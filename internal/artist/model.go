@@ -1,0 +1,79 @@
+package artist
+
+import (
+	"encoding/json"
+	"time"
+)
+
+// Artist represents a music artist or group with full metadata.
+type Artist struct {
+	ID              string     `json:"id"`
+	Name            string     `json:"name"`
+	SortName        string     `json:"sort_name"`
+	Type            string     `json:"type"`
+	Gender          string     `json:"gender"`
+	Disambiguation  string     `json:"disambiguation"`
+	MusicBrainzID   string     `json:"musicbrainz_id"`
+	AudioDBID       string     `json:"audiodb_id"`
+	DiscogsID       string     `json:"discogs_id"`
+	WikidataID      string     `json:"wikidata_id"`
+	Genres          []string   `json:"genres"`
+	Styles          []string   `json:"styles"`
+	Moods           []string   `json:"moods"`
+	YearsActive     string     `json:"years_active"`
+	Born            string     `json:"born"`
+	Formed          string     `json:"formed"`
+	Died            string     `json:"died"`
+	Disbanded       string     `json:"disbanded"`
+	Biography       string     `json:"biography"`
+	Path            string     `json:"path"`
+	NFOExists       bool       `json:"nfo_exists"`
+	ThumbExists     bool       `json:"thumb_exists"`
+	FanartExists    bool       `json:"fanart_exists"`
+	LogoExists      bool       `json:"logo_exists"`
+	BannerExists    bool       `json:"banner_exists"`
+	HealthScore     float64    `json:"health_score"`
+	IsExcluded      bool       `json:"is_excluded"`
+	ExclusionReason string     `json:"exclusion_reason,omitempty"`
+	IsClassical     bool       `json:"is_classical"`
+	LastScannedAt   *time.Time `json:"last_scanned_at,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+}
+
+// BandMember represents a member of a band or group.
+type BandMember struct {
+	ID               string    `json:"id"`
+	ArtistID         string    `json:"artist_id"`
+	MemberName       string    `json:"member_name"`
+	MemberMBID       string    `json:"member_mbid,omitempty"`
+	Instruments      []string  `json:"instruments"`
+	VocalType        string    `json:"vocal_type,omitempty"`
+	DateJoined       string    `json:"date_joined,omitempty"`
+	DateLeft         string    `json:"date_left,omitempty"`
+	IsOriginalMember bool      `json:"is_original_member"`
+	SortOrder        int       `json:"sort_order"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
+}
+
+// MarshalStringSlice encodes a string slice as a JSON array string.
+func MarshalStringSlice(s []string) string {
+	if s == nil {
+		return "[]"
+	}
+	data, _ := json.Marshal(s)
+	return string(data)
+}
+
+// UnmarshalStringSlice decodes a JSON array string into a string slice.
+func UnmarshalStringSlice(data string) []string {
+	if data == "" || data == "[]" {
+		return nil
+	}
+	var result []string
+	if err := json.Unmarshal([]byte(data), &result); err != nil {
+		return nil
+	}
+	return result
+}

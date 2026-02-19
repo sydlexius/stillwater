@@ -1,0 +1,110 @@
+package templates
+
+import (
+	"github.com/sydlexius/stillwater/internal/platform"
+)
+
+// SettingsData holds the data for the settings page.
+type SettingsData struct {
+	Profiles      []platform.Profile
+	ActiveProfile *platform.Profile
+}
+
+templ SettingsPage(assets AssetPaths, data SettingsData) {
+	@Layout("Settings", assets) {
+		<div class="space-y-6">
+			<div class="border-b border-gray-200 dark:border-gray-700 pb-4">
+				<h1 class="text-2xl font-bold">Settings</h1>
+				<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+					Configure platform profiles and output settings.
+				</p>
+			</div>
+			<div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+				<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+					<h2 class="text-lg font-semibold">Platform Profile</h2>
+					<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+						Select the target platform to control NFO output and image naming conventions.
+					</p>
+				</div>
+				<div class="px-6 py-4">
+					<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+						for _, p := range data.Profiles {
+							@profileCard(p)
+						}
+					</div>
+				</div>
+			</div>
+			if data.ActiveProfile != nil {
+				<div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+						<h2 class="text-lg font-semibold">Active Profile Details</h2>
+					</div>
+					<div class="px-6 py-4 space-y-4">
+						<div class="grid grid-cols-2 gap-4 text-sm">
+							<div>
+								<span class="font-medium text-gray-500 dark:text-gray-400">NFO Output</span>
+								<p class="mt-1">
+									if data.ActiveProfile.NFOEnabled {
+										Enabled ({ data.ActiveProfile.NFOFormat } format)
+									} else {
+										Disabled
+									}
+								</p>
+							</div>
+							<div>
+								<span class="font-medium text-gray-500 dark:text-gray-400">Thumbnail</span>
+								<p class="mt-1">{ data.ActiveProfile.ImageNaming.Thumb }</p>
+							</div>
+							<div>
+								<span class="font-medium text-gray-500 dark:text-gray-400">Fanart</span>
+								<p class="mt-1">{ data.ActiveProfile.ImageNaming.Fanart }</p>
+							</div>
+							<div>
+								<span class="font-medium text-gray-500 dark:text-gray-400">Logo</span>
+								<p class="mt-1">{ data.ActiveProfile.ImageNaming.Logo }</p>
+							</div>
+							<div>
+								<span class="font-medium text-gray-500 dark:text-gray-400">Banner</span>
+								<p class="mt-1">{ data.ActiveProfile.ImageNaming.Banner }</p>
+							</div>
+						</div>
+					</div>
+				</div>
+			}
+		</div>
+	}
+}
+
+templ profileCard(p platform.Profile) {
+	<div
+		class={
+			"relative rounded-lg border-2 p-4 cursor-pointer transition-colors",
+			templ.KV("border-blue-500 bg-blue-50 dark:bg-blue-900/20", p.IsActive),
+			templ.KV("border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600", !p.IsActive),
+		}
+		hx-post={ "/api/v1/platforms/" + p.ID + "/activate" }
+		hx-swap="none"
+		hx-on::after-request="window.location.reload()"
+	>
+		<div class="flex items-center justify-between">
+			<h3 class="font-semibold text-sm">{ p.Name }</h3>
+			if p.IsActive {
+				<span class="inline-flex items-center rounded-full bg-blue-100 dark:bg-blue-800 px-2 py-0.5 text-xs font-medium text-blue-700 dark:text-blue-300">
+					Active
+				</span>
+			}
+		</div>
+		<div class="mt-2 text-xs text-gray-500 dark:text-gray-400 space-y-1">
+			<div>
+				NFO:
+				if p.NFOEnabled {
+					<span class="text-green-600 dark:text-green-400">Enabled</span>
+				} else {
+					<span class="text-gray-400 dark:text-gray-500">Disabled</span>
+				}
+			</div>
+			<div>Thumb: { p.ImageNaming.Thumb }</div>
+			<div>Fanart: { p.ImageNaming.Fanart }</div>
+		</div>
+	</div>
+}

@@ -8,6 +8,7 @@ import (
 	"github.com/a-h/templ"
 	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/version"
+	"github.com/sydlexius/stillwater/web/components"
 	"github.com/sydlexius/stillwater/web/templates"
 )
 
@@ -160,6 +161,19 @@ func renderTempl(w http.ResponseWriter, r *http.Request, component templ.Compone
 
 func (r *Router) handleNotImplemented(w http.ResponseWriter, req *http.Request) {
 	writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "not implemented"})
+}
+
+// writeError sends an error response. For HTMX requests, it renders an error
+// toast HTML fragment. For API requests, it returns JSON.
+func writeError(w http.ResponseWriter, req *http.Request, status int, message string) {
+	if req.Header.Get("HX-Request") == "true" {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(status)
+		component := components.ErrorToast("error", message)
+		_ = component.Render(req.Context(), w)
+		return
+	}
+	writeJSON(w, status, map[string]string{"error": message})
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

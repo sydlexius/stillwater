@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<artist>
+  <name>Nirvana</name>
+  <sortname>Nirvana</sortname>
+  <type>group</type>
+  <gender></gender>
+  <disambiguation>US grunge band</disambiguation>
+  <musicbrainzartistid>5b11f4ce-a62d-471e-81fc-a69a8278c7da</musicbrainzartistid>
+  <audiodbartistid>111239</audiodbartistid>
+  <genre>Rock</genre>
+  <genre>Grunge</genre>
+  <genre>Alternative Rock</genre>
+  <style>Grunge</style>
+  <style>Alternative Rock</style>
+  <mood>Aggressive</mood>
+  <mood>Angst</mood>
+  <yearsactive>1987 - 1994</yearsactive>
+  <born></born>
+  <formed>1987</formed>
+  <died></died>
+  <disbanded>1994</disbanded>
+  <biography>Nirvana was an American rock band formed in Aberdeen, Washington in 1987. Founded by lead singer and guitarist Kurt Cobain and bassist Krist Novoselic, the band went through a succession of drummers before recruiting Dave Grohl in 1990.</biography>
+  <thumb aspect="poster">https://assets.fanart.tv/fanart/music/5b11f4ce-a62d-471e-81fc-a69a8278c7da/artistthumb/nirvana-4dda2986e37a5.jpg</thumb>
+  <thumb aspect="poster" preview="https://example.com/preview.jpg">https://example.com/thumb2.jpg</thumb>
+  <fanart>
+    <thumb>https://assets.fanart.tv/fanart/music/5b11f4ce-a62d-471e-81fc-a69a8278c7da/artistbackground/nirvana-4fd53a5f72878.jpg</thumb>
+    <thumb>https://assets.fanart.tv/fanart/music/5b11f4ce-a62d-471e-81fc-a69a8278c7da/artistbackground/nirvana-52147c72c15e2.jpg</thumb>
+  </fanart>
+</artist>

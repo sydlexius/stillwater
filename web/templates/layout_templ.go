@@ -90,7 +90,7 @@ func Layout(title string, assets AssetPaths) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "</main></div></body></html>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "</main></div><div id=\"error-toast-container\"></div><script>\r\n\t\t\t\tdocument.body.addEventListener('htmx:responseError', function(evt) {\r\n\t\t\t\t\tshowToast('Request failed: ' + (evt.detail.xhr.status || 'network error'));\r\n\t\t\t\t});\r\n\t\t\t\tdocument.body.addEventListener('htmx:timeout', function() {\r\n\t\t\t\t\tshowToast('Request timed out. Please try again.');\r\n\t\t\t\t});\r\n\t\t\t\tfunction showToast(msg) {\r\n\t\t\t\t\tvar container = document.getElementById('error-toast-container');\r\n\t\t\t\t\tvar toast = document.createElement('div');\r\n\t\t\t\t\ttoast.className = 'fixed top-4 right-4 z-50 flex items-center gap-3 rounded-lg px-4 py-3 text-sm shadow-lg bg-red-50 dark:bg-red-900/50 text-red-800 dark:text-red-200 border border-red-200 dark:border-red-800 transition-opacity duration-300';\r\n\t\t\t\t\ttoast.innerHTML = '<span>' + msg + '</span><button onclick=\"this.parentElement.remove()\" class=\"ml-2 font-bold opacity-70 hover:opacity-100\">&times;</button>';\r\n\t\t\t\t\tcontainer.appendChild(toast);\r\n\t\t\t\t\tsetTimeout(function() {\r\n\t\t\t\t\t\ttoast.style.opacity = '0';\r\n\t\t\t\t\t\tsetTimeout(function() { toast.remove(); }, 300);\r\n\t\t\t\t\t}, 5000);\r\n\t\t\t\t}\r\n\t\t\t</script></body></html>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

@@ -31,6 +31,26 @@ templ Layout(title string, assets AssetPaths) {
 					{ children... }
 				</main>
 			</div>
+			<div id="error-toast-container"></div>
+			<script>
+				document.body.addEventListener('htmx:responseError', function(evt) {
+					showToast('Request failed: ' + (evt.detail.xhr.status || 'network error'));
+				});
+				document.body.addEventListener('htmx:timeout', function() {
+					showToast('Request timed out. Please try again.');
+				});
+				function showToast(msg) {
+					var container = document.getElementById('error-toast-container');
+					var toast = document.createElement('div');
+					toast.className = 'fixed top-4 right-4 z-50 flex items-center gap-3 rounded-lg px-4 py-3 text-sm shadow-lg bg-red-50 dark:bg-red-900/50 text-red-800 dark:text-red-200 border border-red-200 dark:border-red-800 transition-opacity duration-300';
+					toast.innerHTML = '<span>' + msg + '</span><button onclick="this.parentElement.remove()" class="ml-2 font-bold opacity-70 hover:opacity-100">&times;</button>';
+					container.appendChild(toast);
+					setTimeout(function() {
+						toast.style.opacity = '0';
+						setTimeout(function() { toast.remove(); }, 300);
+					}, 5000);
+				}
+			</script>
 		</body>
 	</html>
 }

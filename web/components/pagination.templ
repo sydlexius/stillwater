@@ -1,0 +1,70 @@
+package components
+
+import "fmt"
+
+// PaginationData holds the state for pagination controls.
+type PaginationData struct {
+	CurrentPage int
+	TotalPages  int
+	PageSize    int
+	TotalItems  int
+	BaseURL     string
+	Sort        string
+	Order       string
+	Search      string
+	Filter      string
+}
+
+func (p PaginationData) pageURL(page int) string {
+	url := fmt.Sprintf("%s?page=%d&page_size=%d", p.BaseURL, page, p.PageSize)
+	if p.Sort != "" {
+		url += "&sort=" + p.Sort
+	}
+	if p.Order != "" {
+		url += "&order=" + p.Order
+	}
+	if p.Search != "" {
+		url += "&search=" + p.Search
+	}
+	if p.Filter != "" {
+		url += "&filter=" + p.Filter
+	}
+	return url
+}
+
+templ Pagination(data PaginationData) {
+	if data.TotalPages > 1 {
+		<nav class="flex items-center justify-between border-t border-gray-200 dark:border-gray-700 px-4 py-3 sm:px-6" aria-label="Pagination">
+			<div class="hidden sm:block">
+				<p class="text-sm text-gray-700 dark:text-gray-300">
+					Showing page { fmt.Sprint(data.CurrentPage) } of { fmt.Sprint(data.TotalPages) }
+					({ fmt.Sprint(data.TotalItems) } total)
+				</p>
+			</div>
+			<div class="flex flex-1 justify-between sm:justify-end gap-2">
+				if data.CurrentPage > 1 {
+					<a
+						href={ templ.SafeURL(data.pageURL(data.CurrentPage - 1)) }
+						hx-get={ data.pageURL(data.CurrentPage - 1) }
+						hx-target="#artist-table"
+						hx-swap="outerHTML"
+						class="relative inline-flex items-center rounded-md bg-white dark:bg-gray-800 px-3 py-2 text-sm font-semibold text-gray-900 dark:text-gray-100 ring-1 ring-inset ring-gray-300 dark:ring-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700"
+					>
+						Previous
+					</a>
+				}
+				if data.CurrentPage < data.TotalPages {
+					<a
+						href={ templ.SafeURL(data.pageURL(data.CurrentPage + 1)) }
+						hx-get={ data.pageURL(data.CurrentPage + 1) }
+						hx-target="#artist-table"
+						hx-swap="outerHTML"
+						class="relative inline-flex items-center rounded-md bg-white dark:bg-gray-800 px-3 py-2 text-sm font-semibold text-gray-900 dark:text-gray-100 ring-1 ring-inset ring-gray-300 dark:ring-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700"
+					>
+						Next
+					</a>
+				}
+			</div>
+		</nav>
+	}
+}
