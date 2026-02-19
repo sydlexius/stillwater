@@ -1,12 +1,13 @@
+version: "2"
+
 run:
   timeout: 5m
 
 linters:
+  default: none
   enable:
     - errcheck
-    - gosimple
     - govet
-    - ineffassign
     - staticcheck
     - unused
     - bodyclose
@@ -18,25 +19,26 @@ linters:
     - wastedassign
     - misspell
     - revive
+  settings:
+    gosec:
+      excludes:
+        - G104  # Unhandled errors (too noisy for http.Error calls)
+    revive:
+      rules:
+        - name: exported
+          severity: warning
+        - name: unexported-return
+          severity: warning
+    misspell:
+      locale: US
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - gosec
+          - errcheck
+
+formatters:
+  enable:
     - gofmt
     - goimports
-
-linters-settings:
-  gosec:
-    excludes:
-      - G104  # Unhandled errors (too noisy for http.Error calls)
-  revive:
-    rules:
-      - name: exported
-        severity: warning
-      - name: unexported-return
-        severity: warning
-  misspell:
-    locale: US
-
-issues:
-  exclude-rules:
-    - path: _test\.go
-      linters:
-        - gosec
-        - errcheck
