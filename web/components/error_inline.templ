@@ -1,0 +1,18 @@
+package components
+
+// InlineMessage renders an inline feedback message for forms and sections.
+// Level should be "error", "warning", "success", or "info".
+templ InlineMessage(level, message string) {
+	<div
+		class={
+			"rounded-md px-4 py-3 text-sm",
+			templ.KV("bg-red-50 dark:bg-red-900/50 text-red-700 dark:text-red-300", level == "error"),
+			templ.KV("bg-yellow-50 dark:bg-yellow-900/50 text-yellow-700 dark:text-yellow-300", level == "warning"),
+			templ.KV("bg-green-50 dark:bg-green-900/50 text-green-700 dark:text-green-300", level == "success"),
+			templ.KV("bg-blue-50 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300", level == "info"),
+		}
+		role="alert"
+	>
+		{ message }
+	</div>
+}

@@ -1,0 +1,203 @@
+package templates
+
+import (
+	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/web/components"
+)
+
+// ArtistDetailData holds the data for the artist detail page.
+type ArtistDetailData struct {
+	Artist  artist.Artist
+	Members []artist.BandMember
+}
+
+templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
+	@Layout(data.Artist.Name, assets) {
+		<div class="space-y-6">
+			<div class="border-b border-gray-200 dark:border-gray-700 pb-4">
+				<div class="flex items-center gap-2">
+					<a href="/artists" class="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200">
+						Artists
+					</a>
+					<span class="text-gray-400">/</span>
+				</div>
+				<h1 class="mt-2 text-2xl font-bold">{ data.Artist.Name }</h1>
+				if data.Artist.SortName != "" && data.Artist.SortName != data.Artist.Name {
+					<p class="text-sm text-gray-500 dark:text-gray-400">Sort: { data.Artist.SortName }</p>
+				}
+				if data.Artist.Disambiguation != "" {
+					<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{ data.Artist.Disambiguation }</p>
+				}
+			</div>
+			<div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
+				<div class="lg:col-span-2 space-y-6">
+					if data.Artist.Biography != "" {
+						<section class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
+							<h2 class="text-lg font-semibold mb-3">Biography</h2>
+							<p class="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-line">{ data.Artist.Biography }</p>
+						</section>
+					}
+					if len(data.Artist.Genres) > 0 || len(data.Artist.Styles) > 0 || len(data.Artist.Moods) > 0 {
+						<section class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
+							<h2 class="text-lg font-semibold mb-3">Tags</h2>
+							if len(data.Artist.Genres) > 0 {
+								<div class="mb-3">
+									<h3 class="text-xs font-medium uppercase text-gray-500 dark:text-gray-400 mb-1">Genres</h3>
+									<div class="flex flex-wrap gap-1">
+										for _, g := range data.Artist.Genres {
+											<span class="inline-flex items-center rounded-full bg-blue-100 dark:bg-blue-900 px-2.5 py-0.5 text-xs font-medium text-blue-800 dark:text-blue-200">
+												{ g }
+											</span>
+										}
+									</div>
+								</div>
+							}
+							if len(data.Artist.Styles) > 0 {
+								<div class="mb-3">
+									<h3 class="text-xs font-medium uppercase text-gray-500 dark:text-gray-400 mb-1">Styles</h3>
+									<div class="flex flex-wrap gap-1">
+										for _, s := range data.Artist.Styles {
+											<span class="inline-flex items-center rounded-full bg-purple-100 dark:bg-purple-900 px-2.5 py-0.5 text-xs font-medium text-purple-800 dark:text-purple-200">
+												{ s }
+											</span>
+										}
+									</div>
+								</div>
+							}
+							if len(data.Artist.Moods) > 0 {
+								<div>
+									<h3 class="text-xs font-medium uppercase text-gray-500 dark:text-gray-400 mb-1">Moods</h3>
+									<div class="flex flex-wrap gap-1">
+										for _, m := range data.Artist.Moods {
+											<span class="inline-flex items-center rounded-full bg-green-100 dark:bg-green-900 px-2.5 py-0.5 text-xs font-medium text-green-800 dark:text-green-200">
+												{ m }
+											</span>
+										}
+									</div>
+								</div>
+							}
+						</section>
+					}
+					if len(data.Members) > 0 {
+						<section class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
+							<h2 class="text-lg font-semibold mb-3">Members</h2>
+							<div class="divide-y divide-gray-200 dark:divide-gray-700">
+								for _, m := range data.Members {
+									<div class="py-3 flex items-center justify-between">
+										<div>
+											<p class="text-sm font-medium text-gray-900 dark:text-gray-100">
+												{ m.MemberName }
+												if m.IsOriginalMember {
+													<span class="ml-1 text-xs text-gray-400">(original)</span>
+												}
+											</p>
+											if len(m.Instruments) > 0 {
+												<p class="text-xs text-gray-500 dark:text-gray-400">
+													for i, inst := range m.Instruments {
+														if i > 0 {
+															{ ", " }
+														}
+														{ inst }
+													}
+												</p>
+											}
+										</div>
+										<div class="text-xs text-gray-400">
+											if m.DateJoined != "" {
+												{ m.DateJoined }
+												if m.DateLeft != "" {
+													{ " - " + m.DateLeft }
+												} else {
+													{ " - present" }
+												}
+											}
+										</div>
+									</div>
+								}
+							</div>
+						</section>
+					}
+				</div>
+				<div class="space-y-6">
+					<section class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
+						<h2 class="text-lg font-semibold mb-3">Details</h2>
+						<dl class="space-y-2 text-sm">
+							if data.Artist.Type != "" {
+								<div>
+									<dt class="text-gray-500 dark:text-gray-400">Type</dt>
+									<dd class="font-medium">{ data.Artist.Type }</dd>
+								</div>
+							}
+							if data.Artist.Gender != "" {
+								<div>
+									<dt class="text-gray-500 dark:text-gray-400">Gender</dt>
+									<dd class="font-medium">{ data.Artist.Gender }</dd>
+								</div>
+							}
+							if data.Artist.Formed != "" {
+								<div>
+									<dt class="text-gray-500 dark:text-gray-400">Formed</dt>
+									<dd class="font-medium">{ data.Artist.Formed }</dd>
+								</div>
+							}
+							if data.Artist.Born != "" {
+								<div>
+									<dt class="text-gray-500 dark:text-gray-400">Born</dt>
+									<dd class="font-medium">{ data.Artist.Born }</dd>
+								</div>
+							}
+							if data.Artist.Disbanded != "" {
+								<div>
+									<dt class="text-gray-500 dark:text-gray-400">Disbanded</dt>
+									<dd class="font-medium">{ data.Artist.Disbanded }</dd>
+								</div>
+							}
+							if data.Artist.Died != "" {
+								<div>
+									<dt class="text-gray-500 dark:text-gray-400">Died</dt>
+									<dd class="font-medium">{ data.Artist.Died }</dd>
+								</div>
+							}
+							if data.Artist.YearsActive != "" {
+								<div>
+									<dt class="text-gray-500 dark:text-gray-400">Years Active</dt>
+									<dd class="font-medium">{ data.Artist.YearsActive }</dd>
+								</div>
+							}
+						</dl>
+					</section>
+					<section class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
+						<h2 class="text-lg font-semibold mb-3">File Status</h2>
+						<div class="space-y-2">
+							@components.StatusBadge(data.Artist.NFOExists, "NFO")
+							@components.StatusBadge(data.Artist.ThumbExists, "Thumbnail")
+							@components.StatusBadge(data.Artist.FanartExists, "Fanart")
+							@components.StatusBadge(data.Artist.LogoExists, "Logo")
+							@components.StatusBadge(data.Artist.BannerExists, "Banner")
+						</div>
+					</section>
+					<section class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
+						<h2 class="text-lg font-semibold mb-3">Provider IDs</h2>
+						<dl class="space-y-2 text-sm">
+							@providerID("MusicBrainz", data.Artist.MusicBrainzID)
+							@providerID("AudioDB", data.Artist.AudioDBID)
+							@providerID("Discogs", data.Artist.DiscogsID)
+							@providerID("Wikidata", data.Artist.WikidataID)
+						</dl>
+					</section>
+				</div>
+			</div>
+		</div>
+	}
+}
+
+templ providerID(name, value string) {
+	<div>
+		<dt class="text-gray-500 dark:text-gray-400">{ name }</dt>
+		if value != "" {
+			<dd class="font-medium font-mono text-xs">{ value }</dd>
+		} else {
+			<dd class="text-gray-400 italic">Not set</dd>
+		}
+	</div>
+}

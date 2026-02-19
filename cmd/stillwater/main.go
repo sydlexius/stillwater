@@ -11,9 +11,12 @@ import (
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/api"
+	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/auth"
 	"github.com/sydlexius/stillwater/internal/config"
 	"github.com/sydlexius/stillwater/internal/database"
+	"github.com/sydlexius/stillwater/internal/platform"
+	"github.com/sydlexius/stillwater/internal/scanner"
 	"github.com/sydlexius/stillwater/internal/version"
 )
 
@@ -78,6 +81,9 @@ func run() error {
 
 	// Initialize services
 	authService := auth.NewService(db)
+	artistService := artist.NewService(db)
+	scannerService := scanner.NewService(artistService, logger, cfg.Music.LibraryPath, cfg.Scanner.Exclusions)
+	platformService := platform.NewService(db)
 
 	logger.Info("starting stillwater",
 		slog.String("version", version.Version),
@@ -85,7 +91,7 @@ func run() error {
 	)
 
 	// Set up HTTP router
-	router := api.NewRouter(authService, logger, cfg.Server.BasePath, "web/static")
+	router := api.NewRouter(authService, artistService, scannerService, platformService, logger, cfg.Server.BasePath, "web/static")
 
 	// Create HTTP server
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)

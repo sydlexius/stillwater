@@ -1,0 +1,26 @@
+package components
+
+// StatusBadge renders a colored indicator for a boolean status.
+templ StatusBadge(exists bool, label string) {
+	if exists {
+		<span
+			class="inline-flex items-center rounded-full bg-green-100 dark:bg-green-900 px-2 py-0.5 text-xs font-medium text-green-800 dark:text-green-200"
+			title={ label + ": found" }
+		>
+			<svg class="mr-1 h-3 w-3" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+				<path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"></path>
+			</svg>
+			{ label }
+		</span>
+	} else {
+		<span
+			class="inline-flex items-center rounded-full bg-red-100 dark:bg-red-900 px-2 py-0.5 text-xs font-medium text-red-800 dark:text-red-200"
+			title={ label + ": missing" }
+		>
+			<svg class="mr-1 h-3 w-3" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+				<path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"></path>
+			</svg>
+			{ label }
+		</span>
+	}
+}

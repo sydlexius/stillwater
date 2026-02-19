@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<artist>
+  <name>Radiohead</name>
+  <musicbrainzartistid>a74b1b7f-71a5-4011-9441-d0b5e4122711</musicbrainzartistid>
+  <genre>Alternative Rock</genre>
+  <biography>English rock band from Abingdon, Oxfordshire.</biography>
+  <customelement>some custom value</customelement>
+  <anothertag attribute="test">tagged value</anothertag>
+</artist>

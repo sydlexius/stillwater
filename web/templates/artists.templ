@@ -1,0 +1,153 @@
+package templates
+
+import (
+	"fmt"
+
+	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/web/components"
+)
+
+// ArtistListData holds the data for the artist list page.
+type ArtistListData struct {
+	Artists    []artist.Artist
+	Pagination components.PaginationData
+	Search     string
+	Sort       string
+	Order      string
+	Filter     string
+}
+
+templ ArtistsPage(assets AssetPaths, data ArtistListData) {
+	@Layout("Artists", assets) {
+		<div class="space-y-6">
+			<div class="border-b border-gray-200 dark:border-gray-700 pb-4 flex items-center justify-between">
+				<div>
+					<h1 class="text-2xl font-bold">Artists</h1>
+					<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+						{ fmt.Sprint(data.Pagination.TotalItems) } artists in library
+					</p>
+				</div>
+				<button
+					hx-post="/api/v1/scanner/run"
+					hx-swap="none"
+					class="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+				>
+					Scan Library
+				</button>
+			</div>
+			<div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+				<div class="relative flex-1 max-w-sm">
+					<input
+						type="search"
+						name="search"
+						value={ data.Search }
+						placeholder="Search artists..."
+						hx-get="/artists"
+						hx-trigger="keyup changed delay:300ms"
+						hx-target="#artist-table"
+						hx-swap="outerHTML"
+						hx-include="[name='filter']"
+						class="block w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+					/>
+				</div>
+				<select
+					name="filter"
+					hx-get="/artists"
+					hx-trigger="change"
+					hx-target="#artist-table"
+					hx-swap="outerHTML"
+					hx-include="[name='search']"
+					class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+				>
+					<option value="" selected?={ data.Filter == "" }>All Artists</option>
+					<option value="missing_nfo" selected?={ data.Filter == "missing_nfo" }>Missing NFO</option>
+					<option value="missing_thumb" selected?={ data.Filter == "missing_thumb" }>Missing Thumbnail</option>
+					<option value="missing_fanart" selected?={ data.Filter == "missing_fanart" }>Missing Fanart</option>
+					<option value="missing_mbid" selected?={ data.Filter == "missing_mbid" }>Missing MBID</option>
+					<option value="excluded" selected?={ data.Filter == "excluded" }>Excluded</option>
+					<option value="not_excluded" selected?={ data.Filter == "not_excluded" }>Not Excluded</option>
+				</select>
+			</div>
+			@ArtistTable(data)
+		</div>
+	}
+}
+
+// ArtistTable is the HTMX-swappable table fragment.
+templ ArtistTable(data ArtistListData) {
+	<div id="artist-table">
+		<div class="overflow-x-auto">
+			<table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+				<thead class="bg-gray-50 dark:bg-gray-800">
+					<tr>
+						<th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
+							Name
+						</th>
+						<th scope="col" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
+							NFO
+						</th>
+						<th scope="col" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
+							Thumb
+						</th>
+						<th scope="col" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
+							Fanart
+						</th>
+						<th scope="col" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
+							Logo
+						</th>
+						<th scope="col" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
+							MBID
+						</th>
+					</tr>
+				</thead>
+				<tbody class="divide-y divide-gray-200 dark:divide-gray-700 bg-white dark:bg-gray-900">
+					if len(data.Artists) == 0 {
+						<tr>
+							<td colspan="6" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+								No artists found. Run a library scan to discover artists.
+							</td>
+						</tr>
+					}
+					for _, a := range data.Artists {
+						@ArtistRow(a)
+					}
+				</tbody>
+			</table>
+		</div>
+		@components.Pagination(data.Pagination)
+	</div>
+}
+
+templ ArtistRow(a artist.Artist) {
+	<tr class={ "hover:bg-gray-50 dark:hover:bg-gray-800", templ.KV("opacity-50", a.IsExcluded) }>
+		<td class="px-4 py-3 text-sm">
+			<a
+				href={ templ.SafeURL("/artists/" + a.ID) }
+				class="font-medium text-blue-600 dark:text-blue-400 hover:underline"
+			>
+				{ a.Name }
+			</a>
+			if a.SortName != "" && a.SortName != a.Name {
+				<span class="ml-2 text-xs text-gray-400">({ a.SortName })</span>
+			}
+			if a.IsExcluded {
+				<span class="ml-2 inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs font-medium text-gray-600 dark:text-gray-400">Excluded</span>
+			}
+		</td>
+		<td class="px-4 py-3 text-center">
+			@components.StatusBadge(a.NFOExists, "NFO")
+		</td>
+		<td class="px-4 py-3 text-center">
+			@components.StatusBadge(a.ThumbExists, "Thumb")
+		</td>
+		<td class="px-4 py-3 text-center">
+			@components.StatusBadge(a.FanartExists, "Fanart")
+		</td>
+		<td class="px-4 py-3 text-center">
+			@components.StatusBadge(a.LogoExists, "Logo")
+		</td>
+		<td class="px-4 py-3 text-center">
+			@components.StatusBadge(a.MusicBrainzID != "", "MBID")
+		</td>
+	</tr>
+}

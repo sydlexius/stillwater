@@ -16,6 +16,7 @@ type Config struct {
 	Auth       AuthConfig       `yaml:"auth"`
 	Encryption EncryptionConfig `yaml:"encryption"`
 	Music      MusicConfig      `yaml:"music"`
+	Scanner    ScannerConfig    `yaml:"scanner"`
 	Logging    LoggingConfig    `yaml:"logging"`
 }
 
@@ -45,6 +46,12 @@ type MusicConfig struct {
 	LibraryPath string `yaml:"library_path"`
 }
 
+// ScannerConfig holds scanner behavior settings.
+type ScannerConfig struct {
+	Depth      int      `yaml:"depth"`
+	Exclusions []string `yaml:"exclusions"`
+}
+
 // LoggingConfig holds logging settings.
 type LoggingConfig struct {
 	Level  string `yaml:"level"`
@@ -65,6 +72,13 @@ func Default() *Config {
 		Encryption: EncryptionConfig{},
 		Music: MusicConfig{
 			LibraryPath: "/music",
+		},
+		Scanner: ScannerConfig{
+			Depth: 1,
+			Exclusions: []string{
+				"Various Artists", "Various", "VA",
+				"Soundtrack", "OST",
+			},
 		},
 		Logging: LoggingConfig{
 			Level:  "info",
@@ -124,6 +138,12 @@ func (c *Config) loadFromEnv() {
 	}
 	if v := os.Getenv("SW_MUSIC_PATH"); v != "" {
 		c.Music.LibraryPath = v
+	}
+	if v := os.Getenv("SW_SCANNER_EXCLUSIONS"); v != "" {
+		c.Scanner.Exclusions = strings.Split(v, ",")
+		for i := range c.Scanner.Exclusions {
+			c.Scanner.Exclusions[i] = strings.TrimSpace(c.Scanner.Exclusions[i])
+		}
 	}
 	if v := os.Getenv("SW_LOG_LEVEL"); v != "" {
 		c.Logging.Level = v
