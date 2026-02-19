@@ -12,9 +12,10 @@ data/
 coverage.out
 coverage.html
 
-# IDE
+# IDE / tools
 .idea/
 .vscode/
+.claude/
 *.swp
 *.swo
 
