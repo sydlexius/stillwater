@@ -3,7 +3,7 @@
 # Build stage
 FROM golang:1.26-alpine AS builder
 
-RUN apk add --no-cache curl
+RUN apk add --no-cache curl libstdc++ libgcc
 
 WORKDIR /src
 
