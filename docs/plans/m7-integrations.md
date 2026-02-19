@@ -18,6 +18,8 @@ Connect Stillwater to external services: Emby, Jellyfin, and Lidarr for library 
 | 26 | Lidarr integration: artist sync and conflict detection | plan | sonnet |
 | 27 | Webhook notifications (Discord, Gotify, generic HTTP) | plan | sonnet |
 | 28 | Artist alias management | direct | sonnet |
+| 39 | API-based metadata push for platforms without NFO support | plan | sonnet |
+| 48 | NFO conflict detection for all platforms | plan | sonnet |
 
 ## Implementation Order
 
@@ -187,6 +189,8 @@ type Event struct {
 ## Key Design Decisions
 
 - **Emby and Jellyfin share similar APIs:** Abstract common operations where possible, but keep separate packages since the APIs diverge in authentication and some endpoints.
+- **Prefer targeted refreshes over full library scans:** After updating a single artist's NFO or images, trigger a refresh for that specific artist (e.g., Emby/Jellyfin `POST /Items/{ItemId}/Refresh`, Lidarr `PUT /api/v1/command` with `RefreshArtist` + artistId). Only fall back to a full library scan when a bulk operation touches a large number of artists and individual refreshes would be less efficient (e.g., 500+ artists).
+- **NFO conflict detection:** Before writing NFO, check last-modified timestamp against what Stillwater last wrote. If changed externally, warn instead of overwriting. Also check Lidarr metadata profile settings and Emby/Jellyfin metadata saver settings via API where possible. If settings cannot be checked via API, provide instructions in the UI.
 - **Lidarr conflict detection is advisory:** Stillwater warns but does not prevent conflicting configurations. The user decides which tool manages NFO files.
 - **Webhook dispatch is fire-and-forget with retry:** Webhook failures do not affect core operations. Failed deliveries are retried up to 3 times with exponential backoff.
 - **Event bus is in-process:** No external message queue needed. A simple Go channel-based event bus is sufficient for the expected event volume.

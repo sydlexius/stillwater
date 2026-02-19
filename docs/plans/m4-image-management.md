@@ -19,6 +19,8 @@ Build the image search, comparison, upload, crop, and processing pipeline. Users
 | 15 | Client-side image cropping with Cropper.js | direct | sonnet |
 | 16 | Server-side image resize and optimization | direct | sonnet |
 | 17 | Image naming convention settings | direct | sonnet |
+| 38 | Image format cleanup: delete old format when replacing with new | direct | sonnet |
+| 49 | Logo browser with transparency preview | direct | sonnet |
 
 ## Implementation Order
 
@@ -140,6 +142,9 @@ Start with the backend processing before building UI.
 - **Progressive enhancement:** Image search works without JavaScript (basic form submit). Cropper.js enhances the experience but is not required for basic upload.
 - **Lazy thumbnail loading:** Image grid uses HTMX lazy loading to avoid fetching all provider images at once.
 - **File size limits:** Default 25MB max upload. Configurable in settings. URL fetch has separate timeout and size limit.
+- **JPG and PNG only:** No WebP output. Logos must always be stored as PNG to preserve alpha channel. Never convert logos to JPG.
+- **Logo transparency preview:** When browsing logos, display with a checkered background (CSS pattern) so users can evaluate transparency quality. Configurable preview background (checkered, dark, light, custom color).
+- **Format cleanup on replace:** When saving a new image, delete existing files of the same type in other formats (e.g., saving folder.png deletes folder.jpg).
 
 ## Verification
 

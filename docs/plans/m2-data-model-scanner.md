@@ -17,6 +17,10 @@ Establish the artist domain model, NFO parser, filesystem scanner, and artist li
 | 3 | NFO parser: read and write Kodi-compatible artist.nfo | plan | sonnet |
 | 4 | Artist list UI with compliance indicators | plan | sonnet |
 | 35 | Band member metadata: store and display artist members | direct | sonnet |
+| 40 | Artist matching: ID-first approach with configurable priority | plan | sonnet |
+| 41 | Atomic filesystem writes utility | plan | sonnet |
+| 42 | Scanner exclusions and special directory types | plan | sonnet |
+| 43 | HTMX error fragment templates | direct | sonnet |
 
 ## Implementation Order
 
@@ -154,6 +158,65 @@ Establish the artist domain model, NFO parser, filesystem scanner, and artist li
 6. Bruno collection:
    - Add artists list and detail requests
 
+### Step 5: Atomic Filesystem Writes (#41)
+
+**Package:** `internal/filesystem/`
+
+1. Implement shared write utility in `internal/filesystem/atomic.go`:
+   - Write to `<target>.tmp` in the target directory
+   - Rename existing `<target>` to `<target>.bak`
+   - Rename `<target>.tmp` to `<target>`
+   - Delete `.bak` on success
+   - Fall back to copy+delete with fsync if rename fails (cross-mount/network share)
+
+2. All file write operations (NFO, images) must use this utility.
+
+3. Tests:
+   - `internal/filesystem/atomic_test.go` -- test normal write, interrupted write recovery, cross-mount fallback
+
+### Step 6: Scanner Exclusions (#42)
+
+**Package:** `internal/scanner/`
+
+1. Add configurable skip list to scanner:
+   - Default exclusions: "Various Artists", "Various", "VA", "Soundtrack", "OST"
+   - Configurable via settings API
+
+2. Excluded directories:
+   - Still appear in artist list but greyed out and marked unfetchable
+   - Users can supply local placeholder images/values
+
+3. Classical music directory designation:
+   - Allow marking a directory as "classical" (full support in M5)
+   - Store designation in settings or artist metadata
+
+### Step 7: HTMX Error Fragment Templates (#43)
+
+**Templates:** `web/components/`
+
+1. Create `web/components/error_toast.templ` -- toast notification for transient errors
+2. Create `web/components/error_inline.templ` -- inline error message for form/action failures
+3. Configure `hx-on::response-error` globally in layout template
+4. Return proper HTTP status codes; HTMX swaps error fragments for 4xx/5xx responses
+5. Network timeout fallback via HTMX `htmx:timeout` event
+
+### Step 8: Artist Matching Foundation (#40)
+
+**Package:** `internal/artist/`
+
+1. Implement ID-first matching logic:
+   - When an MBID is available (from Lidarr, existing NFO, embedded tags), use it directly
+   - Skip name matching when a trusted ID is present
+
+2. User-configurable matching priority setting:
+   - "Prefer ID match" (default), "Prefer name match", "Always prompt"
+
+3. Minimum confidence floor:
+   - Configurable threshold below which matches are never auto-accepted
+   - Even in YOLO mode, log and skip low-confidence matches
+
+4. Note: Album-based disambiguation and preponderance of evidence features depend on M3 and M5 for full implementation but the matching infrastructure is laid here.
+
 ## Migration
 
 The `artists` table in 001_initial.sql includes provider ID columns (musicbrainz_id, audiodb_id, discogs_id, wikidata_id) with indexes. A new 002 migration adds the `band_members` table.
@@ -166,6 +229,10 @@ The `artists` table in 001_initial.sql includes provider ID columns (musicbrainz
 - **NFO round-trip fidelity:** The parser should preserve unrecognized XML elements so that writing an NFO back does not lose custom data added by other tools.
 - **Scanner is read-only:** The filesystem scanner only reads and reports. It does not modify any files. Write operations are handled by explicit user actions in later milestones.
 - **Compliance status is computed:** Not stored separately. Computed on-the-fly based on detected files and NFO content.
+- **Atomic writes for all file operations:** All NFO and image file writes use the shared atomic write utility (tmp/bak/rename pattern) to prevent corruption from crashes or interruptions.
+- **Scanner exclusions are configurable:** Default skip list for Various Artists, Soundtracks, etc. Excluded directories still appear but are greyed out and unfetchable.
+- **HTMX error handling from the start:** Error toast and inline error templates are created in this milestone alongside the first real HTMX interactions.
+- **ID-first matching:** When a trusted provider ID is available, use it directly. Skip name-based matching to avoid ambiguity.
 
 ## Verification
 

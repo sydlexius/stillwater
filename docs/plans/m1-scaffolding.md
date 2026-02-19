@@ -7,11 +7,13 @@ All scaffolding tasks have been implemented and the initial commit has been push
 ## What Was Delivered
 
 ### Project Structure
+
 - Go module initialized (go.mod with Go 1.26)
 - Full directory structure per architecture spec
 - CLAUDE.md with project conventions and issue hints
 
 ### Application Core
+
 - `cmd/stillwater/main.go` - Entry point with graceful shutdown
 - `internal/config/` - Configuration loading (YAML + env var overrides)
 - `internal/database/` - SQLite setup (WAL mode, pure Go) + goose migrations
@@ -22,12 +24,14 @@ All scaffolding tasks have been implemented and the initial commit has been push
 - `internal/api/middleware/` - Auth, CSRF, logging (with log scrubbing)
 
 ### Frontend
+
 - Templ templates: layout, index (dashboard), login, setup
 - HTMX 2.0.8 vendored in web/static/js/
 - Tailwind CSS input file (standalone CLI builds output)
 - Cache-busted static asset serving
 
 ### Infrastructure
+
 - Multi-stage Dockerfile with Tailwind CLI
 - docker-compose.yml with PUID/PGID support
 - Entrypoint script for UID/GID remapping
@@ -38,13 +42,16 @@ All scaffolding tasks have been implemented and the initial commit has been push
 - GitHub Actions CI (lint, test, build, Docker push)
 
 ### API Testing
+
 - Bruno collection: health check, auth/setup, auth/login, auth/me
 
 ### Database Schema (001_initial.sql)
+
 - Tables: users, sessions, connections, settings, artists, artist_aliases, nfo_snapshots, rules, health_history, webhooks
 - Indexes on foreign keys, search columns, timestamps
 
 ## Files Created
+
 ```
 cmd/stillwater/main.go
 internal/api/router.go

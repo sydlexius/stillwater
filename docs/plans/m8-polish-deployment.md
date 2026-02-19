@@ -18,6 +18,8 @@ Final polish pass: mobile responsiveness, logo/favicon, Unraid template, SWAG co
 | 32 | LSIO SWAG reverse proxy configs (subdomain + subfolder) | direct | haiku |
 | 33 | OpenAPI spec and API documentation | direct | sonnet |
 | 34 | Security audit: encryption, log scrubbing, input validation | plan | opus |
+| 45 | Database backup: scheduled and manual | plan | sonnet |
+| 46 | Offline credential reset CLI subcommand | direct | sonnet |
 
 ## Implementation Order
 
@@ -142,7 +144,32 @@ Final polish pass: mobile responsiveness, logo/favicon, Unraid template, SWAG co
    - No unnecessary capabilities
    - Non-root execution verified
 
-### Step 7: README and Documentation
+### Step 7: Database Backup (#45)
+
+1. Implement SQLite backup using Online Backup API:
+   - Manual backup trigger via API endpoint and UI button
+   - Scheduled backups (configurable interval, e.g., daily)
+   - Backup to configurable path (default: within /data volume)
+   - Retention policy (keep N most recent backups)
+
+2. API endpoints:
+   - `POST /api/v1/settings/backup` -- trigger manual backup
+   - `GET /api/v1/settings/backup/history` -- list backup history
+
+3. Settings UI section for backup configuration
+
+### Step 8: Offline Credential Reset (#46)
+
+1. Add `reset-credentials` subcommand to `cmd/stillwater/main.go`:
+   - Can be run when the application is stopped
+   - Clears all encrypted API keys from the database
+   - Forces credential re-entry on next startup
+
+2. Encryption key improvements:
+   - Auto-generate encryption key on first run and store in /data volume
+   - Prominent warning in setup UI about backing up the encryption key
+
+### Step 9: README and Documentation
 
 1. Write comprehensive README.md:
    - Project description and screenshots
@@ -161,6 +188,8 @@ Final polish pass: mobile responsiveness, logo/favicon, Unraid template, SWAG co
 - **Scalar over Swagger UI:** Scalar is a modern, lightweight API documentation renderer. If integration is complex, fall back to Swagger UI.
 - **Security audit as final step:** Easier to audit the complete codebase once rather than incrementally. However, security best practices are followed throughout development.
 - **README is part of the release:** A good README is essential for open-source adoption and self-hosted users.
+- **Database backup via SQLite Online Backup API:** Provides consistent snapshots even while the application is running.
+- **Offline credential reset:** Provides a recovery path when the encryption key is lost. Clears encrypted credentials so the user can re-enter them after setting a new key.
 
 ## Verification
 

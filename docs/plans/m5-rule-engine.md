@@ -17,6 +17,7 @@ Implement the Bliss-inspired rule engine for defining compliance rules, evaluati
 | 18 | Rule definition schema and evaluation engine | plan | opus |
 | 19 | Auto-fix pipeline with source priority chains | plan | sonnet |
 | 20 | Bulk operations with configurable modes | plan | opus |
+| 44 | Classical music directory support | plan | sonnet |
 
 ## Implementation Order
 
@@ -167,6 +168,8 @@ const (
 - **Fixers are composable:** Each fixer handles one violation type. The orchestrator chains them based on provider priorities.
 - **Bulk jobs are async:** Long-running bulk operations run in background goroutines. The API returns a job ID for status polling.
 - **Disambiguation is human-assisted:** Even in YOLO mode, truly ambiguous cases (multiple equally-scored matches) are logged. The UI provides tools to help humans make the right choice.
+- **Adaptive batched transactions:** Small batches (< 100) use a single transaction per batch. Medium batches (100-1000) use transactions of 50 items. Large batches (1000+) use transactions of 25 items with short sleep between batches. User-initiated actions get priority over background jobs. Progress indicators are always shown regardless of batch size.
+- **Classical music support:** Directories designated as "classical" (from M2 scanner) get special rule evaluation. A user preference controls whether metadata/images target the composer or the performer/album artist.
 
 ## Verification
 

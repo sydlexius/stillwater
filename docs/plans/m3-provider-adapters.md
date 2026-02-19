@@ -19,6 +19,8 @@ Implement metadata provider adapters for fetching artist metadata and images fro
 | 9 | Last.fm adapter | direct | sonnet |
 | 10 | Wikidata adapter | direct | sonnet |
 | 11 | Provider priority configuration | plan | sonnet |
+| 36 | Provider API key configuration page | plan | sonnet |
+| 47 | Application-wide singleton rate limiters | plan | sonnet |
 
 ## Implementation Order
 
@@ -69,7 +71,7 @@ type ImageResult struct {
 }
 ```
 
-2. Implement MusicBrainz adapter in `internal/provider/musicbrainz/`:
+1. Implement MusicBrainz adapter in `internal/provider/musicbrainz/`:
    - HTTP client with User-Agent header (MusicBrainz requirement)
    - Rate limiter: max 1 request per second
    - Search: `/ws/2/artist?query=...&fmt=json`
@@ -79,7 +81,7 @@ type ImageResult struct {
    - Extract band members from `artist-rels` (type "member of band") to populate BandMember model
    - Handle pagination for search results
 
-3. Tests:
+2. Tests:
    - Mock HTTP server for unit tests
    - Rate limiter tests
    - Response parsing tests with sample JSON fixtures
@@ -150,22 +152,22 @@ type ProviderPriority struct {
 }
 ```
 
-2. Implement orchestrator in `internal/provider/orchestrator.go`:
+1. Implement orchestrator in `internal/provider/orchestrator.go`:
    - `FetchMetadata(ctx, artist, field)` -- try providers in priority order
    - `FetchImages(ctx, artist, imageType)` -- aggregate from all providers, sorted by priority
    - Fallback chain: try next provider if current fails
 
-3. Settings API:
+2. Settings API:
    - Include provider priorities in `GET /api/v1/settings`
    - Update via `PUT /api/v1/settings`
 
-4. Settings UI:
+3. Settings UI:
    - Priority list per field and image type
    - Reorder via up/down buttons or drag-and-drop
 
 ## Key Design Decisions
 
-- **Rate limiting per provider:** Each adapter manages its own rate limiter. The orchestrator does not need global rate limiting.
+- **Singleton rate limiters:** Rate limiters are application-wide singletons, one per provider, created at startup and shared across all handlers and background jobs. The MusicBrainz limiter enforces 1 req/sec globally, not per-handler. This prevents concurrent operations (bulk + background + UI) from exceeding API limits.
 - **API keys in encrypted settings:** Provider API keys are stored encrypted in the settings table using AES-256-GCM. Decrypted at runtime when making requests.
 - **Graceful degradation:** If a provider is unavailable or returns an error, the orchestrator moves to the next provider in the priority chain. Errors are logged but do not fail the overall operation.
 - **Mock-first testing:** All adapters tested against mock HTTP servers. Optional integration tests (behind build tags) for real API calls.

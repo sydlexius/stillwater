@@ -55,6 +55,7 @@ internal/
     discogs/
     lastfm/
     wikidata/
+  filesystem/            Atomic file writes (tmp/bak/rename)
   image/                 Image fetch, process, crop, compare
   rule/                  Rule engine (define, evaluate, auto-fix)
   scanner/               Filesystem + API library scanners
@@ -117,6 +118,21 @@ M2 (Data Model + Scanner) -- artist model, NFO parser, filesystem scanner
 ```
 
 M3 and M4 can proceed in parallel after M2 is complete. M6 and M7 can also overlap. M8 is the final polish pass.
+
+## Architectural Decisions (Risk Review)
+
+Key decisions made during the risk review to avoid painting into corners:
+
+1. **ID-first matching:** When MBIDs are available, use them directly. Configurable priority. Minimum confidence floor even in YOLO mode.
+2. **Atomic filesystem writes:** All file writes use tmp/bak/rename pattern. Fall back to copy+delete for cross-mount.
+3. **Encryption key management:** Auto-generate on first run, store in /data. Offline credential reset CLI subcommand for recovery.
+4. **Adaptive batched transactions:** Batch sizes scale with operation size. User actions get priority over background jobs.
+5. **Singleton rate limiters:** One per provider, created at startup, shared globally across all handlers and jobs.
+6. **Scanner exclusions:** Default skip list (Various Artists, Soundtracks). Classical music directory designation. VGM relies on MusicBrainz.
+7. **NFO conflict detection:** Timestamp-based + API checks for Lidarr/Emby/Jellyfin settings.
+8. **Image format policy:** JPG and PNG only. Logos always PNG. Format cleanup on replace.
+9. **HTMX error handling:** Error toast and inline templates created in M2. Global error handler in layout.
+10. **Targeted platform refreshes:** Prefer per-artist refresh over full library scan. Full scan only for large bulk operations.
 
 ## Conventions
 
