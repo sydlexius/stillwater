@@ -49,6 +49,7 @@ func NewService(artistService *artist.Service, logger *slog.Logger, libraryPath 
 }
 
 // Run starts a filesystem scan. Only one scan runs at a time.
+// Returns a snapshot of the initial scan result (safe to read without synchronization).
 func (s *Service) Run(ctx context.Context) (*ScanResult, error) {
 	s.mu.Lock()
 	if s.currentScan != nil && s.currentScan.Status == "running" {
@@ -62,18 +63,24 @@ func (s *Service) Run(ctx context.Context) (*ScanResult, error) {
 		StartedAt: time.Now().UTC(),
 	}
 	s.currentScan = result
+	snapshot := *result
 	s.mu.Unlock()
 
 	go s.runScan(ctx, result)
 
-	return result, nil
+	return &snapshot, nil
 }
 
-// Status returns the current or most recent scan result.
+// Status returns a snapshot of the current or most recent scan result.
+// The returned value is a copy and safe to read without synchronization.
 func (s *Service) Status() *ScanResult {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.currentScan
+	if s.currentScan == nil {
+		return nil
+	}
+	snapshot := *s.currentScan
+	return &snapshot
 }
 
 func (s *Service) runScan(ctx context.Context, result *ScanResult) {
@@ -117,7 +124,9 @@ func (s *Service) runScan(ctx context.Context, result *ScanResult) {
 			continue
 		}
 
+		s.mu.Lock()
 		result.TotalDirectories++
+		s.mu.Unlock()
 		dirPath := filepath.Join(s.libraryPath, entry.Name())
 		discoveredPaths[dirPath] = true
 
