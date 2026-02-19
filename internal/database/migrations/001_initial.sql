@@ -43,6 +43,9 @@ CREATE TABLE IF NOT EXISTS artists (
     name TEXT NOT NULL,
     sort_name TEXT,
     musicbrainz_id TEXT,
+    audiodb_id TEXT,
+    discogs_id TEXT,
+    wikidata_id TEXT,
     path TEXT NOT NULL,
     nfo_exists INTEGER NOT NULL DEFAULT 0,
     thumb_exists INTEGER NOT NULL DEFAULT 0,
@@ -57,6 +60,9 @@ CREATE TABLE IF NOT EXISTS artists (
 
 CREATE INDEX idx_artists_name ON artists(name);
 CREATE INDEX idx_artists_musicbrainz_id ON artists(musicbrainz_id);
+CREATE INDEX idx_artists_audiodb_id ON artists(audiodb_id);
+CREATE INDEX idx_artists_discogs_id ON artists(discogs_id);
+CREATE INDEX idx_artists_wikidata_id ON artists(wikidata_id);
 CREATE INDEX idx_artists_path ON artists(path);
 
 CREATE TABLE IF NOT EXISTS artist_aliases (

@@ -25,16 +25,23 @@ Establish the artist domain model, NFO parser, filesystem scanner, and artist li
 **Packages:** `internal/artist/`, `internal/database/`
 
 1. Define `Artist` struct in `internal/artist/model.go` with all NFO fields:
-   - Name, MBID, SortName, Type, Gender, Disambiguation
+   - Name, SortName, Type, Gender, Disambiguation
    - Genres, Styles, Moods (slice fields stored as JSON in SQLite)
    - YearsActive, Born, Formed, Died, Disbanded
    - Biography, Path
+   - Provider IDs (dedicated columns, indexed for lookups):
+     - MusicBrainzID (UUID, primary cross-reference for all providers)
+     - AudioDBID (TheAudioDB numeric ID)
+     - DiscogsID (Discogs numeric artist ID)
+     - WikidataID (Q-item ID, e.g., Q5026)
+     - Note: Last.fm and Fanart.tv use artist name or MBID as their key, no separate IDs needed
    - Timestamps (CreatedAt, UpdatedAt)
 
 2. Define `Repository` interface in `internal/artist/repository.go`:
    - `Create(ctx, *Artist) error`
    - `GetByID(ctx, id) (*Artist, error)`
    - `GetByMBID(ctx, mbid) (*Artist, error)`
+   - `GetByProviderID(ctx, provider, id) (*Artist, error)` -- generic lookup by any provider ID
    - `GetByPath(ctx, path) (*Artist, error)`
    - `List(ctx, ListParams) ([]Artist, int, error)` -- with pagination, filtering, sorting
    - `Update(ctx, *Artist) error`
@@ -75,10 +82,14 @@ Establish the artist domain model, NFO parser, filesystem scanner, and artist li
    - Support multiple `<genre>`, `<style>`, `<mood>` elements
    - Support `<thumb aspect="...">` and `<fanart><thumb>` elements
    - Preserve unrecognized elements (round-trip fidelity)
+   - Provider IDs in NFO (read and write):
+     - `<musicbrainzartistid>` -- read/write (universal: Kodi, Jellyfin, Emby)
+     - `<audiodbartistid>` -- read/write (Jellyfin + Emby; Kodi ignores harmlessly)
+     - Discogs, Wikidata, Last.fm IDs have no NFO elements in any platform -- store in DB only
 
 3. Conversion functions:
-   - `ToArtist(*ArtistNFO) *artist.Artist` -- NFO to domain model
-   - `FromArtist(*artist.Artist) *ArtistNFO` -- domain model to NFO
+   - `ToArtist(*ArtistNFO) *artist.Artist` -- NFO to domain model (maps both ID elements)
+   - `FromArtist(*artist.Artist) *ArtistNFO` -- domain model to NFO (writes both ID elements)
 
 4. Tests:
    - `internal/nfo/parser_test.go` with sample NFO fixtures
@@ -145,11 +156,13 @@ Establish the artist domain model, NFO parser, filesystem scanner, and artist li
 
 ## Migration
 
-No new migration needed -- the `artists` table was created in 001_initial.sql. If schema changes are needed (e.g., adding columns for image detection cache), create `002_*.sql`.
+The `artists` table in 001_initial.sql includes provider ID columns (musicbrainz_id, audiodb_id, discogs_id, wikidata_id) with indexes. A new 002 migration adds the `band_members` table.
 
 ## Key Design Decisions
 
 - **Slice fields as JSON:** Genres, styles, and moods are stored as JSON arrays in SQLite TEXT columns. This avoids junction tables for simple tag-like data.
+- **Provider IDs as dedicated columns:** Each provider with its own ID system gets a dedicated indexed column on the artists table (musicbrainz_id, audiodb_id, discogs_id, wikidata_id). This enables fast lookups to avoid duplicate API calls and supports cross-referencing. Last.fm and Fanart.tv key off artist name or MBID, so they need no separate ID column.
+- **NFO ID elements:** The parser reads/writes `<musicbrainzartistid>` (universal: Kodi, Jellyfin, Emby) and `<audiodbartistid>` (Jellyfin + Emby; Kodi ignores it harmlessly). Discogs and Wikidata IDs are stored in the database only since no platform reads them from NFO files today.
 - **NFO round-trip fidelity:** The parser should preserve unrecognized XML elements so that writing an NFO back does not lose custom data added by other tools.
 - **Scanner is read-only:** The filesystem scanner only reads and reports. It does not modify any files. Write operations are handled by explicit user actions in later milestones.
 - **Compliance status is computed:** Not stored separately. Computed on-the-fly based on detected files and NFO content.

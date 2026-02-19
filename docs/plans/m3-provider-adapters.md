@@ -37,17 +37,25 @@ type Provider interface {
 }
 
 type ArtistResult struct {
-    ID             string
+    ID             string   // provider-specific ID
     Name           string
     Disambiguation string
     Type           string
-    Score          int  // match confidence 0-100
-    Source         string
+    Score          int      // match confidence 0-100
+    Source         string   // provider name
 }
 
 type ArtistMetadata struct {
     // All fields from artist model
     // Source field to track where data came from
+    // Provider IDs (each adapter populates its own):
+    //   MusicBrainz -> MusicBrainzID
+    //   TheAudioDB  -> AudioDBID
+    //   Discogs     -> DiscogsID
+    //   Wikidata    -> WikidataID
+    //   Last.fm     -> (uses MBID/name, no separate ID)
+    //   Fanart.tv   -> (uses MBID, no separate ID)
+    ProviderIDs    map[string]string  // provider name -> ID
 }
 
 type ImageResult struct {
@@ -65,8 +73,10 @@ type ImageResult struct {
    - HTTP client with User-Agent header (MusicBrainz requirement)
    - Rate limiter: max 1 request per second
    - Search: `/ws/2/artist?query=...&fmt=json`
-   - Fetch: `/ws/2/artist/{mbid}?inc=aliases+genres+tags+ratings+url-rels&fmt=json`
+   - Fetch: `/ws/2/artist/{mbid}?inc=aliases+genres+tags+ratings+url-rels+artist-rels&fmt=json`
    - Map MB response to ArtistMetadata and ArtistResult
+   - Populates: MusicBrainzID (the canonical cross-reference for all other providers)
+   - Extract band members from `artist-rels` (type "member of band") to populate BandMember model
    - Handle pagination for search results
 
 3. Tests:
@@ -82,6 +92,7 @@ type ImageResult struct {
 - Image types: artistthumb, artistbackground, hdmusiclogo, musicbanner, musiclogo
 - Map to internal ImageResult with type classification
 - API key from encrypted settings
+- Populates: no separate ID (queries by MBID)
 - Tests with mock responses
 
 ### Step 3: TheAudioDB Adapter (#7)
@@ -91,6 +102,7 @@ type ImageResult struct {
 - Search: `https://theaudiodb.com/api/v1/json/{apikey}/search.php?s=...`
 - Fetch by MBID: `https://theaudiodb.com/api/v1/json/{apikey}/artist-mb.php?i=...`
 - Extract: biography, images (thumb, fanart, logo, banner, wide thumb)
+- Populates: AudioDBID (their internal numeric artist ID, e.g., `111239`)
 - Tests with mock responses
 
 ### Step 4: Discogs Adapter (#8)
@@ -101,6 +113,7 @@ type ImageResult struct {
 - Fetch: `https://api.discogs.com/artists/{id}`
 - Token-based auth (personal access token)
 - Rate limiting per Discogs API rules
+- Populates: DiscogsID (their numeric artist ID, e.g., `108713`)
 - Tests with mock responses
 
 ### Step 5: Last.fm Adapter (#9)
@@ -110,6 +123,7 @@ type ImageResult struct {
 - Search: `http://ws.audioscrobbler.com/2.0/?method=artist.search&artist=...&api_key=...&format=json`
 - Fetch: `artist.getinfo` method
 - Extract: biography, tags (map to genres/styles), similar artists
+- Populates: no separate ID (queries by artist name or MBID)
 - Tests with mock responses
 
 ### Step 6: Wikidata Adapter (#10)
@@ -119,6 +133,7 @@ type ImageResult struct {
 - SPARQL query endpoint: `https://query.wikidata.org/sparql`
 - Query by MBID (P434 property) or name
 - Extract: formation date, dissolution date, members, aliases, country
+- Populates: WikidataID (Q-item ID, e.g., `Q5026`)
 - No authentication required
 - Tests with mock SPARQL responses
 
