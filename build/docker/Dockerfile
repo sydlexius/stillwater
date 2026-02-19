@@ -8,10 +8,10 @@ RUN apk add --no-cache curl
 WORKDIR /src
 
 # Download Tailwind CSS standalone CLI
-ARG TAILWIND_VERSION=v4.1.0
-RUN curl -sLO https://github.com/nicolo-ribaudo/tailwind-cli-extra/releases/download/${TAILWIND_VERSION}/tailwindcss-extra-linux-x64 \
-    && chmod +x tailwindcss-extra-linux-x64 \
-    && mv tailwindcss-extra-linux-x64 /usr/local/bin/tailwindcss
+ARG TAILWIND_VERSION=v4.2.0
+RUN curl -sLO https://github.com/tailwindlabs/tailwindcss/releases/download/${TAILWIND_VERSION}/tailwindcss-linux-x64-musl \
+    && chmod +x tailwindcss-linux-x64-musl \
+    && mv tailwindcss-linux-x64-musl /usr/local/bin/tailwindcss
 
 # Cache Go modules
 COPY go.mod go.sum ./
