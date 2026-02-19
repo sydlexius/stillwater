@@ -16,6 +16,7 @@ Establish the artist domain model, NFO parser, filesystem scanner, and artist li
 | 2 | Filesystem scanner for artist directories | plan | sonnet |
 | 3 | NFO parser: read and write Kodi-compatible artist.nfo | plan | sonnet |
 | 4 | Artist list UI with compliance indicators | plan | sonnet |
+| 35 | Band member metadata: store and display artist members | direct | sonnet |
 
 ## Implementation Order
 
@@ -49,8 +50,16 @@ Establish the artist domain model, NFO parser, filesystem scanner, and artist li
    - Create artist repository in `run()`
    - Pass to router for handler use
 
-5. Tests:
+5. Define `BandMember` model (#35) in `internal/artist/member.go`:
+   - Fields: ID, ArtistID (the group), MemberName, MemberMBID, Instruments ([]string),
+     VocalType, DateJoined, DateLeft, IsOriginalMember, SortOrder
+   - Migration (002) to create `band_members` table with FK to artists, indexes on artist_id and member_mbid
+   - Repository methods: `ListMembersByArtistID(ctx, artistID) ([]BandMember, error)`,
+     `UpsertMembers(ctx, artistID, []BandMember) error`
+
+6. Tests:
    - `internal/database/artist_repo_test.go` -- integration tests with temp SQLite DB
+   - `internal/database/member_repo_test.go` -- member repository tests
    - `internal/artist/model_test.go` -- validation tests
 
 ### Step 2: NFO Parser (#3)
@@ -118,6 +127,7 @@ Establish the artist domain model, NFO parser, filesystem scanner, and artist li
 2. Create `artist_detail.templ` -- individual artist page:
    - Display all metadata fields
    - Show detected images
+   - Band members section (#35): list members with name, instruments, vocal type, years active, original member badge (populated in M3 via MusicBrainz)
    - Action buttons (placeholder for future milestones)
 
 3. Create status badge component in `web/components/`:
