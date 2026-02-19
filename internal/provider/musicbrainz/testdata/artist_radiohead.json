@@ -1,0 +1,139 @@
+{
+  "id": "a74b1b7f-71a5-4011-9441-d0b5e4122711",
+  "type": "Group",
+  "name": "Radiohead",
+  "sort-name": "Radiohead",
+  "country": "GB",
+  "disambiguation": "",
+  "gender": null,
+  "life-span": {
+    "begin": "1991",
+    "end": null,
+    "ended": false
+  },
+  "aliases": [
+    {
+      "name": "レディオヘッド",
+      "sort-name": "レディオヘッド",
+      "type": "Artist name",
+      "locale": "ja",
+      "primary": true
+    }
+  ],
+  "genres": [
+    {"id": "genre-001", "name": "alternative rock", "count": 15},
+    {"id": "genre-002", "name": "art rock", "count": 10},
+    {"id": "genre-003", "name": "electronic", "count": 8}
+  ],
+  "tags": [
+    {"name": "rock", "count": 20},
+    {"name": "experimental", "count": 12}
+  ],
+  "relations": [
+    {
+      "type": "member of band",
+      "target-type": "artist",
+      "direction": "backward",
+      "attributes": ["guitar", "vocals"],
+      "begin": "1991",
+      "end": "",
+      "ended": false,
+      "artist": {
+        "id": "8bfac288-ccc5-448d-9573-c33ea2aa5c30",
+        "name": "Thom Yorke",
+        "sort-name": "Yorke, Thom",
+        "type": "Person"
+      }
+    },
+    {
+      "type": "member of band",
+      "target-type": "artist",
+      "direction": "backward",
+      "attributes": ["guitar"],
+      "begin": "1991",
+      "end": "",
+      "ended": false,
+      "artist": {
+        "id": "member-002",
+        "name": "Jonny Greenwood",
+        "sort-name": "Greenwood, Jonny",
+        "type": "Person"
+      }
+    },
+    {
+      "type": "member of band",
+      "target-type": "artist",
+      "direction": "backward",
+      "attributes": ["bass guitar"],
+      "begin": "1991",
+      "end": "",
+      "ended": false,
+      "artist": {
+        "id": "member-003",
+        "name": "Colin Greenwood",
+        "sort-name": "Greenwood, Colin",
+        "type": "Person"
+      }
+    },
+    {
+      "type": "member of band",
+      "target-type": "artist",
+      "direction": "backward",
+      "attributes": ["drums"],
+      "begin": "1991",
+      "end": "",
+      "ended": false,
+      "artist": {
+        "id": "member-004",
+        "name": "Philip Selway",
+        "sort-name": "Selway, Philip",
+        "type": "Person"
+      }
+    },
+    {
+      "type": "member of band",
+      "target-type": "artist",
+      "direction": "backward",
+      "attributes": ["guitar", "keyboards"],
+      "begin": "1991",
+      "end": "",
+      "ended": false,
+      "artist": {
+        "id": "member-005",
+        "name": "Ed O'Brien",
+        "sort-name": "O'Brien, Ed",
+        "type": "Person"
+      }
+    },
+    {
+      "type": "official homepage",
+      "target-type": "url",
+      "direction": "forward",
+      "attributes": [],
+      "url": {
+        "id": "url-001",
+        "resource": "https://www.radiohead.com/"
+      }
+    },
+    {
+      "type": "wikipedia",
+      "target-type": "url",
+      "direction": "forward",
+      "attributes": [],
+      "url": {
+        "id": "url-002",
+        "resource": "https://en.wikipedia.org/wiki/Radiohead"
+      }
+    },
+    {
+      "type": "wikidata",
+      "target-type": "url",
+      "direction": "forward",
+      "attributes": [],
+      "url": {
+        "id": "url-003",
+        "resource": "https://www.wikidata.org/wiki/Q44190"
+      }
+    }
+  ]
+}

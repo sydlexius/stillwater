@@ -137,9 +137,21 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 		r.logger.Error("getting active platform for settings page", "error", err)
 	}
 
+	providerKeys, err := r.providerSettings.ListProviderKeyStatuses(req.Context())
+	if err != nil {
+		r.logger.Error("listing provider key statuses for settings page", "error", err)
+	}
+
+	priorities, err := r.providerSettings.GetPriorities(req.Context())
+	if err != nil {
+		r.logger.Error("getting provider priorities for settings page", "error", err)
+	}
+
 	data := templates.SettingsData{
 		Profiles:      profiles,
 		ActiveProfile: active,
+		ProviderKeys:  providerKeys,
+		Priorities:    priorities,
 	}
 	renderTempl(w, req, templates.SettingsPage(r.assets(), data))
 }

@@ -1,0 +1,13 @@
+{
+  "pagination": {"page": 1, "pages": 1, "per_page": 50, "items": 1},
+  "results": [
+    {
+      "id": 3840,
+      "title": "Radiohead",
+      "type": "artist",
+      "thumb": "https://img.discogs.com/radiohead-thumb.jpg",
+      "cover_image": "https://img.discogs.com/radiohead-cover.jpg",
+      "resource_url": "https://api.discogs.com/artists/3840"
+    }
+  ]
+}

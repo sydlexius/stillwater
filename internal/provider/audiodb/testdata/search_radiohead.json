@@ -1,0 +1,31 @@
+{
+  "artists": [
+    {
+      "idArtist": "111239",
+      "strArtist": "Radiohead",
+      "strArtistAlternate": "",
+      "strLabel": "XL Recordings",
+      "strGenre": "Alternative Rock",
+      "strStyle": "Art Rock/Experimental",
+      "strMood": "Melancholic",
+      "strBiographyEN": "Radiohead are an English rock band from Abingdon, Oxfordshire.",
+      "strGender": "",
+      "strCountry": "Abingdon, Oxfordshire, England",
+      "intFormedYear": "1985",
+      "intBornYear": "0",
+      "intDiedYear": "0",
+      "strDisbanded": "",
+      "strMusicBrainzID": "a74b1b7f-71a5-4011-9441-d0b5e4122711",
+      "strArtistThumb": "https://www.theaudiodb.com/images/media/artist/thumb/radiohead.jpg",
+      "strArtistLogo": "https://www.theaudiodb.com/images/media/artist/logo/radiohead.png",
+      "strArtistWideThumb": "https://www.theaudiodb.com/images/media/artist/widethumb/radiohead.jpg",
+      "strArtistFanart": "https://www.theaudiodb.com/images/media/artist/fanart/radiohead-1.jpg",
+      "strArtistFanart2": "https://www.theaudiodb.com/images/media/artist/fanart/radiohead-2.jpg",
+      "strArtistFanart3": "",
+      "strArtistFanart4": "",
+      "strArtistBanner": "https://www.theaudiodb.com/images/media/artist/banner/radiohead.jpg",
+      "strArtistCutout": "",
+      "strArtistClearart": ""
+    }
+  ]
+}

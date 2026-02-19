@@ -1,0 +1,35 @@
+{
+  "created": "2024-01-15T12:00:00.000Z",
+  "count": 3,
+  "offset": 0,
+  "artists": [
+    {
+      "id": "a74b1b7f-71a5-4011-9441-d0b5e4122711",
+      "type": "Group",
+      "score": 100,
+      "name": "Radiohead",
+      "sort-name": "Radiohead",
+      "country": "GB",
+      "disambiguation": "",
+      "life-span": {
+        "begin": "1991",
+        "end": null,
+        "ended": false
+      }
+    },
+    {
+      "id": "fake-id-001",
+      "type": "Group",
+      "score": 45,
+      "name": "Radiohead Tribute",
+      "sort-name": "Radiohead Tribute",
+      "country": "US",
+      "disambiguation": "tribute band",
+      "life-span": {
+        "begin": "2005",
+        "end": null,
+        "ended": false
+      }
+    }
+  ]
+}

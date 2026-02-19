@@ -1,0 +1,19 @@
+{
+  "id": 3840,
+  "name": "Radiohead",
+  "realname": "",
+  "profile": "Radiohead are an English rock band formed in Abingdon, Oxfordshire, in 1985.",
+  "urls": ["https://www.radiohead.com/", "https://en.wikipedia.org/wiki/Radiohead"],
+  "aliases": [],
+  "members": [
+    {"id": 163879, "name": "Thom Yorke", "active": true, "resource_url": "https://api.discogs.com/artists/163879"},
+    {"id": 163880, "name": "Jonny Greenwood", "active": true, "resource_url": "https://api.discogs.com/artists/163880"},
+    {"id": 163881, "name": "Colin Greenwood", "active": true, "resource_url": "https://api.discogs.com/artists/163881"},
+    {"id": 163882, "name": "Ed O'Brien", "active": true, "resource_url": "https://api.discogs.com/artists/163882"},
+    {"id": 163883, "name": "Philip Selway", "active": true, "resource_url": "https://api.discogs.com/artists/163883"}
+  ],
+  "images": [
+    {"type": "primary", "uri": "https://img.discogs.com/radiohead-primary.jpg", "width": 500, "height": 500}
+  ],
+  "data_quality": "Correct"
+}

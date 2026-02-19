@@ -1,0 +1,28 @@
+{
+  "artist": {
+    "name": "Radiohead",
+    "mbid": "a74b1b7f-71a5-4011-9441-d0b5e4122711",
+    "url": "https://www.last.fm/music/Radiohead",
+    "stats": {
+      "listeners": "5000000",
+      "playcount": "500000000"
+    },
+    "bio": {
+      "summary": "Radiohead are an English rock band from Abingdon, Oxfordshire.",
+      "content": "Radiohead are an English rock band from Abingdon, Oxfordshire, formed in 1985. The band consists of Thom Yorke, brothers Jonny and Colin Greenwood, Ed O'Brien and Philip Selway."
+    },
+    "tags": {
+      "tag": [
+        {"name": "alternative", "url": "https://www.last.fm/tag/alternative"},
+        {"name": "rock", "url": "https://www.last.fm/tag/rock"},
+        {"name": "electronic", "url": "https://www.last.fm/tag/electronic"}
+      ]
+    },
+    "similar": {
+      "artist": [
+        {"name": "Thom Yorke", "url": "https://www.last.fm/music/Thom+Yorke"},
+        {"name": "Atoms for Peace", "url": "https://www.last.fm/music/Atoms+for+Peace"}
+      ]
+    }
+  }
+}

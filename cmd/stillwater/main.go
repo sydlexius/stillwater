@@ -15,7 +15,15 @@ import (
 	"github.com/sydlexius/stillwater/internal/auth"
 	"github.com/sydlexius/stillwater/internal/config"
 	"github.com/sydlexius/stillwater/internal/database"
+	"github.com/sydlexius/stillwater/internal/encryption"
 	"github.com/sydlexius/stillwater/internal/platform"
+	"github.com/sydlexius/stillwater/internal/provider"
+	"github.com/sydlexius/stillwater/internal/provider/audiodb"
+	"github.com/sydlexius/stillwater/internal/provider/discogs"
+	"github.com/sydlexius/stillwater/internal/provider/fanarttv"
+	"github.com/sydlexius/stillwater/internal/provider/lastfm"
+	"github.com/sydlexius/stillwater/internal/provider/musicbrainz"
+	"github.com/sydlexius/stillwater/internal/provider/wikidata"
 	"github.com/sydlexius/stillwater/internal/scanner"
 	"github.com/sydlexius/stillwater/internal/version"
 )
@@ -79,11 +87,35 @@ func run() error {
 
 	logger.Info("database ready", slog.String("path", cfg.Database.Path))
 
+	// Initialize encryptor
+	encryptor, encKey, err := encryption.NewEncryptor(cfg.Encryption.Key)
+	if err != nil {
+		return fmt.Errorf("creating encryptor: %w", err)
+	}
+	if cfg.Encryption.Key == "" {
+		logger.Warn("no encryption key configured, generated a new one -- set SW_ENCRYPTION_KEY to persist",
+			slog.String("key", encKey))
+	}
+
 	// Initialize services
 	authService := auth.NewService(db)
 	artistService := artist.NewService(db)
 	scannerService := scanner.NewService(artistService, logger, cfg.Music.LibraryPath, cfg.Scanner.Exclusions)
 	platformService := platform.NewService(db)
+
+	// Initialize provider infrastructure
+	rateLimiters := provider.NewRateLimiterMap()
+	providerSettings := provider.NewSettingsService(db, encryptor)
+	providerRegistry := provider.NewRegistry()
+
+	providerRegistry.Register(musicbrainz.New(rateLimiters, logger))
+	providerRegistry.Register(fanarttv.New(rateLimiters, providerSettings, logger))
+	providerRegistry.Register(audiodb.New(rateLimiters, providerSettings, logger))
+	providerRegistry.Register(discogs.New(rateLimiters, providerSettings, logger))
+	providerRegistry.Register(lastfm.New(rateLimiters, providerSettings, logger))
+	providerRegistry.Register(wikidata.New(rateLimiters, logger))
+
+	orchestrator := provider.NewOrchestrator(providerRegistry, providerSettings, logger)
 
 	logger.Info("starting stillwater",
 		slog.String("version", version.Version),
@@ -91,7 +123,7 @@ func run() error {
 	)
 
 	// Set up HTTP router
-	router := api.NewRouter(authService, artistService, scannerService, platformService, logger, cfg.Server.BasePath, "web/static")
+	router := api.NewRouter(authService, artistService, scannerService, platformService, providerSettings, providerRegistry, orchestrator, logger, cfg.Server.BasePath, "web/static")
 
 	// Create HTTP server
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)

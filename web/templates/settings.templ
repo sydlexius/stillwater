@@ -1,13 +1,48 @@
 package templates
 
 import (
+	"encoding/json"
+
 	"github.com/sydlexius/stillwater/internal/platform"
+	"github.com/sydlexius/stillwater/internal/provider"
 )
 
 // SettingsData holds the data for the settings page.
 type SettingsData struct {
 	Profiles      []platform.Profile
 	ActiveProfile *platform.Profile
+	ProviderKeys  []provider.ProviderKeyStatus
+	Priorities    []provider.FieldPriority
+}
+
+// prioritySwapJSON generates the JSON body for an HTMX priority reorder request.
+func prioritySwapJSON(field string, providers []provider.ProviderName, from, to int) string {
+	swapped := make([]provider.ProviderName, len(providers))
+	copy(swapped, providers)
+	swapped[from], swapped[to] = swapped[to], swapped[from]
+	body := struct {
+		Priorities []provider.FieldPriority `json:"priorities"`
+	}{
+		Priorities: []provider.FieldPriority{{Field: field, Providers: swapped}},
+	}
+	data, _ := json.Marshal(body)
+	return string(data)
+}
+
+// providerHelpURL returns the registration URL for a provider's API key.
+func providerHelpURL(name provider.ProviderName) string {
+	switch name {
+	case provider.NameFanartTV:
+		return "https://fanart.tv/get-an-api-key/"
+	case provider.NameAudioDB:
+		return "https://www.theaudiodb.com/api-guide"
+	case provider.NameDiscogs:
+		return "https://www.discogs.com/settings/developers"
+	case provider.NameLastFM:
+		return "https://www.last.fm/api/account/create"
+	default:
+		return ""
+	}
 }
 
 templ SettingsPage(assets AssetPaths, data SettingsData) {
@@ -16,7 +51,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 			<div class="border-b border-gray-200 dark:border-gray-700 pb-4">
 				<h1 class="text-2xl font-bold">Settings</h1>
 				<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-					Configure platform profiles and output settings.
+					Configure platform profiles, provider API keys, and output settings.
 				</p>
 			</div>
 			<div class="bg-white dark:bg-gray-800 shadow rounded-lg">
@@ -71,8 +106,193 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 					</div>
 				</div>
 			}
+			if len(data.ProviderKeys) > 0 {
+				<div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+						<h2 class="text-lg font-semibold">Provider API Keys</h2>
+						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+							Configure API keys for metadata providers. Providers without a configured key will be skipped during metadata lookups.
+						</p>
+					</div>
+					<div class="px-6 py-4 space-y-4">
+						for _, pk := range data.ProviderKeys {
+							<div id={ "provider-card-" + string(pk.Name) }>
+								@ProviderKeyCard(pk)
+							</div>
+						}
+					</div>
+				</div>
+			}
+			if len(data.Priorities) > 0 {
+				<div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+						<h2 class="text-lg font-semibold">Provider Priorities</h2>
+						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+							Set the preferred provider order for each metadata field. The first provider with data wins.
+						</p>
+					</div>
+					<div class="px-6 py-4">
+						<div class="space-y-3">
+							for _, pri := range data.Priorities {
+								@PriorityRow(pri)
+							}
+						</div>
+					</div>
+				</div>
+			}
 		</div>
 	}
+}
+
+templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
+	<div class="flex items-center justify-between rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3">
+		<div class="flex items-center gap-3">
+			<div
+				class={
+					"h-2.5 w-2.5 rounded-full",
+					templ.KV("bg-green-500", pk.Status == "ok" || pk.Status == "not_required"),
+					templ.KV("bg-yellow-500", pk.Status == "untested"),
+					templ.KV("bg-red-500", pk.Status == "invalid" || pk.Status == "error"),
+					templ.KV("bg-gray-400 dark:bg-gray-500", pk.Status == "unconfigured"),
+				}
+			></div>
+			<div>
+				<div class="font-medium text-sm">{ pk.DisplayName }</div>
+				if !pk.RequiresKey {
+					<div class="text-xs text-gray-500 dark:text-gray-400">No API key required</div>
+				} else if pk.HasKey {
+					<div class="text-xs text-gray-500 dark:text-gray-400">Key configured</div>
+				} else {
+					<div class="text-xs text-amber-600 dark:text-amber-400">Key not configured</div>
+				}
+			</div>
+		</div>
+		<div class="flex items-center gap-2">
+			if pk.RequiresKey {
+				if providerHelpURL(pk.Name) != "" {
+					<a
+						href={ templ.SafeURL(providerHelpURL(pk.Name)) }
+						target="_blank"
+						rel="noopener noreferrer"
+						class="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+					>
+						Get key
+					</a>
+				}
+				<button
+					type="button"
+					class="text-xs px-2 py-1 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+					onclick={ toggleKeyInput(string(pk.Name)) }
+				>
+					if pk.HasKey {
+						Update
+					} else {
+						Configure
+					}
+				</button>
+				if pk.HasKey {
+					<button
+						type="button"
+						class="text-xs px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+						hx-post={ "/api/v1/providers/" + string(pk.Name) + "/test" }
+						hx-target={ "#test-result-" + string(pk.Name) }
+						hx-swap="innerHTML"
+					>
+						Test
+					</button>
+				}
+			}
+		</div>
+	</div>
+	<div id={ "key-input-" + string(pk.Name) } class="hidden mt-2 ml-8">
+		<form
+			class="flex items-center gap-2"
+			hx-put={ "/api/v1/providers/" + string(pk.Name) + "/key" }
+			hx-target={ "#provider-card-" + string(pk.Name) }
+			hx-swap="innerHTML"
+			hx-on::after-request="if(event.detail.successful) this.closest('[id^=key-input-]').classList.add('hidden')"
+		>
+			<input
+				type="password"
+				name="api_key"
+				placeholder="Enter API key..."
+				class="flex-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+				required
+			/>
+			<button
+				type="submit"
+				class="text-xs px-3 py-1.5 rounded bg-green-600 text-white hover:bg-green-700 transition-colors"
+			>
+				Save
+			</button>
+			<button
+				type="button"
+				class="text-xs px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+				onclick={ toggleKeyInput(string(pk.Name)) }
+			>
+				Cancel
+			</button>
+		</form>
+	</div>
+	<div id={ "test-result-" + string(pk.Name) } class="ml-8 text-xs mt-1"></div>
+}
+
+script toggleKeyInput(providerName string) {
+	const el = document.getElementById("key-input-" + providerName);
+	if (el) {
+		el.classList.toggle("hidden");
+	}
+}
+
+templ ProviderTestResult(status string, message string) {
+	if status == "ok" {
+		<span class="text-green-600 dark:text-green-400">Connection successful</span>
+	} else {
+		<span class="text-red-600 dark:text-red-400">{ message }</span>
+	}
+}
+
+templ PriorityRow(pri provider.FieldPriority) {
+	<div id={ "priority-row-" + pri.Field } class="flex items-center gap-4 rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3">
+		<div class="w-24 shrink-0">
+			<span class="text-sm font-medium capitalize">{ pri.Field }</span>
+		</div>
+		<div class="flex flex-wrap items-center gap-1.5 flex-1">
+			for i, prov := range pri.Providers {
+				<div class="flex items-center gap-0.5">
+					<span class="text-xs px-2 py-1 rounded bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300">
+						{ prov.DisplayName() }
+					</span>
+					<div class="flex flex-col">
+						if i > 0 {
+							<button
+								type="button"
+								class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-xs leading-none p-0.5"
+								hx-put="/api/v1/providers/priorities"
+								hx-vals={ prioritySwapJSON(pri.Field, pri.Providers, i, i-1) }
+								hx-target={ "#priority-row-" + pri.Field }
+								hx-swap="outerHTML"
+							>
+								&#9650;
+							</button>
+						}
+						if i < len(pri.Providers)-1 {
+							<button
+								type="button"
+								class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-xs leading-none p-0.5"
+								hx-put="/api/v1/providers/priorities"
+								hx-vals={ prioritySwapJSON(pri.Field, pri.Providers, i, i+1) }
+								hx-target={ "#priority-row-" + pri.Field }
+								hx-swap="outerHTML"
+							>
+								&#9660;
+							</button>
+						}
+					</div>
+				</div>
+			}
+		</div>
+	</div>
 }
 
 templ profileCard(p platform.Profile) {

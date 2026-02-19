@@ -1,0 +1,20 @@
+{
+  "name": "Radiohead",
+  "mbid_id": "a74b1b7f-71a5-4011-9441-d0b5e4122711",
+  "artistthumb": [
+    {"id": "1001", "url": "https://assets.fanart.tv/fanart/music/a74b1b7f/artistthumb/radiohead-001.jpg", "likes": "5", "lang": ""},
+    {"id": "1002", "url": "https://assets.fanart.tv/fanart/music/a74b1b7f/artistthumb/radiohead-002.jpg", "likes": "3", "lang": ""}
+  ],
+  "artistbackground": [
+    {"id": "2001", "url": "https://assets.fanart.tv/fanart/music/a74b1b7f/artistbackground/radiohead-bg-001.jpg", "likes": "8", "lang": ""}
+  ],
+  "hdmusiclogo": [
+    {"id": "3001", "url": "https://assets.fanart.tv/fanart/music/a74b1b7f/hdmusiclogo/radiohead-logo-001.png", "likes": "12", "lang": "en"}
+  ],
+  "musiclogo": [
+    {"id": "4001", "url": "https://assets.fanart.tv/fanart/music/a74b1b7f/musiclogo/radiohead-logo-sm-001.png", "likes": "2", "lang": "en"}
+  ],
+  "musicbanner": [
+    {"id": "5001", "url": "https://assets.fanart.tv/fanart/music/a74b1b7f/musicbanner/radiohead-banner-001.jpg", "likes": "4", "lang": ""}
+  ]
+}

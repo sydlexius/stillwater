@@ -8,30 +8,37 @@ import (
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/auth"
 	"github.com/sydlexius/stillwater/internal/platform"
+	"github.com/sydlexius/stillwater/internal/provider"
 	"github.com/sydlexius/stillwater/internal/scanner"
 )
 
 // Router sets up all HTTP routes for the application.
 type Router struct {
-	authService     *auth.Service
-	artistService   *artist.Service
-	scannerService  *scanner.Service
-	platformService *platform.Service
-	logger          *slog.Logger
-	basePath        string
-	staticAssets    *StaticAssets
+	authService      *auth.Service
+	artistService    *artist.Service
+	scannerService   *scanner.Service
+	platformService  *platform.Service
+	providerSettings *provider.SettingsService
+	providerRegistry *provider.Registry
+	orchestrator     *provider.Orchestrator
+	logger           *slog.Logger
+	basePath         string
+	staticAssets     *StaticAssets
 }
 
 // NewRouter creates a new Router with all routes configured.
-func NewRouter(authService *auth.Service, artistService *artist.Service, scannerService *scanner.Service, platformService *platform.Service, logger *slog.Logger, basePath string, staticDir string) *Router {
+func NewRouter(authService *auth.Service, artistService *artist.Service, scannerService *scanner.Service, platformService *platform.Service, providerSettings *provider.SettingsService, providerRegistry *provider.Registry, orchestrator *provider.Orchestrator, logger *slog.Logger, basePath string, staticDir string) *Router {
 	return &Router{
-		authService:     authService,
-		artistService:   artistService,
-		scannerService:  scannerService,
-		platformService: platformService,
-		logger:          logger,
-		basePath:        basePath,
-		staticAssets:    NewStaticAssets(staticDir, logger),
+		authService:      authService,
+		artistService:    artistService,
+		scannerService:   scannerService,
+		platformService:  platformService,
+		providerSettings: providerSettings,
+		providerRegistry: providerRegistry,
+		orchestrator:     orchestrator,
+		logger:           logger,
+		basePath:         basePath,
+		staticAssets:     NewStaticAssets(staticDir, logger),
 	}
 }
 
@@ -65,6 +72,16 @@ func (r *Router) Handler() http.Handler {
 	mux.HandleFunc("POST "+bp+"/api/v1/connections", wrapAuth(r.handleNotImplemented, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/settings", wrapAuth(r.handleNotImplemented, authMw))
 	mux.HandleFunc("PUT "+bp+"/api/v1/settings", wrapAuth(r.handleNotImplemented, authMw))
+
+	// Provider routes
+	mux.HandleFunc("GET "+bp+"/api/v1/providers", wrapAuth(r.handleListProviders, authMw))
+	mux.HandleFunc("PUT "+bp+"/api/v1/providers/{name}/key", wrapAuth(r.handleSetProviderKey, authMw))
+	mux.HandleFunc("DELETE "+bp+"/api/v1/providers/{name}/key", wrapAuth(r.handleDeleteProviderKey, authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/providers/{name}/test", wrapAuth(r.handleTestProvider, authMw))
+	mux.HandleFunc("GET "+bp+"/api/v1/providers/priorities", wrapAuth(r.handleGetPriorities, authMw))
+	mux.HandleFunc("PUT "+bp+"/api/v1/providers/priorities", wrapAuth(r.handleSetPriorities, authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/providers/search", wrapAuth(r.handleProviderSearch, authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/providers/fetch", wrapAuth(r.handleProviderFetch, authMw))
 
 	// Web routes (auth checked in handlers)
 	mux.HandleFunc("GET "+bp+"/artists/{id}", r.handleArtistDetailPage)
