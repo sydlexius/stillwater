@@ -1,0 +1,25 @@
+package templates
+
+templ IndexPage(assets AssetPaths) {
+	@Layout("Dashboard", assets) {
+		<div class="space-y-6">
+			<div class="border-b border-gray-200 dark:border-gray-700 pb-4">
+				<h1 class="text-2xl font-bold">Dashboard</h1>
+				<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+					Artist metadata and image management overview.
+				</p>
+			</div>
+			<div
+				id="health-summary"
+				hx-get="/api/v1/reports/health"
+				hx-trigger="load"
+				hx-swap="innerHTML"
+				class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4"
+			>
+				<div class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
+					<p class="text-sm font-medium text-gray-500 dark:text-gray-400">Loading...</p>
+				</div>
+			</div>
+		</div>
+	}
+}

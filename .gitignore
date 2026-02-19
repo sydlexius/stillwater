@@ -1,0 +1,30 @@
+# Binary (root level only)
+/stillwater
+/stillwater.exe
+
+# Data
+data/
+*.db
+*.db-shm
+*.db-wal
+
+# Coverage
+coverage.out
+coverage.html
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+web/static/css/styles.css
+
+# Temp
+*.tmp
+*.log

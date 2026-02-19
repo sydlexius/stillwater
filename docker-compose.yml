@@ -1,0 +1,23 @@
+services:
+  stillwater:
+    build:
+      context: .
+      dockerfile: build/docker/Dockerfile
+    image: ghcr.io/sydlexius/stillwater:latest
+    container_name: stillwater
+    ports:
+      - "8080:8080"
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - SW_LOG_LEVEL=info
+      - SW_LOG_FORMAT=json
+      # SW_ENCRYPTION_KEY will be auto-generated on first run if not set
+      # SW_BASE_PATH=/stillwater  # Uncomment for subfolder reverse proxy
+    volumes:
+      - stillwater-data:/data
+      - /path/to/your/music:/music:rw
+    restart: unless-stopped
+
+volumes:
+  stillwater-data:
