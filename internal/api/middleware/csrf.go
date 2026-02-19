@@ -7,7 +7,7 @@ import (
 	"sync"
 )
 
-const csrfTokenHeader = "X-CSRF-Token"
+const csrfTokenHeader = "X-CSRF-Token" //nolint:gosec // G101: not a credential, this is an HTTP header name
 const csrfCookieName = "csrf_token"
 
 // CSRF provides token-based CSRF protection for HTMX form submissions.
@@ -70,7 +70,9 @@ func (c *CSRF) ensureToken(w http.ResponseWriter, r *http.Request) {
 
 func (c *CSRF) generate() string {
 	b := make([]byte, 32)
-	rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		panic("crypto/rand failed: " + err.Error())
+	}
 	token := hex.EncodeToString(b)
 
 	c.mu.Lock()

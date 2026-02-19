@@ -107,7 +107,7 @@ func (s *Service) ValidateSession(ctx context.Context, token string) (string, er
 	}
 
 	if time.Now().UTC().After(expires) {
-		s.Logout(ctx, token)
+		_ = s.Logout(ctx, token)
 		return "", errors.New("session expired")
 	}
 

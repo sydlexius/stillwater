@@ -82,12 +82,12 @@ func (sa *StaticAssets) Rescan(logger *slog.Logger) {
 func (sa *StaticAssets) scan(logger *slog.Logger) {
 	hashes := make(map[string]string)
 
-	filepath.WalkDir(sa.dir, func(path string, d fs.DirEntry, err error) error {
+	if err := filepath.WalkDir(sa.dir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return nil
 		}
 
-		data, err := os.ReadFile(path)
+		data, err := os.ReadFile(path) //nolint:gosec // G304: path is constructed from trusted sa.dir
 		if err != nil {
 			logger.Warn("failed to hash static file", "path", path, "error", err)
 			return nil
@@ -100,7 +100,9 @@ func (sa *StaticAssets) scan(logger *slog.Logger) {
 		hashes[relativePath] = hex.EncodeToString(h[:])
 
 		return nil
-	})
+	}); err != nil {
+		logger.Warn("failed to scan static directory", "dir", sa.dir, "error", err)
+	}
 
 	sa.mu.Lock()
 	sa.hashes = hashes

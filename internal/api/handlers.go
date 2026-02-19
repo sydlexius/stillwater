@@ -31,7 +31,7 @@ func (r *Router) assets() templates.AssetPaths {
 func (r *Router) handleLogin(w http.ResponseWriter, req *http.Request) {
 	var body struct {
 		Username string `json:"username"`
-		Password string `json:"password"`
+		Password string `json:"password"` //nolint:gosec // G117: not a hardcoded secret, this is a request field
 	}
 	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
@@ -59,7 +59,9 @@ func (r *Router) handleLogin(w http.ResponseWriter, req *http.Request) {
 
 func (r *Router) handleLogout(w http.ResponseWriter, req *http.Request) {
 	if cookie, err := req.Cookie("session"); err == nil {
-		r.authService.Logout(req.Context(), cookie.Value)
+		if logoutErr := r.authService.Logout(req.Context(), cookie.Value); logoutErr != nil {
+			r.logger.Warn("failed to delete session", "error", logoutErr)
+		}
 	}
 
 	http.SetCookie(w, &http.Cookie{
@@ -95,7 +97,7 @@ func (r *Router) handleSetup(w http.ResponseWriter, req *http.Request) {
 
 	var body struct {
 		Username string `json:"username"`
-		Password string `json:"password"`
+		Password string `json:"password"` //nolint:gosec // G117: not a hardcoded secret, this is a request field
 	}
 	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
@@ -151,7 +153,9 @@ func (r *Router) handleIndex(w http.ResponseWriter, req *http.Request) {
 
 func renderTempl(w http.ResponseWriter, r *http.Request, component templ.Component) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	component.Render(r.Context(), w)
+	if err := component.Render(r.Context(), w); err != nil {
+		http.Error(w, "render error", http.StatusInternalServerError)
+	}
 }
 
 func (r *Router) handleNotImplemented(w http.ResponseWriter, req *http.Request) {
@@ -161,5 +165,7 @@ func (r *Router) handleNotImplemented(w http.ResponseWriter, req *http.Request) 
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		http.Error(w, "encode error", http.StatusInternalServerError)
+	}
 }

@@ -32,7 +32,7 @@ type DatabaseConfig struct {
 
 // AuthConfig holds authentication settings.
 type AuthConfig struct {
-	SessionSecret string `yaml:"session_secret"`
+	SessionSecret string `yaml:"session_secret"` //nolint:gosec // G117: not a hardcoded secret, this is a config field
 }
 
 // EncryptionConfig holds encryption key settings.
@@ -61,7 +61,7 @@ func Default() *Config {
 		Database: DatabaseConfig{
 			Path: "/data/stillwater.db",
 		},
-		Auth: AuthConfig{},
+		Auth:       AuthConfig{},
 		Encryption: EncryptionConfig{},
 		Music: MusicConfig{
 			LibraryPath: "/music",
@@ -94,7 +94,7 @@ func Load(path string) (*Config, error) {
 }
 
 func (c *Config) loadFromFile(path string) error {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // G304: path is from trusted config, not user input
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil

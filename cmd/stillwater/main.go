@@ -63,7 +63,11 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("opening database: %w", err)
 	}
-	defer db.Close()
+	defer func() {
+		if err := db.Close(); err != nil {
+			logger.Error("closing database", "error", err)
+		}
+	}()
 
 	// Run migrations
 	if err := database.Migrate(db); err != nil {
