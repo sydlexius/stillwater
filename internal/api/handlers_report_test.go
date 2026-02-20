@@ -40,16 +40,16 @@ func testRouter(t *testing.T) (*Router, *artist.Service) {
 	ruleEngine := rule.NewEngine(ruleSvc, db, logger)
 	nfoSnapSvc := nfo.NewSnapshotService(db)
 
-	r := &Router{
-		authService:        authSvc,
-		artistService:      artistSvc,
-		ruleService:        ruleSvc,
-		ruleEngine:         ruleEngine,
-		nfoSnapshotService: nfoSnapSvc,
-		db:                 db,
-		logger:             logger,
-		staticAssets:       NewStaticAssets("../../web/static", logger),
-	}
+	r := NewRouter(RouterDeps{
+		AuthService:        authSvc,
+		ArtistService:      artistSvc,
+		RuleService:        ruleSvc,
+		RuleEngine:         ruleEngine,
+		NFOSnapshotService: nfoSnapSvc,
+		DB:                 db,
+		Logger:             logger,
+		StaticDir:          "../../web/static",
+	})
 
 	return r, artistSvc
 }

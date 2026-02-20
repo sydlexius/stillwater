@@ -8,12 +8,38 @@ import (
 	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/auth"
+	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/nfo"
 	"github.com/sydlexius/stillwater/internal/platform"
 	"github.com/sydlexius/stillwater/internal/provider"
 	"github.com/sydlexius/stillwater/internal/rule"
 	"github.com/sydlexius/stillwater/internal/scanner"
+	"github.com/sydlexius/stillwater/internal/webhook"
 )
+
+// RouterDeps bundles all dependencies needed by the HTTP router.
+type RouterDeps struct {
+	AuthService        *auth.Service
+	ArtistService      *artist.Service
+	ScannerService     *scanner.Service
+	PlatformService    *platform.Service
+	ProviderSettings   *provider.SettingsService
+	ProviderRegistry   *provider.Registry
+	Orchestrator       *provider.Orchestrator
+	RuleService        *rule.Service
+	RuleEngine         *rule.Engine
+	Pipeline           *rule.Pipeline
+	BulkService        *rule.BulkService
+	BulkExecutor       *rule.BulkExecutor
+	NFOSnapshotService *nfo.SnapshotService
+	ConnectionService  *connection.Service
+	WebhookService     *webhook.Service
+	WebhookDispatcher  *webhook.Dispatcher
+	DB                 *sql.DB
+	Logger             *slog.Logger
+	BasePath           string
+	StaticDir          string
+}
 
 // Router sets up all HTTP routes for the application.
 type Router struct {
@@ -30,6 +56,9 @@ type Router struct {
 	bulkService        *rule.BulkService
 	bulkExecutor       *rule.BulkExecutor
 	nfoSnapshotService *nfo.SnapshotService
+	connectionService  *connection.Service
+	webhookService     *webhook.Service
+	webhookDispatcher  *webhook.Dispatcher
 	logger             *slog.Logger
 	basePath           string
 	staticAssets       *StaticAssets
@@ -37,31 +66,35 @@ type Router struct {
 }
 
 // NewRouter creates a new Router with all routes configured.
-func NewRouter(authService *auth.Service, artistService *artist.Service, scannerService *scanner.Service, platformService *platform.Service, providerSettings *provider.SettingsService, providerRegistry *provider.Registry, orchestrator *provider.Orchestrator, ruleService *rule.Service, ruleEngine *rule.Engine, pipeline *rule.Pipeline, bulkService *rule.BulkService, bulkExecutor *rule.BulkExecutor, nfoSnapshotService *nfo.SnapshotService, db *sql.DB, logger *slog.Logger, basePath string, staticDir string) *Router {
+func NewRouter(deps RouterDeps) *Router {
 	return &Router{
-		authService:        authService,
-		artistService:      artistService,
-		scannerService:     scannerService,
-		platformService:    platformService,
-		providerSettings:   providerSettings,
-		providerRegistry:   providerRegistry,
-		orchestrator:       orchestrator,
-		ruleService:        ruleService,
-		ruleEngine:         ruleEngine,
-		pipeline:           pipeline,
-		bulkService:        bulkService,
-		bulkExecutor:       bulkExecutor,
-		nfoSnapshotService: nfoSnapshotService,
-		db:                 db,
-		logger:             logger,
-		basePath:           basePath,
-		staticAssets:       NewStaticAssets(staticDir, logger),
+		authService:        deps.AuthService,
+		artistService:      deps.ArtistService,
+		scannerService:     deps.ScannerService,
+		platformService:    deps.PlatformService,
+		providerSettings:   deps.ProviderSettings,
+		providerRegistry:   deps.ProviderRegistry,
+		orchestrator:       deps.Orchestrator,
+		ruleService:        deps.RuleService,
+		ruleEngine:         deps.RuleEngine,
+		pipeline:           deps.Pipeline,
+		bulkService:        deps.BulkService,
+		bulkExecutor:       deps.BulkExecutor,
+		nfoSnapshotService: deps.NFOSnapshotService,
+		connectionService:  deps.ConnectionService,
+		webhookService:     deps.WebhookService,
+		webhookDispatcher:  deps.WebhookDispatcher,
+		db:                 deps.DB,
+		logger:             deps.Logger,
+		basePath:           deps.BasePath,
+		staticAssets:       NewStaticAssets(deps.StaticDir, deps.Logger),
 	}
 }
 
 // Handler returns the fully configured HTTP handler with middleware applied.
 func (r *Router) Handler() http.Handler {
 	authMw := middleware.Auth(r.authService)
+	optAuthMw := middleware.OptionalAuth(r.authService)
 	mux := http.NewServeMux()
 	bp := r.basePath
 
@@ -70,13 +103,18 @@ func (r *Router) Handler() http.Handler {
 	mux.HandleFunc("POST "+bp+"/api/v1/auth/login", r.handleLogin)
 	mux.HandleFunc("POST "+bp+"/api/v1/auth/setup", r.handleSetup)
 	mux.Handle("GET "+bp+"/static/", r.staticAssets.Handler(bp))
-	mux.HandleFunc("GET "+bp+"/", r.handleIndex)
+	mux.HandleFunc("GET "+bp+"/", wrapOptionalAuth(r.handleIndex, optAuthMw))
 
 	// Protected routes (auth required)
 	mux.HandleFunc("POST "+bp+"/api/v1/auth/logout", wrapAuth(r.handleLogout, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/auth/me", wrapAuth(r.handleMe, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/artists", wrapAuth(r.handleListArtists, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}", wrapAuth(r.handleGetArtist, authMw))
+	mux.HandleFunc("GET "+bp+"/api/v1/artists/duplicates", wrapAuth(r.handleDuplicates, authMw))
+	// Alias routes
+	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/aliases", wrapAuth(r.handleListAliases, authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/aliases", wrapAuth(r.handleAddAlias, authMw))
+	mux.HandleFunc("DELETE "+bp+"/api/v1/artists/{id}/aliases/{aliasId}", wrapAuth(r.handleRemoveAlias, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/scanner/run", wrapAuth(r.handleScannerRun, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/scanner/status", wrapAuth(r.handleScannerStatus, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/platforms", wrapAuth(r.handleListPlatforms, authMw))
@@ -85,10 +123,22 @@ func (r *Router) Handler() http.Handler {
 	mux.HandleFunc("PUT "+bp+"/api/v1/platforms/{id}", wrapAuth(r.handleUpdatePlatform, authMw))
 	mux.HandleFunc("DELETE "+bp+"/api/v1/platforms/{id}", wrapAuth(r.handleDeletePlatform, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/platforms/{id}/activate", wrapAuth(r.handleSetActivePlatform, authMw))
-	mux.HandleFunc("GET "+bp+"/api/v1/connections", wrapAuth(r.handleNotImplemented, authMw))
-	mux.HandleFunc("POST "+bp+"/api/v1/connections", wrapAuth(r.handleNotImplemented, authMw))
-	mux.HandleFunc("GET "+bp+"/api/v1/settings", wrapAuth(r.handleNotImplemented, authMw))
-	mux.HandleFunc("PUT "+bp+"/api/v1/settings", wrapAuth(r.handleNotImplemented, authMw))
+	// Connection routes
+	mux.HandleFunc("GET "+bp+"/api/v1/connections", wrapAuth(r.handleListConnections, authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/connections", wrapAuth(r.handleCreateConnection, authMw))
+	mux.HandleFunc("GET "+bp+"/api/v1/connections/{id}", wrapAuth(r.handleGetConnection, authMw))
+	mux.HandleFunc("PUT "+bp+"/api/v1/connections/{id}", wrapAuth(r.handleUpdateConnection, authMw))
+	mux.HandleFunc("DELETE "+bp+"/api/v1/connections/{id}", wrapAuth(r.handleDeleteConnection, authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/connections/{id}/test", wrapAuth(r.handleTestConnection, authMw))
+	// Webhook routes
+	mux.HandleFunc("GET "+bp+"/api/v1/webhooks", wrapAuth(r.handleListWebhooks, authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/webhooks", wrapAuth(r.handleCreateWebhook, authMw))
+	mux.HandleFunc("GET "+bp+"/api/v1/webhooks/{id}", wrapAuth(r.handleGetWebhook, authMw))
+	mux.HandleFunc("PUT "+bp+"/api/v1/webhooks/{id}", wrapAuth(r.handleUpdateWebhook, authMw))
+	mux.HandleFunc("DELETE "+bp+"/api/v1/webhooks/{id}", wrapAuth(r.handleDeleteWebhook, authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/webhooks/{id}/test", wrapAuth(r.handleTestWebhook, authMw))
+	mux.HandleFunc("GET "+bp+"/api/v1/settings", wrapAuth(r.handleGetSettings, authMw))
+	mux.HandleFunc("PUT "+bp+"/api/v1/settings", wrapAuth(r.handleUpdateSettings, authMw))
 
 	// Provider routes
 	mux.HandleFunc("GET "+bp+"/api/v1/providers", wrapAuth(r.handleListProviders, authMw))
@@ -123,6 +173,7 @@ func (r *Router) Handler() http.Handler {
 
 	// NFO snapshot routes
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/nfo/diff", wrapAuth(r.handleNFODiff, authMw))
+	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/nfo/conflict", wrapAuth(r.handleNFOConflictCheck, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/nfo/snapshots", wrapAuth(r.handleNFOSnapshotList, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/nfo/snapshots/{snapshotId}/restore", wrapAuth(r.handleNFOSnapshotRestore, authMw))
 
@@ -132,13 +183,16 @@ func (r *Router) Handler() http.Handler {
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/images/search", wrapAuth(r.handleImageSearch, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/images/crop", wrapAuth(r.handleImageCrop, authMw))
 
-	// Web routes (auth checked in handlers)
-	mux.HandleFunc("GET "+bp+"/artists/{id}/images", r.handleArtistImagesPage)
-	mux.HandleFunc("GET "+bp+"/artists/{id}", r.handleArtistDetailPage)
-	mux.HandleFunc("GET "+bp+"/artists", r.handleArtistsPage)
-	mux.HandleFunc("GET "+bp+"/reports/compliance", r.handleCompliancePage)
-	mux.HandleFunc("GET "+bp+"/artists/{id}/nfo", r.handleNFODiffPage)
-	mux.HandleFunc("GET "+bp+"/settings", r.handleSettingsPage)
+	// Push routes
+	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/push", wrapAuth(r.handlePushMetadata, authMw))
+
+	// Web routes (optional auth populates user context for login redirect)
+	mux.HandleFunc("GET "+bp+"/artists/{id}/images", wrapOptionalAuth(r.handleArtistImagesPage, optAuthMw))
+	mux.HandleFunc("GET "+bp+"/artists/{id}", wrapOptionalAuth(r.handleArtistDetailPage, optAuthMw))
+	mux.HandleFunc("GET "+bp+"/artists", wrapOptionalAuth(r.handleArtistsPage, optAuthMw))
+	mux.HandleFunc("GET "+bp+"/reports/compliance", wrapOptionalAuth(r.handleCompliancePage, optAuthMw))
+	mux.HandleFunc("GET "+bp+"/artists/{id}/nfo", wrapOptionalAuth(r.handleNFODiffPage, optAuthMw))
+	mux.HandleFunc("GET "+bp+"/settings", wrapOptionalAuth(r.handleSettingsPage, optAuthMw))
 
 	// Apply logging to all requests
 	return middleware.Logging(r.logger)(mux)
@@ -148,5 +202,12 @@ func (r *Router) Handler() http.Handler {
 func wrapAuth(fn http.HandlerFunc, authMw func(http.Handler) http.Handler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		authMw(fn).ServeHTTP(w, r)
+	}
+}
+
+// wrapOptionalAuth wraps a handler function with optional auth middleware.
+func wrapOptionalAuth(fn http.HandlerFunc, mw func(http.Handler) http.Handler) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		mw(fn).ServeHTTP(w, r)
 	}
 }

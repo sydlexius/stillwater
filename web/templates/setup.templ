@@ -21,6 +21,8 @@ templ SetupPage(assets AssetPaths) {
 						</p>
 					</div>
 					<form
+						method="post"
+						action="/api/v1/auth/setup"
 						hx-post="/api/v1/auth/setup"
 						hx-swap="innerHTML"
 						hx-target="#setup-result"

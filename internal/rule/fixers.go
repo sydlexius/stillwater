@@ -35,14 +35,26 @@ func (f *NFOFixer) CanFix(v *Violation) bool {
 }
 
 // Fix creates an artist.nfo file in the artist's directory.
+// If the file already exists and was modified externally, returns without overwriting.
 func (f *NFOFixer) Fix(_ context.Context, a *artist.Artist, _ *Violation) (*FixResult, error) {
+	target := filepath.Join(a.Path, "artist.nfo")
+
+	// Check for external modifications before writing
+	conflict := nfo.CheckFileConflict(target, a.UpdatedAt)
+	if conflict.HasConflict {
+		return &FixResult{
+			RuleID:  RuleNFOExists,
+			Fixed:   false,
+			Message: fmt.Sprintf("NFO conflict for %s: %s", a.Name, conflict.Reason),
+		}, nil
+	}
+
 	nfoData := nfo.FromArtist(a)
 	var buf bytes.Buffer
 	if err := nfo.Write(&buf, nfoData); err != nil {
 		return nil, fmt.Errorf("generating nfo: %w", err)
 	}
 
-	target := filepath.Join(a.Path, "artist.nfo")
 	if err := filesystem.WriteFileAtomic(target, buf.Bytes(), 0o644); err != nil {
 		return nil, fmt.Errorf("writing nfo: %w", err)
 	}

@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"strings"
 
+	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/platform"
 	"github.com/sydlexius/stillwater/internal/provider"
+	"github.com/sydlexius/stillwater/internal/webhook"
 )
 
 // joinNames joins a string slice with ", " for display.
@@ -19,6 +21,8 @@ type SettingsData struct {
 	ActiveProfile *platform.Profile
 	ProviderKeys  []provider.ProviderKeyStatus
 	Priorities    []provider.FieldPriority
+	Connections   []connection.Connection
+	Webhooks      []webhook.Webhook
 }
 
 // prioritySwapJSON generates the JSON body for an HTMX priority reorder request.
@@ -146,6 +150,106 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 					</div>
 				</div>
 			}
+			<div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+				<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+					<h2 class="text-lg font-semibold">Server Connections</h2>
+					<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+						Connect to Emby, Jellyfin, or Lidarr servers for library sync and metadata push.
+					</p>
+				</div>
+				<div id="connections-list" class="px-6 py-4 space-y-3">
+					if len(data.Connections) == 0 {
+						<p class="text-sm text-gray-500 dark:text-gray-400 italic">No connections configured.</p>
+					}
+					for _, c := range data.Connections {
+						@connectionCard(c)
+					}
+				</div>
+				<div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700">
+					<button
+						type="button"
+						class="text-sm px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+						onclick="document.getElementById('add-connection-form').classList.toggle('hidden')"
+					>
+						Add Connection
+					</button>
+					<div id="add-connection-form" class="hidden mt-4">
+						<form
+							hx-post="/api/v1/connections"
+							hx-target="#connections-list"
+							hx-swap="innerHTML"
+							hx-on::after-request="if(event.detail.successful) { this.reset(); this.closest('#add-connection-form').classList.add('hidden'); window.location.reload(); }"
+							class="space-y-3"
+						>
+							<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+								<input name="name" placeholder="Connection name" required class="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+								<select name="type" required class="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+									<option value="">Select type...</option>
+									<option value="emby">Emby</option>
+									<option value="jellyfin">Jellyfin</option>
+									<option value="lidarr">Lidarr</option>
+								</select>
+								<input name="url" type="url" placeholder="Server URL" required class="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+								<input name="api_key" type="text" placeholder="API Key" required autocomplete="off" data-1p-ignore data-lpignore="true" class="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+							</div>
+							<div class="flex gap-2">
+								<button type="submit" class="text-xs px-3 py-1.5 rounded bg-green-600 text-white hover:bg-green-700 transition-colors">Save</button>
+								<button type="button" class="text-xs px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" onclick="this.closest('#add-connection-form').classList.add('hidden')">Cancel</button>
+							</div>
+						</form>
+					</div>
+				</div>
+			</div>
+			<div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+				<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+					<h2 class="text-lg font-semibold">Webhooks</h2>
+					<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+						Send notifications to external services when events occur.
+					</p>
+				</div>
+				<div id="webhooks-list" class="px-6 py-4 space-y-3">
+					if len(data.Webhooks) == 0 {
+						<p class="text-sm text-gray-500 dark:text-gray-400 italic">No webhooks configured.</p>
+					}
+					for _, wh := range data.Webhooks {
+						@webhookCard(wh)
+					}
+				</div>
+				<div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700">
+					<button
+						type="button"
+						class="text-sm px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+						onclick="document.getElementById('add-webhook-form').classList.toggle('hidden')"
+					>
+						Add Webhook
+					</button>
+					<div id="add-webhook-form" class="hidden mt-4">
+						<form
+							hx-post="/api/v1/webhooks"
+							hx-target="#webhooks-list"
+							hx-swap="innerHTML"
+							hx-on::after-request="if(event.detail.successful) { this.reset(); this.closest('#add-webhook-form').classList.add('hidden'); window.location.reload(); }"
+							class="space-y-3"
+						>
+							<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+								<input name="name" placeholder="Webhook name" required class="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+								<select name="type" required class="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+									<option value="">Select type...</option>
+									<option value="generic">Generic (JSON)</option>
+									<option value="discord">Discord</option>
+									<option value="slack">Slack</option>
+									<option value="gotify">Gotify</option>
+								</select>
+								<input name="url" type="url" placeholder="Webhook URL" required class="col-span-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+							</div>
+							<div class="flex gap-2">
+								<button type="submit" class="text-xs px-3 py-1.5 rounded bg-green-600 text-white hover:bg-green-700 transition-colors">Save</button>
+								<button type="button" class="text-xs px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" onclick="this.closest('#add-webhook-form').classList.add('hidden')">Cancel</button>
+							</div>
+						</form>
+					</div>
+				</div>
+			</div>
 		</div>
 	}
 }
@@ -219,9 +323,12 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 			hx-on::after-request="if(event.detail.successful) this.closest('[id^=key-input-]').classList.add('hidden')"
 		>
 			<input
-				type="password"
+				type="text"
 				name="api_key"
 				placeholder="Enter API key..."
+				autocomplete="off"
+				data-1p-ignore
+				data-lpignore="true"
 				class="flex-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
 				required
 			/>
@@ -297,6 +404,114 @@ templ PriorityRow(pri provider.FieldPriority) {
 					</div>
 				</div>
 			}
+		</div>
+	</div>
+}
+
+// connectionTypeBadge returns a short display label for a connection type.
+func connectionTypeBadge(connType string) string {
+	switch connType {
+	case "emby":
+		return "Emby"
+	case "jellyfin":
+		return "Jellyfin"
+	case "lidarr":
+		return "Lidarr"
+	default:
+		return connType
+	}
+}
+
+templ connectionCard(c connection.Connection) {
+	<div class="flex items-center justify-between rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3">
+		<div class="flex items-center gap-3">
+			<div
+				class={
+					"h-2.5 w-2.5 rounded-full",
+					templ.KV("bg-green-500", c.Status == "ok"),
+					templ.KV("bg-red-500", c.Status == "error"),
+					templ.KV("bg-gray-400 dark:bg-gray-500", c.Status != "ok" && c.Status != "error"),
+				}
+			></div>
+			<div>
+				<div class="font-medium text-sm flex items-center gap-2">
+					{ c.Name }
+					<span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs font-medium text-gray-600 dark:text-gray-300">
+						{ connectionTypeBadge(c.Type) }
+					</span>
+				</div>
+				<div class="text-xs text-gray-500 dark:text-gray-400">{ c.URL }</div>
+			</div>
+		</div>
+		<div class="flex items-center gap-2">
+			<button
+				type="button"
+				class="text-xs px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+				hx-post={ "/api/v1/connections/" + c.ID + "/test" }
+				hx-swap="none"
+				hx-on::after-request="window.location.reload()"
+			>
+				Test
+			</button>
+			<button
+				type="button"
+				class="text-xs px-2 py-1 rounded border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+				hx-delete={ "/api/v1/connections/" + c.ID }
+				hx-confirm="Delete this connection?"
+				hx-swap="none"
+				hx-on::after-request="window.location.reload()"
+			>
+				Delete
+			</button>
+		</div>
+	</div>
+}
+
+templ webhookCard(wh webhook.Webhook) {
+	<div class="flex items-center justify-between rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3">
+		<div class="flex items-center gap-3">
+			<div
+				class={
+					"h-2.5 w-2.5 rounded-full",
+					templ.KV("bg-green-500", wh.Enabled),
+					templ.KV("bg-gray-400 dark:bg-gray-500", !wh.Enabled),
+				}
+			></div>
+			<div>
+				<div class="font-medium text-sm flex items-center gap-2">
+					{ wh.Name }
+					<span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs font-medium text-gray-600 dark:text-gray-300">
+						{ wh.Type }
+					</span>
+				</div>
+				<div class="text-xs text-gray-500 dark:text-gray-400">
+					if len(wh.Events) > 0 {
+						{ joinNames(wh.Events) }
+					} else {
+						All events
+					}
+				</div>
+			</div>
+		</div>
+		<div class="flex items-center gap-2">
+			<button
+				type="button"
+				class="text-xs px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+				hx-post={ "/api/v1/webhooks/" + wh.ID + "/test" }
+				hx-swap="none"
+			>
+				Test
+			</button>
+			<button
+				type="button"
+				class="text-xs px-2 py-1 rounded border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+				hx-delete={ "/api/v1/webhooks/" + wh.ID }
+				hx-confirm="Delete this webhook?"
+				hx-swap="none"
+				hx-on::after-request="window.location.reload()"
+			>
+				Delete
+			</button>
 		</div>
 	</div>
 }

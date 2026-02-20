@@ -5,8 +5,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
+	"github.com/sydlexius/stillwater/internal/connection"
+	"github.com/sydlexius/stillwater/internal/connection/lidarr"
 	"github.com/sydlexius/stillwater/internal/filesystem"
 	"github.com/sydlexius/stillwater/internal/nfo"
 	"github.com/sydlexius/stillwater/web/templates"
@@ -154,6 +157,54 @@ func (r *Router) handleNFODiffPage(w http.ResponseWriter, req *http.Request) {
 		Snapshots: snapshots,
 	}
 	renderTempl(w, req, templates.NFODiffPage(r.assets(), data))
+}
+
+// handleNFOConflictCheck checks whether an artist's NFO has been modified externally.
+// GET /api/v1/artists/{id}/nfo/conflict
+func (r *Router) handleNFOConflictCheck(w http.ResponseWriter, req *http.Request) {
+	artistID := req.PathValue("id")
+	if artistID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing artist id"})
+		return
+	}
+
+	a, err := r.artistService.GetByID(req.Context(), artistID)
+	if err != nil {
+		writeError(w, req, http.StatusNotFound, "artist not found")
+		return
+	}
+
+	nfoPath := filepath.Join(a.Path, "artist.nfo")
+
+	// Use the latest snapshot time as reference, or fall back to 24h ago
+	since := time.Now().Add(-24 * time.Hour)
+	snapshots, err := r.nfoSnapshotService.List(req.Context(), artistID)
+	if err == nil && len(snapshots) > 0 {
+		since = snapshots[0].CreatedAt
+	}
+
+	check := nfo.CheckFileConflict(nfoPath, since)
+
+	// Check Lidarr connections for NFO writer config
+	lidarrConns, err := r.connectionService.ListByType(req.Context(), connection.TypeLidarr)
+	if err == nil {
+		for _, conn := range lidarrConns {
+			if !conn.Enabled {
+				continue
+			}
+			client := lidarr.New(conn.URL, conn.APIKey, r.logger)
+			enabled, checkErr := client.CheckNFOWriterEnabled(req.Context())
+			if checkErr == nil && enabled {
+				check.ExternalWriter = "lidarr:" + conn.Name
+				if !check.HasConflict {
+					check.Reason = "Lidarr NFO writer is enabled and may overwrite changes"
+				}
+				break
+			}
+		}
+	}
+
+	writeJSON(w, http.StatusOK, check)
 }
 
 // parseNFOFile parses an NFO file from disk, returning nil if it cannot be read.

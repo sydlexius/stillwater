@@ -1,0 +1,17 @@
+[
+  {
+    "Name": "Music",
+    "CollectionType": "music",
+    "ItemId": "lib-music-001"
+  },
+  {
+    "Name": "Movies",
+    "CollectionType": "movies",
+    "ItemId": "lib-movies-001"
+  },
+  {
+    "Name": "Audiobooks",
+    "CollectionType": "music",
+    "ItemId": "lib-audiobooks-001"
+  }
+]

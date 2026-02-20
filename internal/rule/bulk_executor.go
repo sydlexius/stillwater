@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/event"
 	img "github.com/sydlexius/stillwater/internal/image"
 	"github.com/sydlexius/stillwater/internal/nfo"
 	"github.com/sydlexius/stillwater/internal/provider"
@@ -23,10 +24,16 @@ type BulkExecutor struct {
 	pipeline        *Pipeline
 	snapshotService *nfo.SnapshotService
 	logger          *slog.Logger
+	eventBus        *event.Bus
 
 	mu        sync.Mutex
 	cancelFn  context.CancelFunc
 	currentID string
+}
+
+// SetEventBus sets the event bus for publishing bulk job events.
+func (e *BulkExecutor) SetEventBus(bus *event.Bus) {
+	e.eventBus = bus
 }
 
 // NewBulkExecutor creates a BulkExecutor.
@@ -327,5 +334,19 @@ func (e *BulkExecutor) finishJob(ctx context.Context, job *BulkJob, status, errM
 	job.Error = errMsg
 	if err := e.bulkService.UpdateJob(ctx, job); err != nil {
 		e.logger.Error("finishing bulk job", "job_id", job.ID, "error", err)
+	}
+
+	if e.eventBus != nil {
+		e.eventBus.Publish(event.Event{
+			Type: event.BulkCompleted,
+			Data: map[string]any{
+				"job_id":          job.ID,
+				"type":            job.Type,
+				"status":          status,
+				"total_items":     job.TotalItems,
+				"processed_items": job.ProcessedItems,
+				"failed_items":    job.FailedItems,
+			},
+		})
 	}
 }

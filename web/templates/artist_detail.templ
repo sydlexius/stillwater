@@ -7,8 +7,10 @@ import (
 
 // ArtistDetailData holds the data for the artist detail page.
 type ArtistDetailData struct {
-	Artist  artist.Artist
-	Members []artist.BandMember
+	Artist         artist.Artist
+	Members        []artist.BandMember
+	Aliases        []artist.Alias
+	HasConnections bool
 }
 
 templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
@@ -190,6 +192,50 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 							@providerID("Discogs", data.Artist.DiscogsID)
 							@providerID("Wikidata", data.Artist.WikidataID)
 						</dl>
+					</section>
+					<section class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
+						<h2 class="text-lg font-semibold mb-3">Aliases</h2>
+						<div id={ "aliases-" + data.Artist.ID }>
+							if len(data.Aliases) > 0 {
+								<div class="space-y-1.5 mb-3">
+									for _, a := range data.Aliases {
+										<div class="flex items-center justify-between text-sm">
+											<span>{ a.Alias }</span>
+											<button
+												type="button"
+												class="text-xs text-red-500 hover:text-red-700 dark:hover:text-red-300"
+												hx-delete={ "/api/v1/artists/" + data.Artist.ID + "/aliases/" + a.ID }
+												hx-swap="none"
+												hx-on::after-request="window.location.reload()"
+											>
+												Remove
+											</button>
+										</div>
+									}
+								</div>
+							} else {
+								<p class="text-sm text-gray-500 dark:text-gray-400 italic mb-3">No aliases.</p>
+							}
+						</div>
+						<form
+							class="flex items-center gap-2"
+							hx-post={ "/api/v1/artists/" + data.Artist.ID + "/aliases" }
+							hx-swap="none"
+							hx-on::after-request="if(event.detail.successful) { this.reset(); window.location.reload(); }"
+						>
+							<input
+								name="alias"
+								placeholder="Add alias..."
+								required
+								class="flex-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+							/>
+							<button
+								type="submit"
+								class="text-xs px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+							>
+								Add
+							</button>
+						</form>
 					</section>
 				</div>
 			</div>

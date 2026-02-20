@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
 	"errors"
@@ -37,7 +38,7 @@ func (s *Service) Setup(ctx context.Context, username, password string) (bool, e
 		return false, nil
 	}
 
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	hash, err := bcrypt.GenerateFromPassword(prehashPassword(password), bcrypt.DefaultCost)
 	if err != nil {
 		return false, fmt.Errorf("hashing password: %w", err)
 	}
@@ -67,7 +68,7 @@ func (s *Service) Login(ctx context.Context, username, password string) (string,
 		return "", fmt.Errorf("querying user: %w", err)
 	}
 
-	if err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)); err != nil {
+	if err := bcrypt.CompareHashAndPassword([]byte(hash), prehashPassword(password)); err != nil {
 		return "", errors.New("invalid credentials")
 	}
 
@@ -135,6 +136,14 @@ func (s *Service) HasUsers(ctx context.Context) (bool, error) {
 		return false, err
 	}
 	return count > 0, nil
+}
+
+// prehashPassword hashes the password with SHA-256 before bcrypt to support
+// passwords longer than bcrypt's 72-byte limit. The hex-encoded SHA-256
+// digest is 64 bytes, safely within the limit.
+func prehashPassword(password string) []byte {
+	h := sha256.Sum256([]byte(password))
+	return []byte(hex.EncodeToString(h[:]))
 }
 
 func generateToken() (string, error) {
