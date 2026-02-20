@@ -65,7 +65,7 @@ func (d *Dispatcher) deliver(w Webhook, e event.Event) {
 	var lastErr error
 	for attempt := range maxRetries {
 		if attempt > 0 {
-			backoff := time.Duration(1<<uint(attempt-1)) * time.Second
+			backoff := time.Duration(1<<uint(attempt-1)) * time.Second //nolint:gosec // G115: attempt is bounded by maxRetries (3)
 			time.Sleep(backoff)
 		}
 
@@ -105,12 +105,12 @@ func (d *Dispatcher) send(url string, body []byte, contentType string) error {
 	req.Header.Set("Content-Type", contentType)
 	req.Header.Set("User-Agent", "Stillwater-Webhook/1.0")
 
-	resp, err := d.httpClient.Do(req)
+	resp, err := d.httpClient.Do(req) //nolint:gosec // URL is user-configured webhook destination
 	if err != nil {
 		return fmt.Errorf("sending request: %w", err)
 	}
-	defer resp.Body.Close() //nolint:errcheck
-	io.Copy(io.Discard, resp.Body)  //nolint:errcheck
+	defer resp.Body.Close()        //nolint:errcheck
+	io.Copy(io.Discard, resp.Body) //nolint:errcheck
 
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("unexpected status %d", resp.StatusCode)

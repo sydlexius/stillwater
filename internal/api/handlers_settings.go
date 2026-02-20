@@ -7,7 +7,7 @@ import (
 )
 
 func (r *Router) handleGetSettings(w http.ResponseWriter, req *http.Request) {
-	rows, err := r.db.QueryContext(req.Context(), `SELECT key, value FROM settings ORDER BY key`)
+	rows, err := r.db.QueryContext(req.Context(), `SELECT key, value FROM settings ORDER BY key`) //nolint:gosec // G701: static query, no user input
 	if err != nil {
 		r.logger.Error("listing settings", "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
@@ -42,10 +42,10 @@ func (r *Router) handleUpdateSettings(w http.ResponseWriter, req *http.Request) 
 
 	now := time.Now().UTC().Format(time.RFC3339)
 	for k, v := range body {
-		_, err := r.db.ExecContext(req.Context(), `
-			INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
-			ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
-		`, k, v, now)
+		_, err := r.db.ExecContext(req.Context(), //nolint:gosec // G701: static query with parameterized values
+			`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+			ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+			k, v, now)
 		if err != nil {
 			r.logger.Error("upserting setting", "key", k, "error", err)
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})

@@ -94,7 +94,7 @@ func (c *Client) get(ctx context.Context, path string, result any) error {
 	}
 	c.setAuth(req)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.httpClient.Do(req) //nolint:gosec // URL constructed from trusted base + API path
 	if err != nil {
 		return fmt.Errorf("executing request: %w", err)
 	}
@@ -120,7 +120,7 @@ func (c *Client) post(ctx context.Context, path string, body io.Reader) error {
 	}
 	c.setAuth(req)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.httpClient.Do(req) //nolint:gosec // URL constructed from trusted base + API path
 	if err != nil {
 		return fmt.Errorf("executing request: %w", err)
 	}

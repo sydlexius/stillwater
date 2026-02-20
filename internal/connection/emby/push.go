@@ -32,7 +32,7 @@ func (c *Client) PushMetadata(ctx context.Context, platformArtistID string, data
 
 	payload, err := json.Marshal(body)
 	if err != nil {
-		return fmt.Errorf("marshalling push body: %w", err)
+		return fmt.Errorf("marshaling push body: %w", err)
 	}
 
 	path := fmt.Sprintf("/Items/%s", platformArtistID)
@@ -43,7 +43,7 @@ func (c *Client) PushMetadata(ctx context.Context, platformArtistID string, data
 	c.setAuth(req)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.httpClient.Do(req) //nolint:gosec // URL constructed from trusted base + artist ID
 	if err != nil {
 		return fmt.Errorf("executing push request: %w", err)
 	}

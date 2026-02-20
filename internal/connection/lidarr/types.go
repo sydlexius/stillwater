@@ -24,11 +24,11 @@ type MetadataProfile struct {
 
 // MetadataProviderConfig represents metadata provider config from GET /api/v1/config/metadataprovider.
 type MetadataProviderConfig struct {
-	ID                  int    `json:"id"`
-	MetadataType        string `json:"metadataType"`
-	ConsumerID          int    `json:"consumerId"`
-	ConsumerName        string `json:"consumerName"`
-	Enable              bool   `json:"enable"`
+	ID           int    `json:"id"`
+	MetadataType string `json:"metadataType"`
+	ConsumerID   int    `json:"consumerId"`
+	ConsumerName string `json:"consumerName"`
+	Enable       bool   `json:"enable"`
 }
 
 // CommandBody is the request body for POST /api/v1/command.

@@ -8,9 +8,9 @@ import (
 
 // Supported connection types.
 const (
-	TypeEmby    = "emby"
+	TypeEmby     = "emby"
 	TypeJellyfin = "jellyfin"
-	TypeLidarr  = "lidarr"
+	TypeLidarr   = "lidarr"
 )
 
 // Connection represents an external service connection.

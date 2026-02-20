@@ -162,10 +162,6 @@ func renderTempl(w http.ResponseWriter, r *http.Request, component templ.Compone
 	}
 }
 
-func (r *Router) handleNotImplemented(w http.ResponseWriter, req *http.Request) {
-	writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "not implemented"})
-}
-
 // writeError sends an error response. For HTMX requests, it renders an error
 // toast HTML fragment. For API requests, it returns JSON.
 func writeError(w http.ResponseWriter, req *http.Request, status int, message string) {

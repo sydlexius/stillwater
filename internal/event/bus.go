@@ -11,12 +11,12 @@ type Type string
 
 // Known event types.
 const (
-	ArtistNew      Type = "artist.new"
-	MetadataFixed  Type = "metadata.fixed"
-	ReviewNeeded   Type = "review.needed"
-	RuleViolation  Type = "rule.violation"
-	BulkCompleted  Type = "bulk.completed"
-	ScanCompleted  Type = "scan.completed"
+	ArtistNew     Type = "artist.new"
+	MetadataFixed Type = "metadata.fixed"
+	ReviewNeeded  Type = "review.needed"
+	RuleViolation Type = "rule.violation"
+	BulkCompleted Type = "bulk.completed"
+	ScanCompleted Type = "scan.completed"
 )
 
 // Event represents something that happened in the system.
@@ -31,12 +31,12 @@ type Handler func(Event)
 
 // Bus is an in-process event bus backed by a buffered channel.
 type Bus struct {
-	ch       chan Event
-	mu       sync.RWMutex
-	subs     map[Type][]Handler
-	logger   *slog.Logger
-	done     chan struct{}
-	stopped  bool
+	ch      chan Event
+	mu      sync.RWMutex
+	subs    map[Type][]Handler
+	logger  *slog.Logger
+	done    chan struct{}
+	stopped bool
 }
 
 // NewBus creates a new event bus with the given buffer size.

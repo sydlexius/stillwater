@@ -109,10 +109,10 @@ func (s *Service) runScan(ctx context.Context, result *ScanResult) {
 			s.eventBus.Publish(event.Event{
 				Type: event.ScanCompleted,
 				Data: map[string]any{
-					"scan_id":          result.ID,
-					"status":           result.Status,
+					"scan_id":           result.ID,
+					"status":            result.Status,
 					"total_directories": result.TotalDirectories,
-					"new_artists":      result.NewArtists,
+					"new_artists":       result.NewArtists,
 				},
 			})
 		}

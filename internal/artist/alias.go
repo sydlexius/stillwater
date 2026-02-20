@@ -105,13 +105,12 @@ func (s *Service) ListAliases(ctx context.Context, artistID string) ([]Alias, er
 func (s *Service) SearchWithAliases(ctx context.Context, query string) ([]Artist, error) {
 	pattern := "%" + strings.ToLower(query) + "%"
 
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT DISTINCT `+prefixedArtistColumns("artists")+`
-		FROM artists
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT DISTINCT `+prefixedArtistColumns("artists")+` `+ //nolint:gosec // G202: concatenation uses trusted static column list
+			`FROM artists
 		LEFT JOIN artist_aliases ON artists.id = artist_aliases.artist_id
 		WHERE LOWER(artists.name) LIKE ? OR LOWER(artist_aliases.alias) LIKE ?
-		ORDER BY artists.name
-	`, pattern, pattern)
+		ORDER BY artists.name`, pattern, pattern)
 	if err != nil {
 		return nil, fmt.Errorf("searching with aliases: %w", err)
 	}
@@ -217,13 +216,12 @@ func (s *Service) listByMBID(ctx context.Context, mbid string) ([]Artist, error)
 }
 
 func (s *Service) listByAlias(ctx context.Context, alias string) ([]Artist, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT DISTINCT `+prefixedArtistColumns("artists")+`
-		FROM artists
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT DISTINCT `+prefixedArtistColumns("artists")+` `+ //nolint:gosec // G202: concatenation uses trusted static column list
+			`FROM artists
 		JOIN artist_aliases ON artists.id = artist_aliases.artist_id
 		WHERE LOWER(artist_aliases.alias) = ?
-		ORDER BY artists.name
-	`, strings.ToLower(alias))
+		ORDER BY artists.name`, strings.ToLower(alias))
 	if err != nil {
 		return nil, err
 	}
@@ -239,4 +237,3 @@ func (s *Service) listByAlias(ctx context.Context, alias string) ([]Artist, erro
 	}
 	return artists, rows.Err()
 }
-
