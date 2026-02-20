@@ -24,6 +24,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/provider/lastfm"
 	"github.com/sydlexius/stillwater/internal/provider/musicbrainz"
 	"github.com/sydlexius/stillwater/internal/provider/wikidata"
+	"github.com/sydlexius/stillwater/internal/rule"
 	"github.com/sydlexius/stillwater/internal/scanner"
 	"github.com/sydlexius/stillwater/internal/version"
 )
@@ -100,8 +101,17 @@ func run() error {
 	// Initialize services
 	authService := auth.NewService(db)
 	artistService := artist.NewService(db)
-	scannerService := scanner.NewService(artistService, logger, cfg.Music.LibraryPath, cfg.Scanner.Exclusions)
 	platformService := platform.NewService(db)
+
+	// Initialize rule engine
+	ruleService := rule.NewService(db)
+	if err := ruleService.SeedDefaults(context.Background()); err != nil {
+		return fmt.Errorf("seeding default rules: %w", err)
+	}
+	ruleEngine := rule.NewEngine(ruleService, db, logger)
+
+	// Initialize scanner (depends on rule engine for health scoring)
+	scannerService := scanner.NewService(artistService, ruleEngine, ruleService, logger, cfg.Music.LibraryPath, cfg.Scanner.Exclusions)
 
 	// Initialize provider infrastructure
 	rateLimiters := provider.NewRateLimiterMap()
@@ -117,13 +127,25 @@ func run() error {
 
 	orchestrator := provider.NewOrchestrator(providerRegistry, providerSettings, logger)
 
+	// Initialize fix pipeline (depends on orchestrator)
+	fixers := []rule.Fixer{
+		&rule.NFOFixer{},
+		rule.NewMetadataFixer(orchestrator),
+		rule.NewImageFixer(orchestrator, logger),
+	}
+	pipeline := rule.NewPipeline(ruleEngine, artistService, fixers, logger)
+
+	// Initialize bulk operations
+	bulkService := rule.NewBulkService(db)
+	bulkExecutor := rule.NewBulkExecutor(bulkService, artistService, orchestrator, pipeline, logger)
+
 	logger.Info("starting stillwater",
 		slog.String("version", version.Version),
 		slog.String("commit", version.Commit),
 	)
 
 	// Set up HTTP router
-	router := api.NewRouter(authService, artistService, scannerService, platformService, providerSettings, providerRegistry, orchestrator, logger, cfg.Server.BasePath, "web/static")
+	router := api.NewRouter(authService, artistService, scannerService, platformService, providerSettings, providerRegistry, orchestrator, ruleService, ruleEngine, pipeline, bulkService, bulkExecutor, db, logger, cfg.Server.BasePath, "web/static")
 
 	// Create HTTP server
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)

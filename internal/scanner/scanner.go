@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/nfo"
+	"github.com/sydlexius/stillwater/internal/rule"
 )
 
 // Image filename patterns to detect for each type.
@@ -26,6 +27,8 @@ var (
 // Service runs filesystem scans against the music library.
 type Service struct {
 	artistService *artist.Service
+	ruleEngine    *rule.Engine
+	ruleService   *rule.Service
 	logger        *slog.Logger
 	libraryPath   string
 	exclusions    map[string]bool
@@ -35,13 +38,15 @@ type Service struct {
 }
 
 // NewService creates a scanner service.
-func NewService(artistService *artist.Service, logger *slog.Logger, libraryPath string, exclusions []string) *Service {
+func NewService(artistService *artist.Service, ruleEngine *rule.Engine, ruleService *rule.Service, logger *slog.Logger, libraryPath string, exclusions []string) *Service {
 	excMap := make(map[string]bool, len(exclusions))
 	for _, e := range exclusions {
 		excMap[strings.ToLower(e)] = true
 	}
 	return &Service{
 		artistService: artistService,
+		ruleEngine:    ruleEngine,
+		ruleService:   ruleService,
 		logger:        logger,
 		libraryPath:   libraryPath,
 		exclusions:    excMap,
@@ -138,6 +143,9 @@ func (s *Service) runScan(ctx context.Context, result *ScanResult) {
 
 	// Detect removed artists
 	s.detectRemoved(ctx, discoveredPaths, result)
+
+	// Record health snapshot at end of scan
+	s.recordHealthSnapshot(ctx)
 }
 
 func (s *Service) processDirectory(ctx context.Context, dirPath, name string, result *ScanResult) error {
@@ -179,6 +187,9 @@ func (s *Service) processDirectory(ctx context.Context, dirPath, name string, re
 		if err := s.artistService.Create(ctx, a); err != nil {
 			return fmt.Errorf("creating artist: %w", err)
 		}
+
+		s.evaluateHealthScore(ctx, a)
+
 		s.mu.Lock()
 		result.NewArtists++
 		s.mu.Unlock()
@@ -219,6 +230,9 @@ func (s *Service) processDirectory(ctx context.Context, dirPath, name string, re
 			if err := s.artistService.Update(ctx, existing); err != nil {
 				return fmt.Errorf("updating artist: %w", err)
 			}
+
+			s.evaluateHealthScore(ctx, existing)
+
 			s.mu.Lock()
 			result.UpdatedArtists++
 			s.mu.Unlock()
@@ -273,6 +287,55 @@ func (s *Service) populateFromNFO(dirPath string, a *artist.Artist) {
 	a.Disbanded = converted.Disbanded
 	if converted.Biography != "" {
 		a.Biography = converted.Biography
+	}
+}
+
+// evaluateHealthScore runs the rule engine against an artist and persists the score.
+func (s *Service) evaluateHealthScore(ctx context.Context, a *artist.Artist) {
+	if s.ruleEngine == nil {
+		return
+	}
+	eval, err := s.ruleEngine.Evaluate(ctx, a)
+	if err != nil {
+		s.logger.Warn("evaluating health score", "artist", a.Name, "error", err)
+		return
+	}
+	a.HealthScore = eval.HealthScore
+	if err := s.artistService.Update(ctx, a); err != nil {
+		s.logger.Warn("persisting health score", "artist", a.Name, "error", err)
+	}
+}
+
+// recordHealthSnapshot computes the library-wide health score and records it.
+func (s *Service) recordHealthSnapshot(ctx context.Context) {
+	if s.ruleService == nil {
+		return
+	}
+	allArtists, total, err := s.artistService.List(ctx, artist.ListParams{
+		Page:     1,
+		PageSize: 10000,
+		Sort:     "name",
+	})
+	if err != nil {
+		s.logger.Warn("listing artists for health snapshot", "error", err)
+		return
+	}
+	if total == 0 {
+		return
+	}
+
+	compliant := 0
+	var scoreSum float64
+	for _, a := range allArtists {
+		if a.HealthScore >= 100.0 {
+			compliant++
+		}
+		scoreSum += a.HealthScore
+	}
+	avgScore := scoreSum / float64(len(allArtists))
+
+	if err := s.ruleService.RecordHealthSnapshot(ctx, total, compliant, avgScore); err != nil {
+		s.logger.Warn("recording health snapshot", "error", err)
 	}
 }
 
