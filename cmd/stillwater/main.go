@@ -128,20 +128,20 @@ func run() error {
 
 	orchestrator := provider.NewOrchestrator(providerRegistry, providerSettings, logger)
 
-	// Initialize fix pipeline (depends on orchestrator)
+	// Initialize NFO snapshot service
+	nfoSnapshotService := nfo.NewSnapshotService(db)
+
+	// Initialize fix pipeline (depends on orchestrator and snapshot service)
 	fixers := []rule.Fixer{
-		&rule.NFOFixer{},
-		rule.NewMetadataFixer(orchestrator),
+		&rule.NFOFixer{SnapshotService: nfoSnapshotService},
+		rule.NewMetadataFixer(orchestrator, nfoSnapshotService),
 		rule.NewImageFixer(orchestrator, logger),
 	}
 	pipeline := rule.NewPipeline(ruleEngine, artistService, fixers, logger)
 
-	// Initialize NFO snapshot service
-	nfoSnapshotService := nfo.NewSnapshotService(db)
-
 	// Initialize bulk operations
 	bulkService := rule.NewBulkService(db)
-	bulkExecutor := rule.NewBulkExecutor(bulkService, artistService, orchestrator, pipeline, logger)
+	bulkExecutor := rule.NewBulkExecutor(bulkService, artistService, orchestrator, pipeline, nfoSnapshotService, logger)
 
 	logger.Info("starting stillwater",
 		slog.String("version", version.Version),

@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"os"
 	"path/filepath"
 	"sort"
 	"time"
@@ -24,7 +25,9 @@ const (
 )
 
 // NFOFixer creates missing artist.nfo files from the artist's current metadata.
-type NFOFixer struct{}
+type NFOFixer struct {
+	SnapshotService *nfo.SnapshotService
+}
 
 // CanFix returns true for the nfo_exists rule.
 func (f *NFOFixer) CanFix(v *Violation) bool {
@@ -55,12 +58,13 @@ func (f *NFOFixer) Fix(_ context.Context, a *artist.Artist, _ *Violation) (*FixR
 
 // MetadataFixer populates missing metadata (MBID, biography) from providers.
 type MetadataFixer struct {
-	orchestrator *provider.Orchestrator
+	orchestrator    *provider.Orchestrator
+	snapshotService *nfo.SnapshotService
 }
 
 // NewMetadataFixer creates a MetadataFixer.
-func NewMetadataFixer(orchestrator *provider.Orchestrator) *MetadataFixer {
-	return &MetadataFixer{orchestrator: orchestrator}
+func NewMetadataFixer(orchestrator *provider.Orchestrator, snapshotService *nfo.SnapshotService) *MetadataFixer {
+	return &MetadataFixer{orchestrator: orchestrator, snapshotService: snapshotService}
 }
 
 // CanFix returns true for nfo_has_mbid and bio_exists rules.
@@ -116,7 +120,7 @@ func (f *MetadataFixer) fixMBID(ctx context.Context, a *artist.Artist) (*FixResu
 	a.MusicBrainzID = best.MusicBrainzID
 
 	if a.NFOExists {
-		writeArtistNFO(a)
+		writeArtistNFO(a, f.snapshotService)
 	}
 
 	return &FixResult{
@@ -143,7 +147,7 @@ func (f *MetadataFixer) fixBio(ctx context.Context, a *artist.Artist) (*FixResul
 	a.Biography = result.Metadata.Biography
 
 	if a.NFOExists {
-		writeArtistNFO(a)
+		writeArtistNFO(a, f.snapshotService)
 	}
 
 	return &FixResult{
@@ -284,13 +288,22 @@ func setImageFlag(a *artist.Artist, imageType string) {
 }
 
 // writeArtistNFO writes the artist's current metadata to an artist.nfo file (best effort).
-func writeArtistNFO(a *artist.Artist) {
+// If a SnapshotService is provided, saves a snapshot of the existing NFO before overwriting.
+func writeArtistNFO(a *artist.Artist, ss *nfo.SnapshotService) {
+	target := filepath.Join(a.Path, "artist.nfo")
+
+	// Save a snapshot of the existing NFO before overwriting
+	if ss != nil {
+		if existing, err := os.ReadFile(target); err == nil && len(existing) > 0 { //nolint:gosec // G304: path from trusted artist.Path
+			_, _ = ss.Save(context.Background(), a.ID, string(existing))
+		}
+	}
+
 	nfoData := nfo.FromArtist(a)
 	var buf bytes.Buffer
 	if err := nfo.Write(&buf, nfoData); err != nil {
 		return
 	}
-	target := filepath.Join(a.Path, "artist.nfo")
 	_ = filesystem.WriteFileAtomic(target, buf.Bytes(), 0o644)
 }
 
