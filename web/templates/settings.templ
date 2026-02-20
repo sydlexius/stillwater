@@ -45,7 +45,7 @@ func providerHelpURL(name provider.ProviderName) string {
 	case provider.NameFanartTV:
 		return "https://fanart.tv/get-an-api-key/"
 	case provider.NameAudioDB:
-		return "https://www.theaudiodb.com/api-guide"
+		return "https://www.patreon.com/thedatadb"
 	case provider.NameDiscogs:
 		return "https://www.discogs.com/settings/developers"
 	case provider.NameLastFM:
@@ -268,7 +268,11 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 			></div>
 			<div>
 				<div class="font-medium text-sm">{ pk.DisplayName }</div>
-				if !pk.RequiresKey {
+				if !pk.RequiresKey && pk.HasKey {
+					<div class="text-xs text-gray-500 dark:text-gray-400">Paid key configured</div>
+				} else if !pk.RequiresKey && providerHelpURL(pk.Name) != "" {
+					<div class="text-xs text-gray-500 dark:text-gray-400">Free key built-in</div>
+				} else if !pk.RequiresKey {
 					<div class="text-xs text-gray-500 dark:text-gray-400">No API key required</div>
 				} else if pk.HasKey {
 					<div class="text-xs text-gray-500 dark:text-gray-400">Key configured</div>
@@ -278,7 +282,7 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 			</div>
 		</div>
 		<div class="flex items-center gap-2">
-			if pk.RequiresKey {
+			if pk.RequiresKey || providerHelpURL(pk.Name) != "" {
 				if providerHelpURL(pk.Name) != "" {
 					<a
 						href={ templ.SafeURL(providerHelpURL(pk.Name)) }
@@ -286,7 +290,11 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 						rel="noopener noreferrer"
 						class="text-xs text-blue-600 dark:text-blue-400 hover:underline"
 					>
-						Get key
+						if !pk.RequiresKey {
+							Upgrade key
+						} else {
+							Get key
+						}
 					</a>
 				}
 				<button

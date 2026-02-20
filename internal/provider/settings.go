@@ -126,7 +126,7 @@ func (s *SettingsService) ListProviderKeyStatuses(ctx context.Context) ([]Provid
 // providerRequiresKey returns whether a provider needs an API key.
 func providerRequiresKey(name ProviderName) bool {
 	switch name {
-	case NameMusicBrainz, NameWikidata:
+	case NameMusicBrainz, NameWikidata, NameAudioDB:
 		return false
 	default:
 		return true
