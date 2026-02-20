@@ -8,6 +8,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/auth"
+	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/nfo"
 	"github.com/sydlexius/stillwater/internal/platform"
 	"github.com/sydlexius/stillwater/internal/provider"
@@ -30,6 +31,7 @@ type RouterDeps struct {
 	BulkService        *rule.BulkService
 	BulkExecutor       *rule.BulkExecutor
 	NFOSnapshotService *nfo.SnapshotService
+	ConnectionService  *connection.Service
 	DB                 *sql.DB
 	Logger             *slog.Logger
 	BasePath           string
@@ -51,6 +53,7 @@ type Router struct {
 	bulkService        *rule.BulkService
 	bulkExecutor       *rule.BulkExecutor
 	nfoSnapshotService *nfo.SnapshotService
+	connectionService  *connection.Service
 	logger             *slog.Logger
 	basePath           string
 	staticAssets       *StaticAssets
@@ -73,6 +76,7 @@ func NewRouter(deps RouterDeps) *Router {
 		bulkService:        deps.BulkService,
 		bulkExecutor:       deps.BulkExecutor,
 		nfoSnapshotService: deps.NFOSnapshotService,
+		connectionService:  deps.ConnectionService,
 		db:                 deps.DB,
 		logger:             deps.Logger,
 		basePath:           deps.BasePath,
@@ -106,8 +110,13 @@ func (r *Router) Handler() http.Handler {
 	mux.HandleFunc("PUT "+bp+"/api/v1/platforms/{id}", wrapAuth(r.handleUpdatePlatform, authMw))
 	mux.HandleFunc("DELETE "+bp+"/api/v1/platforms/{id}", wrapAuth(r.handleDeletePlatform, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/platforms/{id}/activate", wrapAuth(r.handleSetActivePlatform, authMw))
-	mux.HandleFunc("GET "+bp+"/api/v1/connections", wrapAuth(r.handleNotImplemented, authMw))
-	mux.HandleFunc("POST "+bp+"/api/v1/connections", wrapAuth(r.handleNotImplemented, authMw))
+	// Connection routes
+	mux.HandleFunc("GET "+bp+"/api/v1/connections", wrapAuth(r.handleListConnections, authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/connections", wrapAuth(r.handleCreateConnection, authMw))
+	mux.HandleFunc("GET "+bp+"/api/v1/connections/{id}", wrapAuth(r.handleGetConnection, authMw))
+	mux.HandleFunc("PUT "+bp+"/api/v1/connections/{id}", wrapAuth(r.handleUpdateConnection, authMw))
+	mux.HandleFunc("DELETE "+bp+"/api/v1/connections/{id}", wrapAuth(r.handleDeleteConnection, authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/connections/{id}/test", wrapAuth(r.handleTestConnection, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/settings", wrapAuth(r.handleNotImplemented, authMw))
 	mux.HandleFunc("PUT "+bp+"/api/v1/settings", wrapAuth(r.handleNotImplemented, authMw))
 

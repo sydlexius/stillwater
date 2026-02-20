@@ -12,6 +12,7 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/api"
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/auth"
 	"github.com/sydlexius/stillwater/internal/config"
 	"github.com/sydlexius/stillwater/internal/database"
@@ -103,6 +104,7 @@ func run() error {
 	authService := auth.NewService(db)
 	artistService := artist.NewService(db)
 	platformService := platform.NewService(db)
+	connectionService := connection.NewService(db, encryptor)
 
 	// Initialize rule engine
 	ruleService := rule.NewService(db)
@@ -163,6 +165,7 @@ func run() error {
 		BulkService:        bulkService,
 		BulkExecutor:       bulkExecutor,
 		NFOSnapshotService: nfoSnapshotService,
+		ConnectionService:  connectionService,
 		DB:                 db,
 		Logger:             logger,
 		BasePath:           cfg.Server.BasePath,
