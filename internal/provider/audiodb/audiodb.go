@@ -14,9 +14,10 @@ import (
 	"github.com/sydlexius/stillwater/internal/provider"
 )
 
-const defaultBaseURL = "https://www.theaudiodb.com/api/v1/json"
+const defaultBaseURL = "https://www.theaudiodb.com/api/v2/json"
 
-// Adapter implements the provider.Provider interface for TheAudioDB.
+// Adapter implements the provider.Provider interface for TheAudioDB V2 API.
+// Requires a paid Patreon subscription key for API access.
 type Adapter struct {
 	client   *http.Client
 	limiter  *provider.RateLimiterMap
@@ -25,7 +26,7 @@ type Adapter struct {
 	baseURL  string
 }
 
-// New creates a TheAudioDB adapter with the default base URL.
+// New creates a TheAudioDB adapter with the default V2 base URL.
 func New(limiter *provider.RateLimiterMap, settings *provider.SettingsService, logger *slog.Logger) *Adapter {
 	return NewWithBaseURL(limiter, settings, logger, defaultBaseURL)
 }
@@ -44,7 +45,7 @@ func NewWithBaseURL(limiter *provider.RateLimiterMap, settings *provider.Setting
 // Name returns the provider name.
 func (a *Adapter) Name() provider.ProviderName { return provider.NameAudioDB }
 
-// RequiresAuth returns whether this provider needs an API key.
+// RequiresAuth returns true because TheAudioDB requires a paid Patreon key.
 func (a *Adapter) RequiresAuth() bool { return true }
 
 // SearchArtist searches TheAudioDB by artist name.
@@ -61,8 +62,8 @@ func (a *Adapter) SearchArtist(ctx context.Context, name string) ([]provider.Art
 		}
 	}
 
-	reqURL := fmt.Sprintf("%s/%s/search.php?s=%s", a.baseURL, apiKey, url.QueryEscape(name))
-	artists, err := a.fetchArtists(ctx, reqURL)
+	reqURL := fmt.Sprintf("%s/search/artist/%s", a.baseURL, url.PathEscape(name))
+	artists, err := a.fetchArtists(ctx, reqURL, apiKey)
 	if err != nil {
 		return nil, err
 	}
@@ -95,8 +96,8 @@ func (a *Adapter) GetArtist(ctx context.Context, mbid string) (*provider.ArtistM
 		}
 	}
 
-	reqURL := fmt.Sprintf("%s/%s/artist-mb.php?i=%s", a.baseURL, apiKey, url.QueryEscape(mbid))
-	artists, err := a.fetchArtists(ctx, reqURL)
+	reqURL := fmt.Sprintf("%s/lookup/artist_mb/%s", a.baseURL, url.PathEscape(mbid))
+	artists, err := a.fetchArtists(ctx, reqURL, apiKey)
 	if err != nil {
 		return nil, err
 	}
@@ -121,8 +122,8 @@ func (a *Adapter) GetImages(ctx context.Context, mbid string) ([]provider.ImageR
 		}
 	}
 
-	reqURL := fmt.Sprintf("%s/%s/artist-mb.php?i=%s", a.baseURL, apiKey, url.QueryEscape(mbid))
-	artists, err := a.fetchArtists(ctx, reqURL)
+	reqURL := fmt.Sprintf("%s/lookup/artist_mb/%s", a.baseURL, url.PathEscape(mbid))
+	artists, err := a.fetchArtists(ctx, reqURL, apiKey)
 	if err != nil {
 		return nil, err
 	}
@@ -133,15 +134,15 @@ func (a *Adapter) GetImages(ctx context.Context, mbid string) ([]provider.ImageR
 	return mapImages(&artists[0]), nil
 }
 
-// TestConnection verifies the API key is valid.
+// TestConnection verifies the API key is valid by searching for a known artist.
 func (a *Adapter) TestConnection(ctx context.Context) error {
 	apiKey, err := a.getAPIKey(ctx)
 	if err != nil {
 		return err
 	}
 
-	reqURL := fmt.Sprintf("%s/%s/search.php?s=%s", a.baseURL, apiKey, url.QueryEscape("Radiohead"))
-	_, err = a.fetchArtists(ctx, reqURL)
+	reqURL := fmt.Sprintf("%s/search/artist/%s", a.baseURL, url.PathEscape("Radiohead"))
+	_, err = a.fetchArtists(ctx, reqURL, apiKey)
 	return err
 }
 
@@ -156,11 +157,14 @@ func (a *Adapter) getAPIKey(ctx context.Context) (string, error) {
 	return apiKey, nil
 }
 
-func (a *Adapter) fetchArtists(ctx context.Context, reqURL string) ([]AudioDBArtist, error) {
+// fetchArtists performs an HTTP GET request with the API key sent in the
+// X-API-KEY header (V2 authentication).
+func (a *Adapter) fetchArtists(ctx context.Context, reqURL string, apiKey string) ([]AudioDBArtist, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
+	req.Header.Set("X-API-KEY", apiKey)
 
 	a.logger.Debug("requesting", slog.String("url", reqURL))
 

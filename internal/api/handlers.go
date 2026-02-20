@@ -60,7 +60,7 @@ func (r *Router) handleLogin(w http.ResponseWriter, req *http.Request) {
 		Path:     "/",
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
-		Secure:   req.TLS != nil,
+		Secure:   req.TLS != nil || req.Header.Get("X-Forwarded-Proto") == "https",
 		MaxAge:   86400,
 	})
 
@@ -80,6 +80,7 @@ func (r *Router) handleLogout(w http.ResponseWriter, req *http.Request) {
 		Value:    "",
 		Path:     "/",
 		HttpOnly: true,
+		Secure:   req.TLS != nil || req.Header.Get("X-Forwarded-Proto") == "https",
 		MaxAge:   -1,
 	})
 

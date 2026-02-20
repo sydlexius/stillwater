@@ -5,21 +5,23 @@ import (
 	"encoding/hex"
 	"net/http"
 	"sync"
+	"time"
 )
 
 const csrfTokenHeader = "X-CSRF-Token" //nolint:gosec // G101: not a credential, this is an HTTP header name
 const csrfCookieName = "csrf_token"
+const csrfTokenTTL = 24 * time.Hour
 
 // CSRF provides token-based CSRF protection for HTMX form submissions.
 // It validates that state-changing requests include a matching CSRF token.
 type CSRF struct {
 	mu     sync.RWMutex
-	tokens map[string]bool
+	tokens map[string]time.Time
 }
 
 // NewCSRF creates a CSRF middleware instance.
 func NewCSRF() *CSRF {
-	return &CSRF{tokens: make(map[string]bool)}
+	return &CSRF{tokens: make(map[string]time.Time)}
 }
 
 // Middleware returns the CSRF handler that validates tokens on unsafe methods.
@@ -50,7 +52,7 @@ func (c *CSRF) Middleware(next http.Handler) http.Handler {
 func (c *CSRF) ensureToken(w http.ResponseWriter, r *http.Request) {
 	if cookie, err := r.Cookie(csrfCookieName); err == nil && cookie.Value != "" {
 		c.mu.RLock()
-		exists := c.tokens[cookie.Value]
+		_, exists := c.tokens[cookie.Value]
 		c.mu.RUnlock()
 		if exists {
 			return
@@ -64,7 +66,7 @@ func (c *CSRF) ensureToken(w http.ResponseWriter, r *http.Request) {
 		Path:     "/",
 		HttpOnly: false, // JS needs to read this for HTMX headers
 		SameSite: http.SameSiteStrictMode,
-		Secure:   true,
+		Secure:   isSecureRequest(r),
 	})
 }
 
@@ -76,7 +78,11 @@ func (c *CSRF) generate() string {
 	token := hex.EncodeToString(b)
 
 	c.mu.Lock()
-	c.tokens[token] = true
+	c.tokens[token] = time.Now()
+	// Periodically clean up expired tokens to prevent memory growth
+	if len(c.tokens) > 0 && len(c.tokens)%100 == 0 {
+		c.cleanExpiredLocked()
+	}
 	c.mu.Unlock()
 
 	return token
@@ -84,6 +90,25 @@ func (c *CSRF) generate() string {
 
 func (c *CSRF) valid(token string) bool {
 	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.tokens[token]
+	created, exists := c.tokens[token]
+	c.mu.RUnlock()
+	if !exists {
+		return false
+	}
+	return time.Since(created) < csrfTokenTTL
+}
+
+func (c *CSRF) cleanExpiredLocked() {
+	cutoff := time.Now().Add(-csrfTokenTTL)
+	for t, created := range c.tokens {
+		if created.Before(cutoff) {
+			delete(c.tokens, t)
+		}
+	}
+}
+
+// isSecureRequest returns true if the request arrived over HTTPS,
+// either directly or via a reverse proxy.
+func isSecureRequest(r *http.Request) bool {
+	return r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
 }

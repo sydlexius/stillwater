@@ -17,6 +17,7 @@ type Config struct {
 	Encryption EncryptionConfig `yaml:"encryption"`
 	Music      MusicConfig      `yaml:"music"`
 	Scanner    ScannerConfig    `yaml:"scanner"`
+	Backup     BackupConfig     `yaml:"backup"`
 	Logging    LoggingConfig    `yaml:"logging"`
 }
 
@@ -52,6 +53,14 @@ type ScannerConfig struct {
 	Exclusions []string `yaml:"exclusions"`
 }
 
+// BackupConfig holds database backup settings.
+type BackupConfig struct {
+	Path           string `yaml:"path"`
+	RetentionCount int    `yaml:"retention_count"`
+	IntervalHours  int    `yaml:"interval_hours"`
+	Enabled        bool   `yaml:"enabled"`
+}
+
 // LoggingConfig holds logging settings.
 type LoggingConfig struct {
 	Level  string `yaml:"level"`
@@ -79,6 +88,11 @@ func Default() *Config {
 				"Various Artists", "Various", "VA",
 				"Soundtrack", "OST",
 			},
+		},
+		Backup: BackupConfig{
+			RetentionCount: 7,
+			IntervalHours:  24,
+			Enabled:        true,
 		},
 		Logging: LoggingConfig{
 			Level:  "info",
@@ -144,6 +158,22 @@ func (c *Config) loadFromEnv() {
 		for i := range c.Scanner.Exclusions {
 			c.Scanner.Exclusions[i] = strings.TrimSpace(c.Scanner.Exclusions[i])
 		}
+	}
+	if v := os.Getenv("SW_BACKUP_PATH"); v != "" {
+		c.Backup.Path = v
+	}
+	if v := os.Getenv("SW_BACKUP_RETENTION"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			c.Backup.RetentionCount = n
+		}
+	}
+	if v := os.Getenv("SW_BACKUP_INTERVAL"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			c.Backup.IntervalHours = n
+		}
+	}
+	if v := os.Getenv("SW_BACKUP_ENABLED"); v != "" {
+		c.Backup.Enabled = v == "true" || v == "1"
 	}
 	if v := os.Getenv("SW_LOG_LEVEL"); v != "" {
 		c.Logging.Level = v

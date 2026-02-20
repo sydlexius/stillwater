@@ -8,6 +8,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/auth"
+	"github.com/sydlexius/stillwater/internal/backup"
 	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/nfo"
 	"github.com/sydlexius/stillwater/internal/platform"
@@ -35,6 +36,7 @@ type RouterDeps struct {
 	ConnectionService  *connection.Service
 	WebhookService     *webhook.Service
 	WebhookDispatcher  *webhook.Dispatcher
+	BackupService      *backup.Service
 	DB                 *sql.DB
 	Logger             *slog.Logger
 	BasePath           string
@@ -59,6 +61,7 @@ type Router struct {
 	connectionService  *connection.Service
 	webhookService     *webhook.Service
 	webhookDispatcher  *webhook.Dispatcher
+	backupService      *backup.Service
 	logger             *slog.Logger
 	basePath           string
 	staticAssets       *StaticAssets
@@ -84,6 +87,7 @@ func NewRouter(deps RouterDeps) *Router {
 		connectionService:  deps.ConnectionService,
 		webhookService:     deps.WebhookService,
 		webhookDispatcher:  deps.WebhookDispatcher,
+		backupService:      deps.BackupService,
 		db:                 deps.DB,
 		logger:             deps.Logger,
 		basePath:           deps.BasePath,
@@ -95,13 +99,16 @@ func NewRouter(deps RouterDeps) *Router {
 func (r *Router) Handler() http.Handler {
 	authMw := middleware.Auth(r.authService)
 	optAuthMw := middleware.OptionalAuth(r.authService)
+	csrf := middleware.NewCSRF()
+	loginRL := middleware.NewLoginRateLimiter()
 	mux := http.NewServeMux()
 	bp := r.basePath
 
 	// Public routes (no auth)
+	// Login and setup are exempt from CSRF (entry points) but rate-limited
 	mux.HandleFunc("GET "+bp+"/api/v1/health", r.handleHealth)
-	mux.HandleFunc("POST "+bp+"/api/v1/auth/login", r.handleLogin)
-	mux.HandleFunc("POST "+bp+"/api/v1/auth/setup", r.handleSetup)
+	mux.Handle("POST "+bp+"/api/v1/auth/login", loginRL.Middleware(http.HandlerFunc(r.handleLogin)))
+	mux.Handle("POST "+bp+"/api/v1/auth/setup", loginRL.Middleware(http.HandlerFunc(r.handleSetup)))
 	mux.Handle("GET "+bp+"/static/", r.staticAssets.Handler(bp))
 	mux.HandleFunc("GET "+bp+"/", wrapOptionalAuth(r.handleIndex, optAuthMw))
 
@@ -139,6 +146,10 @@ func (r *Router) Handler() http.Handler {
 	mux.HandleFunc("POST "+bp+"/api/v1/webhooks/{id}/test", wrapAuth(r.handleTestWebhook, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/settings", wrapAuth(r.handleGetSettings, authMw))
 	mux.HandleFunc("PUT "+bp+"/api/v1/settings", wrapAuth(r.handleUpdateSettings, authMw))
+	// Backup routes
+	mux.HandleFunc("POST "+bp+"/api/v1/settings/backup", wrapAuth(r.handleBackupCreate, authMw))
+	mux.HandleFunc("GET "+bp+"/api/v1/settings/backup/history", wrapAuth(r.handleBackupHistory, authMw))
+	mux.HandleFunc("GET "+bp+"/api/v1/settings/backup/{filename}", wrapAuth(r.handleBackupDownload, authMw))
 
 	// Provider routes
 	mux.HandleFunc("GET "+bp+"/api/v1/providers", wrapAuth(r.handleListProviders, authMw))
@@ -194,8 +205,31 @@ func (r *Router) Handler() http.Handler {
 	mux.HandleFunc("GET "+bp+"/artists/{id}/nfo", wrapOptionalAuth(r.handleNFODiffPage, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/settings", wrapOptionalAuth(r.handleSettingsPage, optAuthMw))
 
-	// Apply logging to all requests
-	return middleware.Logging(r.logger)(mux)
+	// Apply middleware chain: security headers > logging > CSRF
+	// Login and setup are exempt from CSRF (registered with rate limiter above)
+	csrfExempt := []string{
+		bp + "/api/v1/auth/login",
+		bp + "/api/v1/auth/setup",
+	}
+	var handler http.Handler = mux
+	handler = csrfWithExemptions(csrf, handler, csrfExempt)
+	handler = middleware.Logging(r.logger)(handler)
+	handler = middleware.SecurityHeaders(handler)
+	return handler
+}
+
+// csrfWithExemptions wraps CSRF middleware but skips validation for exempt paths.
+func csrfWithExemptions(csrf *middleware.CSRF, next http.Handler, exemptPaths []string) http.Handler {
+	csrfHandler := csrf.Middleware(next)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		for _, path := range exemptPaths {
+			if r.URL.Path == path {
+				next.ServeHTTP(w, r)
+				return
+			}
+		}
+		csrfHandler.ServeHTTP(w, r)
+	})
 }
 
 // wrapAuth wraps a handler function with auth middleware.
