@@ -32,7 +32,7 @@ type violationSummary struct {
 }
 
 // handleReportHealth returns the current library health summary.
-// Uses stored health_score values from the database for performance.
+// Evaluates all artists against active rules and records a health snapshot.
 // GET /api/v1/reports/health
 func (r *Router) handleReportHealth(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
@@ -59,7 +59,9 @@ func (r *Router) handleReportHealth(w http.ResponseWriter, req *http.Request) {
 		params.Page++
 		more, _, err := r.artistService.List(ctx, params)
 		if err != nil {
-			break
+			r.logger.Error("listing artists for health report (page)", "page", params.Page, "error", err)
+			writeError(w, req, http.StatusInternalServerError, "failed to generate health report")
+			return
 		}
 		allArtists = append(allArtists, more...)
 	}

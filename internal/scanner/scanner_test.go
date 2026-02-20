@@ -453,11 +453,11 @@ func TestScan_HealthScoreIntegration(t *testing.T) {
 	if a.HealthScore <= 0 {
 		t.Errorf("HealthScore = %v, want > 0", a.HealthScore)
 	}
-	// Missing: logo, thumb quality checks (no valid image data) -- should not be 100
-	// But thumb_square and thumb_min_res will fail to read dimensions (fake jpg), so they
-	// just skip. We have 8 rules, pass: nfo_exists, nfo_has_mbid, thumb_exists, fanart_exists, bio_exists = 5
-	// fail: logo_exists = 1, thumb_square skips (returns nil), thumb_min_res skips (returns nil)
-	// So 7 pass out of 8 = 87.5%
+	// Missing: logo -- should not be 100
+	// thumb_square and thumb_min_res cannot read dimensions from the fake jpg data,
+	// so they return nil (no violation), which counts as a pass in the health score.
+	// 8 rules total: 7 pass (nfo_exists, nfo_has_mbid, thumb_exists, fanart_exists,
+	// bio_exists, thumb_square, thumb_min_res), 1 fail (logo_exists) = 7/8 = 87.5%
 	if a.HealthScore < 50 {
 		t.Errorf("HealthScore = %v, expected at least 50 for an artist with most assets", a.HealthScore)
 	}
