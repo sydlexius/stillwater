@@ -1,0 +1,20 @@
+FROM alpine:3.21
+
+RUN apk add --no-cache ca-certificates tzdata su-exec
+
+RUN addgroup -g 1000 stillwater && \
+    adduser -u 1000 -G stillwater -s /bin/sh -D stillwater
+
+RUN mkdir -p /data /music && chown stillwater:stillwater /data /music
+
+COPY stillwater /usr/local/bin/stillwater
+COPY web/static /app/web/static
+COPY build/docker/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+EXPOSE 8080
+
+VOLUME ["/data", "/music"]
+
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["stillwater"]
