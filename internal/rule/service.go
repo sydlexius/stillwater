@@ -180,6 +180,65 @@ func (s *Service) RecordHealthSnapshot(ctx context.Context, totalArtists, compli
 	return nil
 }
 
+// GetHealthHistory returns health snapshots within a time range, ordered by recorded_at.
+// If from or to are zero-valued, defaults to the last 90 days.
+func (s *Service) GetHealthHistory(ctx context.Context, from, to time.Time) ([]HealthSnapshot, error) {
+	if from.IsZero() {
+		from = time.Now().UTC().AddDate(0, -3, 0)
+	}
+	if to.IsZero() {
+		to = time.Now().UTC()
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, total_artists, compliant_artists, score, recorded_at
+		FROM health_history
+		WHERE recorded_at BETWEEN ? AND ?
+		ORDER BY recorded_at ASC
+	`, from.Format(time.RFC3339), to.Format(time.RFC3339))
+	if err != nil {
+		return nil, fmt.Errorf("querying health history: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck
+
+	var snapshots []HealthSnapshot
+	for rows.Next() {
+		snap, err := scanHealthSnapshot(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scanning health snapshot: %w", err)
+		}
+		snapshots = append(snapshots, *snap)
+	}
+	return snapshots, rows.Err()
+}
+
+// GetLatestHealthSnapshot returns the most recent health snapshot, or nil if none exist.
+func (s *Service) GetLatestHealthSnapshot(ctx context.Context) (*HealthSnapshot, error) {
+	row := s.db.QueryRowContext(ctx, `
+		SELECT id, total_artists, compliant_artists, score, recorded_at
+		FROM health_history
+		ORDER BY recorded_at DESC LIMIT 1
+	`)
+	snap, err := scanHealthSnapshot(row)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("getting latest health snapshot: %w", err)
+	}
+	return snap, nil
+}
+
+func scanHealthSnapshot(row interface{ Scan(...any) error }) (*HealthSnapshot, error) {
+	var snap HealthSnapshot
+	var recordedAt string
+	err := row.Scan(&snap.ID, &snap.TotalArtists, &snap.CompliantArtists, &snap.Score, &recordedAt)
+	if err != nil {
+		return nil, err
+	}
+	snap.RecordedAt = parseTime(recordedAt)
+	return &snap, nil
+}
+
 // scanRule scans a database row into a Rule struct.
 func scanRule(row interface{ Scan(...any) error }) (*Rule, error) {
 	var r Rule
