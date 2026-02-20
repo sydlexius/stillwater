@@ -76,7 +76,7 @@ func (r *Router) renderBackupList(w http.ResponseWriter, backups []backup.Backup
 		)
 	}
 	html += `</tbody></table>`
-	w.Write([]byte(html)) //nolint:errcheck
+	w.Write([]byte(html)) //nolint:errcheck,gosec // G705: all values are from validated backup filenames, formatBytes, and time.Format
 }
 
 func formatBytes(b int64) string {

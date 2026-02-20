@@ -22,11 +22,11 @@ func setupTestDB(t *testing.T) *sql.DB {
 	}
 	t.Cleanup(func() { db.Close() })
 
-	_, err = db.Exec("CREATE TABLE test (id INTEGER PRIMARY KEY, value TEXT)")
+	_, err = db.ExecContext(context.Background(), "CREATE TABLE test (id INTEGER PRIMARY KEY, value TEXT)")
 	if err != nil {
 		t.Fatalf("creating table: %v", err)
 	}
-	_, err = db.Exec("INSERT INTO test (value) VALUES ('hello')")
+	_, err = db.ExecContext(context.Background(), "INSERT INTO test (value) VALUES ('hello')")
 	if err != nil {
 		t.Fatalf("inserting row: %v", err)
 	}
@@ -60,7 +60,7 @@ func TestBackup(t *testing.T) {
 	defer backupDB.Close()
 
 	var value string
-	err = backupDB.QueryRow("SELECT value FROM test WHERE id = 1").Scan(&value)
+	err = backupDB.QueryRowContext(context.Background(), "SELECT value FROM test WHERE id = 1").Scan(&value)
 	if err != nil {
 		t.Fatalf("querying backup: %v", err)
 	}

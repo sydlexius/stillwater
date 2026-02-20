@@ -145,7 +145,7 @@ func (s *Service) BackupDir() string {
 	return s.backupDir
 }
 
-// StartScheduler runs backups on a fixed interval until the context is cancelled.
+// StartScheduler runs backups on a fixed interval until the context is canceled.
 func (s *Service) StartScheduler(ctx context.Context, interval time.Duration) {
 	s.logger.Info("backup scheduler started",
 		slog.String("interval", interval.String()),

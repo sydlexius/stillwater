@@ -299,13 +299,13 @@ func resolveEncryptionKey(cfg *config.Config, logger *slog.Logger) (string, erro
 	}
 
 	// Persist to file
-	if err := os.MkdirAll(dataDir, 0o750); err != nil {
+	if err := os.MkdirAll(dataDir, 0o750); err != nil { //nolint:gosec // G304: dataDir derived from trusted config, not user input
 		logger.Warn("could not create data directory for encryption key",
 			slog.String("path", dataDir), slog.Any("error", err))
 		return key, nil
 	}
 
-	if err := os.WriteFile(keyFile, []byte(key+"\n"), 0o600); err != nil {
+	if err := os.WriteFile(keyFile, []byte(key+"\n"), 0o600); err != nil { //nolint:gosec // G304: keyFile derived from trusted config, not user input
 		logger.Warn("could not save encryption key to file",
 			slog.String("path", keyFile), slog.Any("error", err))
 	} else {
@@ -334,7 +334,7 @@ func resetCredentials() error {
 	if err != nil {
 		return fmt.Errorf("opening database: %w", err)
 	}
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 
 	if err := database.Migrate(db); err != nil {
 		return fmt.Errorf("running migrations: %w", err)
