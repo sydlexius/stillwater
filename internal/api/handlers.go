@@ -24,8 +24,10 @@ func (r *Router) handleHealth(w http.ResponseWriter, req *http.Request) {
 // assets returns cache-busted asset paths for templates.
 func (r *Router) assets() templates.AssetPaths {
 	return templates.AssetPaths{
-		CSS:  r.staticAssets.Path("/css/styles.css"),
-		HTMX: r.staticAssets.Path("/js/htmx.min.js"),
+		CSS:        r.staticAssets.Path("/css/styles.css"),
+		HTMX:       r.staticAssets.Path("/js/htmx.min.js"),
+		CropperJS:  r.staticAssets.Path("/js/cropper.min.js"),
+		CropperCSS: r.staticAssets.Path("/css/cropper.min.css"),
 	}
 }
 

@@ -1,0 +1,57 @@
+package components
+
+import "fmt"
+
+templ ImageCompare(artistID string) {
+	<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+		<div id="compare-left" class="border border-gray-200 dark:border-gray-700 rounded-lg p-3 min-h-[200px]">
+			<p class="text-xs text-gray-400 dark:text-gray-500 text-center py-8">
+				Click an image from the search results to compare
+			</p>
+		</div>
+		<div id="compare-right" class="border border-gray-200 dark:border-gray-700 rounded-lg p-3 min-h-[200px]">
+			<p class="text-xs text-gray-400 dark:text-gray-500 text-center py-8">
+				Click another image to compare side-by-side
+			</p>
+		</div>
+	</div>
+}
+
+// ComparePanel renders one side of the comparison with image metadata and a save button.
+templ ComparePanel(artistID string, url string, source string, imageType string, width int, height int) {
+	<div class="space-y-2">
+		<div class="aspect-square flex items-center justify-center overflow-hidden bg-gray-100 dark:bg-gray-900 rounded">
+			<img
+				src={ url }
+				alt={ imageType + " from " + source }
+				class="max-w-full max-h-full object-contain"
+			/>
+		</div>
+		<dl class="text-xs space-y-1">
+			<div class="flex justify-between">
+				<dt class="text-gray-500 dark:text-gray-400">Source</dt>
+				<dd>{ source }</dd>
+			</div>
+			<div class="flex justify-between">
+				<dt class="text-gray-500 dark:text-gray-400">Type</dt>
+				<dd>{ imageType }</dd>
+			</div>
+			if width > 0 && height > 0 {
+				<div class="flex justify-between">
+					<dt class="text-gray-500 dark:text-gray-400">Resolution</dt>
+					<dd>{ fmt.Sprintf("%dx%d", width, height) }</dd>
+				</div>
+			}
+		</dl>
+		<button
+			type="button"
+			class="w-full text-xs px-2 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+			hx-post={ fmt.Sprintf("/api/v1/artists/%s/images/fetch", artistID) }
+			hx-vals={ fmt.Sprintf(`{"url":"%s","type":"%s"}`, url, imageType) }
+			hx-swap="none"
+			hx-confirm="Save this image?"
+		>
+			Use this one
+		</button>
+	</div>
+}

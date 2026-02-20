@@ -2,6 +2,10 @@
 /stillwater
 /stillwater.exe
 
+# Standalone tool binaries
+/tailwindcss
+/tailwindcss.exe
+
 # Data
 data/
 *.db

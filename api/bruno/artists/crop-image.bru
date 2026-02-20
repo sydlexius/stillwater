@@ -1,0 +1,38 @@
+meta {
+  name: Crop Image
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{apiBase}}/artists/{{artistId}}/images/crop
+  body: json
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+body:json {
+  {
+    "image_data": "<base64-encoded-image-data>",
+    "type": "thumb",
+    "x": 0,
+    "y": 0,
+    "width": 500,
+    "height": 500
+  }
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("should return saved filenames", function() {
+    expect(res.body.status).to.equal("ok");
+    expect(res.body.saved).to.be.an("array");
+    expect(res.body.type).to.equal("thumb");
+  });
+}

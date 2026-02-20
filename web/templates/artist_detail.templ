@@ -175,6 +175,12 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 							@components.StatusBadge(data.Artist.LogoExists, "Logo")
 							@components.StatusBadge(data.Artist.BannerExists, "Banner")
 						</div>
+						<a
+							href={ templ.SafeURL("/artists/" + data.Artist.ID + "/images") }
+							class="mt-3 inline-block text-sm text-blue-600 dark:text-blue-400 hover:underline"
+						>
+							Manage Images
+						</a>
 					</section>
 					<section class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
 						<h2 class="text-lg font-semibold mb-3">Provider IDs</h2>

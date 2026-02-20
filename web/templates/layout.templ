@@ -2,8 +2,10 @@ package templates
 
 // AssetPaths holds cache-busted URLs for static assets.
 type AssetPaths struct {
-	CSS  string
-	HTMX string
+	CSS       string
+	HTMX      string
+	CropperJS string
+	CropperCSS string
 }
 
 templ Layout(title string, assets AssetPaths) {

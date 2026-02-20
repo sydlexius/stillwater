@@ -1,0 +1,29 @@
+meta {
+  name: Search Images
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{apiBase}}/artists/{{artistId}}/images/search
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+params:query {
+  ~type: thumb
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("should return images array", function() {
+    expect(res.body.images).to.be.an("array");
+  });
+}

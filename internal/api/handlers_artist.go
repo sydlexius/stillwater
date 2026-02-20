@@ -163,6 +163,28 @@ func (r *Router) handleArtistDetailPage(w http.ResponseWriter, req *http.Request
 	renderTempl(w, req, templates.ArtistDetailPage(r.assets(), data))
 }
 
+// handleArtistImagesPage renders the image management page.
+// GET /artists/{id}/images
+func (r *Router) handleArtistImagesPage(w http.ResponseWriter, req *http.Request) {
+	userID := middleware.UserIDFromContext(req.Context())
+	if userID == "" {
+		renderTempl(w, req, templates.LoginPage(r.assets()))
+		return
+	}
+
+	id := req.PathValue("id")
+	a, err := r.artistService.GetByID(req.Context(), id)
+	if err != nil {
+		http.Error(w, "artist not found", http.StatusNotFound)
+		return
+	}
+
+	data := templates.ImageSearchData{
+		Artist: *a,
+	}
+	renderTempl(w, req, templates.ImageSearchPage(r.assets(), data))
+}
+
 // isHTMXRequest checks if the request was made by HTMX.
 func isHTMXRequest(r *http.Request) bool {
 	return r.Header.Get("HX-Request") == "true"

@@ -68,8 +68,8 @@ func TestGetByID(t *testing.T) {
 	if !p.NFOEnabled {
 		t.Error("Emby should have NFO enabled")
 	}
-	if p.ImageNaming.Thumb != "folder.jpg" {
-		t.Errorf("ImageNaming.Thumb = %q, want folder.jpg", p.ImageNaming.Thumb)
+	if p.ImageNaming.PrimaryName("thumb") != "folder.jpg" {
+		t.Errorf("ImageNaming.Thumb primary = %q, want folder.jpg", p.ImageNaming.PrimaryName("thumb"))
 	}
 }
 
@@ -147,10 +147,10 @@ func TestCreate_CustomProfile(t *testing.T) {
 		NFOEnabled: true,
 		NFOFormat:  "kodi",
 		ImageNaming: ImageNaming{
-			Thumb:  "cover.jpg",
-			Fanart: "background.jpg",
-			Logo:   "logo.png",
-			Banner: "banner.jpg",
+			Thumb:  []string{"cover.jpg"},
+			Fanart: []string{"background.jpg"},
+			Logo:   []string{"logo.png"},
+			Banner: []string{"banner.jpg"},
 		},
 	}
 	if err := svc.Create(ctx, p); err != nil {
@@ -170,8 +170,8 @@ func TestCreate_CustomProfile(t *testing.T) {
 	if got.IsBuiltin {
 		t.Error("custom profile should not be built-in")
 	}
-	if got.ImageNaming.Thumb != "cover.jpg" {
-		t.Errorf("ImageNaming.Thumb = %q, want cover.jpg", got.ImageNaming.Thumb)
+	if got.ImageNaming.PrimaryName("thumb") != "cover.jpg" {
+		t.Errorf("ImageNaming.Thumb primary = %q, want cover.jpg", got.ImageNaming.PrimaryName("thumb"))
 	}
 }
 
@@ -187,10 +187,10 @@ func TestUpdate(t *testing.T) {
 
 	p.NFOEnabled = false
 	p.ImageNaming = ImageNaming{
-		Thumb:  "artist.jpg",
-		Fanart: "fanart.jpg",
-		Logo:   "logo.png",
-		Banner: "banner.jpg",
+		Thumb:  []string{"artist.jpg"},
+		Fanart: []string{"fanart.jpg"},
+		Logo:   []string{"logo.png"},
+		Banner: []string{"banner.jpg"},
 	}
 	if err := svc.Update(ctx, p); err != nil {
 		t.Fatalf("Update: %v", err)
@@ -203,8 +203,8 @@ func TestUpdate(t *testing.T) {
 	if got.NFOEnabled {
 		t.Error("NFOEnabled should be false after update")
 	}
-	if got.ImageNaming.Thumb != "artist.jpg" {
-		t.Errorf("ImageNaming.Thumb = %q, want artist.jpg", got.ImageNaming.Thumb)
+	if got.ImageNaming.PrimaryName("thumb") != "artist.jpg" {
+		t.Errorf("ImageNaming.Thumb primary = %q, want artist.jpg", got.ImageNaming.PrimaryName("thumb"))
 	}
 }
 
@@ -240,19 +240,66 @@ func TestDelete_BuiltinProfile_Fails(t *testing.T) {
 
 func TestImageNamingMarshal(t *testing.T) {
 	n := ImageNaming{
-		Thumb:  "folder.jpg",
-		Fanart: "fanart.jpg",
-		Logo:   "logo.png",
-		Banner: "banner.jpg",
+		Thumb:  []string{"folder.jpg", "artist.jpg"},
+		Fanart: []string{"fanart.jpg"},
+		Logo:   []string{"logo.png"},
+		Banner: []string{"banner.jpg"},
 	}
 
 	data := MarshalImageNaming(n)
 	got := UnmarshalImageNaming(data)
 
-	if got.Thumb != n.Thumb {
-		t.Errorf("Thumb = %q, want %q", got.Thumb, n.Thumb)
+	if len(got.Thumb) != 2 || got.Thumb[0] != "folder.jpg" || got.Thumb[1] != "artist.jpg" {
+		t.Errorf("Thumb = %v, want [folder.jpg artist.jpg]", got.Thumb)
 	}
-	if got.Fanart != n.Fanart {
-		t.Errorf("Fanart = %q, want %q", got.Fanart, n.Fanart)
+	if len(got.Fanart) != 1 || got.Fanart[0] != "fanart.jpg" {
+		t.Errorf("Fanart = %v, want [fanart.jpg]", got.Fanart)
+	}
+}
+
+func TestImageNamingUnmarshal_LegacyFormat(t *testing.T) {
+	// Legacy format: single strings per type
+	legacy := `{"thumb":"folder.jpg","fanart":"fanart.jpg","logo":"logo.png","banner":"banner.jpg"}`
+	got := UnmarshalImageNaming(legacy)
+
+	if len(got.Thumb) != 1 || got.Thumb[0] != "folder.jpg" {
+		t.Errorf("Thumb = %v, want [folder.jpg]", got.Thumb)
+	}
+	if len(got.Logo) != 1 || got.Logo[0] != "logo.png" {
+		t.Errorf("Logo = %v, want [logo.png]", got.Logo)
+	}
+}
+
+func TestImageNaming_PrimaryName(t *testing.T) {
+	n := ImageNaming{
+		Thumb:  []string{"folder.jpg", "artist.jpg"},
+		Fanart: []string{"fanart.jpg"},
+	}
+
+	if got := n.PrimaryName("thumb"); got != "folder.jpg" {
+		t.Errorf("PrimaryName(thumb) = %q, want folder.jpg", got)
+	}
+	if got := n.PrimaryName("fanart"); got != "fanart.jpg" {
+		t.Errorf("PrimaryName(fanart) = %q, want fanart.jpg", got)
+	}
+	if got := n.PrimaryName("logo"); got != "" {
+		t.Errorf("PrimaryName(logo) = %q, want empty", got)
+	}
+}
+
+func TestImageNaming_ToMap(t *testing.T) {
+	n := ImageNaming{
+		Thumb:  []string{"folder.jpg"},
+		Fanart: []string{"fanart.jpg"},
+		Logo:   []string{"logo.png"},
+		Banner: []string{"banner.jpg"},
+	}
+
+	m := n.ToMap()
+	if len(m) != 4 {
+		t.Errorf("expected 4 entries, got %d", len(m))
+	}
+	if m["thumb"][0] != "folder.jpg" {
+		t.Errorf("thumb[0] = %q, want folder.jpg", m["thumb"][0])
 	}
 }

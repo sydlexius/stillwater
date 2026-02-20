@@ -1,0 +1,32 @@
+meta {
+  name: Upload Image
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{apiBase}}/artists/{{artistId}}/images/upload
+  body: multipartForm
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+body:multipart-form {
+  type: thumb
+  file: @file(test-image.jpg)
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("should return saved filenames", function() {
+    expect(res.body.status).to.equal("ok");
+    expect(res.body.saved).to.be.an("array");
+    expect(res.body.type).to.equal("thumb");
+  });
+}

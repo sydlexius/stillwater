@@ -1,0 +1,83 @@
+package components
+
+import (
+	"fmt"
+	"strconv"
+
+	"github.com/sydlexius/stillwater/internal/provider"
+)
+
+// sourceBadgeColor returns a Tailwind color class for the provider source badge.
+func sourceBadgeColor(source string) string {
+	switch source {
+	case "fanarttv":
+		return "bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200"
+	case "audiodb":
+		return "bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200"
+	case "discogs":
+		return "bg-orange-100 dark:bg-orange-900 text-orange-800 dark:text-orange-200"
+	case "musicbrainz":
+		return "bg-amber-100 dark:bg-amber-900 text-amber-800 dark:text-amber-200"
+	default:
+		return "bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200"
+	}
+}
+
+// isLowResolution returns true if the image dimensions indicate low quality.
+func isLowResolution(w, h int) bool {
+	return (w > 0 && w < 500) || (h > 0 && h < 500)
+}
+
+templ ImageCard(artistID string, img provider.ImageResult) {
+	<div
+		class={
+			"relative rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden group hover:border-blue-400 dark:hover:border-blue-500 transition-colors",
+		}
+	>
+		<div
+			class={
+				"aspect-square flex items-center justify-center overflow-hidden",
+				templ.KV("checkered-bg", string(img.Type) == "logo" || string(img.Type) == "hdlogo"),
+				templ.KV("bg-gray-100 dark:bg-gray-900", string(img.Type) != "logo" && string(img.Type) != "hdlogo"),
+			}
+		>
+			<img
+				src={ img.URL }
+				alt={ string(img.Type) + " from " + img.Source }
+				class="max-w-full max-h-full object-contain"
+				loading="lazy"
+			/>
+		</div>
+		<div class="p-2 space-y-1">
+			<div class="flex items-center gap-1 flex-wrap">
+				<span class={ "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium", sourceBadgeColor(img.Source) }>
+					{ provider.ProviderName(img.Source).DisplayName() }
+				</span>
+				<span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-400">
+					{ string(img.Type) }
+				</span>
+			</div>
+			<div class="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+				if img.Width > 0 && img.Height > 0 {
+					<span>{ strconv.Itoa(img.Width) }x{ strconv.Itoa(img.Height) }</span>
+				}
+				if img.Likes > 0 {
+					<span>{ strconv.Itoa(img.Likes) } likes</span>
+				}
+			</div>
+			if isLowResolution(img.Width, img.Height) {
+				<div class="text-xs text-amber-600 dark:text-amber-400">Low resolution</div>
+			}
+			<button
+				type="button"
+				class="w-full mt-1 text-xs px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+				hx-post={ fmt.Sprintf("/api/v1/artists/%s/images/fetch", artistID) }
+				hx-vals={ fmt.Sprintf(`{"url":"%s","type":"%s"}`, img.URL, string(img.Type)) }
+				hx-swap="none"
+				hx-confirm="Save this image?"
+			>
+				Save
+			</button>
+		</div>
+	</div>
+}

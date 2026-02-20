@@ -83,7 +83,14 @@ func (r *Router) Handler() http.Handler {
 	mux.HandleFunc("POST "+bp+"/api/v1/providers/search", wrapAuth(r.handleProviderSearch, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/providers/fetch", wrapAuth(r.handleProviderFetch, authMw))
 
+	// Image routes
+	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/images/upload", wrapAuth(r.handleImageUpload, authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/images/fetch", wrapAuth(r.handleImageFetch, authMw))
+	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/images/search", wrapAuth(r.handleImageSearch, authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/images/crop", wrapAuth(r.handleImageCrop, authMw))
+
 	// Web routes (auth checked in handlers)
+	mux.HandleFunc("GET "+bp+"/artists/{id}/images", r.handleArtistImagesPage)
 	mux.HandleFunc("GET "+bp+"/artists/{id}", r.handleArtistDetailPage)
 	mux.HandleFunc("GET "+bp+"/artists", r.handleArtistsPage)
 	mux.HandleFunc("GET "+bp+"/settings", r.handleSettingsPage)

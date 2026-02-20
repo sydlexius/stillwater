@@ -2,10 +2,16 @@ package templates
 
 import (
 	"encoding/json"
+	"strings"
 
 	"github.com/sydlexius/stillwater/internal/platform"
 	"github.com/sydlexius/stillwater/internal/provider"
 )
+
+// joinNames joins a string slice with ", " for display.
+func joinNames(names []string) string {
+	return strings.Join(names, ", ")
+}
 
 // SettingsData holds the data for the settings page.
 type SettingsData struct {
@@ -88,19 +94,19 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 							</div>
 							<div>
 								<span class="font-medium text-gray-500 dark:text-gray-400">Thumbnail</span>
-								<p class="mt-1">{ data.ActiveProfile.ImageNaming.Thumb }</p>
+								<p class="mt-1">{ joinNames(data.ActiveProfile.ImageNaming.Thumb) }</p>
 							</div>
 							<div>
 								<span class="font-medium text-gray-500 dark:text-gray-400">Fanart</span>
-								<p class="mt-1">{ data.ActiveProfile.ImageNaming.Fanart }</p>
+								<p class="mt-1">{ joinNames(data.ActiveProfile.ImageNaming.Fanart) }</p>
 							</div>
 							<div>
 								<span class="font-medium text-gray-500 dark:text-gray-400">Logo</span>
-								<p class="mt-1">{ data.ActiveProfile.ImageNaming.Logo }</p>
+								<p class="mt-1">{ joinNames(data.ActiveProfile.ImageNaming.Logo) }</p>
 							</div>
 							<div>
 								<span class="font-medium text-gray-500 dark:text-gray-400">Banner</span>
-								<p class="mt-1">{ data.ActiveProfile.ImageNaming.Banner }</p>
+								<p class="mt-1">{ joinNames(data.ActiveProfile.ImageNaming.Banner) }</p>
 							</div>
 						</div>
 					</div>
@@ -323,8 +329,8 @@ templ profileCard(p platform.Profile) {
 					<span class="text-gray-400 dark:text-gray-500">Disabled</span>
 				}
 			</div>
-			<div>Thumb: { p.ImageNaming.Thumb }</div>
-			<div>Fanart: { p.ImageNaming.Fanart }</div>
+			<div>Thumb: { joinNames(p.ImageNaming.Thumb) }</div>
+			<div>Fanart: { joinNames(p.ImageNaming.Fanart) }</div>
 		</div>
 	</div>
 }
