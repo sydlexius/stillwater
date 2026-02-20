@@ -23,10 +23,13 @@ linters:
     gosec:
       excludes:
         - G104  # Unhandled errors (too noisy for http.Error calls)
+        - G117  # Struct field matching secret pattern (false positive on API key input fields)
     revive:
       rules:
         - name: exported
           severity: warning
+          arguments:
+            - disableStutteringCheck
         - name: unexported-return
           severity: warning
     misspell:

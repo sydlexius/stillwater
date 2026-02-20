@@ -164,7 +164,7 @@ func (a *Adapter) fetchArtists(ctx context.Context, reqURL string) ([]AudioDBArt
 
 	a.logger.Debug("requesting", slog.String("url", reqURL))
 
-	resp, err := a.client.Do(req)
+	resp, err := a.client.Do(req) //nolint:gosec // URL constructed from trusted base + API params
 	if err != nil {
 		return nil, &provider.ErrProviderUnavailable{
 			Provider: provider.NameAudioDB,

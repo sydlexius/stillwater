@@ -22,7 +22,7 @@ func setupTest(t *testing.T) (*provider.RateLimiterMap, *provider.SettingsServic
 		t.Fatalf("opening test db: %v", err)
 	}
 	t.Cleanup(func() { db.Close() })
-	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT (datetime('now')))`)
+	_, err = db.ExecContext(context.Background(), `CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT (datetime('now')))`)
 	if err != nil {
 		t.Fatalf("creating settings table: %v", err)
 	}

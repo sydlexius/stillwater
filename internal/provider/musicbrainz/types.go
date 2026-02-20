@@ -37,11 +37,11 @@ type MBLifeSpan struct {
 
 // MBAlias represents an alternative name for an artist.
 type MBAlias struct {
-	Name    string `json:"name"`
+	Name     string `json:"name"`
 	SortName string `json:"sort-name"`
-	Type    string `json:"type"`
-	Locale  string `json:"locale"`
-	Primary bool   `json:"primary"`
+	Type     string `json:"type"`
+	Locale   string `json:"locale"`
+	Primary  bool   `json:"primary"`
 }
 
 // MBTag represents a user-submitted tag.
@@ -59,15 +59,15 @@ type MBGenre struct {
 
 // MBRelation represents a relationship between entities.
 type MBRelation struct {
-	Type       string          `json:"type"`
-	TargetType string          `json:"target-type"`
-	Direction  string          `json:"direction"`
-	Attributes []string        `json:"attributes"`
-	Begin      string          `json:"begin"`
-	End        string          `json:"end"`
-	Ended      bool            `json:"ended"`
-	Artist     *MBArtist       `json:"artist,omitempty"`
-	URL        *MBRelationURL  `json:"url,omitempty"`
+	Type       string         `json:"type"`
+	TargetType string         `json:"target-type"`
+	Direction  string         `json:"direction"`
+	Attributes []string       `json:"attributes"`
+	Begin      string         `json:"begin"`
+	End        string         `json:"end"`
+	Ended      bool           `json:"ended"`
+	Artist     *MBArtist      `json:"artist,omitempty"`
+	URL        *MBRelationURL `json:"url,omitempty"`
 }
 
 // MBRelationURL holds URL data within a relation.

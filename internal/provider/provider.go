@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// ProviderName uniquely identifies a metadata provider. //nolint:revive // stuttering accepted for clarity
+// ProviderName uniquely identifies a metadata provider.
 type ProviderName string
 
 // Known provider names.

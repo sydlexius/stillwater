@@ -88,7 +88,7 @@ func (s *SettingsService) HasAPIKey(ctx context.Context, name ProviderName) (boo
 	return count > 0, nil
 }
 
-// ProviderKeyStatus describes the API key configuration state for a provider. //nolint:revive // stuttering accepted for clarity
+// ProviderKeyStatus describes the API key configuration state for a provider.
 type ProviderKeyStatus struct {
 	Name        ProviderName `json:"name"`
 	DisplayName string       `json:"display_name"`

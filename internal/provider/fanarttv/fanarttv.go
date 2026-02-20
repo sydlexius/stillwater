@@ -41,8 +41,11 @@ func NewWithBaseURL(limiter *provider.RateLimiterMap, settings *provider.Setting
 	}
 }
 
+// Name returns the provider name.
 func (a *Adapter) Name() provider.ProviderName { return provider.NameFanartTV }
-func (a *Adapter) RequiresAuth() bool           { return true }
+
+// RequiresAuth returns whether this provider needs an API key.
+func (a *Adapter) RequiresAuth() bool { return true }
 
 // SearchArtist is not supported by Fanart.tv (lookup by MBID only).
 func (a *Adapter) SearchArtist(_ context.Context, _ string) ([]provider.ArtistSearchResult, error) {
@@ -79,14 +82,14 @@ func (a *Adapter) GetImages(ctx context.Context, mbid string) ([]provider.ImageR
 
 	a.logger.Debug("requesting images", slog.String("mbid", mbid))
 
-	resp, err := a.client.Do(req)
+	resp, err := a.client.Do(req) //nolint:gosec // URL constructed from trusted base + MBID
 	if err != nil {
 		return nil, &provider.ErrProviderUnavailable{
 			Provider: provider.NameFanartTV,
 			Cause:    err,
 		}
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode == http.StatusNotFound {
 		return nil, &provider.ErrNotFound{Provider: provider.NameFanartTV, ID: mbid}

@@ -28,15 +28,15 @@ type Pagination struct {
 
 // ArtistDetail is the full artist response from Discogs.
 type ArtistDetail struct {
-	ID             int           `json:"id"`
-	Name           string        `json:"name"`
-	Realname       string        `json:"realname"`
-	Profile        string        `json:"profile"`
-	URLs           []string      `json:"urls"`
-	Aliases        []ArtistRef   `json:"aliases"`
-	Members        []ArtistRef   `json:"members"`
-	Images         []Image       `json:"images"`
-	DataQuality    string        `json:"data_quality"`
+	ID          int         `json:"id"`
+	Name        string      `json:"name"`
+	Realname    string      `json:"realname"`
+	Profile     string      `json:"profile"`
+	URLs        []string    `json:"urls"`
+	Aliases     []ArtistRef `json:"aliases"`
+	Members     []ArtistRef `json:"members"`
+	Images      []Image     `json:"images"`
+	DataQuality string      `json:"data_quality"`
 }
 
 // ArtistRef is a reference to another artist.
