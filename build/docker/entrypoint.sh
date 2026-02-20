@@ -18,5 +18,12 @@ fi
 # Ensure data directory ownership
 chown -R stillwater:stillwater /data
 
-# Run as the configured user
-exec su-exec stillwater:stillwater "$@"
+# If first argument is a subcommand, prepend the binary path
+case "${1:-}" in
+    reset-credentials)
+        exec su-exec stillwater:stillwater /app/stillwater "$@"
+        ;;
+    *)
+        exec su-exec stillwater:stillwater "$@"
+        ;;
+esac

@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -34,6 +36,18 @@ import (
 )
 
 func main() {
+	// Handle subcommands before starting the server
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "reset-credentials":
+			if err := resetCredentials(); err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				os.Exit(1)
+			}
+			return
+		}
+	}
+
 	if err := run(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
@@ -92,14 +106,14 @@ func run() error {
 
 	logger.Info("database ready", slog.String("path", cfg.Database.Path))
 
-	// Initialize encryptor
-	encryptor, encKey, err := encryption.NewEncryptor(cfg.Encryption.Key)
+	// Resolve encryption key: env var > file > generate new
+	encKey, err := resolveEncryptionKey(cfg, logger)
+	if err != nil {
+		return fmt.Errorf("resolving encryption key: %w", err)
+	}
+	encryptor, _, err := encryption.NewEncryptor(encKey)
 	if err != nil {
 		return fmt.Errorf("creating encryptor: %w", err)
-	}
-	if cfg.Encryption.Key == "" {
-		logger.Warn("no encryption key configured, generated a new one -- set SW_ENCRYPTION_KEY to persist",
-			slog.String("key", encKey))
 	}
 
 	// Initialize services
@@ -226,4 +240,98 @@ func run() error {
 	defer cancel()
 
 	return srv.Shutdown(shutdownCtx)
+}
+
+// resolveEncryptionKey determines the encryption key to use.
+// Priority: SW_ENCRYPTION_KEY env var > /data/encryption.key file > generate new.
+func resolveEncryptionKey(cfg *config.Config, logger *slog.Logger) (string, error) {
+	if cfg.Encryption.Key != "" {
+		return cfg.Encryption.Key, nil
+	}
+
+	dataDir := filepath.Dir(cfg.Database.Path)
+	keyFile := filepath.Join(dataDir, "encryption.key")
+
+	// Try loading from file
+	data, err := os.ReadFile(keyFile) //nolint:gosec // G304: path derived from trusted config
+	if err == nil {
+		key := strings.TrimSpace(string(data))
+		if key != "" {
+			logger.Info("loaded encryption key from file", slog.String("path", keyFile))
+			return key, nil
+		}
+	}
+
+	// Generate a new key
+	_, key, err := encryption.NewEncryptor("")
+	if err != nil {
+		return "", fmt.Errorf("generating encryption key: %w", err)
+	}
+
+	// Persist to file
+	if err := os.MkdirAll(dataDir, 0o750); err != nil {
+		logger.Warn("could not create data directory for encryption key",
+			slog.String("path", dataDir), slog.Any("error", err))
+		return key, nil
+	}
+
+	if err := os.WriteFile(keyFile, []byte(key+"\n"), 0o600); err != nil {
+		logger.Warn("could not save encryption key to file",
+			slog.String("path", keyFile), slog.Any("error", err))
+	} else {
+		logger.Warn("generated new encryption key -- back up this file",
+			slog.String("path", keyFile))
+	}
+
+	return key, nil
+}
+
+// resetCredentials wipes all stored credentials from the database.
+// This is an offline operation intended for recovery when the encryption key
+// is lost or credentials need to be re-entered.
+func resetCredentials() error {
+	configPath := os.Getenv("SW_CONFIG_PATH")
+	if configPath == "" {
+		configPath = "/data/config.yaml"
+	}
+
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		return fmt.Errorf("loading config: %w", err)
+	}
+
+	db, err := database.Open(cfg.Database.Path)
+	if err != nil {
+		return fmt.Errorf("opening database: %w", err)
+	}
+	defer db.Close()
+
+	if err := database.Migrate(db); err != nil {
+		return fmt.Errorf("running migrations: %w", err)
+	}
+
+	// Clear provider API keys from settings
+	if _, err := db.Exec("DELETE FROM settings WHERE key LIKE 'provider.%.api_key'"); err != nil {
+		return fmt.Errorf("clearing provider API keys: %w", err)
+	}
+
+	// Clear connection API keys
+	if _, err := db.Exec("UPDATE connections SET encrypted_api_key = ''"); err != nil {
+		return fmt.Errorf("clearing connection API keys: %w", err)
+	}
+
+	// Clear user accounts (forces re-setup)
+	if _, err := db.Exec("DELETE FROM users"); err != nil {
+		return fmt.Errorf("clearing user accounts: %w", err)
+	}
+
+	// Clear all sessions
+	if _, err := db.Exec("DELETE FROM sessions"); err != nil {
+		return fmt.Errorf("clearing sessions: %w", err)
+	}
+
+	fmt.Println("Credentials reset successfully.")
+	fmt.Println("All API keys, connection credentials, and user accounts have been cleared.")
+	fmt.Println("The application will prompt for initial setup on next start.")
+	return nil
 }
