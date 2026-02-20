@@ -52,36 +52,43 @@ func NewPipeline(engine *Engine, artistService *artist.Service, fixers []Fixer, 
 
 // RunRule evaluates a single rule against all non-excluded artists and attempts fixes.
 func (p *Pipeline) RunRule(ctx context.Context, ruleID string) (*RunResult, error) {
-	allArtists, _, err := p.artistService.List(ctx, artist.ListParams{
-		Page:     1,
-		PageSize: 10000,
-		Sort:     "name",
-	})
-	if err != nil {
-		return nil, fmt.Errorf("listing artists: %w", err)
-	}
-
 	result := &RunResult{}
 
-	for i := range allArtists {
+	const pageSize = 1000
+	params := artist.ListParams{Page: 1, PageSize: pageSize, Sort: "name"}
+
+	for {
 		if ctx.Err() != nil {
 			break
 		}
 
-		a := &allArtists[i]
-		if a.IsExcluded {
-			continue
-		}
-
-		result.ArtistsProcessed++
-
-		eval, err := p.engine.Evaluate(ctx, a)
+		page, _, err := p.artistService.List(ctx, params)
 		if err != nil {
-			p.logger.Warn("evaluating artist", "artist", a.Name, "error", err)
-			continue
+			return nil, fmt.Errorf("listing artists: %w", err)
+		}
+		if len(page) == 0 {
+			break
 		}
 
-		for j := range eval.Violations {
+		for i := range page {
+			if ctx.Err() != nil {
+				break
+			}
+
+			a := &page[i]
+			if a.IsExcluded {
+				continue
+			}
+
+			result.ArtistsProcessed++
+
+			eval, err := p.engine.Evaluate(ctx, a)
+			if err != nil {
+				p.logger.Warn("evaluating artist", "artist", a.Name, "error", err)
+				continue
+			}
+
+			for j := range eval.Violations {
 			v := &eval.Violations[j]
 			if v.RuleID != ruleID {
 				continue
@@ -100,8 +107,14 @@ func (p *Pipeline) RunRule(ctx context.Context, ruleID string) (*RunResult, erro
 			}
 		}
 
-		// Re-evaluate and persist health score
-		p.updateHealthScore(ctx, a)
+			// Re-evaluate and persist health score
+			p.updateHealthScore(ctx, a)
+		}
+
+		if len(page) < pageSize {
+			break
+		}
+		params.Page++
 	}
 
 	return result, nil
@@ -109,53 +122,66 @@ func (p *Pipeline) RunRule(ctx context.Context, ruleID string) (*RunResult, erro
 
 // RunAll evaluates all enabled rules against all non-excluded artists and attempts fixes.
 func (p *Pipeline) RunAll(ctx context.Context) (*RunResult, error) {
-	allArtists, _, err := p.artistService.List(ctx, artist.ListParams{
-		Page:     1,
-		PageSize: 10000,
-		Sort:     "name",
-	})
-	if err != nil {
-		return nil, fmt.Errorf("listing artists: %w", err)
-	}
-
 	result := &RunResult{}
 
-	for i := range allArtists {
+	const pageSize = 1000
+	params := artist.ListParams{Page: 1, PageSize: pageSize, Sort: "name"}
+
+	for {
 		if ctx.Err() != nil {
 			break
 		}
 
-		a := &allArtists[i]
-		if a.IsExcluded {
-			continue
-		}
-
-		result.ArtistsProcessed++
-
-		eval, err := p.engine.Evaluate(ctx, a)
+		page, _, err := p.artistService.List(ctx, params)
 		if err != nil {
-			p.logger.Warn("evaluating artist", "artist", a.Name, "error", err)
-			continue
+			return nil, fmt.Errorf("listing artists: %w", err)
+		}
+		if len(page) == 0 {
+			break
 		}
 
-		for j := range eval.Violations {
-			v := &eval.Violations[j]
-			result.ViolationsFound++
+		for i := range page {
+			if ctx.Err() != nil {
+				break
+			}
 
-			if !v.Fixable {
+			a := &page[i]
+			if a.IsExcluded {
 				continue
 			}
 
-			fr := p.attemptFix(ctx, a, v)
-			result.Results = append(result.Results, *fr)
-			result.FixesAttempted++
-			if fr.Fixed {
-				result.FixesSucceeded++
+			result.ArtistsProcessed++
+
+			eval, err := p.engine.Evaluate(ctx, a)
+			if err != nil {
+				p.logger.Warn("evaluating artist", "artist", a.Name, "error", err)
+				continue
 			}
+
+			for j := range eval.Violations {
+				v := &eval.Violations[j]
+				result.ViolationsFound++
+
+				if !v.Fixable {
+					continue
+				}
+
+				fr := p.attemptFix(ctx, a, v)
+				result.Results = append(result.Results, *fr)
+				result.FixesAttempted++
+				if fr.Fixed {
+					result.FixesSucceeded++
+				}
+			}
+
+			// Re-evaluate and persist health score
+			p.updateHealthScore(ctx, a)
 		}
 
-		// Re-evaluate and persist health score
-		p.updateHealthScore(ctx, a)
+		if len(page) < pageSize {
+			break
+		}
+		params.Page++
 	}
 
 	return result, nil
