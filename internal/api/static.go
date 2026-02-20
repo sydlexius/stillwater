@@ -82,7 +82,7 @@ func (sa *StaticAssets) Rescan(logger *slog.Logger) {
 func (sa *StaticAssets) scan(logger *slog.Logger) {
 	hashes := make(map[string]string)
 
-	if err := filepath.WalkDir(sa.dir, func(path string, d fs.DirEntry, err error) error {
+	if err := filepath.WalkDir(sa.dir, func(path string, d fs.DirEntry, err error) error { //nolint:gosec // G703: sa.dir is set at startup from trusted config, not user input
 		if err != nil || d.IsDir() {
 			return nil
 		}

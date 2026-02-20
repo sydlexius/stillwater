@@ -11,16 +11,18 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	img "github.com/sydlexius/stillwater/internal/image"
+	"github.com/sydlexius/stillwater/internal/nfo"
 	"github.com/sydlexius/stillwater/internal/provider"
 )
 
 // BulkExecutor runs bulk jobs asynchronously. Only one job runs at a time.
 type BulkExecutor struct {
-	bulkService   *BulkService
-	artistService *artist.Service
-	orchestrator  *provider.Orchestrator
-	pipeline      *Pipeline
-	logger        *slog.Logger
+	bulkService     *BulkService
+	artistService   *artist.Service
+	orchestrator    *provider.Orchestrator
+	pipeline        *Pipeline
+	snapshotService *nfo.SnapshotService
+	logger          *slog.Logger
 
 	mu        sync.Mutex
 	cancelFn  context.CancelFunc
@@ -28,13 +30,14 @@ type BulkExecutor struct {
 }
 
 // NewBulkExecutor creates a BulkExecutor.
-func NewBulkExecutor(bulkService *BulkService, artistService *artist.Service, orchestrator *provider.Orchestrator, pipeline *Pipeline, logger *slog.Logger) *BulkExecutor {
+func NewBulkExecutor(bulkService *BulkService, artistService *artist.Service, orchestrator *provider.Orchestrator, pipeline *Pipeline, snapshotService *nfo.SnapshotService, logger *slog.Logger) *BulkExecutor {
 	return &BulkExecutor{
-		bulkService:   bulkService,
-		artistService: artistService,
-		orchestrator:  orchestrator,
-		pipeline:      pipeline,
-		logger:        logger.With(slog.String("component", "bulk-executor")),
+		bulkService:     bulkService,
+		artistService:   artistService,
+		orchestrator:    orchestrator,
+		pipeline:        pipeline,
+		snapshotService: snapshotService,
+		logger:          logger.With(slog.String("component", "bulk-executor")),
 	}
 }
 
@@ -210,7 +213,7 @@ func (e *BulkExecutor) fetchMetadata(ctx context.Context, a *artist.Artist, mode
 	}
 
 	if a.NFOExists {
-		writeArtistNFO(a)
+		writeArtistNFO(a, e.snapshotService)
 	}
 
 	return BulkItemFixed, "metadata updated"

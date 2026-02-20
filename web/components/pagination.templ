@@ -13,6 +13,14 @@ type PaginationData struct {
 	Order       string
 	Search      string
 	Filter      string
+	TargetID    string // HTMX target element ID (defaults to "artist-table")
+}
+
+func (p PaginationData) target() string {
+	if p.TargetID != "" {
+		return "#" + p.TargetID
+	}
+	return "#artist-table"
 }
 
 func (p PaginationData) pageURL(page int) string {
@@ -46,7 +54,7 @@ templ Pagination(data PaginationData) {
 					<a
 						href={ templ.SafeURL(data.pageURL(data.CurrentPage - 1)) }
 						hx-get={ data.pageURL(data.CurrentPage - 1) }
-						hx-target="#artist-table"
+						hx-target={ data.target() }
 						hx-swap="outerHTML"
 						class="relative inline-flex items-center rounded-md bg-white dark:bg-gray-800 px-3 py-2 text-sm font-semibold text-gray-900 dark:text-gray-100 ring-1 ring-inset ring-gray-300 dark:ring-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700"
 					>
@@ -57,7 +65,7 @@ templ Pagination(data PaginationData) {
 					<a
 						href={ templ.SafeURL(data.pageURL(data.CurrentPage + 1)) }
 						hx-get={ data.pageURL(data.CurrentPage + 1) }
-						hx-target="#artist-table"
+						hx-target={ data.target() }
 						hx-swap="outerHTML"
 						class="relative inline-flex items-center rounded-md bg-white dark:bg-gray-800 px-3 py-2 text-sm font-semibold text-gray-900 dark:text-gray-100 ring-1 ring-inset ring-gray-300 dark:ring-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700"
 					>

@@ -452,6 +452,10 @@ func buildWhereClause(params ListParams) (string, []any) {
 		conditions = append(conditions, "is_excluded = 1")
 	case "not_excluded":
 		conditions = append(conditions, "is_excluded = 0")
+	case "compliant":
+		conditions = append(conditions, "health_score >= 100")
+	case "non_compliant":
+		conditions = append(conditions, "health_score < 100")
 	}
 
 	if len(conditions) == 0 {

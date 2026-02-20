@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"testing"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/database"
 )
@@ -167,6 +168,85 @@ func TestRecordHealthSnapshot(t *testing.T) {
 	}
 	if count != 1 {
 		t.Errorf("health_history count = %d, want 1", count)
+	}
+}
+
+func TestGetHealthHistory(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	// Insert multiple snapshots
+	if err := svc.RecordHealthSnapshot(ctx, 100, 50, 50.0); err != nil {
+		t.Fatalf("recording snapshot 1: %v", err)
+	}
+	if err := svc.RecordHealthSnapshot(ctx, 100, 75, 75.0); err != nil {
+		t.Fatalf("recording snapshot 2: %v", err)
+	}
+
+	history, err := svc.GetHealthHistory(ctx, time.Time{}, time.Time{})
+	if err != nil {
+		t.Fatalf("GetHealthHistory: %v", err)
+	}
+	if len(history) != 2 {
+		t.Fatalf("expected 2 snapshots, got %d", len(history))
+	}
+
+	// Verify ascending order by recorded_at
+	if !history[0].RecordedAt.Before(history[1].RecordedAt) && history[0].RecordedAt != history[1].RecordedAt {
+		t.Error("expected snapshots ordered by recorded_at ASC")
+	}
+}
+
+func TestGetHealthHistory_Empty(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	history, err := svc.GetHealthHistory(ctx, time.Time{}, time.Time{})
+	if err != nil {
+		t.Fatalf("GetHealthHistory: %v", err)
+	}
+	if len(history) != 0 {
+		t.Errorf("expected 0 snapshots, got %d", len(history))
+	}
+}
+
+func TestGetLatestHealthSnapshot(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	if err := svc.RecordHealthSnapshot(ctx, 100, 50, 50.0); err != nil {
+		t.Fatalf("recording snapshot 1: %v", err)
+	}
+	if err := svc.RecordHealthSnapshot(ctx, 100, 80, 80.0); err != nil {
+		t.Fatalf("recording snapshot 2: %v", err)
+	}
+
+	latest, err := svc.GetLatestHealthSnapshot(ctx)
+	if err != nil {
+		t.Fatalf("GetLatestHealthSnapshot: %v", err)
+	}
+	if latest == nil {
+		t.Fatal("expected non-nil snapshot")
+	}
+	if latest.Score != 80.0 {
+		t.Errorf("expected score 80.0, got %v", latest.Score)
+	}
+}
+
+func TestGetLatestHealthSnapshot_Empty(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	latest, err := svc.GetLatestHealthSnapshot(ctx)
+	if err != nil {
+		t.Fatalf("GetLatestHealthSnapshot: %v", err)
+	}
+	if latest != nil {
+		t.Errorf("expected nil for empty table, got %v", latest)
 	}
 }
 

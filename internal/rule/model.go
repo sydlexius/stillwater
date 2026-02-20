@@ -48,6 +48,15 @@ type EvaluationResult struct {
 	HealthScore float64     `json:"health_score"`
 }
 
+// HealthSnapshot represents a recorded library health score.
+type HealthSnapshot struct {
+	ID               string    `json:"id"`
+	TotalArtists     int       `json:"total_artists"`
+	CompliantArtists int       `json:"compliant_artists"`
+	Score            float64   `json:"score"`
+	RecordedAt       time.Time `json:"recorded_at"`
+}
+
 // MarshalConfig serializes a RuleConfig to a JSON string.
 func MarshalConfig(cfg RuleConfig) string {
 	data, _ := json.Marshal(cfg)

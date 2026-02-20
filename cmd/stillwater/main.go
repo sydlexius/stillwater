@@ -16,6 +16,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/config"
 	"github.com/sydlexius/stillwater/internal/database"
 	"github.com/sydlexius/stillwater/internal/encryption"
+	"github.com/sydlexius/stillwater/internal/nfo"
 	"github.com/sydlexius/stillwater/internal/platform"
 	"github.com/sydlexius/stillwater/internal/provider"
 	"github.com/sydlexius/stillwater/internal/provider/audiodb"
@@ -127,17 +128,20 @@ func run() error {
 
 	orchestrator := provider.NewOrchestrator(providerRegistry, providerSettings, logger)
 
-	// Initialize fix pipeline (depends on orchestrator)
+	// Initialize NFO snapshot service
+	nfoSnapshotService := nfo.NewSnapshotService(db)
+
+	// Initialize fix pipeline (depends on orchestrator and snapshot service)
 	fixers := []rule.Fixer{
-		&rule.NFOFixer{},
-		rule.NewMetadataFixer(orchestrator),
+		&rule.NFOFixer{SnapshotService: nfoSnapshotService},
+		rule.NewMetadataFixer(orchestrator, nfoSnapshotService),
 		rule.NewImageFixer(orchestrator, logger),
 	}
 	pipeline := rule.NewPipeline(ruleEngine, artistService, fixers, logger)
 
 	// Initialize bulk operations
 	bulkService := rule.NewBulkService(db)
-	bulkExecutor := rule.NewBulkExecutor(bulkService, artistService, orchestrator, pipeline, logger)
+	bulkExecutor := rule.NewBulkExecutor(bulkService, artistService, orchestrator, pipeline, nfoSnapshotService, logger)
 
 	logger.Info("starting stillwater",
 		slog.String("version", version.Version),
@@ -145,7 +149,7 @@ func run() error {
 	)
 
 	// Set up HTTP router
-	router := api.NewRouter(authService, artistService, scannerService, platformService, providerSettings, providerRegistry, orchestrator, ruleService, ruleEngine, pipeline, bulkService, bulkExecutor, db, logger, cfg.Server.BasePath, "web/static")
+	router := api.NewRouter(authService, artistService, scannerService, platformService, providerSettings, providerRegistry, orchestrator, ruleService, ruleEngine, pipeline, bulkService, bulkExecutor, nfoSnapshotService, db, logger, cfg.Server.BasePath, "web/static")
 
 	// Create HTTP server
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)

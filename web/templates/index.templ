@@ -3,11 +3,27 @@ package templates
 templ IndexPage(assets AssetPaths) {
 	@Layout("Dashboard", assets) {
 		<div class="space-y-6">
-			<div class="border-b border-gray-200 dark:border-gray-700 pb-4">
-				<h1 class="text-2xl font-bold">Dashboard</h1>
-				<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-					Artist metadata and image management overview.
-				</p>
+			<div class="flex items-center justify-between border-b border-gray-200 dark:border-gray-700 pb-4">
+				<div>
+					<h1 class="text-2xl font-bold">Dashboard</h1>
+					<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+						Artist metadata and image management overview.
+					</p>
+				</div>
+				<button
+					hx-post="/api/v1/rules/run-all"
+					hx-swap="none"
+					hx-indicator="#run-all-spinner"
+					class="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
+				>
+					<span id="run-all-spinner" class="htmx-indicator">
+						<svg class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+							<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+							<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+						</svg>
+					</span>
+					Run All Rules
+				</button>
 			</div>
 			<div
 				id="health-summary"
@@ -20,6 +36,70 @@ templ IndexPage(assets AssetPaths) {
 					<p class="text-sm font-medium text-gray-500 dark:text-gray-400">Loading...</p>
 				</div>
 			</div>
+			<div class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
+				<h2 class="text-lg font-semibold mb-4">Health Score Trend</h2>
+				<div class="relative" style="height: 300px;">
+					<canvas id="health-chart"></canvas>
+				</div>
+			</div>
 		</div>
+		<script src={ assets.ChartJS }></script>
+		<script>
+			(function() {
+				var isDark = document.documentElement.classList.contains('dark') ||
+					window.matchMedia('(prefers-color-scheme: dark)').matches;
+				var textColor = isDark ? '#9ca3af' : '#6b7280';
+				var gridColor = isDark ? '#374151' : '#e5e7eb';
+
+				fetch('/api/v1/reports/health/history')
+					.then(function(res) { return res.json(); })
+					.then(function(data) {
+						var history = data.history || [];
+						if (history.length === 0) return;
+
+						var labels = history.map(function(h) {
+							return h.recorded_at.substring(0, 10);
+						});
+						var scores = history.map(function(h) { return h.score; });
+
+						var ctx = document.getElementById('health-chart');
+						new Chart(ctx, {
+							type: 'line',
+							data: {
+								labels: labels,
+								datasets: [{
+									label: 'Health Score',
+									data: scores,
+									borderColor: '#3b82f6',
+									backgroundColor: 'rgba(59, 130, 246, 0.1)',
+									fill: true,
+									tension: 0.3,
+									pointRadius: 2,
+									pointHoverRadius: 5
+								}]
+							},
+							options: {
+								responsive: true,
+								maintainAspectRatio: false,
+								scales: {
+									y: {
+										min: 0,
+										max: 100,
+										ticks: { color: textColor },
+										grid: { color: gridColor }
+									},
+									x: {
+										ticks: { color: textColor, maxTicksLimit: 10 },
+										grid: { color: gridColor }
+									}
+								},
+								plugins: {
+									legend: { labels: { color: textColor } }
+								}
+							}
+						});
+					});
+			})();
+		</script>
 	}
 }
