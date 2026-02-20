@@ -15,6 +15,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/api"
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/auth"
+	"github.com/sydlexius/stillwater/internal/backup"
 	"github.com/sydlexius/stillwater/internal/config"
 	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/database"
@@ -170,6 +171,13 @@ func run() error {
 	webhookService := webhook.NewService(db)
 	webhookDispatcher := webhook.NewDispatcher(webhookService, logger)
 
+	// Initialize backup service
+	backupDir := cfg.Backup.Path
+	if backupDir == "" {
+		backupDir = filepath.Join(filepath.Dir(cfg.Database.Path), "backups")
+	}
+	backupService := backup.NewService(db, backupDir, cfg.Backup.RetentionCount, logger)
+
 	// Subscribe dispatcher to all event types
 	for _, eventType := range []event.Type{
 		event.ArtistNew, event.MetadataFixed, event.ReviewNeeded,
@@ -205,6 +213,7 @@ func run() error {
 		ConnectionService:  connectionService,
 		WebhookService:     webhookService,
 		WebhookDispatcher:  webhookDispatcher,
+		BackupService:      backupService,
 		DB:                 db,
 		Logger:             logger,
 		BasePath:           cfg.Server.BasePath,
@@ -224,6 +233,11 @@ func run() error {
 	// Graceful shutdown
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	// Start backup scheduler
+	if cfg.Backup.Enabled {
+		go backupService.StartScheduler(ctx, time.Duration(cfg.Backup.IntervalHours)*time.Hour)
+	}
 
 	go func() {
 		logger.Info("server starting", slog.String("addr", addr), slog.String("base_path", cfg.Server.BasePath))

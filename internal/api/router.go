@@ -8,6 +8,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/auth"
+	"github.com/sydlexius/stillwater/internal/backup"
 	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/nfo"
 	"github.com/sydlexius/stillwater/internal/platform"
@@ -35,6 +36,7 @@ type RouterDeps struct {
 	ConnectionService  *connection.Service
 	WebhookService     *webhook.Service
 	WebhookDispatcher  *webhook.Dispatcher
+	BackupService      *backup.Service
 	DB                 *sql.DB
 	Logger             *slog.Logger
 	BasePath           string
@@ -59,6 +61,7 @@ type Router struct {
 	connectionService  *connection.Service
 	webhookService     *webhook.Service
 	webhookDispatcher  *webhook.Dispatcher
+	backupService      *backup.Service
 	logger             *slog.Logger
 	basePath           string
 	staticAssets       *StaticAssets
@@ -84,6 +87,7 @@ func NewRouter(deps RouterDeps) *Router {
 		connectionService:  deps.ConnectionService,
 		webhookService:     deps.WebhookService,
 		webhookDispatcher:  deps.WebhookDispatcher,
+		backupService:      deps.BackupService,
 		db:                 deps.DB,
 		logger:             deps.Logger,
 		basePath:           deps.BasePath,
@@ -139,6 +143,10 @@ func (r *Router) Handler() http.Handler {
 	mux.HandleFunc("POST "+bp+"/api/v1/webhooks/{id}/test", wrapAuth(r.handleTestWebhook, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/settings", wrapAuth(r.handleGetSettings, authMw))
 	mux.HandleFunc("PUT "+bp+"/api/v1/settings", wrapAuth(r.handleUpdateSettings, authMw))
+	// Backup routes
+	mux.HandleFunc("POST "+bp+"/api/v1/settings/backup", wrapAuth(r.handleBackupCreate, authMw))
+	mux.HandleFunc("GET "+bp+"/api/v1/settings/backup/history", wrapAuth(r.handleBackupHistory, authMw))
+	mux.HandleFunc("GET "+bp+"/api/v1/settings/backup/{filename}", wrapAuth(r.handleBackupDownload, authMw))
 
 	// Provider routes
 	mux.HandleFunc("GET "+bp+"/api/v1/providers", wrapAuth(r.handleListProviders, authMw))

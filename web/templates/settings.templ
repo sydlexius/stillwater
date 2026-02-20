@@ -250,6 +250,34 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 					</div>
 				</div>
 			</div>
+			<div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+				<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+					<h2 class="text-lg font-semibold">Database Backup</h2>
+					<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+						Create and download database backups. Automatic backups run daily with 7-day retention.
+					</p>
+				</div>
+				<div class="px-6 py-4 space-y-4">
+					<div class="flex items-center gap-3">
+						<button
+							type="button"
+							class="text-sm px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+							hx-post="/api/v1/settings/backup"
+							hx-target="#backup-list"
+							hx-swap="innerHTML"
+							hx-indicator="#backup-spinner"
+						>
+							Create Backup
+						</button>
+						<span id="backup-spinner" class="htmx-indicator text-sm text-gray-500 dark:text-gray-400">
+							Creating backup...
+						</span>
+					</div>
+					<div id="backup-list" hx-get="/api/v1/settings/backup/history" hx-trigger="load" hx-swap="innerHTML">
+						<p class="text-sm text-gray-500 dark:text-gray-400 italic">Loading backup history...</p>
+					</div>
+				</div>
+			</div>
 		</div>
 	}
 }
