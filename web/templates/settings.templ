@@ -271,7 +271,7 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 				if !pk.RequiresKey && pk.HasKey {
 					<div class="text-xs text-gray-500 dark:text-gray-400">Paid key configured</div>
 				} else if !pk.RequiresKey && providerHelpURL(pk.Name) != "" {
-					<div class="text-xs text-gray-500 dark:text-gray-400">Free key built-in</div>
+					<div class="text-xs text-gray-500 dark:text-gray-400">Paid key recommended for full access</div>
 				} else if !pk.RequiresKey {
 					<div class="text-xs text-gray-500 dark:text-gray-400">No API key required</div>
 				} else if pk.HasKey {

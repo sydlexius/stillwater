@@ -145,13 +145,20 @@ func (a *Adapter) GetImages(ctx context.Context, mbid string) ([]provider.ImageR
 }
 
 // TestConnection verifies the API connection works.
+// Uses "Coldplay" for the free key (the only artist search the free tier allows)
+// and "Radiohead" for paid keys.
 func (a *Adapter) TestConnection(ctx context.Context) error {
 	apiKey, base, err := a.resolveRequest(ctx)
 	if err != nil {
 		return err
 	}
 
-	reqURL := fmt.Sprintf("%s/%s/search.php?s=%s", base, apiKey, url.QueryEscape("Radiohead"))
+	testArtist := "Radiohead"
+	if apiKey == freeAPIKey {
+		testArtist = "Coldplay"
+	}
+
+	reqURL := fmt.Sprintf("%s/%s/search.php?s=%s", base, apiKey, url.QueryEscape(testArtist))
 	_, err = a.fetchArtists(ctx, reqURL)
 	return err
 }
