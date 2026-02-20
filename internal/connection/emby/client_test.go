@@ -2,11 +2,14 @@ package emby
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"testing"
+
+	"github.com/sydlexius/stillwater/internal/connection"
 )
 
 func testLogger() *slog.Logger {
@@ -133,5 +136,62 @@ func TestTriggerArtistRefresh(t *testing.T) {
 	c := NewWithHTTPClient(srv.URL, "test-key", srv.Client(), testLogger())
 	if err := c.TriggerArtistRefresh(context.Background(), "emby-001"); err != nil {
 		t.Fatalf("TriggerArtistRefresh failed: %v", err)
+	}
+}
+
+func TestPushMetadata(t *testing.T) {
+	var gotBody itemUpdateBody
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/Items/emby-artist-1" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		if r.Method != http.MethodPost {
+			t.Errorf("method = %s, want POST", r.Method)
+		}
+		if r.Header.Get("Content-Type") != "application/json" {
+			t.Errorf("content-type = %s, want application/json", r.Header.Get("Content-Type"))
+		}
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatalf("decoding body: %v", err)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "test-key", srv.Client(), testLogger())
+	data := connection.ArtistPushData{
+		Name:      "Radiohead",
+		SortName:  "Radiohead",
+		Biography: "English rock band",
+		Genres:    []string{"Rock", "Alternative"},
+	}
+	if err := c.PushMetadata(context.Background(), "emby-artist-1", data); err != nil {
+		t.Fatalf("PushMetadata failed: %v", err)
+	}
+	if gotBody.Name != "Radiohead" {
+		t.Errorf("Name = %q, want Radiohead", gotBody.Name)
+	}
+	if gotBody.ForcedSortName != "Radiohead" {
+		t.Errorf("ForcedSortName = %q, want Radiohead", gotBody.ForcedSortName)
+	}
+	if gotBody.Overview != "English rock band" {
+		t.Errorf("Overview = %q, want English rock band", gotBody.Overview)
+	}
+	if len(gotBody.Genres) != 2 {
+		t.Errorf("got %d genres, want 2", len(gotBody.Genres))
+	}
+}
+
+func TestPushMetadata_ServerError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"error":"internal"}`))
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "test-key", srv.Client(), testLogger())
+	err := c.PushMetadata(context.Background(), "emby-001", connection.ArtistPushData{Name: "Test"})
+	if err == nil {
+		t.Fatal("expected error for server error")
 	}
 }
