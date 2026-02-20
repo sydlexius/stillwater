@@ -25,16 +25,19 @@ Inspired by Bliss (rule engine, auto-fix), MediaElch (multi-scraper aggregation)
 
 ## Milestones
 
-| Milestone | Version | Focus |
-|-----------|---------|-------|
-| M1 | v0.1.0 | Project Scaffolding (COMPLETE) |
-| M2 | v0.2.0 | Core Data Model and Scanner |
-| M3 | v0.3.0 | Provider Adapters |
-| M4 | v0.4.0 | Image Management |
-| M5 | v0.5.0 | Rule Engine |
-| M6 | v0.6.0 | Reports and Dashboard |
-| M7 | v0.7.0 | Integrations |
-| M8 | v0.8.0 | Polish and Deployment |
+| Milestone | Version | Focus | Status |
+|-----------|---------|-------|--------- |
+| M1 | v0.1.0 | Project Scaffolding | COMPLETE |
+| M2 | v0.2.0 | Core Data Model and Scanner | COMPLETE |
+| M3 | v0.3.0 | Provider Adapters | COMPLETE |
+| M4 | v0.4.0 | Image Management | COMPLETE |
+| M5 | v0.5.0 | Rule Engine | COMPLETE |
+| M6 | v0.6.0 | Reports and Dashboard | COMPLETE |
+| M7 | v0.7.0 | Integrations | COMPLETE |
+| M8 | v0.8.0 | Security and Stability | |
+| M9 | v0.9.0 | UX Polish | |
+| M10 | v0.10.0 | Deployment and Docs | |
+| M11 | v0.11.0 | Universal Music Scraper | |
 
 ## Architecture
 
@@ -94,30 +97,38 @@ REST API at `/api/v1/`. All endpoints return JSON. Web UI consumes the same API 
 ## Dependency Graph
 
 ```
-M1 (Scaffolding) -- complete, foundation for all others
+M1 (Scaffolding) ........... COMPLETE
   |
   v
-M2 (Data Model + Scanner) -- artist model, NFO parser, filesystem scanner
+M2 (Data Model + Scanner) .. COMPLETE
   |
-  +---> M3 (Provider Adapters) -- depends on artist model
+  +---> M3 (Providers) ..... COMPLETE
   |       |
   |       v
-  +---> M4 (Image Management) -- depends on M2 artist model + M3 providers
+  +---> M4 (Images) ........ COMPLETE
   |       |
   |       v
-  +---> M5 (Rule Engine) -- depends on M2 + M3 + M4
+  +---> M5 (Rule Engine) ... COMPLETE
           |
           v
-        M6 (Reports + Dashboard) -- depends on M5 rule evaluation
+        M6 (Reports) ....... COMPLETE
           |
           v
-        M7 (Integrations) -- can start in parallel with M6
+        M7 (Integrations) .. COMPLETE
           |
           v
-        M8 (Polish + Deployment) -- final pass
+        M8 (Security + Stability)
+          |
+          v
+        M9 (UX Polish)
+          |
+          v
+        M10 (Deployment + Docs)
+
+        M11 (Universal Scraper) -- depends on M5 + M8
 ```
 
-M3 and M4 can proceed in parallel after M2 is complete. M6 and M7 can also overlap. M8 is the final polish pass.
+M8-M10 are sequential (security before UX, UX before packaging). M11 can start after M8 in parallel with M9/M10.
 
 ## Architectural Decisions (Risk Review)
 
