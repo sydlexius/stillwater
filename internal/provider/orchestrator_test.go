@@ -14,15 +14,15 @@ import (
 
 // mockProvider implements the Provider interface for testing.
 type mockProvider struct {
-	name      ProviderName
-	authReq   bool
-	searchFn  func(ctx context.Context, name string) ([]ArtistSearchResult, error)
-	getArtFn  func(ctx context.Context, id string) (*ArtistMetadata, error)
-	getImgFn  func(ctx context.Context, id string) ([]ImageResult, error)
+	name     ProviderName
+	authReq  bool
+	searchFn func(ctx context.Context, name string) ([]ArtistSearchResult, error)
+	getArtFn func(ctx context.Context, id string) (*ArtistMetadata, error)
+	getImgFn func(ctx context.Context, id string) ([]ImageResult, error)
 }
 
-func (m *mockProvider) Name() ProviderName    { return m.name }
-func (m *mockProvider) RequiresAuth() bool     { return m.authReq }
+func (m *mockProvider) Name() ProviderName { return m.name }
+func (m *mockProvider) RequiresAuth() bool { return m.authReq }
 
 func (m *mockProvider) SearchArtist(ctx context.Context, name string) ([]ArtistSearchResult, error) {
 	if m.searchFn != nil {
@@ -52,7 +52,7 @@ func setupOrchestratorTest(t *testing.T) (*Registry, *SettingsService) {
 		t.Fatalf("opening test db: %v", err)
 	}
 	t.Cleanup(func() { db.Close() })
-	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT (datetime('now')))`)
+	_, err = db.ExecContext(context.Background(), `CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT (datetime('now')))`)
 	if err != nil {
 		t.Fatalf("creating settings table: %v", err)
 	}

@@ -41,8 +41,11 @@ func NewWithBaseURL(limiter *provider.RateLimiterMap, settings *provider.Setting
 	}
 }
 
+// Name returns the provider name.
 func (a *Adapter) Name() provider.ProviderName { return provider.NameAudioDB }
-func (a *Adapter) RequiresAuth() bool           { return true }
+
+// RequiresAuth returns whether this provider needs an API key.
+func (a *Adapter) RequiresAuth() bool { return true }
 
 // SearchArtist searches TheAudioDB by artist name.
 func (a *Adapter) SearchArtist(ctx context.Context, name string) ([]provider.ArtistSearchResult, error) {
@@ -168,7 +171,7 @@ func (a *Adapter) fetchArtists(ctx context.Context, reqURL string) ([]AudioDBArt
 			Cause:    err,
 		}
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, &provider.ErrProviderUnavailable{

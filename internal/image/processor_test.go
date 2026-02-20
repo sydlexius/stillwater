@@ -81,10 +81,10 @@ func TestDetectFormat_Unknown(t *testing.T) {
 
 func TestGetDimensions(t *testing.T) {
 	tests := []struct {
-		name   string
-		data   []byte
-		wantW  int
-		wantH  int
+		name  string
+		data  []byte
+		wantW int
+		wantH int
 	}{
 		{"jpeg 100x50", makeJPEG(t, 100, 50), 100, 50},
 		{"png 200x300", makePNG(t, 200, 300), 200, 300},
@@ -270,10 +270,10 @@ func TestCrop_OutOfBounds(t *testing.T) {
 
 func TestFitDimensions(t *testing.T) {
 	tests := []struct {
-		name               string
-		origW, origH       int
-		maxW, maxH         int
-		wantW, wantH       int
+		name         string
+		origW, origH int
+		maxW, maxH   int
+		wantW, wantH int
 	}{
 		{"no scale needed", 100, 100, 500, 500, 100, 100},
 		{"scale width", 1000, 500, 500, 500, 500, 250},

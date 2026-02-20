@@ -88,7 +88,7 @@ func (s *SettingsService) HasAPIKey(ctx context.Context, name ProviderName) (boo
 	return count > 0, nil
 }
 
-// ProviderKeyStatus describes the API key configuration state for a provider.
+// ProviderKeyStatus describes the API key configuration state for a provider. //nolint:revive // stuttering accepted for clarity
 type ProviderKeyStatus struct {
 	Name        ProviderName `json:"name"`
 	DisplayName string       `json:"display_name"`
@@ -184,7 +184,7 @@ func (s *SettingsService) GetPriorities(ctx context.Context) ([]FieldPriority, e
 func (s *SettingsService) SetPriority(ctx context.Context, field string, providers []ProviderName) error {
 	data, err := json.Marshal(providers)
 	if err != nil {
-		return fmt.Errorf("marshalling priority for %s: %w", field, err)
+		return fmt.Errorf("marshaling priority for %s: %w", field, err)
 	}
 	key := prioritySettingKey(field)
 	_, err = s.db.ExecContext(ctx,

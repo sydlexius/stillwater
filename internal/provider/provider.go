@@ -6,9 +6,10 @@ import (
 	"time"
 )
 
-// ProviderName uniquely identifies a metadata provider.
+// ProviderName uniquely identifies a metadata provider. //nolint:revive // stuttering accepted for clarity
 type ProviderName string
 
+// Known provider names.
 const (
 	NameMusicBrainz ProviderName = "musicbrainz"
 	NameFanartTV    ProviderName = "fanarttv"
@@ -53,6 +54,7 @@ func (n ProviderName) DisplayName() string {
 // ImageType classifies the kind of artist image.
 type ImageType string
 
+// Known image types.
 const (
 	ImageThumb      ImageType = "thumb"
 	ImageFanart     ImageType = "fanart"
@@ -78,30 +80,30 @@ type ArtistSearchResult struct {
 
 // ArtistMetadata is the full metadata a provider returns for a single artist.
 type ArtistMetadata struct {
-	ProviderID    string            `json:"provider_id"`
-	MusicBrainzID string            `json:"musicbrainz_id,omitempty"`
-	AudioDBID     string            `json:"audiodb_id,omitempty"`
-	DiscogsID     string            `json:"discogs_id,omitempty"`
-	WikidataID    string            `json:"wikidata_id,omitempty"`
-	Name          string            `json:"name"`
-	SortName      string            `json:"sort_name,omitempty"`
-	Type          string            `json:"type,omitempty"`
-	Gender        string            `json:"gender,omitempty"`
-	Disambiguation string           `json:"disambiguation,omitempty"`
-	Country       string            `json:"country,omitempty"`
-	Biography     string            `json:"biography,omitempty"`
-	Genres        []string          `json:"genres,omitempty"`
-	Styles        []string          `json:"styles,omitempty"`
-	Moods         []string          `json:"moods,omitempty"`
-	YearsActive   string            `json:"years_active,omitempty"`
-	Born          string            `json:"born,omitempty"`
-	Formed        string            `json:"formed,omitempty"`
-	Died          string            `json:"died,omitempty"`
-	Disbanded     string            `json:"disbanded,omitempty"`
-	Members       []MemberInfo      `json:"members,omitempty"`
-	SimilarArtists []string         `json:"similar_artists,omitempty"`
-	Aliases       []string          `json:"aliases,omitempty"`
-	URLs          map[string]string `json:"urls,omitempty"`
+	ProviderID     string            `json:"provider_id"`
+	MusicBrainzID  string            `json:"musicbrainz_id,omitempty"`
+	AudioDBID      string            `json:"audiodb_id,omitempty"`
+	DiscogsID      string            `json:"discogs_id,omitempty"`
+	WikidataID     string            `json:"wikidata_id,omitempty"`
+	Name           string            `json:"name"`
+	SortName       string            `json:"sort_name,omitempty"`
+	Type           string            `json:"type,omitempty"`
+	Gender         string            `json:"gender,omitempty"`
+	Disambiguation string            `json:"disambiguation,omitempty"`
+	Country        string            `json:"country,omitempty"`
+	Biography      string            `json:"biography,omitempty"`
+	Genres         []string          `json:"genres,omitempty"`
+	Styles         []string          `json:"styles,omitempty"`
+	Moods          []string          `json:"moods,omitempty"`
+	YearsActive    string            `json:"years_active,omitempty"`
+	Born           string            `json:"born,omitempty"`
+	Formed         string            `json:"formed,omitempty"`
+	Died           string            `json:"died,omitempty"`
+	Disbanded      string            `json:"disbanded,omitempty"`
+	Members        []MemberInfo      `json:"members,omitempty"`
+	SimilarArtists []string          `json:"similar_artists,omitempty"`
+	Aliases        []string          `json:"aliases,omitempty"`
+	URLs           map[string]string `json:"urls,omitempty"`
 }
 
 // MemberInfo is a band member as reported by a provider.

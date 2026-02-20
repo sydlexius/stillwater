@@ -35,7 +35,7 @@ func NewRateLimiterMap() *RateLimiterMap {
 }
 
 // Wait blocks until the rate limiter for the given provider allows a request,
-// or the context is cancelled.
+// or the context is canceled.
 func (m *RateLimiterMap) Wait(ctx context.Context, name ProviderName) error {
 	m.mu.RLock()
 	limiter, ok := m.limiters[name]

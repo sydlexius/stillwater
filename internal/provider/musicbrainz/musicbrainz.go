@@ -41,8 +41,11 @@ func NewWithBaseURL(limiter *provider.RateLimiterMap, logger *slog.Logger, baseU
 	}
 }
 
+// Name returns the provider name.
 func (a *Adapter) Name() provider.ProviderName { return provider.NameMusicBrainz }
-func (a *Adapter) RequiresAuth() bool           { return false }
+
+// RequiresAuth returns whether this provider needs an API key.
+func (a *Adapter) RequiresAuth() bool { return false }
 
 // SearchArtist searches MusicBrainz for artists matching the given name.
 func (a *Adapter) SearchArtist(ctx context.Context, name string) ([]provider.ArtistSearchResult, error) {
@@ -136,14 +139,14 @@ func (a *Adapter) doRequest(ctx context.Context, reqURL string) ([]byte, error) 
 
 	a.logger.Debug("requesting", slog.String("url", reqURL))
 
-	resp, err := a.client.Do(req)
+	resp, err := a.client.Do(req) //nolint:gosec // URL constructed from trusted base + user-provided MBID
 	if err != nil {
 		return nil, &provider.ErrProviderUnavailable{
 			Provider: provider.NameMusicBrainz,
 			Cause:    err,
 		}
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode == http.StatusNotFound {
 		return nil, &provider.ErrNotFound{
@@ -245,9 +248,7 @@ func (a *Adapter) mapArtist(mb *MBArtist) *provider.ArtistMetadata {
 				DateJoined: rel.Begin,
 				DateLeft:   rel.End,
 			}
-			for _, attr := range rel.Attributes {
-				member.Instruments = append(member.Instruments, attr)
-			}
+			member.Instruments = append(member.Instruments, rel.Attributes...)
 			meta.Members = append(meta.Members, member)
 		case rel.URL != nil && rel.URL.Resource != "":
 			urlType := mapURLType(rel.Type)

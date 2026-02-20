@@ -305,10 +305,7 @@ func (r *Router) processAndSaveImage(ctx context.Context, dir string, imageType 
 		return nil, fmt.Errorf("resizing: %w", err)
 	}
 
-	naming, err := r.getActiveNamingConfig(ctx, imageType)
-	if err != nil {
-		return nil, err
-	}
+	naming := r.getActiveNamingConfig(ctx, imageType)
 
 	saved, err := img.Save(dir, imageType, resized, naming, r.logger)
 	if err != nil {
@@ -319,16 +316,16 @@ func (r *Router) processAndSaveImage(ctx context.Context, dir string, imageType 
 }
 
 // getActiveNamingConfig returns the filenames for the given image type from the active platform profile.
-func (r *Router) getActiveNamingConfig(ctx context.Context, imageType string) ([]string, error) {
+func (r *Router) getActiveNamingConfig(ctx context.Context, imageType string) []string {
 	profile, err := r.platformService.GetActive(ctx)
 	if err != nil || profile == nil {
-		return img.FileNamesForType(img.DefaultFileNames, imageType), nil
+		return img.FileNamesForType(img.DefaultFileNames, imageType)
 	}
 	names := img.FileNamesForType(profile.ImageNaming.ToMap(), imageType)
 	if len(names) == 0 {
-		return img.FileNamesForType(img.DefaultFileNames, imageType), nil
+		return img.FileNamesForType(img.DefaultFileNames, imageType)
 	}
-	return names, nil
+	return names
 }
 
 // fetchImageFromURL downloads an image from the given URL with timeout and size limits.

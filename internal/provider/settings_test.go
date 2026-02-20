@@ -17,7 +17,7 @@ func setupTestDB(t *testing.T) *sql.DB {
 	}
 	t.Cleanup(func() { db.Close() })
 
-	_, err = db.Exec(`
+	_, err = db.ExecContext(context.Background(), `
 		CREATE TABLE IF NOT EXISTS settings (
 			key TEXT PRIMARY KEY,
 			value TEXT NOT NULL,
@@ -70,7 +70,7 @@ func TestAPIKeyRoundTrip(t *testing.T) {
 
 	// Verify it is encrypted in the database
 	var raw string
-	err = db.QueryRow("SELECT value FROM settings WHERE key = ?", "provider.fanarttv.api_key").Scan(&raw)
+	err = db.QueryRowContext(ctx, "SELECT value FROM settings WHERE key = ?", "provider.fanarttv.api_key").Scan(&raw)
 	if err != nil {
 		t.Fatalf("reading raw value: %v", err)
 	}

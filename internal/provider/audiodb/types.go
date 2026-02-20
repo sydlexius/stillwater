@@ -7,7 +7,7 @@ type ArtistResponse struct {
 	Artists []AudioDBArtist `json:"artists"`
 }
 
-// AudioDBArtist represents a TheAudioDB artist entity.
+// AudioDBArtist represents a TheAudioDB artist entity. //nolint:revive // stuttering accepted for clarity with external API
 type AudioDBArtist struct {
 	IDArtist         string `json:"idArtist"`
 	Artist           string `json:"strArtist"`

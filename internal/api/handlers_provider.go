@@ -39,7 +39,7 @@ func (r *Router) handleSetProviderKey(w http.ResponseWriter, req *http.Request) 
 		apiKey = req.FormValue("api_key")
 	} else {
 		var body struct {
-			APIKey string `json:"api_key"`
+			APIKey string `json:"api_key"` //nolint:gosec // G117: not a hardcoded credential, this is user input
 		}
 		if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
 			writeError(w, req, http.StatusBadRequest, "invalid request body")
