@@ -88,3 +88,40 @@ func (r *Router) handleEvaluateArtist(w http.ResponseWriter, req *http.Request) 
 
 	writeJSON(w, http.StatusOK, result)
 }
+
+// handleRunRule runs a single rule against all artists and attempts to fix violations.
+// POST /api/v1/rules/{id}/run
+func (r *Router) handleRunRule(w http.ResponseWriter, req *http.Request) {
+	ruleID := req.PathValue("id")
+	if ruleID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing rule id"})
+		return
+	}
+
+	if _, err := r.ruleService.GetByID(req.Context(), ruleID); err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "rule not found"})
+		return
+	}
+
+	result, err := r.pipeline.RunRule(req.Context(), ruleID)
+	if err != nil {
+		r.logger.Error("running rule", "rule_id", ruleID, "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to run rule"})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
+}
+
+// handleRunAllRules runs all enabled rules against all artists and attempts fixes.
+// POST /api/v1/rules/run-all
+func (r *Router) handleRunAllRules(w http.ResponseWriter, req *http.Request) {
+	result, err := r.pipeline.RunAll(req.Context())
+	if err != nil {
+		r.logger.Error("running all rules", "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to run rules"})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
+}

@@ -127,13 +127,21 @@ func run() error {
 
 	orchestrator := provider.NewOrchestrator(providerRegistry, providerSettings, logger)
 
+	// Initialize fix pipeline (depends on orchestrator)
+	fixers := []rule.Fixer{
+		&rule.NFOFixer{},
+		rule.NewMetadataFixer(orchestrator),
+		rule.NewImageFixer(orchestrator, logger),
+	}
+	pipeline := rule.NewPipeline(ruleEngine, artistService, fixers, logger)
+
 	logger.Info("starting stillwater",
 		slog.String("version", version.Version),
 		slog.String("commit", version.Commit),
 	)
 
 	// Set up HTTP router
-	router := api.NewRouter(authService, artistService, scannerService, platformService, providerSettings, providerRegistry, orchestrator, ruleService, ruleEngine, logger, cfg.Server.BasePath, "web/static")
+	router := api.NewRouter(authService, artistService, scannerService, platformService, providerSettings, providerRegistry, orchestrator, ruleService, ruleEngine, pipeline, logger, cfg.Server.BasePath, "web/static")
 
 	// Create HTTP server
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)

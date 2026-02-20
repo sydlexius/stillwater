@@ -24,13 +24,14 @@ type Router struct {
 	orchestrator     *provider.Orchestrator
 	ruleService      *rule.Service
 	ruleEngine       *rule.Engine
+	pipeline         *rule.Pipeline
 	logger           *slog.Logger
 	basePath         string
 	staticAssets     *StaticAssets
 }
 
 // NewRouter creates a new Router with all routes configured.
-func NewRouter(authService *auth.Service, artistService *artist.Service, scannerService *scanner.Service, platformService *platform.Service, providerSettings *provider.SettingsService, providerRegistry *provider.Registry, orchestrator *provider.Orchestrator, ruleService *rule.Service, ruleEngine *rule.Engine, logger *slog.Logger, basePath string, staticDir string) *Router {
+func NewRouter(authService *auth.Service, artistService *artist.Service, scannerService *scanner.Service, platformService *platform.Service, providerSettings *provider.SettingsService, providerRegistry *provider.Registry, orchestrator *provider.Orchestrator, ruleService *rule.Service, ruleEngine *rule.Engine, pipeline *rule.Pipeline, logger *slog.Logger, basePath string, staticDir string) *Router {
 	return &Router{
 		authService:      authService,
 		artistService:    artistService,
@@ -41,6 +42,7 @@ func NewRouter(authService *auth.Service, artistService *artist.Service, scanner
 		orchestrator:     orchestrator,
 		ruleService:      ruleService,
 		ruleEngine:       ruleEngine,
+		pipeline:         pipeline,
 		logger:           logger,
 		basePath:         basePath,
 		staticAssets:     NewStaticAssets(staticDir, logger),
@@ -91,6 +93,8 @@ func (r *Router) Handler() http.Handler {
 	// Rule routes
 	mux.HandleFunc("GET "+bp+"/api/v1/rules", wrapAuth(r.handleListRules, authMw))
 	mux.HandleFunc("PUT "+bp+"/api/v1/rules/{id}", wrapAuth(r.handleUpdateRule, authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/rules/{id}/run", wrapAuth(r.handleRunRule, authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/rules/run-all", wrapAuth(r.handleRunAllRules, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/health", wrapAuth(r.handleEvaluateArtist, authMw))
 
 	// Image routes
