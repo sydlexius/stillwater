@@ -12,6 +12,7 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/database"
+	"github.com/sydlexius/stillwater/internal/rule"
 )
 
 func setupTestDB(t *testing.T) *sql.DB {
@@ -32,7 +33,7 @@ func setupScanner(t *testing.T, libraryPath string) (*Service, *artist.Service) 
 	db := setupTestDB(t)
 	artistSvc := artist.NewService(db)
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	scannerSvc := NewService(artistSvc, logger, libraryPath, nil)
+	scannerSvc := NewService(artistSvc, nil, nil, logger, libraryPath, nil)
 	return scannerSvc, artistSvc
 }
 
@@ -365,7 +366,7 @@ func TestScan_Exclusions(t *testing.T) {
 	db := setupTestDB(t)
 	artistSvc := artist.NewService(db)
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	svc := NewService(artistSvc, logger, libDir, []string{"Various Artists", "VA", "OST"})
+	svc := NewService(artistSvc, nil, nil, logger, libDir, []string{"Various Artists", "VA", "OST"})
 	ctx := context.Background()
 
 	if _, err := svc.Run(ctx); err != nil {
@@ -405,6 +406,82 @@ func TestScan_Exclusions(t *testing.T) {
 	}
 	if !ost.IsExcluded {
 		t.Error("OST should be excluded")
+	}
+}
+
+func TestScan_HealthScoreIntegration(t *testing.T) {
+	libDir := t.TempDir()
+	// Create an artist with NFO, thumb, fanart -- should pass several rules
+	nfoContent := `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<artist>
+  <name>Radiohead</name>
+  <musicbrainzartistid>a74b1b7f-71a5-4011-9441-d0b5e4122711</musicbrainzartistid>
+  <biography>English rock band from Abingdon, Oxfordshire, formed in 1985.</biography>
+</artist>`
+	createArtistDirWithNFO(t, libDir, "Radiohead", nfoContent)
+	// Add thumb and fanart files
+	os.WriteFile(filepath.Join(libDir, "Radiohead", "folder.jpg"), []byte("jpg"), 0o644) //nolint:errcheck
+	os.WriteFile(filepath.Join(libDir, "Radiohead", "fanart.jpg"), []byte("jpg"), 0o644) //nolint:errcheck
+
+	db := setupTestDB(t)
+	artistSvc := artist.NewService(db)
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+
+	ruleSvc := rule.NewService(db)
+	if err := ruleSvc.SeedDefaults(context.Background()); err != nil {
+		t.Fatalf("seeding rules: %v", err)
+	}
+	ruleEng := rule.NewEngine(ruleSvc, logger)
+
+	svc := NewService(artistSvc, ruleEng, ruleSvc, logger, libDir, nil)
+	ctx := context.Background()
+
+	if _, err := svc.Run(ctx); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	waitForScan(t, svc, 5*time.Second)
+
+	a, err := artistSvc.GetByPath(ctx, filepath.Join(libDir, "Radiohead"))
+	if err != nil {
+		t.Fatalf("GetByPath: %v", err)
+	}
+	if a == nil {
+		t.Fatal("artist not found")
+	}
+
+	// Artist has: NFO, MBID, thumb, fanart, biography -- should have a non-zero health score
+	if a.HealthScore <= 0 {
+		t.Errorf("HealthScore = %v, want > 0", a.HealthScore)
+	}
+	// Missing: logo, thumb quality checks (no valid image data) -- should not be 100
+	// But thumb_square and thumb_min_res will fail to read dimensions (fake jpg), so they
+	// just skip. We have 8 rules, pass: nfo_exists, nfo_has_mbid, thumb_exists, fanart_exists, bio_exists = 5
+	// fail: logo_exists = 1, thumb_square skips (returns nil), thumb_min_res skips (returns nil)
+	// So 7 pass out of 8 = 87.5%
+	if a.HealthScore < 50 {
+		t.Errorf("HealthScore = %v, expected at least 50 for an artist with most assets", a.HealthScore)
+	}
+}
+
+func TestScan_NilRuleEngine(t *testing.T) {
+	// Verify scanner works fine when rule engine is nil (backward compat)
+	libDir := t.TempDir()
+	createArtistDir(t, libDir, "Nirvana", "folder.jpg")
+	svc, artistSvc := setupScanner(t, libDir)
+	ctx := context.Background()
+
+	if _, err := svc.Run(ctx); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	waitForScan(t, svc, 5*time.Second)
+
+	a, _ := artistSvc.GetByPath(ctx, filepath.Join(libDir, "Nirvana"))
+	if a == nil {
+		t.Fatal("artist not found")
+	}
+	// Health score should be default (0) when rule engine is nil
+	if a.HealthScore != 0 {
+		t.Errorf("HealthScore = %v, want 0 (no rule engine)", a.HealthScore)
 	}
 }
 

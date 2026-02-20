@@ -101,8 +101,17 @@ func run() error {
 	// Initialize services
 	authService := auth.NewService(db)
 	artistService := artist.NewService(db)
-	scannerService := scanner.NewService(artistService, logger, cfg.Music.LibraryPath, cfg.Scanner.Exclusions)
 	platformService := platform.NewService(db)
+
+	// Initialize rule engine
+	ruleService := rule.NewService(db)
+	if err := ruleService.SeedDefaults(context.Background()); err != nil {
+		return fmt.Errorf("seeding default rules: %w", err)
+	}
+	ruleEngine := rule.NewEngine(ruleService, logger)
+
+	// Initialize scanner (depends on rule engine for health scoring)
+	scannerService := scanner.NewService(artistService, ruleEngine, ruleService, logger, cfg.Music.LibraryPath, cfg.Scanner.Exclusions)
 
 	// Initialize provider infrastructure
 	rateLimiters := provider.NewRateLimiterMap()
@@ -117,13 +126,6 @@ func run() error {
 	providerRegistry.Register(wikidata.New(rateLimiters, logger))
 
 	orchestrator := provider.NewOrchestrator(providerRegistry, providerSettings, logger)
-
-	// Initialize rule engine
-	ruleService := rule.NewService(db)
-	if err := ruleService.SeedDefaults(context.Background()); err != nil {
-		return fmt.Errorf("seeding default rules: %w", err)
-	}
-	ruleEngine := rule.NewEngine(ruleService, logger)
 
 	logger.Info("starting stillwater",
 		slog.String("version", version.Version),
