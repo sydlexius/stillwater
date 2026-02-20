@@ -239,6 +239,22 @@ func run() error {
 		go backupService.StartScheduler(ctx, time.Duration(cfg.Backup.IntervalHours)*time.Hour)
 	}
 
+	// Start session cleanup goroutine
+	go func() {
+		ticker := time.NewTicker(1 * time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if err := authService.CleanExpiredSessions(ctx); err != nil {
+					logger.Error("session cleanup failed", "error", err)
+				}
+			}
+		}
+	}()
+
 	go func() {
 		logger.Info("server starting", slog.String("addr", addr), slog.String("base_path", cfg.Server.BasePath))
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
