@@ -71,14 +71,14 @@ func ArtistsPage(assets AssetPaths, data ArtistListData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, " artists in library</p></div><button hx-post=\"/api/v1/scanner/run\" hx-swap=\"none\" class=\"rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2\">Scan Library</button></div><div class=\"flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between\"><div class=\"relative flex-1 max-w-sm\"><input type=\"search\" name=\"search\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, " artists in library</p></div><button id=\"scan-btn\" hx-post=\"/api/v1/scanner/run\" hx-swap=\"none\" hx-indicator=\"#scan-spinner\" class=\"inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed\"><span id=\"scan-spinner\" class=\"htmx-indicator\"><svg class=\"animate-spin h-4 w-4\" xmlns=\"http://www.w3.org/2000/svg\" fill=\"none\" viewBox=\"0 0 24 24\"><circle class=\"opacity-25\" cx=\"12\" cy=\"12\" r=\"10\" stroke=\"currentColor\" stroke-width=\"4\"></circle> <path class=\"opacity-75\" fill=\"currentColor\" d=\"M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z\"></path></svg></span> <span id=\"scan-label\">Scan Library</span></button></div><div class=\"flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between\"><div class=\"relative flex-1 max-w-sm\"><input type=\"search\" name=\"search\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var4 string
 			templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(data.Search)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 43, Col: 25}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 51, Col: 25}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 			if templ_7745c5c3_Err != nil {
@@ -162,7 +162,7 @@ func ArtistsPage(assets AssetPaths, data ArtistListData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "</div><script>\r\n\t\t\t(function() {\r\n\t\t\t\tvar btn = document.getElementById('scan-btn');\r\n\t\t\t\tif (!btn) return;\r\n\r\n\t\t\t\tdocument.body.addEventListener('htmx:afterRequest', function(evt) {\r\n\t\t\t\t\tif (evt.detail.elt !== btn) return;\r\n\t\t\t\t\tif (!evt.detail.successful) return;\r\n\r\n\t\t\t\t\tvar spinner = document.getElementById('scan-spinner');\r\n\t\t\t\t\tvar label = document.getElementById('scan-label');\r\n\t\t\t\t\tbtn.disabled = true;\r\n\t\t\t\t\tspinner.style.opacity = '1';\r\n\t\t\t\t\tlabel.textContent = 'Scanning...';\r\n\r\n\t\t\t\t\tvar poll = setInterval(function() {\r\n\t\t\t\t\t\tfetch('/api/v1/scanner/status')\r\n\t\t\t\t\t\t\t.then(function(r) { return r.json(); })\r\n\t\t\t\t\t\t\t.then(function(data) {\r\n\t\t\t\t\t\t\t\tif (data.status === 'completed' || data.status === 'failed') {\r\n\t\t\t\t\t\t\t\t\tclearInterval(poll);\r\n\t\t\t\t\t\t\t\t\tbtn.disabled = false;\r\n\t\t\t\t\t\t\t\t\tspinner.style.opacity = '';\r\n\t\t\t\t\t\t\t\t\tlabel.textContent = 'Scan Library';\r\n\t\t\t\t\t\t\t\t\thtmx.ajax('GET', window.location.pathname + window.location.search, {target: '#artist-table', swap: 'outerHTML'});\r\n\t\t\t\t\t\t\t\t}\r\n\t\t\t\t\t\t\t})\r\n\t\t\t\t\t\t\t.catch(function() {\r\n\t\t\t\t\t\t\t\tclearInterval(poll);\r\n\t\t\t\t\t\t\t\tbtn.disabled = false;\r\n\t\t\t\t\t\t\t\tspinner.style.opacity = '';\r\n\t\t\t\t\t\t\t\tlabel.textContent = 'Scan Library';\r\n\t\t\t\t\t\t\t});\r\n\t\t\t\t\t}, 2000);\r\n\t\t\t\t});\r\n\t\t\t})();\r\n\t\t</script>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -276,7 +276,7 @@ func ArtistRow(a artist.Artist) templ.Component {
 		var templ_7745c5c3_Var9 templ.SafeURL
 		templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/artists/" + a.ID))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 125, Col: 44}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 170, Col: 44}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 		if templ_7745c5c3_Err != nil {
@@ -289,7 +289,7 @@ func ArtistRow(a artist.Artist) templ.Component {
 		var templ_7745c5c3_Var10 string
 		templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(a.Name)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 128, Col: 12}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 173, Col: 12}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 		if templ_7745c5c3_Err != nil {
@@ -307,7 +307,7 @@ func ArtistRow(a artist.Artist) templ.Component {
 			var templ_7745c5c3_Var11 string
 			templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(a.SortName)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 131, Col: 58}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 176, Col: 58}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 			if templ_7745c5c3_Err != nil {

@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/connection/emby"
@@ -78,9 +79,17 @@ func (r *Router) handleCreateConnection(w http.ResponseWriter, req *http.Request
 		APIKey  string `json:"api_key"` //nolint:gosec // G101: not a hardcoded secret, this is a request field
 		Enabled bool   `json:"enabled"`
 	}
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
-		return
+	if strings.HasPrefix(req.Header.Get("Content-Type"), "application/json") {
+		if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+			return
+		}
+	} else {
+		body.Name = req.FormValue("name")
+		body.Type = req.FormValue("type")
+		body.URL = req.FormValue("url")
+		body.APIKey = req.FormValue("api_key")
+		body.Enabled = true
 	}
 
 	c := &connection.Connection{

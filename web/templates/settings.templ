@@ -190,7 +190,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 									<option value="lidarr">Lidarr</option>
 								</select>
 								<input name="url" type="url" placeholder="Server URL" required class="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
-								<input name="api_key" type="password" placeholder="API Key" required class="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+								<input name="api_key" type="text" placeholder="API Key" required autocomplete="off" data-1p-ignore data-lpignore="true" class="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
 							</div>
 							<div class="flex gap-2">
 								<button type="submit" class="text-xs px-3 py-1.5 rounded bg-green-600 text-white hover:bg-green-700 transition-colors">Save</button>
@@ -323,9 +323,12 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 			hx-on::after-request="if(event.detail.successful) this.closest('[id^=key-input-]').classList.add('hidden')"
 		>
 			<input
-				type="password"
+				type="text"
 				name="api_key"
 				placeholder="Enter API key..."
+				autocomplete="off"
+				data-1p-ignore
+				data-lpignore="true"
 				class="flex-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
 				required
 			/>

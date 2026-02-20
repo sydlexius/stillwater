@@ -28,11 +28,19 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 					</p>
 				</div>
 				<button
+					id="scan-btn"
 					hx-post="/api/v1/scanner/run"
 					hx-swap="none"
-					class="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+					hx-indicator="#scan-spinner"
+					class="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
 				>
-					Scan Library
+					<span id="scan-spinner" class="htmx-indicator">
+						<svg class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+							<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+							<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+						</svg>
+					</span>
+					<span id="scan-label">Scan Library</span>
 				</button>
 			</div>
 			<div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -70,6 +78,43 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 			</div>
 			@ArtistTable(data)
 		</div>
+		<script>
+			(function() {
+				var btn = document.getElementById('scan-btn');
+				if (!btn) return;
+
+				document.body.addEventListener('htmx:afterRequest', function(evt) {
+					if (evt.detail.elt !== btn) return;
+					if (!evt.detail.successful) return;
+
+					var spinner = document.getElementById('scan-spinner');
+					var label = document.getElementById('scan-label');
+					btn.disabled = true;
+					spinner.style.opacity = '1';
+					label.textContent = 'Scanning...';
+
+					var poll = setInterval(function() {
+						fetch('/api/v1/scanner/status')
+							.then(function(r) { return r.json(); })
+							.then(function(data) {
+								if (data.status === 'completed' || data.status === 'failed') {
+									clearInterval(poll);
+									btn.disabled = false;
+									spinner.style.opacity = '';
+									label.textContent = 'Scan Library';
+									htmx.ajax('GET', window.location.pathname + window.location.search, {target: '#artist-table', swap: 'outerHTML'});
+								}
+							})
+							.catch(function() {
+								clearInterval(poll);
+								btn.disabled = false;
+								spinner.style.opacity = '';
+								label.textContent = 'Scan Library';
+							});
+					}, 2000);
+				});
+			})();
+		</script>
 	}
 }
 

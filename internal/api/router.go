@@ -94,6 +94,7 @@ func NewRouter(deps RouterDeps) *Router {
 // Handler returns the fully configured HTTP handler with middleware applied.
 func (r *Router) Handler() http.Handler {
 	authMw := middleware.Auth(r.authService)
+	optAuthMw := middleware.OptionalAuth(r.authService)
 	mux := http.NewServeMux()
 	bp := r.basePath
 
@@ -102,7 +103,7 @@ func (r *Router) Handler() http.Handler {
 	mux.HandleFunc("POST "+bp+"/api/v1/auth/login", r.handleLogin)
 	mux.HandleFunc("POST "+bp+"/api/v1/auth/setup", r.handleSetup)
 	mux.Handle("GET "+bp+"/static/", r.staticAssets.Handler(bp))
-	mux.HandleFunc("GET "+bp+"/", r.handleIndex)
+	mux.HandleFunc("GET "+bp+"/", wrapOptionalAuth(r.handleIndex, optAuthMw))
 
 	// Protected routes (auth required)
 	mux.HandleFunc("POST "+bp+"/api/v1/auth/logout", wrapAuth(r.handleLogout, authMw))
@@ -185,13 +186,13 @@ func (r *Router) Handler() http.Handler {
 	// Push routes
 	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/push", wrapAuth(r.handlePushMetadata, authMw))
 
-	// Web routes (auth checked in handlers)
-	mux.HandleFunc("GET "+bp+"/artists/{id}/images", r.handleArtistImagesPage)
-	mux.HandleFunc("GET "+bp+"/artists/{id}", r.handleArtistDetailPage)
-	mux.HandleFunc("GET "+bp+"/artists", r.handleArtistsPage)
-	mux.HandleFunc("GET "+bp+"/reports/compliance", r.handleCompliancePage)
-	mux.HandleFunc("GET "+bp+"/artists/{id}/nfo", r.handleNFODiffPage)
-	mux.HandleFunc("GET "+bp+"/settings", r.handleSettingsPage)
+	// Web routes (optional auth populates user context for login redirect)
+	mux.HandleFunc("GET "+bp+"/artists/{id}/images", wrapOptionalAuth(r.handleArtistImagesPage, optAuthMw))
+	mux.HandleFunc("GET "+bp+"/artists/{id}", wrapOptionalAuth(r.handleArtistDetailPage, optAuthMw))
+	mux.HandleFunc("GET "+bp+"/artists", wrapOptionalAuth(r.handleArtistsPage, optAuthMw))
+	mux.HandleFunc("GET "+bp+"/reports/compliance", wrapOptionalAuth(r.handleCompliancePage, optAuthMw))
+	mux.HandleFunc("GET "+bp+"/artists/{id}/nfo", wrapOptionalAuth(r.handleNFODiffPage, optAuthMw))
+	mux.HandleFunc("GET "+bp+"/settings", wrapOptionalAuth(r.handleSettingsPage, optAuthMw))
 
 	// Apply logging to all requests
 	return middleware.Logging(r.logger)(mux)
@@ -201,5 +202,12 @@ func (r *Router) Handler() http.Handler {
 func wrapAuth(fn http.HandlerFunc, authMw func(http.Handler) http.Handler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		authMw(fn).ServeHTTP(w, r)
+	}
+}
+
+// wrapOptionalAuth wraps a handler function with optional auth middleware.
+func wrapOptionalAuth(fn http.HandlerFunc, mw func(http.Handler) http.Handler) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		mw(fn).ServeHTTP(w, r)
 	}
 }

@@ -12,6 +12,24 @@ type contextKey string
 
 const userIDKey contextKey = "userID"
 
+// OptionalAuth returns middleware that populates the user context if a valid
+// session exists but does not reject unauthenticated requests. Use this for
+// public pages that change behavior based on auth state.
+func OptionalAuth(authService *auth.Service) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if token := extractToken(r); token != "" {
+				if userID, err := authService.ValidateSession(r.Context(), token); err == nil {
+					ctx := context.WithValue(r.Context(), userIDKey, userID)
+					next.ServeHTTP(w, r.WithContext(ctx))
+					return
+				}
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 // Auth returns middleware that requires a valid session.
 // It checks for a session cookie or Authorization header.
 func Auth(authService *auth.Service) func(http.Handler) http.Handler {

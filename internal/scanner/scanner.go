@@ -78,7 +78,9 @@ func (s *Service) Run(ctx context.Context) (*ScanResult, error) {
 	snapshot := *result
 	s.mu.Unlock()
 
-	go s.runScan(ctx, result)
+	// Use a detached context so the scan is not canceled when the HTTP
+	// request that triggered it completes.
+	go s.runScan(context.WithoutCancel(ctx), result)
 
 	return &snapshot, nil
 }
