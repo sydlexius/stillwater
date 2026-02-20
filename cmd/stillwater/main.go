@@ -26,9 +26,11 @@ import (
 	"github.com/sydlexius/stillwater/internal/provider/lastfm"
 	"github.com/sydlexius/stillwater/internal/provider/musicbrainz"
 	"github.com/sydlexius/stillwater/internal/provider/wikidata"
+	"github.com/sydlexius/stillwater/internal/event"
 	"github.com/sydlexius/stillwater/internal/rule"
 	"github.com/sydlexius/stillwater/internal/scanner"
 	"github.com/sydlexius/stillwater/internal/version"
+	"github.com/sydlexius/stillwater/internal/webhook"
 )
 
 func main() {
@@ -145,6 +147,27 @@ func run() error {
 	bulkService := rule.NewBulkService(db)
 	bulkExecutor := rule.NewBulkExecutor(bulkService, artistService, orchestrator, pipeline, nfoSnapshotService, logger)
 
+	// Initialize event bus
+	eventBus := event.NewBus(logger, 256)
+	go eventBus.Start()
+	defer eventBus.Stop()
+
+	// Initialize webhook service and dispatcher
+	webhookService := webhook.NewService(db)
+	webhookDispatcher := webhook.NewDispatcher(webhookService, logger)
+
+	// Subscribe dispatcher to all event types
+	for _, eventType := range []event.Type{
+		event.ArtistNew, event.MetadataFixed, event.ReviewNeeded,
+		event.RuleViolation, event.BulkCompleted, event.ScanCompleted,
+	} {
+		eventBus.Subscribe(eventType, webhookDispatcher.HandleEvent)
+	}
+
+	// Wire event bus into scanner and bulk executor
+	scannerService.SetEventBus(eventBus)
+	bulkExecutor.SetEventBus(eventBus)
+
 	logger.Info("starting stillwater",
 		slog.String("version", version.Version),
 		slog.String("commit", version.Commit),
@@ -166,6 +189,8 @@ func run() error {
 		BulkExecutor:       bulkExecutor,
 		NFOSnapshotService: nfoSnapshotService,
 		ConnectionService:  connectionService,
+		WebhookService:     webhookService,
+		WebhookDispatcher:  webhookDispatcher,
 		DB:                 db,
 		Logger:             logger,
 		BasePath:           cfg.Server.BasePath,

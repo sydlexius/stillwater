@@ -14,6 +14,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/provider"
 	"github.com/sydlexius/stillwater/internal/rule"
 	"github.com/sydlexius/stillwater/internal/scanner"
+	"github.com/sydlexius/stillwater/internal/webhook"
 )
 
 // RouterDeps bundles all dependencies needed by the HTTP router.
@@ -32,6 +33,8 @@ type RouterDeps struct {
 	BulkExecutor       *rule.BulkExecutor
 	NFOSnapshotService *nfo.SnapshotService
 	ConnectionService  *connection.Service
+	WebhookService     *webhook.Service
+	WebhookDispatcher  *webhook.Dispatcher
 	DB                 *sql.DB
 	Logger             *slog.Logger
 	BasePath           string
@@ -54,6 +57,8 @@ type Router struct {
 	bulkExecutor       *rule.BulkExecutor
 	nfoSnapshotService *nfo.SnapshotService
 	connectionService  *connection.Service
+	webhookService     *webhook.Service
+	webhookDispatcher  *webhook.Dispatcher
 	logger             *slog.Logger
 	basePath           string
 	staticAssets       *StaticAssets
@@ -77,6 +82,8 @@ func NewRouter(deps RouterDeps) *Router {
 		bulkExecutor:       deps.BulkExecutor,
 		nfoSnapshotService: deps.NFOSnapshotService,
 		connectionService:  deps.ConnectionService,
+		webhookService:     deps.WebhookService,
+		webhookDispatcher:  deps.WebhookDispatcher,
 		db:                 deps.DB,
 		logger:             deps.Logger,
 		basePath:           deps.BasePath,
@@ -117,6 +124,13 @@ func (r *Router) Handler() http.Handler {
 	mux.HandleFunc("PUT "+bp+"/api/v1/connections/{id}", wrapAuth(r.handleUpdateConnection, authMw))
 	mux.HandleFunc("DELETE "+bp+"/api/v1/connections/{id}", wrapAuth(r.handleDeleteConnection, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/connections/{id}/test", wrapAuth(r.handleTestConnection, authMw))
+	// Webhook routes
+	mux.HandleFunc("GET "+bp+"/api/v1/webhooks", wrapAuth(r.handleListWebhooks, authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/webhooks", wrapAuth(r.handleCreateWebhook, authMw))
+	mux.HandleFunc("GET "+bp+"/api/v1/webhooks/{id}", wrapAuth(r.handleGetWebhook, authMw))
+	mux.HandleFunc("PUT "+bp+"/api/v1/webhooks/{id}", wrapAuth(r.handleUpdateWebhook, authMw))
+	mux.HandleFunc("DELETE "+bp+"/api/v1/webhooks/{id}", wrapAuth(r.handleDeleteWebhook, authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/webhooks/{id}/test", wrapAuth(r.handleTestWebhook, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/settings", wrapAuth(r.handleNotImplemented, authMw))
 	mux.HandleFunc("PUT "+bp+"/api/v1/settings", wrapAuth(r.handleNotImplemented, authMw))
 

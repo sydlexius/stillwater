@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/event"
 	"github.com/sydlexius/stillwater/internal/nfo"
 	"github.com/sydlexius/stillwater/internal/rule"
 )
@@ -32,9 +33,15 @@ type Service struct {
 	logger        *slog.Logger
 	libraryPath   string
 	exclusions    map[string]bool
+	eventBus      *event.Bus
 
 	mu          sync.Mutex
 	currentScan *ScanResult
+}
+
+// SetEventBus sets the event bus for publishing scan events.
+func (s *Service) SetEventBus(bus *event.Bus) {
+	s.eventBus = bus
 }
 
 // NewService creates a scanner service.
@@ -97,6 +104,18 @@ func (s *Service) runScan(ctx context.Context, result *ScanResult) {
 			result.Status = "completed"
 		}
 		s.mu.Unlock()
+
+		if s.eventBus != nil {
+			s.eventBus.Publish(event.Event{
+				Type: event.ScanCompleted,
+				Data: map[string]any{
+					"scan_id":          result.ID,
+					"status":           result.Status,
+					"total_directories": result.TotalDirectories,
+					"new_artists":      result.NewArtists,
+				},
+			})
+		}
 	}()
 
 	entries, err := os.ReadDir(s.libraryPath)
