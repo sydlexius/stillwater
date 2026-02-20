@@ -2,6 +2,7 @@ package artist
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"strings"
 	"time"
@@ -105,12 +106,12 @@ func (s *Service) ListAliases(ctx context.Context, artistID string) ([]Alias, er
 func (s *Service) SearchWithAliases(ctx context.Context, query string) ([]Artist, error) {
 	pattern := "%" + strings.ToLower(query) + "%"
 
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT DISTINCT `+prefixedArtistColumns("artists")+` `+ //nolint:gosec // G202: concatenation uses trusted static column list
-			`FROM artists
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT `+artistColumns+` FROM artists WHERE id IN ( `+ //nolint:gosec // G202: concatenation uses trusted static column list
+		`SELECT artists.id FROM artists
 		LEFT JOIN artist_aliases ON artists.id = artist_aliases.artist_id
 		WHERE LOWER(artists.name) LIKE ? OR LOWER(artist_aliases.alias) LIKE ?
-		ORDER BY artists.name`, pattern, pattern)
+		) ORDER BY name`, pattern, pattern)
 	if err != nil {
 		return nil, fmt.Errorf("searching with aliases: %w", err)
 	}
@@ -129,111 +130,169 @@ func (s *Service) SearchWithAliases(ctx context.Context, query string) ([]Artist
 
 // FindDuplicates returns groups of artists that appear to be duplicates.
 // Detection is based on shared aliases, matching MBIDs, or similar names.
+// Uses single queries with subqueries to avoid SQLite single-connection deadlocks.
 func (s *Service) FindDuplicates(ctx context.Context) ([]DuplicateGroup, error) {
 	var groups []DuplicateGroup
 
-	// Collect shared MBIDs first, then close rows before sub-queries (SQLite limitation)
-	mbids, err := s.collectStrings(ctx, `
-		SELECT musicbrainz_id FROM artists
-		WHERE musicbrainz_id != '' AND is_excluded = 0
-		GROUP BY musicbrainz_id HAVING COUNT(*) > 1
-	`)
+	// Find artists sharing MBIDs in a single query
+	mbidGroups, err := s.findMBIDDuplicates(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("finding MBID duplicates: %w", err)
 	}
+	groups = append(groups, mbidGroups...)
 
-	for _, mbid := range mbids {
-		artists, err := s.listByMBID(ctx, mbid)
-		if err != nil {
-			return nil, err
-		}
-		groups = append(groups, DuplicateGroup{
-			Artists: artists,
-			Reason:  fmt.Sprintf("shared MusicBrainz ID: %s", mbid),
-		})
-	}
-
-	// Collect shared aliases, then close rows before sub-queries
-	aliases, err := s.collectStrings(ctx, `
-		SELECT LOWER(alias) FROM artist_aliases
-		GROUP BY LOWER(alias) HAVING COUNT(DISTINCT artist_id) > 1
-	`)
+	// Find artists sharing aliases in a single query
+	aliasGroups, err := s.findAliasDuplicates(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("finding alias duplicates: %w", err)
 	}
-
-	for _, alias := range aliases {
-		artists, err := s.listByAlias(ctx, alias)
-		if err != nil {
-			return nil, err
-		}
-		groups = append(groups, DuplicateGroup{
-			Artists: artists,
-			Reason:  fmt.Sprintf("shared alias: %s", alias),
-		})
-	}
+	groups = append(groups, aliasGroups...)
 
 	return groups, nil
 }
 
-// collectStrings runs a query that returns a single string column and collects all values.
-func (s *Service) collectStrings(ctx context.Context, query string) ([]string, error) {
-	rows, err := s.db.QueryContext(ctx, query)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close() //nolint:errcheck
-
-	var result []string
-	for rows.Next() {
-		var val string
-		if err := rows.Scan(&val); err != nil {
-			return nil, err
-		}
-		result = append(result, val)
-	}
-	return result, rows.Err()
-}
-
-func (s *Service) listByMBID(ctx context.Context, mbid string) ([]Artist, error) {
+func (s *Service) findMBIDDuplicates(ctx context.Context) ([]DuplicateGroup, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT `+artistColumns+` FROM artists WHERE musicbrainz_id = ? ORDER BY name
-	`, mbid)
+		SELECT `+artistColumns+` FROM artists `+ //nolint:gosec // G202: concatenation uses trusted static column list
+		`WHERE musicbrainz_id != '' AND is_excluded = 0
+		AND musicbrainz_id IN (
+			SELECT musicbrainz_id FROM artists
+			WHERE musicbrainz_id != '' AND is_excluded = 0
+			GROUP BY musicbrainz_id HAVING COUNT(*) > 1
+		) ORDER BY musicbrainz_id, name`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close() //nolint:errcheck
 
-	var artists []Artist
+	// Group artists by their MBID
+	mbidMap := make(map[string][]Artist)
+	var mbidOrder []string
 	for rows.Next() {
 		a, err := scanArtist(rows)
 		if err != nil {
 			return nil, err
 		}
-		artists = append(artists, *a)
+		if _, exists := mbidMap[a.MusicBrainzID]; !exists {
+			mbidOrder = append(mbidOrder, a.MusicBrainzID)
+		}
+		mbidMap[a.MusicBrainzID] = append(mbidMap[a.MusicBrainzID], *a)
 	}
-	return artists, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	var groups []DuplicateGroup
+	for _, mbid := range mbidOrder {
+		groups = append(groups, DuplicateGroup{
+			Artists: mbidMap[mbid],
+			Reason:  fmt.Sprintf("shared MusicBrainz ID: %s", mbid),
+		})
+	}
+	return groups, nil
 }
 
-func (s *Service) listByAlias(ctx context.Context, alias string) ([]Artist, error) {
+func (s *Service) findAliasDuplicates(ctx context.Context) ([]DuplicateGroup, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT DISTINCT `+prefixedArtistColumns("artists")+` `+ //nolint:gosec // G202: concatenation uses trusted static column list
-			`FROM artists
-		JOIN artist_aliases ON artists.id = artist_aliases.artist_id
-		WHERE LOWER(artist_aliases.alias) = ?
-		ORDER BY artists.name`, strings.ToLower(alias))
+		`SELECT `+prefixedArtistColumns("artists")+`, aa.alias FROM artists `+ //nolint:gosec // G202: concatenation uses trusted static column list
+			`JOIN artist_aliases aa ON artists.id = aa.artist_id
+		WHERE LOWER(aa.alias) IN (
+			SELECT LOWER(alias) FROM artist_aliases
+			GROUP BY LOWER(alias) HAVING COUNT(DISTINCT artist_id) > 1
+		) ORDER BY LOWER(aa.alias), artists.name`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close() //nolint:errcheck
 
-	var artists []Artist
+	// Group artists by their shared alias
+	aliasMap := make(map[string][]Artist)
+	aliasSeenArtist := make(map[string]map[string]bool) // alias -> artist ID -> seen
+	var aliasOrder []string
 	for rows.Next() {
-		a, err := scanArtist(rows)
+		a, err := scanArtistWithExtra(rows, 1)
 		if err != nil {
 			return nil, err
 		}
-		artists = append(artists, *a)
+		lowerAlias := strings.ToLower(a.extra[0])
+		if _, exists := aliasMap[lowerAlias]; !exists {
+			aliasOrder = append(aliasOrder, lowerAlias)
+			aliasSeenArtist[lowerAlias] = make(map[string]bool)
+		}
+		// Deduplicate: an artist might match multiple aliases
+		if !aliasSeenArtist[lowerAlias][a.artist.ID] {
+			aliasSeenArtist[lowerAlias][a.artist.ID] = true
+			aliasMap[lowerAlias] = append(aliasMap[lowerAlias], a.artist)
+		}
 	}
-	return artists, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	var groups []DuplicateGroup
+	for _, alias := range aliasOrder {
+		if len(aliasMap[alias]) > 1 {
+			groups = append(groups, DuplicateGroup{
+				Artists: aliasMap[alias],
+				Reason:  fmt.Sprintf("shared alias: %s", alias),
+			})
+		}
+	}
+	return groups, nil
+}
+
+// artistWithExtra wraps an Artist with extra scanned string columns.
+type artistWithExtra struct {
+	artist Artist
+	extra  []string
+}
+
+// scanArtistWithExtra scans the standard artist columns plus n additional string columns.
+func scanArtistWithExtra(row interface{ Scan(...any) error }, n int) (*artistWithExtra, error) {
+	extra := make([]string, n)
+	extraPtrs := make([]any, n)
+	for i := range extra {
+		extraPtrs[i] = &extra[i]
+	}
+
+	var a Artist
+	var genres, styles, moods string
+	var lastScannedAt sql.NullString
+	var nfo, thumb, fanart, logo, banner int
+	var isExcluded, isClassical int
+	var createdAt, updatedAt string
+
+	args := []any{
+		&a.ID, &a.Name, &a.SortName, &a.Type, &a.Gender, &a.Disambiguation,
+		&a.MusicBrainzID, &a.AudioDBID, &a.DiscogsID, &a.WikidataID,
+		&genres, &styles, &moods,
+		&a.YearsActive, &a.Born, &a.Formed, &a.Died, &a.Disbanded, &a.Biography,
+		&a.Path, &nfo, &thumb, &fanart, &logo, &banner,
+		&a.HealthScore, &isExcluded, &a.ExclusionReason, &isClassical,
+		&lastScannedAt, &createdAt, &updatedAt,
+	}
+	args = append(args, extraPtrs...)
+
+	if err := row.Scan(args...); err != nil {
+		return nil, err
+	}
+
+	a.Genres = UnmarshalStringSlice(genres)
+	a.Styles = UnmarshalStringSlice(styles)
+	a.Moods = UnmarshalStringSlice(moods)
+	a.NFOExists = nfo == 1
+	a.ThumbExists = thumb == 1
+	a.FanartExists = fanart == 1
+	a.LogoExists = logo == 1
+	a.BannerExists = banner == 1
+	a.IsExcluded = isExcluded == 1
+	a.IsClassical = isClassical == 1
+	if lastScannedAt.Valid {
+		t := parseTime(lastScannedAt.String)
+		a.LastScannedAt = &t
+	}
+	a.CreatedAt = parseTime(createdAt)
+	a.UpdatedAt = parseTime(updatedAt)
+
+	return &artistWithExtra{artist: a, extra: extra}, nil
 }
