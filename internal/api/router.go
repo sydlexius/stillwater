@@ -153,6 +153,7 @@ func (r *Router) Handler() http.Handler {
 
 	// NFO snapshot routes
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/nfo/diff", wrapAuth(r.handleNFODiff, authMw))
+	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/nfo/conflict", wrapAuth(r.handleNFOConflictCheck, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/nfo/snapshots", wrapAuth(r.handleNFOSnapshotList, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/nfo/snapshots/{snapshotId}/restore", wrapAuth(r.handleNFOSnapshotRestore, authMw))
 

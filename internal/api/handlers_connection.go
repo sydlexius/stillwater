@@ -7,6 +7,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/connection/emby"
 	"github.com/sydlexius/stillwater/internal/connection/jellyfin"
+	"github.com/sydlexius/stillwater/internal/connection/lidarr"
 )
 
 // connectionResponse is a Connection without the raw API key for list responses.
@@ -164,6 +165,9 @@ func (r *Router) handleTestConnection(w http.ResponseWriter, req *http.Request) 
 		testErr = client.TestConnection(req.Context())
 	case connection.TypeJellyfin:
 		client := jellyfin.New(conn.URL, conn.APIKey, r.logger)
+		testErr = client.TestConnection(req.Context())
+	case connection.TypeLidarr:
+		client := lidarr.New(conn.URL, conn.APIKey, r.logger)
 		testErr = client.TestConnection(req.Context())
 	default:
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unsupported connection type: " + conn.Type})
