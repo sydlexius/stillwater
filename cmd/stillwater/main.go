@@ -149,7 +149,25 @@ func run() error {
 	)
 
 	// Set up HTTP router
-	router := api.NewRouter(authService, artistService, scannerService, platformService, providerSettings, providerRegistry, orchestrator, ruleService, ruleEngine, pipeline, bulkService, bulkExecutor, nfoSnapshotService, db, logger, cfg.Server.BasePath, "web/static")
+	router := api.NewRouter(api.RouterDeps{
+		AuthService:        authService,
+		ArtistService:      artistService,
+		ScannerService:     scannerService,
+		PlatformService:    platformService,
+		ProviderSettings:   providerSettings,
+		ProviderRegistry:   providerRegistry,
+		Orchestrator:       orchestrator,
+		RuleService:        ruleService,
+		RuleEngine:         ruleEngine,
+		Pipeline:           pipeline,
+		BulkService:        bulkService,
+		BulkExecutor:       bulkExecutor,
+		NFOSnapshotService: nfoSnapshotService,
+		DB:                 db,
+		Logger:             logger,
+		BasePath:           cfg.Server.BasePath,
+		StaticDir:          "web/static",
+	})
 
 	// Create HTTP server
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)

@@ -15,6 +15,27 @@ import (
 	"github.com/sydlexius/stillwater/internal/scanner"
 )
 
+// RouterDeps bundles all dependencies needed by the HTTP router.
+type RouterDeps struct {
+	AuthService        *auth.Service
+	ArtistService      *artist.Service
+	ScannerService     *scanner.Service
+	PlatformService    *platform.Service
+	ProviderSettings   *provider.SettingsService
+	ProviderRegistry   *provider.Registry
+	Orchestrator       *provider.Orchestrator
+	RuleService        *rule.Service
+	RuleEngine         *rule.Engine
+	Pipeline           *rule.Pipeline
+	BulkService        *rule.BulkService
+	BulkExecutor       *rule.BulkExecutor
+	NFOSnapshotService *nfo.SnapshotService
+	DB                 *sql.DB
+	Logger             *slog.Logger
+	BasePath           string
+	StaticDir          string
+}
+
 // Router sets up all HTTP routes for the application.
 type Router struct {
 	authService        *auth.Service
@@ -37,25 +58,25 @@ type Router struct {
 }
 
 // NewRouter creates a new Router with all routes configured.
-func NewRouter(authService *auth.Service, artistService *artist.Service, scannerService *scanner.Service, platformService *platform.Service, providerSettings *provider.SettingsService, providerRegistry *provider.Registry, orchestrator *provider.Orchestrator, ruleService *rule.Service, ruleEngine *rule.Engine, pipeline *rule.Pipeline, bulkService *rule.BulkService, bulkExecutor *rule.BulkExecutor, nfoSnapshotService *nfo.SnapshotService, db *sql.DB, logger *slog.Logger, basePath string, staticDir string) *Router {
+func NewRouter(deps RouterDeps) *Router {
 	return &Router{
-		authService:        authService,
-		artistService:      artistService,
-		scannerService:     scannerService,
-		platformService:    platformService,
-		providerSettings:   providerSettings,
-		providerRegistry:   providerRegistry,
-		orchestrator:       orchestrator,
-		ruleService:        ruleService,
-		ruleEngine:         ruleEngine,
-		pipeline:           pipeline,
-		bulkService:        bulkService,
-		bulkExecutor:       bulkExecutor,
-		nfoSnapshotService: nfoSnapshotService,
-		db:                 db,
-		logger:             logger,
-		basePath:           basePath,
-		staticAssets:       NewStaticAssets(staticDir, logger),
+		authService:        deps.AuthService,
+		artistService:      deps.ArtistService,
+		scannerService:     deps.ScannerService,
+		platformService:    deps.PlatformService,
+		providerSettings:   deps.ProviderSettings,
+		providerRegistry:   deps.ProviderRegistry,
+		orchestrator:       deps.Orchestrator,
+		ruleService:        deps.RuleService,
+		ruleEngine:         deps.RuleEngine,
+		pipeline:           deps.Pipeline,
+		bulkService:        deps.BulkService,
+		bulkExecutor:       deps.BulkExecutor,
+		nfoSnapshotService: deps.NFOSnapshotService,
+		db:                 deps.DB,
+		logger:             deps.Logger,
+		basePath:           deps.BasePath,
+		staticAssets:       NewStaticAssets(deps.StaticDir, deps.Logger),
 	}
 }
 
