@@ -139,3 +139,30 @@ make clean          Remove build artifacts
 ```
 
 When `make` is not available, run the equivalent commands directly as shown in the sections above.
+
+## Releasing
+
+Releases are automated with [GoReleaser](https://goreleaser.com/). Pushing a semver tag triggers the release workflow, which builds multi-platform binaries, pushes Docker images to GHCR with semver tags, and creates a GitHub Release with auto-generated notes from conventional commit history.
+
+### Tag and push
+
+```bash
+git tag -a v0.2.0 -m "Release v0.2.0"
+git push origin v0.2.0
+```
+
+The release workflow creates the GitHub Release automatically. Pre-release tags (e.g. `v0.2.0-rc1`) are marked as pre-release on GitHub.
+
+### Local dry run (no publish)
+
+```bash
+goreleaser release --snapshot --clean
+```
+
+This builds all artifacts locally without creating a release or pushing images. Useful for verifying the config before tagging.
+
+### Validate config
+
+```bash
+goreleaser check
+```

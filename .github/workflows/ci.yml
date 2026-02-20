@@ -68,7 +68,14 @@ jobs:
         run: templ generate
 
       - name: Build binary
-        run: CGO_ENABLED=0 go build -ldflags="-s -w" -o stillwater ./cmd/stillwater
+        run: |
+          VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "0.1.0-dev")
+          COMMIT=$(git rev-parse --short HEAD)
+          DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          PKG=github.com/sydlexius/stillwater/internal/version
+          CGO_ENABLED=0 go build \
+            -ldflags="-s -w -X ${PKG}.Version=${VERSION} -X ${PKG}.Commit=${COMMIT} -X ${PKG}.Date=${DATE}" \
+            -o stillwater ./cmd/stillwater
 
   docker:
     name: Docker Build
