@@ -9,6 +9,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/auth"
 	"github.com/sydlexius/stillwater/internal/platform"
 	"github.com/sydlexius/stillwater/internal/provider"
+	"github.com/sydlexius/stillwater/internal/rule"
 	"github.com/sydlexius/stillwater/internal/scanner"
 )
 
@@ -21,13 +22,15 @@ type Router struct {
 	providerSettings *provider.SettingsService
 	providerRegistry *provider.Registry
 	orchestrator     *provider.Orchestrator
+	ruleService      *rule.Service
+	ruleEngine       *rule.Engine
 	logger           *slog.Logger
 	basePath         string
 	staticAssets     *StaticAssets
 }
 
 // NewRouter creates a new Router with all routes configured.
-func NewRouter(authService *auth.Service, artistService *artist.Service, scannerService *scanner.Service, platformService *platform.Service, providerSettings *provider.SettingsService, providerRegistry *provider.Registry, orchestrator *provider.Orchestrator, logger *slog.Logger, basePath string, staticDir string) *Router {
+func NewRouter(authService *auth.Service, artistService *artist.Service, scannerService *scanner.Service, platformService *platform.Service, providerSettings *provider.SettingsService, providerRegistry *provider.Registry, orchestrator *provider.Orchestrator, ruleService *rule.Service, ruleEngine *rule.Engine, logger *slog.Logger, basePath string, staticDir string) *Router {
 	return &Router{
 		authService:      authService,
 		artistService:    artistService,
@@ -36,6 +39,8 @@ func NewRouter(authService *auth.Service, artistService *artist.Service, scanner
 		providerSettings: providerSettings,
 		providerRegistry: providerRegistry,
 		orchestrator:     orchestrator,
+		ruleService:      ruleService,
+		ruleEngine:       ruleEngine,
 		logger:           logger,
 		basePath:         basePath,
 		staticAssets:     NewStaticAssets(staticDir, logger),
@@ -82,6 +87,11 @@ func (r *Router) Handler() http.Handler {
 	mux.HandleFunc("PUT "+bp+"/api/v1/providers/priorities", wrapAuth(r.handleSetPriorities, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/providers/search", wrapAuth(r.handleProviderSearch, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/providers/fetch", wrapAuth(r.handleProviderFetch, authMw))
+
+	// Rule routes
+	mux.HandleFunc("GET "+bp+"/api/v1/rules", wrapAuth(r.handleListRules, authMw))
+	mux.HandleFunc("PUT "+bp+"/api/v1/rules/{id}", wrapAuth(r.handleUpdateRule, authMw))
+	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/health", wrapAuth(r.handleEvaluateArtist, authMw))
 
 	// Image routes
 	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/images/upload", wrapAuth(r.handleImageUpload, authMw))
