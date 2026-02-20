@@ -2,10 +2,11 @@ package templates
 
 // AssetPaths holds cache-busted URLs for static assets.
 type AssetPaths struct {
-	CSS       string
-	HTMX      string
-	CropperJS string
+	CSS        string
+	HTMX       string
+	CropperJS  string
 	CropperCSS string
+	ChartJS    string
 }
 
 templ Layout(title string, assets AssetPaths) {
@@ -71,6 +72,9 @@ templ navbar() {
 						</a>
 						<a href="/artists" class="rounded-md px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
 							Artists
+						</a>
+						<a href="/reports/compliance" class="rounded-md px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
+							Reports
 						</a>
 						<a href="/settings" class="rounded-md px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
 							Settings

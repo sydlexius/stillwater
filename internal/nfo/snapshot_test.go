@@ -14,7 +14,7 @@ func setupTestDB(t *testing.T) *sql.DB {
 	if err != nil {
 		t.Fatalf("opening test db: %v", err)
 	}
-	_, err = db.Exec(`
+	_, err = db.ExecContext(context.Background(), `
 		CREATE TABLE nfo_snapshots (
 			id TEXT PRIMARY KEY,
 			artist_id TEXT NOT NULL,

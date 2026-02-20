@@ -1,0 +1,92 @@
+package templates
+
+import "fmt"
+
+// HealthSummaryData holds data for the dashboard health summary cards.
+type HealthSummaryData struct {
+	Score            float64
+	TotalArtists     int
+	CompliantArtists int
+	MissingNFO       int
+	MissingThumb     int
+	MissingFanart    int
+	MissingMBID      int
+	TopViolations    []ViolationSummaryData
+}
+
+// ViolationSummaryData represents a rule violation count for display.
+type ViolationSummaryData struct {
+	RuleID   string
+	RuleName string
+	Count    int
+	Severity string
+}
+
+// HealthSummaryFragment renders the quick stat cards for the dashboard.
+templ HealthSummaryFragment(data HealthSummaryData) {
+	<div
+		class={
+			"rounded-lg bg-white dark:bg-gray-800 p-6 shadow",
+		}
+	>
+		<p class="text-sm font-medium text-gray-500 dark:text-gray-400">Compliance Score</p>
+		<p
+			class={
+				"mt-2 text-4xl font-bold",
+				templ.KV("text-green-600 dark:text-green-400", data.Score >= 80),
+				templ.KV("text-yellow-600 dark:text-yellow-400", data.Score >= 50 && data.Score < 80),
+				templ.KV("text-red-600 dark:text-red-400", data.Score < 50),
+			}
+		>
+			{ fmt.Sprintf("%.1f%%", data.Score) }
+		</p>
+		<p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
+			{ fmt.Sprint(data.CompliantArtists) } of { fmt.Sprint(data.TotalArtists) } fully compliant
+		</p>
+	</div>
+	@quickStatCard("Missing NFO", data.MissingNFO, "/reports/compliance?filter=missing_nfo")
+	@quickStatCard("Missing Thumb", data.MissingThumb, "/reports/compliance?filter=missing_thumb")
+	@quickStatCard("Missing MBID", data.MissingMBID, "/reports/compliance?filter=missing_mbid")
+	if len(data.TopViolations) > 0 {
+		<div class="sm:col-span-2 lg:col-span-4 rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
+			<h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Top Violations</h3>
+			<div class="space-y-2">
+				for _, v := range data.TopViolations {
+					<div class="flex items-center justify-between text-sm">
+						<span class="text-gray-600 dark:text-gray-400">{ v.RuleName }</span>
+						<div class="flex items-center gap-2">
+							<span
+								class={
+									"inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
+									templ.KV("bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200", v.Severity == "error"),
+									templ.KV("bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200", v.Severity == "warning"),
+									templ.KV("bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200", v.Severity == "info"),
+								}
+							>
+								{ fmt.Sprint(v.Count) } artists
+							</span>
+						</div>
+					</div>
+				}
+			</div>
+		</div>
+	}
+}
+
+templ quickStatCard(label string, count int, link string) {
+	<a
+		href={ templ.SafeURL(link) }
+		class="block rounded-lg bg-white dark:bg-gray-800 p-6 shadow hover:shadow-md transition-shadow"
+	>
+		<p class="text-sm font-medium text-gray-500 dark:text-gray-400">{ label }</p>
+		<p
+			class={
+				"mt-2 text-2xl font-bold",
+				templ.KV("text-red-600 dark:text-red-400", count > 0),
+				templ.KV("text-green-600 dark:text-green-400", count == 0),
+			}
+		>
+			{ fmt.Sprint(count) }
+		</p>
+	</a>
+}

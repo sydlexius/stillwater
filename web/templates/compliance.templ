@@ -1,0 +1,186 @@
+package templates
+
+import (
+	"fmt"
+
+	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/rule"
+	"github.com/sydlexius/stillwater/web/components"
+)
+
+// ComplianceRow represents one artist in the compliance report.
+type ComplianceRow struct {
+	Artist      artist.Artist   `json:"artist"`
+	HealthScore float64         `json:"health_score"`
+	Violations  []rule.Violation `json:"violations"`
+}
+
+// ComplianceData holds the data for the compliance report page.
+type ComplianceData struct {
+	Rows       []ComplianceRow
+	Pagination components.PaginationData
+	Search     string
+	Status     string
+	Filter     string
+}
+
+templ CompliancePage(assets AssetPaths, data ComplianceData) {
+	@Layout("Compliance Report", assets) {
+		<div class="space-y-6">
+			<div class="border-b border-gray-200 dark:border-gray-700 pb-4">
+				<h1 class="text-2xl font-bold">Compliance Report</h1>
+				<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+					Per-artist rule compliance with actionable details.
+				</p>
+			</div>
+			<div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+				<div class="relative flex-1 max-w-sm">
+					<input
+						type="search"
+						name="search"
+						value={ data.Search }
+						placeholder="Search artists..."
+						hx-get="/reports/compliance"
+						hx-trigger="keyup changed delay:300ms"
+						hx-target="#compliance-table"
+						hx-swap="outerHTML"
+						hx-include="[name='status'], [name='filter']"
+						class="block w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+					/>
+				</div>
+				<select
+					name="status"
+					hx-get="/reports/compliance"
+					hx-trigger="change"
+					hx-target="#compliance-table"
+					hx-swap="outerHTML"
+					hx-include="[name='search'], [name='filter']"
+					class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+				>
+					<option value="all" selected?={ data.Status == "" || data.Status == "all" }>All Artists</option>
+					<option value="compliant" selected?={ data.Status == "compliant" }>Compliant</option>
+					<option value="non_compliant" selected?={ data.Status == "non_compliant" }>Non-Compliant</option>
+				</select>
+				<select
+					name="filter"
+					hx-get="/reports/compliance"
+					hx-trigger="change"
+					hx-target="#compliance-table"
+					hx-swap="outerHTML"
+					hx-include="[name='search'], [name='status']"
+					class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+				>
+					<option value="" selected?={ data.Filter == "" }>No Filter</option>
+					<option value="missing_nfo" selected?={ data.Filter == "missing_nfo" }>Missing NFO</option>
+					<option value="missing_thumb" selected?={ data.Filter == "missing_thumb" }>Missing Thumbnail</option>
+					<option value="missing_fanart" selected?={ data.Filter == "missing_fanart" }>Missing Fanart</option>
+					<option value="missing_mbid" selected?={ data.Filter == "missing_mbid" }>Missing MBID</option>
+				</select>
+			</div>
+			@ComplianceTable(data)
+		</div>
+	}
+}
+
+// ComplianceTable is the HTMX-swappable table fragment.
+templ ComplianceTable(data ComplianceData) {
+	<div id="compliance-table">
+		<div class="overflow-x-auto">
+			<table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+				<thead class="bg-gray-50 dark:bg-gray-800">
+					<tr>
+						<th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
+							Artist
+						</th>
+						<th scope="col" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
+							Score
+						</th>
+						<th scope="col" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
+							NFO
+						</th>
+						<th scope="col" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
+							Thumb
+						</th>
+						<th scope="col" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
+							Fanart
+						</th>
+						<th scope="col" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
+							Logo
+						</th>
+						<th scope="col" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
+							MBID
+						</th>
+						<th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
+							Actions
+						</th>
+					</tr>
+				</thead>
+				<tbody class="divide-y divide-gray-200 dark:divide-gray-700 bg-white dark:bg-gray-900">
+					if len(data.Rows) == 0 {
+						<tr>
+							<td colspan="8" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+								No artists found. Run a library scan to discover artists.
+							</td>
+						</tr>
+					}
+					for _, row := range data.Rows {
+						@complianceRow(row)
+					}
+				</tbody>
+			</table>
+		</div>
+		@components.Pagination(data.Pagination)
+	</div>
+}
+
+templ complianceRow(row ComplianceRow) {
+	<tr class="hover:bg-gray-50 dark:hover:bg-gray-800">
+		<td class="px-4 py-3 text-sm">
+			<a
+				href={ templ.SafeURL("/artists/" + row.Artist.ID) }
+				class="font-medium text-blue-600 dark:text-blue-400 hover:underline"
+			>
+				{ row.Artist.Name }
+			</a>
+		</td>
+		<td class="px-4 py-3 text-sm text-center">
+			<span
+				class={
+					"font-semibold",
+					templ.KV("text-green-600 dark:text-green-400", row.HealthScore >= 100),
+					templ.KV("text-yellow-600 dark:text-yellow-400", row.HealthScore >= 50 && row.HealthScore < 100),
+					templ.KV("text-red-600 dark:text-red-400", row.HealthScore < 50),
+				}
+			>
+				{ fmt.Sprintf("%.0f%%", row.HealthScore) }
+			</span>
+		</td>
+		<td class="px-4 py-3 text-center">
+			@components.StatusBadge(row.Artist.NFOExists, "NFO")
+		</td>
+		<td class="px-4 py-3 text-center">
+			@components.StatusBadge(row.Artist.ThumbExists, "Thumb")
+		</td>
+		<td class="px-4 py-3 text-center">
+			@components.StatusBadge(row.Artist.FanartExists, "Fanart")
+		</td>
+		<td class="px-4 py-3 text-center">
+			@components.StatusBadge(row.Artist.LogoExists, "Logo")
+		</td>
+		<td class="px-4 py-3 text-center">
+			@components.StatusBadge(row.Artist.MusicBrainzID != "", "MBID")
+		</td>
+		<td class="px-4 py-3 text-sm text-right">
+			<div class="flex items-center justify-end gap-1">
+				if row.Artist.NFOExists {
+					<a
+						href={ templ.SafeURL("/artists/" + row.Artist.ID + "/nfo") }
+						class="text-xs px-2 py-1 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+					>
+						NFO Diff
+					</a>
+				}
+			</div>
+		</td>
+	</tr>
+}

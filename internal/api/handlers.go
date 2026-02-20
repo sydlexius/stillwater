@@ -28,6 +28,7 @@ func (r *Router) assets() templates.AssetPaths {
 		HTMX:       r.staticAssets.Path("/js/htmx.min.js"),
 		CropperJS:  r.staticAssets.Path("/js/cropper.min.js"),
 		CropperCSS: r.staticAssets.Path("/css/cropper.min.css"),
+		ChartJS:    r.staticAssets.Path("/js/chart.min.js"),
 	}
 }
 

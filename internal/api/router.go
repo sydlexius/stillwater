@@ -8,6 +8,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/auth"
+	"github.com/sydlexius/stillwater/internal/nfo"
 	"github.com/sydlexius/stillwater/internal/platform"
 	"github.com/sydlexius/stillwater/internal/provider"
 	"github.com/sydlexius/stillwater/internal/rule"
@@ -16,43 +17,45 @@ import (
 
 // Router sets up all HTTP routes for the application.
 type Router struct {
-	authService      *auth.Service
-	artistService    *artist.Service
-	scannerService   *scanner.Service
-	platformService  *platform.Service
-	providerSettings *provider.SettingsService
-	providerRegistry *provider.Registry
-	orchestrator     *provider.Orchestrator
-	ruleService      *rule.Service
-	ruleEngine       *rule.Engine
-	pipeline         *rule.Pipeline
-	bulkService      *rule.BulkService
-	bulkExecutor     *rule.BulkExecutor
-	logger           *slog.Logger
-	basePath         string
-	staticAssets     *StaticAssets
-	db               *sql.DB
+	authService        *auth.Service
+	artistService      *artist.Service
+	scannerService     *scanner.Service
+	platformService    *platform.Service
+	providerSettings   *provider.SettingsService
+	providerRegistry   *provider.Registry
+	orchestrator       *provider.Orchestrator
+	ruleService        *rule.Service
+	ruleEngine         *rule.Engine
+	pipeline           *rule.Pipeline
+	bulkService        *rule.BulkService
+	bulkExecutor       *rule.BulkExecutor
+	nfoSnapshotService *nfo.SnapshotService
+	logger             *slog.Logger
+	basePath           string
+	staticAssets       *StaticAssets
+	db                 *sql.DB
 }
 
 // NewRouter creates a new Router with all routes configured.
-func NewRouter(authService *auth.Service, artistService *artist.Service, scannerService *scanner.Service, platformService *platform.Service, providerSettings *provider.SettingsService, providerRegistry *provider.Registry, orchestrator *provider.Orchestrator, ruleService *rule.Service, ruleEngine *rule.Engine, pipeline *rule.Pipeline, bulkService *rule.BulkService, bulkExecutor *rule.BulkExecutor, db *sql.DB, logger *slog.Logger, basePath string, staticDir string) *Router {
+func NewRouter(authService *auth.Service, artistService *artist.Service, scannerService *scanner.Service, platformService *platform.Service, providerSettings *provider.SettingsService, providerRegistry *provider.Registry, orchestrator *provider.Orchestrator, ruleService *rule.Service, ruleEngine *rule.Engine, pipeline *rule.Pipeline, bulkService *rule.BulkService, bulkExecutor *rule.BulkExecutor, nfoSnapshotService *nfo.SnapshotService, db *sql.DB, logger *slog.Logger, basePath string, staticDir string) *Router {
 	return &Router{
-		authService:      authService,
-		artistService:    artistService,
-		scannerService:   scannerService,
-		platformService:  platformService,
-		providerSettings: providerSettings,
-		providerRegistry: providerRegistry,
-		orchestrator:     orchestrator,
-		ruleService:      ruleService,
-		ruleEngine:       ruleEngine,
-		pipeline:         pipeline,
-		bulkService:      bulkService,
-		bulkExecutor:     bulkExecutor,
-		db:               db,
-		logger:           logger,
-		basePath:         basePath,
-		staticAssets:     NewStaticAssets(staticDir, logger),
+		authService:        authService,
+		artistService:      artistService,
+		scannerService:     scannerService,
+		platformService:    platformService,
+		providerSettings:   providerSettings,
+		providerRegistry:   providerRegistry,
+		orchestrator:       orchestrator,
+		ruleService:        ruleService,
+		ruleEngine:         ruleEngine,
+		pipeline:           pipeline,
+		bulkService:        bulkService,
+		bulkExecutor:       bulkExecutor,
+		nfoSnapshotService: nfoSnapshotService,
+		db:                 db,
+		logger:             logger,
+		basePath:           basePath,
+		staticAssets:       NewStaticAssets(staticDir, logger),
 	}
 }
 
@@ -113,6 +116,16 @@ func (r *Router) Handler() http.Handler {
 	mux.HandleFunc("GET "+bp+"/api/v1/bulk/jobs/{id}", wrapAuth(r.handleBulkJobStatus, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/bulk/jobs/{id}/cancel", wrapAuth(r.handleBulkJobCancel, authMw))
 
+	// Report routes
+	mux.HandleFunc("GET "+bp+"/api/v1/reports/health", wrapAuth(r.handleReportHealth, authMw))
+	mux.HandleFunc("GET "+bp+"/api/v1/reports/health/history", wrapAuth(r.handleReportHealthHistory, authMw))
+	mux.HandleFunc("GET "+bp+"/api/v1/reports/compliance", wrapAuth(r.handleReportCompliance, authMw))
+
+	// NFO snapshot routes
+	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/nfo/diff", wrapAuth(r.handleNFODiff, authMw))
+	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/nfo/snapshots", wrapAuth(r.handleNFOSnapshotList, authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/nfo/snapshots/{snapshotId}/restore", wrapAuth(r.handleNFOSnapshotRestore, authMw))
+
 	// Image routes
 	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/images/upload", wrapAuth(r.handleImageUpload, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/images/fetch", wrapAuth(r.handleImageFetch, authMw))
@@ -123,6 +136,8 @@ func (r *Router) Handler() http.Handler {
 	mux.HandleFunc("GET "+bp+"/artists/{id}/images", r.handleArtistImagesPage)
 	mux.HandleFunc("GET "+bp+"/artists/{id}", r.handleArtistDetailPage)
 	mux.HandleFunc("GET "+bp+"/artists", r.handleArtistsPage)
+	mux.HandleFunc("GET "+bp+"/reports/compliance", r.handleCompliancePage)
+	mux.HandleFunc("GET "+bp+"/artists/{id}/nfo", r.handleNFODiffPage)
 	mux.HandleFunc("GET "+bp+"/settings", r.handleSettingsPage)
 
 	// Apply logging to all requests
