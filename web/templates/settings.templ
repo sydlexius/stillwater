@@ -268,21 +268,17 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 			></div>
 			<div>
 				<div class="font-medium text-sm">{ pk.DisplayName }</div>
-				if !pk.RequiresKey && pk.HasKey {
-					<div class="text-xs text-gray-500 dark:text-gray-400">Paid key configured</div>
-				} else if !pk.RequiresKey && providerHelpURL(pk.Name) != "" {
-					<div class="text-xs text-gray-500 dark:text-gray-400">Paid key recommended for full access</div>
-				} else if !pk.RequiresKey {
+				if !pk.RequiresKey {
 					<div class="text-xs text-gray-500 dark:text-gray-400">No API key required</div>
 				} else if pk.HasKey {
 					<div class="text-xs text-gray-500 dark:text-gray-400">Key configured</div>
 				} else {
-					<div class="text-xs text-amber-600 dark:text-amber-400">Key not configured</div>
+					<div class="text-xs text-amber-600 dark:text-amber-400">Subscription required</div>
 				}
 			</div>
 		</div>
 		<div class="flex items-center gap-2">
-			if pk.RequiresKey || providerHelpURL(pk.Name) != "" {
+			if pk.RequiresKey {
 				if providerHelpURL(pk.Name) != "" {
 					<a
 						href={ templ.SafeURL(providerHelpURL(pk.Name)) }
@@ -290,11 +286,7 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 						rel="noopener noreferrer"
 						class="text-xs text-blue-600 dark:text-blue-400 hover:underline"
 					>
-						if !pk.RequiresKey {
-							Upgrade key
-						} else {
-							Get key
-						}
+						Get key
 					</a>
 				}
 				<button

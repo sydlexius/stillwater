@@ -35,24 +35,6 @@ func setupTest(t *testing.T) (*provider.RateLimiterMap, *provider.SettingsServic
 	return limiter, settings
 }
 
-// setupTestNoKey creates test infrastructure without configuring an API key.
-func setupTestNoKey(t *testing.T) (*provider.RateLimiterMap, *provider.SettingsService) {
-	t.Helper()
-	db, err := sql.Open("sqlite", ":memory:")
-	if err != nil {
-		t.Fatalf("opening test db: %v", err)
-	}
-	t.Cleanup(func() { db.Close() })
-	_, err = db.ExecContext(context.Background(), `CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT (datetime('now')))`)
-	if err != nil {
-		t.Fatalf("creating settings table: %v", err)
-	}
-	enc, _, _ := encryption.NewEncryptor("")
-	limiter := provider.NewRateLimiterMap()
-	settings := provider.NewSettingsService(db, enc)
-	return limiter, settings
-}
-
 func loadFixture(t *testing.T, name string) []byte {
 	t.Helper()
 	data, err := os.ReadFile("testdata/" + name)
@@ -62,29 +44,25 @@ func loadFixture(t *testing.T, name string) []byte {
 	return data
 }
 
-// newTestServerWithKeyCapture returns a test server that records the API key
-// extracted from the request path. The key is the path segment immediately
-// before the endpoint name (e.g., /mykey/search.php -> "mykey").
-func newTestServerWithKeyCapture(t *testing.T, capturedKey *string) *httptest.Server {
+// newTestServerV2 creates a test server that mimics TheAudioDB V2 API.
+// It verifies that the API key is sent in the X-API-KEY header and uses
+// V2-style path-based routes (/search/artist/, /lookup/artist_mb/).
+func newTestServerV2(t *testing.T, capturedKey *string) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 
-		// Extract the API key from the path: /{key}/{endpoint}
-		parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/"), "/")
-		if len(parts) >= 2 && capturedKey != nil {
-			*capturedKey = parts[0]
+		// Capture the API key from the V2 header
+		if capturedKey != nil {
+			*capturedKey = r.Header.Get("X-API-KEY")
 		}
 
 		switch {
-		case strings.Contains(r.URL.Path, "/search.php"):
+		case strings.Contains(r.URL.Path, "/search/artist/"):
 			w.Write(loadFixture(t, "search_radiohead.json"))
-		case strings.Contains(r.URL.Path, "/artist-mb.php"):
-			mbid := r.URL.Query().Get("i")
-			if mbid == "not-found" {
-				w.Write([]byte(`{"artists":null}`))
-				return
-			}
+		case strings.Contains(r.URL.Path, "/lookup/artist_mb/not-found"):
+			w.Write([]byte(`{"artists":null}`))
+		case strings.Contains(r.URL.Path, "/lookup/artist_mb/"):
 			w.Write(loadFixture(t, "search_radiohead.json"))
 		default:
 			w.WriteHeader(http.StatusNotFound)
@@ -93,7 +71,7 @@ func newTestServerWithKeyCapture(t *testing.T, capturedKey *string) *httptest.Se
 }
 
 func newTestServer(t *testing.T) *httptest.Server {
-	return newTestServerWithKeyCapture(t, nil)
+	return newTestServerV2(t, nil)
 }
 
 func TestSearchArtist(t *testing.T) {
@@ -178,41 +156,20 @@ func TestGetImages(t *testing.T) {
 	}
 }
 
-func TestDefaultFreeKey(t *testing.T) {
-	limiter, settings := setupTestNoKey(t)
+func TestAPIKeyInHeader(t *testing.T) {
+	limiter, settings := setupTest(t)
 	var capturedKey string
-	srv := newTestServerWithKeyCapture(t, &capturedKey)
-	defer srv.Close()
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	a := NewWithBaseURL(limiter, settings, logger, srv.URL)
-
-	// Should work without a configured key (uses free key "2")
-	results, err := a.SearchArtist(context.Background(), "Radiohead")
-	if err != nil {
-		t.Fatalf("SearchArtist with free key: %v", err)
-	}
-	if len(results) != 1 {
-		t.Fatalf("expected 1 result, got %d", len(results))
-	}
-	if capturedKey != freeAPIKey {
-		t.Errorf("expected free key %q in request, got %q", freeAPIKey, capturedKey)
-	}
-}
-
-func TestCustomKeyUsed(t *testing.T) {
-	limiter, settings := setupTest(t) // sets "test-key"
-	var capturedKey string
-	srv := newTestServerWithKeyCapture(t, &capturedKey)
+	srv := newTestServerV2(t, &capturedKey)
 	defer srv.Close()
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	a := NewWithBaseURL(limiter, settings, logger, srv.URL)
 
 	_, err := a.SearchArtist(context.Background(), "Radiohead")
 	if err != nil {
-		t.Fatalf("SearchArtist with custom key: %v", err)
+		t.Fatalf("SearchArtist: %v", err)
 	}
 	if capturedKey != "test-key" {
-		t.Errorf("expected custom key %q in request, got %q", "test-key", capturedKey)
+		t.Errorf("expected X-API-KEY header to be %q, got %q", "test-key", capturedKey)
 	}
 }
 
@@ -221,7 +178,35 @@ func TestRequiresAuth(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	a := NewWithBaseURL(limiter, settings, logger, "http://unused")
 
-	if a.RequiresAuth() {
-		t.Error("expected RequiresAuth to return false")
+	if !a.RequiresAuth() {
+		t.Error("expected RequiresAuth to return true")
+	}
+}
+
+func TestNoKeyReturnsAuthError(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("opening test db: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+	_, err = db.ExecContext(context.Background(), `CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT (datetime('now')))`)
+	if err != nil {
+		t.Fatalf("creating settings table: %v", err)
+	}
+	enc, _, _ := encryption.NewEncryptor("")
+	limiter := provider.NewRateLimiterMap()
+	settings := provider.NewSettingsService(db, enc)
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+
+	srv := newTestServer(t)
+	defer srv.Close()
+	a := NewWithBaseURL(limiter, settings, logger, srv.URL)
+
+	_, err = a.SearchArtist(context.Background(), "Radiohead")
+	if err == nil {
+		t.Fatal("expected error when no key configured")
+	}
+	if _, ok := err.(*provider.ErrAuthRequired); !ok {
+		t.Errorf("expected ErrAuthRequired, got %T: %v", err, err)
 	}
 }
