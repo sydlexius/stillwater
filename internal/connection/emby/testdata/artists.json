@@ -1,0 +1,21 @@
+{
+  "Items": [
+    {
+      "Name": "Radiohead",
+      "Id": "emby-001",
+      "Path": "/music/Radiohead",
+      "ProviderIds": {
+        "MusicBrainzArtist": "a74b1b7f-71a5-4011-9441-d0b5e4122711"
+      }
+    },
+    {
+      "Name": "Bjork",
+      "Id": "emby-002",
+      "Path": "/music/Bjork",
+      "ProviderIds": {
+        "MusicBrainzArtist": "87c5dedd-371d-4571-9e1c-45f6e0ed3fce"
+      }
+    }
+  ],
+  "TotalRecordCount": 2
+}

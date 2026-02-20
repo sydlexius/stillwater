@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/sydlexius/stillwater/internal/connection"
+	"github.com/sydlexius/stillwater/internal/connection/emby"
 )
 
 // connectionResponse is a Connection without the raw API key for list responses.
@@ -157,16 +158,14 @@ func (r *Router) handleTestConnection(w http.ResponseWriter, req *http.Request) 
 
 	var testErr error
 	switch conn.Type {
-	case connection.TypeEmby, connection.TypeJellyfin, connection.TypeLidarr:
-		// Platform clients will be wired in Steps 2-4
-		writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "test not yet available for " + conn.Type})
-		return
+	case connection.TypeEmby:
+		client := emby.New(conn.URL, conn.APIKey, r.logger)
+		testErr = client.TestConnection(req.Context())
 	default:
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unsupported connection type: " + conn.Type})
 		return
 	}
 
-	// This code will be reached once platform clients are wired in
 	status := "ok"
 	msg := ""
 	if testErr != nil {
