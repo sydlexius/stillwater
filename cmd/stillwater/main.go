@@ -135,13 +135,17 @@ func run() error {
 	}
 	pipeline := rule.NewPipeline(ruleEngine, artistService, fixers, logger)
 
+	// Initialize bulk operations
+	bulkService := rule.NewBulkService(db)
+	bulkExecutor := rule.NewBulkExecutor(bulkService, artistService, orchestrator, pipeline, logger)
+
 	logger.Info("starting stillwater",
 		slog.String("version", version.Version),
 		slog.String("commit", version.Commit),
 	)
 
 	// Set up HTTP router
-	router := api.NewRouter(authService, artistService, scannerService, platformService, providerSettings, providerRegistry, orchestrator, ruleService, ruleEngine, pipeline, logger, cfg.Server.BasePath, "web/static")
+	router := api.NewRouter(authService, artistService, scannerService, platformService, providerSettings, providerRegistry, orchestrator, ruleService, ruleEngine, pipeline, bulkService, bulkExecutor, logger, cfg.Server.BasePath, "web/static")
 
 	// Create HTTP server
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)

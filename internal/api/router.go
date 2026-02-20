@@ -25,13 +25,15 @@ type Router struct {
 	ruleService      *rule.Service
 	ruleEngine       *rule.Engine
 	pipeline         *rule.Pipeline
+	bulkService      *rule.BulkService
+	bulkExecutor     *rule.BulkExecutor
 	logger           *slog.Logger
 	basePath         string
 	staticAssets     *StaticAssets
 }
 
 // NewRouter creates a new Router with all routes configured.
-func NewRouter(authService *auth.Service, artistService *artist.Service, scannerService *scanner.Service, platformService *platform.Service, providerSettings *provider.SettingsService, providerRegistry *provider.Registry, orchestrator *provider.Orchestrator, ruleService *rule.Service, ruleEngine *rule.Engine, pipeline *rule.Pipeline, logger *slog.Logger, basePath string, staticDir string) *Router {
+func NewRouter(authService *auth.Service, artistService *artist.Service, scannerService *scanner.Service, platformService *platform.Service, providerSettings *provider.SettingsService, providerRegistry *provider.Registry, orchestrator *provider.Orchestrator, ruleService *rule.Service, ruleEngine *rule.Engine, pipeline *rule.Pipeline, bulkService *rule.BulkService, bulkExecutor *rule.BulkExecutor, logger *slog.Logger, basePath string, staticDir string) *Router {
 	return &Router{
 		authService:      authService,
 		artistService:    artistService,
@@ -43,6 +45,8 @@ func NewRouter(authService *auth.Service, artistService *artist.Service, scanner
 		ruleService:      ruleService,
 		ruleEngine:       ruleEngine,
 		pipeline:         pipeline,
+		bulkService:      bulkService,
+		bulkExecutor:     bulkExecutor,
 		logger:           logger,
 		basePath:         basePath,
 		staticAssets:     NewStaticAssets(staticDir, logger),
@@ -96,6 +100,13 @@ func (r *Router) Handler() http.Handler {
 	mux.HandleFunc("POST "+bp+"/api/v1/rules/{id}/run", wrapAuth(r.handleRunRule, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/rules/run-all", wrapAuth(r.handleRunAllRules, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/health", wrapAuth(r.handleEvaluateArtist, authMw))
+
+	// Bulk operation routes
+	mux.HandleFunc("POST "+bp+"/api/v1/bulk/fetch-metadata", wrapAuth(r.handleBulkFetchMetadata, authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/bulk/fetch-images", wrapAuth(r.handleBulkFetchImages, authMw))
+	mux.HandleFunc("GET "+bp+"/api/v1/bulk/jobs", wrapAuth(r.handleBulkJobList, authMw))
+	mux.HandleFunc("GET "+bp+"/api/v1/bulk/jobs/{id}", wrapAuth(r.handleBulkJobStatus, authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/bulk/jobs/{id}/cancel", wrapAuth(r.handleBulkJobCancel, authMw))
 
 	// Image routes
 	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/images/upload", wrapAuth(r.handleImageUpload, authMw))

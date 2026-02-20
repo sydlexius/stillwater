@@ -125,3 +125,89 @@ func (r *Router) handleRunAllRules(w http.ResponseWriter, req *http.Request) {
 
 	writeJSON(w, http.StatusOK, result)
 }
+
+// handleBulkFetchMetadata starts a bulk metadata fetch job.
+// POST /api/v1/bulk/fetch-metadata
+func (r *Router) handleBulkFetchMetadata(w http.ResponseWriter, req *http.Request) {
+	r.startBulkJob(w, req, rule.BulkTypeFetchMetadata)
+}
+
+// handleBulkFetchImages starts a bulk image fetch job.
+// POST /api/v1/bulk/fetch-images
+func (r *Router) handleBulkFetchImages(w http.ResponseWriter, req *http.Request) {
+	r.startBulkJob(w, req, rule.BulkTypeFetchImages)
+}
+
+func (r *Router) startBulkJob(w http.ResponseWriter, req *http.Request, jobType string) {
+	var body rule.BulkRequest
+	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+
+	mode := body.Mode
+	if mode == "" {
+		mode = rule.BulkModePromptNoMatch
+	}
+
+	job, err := r.bulkService.CreateJob(req.Context(), jobType, mode, 0)
+	if err != nil {
+		r.logger.Error("creating bulk job", "type", jobType, "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to create job"})
+		return
+	}
+
+	if err := r.bulkExecutor.Start(req.Context(), job); err != nil {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+		return
+	}
+
+	writeJSON(w, http.StatusAccepted, job)
+}
+
+// handleBulkJobList returns recent bulk jobs.
+// GET /api/v1/bulk/jobs
+func (r *Router) handleBulkJobList(w http.ResponseWriter, req *http.Request) {
+	jobs, err := r.bulkService.ListJobs(req.Context(), 20)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to list jobs"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"jobs": jobs})
+}
+
+// handleBulkJobStatus returns a single bulk job with its items.
+// GET /api/v1/bulk/jobs/{id}
+func (r *Router) handleBulkJobStatus(w http.ResponseWriter, req *http.Request) {
+	jobID := req.PathValue("id")
+	if jobID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing job id"})
+		return
+	}
+
+	job, err := r.bulkService.GetJob(req.Context(), jobID)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "job not found"})
+		return
+	}
+
+	items, err := r.bulkService.ListItems(req.Context(), jobID)
+	if err != nil {
+		r.logger.Warn("listing job items", "job_id", jobID, "error", err)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"job":   job,
+		"items": items,
+	})
+}
+
+// handleBulkJobCancel cancels a running bulk job.
+// POST /api/v1/bulk/jobs/{id}/cancel
+func (r *Router) handleBulkJobCancel(w http.ResponseWriter, req *http.Request) {
+	if err := r.bulkExecutor.Cancel(); err != nil {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "canceling"})
+}
