@@ -147,11 +147,23 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 		r.logger.Error("getting provider priorities for settings page", "error", err)
 	}
 
+	conns, err := r.connectionService.List(req.Context())
+	if err != nil {
+		r.logger.Error("listing connections for settings page", "error", err)
+	}
+
+	webhooks, err := r.webhookService.List(req.Context())
+	if err != nil {
+		r.logger.Error("listing webhooks for settings page", "error", err)
+	}
+
 	data := templates.SettingsData{
 		Profiles:      profiles,
 		ActiveProfile: active,
 		ProviderKeys:  providerKeys,
 		Priorities:    priorities,
+		Connections:   conns,
+		Webhooks:      webhooks,
 	}
 	renderTempl(w, req, templates.SettingsPage(r.assets(), data))
 }

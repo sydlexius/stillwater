@@ -156,9 +156,18 @@ func (r *Router) handleArtistDetailPage(w http.ResponseWriter, req *http.Request
 		r.logger.Warn("listing band members for page", "artist_id", id, "error", err)
 	}
 
+	aliases, err := r.artistService.ListAliases(req.Context(), id)
+	if err != nil {
+		r.logger.Warn("listing aliases for page", "artist_id", id, "error", err)
+	}
+
+	conns, _ := r.connectionService.List(req.Context())
+
 	data := templates.ArtistDetailData{
-		Artist:  *a,
-		Members: members,
+		Artist:         *a,
+		Members:        members,
+		Aliases:        aliases,
+		HasConnections: len(conns) > 0,
 	}
 	renderTempl(w, req, templates.ArtistDetailPage(r.assets(), data))
 }
