@@ -108,7 +108,7 @@ func run() error {
 	if err := ruleService.SeedDefaults(context.Background()); err != nil {
 		return fmt.Errorf("seeding default rules: %w", err)
 	}
-	ruleEngine := rule.NewEngine(ruleService, logger)
+	ruleEngine := rule.NewEngine(ruleService, db, logger)
 
 	// Initialize scanner (depends on rule engine for health scoring)
 	scannerService := scanner.NewService(artistService, ruleEngine, ruleService, logger, cfg.Music.LibraryPath, cfg.Scanner.Exclusions)
@@ -145,7 +145,7 @@ func run() error {
 	)
 
 	// Set up HTTP router
-	router := api.NewRouter(authService, artistService, scannerService, platformService, providerSettings, providerRegistry, orchestrator, ruleService, ruleEngine, pipeline, bulkService, bulkExecutor, logger, cfg.Server.BasePath, "web/static")
+	router := api.NewRouter(authService, artistService, scannerService, platformService, providerSettings, providerRegistry, orchestrator, ruleService, ruleEngine, pipeline, bulkService, bulkExecutor, db, logger, cfg.Server.BasePath, "web/static")
 
 	// Create HTTP server
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)

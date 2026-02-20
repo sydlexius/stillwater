@@ -2,6 +2,7 @@ package rule
 
 import (
 	"context"
+	"database/sql"
 	"log/slog"
 	"math"
 
@@ -11,14 +12,16 @@ import (
 // Engine evaluates rules against artists.
 type Engine struct {
 	service  *Service
+	db       *sql.DB
 	checkers map[string]Checker
 	logger   *slog.Logger
 }
 
 // NewEngine creates a rule evaluation engine with all built-in checkers registered.
-func NewEngine(service *Service, logger *slog.Logger) *Engine {
+func NewEngine(service *Service, db *sql.DB, logger *slog.Logger) *Engine {
 	e := &Engine{
 		service: service,
+		db:      db,
 		logger:  logger.With(slog.String("component", "rule-engine")),
 		checkers: map[string]Checker{
 			RuleNFOExists:    checkNFOExists,
@@ -36,6 +39,15 @@ func NewEngine(service *Service, logger *slog.Logger) *Engine {
 
 // Evaluate runs all enabled rules against an artist and returns the results.
 func (e *Engine) Evaluate(ctx context.Context, a *artist.Artist) (*EvaluationResult, error) {
+	// Classical artists in skip mode get a perfect score with no evaluation
+	if a.IsClassical && GetClassicalMode(ctx, e.db) == ClassicalModeSkip {
+		return &EvaluationResult{
+			ArtistID:    a.ID,
+			ArtistName:  a.Name,
+			HealthScore: 100.0,
+		}, nil
+	}
+
 	rules, err := e.service.List(ctx)
 	if err != nil {
 		return nil, err

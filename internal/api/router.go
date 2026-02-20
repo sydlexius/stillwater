@@ -1,6 +1,7 @@
 package api
 
 import (
+	"database/sql"
 	"log/slog"
 	"net/http"
 
@@ -30,10 +31,11 @@ type Router struct {
 	logger           *slog.Logger
 	basePath         string
 	staticAssets     *StaticAssets
+	db               *sql.DB
 }
 
 // NewRouter creates a new Router with all routes configured.
-func NewRouter(authService *auth.Service, artistService *artist.Service, scannerService *scanner.Service, platformService *platform.Service, providerSettings *provider.SettingsService, providerRegistry *provider.Registry, orchestrator *provider.Orchestrator, ruleService *rule.Service, ruleEngine *rule.Engine, pipeline *rule.Pipeline, bulkService *rule.BulkService, bulkExecutor *rule.BulkExecutor, logger *slog.Logger, basePath string, staticDir string) *Router {
+func NewRouter(authService *auth.Service, artistService *artist.Service, scannerService *scanner.Service, platformService *platform.Service, providerSettings *provider.SettingsService, providerRegistry *provider.Registry, orchestrator *provider.Orchestrator, ruleService *rule.Service, ruleEngine *rule.Engine, pipeline *rule.Pipeline, bulkService *rule.BulkService, bulkExecutor *rule.BulkExecutor, db *sql.DB, logger *slog.Logger, basePath string, staticDir string) *Router {
 	return &Router{
 		authService:      authService,
 		artistService:    artistService,
@@ -47,6 +49,7 @@ func NewRouter(authService *auth.Service, artistService *artist.Service, scanner
 		pipeline:         pipeline,
 		bulkService:      bulkService,
 		bulkExecutor:     bulkExecutor,
+		db:               db,
 		logger:           logger,
 		basePath:         basePath,
 		staticAssets:     NewStaticAssets(staticDir, logger),
@@ -99,6 +102,8 @@ func (r *Router) Handler() http.Handler {
 	mux.HandleFunc("PUT "+bp+"/api/v1/rules/{id}", wrapAuth(r.handleUpdateRule, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/rules/{id}/run", wrapAuth(r.handleRunRule, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/rules/run-all", wrapAuth(r.handleRunAllRules, authMw))
+	mux.HandleFunc("GET "+bp+"/api/v1/rules/classical-mode", wrapAuth(r.handleGetClassicalMode, authMw))
+	mux.HandleFunc("PUT "+bp+"/api/v1/rules/classical-mode", wrapAuth(r.handleSetClassicalMode, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/health", wrapAuth(r.handleEvaluateArtist, authMw))
 
 	// Bulk operation routes

@@ -31,7 +31,7 @@ func TestEvaluate_FullyCompliant(t *testing.T) {
 		}
 	}
 
-	engine := NewEngine(svc, testLogger())
+	engine := NewEngine(svc, db, testLogger())
 
 	a := &artist.Artist{
 		ID:            "test-1",
@@ -79,7 +79,7 @@ func TestEvaluate_EmptyArtist(t *testing.T) {
 		}
 	}
 
-	engine := NewEngine(svc, testLogger())
+	engine := NewEngine(svc, db, testLogger())
 
 	a := &artist.Artist{
 		ID:   "test-2",
@@ -125,7 +125,7 @@ func TestEvaluate_PartialCompliance(t *testing.T) {
 		}
 	}
 
-	engine := NewEngine(svc, testLogger())
+	engine := NewEngine(svc, db, testLogger())
 
 	// Artist has NFO and MBID but nothing else
 	a := &artist.Artist{
@@ -173,7 +173,7 @@ func TestEvaluate_DisabledRulesSkipped(t *testing.T) {
 		}
 	}
 
-	engine := NewEngine(svc, testLogger())
+	engine := NewEngine(svc, db, testLogger())
 
 	a := &artist.Artist{
 		ID:   "test-4",
@@ -212,7 +212,7 @@ func TestEvaluateAll(t *testing.T) {
 		}
 	}
 
-	engine := NewEngine(svc, testLogger())
+	engine := NewEngine(svc, db, testLogger())
 
 	artists := []artist.Artist{
 		{ID: "a1", Name: "Has NFO", NFOExists: true, Path: t.TempDir()},
@@ -274,7 +274,7 @@ func TestEngine_WithRealDB(t *testing.T) {
 		t.Fatalf("seeding: %v", err)
 	}
 
-	engine := NewEngine(svc, slog.Default())
+	engine := NewEngine(svc, db, slog.Default())
 	if engine == nil {
 		t.Fatal("expected non-nil engine")
 	}

@@ -126,6 +126,43 @@ func (r *Router) handleRunAllRules(w http.ResponseWriter, req *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
+// handleGetClassicalMode returns the current classical music evaluation mode.
+// GET /api/v1/rules/classical-mode
+func (r *Router) handleGetClassicalMode(w http.ResponseWriter, req *http.Request) {
+	mode := rule.GetClassicalMode(req.Context(), r.db)
+	writeJSON(w, http.StatusOK, map[string]string{"mode": mode})
+}
+
+// handleSetClassicalMode updates the classical music evaluation mode.
+// PUT /api/v1/rules/classical-mode
+func (r *Router) handleSetClassicalMode(w http.ResponseWriter, req *http.Request) {
+	var body struct {
+		Mode string `json:"mode"`
+	}
+	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+
+	switch body.Mode {
+	case rule.ClassicalModeSkip, rule.ClassicalModeComposer, rule.ClassicalModePerformer:
+		// valid
+	default:
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "invalid mode, must be one of: skip, composer, performer",
+		})
+		return
+	}
+
+	if err := rule.SetClassicalMode(req.Context(), r.db, body.Mode); err != nil {
+		r.logger.Error("setting classical mode", "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to set classical mode"})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"mode": body.Mode})
+}
+
 // handleBulkFetchMetadata starts a bulk metadata fetch job.
 // POST /api/v1/bulk/fetch-metadata
 func (r *Router) handleBulkFetchMetadata(w http.ResponseWriter, req *http.Request) {
