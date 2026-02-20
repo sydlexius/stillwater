@@ -58,7 +58,8 @@ func (r *Router) handleBackupDownload(w http.ResponseWriter, req *http.Request) 
 	}
 
 	path := filepath.Join(r.backupService.BackupDir(), filename)
-	w.Header().Set("Content-Disposition", "attachment; filename="+filename)
+	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
+	w.Header().Set("Content-Type", "application/octet-stream")
 	http.ServeFile(w, req, path)
 }
 

@@ -1,8 +1,10 @@
 package middleware
 
 import (
+	"context"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -21,11 +23,12 @@ type LoginRateLimiter struct {
 }
 
 // NewLoginRateLimiter creates a rate limiter that cleans up stale entries periodically.
-func NewLoginRateLimiter() *LoginRateLimiter {
+// The cleanup goroutine stops when the provided context is cancelled.
+func NewLoginRateLimiter(ctx context.Context) *LoginRateLimiter {
 	rl := &LoginRateLimiter{
 		limiters: make(map[string]*ipLimiter),
 	}
-	go rl.cleanup()
+	go rl.cleanup(ctx)
 	return rl
 }
 
@@ -59,31 +62,33 @@ func (rl *LoginRateLimiter) getLimiter(ip string) *rate.Limiter {
 	return entry.limiter
 }
 
-func (rl *LoginRateLimiter) cleanup() {
+func (rl *LoginRateLimiter) cleanup(ctx context.Context) {
 	ticker := time.NewTicker(10 * time.Minute)
 	defer ticker.Stop()
-	for range ticker.C {
-		rl.mu.Lock()
-		for ip, entry := range rl.limiters {
-			if time.Since(entry.lastSeen) > 15*time.Minute {
-				delete(rl.limiters, ip)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			rl.mu.Lock()
+			for ip, entry := range rl.limiters {
+				if time.Since(entry.lastSeen) > 15*time.Minute {
+					delete(rl.limiters, ip)
+				}
 			}
+			rl.mu.Unlock()
 		}
-		rl.mu.Unlock()
 	}
 }
 
 func clientIP(r *http.Request) string {
-	// Check X-Forwarded-For for reverse proxy setups
+	// Check X-Forwarded-For for reverse proxy setups.
+	// Use the rightmost IP (added by the nearest trusted proxy) to resist spoofing.
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		// Take the first (client) IP
-		if i := len(xff); i > 0 {
-			for j := 0; j < len(xff); j++ {
-				if xff[j] == ',' {
-					return xff[:j]
-				}
-			}
-			return xff
+		parts := strings.Split(xff, ",")
+		ip := strings.TrimSpace(parts[len(parts)-1])
+		if ip != "" {
+			return ip
 		}
 	}
 	if xri := r.Header.Get("X-Real-Ip"); xri != "" {
