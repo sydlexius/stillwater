@@ -332,7 +332,7 @@ func (s *Service) recordHealthSnapshot(ctx context.Context) {
 	if s.ruleService == nil {
 		return
 	}
-	const pageSize = 1000
+	const pageSize = 200
 	params := artist.ListParams{Page: 1, PageSize: pageSize, Sort: "name"}
 
 	firstPage, total, err := s.artistService.List(ctx, params)
@@ -360,6 +360,10 @@ func (s *Service) recordHealthSnapshot(ctx context.Context) {
 
 	processPage(firstPage)
 	for processed < total {
+		if ctx.Err() != nil {
+			s.logger.Warn("context canceled while listing artists for health snapshot", "page", params.Page, "error", ctx.Err())
+			break
+		}
 		params.Page++
 		more, _, err := s.artistService.List(ctx, params)
 		if err != nil {

@@ -54,14 +54,10 @@ func NewPipeline(engine *Engine, artistService *artist.Service, fixers []Fixer, 
 func (p *Pipeline) RunRule(ctx context.Context, ruleID string) (*RunResult, error) {
 	result := &RunResult{}
 
-	const pageSize = 1000
+	const pageSize = 200
 	params := artist.ListParams{Page: 1, PageSize: pageSize, Sort: "name"}
 
-	for {
-		if ctx.Err() != nil {
-			break
-		}
-
+	for ctx.Err() == nil {
 		page, _, err := p.artistService.List(ctx, params)
 		if err != nil {
 			return nil, fmt.Errorf("listing artists: %w", err)
@@ -89,23 +85,23 @@ func (p *Pipeline) RunRule(ctx context.Context, ruleID string) (*RunResult, erro
 			}
 
 			for j := range eval.Violations {
-			v := &eval.Violations[j]
-			if v.RuleID != ruleID {
-				continue
-			}
-			result.ViolationsFound++
+				v := &eval.Violations[j]
+				if v.RuleID != ruleID {
+					continue
+				}
+				result.ViolationsFound++
 
-			if !v.Fixable {
-				continue
-			}
+				if !v.Fixable {
+					continue
+				}
 
-			fr := p.attemptFix(ctx, a, v)
-			result.Results = append(result.Results, *fr)
-			result.FixesAttempted++
-			if fr.Fixed {
-				result.FixesSucceeded++
+				fr := p.attemptFix(ctx, a, v)
+				result.Results = append(result.Results, *fr)
+				result.FixesAttempted++
+				if fr.Fixed {
+					result.FixesSucceeded++
+				}
 			}
-		}
 
 			// Re-evaluate and persist health score
 			p.updateHealthScore(ctx, a)
@@ -124,14 +120,10 @@ func (p *Pipeline) RunRule(ctx context.Context, ruleID string) (*RunResult, erro
 func (p *Pipeline) RunAll(ctx context.Context) (*RunResult, error) {
 	result := &RunResult{}
 
-	const pageSize = 1000
+	const pageSize = 200
 	params := artist.ListParams{Page: 1, PageSize: pageSize, Sort: "name"}
 
-	for {
-		if ctx.Err() != nil {
-			break
-		}
-
+	for ctx.Err() == nil {
 		page, _, err := p.artistService.List(ctx, params)
 		if err != nil {
 			return nil, fmt.Errorf("listing artists: %w", err)

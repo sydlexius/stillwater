@@ -94,10 +94,14 @@ func (e *BulkExecutor) run(ctx context.Context, job *BulkJob) {
 
 	// Collect all non-excluded artists via pagination
 	var artists []artist.Artist
-	const pageSize = 1000
+	const pageSize = 200
 	params := artist.ListParams{Page: 1, PageSize: pageSize, Sort: "name"}
 
 	for {
+		if err := ctx.Err(); err != nil {
+			e.finishJob(ctx, job, BulkStatusCanceled, fmt.Sprintf("bulk job canceled: %v", err))
+			return
+		}
 		page, _, err := e.artistService.List(ctx, params)
 		if err != nil {
 			e.finishJob(ctx, job, BulkStatusFailed, fmt.Sprintf("listing artists: %v", err))
