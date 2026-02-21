@@ -18,9 +18,9 @@ func TestSecurityHeaders_Present(t *testing.T) {
 
 	expected := map[string]string{
 		"X-Content-Type-Options": "nosniff",
-		"X-Frame-Options":       "DENY",
-		"Referrer-Policy":       "strict-origin-when-cross-origin",
-		"X-XSS-Protection":     "0",
+		"X-Frame-Options":        "DENY",
+		"Referrer-Policy":        "strict-origin-when-cross-origin",
+		"X-XSS-Protection":       "0",
 	}
 
 	for header, want := range expected {
@@ -82,6 +82,7 @@ func TestSecurityHeaders_CSPPresent(t *testing.T) {
 		"default-src 'self'",
 		"script-src",
 		"style-src",
+		"connect-src 'self'",
 		"object-src 'none'",
 		"frame-ancestors 'none'",
 	}
