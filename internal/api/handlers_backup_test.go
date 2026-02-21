@@ -130,9 +130,12 @@ func TestHandleBackupHistory_JSONEmpty(t *testing.T) {
 		t.Errorf("Content-Type = %q, want application/json", ct)
 	}
 
-	body := strings.TrimSpace(w.Body.String())
-	if body != "null" {
-		t.Errorf("expected null for empty backup list, got: %s", body)
+	var backups []backup.BackupInfo
+	if err := json.NewDecoder(w.Body).Decode(&backups); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if len(backups) != 0 {
+		t.Errorf("expected empty backup list, got %d items", len(backups))
 	}
 }
 

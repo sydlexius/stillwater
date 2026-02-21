@@ -46,6 +46,9 @@ func (r *Router) handleBackupHistory(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	if backups == nil {
+		backups = []backup.BackupInfo{}
+	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(backups) //nolint:errcheck
 }
