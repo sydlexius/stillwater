@@ -2,7 +2,7 @@
 
 ## Goal
 
-Per-field provider assignment, fallback chains, library-scoped configuration, and web image search. Inspired by TinyMediaManager's Universal Scraper.
+Per-field provider assignment, fallback chains, connection-scoped configuration, and web image search. Inspired by TinyMediaManager's Universal Scraper.
 
 ## Prerequisites
 
@@ -11,150 +11,164 @@ Per-field provider assignment, fallback chains, library-scoped configuration, an
 
 ## Issues
 
-| # | Title | Mode | Model |
-|---|-------|------|-------|
-| 51 | Universal Music Scraper: per-field provider assignment, fallback chains, REST API and UI config | plan | opus |
-| 56 | Web Image Search Provider Tier: targeted scraping for artist images (blocked by #51) | plan | opus |
+| # | Title | Mode | Model | Status |
+|---|-------|------|-------|--------|
+| 51 | Universal Music Scraper: per-field provider assignment, fallback chains, REST API and UI config | plan | opus | Backend complete (PR #87), UI pending |
+| 86 | Settings UI Refactor: card-based layout with service logos | plan | opus | Not started |
+| 56 | Web Image Search Provider Tier: targeted scraping for artist images (blocked by #51) | plan | opus | Not started |
 
-## Implementation Order
+## Execution Order
 
-### Step 1: Configuration Model (#51)
+1. **#51 Steps 1-3, 5** -- Scraper backend (config model, service/executor, REST API, rule engine) -- DONE (PR #87)
+2. **#86** -- Settings UI refactor (card-based layout with service logos) -- NEXT
+3. **#51 Step 4** -- Scraper UI (scraper.templ, built on #86 patterns) -- after #86
+4. **#56** -- Web image search provider -- after #51 is fully complete
 
-1. Define scraper configuration structures in `internal/scraper/`:
-   - `FieldConfig` struct: field name, primary provider, enabled flag
-   - `FallbackChain` struct: category (metadata/images), ordered provider list
-   - `ScraperConfig` struct: map of field configs, metadata fallback chain, image fallback chain, scope (global/library)
-   - `LibraryConfig` struct: library ID, overrides map, inherits-from reference
+Each issue gets its own feature branch and PR against main.
 
-2. Database schema:
-   - `scraper_config` table: id, scope ("global" or library ID), config_json (JSON blob), created_at, updated_at
-   - Migration file in `internal/database/migrations/`
+---
 
-3. Default configuration:
-   - Metadata primary: MusicBrainz (name, sort_name, type, gender, disambiguation, mbid, genres, born, formed, died, disbanded)
-   - Metadata fallback: MusicBrainz -> Last.fm -> Discogs -> TheAudioDB -> Wikidata
-   - Biography primary: Last.fm (biography)
-   - Image primary: Fanart.tv (thumb, fanart, logo, banner)
-   - Image fallback: Fanart.tv -> TheAudioDB -> Discogs
+## Implementation Progress
 
-### Step 2: Scraper Service (#51)
+### Step 1: Configuration Model -- DONE
 
-1. Create `internal/scraper/service.go`:
-   - `Service` struct with `*sql.DB`, provider registry, `*slog.Logger`
-   - `GetConfig(ctx, scope) (*ScraperConfig, error)` -- returns merged config (library inherits from global)
-   - `SaveConfig(ctx, config) error` -- upsert config for scope
-   - `ResetConfig(ctx, scope) error` -- delete overrides, revert to inherited
+**New file: `internal/scraper/config.go`**
 
-2. Create `internal/scraper/executor.go`:
-   - `Executor` struct with scraper service, all provider clients
-   - `ScrapeField(ctx, artist, field) (*FieldResult, error)` -- tries primary provider, then fallback chain
-   - `ScrapeAll(ctx, artist) (*ScrapeResult, error)` -- scrapes all configured fields
-   - `FieldResult` includes: value, provider used, was_fallback flag, error
-   - `ScrapeResult` includes: per-field results, overall success/failure
+Types implemented:
+- `FieldName` (13 constants: biography, genres, styles, moods, members, formed, born, died, disbanded, thumb, fanart, logo, banner)
+- `FieldCategory` (metadata, images)
+- `FieldConfig`, `FallbackChain`, `ScraperConfig`, `Overrides`, `ProviderCapability`
+- `DefaultConfig()` with sensible defaults, `ProviderCapabilities()` static capability map
+- Helper methods: `PrimaryFor()`, `FallbackChainFor()`, `CategoryFor()`, `AllFieldNames()`
 
-3. Fallback logic:
-   - Try primary provider for the field
-   - If primary fails or returns empty, walk the category fallback chain in order
-   - Record which provider ultimately supplied each field
-   - If all providers fail, mark field as unresolved
+**New file: `internal/database/migrations/009_scraper_config.sql`**
 
-### Step 3: REST API (#51)
+- Creates `scraper_config` table (id, scope, config_json, overrides_json, timestamps)
+- Index on scope column
+- Adds `metadata_sources TEXT NOT NULL DEFAULT '{}'` column to `artists` table
 
-1. API endpoints:
-   - `GET /api/v1/scraper/config` -- get global config
-   - `PUT /api/v1/scraper/config` -- update global config
-   - `GET /api/v1/scraper/config/{libraryId}` -- get library config (merged with global)
-   - `PUT /api/v1/scraper/config/{libraryId}` -- update library overrides
-   - `DELETE /api/v1/scraper/config/{libraryId}` -- reset library to global defaults
-   - `GET /api/v1/scraper/providers` -- list available providers with their capabilities (which fields they support)
+**Tests: `internal/scraper/config_test.go`** -- 5 tests pass
 
-2. Handlers in `internal/api/handlers_scraper.go`
+### Step 2: Scraper Service and Executor -- DONE
 
-3. Wire into router and main.go
+**New file: `internal/scraper/service.go`**
 
-### Step 4: Scraper UI (#51)
+- `Service` struct with `*sql.DB` and `*slog.Logger`
+- `SeedDefaults()` -- inserts default global config if none exists
+- `GetConfig()` -- returns merged config (connection overrides applied on top of global)
+- `GetRawConfig()` -- returns unmerged config + overrides (for UI)
+- `SaveConfig()` -- upsert for any scope
+- `ResetConfig()` -- deletes non-global scope row
+- `mergeConfigs()` -- iterates global fields, uses connection value if overridden
 
-1. Create `web/templates/scraper.templ`:
-   - Per-field dropdown for primary provider selection
-   - Only shows providers that support that field
-   - Fallback chain section with drag-and-drop or up/down reordering (pills/chips)
-   - Separate sections for metadata fields and image fields
-   - "Reset to defaults" button
+**New file: `internal/scraper/executor.go`**
 
-2. Library-scope UI:
-   - Per-library override toggle
-   - Visual indication of inherited vs overridden fields (e.g., dimmed = inherited, bold = overridden)
-   - "Reset to global" button per library
+- `Executor` struct with `*Service`, `*provider.Registry`, `*slog.Logger`
+- `ScrapeAll()` -- loads global config, iterates enabled fields, calls `scrapeField`, builds merged `FetchResult` with sources
+- `scrapeField()` -- tries primary, walks category fallback chain, records `WasFallback`
+- `getProviderResult()` -- thread-safe caching to avoid duplicate API calls
+- `applyFieldValue()` -- checks provider has data for a field (switch on FieldName)
+- `applyMergeableFields()` -- copies IDs, URLs, aliases to merged result
 
-3. Add navigation link to scraper config page
+**Modified: `internal/provider/orchestrator.go`**
 
-### Step 5: Rule Engine Integration (#51)
+- Added `ScraperExecutor` interface with `ScrapeAll()` method
+- Added `SetExecutor()` setter on Orchestrator
+- `FetchMetadata()` delegates to executor when set, falls back to existing FieldPriority logic
 
-1. Add fallback audit rule in `internal/rule/`:
-   - New rule type: "fallback_used"
-   - Triggers when a field was populated by a fallback provider instead of the primary
-   - Severity: info (audit trail, not a violation)
-   - In YOLO mode: auto-accept fallback results
-   - In review mode: flag for user review
+Dependency direction: `scraper` imports `provider`, `provider` does NOT import `scraper` (uses interface). No circular imports.
 
-2. Record fallback events:
-   - Store which provider supplied each field in the artist record or a separate audit table
-   - Visible in artist detail page under "Metadata Sources" section
+**Tests: `internal/scraper/service_test.go`** -- 6 tests pass
 
-### Step 6: Web Image Search Provider (#56)
+### Step 3: REST API -- DONE
 
-1. Create `internal/provider/websearch/` package:
-   - `Provider` struct implementing image search interface
-   - Google Images scraper (HTML parsing, fragile but functional)
-   - Search query construction:
-     - Use artist name + image type keyword (e.g., "Artist Name logo png")
-     - Use `site:` queries with known URLs from Wikidata/MusicBrainz (official site, Wikipedia, Discogs)
-   - Search term sets per image type stored in `internal/provider/websearch/terms.json`
+**New file: `internal/api/handlers_scraper.go`**
 
-2. Result handling:
-   - Results tagged with source badge and search query
-   - Image dimensions: "Unknown" until user clicks to fetch/verify
-   - Logo transparency check: fast PNG header alpha channel detection
-   - Badge for logos lacking transparency
+| Method | Path | Handler | Description |
+|--------|------|---------|-------------|
+| GET | `/api/v1/scraper/config` | `handleGetScraperConfig` | Get global config |
+| PUT | `/api/v1/scraper/config` | `handleUpdateScraperConfig` | Update global config |
+| GET | `/api/v1/scraper/config/connections/{id}` | `handleGetConnectionScraperConfig` | Get merged connection config (+ raw/overrides) |
+| PUT | `/api/v1/scraper/config/connections/{id}` | `handleUpdateConnectionScraperConfig` | Update connection overrides |
+| DELETE | `/api/v1/scraper/config/connections/{id}` | `handleResetConnectionScraperConfig` | Reset connection to global |
+| GET | `/api/v1/scraper/providers` | `handleListScraperProviders` | List providers with capabilities and key status |
 
-3. UI integration:
-   - "Extend Search" button on image search page
-   - Web results appear in a separate section below main provider results
-   - Clear visual distinction (different background, source badges)
-   - Loading indicator while web search runs
+Connection ID validated against `connectionService.GetByID()` (404 if not found).
 
-4. Bulk fetch integration:
-   - Web search providers disabled by default in bulk operations
-   - Configurable toggle in scraper config
-   - Rate limiting for web scraping (longer delays than API providers)
+**Modified: `internal/api/router.go`**
 
-5. Configuration:
-   - Enable/disable at global and per-library scope (inherits from scraper config)
-   - Appears as a provider in the fallback chain for image category
-   - Search terms configurable via JSON file (advanced users only, not exposed in UI)
+- Added `ScraperService *scraper.Service` to `RouterDeps` and `scraperService` to `Router`
+- Registered 6 API routes in `Handler()`
 
-## Key Design Decisions
+### Step 4: Scraper UI -- PENDING (after #86)
 
-- **JSON blob for config:** Scraper config is complex and nested. A JSON column is simpler than normalizing into multiple relational tables. Queries are by scope ID only.
-- **Category-level fallback, not field-level:** A single fallback chain per category (metadata, images) keeps config manageable. Per-field primary selection gives enough control.
-- **Inheritance model:** Library configs inherit all global settings by default. Overrides are explicit and can be reset. Prevents configuration drift.
-- **Web scraping as lowest tier:** Web search results are inherently lower quality and more fragile. They supplement, not replace, dedicated API providers. Disabled in bulk by default.
-- **Google scraping is fragile:** Document this clearly. May need periodic maintenance. API alternative (Google Custom Search) can be added later if scraping breaks.
+Requires #86 (Settings UI refactor) to establish card-based patterns with service logos.
+
+### Step 5: Rule Engine Integration -- DONE
+
+**Modified: `internal/artist/model.go`**
+
+- Added `MetadataSources map[string]string` field
+- Added `MarshalStringMap()` / `UnmarshalStringMap()` helpers
+
+**Modified: `internal/artist/service.go` + `alias.go`**
+
+- Added `metadata_sources` to `artistColumns`, `Create`, `Update`, `scanArtist`, `scanArtistWithExtra`
+
+**Modified: `internal/rule/service.go`**
+
+- Added `RuleFallbackUsed = "fallback_used"` constant
+- Added default rule entry (category: metadata, severity: info, not fixable)
+
+**Modified: `internal/rule/checkers.go`**
+
+- Added `makeFallbackChecker()` closure-based checker that captures `*scraper.Service`
+- Compares artist's `MetadataSources` against configured primaries in global scraper config
+
+**Modified: `internal/rule/engine.go`**
+
+- Added `SetScraperService(svc *scraper.Service)` which registers the fallback checker
+- Follows same deferred-registration pattern as `SetEventBus` on scanner
+
+**Modified: `cmd/stillwater/main.go`**
+
+- Creates `scraperService`, seeds defaults, creates `scraperExecutor`
+- Wires executor into orchestrator via `SetExecutor()`
+- Wires scraper service into rule engine via `SetScraperService()`
+- Passes `ScraperService` to `RouterDeps`
+
+---
+
+## Key Design Decisions (updated from implementation)
+
+- **"Connection" not "library":** Scope overrides use connection IDs from the existing `connections` table. The "library" terminology was dropped to avoid confusion with media library paths.
+- **JSON blob for config:** Scraper config stored as JSON in `config_json` column. Overrides tracked separately in `overrides_json` column with boolean maps per field/chain.
+- **Category-level fallback, not field-level:** Single fallback chain per category (metadata, images). Per-field primary selection gives enough control.
+- **Orchestrator delegates via interface:** `ScraperExecutor` interface in `provider` package avoids circular imports. Orchestrator falls back to old `FieldPriority` logic when no executor is set (backward compat).
+- **Setter pattern for deferred wiring:** `SetExecutor()` on orchestrator and `SetScraperService()` on rule engine match the existing `SetEventBus()` pattern used by scanner.
+- **Provider result caching:** `getProviderResult()` uses mutex-guarded map to avoid duplicate API calls when multiple fields try the same provider. Same pattern as existing orchestrator.
 - **No disk caching for web images:** Web search results are ephemeral. Only persist if the user explicitly selects and saves an image.
+
+## Observations and Notes
+
+- The MSYS/Windows dev environment does not support `-race` flag (requires CGO). Race detector testing should be done in CI (Linux Docker).
+- `gofmt` realigns all struct field tags when a new wider field is added. The `map[string]string` type for `MetadataSources` caused tag realignment across the entire `Artist` struct.
+- The `scanArtistWithExtra()` function in `alias.go` duplicates most of `scanArtist()` logic. If more columns are added in future, consider refactoring to share scan logic.
+- Migration 009 uses `ALTER TABLE artists ADD COLUMN metadata_sources TEXT NOT NULL DEFAULT '{}'` which SQLite handles well (no table rebuild needed for DEFAULT).
 
 ## Verification
 
-- [ ] Default scraper config provides sensible per-field assignments
-- [ ] Fallback chain executes in order when primary fails
-- [ ] Library config inherits from global correctly
-- [ ] Library overrides are visually distinct in UI
-- [ ] "Reset to global" clears library overrides
-- [ ] Provider capabilities accurately reported (which fields each supports)
-- [ ] Fallback audit rule fires when fallback provider used
-- [ ] Web image search returns results for known artists
-- [ ] Web results visually distinct from API provider results
-- [ ] Logo transparency detection works
-- [ ] "Extend Search" button triggers web search
-- [ ] Web search disabled by default in bulk operations
-- [ ] `go test ./...` and `golangci-lint run` pass
+- [x] Default scraper config provides sensible per-field assignments
+- [x] `go test ./...` passes (24 packages, 0 failures)
+- [x] `golangci-lint run ./...` passes (0 issues)
+- [ ] Fallback chain executes in order when primary fails (needs integration test with mock providers)
+- [ ] Connection config inherits from global correctly (unit tested, needs manual API test)
+- [ ] Connection overrides are visually distinct in UI (Step 4)
+- [ ] "Reset to global" / "Reset to defaults" buttons work (Step 4)
+- [ ] Provider capabilities endpoint returns accurate field support
+- [ ] Fallback audit rule fires when fallback provider used (needs artist with MetadataSources populated)
+- [ ] Web image search returns results for known artists (#56)
+- [ ] Web results visually distinct from API provider results (#56)
+- [ ] Logo transparency detection works (#56)
+- [ ] Web search disabled by default in bulk operations (#56)
 - [ ] Tag v0.11.0
