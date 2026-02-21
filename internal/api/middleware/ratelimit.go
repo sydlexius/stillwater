@@ -23,7 +23,7 @@ type LoginRateLimiter struct {
 }
 
 // NewLoginRateLimiter creates a rate limiter that cleans up stale entries periodically.
-// The cleanup goroutine stops when the provided context is cancelled.
+// The cleanup goroutine stops when the provided context is canceled.
 func NewLoginRateLimiter(ctx context.Context) *LoginRateLimiter {
 	if ctx == nil {
 		ctx = context.Background()
