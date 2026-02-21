@@ -1,0 +1,25 @@
+meta {
+  name: Artist Health
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{apiBase}}/artists/{{artistId}}/health
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("should return health score", function() {
+    expect(res.body).to.have.property("score");
+  });
+}

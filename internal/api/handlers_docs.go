@@ -19,7 +19,7 @@ func (r *Router) handleAPIDocs(w http.ResponseWriter, _ *http.Request) {
 </head>
 <body>
   <script id="api-reference" data-url="` + r.basePath + `/api/v1/docs/openapi.yaml"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference@1.44.25" integrity="sha384-mdpu2MEiWcPJMrJ91t3OmElVeY6UTX3p9b8uD9YwVgjRR8kV8+StCxDM7srs6J52" crossorigin="anonymous"></script>
 </body>
 </html>`))
 }
