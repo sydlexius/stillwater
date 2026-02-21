@@ -8,8 +8,8 @@ services:
     ports:
       - "1973:1973"
     environment:
-      - PUID=1000
-      - PGID=1000
+      - PUID=99
+      - PGID=100
       - SW_LOG_LEVEL=info
       - SW_LOG_FORMAT=json
       # SW_ENCRYPTION_KEY will be auto-generated on first run if not set
