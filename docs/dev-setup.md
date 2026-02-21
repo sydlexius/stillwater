@@ -119,7 +119,7 @@ go test -v -count=1 ./internal/image/...
 | `SW_LISTEN_ADDR` | `:1973` | HTTP listen address |
 | `SW_BASE_PATH` | (empty) | URL prefix for reverse proxy (e.g., `/stillwater`) |
 | `SW_ENCRYPTION_KEY` | (auto-generated) | Base64-encoded AES-256 key for encrypting API keys at rest |
-| `PUID` / `PGID` | `1000` | User/group ID for Docker container file ownership |
+| `PUID` / `PGID` | `99` / `100` | User/group ID for Docker container file ownership |
 
 ## Project Structure
 

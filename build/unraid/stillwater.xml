@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>Stillwater</Name>
+  <Repository>ghcr.io/sydlexius/stillwater</Repository>
+  <Registry>https://github.com/sydlexius/stillwater/pkgs/container/stillwater</Registry>
+  <Branch>
+    <Tag>latest</Tag>
+    <TagDescription>Latest stable release</TagDescription>
+  </Branch>
+  <Network>bridge</Network>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/sydlexius/stillwater/issues</Support>
+  <Project>https://github.com/sydlexius/stillwater</Project>
+  <Overview>Artist metadata and image management for Emby, Jellyfin, and Kodi. Manage NFO files, artwork, and metadata across your media library.</Overview>
+  <Category>MediaApp:Other</Category>
+  <WebUI>http://[IP]:[PORT:1973]</WebUI>
+  <Icon>https://raw.githubusercontent.com/sydlexius/stillwater/main/web/static/img/favicon-96x96.png</Icon>
+  <ExtraParams/>
+  <PostArgs/>
+  <DonateText/>
+  <DonateLink/>
+  <Requires/>
+  <Config Name="Web UI Port" Target="1973" Default="1973" Mode="tcp" Description="Web interface port." Type="Port" Display="always" Required="true" Mask="false">1973</Config>
+  <Config Name="Config/Database" Target="/data" Default="/mnt/user/appdata/stillwater" Mode="rw" Description="Stores configuration, database, and backups." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/stillwater</Config>
+  <Config Name="Music Library" Target="/music" Default="" Mode="rw" Description="Path to your music library. Maps to /music inside the container." Type="Path" Display="always" Required="true" Mask="false"/>
+  <Config Name="PUID" Target="PUID" Default="99" Description="User ID for file permissions. Default 99 maps to nobody on Unraid." Type="Variable" Display="advanced" Required="false" Mask="false">99</Config>
+  <Config Name="PGID" Target="PGID" Default="100" Description="Group ID for file permissions. Default 100 maps to users on Unraid." Type="Variable" Display="advanced" Required="false" Mask="false">100</Config>
+  <Config Name="Encryption Key" Target="SW_ENCRYPTION_KEY" Default="" Description="AES-256 encryption key for API secrets stored at rest. Auto-generated on first run if left blank." Type="Variable" Display="advanced" Required="false" Mask="true"/>
+</Container>
