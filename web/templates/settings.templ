@@ -25,6 +25,53 @@ type SettingsData struct {
 	Webhooks      []webhook.Webhook
 }
 
+// logoSrc returns the static path to a logo file for the given key.
+// Most logos are SVG; audiodb and emby use PNG (128px variant).
+func logoSrc(key string) string {
+	switch key {
+	case "audiodb", "emby":
+		return "/static/img/logos/" + key + "-128.png"
+	case "custom":
+		return "/static/img/favicon.svg"
+	default:
+		return "/static/img/logos/" + key + ".svg"
+	}
+}
+
+// logoSrcSet returns an srcset attribute value for PNG logos with multi-DPI
+// variants. Returns an empty string for SVG logos (they scale natively).
+func logoSrcSet(key string) string {
+	switch key {
+	case "audiodb", "emby":
+		return "/static/img/logos/" + key + "-32.png 1x, " +
+			"/static/img/logos/" + key + "-64.png 2x, " +
+			"/static/img/logos/" + key + "-128.png 4x"
+	default:
+		return ""
+	}
+}
+
+// connectionsForType filters connections by type.
+func connectionsForType(conns []connection.Connection, connType string) []connection.Connection {
+	var result []connection.Connection
+	for _, c := range conns {
+		if c.Type == connType {
+			result = append(result, c)
+		}
+	}
+	return result
+}
+
+// hasOKConnection returns true if any connection in the slice has status "ok".
+func hasOKConnection(conns []connection.Connection) bool {
+	for _, c := range conns {
+		if c.Status == "ok" {
+			return true
+		}
+	}
+	return false
+}
+
 // prioritySwapJSON generates the JSON body for an HTMX priority reorder request.
 func prioritySwapJSON(field string, providers []provider.ProviderName, from, to int) string {
 	swapped := make([]provider.ProviderName, len(providers))
@@ -157,46 +204,11 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 						Connect to Emby, Jellyfin, or Lidarr servers for library sync and metadata push.
 					</p>
 				</div>
-				<div id="connections-list" class="px-6 py-4 space-y-3">
-					if len(data.Connections) == 0 {
-						<p class="text-sm text-gray-500 dark:text-gray-400 italic">No connections configured.</p>
-					}
-					for _, c := range data.Connections {
-						@connectionCard(c)
-					}
-				</div>
-				<div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700">
-					<button
-						type="button"
-						class="text-sm px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
-						onclick="document.getElementById('add-connection-form').classList.toggle('hidden')"
-					>
-						Add Connection
-					</button>
-					<div id="add-connection-form" class="hidden mt-4">
-						<form
-							hx-post="/api/v1/connections"
-							hx-target="#connections-list"
-							hx-swap="innerHTML"
-							hx-on::after-request="if(event.detail.successful) { this.reset(); this.closest('#add-connection-form').classList.add('hidden'); window.location.reload(); }"
-							class="space-y-3"
-						>
-							<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-								<input name="name" placeholder="Connection name" required class="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
-								<select name="type" required class="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-									<option value="">Select type...</option>
-									<option value="emby">Emby</option>
-									<option value="jellyfin">Jellyfin</option>
-									<option value="lidarr">Lidarr</option>
-								</select>
-								<input name="url" type="url" placeholder="Server URL" required class="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
-								<input name="api_key" type="text" placeholder="API Key" required autocomplete="off" data-1p-ignore data-lpignore="true" class="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
-							</div>
-							<div class="flex gap-2">
-								<button type="submit" class="text-sm px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 transition-colors">Save</button>
-								<button type="button" class="text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" onclick="this.closest('#add-connection-form').classList.add('hidden')">Cancel</button>
-							</div>
-						</form>
+				<div class="px-6 py-4">
+					<div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
+						@serviceConnectionCard("emby", "Emby", "http://192.168.1.100:8096", connectionsForType(data.Connections, "emby"))
+						@serviceConnectionCard("jellyfin", "Jellyfin", "http://192.168.1.100:8096", connectionsForType(data.Connections, "jellyfin"))
+						@serviceConnectionCard("lidarr", "Lidarr", "http://192.168.1.100:8686", connectionsForType(data.Connections, "lidarr"))
 					</div>
 				</div>
 			</div>
@@ -285,6 +297,22 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 	<div class="flex flex-col gap-2 rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
 		<div class="flex items-center gap-3">
+			if logoSrcSet(string(pk.Name)) != "" {
+				<img
+					src={ logoSrc(string(pk.Name)) }
+					srcset={ logoSrcSet(string(pk.Name)) }
+					alt=""
+					class="h-6 w-6 shrink-0"
+					aria-hidden="true"
+				/>
+			} else {
+				<img
+					src={ logoSrc(string(pk.Name)) }
+					alt=""
+					class="h-6 w-6 shrink-0"
+					aria-hidden="true"
+				/>
+			}
 			<div
 				class={
 					"h-2.5 w-2.5 shrink-0 rounded-full",
@@ -438,63 +466,137 @@ templ PriorityRow(pri provider.FieldPriority) {
 	</div>
 }
 
-// connectionTypeBadge returns a short display label for a connection type.
-func connectionTypeBadge(connType string) string {
-	switch connType {
-	case "emby":
-		return "Emby"
-	case "jellyfin":
-		return "Jellyfin"
-	case "lidarr":
-		return "Lidarr"
-	default:
-		return connType
-	}
-}
-
-templ connectionCard(c connection.Connection) {
-	<div class="flex flex-col gap-2 rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-		<div class="flex items-center gap-3 min-w-0">
-			<div
-				class={
-					"h-2.5 w-2.5 shrink-0 rounded-full",
-					templ.KV("bg-green-500", c.Status == "ok"),
-					templ.KV("bg-red-500", c.Status == "error"),
-					templ.KV("bg-gray-400 dark:bg-gray-500", c.Status != "ok" && c.Status != "error"),
-				}
-			></div>
-			<div class="min-w-0">
-				<div class="font-medium text-sm flex items-center gap-2">
-					{ c.Name }
-					<span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs font-medium text-gray-600 dark:text-gray-300">
-						{ connectionTypeBadge(c.Type) }
-					</span>
-				</div>
-				<div class="text-xs text-gray-500 dark:text-gray-400 truncate">{ c.URL }</div>
+templ serviceConnectionCard(connType string, displayName string, exampleURL string, conns []connection.Connection) {
+	<div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+		<div class="flex items-center gap-3 mb-3">
+			if logoSrcSet(connType) != "" {
+				<img
+					src={ logoSrc(connType) }
+					srcset={ logoSrcSet(connType) }
+					alt=""
+					class="h-8 w-8 shrink-0"
+					aria-hidden="true"
+				/>
+			} else {
+				<img
+					src={ logoSrc(connType) }
+					alt=""
+					class="h-8 w-8 shrink-0"
+					aria-hidden="true"
+				/>
+			}
+			<div class="flex items-center gap-2">
+				<span class="font-medium text-sm">{ displayName }</span>
+				<div
+					class={
+						"h-2 w-2 shrink-0 rounded-full",
+						templ.KV("bg-green-500", hasOKConnection(conns)),
+						templ.KV("bg-gray-400 dark:bg-gray-500", !hasOKConnection(conns)),
+					}
+				></div>
 			</div>
 		</div>
-		<div class="flex items-center gap-2 shrink-0">
-			<button
-				type="button"
-				class="text-sm px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
-				hx-post={ "/api/v1/connections/" + c.ID + "/test" }
+		if len(conns) > 0 {
+			<div class="space-y-2 mb-3">
+				for _, c := range conns {
+					<div class="flex flex-col gap-1.5 rounded border border-gray-100 dark:border-gray-700 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+						<div class="flex items-center gap-2 min-w-0">
+							<div
+								class={
+									"h-2 w-2 shrink-0 rounded-full",
+									templ.KV("bg-green-500", c.Status == "ok"),
+									templ.KV("bg-red-500", c.Status == "error"),
+									templ.KV("bg-gray-400 dark:bg-gray-500", c.Status != "ok" && c.Status != "error"),
+								}
+							></div>
+							<div class="min-w-0">
+								<div class="font-medium text-xs">{ c.Name }</div>
+								<div class="text-xs text-gray-500 dark:text-gray-400 truncate">{ c.URL }</div>
+							</div>
+						</div>
+						<div class="flex items-center gap-1.5 shrink-0">
+							<button
+								type="button"
+								class="text-xs px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+								hx-post={ "/api/v1/connections/" + c.ID + "/test" }
+								hx-swap="none"
+								hx-on::after-request="window.location.reload()"
+							>
+								Test
+							</button>
+							<button
+								type="button"
+								class="text-xs px-2 py-1 rounded border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+								hx-delete={ "/api/v1/connections/" + c.ID }
+								hx-confirm="Delete this connection?"
+								hx-swap="none"
+								hx-on::after-request="window.location.reload()"
+							>
+								Delete
+							</button>
+						</div>
+					</div>
+				}
+			</div>
+		} else {
+			<p class="text-xs text-gray-500 dark:text-gray-400 italic mb-3">Not configured</p>
+		}
+		<button
+			type="button"
+			class="text-xs px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+			onclick={ toggleConnectionForm(connType) }
+		>
+			if len(conns) > 0 {
+				Add another
+			} else {
+				Configure
+			}
+		</button>
+		<div id={ "conn-form-" + connType } class="hidden mt-3">
+			<form
+				class="space-y-2"
+				hx-post="/api/v1/connections"
 				hx-swap="none"
-				hx-on::after-request="window.location.reload()"
+				hx-on::after-request="if(event.detail.successful) { this.reset(); window.location.reload(); }"
 			>
-				Test
-			</button>
-			<button
-				type="button"
-				class="text-sm px-3 py-1.5 rounded border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-				hx-delete={ "/api/v1/connections/" + c.ID }
-				hx-confirm="Delete this connection?"
-				hx-swap="none"
-				hx-on::after-request="window.location.reload()"
-			>
-				Delete
-			</button>
+				<input type="hidden" name="type" value={ connType }/>
+				<input
+					name="name"
+					placeholder={ displayName + " server" }
+					required
+					class="w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+				/>
+				<input
+					name="url"
+					type="url"
+					placeholder={ "URL (e.g. " + exampleURL + ")" }
+					required
+					class="w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+				/>
+				<input
+					name="api_key"
+					type="text"
+					placeholder="API Key"
+					required
+					autocomplete="off"
+					data-1p-ignore
+					data-lpignore="true"
+					class="w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+				/>
+				<div class="flex gap-2">
+					<button type="submit" class="text-xs px-3 py-1.5 rounded bg-green-600 text-white hover:bg-green-700 transition-colors">Save</button>
+					<button type="button" class="text-xs px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" onclick={ toggleConnectionForm(connType) }>Cancel</button>
+				</div>
+			</form>
 		</div>
 	</div>
+}
+
+script toggleConnectionForm(connType string) {
+	var form = document.getElementById("conn-form-" + connType);
+	if (form) {
+		form.classList.toggle("hidden");
+	}
 }
 
 templ webhookCard(wh webhook.Webhook) {
@@ -558,7 +660,25 @@ templ profileCard(p platform.Profile) {
 		hx-on::after-request="window.location.reload()"
 	>
 		<div class="flex items-center justify-between">
-			<h3 class="font-semibold text-sm">{ p.Name }</h3>
+			<div class="flex items-center gap-2">
+				if logoSrcSet(p.ID) != "" {
+					<img
+						src={ logoSrc(p.ID) }
+						srcset={ logoSrcSet(p.ID) }
+						alt=""
+						class="h-6 w-6 shrink-0"
+						aria-hidden="true"
+					/>
+				} else {
+					<img
+						src={ logoSrc(p.ID) }
+						alt=""
+						class="h-6 w-6 shrink-0"
+						aria-hidden="true"
+					/>
+				}
+				<h3 class="font-semibold text-sm">{ p.Name }</h3>
+			</div>
 			if p.IsActive {
 				<span class="inline-flex items-center rounded-full bg-blue-100 dark:bg-blue-800 px-2 py-0.5 text-xs font-medium text-blue-700 dark:text-blue-300">
 					Active

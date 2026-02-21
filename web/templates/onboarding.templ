@@ -307,7 +307,25 @@ templ onboardingProfileCard(p platform.Profile) {
 		hx-on::after-request="if(event.detail.successful) selectPlatform(this)"
 	>
 		<div class="flex items-center justify-between">
-			<h3 class="font-semibold text-sm text-gray-900 dark:text-gray-100">{ p.Name }</h3>
+			<div class="flex items-center gap-2">
+				if logoSrcSet(p.ID) != "" {
+					<img
+						src={ logoSrc(p.ID) }
+						srcset={ logoSrcSet(p.ID) }
+						alt=""
+						class="h-6 w-6 shrink-0"
+						aria-hidden="true"
+					/>
+				} else {
+					<img
+						src={ logoSrc(p.ID) }
+						alt=""
+						class="h-6 w-6 shrink-0"
+						aria-hidden="true"
+					/>
+				}
+				<h3 class="font-semibold text-sm text-gray-900 dark:text-gray-100">{ p.Name }</h3>
+			</div>
 			if p.IsActive {
 				<span class="inline-flex items-center rounded-full bg-blue-100 dark:bg-blue-800 px-2 py-0.5 text-xs font-medium text-blue-700 dark:text-blue-300">
 					Active
@@ -331,6 +349,22 @@ templ onboardingProviderCard(pk provider.ProviderKeyStatus) {
 	<div id={ "ob-provider-card-" + string(pk.Name) } class="rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3">
 		<div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
 			<div class="flex items-center gap-3">
+				if logoSrcSet(string(pk.Name)) != "" {
+					<img
+						src={ logoSrc(string(pk.Name)) }
+						srcset={ logoSrcSet(string(pk.Name)) }
+						alt=""
+						class="h-6 w-6 shrink-0"
+						aria-hidden="true"
+					/>
+				} else {
+					<img
+						src={ logoSrc(string(pk.Name)) }
+						alt=""
+						class="h-6 w-6 shrink-0"
+						aria-hidden="true"
+					/>
+				}
 				<div
 					class={
 						"h-2.5 w-2.5 shrink-0 rounded-full",
@@ -428,6 +462,22 @@ templ onboardingConnectionCard(connType string, displayName string, exampleURL s
 	<div class="rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3">
 		<div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
 			<div class="flex items-start gap-3">
+				if logoSrcSet(connType) != "" {
+					<img
+						src={ logoSrc(connType) }
+						srcset={ logoSrcSet(connType) }
+						alt=""
+						class="h-6 w-6 shrink-0 mt-0.5"
+						aria-hidden="true"
+					/>
+				} else {
+					<img
+						src={ logoSrc(connType) }
+						alt=""
+						class="h-6 w-6 shrink-0 mt-0.5"
+						aria-hidden="true"
+					/>
+				}
 				<div id={ "ob-conn-dot-" + connType } class="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-gray-400 dark:bg-gray-500"></div>
 				<div>
 					<div class="flex items-center gap-1.5">

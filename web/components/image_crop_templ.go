@@ -57,8 +57,8 @@ func ImageCropModal(artistID string) templ.Component {
 
 func saveCroppedImage(artistID string) templ.ComponentScript {
 	return templ.ComponentScript{
-		Name: `__templ_saveCroppedImage_5e81`,
-		Function: `function __templ_saveCroppedImage_5e81(artistID){if (!window._cropper) return;
+		Name: `__templ_saveCroppedImage_4575`,
+		Function: `function __templ_saveCroppedImage_4575(artistID){if (!window._cropper) return;
 	const canvas = window._cropper.getCroppedCanvas();
 	if (!canvas) return;
 	const base64 = canvas.toDataURL('image/png');
@@ -80,8 +80,8 @@ func saveCroppedImage(artistID string) templ.ComponentScript {
 		}
 	});
 }`,
-		Call:       templ.SafeScript(`__templ_saveCroppedImage_5e81`, artistID),
-		CallInline: templ.SafeScriptInline(`__templ_saveCroppedImage_5e81`, artistID),
+		Call:       templ.SafeScript(`__templ_saveCroppedImage_4575`, artistID),
+		CallInline: templ.SafeScriptInline(`__templ_saveCroppedImage_4575`, artistID),
 	}
 }
 
