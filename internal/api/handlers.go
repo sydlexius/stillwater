@@ -1,7 +1,9 @@
 package api
 
 import (
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -171,7 +173,12 @@ func (r *Router) handleIndex(w http.ResponseWriter, req *http.Request) {
 	var completed string
 	err = r.db.QueryRowContext(req.Context(), //nolint:gosec // G701: query is a string literal
 		`SELECT value FROM settings WHERE key = 'onboarding.completed'`).Scan(&completed)
-	if err != nil || completed != "true" {
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		r.logger.Error("checking onboarding status", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	if completed != "true" {
 		http.Redirect(w, req, r.basePath+"/setup/wizard", http.StatusSeeOther)
 		return
 	}
@@ -191,7 +198,12 @@ func (r *Router) handleOnboardingPage(w http.ResponseWriter, req *http.Request) 
 	var completed string
 	err := r.db.QueryRowContext(req.Context(), //nolint:gosec // G701: query is a string literal
 		`SELECT value FROM settings WHERE key = 'onboarding.completed'`).Scan(&completed)
-	if err == nil && completed == "true" {
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		r.logger.Error("checking onboarding status", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	if completed == "true" {
 		http.Redirect(w, req, r.basePath+"/", http.StatusSeeOther)
 		return
 	}
@@ -212,7 +224,9 @@ func (r *Router) handleOnboardingPage(w http.ResponseWriter, req *http.Request) 
 	var stepStr string
 	err = r.db.QueryRowContext(req.Context(), //nolint:gosec // G701: query is a string literal
 		`SELECT value FROM settings WHERE key = 'onboarding.step'`).Scan(&stepStr)
-	if err == nil {
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		r.logger.Error("loading onboarding step", "error", err)
+	} else if err == nil {
 		switch stepStr {
 		case "2":
 			currentStep = 2

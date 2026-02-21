@@ -235,11 +235,6 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 					el.closest('[data-profile-card]').classList.add('border-blue-500', 'bg-blue-50', 'dark:bg-blue-900/20');
 				}
 
-				function toggleConnectionForm(connType) {
-					var form = document.getElementById('ob-conn-form-' + connType);
-					if (form) form.classList.toggle('hidden');
-				}
-
 				function onConnectionSaved(connType, xhr) {
 					var form = document.getElementById('ob-conn-form-' + connType);
 					var success = document.getElementById('ob-conn-success-' + connType);
@@ -502,7 +497,7 @@ templ onboardingConnectionCard(connType string, displayName string, exampleURL s
 				</div>
 			</form>
 		</div>
-		<div id={ "ob-conn-success-" + connType } class="hidden mt-3 pl-5.5">
+		<div id={ "ob-conn-success-" + connType } class="hidden mt-3 pl-6">
 			<div class="flex items-center gap-3">
 				<p class="text-xs text-green-600 dark:text-green-400">Connected.</p>
 				<button
