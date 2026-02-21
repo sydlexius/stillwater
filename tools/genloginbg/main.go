@@ -19,11 +19,11 @@ import (
 )
 
 const (
-	targetWidth  = 800
-	blurRadius   = 18
-	blurPasses   = 3
-	jpegQuality  = 80
-	outputFile   = "web/static/img/login-bg.jpg"
+	targetWidth = 800
+	blurRadius  = 18
+	blurPasses  = 3
+	jpegQuality = 80
+	outputFile  = "web/static/img/login-bg.jpg"
 )
 
 func main() {
@@ -55,32 +55,32 @@ func main() {
 	}
 
 	// Save as JPEG.
-	if err := os.MkdirAll(filepath.Dir(outputFile), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(outputFile), 0o750); err != nil {
 		fmt.Fprintf(os.Stderr, "create dir: %v\n", err)
 		os.Exit(1)
 	}
-	f, err := os.Create(outputFile)
+	f, err := os.Create(outputFile) //nolint:gosec // G304: outputFile is a compile-time constant
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "create output: %v\n", err)
 		os.Exit(1)
 	}
 	if err := jpeg.Encode(f, blurred, &jpeg.Options{Quality: jpegQuality}); err != nil {
-		f.Close()
+		_ = f.Close()
 		fmt.Fprintf(os.Stderr, "encode jpeg: %v\n", err)
 		os.Exit(1)
 	}
-	f.Close()
+	_ = f.Close()
 
 	info, _ := os.Stat(outputFile)
 	fmt.Printf("generated %s (%dx%d, %dKB)\n", outputFile, targetWidth, targetHeight, info.Size()/1024)
 }
 
 func loadPNG(path string) (image.Image, error) {
-	f, err := os.Open(path)
+	f, err := os.Open(path) //nolint:gosec // G304: path is a CLI argument for this tool
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer f.Close() //nolint:errcheck // best-effort close on read-only file
 	return png.Decode(f)
 }
 
@@ -99,7 +99,7 @@ func boxBlur(src *image.NRGBA, radius int) *image.NRGBA {
 		var rSum, gSum, bSum, aSum int
 		// Seed the window with the leftmost pixel repeated.
 		for i := -radius; i <= radius; i++ {
-			xi := clamp(i, 0, w-1)
+			xi := clamp(i, w-1)
 			c := src.NRGBAAt(xi, y)
 			rSum += int(c.R)
 			gSum += int(c.G)
@@ -107,14 +107,14 @@ func boxBlur(src *image.NRGBA, radius int) *image.NRGBA {
 			aSum += int(c.A)
 		}
 		for x := 0; x < w; x++ {
-			tmp.Pix[(y*w+x)*4+0] = uint8(rSum / diameter)
-			tmp.Pix[(y*w+x)*4+1] = uint8(gSum / diameter)
-			tmp.Pix[(y*w+x)*4+2] = uint8(bSum / diameter)
+			tmp.Pix[(y*w+x)*4+0] = uint8(rSum / diameter) //nolint:gosec // G115: result is always 0-255
+			tmp.Pix[(y*w+x)*4+1] = uint8(gSum / diameter) //nolint:gosec // G115: result is always 0-255
+			tmp.Pix[(y*w+x)*4+2] = uint8(bSum / diameter) //nolint:gosec // G115: result is always 0-255
 			tmp.Pix[(y*w+x)*4+3] = uint8(aSum / diameter)
 
 			// Slide the window: remove left edge, add right edge.
-			oldX := clamp(x-radius, 0, w-1)
-			newX := clamp(x+radius+1, 0, w-1)
+			oldX := clamp(x-radius, w-1)
+			newX := clamp(x+radius+1, w-1)
 			oldC := src.NRGBAAt(oldX, y)
 			newC := src.NRGBAAt(newX, y)
 			rSum += int(newC.R) - int(oldC.R)
@@ -128,7 +128,7 @@ func boxBlur(src *image.NRGBA, radius int) *image.NRGBA {
 	for x := 0; x < w; x++ {
 		var rSum, gSum, bSum, aSum int
 		for i := -radius; i <= radius; i++ {
-			yi := clamp(i, 0, h-1)
+			yi := clamp(i, h-1)
 			c := tmp.NRGBAAt(x, yi)
 			rSum += int(c.R)
 			gSum += int(c.G)
@@ -136,13 +136,13 @@ func boxBlur(src *image.NRGBA, radius int) *image.NRGBA {
 			aSum += int(c.A)
 		}
 		for y := 0; y < h; y++ {
-			dst.Pix[(y*w+x)*4+0] = uint8(rSum / diameter)
-			dst.Pix[(y*w+x)*4+1] = uint8(gSum / diameter)
-			dst.Pix[(y*w+x)*4+2] = uint8(bSum / diameter)
+			dst.Pix[(y*w+x)*4+0] = uint8(rSum / diameter) //nolint:gosec // G115: result is always 0-255
+			dst.Pix[(y*w+x)*4+1] = uint8(gSum / diameter) //nolint:gosec // G115: result is always 0-255
+			dst.Pix[(y*w+x)*4+2] = uint8(bSum / diameter) //nolint:gosec // G115: result is always 0-255
 			dst.Pix[(y*w+x)*4+3] = uint8(aSum / diameter)
 
-			oldY := clamp(y-radius, 0, h-1)
-			newY := clamp(y+radius+1, 0, h-1)
+			oldY := clamp(y-radius, h-1)
+			newY := clamp(y+radius+1, h-1)
 			oldC := tmp.NRGBAAt(x, oldY)
 			newC := tmp.NRGBAAt(x, newY)
 			rSum += int(newC.R) - int(oldC.R)
@@ -155,9 +155,9 @@ func boxBlur(src *image.NRGBA, radius int) *image.NRGBA {
 	return dst
 }
 
-func clamp(v, lo, hi int) int {
-	if v < lo {
-		return lo
+func clamp(v, hi int) int {
+	if v < 0 {
+		return 0
 	}
 	if v > hi {
 		return hi

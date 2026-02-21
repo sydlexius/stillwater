@@ -169,7 +169,7 @@ func (r *Router) handleIndex(w http.ResponseWriter, req *http.Request) {
 
 	// Check if onboarding wizard needs to run
 	var completed string
-	err = r.db.QueryRowContext(req.Context(),
+	err = r.db.QueryRowContext(req.Context(), //nolint:gosec // G701: query is a string literal
 		`SELECT value FROM settings WHERE key = 'onboarding.completed'`).Scan(&completed)
 	if err != nil || completed != "true" {
 		http.Redirect(w, req, r.basePath+"/setup/wizard", http.StatusSeeOther)
@@ -189,7 +189,7 @@ func (r *Router) handleOnboardingPage(w http.ResponseWriter, req *http.Request) 
 
 	// If onboarding already completed, redirect to dashboard
 	var completed string
-	err := r.db.QueryRowContext(req.Context(),
+	err := r.db.QueryRowContext(req.Context(), //nolint:gosec // G701: query is a string literal
 		`SELECT value FROM settings WHERE key = 'onboarding.completed'`).Scan(&completed)
 	if err == nil && completed == "true" {
 		http.Redirect(w, req, r.basePath+"/", http.StatusSeeOther)
@@ -210,7 +210,7 @@ func (r *Router) handleOnboardingPage(w http.ResponseWriter, req *http.Request) 
 	// Load current step from settings (default to 1)
 	currentStep := 1
 	var stepStr string
-	err = r.db.QueryRowContext(req.Context(),
+	err = r.db.QueryRowContext(req.Context(), //nolint:gosec // G701: query is a string literal
 		`SELECT value FROM settings WHERE key = 'onboarding.step'`).Scan(&stepStr)
 	if err == nil {
 		switch stepStr {

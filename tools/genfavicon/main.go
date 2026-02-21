@@ -76,7 +76,7 @@ var glyphCubics = [][6]float64{
 
 func main() {
 	outDir := filepath.Join("web", "static", "img")
-	if err := os.MkdirAll(outDir, 0o755); err != nil {
+	if err := os.MkdirAll(outDir, 0o750); err != nil {
 		fmt.Fprintf(os.Stderr, "create dir: %v\n", err)
 		os.Exit(1)
 	}
@@ -95,7 +95,7 @@ func main() {
 	for _, t := range targets {
 		img := renderIcon(t.size)
 		p := filepath.Join(outDir, t.name)
-		f, err := os.Create(p)
+		f, err := os.Create(p) //nolint:gosec // G304: path is constructed from hardcoded directory + filename
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "create %s: %v\n", p, err)
 			os.Exit(1)
