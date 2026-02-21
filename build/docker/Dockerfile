@@ -32,7 +32,7 @@ FROM alpine:3.21
 RUN apk add --no-cache ca-certificates tzdata su-exec
 
 # Create app user
-RUN addgroup -g 100 stillwater && \
+RUN addgroup stillwater && \
     adduser -u 99 -G stillwater -s /bin/sh -D stillwater
 
 # Create data and music directories
