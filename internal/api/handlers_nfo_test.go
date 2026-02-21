@@ -177,6 +177,73 @@ func TestHandleNFOSnapshotRestore_MissingParams(t *testing.T) {
 	}
 }
 
+func TestHandleNFODiff_CrossArtistSnapshot(t *testing.T) {
+	r, artistSvc := testRouter(t)
+	ctx := context.Background()
+
+	artistA := addTestArtist(t, artistSvc, "Artist A")
+	artistB := addTestArtist(t, artistSvc, "Artist B")
+
+	// Save a snapshot for artist B
+	snap, err := r.nfoSnapshotService.Save(ctx, artistB.ID, "<artist><name>B</name></artist>")
+	if err != nil {
+		t.Fatalf("saving snapshot: %v", err)
+	}
+
+	// Try to diff artist A with artist B's snapshot -- should get 404
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/artists/"+artistA.ID+"/nfo/diff?compare_to="+snap.ID, nil)
+	req.SetPathValue("id", artistA.ID)
+	w := httptest.NewRecorder()
+
+	r.handleNFODiff(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d (cross-artist snapshot should be rejected)", w.Code, http.StatusNotFound)
+	}
+}
+
+func TestHandleNFODiff_SnapshotNotFound(t *testing.T) {
+	r, artistSvc := testRouter(t)
+
+	a := addTestArtist(t, artistSvc, "Diff Missing Snap")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/artists/"+a.ID+"/nfo/diff?compare_to=nonexistent", nil)
+	req.SetPathValue("id", a.ID)
+	w := httptest.NewRecorder()
+
+	r.handleNFODiff(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusNotFound)
+	}
+}
+
+func TestHandleNFOSnapshotRestore_CrossArtist(t *testing.T) {
+	r, artistSvc := testRouter(t)
+	ctx := context.Background()
+
+	artistA := addTestArtist(t, artistSvc, "Restore A")
+	artistB := addTestArtist(t, artistSvc, "Restore B")
+
+	// Save a snapshot for artist B
+	snap, err := r.nfoSnapshotService.Save(ctx, artistB.ID, "<artist><name>B</name></artist>")
+	if err != nil {
+		t.Fatalf("saving snapshot: %v", err)
+	}
+
+	// Try to restore artist B's snapshot via artist A's route -- should get 404
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+artistA.ID+"/nfo/snapshots/"+snap.ID+"/restore", nil)
+	req.SetPathValue("id", artistA.ID)
+	req.SetPathValue("snapshotId", snap.ID)
+	w := httptest.NewRecorder()
+
+	r.handleNFOSnapshotRestore(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d (cross-artist restore should be rejected)", w.Code, http.StatusNotFound)
+	}
+}
+
 func TestParseNFOFile_NonExistent(t *testing.T) {
 	result := parseNFOFile("/nonexistent/path/artist.nfo")
 	if result != nil {

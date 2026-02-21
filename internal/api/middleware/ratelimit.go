@@ -25,6 +25,9 @@ type LoginRateLimiter struct {
 // NewLoginRateLimiter creates a rate limiter that cleans up stale entries periodically.
 // The cleanup goroutine stops when the provided context is cancelled.
 func NewLoginRateLimiter(ctx context.Context) *LoginRateLimiter {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	rl := &LoginRateLimiter{
 		limiters: make(map[string]*ipLimiter),
 	}
@@ -82,21 +85,35 @@ func (rl *LoginRateLimiter) cleanup(ctx context.Context) {
 }
 
 func clientIP(r *http.Request) string {
-	// Check X-Forwarded-For for reverse proxy setups.
-	// Use the rightmost IP (added by the nearest trusted proxy) to resist spoofing.
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		parts := strings.Split(xff, ",")
-		ip := strings.TrimSpace(parts[len(parts)-1])
-		if ip != "" {
-			return ip
+	remoteIP, _, _ := net.SplitHostPort(r.RemoteAddr)
+	if remoteIP == "" {
+		remoteIP = r.RemoteAddr
+	}
+
+	// Only honor proxy headers when the direct connection is from a private/loopback IP,
+	// which indicates a trusted reverse proxy is in front of the application.
+	if isPrivateIP(remoteIP) {
+		// Use the rightmost XFF IP (added by the nearest trusted proxy) to resist spoofing.
+		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			parts := strings.Split(xff, ",")
+			ip := strings.TrimSpace(parts[len(parts)-1])
+			if ip != "" {
+				return ip
+			}
+		}
+		if xri := r.Header.Get("X-Real-Ip"); xri != "" {
+			return xri
 		}
 	}
-	if xri := r.Header.Get("X-Real-Ip"); xri != "" {
-		return xri
+
+	return remoteIP
+}
+
+// isPrivateIP checks if an IP address is in a private or loopback range.
+func isPrivateIP(ipStr string) bool {
+	ip := net.ParseIP(ipStr)
+	if ip == nil {
+		return false
 	}
-	ip, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return ip
+	return ip.IsLoopback() || ip.IsPrivate()
 }
