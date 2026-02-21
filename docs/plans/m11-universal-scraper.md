@@ -11,10 +11,11 @@ Per-field provider assignment, fallback chains, library-scoped configuration, an
 
 ## Issues
 
-| # | Title | Mode | Model |
-|---|-------|------|-------|
-| 51 | Universal Music Scraper: per-field provider assignment, fallback chains, REST API and UI config | plan | opus |
-| 56 | Web Image Search Provider Tier: targeted scraping for artist images (blocked by #51) | plan | opus |
+| # | Title | Mode | Model | Status |
+|---|-------|------|-------|--------|
+| 51 | Universal Music Scraper: per-field provider assignment, fallback chains, REST API and UI config | plan | opus | Backend complete (PR #87), UI pending |
+| 86 | Settings UI Refactor: card-based layout with service logos | plan | opus | In progress (branch: feature/m11-settings-card-layout) |
+| 56 | Web Image Search Provider Tier: targeted scraping for artist images (blocked by #51) | plan | opus | Not started |
 
 ## Implementation Order
 
