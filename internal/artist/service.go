@@ -17,7 +17,7 @@ const artistColumns = `id, name, sort_name, type, gender, disambiguation,
 	genres, styles, moods,
 	years_active, born, formed, died, disbanded, biography,
 	path, nfo_exists, thumb_exists, fanart_exists, logo_exists, banner_exists,
-	health_score, is_excluded, exclusion_reason, is_classical,
+	health_score, is_excluded, exclusion_reason, is_classical, metadata_sources,
 	last_scanned_at, created_at, updated_at`
 
 // Service provides artist and band member data operations.
@@ -46,9 +46,9 @@ func (s *Service) Create(ctx context.Context, a *Artist) error {
 			genres, styles, moods,
 			years_active, born, formed, died, disbanded, biography,
 			path, nfo_exists, thumb_exists, fanart_exists, logo_exists, banner_exists,
-			health_score, is_excluded, exclusion_reason, is_classical,
+			health_score, is_excluded, exclusion_reason, is_classical, metadata_sources,
 			last_scanned_at, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		a.ID, a.Name, a.SortName, a.Type, a.Gender, a.Disambiguation,
 		a.MusicBrainzID, a.AudioDBID, a.DiscogsID, a.WikidataID,
@@ -57,6 +57,7 @@ func (s *Service) Create(ctx context.Context, a *Artist) error {
 		a.Path, boolToInt(a.NFOExists), boolToInt(a.ThumbExists),
 		boolToInt(a.FanartExists), boolToInt(a.LogoExists), boolToInt(a.BannerExists),
 		a.HealthScore, boolToInt(a.IsExcluded), a.ExclusionReason, boolToInt(a.IsClassical),
+		MarshalStringMap(a.MetadataSources),
 		formatNullableTime(a.LastScannedAt),
 		now.Format(time.RFC3339), now.Format(time.RFC3339),
 	)
@@ -196,6 +197,7 @@ func (s *Service) Update(ctx context.Context, a *Artist) error {
 			years_active = ?, born = ?, formed = ?, died = ?, disbanded = ?, biography = ?,
 			path = ?, nfo_exists = ?, thumb_exists = ?, fanart_exists = ?, logo_exists = ?, banner_exists = ?,
 			health_score = ?, is_excluded = ?, exclusion_reason = ?, is_classical = ?,
+			metadata_sources = ?,
 			last_scanned_at = ?, updated_at = ?
 		WHERE id = ?
 	`,
@@ -206,6 +208,7 @@ func (s *Service) Update(ctx context.Context, a *Artist) error {
 		a.Path, boolToInt(a.NFOExists), boolToInt(a.ThumbExists),
 		boolToInt(a.FanartExists), boolToInt(a.LogoExists), boolToInt(a.BannerExists),
 		a.HealthScore, boolToInt(a.IsExcluded), a.ExclusionReason, boolToInt(a.IsClassical),
+		MarshalStringMap(a.MetadataSources),
 		formatNullableTime(a.LastScannedAt),
 		a.UpdatedAt.Format(time.RFC3339),
 		a.ID,
@@ -364,6 +367,7 @@ func (s *Service) UpsertMembers(ctx context.Context, artistID string, members []
 func scanArtist(row interface{ Scan(...any) error }) (*Artist, error) {
 	var a Artist
 	var genres, styles, moods string
+	var metadataSources string
 	var lastScannedAt sql.NullString
 	var nfo, thumb, fanart, logo, banner int
 	var isExcluded, isClassical int
@@ -376,6 +380,7 @@ func scanArtist(row interface{ Scan(...any) error }) (*Artist, error) {
 		&a.YearsActive, &a.Born, &a.Formed, &a.Died, &a.Disbanded, &a.Biography,
 		&a.Path, &nfo, &thumb, &fanart, &logo, &banner,
 		&a.HealthScore, &isExcluded, &a.ExclusionReason, &isClassical,
+		&metadataSources,
 		&lastScannedAt,
 		&createdAt, &updatedAt,
 	)
@@ -393,6 +398,7 @@ func scanArtist(row interface{ Scan(...any) error }) (*Artist, error) {
 	a.BannerExists = banner == 1
 	a.IsExcluded = isExcluded == 1
 	a.IsClassical = isClassical == 1
+	a.MetadataSources = UnmarshalStringMap(metadataSources)
 	a.CreatedAt = parseTime(createdAt)
 	a.UpdatedAt = parseTime(updatedAt)
 

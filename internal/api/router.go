@@ -16,6 +16,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/provider"
 	"github.com/sydlexius/stillwater/internal/rule"
 	"github.com/sydlexius/stillwater/internal/scanner"
+	"github.com/sydlexius/stillwater/internal/scraper"
 	"github.com/sydlexius/stillwater/internal/webhook"
 )
 
@@ -35,6 +36,7 @@ type RouterDeps struct {
 	BulkExecutor       *rule.BulkExecutor
 	NFOSnapshotService *nfo.SnapshotService
 	ConnectionService  *connection.Service
+	ScraperService     *scraper.Service
 	WebhookService     *webhook.Service
 	WebhookDispatcher  *webhook.Dispatcher
 	BackupService      *backup.Service
@@ -60,6 +62,7 @@ type Router struct {
 	bulkExecutor       *rule.BulkExecutor
 	nfoSnapshotService *nfo.SnapshotService
 	connectionService  *connection.Service
+	scraperService     *scraper.Service
 	webhookService     *webhook.Service
 	webhookDispatcher  *webhook.Dispatcher
 	backupService      *backup.Service
@@ -86,6 +89,7 @@ func NewRouter(deps RouterDeps) *Router {
 		bulkExecutor:       deps.BulkExecutor,
 		nfoSnapshotService: deps.NFOSnapshotService,
 		connectionService:  deps.ConnectionService,
+		scraperService:     deps.ScraperService,
 		webhookService:     deps.WebhookService,
 		webhookDispatcher:  deps.WebhookDispatcher,
 		backupService:      deps.BackupService,
@@ -164,6 +168,14 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("PUT "+bp+"/api/v1/providers/priorities", wrapAuth(r.handleSetPriorities, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/providers/search", wrapAuth(r.handleProviderSearch, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/providers/fetch", wrapAuth(r.handleProviderFetch, authMw))
+
+	// Scraper config routes
+	mux.HandleFunc("GET "+bp+"/api/v1/scraper/config", wrapAuth(r.handleGetScraperConfig, authMw))
+	mux.HandleFunc("PUT "+bp+"/api/v1/scraper/config", wrapAuth(r.handleUpdateScraperConfig, authMw))
+	mux.HandleFunc("GET "+bp+"/api/v1/scraper/config/connections/{id}", wrapAuth(r.handleGetConnectionScraperConfig, authMw))
+	mux.HandleFunc("PUT "+bp+"/api/v1/scraper/config/connections/{id}", wrapAuth(r.handleUpdateConnectionScraperConfig, authMw))
+	mux.HandleFunc("DELETE "+bp+"/api/v1/scraper/config/connections/{id}", wrapAuth(r.handleResetConnectionScraperConfig, authMw))
+	mux.HandleFunc("GET "+bp+"/api/v1/scraper/providers", wrapAuth(r.handleListScraperProviders, authMw))
 
 	// Rule routes
 	mux.HandleFunc("GET "+bp+"/api/v1/rules", wrapAuth(r.handleListRules, authMw))

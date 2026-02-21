@@ -19,6 +19,7 @@ const (
 	RuleFanartExists = "fanart_exists"
 	RuleLogoExists   = "logo_exists"
 	RuleBioExists    = "bio_exists"
+	RuleFallbackUsed = "fallback_used"
 )
 
 // defaultRules defines the built-in rules seeded on first startup.
@@ -86,6 +87,14 @@ var defaultRules = []Rule{
 		Category:    "metadata",
 		Enabled:     true,
 		Config:      RuleConfig{MinLength: 10, Severity: "warning"},
+	},
+	{
+		ID:          RuleFallbackUsed,
+		Name:        "Fallback provider used",
+		Description: "Flags when metadata fields were populated by a fallback provider instead of the configured primary",
+		Category:    "metadata",
+		Enabled:     true,
+		Config:      RuleConfig{Severity: "info"},
 	},
 }
 

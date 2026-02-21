@@ -1,6 +1,7 @@
 package rule
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -8,6 +9,8 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/image"
+	"github.com/sydlexius/stillwater/internal/provider"
+	"github.com/sydlexius/stillwater/internal/scraper"
 )
 
 // Checker evaluates a single rule against an artist.
@@ -215,6 +218,39 @@ func getThumbDimensions(dirPath string) (int, int, error) {
 	}
 
 	return 0, 0, fmt.Errorf("no thumbnail found in %s", dirPath)
+}
+
+// makeFallbackChecker returns a Checker that flags artists whose metadata
+// was populated by a fallback provider instead of the configured primary.
+func makeFallbackChecker(scraperSvc *scraper.Service) Checker {
+	return func(a *artist.Artist, cfg RuleConfig) *Violation {
+		if len(a.MetadataSources) == 0 {
+			return nil
+		}
+		scraperCfg, err := scraperSvc.GetConfig(context.Background(), scraper.ScopeGlobal)
+		if err != nil {
+			return nil
+		}
+		var fallbackFields []string
+		for _, fc := range scraperCfg.Fields {
+			source, ok := a.MetadataSources[string(fc.Field)]
+			if ok && provider.ProviderName(source) != fc.Primary {
+				fallbackFields = append(fallbackFields, string(fc.Field)+" ("+source+")")
+			}
+		}
+		if len(fallbackFields) == 0 {
+			return nil
+		}
+		return &Violation{
+			RuleID:   RuleFallbackUsed,
+			RuleName: "Fallback provider used",
+			Category: "metadata",
+			Severity: effectiveSeverity(cfg),
+			Message: fmt.Sprintf("artist %q: %d field(s) from fallback providers: %s",
+				a.Name, len(fallbackFields), strings.Join(fallbackFields, ", ")),
+			Fixable: false,
+		}
+	}
 }
 
 func effectiveSeverity(cfg RuleConfig) string {
