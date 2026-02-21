@@ -332,11 +332,10 @@ func (s *Service) recordHealthSnapshot(ctx context.Context) {
 	if s.ruleService == nil {
 		return
 	}
-	allArtists, total, err := s.artistService.List(ctx, artist.ListParams{
-		Page:     1,
-		PageSize: 10000,
-		Sort:     "name",
-	})
+	const pageSize = 200
+	params := artist.ListParams{Page: 1, PageSize: pageSize, Sort: "name"}
+
+	firstPage, total, err := s.artistService.List(ctx, params)
 	if err != nil {
 		s.logger.Warn("listing artists for health snapshot", "error", err)
 		return
@@ -347,13 +346,40 @@ func (s *Service) recordHealthSnapshot(ctx context.Context) {
 
 	compliant := 0
 	var scoreSum float64
-	for _, a := range allArtists {
-		if a.HealthScore >= 100.0 {
-			compliant++
+	processed := 0
+
+	processPage := func(artists []artist.Artist) {
+		for _, a := range artists {
+			if a.HealthScore >= 100.0 {
+				compliant++
+			}
+			scoreSum += a.HealthScore
+			processed++
 		}
-		scoreSum += a.HealthScore
 	}
-	avgScore := scoreSum / float64(len(allArtists))
+
+	processPage(firstPage)
+	for processed < total {
+		if ctx.Err() != nil {
+			s.logger.Warn("context canceled while listing artists for health snapshot", "page", params.Page, "error", ctx.Err())
+			break
+		}
+		params.Page++
+		more, _, err := s.artistService.List(ctx, params)
+		if err != nil {
+			s.logger.Warn("listing artists for health snapshot (page)", "page", params.Page, "error", err)
+			break
+		}
+		if len(more) == 0 {
+			break
+		}
+		processPage(more)
+	}
+
+	if processed == 0 {
+		return
+	}
+	avgScore := scoreSum / float64(processed)
 
 	if err := s.ruleService.RecordHealthSnapshot(ctx, total, compliant, avgScore); err != nil {
 		s.logger.Warn("recording health snapshot", "error", err)
