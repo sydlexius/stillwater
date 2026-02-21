@@ -17,3 +17,4 @@ ALTER TABLE artists ADD COLUMN metadata_sources TEXT NOT NULL DEFAULT '{}';
 
 DROP INDEX IF EXISTS idx_scraper_config_scope;
 DROP TABLE IF EXISTS scraper_config;
+ALTER TABLE artists DROP COLUMN metadata_sources;

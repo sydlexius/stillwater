@@ -33,10 +33,11 @@ func NewExecutor(service *Service, registry *provider.Registry, logger *slog.Log
 	}
 }
 
-// ScrapeAll scrapes all enabled fields using the global scraper configuration.
-// It returns a merged FetchResult compatible with the provider.Orchestrator output.
-func (e *Executor) ScrapeAll(ctx context.Context, mbid, name string) (*provider.FetchResult, error) {
-	cfg, err := e.service.GetConfig(ctx, ScopeGlobal)
+// ScrapeAll scrapes all enabled fields using the scraper configuration for the
+// given scope. It returns a merged FetchResult compatible with the
+// provider.Orchestrator output.
+func (e *Executor) ScrapeAll(ctx context.Context, mbid, name, scope string) (*provider.FetchResult, error) {
+	cfg, err := e.service.GetConfig(ctx, scope)
 	if err != nil {
 		return nil, fmt.Errorf("loading scraper config: %w", err)
 	}
@@ -50,6 +51,7 @@ func (e *Executor) ScrapeAll(ctx context.Context, mbid, name string) (*provider.
 	// Cache provider results to avoid duplicate API calls
 	var mu sync.Mutex
 	cache := make(map[provider.ProviderName]*providerResult)
+	selectedProviders := make(map[provider.ProviderName]bool)
 
 	for _, field := range cfg.Fields {
 		if !field.Enabled {
@@ -61,7 +63,7 @@ func (e *Executor) ScrapeAll(ctx context.Context, mbid, name string) (*provider.
 			continue
 		}
 
-		fr := e.scrapeField(ctx, mbid, name, field, *chain, cache, &mu)
+		fr := e.scrapeField(ctx, mbid, name, field, *chain, cache, &mu, result)
 		if fr.Err != nil {
 			result.Errors = append(result.Errors,
 				fmt.Sprintf("%s: %s", fr.Field, fr.Err.Error()))
@@ -69,6 +71,7 @@ func (e *Executor) ScrapeAll(ctx context.Context, mbid, name string) (*provider.
 		}
 
 		if fr.Provider != "" {
+			selectedProviders[fr.Provider] = true
 			result.Sources = append(result.Sources, provider.FieldSource{
 				Field:    string(fr.Field),
 				Provider: fr.Provider,
@@ -76,9 +79,12 @@ func (e *Executor) ScrapeAll(ctx context.Context, mbid, name string) (*provider.
 		}
 	}
 
-	// Apply cached provider data to the merged result
+	// Apply mergeable fields only from providers that were actually selected
 	mu.Lock()
 	for provName, pr := range cache {
+		if !selectedProviders[provName] {
+			continue
+		}
 		if pr.err != nil || pr.meta == nil {
 			continue
 		}
@@ -90,6 +96,7 @@ func (e *Executor) ScrapeAll(ctx context.Context, mbid, name string) (*provider.
 }
 
 // scrapeField tries the primary provider for a field, then walks the fallback chain.
+// Matched field data is written into the merged result.
 func (e *Executor) scrapeField(
 	ctx context.Context,
 	mbid, name string,
@@ -97,10 +104,11 @@ func (e *Executor) scrapeField(
 	chain FallbackChain,
 	cache map[provider.ProviderName]*providerResult,
 	mu *sync.Mutex,
+	result *provider.FetchResult,
 ) FieldResult {
 	// Try primary provider first
 	pr := e.getProviderResult(ctx, field.Primary, mbid, name, cache, mu)
-	if pr.err == nil && applyFieldValue(field.Field, pr, nil) {
+	if pr.err == nil && applyFieldValue(field.Field, pr, result) {
 		return FieldResult{Field: field.Field, Provider: field.Primary}
 	}
 
@@ -115,7 +123,7 @@ func (e *Executor) scrapeField(
 			continue
 		}
 
-		if applyFieldValue(field.Field, pr, nil) {
+		if applyFieldValue(field.Field, pr, result) {
 			return FieldResult{
 				Field:       field.Field,
 				Provider:    provName,
@@ -192,9 +200,10 @@ func (e *Executor) getProviderResult(
 	return pr
 }
 
-// applyFieldValue checks whether a provider result has data for a given field.
-// Returns true if the field has a non-empty value.
-func applyFieldValue(field FieldName, pr *providerResult, _ *provider.FetchResult) bool {
+// applyFieldValue checks whether a provider result has data for a given field
+// and writes the value into the merged FetchResult. Returns true if the field
+// has a non-empty value that was applied.
+func applyFieldValue(field FieldName, pr *providerResult, result *provider.FetchResult) bool {
 	if pr.meta == nil && len(pr.images) == 0 {
 		return false
 	}
@@ -206,31 +215,69 @@ func applyFieldValue(field FieldName, pr *providerResult, _ *provider.FetchResul
 
 	switch field {
 	case FieldBiography:
-		return meta.Biography != ""
+		if meta.Biography == "" {
+			return false
+		}
+		result.Metadata.Biography = meta.Biography
+		return true
 	case FieldGenres:
-		return len(meta.Genres) > 0
+		if len(meta.Genres) == 0 {
+			return false
+		}
+		result.Metadata.Genres = meta.Genres
+		return true
 	case FieldStyles:
-		return len(meta.Styles) > 0
+		if len(meta.Styles) == 0 {
+			return false
+		}
+		result.Metadata.Styles = meta.Styles
+		return true
 	case FieldMoods:
-		return len(meta.Moods) > 0
+		if len(meta.Moods) == 0 {
+			return false
+		}
+		result.Metadata.Moods = meta.Moods
+		return true
 	case FieldMembers:
-		return len(meta.Members) > 0
+		if len(meta.Members) == 0 {
+			return false
+		}
+		result.Metadata.Members = meta.Members
+		return true
 	case FieldFormed:
-		return meta.Formed != ""
+		if meta.Formed == "" {
+			return false
+		}
+		result.Metadata.Formed = meta.Formed
+		return true
 	case FieldBorn:
-		return meta.Born != ""
+		if meta.Born == "" {
+			return false
+		}
+		result.Metadata.Born = meta.Born
+		return true
 	case FieldDied:
-		return meta.Died != ""
+		if meta.Died == "" {
+			return false
+		}
+		result.Metadata.Died = meta.Died
+		return true
 	case FieldDisbanded:
-		return meta.Disbanded != ""
+		if meta.Disbanded == "" {
+			return false
+		}
+		result.Metadata.Disbanded = meta.Disbanded
+		return true
 	case FieldThumb, FieldFanart, FieldLogo, FieldBanner:
 		imgType := fieldToImageType(field)
+		found := false
 		for _, img := range pr.images {
 			if img.Type == imgType {
-				return true
+				result.Images = append(result.Images, img)
+				found = true
 			}
 		}
-		return false
+		return found
 	}
 
 	return false

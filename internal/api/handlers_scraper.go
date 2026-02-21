@@ -26,6 +26,11 @@ func (r *Router) handleUpdateScraperConfig(w http.ResponseWriter, req *http.Requ
 		return
 	}
 
+	if err := scraper.ValidateConfig(&cfg); err != nil {
+		writeError(w, req, http.StatusBadRequest, err.Error())
+		return
+	}
+
 	if err := r.scraperService.SaveConfig(req.Context(), scraper.ScopeGlobal, &cfg, nil); err != nil {
 		r.logger.Error("saving scraper config", "error", err)
 		writeError(w, req, http.StatusInternalServerError, "failed to save scraper config")
@@ -52,7 +57,12 @@ func (r *Router) handleGetConnectionScraperConfig(w http.ResponseWriter, req *ht
 	}
 
 	// Also return the raw config so the UI can distinguish inherited vs overridden
-	raw, overrides, _ := r.scraperService.GetRawConfig(req.Context(), connID)
+	raw, overrides, err2 := r.scraperService.GetRawConfig(req.Context(), connID)
+	if err2 != nil {
+		r.logger.Error("getting raw scraper config", "connection", connID, "error", err2)
+		writeError(w, req, http.StatusInternalServerError, "failed to load raw scraper config")
+		return
+	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"config":    cfg,
@@ -77,6 +87,11 @@ func (r *Router) handleUpdateConnectionScraperConfig(w http.ResponseWriter, req 
 	}
 	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
 		writeError(w, req, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if err := scraper.ValidateConfig(&body.Config); err != nil {
+		writeError(w, req, http.StatusBadRequest, err.Error())
 		return
 	}
 

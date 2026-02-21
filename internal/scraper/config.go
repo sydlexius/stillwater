@@ -1,6 +1,7 @@
 package scraper
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/provider"
@@ -33,6 +34,43 @@ func AllFieldNames() []FieldName {
 		FieldMembers, FieldFormed, FieldBorn, FieldDied, FieldDisbanded,
 		FieldThumb, FieldFanart, FieldLogo, FieldBanner,
 	}
+}
+
+// IsValidFieldName returns true if the given name is a known field.
+func IsValidFieldName(name FieldName) bool {
+	for _, f := range AllFieldNames() {
+		if f == name {
+			return true
+		}
+	}
+	return false
+}
+
+// ValidateConfig checks that all provider and field names in the config are valid.
+func ValidateConfig(cfg *ScraperConfig) error {
+	validProviders := make(map[provider.ProviderName]bool)
+	for _, name := range provider.AllProviderNames() {
+		validProviders[name] = true
+	}
+
+	for _, f := range cfg.Fields {
+		if !IsValidFieldName(f.Field) {
+			return fmt.Errorf("unknown field name: %q", f.Field)
+		}
+		if f.Primary != "" && !validProviders[f.Primary] {
+			return fmt.Errorf("unknown provider name: %q", f.Primary)
+		}
+	}
+
+	for _, chain := range cfg.FallbackChains {
+		for _, p := range chain.Providers {
+			if !validProviders[p] {
+				return fmt.Errorf("unknown provider name in fallback chain: %q", p)
+			}
+		}
+	}
+
+	return nil
 }
 
 // FieldCategory groups fields into categories for fallback chains.
@@ -156,7 +194,6 @@ func DefaultConfig() *ScraperConfig {
 				Providers: []provider.ProviderName{
 					provider.NameFanartTV,
 					provider.NameAudioDB,
-					provider.NameDiscogs,
 				},
 			},
 		},

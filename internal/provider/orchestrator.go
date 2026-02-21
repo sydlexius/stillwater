@@ -24,7 +24,7 @@ type FetchResult struct {
 // ScraperExecutor is implemented by the scraper.Executor to avoid circular imports.
 // When set on the Orchestrator, FetchMetadata delegates to it.
 type ScraperExecutor interface {
-	ScrapeAll(ctx context.Context, mbid, name string) (*FetchResult, error)
+	ScrapeAll(ctx context.Context, mbid, name, scope string) (*FetchResult, error)
 }
 
 // Orchestrator queries providers in priority order and merges results.
@@ -55,7 +55,7 @@ func (o *Orchestrator) SetExecutor(e ScraperExecutor) {
 // per-field fetching with fallback chains.
 func (o *Orchestrator) FetchMetadata(ctx context.Context, mbid string, name string) (*FetchResult, error) {
 	if o.executor != nil {
-		return o.executor.ScrapeAll(ctx, mbid, name)
+		return o.executor.ScrapeAll(ctx, mbid, name, "global")
 	}
 
 	priorities, err := o.settings.GetPriorities(ctx)
