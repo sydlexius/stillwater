@@ -29,8 +29,8 @@ Packaging for Unraid, SWAG reverse proxy configs, and OpenAPI documentation. Mak
      - Repository: ghcr.io/sydlexius/stillwater
      - Registry: ghcr.io
      - Network: bridge
-     - WebUI: `http://[IP]:[PORT:8080]`
-   - Port mapping: 8080 (container) -> 8080 (host, configurable)
+     - WebUI: `http://[IP]:[PORT:1973]`
+   - Port mapping: 1973 (container) -> 1973 (host, configurable)
    - Volume mappings:
      - `/data` -- config and database (Appdata path)
      - `/music` -- music library (read-only capable)
@@ -69,7 +69,7 @@ Configs already scaffolded in `build/swag/`. Verify and finalize.
 
 1. Write OpenAPI 3.1 spec in `docs/openapi.yaml`:
    - Info section (title, version, description, license)
-   - Server URLs (default `http://localhost:8080/api/v1`)
+   - Server URLs (default `http://localhost:1973/api/v1`)
    - Authentication schemes:
      - Cookie-based session (`sw_session`)
      - Bearer token (for API clients)

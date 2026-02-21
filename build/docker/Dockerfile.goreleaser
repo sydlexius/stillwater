@@ -14,7 +14,7 @@ COPY web/static /app/web/static
 COPY build/docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-EXPOSE 8080
+EXPOSE 1973
 
 VOLUME ["/data", "/music"]
 
