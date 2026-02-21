@@ -6,6 +6,8 @@ PGID=${PGID:-1000}
 
 # Resolve group: reuse existing group if GID is taken, otherwise create stillwater group
 if [ "$(id -g stillwater 2>/dev/null)" != "$PGID" ]; then
+    # Remove user before group to avoid "group in use" errors
+    deluser stillwater 2>/dev/null || true
     delgroup stillwater 2>/dev/null || true
     SW_GROUP=$(getent group "$PGID" | cut -d: -f1)
     if [ -z "$SW_GROUP" ]; then
@@ -28,7 +30,7 @@ chown -R "$PUID:$PGID" /data
 # If first argument is a subcommand, prepend the binary path
 case "${1:-}" in
     reset-credentials)
-        exec su-exec "$PUID:$PGID" /app/stillwater "$@"
+        exec su-exec "$PUID:$PGID" stillwater "$@"
         ;;
     *)
         exec su-exec "$PUID:$PGID" "$@"
