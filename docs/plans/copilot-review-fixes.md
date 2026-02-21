@@ -139,33 +139,21 @@ Do NOT merge PRs until Copilot review comments have been addressed. Wait for CI 
 - [x] #61 - fix(security): validate NFO snapshot belongs to requested artist (PR #72, merged)
 - [x] #62 - fix(security): harden backup download headers (PR #72, merged)
 - [x] #63 - fix(security): rate limiter XFF spoofing, goroutine leak, dead code (PR #72, merged)
-- [ ] #64 - feat(security): add CSP and HSTS headers (PR #77, awaiting Copilot review)
+- [x] #64 - feat(security): add CSP and HSTS headers (PR #77, merged)
 - [x] #65 - fix: health report pagination error handling (PR #73, merged)
 - [x] #66 - fix: rune-aware truncation in NFO diff display (PR #73, merged)
 - [x] #67 - fix: correct health score test comment (PR #73, merged)
 - [x] #68 - fix: implement pagination for 10k artist limit (PR #74, merged)
 - [x] #69 - fix(ci): GoReleaser pre-release tagging and Dockerfile (PR #75, merged)
 - [x] #70 - fix: log level and UI text improvements (PR #76, merged)
-- [ ] #71 - test: add coverage for backup handlers and security middleware (PR #78 covers middleware; backup handler tests still needed)
+- [x] #71 - test: add coverage for backup handlers and security middleware (PR #78 middleware, PR #79 backup handlers, merged)
 
-## Remaining Work
+## Completed
 
-### PR #77 (Issue #64) - CSP and HSTS Headers
+All 11 issues from Copilot review feedback have been addressed and merged.
 
-- Awaiting Copilot review. Address any comments before merging.
-- CSP policy: `default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'`
-- HSTS is conditional on `r.TLS != nil || X-Forwarded-Proto == "https"`
-- Includes security_test.go with CSP/HSTS test coverage
+### Copilot Review Feedback Addressed
 
-### PR #78 (Issue #71 partial) - Middleware Tests
-
-- Awaiting Copilot review. Address any comments before merging.
-- Covers CSRF, rate limiter, and baseline security header tests (17 tests)
-- Does NOT include backup handler tests (handlers_backup_test.go)
-
-### Still TODO: Backup Handler Tests (Issue #71 remainder)
-
-- Need `handlers_backup_test.go` covering: backup create, history, download, invalid filename
-- Requires extending `testRouter()` in `handlers_report_test.go` to include a `BackupService`
-- The `backup.Service` constructor needs a DB and backup directory path
-- Follow existing httptest.NewRecorder + table-driven test patterns
+- **PR #77** (CSP/HSTS): Used shared `isSecureRequest()` helper instead of duplicating HTTPS detection. Added `connect-src 'self'` directive for fetch() API calls. Fixed gofmt alignment. Test coverage comment addressed by PR #78.
+- **PR #78** (Middleware tests): Rebased on main after PR #77 merge. Resolved security_test.go conflict (kept PR #77's comprehensive 5-test version). Added CSRF (6 tests), rate limiter (9 tests) coverage.
+- **PR #79** (Backup handler tests): Added `handlers_backup_test.go` with 11 tests. Used dedicated `testRouterWithBackup()` helper with file-based SQLite DB (required by VACUUM INTO). Normalized empty backup list response from `null` to `[]` per Copilot feedback.
