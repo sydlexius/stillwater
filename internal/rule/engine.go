@@ -7,6 +7,7 @@ import (
 	"math"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/scraper"
 )
 
 // Engine evaluates rules against artists.
@@ -35,6 +36,13 @@ func NewEngine(service *Service, db *sql.DB, logger *slog.Logger) *Engine {
 		},
 	}
 	return e
+}
+
+// SetScraperService registers the fallback-used checker that requires
+// access to the scraper configuration service. This follows the same
+// deferred-registration pattern as SetEventBus on the scanner.
+func (e *Engine) SetScraperService(svc *scraper.Service) {
+	e.checkers[RuleFallbackUsed] = makeFallbackChecker(svc)
 }
 
 // Evaluate runs all enabled rules against an artist and returns the results.

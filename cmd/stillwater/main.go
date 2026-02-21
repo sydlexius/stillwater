@@ -32,6 +32,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/provider/wikidata"
 	"github.com/sydlexius/stillwater/internal/rule"
 	"github.com/sydlexius/stillwater/internal/scanner"
+	"github.com/sydlexius/stillwater/internal/scraper"
 	"github.com/sydlexius/stillwater/internal/version"
 	"github.com/sydlexius/stillwater/internal/webhook"
 )
@@ -147,6 +148,15 @@ func run() error {
 
 	orchestrator := provider.NewOrchestrator(providerRegistry, providerSettings, logger)
 
+	// Initialize scraper configuration and executor
+	scraperService := scraper.NewService(db, logger)
+	if err := scraperService.SeedDefaults(context.Background()); err != nil {
+		return fmt.Errorf("seeding default scraper config: %w", err)
+	}
+	scraperExecutor := scraper.NewExecutor(scraperService, providerRegistry, logger)
+	orchestrator.SetExecutor(scraperExecutor)
+	ruleEngine.SetScraperService(scraperService)
+
 	// Initialize NFO snapshot service
 	nfoSnapshotService := nfo.NewSnapshotService(db)
 
@@ -211,6 +221,7 @@ func run() error {
 		BulkExecutor:       bulkExecutor,
 		NFOSnapshotService: nfoSnapshotService,
 		ConnectionService:  connectionService,
+		ScraperService:     scraperService,
 		WebhookService:     webhookService,
 		WebhookDispatcher:  webhookDispatcher,
 		BackupService:      backupService,

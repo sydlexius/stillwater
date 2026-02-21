@@ -257,6 +257,7 @@ func scanArtistWithExtra(row interface{ Scan(...any) error }, n int) (*artistWit
 
 	var a Artist
 	var genres, styles, moods string
+	var metadataSources string
 	var lastScannedAt sql.NullString
 	var nfo, thumb, fanart, logo, banner int
 	var isExcluded, isClassical int
@@ -269,6 +270,7 @@ func scanArtistWithExtra(row interface{ Scan(...any) error }, n int) (*artistWit
 		&a.YearsActive, &a.Born, &a.Formed, &a.Died, &a.Disbanded, &a.Biography,
 		&a.Path, &nfo, &thumb, &fanart, &logo, &banner,
 		&a.HealthScore, &isExcluded, &a.ExclusionReason, &isClassical,
+		&metadataSources,
 		&lastScannedAt, &createdAt, &updatedAt,
 	}
 	args = append(args, extraPtrs...)
@@ -287,6 +289,7 @@ func scanArtistWithExtra(row interface{ Scan(...any) error }, n int) (*artistWit
 	a.BannerExists = banner == 1
 	a.IsExcluded = isExcluded == 1
 	a.IsClassical = isClassical == 1
+	a.MetadataSources = UnmarshalStringMap(metadataSources)
 	if lastScannedAt.Valid {
 		t := parseTime(lastScannedAt.String)
 		a.LastScannedAt = &t
