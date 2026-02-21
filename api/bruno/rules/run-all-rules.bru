@@ -1,0 +1,21 @@
+meta {
+  name: Run All Rules
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{apiBase}}/rules/run-all
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+}

@@ -1,0 +1,21 @@
+meta {
+  name: NFO Diff
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{apiBase}}/artists/{{artistId}}/nfo/diff
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+}

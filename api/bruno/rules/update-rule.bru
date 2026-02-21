@@ -1,0 +1,27 @@
+meta {
+  name: Update Rule
+  type: http
+  seq: 2
+}
+
+put {
+  url: {{apiBase}}/rules/{{ruleId}}
+  body: json
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+body:json {
+  {
+    "enabled": true
+  }
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+}

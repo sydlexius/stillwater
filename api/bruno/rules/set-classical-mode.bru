@@ -1,0 +1,31 @@
+meta {
+  name: Set Classical Mode
+  type: http
+  seq: 6
+}
+
+put {
+  url: {{apiBase}}/rules/classical-mode
+  body: json
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+body:json {
+  {
+    "mode": "skip"
+  }
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("should return updated mode", function() {
+    expect(res.body.mode).to.equal("skip");
+  });
+}

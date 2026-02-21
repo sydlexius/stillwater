@@ -1,0 +1,32 @@
+meta {
+  name: Set Priorities
+  type: http
+  seq: 6
+}
+
+put {
+  url: {{apiBase}}/providers/priorities
+  body: json
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+body:json {
+  {
+    "priorities": [
+      {
+        "field": "biography",
+        "providers": ["musicbrainz", "lastfm", "wikipedia"]
+      }
+    ]
+  }
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+}

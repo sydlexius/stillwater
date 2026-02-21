@@ -1,0 +1,31 @@
+meta {
+  name: Provider Search
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{apiBase}}/providers/search
+  body: json
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+body:json {
+  {
+    "name": "Radiohead"
+  }
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("should return results", function() {
+    expect(res.body.results).to.be.an("array");
+  });
+}

@@ -1,0 +1,28 @@
+meta {
+  name: Provider Fetch
+  type: http
+  seq: 8
+}
+
+post {
+  url: {{apiBase}}/providers/fetch
+  body: json
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+body:json {
+  {
+    "mbid": "a74b1b7f-71a5-4011-9441-d0b5e4122711",
+    "name": "Radiohead"
+  }
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+}

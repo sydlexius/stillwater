@@ -1,0 +1,25 @@
+meta {
+  name: List Rules
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{apiBase}}/rules
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("should return rules array", function() {
+    expect(res.body.rules).to.be.an("array");
+  });
+}

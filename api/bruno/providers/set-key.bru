@@ -1,0 +1,27 @@
+meta {
+  name: Set Provider Key
+  type: http
+  seq: 2
+}
+
+put {
+  url: {{apiBase}}/providers/fanarttv/key
+  body: json
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+body:json {
+  {
+    "api_key": "test-api-key"
+  }
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+}

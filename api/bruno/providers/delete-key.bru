@@ -1,0 +1,21 @@
+meta {
+  name: Delete Provider Key
+  type: http
+  seq: 3
+}
+
+delete {
+  url: {{apiBase}}/providers/fanarttv/key
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+}

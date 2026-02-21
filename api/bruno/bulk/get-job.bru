@@ -1,0 +1,25 @@
+meta {
+  name: Get Job
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{apiBase}}/bulk/jobs/{{jobId}}
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("should return job with items", function() {
+    expect(res.body.job).to.be.an("object");
+  });
+}

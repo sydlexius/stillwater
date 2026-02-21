@@ -1,0 +1,21 @@
+meta {
+  name: Get Connection
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{apiBase}}/connections/{{connectionId}}
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+}

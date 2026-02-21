@@ -1,0 +1,29 @@
+meta {
+  name: Create Platform
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{apiBase}}/platforms
+  body: json
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+body:json {
+  {
+    "name": "Test Platform",
+    "nfo_enabled": true,
+    "nfo_format": "kodi"
+  }
+}
+
+tests {
+  test("should return 201", function() {
+    expect(res.status).to.equal(201);
+  });
+}

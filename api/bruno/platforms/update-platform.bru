@@ -1,0 +1,29 @@
+meta {
+  name: Update Platform
+  type: http
+  seq: 4
+}
+
+put {
+  url: {{apiBase}}/platforms/{{platformId}}
+  body: json
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+body:json {
+  {
+    "name": "Updated Platform",
+    "nfo_enabled": true,
+    "nfo_format": "jellyfin"
+  }
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+}
