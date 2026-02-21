@@ -1,4 +1,4 @@
-## Version 2026/02/19
+## Version 2026/02/20
 # Make sure that your stillwater container is named stillwater
 # Make sure that the SW_BASE_PATH environment variable is set to /stillwater on the stillwater container
 
@@ -30,16 +30,8 @@ location ^~ /stillwater/ {
     set $upstream_proto http;
     proxy_pass $upstream_proto://$upstream_app:$upstream_port;
 
-    # WebSocket support
-    proxy_set_header Upgrade $http_upgrade;
-    proxy_set_header Connection $http_connection;
-}
+    client_max_body_size 25m;
 
-location ^~ /stillwater/api {
-    include /config/nginx/proxy.conf;
-    include /config/nginx/resolver.conf;
-    set $upstream_app stillwater;
-    set $upstream_port 1973;
-    set $upstream_proto http;
-    proxy_pass $upstream_proto://$upstream_app:$upstream_port;
+    # longer timeout for scanner and bulk operations
+    proxy_read_timeout 600s;
 }
