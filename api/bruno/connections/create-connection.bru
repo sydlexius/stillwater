@@ -1,0 +1,31 @@
+meta {
+  name: Create Connection
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{apiBase}}/connections
+  body: json
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+body:json {
+  {
+    "name": "Test Jellyfin",
+    "type": "jellyfin",
+    "url": "http://localhost:8096",
+    "api_key": "test-key",
+    "enabled": true
+  }
+}
+
+tests {
+  test("should return 201", function() {
+    expect(res.status).to.equal(201);
+  });
+}

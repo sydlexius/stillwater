@@ -1,0 +1,25 @@
+meta {
+  name: Activate Platform
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{apiBase}}/platforms/{{platformId}}/activate
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("should return active status", function() {
+    expect(res.body.status).to.equal("active");
+  });
+}

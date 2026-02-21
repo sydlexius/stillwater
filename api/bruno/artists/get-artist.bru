@@ -1,0 +1,25 @@
+meta {
+  name: Get Artist
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{apiBase}}/artists/{{artistId}}
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("should return artist with members", function() {
+    expect(res.body.artist).to.be.an("object");
+  });
+}

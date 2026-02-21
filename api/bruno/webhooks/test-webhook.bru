@@ -1,0 +1,25 @@
+meta {
+  name: Test Webhook
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{apiBase}}/webhooks/{{webhookId}}/test
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("should return sent status", function() {
+    expect(res.body.status).to.equal("sent");
+  });
+}

@@ -1,0 +1,21 @@
+meta {
+  name: Run Scanner
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{apiBase}}/scanner/run
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+tests {
+  test("should return 202", function() {
+    expect(res.status).to.equal(202);
+  });
+}

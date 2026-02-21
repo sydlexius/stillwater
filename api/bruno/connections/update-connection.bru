@@ -1,0 +1,27 @@
+meta {
+  name: Update Connection
+  type: http
+  seq: 4
+}
+
+put {
+  url: {{apiBase}}/connections/{{connectionId}}
+  body: json
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+body:json {
+  {
+    "name": "Updated Connection"
+  }
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+}

@@ -1,0 +1,27 @@
+meta {
+  name: List Artists
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{apiBase}}/artists?page=1&page_size=50
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("should return paginated list", function() {
+    expect(res.body.artists).to.be.an("array");
+    expect(res.body.total).to.be.a("number");
+    expect(res.body.page).to.equal(1);
+  });
+}

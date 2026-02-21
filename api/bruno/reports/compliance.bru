@@ -1,0 +1,26 @@
+meta {
+  name: Compliance Report
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{apiBase}}/reports/compliance?page=1&page_size=50
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("should return paginated rows", function() {
+    expect(res.body.rows).to.be.an("array");
+    expect(res.body.total).to.be.a("number");
+  });
+}

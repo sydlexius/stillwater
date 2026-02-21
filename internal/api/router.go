@@ -109,6 +109,8 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	// Public routes (no auth)
 	// Login and setup are exempt from CSRF (entry points) but rate-limited
 	mux.HandleFunc("GET "+bp+"/api/v1/health", r.handleHealth)
+	mux.HandleFunc("GET "+bp+"/api/v1/docs", r.handleAPIDocs)
+	mux.HandleFunc("GET "+bp+"/api/v1/docs/openapi.yaml", r.handleOpenAPISpec)
 	mux.Handle("POST "+bp+"/api/v1/auth/login", loginRL.Middleware(http.HandlerFunc(r.handleLogin)))
 	mux.Handle("POST "+bp+"/api/v1/auth/setup", loginRL.Middleware(http.HandlerFunc(r.handleSetup)))
 	mux.Handle("GET "+bp+"/static/", r.staticAssets.Handler(bp))

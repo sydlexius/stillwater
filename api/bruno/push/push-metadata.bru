@@ -1,0 +1,32 @@
+meta {
+  name: Push Metadata
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{apiBase}}/artists/{{artistId}}/push
+  body: json
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+body:json {
+  {
+    "connection_id": "{{connectionId}}",
+    "platform_artist_id": "{{platformArtistId}}"
+  }
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("should return pushed status", function() {
+    expect(res.body.status).to.equal("pushed");
+  });
+}

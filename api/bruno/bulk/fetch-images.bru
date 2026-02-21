@@ -1,0 +1,27 @@
+meta {
+  name: Bulk Fetch Images
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{apiBase}}/bulk/fetch-images
+  body: json
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+body:json {
+  {
+    "mode": "prompt_no_match"
+  }
+}
+
+tests {
+  test("should return 202", function() {
+    expect(res.status).to.equal(202);
+  });
+}

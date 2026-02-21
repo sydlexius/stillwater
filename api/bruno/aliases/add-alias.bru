@@ -1,0 +1,28 @@
+meta {
+  name: Add Alias
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{apiBase}}/artists/{{artistId}}/aliases
+  body: json
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+body:json {
+  {
+    "alias": "Test Alias",
+    "source": "manual"
+  }
+}
+
+tests {
+  test("should return 201", function() {
+    expect(res.status).to.equal(201);
+  });
+}

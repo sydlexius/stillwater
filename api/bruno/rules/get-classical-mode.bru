@@ -1,0 +1,25 @@
+meta {
+  name: Get Classical Mode
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{apiBase}}/rules/classical-mode
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("should return mode", function() {
+    expect(res.body.mode).to.be.a("string");
+  });
+}

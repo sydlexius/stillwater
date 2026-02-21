@@ -1,0 +1,25 @@
+meta {
+  name: List Jobs
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{apiBase}}/bulk/jobs
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("should return jobs array", function() {
+    expect(res.body.jobs).to.be.an("array");
+  });
+}

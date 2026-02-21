@@ -1,0 +1,26 @@
+meta {
+  name: Health Report
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{apiBase}}/reports/health
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("should return health summary", function() {
+    expect(res.body.score).to.be.a("number");
+    expect(res.body.total_artists).to.be.a("number");
+  });
+}

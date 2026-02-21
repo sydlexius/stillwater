@@ -1,0 +1,25 @@
+meta {
+  name: List Snapshots
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{apiBase}}/artists/{{artistId}}/nfo/snapshots
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("should return snapshots array", function() {
+    expect(res.body.snapshots).to.be.an("array");
+  });
+}
