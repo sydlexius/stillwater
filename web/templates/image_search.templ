@@ -30,8 +30,8 @@ templ ImageSearchPage(assets AssetPaths, data ImageSearchData) {
 				</div>
 				<h1 class="mt-2 text-2xl font-bold">Image Management</h1>
 			</div>
-			<div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
-				<div class="lg:col-span-2 space-y-6">
+			<div class="grid grid-cols-1 gap-6 md:grid-cols-3">
+				<div class="md:col-span-2 space-y-6">
 					@components.ImageUpload(data.Artist.ID)
 					if data.Artist.MusicBrainzID != "" {
 						<section class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
@@ -40,7 +40,7 @@ templ ImageSearchPage(assets AssetPaths, data ImageSearchData) {
 								for _, t := range []string{"thumb", "fanart", "logo", "banner"} {
 									<button
 										type="button"
-										class="px-3 py-1.5 text-sm rounded-md border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+										class="px-3 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
 										hx-get={ fmt.Sprintf("/api/v1/artists/%s/images/search?type=%s", data.Artist.ID, t) }
 										hx-target="#search-results"
 										hx-swap="innerHTML"
@@ -51,7 +51,7 @@ templ ImageSearchPage(assets AssetPaths, data ImageSearchData) {
 								}
 								<button
 									type="button"
-									class="px-3 py-1.5 text-sm rounded-md border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+									class="px-3 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
 									hx-get={ fmt.Sprintf("/api/v1/artists/%s/images/search", data.Artist.ID) }
 									hx-target="#search-results"
 									hx-swap="innerHTML"

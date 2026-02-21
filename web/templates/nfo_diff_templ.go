@@ -53,7 +53,7 @@ func NFODiffPage(assets AssetPaths, data NFODiffPageData) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"space-y-6\"><div class=\"border-b border-gray-200 dark:border-gray-700 pb-4\"><div class=\"flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 mb-2\"><a href=\"/artists\" class=\"hover:text-gray-700 dark:hover:text-gray-200\">Artists</a> <span>/</span> <a href=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"space-y-6\"><div class=\"border-b border-gray-200 dark:border-gray-700 pb-4\"><div class=\"flex flex-wrap items-center gap-2 text-sm text-gray-500 dark:text-gray-400 mb-2\"><a href=\"/artists\" class=\"hover:text-gray-700 dark:hover:text-gray-200\">Artists</a> <span>/</span> <a href=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -79,7 +79,7 @@ func NFODiffPage(assets AssetPaths, data NFODiffPageData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</a> <span>/</span> <span>NFO Diff</span></div><h1 class=\"text-2xl font-bold\">NFO Diff Preview</h1></div><div class=\"grid grid-cols-1 gap-6 lg:grid-cols-3\"><div class=\"lg:col-span-2\"><div id=\"nfo-diff-content\" hx-get=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</a> <span>/</span> <span>NFO Diff</span></div><h1 class=\"text-2xl font-bold\">NFO Diff Preview</h1></div><div class=\"grid grid-cols-1 gap-6 md:grid-cols-3\"><div class=\"md:col-span-2\"><div id=\"nfo-diff-content\" hx-get=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -115,7 +115,7 @@ func NFODiffPage(assets AssetPaths, data NFODiffPageData) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			for _, snap := range data.Snapshots {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "<div class=\"flex items-center justify-between rounded border border-gray-200 dark:border-gray-700 px-3 py-2\"><span class=\"text-xs text-gray-500 dark:text-gray-400\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "<div class=\"flex flex-col gap-2 rounded border border-gray-200 dark:border-gray-700 px-3 py-2 sm:flex-row sm:items-center sm:justify-between\"><span class=\"text-xs text-gray-500 dark:text-gray-400\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -141,7 +141,7 @@ func NFODiffPage(assets AssetPaths, data NFODiffPageData) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "\" hx-target=\"#nfo-diff-content\" hx-swap=\"innerHTML\" class=\"text-xs px-2 py-1 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors\">Compare</button> <button hx-post=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "\" hx-target=\"#nfo-diff-content\" hx-swap=\"innerHTML\" class=\"text-sm px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors\">Compare</button> <button hx-post=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -154,7 +154,7 @@ func NFODiffPage(assets AssetPaths, data NFODiffPageData) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "\" hx-swap=\"none\" hx-confirm=\"Restore this snapshot? The current NFO will be saved as a new snapshot first.\" class=\"text-xs px-2 py-1 rounded bg-yellow-600 text-white hover:bg-yellow-700 transition-colors\">Restore</button></div></div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "\" hx-swap=\"none\" hx-confirm=\"Restore this snapshot? The current NFO will be saved as a new snapshot first.\" class=\"text-sm px-3 py-1.5 rounded bg-yellow-600 text-white hover:bg-yellow-700 transition-colors\">Restore</button></div></div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -325,10 +325,11 @@ func NFODiffFragment(diff nfo.DiffResult) templ.Component {
 }
 
 func truncateStr(s string, maxLen int) string {
-	if len(s) <= maxLen {
+	runes := []rune(s)
+	if len(runes) <= maxLen {
 		return s
 	}
-	return s[:maxLen] + "..."
+	return string(runes[:maxLen]) + "..."
 }
 
 func diffStatusBadge(status string) templ.Component {

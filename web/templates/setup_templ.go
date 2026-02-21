@@ -42,20 +42,28 @@ func SetupPage(assets AssetPaths) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "\"><script src=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "\"><link rel=\"icon\" type=\"image/svg+xml\" href=\"/static/img/favicon.svg\"><link rel=\"icon\" type=\"image/png\" sizes=\"32x32\" href=\"/static/img/favicon-32x32.png\"><link rel=\"icon\" type=\"image/png\" sizes=\"16x16\" href=\"/static/img/favicon-16x16.png\"><link rel=\"apple-touch-icon\" sizes=\"180x180\" href=\"/static/img/apple-touch-icon.png\"><link rel=\"manifest\" href=\"/static/site.webmanifest\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = themeInitScript().Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<script src=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var3 string
 		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(assets.HTMX)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/setup.templ`, Line: 11, Col: 28}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/setup.templ`, Line: 17, Col: 28}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "\"></script></head><body class=\"h-full bg-gray-50 dark:bg-gray-900\"><div class=\"flex min-h-full items-center justify-center px-4 py-12\"><div class=\"w-full max-w-md space-y-8\"><div class=\"text-center\"><h1 class=\"text-3xl font-bold text-blue-600 dark:text-blue-400\">Stillwater</h1><h2 class=\"mt-4 text-xl text-gray-900 dark:text-gray-100\">Create Admin Account</h2><p class=\"mt-2 text-sm text-gray-500 dark:text-gray-400\">Set up your initial administrator account to get started.</p></div><form method=\"post\" action=\"/api/v1/auth/setup\" hx-post=\"/api/v1/auth/setup\" hx-swap=\"innerHTML\" hx-target=\"#setup-result\" class=\"mt-8 space-y-6\"><div class=\"space-y-4 rounded-md\"><div><label for=\"username\" class=\"block text-sm font-medium text-gray-700 dark:text-gray-300\">Username</label> <input id=\"username\" name=\"username\" type=\"text\" required autocomplete=\"username\" class=\"mt-1 block w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500\"></div><div><label for=\"password\" class=\"block text-sm font-medium text-gray-700 dark:text-gray-300\">Password</label> <input id=\"password\" name=\"password\" type=\"password\" required minlength=\"8\" autocomplete=\"new-password\" class=\"mt-1 block w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500\"></div></div><button type=\"submit\" class=\"flex w-full justify-center rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2\">Create Account</button></form><div id=\"setup-result\"></div></div></div></body></html>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "\"></script></head><body class=\"h-full bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100\"><div class=\"flex min-h-full items-center justify-center px-4 py-12\"><div class=\"w-full max-w-md space-y-8\"><div class=\"text-center\"><div class=\"flex justify-center\"><img src=\"/static/img/favicon.svg\" alt=\"\" class=\"h-12 w-12\" aria-hidden=\"true\"></div><h1 class=\"mt-3 text-3xl font-bold text-blue-600 dark:text-blue-400\">Stillwater</h1><h2 class=\"mt-4 text-xl text-gray-900 dark:text-gray-100\">Create Admin Account</h2><p class=\"mt-2 text-sm text-gray-500 dark:text-gray-400\">Set up your initial administrator account to get started.</p></div><form method=\"post\" action=\"/api/v1/auth/setup\" hx-post=\"/api/v1/auth/setup\" hx-swap=\"innerHTML\" hx-target=\"#setup-result\" class=\"mt-8 space-y-6\"><div class=\"space-y-4 rounded-md\"><div><label for=\"username\" class=\"block text-sm font-medium text-gray-700 dark:text-gray-300\">Username</label> <input id=\"username\" name=\"username\" type=\"text\" required autocomplete=\"username\" class=\"mt-1 block w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500\"></div><div><label for=\"password\" class=\"block text-sm font-medium text-gray-700 dark:text-gray-300\">Password</label> <input id=\"password\" name=\"password\" type=\"password\" required minlength=\"8\" autocomplete=\"new-password\" class=\"mt-1 block w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500\"></div></div><button type=\"submit\" class=\"flex w-full justify-center rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2\">Create Account</button></form><div id=\"setup-result\"></div></div></div></body></html>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

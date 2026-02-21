@@ -1,0 +1,533 @@
+package templates
+
+import (
+	"strconv"
+
+	"github.com/sydlexius/stillwater/internal/platform"
+	"github.com/sydlexius/stillwater/internal/provider"
+)
+
+// OnboardingData holds the data for the onboarding wizard page.
+type OnboardingData struct {
+	Profiles     []platform.Profile
+	ProviderKeys []provider.ProviderKeyStatus
+	CurrentStep  int
+}
+
+templ OnboardingPage(assets AssetPaths, data OnboardingData) {
+	<!DOCTYPE html>
+	<html lang="en" class="h-full">
+		<head>
+			<meta charset="UTF-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+			<title>Welcome - Stillwater</title>
+			<link rel="stylesheet" href={ assets.CSS }/>
+			<link rel="icon" type="image/svg+xml" href="/static/img/favicon.svg"/>
+			<link rel="icon" type="image/png" sizes="32x32" href="/static/img/favicon-32x32.png"/>
+			<link rel="icon" type="image/png" sizes="16x16" href="/static/img/favicon-16x16.png"/>
+			<link rel="apple-touch-icon" sizes="180x180" href="/static/img/apple-touch-icon.png"/>
+			<link rel="manifest" href="/static/site.webmanifest"/>
+			@themeInitScript()
+			<script src={ assets.HTMX }></script>
+			<script>
+				document.addEventListener('htmx:configRequest', function(evt) {
+					var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*\=\s*([^;]*).*$)|^.*$/, "$1");
+					if (csrfToken) {
+						evt.detail.headers['X-CSRF-Token'] = csrfToken;
+					}
+				});
+			</script>
+		</head>
+		<body class="h-full bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100" data-current-step={ strconv.Itoa(data.CurrentStep) }>
+			<div class="flex min-h-full items-start justify-center px-4 py-8 sm:py-12">
+				<div class="w-full max-w-2xl space-y-6">
+					<div class="text-center">
+						<div class="flex justify-center">
+							<img src="/static/img/favicon.svg" alt="" class="h-12 w-12" aria-hidden="true"/>
+						</div>
+						<h1 class="mt-3 text-3xl font-bold text-blue-600 dark:text-blue-400">Welcome to Stillwater</h1>
+						<p class="mt-2 text-sm text-gray-500 dark:text-gray-400">
+							Configure your installation in a few quick steps.
+						</p>
+					</div>
+					<!-- Progress indicator -->
+					<div class="flex items-center justify-center gap-0" id="progress-bar">
+						<div class="flex items-center gap-2">
+							<div id="step-dot-1" class="h-8 w-8 rounded-full bg-blue-600 text-white flex items-center justify-center text-sm font-medium">1</div>
+							<span id="step-label-1" class="text-sm font-medium text-gray-900 dark:text-gray-100 hidden sm:inline">Platform</span>
+						</div>
+						<div id="step-line-1" class="h-0.5 w-8 bg-gray-300 dark:bg-gray-600 mx-2 sm:w-12"></div>
+						<div class="flex items-center gap-2">
+							<div id="step-dot-2" class="h-8 w-8 rounded-full bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 flex items-center justify-center text-sm font-medium">2</div>
+							<span id="step-label-2" class="text-sm text-gray-500 dark:text-gray-400 hidden sm:inline">Providers</span>
+						</div>
+						<div id="step-line-2" class="h-0.5 w-8 bg-gray-300 dark:bg-gray-600 mx-2 sm:w-12"></div>
+						<div class="flex items-center gap-2">
+							<div id="step-dot-3" class="h-8 w-8 rounded-full bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 flex items-center justify-center text-sm font-medium">3</div>
+							<span id="step-label-3" class="text-sm text-gray-500 dark:text-gray-400 hidden sm:inline">Connections</span>
+						</div>
+					</div>
+					<!-- Step 1: Platform Profile -->
+					<div id="wizard-step-1" class="rounded-lg bg-white dark:bg-gray-800 shadow p-6">
+						<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">Choose Your Platform</h2>
+						<p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+							Select the media server you use. This controls NFO format and image naming conventions.
+						</p>
+						<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+							for _, p := range data.Profiles {
+								@onboardingProfileCard(p)
+							}
+						</div>
+					</div>
+					<!-- Step 2: Provider API Keys -->
+					<div id="wizard-step-2" class="hidden rounded-lg bg-white dark:bg-gray-800 shadow p-6">
+						<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">Provider API Keys</h2>
+						<p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+							Configure API keys for metadata and image providers. You can skip this and add keys later from Settings.
+						</p>
+						<div class="space-y-3">
+							for _, pk := range data.ProviderKeys {
+								@onboardingProviderCard(pk)
+							}
+						</div>
+					</div>
+					<!-- Step 3: Server Connections -->
+					<div id="wizard-step-3" class="hidden rounded-lg bg-white dark:bg-gray-800 shadow p-6">
+						<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">Server Connections</h2>
+						<p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+							Optionally connect to your media server or music manager. These are not required for core functionality and can be added later from Settings.
+						</p>
+						<div class="space-y-4">
+							@onboardingConnectionCard("emby", "Emby", "http://192.168.1.100:8096") {
+								<ul class="text-xs text-gray-500 dark:text-gray-400 mt-1 space-y-0.5 list-disc list-inside">
+									<li>Import artist lists from your Emby music libraries</li>
+									<li>Push metadata updates (biography, genres, sort name) to Emby artist entries</li>
+									<li>Trigger per-artist or full library refreshes after image and NFO changes</li>
+									<li>Read MusicBrainz IDs from existing Emby records for accurate provider matching</li>
+								</ul>
+							}
+							@onboardingConnectionCard("jellyfin", "Jellyfin", "http://192.168.1.100:8096") {
+								<ul class="text-xs text-gray-500 dark:text-gray-400 mt-1 space-y-0.5 list-disc list-inside">
+									<li>Import artist lists from your Jellyfin music libraries</li>
+									<li>Push metadata updates (biography, genres, sort name) to Jellyfin artist entries</li>
+									<li>Trigger per-artist or full library refreshes after image and NFO changes</li>
+									<li>Read MusicBrainz IDs from existing Jellyfin records for accurate provider matching</li>
+								</ul>
+							}
+							@onboardingConnectionCard("lidarr", "Lidarr", "http://192.168.1.100:8686") {
+								<ul class="text-xs text-gray-500 dark:text-gray-400 mt-1 space-y-0.5 list-disc list-inside">
+									<li>Import monitored artist lists with filesystem paths and MusicBrainz IDs</li>
+									<li>Trigger per-artist metadata refreshes via Lidarr's command queue</li>
+									<li>Detect Lidarr NFO writer configuration to warn about write conflicts</li>
+									<li>Read metadata profiles for configuration awareness</li>
+								</ul>
+							}
+						</div>
+					</div>
+					<!-- Navigation -->
+					<div class="flex items-center justify-between">
+						<button
+							type="button"
+							id="skip-btn"
+							class="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 py-2"
+							onclick="finishWizard()"
+						>
+							Skip setup
+						</button>
+						<div class="flex items-center gap-3">
+							<button
+								type="button"
+								id="back-btn"
+								class="hidden text-sm px-4 py-2 rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+								onclick="goToStep(currentStep - 1)"
+							>
+								Back
+							</button>
+							<button
+								type="button"
+								id="next-btn"
+								class="text-sm px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+								onclick="goToStep(currentStep + 1)"
+							>
+								Next
+							</button>
+							<button
+								type="button"
+								id="finish-btn"
+								class="hidden text-sm px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+								onclick="finishWizard()"
+							>
+								Finish Setup
+							</button>
+						</div>
+					</div>
+				</div>
+			</div>
+			<script>
+				var currentStep = parseInt(document.body.dataset.currentStep, 10) || 1;
+				var totalSteps = 3;
+
+				function getCsrfToken() {
+					return document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*\=\s*([^;]*).*$)|^.*$/, "$1");
+				}
+
+				function goToStep(step) {
+					if (step < 1) step = 1;
+					if (step > totalSteps) step = totalSteps;
+					currentStep = step;
+
+					for (var i = 1; i <= totalSteps; i++) {
+						var el = document.getElementById('wizard-step-' + i);
+						if (el) el.classList.toggle('hidden', i !== step);
+
+						var dot = document.getElementById('step-dot-' + i);
+						var label = document.getElementById('step-label-' + i);
+						var line = document.getElementById('step-line-' + i);
+						if (dot) {
+							if (i <= step) {
+								dot.className = 'h-8 w-8 rounded-full bg-blue-600 text-white flex items-center justify-center text-sm font-medium';
+							} else {
+								dot.className = 'h-8 w-8 rounded-full bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 flex items-center justify-center text-sm font-medium';
+							}
+						}
+						if (label) {
+							if (i <= step) {
+								label.className = 'text-sm font-medium text-gray-900 dark:text-gray-100 hidden sm:inline';
+							} else {
+								label.className = 'text-sm text-gray-500 dark:text-gray-400 hidden sm:inline';
+							}
+						}
+						if (line) {
+							line.className = i < step
+								? 'h-0.5 w-8 bg-blue-600 mx-2 sm:w-12'
+								: 'h-0.5 w-8 bg-gray-300 dark:bg-gray-600 mx-2 sm:w-12';
+						}
+					}
+
+					document.getElementById('back-btn').classList.toggle('hidden', step <= 1);
+					document.getElementById('next-btn').classList.toggle('hidden', step >= totalSteps);
+					document.getElementById('finish-btn').classList.toggle('hidden', step < totalSteps);
+
+					fetch('/api/v1/settings', {
+						method: 'PUT',
+						headers: {'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken()},
+						body: JSON.stringify({"onboarding.step": String(step)})
+					});
+				}
+
+				function finishWizard() {
+					fetch('/api/v1/settings', {
+						method: 'PUT',
+						headers: {'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken()},
+						body: JSON.stringify({"onboarding.completed": "true"})
+					}).then(function() {
+						window.location.href = '/';
+					});
+				}
+
+				function selectPlatform(el) {
+					var cards = el.closest('.grid').querySelectorAll('[data-profile-card]');
+					cards.forEach(function(card) {
+						card.classList.remove('border-blue-500', 'bg-blue-50', 'dark:bg-blue-900/20');
+						card.classList.add('border-gray-200', 'dark:border-gray-700');
+					});
+					el.closest('[data-profile-card]').classList.remove('border-gray-200', 'dark:border-gray-700');
+					el.closest('[data-profile-card]').classList.add('border-blue-500', 'bg-blue-50', 'dark:bg-blue-900/20');
+				}
+
+				function toggleConnectionForm(connType) {
+					var form = document.getElementById('ob-conn-form-' + connType);
+					if (form) form.classList.toggle('hidden');
+				}
+
+				function onConnectionSaved(connType, xhr) {
+					var form = document.getElementById('ob-conn-form-' + connType);
+					var success = document.getElementById('ob-conn-success-' + connType);
+					var dot = document.getElementById('ob-conn-dot-' + connType);
+					var btn = document.getElementById('ob-conn-btn-' + connType);
+					if (form) form.classList.add('hidden');
+					if (success) success.classList.remove('hidden');
+					if (btn) btn.classList.add('hidden');
+					if (dot) {
+						dot.classList.remove('bg-gray-400', 'dark:bg-gray-500');
+						dot.classList.add('bg-green-500');
+					}
+					if (xhr && xhr.responseText) {
+						try {
+							var data = JSON.parse(xhr.responseText);
+							if (data.id) {
+								var testBtn = document.getElementById('ob-conn-test-' + connType);
+								if (testBtn) {
+									testBtn.classList.remove('hidden');
+									testBtn.onclick = function() { testConnection(data.id, connType); };
+								}
+							}
+						} catch(e) {}
+					}
+				}
+
+				function testConnection(connID, connType) {
+					var testBtn = document.getElementById('ob-conn-test-' + connType);
+					var resultEl = document.getElementById('ob-conn-test-result-' + connType);
+					var dot = document.getElementById('ob-conn-dot-' + connType);
+					if (testBtn) { testBtn.disabled = true; testBtn.textContent = 'Testing...'; }
+					fetch('/api/v1/connections/' + connID + '/test', {
+						method: 'POST',
+						headers: {'X-CSRF-Token': getCsrfToken()}
+					}).then(function(res) { return res.json(); })
+					.then(function(data) {
+						if (testBtn) { testBtn.disabled = false; testBtn.textContent = 'Test'; }
+						if (data.status === 'ok') {
+							if (resultEl) { resultEl.className = 'text-xs mt-1 text-green-600 dark:text-green-400'; resultEl.textContent = 'Connection successful'; }
+							if (dot) { dot.className = 'mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-green-500'; }
+						} else {
+							if (resultEl) { resultEl.className = 'text-xs mt-1 text-red-600 dark:text-red-400'; resultEl.textContent = 'Failed: ' + (data.message || 'unknown error'); }
+							if (dot) { dot.className = 'mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-red-500'; }
+						}
+					}).catch(function() {
+						if (testBtn) { testBtn.disabled = false; testBtn.textContent = 'Test'; }
+						if (resultEl) { resultEl.className = 'text-xs mt-1 text-red-600 dark:text-red-400'; resultEl.textContent = 'Network error'; }
+					});
+				}
+
+				// Initialize to the correct step on page load
+				if (currentStep > 1) {
+					goToStep(currentStep);
+				}
+			</script>
+		</body>
+	</html>
+}
+
+templ onboardingProfileCard(p platform.Profile) {
+	<div
+		data-profile-card
+		class={
+			"relative rounded-lg border-2 p-4 cursor-pointer transition-colors",
+			templ.KV("border-blue-500 bg-blue-50 dark:bg-blue-900/20", p.IsActive),
+			templ.KV("border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600", !p.IsActive),
+		}
+		hx-post={ "/api/v1/platforms/" + p.ID + "/activate" }
+		hx-swap="none"
+		hx-on::after-request="if(event.detail.successful) selectPlatform(this)"
+	>
+		<div class="flex items-center justify-between">
+			<h3 class="font-semibold text-sm text-gray-900 dark:text-gray-100">{ p.Name }</h3>
+			if p.IsActive {
+				<span class="inline-flex items-center rounded-full bg-blue-100 dark:bg-blue-800 px-2 py-0.5 text-xs font-medium text-blue-700 dark:text-blue-300">
+					Active
+				</span>
+			}
+		</div>
+		<div class="mt-2 text-xs text-gray-500 dark:text-gray-400 space-y-1">
+			<div>
+				NFO:
+				if p.NFOEnabled {
+					<span class="text-green-600 dark:text-green-400">Enabled</span>
+				} else {
+					<span class="text-gray-400 dark:text-gray-500">Disabled</span>
+				}
+			</div>
+		</div>
+	</div>
+}
+
+templ onboardingProviderCard(pk provider.ProviderKeyStatus) {
+	<div id={ "ob-provider-card-" + string(pk.Name) } class="rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3">
+		<div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+			<div class="flex items-center gap-3">
+				<div
+					class={
+						"h-2.5 w-2.5 shrink-0 rounded-full",
+						templ.KV("bg-green-500", pk.Status == "ok" || pk.Status == "not_required"),
+						templ.KV("bg-yellow-500", pk.Status == "untested"),
+						templ.KV("bg-red-500", pk.Status == "invalid" || pk.Status == "error"),
+						templ.KV("bg-gray-400 dark:bg-gray-500", pk.Status == "unconfigured"),
+					}
+				></div>
+				<div>
+					<div class="font-medium text-sm text-gray-900 dark:text-gray-100">{ pk.DisplayName }</div>
+					if !pk.RequiresKey {
+						<div class="text-xs text-gray-500 dark:text-gray-400">No API key required</div>
+					} else if pk.HasKey {
+						<div class="text-xs text-green-600 dark:text-green-400">Key configured</div>
+					} else {
+						<div class="text-xs text-amber-600 dark:text-amber-400">API key required</div>
+					}
+				</div>
+			</div>
+			if pk.RequiresKey {
+				<div class="flex items-center gap-2">
+					if providerHelpURL(pk.Name) != "" {
+						<a
+							href={ templ.SafeURL(providerHelpURL(pk.Name)) }
+							target="_blank"
+							rel="noopener noreferrer"
+							class="text-sm text-blue-600 dark:text-blue-400 hover:underline"
+						>
+							Get key
+						</a>
+					}
+					<button
+						type="button"
+						class="text-sm px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+						onclick={ toggleOnboardingKeyInput(string(pk.Name)) }
+					>
+						if pk.HasKey {
+							Update
+						} else {
+							Configure
+						}
+					</button>
+					if pk.HasKey {
+						<button
+							type="button"
+							class="text-sm px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+							hx-post={ "/api/v1/providers/" + string(pk.Name) + "/test" }
+							hx-target={ "#ob-test-result-" + string(pk.Name) }
+							hx-swap="innerHTML"
+						>
+							Test
+						</button>
+					}
+				</div>
+			}
+		</div>
+		if pk.RequiresKey {
+			<div id={ "ob-key-input-" + string(pk.Name) } class="hidden mt-3">
+				<form
+					class="flex flex-col gap-2 sm:flex-row sm:items-center"
+					hx-put={ "/api/v1/providers/" + string(pk.Name) + "/key" }
+					hx-target={ "#ob-provider-card-" + string(pk.Name) }
+					hx-swap="outerHTML"
+				>
+					<input
+						type="text"
+						name="api_key"
+						placeholder="Enter API key..."
+						autocomplete="off"
+						data-1p-ignore
+						data-lpignore="true"
+						class="flex-1 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+						required
+					/>
+					<div class="flex gap-2">
+						<button type="submit" class="text-sm px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 transition-colors">Save</button>
+						<button type="button" class="text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" onclick={ toggleOnboardingKeyInput(string(pk.Name)) }>Cancel</button>
+					</div>
+				</form>
+			</div>
+			<div id={ "ob-test-result-" + string(pk.Name) } class="text-xs mt-1"></div>
+		}
+	</div>
+}
+
+script toggleOnboardingKeyInput(providerName string) {
+	const el = document.getElementById("ob-key-input-" + providerName);
+	if (el) {
+		el.classList.toggle("hidden");
+	}
+}
+
+templ onboardingConnectionCard(connType string, displayName string, exampleURL string) {
+	<div class="rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3">
+		<div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+			<div class="flex items-start gap-3">
+				<div id={ "ob-conn-dot-" + connType } class="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-gray-400 dark:bg-gray-500"></div>
+				<div>
+					<div class="flex items-center gap-1.5">
+						<span class="font-medium text-sm text-gray-900 dark:text-gray-100">{ displayName }</span>
+						<button
+							type="button"
+							class="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300"
+							onclick={ toggleObConnectionInfo(connType) }
+							aria-label={ "More info about " + displayName }
+						>
+							<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+								<path stroke-linecap="round" stroke-linejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"></path>
+							</svg>
+						</button>
+					</div>
+					<div id={ "ob-conn-info-" + connType } class="hidden">
+						{ children... }
+					</div>
+				</div>
+			</div>
+			<button
+				id={ "ob-conn-btn-" + connType }
+				type="button"
+				class="text-sm px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors shrink-0"
+				onclick={ toggleObConnectionForm(connType) }
+			>
+				Configure
+			</button>
+		</div>
+		<div id={ "ob-conn-form-" + connType } class="hidden mt-3 pl-5.5">
+			<form
+				class="space-y-3"
+				data-conn-type={ connType }
+				hx-post="/api/v1/connections"
+				hx-swap="none"
+				hx-on::after-request="if(event.detail.successful) onConnectionSaved(this.dataset.connType, event.detail.xhr)"
+			>
+				<input type="hidden" name="type" value={ connType }/>
+				<div class="grid grid-cols-1 gap-3">
+					<input
+						name="name"
+						placeholder={ displayName + " server" }
+						required
+						class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+					/>
+					<input
+						name="url"
+						type="url"
+						placeholder={ "Server URL (e.g. " + exampleURL + ")" }
+						required
+						class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+					/>
+					<input
+						name="api_key"
+						type="text"
+						placeholder="API Key"
+						required
+						autocomplete="off"
+						data-1p-ignore
+						data-lpignore="true"
+						class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+					/>
+				</div>
+				<div class="flex gap-2">
+					<button type="submit" class="text-sm px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 transition-colors">Save</button>
+					<button type="button" class="text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" onclick={ toggleObConnectionForm(connType) }>Cancel</button>
+				</div>
+			</form>
+		</div>
+		<div id={ "ob-conn-success-" + connType } class="hidden mt-3 pl-5.5">
+			<div class="flex items-center gap-3">
+				<p class="text-xs text-green-600 dark:text-green-400">Connected.</p>
+				<button
+					type="button"
+					id={ "ob-conn-test-" + connType }
+					class="hidden text-xs px-2.5 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+				>
+					Test
+				</button>
+			</div>
+			<div id={ "ob-conn-test-result-" + connType } class="text-xs mt-1"></div>
+		</div>
+	</div>
+}
+
+script toggleObConnectionForm(connType string) {
+	var form = document.getElementById("ob-conn-form-" + connType);
+	if (form) {
+		form.classList.toggle("hidden");
+	}
+}
+
+script toggleObConnectionInfo(connType string) {
+	var info = document.getElementById("ob-conn-info-" + connType);
+	if (info) {
+		info.classList.toggle("hidden");
+	}
+}

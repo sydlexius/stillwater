@@ -107,7 +107,7 @@ func ImageCard(artistID string, img provider.ImageResult) templ.Component {
 		var templ_7745c5c3_Var6 string
 		templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(img.URL)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/image_card.templ`, Line: 45, Col: 17}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/image_card.templ`, Line: 43, Col: 17}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 		if templ_7745c5c3_Err != nil {
@@ -120,7 +120,7 @@ func ImageCard(artistID string, img provider.ImageResult) templ.Component {
 		var templ_7745c5c3_Var7 string
 		templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(string(img.Type) + " from " + img.Source)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/image_card.templ`, Line: 46, Col: 50}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/image_card.templ`, Line: 44, Col: 50}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 		if templ_7745c5c3_Err != nil {
@@ -155,7 +155,7 @@ func ImageCard(artistID string, img provider.ImageResult) templ.Component {
 		var templ_7745c5c3_Var10 string
 		templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(provider.ProviderName(img.Source).DisplayName())
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/image_card.templ`, Line: 54, Col: 54}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/image_card.templ`, Line: 52, Col: 54}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 		if templ_7745c5c3_Err != nil {
@@ -168,7 +168,7 @@ func ImageCard(artistID string, img provider.ImageResult) templ.Component {
 		var templ_7745c5c3_Var11 string
 		templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(string(img.Type))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/image_card.templ`, Line: 57, Col: 23}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/image_card.templ`, Line: 55, Col: 23}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 		if templ_7745c5c3_Err != nil {
@@ -186,7 +186,7 @@ func ImageCard(artistID string, img provider.ImageResult) templ.Component {
 			var templ_7745c5c3_Var12 string
 			templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(img.Width))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/image_card.templ`, Line: 62, Col: 36}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/image_card.templ`, Line: 60, Col: 36}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 			if templ_7745c5c3_Err != nil {
@@ -199,7 +199,7 @@ func ImageCard(artistID string, img provider.ImageResult) templ.Component {
 			var templ_7745c5c3_Var13 string
 			templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(img.Height))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/image_card.templ`, Line: 62, Col: 65}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/image_card.templ`, Line: 60, Col: 65}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 			if templ_7745c5c3_Err != nil {
@@ -218,7 +218,7 @@ func ImageCard(artistID string, img provider.ImageResult) templ.Component {
 			var templ_7745c5c3_Var14 string
 			templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(img.Likes))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/image_card.templ`, Line: 65, Col: 36}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/image_card.templ`, Line: 63, Col: 36}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 			if templ_7745c5c3_Err != nil {
@@ -239,14 +239,14 @@ func ImageCard(artistID string, img provider.ImageResult) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "<button type=\"button\" class=\"w-full mt-1 text-xs px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors\" hx-post=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "<button type=\"button\" class=\"w-full mt-1 text-sm px-2 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors\" hx-post=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var15 string
 		templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/api/v1/artists/%s/images/fetch", artistID))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/image_card.templ`, Line: 74, Col: 70}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/image_card.templ`, Line: 72, Col: 70}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 		if templ_7745c5c3_Err != nil {
@@ -259,7 +259,7 @@ func ImageCard(artistID string, img provider.ImageResult) templ.Component {
 		var templ_7745c5c3_Var16 string
 		templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf(`{"url":"%s","type":"%s"}`, img.URL, string(img.Type)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/image_card.templ`, Line: 75, Col: 80}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/image_card.templ`, Line: 73, Col: 80}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 		if templ_7745c5c3_Err != nil {

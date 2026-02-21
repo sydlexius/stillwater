@@ -206,6 +206,7 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("GET "+bp+"/reports/compliance", wrapOptionalAuth(r.handleCompliancePage, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/artists/{id}/nfo", wrapOptionalAuth(r.handleNFODiffPage, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/settings", wrapOptionalAuth(r.handleSettingsPage, optAuthMw))
+	mux.HandleFunc("GET "+bp+"/setup/wizard", wrapOptionalAuth(r.handleOnboardingPage, optAuthMw))
 
 	// Apply middleware chain: security headers > logging > CSRF
 	// Login and setup are exempt from CSRF (registered with rate limiter above)
