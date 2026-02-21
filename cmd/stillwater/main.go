@@ -287,7 +287,7 @@ func resolveEncryptionKey(cfg *config.Config, logger *slog.Logger) (string, erro
 	if err == nil {
 		key := strings.TrimSpace(string(data))
 		if key != "" {
-			logger.Info("loaded encryption key from file", slog.String("path", keyFile))
+			logger.Debug("loaded encryption key from file", slog.String("path", keyFile))
 			return key, nil
 		}
 	}
