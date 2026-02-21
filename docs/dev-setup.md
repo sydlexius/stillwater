@@ -81,7 +81,7 @@ mkdir -p data
 SW_DB_PATH=./data/stillwater.db SW_LOG_FORMAT=text SW_LOG_LEVEL=debug ./stillwater.exe
 ```
 
-The app starts at http://localhost:8080. On first run it will run all database migrations and prompt you to create an admin account.
+The app starts at http://localhost:1973. On first run it will run all database migrations and prompt you to create an admin account.
 
 ## Running with Docker
 
@@ -91,7 +91,7 @@ docker compose up --build
 
 # Or build the image separately
 docker build -f build/docker/Dockerfile -t stillwater:dev .
-docker run -p 8080:8080 -v stillwater-data:/data -v /path/to/music:/music:rw stillwater:dev
+docker run -p 1973:1973 -v stillwater-data:/data -v /path/to/music:/music:rw stillwater:dev
 ```
 
 The Docker build handles templ generation implicitly (committed `_templ.go` files) and runs Tailwind CSS inside the build stage, so no local tooling beyond Docker is needed for container builds.
@@ -116,7 +116,7 @@ go test -v -count=1 ./internal/image/...
 | `SW_DB_PATH` | `data/stillwater.db` | SQLite database file path |
 | `SW_LOG_LEVEL` | `info` | Log level: debug, info, warn, error |
 | `SW_LOG_FORMAT` | `json` | Log format: json, text |
-| `SW_LISTEN_ADDR` | `:8080` | HTTP listen address |
+| `SW_LISTEN_ADDR` | `:1973` | HTTP listen address |
 | `SW_BASE_PATH` | (empty) | URL prefix for reverse proxy (e.g., `/stillwater`) |
 | `SW_ENCRYPTION_KEY` | (auto-generated) | Base64-encoded AES-256 key for encrypting API keys at rest |
 | `PUID` / `PGID` | `1000` | User/group ID for Docker container file ownership |

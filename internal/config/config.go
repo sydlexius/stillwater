@@ -71,7 +71,7 @@ type LoggingConfig struct {
 func Default() *Config {
 	return &Config{
 		Server: ServerConfig{
-			Port:     8080,
+			Port:     1973,
 			BasePath: "/",
 		},
 		Database: DatabaseConfig{

@@ -45,7 +45,7 @@ RUN chmod +x /entrypoint.sh
 
 WORKDIR /app
 
-EXPOSE 8080
+EXPOSE 1973
 
 VOLUME ["/data", "/music"]
 
