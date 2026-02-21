@@ -74,11 +74,13 @@ docker_manifests:
       - "ghcr.io/sydlexius/stillwater:{{ .Version }}-arm64"
 
   - name_template: "ghcr.io/sydlexius/stillwater:{{ .Major }}.{{ .Minor }}"
+    skip_push: "{{ .Prerelease }}"
     image_templates:
       - "ghcr.io/sydlexius/stillwater:{{ .Version }}-amd64"
       - "ghcr.io/sydlexius/stillwater:{{ .Version }}-arm64"
 
   - name_template: "ghcr.io/sydlexius/stillwater:latest"
+    skip_push: "{{ .Prerelease }}"
     image_templates:
       - "ghcr.io/sydlexius/stillwater:{{ .Version }}-amd64"
       - "ghcr.io/sydlexius/stillwater:{{ .Version }}-arm64"
@@ -116,4 +118,4 @@ release:
     owner: sydlexius
     name: stillwater
   prerelease: auto
-  make_latest: true
+  make_latest: auto
