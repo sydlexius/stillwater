@@ -3,7 +3,7 @@ package templates
 templ IndexPage(assets AssetPaths) {
 	@Layout("Dashboard", assets) {
 		<div class="space-y-6">
-			<div class="flex items-center justify-between border-b border-gray-200 dark:border-gray-700 pb-4">
+			<div class="flex flex-col gap-3 border-b border-gray-200 dark:border-gray-700 pb-4 sm:flex-row sm:items-center sm:justify-between">
 				<div>
 					<h1 class="text-2xl font-bold">Dashboard</h1>
 					<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
@@ -14,7 +14,7 @@ templ IndexPage(assets AssetPaths) {
 					hx-post="/api/v1/rules/run-all"
 					hx-swap="none"
 					hx-indicator="#run-all-spinner"
-					class="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
+					class="inline-flex items-center justify-center gap-2 rounded-md bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
 				>
 					<span id="run-all-spinner" class="htmx-indicator">
 						<svg class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -36,9 +36,9 @@ templ IndexPage(assets AssetPaths) {
 					<p class="text-sm font-medium text-gray-500 dark:text-gray-400">Loading...</p>
 				</div>
 			</div>
-			<div class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
+			<div class="rounded-lg bg-white dark:bg-gray-800 p-4 shadow sm:p-6">
 				<h2 class="text-lg font-semibold mb-4">Health Score Trend</h2>
-				<div class="relative" style="height: 300px;">
+				<div class="relative h-[250px] sm:h-[300px]">
 					<canvas id="health-chart"></canvas>
 				</div>
 			</div>
@@ -46,8 +46,7 @@ templ IndexPage(assets AssetPaths) {
 		<script src={ assets.ChartJS }></script>
 		<script>
 			(function() {
-				var isDark = document.documentElement.classList.contains('dark') ||
-					window.matchMedia('(prefers-color-scheme: dark)').matches;
+				var isDark = document.documentElement.classList.contains('dark');
 				var textColor = isDark ? '#9ca3af' : '#6b7280';
 				var gridColor = isDark ? '#374151' : '#e5e7eb';
 

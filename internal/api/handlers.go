@@ -1,7 +1,9 @@
 package api
 
 import (
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -30,6 +32,7 @@ func (r *Router) assets() templates.AssetPaths {
 		CropperJS:  r.staticAssets.Path("/js/cropper.min.js"),
 		CropperCSS: r.staticAssets.Path("/css/cropper.min.css"),
 		ChartJS:    r.staticAssets.Path("/js/chart.min.js"),
+		LoginBG:    r.staticAssets.Path("/img/login-bg.jpg"),
 	}
 }
 
@@ -166,7 +169,78 @@ func (r *Router) handleIndex(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	// Check if onboarding wizard needs to run
+	var completed string
+	err = r.db.QueryRowContext(req.Context(), //nolint:gosec // G701: query is a string literal
+		`SELECT value FROM settings WHERE key = 'onboarding.completed'`).Scan(&completed)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		r.logger.Error("checking onboarding status", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	if completed != "true" {
+		http.Redirect(w, req, r.basePath+"/setup/wizard", http.StatusSeeOther)
+		return
+	}
+
 	renderTempl(w, req, templates.IndexPage(r.assets()))
+}
+
+func (r *Router) handleOnboardingPage(w http.ResponseWriter, req *http.Request) {
+	// Require auth
+	userID := middleware.UserIDFromContext(req.Context())
+	if userID == "" {
+		http.Redirect(w, req, r.basePath+"/", http.StatusSeeOther)
+		return
+	}
+
+	// If onboarding already completed, redirect to dashboard
+	var completed string
+	err := r.db.QueryRowContext(req.Context(), //nolint:gosec // G701: query is a string literal
+		`SELECT value FROM settings WHERE key = 'onboarding.completed'`).Scan(&completed)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		r.logger.Error("checking onboarding status", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	if completed == "true" {
+		http.Redirect(w, req, r.basePath+"/", http.StatusSeeOther)
+		return
+	}
+
+	// Load wizard data
+	profiles, err := r.platformService.List(req.Context())
+	if err != nil {
+		r.logger.Error("listing platforms for onboarding", "error", err)
+	}
+
+	providerKeys, err := r.providerSettings.ListProviderKeyStatuses(req.Context())
+	if err != nil {
+		r.logger.Error("listing provider keys for onboarding", "error", err)
+	}
+
+	// Load current step from settings (default to 1)
+	currentStep := 1
+	var stepStr string
+	err = r.db.QueryRowContext(req.Context(), //nolint:gosec // G701: query is a string literal
+		`SELECT value FROM settings WHERE key = 'onboarding.step'`).Scan(&stepStr)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		r.logger.Error("loading onboarding step", "error", err)
+	} else if err == nil {
+		switch stepStr {
+		case "2":
+			currentStep = 2
+		case "3":
+			currentStep = 3
+		}
+	}
+
+	data := templates.OnboardingData{
+		Profiles:     profiles,
+		ProviderKeys: providerKeys,
+		CurrentStep:  currentStep,
+	}
+	renderTempl(w, req, templates.OnboardingPage(r.assets(), data))
 }
 
 func renderTempl(w http.ResponseWriter, r *http.Request, component templ.Component) {

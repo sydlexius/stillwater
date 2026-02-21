@@ -6,8 +6,9 @@ import "net/http"
 // unsafe-inline is required for inline <script> blocks used by HTMX event
 // handlers (hx-on::after-request) and chart/cropper initialization, and for
 // inline styles used by Tailwind and template markup.
+// unsafe-eval is required by HTMX for hx-on::* event handler attributes.
 const cspHeader = "default-src 'self'; " +
-	"script-src 'self' 'unsafe-inline'; " +
+	"script-src 'self' 'unsafe-inline' 'unsafe-eval'; " +
 	"style-src 'self' 'unsafe-inline'; " +
 	"img-src 'self' data:; " +
 	"connect-src 'self'; " +

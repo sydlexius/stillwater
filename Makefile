@@ -1,4 +1,4 @@
-.PHONY: build run test lint fmt clean docker-build docker-run dev templ tailwind migrate
+.PHONY: build run test lint fmt clean docker-build docker-run dev templ tailwind migrate favicon
 
 # Binary name
 BINARY=stillwater
@@ -64,6 +64,10 @@ tailwind-watch:
 ## migrate: Run database migrations
 migrate:
 	go run $(CMD_DIR)
+
+## favicon: Regenerate PNG favicons from logo design
+favicon:
+	go run ./tools/genfavicon
 
 ## docker-build: Build Docker image
 docker-build:

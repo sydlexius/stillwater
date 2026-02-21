@@ -66,7 +66,7 @@ templ ImageUpload(artistID string) {
 					hx-target="#upload-result"
 					hx-swap="innerHTML"
 					hx-indicator="#upload-spinner"
-					class="flex gap-2"
+					class="flex flex-col gap-2 sm:flex-row"
 				>
 					<input type="hidden" name="type" value="thumb" id="fetch-type"/>
 					<input
@@ -78,7 +78,7 @@ templ ImageUpload(artistID string) {
 					/>
 					<button
 						type="submit"
-						class="px-4 py-2 text-sm rounded-md bg-green-600 text-white hover:bg-green-700 transition-colors"
+						class="px-4 py-2.5 text-sm rounded-md bg-green-600 text-white hover:bg-green-700 transition-colors"
 					>
 						Fetch
 					</button>

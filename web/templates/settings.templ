@@ -85,7 +85,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 						<h2 class="text-lg font-semibold">Active Profile Details</h2>
 					</div>
 					<div class="px-6 py-4 space-y-4">
-						<div class="grid grid-cols-2 gap-4 text-sm">
+						<div class="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
 							<div>
 								<span class="font-medium text-gray-500 dark:text-gray-400">NFO Output</span>
 								<p class="mt-1">
@@ -168,7 +168,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 				<div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700">
 					<button
 						type="button"
-						class="text-sm px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+						class="text-sm px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
 						onclick="document.getElementById('add-connection-form').classList.toggle('hidden')"
 					>
 						Add Connection
@@ -182,19 +182,19 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 							class="space-y-3"
 						>
 							<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-								<input name="name" placeholder="Connection name" required class="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
-								<select name="type" required class="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+								<input name="name" placeholder="Connection name" required class="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+								<select name="type" required class="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
 									<option value="">Select type...</option>
 									<option value="emby">Emby</option>
 									<option value="jellyfin">Jellyfin</option>
 									<option value="lidarr">Lidarr</option>
 								</select>
-								<input name="url" type="url" placeholder="Server URL" required class="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
-								<input name="api_key" type="text" placeholder="API Key" required autocomplete="off" data-1p-ignore data-lpignore="true" class="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+								<input name="url" type="url" placeholder="Server URL" required class="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+								<input name="api_key" type="text" placeholder="API Key" required autocomplete="off" data-1p-ignore data-lpignore="true" class="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
 							</div>
 							<div class="flex gap-2">
-								<button type="submit" class="text-xs px-3 py-1.5 rounded bg-green-600 text-white hover:bg-green-700 transition-colors">Save</button>
-								<button type="button" class="text-xs px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" onclick="this.closest('#add-connection-form').classList.add('hidden')">Cancel</button>
+								<button type="submit" class="text-sm px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 transition-colors">Save</button>
+								<button type="button" class="text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" onclick="this.closest('#add-connection-form').classList.add('hidden')">Cancel</button>
 							</div>
 						</form>
 					</div>
@@ -218,7 +218,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 				<div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700">
 					<button
 						type="button"
-						class="text-sm px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+						class="text-sm px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
 						onclick="document.getElementById('add-webhook-form').classList.toggle('hidden')"
 					>
 						Add Webhook
@@ -232,19 +232,19 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 							class="space-y-3"
 						>
 							<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-								<input name="name" placeholder="Webhook name" required class="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
-								<select name="type" required class="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+								<input name="name" placeholder="Webhook name" required class="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+								<select name="type" required class="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
 									<option value="">Select type...</option>
 									<option value="generic">Generic (JSON)</option>
 									<option value="discord">Discord</option>
 									<option value="slack">Slack</option>
 									<option value="gotify">Gotify</option>
 								</select>
-								<input name="url" type="url" placeholder="Webhook URL" required class="col-span-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+								<input name="url" type="url" placeholder="Webhook URL" required class="col-span-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
 							</div>
 							<div class="flex gap-2">
-								<button type="submit" class="text-xs px-3 py-1.5 rounded bg-green-600 text-white hover:bg-green-700 transition-colors">Save</button>
-								<button type="button" class="text-xs px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" onclick="this.closest('#add-webhook-form').classList.add('hidden')">Cancel</button>
+								<button type="submit" class="text-sm px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 transition-colors">Save</button>
+								<button type="button" class="text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" onclick="this.closest('#add-webhook-form').classList.add('hidden')">Cancel</button>
 							</div>
 						</form>
 					</div>
@@ -261,7 +261,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 					<div class="flex items-center gap-3">
 						<button
 							type="button"
-							class="text-sm px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+							class="text-sm px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
 							hx-post="/api/v1/settings/backup"
 							hx-target="#backup-list"
 							hx-swap="innerHTML"
@@ -283,11 +283,11 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 }
 
 templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
-	<div class="flex items-center justify-between rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3">
+	<div class="flex flex-col gap-2 rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
 		<div class="flex items-center gap-3">
 			<div
 				class={
-					"h-2.5 w-2.5 rounded-full",
+					"h-2.5 w-2.5 shrink-0 rounded-full",
 					templ.KV("bg-green-500", pk.Status == "ok" || pk.Status == "not_required"),
 					templ.KV("bg-yellow-500", pk.Status == "untested"),
 					templ.KV("bg-red-500", pk.Status == "invalid" || pk.Status == "error"),
@@ -312,14 +312,14 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 						href={ templ.SafeURL(providerHelpURL(pk.Name)) }
 						target="_blank"
 						rel="noopener noreferrer"
-						class="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+						class="text-sm text-blue-600 dark:text-blue-400 hover:underline"
 					>
 						Get key
 					</a>
 				}
 				<button
 					type="button"
-					class="text-xs px-2 py-1 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+					class="text-sm px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
 					onclick={ toggleKeyInput(string(pk.Name)) }
 				>
 					if pk.HasKey {
@@ -331,7 +331,7 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 				if pk.HasKey {
 					<button
 						type="button"
-						class="text-xs px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+						class="text-sm px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
 						hx-post={ "/api/v1/providers/" + string(pk.Name) + "/test" }
 						hx-target={ "#test-result-" + string(pk.Name) }
 						hx-swap="innerHTML"
@@ -342,9 +342,9 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 			}
 		</div>
 	</div>
-	<div id={ "key-input-" + string(pk.Name) } class="hidden mt-2 ml-8">
+	<div id={ "key-input-" + string(pk.Name) } class="hidden mt-2 sm:ml-8">
 		<form
-			class="flex items-center gap-2"
+			class="flex flex-col gap-2 sm:flex-row sm:items-center"
 			hx-put={ "/api/v1/providers/" + string(pk.Name) + "/key" }
 			hx-target={ "#provider-card-" + string(pk.Name) }
 			hx-swap="innerHTML"
@@ -357,22 +357,24 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 				autocomplete="off"
 				data-1p-ignore
 				data-lpignore="true"
-				class="flex-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+				class="flex-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
 				required
 			/>
-			<button
-				type="submit"
-				class="text-xs px-3 py-1.5 rounded bg-green-600 text-white hover:bg-green-700 transition-colors"
-			>
-				Save
-			</button>
-			<button
-				type="button"
-				class="text-xs px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-				onclick={ toggleKeyInput(string(pk.Name)) }
-			>
-				Cancel
-			</button>
+			<div class="flex gap-2">
+				<button
+					type="submit"
+					class="text-sm px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 transition-colors"
+				>
+					Save
+				</button>
+				<button
+					type="button"
+					class="text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+					onclick={ toggleKeyInput(string(pk.Name)) }
+				>
+					Cancel
+				</button>
+			</div>
 		</form>
 	</div>
 	<div id={ "test-result-" + string(pk.Name) } class="ml-8 text-xs mt-1"></div>
@@ -394,8 +396,8 @@ templ ProviderTestResult(status string, message string) {
 }
 
 templ PriorityRow(pri provider.FieldPriority) {
-	<div id={ "priority-row-" + pri.Field } class="flex items-center gap-4 rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3">
-		<div class="w-24 shrink-0">
+	<div id={ "priority-row-" + pri.Field } class="flex flex-col gap-2 rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3 sm:flex-row sm:items-center sm:gap-4">
+		<div class="sm:w-24 shrink-0">
 			<span class="text-sm font-medium capitalize">{ pri.Field }</span>
 		</div>
 		<div class="flex flex-wrap items-center gap-1.5 flex-1">
@@ -408,7 +410,7 @@ templ PriorityRow(pri provider.FieldPriority) {
 						if i > 0 {
 							<button
 								type="button"
-								class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-xs leading-none p-0.5"
+								class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-sm leading-none p-1"
 								hx-put="/api/v1/providers/priorities"
 								hx-vals={ prioritySwapJSON(pri.Field, pri.Providers, i, i-1) }
 								hx-target={ "#priority-row-" + pri.Field }
@@ -420,7 +422,7 @@ templ PriorityRow(pri provider.FieldPriority) {
 						if i < len(pri.Providers)-1 {
 							<button
 								type="button"
-								class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-xs leading-none p-0.5"
+								class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-sm leading-none p-1"
 								hx-put="/api/v1/providers/priorities"
 								hx-vals={ prioritySwapJSON(pri.Field, pri.Providers, i, i+1) }
 								hx-target={ "#priority-row-" + pri.Field }
@@ -451,30 +453,30 @@ func connectionTypeBadge(connType string) string {
 }
 
 templ connectionCard(c connection.Connection) {
-	<div class="flex items-center justify-between rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3">
-		<div class="flex items-center gap-3">
+	<div class="flex flex-col gap-2 rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+		<div class="flex items-center gap-3 min-w-0">
 			<div
 				class={
-					"h-2.5 w-2.5 rounded-full",
+					"h-2.5 w-2.5 shrink-0 rounded-full",
 					templ.KV("bg-green-500", c.Status == "ok"),
 					templ.KV("bg-red-500", c.Status == "error"),
 					templ.KV("bg-gray-400 dark:bg-gray-500", c.Status != "ok" && c.Status != "error"),
 				}
 			></div>
-			<div>
+			<div class="min-w-0">
 				<div class="font-medium text-sm flex items-center gap-2">
 					{ c.Name }
 					<span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs font-medium text-gray-600 dark:text-gray-300">
 						{ connectionTypeBadge(c.Type) }
 					</span>
 				</div>
-				<div class="text-xs text-gray-500 dark:text-gray-400">{ c.URL }</div>
+				<div class="text-xs text-gray-500 dark:text-gray-400 truncate">{ c.URL }</div>
 			</div>
 		</div>
-		<div class="flex items-center gap-2">
+		<div class="flex items-center gap-2 shrink-0">
 			<button
 				type="button"
-				class="text-xs px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+				class="text-sm px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
 				hx-post={ "/api/v1/connections/" + c.ID + "/test" }
 				hx-swap="none"
 				hx-on::after-request="window.location.reload()"
@@ -483,7 +485,7 @@ templ connectionCard(c connection.Connection) {
 			</button>
 			<button
 				type="button"
-				class="text-xs px-2 py-1 rounded border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+				class="text-sm px-3 py-1.5 rounded border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
 				hx-delete={ "/api/v1/connections/" + c.ID }
 				hx-confirm="Delete this connection?"
 				hx-swap="none"
@@ -496,16 +498,16 @@ templ connectionCard(c connection.Connection) {
 }
 
 templ webhookCard(wh webhook.Webhook) {
-	<div class="flex items-center justify-between rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3">
-		<div class="flex items-center gap-3">
+	<div class="flex flex-col gap-2 rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+		<div class="flex items-center gap-3 min-w-0">
 			<div
 				class={
-					"h-2.5 w-2.5 rounded-full",
+					"h-2.5 w-2.5 shrink-0 rounded-full",
 					templ.KV("bg-green-500", wh.Enabled),
 					templ.KV("bg-gray-400 dark:bg-gray-500", !wh.Enabled),
 				}
 			></div>
-			<div>
+			<div class="min-w-0">
 				<div class="font-medium text-sm flex items-center gap-2">
 					{ wh.Name }
 					<span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs font-medium text-gray-600 dark:text-gray-300">
@@ -521,10 +523,10 @@ templ webhookCard(wh webhook.Webhook) {
 				</div>
 			</div>
 		</div>
-		<div class="flex items-center gap-2">
+		<div class="flex items-center gap-2 shrink-0">
 			<button
 				type="button"
-				class="text-xs px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+				class="text-sm px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
 				hx-post={ "/api/v1/webhooks/" + wh.ID + "/test" }
 				hx-swap="none"
 			>
@@ -532,7 +534,7 @@ templ webhookCard(wh webhook.Webhook) {
 			</button>
 			<button
 				type="button"
-				class="text-xs px-2 py-1 rounded border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+				class="text-sm px-3 py-1.5 rounded border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
 				hx-delete={ "/api/v1/webhooks/" + wh.ID }
 				hx-confirm="Delete this webhook?"
 				hx-swap="none"

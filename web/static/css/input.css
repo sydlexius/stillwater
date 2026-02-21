@@ -1,13 +1,13 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 /* Checkered background for logo transparency preview */
 .checkered-bg {
   background-image: repeating-conic-gradient(#d1d5db 0% 25%, transparent 0% 50%);
   background-size: 16px 16px;
 }
 
-@media (prefers-color-scheme: dark) {
-  .checkered-bg {
-    background-image: repeating-conic-gradient(#4b5563 0% 25%, transparent 0% 50%);
-  }
+.dark .checkered-bg {
+  background-image: repeating-conic-gradient(#4b5563 0% 25%, transparent 0% 50%);
 }

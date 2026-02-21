@@ -15,6 +15,7 @@ type AssetPaths struct {
 	CropperJS  string
 	CropperCSS string
 	ChartJS    string
+	LoginBG    string
 }
 
 func Layout(title string, assets AssetPaths) templ.Component {
@@ -45,7 +46,7 @@ func Layout(title string, assets AssetPaths) templ.Component {
 		var templ_7745c5c3_Var2 string
 		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinStringErrs(title)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/layout.templ`, Line: 18, Col: 17}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/layout.templ`, Line: 19, Col: 17}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
 		if templ_7745c5c3_Err != nil {
@@ -58,26 +59,34 @@ func Layout(title string, assets AssetPaths) templ.Component {
 		var templ_7745c5c3_Var3 templ.SafeURL
 		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinURLErrs(assets.CSS)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/layout.templ`, Line: 19, Col: 43}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/layout.templ`, Line: 20, Col: 43}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "\"><script src=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "\"><link rel=\"icon\" type=\"image/svg+xml\" href=\"/static/img/favicon.svg\"><link rel=\"icon\" type=\"image/png\" sizes=\"32x32\" href=\"/static/img/favicon-32x32.png\"><link rel=\"icon\" type=\"image/png\" sizes=\"16x16\" href=\"/static/img/favicon-16x16.png\"><link rel=\"apple-touch-icon\" sizes=\"180x180\" href=\"/static/img/apple-touch-icon.png\"><link rel=\"manifest\" href=\"/static/site.webmanifest\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = themeInitScript().Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<script src=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var4 string
 		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(assets.HTMX)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/layout.templ`, Line: 20, Col: 28}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/layout.templ`, Line: 27, Col: 28}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "\"></script><script>\r\n\t\t\t\tdocument.addEventListener('htmx:configRequest', function(evt) {\r\n\t\t\t\t\tvar csrfToken = document.cookie.replace(/(?:(?:^|.*;\\s*)csrf_token\\s*\\=\\s*([^;]*).*$)|^.*$/, \"$1\");\r\n\t\t\t\t\tif (csrfToken) {\r\n\t\t\t\t\t\tevt.detail.headers['X-CSRF-Token'] = csrfToken;\r\n\t\t\t\t\t}\r\n\t\t\t\t});\r\n\t\t\t</script></head><body class=\"h-full bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100\"><div class=\"min-h-full\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "\"></script><script>\r\n\t\t\t\tdocument.addEventListener('htmx:configRequest', function(evt) {\r\n\t\t\t\t\tvar csrfToken = document.cookie.replace(/(?:(?:^|.*;\\s*)csrf_token\\s*\\=\\s*([^;]*).*$)|^.*$/, \"$1\");\r\n\t\t\t\t\tif (csrfToken) {\r\n\t\t\t\t\t\tevt.detail.headers['X-CSRF-Token'] = csrfToken;\r\n\t\t\t\t\t}\r\n\t\t\t\t});\r\n\t\t\t</script></head><body class=\"h-full bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100\"><div class=\"min-h-full\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -85,7 +94,7 @@ func Layout(title string, assets AssetPaths) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<main class=\"mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<main class=\"mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -93,7 +102,67 @@ func Layout(title string, assets AssetPaths) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "</main></div><div id=\"error-toast-container\"></div><script>\r\n\t\t\t\tdocument.body.addEventListener('htmx:responseError', function(evt) {\r\n\t\t\t\t\tshowToast('Request failed: ' + (evt.detail.xhr.status || 'network error'));\r\n\t\t\t\t});\r\n\t\t\t\tdocument.body.addEventListener('htmx:timeout', function() {\r\n\t\t\t\t\tshowToast('Request timed out. Please try again.');\r\n\t\t\t\t});\r\n\t\t\t\tfunction showToast(msg) {\r\n\t\t\t\t\tvar container = document.getElementById('error-toast-container');\r\n\t\t\t\t\tvar toast = document.createElement('div');\r\n\t\t\t\t\ttoast.className = 'fixed top-4 right-4 z-50 flex items-center gap-3 rounded-lg px-4 py-3 text-sm shadow-lg bg-red-50 dark:bg-red-900/50 text-red-800 dark:text-red-200 border border-red-200 dark:border-red-800 transition-opacity duration-300';\r\n\t\t\t\t\ttoast.innerHTML = '<span>' + msg + '</span><button onclick=\"this.parentElement.remove()\" class=\"ml-2 font-bold opacity-70 hover:opacity-100\">&times;</button>';\r\n\t\t\t\t\tcontainer.appendChild(toast);\r\n\t\t\t\t\tsetTimeout(function() {\r\n\t\t\t\t\t\ttoast.style.opacity = '0';\r\n\t\t\t\t\t\tsetTimeout(function() { toast.remove(); }, 300);\r\n\t\t\t\t\t}, 5000);\r\n\t\t\t\t}\r\n\t\t\t</script></body></html>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "</main></div><div id=\"error-toast-container\"></div><script>\r\n\t\t\t\t// Theme toggle: cycles Light -> Dark -> System\r\n\t\t\t\tfunction cycleTheme() {\r\n\t\t\t\t\tvar current = localStorage.getItem('theme');\r\n\t\t\t\t\tvar next;\r\n\t\t\t\t\tif (current === 'light') {\r\n\t\t\t\t\t\tnext = 'dark';\r\n\t\t\t\t\t} else if (current === 'dark') {\r\n\t\t\t\t\t\tnext = 'system';\r\n\t\t\t\t\t} else {\r\n\t\t\t\t\t\tnext = 'light';\r\n\t\t\t\t\t}\r\n\t\t\t\t\tapplyTheme(next);\r\n\t\t\t\t}\r\n\t\t\t\tfunction applyTheme(pref) {\r\n\t\t\t\t\tif (pref === 'system') {\r\n\t\t\t\t\t\tlocalStorage.removeItem('theme');\r\n\t\t\t\t\t} else {\r\n\t\t\t\t\t\tlocalStorage.setItem('theme', pref);\r\n\t\t\t\t\t}\r\n\t\t\t\t\tvar isDark = pref === 'dark' || (pref === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);\r\n\t\t\t\t\tdocument.documentElement.classList.toggle('dark', isDark);\r\n\t\t\t\t}\r\n\t\t\t</script><script>\r\n\t\t\t\tdocument.body.addEventListener('htmx:responseError', function(evt) {\r\n\t\t\t\t\tshowToast('Request failed: ' + (evt.detail.xhr.status || 'network error'));\r\n\t\t\t\t});\r\n\t\t\t\tdocument.body.addEventListener('htmx:timeout', function() {\r\n\t\t\t\t\tshowToast('Request timed out. Please try again.');\r\n\t\t\t\t});\r\n\t\t\t\tfunction showToast(msg) {\r\n\t\t\t\t\tvar container = document.getElementById('error-toast-container');\r\n\t\t\t\t\tvar toast = document.createElement('div');\r\n\t\t\t\t\ttoast.className = 'fixed top-4 right-4 z-50 flex items-center gap-3 rounded-lg px-4 py-3 text-sm shadow-lg bg-red-50 dark:bg-red-900/50 text-red-800 dark:text-red-200 border border-red-200 dark:border-red-800 transition-opacity duration-300';\r\n\t\t\t\t\ttoast.innerHTML = '<span>' + msg + '</span><button onclick=\"this.parentElement.remove()\" class=\"ml-2 font-bold opacity-70 hover:opacity-100\">&times;</button>';\r\n\t\t\t\t\tcontainer.appendChild(toast);\r\n\t\t\t\t\tsetTimeout(function() {\r\n\t\t\t\t\t\ttoast.style.opacity = '0';\r\n\t\t\t\t\t\tsetTimeout(function() { toast.remove(); }, 300);\r\n\t\t\t\t\t}, 5000);\r\n\t\t\t\t}\r\n\t\t\t</script></body></html>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		return nil
+	})
+}
+
+// themeInitScript applies the dark class before first paint to prevent FOUC.
+// Must be placed in <head> before any stylesheets take effect.
+func themeInitScript() templ.Component {
+	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
+			return templ_7745c5c3_CtxErr
+		}
+		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+		if !templ_7745c5c3_IsBuffer {
+			defer func() {
+				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err == nil {
+					templ_7745c5c3_Err = templ_7745c5c3_BufErr
+				}
+			}()
+		}
+		ctx = templ.InitializeContext(ctx)
+		templ_7745c5c3_Var5 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var5 == nil {
+			templ_7745c5c3_Var5 = templ.NopComponent
+		}
+		ctx = templ.ClearChildren(ctx)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "<script>\r\n\t\t(function() {\r\n\t\t\tvar pref = localStorage.getItem('theme');\r\n\t\t\tif (pref === 'dark' || (pref !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches)) {\r\n\t\t\t\tdocument.documentElement.classList.add('dark');\r\n\t\t\t}\r\n\t\t})();\r\n\t</script>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		return nil
+	})
+}
+
+func themeToggleButton() templ.Component {
+	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
+			return templ_7745c5c3_CtxErr
+		}
+		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+		if !templ_7745c5c3_IsBuffer {
+			defer func() {
+				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err == nil {
+					templ_7745c5c3_Err = templ_7745c5c3_BufErr
+				}
+			}()
+		}
+		ctx = templ.InitializeContext(ctx)
+		templ_7745c5c3_Var6 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var6 == nil {
+			templ_7745c5c3_Var6 = templ.NopComponent
+		}
+		ctx = templ.ClearChildren(ctx)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "<button type=\"button\" class=\"rounded-md p-2 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-700 dark:hover:text-gray-200\" onclick=\"cycleTheme()\" aria-label=\"Toggle theme\"><!-- Sun icon (shown in dark mode) --><svg class=\"hidden dark:block h-5 w-5\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1.5\" stroke=\"currentColor\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z\"></path></svg><!-- Moon icon (shown in light mode) --><svg class=\"block dark:hidden h-5 w-5\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1.5\" stroke=\"currentColor\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M21.752 15.002A9.718 9.718 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z\"></path></svg></button>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -117,12 +186,28 @@ func navbar() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var5 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var5 == nil {
-			templ_7745c5c3_Var5 = templ.NopComponent
+		templ_7745c5c3_Var7 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var7 == nil {
+			templ_7745c5c3_Var7 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<nav class=\"bg-white dark:bg-gray-800 shadow\"><div class=\"mx-auto max-w-7xl px-4 sm:px-6 lg:px-8\"><div class=\"flex h-16 items-center justify-between\"><div class=\"flex items-center\"><a href=\"/\" class=\"text-xl font-bold text-blue-600 dark:text-blue-400\">Stillwater</a><div class=\"ml-10 flex items-baseline space-x-4\"><a href=\"/\" class=\"rounded-md px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700\">Dashboard</a> <a href=\"/artists\" class=\"rounded-md px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700\">Artists</a> <a href=\"/reports/compliance\" class=\"rounded-md px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700\">Reports</a> <a href=\"/settings\" class=\"rounded-md px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700\">Settings</a></div></div><div><button hx-post=\"/api/v1/auth/logout\" hx-redirect=\"/\" class=\"rounded-md px-3 py-2 text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200\">Logout</button></div></div></div></nav>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<nav class=\"bg-white dark:bg-gray-800 shadow\"><div class=\"mx-auto max-w-7xl px-4 sm:px-6 lg:px-8\"><div class=\"flex h-16 items-center justify-between\"><div class=\"flex items-center\"><a href=\"/\" class=\"flex items-center gap-2 text-xl font-bold text-blue-600 dark:text-blue-400\"><img src=\"/static/img/favicon.svg\" alt=\"\" class=\"h-7 w-7\" aria-hidden=\"true\"> Stillwater</a><div class=\"ml-10 hidden md:flex items-baseline space-x-4\"><a href=\"/\" class=\"rounded-md px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700\">Dashboard</a> <a href=\"/artists\" class=\"rounded-md px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700\">Artists</a> <a href=\"/reports/compliance\" class=\"rounded-md px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700\">Reports</a> <a href=\"/settings\" class=\"rounded-md px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700\">Settings</a></div></div><div class=\"hidden md:flex items-center gap-1\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = themeToggleButton().Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "<button hx-post=\"/api/v1/auth/logout\" hx-redirect=\"/\" class=\"rounded-md px-3 py-2 text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200\">Logout</button></div><div class=\"flex items-center gap-1 md:hidden\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = themeToggleButton().Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<button type=\"button\" class=\"inline-flex items-center justify-center rounded-md p-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700\" aria-controls=\"mobile-menu\" aria-expanded=\"false\" onclick=\"var m=document.getElementById('mobile-menu');var open=m.classList.toggle('hidden');this.setAttribute('aria-expanded',!open);this.querySelector('.icon-open').classList.toggle('hidden');this.querySelector('.icon-close').classList.toggle('hidden')\"><span class=\"sr-only\">Open main menu</span> <svg class=\"icon-open h-6 w-6\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1.5\" stroke=\"currentColor\" aria-hidden=\"true\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5\"></path></svg> <svg class=\"icon-close hidden h-6 w-6\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1.5\" stroke=\"currentColor\" aria-hidden=\"true\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M6 18L18 6M6 6l12 12\"></path></svg></button></div></div></div><div class=\"hidden md:hidden\" id=\"mobile-menu\"><div class=\"space-y-1 px-2 pb-3 pt-2\"><a href=\"/\" class=\"block rounded-md px-3 py-3 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700\">Dashboard</a> <a href=\"/artists\" class=\"block rounded-md px-3 py-3 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700\">Artists</a> <a href=\"/reports/compliance\" class=\"block rounded-md px-3 py-3 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700\">Reports</a> <a href=\"/settings\" class=\"block rounded-md px-3 py-3 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700\">Settings</a> <button hx-post=\"/api/v1/auth/logout\" hx-redirect=\"/\" class=\"block w-full rounded-md px-3 py-3 text-left text-base font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-700 dark:hover:text-gray-200\">Logout</button></div></div></nav>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

@@ -103,7 +103,7 @@ func HealthSummaryFragment(data HealthSummaryData) templ.Component {
 		var templ_7745c5c3_Var6 string
 		templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%.1f%%", data.Score))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/health_summary.templ`, Line: 41, Col: 38}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/health_summary.templ`, Line: 39, Col: 38}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 		if templ_7745c5c3_Err != nil {
@@ -116,7 +116,7 @@ func HealthSummaryFragment(data HealthSummaryData) templ.Component {
 		var templ_7745c5c3_Var7 string
 		templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprint(data.CompliantArtists))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/health_summary.templ`, Line: 44, Col: 38}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/health_summary.templ`, Line: 42, Col: 38}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 		if templ_7745c5c3_Err != nil {
@@ -129,7 +129,7 @@ func HealthSummaryFragment(data HealthSummaryData) templ.Component {
 		var templ_7745c5c3_Var8 string
 		templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprint(data.TotalArtists))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/health_summary.templ`, Line: 44, Col: 75}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/health_summary.templ`, Line: 42, Col: 75}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 		if templ_7745c5c3_Err != nil {
@@ -164,7 +164,7 @@ func HealthSummaryFragment(data HealthSummaryData) templ.Component {
 				var templ_7745c5c3_Var9 string
 				templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(v.RuleName)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/health_summary.templ`, Line: 56, Col: 65}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/health_summary.templ`, Line: 54, Col: 65}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 				if templ_7745c5c3_Err != nil {
@@ -203,7 +203,7 @@ func HealthSummaryFragment(data HealthSummaryData) templ.Component {
 				var templ_7745c5c3_Var12 string
 				templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprint(v.Count))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/health_summary.templ`, Line: 66, Col: 29}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/health_summary.templ`, Line: 64, Col: 29}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 				if templ_7745c5c3_Err != nil {
@@ -251,7 +251,7 @@ func quickStatCard(label string, count int, link string) templ.Component {
 		var templ_7745c5c3_Var14 templ.SafeURL
 		templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(link))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/health_summary.templ`, Line: 78, Col: 28}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/health_summary.templ`, Line: 76, Col: 28}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 		if templ_7745c5c3_Err != nil {
@@ -264,7 +264,7 @@ func quickStatCard(label string, count int, link string) templ.Component {
 		var templ_7745c5c3_Var15 string
 		templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/health_summary.templ`, Line: 81, Col: 73}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/health_summary.templ`, Line: 79, Col: 73}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 		if templ_7745c5c3_Err != nil {
@@ -302,7 +302,7 @@ func quickStatCard(label string, count int, link string) templ.Component {
 		var templ_7745c5c3_Var18 string
 		templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprint(count))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/health_summary.templ`, Line: 89, Col: 22}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/health_summary.templ`, Line: 87, Col: 22}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
 		if templ_7745c5c3_Err != nil {

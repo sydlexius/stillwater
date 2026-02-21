@@ -30,9 +30,7 @@ func isLowResolution(w, h int) bool {
 
 templ ImageCard(artistID string, img provider.ImageResult) {
 	<div
-		class={
-			"relative rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden group hover:border-blue-400 dark:hover:border-blue-500 transition-colors",
-		}
+		class={ "relative rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden group hover:border-blue-400 dark:hover:border-blue-500 transition-colors", }
 	>
 		<div
 			class={
@@ -70,7 +68,7 @@ templ ImageCard(artistID string, img provider.ImageResult) {
 			}
 			<button
 				type="button"
-				class="w-full mt-1 text-xs px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+				class="w-full mt-1 text-sm px-2 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
 				hx-post={ fmt.Sprintf("/api/v1/artists/%s/images/fetch", artistID) }
 				hx-vals={ fmt.Sprintf(`{"url":"%s","type":"%s"}`, img.URL, string(img.Type)) }
 				hx-swap="none"
