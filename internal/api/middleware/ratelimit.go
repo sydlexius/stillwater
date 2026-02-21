@@ -1,8 +1,10 @@
 package middleware
 
 import (
+	"context"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -21,11 +23,15 @@ type LoginRateLimiter struct {
 }
 
 // NewLoginRateLimiter creates a rate limiter that cleans up stale entries periodically.
-func NewLoginRateLimiter() *LoginRateLimiter {
+// The cleanup goroutine stops when the provided context is canceled.
+func NewLoginRateLimiter(ctx context.Context) *LoginRateLimiter {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	rl := &LoginRateLimiter{
 		limiters: make(map[string]*ipLimiter),
 	}
-	go rl.cleanup()
+	go rl.cleanup(ctx)
 	return rl
 }
 
@@ -59,39 +65,55 @@ func (rl *LoginRateLimiter) getLimiter(ip string) *rate.Limiter {
 	return entry.limiter
 }
 
-func (rl *LoginRateLimiter) cleanup() {
+func (rl *LoginRateLimiter) cleanup(ctx context.Context) {
 	ticker := time.NewTicker(10 * time.Minute)
 	defer ticker.Stop()
-	for range ticker.C {
-		rl.mu.Lock()
-		for ip, entry := range rl.limiters {
-			if time.Since(entry.lastSeen) > 15*time.Minute {
-				delete(rl.limiters, ip)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			rl.mu.Lock()
+			for ip, entry := range rl.limiters {
+				if time.Since(entry.lastSeen) > 15*time.Minute {
+					delete(rl.limiters, ip)
+				}
 			}
+			rl.mu.Unlock()
 		}
-		rl.mu.Unlock()
 	}
 }
 
 func clientIP(r *http.Request) string {
-	// Check X-Forwarded-For for reverse proxy setups
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		// Take the first (client) IP
-		if i := len(xff); i > 0 {
-			for j := 0; j < len(xff); j++ {
-				if xff[j] == ',' {
-					return xff[:j]
-				}
+	remoteIP, _, _ := net.SplitHostPort(r.RemoteAddr)
+	if remoteIP == "" {
+		remoteIP = r.RemoteAddr
+	}
+
+	// Only honor proxy headers when the direct connection is from a private/loopback IP,
+	// which indicates a trusted reverse proxy is in front of the application.
+	if isPrivateIP(remoteIP) {
+		// Use the rightmost XFF IP (added by the nearest trusted proxy) to resist spoofing.
+		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			parts := strings.Split(xff, ",")
+			ip := strings.TrimSpace(parts[len(parts)-1])
+			if ip != "" {
+				return ip
 			}
-			return xff
+		}
+		if xri := r.Header.Get("X-Real-Ip"); xri != "" {
+			return xri
 		}
 	}
-	if xri := r.Header.Get("X-Real-Ip"); xri != "" {
-		return xri
+
+	return remoteIP
+}
+
+// isPrivateIP checks if an IP address is in a private or loopback range.
+func isPrivateIP(ipStr string) bool {
+	ip := net.ParseIP(ipStr)
+	if ip == nil {
+		return false
 	}
-	ip, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return ip
+	return ip.IsLoopback() || ip.IsPrivate()
 }

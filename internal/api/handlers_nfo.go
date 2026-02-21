@@ -40,8 +40,18 @@ func (r *Router) handleNFODiff(w http.ResponseWriter, req *http.Request) {
 	compareToID := req.URL.Query().Get("compare_to")
 	if compareToID != "" {
 		snap, err := r.nfoSnapshotService.GetByID(req.Context(), compareToID)
-		if err == nil {
-			snapshotNFO, _ = nfo.Parse(strings.NewReader(snap.Content))
+		if err != nil {
+			writeError(w, req, http.StatusNotFound, "snapshot not found")
+			return
+		}
+		if snap.ArtistID != artistID {
+			writeError(w, req, http.StatusNotFound, "snapshot not found")
+			return
+		}
+		snapshotNFO, err = nfo.Parse(strings.NewReader(snap.Content))
+		if err != nil {
+			writeError(w, req, http.StatusBadRequest, "invalid snapshot content")
+			return
 		}
 	} else {
 		// Default: compare against the latest snapshot
@@ -102,6 +112,10 @@ func (r *Router) handleNFOSnapshotRestore(w http.ResponseWriter, req *http.Reque
 
 	snap, err := r.nfoSnapshotService.GetByID(req.Context(), snapshotID)
 	if err != nil {
+		writeError(w, req, http.StatusNotFound, "snapshot not found")
+		return
+	}
+	if snap.ArtistID != artistID {
 		writeError(w, req, http.StatusNotFound, "snapshot not found")
 		return
 	}

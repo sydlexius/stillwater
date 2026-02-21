@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"database/sql"
 	"log/slog"
 	"net/http"
@@ -96,11 +97,12 @@ func NewRouter(deps RouterDeps) *Router {
 }
 
 // Handler returns the fully configured HTTP handler with middleware applied.
-func (r *Router) Handler() http.Handler {
+// The provided context controls the lifecycle of background goroutines (e.g. rate limiter cleanup).
+func (r *Router) Handler(ctx context.Context) http.Handler {
 	authMw := middleware.Auth(r.authService)
 	optAuthMw := middleware.OptionalAuth(r.authService)
 	csrf := middleware.NewCSRF()
-	loginRL := middleware.NewLoginRateLimiter()
+	loginRL := middleware.NewLoginRateLimiter(ctx)
 	mux := http.NewServeMux()
 	bp := r.basePath
 
