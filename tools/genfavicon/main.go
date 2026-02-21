@@ -101,11 +101,11 @@ func main() {
 			os.Exit(1)
 		}
 		if err := png.Encode(f, img); err != nil {
-			f.Close()
+			_ = f.Close()
 			fmt.Fprintf(os.Stderr, "encode %s: %v\n", p, err)
 			os.Exit(1)
 		}
-		f.Close()
+		_ = f.Close()
 		fmt.Printf("generated %s (%dx%d)\n", p, t.size, t.size)
 	}
 }

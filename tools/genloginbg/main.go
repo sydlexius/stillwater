@@ -110,7 +110,7 @@ func boxBlur(src *image.NRGBA, radius int) *image.NRGBA {
 			tmp.Pix[(y*w+x)*4+0] = uint8(rSum / diameter) //nolint:gosec // G115: result is always 0-255
 			tmp.Pix[(y*w+x)*4+1] = uint8(gSum / diameter) //nolint:gosec // G115: result is always 0-255
 			tmp.Pix[(y*w+x)*4+2] = uint8(bSum / diameter) //nolint:gosec // G115: result is always 0-255
-			tmp.Pix[(y*w+x)*4+3] = uint8(aSum / diameter)
+			tmp.Pix[(y*w+x)*4+3] = uint8(aSum / diameter) //nolint:gosec // G115: result is always 0-255
 
 			// Slide the window: remove left edge, add right edge.
 			oldX := clamp(x-radius, w-1)
@@ -139,7 +139,7 @@ func boxBlur(src *image.NRGBA, radius int) *image.NRGBA {
 			dst.Pix[(y*w+x)*4+0] = uint8(rSum / diameter) //nolint:gosec // G115: result is always 0-255
 			dst.Pix[(y*w+x)*4+1] = uint8(gSum / diameter) //nolint:gosec // G115: result is always 0-255
 			dst.Pix[(y*w+x)*4+2] = uint8(bSum / diameter) //nolint:gosec // G115: result is always 0-255
-			dst.Pix[(y*w+x)*4+3] = uint8(aSum / diameter)
+			dst.Pix[(y*w+x)*4+3] = uint8(aSum / diameter) //nolint:gosec // G115: result is always 0-255
 
 			oldY := clamp(y-radius, h-1)
 			newY := clamp(y+radius+1, h-1)
