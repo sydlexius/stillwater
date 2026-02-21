@@ -1,8 +1,8 @@
 #!/bin/sh
 set -e
 
-PUID=${PUID:-1000}
-PGID=${PGID:-1000}
+PUID=${PUID:-99}
+PGID=${PGID:-100}
 
 # Resolve group: reuse existing group if GID is taken, otherwise create stillwater group
 if [ "$(id -g stillwater 2>/dev/null)" != "$PGID" ]; then
