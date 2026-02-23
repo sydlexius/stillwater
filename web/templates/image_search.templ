@@ -400,8 +400,12 @@ templ imageSearchContextualized(data ImageSearchData) {
 					var isLogo = imgType === 'logo';
 					imgContainer.className = 'flex items-center justify-center overflow-hidden rounded max-h-64 min-h-32 ' +
 						(isLogo ? 'checkered-bg' : 'bg-gray-100 dark:bg-gray-900');
-					imgContainer.innerHTML = '<img src="' + url + '" alt="' + imgType + ' from ' + source +
-						'" class="max-w-full max-h-64 object-contain" />';
+					imgContainer.innerHTML = '';
+					var imgEl = document.createElement('img');
+					imgEl.src = url;
+					imgEl.alt = imgType + ' from ' + source;
+					imgEl.className = 'max-w-full max-h-64 object-contain';
+					imgContainer.appendChild(imgEl);
 
 					var meta = document.getElementById('compare-right-meta');
 					var parts = [source];
