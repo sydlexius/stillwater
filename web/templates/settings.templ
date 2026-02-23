@@ -496,8 +496,13 @@ templ sortableInitScript() {
 				Sortable.create(container, {
 					animation: 150,
 					ghostClass: 'opacity-30',
-					chosenClass: 'ring-2 ring-blue-400 rounded-full',
 					dragClass: 'shadow-lg',
+					onChoose: function(evt) {
+						evt.item.classList.add('ring-2', 'ring-blue-400', 'rounded-full');
+					},
+					onUnchoose: function(evt) {
+						evt.item.classList.remove('ring-2', 'ring-blue-400', 'rounded-full');
+					},
 					onEnd: function() {
 						var providers = [];
 						container.querySelectorAll('[data-provider]').forEach(function(chip) {
