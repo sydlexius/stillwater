@@ -1,0 +1,20 @@
+package templates
+
+// ClobberWarning represents a single clobber risk for template rendering.
+type ClobberWarning struct {
+	ConnectionName string
+	ConnectionType string
+	LibraryName    string
+}
+
+templ ClobberWarnings(warnings []ClobberWarning) {
+	for _, w := range warnings {
+		<div class="rounded-md bg-yellow-50 dark:bg-yellow-900/50 px-4 py-3 text-sm text-yellow-700 dark:text-yellow-300 mb-2" role="alert">
+			<strong>{ w.ConnectionName }</strong> ({ w.ConnectionType }) has NFO writing enabled
+			if w.LibraryName != "" {
+				{ " on library \"" + w.LibraryName + "\"" }
+			}
+			. This may overwrite changes made by Stillwater. Disable the NFO saver in your server settings to prevent conflicts.
+		</div>
+	}
+}

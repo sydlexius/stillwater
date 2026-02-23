@@ -192,7 +192,7 @@ func OnboardingPage(assets AssetPaths, data OnboardingData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "</div></div><!-- Navigation --><div class=\"flex items-center justify-between\"><button type=\"button\" id=\"skip-btn\" class=\"text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 py-2\" onclick=\"finishWizard()\">Skip setup</button><div class=\"flex items-center gap-3\"><button type=\"button\" id=\"back-btn\" class=\"hidden text-sm px-4 py-2 rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors\" onclick=\"goToStep(currentStep - 1)\">Back</button> <button type=\"button\" id=\"next-btn\" class=\"text-sm px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 transition-colors\" onclick=\"goToStep(currentStep + 1)\">Next</button> <button type=\"button\" id=\"finish-btn\" class=\"hidden text-sm px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 transition-colors\" onclick=\"finishWizard()\">Finish Setup</button></div></div></div></div><script>\n\t\t\t\tvar currentStep = parseInt(document.body.dataset.currentStep, 10) || 1;\n\t\t\t\tvar totalSteps = 3;\n\n\t\t\t\tfunction getCsrfToken() {\n\t\t\t\t\treturn document.cookie.replace(/(?:(?:^|.*;\\s*)csrf_token\\s*\\=\\s*([^;]*).*$)|^.*$/, \"$1\");\n\t\t\t\t}\n\n\t\t\t\tfunction goToStep(step) {\n\t\t\t\t\tif (step < 1) step = 1;\n\t\t\t\t\tif (step > totalSteps) step = totalSteps;\n\t\t\t\t\tcurrentStep = step;\n\n\t\t\t\t\tfor (var i = 1; i <= totalSteps; i++) {\n\t\t\t\t\t\tvar el = document.getElementById('wizard-step-' + i);\n\t\t\t\t\t\tif (el) el.classList.toggle('hidden', i !== step);\n\n\t\t\t\t\t\tvar dot = document.getElementById('step-dot-' + i);\n\t\t\t\t\t\tvar label = document.getElementById('step-label-' + i);\n\t\t\t\t\t\tvar line = document.getElementById('step-line-' + i);\n\t\t\t\t\t\tif (dot) {\n\t\t\t\t\t\t\tif (i <= step) {\n\t\t\t\t\t\t\t\tdot.className = 'h-8 w-8 rounded-full bg-blue-600 text-white flex items-center justify-center text-sm font-medium';\n\t\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t\tdot.className = 'h-8 w-8 rounded-full bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 flex items-center justify-center text-sm font-medium';\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}\n\t\t\t\t\t\tif (label) {\n\t\t\t\t\t\t\tif (i <= step) {\n\t\t\t\t\t\t\t\tlabel.className = 'text-sm font-medium text-gray-900 dark:text-gray-100 hidden sm:inline';\n\t\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t\tlabel.className = 'text-sm text-gray-500 dark:text-gray-400 hidden sm:inline';\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}\n\t\t\t\t\t\tif (line) {\n\t\t\t\t\t\t\tline.className = i < step\n\t\t\t\t\t\t\t\t? 'h-0.5 w-8 bg-blue-600 mx-2 sm:w-12'\n\t\t\t\t\t\t\t\t: 'h-0.5 w-8 bg-gray-300 dark:bg-gray-600 mx-2 sm:w-12';\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\n\t\t\t\t\tdocument.getElementById('back-btn').classList.toggle('hidden', step <= 1);\n\t\t\t\t\tdocument.getElementById('next-btn').classList.toggle('hidden', step >= totalSteps);\n\t\t\t\t\tdocument.getElementById('finish-btn').classList.toggle('hidden', step < totalSteps);\n\n\t\t\t\t\tfetch('/api/v1/settings', {\n\t\t\t\t\t\tmethod: 'PUT',\n\t\t\t\t\t\theaders: {'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken()},\n\t\t\t\t\t\tbody: JSON.stringify({\"onboarding.step\": String(step)})\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\tfunction finishWizard() {\n\t\t\t\t\tfetch('/api/v1/settings', {\n\t\t\t\t\t\tmethod: 'PUT',\n\t\t\t\t\t\theaders: {'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken()},\n\t\t\t\t\t\tbody: JSON.stringify({\"onboarding.completed\": \"true\"})\n\t\t\t\t\t}).then(function() {\n\t\t\t\t\t\twindow.location.href = '/';\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\tfunction selectPlatform(el) {\n\t\t\t\t\tvar cards = el.closest('.grid').querySelectorAll('[data-profile-card]');\n\t\t\t\t\tcards.forEach(function(card) {\n\t\t\t\t\t\tcard.classList.remove('border-blue-500', 'bg-blue-50', 'dark:bg-blue-900/20');\n\t\t\t\t\t\tcard.classList.add('border-gray-200', 'dark:border-gray-700');\n\t\t\t\t\t});\n\t\t\t\t\tel.closest('[data-profile-card]').classList.remove('border-gray-200', 'dark:border-gray-700');\n\t\t\t\t\tel.closest('[data-profile-card]').classList.add('border-blue-500', 'bg-blue-50', 'dark:bg-blue-900/20');\n\t\t\t\t}\n\n\t\t\t\tfunction onConnectionSaved(connType, xhr) {\n\t\t\t\t\tvar form = document.getElementById('ob-conn-form-' + connType);\n\t\t\t\t\tvar success = document.getElementById('ob-conn-success-' + connType);\n\t\t\t\t\tvar dot = document.getElementById('ob-conn-dot-' + connType);\n\t\t\t\t\tvar btn = document.getElementById('ob-conn-btn-' + connType);\n\t\t\t\t\tif (form) form.classList.add('hidden');\n\t\t\t\t\tif (success) success.classList.remove('hidden');\n\t\t\t\t\tif (btn) btn.classList.add('hidden');\n\t\t\t\t\tif (dot) {\n\t\t\t\t\t\tdot.classList.remove('bg-gray-400', 'dark:bg-gray-500');\n\t\t\t\t\t\tdot.classList.add('bg-green-500');\n\t\t\t\t\t}\n\t\t\t\t\tif (xhr && xhr.responseText) {\n\t\t\t\t\t\ttry {\n\t\t\t\t\t\t\tvar data = JSON.parse(xhr.responseText);\n\t\t\t\t\t\t\tif (data.id) {\n\t\t\t\t\t\t\t\tvar testBtn = document.getElementById('ob-conn-test-' + connType);\n\t\t\t\t\t\t\t\tif (testBtn) {\n\t\t\t\t\t\t\t\t\ttestBtn.classList.remove('hidden');\n\t\t\t\t\t\t\t\t\ttestBtn.onclick = function() { testConnection(data.id, connType); };\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t} catch(e) {}\n\t\t\t\t\t}\n\t\t\t\t}\n\n\t\t\t\tfunction testConnection(connID, connType) {\n\t\t\t\t\tvar testBtn = document.getElementById('ob-conn-test-' + connType);\n\t\t\t\t\tvar resultEl = document.getElementById('ob-conn-test-result-' + connType);\n\t\t\t\t\tvar dot = document.getElementById('ob-conn-dot-' + connType);\n\t\t\t\t\tif (testBtn) { testBtn.disabled = true; testBtn.textContent = 'Testing...'; }\n\t\t\t\t\tfetch('/api/v1/connections/' + connID + '/test', {\n\t\t\t\t\t\tmethod: 'POST',\n\t\t\t\t\t\theaders: {'X-CSRF-Token': getCsrfToken()}\n\t\t\t\t\t}).then(function(res) { return res.json(); })\n\t\t\t\t\t.then(function(data) {\n\t\t\t\t\t\tif (testBtn) { testBtn.disabled = false; testBtn.textContent = 'Test'; }\n\t\t\t\t\t\tif (data.status === 'ok') {\n\t\t\t\t\t\t\tif (resultEl) { resultEl.className = 'text-xs mt-1 text-green-600 dark:text-green-400'; resultEl.textContent = 'Connection successful'; }\n\t\t\t\t\t\t\tif (dot) { dot.className = 'mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-green-500'; }\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\tif (resultEl) { resultEl.className = 'text-xs mt-1 text-red-600 dark:text-red-400'; resultEl.textContent = 'Failed: ' + (data.message || 'unknown error'); }\n\t\t\t\t\t\t\tif (dot) { dot.className = 'mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-red-500'; }\n\t\t\t\t\t\t}\n\t\t\t\t\t}).catch(function() {\n\t\t\t\t\t\tif (testBtn) { testBtn.disabled = false; testBtn.textContent = 'Test'; }\n\t\t\t\t\t\tif (resultEl) { resultEl.className = 'text-xs mt-1 text-red-600 dark:text-red-400'; resultEl.textContent = 'Network error'; }\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\t// Initialize to the correct step on page load\n\t\t\t\tif (currentStep > 1) {\n\t\t\t\t\tgoToStep(currentStep);\n\t\t\t\t}\n\t\t\t</script></body></html>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "</div><div id=\"ob-clobber-warnings\" hx-get=\"/api/v1/connections/clobber-check\" hx-trigger=\"load delay:1s, clobberRecheck from:body\" hx-swap=\"innerHTML\" class=\"mt-4\"></div></div><!-- Navigation --><div class=\"flex items-center justify-between\"><button type=\"button\" id=\"skip-btn\" class=\"text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 py-2\" onclick=\"finishWizard()\">Skip setup</button><div class=\"flex items-center gap-3\"><button type=\"button\" id=\"back-btn\" class=\"hidden text-sm px-4 py-2 rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors\" onclick=\"goToStep(currentStep - 1)\">Back</button> <button type=\"button\" id=\"next-btn\" class=\"text-sm px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 transition-colors\" onclick=\"goToStep(currentStep + 1)\">Next</button> <button type=\"button\" id=\"finish-btn\" class=\"hidden text-sm px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 transition-colors\" onclick=\"finishWizard()\">Finish Setup</button></div></div></div></div><script>\n\t\t\t\tvar currentStep = parseInt(document.body.dataset.currentStep, 10) || 1;\n\t\t\t\tvar totalSteps = 3;\n\n\t\t\t\tfunction getCsrfToken() {\n\t\t\t\t\treturn document.cookie.replace(/(?:(?:^|.*;\\s*)csrf_token\\s*\\=\\s*([^;]*).*$)|^.*$/, \"$1\");\n\t\t\t\t}\n\n\t\t\t\tfunction goToStep(step) {\n\t\t\t\t\tif (step < 1) step = 1;\n\t\t\t\t\tif (step > totalSteps) step = totalSteps;\n\t\t\t\t\tcurrentStep = step;\n\n\t\t\t\t\tfor (var i = 1; i <= totalSteps; i++) {\n\t\t\t\t\t\tvar el = document.getElementById('wizard-step-' + i);\n\t\t\t\t\t\tif (el) el.classList.toggle('hidden', i !== step);\n\n\t\t\t\t\t\tvar dot = document.getElementById('step-dot-' + i);\n\t\t\t\t\t\tvar label = document.getElementById('step-label-' + i);\n\t\t\t\t\t\tvar line = document.getElementById('step-line-' + i);\n\t\t\t\t\t\tif (dot) {\n\t\t\t\t\t\t\tif (i <= step) {\n\t\t\t\t\t\t\t\tdot.className = 'h-8 w-8 rounded-full bg-blue-600 text-white flex items-center justify-center text-sm font-medium';\n\t\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t\tdot.className = 'h-8 w-8 rounded-full bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 flex items-center justify-center text-sm font-medium';\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}\n\t\t\t\t\t\tif (label) {\n\t\t\t\t\t\t\tif (i <= step) {\n\t\t\t\t\t\t\t\tlabel.className = 'text-sm font-medium text-gray-900 dark:text-gray-100 hidden sm:inline';\n\t\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t\tlabel.className = 'text-sm text-gray-500 dark:text-gray-400 hidden sm:inline';\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}\n\t\t\t\t\t\tif (line) {\n\t\t\t\t\t\t\tline.className = i < step\n\t\t\t\t\t\t\t\t? 'h-0.5 w-8 bg-blue-600 mx-2 sm:w-12'\n\t\t\t\t\t\t\t\t: 'h-0.5 w-8 bg-gray-300 dark:bg-gray-600 mx-2 sm:w-12';\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\n\t\t\t\t\tdocument.getElementById('back-btn').classList.toggle('hidden', step <= 1);\n\t\t\t\t\tdocument.getElementById('next-btn').classList.toggle('hidden', step >= totalSteps);\n\t\t\t\t\tdocument.getElementById('finish-btn').classList.toggle('hidden', step < totalSteps);\n\n\t\t\t\t\tfetch('/api/v1/settings', {\n\t\t\t\t\t\tmethod: 'PUT',\n\t\t\t\t\t\theaders: {'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken()},\n\t\t\t\t\t\tbody: JSON.stringify({\"onboarding.step\": String(step)})\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\tfunction finishWizard() {\n\t\t\t\t\tfetch('/api/v1/settings', {\n\t\t\t\t\t\tmethod: 'PUT',\n\t\t\t\t\t\theaders: {'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken()},\n\t\t\t\t\t\tbody: JSON.stringify({\"onboarding.completed\": \"true\"})\n\t\t\t\t\t}).then(function() {\n\t\t\t\t\t\twindow.location.href = '/';\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\tfunction selectPlatform(el) {\n\t\t\t\t\tvar cards = el.closest('.grid').querySelectorAll('[data-profile-card]');\n\t\t\t\t\tcards.forEach(function(card) {\n\t\t\t\t\t\tcard.classList.remove('border-blue-500', 'bg-blue-50', 'dark:bg-blue-900/20');\n\t\t\t\t\t\tcard.classList.add('border-gray-200', 'dark:border-gray-700');\n\t\t\t\t\t});\n\t\t\t\t\tel.closest('[data-profile-card]').classList.remove('border-gray-200', 'dark:border-gray-700');\n\t\t\t\t\tel.closest('[data-profile-card]').classList.add('border-blue-500', 'bg-blue-50', 'dark:bg-blue-900/20');\n\t\t\t\t}\n\n\t\t\t\tfunction onConnectionSaved(connType, xhr) {\n\t\t\t\t\tvar form = document.getElementById('ob-conn-form-' + connType);\n\t\t\t\t\tvar success = document.getElementById('ob-conn-success-' + connType);\n\t\t\t\t\tvar dot = document.getElementById('ob-conn-dot-' + connType);\n\t\t\t\t\tvar btn = document.getElementById('ob-conn-btn-' + connType);\n\t\t\t\t\tif (form) form.classList.add('hidden');\n\t\t\t\t\tif (success) success.classList.remove('hidden');\n\t\t\t\t\tif (btn) btn.classList.add('hidden');\n\t\t\t\t\tdocument.body.dispatchEvent(new Event('clobberRecheck'));\n\t\t\t\t\tif (dot) {\n\t\t\t\t\t\tdot.classList.remove('bg-gray-400', 'dark:bg-gray-500');\n\t\t\t\t\t\tdot.classList.add('bg-green-500');\n\t\t\t\t\t}\n\t\t\t\t\tif (xhr && xhr.responseText) {\n\t\t\t\t\t\ttry {\n\t\t\t\t\t\t\tvar data = JSON.parse(xhr.responseText);\n\t\t\t\t\t\t\tif (data.id) {\n\t\t\t\t\t\t\t\tvar testBtn = document.getElementById('ob-conn-test-' + connType);\n\t\t\t\t\t\t\t\tif (testBtn) {\n\t\t\t\t\t\t\t\t\ttestBtn.classList.remove('hidden');\n\t\t\t\t\t\t\t\t\ttestBtn.onclick = function() { testConnection(data.id, connType); };\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t} catch(e) {}\n\t\t\t\t\t}\n\t\t\t\t}\n\n\t\t\t\tfunction testConnection(connID, connType) {\n\t\t\t\t\tvar testBtn = document.getElementById('ob-conn-test-' + connType);\n\t\t\t\t\tvar resultEl = document.getElementById('ob-conn-test-result-' + connType);\n\t\t\t\t\tvar dot = document.getElementById('ob-conn-dot-' + connType);\n\t\t\t\t\tif (testBtn) { testBtn.disabled = true; testBtn.textContent = 'Testing...'; }\n\t\t\t\t\tfetch('/api/v1/connections/' + connID + '/test', {\n\t\t\t\t\t\tmethod: 'POST',\n\t\t\t\t\t\theaders: {'X-CSRF-Token': getCsrfToken()}\n\t\t\t\t\t}).then(function(res) { return res.json(); })\n\t\t\t\t\t.then(function(data) {\n\t\t\t\t\t\tif (testBtn) { testBtn.disabled = false; testBtn.textContent = 'Test'; }\n\t\t\t\t\t\tif (data.status === 'ok') {\n\t\t\t\t\t\t\tif (resultEl) { resultEl.className = 'text-xs mt-1 text-green-600 dark:text-green-400'; resultEl.textContent = 'Connection successful'; }\n\t\t\t\t\t\t\tif (dot) { dot.className = 'mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-green-500'; }\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\tif (resultEl) { resultEl.className = 'text-xs mt-1 text-red-600 dark:text-red-400'; resultEl.textContent = 'Failed: ' + (data.message || 'unknown error'); }\n\t\t\t\t\t\t\tif (dot) { dot.className = 'mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-red-500'; }\n\t\t\t\t\t\t}\n\t\t\t\t\t}).catch(function() {\n\t\t\t\t\t\tif (testBtn) { testBtn.disabled = false; testBtn.textContent = 'Test'; }\n\t\t\t\t\t\tif (resultEl) { resultEl.className = 'text-xs mt-1 text-red-600 dark:text-red-400'; resultEl.textContent = 'Network error'; }\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\t// Initialize to the correct step on page load\n\t\t\t\tif (currentStep > 1) {\n\t\t\t\t\tgoToStep(currentStep);\n\t\t\t\t}\n\t\t\t</script></body></html>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -249,7 +249,7 @@ func onboardingProfileCard(p platform.Profile) templ.Component {
 		var templ_7745c5c3_Var11 string
 		templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs("/api/v1/platforms/" + p.ID + "/activate")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 317, Col: 53}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 325, Col: 53}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 		if templ_7745c5c3_Err != nil {
@@ -267,7 +267,7 @@ func onboardingProfileCard(p platform.Profile) templ.Component {
 			var templ_7745c5c3_Var12 string
 			templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(logoSrc(p.ID))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 325, Col: 25}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 333, Col: 25}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 			if templ_7745c5c3_Err != nil {
@@ -280,7 +280,7 @@ func onboardingProfileCard(p platform.Profile) templ.Component {
 			var templ_7745c5c3_Var13 string
 			templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(logoSrcSet(p.ID))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 326, Col: 31}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 334, Col: 31}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 			if templ_7745c5c3_Err != nil {
@@ -298,7 +298,7 @@ func onboardingProfileCard(p platform.Profile) templ.Component {
 			var templ_7745c5c3_Var14 string
 			templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(logoSrc(p.ID))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 333, Col: 25}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 341, Col: 25}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 			if templ_7745c5c3_Err != nil {
@@ -316,7 +316,7 @@ func onboardingProfileCard(p platform.Profile) templ.Component {
 		var templ_7745c5c3_Var15 string
 		templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(p.Name)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 339, Col: 79}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 347, Col: 79}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 		if templ_7745c5c3_Err != nil {
@@ -383,7 +383,7 @@ func onboardingProviderCard(pk provider.ProviderKeyStatus) templ.Component {
 		var templ_7745c5c3_Var17 string
 		templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs("ob-provider-card-" + string(pk.Name))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 361, Col: 48}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 369, Col: 48}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 		if templ_7745c5c3_Err != nil {
@@ -401,7 +401,7 @@ func onboardingProviderCard(pk provider.ProviderKeyStatus) templ.Component {
 			var templ_7745c5c3_Var18 string
 			templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(logoSrc(string(pk.Name)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 366, Col: 36}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 374, Col: 36}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
 			if templ_7745c5c3_Err != nil {
@@ -414,7 +414,7 @@ func onboardingProviderCard(pk provider.ProviderKeyStatus) templ.Component {
 			var templ_7745c5c3_Var19 string
 			templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(logoSrcSet(string(pk.Name)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 367, Col: 42}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 375, Col: 42}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 			if templ_7745c5c3_Err != nil {
@@ -432,7 +432,7 @@ func onboardingProviderCard(pk provider.ProviderKeyStatus) templ.Component {
 			var templ_7745c5c3_Var20 string
 			templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(logoSrc(string(pk.Name)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 374, Col: 36}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 382, Col: 36}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
 			if templ_7745c5c3_Err != nil {
@@ -473,7 +473,7 @@ func onboardingProviderCard(pk provider.ProviderKeyStatus) templ.Component {
 		var templ_7745c5c3_Var23 string
 		templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(pk.DisplayName)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 390, Col: 87}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 398, Col: 87}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
 		if templ_7745c5c3_Err != nil {
@@ -516,7 +516,7 @@ func onboardingProviderCard(pk provider.ProviderKeyStatus) templ.Component {
 				var templ_7745c5c3_Var24 templ.SafeURL
 				templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(providerHelpURL(pk.Name)))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 404, Col: 53}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 412, Col: 53}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
 				if templ_7745c5c3_Err != nil {
@@ -567,7 +567,7 @@ func onboardingProviderCard(pk provider.ProviderKeyStatus) templ.Component {
 				var templ_7745c5c3_Var26 string
 				templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.JoinStringErrs("/api/v1/providers/" + string(pk.Name) + "/test")
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 427, Col: 65}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 435, Col: 65}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var26))
 				if templ_7745c5c3_Err != nil {
@@ -580,7 +580,7 @@ func onboardingProviderCard(pk provider.ProviderKeyStatus) templ.Component {
 				var templ_7745c5c3_Var27 string
 				templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.JoinStringErrs("#ob-test-result-" + string(pk.Name))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 428, Col: 55}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 436, Col: 55}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var27))
 				if templ_7745c5c3_Err != nil {
@@ -608,7 +608,7 @@ func onboardingProviderCard(pk provider.ProviderKeyStatus) templ.Component {
 			var templ_7745c5c3_Var28 string
 			templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.JoinStringErrs("ob-key-input-" + string(pk.Name))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 438, Col: 46}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 446, Col: 46}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var28))
 			if templ_7745c5c3_Err != nil {
@@ -621,7 +621,7 @@ func onboardingProviderCard(pk provider.ProviderKeyStatus) templ.Component {
 			var templ_7745c5c3_Var29 string
 			templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.JoinStringErrs("/api/v1/providers/" + string(pk.Name) + "/key")
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 441, Col: 61}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 449, Col: 61}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var29))
 			if templ_7745c5c3_Err != nil {
@@ -634,7 +634,7 @@ func onboardingProviderCard(pk provider.ProviderKeyStatus) templ.Component {
 			var templ_7745c5c3_Var30 string
 			templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.JoinStringErrs("#ob-provider-card-" + string(pk.Name))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 442, Col: 55}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 450, Col: 55}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var30))
 			if templ_7745c5c3_Err != nil {
@@ -664,7 +664,7 @@ func onboardingProviderCard(pk provider.ProviderKeyStatus) templ.Component {
 			var templ_7745c5c3_Var32 string
 			templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.JoinStringErrs("ob-test-result-" + string(pk.Name))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 461, Col: 48}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 469, Col: 48}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var32))
 			if templ_7745c5c3_Err != nil {
@@ -729,7 +729,7 @@ func onboardingConnectionCard(connType string, displayName string, exampleURL st
 			var templ_7745c5c3_Var34 string
 			templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.JoinStringErrs(logoSrc(connType))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 479, Col: 29}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 487, Col: 29}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var34))
 			if templ_7745c5c3_Err != nil {
@@ -742,7 +742,7 @@ func onboardingConnectionCard(connType string, displayName string, exampleURL st
 			var templ_7745c5c3_Var35 string
 			templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.JoinStringErrs(logoSrcSet(connType))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 480, Col: 35}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 488, Col: 35}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var35))
 			if templ_7745c5c3_Err != nil {
@@ -760,7 +760,7 @@ func onboardingConnectionCard(connType string, displayName string, exampleURL st
 			var templ_7745c5c3_Var36 string
 			templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.JoinStringErrs(logoSrc(connType))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 487, Col: 29}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 495, Col: 29}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var36))
 			if templ_7745c5c3_Err != nil {
@@ -779,7 +779,7 @@ func onboardingConnectionCard(connType string, displayName string, exampleURL st
 			var templ_7745c5c3_Var37 string
 			templ_7745c5c3_Var37, templ_7745c5c3_Err = templ.JoinStringErrs("ob-conn-dot-" + connType)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 494, Col: 40}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 502, Col: 40}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var37))
 			if templ_7745c5c3_Err != nil {
@@ -797,7 +797,7 @@ func onboardingConnectionCard(connType string, displayName string, exampleURL st
 			var templ_7745c5c3_Var38 string
 			templ_7745c5c3_Var38, templ_7745c5c3_Err = templ.JoinStringErrs("ob-conn-dot-" + connType)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 496, Col: 40}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 504, Col: 40}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var38))
 			if templ_7745c5c3_Err != nil {
@@ -815,7 +815,7 @@ func onboardingConnectionCard(connType string, displayName string, exampleURL st
 		var templ_7745c5c3_Var39 string
 		templ_7745c5c3_Var39, templ_7745c5c3_Err = templ.JoinStringErrs(displayName)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 500, Col: 86}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 508, Col: 86}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var39))
 		if templ_7745c5c3_Err != nil {
@@ -845,7 +845,7 @@ func onboardingConnectionCard(connType string, displayName string, exampleURL st
 		var templ_7745c5c3_Var41 string
 		templ_7745c5c3_Var41, templ_7745c5c3_Err = templ.JoinStringErrs("More info about " + displayName)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 505, Col: 52}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 513, Col: 52}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var41))
 		if templ_7745c5c3_Err != nil {
@@ -858,7 +858,7 @@ func onboardingConnectionCard(connType string, displayName string, exampleURL st
 		var templ_7745c5c3_Var42 string
 		templ_7745c5c3_Var42, templ_7745c5c3_Err = templ.JoinStringErrs("ob-conn-info-" + connType)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 512, Col: 41}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 520, Col: 41}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var42))
 		if templ_7745c5c3_Err != nil {
@@ -892,7 +892,7 @@ func onboardingConnectionCard(connType string, displayName string, exampleURL st
 			var templ_7745c5c3_Var43 string
 			templ_7745c5c3_Var43, templ_7745c5c3_Err = templ.JoinStringErrs("ob-conn-test-" + connType)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 522, Col: 37}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 530, Col: 37}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var43))
 			if templ_7745c5c3_Err != nil {
@@ -923,7 +923,7 @@ func onboardingConnectionCard(connType string, displayName string, exampleURL st
 			var templ_7745c5c3_Var45 string
 			templ_7745c5c3_Var45, templ_7745c5c3_Err = templ.JoinStringErrs("ob-conn-btn-" + connType)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 531, Col: 35}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 539, Col: 35}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var45))
 			if templ_7745c5c3_Err != nil {
@@ -950,7 +950,7 @@ func onboardingConnectionCard(connType string, displayName string, exampleURL st
 		var templ_7745c5c3_Var47 string
 		templ_7745c5c3_Var47, templ_7745c5c3_Err = templ.JoinStringErrs("ob-conn-form-" + connType)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 540, Col: 38}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 548, Col: 38}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var47))
 		if templ_7745c5c3_Err != nil {
@@ -963,7 +963,7 @@ func onboardingConnectionCard(connType string, displayName string, exampleURL st
 		var templ_7745c5c3_Var48 string
 		templ_7745c5c3_Var48, templ_7745c5c3_Err = templ.JoinStringErrs(connType)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 543, Col: 29}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 551, Col: 29}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var48))
 		if templ_7745c5c3_Err != nil {
@@ -976,7 +976,7 @@ func onboardingConnectionCard(connType string, displayName string, exampleURL st
 		var templ_7745c5c3_Var49 string
 		templ_7745c5c3_Var49, templ_7745c5c3_Err = templ.JoinStringErrs(connType)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 548, Col: 53}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 556, Col: 53}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var49))
 		if templ_7745c5c3_Err != nil {
@@ -989,7 +989,7 @@ func onboardingConnectionCard(connType string, displayName string, exampleURL st
 		var templ_7745c5c3_Var50 string
 		templ_7745c5c3_Var50, templ_7745c5c3_Err = templ.JoinStringErrs(displayName + " server")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 552, Col: 43}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 560, Col: 43}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var50))
 		if templ_7745c5c3_Err != nil {
@@ -1002,7 +1002,7 @@ func onboardingConnectionCard(connType string, displayName string, exampleURL st
 		var templ_7745c5c3_Var51 string
 		templ_7745c5c3_Var51, templ_7745c5c3_Err = templ.JoinStringErrs("Server URL (e.g. " + exampleURL + ")")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 559, Col: 58}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 567, Col: 58}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var51))
 		if templ_7745c5c3_Err != nil {
@@ -1037,7 +1037,7 @@ func onboardingConnectionCard(connType string, displayName string, exampleURL st
 			var templ_7745c5c3_Var53 string
 			templ_7745c5c3_Var53, templ_7745c5c3_Err = templ.JoinStringErrs("ob-conn-test-result-" + connType)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 582, Col: 47}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 590, Col: 47}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var53))
 			if templ_7745c5c3_Err != nil {
@@ -1055,7 +1055,7 @@ func onboardingConnectionCard(connType string, displayName string, exampleURL st
 			var templ_7745c5c3_Var54 string
 			templ_7745c5c3_Var54, templ_7745c5c3_Err = templ.JoinStringErrs("ob-conn-success-" + connType)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 585, Col: 42}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 593, Col: 42}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var54))
 			if templ_7745c5c3_Err != nil {
@@ -1068,7 +1068,7 @@ func onboardingConnectionCard(connType string, displayName string, exampleURL st
 			var templ_7745c5c3_Var55 string
 			templ_7745c5c3_Var55, templ_7745c5c3_Err = templ.JoinStringErrs("ob-conn-test-" + connType)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 590, Col: 37}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 598, Col: 37}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var55))
 			if templ_7745c5c3_Err != nil {
@@ -1081,7 +1081,7 @@ func onboardingConnectionCard(connType string, displayName string, exampleURL st
 			var templ_7745c5c3_Var56 string
 			templ_7745c5c3_Var56, templ_7745c5c3_Err = templ.JoinStringErrs("ob-conn-test-result-" + connType)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 596, Col: 47}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 604, Col: 47}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var56))
 			if templ_7745c5c3_Err != nil {

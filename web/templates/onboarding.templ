@@ -135,6 +135,13 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 								</ul>
 							}
 						</div>
+						<div
+							id="ob-clobber-warnings"
+							hx-get="/api/v1/connections/clobber-check"
+							hx-trigger="load delay:1s, clobberRecheck from:body"
+							hx-swap="innerHTML"
+							class="mt-4"
+						></div>
 					</div>
 					<!-- Navigation -->
 					<div class="flex items-center justify-between">
@@ -255,6 +262,7 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 					if (form) form.classList.add('hidden');
 					if (success) success.classList.remove('hidden');
 					if (btn) btn.classList.add('hidden');
+					document.body.dispatchEvent(new Event('clobberRecheck'));
 					if (dot) {
 						dot.classList.remove('bg-gray-400', 'dark:bg-gray-500');
 						dot.classList.add('bg-green-500');

@@ -144,6 +144,7 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	// Connection routes
 	mux.HandleFunc("GET "+bp+"/api/v1/connections", wrapAuth(r.handleListConnections, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/connections", wrapAuth(r.handleCreateConnection, authMw))
+	mux.HandleFunc("GET "+bp+"/api/v1/connections/clobber-check", wrapAuth(r.handleClobberCheck, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/connections/{id}", wrapAuth(r.handleGetConnection, authMw))
 	mux.HandleFunc("PUT "+bp+"/api/v1/connections/{id}", wrapAuth(r.handleUpdateConnection, authMw))
 	mux.HandleFunc("DELETE "+bp+"/api/v1/connections/{id}", wrapAuth(r.handleDeleteConnection, authMw))

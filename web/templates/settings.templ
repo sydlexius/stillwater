@@ -239,6 +239,13 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 					</p>
 				</div>
 				<div class="px-6 py-4">
+					<div
+						id="clobber-warnings"
+						hx-get="/api/v1/connections/clobber-check"
+						hx-trigger="load"
+						hx-swap="innerHTML"
+						class="mb-4"
+					></div>
 					<div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
 						@serviceConnectionCard("emby", "Emby", "http://192.168.1.100:8096", connectionsForType(data.Connections, "emby"))
 						@serviceConnectionCard("jellyfin", "Jellyfin", "http://192.168.1.100:8096", connectionsForType(data.Connections, "jellyfin"))

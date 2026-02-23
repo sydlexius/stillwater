@@ -65,21 +65,22 @@ func (c *Client) GetMetadataProfiles(ctx context.Context) ([]MetadataProfile, er
 
 // CheckNFOWriterEnabled checks if Lidarr is configured to write NFO files.
 // Returns true if any metadata consumer with NFO/Kodi type is enabled.
-func (c *Client) CheckNFOWriterEnabled(ctx context.Context) (bool, error) {
+// The library name is always empty for Lidarr (the setting is global, not per-library).
+func (c *Client) CheckNFOWriterEnabled(ctx context.Context) (bool, string, error) {
 	var configs []MetadataProviderConfig
 	if err := c.get(ctx, "/api/v1/config/metadataprovider", &configs); err != nil {
 		// Some Lidarr versions may not expose this endpoint; treat as unknown
 		c.logger.Warn("could not check metadata provider config", "error", err)
-		return false, nil
+		return false, "", nil
 	}
 
 	for _, cfg := range configs {
 		if cfg.Enable && (strings.Contains(strings.ToLower(cfg.MetadataType), "kodi") ||
 			strings.Contains(strings.ToLower(cfg.ConsumerName), "kodi")) {
-			return true, nil
+			return true, "", nil
 		}
 	}
-	return false, nil
+	return false, "", nil
 }
 
 // TriggerArtistRefresh triggers a metadata refresh for a specific artist.

@@ -60,6 +60,25 @@ func (c *Client) GetMusicLibraries(ctx context.Context) ([]VirtualFolder, error)
 	return music, nil
 }
 
+// CheckNFOWriterEnabled checks if any Jellyfin music library has an NFO metadata saver enabled.
+// Returns true and the library name if found. On error, logs a warning and returns false.
+func (c *Client) CheckNFOWriterEnabled(ctx context.Context) (bool, string, error) {
+	libs, err := c.GetMusicLibraries(ctx)
+	if err != nil {
+		c.logger.Warn("could not check jellyfin library options", "error", err)
+		return false, "", nil
+	}
+
+	for _, lib := range libs {
+		for _, saver := range lib.LibraryOptions.MetadataSavers {
+			if strings.Contains(strings.ToLower(saver), "nfo") {
+				return true, lib.Name, nil
+			}
+		}
+	}
+	return false, "", nil
+}
+
 // GetArtists returns artists from a specific library with pagination.
 func (c *Client) GetArtists(ctx context.Context, libraryID string, startIndex, limit int) (*ItemsResponse, error) {
 	path := fmt.Sprintf("/Artists?ParentId=%s&StartIndex=%d&Limit=%d&Recursive=true", libraryID, startIndex, limit)

@@ -2,16 +2,28 @@
   {
     "Name": "Music",
     "CollectionType": "music",
-    "ItemId": "lib-music-001"
+    "ItemId": "lib-music-001",
+    "LibraryOptions": {
+      "SaveLocalMetadata": false,
+      "MetadataSavers": []
+    }
   },
   {
     "Name": "Movies",
     "CollectionType": "movies",
-    "ItemId": "lib-movies-001"
+    "ItemId": "lib-movies-001",
+    "LibraryOptions": {
+      "SaveLocalMetadata": false,
+      "MetadataSavers": []
+    }
   },
   {
     "Name": "Audiobooks",
     "CollectionType": "music",
-    "ItemId": "lib-audiobooks-001"
+    "ItemId": "lib-audiobooks-001",
+    "LibraryOptions": {
+      "SaveLocalMetadata": false,
+      "MetadataSavers": []
+    }
   }
 ]

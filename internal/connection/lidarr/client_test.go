@@ -96,12 +96,15 @@ func TestCheckNFOWriterEnabled_True(t *testing.T) {
 	defer srv.Close()
 
 	c := NewWithHTTPClient(srv.URL, "key", srv.Client(), testLogger())
-	enabled, err := c.CheckNFOWriterEnabled(context.Background())
+	enabled, libName, err := c.CheckNFOWriterEnabled(context.Background())
 	if err != nil {
 		t.Fatalf("CheckNFOWriterEnabled failed: %v", err)
 	}
 	if !enabled {
 		t.Error("expected NFO writer to be enabled")
+	}
+	if libName != "" {
+		t.Errorf("library name = %q, want empty (Lidarr setting is global)", libName)
 	}
 }
 
@@ -116,7 +119,7 @@ func TestCheckNFOWriterEnabled_False(t *testing.T) {
 	defer srv.Close()
 
 	c := NewWithHTTPClient(srv.URL, "key", srv.Client(), testLogger())
-	enabled, err := c.CheckNFOWriterEnabled(context.Background())
+	enabled, _, err := c.CheckNFOWriterEnabled(context.Background())
 	if err != nil {
 		t.Fatalf("CheckNFOWriterEnabled failed: %v", err)
 	}
