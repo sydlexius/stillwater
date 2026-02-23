@@ -139,6 +139,84 @@ func TestTriggerArtistRefresh(t *testing.T) {
 	}
 }
 
+func TestCheckNFOWriterEnabled_True(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[
+			{"Name":"Music","CollectionType":"music","ItemId":"lib-001","LibraryOptions":{"SaveLocalMetadata":true,"MetadataSavers":["Nfo saver"]}},
+			{"Name":"Movies","CollectionType":"movies","ItemId":"lib-002","LibraryOptions":{"SaveLocalMetadata":false,"MetadataSavers":[]}}
+		]`))
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "key", srv.Client(), testLogger())
+	enabled, libName, err := c.CheckNFOWriterEnabled(context.Background())
+	if err != nil {
+		t.Fatalf("CheckNFOWriterEnabled failed: %v", err)
+	}
+	if !enabled {
+		t.Error("expected NFO writer to be enabled")
+	}
+	if libName != "Music" {
+		t.Errorf("library name = %q, want Music", libName)
+	}
+}
+
+func TestCheckNFOWriterEnabled_False(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[
+			{"Name":"Music","CollectionType":"music","ItemId":"lib-001","LibraryOptions":{"SaveLocalMetadata":false,"MetadataSavers":[]}},
+			{"Name":"Movies","CollectionType":"movies","ItemId":"lib-002","LibraryOptions":{"SaveLocalMetadata":false,"MetadataSavers":[]}}
+		]`))
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "key", srv.Client(), testLogger())
+	enabled, _, err := c.CheckNFOWriterEnabled(context.Background())
+	if err != nil {
+		t.Fatalf("CheckNFOWriterEnabled failed: %v", err)
+	}
+	if enabled {
+		t.Error("expected NFO writer to be disabled")
+	}
+}
+
+func TestCheckNFOWriterEnabled_NoMusicLibraries(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[
+			{"Name":"Movies","CollectionType":"movies","ItemId":"lib-002","LibraryOptions":{"SaveLocalMetadata":false,"MetadataSavers":["Nfo saver"]}}
+		]`))
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "key", srv.Client(), testLogger())
+	enabled, _, err := c.CheckNFOWriterEnabled(context.Background())
+	if err != nil {
+		t.Fatalf("CheckNFOWriterEnabled failed: %v", err)
+	}
+	if enabled {
+		t.Error("expected false when NFO saver only on non-music library")
+	}
+}
+
+func TestCheckNFOWriterEnabled_ServerError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "key", srv.Client(), testLogger())
+	enabled, _, err := c.CheckNFOWriterEnabled(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if enabled {
+		t.Error("expected false on server error")
+	}
+}
+
 func TestPushMetadata(t *testing.T) {
 	var gotBody itemUpdateBody
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

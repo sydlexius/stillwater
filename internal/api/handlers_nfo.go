@@ -9,6 +9,8 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/connection"
+	"github.com/sydlexius/stillwater/internal/connection/emby"
+	"github.com/sydlexius/stillwater/internal/connection/jellyfin"
 	"github.com/sydlexius/stillwater/internal/connection/lidarr"
 	"github.com/sydlexius/stillwater/internal/filesystem"
 	"github.com/sydlexius/stillwater/internal/nfo"
@@ -218,7 +220,140 @@ func (r *Router) handleNFOConflictCheck(w http.ResponseWriter, req *http.Request
 		}
 	}
 
+	// Check Emby connections for NFO writer config
+	if check.ExternalWriter == "" {
+		embyConns, embyErr := r.connectionService.ListByType(req.Context(), connection.TypeEmby)
+		if embyErr == nil {
+			for _, conn := range embyConns {
+				if !conn.Enabled {
+					continue
+				}
+				client := emby.New(conn.URL, conn.APIKey, r.logger)
+				enabled, libName, _ := client.CheckNFOWriterEnabled(req.Context())
+				if enabled {
+					check.ExternalWriter = "emby:" + conn.Name
+					if !check.HasConflict {
+						check.Reason = "Emby NFO saver is enabled on library \"" + libName + "\" and may overwrite changes"
+					}
+					break
+				}
+			}
+		}
+	}
+
+	// Check Jellyfin connections for NFO writer config
+	if check.ExternalWriter == "" {
+		jfConns, jfErr := r.connectionService.ListByType(req.Context(), connection.TypeJellyfin)
+		if jfErr == nil {
+			for _, conn := range jfConns {
+				if !conn.Enabled {
+					continue
+				}
+				client := jellyfin.New(conn.URL, conn.APIKey, r.logger)
+				enabled, libName, _ := client.CheckNFOWriterEnabled(req.Context())
+				if enabled {
+					check.ExternalWriter = "jellyfin:" + conn.Name
+					if !check.HasConflict {
+						check.Reason = "Jellyfin NFO saver is enabled on library \"" + libName + "\" and may overwrite changes"
+					}
+					break
+				}
+			}
+		}
+	}
+
 	writeJSON(w, http.StatusOK, check)
+}
+
+// ClobberRisk describes whether a specific connection may overwrite NFO/image files.
+type ClobberRisk struct {
+	ConnectionID   string `json:"connection_id"`
+	ConnectionName string `json:"connection_name"`
+	ConnectionType string `json:"connection_type"`
+	NFOWriter      bool   `json:"nfo_writer"`
+	LibraryName    string `json:"library_name,omitempty"`
+	Error          string `json:"error,omitempty"`
+}
+
+// ClobberCheckResponse is the response for GET /api/v1/connections/clobber-check.
+type ClobberCheckResponse struct {
+	HasRisk bool          `json:"has_risk"`
+	Risks   []ClobberRisk `json:"risks"`
+}
+
+// handleClobberCheck checks all enabled connections for NFO/image writing configuration.
+// GET /api/v1/connections/clobber-check
+func (r *Router) handleClobberCheck(w http.ResponseWriter, req *http.Request) {
+	conns, err := r.connectionService.List(req.Context())
+	if err != nil {
+		r.logger.Error("listing connections for clobber check", "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		return
+	}
+
+	resp := ClobberCheckResponse{Risks: []ClobberRisk{}}
+
+	for _, conn := range conns {
+		if !conn.Enabled {
+			continue
+		}
+
+		var risk ClobberRisk
+		risk.ConnectionID = conn.ID
+		risk.ConnectionName = conn.Name
+		risk.ConnectionType = conn.Type
+
+		switch conn.Type {
+		case connection.TypeLidarr:
+			client := lidarr.New(conn.URL, conn.APIKey, r.logger)
+			enabled, checkErr := client.CheckNFOWriterEnabled(req.Context())
+			if checkErr != nil {
+				risk.Error = checkErr.Error()
+			}
+			risk.NFOWriter = enabled
+
+		case connection.TypeEmby:
+			client := emby.New(conn.URL, conn.APIKey, r.logger)
+			enabled, libName, checkErr := client.CheckNFOWriterEnabled(req.Context())
+			if checkErr != nil {
+				risk.Error = checkErr.Error()
+			}
+			risk.NFOWriter = enabled
+			risk.LibraryName = libName
+
+		case connection.TypeJellyfin:
+			client := jellyfin.New(conn.URL, conn.APIKey, r.logger)
+			enabled, libName, checkErr := client.CheckNFOWriterEnabled(req.Context())
+			if checkErr != nil {
+				risk.Error = checkErr.Error()
+			}
+			risk.NFOWriter = enabled
+			risk.LibraryName = libName
+		}
+
+		if risk.NFOWriter || risk.Error != "" {
+			resp.Risks = append(resp.Risks, risk)
+			if risk.NFOWriter {
+				resp.HasRisk = true
+			}
+		}
+	}
+
+	if isHTMXRequest(req) {
+		var warnings []templates.ClobberWarning
+		for _, risk := range resp.Risks {
+			if risk.NFOWriter {
+				warnings = append(warnings, templates.ClobberWarning{
+					ConnectionName: risk.ConnectionName,
+					ConnectionType: risk.ConnectionType,
+					LibraryName:    risk.LibraryName,
+				})
+			}
+		}
+		renderTempl(w, req, templates.ClobberWarnings(warnings))
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // parseNFOFile parses an NFO file from disk, returning nil if it cannot be read.
