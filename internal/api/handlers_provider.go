@@ -163,11 +163,81 @@ func (r *Router) handleSetPriorities(w http.ResponseWriter, req *http.Request) {
 
 	// For HTMX requests, return the updated priority row
 	if req.Header.Get("HX-Request") == "true" && len(body.Priorities) == 1 {
-		renderTempl(w, req, templates.PriorityRow(body.Priorities[0]))
+		keys, err := r.providerSettings.ListProviderKeyStatuses(req.Context())
+		if err != nil {
+			r.logger.Error("listing provider key statuses for priority row", "error", err)
+		}
+		renderTempl(w, req, templates.PriorityChipRow(body.Priorities[0], keys))
 		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "saved"})
+}
+
+// handleToggleFieldProvider enables or disables a provider for a specific field.
+// PUT /api/v1/providers/priorities/{field}/{provider}/toggle
+func (r *Router) handleToggleFieldProvider(w http.ResponseWriter, req *http.Request) {
+	field := req.PathValue("field")
+	provName := provider.ProviderName(req.PathValue("provider"))
+
+	if field == "" || provName == "" {
+		writeError(w, req, http.StatusBadRequest, "field and provider are required")
+		return
+	}
+
+	// Load current priorities to find this field.
+	priorities, err := r.providerSettings.GetPriorities(req.Context())
+	if err != nil {
+		r.logger.Error("loading priorities for toggle", "error", err)
+		writeError(w, req, http.StatusInternalServerError, "failed to load priorities")
+		return
+	}
+
+	var pri *provider.FieldPriority
+	for i := range priorities {
+		if priorities[i].Field == field {
+			pri = &priorities[i]
+			break
+		}
+	}
+	if pri == nil {
+		writeError(w, req, http.StatusNotFound, "field not found")
+		return
+	}
+
+	// Toggle: if provider is in the disabled list, remove it (enable).
+	// If not in the disabled list, add it (disable).
+	found := false
+	var newDisabled []provider.ProviderName
+	for _, d := range pri.Disabled {
+		if d == provName {
+			found = true
+			continue // Remove from disabled = enable
+		}
+		newDisabled = append(newDisabled, d)
+	}
+	if !found {
+		newDisabled = append(newDisabled, provName)
+	}
+
+	if err := r.providerSettings.SetDisabledProviders(req.Context(), field, newDisabled); err != nil {
+		r.logger.Error("toggling field provider", "field", field, "provider", provName, "error", err)
+		writeError(w, req, http.StatusInternalServerError, "failed to toggle provider")
+		return
+	}
+
+	// For HTMX requests, return the updated priority row.
+	if req.Header.Get("HX-Request") == "true" {
+		pri.Disabled = newDisabled
+		keys, err := r.providerSettings.ListProviderKeyStatuses(req.Context())
+		if err != nil {
+			r.logger.Error("listing provider key statuses for toggle", "error", err)
+		}
+		renderTempl(w, req, templates.PriorityChipRow(*pri, keys))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "toggled"})
 }
 
 // handleProviderSearch searches all providers for an artist by name.

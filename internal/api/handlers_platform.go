@@ -162,7 +162,13 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 		r.logger.Error("listing web search statuses for settings page", "error", err)
 	}
 
+	tab := req.URL.Query().Get("tab")
+	if tab == "" {
+		tab = "general"
+	}
+
 	data := templates.SettingsData{
+		ActiveTab:          tab,
 		Profiles:           profiles,
 		ActiveProfile:      active,
 		ProviderKeys:       providerKeys,

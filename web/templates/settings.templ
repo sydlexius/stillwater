@@ -1,13 +1,13 @@
 package templates
 
 import (
-	"encoding/json"
 	"strings"
 
 	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/platform"
 	"github.com/sydlexius/stillwater/internal/provider"
 	"github.com/sydlexius/stillwater/internal/webhook"
+	"github.com/sydlexius/stillwater/web/components"
 )
 
 // joinNames joins a string slice with ", " for display.
@@ -17,6 +17,7 @@ func joinNames(names []string) string {
 
 // SettingsData holds the data for the settings page.
 type SettingsData struct {
+	ActiveTab          string
 	Profiles           []platform.Profile
 	ActiveProfile      *platform.Profile
 	ProviderKeys       []provider.ProviderKeyStatus
@@ -25,6 +26,59 @@ type SettingsData struct {
 	Webhooks           []webhook.Webhook
 	WebSearchProviders []provider.WebSearchProviderStatus
 }
+
+// settingsTab defines a tab in the settings page navigation.
+type settingsTab struct {
+	ID    string
+	Label string
+}
+
+// settingsTabs returns the ordered list of settings page tabs.
+func settingsTabs() []settingsTab {
+	return []settingsTab{
+		{ID: "general", Label: "General"},
+		{ID: "providers", Label: "Providers"},
+		{ID: "connections", Label: "Connections"},
+		{ID: "notifications", Label: "Notifications"},
+		{ID: "maintenance", Label: "Maintenance"},
+	}
+}
+
+// providerIsAvailable returns true if a provider has a key configured or does not require one.
+func providerIsAvailable(name provider.ProviderName, keys []provider.ProviderKeyStatus) bool {
+	for _, k := range keys {
+		if k.Name == name {
+			return k.Status != "unconfigured"
+		}
+	}
+	// Web search providers are not in the key list; check separately.
+	if isWebSearchProvider(name) {
+		return true
+	}
+	return false
+}
+
+// availableProviders filters a priority list to only providers that are configured.
+func availableProviders(pri provider.FieldPriority, keys []provider.ProviderKeyStatus) []provider.ProviderName {
+	var result []provider.ProviderName
+	for _, p := range pri.Providers {
+		if providerIsAvailable(p, keys) {
+			result = append(result, p)
+		}
+	}
+	return result
+}
+
+// providerIsDisabled returns true if a provider is in the field's disabled list.
+func providerIsDisabled(name provider.ProviderName, disabled []provider.ProviderName) bool {
+	for _, d := range disabled {
+		if d == name {
+			return true
+		}
+	}
+	return false
+}
+
 
 // connectionsForType filters connections by type.
 func connectionsForType(conns []connection.Connection, connType string) []connection.Connection {
@@ -45,20 +99,6 @@ func hasOKConnection(conns []connection.Connection) bool {
 		}
 	}
 	return false
-}
-
-// prioritySwapJSON generates the JSON body for an HTMX priority reorder request.
-func prioritySwapJSON(field string, providers []provider.ProviderName, from, to int) string {
-	swapped := make([]provider.ProviderName, len(providers))
-	copy(swapped, providers)
-	swapped[from], swapped[to] = swapped[to], swapped[from]
-	body := struct {
-		Priorities []provider.FieldPriority `json:"priorities"`
-	}{
-		Priorities: []provider.FieldPriority{{Field: field, Providers: swapped}},
-	}
-	data, _ := json.Marshal(body)
-	return string(data)
 }
 
 // providerHelpURL returns the registration URL for a provider's API key.
@@ -98,238 +138,287 @@ func isWebSearchProvider(name provider.ProviderName) bool {
 templ SettingsPage(assets AssetPaths, data SettingsData) {
 	@Layout("Settings", assets) {
 		@resetConfirmPrefsScript()
+		@settingsTabScript()
+		<script src={ assets.SortableJS }></script>
 		<div class="space-y-6">
-			<div class="border-b border-gray-200 dark:border-gray-700 pb-4">
+			<div class="pb-2">
 				<h1 class="text-2xl font-bold">Settings</h1>
 				<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
 					Configure platform profiles, provider API keys, and output settings.
 				</p>
 			</div>
-			<div class="bg-white dark:bg-gray-800 shadow rounded-lg">
-				<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-					<h2 class="text-lg font-semibold">Platform Profile</h2>
-					<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-						Select the target platform to control NFO output and image naming conventions.
-					</p>
-				</div>
-				<div class="px-6 py-4">
-					<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-						for _, p := range data.Profiles {
-							@profileCard(p)
-						}
-					</div>
-				</div>
-			</div>
-			if data.ActiveProfile != nil {
+			@settingsTabBar(data.ActiveTab)
+			<!-- General tab -->
+			<div
+				data-tab-panel="general"
+				class={
+					"space-y-6",
+					templ.KV("hidden", data.ActiveTab != "general"),
+				}
+			>
 				<div class="bg-white dark:bg-gray-800 shadow rounded-lg">
 					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-						<h2 class="text-lg font-semibold">Active Profile Details</h2>
-					</div>
-					<div class="px-6 py-4 space-y-4">
-						<div class="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
-							<div>
-								<span class="font-medium text-gray-500 dark:text-gray-400">NFO Output</span>
-								<p class="mt-1">
-									if data.ActiveProfile.NFOEnabled {
-										Enabled ({ data.ActiveProfile.NFOFormat } format)
-									} else {
-										Disabled
-									}
-								</p>
-							</div>
-							<div>
-								<span class="font-medium text-gray-500 dark:text-gray-400">Thumbnail</span>
-								<p class="mt-1">{ joinNames(data.ActiveProfile.ImageNaming.Thumb) }</p>
-							</div>
-							<div>
-								<span class="font-medium text-gray-500 dark:text-gray-400">Fanart</span>
-								<p class="mt-1">{ joinNames(data.ActiveProfile.ImageNaming.Fanart) }</p>
-							</div>
-							<div>
-								<span class="font-medium text-gray-500 dark:text-gray-400">Logo</span>
-								<p class="mt-1">{ joinNames(data.ActiveProfile.ImageNaming.Logo) }</p>
-							</div>
-							<div>
-								<span class="font-medium text-gray-500 dark:text-gray-400">Banner</span>
-								<p class="mt-1">{ joinNames(data.ActiveProfile.ImageNaming.Banner) }</p>
-							</div>
-						</div>
-					</div>
-				</div>
-			}
-			if len(data.ProviderKeys) > 0 {
-				<div class="bg-white dark:bg-gray-800 shadow rounded-lg">
-					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-						<h2 class="text-lg font-semibold">Provider API Keys</h2>
+						<h2 class="text-lg font-semibold">Platform Profile</h2>
 						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-							Configure API keys for metadata providers. Providers without a configured key will be skipped during metadata lookups.
-						</p>
-					</div>
-					<div class="px-6 py-4 space-y-4">
-						for _, pk := range data.ProviderKeys {
-							<div id={ "provider-card-" + string(pk.Name) }>
-								@ProviderKeyCard(pk)
-							</div>
-						}
-					</div>
-				</div>
-			}
-			if len(data.WebSearchProviders) > 0 {
-				<div class="bg-white dark:bg-gray-800 shadow rounded-lg">
-					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-						<h2 class="text-lg font-semibold">Web Image Search</h2>
-						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-							Enable web search providers to find additional artist images beyond authoritative sources. No API key required.
-						</p>
-					</div>
-					<div class="px-6 py-4 space-y-4">
-						for _, ws := range data.WebSearchProviders {
-							@WebSearchToggle(ws)
-						}
-					</div>
-				</div>
-			}
-			if len(data.Priorities) > 0 {
-				<div class="bg-white dark:bg-gray-800 shadow rounded-lg">
-					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-						<h2 class="text-lg font-semibold">Provider Priorities</h2>
-						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-							Set the preferred provider order for each metadata field. The first provider with data wins.
+							Select the target platform to control NFO output and image naming conventions.
 						</p>
 					</div>
 					<div class="px-6 py-4">
-						<div class="space-y-3">
-							for _, pri := range data.Priorities {
-								@PriorityRow(pri)
+						<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+							for _, p := range data.Profiles {
+								@profileCard(p)
 							}
 						</div>
 					</div>
 				</div>
-			}
-			<div class="bg-white dark:bg-gray-800 shadow rounded-lg">
-				<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-					<h2 class="text-lg font-semibold">Server Connections</h2>
-					<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-						Connect to Emby, Jellyfin, or Lidarr servers for library sync and metadata push.
-					</p>
-				</div>
-				<div class="px-6 py-4">
-					<div
-						id="clobber-warnings"
-						hx-get="/api/v1/connections/clobber-check"
-						hx-trigger="load"
-						hx-swap="innerHTML"
-						class="mb-4"
-					></div>
-					<div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
-						@serviceConnectionCard("emby", "Emby", "http://192.168.1.100:8096", connectionsForType(data.Connections, "emby"))
-						@serviceConnectionCard("jellyfin", "Jellyfin", "http://192.168.1.100:8096", connectionsForType(data.Connections, "jellyfin"))
-						@serviceConnectionCard("lidarr", "Lidarr", "http://192.168.1.100:8686", connectionsForType(data.Connections, "lidarr"))
+				if data.ActiveProfile != nil {
+					<div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+						<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+							<h2 class="text-lg font-semibold">Active Profile Details</h2>
+						</div>
+						<div class="px-6 py-4 space-y-4">
+							<div class="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
+								<div>
+									<span class="font-medium text-gray-500 dark:text-gray-400">NFO Output</span>
+									<p class="mt-1">
+										if data.ActiveProfile.NFOEnabled {
+											Enabled ({ data.ActiveProfile.NFOFormat } format)
+										} else {
+											Disabled
+										}
+									</p>
+								</div>
+								<div>
+									<span class="font-medium text-gray-500 dark:text-gray-400">Thumbnail</span>
+									<p class="mt-1">{ joinNames(data.ActiveProfile.ImageNaming.Thumb) }</p>
+								</div>
+								<div>
+									<span class="font-medium text-gray-500 dark:text-gray-400">Fanart</span>
+									<p class="mt-1">{ joinNames(data.ActiveProfile.ImageNaming.Fanart) }</p>
+								</div>
+								<div>
+									<span class="font-medium text-gray-500 dark:text-gray-400">Logo</span>
+									<p class="mt-1">{ joinNames(data.ActiveProfile.ImageNaming.Logo) }</p>
+								</div>
+								<div>
+									<span class="font-medium text-gray-500 dark:text-gray-400">Banner</span>
+									<p class="mt-1">{ joinNames(data.ActiveProfile.ImageNaming.Banner) }</p>
+								</div>
+							</div>
+						</div>
 					</div>
-				</div>
+				}
 			</div>
-			<div class="bg-white dark:bg-gray-800 shadow rounded-lg">
-				<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-					<h2 class="text-lg font-semibold">Webhooks</h2>
-					<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-						Send notifications to external services when events occur.
-					</p>
-				</div>
-				<div id="webhooks-list" class="px-6 py-4 space-y-3">
-					if len(data.Webhooks) == 0 {
-						<p class="text-sm text-gray-500 dark:text-gray-400 italic">No webhooks configured.</p>
-					}
-					for _, wh := range data.Webhooks {
-						@webhookCard(wh)
-					}
-				</div>
-				<div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700">
-					<button
-						type="button"
-						class="text-sm px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
-						onclick="document.getElementById('add-webhook-form').classList.toggle('hidden')"
-					>
-						Add Webhook
-					</button>
-					<div id="add-webhook-form" class="hidden mt-4">
-						<form
-							hx-post="/api/v1/webhooks"
-							hx-target="#webhooks-list"
+			<!-- Providers tab -->
+			<div
+				data-tab-panel="providers"
+				class={
+					"space-y-6",
+					templ.KV("hidden", data.ActiveTab != "providers"),
+				}
+			>
+				if len(data.ProviderKeys) > 0 {
+					<div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+						<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+							<h2 class="text-lg font-semibold">Provider API Keys</h2>
+							<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+								Configure API keys for metadata providers. Providers without a configured key will be skipped during metadata lookups.
+							</p>
+						</div>
+						<div class="px-6 py-4 space-y-4">
+							for _, pk := range data.ProviderKeys {
+								<div id={ "provider-card-" + string(pk.Name) }>
+									@ProviderKeyCard(pk)
+								</div>
+							}
+						</div>
+					</div>
+				}
+				if len(data.WebSearchProviders) > 0 {
+					<div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+						<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+							<h2 class="text-lg font-semibold">Web Image Search</h2>
+							<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+								Enable web search providers to find additional artist images beyond authoritative sources. No API key required.
+							</p>
+						</div>
+						<div class="px-6 py-4 space-y-4">
+							for _, ws := range data.WebSearchProviders {
+								@WebSearchToggle(ws)
+							}
+						</div>
+					</div>
+				}
+				if len(data.Priorities) > 0 {
+					<div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+						<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+							<h2 class="text-lg font-semibold">Provider Priorities</h2>
+							<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+								Set the preferred provider order for each metadata field. Drag to reorder. Only configured providers are shown.
+							</p>
+						</div>
+						<div class="px-6 py-4">
+							<div class="space-y-3">
+								for _, pri := range data.Priorities {
+									@PriorityChipRow(pri, data.ProviderKeys)
+								}
+							</div>
+						</div>
+					</div>
+				}
+			</div>
+			<!-- Connections tab -->
+			<div
+				data-tab-panel="connections"
+				class={
+					"space-y-6",
+					templ.KV("hidden", data.ActiveTab != "connections"),
+				}
+			>
+				<div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+						<h2 class="text-lg font-semibold">Server Connections</h2>
+						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+							Connect to Emby, Jellyfin, or Lidarr servers for library sync and metadata push.
+						</p>
+					</div>
+					<div class="px-6 py-4">
+						<div
+							id="clobber-warnings"
+							hx-get="/api/v1/connections/clobber-check"
+							hx-trigger="load"
 							hx-swap="innerHTML"
-							hx-on::after-request="if(event.detail.successful) { this.reset(); this.closest('#add-webhook-form').classList.add('hidden'); window.location.reload(); }"
-							class="space-y-3"
-						>
-							<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-								<input name="name" placeholder="Webhook name" required class="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
-								<select name="type" required class="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-									<option value="">Select type...</option>
-									<option value="generic">Generic (JSON)</option>
-									<option value="discord">Discord</option>
-									<option value="slack">Slack</option>
-									<option value="gotify">Gotify</option>
-								</select>
-								<input name="url" type="url" placeholder="Webhook URL" required class="col-span-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
-							</div>
-							<div class="flex gap-2">
-								<button type="submit" class="text-sm px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 transition-colors">Save</button>
-								<button type="button" class="text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" onclick="this.closest('#add-webhook-form').classList.add('hidden')">Cancel</button>
-							</div>
-						</form>
+							class="mb-4"
+						></div>
+						<div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
+							@serviceConnectionCard("emby", "Emby", "http://192.168.1.100:8096", connectionsForType(data.Connections, "emby"))
+							@serviceConnectionCard("jellyfin", "Jellyfin", "http://192.168.1.100:8096", connectionsForType(data.Connections, "jellyfin"))
+							@serviceConnectionCard("lidarr", "Lidarr", "http://192.168.1.100:8686", connectionsForType(data.Connections, "lidarr"))
+						</div>
 					</div>
 				</div>
 			</div>
-			<div class="bg-white dark:bg-gray-800 shadow rounded-lg">
-				<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-					<h2 class="text-lg font-semibold">Confirmation Dialogs</h2>
-					<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-						Manage "Don't ask again" preferences for confirmation dialogs throughout the app.
-					</p>
-				</div>
-				<div class="px-6 py-4">
-					<p class="text-sm text-gray-600 dark:text-gray-400 mb-3">
-						If you previously checked "Don't ask again" on a confirmation dialog, you can reset
-						all preferences here to restore those prompts.
-					</p>
-					<button
-						type="button"
-						id="reset-confirm-prefs"
-						class="text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-						onclick="resetConfirmPrefs()"
-					>
-						Reset all confirmation preferences
-					</button>
-					<span id="confirm-reset-status" class="ml-2 text-sm text-green-600 dark:text-green-400 hidden">Preferences reset.</span>
-				</div>
-			</div>
-			<div class="bg-white dark:bg-gray-800 shadow rounded-lg">
-				<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-					<h2 class="text-lg font-semibold">Database Backup</h2>
-					<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-						Create and download database backups. Automatic backups run daily with 7-day retention.
-					</p>
-				</div>
-				<div class="px-6 py-4 space-y-4">
-					<div class="flex items-center gap-3">
+			<!-- Notifications tab -->
+			<div
+				data-tab-panel="notifications"
+				class={
+					"space-y-6",
+					templ.KV("hidden", data.ActiveTab != "notifications"),
+				}
+			>
+				<div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+						<h2 class="text-lg font-semibold">Webhooks</h2>
+						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+							Send notifications to external services when events occur.
+						</p>
+					</div>
+					<div id="webhooks-list" class="px-6 py-4 space-y-3">
+						if len(data.Webhooks) == 0 {
+							<p class="text-sm text-gray-500 dark:text-gray-400 italic">No webhooks configured.</p>
+						}
+						for _, wh := range data.Webhooks {
+							@webhookCard(wh)
+						}
+					</div>
+					<div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700">
 						<button
 							type="button"
 							class="text-sm px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
-							hx-post="/api/v1/settings/backup"
-							hx-target="#backup-list"
-							hx-swap="innerHTML"
-							hx-indicator="#backup-spinner"
+							onclick="document.getElementById('add-webhook-form').classList.toggle('hidden')"
 						>
-							Create Backup
+							Add Webhook
 						</button>
-						<span id="backup-spinner" class="htmx-indicator text-sm text-gray-500 dark:text-gray-400">
-							Creating backup...
-						</span>
+						<div id="add-webhook-form" class="hidden mt-4">
+							<form
+								hx-post="/api/v1/webhooks"
+								hx-target="#webhooks-list"
+								hx-swap="innerHTML"
+								hx-on::after-request="if(event.detail.successful) { this.reset(); this.closest('#add-webhook-form').classList.add('hidden'); window.location.reload(); }"
+								class="space-y-3"
+							>
+								<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+									<input name="name" placeholder="Webhook name" required class="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+									<select name="type" required class="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+										<option value="">Select type...</option>
+										<option value="generic">Generic (JSON)</option>
+										<option value="discord">Discord</option>
+										<option value="slack">Slack</option>
+										<option value="gotify">Gotify</option>
+									</select>
+									<input name="url" type="url" placeholder="Webhook URL" required class="col-span-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+								</div>
+								<div class="flex gap-2">
+									<button type="submit" class="text-sm px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 transition-colors">Save</button>
+									<button type="button" class="text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" onclick="this.closest('#add-webhook-form').classList.add('hidden')">Cancel</button>
+								</div>
+							</form>
+						</div>
 					</div>
-					<div id="backup-list" hx-get="/api/v1/settings/backup/history" hx-trigger="load" hx-swap="innerHTML">
-						<p class="text-sm text-gray-500 dark:text-gray-400 italic">Loading backup history...</p>
+				</div>
+			</div>
+			<!-- Maintenance tab -->
+			<div
+				data-tab-panel="maintenance"
+				class={
+					"space-y-6",
+					templ.KV("hidden", data.ActiveTab != "maintenance"),
+				}
+			>
+				<div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+						<h2 class="text-lg font-semibold">Confirmation Dialogs</h2>
+						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+							Manage "Don't ask again" preferences for confirmation dialogs throughout the app.
+						</p>
+					</div>
+					<div class="px-6 py-4">
+						<p class="text-sm text-gray-600 dark:text-gray-400 mb-3">
+							If you previously checked "Don't ask again" on a confirmation dialog, you can reset
+							all preferences here to restore those prompts.
+						</p>
+						<button
+							type="button"
+							id="reset-confirm-prefs"
+							class="text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+							onclick="resetConfirmPrefs()"
+						>
+							Reset all confirmation preferences
+						</button>
+						<span id="confirm-reset-status" class="ml-2 text-sm text-green-600 dark:text-green-400 hidden">Preferences reset.</span>
+					</div>
+				</div>
+				<div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+						<h2 class="text-lg font-semibold">Database Backup</h2>
+						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+							Create and download database backups. Automatic backups run daily with 7-day retention.
+						</p>
+					</div>
+					<div class="px-6 py-4 space-y-4">
+						<div class="flex items-center gap-3">
+							<button
+								type="button"
+								class="text-sm px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+								hx-post="/api/v1/settings/backup"
+								hx-target="#backup-list"
+								hx-swap="innerHTML"
+								hx-indicator="#backup-spinner"
+							>
+								Create Backup
+							</button>
+							<span id="backup-spinner" class="htmx-indicator text-sm text-gray-500 dark:text-gray-400">
+								Creating backup...
+							</span>
+						</div>
+						<div id="backup-list" hx-get="/api/v1/settings/backup/history" hx-trigger="load" hx-swap="innerHTML">
+							<p class="text-sm text-gray-500 dark:text-gray-400 italic">Loading backup history...</p>
+						</div>
 					</div>
 				</div>
 			</div>
 		</div>
+		@sortableInitScript()
 	}
 }
 
@@ -353,6 +442,97 @@ templ resetConfirmPrefsScript() {
 				setTimeout(function() { status.classList.add('hidden'); }, 3000);
 			}
 		}
+	</script>
+}
+
+templ settingsTabBar(activeTab string) {
+	<div class="border-b border-gray-200 dark:border-gray-700">
+		<nav class="flex overflow-x-auto -mb-px" aria-label="Settings tabs">
+			for _, tab := range settingsTabs() {
+				<a
+					href={ templ.SafeURL("/settings?tab=" + tab.ID) }
+					class={
+						"whitespace-nowrap border-b-2 py-3 px-4 text-sm font-medium transition-colors cursor-pointer",
+						templ.KV("border-blue-500 text-blue-600 dark:text-blue-400", tab.ID == activeTab),
+						templ.KV("border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:border-gray-300 dark:hover:border-gray-600", tab.ID != activeTab),
+					}
+					data-tab={ tab.ID }
+					onclick="switchSettingsTab(event, this)"
+				>
+					{ tab.Label }
+				</a>
+			}
+		</nav>
+	</div>
+}
+
+templ settingsTabScript() {
+	<script>
+		function switchSettingsTab(event, el) {
+			event.preventDefault();
+			var tabId = el.dataset.tab;
+			document.querySelectorAll('[data-tab-panel]').forEach(function(p) {
+				p.classList.add('hidden');
+			});
+			var panel = document.querySelector('[data-tab-panel="' + tabId + '"]');
+			if (panel) panel.classList.remove('hidden');
+			document.querySelectorAll('[data-tab]').forEach(function(t) {
+				t.classList.remove('border-blue-500', 'text-blue-600', 'dark:text-blue-400');
+				t.classList.add('border-transparent', 'text-gray-500', 'dark:text-gray-400');
+			});
+			el.classList.remove('border-transparent', 'text-gray-500', 'dark:text-gray-400');
+			el.classList.add('border-blue-500', 'text-blue-600', 'dark:text-blue-400');
+			history.replaceState(null, '', '/settings?tab=' + tabId);
+		}
+	</script>
+}
+
+templ sortableInitScript() {
+	<script>
+		(function() {
+			if (typeof Sortable === 'undefined') return;
+			document.querySelectorAll('[data-sortable-field]').forEach(function(container) {
+				var field = container.dataset.sortableField;
+				Sortable.create(container, {
+					animation: 150,
+					ghostClass: 'opacity-30',
+					chosenClass: 'ring-2 ring-blue-400 rounded-full',
+					dragClass: 'shadow-lg',
+					onEnd: function() {
+						var providers = [];
+						container.querySelectorAll('[data-provider]').forEach(function(chip) {
+							providers.push(chip.dataset.provider);
+						});
+						var csrfToken = document.cookie.replace(
+							/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1"
+						);
+						fetch('/api/v1/providers/priorities', {
+							method: 'PUT',
+							headers: {
+								'Content-Type': 'application/json',
+								'X-CSRF-Token': csrfToken
+							},
+							body: JSON.stringify({
+								priorities: [{field: field, providers: providers}]
+							}),
+							credentials: 'same-origin'
+						}).then(function(r) {
+							if (!r.ok) {
+								if (typeof showToast === 'function') {
+									showToast('Failed to save provider order');
+								}
+								window.location.reload();
+							}
+						}).catch(function() {
+							if (typeof showToast === 'function') {
+								showToast('Failed to save provider order');
+							}
+							window.location.reload();
+						});
+					}
+				});
+			});
+		})();
 	</script>
 }
 
@@ -485,52 +665,62 @@ templ ProviderTestResult(status string, message string) {
 	}
 }
 
-templ PriorityRow(pri provider.FieldPriority) {
-	<div id={ "priority-row-" + pri.Field } class="flex flex-col gap-2 rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3 sm:flex-row sm:items-center sm:gap-4">
-		<div class="sm:w-24 shrink-0">
-			<span class="text-sm font-medium capitalize">{ pri.Field }</span>
+templ PriorityChipRow(pri provider.FieldPriority, keys []provider.ProviderKeyStatus) {
+	<div id={ "priority-row-" + pri.Field } class="rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3">
+		<div class="flex items-center gap-3 mb-2">
+			<span class="text-sm font-medium capitalize w-24 shrink-0">{ pri.Field }</span>
+			<span class="text-xs text-gray-400 dark:text-gray-500">Drag to reorder. Click to enable/disable.</span>
 		</div>
-		<div class="flex flex-wrap items-center gap-1.5 flex-1">
-			for i, prov := range pri.Providers {
-				<div class="flex items-center gap-0.5">
-					<span
+		<div class="flex flex-wrap gap-2" data-sortable-field={ pri.Field }>
+			for _, prov := range availableProviders(pri, keys) {
+				if !providerIsDisabled(prov, pri.Disabled) {
+					<div
 						class={
-							"text-xs px-2 py-1 rounded",
-							templ.KV("bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300", !isWebSearchProvider(prov)),
-							templ.KV("bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300 border border-dashed border-purple-300 dark:border-purple-700", isWebSearchProvider(prov)),
+							"inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs font-medium cursor-grab select-none transition-colors border",
+							templ.KV("bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300 border-green-300 dark:border-green-700", !isWebSearchProvider(prov)),
+							templ.KV("bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300 border-dashed border-purple-300 dark:border-purple-700", isWebSearchProvider(prov)),
 						}
+						data-provider={ string(prov) }
 					>
-						{ prov.DisplayName() }
-					</span>
-					<div class="flex flex-col">
-						if i > 0 {
-							<button
-								type="button"
-								class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-sm leading-none p-1"
-								hx-put="/api/v1/providers/priorities"
-								hx-vals={ prioritySwapJSON(pri.Field, pri.Providers, i, i-1) }
-								hx-target={ "#priority-row-" + pri.Field }
-								hx-swap="outerHTML"
-							>
-								&#9650;
-							</button>
-						}
-						if i < len(pri.Providers)-1 {
-							<button
-								type="button"
-								class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-sm leading-none p-1"
-								hx-put="/api/v1/providers/priorities"
-								hx-vals={ prioritySwapJSON(pri.Field, pri.Providers, i, i+1) }
-								hx-target={ "#priority-row-" + pri.Field }
-								hx-swap="outerHTML"
-							>
-								&#9660;
-							</button>
-						}
+						@components.IconBars2("h-3 w-3 text-green-500 dark:text-green-400")
+						<span>{ prov.DisplayName() }</span>
+						<button
+							type="button"
+							class="ml-0.5 text-green-500 dark:text-green-400 hover:text-red-500 dark:hover:text-red-400"
+							title="Disable this provider"
+							hx-put={ "/api/v1/providers/priorities/" + pri.Field + "/" + string(prov) + "/toggle" }
+							hx-target={ "#priority-row-" + pri.Field }
+							hx-swap="outerHTML"
+							onclick="event.stopPropagation()"
+						>
+							@components.IconCheck("h-3.5 w-3.5")
+						</button>
 					</div>
-				</div>
+				}
 			}
 		</div>
+		for _, prov := range availableProviders(pri, keys) {
+			if providerIsDisabled(prov, pri.Disabled) {
+				<div
+					class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs font-medium select-none transition-colors border bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border-red-300 dark:border-red-700 opacity-60 mt-2"
+				>
+					<span>{ prov.DisplayName() }</span>
+					<button
+						type="button"
+						class="ml-0.5 text-red-500 dark:text-red-400 hover:text-green-500 dark:hover:text-green-400"
+						title="Enable this provider"
+						hx-put={ "/api/v1/providers/priorities/" + pri.Field + "/" + string(prov) + "/toggle" }
+						hx-target={ "#priority-row-" + pri.Field }
+						hx-swap="outerHTML"
+					>
+						@components.IconXMark("h-3.5 w-3.5")
+					</button>
+				</div>
+			}
+		}
+		if len(availableProviders(pri, keys)) == 0 {
+			<p class="text-xs text-gray-400 dark:text-gray-500 italic mt-1">No configured providers for this field.</p>
+		}
 	</div>
 }
 

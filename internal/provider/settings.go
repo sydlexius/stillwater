@@ -31,6 +31,10 @@ func prioritySettingKey(field string) string {
 	return fmt.Sprintf("provider.priority.%s", field)
 }
 
+func priorityDisabledKey(field string) string {
+	return fmt.Sprintf("provider.priority.%s.disabled", field)
+}
+
 // GetAPIKey retrieves and decrypts the API key for a provider.
 // Returns empty string if no key is configured.
 func (s *SettingsService) GetAPIKey(ctx context.Context, name ProviderName) (string, error) {
@@ -137,6 +141,25 @@ func providerRequiresKey(name ProviderName) bool {
 type FieldPriority struct {
 	Field     string         `json:"field"`
 	Providers []ProviderName `json:"providers"`
+	Disabled  []ProviderName `json:"disabled,omitempty"`
+}
+
+// EnabledProviders returns the providers list excluding any that are disabled.
+func (fp FieldPriority) EnabledProviders() []ProviderName {
+	if len(fp.Disabled) == 0 {
+		return fp.Providers
+	}
+	disabled := make(map[ProviderName]bool, len(fp.Disabled))
+	for _, d := range fp.Disabled {
+		disabled[d] = true
+	}
+	var result []ProviderName
+	for _, p := range fp.Providers {
+		if !disabled[p] {
+			result = append(result, p)
+		}
+	}
+	return result
 }
 
 // DefaultPriorities returns the default provider priority order per field.
@@ -165,17 +188,27 @@ func (s *SettingsService) GetPriorities(ctx context.Context) ([]FieldPriority, e
 		err := s.db.QueryRowContext(ctx, "SELECT value FROM settings WHERE key = ?", key).Scan(&value)
 		if err == sql.ErrNoRows {
 			result[i] = d
-			continue
-		}
-		if err != nil {
+		} else if err != nil {
 			return nil, fmt.Errorf("reading priority for %s: %w", d.Field, err)
+		} else {
+			var providers []ProviderName
+			if err := json.Unmarshal([]byte(value), &providers); err != nil {
+				result[i] = d
+			} else {
+				result[i] = FieldPriority{Field: d.Field, Providers: providers}
+			}
 		}
-		var providers []ProviderName
-		if err := json.Unmarshal([]byte(value), &providers); err != nil {
-			result[i] = d
-			continue
+
+		// Load disabled providers for this field.
+		disKey := priorityDisabledKey(d.Field)
+		var disValue string
+		err = s.db.QueryRowContext(ctx, "SELECT value FROM settings WHERE key = ?", disKey).Scan(&disValue)
+		if err == nil {
+			var disabled []ProviderName
+			if err := json.Unmarshal([]byte(disValue), &disabled); err == nil {
+				result[i].Disabled = disabled
+			}
 		}
-		result[i] = FieldPriority{Field: d.Field, Providers: providers}
 	}
 	return result, nil
 }
@@ -193,6 +226,31 @@ func (s *SettingsService) SetPriority(ctx context.Context, field string, provide
 	)
 	if err != nil {
 		return fmt.Errorf("storing priority for %s: %w", field, err)
+	}
+	return nil
+}
+
+// SetDisabledProviders stores the list of disabled providers for a metadata field.
+func (s *SettingsService) SetDisabledProviders(ctx context.Context, field string, disabled []ProviderName) error {
+	key := priorityDisabledKey(field)
+	if len(disabled) == 0 {
+		// Remove the key entirely when no providers are disabled.
+		_, err := s.db.ExecContext(ctx, "DELETE FROM settings WHERE key = ?", key)
+		if err != nil {
+			return fmt.Errorf("clearing disabled providers for %s: %w", field, err)
+		}
+		return nil
+	}
+	data, err := json.Marshal(disabled)
+	if err != nil {
+		return fmt.Errorf("marshaling disabled providers for %s: %w", field, err)
+	}
+	_, err = s.db.ExecContext(ctx,
+		"INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = datetime('now')",
+		key, string(data), string(data),
+	)
+	if err != nil {
+		return fmt.Errorf("storing disabled providers for %s: %w", field, err)
 	}
 	return nil
 }
