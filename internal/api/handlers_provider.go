@@ -205,6 +205,19 @@ func (r *Router) handleToggleFieldProvider(w http.ResponseWriter, req *http.Requ
 		return
 	}
 
+	// Verify the provider is part of this field's priority list.
+	provInField := false
+	for _, p := range pri.Providers {
+		if p == provName {
+			provInField = true
+			break
+		}
+	}
+	if !provInField {
+		writeError(w, req, http.StatusBadRequest, "provider not in field priority list")
+		return
+	}
+
 	// Toggle: if provider is in the disabled list, remove it (enable).
 	// If not in the disabled list, add it (disable).
 	found := false

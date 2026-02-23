@@ -494,6 +494,7 @@ templ sortableInitScript() {
 			document.querySelectorAll('[data-sortable-field]').forEach(function(container) {
 				var field = container.dataset.sortableField;
 				Sortable.create(container, {
+					handle: '.drag-handle',
 					animation: 150,
 					ghostClass: 'opacity-30',
 					dragClass: 'shadow-lg',
@@ -508,6 +509,13 @@ templ sortableInitScript() {
 						container.querySelectorAll('[data-provider]').forEach(function(chip) {
 							providers.push(chip.dataset.provider);
 						});
+						// Include disabled providers so they are not dropped from the persisted list.
+						var row = container.closest('[id^="priority-row-"]');
+						if (row) {
+							row.querySelectorAll('[data-disabled-provider]').forEach(function(chip) {
+								providers.push(chip.dataset.disabledProvider);
+							});
+						}
 						var csrfToken = document.cookie.replace(
 							/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1"
 						);
@@ -671,13 +679,17 @@ templ ProviderTestResult(status string, message string) {
 }
 
 templ PriorityChipRow(pri provider.FieldPriority, keys []provider.ProviderKeyStatus) {
+	@priorityChipRowInner(pri, availableProviders(pri, keys))
+}
+
+templ priorityChipRowInner(pri provider.FieldPriority, available []provider.ProviderName) {
 	<div id={ "priority-row-" + pri.Field } class="rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3">
 		<div class="flex items-center gap-3 mb-2">
 			<span class="text-sm font-medium capitalize w-24 shrink-0">{ pri.Field }</span>
 			<span class="text-xs text-gray-400 dark:text-gray-500">Drag to reorder. Click to enable/disable.</span>
 		</div>
 		<div class="flex flex-wrap gap-2" data-sortable-field={ pri.Field }>
-			for _, prov := range availableProviders(pri, keys) {
+			for _, prov := range available {
 				if !providerIsDisabled(prov, pri.Disabled) {
 					<div
 						class={
@@ -687,7 +699,9 @@ templ PriorityChipRow(pri provider.FieldPriority, keys []provider.ProviderKeySta
 						}
 						data-provider={ string(prov) }
 					>
-						@components.IconBars2("h-3 w-3 text-green-500 dark:text-green-400")
+						<span class="drag-handle cursor-grab">
+							@components.IconBars2("h-3 w-3 text-green-500 dark:text-green-400")
+						</span>
 						<span>{ prov.DisplayName() }</span>
 						<button
 							type="button"
@@ -696,7 +710,6 @@ templ PriorityChipRow(pri provider.FieldPriority, keys []provider.ProviderKeySta
 							hx-put={ "/api/v1/providers/priorities/" + pri.Field + "/" + string(prov) + "/toggle" }
 							hx-target={ "#priority-row-" + pri.Field }
 							hx-swap="outerHTML"
-							onclick="event.stopPropagation()"
 						>
 							@components.IconCheck("h-3.5 w-3.5")
 						</button>
@@ -704,10 +717,11 @@ templ PriorityChipRow(pri provider.FieldPriority, keys []provider.ProviderKeySta
 				}
 			}
 		</div>
-		for _, prov := range availableProviders(pri, keys) {
+		for _, prov := range available {
 			if providerIsDisabled(prov, pri.Disabled) {
 				<div
 					class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs font-medium select-none transition-colors border bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border-red-300 dark:border-red-700 opacity-60 mt-2"
+					data-disabled-provider={ string(prov) }
 				>
 					<span>{ prov.DisplayName() }</span>
 					<button
@@ -723,7 +737,7 @@ templ PriorityChipRow(pri provider.FieldPriority, keys []provider.ProviderKeySta
 				</div>
 			}
 		}
-		if len(availableProviders(pri, keys)) == 0 {
+		if len(available) == 0 {
 			<p class="text-xs text-gray-400 dark:text-gray-500 italic mt-1">No configured providers for this field.</p>
 		}
 	</div>
