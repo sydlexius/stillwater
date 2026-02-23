@@ -65,36 +65,36 @@ templ ImageSearchPage(assets AssetPaths, data ImageSearchData) {
 								<span class="text-sm text-gray-500 dark:text-gray-400">Searching providers...</span>
 							</div>
 							<div id="search-results"></div>
-						if data.WebSearchEnabled {
-							<div class="mt-6 border-t border-gray-200 dark:border-gray-700 pt-4">
-								<div class="flex items-center justify-between mb-3">
-									<h3 class="text-sm font-semibold text-gray-500 dark:text-gray-400">Web Search Results</h3>
-									<span id="web-search-spinner" class="htmx-indicator text-xs text-gray-500 dark:text-gray-400">Searching...</span>
-								</div>
-								<div class="flex flex-wrap gap-2 mb-4">
-									for _, t := range []string{"thumb", "fanart", "logo", "banner"} {
-										<button
-											type="button"
-											class="px-3 py-2 text-sm rounded-md border border-dashed border-purple-300 dark:border-purple-700 text-purple-700 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors"
-											hx-get={ fmt.Sprintf("/api/v1/artists/%s/images/websearch?type=%s", data.Artist.ID, t) }
-											hx-target="#web-search-results"
-											hx-swap="innerHTML"
-											hx-indicator="#web-search-spinner"
-										>
-											Extend: { t }
-										</button>
-									}
-								</div>
-								<div id="web-search-results"></div>
-							</div>
-						}
 						</section>
-					} else {
+					} else if !data.WebSearchEnabled {
 						<section class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
 							<p class="text-sm text-gray-500 dark:text-gray-400">
 								This artist has no MusicBrainz ID. Provider image search requires an MBID.
 								Use the upload form above to add images manually.
 							</p>
+						</section>
+					}
+					if data.WebSearchEnabled {
+						<section class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
+							<div class="flex items-center justify-between mb-3">
+								<h3 class="text-sm font-semibold text-gray-500 dark:text-gray-400">Web Search Results</h3>
+								<span id="web-search-spinner" class="htmx-indicator text-xs text-gray-500 dark:text-gray-400">Searching...</span>
+							</div>
+							<div class="flex flex-wrap gap-2 mb-4">
+								for _, t := range []string{"thumb", "fanart", "logo", "banner"} {
+									<button
+										type="button"
+										class="px-3 py-2 text-sm rounded-md border border-dashed border-purple-300 dark:border-purple-700 text-purple-700 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors"
+										hx-get={ fmt.Sprintf("/api/v1/artists/%s/images/websearch?type=%s", data.Artist.ID, t) }
+										hx-target="#web-search-results"
+										hx-swap="innerHTML"
+										hx-indicator="#web-search-spinner"
+									>
+										Extend: { t }
+									</button>
+								}
+							</div>
+							<div id="web-search-results"></div>
 						</section>
 					}
 				</div>

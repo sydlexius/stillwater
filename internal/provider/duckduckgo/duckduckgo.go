@@ -16,10 +16,11 @@ import (
 )
 
 const (
-	defaultBaseURL = "https://duckduckgo.com"
-	htmlBaseURL    = "https://html.duckduckgo.com"
-	maxResults     = 30
-	userAgent      = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+	defaultBaseURL   = "https://duckduckgo.com"
+	htmlBaseURL      = "https://html.duckduckgo.com"
+	maxResults       = 30
+	maxArtistNameLen = 200
+	userAgent        = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 )
 
 // searchTerms maps image types to query suffix templates.
@@ -66,6 +67,10 @@ func (a *Adapter) RequiresAuth() bool { return false }
 
 // SearchImages queries DuckDuckGo image search for artist images of a specific type.
 func (a *Adapter) SearchImages(ctx context.Context, artistName string, imageType provider.ImageType) ([]provider.ImageResult, error) {
+	if artistName == "" || len(artistName) > maxArtistNameLen {
+		return nil, nil
+	}
+
 	suffix, ok := searchTerms[imageType]
 	if !ok {
 		return nil, nil

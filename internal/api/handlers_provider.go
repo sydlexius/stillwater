@@ -278,46 +278,51 @@ func (r *Router) handleSetWebSearchEnabled(w http.ResponseWriter, req *http.Requ
 	priorities, err := r.providerSettings.GetPriorities(req.Context())
 	if err != nil {
 		r.logger.Error("getting priorities for web search toggle", "error", err)
-	} else {
-		for _, pri := range priorities {
-			isImageField := false
-			for _, f := range imageFields {
-				if pri.Field == f {
-					isImageField = true
+		writeError(w, req, http.StatusInternalServerError, "failed to update priorities")
+		return
+	}
+	for _, pri := range priorities {
+		isImageField := false
+		for _, f := range imageFields {
+			if pri.Field == f {
+				isImageField = true
+				break
+			}
+		}
+		if !isImageField {
+			continue
+		}
+
+		if enabled {
+			// Add at end if not already present
+			found := false
+			for _, p := range pri.Providers {
+				if p == name {
+					found = true
 					break
 				}
 			}
-			if !isImageField {
-				continue
+			if !found {
+				pri.Providers = append(pri.Providers, name)
+				if err := r.providerSettings.SetPriority(req.Context(), pri.Field, pri.Providers); err != nil {
+					r.logger.Error("adding web search to priority", "field", pri.Field, "error", err)
+					writeError(w, req, http.StatusInternalServerError, "failed to update priorities")
+					return
+				}
 			}
-
-			if enabled {
-				// Add at end if not already present
-				found := false
-				for _, p := range pri.Providers {
-					if p == name {
-						found = true
-						break
-					}
+		} else {
+			// Remove from list
+			var filtered []provider.ProviderName
+			for _, p := range pri.Providers {
+				if p != name {
+					filtered = append(filtered, p)
 				}
-				if !found {
-					pri.Providers = append(pri.Providers, name)
-					if err := r.providerSettings.SetPriority(req.Context(), pri.Field, pri.Providers); err != nil {
-						r.logger.Error("adding web search to priority", "field", pri.Field, "error", err)
-					}
-				}
-			} else {
-				// Remove from list
-				var filtered []provider.ProviderName
-				for _, p := range pri.Providers {
-					if p != name {
-						filtered = append(filtered, p)
-					}
-				}
-				if len(filtered) != len(pri.Providers) {
-					if err := r.providerSettings.SetPriority(req.Context(), pri.Field, filtered); err != nil {
-						r.logger.Error("removing web search from priority", "field", pri.Field, "error", err)
-					}
+			}
+			if len(filtered) != len(pri.Providers) {
+				if err := r.providerSettings.SetPriority(req.Context(), pri.Field, filtered); err != nil {
+					r.logger.Error("removing web search from priority", "field", pri.Field, "error", err)
+					writeError(w, req, http.StatusInternalServerError, "failed to update priorities")
+					return
 				}
 			}
 		}
