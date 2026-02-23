@@ -32,6 +32,7 @@ func (r *Router) assets() templates.AssetPaths {
 		CropperJS:  r.staticAssets.Path("/js/cropper.min.js"),
 		CropperCSS: r.staticAssets.Path("/css/cropper.min.css"),
 		ChartJS:    r.staticAssets.Path("/js/chart.min.js"),
+		SortableJS: r.staticAssets.Path("/js/Sortable.min.js"),
 		LoginBG:    r.staticAssets.Path("/img/login-bg.jpg"),
 	}
 }

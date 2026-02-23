@@ -74,7 +74,7 @@ func (o *Orchestrator) FetchMetadata(ctx context.Context, mbid string, name stri
 	cache := make(map[ProviderName]*providerResult)
 
 	for _, pri := range priorities {
-		for _, provName := range pri.Providers {
+		for _, provName := range pri.EnabledProviders() {
 			pr := o.getProviderResult(ctx, provName, mbid, name, cache, &mu)
 			if pr.err != nil {
 				continue
@@ -298,11 +298,11 @@ func (o *Orchestrator) FetchFieldFromProviders(ctx context.Context, mbid, name, 
 		return nil, fmt.Errorf("loading priorities: %w", err)
 	}
 
-	// Find which providers are configured for this field
+	// Find which providers are enabled for this field
 	var providers []ProviderName
 	for _, pri := range priorities {
 		if pri.Field == field {
-			providers = pri.Providers
+			providers = pri.EnabledProviders()
 			break
 		}
 	}

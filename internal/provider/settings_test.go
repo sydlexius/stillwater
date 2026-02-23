@@ -330,6 +330,101 @@ func TestListWebSearchStatuses(t *testing.T) {
 	}
 }
 
+func TestDisabledProvidersRoundTrip(t *testing.T) {
+	db := setupTestDB(t)
+	enc := setupTestEncryptor(t)
+	svc := NewSettingsService(db, enc)
+	ctx := context.Background()
+
+	// Initially no disabled providers.
+	priorities, err := svc.GetPriorities(ctx)
+	if err != nil {
+		t.Fatalf("GetPriorities: %v", err)
+	}
+	for _, p := range priorities {
+		if p.Field == "biography" {
+			if len(p.Disabled) != 0 {
+				t.Errorf("expected no disabled providers initially, got %v", p.Disabled)
+			}
+			break
+		}
+	}
+
+	// Disable two providers for biography.
+	disabled := []ProviderName{NameMusicBrainz, NameWikidata}
+	if err := svc.SetDisabledProviders(ctx, "biography", disabled); err != nil {
+		t.Fatalf("SetDisabledProviders: %v", err)
+	}
+
+	// Read back and verify.
+	priorities, err = svc.GetPriorities(ctx)
+	if err != nil {
+		t.Fatalf("GetPriorities after disable: %v", err)
+	}
+	for _, p := range priorities {
+		if p.Field == "biography" {
+			if len(p.Disabled) != 2 {
+				t.Fatalf("expected 2 disabled providers, got %d", len(p.Disabled))
+			}
+			if p.Disabled[0] != NameMusicBrainz || p.Disabled[1] != NameWikidata {
+				t.Errorf("unexpected disabled list: %v", p.Disabled)
+			}
+			break
+		}
+	}
+
+	// Clear disabled list.
+	if err := svc.SetDisabledProviders(ctx, "biography", nil); err != nil {
+		t.Fatalf("SetDisabledProviders(nil): %v", err)
+	}
+	priorities, err = svc.GetPriorities(ctx)
+	if err != nil {
+		t.Fatalf("GetPriorities after clear: %v", err)
+	}
+	for _, p := range priorities {
+		if p.Field == "biography" {
+			if len(p.Disabled) != 0 {
+				t.Errorf("expected empty disabled list after clear, got %v", p.Disabled)
+			}
+			break
+		}
+	}
+}
+
+func TestEnabledProviders(t *testing.T) {
+	fp := FieldPriority{
+		Field:     "biography",
+		Providers: []ProviderName{NameMusicBrainz, NameAudioDB, NameDiscogs, NameWikidata},
+		Disabled:  []ProviderName{NameAudioDB, NameWikidata},
+	}
+
+	enabled := fp.EnabledProviders()
+	if len(enabled) != 2 {
+		t.Fatalf("expected 2 enabled providers, got %d", len(enabled))
+	}
+	if enabled[0] != NameMusicBrainz {
+		t.Errorf("expected first enabled to be musicbrainz, got %s", enabled[0])
+	}
+	if enabled[1] != NameDiscogs {
+		t.Errorf("expected second enabled to be discogs, got %s", enabled[1])
+	}
+}
+
+func TestEnabledProvidersNoDisabled(t *testing.T) {
+	fp := FieldPriority{
+		Field:     "genres",
+		Providers: []ProviderName{NameMusicBrainz, NameAudioDB},
+	}
+
+	enabled := fp.EnabledProviders()
+	if len(enabled) != 2 {
+		t.Fatalf("expected 2 enabled providers, got %d", len(enabled))
+	}
+	if enabled[0] != NameMusicBrainz || enabled[1] != NameAudioDB {
+		t.Errorf("expected original order, got %v", enabled)
+	}
+}
+
 func TestAnyWebSearchEnabled(t *testing.T) {
 	db := setupTestDB(t)
 	enc := setupTestEncryptor(t)

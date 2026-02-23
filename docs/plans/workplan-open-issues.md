@@ -6,9 +6,11 @@ Work through all 9 open issues in priority order, respecting blocking relationsh
 
 ## Progress Summary
 
-- **Completed:** 4 of 9 issues (#90, #97, #88, #98)
-- **Remaining:** 5 issues (#100, #91, #95, #99, #94)
-- **Next up:** #100 (per-artist metadata refresh, builds on #98 icon infrastructure)
+- **Completed:** 5 of 9 issues (#90, #97, #88, #98, #100)
+- **In progress:** #91 + #95 (settings page overhaul: tab navigation + provider priority chips) -- PR pending
+- **Remaining:** 2 issues (#99, #94)
+- **Next up:** #99 (image management improvements)
+- **New issues (not in original scope):** #105 (hamburger menu nav), #106 (contextual menus audit)
 
 ## Dependency Graph
 
@@ -16,10 +18,9 @@ Work through all 9 open issues in priority order, respecting blocking relationsh
 #90 DONE (critical bug, no blockers) -- PR #101 merged
 #97 DONE (high bug, no blockers) -- PR #102 merged
 #88 DONE (medium, no blockers) -- PR #103 merged
-#98 DONE (high, soft depends on #97) -- PR #104
-#100 (medium, no blockers) <-- NEXT
-#91 (medium, no blockers)
-#95 (medium, no blockers)
+#98 DONE (high, soft depends on #97) -- PR #104 merged
+#100 DONE (medium, no blockers) -- PR #107 merged
+#91 + #95 (medium, no blockers) <-- PR pending (combined PR)
 #99 (medium, blocked by #98) -- now unblocked
 #94 (low, no blockers, intentionally last)
 ```
@@ -32,9 +33,9 @@ Work through all 9 open issues in priority order, respecting blocking relationsh
 | 97 | Fanart.tv images missing dimensions and rendering blank | high | small | direct | sonnet | DONE (PR #102) |
 | 88 | NFO and artwork clobber risk detection and UI warnings | medium | medium | plan | sonnet | DONE (PR #103) |
 | 98 | Display existing local images on artist detail page | high | medium | plan | opus | DONE (PR #104) |
-| 100 | Per-artist metadata refresh with field-level provider selection | medium | large | plan | opus | **NEXT** |
-| 91 | Provider Priority UI redesign: drag-drop chips | medium | large | plan | opus | open |
-| 95 | Settings page: add tab navigation for sections | medium | medium | direct | sonnet | open |
+| 100 | Per-artist metadata refresh with field-level provider selection | medium | large | plan | opus | DONE (PR #107) |
+| 91 | Provider Priority UI redesign: drag-drop chips | medium | large | plan | opus | **PR pending** (combined with #95) |
+| 95 | Settings page: add tab navigation for sections | medium | medium | direct | sonnet | **PR pending** (combined with #91) |
 | 99 | Image management improvements: unified search, edit, upload UX | medium | large | plan | opus | open (unblocked) |
 | 94 | Developer documentation overhaul | low | medium | direct | haiku | open (last) |
 
@@ -179,9 +180,9 @@ Testing and PR
 - [x] Tests pass: `go test ./...`
 - [x] Lint passes: `golangci-lint run ./...`
 - [ ] Manual acceptance test: image previews, hover icons, delete, info badge loading
-- [x] PR created -- PR #104
-- [ ] PR checks pass (no CI failures)
-- [ ] PR reviewed (check for copilot feedback)
+- [x] PR created and merged -- PR #104
+- [x] PR checks pass (no CI failures)
+- [x] PR reviewed
 
 **Files:**
 - `web/components/icon.templ` -- reusable Heroicons SVG components (new)
@@ -207,36 +208,37 @@ Use the Heroicons component (created in #98 PR) for edit, delete, and refresh ic
 
 #### Checklist
 
-Phase 1: Edit and delete icons on metadata fields
-- [ ] Add `pencil-square` and `trash` icon buttons next to Biography, Genres, Styles, Moods, Life events, Members
+Phase 1: Provider fetch modal with field-level comparison
 
-Phase 2: Inline manual edit per field
-- [ ] HTMX swap to editable form on `pencil-square` icon click (textarea, tag input, date input)
-- [ ] Add `PATCH /api/v1/artists/{id}/fields/{field}` endpoint
-- [ ] Add `DELETE /api/v1/artists/{id}/fields/{field}` endpoint
+- [x] Modal dialog for fetching metadata from providers (MusicBrainz, Fanart.tv, etc.)
+- [x] Side-by-side comparison of current vs. fetched values per field
+- [x] Accept/reject per field with HTMX-driven updates
 
-Phase 3: Per-field provider fetch
-- [ ] Add `GET /api/v1/artists/{id}/fields/{field}/fetch` endpoint
-- [ ] New `FetchField()` method on Orchestrator for single-field provider queries
-- [ ] Inline expandable panel showing provider results side-by-side
+Phase 2: Per-field inline editing
 
-Phase 4: Global "Refresh Metadata" button
-- [ ] Add `POST /api/v1/artists/{id}/refresh` endpoint
-- [ ] Trigger full metadata fetch via orchestrator
+- [x] HTMX swap to editable form on pencil icon click
+- [x] Add `PATCH /api/v1/artists/{id}/fields/{field}` endpoint
+- [x] Add `DELETE /api/v1/artists/{id}/fields/{field}` endpoint
 
-Phase 5: Delete/reset field with confirmation
-- [ ] `trash` icon triggers DELETE with configurable confirmation dialog
-- [ ] Custom modal with "Don't ask again" checkbox (also retrofits image delete from #98)
-- [ ] Store preference via settings key-value store (`ui.confirm.*` keys)
-- [ ] Add toggle in Settings page to re-enable dialogs
+Phase 3: Global "Refresh Metadata" button
+
+- [x] Add `POST /api/v1/artists/{id}/refresh` endpoint
+- [x] Trigger full metadata fetch via provider orchestrator
+- [x] Auto-refresh artist detail page after mutations
+
+Phase 4: Image auto-refresh after mutations
+
+- [x] Form-encoded image fetch support
+- [x] Auto-refresh image cards after save/delete operations
 
 Testing and PR
-- [ ] Tests pass: `go test ./...`
-- [ ] Lint passes: `golangci-lint run ./...`
-- [ ] Manual acceptance test: metadata edit/delete, provider fetch, global refresh, confirmation dialog
-- [ ] PR created and merged
-- [ ] PR checks pass (no CI failures)
-- [ ] PR reviewed (check for copilot feedback)
+
+- [x] Tests pass: `go test ./...`
+- [x] Lint passes: `golangci-lint run ./...`
+- [ ] Manual acceptance test: metadata edit/delete, provider fetch, global refresh
+- [x] PR created and merged -- PR #107
+- [x] PR checks pass (no CI failures)
+- [x] PR reviewed (Copilot feedback addressed in commits 6af4197, 6b46b2a)
 
 **Files:**
 - `web/components/icon.templ` -- add `IconArrowPath` (refresh)
@@ -261,37 +263,44 @@ Testing and PR
 
 **Closes:** #91, #95
 
-#### Icon guidance
-
-Use the Heroicons component (created in #98) for the drag handle icon (`bars-3`) on provider chips. Add `IconBars3` to `icon.templ`.
-
 #### Checklist
 
 Phase 1: Tab navigation (#95)
-- [ ] Group settings sections into tabs: General, Providers, Scraper, Connections, Notifications, Maintenance
-- [ ] Implement tab switching (HTMX or JS-driven, preserving scroll position)
-- [ ] Ensure deep-linking works (e.g., `/settings?tab=providers`)
-- [ ] Mobile-friendly tab navigation (horizontal scroll or dropdown)
+- [x] Group settings sections into 5 tabs: General, Providers, Connections, Notifications, Maintenance
+- [x] Implement JS-driven tab switching with `showTab()` function (hides/shows tab content divs)
+- [x] Deep-linking via `?tab=` query param, parsed in `handleSettingsPage` and passed as `ActiveTab` in `SettingsData`
+- [x] Mobile-friendly: tabs use `overflow-x-auto` horizontal scroll with `whitespace-nowrap`
 
 Phase 2: Provider priority chip redesign (#91)
-- [ ] Design chip/card component for each provider (`bars-3` drag handle icon, name, enable/disable toggle)
-- [ ] Implement drag-and-drop reordering (consider SortableJS or native HTML5 drag)
-- [ ] Grey out chips for unconfigured providers (no valid API key)
-- [ ] Persist reorder and enable/disable state via existing provider priority API
-- [ ] Mobile support: tap-to-toggle, swipe-to-reorder or fallback to up/down buttons
+- [x] Replace `PriorityRow` table rows with `PriorityChipRow` drag-and-drop chip components
+- [x] Each chip: `IconBars2` drag handle, provider name, green/red enable/disable toggle button
+- [x] Drag-and-drop reordering via vendored SortableJS v1.15.7 (`web/static/js/Sortable.min.js`)
+- [x] Per-field provider enable/disable toggle: `PUT /api/v1/providers/priorities/{field}/{provider}/toggle`
+- [x] `Disabled` field added to `FieldPriority` struct in `internal/provider/settings.go`
+- [x] `EnabledProviders()` method filters out disabled providers; used by `FetchMetadata` and `FetchFieldFromProviders`
+- [x] `SetDisabledProviders()` persists disabled state; `priorityDisabledKey()` generates storage keys
+- [x] Removed dead code: old `PriorityRow` component and `prioritySwapJSON` helper
 
 Testing and PR
-- [ ] Tests pass: `go test ./...`
-- [ ] Lint passes: `golangci-lint run ./...`
-- [ ] Manual acceptance test: tabs switch, deep links work, drag reorder works, toggle persists, unconfigured greyed
+- [x] Tests pass: `go test ./...`
+- [x] Lint passes: `golangci-lint run ./...`
+- [x] Docker build succeeds and container starts cleanly (31 static assets including Sortable.min.js)
+- [ ] Manual acceptance test: tabs switch, deep links work, drag reorder works, toggle persists
 - [ ] PR created and merged
 - [ ] PR checks pass (no CI failures)
 - [ ] PR reviewed (check for copilot feedback)
 
 **Files:**
-- `web/templates/settings.templ` -- tab navigation wrapper + provider chip redesign
-- `web/static/` -- vendored SortableJS if needed
-- `internal/api/handlers_settings.go` -- accept `tab` query param
+- `web/templates/settings.templ` -- major rewrite: tab navigation, `PriorityChipRow` replacing `PriorityRow`
+- `web/components/icon.templ` -- added `IconBars2` (drag handle)
+- `web/static/js/Sortable.min.js` -- vendored SortableJS v1.15.7
+- `web/templates/layout.templ` -- added SortableJS to `AssetPaths`
+- `internal/api/handlers.go` -- added SortableJS path to `assets()`
+- `internal/api/handlers_platform.go` -- parse `?tab` query param, add `ActiveTab` to `SettingsData`
+- `internal/api/handlers_provider.go` -- updated `handleSetPriorities` to use `PriorityChipRow`, added `handleToggleFieldProvider`
+- `internal/api/router.go` -- added `PUT /api/v1/providers/priorities/{field}/{provider}/toggle` route
+- `internal/provider/settings.go` -- `Disabled` field, `EnabledProviders()`, `SetDisabledProviders()`, `priorityDisabledKey()`
+- `internal/provider/orchestrator.go` -- `FetchMetadata` and `FetchFieldFromProviders` use `EnabledProviders()`
 
 ---
 
@@ -407,9 +416,10 @@ These tags go in the GitHub issue body to guide Claude Code and Copilot:
 
 ## Notes
 
-- Items 1-4 (bugs + clobber detection + image previews) are complete.
-- #98 and #100 were originally combined but split back into separate PRs to manage session scope. #98 provides the icon infrastructure and image serving endpoints. #100 builds on that with metadata editing and provider fetch.
+- Items 1-5 (bugs + clobber detection + image previews + metadata refresh) are complete.
+- #98 and #100 were originally combined but split back into separate PRs to manage session scope. #98 provides the icon infrastructure and image serving endpoints. #100 builds on that with metadata editing and provider fetch. Both now merged.
 - Item 6 consolidates #91 and #95 into one PR since both rewrite `settings.templ`. Tab navigation wraps around the new provider chip design.
 - Item 7 (#99) depends on #98 for the local image serving endpoint and edit icon entry point. Now unblocked.
 - Item 8 (#94) should be the last item. It cleans up completed plan files and this workplan.
 - All icon work uses Heroicons inline SVGs via reusable Templ components in `web/components/icon.templ`. No Unicode emoji, no icon fonts.
+- Two new issues (#105 hamburger menu nav, #106 contextual menus audit) were opened but are not part of this workplan.
