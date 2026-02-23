@@ -135,178 +135,148 @@ Work items are ordered by priority, then by blocking relationships. Items at the
 
 ---
 
-### 4. #98 -- Display existing local images on artist detail page
+### 4. #98 + #100 -- Artist detail page: images, metadata editing, and per-field refresh
 
 `[mode: plan]` `[model: opus]`
 
-**Why fourth:** High priority, medium scope. Foundational for the image UX overhaul. Must land before #99.
+**Why next:** #98 is high priority and foundational. #100 touches the same files (`artist_detail.templ`, `router.go`, `handlers_settings.go`, `settings.templ`) so they belong in one PR to avoid repeated merge conflicts and duplicate confirmation-dialog work.
 
-**Branch:** `feature/98-local-image-display`
+**Branch:** `feature/98-100-artist-detail-overhaul`
 
-**Soft dependency:** #97 (dimensions are more useful with probing, but not strictly required)
+**Closes:** #98, #100
+
+**Soft dependency:** #97 (merged)
+
+#### Icon guidance
+
+All edit and delete icons must use **Heroicons** (inline SVG), not Unicode emoji or icon fonts. Heroicons are made by the Tailwind CSS team and are pure SVG with no font files or JS runtime. Create a reusable Templ component (e.g., `Icon(name string)`) that renders the SVG path for each icon. Key icons needed: `pencil-square` (edit), `trash` (delete), `arrow-path` (refresh), `bars-3` (drag handle). Copy SVG paths from the Heroicons "outline" set (24x24). This applies everywhere icons are added in this PR (image hover overlays and metadata field action buttons).
 
 #### Checklist
 
-Phase 1: Local image serving endpoint
+Phase 0: Icon infrastructure
+- [ ] Create a reusable Templ component `Icon(name string)` in `web/components/`
+- [ ] Copy SVG paths from Heroicons outline set (24x24) for: `pencil-square`, `trash`, `arrow-path`, `bars-3`
+- [ ] Verify icon rendering in layout with Tailwind size/color classes
+
+Phase 1: Local image serving endpoint (#98)
 - [ ] Add `GET /api/v1/artists/{id}/images/{type}` route in `router.go`
 - [ ] Handler finds image file using scanner patterns, serves with Content-Type and caching headers
 
-Phase 2: Local image metadata endpoint
+Phase 2: Local image metadata endpoint (#98)
 - [ ] Add `GET /api/v1/artists/{id}/images/{type}/info` returning JSON (width, height, fileSize, filename, format)
 - [ ] Reuse `getThumbDimensions()` pattern from `checkers.go`
 
-Phase 3: Replace status badges with image previews
+Phase 3: Replace status badges with image previews (#98)
 - [ ] Replace StatusBadge calls in `artist_detail.templ` with `<img>` tags for existing images
 - [ ] Show placeholder for missing image types
 
-Phase 4: Resolution and file size display
+Phase 4: Resolution and file size display (#98)
 - [ ] Show dimensions and file size beneath each image preview (HTMX load from info endpoint)
 
-Phase 5: Hover overlay with pencil and trashcan icons
-- [ ] Pencil icon navigates to `/artists/{id}/images?type={type}`
-- [ ] Trashcan icon triggers delete with confirmation
+Phase 5: Hover overlay with edit and delete icons (#98)
+- [ ] `pencil-square` icon navigates to `/artists/{id}/images?type={type}`
+- [ ] `trash` icon triggers delete with confirmation
 
-Phase 6: Delete endpoint and confirmation dialog
+Phase 6: Image delete endpoint and confirmation dialog (#98)
 - [ ] Add `DELETE /api/v1/artists/{id}/images/{type}` handler
 - [ ] Confirmation dialog with "Don't ask again" checkbox
 - [ ] Store preference in settings key-value store
 - [ ] Add toggle in Settings page to re-enable dialog
 
-Testing and PR
-- [ ] Tests pass: `go test ./...`
-- [ ] Lint passes: `golangci-lint run ./...`
-- [ ] Manual acceptance test: artist detail shows image previews, hover icons work, delete works
-- [ ] PR created and merged
-- [ ] PR checks pass (no CI failures)
-- [ ] PR reviewed (check for copilot feedback)
+Phase 7: Edit and delete icons on metadata fields (#100)
+- [ ] Add `pencil-square` and `trash` icon buttons next to Biography, Genres, Styles, Moods, Life events, Members
 
-**Files:**
-- `internal/api/router.go` -- new routes
-- `internal/api/handlers_image.go` -- serve, info, delete handlers
-- `web/templates/artist_detail.templ` -- image preview sidebar
-- `internal/api/handlers_settings.go` -- confirmation preference
-- `web/templates/settings.templ` -- confirmation toggle
-
----
-
-### 5. #100 -- Per-artist metadata refresh with field-level provider selection
-
-`[mode: plan]` `[model: opus]`
-
-**Why fifth:** Medium priority, large scope. Independent of image issues. Complex multi-file change with architectural decisions.
-
-**Branch:** `feature/100-per-artist-metadata-refresh`
-
-#### Checklist
-
-Phase 1: Pencil and trashcan icons on metadata fields
-- [ ] Add icon buttons next to Biography, Genres, Styles, Moods, Life events, Members in `artist_detail.templ`
-
-Phase 2: Inline manual edit per field
-- [ ] HTMX swap to editable form on pencil click (textarea, tag input, date input)
+Phase 8: Inline manual edit per field (#100)
+- [ ] HTMX swap to editable form on `pencil-square` icon click (textarea, tag input, date input)
 - [ ] Add `PATCH /api/v1/artists/{id}/fields/{field}` endpoint
 - [ ] Add `DELETE /api/v1/artists/{id}/fields/{field}` endpoint
 
-Phase 3: Per-field provider fetch
+Phase 9: Per-field provider fetch (#100)
 - [ ] Add `GET /api/v1/artists/{id}/fields/{field}/providers` endpoint
 - [ ] Call orchestrator for specific field, return results from all enabled providers
 - [ ] Inline expandable panel showing provider results side-by-side
 
-Phase 4: Global "Refresh Metadata" button
+Phase 10: Global "Refresh Metadata" button (#100)
 - [ ] Add `POST /api/v1/artists/{id}/refresh` endpoint
 - [ ] Trigger full metadata fetch via orchestrator
 
-Phase 5: Delete/reset field with confirmation
-- [ ] Trashcan triggers DELETE with configurable confirmation dialog
-- [ ] "Don't ask again" checkbox, stored in settings
-
-Phase 6: Settings toggle for confirmation dialogs
-- [ ] Add toggle in `settings.templ` (shared with #98 image deletion confirmation)
+Phase 11: Delete/reset field with confirmation (#100)
+- [ ] `trash` icon triggers DELETE with configurable confirmation dialog
+- [ ] Reuse "Don't ask again" pattern from Phase 6
 
 Testing and PR
 - [ ] Tests pass: `go test ./...`
 - [ ] Lint passes: `golangci-lint run ./...`
-- [ ] Manual acceptance test: per-field edit, provider fetch, global refresh all work
+- [ ] Manual acceptance test: image previews, hover icons, metadata edit/delete, provider fetch, global refresh
 - [ ] PR created and merged
 - [ ] PR checks pass (no CI failures)
 - [ ] PR reviewed (check for copilot feedback)
 
 **Files:**
-- `web/templates/artist_detail.templ` -- icons, inline edit forms, provider panel
-- `internal/api/router.go` -- new field-level routes
-- `internal/api/handlers_artist.go` -- field PATCH/DELETE/GET handlers
+- `web/components/icon.templ` -- reusable Heroicons SVG component
+- `web/templates/artist_detail.templ` -- image previews, metadata icons, inline edit, provider panel
+- `internal/api/router.go` -- image serve/delete routes, field PATCH/DELETE/GET routes, refresh route
+- `internal/api/handlers_image.go` -- serve, info, delete handlers
+- `internal/api/handlers_artist.go` -- field PATCH/DELETE/GET, refresh handlers
 - `internal/provider/orchestrator.go` -- per-field fetch method
-- `internal/provider/settings.go` -- priority lookups
-- `internal/api/handlers_settings.go` -- confirmation preferences
-- `web/templates/settings.templ` -- confirmation toggle
+- `internal/api/handlers_settings.go` -- confirmation dialog preferences
+- `web/templates/settings.templ` -- confirmation dialog toggle
 
 ---
 
-### 6. #91 -- Provider Priority UI redesign: drag-drop chips
+### 5. #91 + #95 -- Settings page: tab navigation and provider priority chips
 
 `[mode: plan]` `[model: opus]`
 
-**Why sixth:** Medium priority, large scope. Standalone UX improvement. No blockers or dependents.
+**Why together:** Both issues rewrite `settings.templ`. #91 redesigns the provider priority section as drag-and-drop chips; #95 wraps all sections in tab navigation. Doing them together avoids merge conflicts and produces a coherent settings page layout.
 
-**Branch:** `feature/91-provider-priority-chips`
+**Branch:** `feature/91-95-settings-overhaul`
 
-#### Checklist
+**Closes:** #91, #95
 
-- [ ] Design chip/card component for each provider (drag handle, name, enable/disable toggle)
-- [ ] Implement drag-and-drop reordering (consider SortableJS or native HTML5 drag)
-- [ ] Grey out chips for unconfigured providers (no valid API key)
-- [ ] Persist reorder and enable/disable state via existing provider priority API
-- [ ] Mobile support: tap-to-toggle, swipe-to-reorder or fallback to up/down buttons
-- [ ] Tests pass: `go test ./...`
-- [ ] Lint passes: `golangci-lint run ./...`
-- [ ] Manual acceptance test: drag reorder works, toggle persists, unconfigured providers greyed
-- [ ] PR created and merged
-- [ ] PR checks pass (no CI failures)
-- [ ] PR reviewed (check for copilot feedback)
+#### Icon guidance
 
-**Files:**
-- `web/templates/settings.templ` -- replace provider priority section
-- `web/static/` -- vendored drag-drop library if needed
-- `internal/api/handlers_settings.go` -- no backend changes expected (reuse existing API)
-
----
-
-### 7. #95 -- Settings page: add tab navigation for sections
-
-`[mode: direct]` `[model: sonnet]`
-
-**Why seventh:** Medium priority, medium scope. Pure frontend change. Consider coordinating with #91 (provider priority redesign) if both are in flight.
-
-**Branch:** `feature/95-settings-tabs`
+Use the Heroicons component (created in the previous PR) for the drag handle icon (`bars-3`) on provider chips.
 
 #### Checklist
 
+Phase 1: Tab navigation (#95)
 - [ ] Group settings sections into tabs: General, Providers, Scraper, Connections, Notifications, Maintenance
 - [ ] Implement tab switching (HTMX or JS-driven, preserving scroll position)
 - [ ] Ensure deep-linking works (e.g., `/settings?tab=providers`)
 - [ ] Mobile-friendly tab navigation (horizontal scroll or dropdown)
+
+Phase 2: Provider priority chip redesign (#91)
+- [ ] Design chip/card component for each provider (`bars-3` drag handle icon, name, enable/disable toggle)
+- [ ] Implement drag-and-drop reordering (consider SortableJS or native HTML5 drag)
+- [ ] Grey out chips for unconfigured providers (no valid API key)
+- [ ] Persist reorder and enable/disable state via existing provider priority API
+- [ ] Mobile support: tap-to-toggle, swipe-to-reorder or fallback to up/down buttons
+
+Testing and PR
 - [ ] Tests pass: `go test ./...`
 - [ ] Lint passes: `golangci-lint run ./...`
-- [ ] Manual acceptance test: tabs switch correctly, deep links work, mobile layout works
+- [ ] Manual acceptance test: tabs switch, deep links work, drag reorder works, toggle persists, unconfigured greyed
 - [ ] PR created and merged
 - [ ] PR checks pass (no CI failures)
 - [ ] PR reviewed (check for copilot feedback)
 
 **Files:**
-- `web/templates/settings.templ` -- tab navigation wrapper around existing sections
-- `internal/api/handlers_settings.go` -- accept `tab` query param if needed
+- `web/templates/settings.templ` -- tab navigation wrapper + provider chip redesign
+- `web/static/` -- vendored SortableJS if needed
+- `internal/api/handlers_settings.go` -- accept `tab` query param
 
 ---
 
-### 8. #99 -- Image management improvements: unified search, edit, upload UX
+### 6. #99 -- Image management improvements: unified search, edit, upload UX
 
 `[mode: plan]` `[model: opus]`
 
-**Why eighth:** Medium priority, large scope. Blocked by #98 (local image display provides the pencil icon entry point and serving endpoint).
+**Why separate:** Primarily touches `image_search.templ` and image components, not `artist_detail.templ`. The local image serving endpoint it depends on will already be merged from the #98+#100 PR.
 
 **Branch:** `feature/99-image-management-ux`
 
-**Blocked by:** #98
+**Blocked by:** #98+#100 PR (provides serving endpoint and `pencil-square` icon entry point)
 
 #### Checklist
 
@@ -329,7 +299,7 @@ Phase 5: Resolution and file size for fetched results
 - [ ] Display dimensions on every image card (benefits from #97 probing)
 
 Phase 6: Configurable confirmation on save/delete
-- [ ] Save and delete use confirmation dialog with "Don't ask again" (shared with #98/#100)
+- [ ] Save and delete use confirmation dialog with "Don't ask again" (shared from #98+#100)
 
 Testing and PR
 - [ ] Tests pass: `go test ./...`
@@ -348,7 +318,7 @@ Testing and PR
 
 ---
 
-### 9. #94 -- Developer documentation overhaul
+### 7. #94 -- Developer documentation overhaul
 
 `[mode: direct]` `[model: haiku]`
 
@@ -410,8 +380,9 @@ These tags go in the GitHub issue body to guide Claude Code and Copilot:
 
 ## Notes
 
-- Items 1-2 (bugs) can be done quickly and merged before starting feature work.
-- Items 4 and 5 both modify `artist_detail.templ` extensively. If worked in parallel, coordinate to avoid merge conflicts. Consider working #98 first, merging, then starting #100.
-- Items 6 and 7 both modify `settings.templ`. Same coordination applies. Consider working #91 first (provider chips), then #95 (tabs) wraps around all sections including the new chips.
-- Item 8 (#99) cannot start until item 4 (#98) is merged.
-- Item 9 (#94) should be the last item. It cleans up completed plan files and this workplan.
+- Items 1-3 (bugs + clobber detection) are complete.
+- Item 4 consolidates #98 and #100 into one PR since both heavily modify `artist_detail.templ`, `router.go`, and `handlers_settings.go`. This avoids merge conflicts and shares the confirmation dialog implementation.
+- Item 5 consolidates #91 and #95 into one PR since both rewrite `settings.templ`. Tab navigation wraps around the new provider chip design.
+- Item 6 (#99) depends on item 4 for the local image serving endpoint and edit icon entry point.
+- Item 7 (#94) should be the last item. It cleans up completed plan files and this workplan.
+- All icon work uses Heroicons inline SVGs via a reusable Templ component. No Unicode emoji, no icon fonts.
