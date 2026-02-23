@@ -6,8 +6,7 @@ Work through all 9 open issues in priority order, respecting blocking relationsh
 
 ## Progress Summary
 
-- **Completed:** 5 of 9 issues (#90, #97, #88, #98, #100)
-- **In progress:** #91 + #95 (settings page overhaul: tab navigation + provider priority chips) -- PR pending
+- **Completed:** 7 of 9 issues (#90, #97, #88, #98, #100, #91, #95)
 - **Remaining:** 2 issues (#99, #94)
 - **Next up:** #99 (image management improvements)
 - **New issues (not in original scope):** #105 (hamburger menu nav), #106 (contextual menus audit)
@@ -20,7 +19,7 @@ Work through all 9 open issues in priority order, respecting blocking relationsh
 #88 DONE (medium, no blockers) -- PR #103 merged
 #98 DONE (high, soft depends on #97) -- PR #104 merged
 #100 DONE (medium, no blockers) -- PR #107 merged
-#91 + #95 (medium, no blockers) <-- PR pending (combined PR)
+#91 + #95 DONE (medium, no blockers) -- PR #110 merged
 #99 (medium, blocked by #98) -- now unblocked
 #94 (low, no blockers, intentionally last)
 ```
@@ -34,8 +33,8 @@ Work through all 9 open issues in priority order, respecting blocking relationsh
 | 88 | NFO and artwork clobber risk detection and UI warnings | medium | medium | plan | sonnet | DONE (PR #103) |
 | 98 | Display existing local images on artist detail page | high | medium | plan | opus | DONE (PR #104) |
 | 100 | Per-artist metadata refresh with field-level provider selection | medium | large | plan | opus | DONE (PR #107) |
-| 91 | Provider Priority UI redesign: drag-drop chips | medium | large | plan | opus | **PR pending** (combined with #95) |
-| 95 | Settings page: add tab navigation for sections | medium | medium | direct | sonnet | **PR pending** (combined with #91) |
+| 91 | Provider Priority UI redesign: drag-drop chips | medium | large | plan | opus | DONE (PR #110, combined with #95) |
+| 95 | Settings page: add tab navigation for sections | medium | medium | direct | sonnet | DONE (PR #110, combined with #91) |
 | 99 | Image management improvements: unified search, edit, upload UX | medium | large | plan | opus | open (unblocked) |
 | 94 | Developer documentation overhaul | low | medium | direct | haiku | open (last) |
 
@@ -285,10 +284,10 @@ Testing and PR
 - [x] Tests pass: `go test ./...`
 - [x] Lint passes: `golangci-lint run ./...`
 - [x] Docker build succeeds and container starts cleanly (31 static assets including Sortable.min.js)
-- [ ] Manual acceptance test: tabs switch, deep links work, drag reorder works, toggle persists
-- [ ] PR created and merged
-- [ ] PR checks pass (no CI failures)
-- [ ] PR reviewed (check for copilot feedback)
+- [x] Manual acceptance test: tabs switch, deep links work, drag reorder works, toggle persists
+- [x] PR created and merged -- PR #110
+- [x] PR checks pass (no CI failures)
+- [x] PR reviewed (Copilot: 10 comments across 2 rounds, all addressed)
 
 **Files:**
 - `web/templates/settings.templ` -- major rewrite: tab navigation, `PriorityChipRow` replacing `PriorityRow`
