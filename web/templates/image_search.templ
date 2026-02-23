@@ -50,6 +50,7 @@ templ ImageSearchPage(assets AssetPaths, data ImageSearchData) {
 					var modal = document.getElementById('crop-modal');
 					var cropImage = document.getElementById('crop-image');
 					var cropType = document.getElementById('crop-type');
+					cropImage.crossOrigin = 'anonymous';
 					cropImage.src = imgSrc;
 					if (imageType) cropType.value = imageType;
 					modal.classList.remove('hidden');
@@ -60,6 +61,16 @@ templ ImageSearchPage(assets AssetPaths, data ImageSearchData) {
 							autoCropArea: 0.8,
 						});
 						window._cropper = _cropper;
+					};
+					cropImage.onerror = function() {
+						closeCropModal();
+						var statusEl = document.getElementById('upload-status');
+						if (statusEl) {
+							var s = document.createElement('span');
+							s.className = 'text-sm text-amber-600';
+							s.textContent = 'Cannot crop this image directly (CORS). Save it first, then crop.';
+							statusEl.replaceChildren(s);
+						}
 					};
 				}
 				function closeCropModal() {
@@ -171,6 +182,7 @@ templ imageSearchContextualized(data ImageSearchData) {
 						class="px-3 py-2 text-sm rounded-md border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
 						hx-delete={ fmt.Sprintf("/api/v1/artists/%s/images/%s", data.Artist.ID, data.SelectedType) }
 						hx-confirm={ "Delete this " + imageTypeLabel(data.SelectedType) + " image?" }
+						data-confirm-key="image-delete"
 						hx-swap="none"
 						hx-on::after-request="if(event.detail.successful) window.location.reload()"
 					>
@@ -182,8 +194,76 @@ templ imageSearchContextualized(data ImageSearchData) {
 			// -- Upload status --
 			<div id="upload-status" class="mt-2"></div>
 		</section>
-		// -- Search results (single shared area) --
-		<div id="image-results" class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow hidden"></div>
+		// -- Search results (single shared area, auto-fires when MBID is available) --
+		if data.Artist.MusicBrainzID != "" {
+			<div
+				id="image-results"
+				class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow hidden"
+				hx-get={ fmt.Sprintf("/api/v1/artists/%s/images/search?type=%s", data.Artist.ID, data.SelectedType) }
+				hx-trigger="load"
+				hx-swap="innerHTML"
+				hx-indicator="#search-spinner"
+			></div>
+		} else {
+			<div id="image-results" class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow hidden"></div>
+		}
+		// -- Compare panel (local vs. fetched, only when a local image exists) --
+		if imageExistsForType(data.Artist, data.SelectedType) {
+			<section id="compare-section" class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow hidden">
+				<div class="flex items-center justify-between mb-4">
+					<h2 class="text-lg font-semibold">Compare</h2>
+					<button
+						type="button"
+						class="text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+						onclick="document.getElementById('compare-section').classList.add('hidden')"
+					>
+						Close
+					</button>
+				</div>
+				<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+					<div class="border border-gray-200 dark:border-gray-700 rounded-lg p-3">
+						<h3 class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Current</h3>
+						<div
+							class={
+								"flex items-center justify-center overflow-hidden rounded max-h-64",
+								templ.KV("checkered-bg", data.SelectedType == "logo"),
+								templ.KV("bg-gray-100 dark:bg-gray-900", data.SelectedType != "logo"),
+							}
+						>
+							<img
+								src={ fmt.Sprintf("/api/v1/artists/%s/images/%s/file", data.Artist.ID, data.SelectedType) }
+								alt="Current image"
+								class="max-w-full max-h-64 object-contain"
+							/>
+						</div>
+						<div
+							class="mt-2 text-xs text-gray-500 dark:text-gray-400"
+							hx-get={ fmt.Sprintf("/api/v1/artists/%s/images/%s/info", data.Artist.ID, data.SelectedType) }
+							hx-trigger="load"
+							hx-swap="innerHTML"
+						></div>
+					</div>
+					<div id="compare-right-panel" class="border border-gray-200 dark:border-gray-700 rounded-lg p-3">
+						<h3 class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Selected</h3>
+						<div id="compare-right-image" class="flex items-center justify-center overflow-hidden bg-gray-100 dark:bg-gray-900 rounded max-h-64 min-h-32">
+							<p class="text-xs text-gray-400 py-8">Click "Compare" on a search result</p>
+						</div>
+						<div id="compare-right-meta" class="mt-2 text-xs text-gray-500 dark:text-gray-400"></div>
+						<button
+							type="button"
+							id="compare-save-btn"
+							class="hidden w-full mt-2 text-sm px-2 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+							hx-post={ fmt.Sprintf("/api/v1/artists/%s/images/fetch", data.Artist.ID) }
+							hx-swap="none"
+							hx-confirm="Save this image?"
+							data-confirm-key="image-save"
+						>
+							Use this one
+						</button>
+					</div>
+				</div>
+			</section>
+		}
 		// -- Hidden file input for Browse button --
 		<input
 			type="file"
@@ -290,12 +370,57 @@ templ imageSearchContextualized(data ImageSearchData) {
 					}).catch(function() { setStatus('Fetch failed', 'text-red-500'); });
 				});
 
-				// Show results panel when HTMX swap completes
+				// Show results panel and reveal compare/crop buttons when HTMX swap completes
 				document.body.addEventListener('htmx:afterSwap', function(e) {
 					if (e.detail.target && e.detail.target.id === 'image-results') {
 						e.detail.target.classList.remove('hidden');
+						var hasCompare = document.getElementById('compare-section');
+						var btns = e.detail.target.querySelectorAll('.compare-btn, .crop-btn');
+						for (var i = 0; i < btns.length; i++) {
+							if (btns[i].classList.contains('compare-btn') && !hasCompare) continue;
+							btns[i].classList.remove('hidden');
+						}
 					}
 				});
+
+				// Populate compare panel with data from an ImageCard
+				window.populateCompare = function(card) {
+					if (!card) return;
+					var section = document.getElementById('compare-section');
+					if (!section) return;
+					section.classList.remove('hidden');
+
+					var url = card.dataset.imgUrl;
+					var imgType = card.dataset.imgType;
+					var source = card.dataset.imgSource;
+					var width = card.dataset.imgWidth;
+					var height = card.dataset.imgHeight;
+
+					var imgContainer = document.getElementById('compare-right-image');
+					var isLogo = imgType === 'logo';
+					imgContainer.className = 'flex items-center justify-center overflow-hidden rounded max-h-64 min-h-32 ' +
+						(isLogo ? 'checkered-bg' : 'bg-gray-100 dark:bg-gray-900');
+					imgContainer.innerHTML = '';
+					var imgEl = document.createElement('img');
+					imgEl.src = url;
+					imgEl.alt = imgType + ' from ' + source;
+					imgEl.className = 'max-w-full max-h-64 object-contain';
+					imgContainer.appendChild(imgEl);
+
+					var meta = document.getElementById('compare-right-meta');
+					var parts = [source];
+					if (parseInt(width) > 0 && parseInt(height) > 0) {
+						parts.push(width + 'x' + height);
+					}
+					meta.textContent = parts.join(' \u00b7 ');
+
+					var saveBtn = document.getElementById('compare-save-btn');
+					saveBtn.classList.remove('hidden');
+					saveBtn.setAttribute('hx-vals', JSON.stringify({url: url, type: imgType}));
+					htmx.process(saveBtn);
+
+					section.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+				};
 			})();
 		</script>
 	</div>

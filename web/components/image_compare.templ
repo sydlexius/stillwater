@@ -50,6 +50,7 @@ templ ComparePanel(artistID string, url string, source string, imageType string,
 			hx-vals={ fmt.Sprintf(`{"url":"%s","type":"%s"}`, url, imageType) }
 			hx-swap="none"
 			hx-confirm="Save this image?"
+			data-confirm-key="image-save"
 		>
 			Use this one
 		</button>

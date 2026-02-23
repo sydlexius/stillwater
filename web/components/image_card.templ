@@ -30,9 +30,28 @@ func isLowResolution(w, h int) bool {
 	return (w > 0 && w < 500) || (h > 0 && h < 500)
 }
 
+// normalizeCardImageType maps provider-specific types to base types for crop/compare.
+func normalizeCardImageType(t string) string {
+	switch t {
+	case "hdlogo":
+		return "logo"
+	case "widethumb":
+		return "thumb"
+	case "background":
+		return "fanart"
+	default:
+		return t
+	}
+}
+
 templ ImageCard(artistID string, img provider.ImageResult) {
 	<div
 		class={ "relative rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden group hover:border-blue-400 dark:hover:border-blue-500 transition-colors", }
+		data-img-url={ img.URL }
+		data-img-type={ normalizeCardImageType(string(img.Type)) }
+		data-img-source={ img.Source }
+		data-img-width={ strconv.Itoa(img.Width) }
+		data-img-height={ strconv.Itoa(img.Height) }
 	>
 		<div
 			class={
@@ -87,9 +106,26 @@ templ ImageCard(artistID string, img provider.ImageResult) {
 				hx-vals={ fmt.Sprintf(`{"url":"%s","type":"%s"}`, img.URL, string(img.Type)) }
 				hx-swap="none"
 				hx-confirm="Save this image?"
+				data-confirm-key="image-save"
 			>
 				Save
 			</button>
+			<div class="flex gap-1">
+				<button
+					type="button"
+					class="compare-btn hidden flex-1 text-sm px-2 py-1 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+					onclick="if(typeof populateCompare==='function') populateCompare(this.closest('[data-img-url]'))"
+				>
+					Compare
+				</button>
+				<button
+					type="button"
+					class="crop-btn hidden flex-1 text-sm px-2 py-1 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+					onclick="if(typeof openCropModal==='function') openCropModal(this.closest('[data-img-url]').dataset.imgUrl, this.closest('[data-img-url]').dataset.imgType)"
+				>
+					Crop
+				</button>
+			</div>
 		</div>
 	</div>
 }
