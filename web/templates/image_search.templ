@@ -237,11 +237,18 @@ templ imageSearchContextualized(data ImageSearchData) {
 					return document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*\=\s*([^;]*).*$)|^.*$/, "$1");
 				}
 
+				function setStatus(msg, cls) {
+					var s = document.createElement('span');
+					s.className = 'text-sm ' + cls;
+					s.textContent = msg;
+					statusEl.replaceChildren(s);
+				}
+
 				function uploadFile(file) {
 					var fd = new FormData();
 					fd.append('file', file);
 					fd.append('type', imageType);
-					statusEl.innerHTML = '<span class="text-sm text-gray-500">Uploading...</span>';
+					setStatus('Uploading...', 'text-gray-500');
 					fetch('/api/v1/artists/' + artistID + '/images/upload', {
 						method: 'POST',
 						headers: {'X-CSRF-Token': csrfToken()},
@@ -249,8 +256,8 @@ templ imageSearchContextualized(data ImageSearchData) {
 						credentials: 'same-origin'
 					}).then(function(r) {
 						if (r.ok) { window.location.reload(); }
-						else { r.text().then(function(t) { statusEl.innerHTML = '<span class="text-sm text-red-500">' + t + '</span>'; }); }
-					}).catch(function() { statusEl.innerHTML = '<span class="text-sm text-red-500">Upload failed</span>'; });
+						else { r.text().then(function(t) { setStatus(t, 'text-red-500'); }); }
+					}).catch(function() { setStatus('Upload failed', 'text-red-500'); });
 				}
 
 				dropZone.addEventListener('dragover', function(e) { e.preventDefault(); dropHint.classList.remove('hidden'); });
@@ -270,7 +277,7 @@ templ imageSearchContextualized(data ImageSearchData) {
 					var url = document.getElementById('fetch-url-input').value.trim();
 					if (!url) return;
 					var modal = document.getElementById('fetch-url-modal');
-					statusEl.innerHTML = '<span class="text-sm text-gray-500">Fetching...</span>';
+					setStatus('Fetching...', 'text-gray-500');
 					modal.classList.add('hidden');
 					fetch('/api/v1/artists/' + artistID + '/images/fetch', {
 						method: 'POST',
@@ -279,8 +286,8 @@ templ imageSearchContextualized(data ImageSearchData) {
 						credentials: 'same-origin'
 					}).then(function(r) {
 						if (r.ok) { window.location.reload(); }
-						else { r.text().then(function(t) { statusEl.innerHTML = '<span class="text-sm text-red-500">' + t + '</span>'; }); }
-					}).catch(function() { statusEl.innerHTML = '<span class="text-sm text-red-500">Fetch failed</span>'; });
+						else { r.text().then(function(t) { setStatus(t, 'text-red-500'); }); }
+					}).catch(function() { setStatus('Fetch failed', 'text-red-500'); });
 				});
 
 				// Show results panel when HTMX swap completes

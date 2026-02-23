@@ -743,7 +743,7 @@ func ImagePreviewCard(artistID, imageType string, exists bool, label string) tem
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var32 = []any{"aspect-square flex items-center justify-center overflow-hidden",
-				templ.KV("bg-[repeating-conic-gradient(#e5e7eb_0%_25%,transparent_0%_50%)] dark:bg-[repeating-conic-gradient(#374151_0%_25%,transparent_0%_50%)] bg-[length:16px_16px]", imageType == "logo"),
+				templ.KV("checkered-bg", imageType == "logo"),
 				templ.KV("bg-gray-100 dark:bg-gray-900", imageType != "logo"),
 			}
 			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var32...)

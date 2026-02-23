@@ -265,7 +265,7 @@ templ ImagePreviewCard(artistID, imageType string, exists bool, label string) {
 				<div
 					class={
 						"aspect-square flex items-center justify-center overflow-hidden",
-						templ.KV("bg-[repeating-conic-gradient(#e5e7eb_0%_25%,transparent_0%_50%)] dark:bg-[repeating-conic-gradient(#374151_0%_25%,transparent_0%_50%)] bg-[length:16px_16px]", imageType == "logo"),
+						templ.KV("checkered-bg", imageType == "logo"),
 						templ.KV("bg-gray-100 dark:bg-gray-900", imageType != "logo"),
 					}
 				>
