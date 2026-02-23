@@ -5,11 +5,15 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/sydlexius/stillwater/internal/encryption"
 )
+
+// errDecrypt is a sentinel indicating an API key decryption failure.
+var errDecrypt = errors.New("decrypt")
 
 // Service provides connection data operations.
 type Service struct {
@@ -87,9 +91,13 @@ func (s *Service) List(ctx context.Context) ([]Connection, error) {
 
 	var connections []Connection
 	for rows.Next() {
-		c, err := s.scanConnection(rows)
-		if err != nil {
-			return nil, fmt.Errorf("scanning connection: %w", err)
+		c, scanErr := s.scanConnection(rows)
+		if scanErr != nil {
+			if errors.Is(scanErr, errDecrypt) {
+				slog.Warn("skipping connection with undecryptable key", "error", scanErr)
+				continue
+			}
+			return nil, fmt.Errorf("scanning connection row: %w", scanErr)
 		}
 		connections = append(connections, *c)
 	}
@@ -109,13 +117,55 @@ func (s *Service) ListByType(ctx context.Context, connType string) ([]Connection
 
 	var connections []Connection
 	for rows.Next() {
-		c, err := s.scanConnection(rows)
-		if err != nil {
-			return nil, fmt.Errorf("scanning connection: %w", err)
+		c, scanErr := s.scanConnection(rows)
+		if scanErr != nil {
+			if errors.Is(scanErr, errDecrypt) {
+				slog.Warn("skipping connection with undecryptable key", "error", scanErr)
+				continue
+			}
+			return nil, fmt.Errorf("scanning connection row: %w", scanErr)
 		}
 		connections = append(connections, *c)
 	}
 	return connections, rows.Err()
+}
+
+// GetByTypeAndURL returns the most recently created connection matching type and URL, or nil if none.
+func (s *Service) GetByTypeAndURL(ctx context.Context, connType, url string) (*Connection, error) {
+	row := s.db.QueryRowContext(ctx, `
+		SELECT id, name, type, url, encrypted_api_key, enabled, status, status_message, last_checked_at, created_at, updated_at
+		FROM connections WHERE type = ? AND url = ? ORDER BY created_at DESC LIMIT 1
+	`, connType, url)
+	c, err := s.scanConnection(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if errors.Is(err, errDecrypt) {
+		slog.Warn("treating undecryptable connection as not found for type+url lookup",
+			"error", err, "type", connType, "url", url)
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("getting connection by type+url: %w", err)
+	}
+	return c, nil
+}
+
+// DeduplicateByTypeURL removes duplicate connection rows, keeping only the most
+// recent row per type+url combination. Returns the number of rows removed.
+func (s *Service) DeduplicateByTypeURL(ctx context.Context) (int64, error) {
+	result, err := s.db.ExecContext(ctx, `
+		DELETE FROM connections WHERE id NOT IN (
+			SELECT id FROM (
+				SELECT id, ROW_NUMBER() OVER (PARTITION BY type, url ORDER BY created_at DESC) AS rn
+				FROM connections
+			) WHERE rn = 1
+		)
+	`)
+	if err != nil {
+		return 0, fmt.Errorf("deduplicating connections: %w", err)
+	}
+	return result.RowsAffected()
 }
 
 // Update modifies an existing connection. If APIKey is non-empty, it re-encrypts.
@@ -191,11 +241,13 @@ func (s *Service) scanConnection(row interface{ Scan(...any) error }) (*Connecti
 		return nil, err
 	}
 
-	apiKey, err := s.encryptor.Decrypt(encKey)
-	if err != nil {
-		return nil, fmt.Errorf("decrypting api key for connection %s: %w", c.ID, err)
+	if encKey != "" {
+		apiKey, decErr := s.encryptor.Decrypt(encKey)
+		if decErr != nil {
+			return nil, fmt.Errorf("%w: api key for connection %s: %w", errDecrypt, c.ID, decErr)
+		}
+		c.APIKey = apiKey
 	}
-	c.APIKey = apiKey
 	c.Enabled = enabled == 1
 	c.CreatedAt = parseTime(createdAt)
 	c.UpdatedAt = parseTime(updatedAt)
