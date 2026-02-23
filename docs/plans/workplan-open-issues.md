@@ -6,9 +6,9 @@ Work through all 9 open issues in priority order, respecting blocking relationsh
 
 ## Progress Summary
 
-- **Completed:** 3 of 9 issues (#90, #97, #88)
-- **Remaining:** 6 issues (#98, #100, #91, #95, #99, #94)
-- **Next up:** #98 (high priority, unblocks #99)
+- **Completed:** 4 of 9 issues (#90, #97, #88, #98)
+- **Remaining:** 5 issues (#100, #91, #95, #99, #94)
+- **Next up:** #100 (per-artist metadata refresh, builds on #98 icon infrastructure)
 
 ## Dependency Graph
 
@@ -16,11 +16,11 @@ Work through all 9 open issues in priority order, respecting blocking relationsh
 #90 DONE (critical bug, no blockers) -- PR #101 merged
 #97 DONE (high bug, no blockers) -- PR #102 merged
 #88 DONE (medium, no blockers) -- PR #103 merged
-#98 (high, soft depends on #97) <-- NEXT
-#100 (medium, no blockers)
+#98 DONE (high, soft depends on #97) -- PR #104
+#100 (medium, no blockers) <-- NEXT
 #91 (medium, no blockers)
 #95 (medium, no blockers)
-#99 (medium, blocked by #98)
+#99 (medium, blocked by #98) -- now unblocked
 #94 (low, no blockers, intentionally last)
 ```
 
@@ -31,11 +31,11 @@ Work through all 9 open issues in priority order, respecting blocking relationsh
 | 90 | Connections bug: stale encrypted row poisons List() | critical | small | direct | sonnet | DONE (PR #101) |
 | 97 | Fanart.tv images missing dimensions and rendering blank | high | small | direct | sonnet | DONE (PR #102) |
 | 88 | NFO and artwork clobber risk detection and UI warnings | medium | medium | plan | sonnet | DONE (PR #103) |
-| 98 | Display existing local images on artist detail page | high | medium | plan | opus | **NEXT**  |
-| 100 | Per-artist metadata refresh with field-level provider selection | medium | large | plan | opus | open |
+| 98 | Display existing local images on artist detail page | high | medium | plan | opus | DONE (PR #104) |
+| 100 | Per-artist metadata refresh with field-level provider selection | medium | large | plan | opus | **NEXT** |
 | 91 | Provider Priority UI redesign: drag-drop chips | medium | large | plan | opus | open |
 | 95 | Settings page: add tab navigation for sections | medium | medium | direct | sonnet | open |
-| 99 | Image management improvements: unified search, edit, upload UX | medium | large | plan | opus | blocked by #98 |
+| 99 | Image management improvements: unified search, edit, upload UX | medium | large | plan | opus | open (unblocked) |
 | 94 | Developer documentation overhaul | low | medium | direct | haiku | open (last) |
 
 ## Execution Order
@@ -135,96 +135,123 @@ Work items are ordered by priority, then by blocking relationships. Items at the
 
 ---
 
-### 4. #98 + #100 -- Artist detail page: images, metadata editing, and per-field refresh
+### 4. #98 -- Display existing local images on artist detail page
 
 `[mode: plan]` `[model: opus]`
 
-**Why next:** #98 is high priority and foundational. #100 touches the same files (`artist_detail.templ`, `router.go`, `handlers_settings.go`, `settings.templ`) so they belong in one PR to avoid repeated merge conflicts and duplicate confirmation-dialog work.
+**Why next:** High priority, foundational for #99 image management improvements.
 
-**Branch:** `feature/98-100-artist-detail-overhaul`
+**Branch:** `feature/98-artist-detail-images`
 
-**Closes:** #98, #100
+**Closes:** #98
 
 **Soft dependency:** #97 (merged)
-
-#### Icon guidance
-
-All edit and delete icons must use **Heroicons** (inline SVG), not Unicode emoji or icon fonts. Heroicons are made by the Tailwind CSS team and are pure SVG with no font files or JS runtime. Create a reusable Templ component (e.g., `Icon(name string)`) that renders the SVG path for each icon. Key icons needed: `pencil-square` (edit), `trash` (delete), `arrow-path` (refresh), `bars-3` (drag handle). Copy SVG paths from the Heroicons "outline" set (24x24). This applies everywhere icons are added in this PR (image hover overlays and metadata field action buttons).
 
 #### Checklist
 
 Phase 0: Icon infrastructure
-- [ ] Create a reusable Templ component `Icon(name string)` in `web/components/`
-- [ ] Copy SVG paths from Heroicons outline set (24x24) for: `pencil-square`, `trash`, `arrow-path`, `bars-3`
-- [ ] Verify icon rendering in layout with Tailwind size/color classes
+- [x] Create reusable Templ components `IconPencilSquare` and `IconTrash` in `web/components/icon.templ`
+- [x] SVG paths from Heroicons outline set (24x24), stroke-based, `currentColor`
 
-Phase 1: Local image serving endpoint (#98)
-- [ ] Add `GET /api/v1/artists/{id}/images/{type}` route in `router.go`
-- [ ] Handler finds image file using scanner patterns, serves with Content-Type and caching headers
+Phase 1: Local image serving endpoint
+- [x] Add `GET /api/v1/artists/{id}/images/{type}/file` route in `router.go`
+- [x] Handler finds image file using naming patterns, serves with Content-Type and caching headers
 
-Phase 2: Local image metadata endpoint (#98)
-- [ ] Add `GET /api/v1/artists/{id}/images/{type}/info` returning JSON (width, height, fileSize, filename, format)
-- [ ] Reuse `getThumbDimensions()` pattern from `checkers.go`
+Phase 2: Local image metadata endpoint
+- [x] Add `GET /api/v1/artists/{id}/images/{type}/info` returning JSON or HTMX partial
+- [x] Uses `img.GetDimensions()` for width/height, `os.Stat` for file size
 
-Phase 3: Replace status badges with image previews (#98)
-- [ ] Replace StatusBadge calls in `artist_detail.templ` with `<img>` tags for existing images
-- [ ] Show placeholder for missing image types
+Phase 3-5: Replace status badges with image previews + hover overlay
+- [x] Replace StatusBadge calls in `artist_detail.templ` with `ImagePreviewCard` components
+- [x] Show actual image thumbnails with lazy loading
+- [x] Show placeholder with image icon for missing types
+- [x] HTMX-loaded resolution and file size badge below each image
+- [x] Hover overlay with pencil (edit) and trash (delete) icons
+- [x] Checkered background for logo type (transparency detection)
 
-Phase 4: Resolution and file size display (#98)
-- [ ] Show dimensions and file size beneath each image preview (HTMX load from info endpoint)
+Phase 6: Image delete endpoint
+- [x] Add `DELETE /api/v1/artists/{id}/images/{type}` handler
+- [x] Deletes all matching pattern files and clears artist image flag
+- [x] HTMX response returns updated card in placeholder state
+- [x] Native `hx-confirm` dialog (custom "Don't ask again" deferred to #100)
 
-Phase 5: Hover overlay with edit and delete icons (#98)
-- [ ] `pencil-square` icon navigates to `/artists/{id}/images?type={type}`
-- [ ] `trash` icon triggers delete with confirmation
+Testing and PR
+- [x] Tests pass: `go test ./...`
+- [x] Lint passes: `golangci-lint run ./...`
+- [ ] Manual acceptance test: image previews, hover icons, delete, info badge loading
+- [x] PR created -- PR #104
+- [ ] PR checks pass (no CI failures)
+- [ ] PR reviewed (check for copilot feedback)
 
-Phase 6: Image delete endpoint and confirmation dialog (#98)
-- [ ] Add `DELETE /api/v1/artists/{id}/images/{type}` handler
-- [ ] Confirmation dialog with "Don't ask again" checkbox
-- [ ] Store preference in settings key-value store
-- [ ] Add toggle in Settings page to re-enable dialog
+**Files:**
+- `web/components/icon.templ` -- reusable Heroicons SVG components (new)
+- `web/templates/artist_detail.templ` -- `ImagePreviewCard`, `ImageInfoBadge` components, replaced File Status section
+- `internal/api/handlers_image.go` -- `handleServeImage`, `handleImageInfo`, `handleDeleteImage` + helpers
+- `internal/api/router.go` -- 3 new routes
 
-Phase 7: Edit and delete icons on metadata fields (#100)
+---
+
+### 5. #100 -- Per-artist metadata refresh with field-level provider selection
+
+`[mode: plan]` `[model: opus]`
+
+**Why next:** Medium priority, large scope. Builds on the Heroicons icon component from #98.
+
+**Branch:** `feature/100-artist-metadata-refresh`
+
+**Closes:** #100
+
+#### Icon guidance
+
+Use the Heroicons component (created in #98 PR) for edit, delete, and refresh icons. Add `arrow-path` (refresh) icon to `icon.templ`.
+
+#### Checklist
+
+Phase 1: Edit and delete icons on metadata fields
 - [ ] Add `pencil-square` and `trash` icon buttons next to Biography, Genres, Styles, Moods, Life events, Members
 
-Phase 8: Inline manual edit per field (#100)
+Phase 2: Inline manual edit per field
 - [ ] HTMX swap to editable form on `pencil-square` icon click (textarea, tag input, date input)
 - [ ] Add `PATCH /api/v1/artists/{id}/fields/{field}` endpoint
 - [ ] Add `DELETE /api/v1/artists/{id}/fields/{field}` endpoint
 
-Phase 9: Per-field provider fetch (#100)
-- [ ] Add `GET /api/v1/artists/{id}/fields/{field}/providers` endpoint
-- [ ] Call orchestrator for specific field, return results from all enabled providers
+Phase 3: Per-field provider fetch
+- [ ] Add `GET /api/v1/artists/{id}/fields/{field}/fetch` endpoint
+- [ ] New `FetchField()` method on Orchestrator for single-field provider queries
 - [ ] Inline expandable panel showing provider results side-by-side
 
-Phase 10: Global "Refresh Metadata" button (#100)
+Phase 4: Global "Refresh Metadata" button
 - [ ] Add `POST /api/v1/artists/{id}/refresh` endpoint
 - [ ] Trigger full metadata fetch via orchestrator
 
-Phase 11: Delete/reset field with confirmation (#100)
+Phase 5: Delete/reset field with confirmation
 - [ ] `trash` icon triggers DELETE with configurable confirmation dialog
-- [ ] Reuse "Don't ask again" pattern from Phase 6
+- [ ] Custom modal with "Don't ask again" checkbox (also retrofits image delete from #98)
+- [ ] Store preference via settings key-value store (`ui.confirm.*` keys)
+- [ ] Add toggle in Settings page to re-enable dialogs
 
 Testing and PR
 - [ ] Tests pass: `go test ./...`
 - [ ] Lint passes: `golangci-lint run ./...`
-- [ ] Manual acceptance test: image previews, hover icons, metadata edit/delete, provider fetch, global refresh
+- [ ] Manual acceptance test: metadata edit/delete, provider fetch, global refresh, confirmation dialog
 - [ ] PR created and merged
 - [ ] PR checks pass (no CI failures)
 - [ ] PR reviewed (check for copilot feedback)
 
 **Files:**
-- `web/components/icon.templ` -- reusable Heroicons SVG component
-- `web/templates/artist_detail.templ` -- image previews, metadata icons, inline edit, provider panel
-- `internal/api/router.go` -- image serve/delete routes, field PATCH/DELETE/GET routes, refresh route
-- `internal/api/handlers_image.go` -- serve, info, delete handlers
-- `internal/api/handlers_artist.go` -- field PATCH/DELETE/GET, refresh handlers
-- `internal/provider/orchestrator.go` -- per-field fetch method
+- `web/components/icon.templ` -- add `IconArrowPath` (refresh)
+- `web/templates/artist_detail.templ` -- editable fields, provider panel, refresh button
+- `internal/api/handlers_field.go` -- field PATCH/DELETE/GET handlers (new)
+- `internal/api/handlers_refresh.go` -- refresh handler (new)
+- `internal/api/router.go` -- field and refresh routes
+- `internal/provider/orchestrator.go` -- `FetchField()` method
+- `web/components/confirm_modal.templ` -- custom confirmation dialog (new)
 - `internal/api/handlers_settings.go` -- confirmation dialog preferences
 - `web/templates/settings.templ` -- confirmation dialog toggle
 
 ---
 
-### 5. #91 + #95 -- Settings page: tab navigation and provider priority chips
+### 6. #91 + #95 -- Settings page: tab navigation and provider priority chips
 
 `[mode: plan]` `[model: opus]`
 
@@ -236,7 +263,7 @@ Testing and PR
 
 #### Icon guidance
 
-Use the Heroicons component (created in the previous PR) for the drag handle icon (`bars-3`) on provider chips.
+Use the Heroicons component (created in #98) for the drag handle icon (`bars-3`) on provider chips. Add `IconBars3` to `icon.templ`.
 
 #### Checklist
 
@@ -268,15 +295,15 @@ Testing and PR
 
 ---
 
-### 6. #99 -- Image management improvements: unified search, edit, upload UX
+### 7. #99 -- Image management improvements: unified search, edit, upload UX
 
 `[mode: plan]` `[model: opus]`
 
-**Why separate:** Primarily touches `image_search.templ` and image components, not `artist_detail.templ`. The local image serving endpoint it depends on will already be merged from the #98+#100 PR.
+**Why separate:** Primarily touches `image_search.templ` and image components, not `artist_detail.templ`. The local image serving endpoint it depends on is now merged from #98.
 
 **Branch:** `feature/99-image-management-ux`
 
-**Blocked by:** #98+#100 PR (provides serving endpoint and `pencil-square` icon entry point)
+**Blocked by:** #98 (merged)
 
 #### Checklist
 
@@ -299,7 +326,7 @@ Phase 5: Resolution and file size for fetched results
 - [ ] Display dimensions on every image card (benefits from #97 probing)
 
 Phase 6: Configurable confirmation on save/delete
-- [ ] Save and delete use confirmation dialog with "Don't ask again" (shared from #98+#100)
+- [ ] Save and delete use confirmation dialog with "Don't ask again" (shared from #100)
 
 Testing and PR
 - [ ] Tests pass: `go test ./...`
@@ -318,7 +345,7 @@ Testing and PR
 
 ---
 
-### 7. #94 -- Developer documentation overhaul
+### 8. #94 -- Developer documentation overhaul
 
 `[mode: direct]` `[model: haiku]`
 
@@ -380,9 +407,9 @@ These tags go in the GitHub issue body to guide Claude Code and Copilot:
 
 ## Notes
 
-- Items 1-3 (bugs + clobber detection) are complete.
-- Item 4 consolidates #98 and #100 into one PR since both heavily modify `artist_detail.templ`, `router.go`, and `handlers_settings.go`. This avoids merge conflicts and shares the confirmation dialog implementation.
-- Item 5 consolidates #91 and #95 into one PR since both rewrite `settings.templ`. Tab navigation wraps around the new provider chip design.
-- Item 6 (#99) depends on item 4 for the local image serving endpoint and edit icon entry point.
-- Item 7 (#94) should be the last item. It cleans up completed plan files and this workplan.
-- All icon work uses Heroicons inline SVGs via a reusable Templ component. No Unicode emoji, no icon fonts.
+- Items 1-4 (bugs + clobber detection + image previews) are complete.
+- #98 and #100 were originally combined but split back into separate PRs to manage session scope. #98 provides the icon infrastructure and image serving endpoints. #100 builds on that with metadata editing and provider fetch.
+- Item 6 consolidates #91 and #95 into one PR since both rewrite `settings.templ`. Tab navigation wraps around the new provider chip design.
+- Item 7 (#99) depends on #98 for the local image serving endpoint and edit icon entry point. Now unblocked.
+- Item 8 (#94) should be the last item. It cleans up completed plan files and this workplan.
+- All icon work uses Heroicons inline SVGs via reusable Templ components in `web/components/icon.templ`. No Unicode emoji, no icon fonts.
