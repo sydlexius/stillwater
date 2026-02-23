@@ -1,0 +1,48 @@
+package components
+
+// ConfirmModal renders a reusable confirmation dialog that intercepts HTMX's
+// htmx:confirm event. Elements using hx-confirm will display this styled modal
+// instead of the browser's native confirm dialog. Elements with a
+// data-confirm-key attribute enable "Don't ask again" storage in localStorage.
+// Included once in layout.templ before </body>.
+templ ConfirmModal() {
+	<div
+		id="confirm-modal"
+		class="fixed inset-0 z-50 hidden"
+		role="dialog"
+		aria-modal="true"
+		aria-labelledby="confirm-modal-title"
+	>
+		<div class="fixed inset-0 bg-black/40 transition-opacity" id="confirm-backdrop"></div>
+		<div class="fixed inset-0 flex items-center justify-center p-4">
+			<div class="relative w-full max-w-sm rounded-lg bg-white dark:bg-gray-800 shadow-xl">
+				<div class="p-6">
+					<h3 id="confirm-modal-title" class="text-base font-semibold text-gray-900 dark:text-gray-100">
+						Confirm
+					</h3>
+					<p id="confirm-modal-message" class="mt-2 text-sm text-gray-600 dark:text-gray-400"></p>
+					<label id="confirm-modal-remember-label" class="mt-4 flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 cursor-pointer hidden">
+						<input type="checkbox" id="confirm-modal-remember" class="rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"/>
+						Don't ask again
+					</label>
+				</div>
+				<div class="flex justify-end gap-2 border-t border-gray-200 dark:border-gray-700 px-6 py-3">
+					<button
+						type="button"
+						id="confirm-modal-cancel"
+						class="rounded px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+					>
+						Cancel
+					</button>
+					<button
+						type="button"
+						id="confirm-modal-accept"
+						class="rounded bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 transition-colors"
+					>
+						Confirm
+					</button>
+				</div>
+			</div>
+		</div>
+	</div>
+}

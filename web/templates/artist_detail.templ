@@ -14,6 +14,7 @@ type ArtistDetailData struct {
 	Members        []artist.BandMember
 	Aliases        []artist.Alias
 	HasConnections bool
+	FieldProviders map[string][]string
 }
 
 templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
@@ -26,66 +27,49 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 					</a>
 					<span class="text-gray-400">/</span>
 				</div>
-				<h1 class="mt-2 text-2xl font-bold">{ data.Artist.Name }</h1>
-				if data.Artist.SortName != "" && data.Artist.SortName != data.Artist.Name {
-					<p class="text-sm text-gray-500 dark:text-gray-400">Sort: { data.Artist.SortName }</p>
-				}
-				if data.Artist.Disambiguation != "" {
-					<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{ data.Artist.Disambiguation }</p>
-				}
+				<div class="flex items-center justify-between mt-2">
+					<div>
+						<h1 class="text-2xl font-bold">{ data.Artist.Name }</h1>
+						if data.Artist.SortName != "" && data.Artist.SortName != data.Artist.Name {
+							<p class="text-sm text-gray-500 dark:text-gray-400">Sort: { data.Artist.SortName }</p>
+						}
+						if data.Artist.Disambiguation != "" {
+							<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{ data.Artist.Disambiguation }</p>
+						}
+					</div>
+					<button
+						type="button"
+						class="inline-flex items-center gap-2 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
+						hx-post={ "/api/v1/artists/" + data.Artist.ID + "/refresh" }
+						hx-target="#refresh-panel"
+						hx-swap="innerHTML"
+						hx-indicator="#refresh-spinner"
+					>
+						@components.IconArrowPath("h-4 w-4")
+						Refresh Metadata
+					</button>
+				</div>
+				<div id="refresh-panel" class="mt-3"></div>
+				<span id="refresh-spinner" class="htmx-indicator text-sm text-gray-500">Fetching metadata...</span>
 			</div>
 			<div class="grid grid-cols-1 gap-6 md:grid-cols-3">
 				<div class="md:col-span-2 space-y-6">
-					if data.Artist.Biography != "" {
-						<section class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
-							<h2 class="text-lg font-semibold mb-3">Biography</h2>
-							<p class="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-line">{ data.Artist.Biography }</p>
-						</section>
-					}
-					if len(data.Artist.Genres) > 0 || len(data.Artist.Styles) > 0 || len(data.Artist.Moods) > 0 {
-						<section class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
-							<h2 class="text-lg font-semibold mb-3">Tags</h2>
-							if len(data.Artist.Genres) > 0 {
-								<div class="mb-3">
-									<h3 class="text-xs font-medium uppercase text-gray-500 dark:text-gray-400 mb-1">Genres</h3>
-									<div class="flex flex-wrap gap-1">
-										for _, g := range data.Artist.Genres {
-											<span class="inline-flex items-center rounded-full bg-blue-100 dark:bg-blue-900 px-2.5 py-0.5 text-xs font-medium text-blue-800 dark:text-blue-200">
-												{ g }
-											</span>
-										}
-									</div>
-								</div>
-							}
-							if len(data.Artist.Styles) > 0 {
-								<div class="mb-3">
-									<h3 class="text-xs font-medium uppercase text-gray-500 dark:text-gray-400 mb-1">Styles</h3>
-									<div class="flex flex-wrap gap-1">
-										for _, s := range data.Artist.Styles {
-											<span class="inline-flex items-center rounded-full bg-purple-100 dark:bg-purple-900 px-2.5 py-0.5 text-xs font-medium text-purple-800 dark:text-purple-200">
-												{ s }
-											</span>
-										}
-									</div>
-								</div>
-							}
-							if len(data.Artist.Moods) > 0 {
-								<div>
-									<h3 class="text-xs font-medium uppercase text-gray-500 dark:text-gray-400 mb-1">Moods</h3>
-									<div class="flex flex-wrap gap-1">
-										for _, m := range data.Artist.Moods {
-											<span class="inline-flex items-center rounded-full bg-green-100 dark:bg-green-900 px-2.5 py-0.5 text-xs font-medium text-green-800 dark:text-green-200">
-												{ m }
-											</span>
-										}
-									</div>
-								</div>
-							}
-						</section>
-					}
-					if len(data.Members) > 0 {
-						<section class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
-							<h2 class="text-lg font-semibold mb-3">Members</h2>
+					// Biography -- always show section wrapper for edit access
+					@FieldDisplay(&data.Artist, "biography", data.FieldProviders["biography"])
+					// Tags
+					<section class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
+						<h2 class="text-lg font-semibold mb-3">Tags</h2>
+						@FieldDisplay(&data.Artist, "genres", data.FieldProviders["genres"])
+						@FieldDisplay(&data.Artist, "styles", data.FieldProviders["styles"])
+						@FieldDisplay(&data.Artist, "moods", data.FieldProviders["moods"])
+					</section>
+					// Members -- always show section so fetch is accessible
+					<section class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
+						<div class="flex items-center justify-between mb-3">
+							<h2 class="text-lg font-semibold">Members</h2>
+							@ProviderLogoStack(data.Artist.ID, "members", data.FieldProviders["members"])
+						</div>
+						if len(data.Members) > 0 {
 							<div class="divide-y divide-gray-200 dark:divide-gray-700">
 								for _, m := range data.Members {
 									<div class="py-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
@@ -120,55 +104,22 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 									</div>
 								}
 							</div>
-						</section>
-					}
+						} else {
+							<p class="text-sm text-gray-400 italic">No members.</p>
+						}
+					</section>
 				</div>
 				<div class="space-y-6">
 					<section class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
 						<h2 class="text-lg font-semibold mb-3">Details</h2>
 						<dl class="space-y-2 text-sm">
-							if data.Artist.Type != "" {
-								<div>
-									<dt class="text-gray-500 dark:text-gray-400">Type</dt>
-									<dd class="font-medium">{ data.Artist.Type }</dd>
-								</div>
-							}
-							if data.Artist.Gender != "" {
-								<div>
-									<dt class="text-gray-500 dark:text-gray-400">Gender</dt>
-									<dd class="font-medium">{ data.Artist.Gender }</dd>
-								</div>
-							}
-							if data.Artist.Formed != "" {
-								<div>
-									<dt class="text-gray-500 dark:text-gray-400">Formed</dt>
-									<dd class="font-medium">{ data.Artist.Formed }</dd>
-								</div>
-							}
-							if data.Artist.Born != "" {
-								<div>
-									<dt class="text-gray-500 dark:text-gray-400">Born</dt>
-									<dd class="font-medium">{ data.Artist.Born }</dd>
-								</div>
-							}
-							if data.Artist.Disbanded != "" {
-								<div>
-									<dt class="text-gray-500 dark:text-gray-400">Disbanded</dt>
-									<dd class="font-medium">{ data.Artist.Disbanded }</dd>
-								</div>
-							}
-							if data.Artist.Died != "" {
-								<div>
-									<dt class="text-gray-500 dark:text-gray-400">Died</dt>
-									<dd class="font-medium">{ data.Artist.Died }</dd>
-								</div>
-							}
-							if data.Artist.YearsActive != "" {
-								<div>
-									<dt class="text-gray-500 dark:text-gray-400">Years Active</dt>
-									<dd class="font-medium">{ data.Artist.YearsActive }</dd>
-								</div>
-							}
+							@FieldDisplay(&data.Artist, "type", data.FieldProviders["type"])
+							@FieldDisplay(&data.Artist, "gender", data.FieldProviders["gender"])
+							@FieldDisplay(&data.Artist, "formed", data.FieldProviders["formed"])
+							@FieldDisplay(&data.Artist, "born", data.FieldProviders["born"])
+							@FieldDisplay(&data.Artist, "disbanded", data.FieldProviders["disbanded"])
+							@FieldDisplay(&data.Artist, "died", data.FieldProviders["died"])
+							@FieldDisplay(&data.Artist, "years_active", data.FieldProviders["years_active"])
 						</dl>
 					</section>
 					<section class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
@@ -292,6 +243,7 @@ templ ImagePreviewCard(artistID, imageType string, exists bool, label string) {
 						hx-target={ "#image-preview-" + imageType + "-" + artistID }
 						hx-swap="outerHTML"
 						hx-confirm={ "Delete this " + label + " image?" }
+						data-confirm-key="image-delete"
 					>
 						@components.IconTrash("h-5 w-5")
 					</button>

@@ -1,0 +1,67 @@
+package components
+
+// FieldProviderModal renders a reusable modal for displaying provider fetch
+// results. The modal body is populated via HTMX content injection into
+// #field-provider-modal-body. Auto-opens when content is swapped in via
+// htmx:afterSwap. Included once in layout.templ before </body>.
+templ FieldProviderModal() {
+	<div
+		id="field-provider-modal"
+		class="fixed inset-0 z-50 hidden"
+		role="dialog"
+		aria-modal="true"
+		aria-labelledby="field-provider-modal-title"
+	>
+		<div class="fixed inset-0 bg-black/40 transition-opacity" id="field-provider-backdrop"></div>
+		<div class="fixed inset-0 flex items-center justify-center p-4">
+			<div class="relative w-full max-w-2xl max-h-[80vh] rounded-lg bg-white dark:bg-gray-800 shadow-xl flex flex-col">
+				<div class="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+					<h3 id="field-provider-modal-title" class="text-lg font-semibold text-gray-900 dark:text-gray-100">
+						Provider Results
+					</h3>
+					<button
+						type="button"
+						class="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+						onclick="hideFieldProviderModal()"
+					>
+						@IconXMark("h-5 w-5")
+					</button>
+				</div>
+				<div id="field-provider-modal-body" class="px-6 py-4 overflow-y-auto">
+				</div>
+			</div>
+		</div>
+	</div>
+	<script>
+		(function() {
+			var modal = document.getElementById('field-provider-modal');
+			var backdrop = document.getElementById('field-provider-backdrop');
+			var body = document.getElementById('field-provider-modal-body');
+
+			window.showFieldProviderModal = function() {
+				modal.classList.remove('hidden');
+			};
+
+			window.hideFieldProviderModal = function() {
+				modal.classList.add('hidden');
+				body.innerHTML = '';
+			};
+
+			document.body.addEventListener('htmx:afterSwap', function(e) {
+				if (e.detail.target && e.detail.target.id === 'field-provider-modal-body') {
+					showFieldProviderModal();
+				}
+			});
+
+			backdrop.addEventListener('click', function() {
+				hideFieldProviderModal();
+			});
+
+			document.addEventListener('keydown', function(e) {
+				if (e.key === 'Escape' && !modal.classList.contains('hidden')) {
+					hideFieldProviderModal();
+				}
+			});
+		})();
+	</script>
+}

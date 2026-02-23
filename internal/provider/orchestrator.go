@@ -279,6 +279,147 @@ func applyField(result *FetchResult, field string, pr *providerResult, source Pr
 	return false
 }
 
+// FieldProviderResult holds one provider's value for a single metadata field.
+type FieldProviderResult struct {
+	Provider ProviderName `json:"provider"`
+	Value    string       `json:"value,omitempty"`
+	Values   []string     `json:"values,omitempty"`
+	Members  []MemberInfo `json:"members,omitempty"`
+	HasData  bool         `json:"has_data"`
+	Error    string       `json:"error,omitempty"`
+}
+
+// FetchFieldFromProviders queries all providers configured for a given field
+// and returns each provider's result without merging. This enables a
+// side-by-side comparison UI where the user picks which provider's value to use.
+func (o *Orchestrator) FetchFieldFromProviders(ctx context.Context, mbid, name, field string) ([]FieldProviderResult, error) {
+	priorities, err := o.settings.GetPriorities(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("loading priorities: %w", err)
+	}
+
+	// Find which providers are configured for this field
+	var providers []ProviderName
+	for _, pri := range priorities {
+		if pri.Field == field {
+			providers = pri.Providers
+			break
+		}
+	}
+	if len(providers) == 0 {
+		return nil, fmt.Errorf("no providers configured for field %s", field)
+	}
+
+	var mu sync.Mutex
+	cache := make(map[ProviderName]*providerResult)
+	var results []FieldProviderResult
+
+	for _, provName := range providers {
+		pr := o.getProviderResult(ctx, provName, mbid, name, cache, &mu)
+		fpr := FieldProviderResult{
+			Provider: provName,
+		}
+		if pr.err != nil {
+			fpr.Error = pr.err.Error()
+		} else if pr.meta != nil {
+			extractFieldForComparison(&fpr, field, pr.meta)
+		}
+		results = append(results, fpr)
+	}
+
+	return results, nil
+}
+
+// extractFieldForComparison populates a FieldProviderResult from provider metadata.
+func extractFieldForComparison(fpr *FieldProviderResult, field string, meta *ArtistMetadata) {
+	switch field {
+	case "biography":
+		if meta.Biography != "" {
+			fpr.Value = meta.Biography
+			fpr.HasData = true
+		}
+	case "genres":
+		if len(meta.Genres) > 0 {
+			fpr.Values = meta.Genres
+			fpr.HasData = true
+		}
+	case "styles":
+		if len(meta.Styles) > 0 {
+			fpr.Values = meta.Styles
+			fpr.HasData = true
+		}
+	case "moods":
+		if len(meta.Moods) > 0 {
+			fpr.Values = meta.Moods
+			fpr.HasData = true
+		}
+	case "members":
+		if len(meta.Members) > 0 {
+			fpr.Members = meta.Members
+			fpr.HasData = true
+		}
+	case "formed":
+		if meta.Formed != "" {
+			fpr.Value = meta.Formed
+			fpr.HasData = true
+		}
+	case "born":
+		if meta.Born != "" {
+			fpr.Value = meta.Born
+			fpr.HasData = true
+		}
+	case "died":
+		if meta.Died != "" {
+			fpr.Value = meta.Died
+			fpr.HasData = true
+		}
+	case "disbanded":
+		if meta.Disbanded != "" {
+			fpr.Value = meta.Disbanded
+			fpr.HasData = true
+		}
+	case "years_active":
+		if meta.YearsActive != "" {
+			fpr.Value = meta.YearsActive
+			fpr.HasData = true
+		}
+	case "type":
+		if meta.Type != "" {
+			fpr.Value = meta.Type
+			fpr.HasData = true
+		}
+	case "gender":
+		if meta.Gender != "" {
+			fpr.Value = meta.Gender
+			fpr.HasData = true
+		}
+	}
+}
+
+// SearchForLinking queries only the specified providers for disambiguation.
+// Unlike Search (which queries all providers), this targets only providers
+// whose IDs need to be linked (e.g., MusicBrainz for MBID, Discogs for DiscogsID).
+func (o *Orchestrator) SearchForLinking(ctx context.Context, name string, providers []ProviderName) ([]ArtistSearchResult, error) {
+	var allResults []ArtistSearchResult
+
+	for _, provName := range providers {
+		p := o.registry.Get(provName)
+		if p == nil {
+			continue
+		}
+		results, err := p.SearchArtist(ctx, name)
+		if err != nil {
+			o.logger.Warn("provider search failed",
+				slog.String("provider", string(provName)),
+				slog.String("error", err.Error()))
+			continue
+		}
+		allResults = append(allResults, results...)
+	}
+
+	return allResults, nil
+}
+
 func fieldToImageType(field string) ImageType {
 	switch field {
 	case "thumb":

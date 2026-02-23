@@ -118,48 +118,47 @@ func (r *Router) handleImageFetch(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	var body struct {
-		URL  string `json:"url"`
-		Type string `json:"type"`
-	}
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
-		return
-	}
+	imageURL, imageType := extractImageFetchParams(req)
 
-	if body.URL == "" {
+	if imageURL == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "url is required"})
 		return
 	}
-	if !validImageTypes[body.Type] {
+	if !validImageTypes[imageType] {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid image type, must be: thumb, fanart, logo, banner"})
 		return
 	}
-	if !strings.HasPrefix(body.URL, "http://") && !strings.HasPrefix(body.URL, "https://") {
+	if !strings.HasPrefix(imageURL, "http://") && !strings.HasPrefix(imageURL, "https://") {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "url must start with http:// or https://"})
 		return
 	}
 
-	data, err := r.fetchImageFromURL(body.URL)
+	data, err := r.fetchImageFromURL(imageURL)
 	if err != nil {
-		r.logger.Warn("fetching image from URL", "url", body.URL, "error", err)
+		r.logger.Warn("fetching image from URL", "url", imageURL, "error", err)
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": fmt.Sprintf("failed to fetch image: %v", err)})
 		return
 	}
 
-	saved, err := r.processAndSaveImage(req.Context(), a.Path, body.Type, data)
+	saved, err := r.processAndSaveImage(req.Context(), a.Path, imageType, data)
 	if err != nil {
 		r.logger.Error("saving fetched image", "artist_id", artistID, "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to save image"})
 		return
 	}
 
-	r.updateArtistImageFlag(req.Context(), a, body.Type)
+	r.updateArtistImageFlag(req.Context(), a, imageType)
+
+	if isHTMXRequest(req) {
+		w.Header().Set("HX-Refresh", "true")
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status": "ok",
 		"saved":  saved,
-		"type":   body.Type,
+		"type":   imageType,
 	})
 }
 
@@ -655,6 +654,41 @@ func deleteImageFiles(dir string, patterns []string, logger *slog.Logger) []stri
 		}
 	}
 	return deleted
+}
+
+// extractImageFetchParams reads the URL and type from an image fetch request.
+// Supports both form-encoded (HTMX) and JSON payloads (API clients).
+// Provider image types (hdlogo, widethumb, background) are normalized to their
+// base types (logo, thumb, fanart) for filesystem naming.
+func extractImageFetchParams(req *http.Request) (string, string) {
+	var rawURL, rawType string
+	if strings.HasPrefix(req.Header.Get("Content-Type"), "application/json") {
+		var body struct {
+			URL  string `json:"url"`
+			Type string `json:"type"`
+		}
+		if err := json.NewDecoder(req.Body).Decode(&body); err == nil {
+			rawURL, rawType = body.URL, body.Type
+		}
+	} else {
+		rawURL, rawType = req.FormValue("url"), req.FormValue("type")
+	}
+	return rawURL, normalizeImageType(rawType)
+}
+
+// normalizeImageType maps provider-specific image types to the base types
+// used by the filesystem naming system.
+func normalizeImageType(t string) string {
+	switch t {
+	case "hdlogo":
+		return "logo"
+	case "widethumb":
+		return "thumb"
+	case "background":
+		return "fanart"
+	default:
+		return t
+	}
 }
 
 // imageTypeLabel returns a human-readable label for an image type.
