@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"time"
@@ -54,4 +55,15 @@ func (r *Router) handleUpdateSettings(w http.ResponseWriter, req *http.Request) 
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
+}
+
+// getBoolSetting reads a boolean setting from the key-value table.
+// Returns the fallback value if the key does not exist or cannot be parsed.
+func (r *Router) getBoolSetting(ctx context.Context, key string, fallback bool) bool {
+	var v string
+	err := r.db.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = ?`, key).Scan(&v)
+	if err != nil {
+		return fallback
+	}
+	return v == "true" || v == "1"
 }

@@ -131,6 +131,16 @@ func mergeSliceValues(current, provider []string) string {
 	return escapeJSONValue(strings.Join(merged, ", "))
 }
 
+// membersJSON serializes a slice of MemberInfo to a JSON string for
+// embedding as a data attribute on the "Use this" button in the provider modal.
+func membersJSON(members []provider.MemberInfo) string {
+	b, err := json.Marshal(members)
+	if err != nil {
+		return "[]"
+	}
+	return string(b)
+}
+
 // disambiguationHxVals builds the hx-vals JSON string for a disambiguation result card.
 func disambiguationHxVals(r provider.ArtistSearchResult) string {
 	var parts []string

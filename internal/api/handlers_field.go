@@ -139,6 +139,54 @@ func (r *Router) handleFieldClear(w http.ResponseWriter, req *http.Request) {
 	})
 }
 
+// handleClearMembers deletes all band members for an artist.
+// DELETE /api/v1/artists/{id}/members
+func (r *Router) handleClearMembers(w http.ResponseWriter, req *http.Request) {
+	artistID := req.PathValue("id")
+
+	if err := r.artistService.DeleteMembersByArtistID(req.Context(), artistID); err != nil {
+		writeError(w, req, http.StatusInternalServerError, "failed to clear members")
+		return
+	}
+
+	if isHTMXRequest(req) {
+		providers := r.fieldProviderNames(req, "members")
+		renderTempl(w, req, templates.MembersSection(artistID, nil, providers))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "cleared"})
+}
+
+// handleSaveMembers accepts a JSON array of provider MemberInfo objects,
+// converts them to BandMember records, and upserts them for the artist.
+// POST /api/v1/artists/{id}/members/from-provider
+func (r *Router) handleSaveMembers(w http.ResponseWriter, req *http.Request) {
+	artistID := req.PathValue("id")
+
+	var members []provider.MemberInfo
+	if err := json.NewDecoder(req.Body).Decode(&members); err != nil {
+		writeError(w, req, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	bandMembers := convertProviderMembers(artistID, members)
+	if err := r.artistService.UpsertMembers(req.Context(), artistID, bandMembers); err != nil {
+		writeError(w, req, http.StatusInternalServerError, "failed to save members")
+		return
+	}
+
+	if isHTMXRequest(req) {
+		saved, _ := r.artistService.ListMembersByArtistID(req.Context(), artistID)
+		providers := r.fieldProviderNames(req, "members")
+		w.Header().Set("HX-Trigger", "hideFieldProviderModal")
+		renderTempl(w, req, templates.MembersSection(artistID, saved, providers))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "saved"})
+}
+
 // handleFieldProviders fetches a field from all configured providers and returns
 // a side-by-side comparison UI.
 // GET /api/v1/artists/{id}/fields/{field}/providers
@@ -214,6 +262,12 @@ func (r *Router) fieldProviderNames(req *http.Request, field string) []string {
 // matches the artist's current value for the field. Returns false if no
 // provider had data (so the user sees "no data" messages in the modal).
 func allProvidersMatch(field string, results []provider.FieldProviderResult, a *artist.Artist) bool {
+	// Members are stored in a separate table and returned via r.Members,
+	// not r.Value. We cannot compare them here, so always show the modal.
+	if field == "members" {
+		return false
+	}
+
 	anyHasData := false
 	for _, r := range results {
 		if !r.HasData {

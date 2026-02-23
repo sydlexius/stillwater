@@ -1,0 +1,95 @@
+package components
+
+// ContextMenu renders a contextual "..." dropdown menu. The trigger is always
+// visible as a horizontal ellipsis icon. Menu items are passed as children.
+// Each ContextMenu must have a unique id on the page.
+//
+// The compact parameter controls icon sizing: true for sidebar/inline contexts,
+// false for standard button rows.
+//
+// Usage:
+//
+//	@components.ContextMenu("artist-bio-actions", false) {
+//	    <button role="menuitem" class="context-menu-item" ...>Edit</button>
+//	    <div class="context-menu-divider"></div>
+//	    <button role="menuitem" class="context-menu-item context-menu-item-danger" ...>Delete</button>
+//	}
+templ ContextMenu(id string, compact bool) {
+	<div class="relative inline-flex" data-context-menu={ id }>
+		<button
+			type="button"
+			class={
+				"inline-flex items-center justify-center rounded transition-colors",
+				"text-gray-400 hover:text-gray-600 dark:hover:text-gray-200",
+				"hover:bg-gray-100 dark:hover:bg-gray-700",
+				templ.KV("p-0.5", compact),
+				templ.KV("p-1", !compact),
+			}
+			aria-haspopup="true"
+			aria-expanded="false"
+			aria-controls={ "ctx-panel-" + id }
+			onclick={ toggleContextMenu(id) }
+		>
+			<span class="sr-only">Actions</span>
+			if compact {
+				@IconEllipsisHorizontal("h-3.5 w-3.5")
+			} else {
+				@IconEllipsisHorizontal("h-4 w-4")
+			}
+		</button>
+		<div
+			id={ "ctx-panel-" + id }
+			class="hidden absolute right-0 top-full z-40 mt-1 min-w-[10rem] rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 py-1 shadow-lg"
+			role="menu"
+		>
+			{ children... }
+		</div>
+	</div>
+}
+
+script toggleContextMenu(id string) {
+	var panel = document.getElementById('ctx-panel-' + id);
+	var btn = panel.previousElementSibling;
+	var isOpen = !panel.classList.contains('hidden');
+	// Close all other open menus first.
+	document.querySelectorAll('[data-context-menu] [role="menu"]:not(.hidden)').forEach(function(p) {
+		p.classList.add('hidden');
+		p.previousElementSibling.setAttribute('aria-expanded', 'false');
+	});
+	if (!isOpen) {
+		panel.classList.remove('hidden');
+		btn.setAttribute('aria-expanded', 'true');
+	}
+}
+
+// ContextMenuGlobalJS must be included once in the layout (before </body>).
+// It handles click-outside and Escape-to-close for all context menus.
+templ ContextMenuGlobalJS() {
+	<script>
+		(function() {
+			function closeAllContextMenus() {
+				document.querySelectorAll('[data-context-menu] [role="menu"]:not(.hidden)').forEach(function(p) {
+					p.classList.add('hidden');
+					p.previousElementSibling.setAttribute('aria-expanded', 'false');
+				});
+			}
+			document.addEventListener('click', function(e) {
+				var menu = e.target.closest('[data-context-menu]');
+				if (!menu) {
+					closeAllContextMenus();
+				}
+			});
+			document.addEventListener('keydown', function(e) {
+				if (e.key === 'Escape') {
+					closeAllContextMenus();
+				}
+			});
+			// Close menus when an HTMX request starts from inside a menu.
+			document.body.addEventListener('htmx:beforeRequest', function(e) {
+				if (e.detail.elt.closest('[data-context-menu]')) {
+					closeAllContextMenus();
+				}
+			});
+		})();
+	</script>
+}

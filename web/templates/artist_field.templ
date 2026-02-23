@@ -88,34 +88,53 @@ templ ProviderLogoStack(artistID, field string, providers []string) {
 	}
 }
 
-// fieldActions renders the hover-revealed edit/delete/fetch icon buttons for a field.
+// fieldActions renders a contextual "..." dropdown menu for a field with
+// Edit, Clear, and Fetch from providers actions.
 templ fieldActions(artistID, field string, hasValue bool, providers []string) {
-	<span class="inline-flex items-center gap-0.5 opacity-0 group-hover/field:opacity-100 transition-opacity">
-		<button
-			type="button"
-			class="p-1 text-gray-400 hover:text-blue-500 transition-colors"
-			title={ "Edit " + fieldLabel(field) }
-			hx-get={ "/api/v1/artists/" + artistID + "/fields/" + field + "/edit" }
-			hx-target={ "#field-" + field + "-" + artistID }
-			hx-swap="outerHTML"
-		>
-			@components.IconPencilSquare("h-3.5 w-3.5")
-		</button>
-		if hasValue {
+	<span class="inline-flex items-center gap-0.5">
+		@components.ContextMenu("fa-"+field+"-"+artistID, true) {
 			<button
 				type="button"
-				class="p-1 text-gray-400 hover:text-red-500 transition-colors"
-				title={ "Clear " + fieldLabel(field) }
-				hx-delete={ "/api/v1/artists/" + artistID + "/fields/" + field }
+				role="menuitem"
+				class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+				hx-get={ "/api/v1/artists/" + artistID + "/fields/" + field + "/edit" }
 				hx-target={ "#field-" + field + "-" + artistID }
 				hx-swap="outerHTML"
-				hx-confirm={ "Clear " + fieldLabel(field) + "?" }
-				data-confirm-key="field-delete"
 			>
-				@components.IconTrash("h-3.5 w-3.5")
+				@components.IconPencilSquare("h-4 w-4 text-gray-400")
+				Edit { fieldLabel(field) }
 			</button>
+			if hasValue {
+				<button
+					type="button"
+					role="menuitem"
+					class="flex w-full items-center gap-2 px-3 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
+					hx-delete={ "/api/v1/artists/" + artistID + "/fields/" + field }
+					hx-target={ "#field-" + field + "-" + artistID }
+					hx-swap="outerHTML"
+					hx-confirm={ "Clear " + fieldLabel(field) + "?" }
+					data-confirm-key="field-delete"
+				>
+					@components.IconTrash("h-4 w-4")
+					Clear { fieldLabel(field) }
+				</button>
+			}
+			if len(providers) > 0 {
+				<div class="my-1 border-t border-gray-200 dark:border-gray-700"></div>
+				<button
+					type="button"
+					role="menuitem"
+					class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+					hx-get={ "/api/v1/artists/" + artistID + "/fields/" + field + "/providers" }
+					hx-target="#field-provider-modal-body"
+					hx-swap="innerHTML"
+					hx-indicator={ "#field-spinner-" + field + "-" + artistID }
+				>
+					@components.IconArrowDownTray("h-4 w-4 text-gray-400")
+					Fetch from providers
+				</button>
+			}
 		}
-		@ProviderLogoStack(artistID, field, providers)
 		<span id={ "field-spinner-" + field + "-" + artistID } class="htmx-indicator">
 			<svg class="h-3.5 w-3.5 animate-spin text-gray-400" fill="none" viewBox="0 0 24 24">
 				<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -128,7 +147,7 @@ templ fieldActions(artistID, field string, hasValue bool, providers []string) {
 // --- Biography ---
 
 templ biographyDisplay(a *artist.Artist, providers []string) {
-	<div id={ "field-biography-" + a.ID } class="group/field rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
+	<div id={ "field-biography-" + a.ID } class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
 		<div class="flex items-center justify-between mb-3">
 			<h2 class="text-lg font-semibold">Biography</h2>
 			@fieldActions(a.ID, "biography", a.Biography != "", providers)
@@ -164,7 +183,7 @@ templ biographyEdit(a *artist.Artist) {
 // --- Tag fields (Genres, Styles, Moods) ---
 
 templ tagFieldDisplay(a *artist.Artist, field, label string, tags []string, colorClass string, providers []string) {
-	<div id={ "field-" + field + "-" + a.ID } class="mb-3 group/field">
+	<div id={ "field-" + field + "-" + a.ID } class="mb-3">
 		<h3 class="text-xs font-medium uppercase text-gray-500 dark:text-gray-400 mb-1 flex items-center gap-1">
 			{ label }
 			@fieldActions(a.ID, field, len(tags) > 0, providers)
@@ -208,35 +227,57 @@ templ tagFieldEdit(a *artist.Artist, field, label string, tags []string) {
 // --- Detail sidebar fields ---
 
 templ detailFieldDisplay(a *artist.Artist, field, label, value string, providers []string) {
-	<div id={ "field-" + field + "-" + a.ID } class="group/field">
+	<div id={ "field-" + field + "-" + a.ID }>
 		<dt class="text-gray-500 dark:text-gray-400 flex items-center gap-1">
 			{ label }
-			<span class="inline-flex items-center gap-0.5 opacity-0 group-hover/field:opacity-100 transition-opacity">
+			@components.ContextMenu("df-"+field+"-"+a.ID, true) {
 				<button
 					type="button"
-					class="p-0.5 text-gray-400 hover:text-blue-500 transition-colors"
-					title={ "Edit " + label }
+					role="menuitem"
+					class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
 					hx-get={ "/api/v1/artists/" + a.ID + "/fields/" + field + "/edit" }
 					hx-target={ "#field-" + field + "-" + a.ID }
 					hx-swap="outerHTML"
 				>
-					@components.IconPencilSquare("h-3 w-3")
+					@components.IconPencilSquare("h-4 w-4 text-gray-400")
+					Edit { label }
 				</button>
 				if value != "" {
 					<button
 						type="button"
-						class="p-0.5 text-gray-400 hover:text-red-500 transition-colors"
-						title={ "Clear " + label }
+						role="menuitem"
+						class="flex w-full items-center gap-2 px-3 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
 						hx-delete={ "/api/v1/artists/" + a.ID + "/fields/" + field }
 						hx-target={ "#field-" + field + "-" + a.ID }
 						hx-swap="outerHTML"
 						hx-confirm={ "Clear " + label + "?" }
 						data-confirm-key="field-delete"
 					>
-						@components.IconTrash("h-3 w-3")
+						@components.IconTrash("h-4 w-4")
+						Clear { label }
 					</button>
 				}
-				@ProviderLogoStack(a.ID, field, providers)
+				if len(providers) > 0 {
+					<div class="my-1 border-t border-gray-200 dark:border-gray-700"></div>
+					<button
+						type="button"
+						role="menuitem"
+						class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+						hx-get={ "/api/v1/artists/" + a.ID + "/fields/" + field + "/providers" }
+						hx-target="#field-provider-modal-body"
+						hx-swap="innerHTML"
+						hx-indicator={ "#field-spinner-" + field + "-" + a.ID }
+					>
+						@components.IconArrowDownTray("h-4 w-4 text-gray-400")
+						Fetch from providers
+					</button>
+				}
+			}
+			<span id={ "field-spinner-" + field + "-" + a.ID } class="htmx-indicator">
+				<svg class="h-3 w-3 animate-spin text-gray-400" fill="none" viewBox="0 0 24 24">
+					<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+					<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+				</svg>
 			</span>
 		</dt>
 		if value != "" {
@@ -336,6 +377,15 @@ templ FieldProviderModalContent(a *artist.Artist, field string, results []provid
 									>
 										Merge
 									</button>
+								} else if len(r.Members) > 0 {
+									<button
+										type="button"
+										class="text-xs px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+										data-members={ membersJSON(r.Members) }
+										onclick={ saveMembers("/api/v1/artists/" + a.ID + "/members/from-provider", "#members-section-" + a.ID) }
+									>
+										Use this
+									</button>
 								} else if r.Value != "" {
 									<button
 										type="button"
@@ -357,6 +407,19 @@ templ FieldProviderModalContent(a *artist.Artist, field string, results []provid
 						<p class="text-xs text-red-500">{ r.Error }</p>
 					} else if !r.HasData {
 						<p class="text-xs text-gray-400 italic">No data available</p>
+					} else if len(r.Members) > 0 {
+						<div class="space-y-1 max-h-32 overflow-y-auto">
+							for _, m := range r.Members {
+								<div class="text-xs text-gray-700 dark:text-gray-300">
+									{ m.Name }
+									if len(m.Instruments) > 0 {
+										<span class="text-gray-400">
+											{ " - " + strings.Join(m.Instruments, ", ") }
+										</span>
+									}
+								</div>
+							}
+						</div>
 					} else if len(r.Values) > 0 {
 						<div class="flex flex-wrap gap-1">
 							for _, v := range r.Values {
@@ -384,6 +447,35 @@ templ FieldProviderNoChanges(field string) {
 			All providers returned the same data as the current value for { fieldLabel(field) }.
 		</p>
 	</div>
+}
+
+// saveMembers posts member data from a provider result to the save endpoint,
+// swaps the members section, and closes the modal.
+script saveMembers(url string, targetSelector string) {
+	var btn = event.currentTarget;
+	var members = btn.getAttribute('data-members');
+	var csrf = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, '$1');
+	fetch(url, {
+		method: 'POST',
+		headers: {
+			'Content-Type': 'application/json',
+			'HX-Request': 'true',
+			'X-CSRF-Token': csrf
+		},
+		body: members,
+		credentials: 'same-origin'
+	}).then(function(r) {
+		if (r.ok) {
+			return r.text().then(function(html) {
+				var target = document.querySelector(targetSelector);
+				if (target) {
+					target.outerHTML = html;
+					htmx.process(document.querySelector(targetSelector));
+				}
+				hideFieldProviderModal();
+			});
+		}
+	});
 }
 
 // --- Shared edit form buttons ---

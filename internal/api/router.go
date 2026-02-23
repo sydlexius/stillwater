@@ -218,6 +218,8 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("PATCH "+bp+"/api/v1/artists/{id}/fields/{field}", wrapAuth(r.handleFieldUpdate, authMw))
 	mux.HandleFunc("DELETE "+bp+"/api/v1/artists/{id}/fields/{field}", wrapAuth(r.handleFieldClear, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/fields/{field}/providers", wrapAuth(r.handleFieldProviders, authMw))
+	mux.HandleFunc("DELETE "+bp+"/api/v1/artists/{id}/members", wrapAuth(r.handleClearMembers, authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/members/from-provider", wrapAuth(r.handleSaveMembers, authMw))
 	// Refresh and disambiguation routes
 	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/refresh", wrapAuth(r.handleArtistRefresh, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/refresh/search", wrapAuth(r.handleRefreshSearch, authMw))

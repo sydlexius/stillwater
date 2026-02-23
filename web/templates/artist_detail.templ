@@ -64,50 +64,7 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 						@FieldDisplay(&data.Artist, "moods", data.FieldProviders["moods"])
 					</section>
 					// Members -- always show section so fetch is accessible
-					<section class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
-						<div class="flex items-center justify-between mb-3">
-							<h2 class="text-lg font-semibold">Members</h2>
-							@ProviderLogoStack(data.Artist.ID, "members", data.FieldProviders["members"])
-						</div>
-						if len(data.Members) > 0 {
-							<div class="divide-y divide-gray-200 dark:divide-gray-700">
-								for _, m := range data.Members {
-									<div class="py-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-										<div>
-											<p class="text-sm font-medium text-gray-900 dark:text-gray-100">
-												{ m.MemberName }
-												if m.IsOriginalMember {
-													<span class="ml-1 text-xs text-gray-400">(original)</span>
-												}
-											</p>
-											if len(m.Instruments) > 0 {
-												<p class="text-xs text-gray-500 dark:text-gray-400">
-													for i, inst := range m.Instruments {
-														if i > 0 {
-															{ ", " }
-														}
-														{ inst }
-													}
-												</p>
-											}
-										</div>
-										<div class="text-xs text-gray-400">
-											if m.DateJoined != "" {
-												{ m.DateJoined }
-												if m.DateLeft != "" {
-													{ " - " + m.DateLeft }
-												} else {
-													{ " - present" }
-												}
-											}
-										</div>
-									</div>
-								}
-							</div>
-						} else {
-							<p class="text-sm text-gray-400 italic">No members.</p>
-						}
-					</section>
+					@MembersSection(data.Artist.ID, data.Members, data.FieldProviders["members"])
 				</div>
 				<div class="space-y-6">
 					<section class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
@@ -298,4 +255,95 @@ func formatFileSizeTempl(bytes int64) string {
 	default:
 		return strconv.FormatInt(bytes, 10) + " B"
 	}
+}
+
+// MembersSection renders the band members card with a contextual menu for
+// Fetch from providers and Clear all members. Exported so the clear handler
+// can return it as an HTMX fragment.
+templ MembersSection(artistID string, members []artist.BandMember, providers []string) {
+	<section id={ "members-section-" + artistID } class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
+		<div class="flex items-center justify-between mb-3">
+			<h2 class="text-lg font-semibold">Members</h2>
+			<span class="inline-flex items-center gap-0.5">
+				@components.ContextMenu("members-"+artistID, true) {
+					if len(providers) > 0 {
+						<button
+							type="button"
+							role="menuitem"
+							class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+							hx-get={ "/api/v1/artists/" + artistID + "/fields/members/providers" }
+							hx-target="#field-provider-modal-body"
+							hx-swap="innerHTML"
+							hx-indicator={ "#members-spinner-" + artistID }
+						>
+							@components.IconArrowDownTray("h-4 w-4 text-gray-400")
+							Fetch from providers
+						</button>
+					}
+					if len(members) > 0 {
+						if len(providers) > 0 {
+							<div class="my-1 border-t border-gray-200 dark:border-gray-700"></div>
+						}
+						<button
+							type="button"
+							role="menuitem"
+							class="flex w-full items-center gap-2 px-3 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
+							hx-delete={ "/api/v1/artists/" + artistID + "/members" }
+							hx-target={ "#members-section-" + artistID }
+							hx-swap="outerHTML"
+							hx-confirm="Clear all members?"
+							data-confirm-key="members-clear"
+						>
+							@components.IconTrash("h-4 w-4")
+							Clear all members
+						</button>
+					}
+				}
+				<span id={ "members-spinner-" + artistID } class="htmx-indicator">
+					<svg class="h-3.5 w-3.5 animate-spin text-gray-400" fill="none" viewBox="0 0 24 24">
+						<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+						<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+					</svg>
+				</span>
+			</span>
+		</div>
+		if len(members) > 0 {
+			<div class="divide-y divide-gray-200 dark:divide-gray-700">
+				for _, m := range members {
+					<div class="py-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+						<div>
+							<p class="text-sm font-medium text-gray-900 dark:text-gray-100">
+								{ m.MemberName }
+								if m.IsOriginalMember {
+									<span class="ml-1 text-xs text-gray-400">(original)</span>
+								}
+							</p>
+							if len(m.Instruments) > 0 {
+								<p class="text-xs text-gray-500 dark:text-gray-400">
+									for i, inst := range m.Instruments {
+										if i > 0 {
+											{ ", " }
+										}
+										{ inst }
+									}
+								</p>
+							}
+						</div>
+						<div class="text-xs text-gray-400">
+							if m.DateJoined != "" {
+								{ m.DateJoined }
+								if m.DateLeft != "" {
+									{ " - " + m.DateLeft }
+								} else {
+									{ " - present" }
+								}
+							}
+						</div>
+					</div>
+				}
+			</div>
+		} else {
+			<p class="text-sm text-gray-400 italic">No members.</p>
+		}
+	</section>
 }

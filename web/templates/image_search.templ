@@ -13,6 +13,7 @@ import (
 type ImageSearchData struct {
 	Artist           artist.Artist
 	WebSearchEnabled bool
+	AutoFetchImages  bool   // When true, auto-search providers on page load
 	SelectedType     string // "thumb", "fanart", "logo", "banner", or "" for generic
 }
 
@@ -93,7 +94,87 @@ templ ImageSearchPage(assets AssetPaths, data ImageSearchData) {
 templ imageSearchContextualized(data ImageSearchData) {
 	<div class="max-w-4xl mx-auto space-y-6" data-artist-id={ data.Artist.ID } data-image-type={ data.SelectedType }>
 		<section class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
-			<h2 class="text-lg font-semibold mb-4">Current { imageTypeLabel(data.SelectedType) }</h2>
+			<div class="flex items-center justify-between mb-4">
+				<h2 class="text-lg font-semibold">Current { imageTypeLabel(data.SelectedType) }</h2>
+				<span class="inline-flex items-center gap-1">
+					@components.ContextMenu("img-actions-"+data.Artist.ID, false) {
+						if data.Artist.MusicBrainzID != "" {
+							<button
+								type="button"
+								role="menuitem"
+								class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+								hx-get={ fmt.Sprintf("/api/v1/artists/%s/images/search?type=%s", data.Artist.ID, data.SelectedType) }
+								hx-target="#image-results"
+								hx-swap="innerHTML"
+								hx-indicator="#search-spinner"
+							>
+								Fetch
+							</button>
+						}
+						if data.WebSearchEnabled {
+							<button
+								type="button"
+								role="menuitem"
+								class="flex w-full items-center gap-2 px-3 py-2 text-sm text-purple-700 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-900/20"
+								hx-get={ fmt.Sprintf("/api/v1/artists/%s/images/websearch?type=%s", data.Artist.ID, data.SelectedType) }
+								hx-target="#image-results"
+								hx-swap="innerHTML"
+								hx-indicator="#search-spinner"
+							>
+								Web Search
+							</button>
+						}
+						if data.Artist.MusicBrainzID != "" || data.WebSearchEnabled {
+							<div class="my-1 border-t border-gray-200 dark:border-gray-700"></div>
+						}
+						<button
+							type="button"
+							role="menuitem"
+							class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+							onclick="this.closest('[data-context-menu]').querySelector('[role=menu]').classList.add('hidden');document.getElementById('image-file-input').click()"
+						>
+							Browse...
+						</button>
+						<button
+							type="button"
+							role="menuitem"
+							class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+							onclick="this.closest('[data-context-menu]').querySelector('[role=menu]').classList.add('hidden');document.getElementById('fetch-url-modal').classList.remove('hidden')"
+						>
+							Fetch from URL
+						</button>
+						if imageExistsForType(data.Artist, data.SelectedType) {
+							<div class="my-1 border-t border-gray-200 dark:border-gray-700"></div>
+							<button
+								type="button"
+								role="menuitem"
+								class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+								onclick={ openCropForType(fmt.Sprintf("/api/v1/artists/%s/images/%s/file", data.Artist.ID, data.SelectedType), data.SelectedType) }
+							>
+								Crop
+							</button>
+							<button
+								type="button"
+								role="menuitem"
+								class="flex w-full items-center gap-2 px-3 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
+								hx-delete={ fmt.Sprintf("/api/v1/artists/%s/images/%s", data.Artist.ID, data.SelectedType) }
+								hx-confirm={ "Delete this " + imageTypeLabel(data.SelectedType) + " image?" }
+								data-confirm-key="image-delete"
+								hx-swap="none"
+								hx-on::after-request="if(event.detail.successful) window.location.reload()"
+							>
+								Delete
+							</button>
+						}
+					}
+					<span id="search-spinner" class="htmx-indicator">
+						<svg class="h-4 w-4 animate-spin text-gray-400" fill="none" viewBox="0 0 24 24">
+							<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+							<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+						</svg>
+					</span>
+				</span>
+			</div>
 			// -- Image display / drag-drop target --
 			<div
 				id="image-drop-zone"
@@ -129,73 +210,11 @@ templ imageSearchContextualized(data ImageSearchData) {
 					hx-swap="innerHTML"
 				></div>
 			}
-			// -- Action button row --
-			<div class="mt-4 flex flex-wrap items-center gap-2">
-				if data.Artist.MusicBrainzID != "" {
-					<button
-						type="button"
-						class="px-3 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-						hx-get={ fmt.Sprintf("/api/v1/artists/%s/images/search?type=%s", data.Artist.ID, data.SelectedType) }
-						hx-target="#image-results"
-						hx-swap="innerHTML"
-						hx-indicator="#search-spinner"
-					>
-						Fetch
-					</button>
-				}
-				if data.WebSearchEnabled {
-					<button
-						type="button"
-						class="px-3 py-2 text-sm rounded-md border border-dashed border-purple-300 dark:border-purple-700 text-purple-700 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors"
-						hx-get={ fmt.Sprintf("/api/v1/artists/%s/images/websearch?type=%s", data.Artist.ID, data.SelectedType) }
-						hx-target="#image-results"
-						hx-swap="innerHTML"
-						hx-indicator="#search-spinner"
-					>
-						Web Search
-					</button>
-				}
-				<button
-					type="button"
-					class="px-3 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-					onclick="document.getElementById('image-file-input').click()"
-				>
-					Browse
-				</button>
-				<button
-					type="button"
-					class="px-3 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-					onclick="document.getElementById('fetch-url-modal').classList.remove('hidden')"
-				>
-					Fetch from URL
-				</button>
-				if imageExistsForType(data.Artist, data.SelectedType) {
-					<button
-						type="button"
-						class="px-3 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-						onclick={ openCropForType(fmt.Sprintf("/api/v1/artists/%s/images/%s/file", data.Artist.ID, data.SelectedType), data.SelectedType) }
-					>
-						Crop
-					</button>
-					<button
-						type="button"
-						class="px-3 py-2 text-sm rounded-md border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-						hx-delete={ fmt.Sprintf("/api/v1/artists/%s/images/%s", data.Artist.ID, data.SelectedType) }
-						hx-confirm={ "Delete this " + imageTypeLabel(data.SelectedType) + " image?" }
-						data-confirm-key="image-delete"
-						hx-swap="none"
-						hx-on::after-request="if(event.detail.successful) window.location.reload()"
-					>
-						Delete
-					</button>
-				}
-				<span id="search-spinner" class="htmx-indicator text-xs text-gray-500 dark:text-gray-400">Searching...</span>
-			</div>
 			// -- Upload status --
 			<div id="upload-status" class="mt-2"></div>
 		</section>
-		// -- Search results (single shared area, auto-fires when MBID is available) --
-		if data.Artist.MusicBrainzID != "" {
+		// -- Search results (shared area, auto-fires only when auto-fetch is enabled) --
+		if data.AutoFetchImages && data.Artist.MusicBrainzID != "" {
 			<div
 				id="image-results"
 				class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow hidden"
