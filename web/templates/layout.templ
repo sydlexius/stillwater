@@ -1,5 +1,7 @@
 package templates
 
+import "github.com/sydlexius/stillwater/web/components"
+
 // AssetPaths holds cache-busted URLs for static assets.
 type AssetPaths struct {
 	CSS        string
@@ -41,6 +43,7 @@ templ Layout(title string, assets AssetPaths) {
 					{ children... }
 				</main>
 			</div>
+			@components.ConfirmModal()
 			<div id="error-toast-container"></div>
 			<script>
 				// Theme toggle: cycles Light -> Dark -> System
@@ -84,6 +87,89 @@ templ Layout(title string, assets AssetPaths) {
 						setTimeout(function() { toast.remove(); }, 300);
 					}, 5000);
 				}
+			</script>
+			<script>
+				// Confirmation modal interceptor for HTMX hx-confirm events.
+				// Replaces the native browser confirm() with a styled modal.
+				// Elements with data-confirm-key support "Don't ask again" via localStorage.
+				(function() {
+					var modal = null;
+					var pendingEvent = null;
+
+					function getModal() {
+						if (!modal) {
+							modal = {
+								el: document.getElementById('confirm-modal'),
+								title: document.getElementById('confirm-modal-title'),
+								message: document.getElementById('confirm-modal-message'),
+								accept: document.getElementById('confirm-modal-accept'),
+								cancel: document.getElementById('confirm-modal-cancel'),
+								remember: document.getElementById('confirm-modal-remember'),
+								rememberLabel: document.getElementById('confirm-modal-remember-label'),
+								backdrop: document.getElementById('confirm-backdrop')
+							};
+						}
+						return modal;
+					}
+
+					function showModal(message, confirmKey) {
+						var m = getModal();
+						m.message.textContent = message;
+						m.remember.checked = false;
+						if (confirmKey) {
+							m.rememberLabel.classList.remove('hidden');
+						} else {
+							m.rememberLabel.classList.add('hidden');
+						}
+						m.el.classList.remove('hidden');
+					}
+
+					function hideModal() {
+						var m = getModal();
+						m.el.classList.add('hidden');
+						pendingEvent = null;
+					}
+
+					document.body.addEventListener('htmx:confirm', function(evt) {
+						var trigger = evt.detail.elt;
+						var question = evt.detail.question;
+						if (!question) return;
+
+						evt.preventDefault();
+
+						var confirmKey = trigger.getAttribute('data-confirm-key');
+						if (confirmKey && localStorage.getItem('ui.confirm.' + confirmKey) === 'skip') {
+							evt.detail.issueRequest(true);
+							return;
+						}
+
+						pendingEvent = evt;
+						showModal(question, confirmKey);
+					});
+
+					document.addEventListener('click', function(e) {
+						if (e.target.id === 'confirm-modal-accept') {
+							if (pendingEvent) {
+								var trigger = pendingEvent.detail.elt;
+								var confirmKey = trigger.getAttribute('data-confirm-key');
+								var m = getModal();
+								if (confirmKey && m.remember.checked) {
+									localStorage.setItem('ui.confirm.' + confirmKey, 'skip');
+								}
+								pendingEvent.detail.issueRequest(true);
+							}
+							hideModal();
+						} else if (e.target.id === 'confirm-modal-cancel' || e.target.id === 'confirm-backdrop') {
+							hideModal();
+						}
+					});
+
+					document.addEventListener('keydown', function(e) {
+						if (e.key === 'Escape' && pendingEvent) {
+							hideModal();
+						}
+					});
+				})();
 			</script>
 		</body>
 	</html>

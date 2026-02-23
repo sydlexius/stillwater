@@ -163,11 +163,15 @@ func (r *Router) handleArtistDetailPage(w http.ResponseWriter, req *http.Request
 
 	conns, _ := r.connectionService.List(req.Context())
 
+	priorities, _ := r.providerSettings.GetPriorities(req.Context())
+	fieldProviders := buildFieldProvidersMap(priorities)
+
 	data := templates.ArtistDetailData{
 		Artist:         *a,
 		Members:        members,
 		Aliases:        aliases,
 		HasConnections: len(conns) > 0,
+		FieldProviders: fieldProviders,
 	}
 	renderTempl(w, req, templates.ArtistDetailPage(r.assets(), data))
 }

@@ -1,0 +1,403 @@
+package templates
+
+import (
+	"strings"
+	"strconv"
+
+	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/provider"
+	"github.com/sydlexius/stillwater/web/components"
+)
+
+// FieldDisplay renders a metadata field in display mode with hover-revealed
+// edit, delete, and provider-fetch action icons.
+templ FieldDisplay(a *artist.Artist, field string, providers []string) {
+	switch field {
+		case "biography":
+			@biographyDisplay(a, providers)
+		case "genres":
+			@tagFieldDisplay(a, "genres", "Genres", a.Genres, "bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200", providers)
+		case "styles":
+			@tagFieldDisplay(a, "styles", "Styles", a.Styles, "bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200", providers)
+		case "moods":
+			@tagFieldDisplay(a, "moods", "Moods", a.Moods, "bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200", providers)
+		case "formed", "born", "disbanded", "died", "years_active", "type", "gender":
+			@detailFieldDisplay(a, field, fieldLabel(field), artist.FieldValueFromArtist(a, field), providers)
+	}
+}
+
+// FieldEdit renders a metadata field in edit mode with a form for inline editing.
+templ FieldEdit(a *artist.Artist, field string) {
+	switch field {
+		case "biography":
+			@biographyEdit(a)
+		case "genres":
+			@tagFieldEdit(a, "genres", "Genres", a.Genres)
+		case "styles":
+			@tagFieldEdit(a, "styles", "Styles", a.Styles)
+		case "moods":
+			@tagFieldEdit(a, "moods", "Moods", a.Moods)
+		case "formed", "born", "disbanded", "died", "years_active", "type", "gender":
+			@detailFieldEdit(a, field, fieldLabel(field), artist.FieldValueFromArtist(a, field))
+	}
+}
+
+// ProviderLogoStack renders a "Fetch" button with overlapping provider logos.
+// The text label makes the action clear; the logos show which providers will be queried.
+templ ProviderLogoStack(artistID, field string, providers []string) {
+	if len(providers) > 0 {
+		<button
+			type="button"
+			class="inline-flex items-center gap-1 p-0.5 text-gray-400 hover:text-blue-500 transition-colors"
+			title="Fetch from providers"
+			hx-get={ "/api/v1/artists/" + artistID + "/fields/" + field + "/providers" }
+			hx-target={ "#field-" + field + "-" + artistID }
+			hx-swap="outerHTML"
+			hx-indicator={ "#field-spinner-" + field + "-" + artistID }
+		>
+			@components.IconArrowPath("h-3.5 w-3.5")
+			<span class="text-[10px] font-medium">Fetch</span>
+			<span class="inline-flex -space-x-1.5 ml-0.5">
+				for i, p := range providers {
+					if i < 3 {
+						if logoSrcSet(p) != "" {
+							<img
+								src={ logoSrc(p) }
+								srcset={ logoSrcSet(p) }
+								alt={ p }
+								class="h-3.5 w-3.5 rounded-full ring-1 ring-white dark:ring-gray-800"
+								title={ providerDisplayName(p) }
+							/>
+						} else {
+							<img
+								src={ logoSrc(p) }
+								alt={ p }
+								class="h-3.5 w-3.5 rounded-full ring-1 ring-white dark:ring-gray-800"
+								title={ providerDisplayName(p) }
+							/>
+						}
+					}
+				}
+				if len(providers) > 3 {
+					<span class="flex h-3.5 w-3.5 items-center justify-center rounded-full bg-gray-200 dark:bg-gray-600 ring-1 ring-white dark:ring-gray-800 text-[8px] font-medium">
+						+{ strconv.Itoa(len(providers) - 3) }
+					</span>
+				}
+			</span>
+		</button>
+	}
+}
+
+// fieldActions renders the hover-revealed edit/delete/fetch icon buttons for a field.
+templ fieldActions(artistID, field string, hasValue bool, providers []string) {
+	<span class="inline-flex items-center gap-0.5 opacity-0 group-hover/field:opacity-100 transition-opacity">
+		<button
+			type="button"
+			class="p-1 text-gray-400 hover:text-blue-500 transition-colors"
+			title={ "Edit " + fieldLabel(field) }
+			hx-get={ "/api/v1/artists/" + artistID + "/fields/" + field + "/edit" }
+			hx-target={ "#field-" + field + "-" + artistID }
+			hx-swap="outerHTML"
+		>
+			@components.IconPencilSquare("h-3.5 w-3.5")
+		</button>
+		if hasValue {
+			<button
+				type="button"
+				class="p-1 text-gray-400 hover:text-red-500 transition-colors"
+				title={ "Clear " + fieldLabel(field) }
+				hx-delete={ "/api/v1/artists/" + artistID + "/fields/" + field }
+				hx-target={ "#field-" + field + "-" + artistID }
+				hx-swap="outerHTML"
+				hx-confirm={ "Clear " + fieldLabel(field) + "?" }
+				data-confirm-key="field-delete"
+			>
+				@components.IconTrash("h-3.5 w-3.5")
+			</button>
+		}
+		@ProviderLogoStack(artistID, field, providers)
+		<span id={ "field-spinner-" + field + "-" + artistID } class="htmx-indicator">
+			<svg class="h-3.5 w-3.5 animate-spin text-gray-400" fill="none" viewBox="0 0 24 24">
+				<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+				<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+			</svg>
+		</span>
+	</span>
+}
+
+// --- Biography ---
+
+templ biographyDisplay(a *artist.Artist, providers []string) {
+	<div id={ "field-biography-" + a.ID } class="group/field rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
+		<div class="flex items-center justify-between mb-3">
+			<h2 class="text-lg font-semibold">Biography</h2>
+			@fieldActions(a.ID, "biography", a.Biography != "", providers)
+		</div>
+		if a.Biography != "" {
+			<p class="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-line">{ a.Biography }</p>
+		} else {
+			<p class="text-sm text-gray-400 italic">No biography.</p>
+		}
+	</div>
+}
+
+templ biographyEdit(a *artist.Artist) {
+	<div id={ "field-biography-" + a.ID } class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
+		<div class="flex items-center justify-between mb-3">
+			<h2 class="text-lg font-semibold">Biography</h2>
+		</div>
+		<form
+			hx-patch={ "/api/v1/artists/" + a.ID + "/fields/biography" }
+			hx-target={ "#field-biography-" + a.ID }
+			hx-swap="outerHTML"
+		>
+			<textarea
+				name="value"
+				rows="8"
+				class="w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+			>{ a.Biography }</textarea>
+			@editFormButtons(a.ID, "biography")
+		</form>
+	</div>
+}
+
+// --- Tag fields (Genres, Styles, Moods) ---
+
+templ tagFieldDisplay(a *artist.Artist, field, label string, tags []string, colorClass string, providers []string) {
+	<div id={ "field-" + field + "-" + a.ID } class="mb-3 group/field">
+		<h3 class="text-xs font-medium uppercase text-gray-500 dark:text-gray-400 mb-1 flex items-center gap-1">
+			{ label }
+			@fieldActions(a.ID, field, len(tags) > 0, providers)
+		</h3>
+		if len(tags) > 0 {
+			<div class="flex flex-wrap gap-1">
+				for _, t := range tags {
+					<span class={ "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium " + colorClass }>
+						{ t }
+					</span>
+				}
+			</div>
+		} else {
+			<p class="text-sm text-gray-400 italic">None set.</p>
+		}
+	</div>
+}
+
+templ tagFieldEdit(a *artist.Artist, field, label string, tags []string) {
+	<div id={ "field-" + field + "-" + a.ID } class="mb-3">
+		<h3 class="text-xs font-medium uppercase text-gray-500 dark:text-gray-400 mb-1">
+			{ label }
+		</h3>
+		<form
+			hx-patch={ "/api/v1/artists/" + a.ID + "/fields/" + field }
+			hx-target={ "#field-" + field + "-" + a.ID }
+			hx-swap="outerHTML"
+		>
+			<input
+				type="text"
+				name="value"
+				value={ strings.Join(tags, ", ") }
+				placeholder="Comma-separated values"
+				class="w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+			/>
+			@editFormButtons(a.ID, field)
+		</form>
+	</div>
+}
+
+// --- Detail sidebar fields ---
+
+templ detailFieldDisplay(a *artist.Artist, field, label, value string, providers []string) {
+	<div id={ "field-" + field + "-" + a.ID } class="group/field">
+		<dt class="text-gray-500 dark:text-gray-400 flex items-center gap-1">
+			{ label }
+			<span class="inline-flex items-center gap-0.5 opacity-0 group-hover/field:opacity-100 transition-opacity">
+				<button
+					type="button"
+					class="p-0.5 text-gray-400 hover:text-blue-500 transition-colors"
+					title={ "Edit " + label }
+					hx-get={ "/api/v1/artists/" + a.ID + "/fields/" + field + "/edit" }
+					hx-target={ "#field-" + field + "-" + a.ID }
+					hx-swap="outerHTML"
+				>
+					@components.IconPencilSquare("h-3 w-3")
+				</button>
+				if value != "" {
+					<button
+						type="button"
+						class="p-0.5 text-gray-400 hover:text-red-500 transition-colors"
+						title={ "Clear " + label }
+						hx-delete={ "/api/v1/artists/" + a.ID + "/fields/" + field }
+						hx-target={ "#field-" + field + "-" + a.ID }
+						hx-swap="outerHTML"
+						hx-confirm={ "Clear " + label + "?" }
+						data-confirm-key="field-delete"
+					>
+						@components.IconTrash("h-3 w-3")
+					</button>
+				}
+				@ProviderLogoStack(a.ID, field, providers)
+			</span>
+		</dt>
+		if value != "" {
+			<dd class="font-medium">{ value }</dd>
+		} else {
+			<dd class="text-gray-400 italic text-xs">Not set</dd>
+		}
+	</div>
+}
+
+templ detailFieldEdit(a *artist.Artist, field, label, value string) {
+	<div id={ "field-" + field + "-" + a.ID }>
+		<dt class="text-gray-500 dark:text-gray-400">{ label }</dt>
+		<dd>
+			<form
+				class="flex items-center gap-1 mt-0.5"
+				hx-patch={ "/api/v1/artists/" + a.ID + "/fields/" + field }
+				hx-target={ "#field-" + field + "-" + a.ID }
+				hx-swap="outerHTML"
+			>
+				<input
+					type="text"
+					name="value"
+					value={ value }
+					class="flex-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+				/>
+				<button type="submit" class="p-1 text-green-600 hover:text-green-700 transition-colors" title="Save">
+					@components.IconCheck("h-4 w-4")
+				</button>
+				<button
+					type="button"
+					class="p-1 text-gray-400 hover:text-gray-600 transition-colors"
+					title="Cancel"
+					hx-get={ "/api/v1/artists/" + a.ID + "/fields/" + field + "/display" }
+					hx-target={ "#field-" + field + "-" + a.ID }
+					hx-swap="outerHTML"
+				>
+					@components.IconXMark("h-4 w-4")
+				</button>
+			</form>
+		</dd>
+	</div>
+}
+
+// --- Provider comparison ---
+
+// FieldProviderResultView wraps provider result data for template rendering.
+type FieldProviderResultView struct {
+	Provider    string
+	DisplayName string
+	Value       string
+	Values      []string
+	HasData     bool
+	Error       string
+}
+
+// FieldProviderComparison shows side-by-side results from all providers for a field.
+templ FieldProviderComparison(a *artist.Artist, field string, results []provider.FieldProviderResult, currentValue string) {
+	<div id={ "field-" + field + "-" + a.ID } class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
+		<div class="flex items-center justify-between mb-3">
+			<h2 class="text-lg font-semibold">{ fieldLabel(field) } -- Provider Results</h2>
+			<button
+				type="button"
+				class="p-1 text-gray-400 hover:text-gray-600 transition-colors"
+				title="Close"
+				hx-get={ "/api/v1/artists/" + a.ID + "/fields/" + field + "/display" }
+				hx-target={ "#field-" + field + "-" + a.ID }
+				hx-swap="outerHTML"
+			>
+				@components.IconXMark("h-5 w-5")
+			</button>
+		</div>
+		if currentValue != "" {
+			<div class="mb-3 rounded border border-gray-200 dark:border-gray-700 p-3 bg-gray-50 dark:bg-gray-900/50">
+				<div class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Current value</div>
+				<div class="text-sm text-gray-700 dark:text-gray-300 max-h-20 overflow-y-auto">{ currentValue }</div>
+			</div>
+		}
+		<div class="space-y-3">
+			for _, r := range results {
+				<div class="rounded border border-gray-200 dark:border-gray-700 p-3">
+					<div class="flex items-center justify-between mb-2">
+						<div class="flex items-center gap-2">
+							if logoSrcSet(string(r.Provider)) != "" {
+								<img src={ logoSrc(string(r.Provider)) } srcset={ logoSrcSet(string(r.Provider)) } alt="" class="h-5 w-5" aria-hidden="true"/>
+							} else {
+								<img src={ logoSrc(string(r.Provider)) } alt="" class="h-5 w-5" aria-hidden="true"/>
+							}
+							<span class="text-sm font-medium">{ r.Provider.DisplayName() }</span>
+						</div>
+						if r.HasData {
+							if artist.IsSliceField(field) && len(r.Values) > 0 {
+								<button
+									type="button"
+									class="text-xs px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+									hx-patch={ "/api/v1/artists/" + a.ID + "/fields/" + field }
+									hx-target={ "#field-" + field + "-" + a.ID }
+									hx-swap="outerHTML"
+									hx-vals={ `{"value":"` + strings.Join(r.Values, ", ") + `"}` }
+									hx-headers='{"Content-Type":"application/json"}'
+								>
+									Use this
+								</button>
+							} else if r.Value != "" {
+								<button
+									type="button"
+									class="text-xs px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+									hx-patch={ "/api/v1/artists/" + a.ID + "/fields/" + field }
+									hx-target={ "#field-" + field + "-" + a.ID }
+									hx-swap="outerHTML"
+									hx-vals={ `{"value":"` + escapeJSONValue(r.Value) + `"}` }
+									hx-headers='{"Content-Type":"application/json"}'
+								>
+									Use this
+								</button>
+							}
+						}
+					</div>
+					if r.Error != "" {
+						<p class="text-xs text-red-500">{ r.Error }</p>
+					} else if !r.HasData {
+						<p class="text-xs text-gray-400 italic">No data available</p>
+					} else if len(r.Values) > 0 {
+						<div class="flex flex-wrap gap-1">
+							for _, v := range r.Values {
+								<span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs font-medium text-gray-700 dark:text-gray-300">
+									{ v }
+								</span>
+							}
+						</div>
+					} else {
+						<div class="text-sm text-gray-700 dark:text-gray-300 max-h-32 overflow-y-auto whitespace-pre-line">
+							{ truncateText(r.Value, 500) }
+						</div>
+					}
+				</div>
+			}
+		</div>
+	</div>
+}
+
+// --- Shared edit form buttons ---
+
+templ editFormButtons(artistID, field string) {
+	<div class="mt-2 flex gap-2">
+		<button
+			type="submit"
+			class="inline-flex items-center gap-1 px-3 py-1.5 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+		>
+			@components.IconCheck("h-3.5 w-3.5")
+			Save
+		</button>
+		<button
+			type="button"
+			class="inline-flex items-center gap-1 px-3 py-1.5 text-sm rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+			hx-get={ "/api/v1/artists/" + artistID + "/fields/" + field + "/display" }
+			hx-target={ "#field-" + field + "-" + artistID }
+			hx-swap="outerHTML"
+		>
+			@components.IconXMark("h-3.5 w-3.5")
+			Cancel
+		</button>
+	</div>
+}

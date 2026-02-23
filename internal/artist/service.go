@@ -219,6 +219,147 @@ func (s *Service) Update(ctx context.Context, a *Artist) error {
 	return nil
 }
 
+// fieldToColumn maps API field names to database column names.
+// Returns an error for unknown fields to prevent SQL injection.
+var fieldColumnMap = map[string]string{
+	"biography":    "biography",
+	"genres":       "genres",
+	"styles":       "styles",
+	"moods":        "moods",
+	"formed":       "formed",
+	"born":         "born",
+	"disbanded":    "disbanded",
+	"died":         "died",
+	"years_active": "years_active",
+	"type":         "type",
+	"gender":       "gender",
+}
+
+// sliceFields are fields that store JSON arrays in the database.
+var sliceFields = map[string]bool{
+	"genres": true,
+	"styles": true,
+	"moods":  true,
+}
+
+// IsEditableField reports whether the given field name can be updated via
+// the field-level API.
+func IsEditableField(field string) bool {
+	_, ok := fieldColumnMap[field]
+	return ok
+}
+
+// UpdateField updates a single metadata field on an artist record.
+// For slice fields (genres, styles, moods), the value is a comma-separated
+// string that gets marshaled to a JSON array for storage.
+func (s *Service) UpdateField(ctx context.Context, id, field, value string) error {
+	col, ok := fieldColumnMap[field]
+	if !ok {
+		return fmt.Errorf("unknown field: %s", field)
+	}
+
+	dbValue := value
+	if sliceFields[field] {
+		dbValue = MarshalStringSlice(splitTags(value))
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	_, err := s.db.ExecContext(ctx,
+		"UPDATE artists SET "+col+" = ?, updated_at = ? WHERE id = ?", //nolint:gosec // col is from validated map
+		dbValue, now, id,
+	)
+	if err != nil {
+		return fmt.Errorf("updating field %s: %w", field, err)
+	}
+	return nil
+}
+
+// ClearField sets a single metadata field to its zero value.
+func (s *Service) ClearField(ctx context.Context, id, field string) error {
+	col, ok := fieldColumnMap[field]
+	if !ok {
+		return fmt.Errorf("unknown field: %s", field)
+	}
+
+	zeroValue := ""
+	if sliceFields[field] {
+		zeroValue = "[]"
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	_, err := s.db.ExecContext(ctx,
+		"UPDATE artists SET "+col+" = ?, updated_at = ? WHERE id = ?", //nolint:gosec // col is from validated map
+		zeroValue, now, id,
+	)
+	if err != nil {
+		return fmt.Errorf("clearing field %s: %w", field, err)
+	}
+	return nil
+}
+
+// splitTags splits a comma-separated string into trimmed non-empty values.
+func splitTags(s string) []string {
+	var tags []string
+	for _, t := range strings.Split(s, ",") {
+		t = strings.TrimSpace(t)
+		if t != "" {
+			tags = append(tags, t)
+		}
+	}
+	return tags
+}
+
+// FieldValueFromArtist extracts a single field's value from an Artist struct.
+// For string fields returns the value directly; for slice fields returns
+// the comma-joined representation.
+func FieldValueFromArtist(a *Artist, field string) string {
+	switch field {
+	case "biography":
+		return a.Biography
+	case "genres":
+		return strings.Join(a.Genres, ", ")
+	case "styles":
+		return strings.Join(a.Styles, ", ")
+	case "moods":
+		return strings.Join(a.Moods, ", ")
+	case "formed":
+		return a.Formed
+	case "born":
+		return a.Born
+	case "disbanded":
+		return a.Disbanded
+	case "died":
+		return a.Died
+	case "years_active":
+		return a.YearsActive
+	case "type":
+		return a.Type
+	case "gender":
+		return a.Gender
+	default:
+		return ""
+	}
+}
+
+// SliceFieldFromArtist extracts a slice field's values from an Artist struct.
+func SliceFieldFromArtist(a *Artist, field string) []string {
+	switch field {
+	case "genres":
+		return a.Genres
+	case "styles":
+		return a.Styles
+	case "moods":
+		return a.Moods
+	default:
+		return nil
+	}
+}
+
+// IsSliceField reports whether the given field stores a JSON array.
+func IsSliceField(field string) bool {
+	return sliceFields[field]
+}
+
 // Delete removes an artist by ID. Cascade deletes related rows.
 func (s *Service) Delete(ctx context.Context, id string) error {
 	result, err := s.db.ExecContext(ctx, `DELETE FROM artists WHERE id = ?`, id)

@@ -26,32 +26,6 @@ type SettingsData struct {
 	WebSearchProviders []provider.WebSearchProviderStatus
 }
 
-// logoSrc returns the static path to a logo file for the given key.
-// Most logos are SVG; audiodb and emby use PNG (128px variant).
-func logoSrc(key string) string {
-	switch key {
-	case "audiodb", "emby":
-		return "/static/img/logos/" + key + "-128.png"
-	case "custom":
-		return "/static/img/favicon.svg"
-	default:
-		return "/static/img/logos/" + key + ".svg"
-	}
-}
-
-// logoSrcSet returns an srcset attribute value for PNG logos with multi-DPI
-// variants. Returns an empty string for SVG logos (they scale natively).
-func logoSrcSet(key string) string {
-	switch key {
-	case "audiodb", "emby":
-		return "/static/img/logos/" + key + "-32.png 1x, " +
-			"/static/img/logos/" + key + "-64.png 2x, " +
-			"/static/img/logos/" + key + "-128.png 4x"
-	default:
-		return ""
-	}
-}
-
 // connectionsForType filters connections by type.
 func connectionsForType(conns []connection.Connection, connType string) []connection.Connection {
 	var result []connection.Connection
@@ -123,6 +97,7 @@ func isWebSearchProvider(name provider.ProviderName) bool {
 
 templ SettingsPage(assets AssetPaths, data SettingsData) {
 	@Layout("Settings", assets) {
+		@resetConfirmPrefsScript()
 		<div class="space-y-6">
 			<div class="border-b border-gray-200 dark:border-gray-700 pb-4">
 				<h1 class="text-2xl font-bold">Settings</h1>
@@ -305,6 +280,29 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 			</div>
 			<div class="bg-white dark:bg-gray-800 shadow rounded-lg">
 				<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+					<h2 class="text-lg font-semibold">Confirmation Dialogs</h2>
+					<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+						Manage "Don't ask again" preferences for confirmation dialogs throughout the app.
+					</p>
+				</div>
+				<div class="px-6 py-4">
+					<p class="text-sm text-gray-600 dark:text-gray-400 mb-3">
+						If you previously checked "Don't ask again" on a confirmation dialog, you can reset
+						all preferences here to restore those prompts.
+					</p>
+					<button
+						type="button"
+						id="reset-confirm-prefs"
+						class="text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+						onclick="resetConfirmPrefs()"
+					>
+						Reset all confirmation preferences
+					</button>
+					<span id="confirm-reset-status" class="ml-2 text-sm text-green-600 dark:text-green-400 hidden">Preferences reset.</span>
+				</div>
+			</div>
+			<div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+				<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 					<h2 class="text-lg font-semibold">Database Backup</h2>
 					<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
 						Create and download database backups. Automatic backups run daily with 7-day retention.
@@ -333,6 +331,29 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 			</div>
 		</div>
 	}
+}
+
+// resetConfirmPrefsScript renders inline JS for the "Reset confirmation preferences" button.
+templ resetConfirmPrefsScript() {
+	<script>
+		function resetConfirmPrefs() {
+			var keys = [];
+			for (var i = 0; i < localStorage.length; i++) {
+				var key = localStorage.key(i);
+				if (key && key.indexOf('ui.confirm.') === 0) {
+					keys.push(key);
+				}
+			}
+			for (var j = 0; j < keys.length; j++) {
+				localStorage.removeItem(keys[j]);
+			}
+			var status = document.getElementById('confirm-reset-status');
+			if (status) {
+				status.classList.remove('hidden');
+				setTimeout(function() { status.classList.add('hidden'); }, 3000);
+			}
+		}
+	</script>
 }
 
 templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
