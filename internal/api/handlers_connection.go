@@ -101,7 +101,9 @@ func (r *Router) handleCreateConnection(w http.ResponseWriter, req *http.Request
 	}
 	if existing != nil {
 		existing.Name = body.Name
-		existing.APIKey = body.APIKey
+		if body.APIKey != "" {
+			existing.APIKey = body.APIKey
+		}
 		existing.Enabled = body.Enabled
 		if updateErr := r.connectionService.Update(req.Context(), existing); updateErr != nil {
 			r.logger.Error("updating existing connection", "error", updateErr)

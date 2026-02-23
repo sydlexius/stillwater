@@ -12,6 +12,9 @@ import (
 	"github.com/sydlexius/stillwater/internal/encryption"
 )
 
+// errDecrypt is a sentinel indicating an API key decryption failure.
+var errDecrypt = errors.New("decrypt")
+
 // Service provides connection data operations.
 type Service struct {
 	db        *sql.DB
@@ -88,10 +91,13 @@ func (s *Service) List(ctx context.Context) ([]Connection, error) {
 
 	var connections []Connection
 	for rows.Next() {
-		c, err := s.scanConnection(rows)
-		if err != nil {
-			slog.Warn("skipping unreadable connection row", "error", err)
-			continue
+		c, scanErr := s.scanConnection(rows)
+		if scanErr != nil {
+			if errors.Is(scanErr, errDecrypt) {
+				slog.Warn("skipping connection with undecryptable key", "error", scanErr)
+				continue
+			}
+			return nil, fmt.Errorf("scanning connection row: %w", scanErr)
 		}
 		connections = append(connections, *c)
 	}
@@ -111,10 +117,13 @@ func (s *Service) ListByType(ctx context.Context, connType string) ([]Connection
 
 	var connections []Connection
 	for rows.Next() {
-		c, err := s.scanConnection(rows)
-		if err != nil {
-			slog.Warn("skipping unreadable connection row", "error", err)
-			continue
+		c, scanErr := s.scanConnection(rows)
+		if scanErr != nil {
+			if errors.Is(scanErr, errDecrypt) {
+				slog.Warn("skipping connection with undecryptable key", "error", scanErr)
+				continue
+			}
+			return nil, fmt.Errorf("scanning connection row: %w", scanErr)
 		}
 		connections = append(connections, *c)
 	}
@@ -129,6 +138,11 @@ func (s *Service) GetByTypeAndURL(ctx context.Context, connType, url string) (*C
 	`, connType, url)
 	c, err := s.scanConnection(row)
 	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if errors.Is(err, errDecrypt) {
+		slog.Warn("treating undecryptable connection as not found for type+url lookup",
+			"error", err, "type", connType, "url", url)
 		return nil, nil
 	}
 	if err != nil {
@@ -228,9 +242,9 @@ func (s *Service) scanConnection(row interface{ Scan(...any) error }) (*Connecti
 	}
 
 	if encKey != "" {
-		apiKey, err := s.encryptor.Decrypt(encKey)
-		if err != nil {
-			return nil, fmt.Errorf("decrypting api key for connection %s: %w", c.ID, err)
+		apiKey, decErr := s.encryptor.Decrypt(encKey)
+		if decErr != nil {
+			return nil, fmt.Errorf("%w: api key for connection %s: %w", errDecrypt, c.ID, decErr)
 		}
 		c.APIKey = apiKey
 	}
