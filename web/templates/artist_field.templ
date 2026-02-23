@@ -51,11 +51,11 @@ templ ProviderLogoStack(artistID, field string, providers []string) {
 			class="inline-flex items-center gap-1 p-0.5 text-gray-400 hover:text-blue-500 transition-colors"
 			title="Fetch from providers"
 			hx-get={ "/api/v1/artists/" + artistID + "/fields/" + field + "/providers" }
-			hx-target={ "#field-" + field + "-" + artistID }
-			hx-swap="outerHTML"
+			hx-target="#field-provider-modal-body"
+			hx-swap="innerHTML"
 			hx-indicator={ "#field-spinner-" + field + "-" + artistID }
 		>
-			@components.IconArrowPath("h-3.5 w-3.5")
+			@components.IconArrowDownTray("h-3.5 w-3.5")
 			<span class="text-[10px] font-medium">Fetch</span>
 			<span class="inline-flex -space-x-1.5 ml-0.5">
 				for i, p := range providers {
@@ -281,36 +281,18 @@ templ detailFieldEdit(a *artist.Artist, field, label, value string) {
 	</div>
 }
 
-// --- Provider comparison ---
+// --- Provider comparison (modal content) ---
 
-// FieldProviderResultView wraps provider result data for template rendering.
-type FieldProviderResultView struct {
-	Provider    string
-	DisplayName string
-	Value       string
-	Values      []string
-	HasData     bool
-	Error       string
-}
-
-// FieldProviderComparison shows side-by-side results from all providers for a field.
-templ FieldProviderComparison(a *artist.Artist, field string, results []provider.FieldProviderResult, currentValue string) {
-	<div id={ "field-" + field + "-" + a.ID } class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
-		<div class="flex items-center justify-between mb-3">
-			<h2 class="text-lg font-semibold">{ fieldLabel(field) } -- Provider Results</h2>
-			<button
-				type="button"
-				class="p-1 text-gray-400 hover:text-gray-600 transition-colors"
-				title="Close"
-				hx-get={ "/api/v1/artists/" + a.ID + "/fields/" + field + "/display" }
-				hx-target={ "#field-" + field + "-" + a.ID }
-				hx-swap="outerHTML"
-			>
-				@components.IconXMark("h-5 w-5")
-			</button>
-		</div>
+// FieldProviderModalContent renders provider comparison results inside the
+// field provider modal body. The "Use this" and "Merge" buttons target the
+// original field display container and close the modal on successful save.
+templ FieldProviderModalContent(a *artist.Artist, field string, results []provider.FieldProviderResult, currentValue string) {
+	<div>
+		<h4 class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-3">
+			{ fieldLabel(field) }
+		</h4>
 		if currentValue != "" {
-			<div class="mb-3 rounded border border-gray-200 dark:border-gray-700 p-3 bg-gray-50 dark:bg-gray-900/50">
+			<div class="mb-4 rounded border border-gray-200 dark:border-gray-700 p-3 bg-gray-50 dark:bg-gray-900/50">
 				<div class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Current value</div>
 				<div class="text-sm text-gray-700 dark:text-gray-300 max-h-20 overflow-y-auto">{ currentValue }</div>
 			</div>
@@ -328,31 +310,47 @@ templ FieldProviderComparison(a *artist.Artist, field string, results []provider
 							<span class="text-sm font-medium">{ r.Provider.DisplayName() }</span>
 						</div>
 						if r.HasData {
-							if artist.IsSliceField(field) && len(r.Values) > 0 {
-								<button
-									type="button"
-									class="text-xs px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
-									hx-patch={ "/api/v1/artists/" + a.ID + "/fields/" + field }
-									hx-target={ "#field-" + field + "-" + a.ID }
-									hx-swap="outerHTML"
-									hx-vals={ `{"value":"` + strings.Join(r.Values, ", ") + `"}` }
-									hx-headers='{"Content-Type":"application/json"}'
-								>
-									Use this
-								</button>
-							} else if r.Value != "" {
-								<button
-									type="button"
-									class="text-xs px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
-									hx-patch={ "/api/v1/artists/" + a.ID + "/fields/" + field }
-									hx-target={ "#field-" + field + "-" + a.ID }
-									hx-swap="outerHTML"
-									hx-vals={ `{"value":"` + escapeJSONValue(r.Value) + `"}` }
-									hx-headers='{"Content-Type":"application/json"}'
-								>
-									Use this
-								</button>
-							}
+							<div class="flex items-center gap-1.5">
+								if artist.IsSliceField(field) && len(r.Values) > 0 {
+									<button
+										type="button"
+										class="text-xs px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+										hx-patch={ "/api/v1/artists/" + a.ID + "/fields/" + field }
+										hx-target={ "#field-" + field + "-" + a.ID }
+										hx-swap="outerHTML"
+										hx-vals={ `{"value":"` + escapeJSONValue(strings.Join(r.Values, ", ")) + `"}` }
+										hx-headers='{"Content-Type":"application/json"}'
+										hx-on::after-request="hideFieldProviderModal()"
+									>
+										Use this
+									</button>
+									<button
+										type="button"
+										class="text-xs px-2 py-1 rounded border border-blue-600 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+										hx-patch={ "/api/v1/artists/" + a.ID + "/fields/" + field }
+										hx-target={ "#field-" + field + "-" + a.ID }
+										hx-swap="outerHTML"
+										hx-vals={ `{"value":"` + mergeSliceValues(artist.SliceFieldFromArtist(a, field), r.Values) + `"}` }
+										hx-headers='{"Content-Type":"application/json"}'
+										hx-on::after-request="hideFieldProviderModal()"
+									>
+										Merge
+									</button>
+								} else if r.Value != "" {
+									<button
+										type="button"
+										class="text-xs px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+										hx-patch={ "/api/v1/artists/" + a.ID + "/fields/" + field }
+										hx-target={ "#field-" + field + "-" + a.ID }
+										hx-swap="outerHTML"
+										hx-vals={ `{"value":"` + escapeJSONValue(r.Value) + `"}` }
+										hx-headers='{"Content-Type":"application/json"}'
+										hx-on::after-request="hideFieldProviderModal()"
+									>
+										Use this
+									</button>
+								}
+							</div>
 						}
 					</div>
 					if r.Error != "" {
@@ -375,6 +373,16 @@ templ FieldProviderComparison(a *artist.Artist, field string, results []provider
 				</div>
 			}
 		</div>
+	</div>
+}
+
+// FieldProviderNoChanges renders a message inside the modal body when all
+// providers returned data identical to the current value.
+templ FieldProviderNoChanges(field string) {
+	<div class="text-center py-6">
+		<p class="text-sm text-gray-500 dark:text-gray-400">
+			All providers returned the same data as the current value for { fieldLabel(field) }.
+		</p>
 	</div>
 }
 

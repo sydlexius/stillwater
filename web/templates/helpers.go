@@ -105,6 +105,31 @@ func escapeJSONValue(s string) string {
 	return s
 }
 
+// mergeSliceValues combines current and provider slices, deduplicating
+// case-insensitively while preserving original casing. Returns a
+// comma-separated string escaped for safe hx-vals JSON embedding.
+func mergeSliceValues(current, provider []string) string {
+	seen := make(map[string]bool, len(current)+len(provider))
+	var merged []string
+	for _, v := range current {
+		trimmed := strings.TrimSpace(v)
+		lower := strings.ToLower(trimmed)
+		if lower != "" && !seen[lower] {
+			seen[lower] = true
+			merged = append(merged, trimmed)
+		}
+	}
+	for _, v := range provider {
+		trimmed := strings.TrimSpace(v)
+		lower := strings.ToLower(trimmed)
+		if lower != "" && !seen[lower] {
+			seen[lower] = true
+			merged = append(merged, trimmed)
+		}
+	}
+	return escapeJSONValue(strings.Join(merged, ", "))
+}
+
 // disambiguationHxVals builds the hx-vals JSON string for a disambiguation result card.
 func disambiguationHxVals(r provider.ArtistSearchResult) string {
 	var parts []string

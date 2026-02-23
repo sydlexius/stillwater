@@ -44,6 +44,7 @@ templ Layout(title string, assets AssetPaths) {
 				</main>
 			</div>
 			@components.ConfirmModal()
+			@components.FieldProviderModal()
 			<div id="error-toast-container"></div>
 			<script>
 				// Theme toggle: cycles Light -> Dark -> System

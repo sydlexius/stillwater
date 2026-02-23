@@ -161,8 +161,12 @@ func (r *Router) handleFieldProviders(w http.ResponseWriter, req *http.Request) 
 	}
 
 	if isHTMXRequest(req) {
+		if allProvidersMatch(field, results, a) {
+			renderTempl(w, req, templates.FieldProviderNoChanges(field))
+			return
+		}
 		currentValue := artist.FieldValueFromArtist(a, field)
-		renderTempl(w, req, templates.FieldProviderComparison(a, field, results, currentValue))
+		renderTempl(w, req, templates.FieldProviderModalContent(a, field, results, currentValue))
 		return
 	}
 
@@ -204,6 +208,50 @@ func (r *Router) fieldProviderNames(req *http.Request, field string) []string {
 		}
 	}
 	return nil
+}
+
+// allProvidersMatch returns true when every provider result that has data
+// matches the artist's current value for the field. Returns false if no
+// provider had data (so the user sees "no data" messages in the modal).
+func allProvidersMatch(field string, results []provider.FieldProviderResult, a *artist.Artist) bool {
+	anyHasData := false
+	for _, r := range results {
+		if !r.HasData {
+			continue
+		}
+		anyHasData = true
+		if artist.IsSliceField(field) {
+			if !slicesEqualIgnoreCase(artist.SliceFieldFromArtist(a, field), r.Values) {
+				return false
+			}
+		} else {
+			currentValue := artist.FieldValueFromArtist(a, field)
+			if strings.TrimSpace(r.Value) != strings.TrimSpace(currentValue) {
+				return false
+			}
+		}
+	}
+	return anyHasData
+}
+
+// slicesEqualIgnoreCase compares two string slices for equality, ignoring
+// order and case.
+func slicesEqualIgnoreCase(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	counts := make(map[string]int, len(a))
+	for _, v := range a {
+		counts[strings.ToLower(strings.TrimSpace(v))]++
+	}
+	for _, v := range b {
+		key := strings.ToLower(strings.TrimSpace(v))
+		counts[key]--
+		if counts[key] < 0 {
+			return false
+		}
+	}
+	return true
 }
 
 // buildFieldProvidersMap builds a map of field name -> provider name strings
