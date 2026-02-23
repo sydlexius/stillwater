@@ -4,13 +4,19 @@
 
 Work through all 9 open issues in priority order, respecting blocking relationships. Each issue gets its own feature branch, PR, and testing cycle before merge.
 
+## Progress Summary
+
+- **Completed:** 3 of 9 issues (#90, #97, #88)
+- **Remaining:** 6 issues (#98, #100, #91, #95, #99, #94)
+- **Next up:** #98 (high priority, unblocks #99)
+
 ## Dependency Graph
 
 ```
-#90 (critical bug, no blockers)
-#97 (high bug, no blockers)
-#88 (medium, no blockers)
-#98 (high, soft depends on #97)
+#90 DONE (critical bug, no blockers) -- PR #101 merged
+#97 DONE (high bug, no blockers) -- PR #102 merged
+#88 DONE (medium, no blockers) -- PR #103 merged
+#98 (high, soft depends on #97) <-- NEXT
 #100 (medium, no blockers)
 #91 (medium, no blockers)
 #95 (medium, no blockers)
@@ -20,17 +26,17 @@ Work through all 9 open issues in priority order, respecting blocking relationsh
 
 ## Issues
 
-| # | Title | Priority | Scope | Mode | Model |
-|---|-------|----------|-------|------|-------|
-| 90 | Connections bug: stale encrypted row poisons List() | critical | small | direct | sonnet |
-| 97 | Fanart.tv images missing dimensions and rendering blank | high | small | direct | sonnet |
-| 88 | NFO and artwork clobber risk detection and UI warnings | medium | medium | plan | sonnet |
-| 98 | Display existing local images on artist detail page | high | medium | plan | opus |
-| 100 | Per-artist metadata refresh with field-level provider selection | medium | large | plan | opus |
-| 91 | Provider Priority UI redesign: drag-drop chips | medium | large | plan | opus |
-| 95 | Settings page: add tab navigation for sections | medium | medium | direct | sonnet |
-| 99 | Image management improvements: unified search, edit, upload UX | medium | large | plan | opus |
-| 94 | Developer documentation overhaul | low | medium | direct | haiku |
+| # | Title | Priority | Scope | Mode | Model | Status |
+|---|-------|----------|-------|------|-------|--------|
+| 90 | Connections bug: stale encrypted row poisons List() | critical | small | direct | sonnet | DONE (PR #101) |
+| 97 | Fanart.tv images missing dimensions and rendering blank | high | small | direct | sonnet | DONE (PR #102) |
+| 88 | NFO and artwork clobber risk detection and UI warnings | medium | medium | plan | sonnet | DONE (PR #103) |
+| 98 | Display existing local images on artist detail page | high | medium | plan | opus | **NEXT**  |
+| 100 | Per-artist metadata refresh with field-level provider selection | medium | large | plan | opus | open |
+| 91 | Provider Priority UI redesign: drag-drop chips | medium | large | plan | opus | open |
+| 95 | Settings page: add tab navigation for sections | medium | medium | direct | sonnet | open |
+| 99 | Image management improvements: unified search, edit, upload UX | medium | large | plan | opus | blocked by #98 |
+| 94 | Developer documentation overhaul | low | medium | direct | haiku | open (last) |
 
 ## Execution Order
 
@@ -59,8 +65,8 @@ Work items are ordered by priority, then by blocking relationships. Items at the
 - [x] Lint passes: `golangci-lint run ./...`
 - [ ] Manual acceptance test: connections page loads, OOBE shows saved connections
 - [x] PR created and merged -- PR #101
-- [ ] PR checks pass (no CI failures)
-- [ ] PR reviewed (check for copilot feedback)
+- [x] PR checks pass (no CI failures)
+- [x] PR reviewed (Copilot feedback addressed in commit 502a166)
 
 **Files:**
 - `internal/connection/service.go` -- resilient `List()` / `ListByType()`
@@ -87,8 +93,8 @@ Work items are ordered by priority, then by blocking relationships. Items at the
 - [x] Lint passes: `golangci-lint run ./...`
 - [ ] Manual acceptance test: Fanart.tv search results show dimensions, broken images show placeholder
 - [x] PR created and merged -- PR #102
-- [ ] PR checks pass (no CI failures)
-- [ ] PR reviewed (check for copilot feedback)
+- [x] PR checks pass (no CI failures)
+- [x] PR reviewed (Copilot: no comments, clean)
 
 **Files:**
 - `internal/image/` or new probing utility
@@ -107,19 +113,19 @@ Work items are ordered by priority, then by blocking relationships. Items at the
 
 #### Checklist
 
-- [ ] Investigate Emby/Jellyfin APIs for detecting NFO/artwork write settings
-- [ ] Implement detection for Lidarr (existing `CheckNFOWriterEnabled`)
-- [ ] Implement detection for Emby (API query or documented manual check)
-- [ ] Implement detection for Jellyfin (API query or documented manual check)
-- [ ] Surface persistent UI warning banner when risk detected
-- [ ] Show warning during onboarding if risk present
-- [ ] Graceful fallback when platform settings cannot be queried
-- [ ] Tests pass: `go test ./...`
-- [ ] Lint passes: `golangci-lint run ./...`
+- [x] Investigate Emby/Jellyfin APIs for detecting NFO/artwork write settings
+- [x] Implement detection for Lidarr (existing `CheckNFOWriterEnabled`)
+- [x] Implement detection for Emby (`/Library/VirtualFolders` + `LibraryOptions.MetadataSavers`)
+- [x] Implement detection for Jellyfin (same API pattern as Emby)
+- [x] Surface persistent UI warning banner when risk detected (yellow banner on Settings page)
+- [x] Show warning during onboarding if risk present (HTMX `clobberRecheck` event)
+- [x] Graceful fallback when platform settings cannot be queried (log warning, return false)
+- [x] Tests pass: `go test ./...` (8 new tests across Emby/Jellyfin)
+- [x] Lint passes: `golangci-lint run ./...`
 - [ ] Manual acceptance test: warning appears when Lidarr has NFO writer enabled
-- [ ] PR created and merged
-- [ ] PR checks pass (no CI failures)
-- [ ] PR reviewed (check for copilot feedback)
+- [x] PR created and merged -- PR #103
+- [x] PR checks pass (no CI failures)
+- [x] PR reviewed (Copilot: 2 comments addressed -- unified signatures, extracted shared helper)
 
 **Files:**
 - `internal/api/handlers_nfo.go` -- existing `handleNFOConflictCheck`
