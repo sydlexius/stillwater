@@ -92,6 +92,28 @@ func (r *Router) handleCreateConnection(w http.ResponseWriter, req *http.Request
 		body.Enabled = true
 	}
 
+	// Prevent duplicate connections with the same type+url
+	existing, err := r.connectionService.GetByTypeAndURL(req.Context(), body.Type, body.URL)
+	if err != nil {
+		r.logger.Error("checking for existing connection", "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		return
+	}
+	if existing != nil {
+		existing.Name = body.Name
+		if body.APIKey != "" {
+			existing.APIKey = body.APIKey
+		}
+		existing.Enabled = body.Enabled
+		if updateErr := r.connectionService.Update(req.Context(), existing); updateErr != nil {
+			r.logger.Error("updating existing connection", "error", updateErr)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+			return
+		}
+		writeJSON(w, http.StatusOK, toConnectionResponse(*existing))
+		return
+	}
+
 	c := &connection.Connection{
 		Name:    body.Name,
 		Type:    body.Type,

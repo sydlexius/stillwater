@@ -202,6 +202,176 @@ func TestDelete_NotFound(t *testing.T) {
 	}
 }
 
+func TestList_SkipsUndecryptableRows(t *testing.T) {
+	db, err := database.Open(":memory:")
+	if err != nil {
+		t.Fatalf("opening test db: %v", err)
+	}
+	if err := database.Migrate(db); err != nil {
+		t.Fatalf("running migrations: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	enc, _, err := encryption.NewEncryptor("")
+	if err != nil {
+		t.Fatalf("creating encryptor: %v", err)
+	}
+	svc := NewService(db, enc)
+	ctx := context.Background()
+
+	// Create a valid connection
+	if err := svc.Create(ctx, &Connection{Name: "Good", Type: TypeEmby, URL: "http://good:8096", APIKey: "key1", Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Insert a row with garbage encrypted key directly into the database
+	_, err = db.ExecContext(ctx, `
+		INSERT INTO connections (id, name, type, url, encrypted_api_key, enabled, status, status_message, created_at, updated_at)
+		VALUES ('bad-id', 'Bad', 'emby', 'http://bad:8096', 'not-valid-ciphertext', 1, 'unknown', '', '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z')
+	`)
+	if err != nil {
+		t.Fatalf("inserting bad row: %v", err)
+	}
+
+	conns, err := svc.List(ctx)
+	if err != nil {
+		t.Fatalf("List() should not return error with undecryptable rows: %v", err)
+	}
+	if len(conns) != 1 {
+		t.Fatalf("got %d connections, want 1 (should skip bad row)", len(conns))
+	}
+	if conns[0].Name != "Good" {
+		t.Errorf("Name = %q, want Good", conns[0].Name)
+	}
+}
+
+func TestList_EmptyEncryptedKey(t *testing.T) {
+	db, err := database.Open(":memory:")
+	if err != nil {
+		t.Fatalf("opening test db: %v", err)
+	}
+	if err := database.Migrate(db); err != nil {
+		t.Fatalf("running migrations: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	enc, _, err := encryption.NewEncryptor("")
+	if err != nil {
+		t.Fatalf("creating encryptor: %v", err)
+	}
+	svc := NewService(db, enc)
+	ctx := context.Background()
+
+	// Insert a row with empty encrypted key (simulates reset-credentials)
+	_, err = db.ExecContext(ctx, `
+		INSERT INTO connections (id, name, type, url, encrypted_api_key, enabled, status, status_message, created_at, updated_at)
+		VALUES ('empty-key-id', 'ResetConn', 'lidarr', 'http://reset:8686', '', 1, 'unknown', '', '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z')
+	`)
+	if err != nil {
+		t.Fatalf("inserting row with empty key: %v", err)
+	}
+
+	conns, err := svc.List(ctx)
+	if err != nil {
+		t.Fatalf("List() should not return error with empty key: %v", err)
+	}
+	if len(conns) != 1 {
+		t.Fatalf("got %d connections, want 1", len(conns))
+	}
+	if conns[0].APIKey != "" {
+		t.Errorf("APIKey = %q, want empty string", conns[0].APIKey)
+	}
+	if conns[0].Name != "ResetConn" {
+		t.Errorf("Name = %q, want ResetConn", conns[0].Name)
+	}
+}
+
+func TestGetByTypeAndURL(t *testing.T) {
+	svc := setupTestService(t)
+	ctx := context.Background()
+
+	c := &Connection{Name: "Emby1", Type: TypeEmby, URL: "http://emby:8096", APIKey: "key1", Enabled: true}
+	if err := svc.Create(ctx, c); err != nil {
+		t.Fatal(err)
+	}
+
+	// Should find the connection
+	got, err := svc.GetByTypeAndURL(ctx, TypeEmby, "http://emby:8096")
+	if err != nil {
+		t.Fatalf("GetByTypeAndURL: %v", err)
+	}
+	if got == nil {
+		t.Fatal("expected to find connection, got nil")
+	}
+	if got.Name != "Emby1" {
+		t.Errorf("Name = %q, want Emby1", got.Name)
+	}
+
+	// Should not find a connection with different type
+	got, err = svc.GetByTypeAndURL(ctx, TypeJellyfin, "http://emby:8096")
+	if err != nil {
+		t.Fatalf("GetByTypeAndURL: %v", err)
+	}
+	if got != nil {
+		t.Errorf("expected nil, got %+v", got)
+	}
+
+	// Should not find a connection with different URL
+	got, err = svc.GetByTypeAndURL(ctx, TypeEmby, "http://other:8096")
+	if err != nil {
+		t.Fatalf("GetByTypeAndURL: %v", err)
+	}
+	if got != nil {
+		t.Errorf("expected nil, got %+v", got)
+	}
+}
+
+func TestDeduplicateByTypeURL(t *testing.T) {
+	db, err := database.Open(":memory:")
+	if err != nil {
+		t.Fatalf("opening test db: %v", err)
+	}
+	if err := database.Migrate(db); err != nil {
+		t.Fatalf("running migrations: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	enc, _, err := encryption.NewEncryptor("")
+	if err != nil {
+		t.Fatalf("creating encryptor: %v", err)
+	}
+	svc := NewService(db, enc)
+	ctx := context.Background()
+
+	// Create 3 connections with the same type+url
+	for i := 0; i < 3; i++ {
+		c := &Connection{Name: "Emby", Type: TypeEmby, URL: "http://emby:8096", APIKey: "key", Enabled: true}
+		if err := svc.Create(ctx, c); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Create 1 different connection
+	if err := svc.Create(ctx, &Connection{Name: "Lidarr", Type: TypeLidarr, URL: "http://lidarr:8686", APIKey: "key2", Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+
+	removed, err := svc.DeduplicateByTypeURL(ctx)
+	if err != nil {
+		t.Fatalf("DeduplicateByTypeURL: %v", err)
+	}
+	if removed != 2 {
+		t.Errorf("removed %d rows, want 2", removed)
+	}
+
+	conns, err := svc.List(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(conns) != 2 {
+		t.Fatalf("got %d connections after dedup, want 2", len(conns))
+	}
+}
+
 func TestUpdateStatus(t *testing.T) {
 	svc := setupTestService(t)
 	ctx := context.Background()

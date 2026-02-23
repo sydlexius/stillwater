@@ -235,9 +235,15 @@ func (r *Router) handleOnboardingPage(w http.ResponseWriter, req *http.Request) 
 		}
 	}
 
+	conns, err := r.connectionService.List(req.Context())
+	if err != nil {
+		r.logger.Error("listing connections for onboarding", "error", err)
+	}
+
 	data := templates.OnboardingData{
 		Profiles:     profiles,
 		ProviderKeys: providerKeys,
+		Connections:  conns,
 		CurrentStep:  currentStep,
 	}
 	renderTempl(w, req, templates.OnboardingPage(r.assets(), data))
