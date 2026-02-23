@@ -3,6 +3,7 @@ package templates
 import (
 	"strconv"
 
+	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/platform"
 	"github.com/sydlexius/stillwater/internal/provider"
 )
@@ -11,7 +12,18 @@ import (
 type OnboardingData struct {
 	Profiles     []platform.Profile
 	ProviderKeys []provider.ProviderKeyStatus
+	Connections  []connection.Connection
 	CurrentStep  int
+}
+
+// findConnectionByType returns the first connection matching the given type, or nil.
+func findConnectionByType(conns []connection.Connection, connType string) *connection.Connection {
+	for i := range conns {
+		if conns[i].Type == connType {
+			return &conns[i]
+		}
+	}
+	return nil
 }
 
 templ OnboardingPage(assets AssetPaths, data OnboardingData) {
@@ -98,7 +110,7 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 							Optionally connect to your media server or music manager. These are not required for core functionality and can be added later from Settings.
 						</p>
 						<div class="space-y-4">
-							@onboardingConnectionCard("emby", "Emby", "http://192.168.1.100:8096") {
+							@onboardingConnectionCard("emby", "Emby", "http://192.168.1.100:8096", data.Connections) {
 								<ul class="text-xs text-gray-500 dark:text-gray-400 mt-1 space-y-0.5 list-disc list-inside">
 									<li>Import artist lists from your Emby music libraries</li>
 									<li>Push metadata updates (biography, genres, sort name) to Emby artist entries</li>
@@ -106,7 +118,7 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 									<li>Read MusicBrainz IDs from existing Emby records for accurate provider matching</li>
 								</ul>
 							}
-							@onboardingConnectionCard("jellyfin", "Jellyfin", "http://192.168.1.100:8096") {
+							@onboardingConnectionCard("jellyfin", "Jellyfin", "http://192.168.1.100:8096", data.Connections) {
 								<ul class="text-xs text-gray-500 dark:text-gray-400 mt-1 space-y-0.5 list-disc list-inside">
 									<li>Import artist lists from your Jellyfin music libraries</li>
 									<li>Push metadata updates (biography, genres, sort name) to Jellyfin artist entries</li>
@@ -114,7 +126,7 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 									<li>Read MusicBrainz IDs from existing Jellyfin records for accurate provider matching</li>
 								</ul>
 							}
-							@onboardingConnectionCard("lidarr", "Lidarr", "http://192.168.1.100:8686") {
+							@onboardingConnectionCard("lidarr", "Lidarr", "http://192.168.1.100:8686", data.Connections) {
 								<ul class="text-xs text-gray-500 dark:text-gray-400 mt-1 space-y-0.5 list-disc list-inside">
 									<li>Import monitored artist lists with filesystem paths and MusicBrainz IDs</li>
 									<li>Trigger per-artist metadata refreshes via Lidarr's command queue</li>
@@ -458,7 +470,7 @@ script toggleOnboardingKeyInput(providerName string) {
 	}
 }
 
-templ onboardingConnectionCard(connType string, displayName string, exampleURL string) {
+templ onboardingConnectionCard(connType string, displayName string, exampleURL string, conns []connection.Connection) {
 	<div class="rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3">
 		<div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
 			<div class="flex items-start gap-3">
@@ -478,7 +490,11 @@ templ onboardingConnectionCard(connType string, displayName string, exampleURL s
 						aria-hidden="true"
 					/>
 				}
-				<div id={ "ob-conn-dot-" + connType } class="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-gray-400 dark:bg-gray-500"></div>
+				if findConnectionByType(conns, connType) != nil {
+					<div id={ "ob-conn-dot-" + connType } class="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-green-500"></div>
+				} else {
+					<div id={ "ob-conn-dot-" + connType } class="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-gray-400 dark:bg-gray-500"></div>
+				}
 				<div>
 					<div class="flex items-center gap-1.5">
 						<span class="font-medium text-sm text-gray-900 dark:text-gray-100">{ displayName }</span>
@@ -498,14 +514,28 @@ templ onboardingConnectionCard(connType string, displayName string, exampleURL s
 					</div>
 				</div>
 			</div>
-			<button
-				id={ "ob-conn-btn-" + connType }
-				type="button"
-				class="text-sm px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors shrink-0"
-				onclick={ toggleObConnectionForm(connType) }
-			>
-				Configure
-			</button>
+			if findConnectionByType(conns, connType) != nil {
+				<div class="flex items-center gap-2 shrink-0">
+					<span class="text-xs text-green-600 dark:text-green-400">Connected</span>
+					<button
+						type="button"
+						id={ "ob-conn-test-" + connType }
+						class="text-xs px-2.5 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+						onclick={ initTestConnection(findConnectionByType(conns, connType).ID, connType) }
+					>
+						Test
+					</button>
+				</div>
+			} else {
+				<button
+					id={ "ob-conn-btn-" + connType }
+					type="button"
+					class="text-sm px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors shrink-0"
+					onclick={ toggleObConnectionForm(connType) }
+				>
+					Configure
+				</button>
+			}
 		</div>
 		<div id={ "ob-conn-form-" + connType } class="hidden mt-3 pl-5.5">
 			<form
@@ -547,19 +577,25 @@ templ onboardingConnectionCard(connType string, displayName string, exampleURL s
 				</div>
 			</form>
 		</div>
-		<div id={ "ob-conn-success-" + connType } class="hidden mt-3 pl-6">
-			<div class="flex items-center gap-3">
-				<p class="text-xs text-green-600 dark:text-green-400">Connected.</p>
-				<button
-					type="button"
-					id={ "ob-conn-test-" + connType }
-					class="hidden text-xs px-2.5 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
-				>
-					Test
-				</button>
+		if findConnectionByType(conns, connType) != nil {
+			<div class="mt-2 pl-6">
+				<div id={ "ob-conn-test-result-" + connType } class="text-xs mt-1"></div>
 			</div>
-			<div id={ "ob-conn-test-result-" + connType } class="text-xs mt-1"></div>
-		</div>
+		} else {
+			<div id={ "ob-conn-success-" + connType } class="hidden mt-3 pl-6">
+				<div class="flex items-center gap-3">
+					<p class="text-xs text-green-600 dark:text-green-400">Connected.</p>
+					<button
+						type="button"
+						id={ "ob-conn-test-" + connType }
+						class="hidden text-xs px-2.5 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+					>
+						Test
+					</button>
+				</div>
+				<div id={ "ob-conn-test-result-" + connType } class="text-xs mt-1"></div>
+			</div>
+		}
 	</div>
 }
 
@@ -575,4 +611,8 @@ script toggleObConnectionInfo(connType string) {
 	if (info) {
 		info.classList.toggle("hidden");
 	}
+}
+
+script initTestConnection(connID string, connType string) {
+	testConnection(connID, connType);
 }
