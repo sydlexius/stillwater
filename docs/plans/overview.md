@@ -6,6 +6,8 @@ Stillwater is a containerized, self-hosted web application for managing artist a
 
 Inspired by Bliss (rule engine, auto-fix), MediaElch (multi-scraper aggregation), and Album Art Finder (configurable sources, image search UI).
 
+**Status:** Core functionality complete (M1-M7 finished). In active development on UX polish (M9) and deployment/docs (M10). Security work (M8) ongoing.
+
 ## Technology Stack
 
 | Layer | Technology |
