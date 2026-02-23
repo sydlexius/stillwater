@@ -171,8 +171,8 @@ templ imageSearchContextualized(data ImageSearchData) {
 						class="px-3 py-2 text-sm rounded-md border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
 						hx-delete={ fmt.Sprintf("/api/v1/artists/%s/images/%s", data.Artist.ID, data.SelectedType) }
 						hx-confirm={ "Delete this " + imageTypeLabel(data.SelectedType) + " image?" }
-						hx-target="body"
 						hx-swap="none"
+						hx-on::after-request="if(event.detail.successful) window.location.reload()"
 					>
 						Delete
 					</button>
