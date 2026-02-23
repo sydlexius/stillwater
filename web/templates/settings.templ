@@ -254,7 +254,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 						<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 							<h2 class="text-lg font-semibold">Provider Priorities</h2>
 							<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-								Set the preferred provider order for each metadata field. Drag to reorder. Only configured providers are shown.
+								Set the preferred provider order for each metadata field. Drag to reorder. Click the checkmark/X to enable or disable. Only configured providers are shown.
 							</p>
 						</div>
 						<div class="px-6 py-4">
@@ -474,7 +474,12 @@ templ settingsTabScript() {
 			document.querySelectorAll('[data-tab-panel]').forEach(function(p) {
 				p.classList.add('hidden');
 			});
-			var panel = document.querySelector('[data-tab-panel="' + tabId + '"]');
+			var panel = null;
+			document.querySelectorAll('[data-tab-panel]').forEach(function(p) {
+				if (p.dataset.tabPanel === tabId) {
+					panel = p;
+				}
+			});
 			if (panel) panel.classList.remove('hidden');
 			document.querySelectorAll('[data-tab]').forEach(function(t) {
 				t.classList.remove('border-blue-500', 'text-blue-600', 'dark:text-blue-400');
@@ -482,7 +487,7 @@ templ settingsTabScript() {
 			});
 			el.classList.remove('border-transparent', 'text-gray-500', 'dark:text-gray-400');
 			el.classList.add('border-blue-500', 'text-blue-600', 'dark:text-blue-400');
-			history.replaceState(null, '', '/settings?tab=' + tabId);
+			history.replaceState(null, '', '/settings?tab=' + encodeURIComponent(tabId));
 		}
 	</script>
 }
@@ -700,7 +705,11 @@ templ priorityChipRowInner(pri provider.FieldPriority, available []provider.Prov
 						data-provider={ string(prov) }
 					>
 						<span class="drag-handle cursor-grab">
-							@components.IconBars2("h-3 w-3 text-green-500 dark:text-green-400")
+							if isWebSearchProvider(prov) {
+								@components.IconBars2("h-3 w-3 text-purple-500 dark:text-purple-400")
+							} else {
+								@components.IconBars2("h-3 w-3 text-green-500 dark:text-green-400")
+							}
 						</span>
 						<span>{ prov.DisplayName() }</span>
 						<button
