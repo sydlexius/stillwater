@@ -2,10 +2,14 @@ package image
 
 import (
 	"bytes"
+	"context"
 	"image"
 	"image/color"
 	"image/jpeg"
 	"image/png"
+	"net/http"
+	"net/http/httptest"
+	"strconv"
 	"testing"
 )
 
@@ -265,6 +269,40 @@ func TestCrop_OutOfBounds(t *testing.T) {
 	_, _, err := Crop(bytes.NewReader(data), 50, 50, 100, 100)
 	if err == nil {
 		t.Error("expected error for out-of-bounds crop")
+	}
+}
+
+func TestProbeRemoteImage(t *testing.T) {
+	data := makeJPEG(t, 640, 480)
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/jpeg")
+		w.Header().Set("Content-Length", strconv.Itoa(len(data)))
+		w.Write(data) //nolint:errcheck
+	}))
+	defer ts.Close()
+
+	info, err := ProbeRemoteImage(context.Background(), ts.URL+"/test.jpg")
+	if err != nil {
+		t.Fatalf("ProbeRemoteImage: %v", err)
+	}
+	if info.Width != 640 || info.Height != 480 {
+		t.Errorf("dimensions = %dx%d, want 640x480", info.Width, info.Height)
+	}
+	if info.FileSize != int64(len(data)) {
+		t.Errorf("FileSize = %d, want %d", info.FileSize, len(data))
+	}
+}
+
+func TestProbeRemoteImage_NotFound(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.NotFound(w, r)
+	}))
+	defer ts.Close()
+
+	_, err := ProbeRemoteImage(context.Background(), ts.URL+"/missing.jpg")
+	if err == nil {
+		t.Error("expected error for 404 response")
 	}
 }
 

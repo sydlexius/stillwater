@@ -2,16 +2,70 @@ package image
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"image"
 	"image/jpeg"
 	"image/png"
 	"io"
 	"math"
+	"net/http"
+	"strconv"
+	"time"
 
 	"golang.org/x/image/draw"
 	_ "golang.org/x/image/webp" // register WebP decoder
 )
+
+// RemoteImageInfo holds dimension and size metadata retrieved from a remote image URL.
+type RemoteImageInfo struct {
+	Width    int
+	Height   int
+	FileSize int64
+}
+
+// ProbeRemoteImage fetches a remote image URL and decodes its dimensions.
+// It also reads Content-Length from the response for file size.
+func ProbeRemoteImage(ctx context.Context, rawURL string) (*RemoteImageInfo, error) {
+	client := &http.Client{Timeout: 10 * time.Second}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+
+	resp, err := client.Do(req) //nolint:gosec // URL comes from trusted provider API
+	if err != nil {
+		return nil, fmt.Errorf("fetching image: %w", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+
+	var fileSize int64
+	if cl := resp.Header.Get("Content-Length"); cl != "" {
+		fileSize, _ = strconv.ParseInt(cl, 10, 64)
+	}
+
+	// Limit read to 5MB to prevent excessive memory usage for probing
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 5<<20))
+	if err != nil {
+		return nil, fmt.Errorf("reading response: %w", err)
+	}
+
+	if fileSize == 0 {
+		fileSize = int64(len(data))
+	}
+
+	w, h, err := GetDimensions(bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("decoding dimensions: %w", err)
+	}
+
+	return &RemoteImageInfo{Width: w, Height: h, FileSize: fileSize}, nil
+}
 
 // Supported image format names.
 const (

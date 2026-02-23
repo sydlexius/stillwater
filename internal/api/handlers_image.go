@@ -200,6 +200,9 @@ func (r *Router) handleImageSearch(w http.ResponseWriter, req *http.Request) {
 		images = filtered
 	}
 
+	// Probe dimensions for images that have none (e.g., Fanart.tv)
+	images = r.probeImageDimensions(req.Context(), images)
+
 	// Sort by likes (descending), then by resolution (descending)
 	sort.Slice(images, func(i, j int) bool {
 		if images[i].Likes != images[j].Likes {
@@ -414,6 +417,60 @@ func (r *Router) fetchImageFromURL(rawURL string) ([]byte, error) {
 	}
 
 	return data, nil
+}
+
+// probeImageDimensions probes remote images that are missing dimensions.
+// It runs probes concurrently with a cap on parallelism.
+func (r *Router) probeImageDimensions(ctx context.Context, images []provider.ImageResult) []provider.ImageResult {
+	const maxConcurrent = 5
+
+	// Find indices that need probing
+	var needProbe []int
+	for i := range images {
+		if images[i].Width == 0 && images[i].Height == 0 {
+			needProbe = append(needProbe, i)
+		}
+	}
+	if len(needProbe) == 0 {
+		return images
+	}
+
+	type probeResult struct {
+		idx    int
+		width  int
+		height int
+	}
+
+	results := make(chan probeResult, len(needProbe))
+	sem := make(chan struct{}, maxConcurrent)
+
+	for _, idx := range needProbe {
+		sem <- struct{}{}
+		go func(i int) {
+			defer func() { <-sem }()
+			info, err := img.ProbeRemoteImage(ctx, images[i].URL)
+			if err != nil {
+				r.logger.Debug("probing remote image dimensions",
+					slog.String("url", images[i].URL),
+					slog.String("error", err.Error()))
+				return
+			}
+			results <- probeResult{idx: i, width: info.Width, height: info.Height}
+		}(idx)
+	}
+
+	// Wait for all goroutines to finish
+	for range maxConcurrent {
+		sem <- struct{}{}
+	}
+	close(results)
+
+	for pr := range results {
+		images[pr.idx].Width = pr.width
+		images[pr.idx].Height = pr.height
+	}
+
+	return images
 }
 
 // updateArtistImageFlag updates the image existence flag on the artist and persists it.

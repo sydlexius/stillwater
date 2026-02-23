@@ -79,14 +79,14 @@ Work items are ordered by priority, then by blocking relationships. Items at the
 
 #### Checklist
 
-- [ ] Add remote image probing utility (HTTP GET + `image.DecodeConfig` for dimensions, Content-Length for file size)
-- [ ] Call probing in `handleImageSearch` for results with `Width == 0 && Height == 0`
-- [ ] Add `onerror` fallback placeholder in `image_card.templ` for broken image URLs
+- [x] Add remote image probing utility (HTTP GET + `image.DecodeConfig` for dimensions, Content-Length for file size)
+- [x] Call probing in `handleImageSearch` for results with `Width == 0 && Height == 0`
+- [x] Add `onerror` fallback placeholder in `image_card.templ` for broken image URLs
 - [ ] Investigate Fanart.tv URL accessibility (CORS, hotlink protection, redirects)
-- [ ] Tests pass: `go test ./internal/image/... ./internal/api/...`
-- [ ] Lint passes: `golangci-lint run ./...`
+- [x] Tests pass: `go test ./internal/image/... ./internal/api/...`
+- [x] Lint passes: `golangci-lint run ./...`
 - [ ] Manual acceptance test: Fanart.tv search results show dimensions, broken images show placeholder
-- [ ] PR created and merged
+- [x] PR created and merged -- PR #102
 - [ ] PR checks pass (no CI failures)
 - [ ] PR reviewed (check for copilot feedback)
 
