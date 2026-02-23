@@ -244,15 +244,15 @@ func convertProviderMembers(artistID string, members []provider.MemberInfo) []ar
 	result := make([]artist.BandMember, len(members))
 	for i, m := range members {
 		result[i] = artist.BandMember{
-			ArtistID:    artistID,
-			MemberName:  m.Name,
-			MemberMBID:  m.MBID,
-			Instruments: m.Instruments,
-			VocalType:   m.VocalType,
-			DateJoined:  m.DateJoined,
-			DateLeft:    m.DateLeft,
+			ArtistID:         artistID,
+			MemberName:       m.Name,
+			MemberMBID:       m.MBID,
+			Instruments:      m.Instruments,
+			VocalType:        m.VocalType,
+			DateJoined:       m.DateJoined,
+			DateLeft:         m.DateLeft,
 			IsOriginalMember: false,
-			SortOrder:   i,
+			SortOrder:        i,
 		}
 	}
 	return result
