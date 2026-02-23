@@ -18,6 +18,8 @@ func sourceBadgeColor(source string) string {
 		return "bg-orange-100 dark:bg-orange-900 text-orange-800 dark:text-orange-200"
 	case "musicbrainz":
 		return "bg-amber-100 dark:bg-amber-900 text-amber-800 dark:text-amber-200"
+	case "duckduckgo":
+		return "bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200"
 	default:
 		return "bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200"
 	}
@@ -58,6 +60,8 @@ templ ImageCard(artistID string, img provider.ImageResult) {
 			<div class="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
 				if img.Width > 0 && img.Height > 0 {
 					<span>{ strconv.Itoa(img.Width) }x{ strconv.Itoa(img.Height) }</span>
+				} else if img.Source == "duckduckgo" {
+					<span class="italic">Unknown size</span>
 				}
 				if img.Likes > 0 {
 					<span>{ strconv.Itoa(img.Likes) } likes</span>
@@ -65,6 +69,9 @@ templ ImageCard(artistID string, img provider.ImageResult) {
 			</div>
 			if isLowResolution(img.Width, img.Height) {
 				<div class="text-xs text-amber-600 dark:text-amber-400">Low resolution</div>
+			}
+			if (string(img.Type) == "logo" || string(img.Type) == "hdlogo") && img.Source == "duckduckgo" {
+				<div class="text-xs text-amber-600 dark:text-amber-400">Check transparency before saving</div>
 			}
 			<button
 				type="button"

@@ -157,13 +157,19 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 		r.logger.Error("listing webhooks for settings page", "error", err)
 	}
 
+	webSearchProviders, err := r.providerSettings.ListWebSearchStatuses(req.Context())
+	if err != nil {
+		r.logger.Error("listing web search statuses for settings page", "error", err)
+	}
+
 	data := templates.SettingsData{
-		Profiles:      profiles,
-		ActiveProfile: active,
-		ProviderKeys:  providerKeys,
-		Priorities:    priorities,
-		Connections:   conns,
-		Webhooks:      webhooks,
+		Profiles:           profiles,
+		ActiveProfile:      active,
+		ProviderKeys:       providerKeys,
+		Priorities:         priorities,
+		Connections:        conns,
+		Webhooks:           webhooks,
+		WebSearchProviders: webSearchProviders,
 	}
 	renderTempl(w, req, templates.SettingsPage(r.assets(), data))
 }

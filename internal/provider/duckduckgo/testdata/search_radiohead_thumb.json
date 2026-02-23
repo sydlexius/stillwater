@@ -1,0 +1,29 @@
+{
+  "results": [
+    {
+      "image": "https://example.com/radiohead_photo1.jpg",
+      "thumbnail": "https://example.com/radiohead_photo1_thumb.jpg",
+      "width": 1200,
+      "height": 800,
+      "title": "Radiohead band photo",
+      "source": "https://example.com/music/radiohead"
+    },
+    {
+      "image": "https://example.com/radiohead_photo2.jpg",
+      "thumbnail": "https://example.com/radiohead_photo2_thumb.jpg",
+      "width": 600,
+      "height": 400,
+      "title": "Radiohead portrait",
+      "source": "https://example.com/artists/radiohead"
+    },
+    {
+      "image": "https://example.com/radiohead_photo3.png",
+      "thumbnail": "https://example.com/radiohead_photo3_thumb.jpg",
+      "width": 0,
+      "height": 0,
+      "title": "Radiohead live",
+      "source": "https://example.com/photos/radiohead"
+    }
+  ],
+  "next": "i.js?q=Radiohead+artist+photo+portrait&o=json&p=2&vqd=12345"
+}

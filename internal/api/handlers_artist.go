@@ -188,8 +188,10 @@ func (r *Router) handleArtistImagesPage(w http.ResponseWriter, req *http.Request
 		return
 	}
 
+	webSearchEnabled, _ := r.providerSettings.AnyWebSearchEnabled(req.Context())
 	data := templates.ImageSearchData{
-		Artist: *a,
+		Artist:           *a,
+		WebSearchEnabled: webSearchEnabled,
 	}
 	renderTempl(w, req, templates.ImageSearchPage(r.assets(), data))
 }

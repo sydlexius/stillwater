@@ -41,3 +41,43 @@ func (r *Registry) All() []Provider {
 	}
 	return result
 }
+
+// WebSearchRegistry holds registered web image search adapters.
+type WebSearchRegistry struct {
+	mu        sync.RWMutex
+	providers map[ProviderName]WebImageProvider
+}
+
+// NewWebSearchRegistry creates an empty web search provider registry.
+func NewWebSearchRegistry() *WebSearchRegistry {
+	return &WebSearchRegistry{
+		providers: make(map[ProviderName]WebImageProvider),
+	}
+}
+
+// Register adds a web search provider to the registry.
+func (r *WebSearchRegistry) Register(p WebImageProvider) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.providers[p.Name()] = p
+}
+
+// Get returns a web search provider by name, or nil if not registered.
+func (r *WebSearchRegistry) Get(name ProviderName) WebImageProvider {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.providers[name]
+}
+
+// All returns all registered web search providers in a stable order.
+func (r *WebSearchRegistry) All() []WebImageProvider {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var result []WebImageProvider
+	for _, name := range AllWebSearchProviderNames() {
+		if p, ok := r.providers[name]; ok {
+			result = append(result, p)
+		}
+	}
+	return result
+}

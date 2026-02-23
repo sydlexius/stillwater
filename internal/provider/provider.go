@@ -17,6 +17,7 @@ const (
 	NameDiscogs     ProviderName = "discogs"
 	NameLastFM      ProviderName = "lastfm"
 	NameWikidata    ProviderName = "wikidata"
+	NameDuckDuckGo  ProviderName = "duckduckgo"
 )
 
 // AllProviderNames returns all known provider names in display order.
@@ -46,9 +47,16 @@ func (n ProviderName) DisplayName() string {
 		return "Last.fm"
 	case NameWikidata:
 		return "Wikidata"
+	case NameDuckDuckGo:
+		return "DuckDuckGo"
 	default:
 		return string(n)
 	}
+}
+
+// AllWebSearchProviderNames returns all known web search provider names in display order.
+func AllWebSearchProviderNames() []ProviderName {
+	return []ProviderName{NameDuckDuckGo}
 }
 
 // ImageType classifies the kind of artist image.
@@ -152,6 +160,15 @@ type Provider interface {
 type TestableProvider interface {
 	Provider
 	TestConnection(ctx context.Context) error
+}
+
+// WebImageProvider is the interface for web-based image search adapters.
+// Unlike Provider (which uses provider-specific IDs like MBIDs), web image
+// providers search by artist name and image type.
+type WebImageProvider interface {
+	Name() ProviderName
+	RequiresAuth() bool
+	SearchImages(ctx context.Context, artistName string, imageType ImageType) ([]ImageResult, error)
 }
 
 // ErrProviderUnavailable indicates a transient failure (rate-limited, timeout, server error).
