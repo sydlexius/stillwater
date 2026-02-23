@@ -475,24 +475,30 @@ func (r *Router) probeImageDimensions(ctx context.Context, images []provider.Ima
 	return images
 }
 
-// updateArtistImageFlag updates the image existence flag on the artist and persists it.
-func (r *Router) updateArtistImageFlag(ctx context.Context, a *artist.Artist, imageType string) {
+// setArtistImageFlag sets the image existence flag and persists it.
+func (r *Router) setArtistImageFlag(ctx context.Context, a *artist.Artist, imageType string, exists bool) {
 	switch imageType {
 	case "thumb":
-		a.ThumbExists = true
+		a.ThumbExists = exists
 	case "fanart":
-		a.FanartExists = true
+		a.FanartExists = exists
 	case "logo":
-		a.LogoExists = true
+		a.LogoExists = exists
 	case "banner":
-		a.BannerExists = true
+		a.BannerExists = exists
 	}
 
 	if err := r.artistService.Update(ctx, a); err != nil {
-		r.logger.Warn("updating artist image flags",
+		r.logger.Warn("setting artist image flag",
 			slog.String("artist_id", a.ID),
+			slog.String("image_type", imageType),
 			slog.String("error", err.Error()))
 	}
+}
+
+// updateArtistImageFlag sets the image existence flag to true and persists it.
+func (r *Router) updateArtistImageFlag(ctx context.Context, a *artist.Artist, imageType string) {
+	r.setArtistImageFlag(ctx, a, imageType, true)
 }
 
 // handleServeImage serves a local artist image file from disk.
@@ -564,8 +570,8 @@ func (r *Router) handleImageInfo(w http.ResponseWriter, req *http.Request) {
 	var width, height int
 	f, err := os.Open(filePath) //nolint:gosec // path is constructed from trusted patterns
 	if err == nil {
+		defer func() { _ = f.Close() }()
 		width, height, _ = img.GetDimensions(f)
-		f.Close() //nolint:errcheck
 	}
 
 	if req.Header.Get("HX-Request") == "true" {
@@ -622,22 +628,7 @@ func (r *Router) handleDeleteImage(w http.ResponseWriter, req *http.Request) {
 
 // clearArtistImageFlag sets the image existence flag to false and persists it.
 func (r *Router) clearArtistImageFlag(ctx context.Context, a *artist.Artist, imageType string) {
-	switch imageType {
-	case "thumb":
-		a.ThumbExists = false
-	case "fanart":
-		a.FanartExists = false
-	case "logo":
-		a.LogoExists = false
-	case "banner":
-		a.BannerExists = false
-	}
-
-	if err := r.artistService.Update(ctx, a); err != nil {
-		r.logger.Warn("clearing artist image flag",
-			slog.String("artist_id", a.ID),
-			slog.String("error", err.Error()))
-	}
+	r.setArtistImageFlag(ctx, a, imageType, false)
 }
 
 // findExistingImage searches for the first matching image file in a directory.

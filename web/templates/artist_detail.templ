@@ -182,12 +182,6 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 						<div class="mt-3">
 							@components.StatusBadge(data.Artist.NFOExists, "NFO")
 						</div>
-						<a
-							href={ templ.SafeURL("/artists/" + data.Artist.ID + "/images") }
-							class="mt-3 inline-block text-sm text-blue-600 dark:text-blue-400 hover:underline"
-						>
-							Manage Images
-						</a>
 					</section>
 					<section class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
 						<h2 class="text-lg font-semibold mb-3">Provider IDs</h2>
@@ -312,14 +306,16 @@ templ ImagePreviewCard(artistID, imageType string, exists bool, label string) {
 				></div>
 			</div>
 		} else {
-			<div class="aspect-square flex items-center justify-center bg-gray-50 dark:bg-gray-800/50">
-				<div class="text-center text-gray-400">
-					<svg class="mx-auto h-8 w-8" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-						<path stroke-linecap="round" stroke-linejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0 0 22.5 18.75V5.25A2.25 2.25 0 0 0 20.25 3H3.75A2.25 2.25 0 0 0 1.5 5.25v13.5A2.25 2.25 0 0 0 3.75 21Z"></path>
-					</svg>
-					<span class="text-xs mt-1 block">No { label }</span>
+			<a
+				href={ templ.SafeURL(fmt.Sprintf("/artists/%s/images?type=%s", artistID, imageType)) }
+				class="aspect-square flex items-center justify-center bg-gray-50 dark:bg-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors group/add"
+				title={ "Add " + label }
+			>
+				<div class="text-center text-gray-400 group-hover/add:text-blue-500 dark:group-hover/add:text-blue-400 transition-colors">
+					@components.IconPlusCircle("mx-auto h-8 w-8")
+					<span class="text-xs mt-1 block">{ label }</span>
 				</div>
-			</div>
+			</a>
 			<div class="p-1.5 text-center">
 				<span class="text-xs font-medium text-gray-600 dark:text-gray-400">{ label }</span>
 			</div>
@@ -332,8 +328,7 @@ templ ImagePreviewCard(artistID, imageType string, exists bool, label string) {
 templ ImageInfoBadge(width, height int, size int64) {
 	<span class="text-xs text-gray-500 dark:text-gray-400">
 		if width > 0 && height > 0 {
-			{ strconv.Itoa(width) + "x" + strconv.Itoa(height) }
-			{ " " }
+			{ strconv.Itoa(width) + "x" + strconv.Itoa(height) + " " }
 		}
 		{ formatFileSizeTempl(size) }
 	</span>

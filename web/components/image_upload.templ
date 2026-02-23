@@ -2,7 +2,7 @@ package components
 
 import "fmt"
 
-templ ImageUpload(artistID string) {
+templ ImageUpload(artistID string, selectedType string) {
 	<section class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
 		<h2 class="text-lg font-semibold mb-4">Upload Image</h2>
 		<div class="space-y-4">
@@ -23,10 +23,10 @@ templ ImageUpload(artistID string) {
 						name="type"
 						class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
 					>
-						<option value="thumb">Thumbnail</option>
-						<option value="fanart">Fanart</option>
-						<option value="logo">Logo</option>
-						<option value="banner">Banner</option>
+						<option value="thumb" selected?={ selectedType == "thumb" || selectedType == "" }>Thumbnail</option>
+						<option value="fanart" selected?={ selectedType == "fanart" }>Fanart</option>
+						<option value="logo" selected?={ selectedType == "logo" }>Logo</option>
+						<option value="banner" selected?={ selectedType == "banner" }>Banner</option>
 					</select>
 				</div>
 				<div>
@@ -68,7 +68,11 @@ templ ImageUpload(artistID string) {
 					hx-indicator="#upload-spinner"
 					class="flex flex-col gap-2 sm:flex-row"
 				>
-					<input type="hidden" name="type" value="thumb" id="fetch-type"/>
+					if selectedType != "" {
+						<input type="hidden" name="type" value={ selectedType } id="fetch-type"/>
+					} else {
+						<input type="hidden" name="type" value="thumb" id="fetch-type"/>
+					}
 					<input
 						type="url"
 						name="url"
