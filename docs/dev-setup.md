@@ -55,7 +55,7 @@ cd stillwater
 # Install Go dependencies
 go mod download
 
-# Generate templ code (only needed if _templ.go files are stale)
+# Generate templ code (converts .templ files to Go code)
 templ generate
 
 # Build Tailwind CSS
@@ -63,6 +63,26 @@ tailwindcss -i web/static/css/input.css -o web/static/css/styles.css --minify
 
 # Build the binary
 go build -o stillwater ./cmd/stillwater
+```
+
+## Quick Start with Make
+
+If `make` is available, the build process is simplified:
+
+```bash
+make build          # templ generate + tailwind + go build
+make run            # build + run with debug logging
+make test           # run all tests with race detector
+make lint           # run golangci-lint
+make fmt            # format Go and Templ code
+make clean          # remove build artifacts
+```
+
+Equivalent Docker commands:
+
+```bash
+make docker-build   # build Docker image
+make docker-run     # start via docker-compose.local.yml
 ```
 
 ## Running Locally
@@ -95,6 +115,68 @@ docker run -p 1973:1973 -v stillwater-data:/data -v /path/to/music:/music:rw sti
 ```
 
 The Docker build handles templ generation implicitly (committed `_templ.go` files) and runs Tailwind CSS inside the build stage, so no local tooling beyond Docker is needed for container builds.
+
+## Development Workflow
+
+### Editing Code
+
+1. **Modify Go files** in `internal/` or `cmd/stillwater/`
+2. **Edit Templ templates** in `web/templates/` or `web/components/`
+   - Changes to `.templ` files require regeneration: `templ generate`
+   - Generated `_templ.go` files should be committed alongside source templates
+3. **Update CSS** in `web/static/css/input.css`
+   - Rebuild: `tailwindcss -i web/static/css/input.css -o web/static/css/styles.css --minify`
+4. **Add Go dependencies**: `go get` (then commit changes to `go.mod` and `go.sum`)
+
+### Hot Reload (Development)
+
+Use `air` for automatic rebuild on file changes:
+
+```bash
+go install github.com/air-verse/air@latest
+air  # watches for changes and rebuilds
+```
+
+The app restarts at `http://localhost:1973` after each rebuild.
+
+### Making Database Schema Changes
+
+1. Create a new migration file in `internal/database/migrations/`:
+
+   ```bash
+   # Migration files are SQL-based, named YYYYMMDDHHMMSS_description.sql
+   # Example: 20260223100000_add_user_settings.sql
+   ```
+
+2. Add `-- +goose Up` and `-- +goose Down` sections (see existing migrations)
+3. Test locally: `go test ./internal/database/...`
+4. Migrations run automatically on application startup via goose
+
+### Code Quality
+
+Before committing or opening a PR:
+
+```bash
+# Format code
+make fmt          # or: go fmt ./... && templ fmt web/
+
+# Run linter
+make lint         # or: golangci-lint run ./...
+
+# Run tests
+make test         # or: go test -race -count=1 ./...
+```
+
+Pre-commit hooks (if configured in `.git/hooks/`) enforce formatting and linting automatically. Check `.pre-commit-config.yaml` if present.
+
+### API Testing
+
+Use Bruno collections in `api/bruno/` to test endpoints:
+
+1. Install Bruno: [https://www.usebruno.com/](https://www.usebruno.com/)
+2. Open `api/bruno/` as a collection
+3. Run requests against a local or running instance
+4. Bruno exports as plaintext files (no binary lock-in)
 
 ## Running Tests
 

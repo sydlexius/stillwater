@@ -6,9 +6,9 @@ Work through all 9 open issues in priority order, respecting blocking relationsh
 
 ## Progress Summary
 
-- **Completed:** 7 of 9 issues (#90, #97, #88, #98, #100, #91, #95)
-- **Remaining:** 2 issues (#99, #94)
-- **Next up:** #99 (image management improvements)
+- **Completed:** 8 of 9 issues (#90, #97, #88, #98, #100, #91, #95, #99)
+- **Remaining:** 1 issue (#94)
+- **Next up:** #94 (developer documentation overhaul)
 - **New issues (not in original scope):** #105 (hamburger menu nav), #106 (contextual menus audit)
 
 ## Dependency Graph
@@ -20,7 +20,7 @@ Work through all 9 open issues in priority order, respecting blocking relationsh
 #98 DONE (high, soft depends on #97) -- PR #104 merged
 #100 DONE (medium, no blockers) -- PR #107 merged
 #91 + #95 DONE (medium, no blockers) -- PR #110 merged
-#99 (medium, blocked by #98) -- now unblocked
+#99 DONE (medium, blocked by #98) -- PR #119 merged
 #94 (low, no blockers, intentionally last)
 ```
 
@@ -35,7 +35,7 @@ Work through all 9 open issues in priority order, respecting blocking relationsh
 | 100 | Per-artist metadata refresh with field-level provider selection | medium | large | plan | opus | DONE (PR #107) |
 | 91 | Provider Priority UI redesign: drag-drop chips | medium | large | plan | opus | DONE (PR #110, combined with #95) |
 | 95 | Settings page: add tab navigation for sections | medium | medium | direct | sonnet | DONE (PR #110, combined with #91) |
-| 99 | Image management improvements: unified search, edit, upload UX | medium | large | plan | opus | open (unblocked) |
+| 99 | Image management improvements: unified search, edit, upload UX | medium | large | plan | opus | DONE (PR #119) |
 | 94 | Developer documentation overhaul | low | medium | direct | haiku | open (last) |
 
 ## Execution Order
@@ -316,33 +316,33 @@ Testing and PR
 #### Checklist
 
 Phase 1: Type pre-selection and auto-search
-- [ ] Accept `?type=thumb` query param to pre-select image type
-- [ ] Auto-trigger search on page load via HTMX when type is pre-selected
+- [x] Accept `?type=thumb` query param to pre-select image type
+- [x] Auto-trigger search on page load via HTMX when type is pre-selected
 
 Phase 2: Show current local image alongside results
-- [ ] Display current local image at top of results area (using endpoint from #98)
-- [ ] Show resolution and file size
+- [x] Display current local image at top of results area (using endpoint from #98)
+- [x] Show resolution and file size
 
 Phase 3: Enhanced compare panel
-- [ ] Update `image_compare.templ` for local vs. fetched side-by-side with full metadata
+- [x] Update `image_compare.templ` for local vs. fetched side-by-side with full metadata
 
 Phase 4: Consolidate upload, URL-fetch, and crop
-- [ ] Bring upload form and URL-fetch inline on same page
-- [ ] Crop tool accessible from any image source
+- [x] Bring upload form and URL-fetch inline on same page
+- [x] Crop tool accessible from any image source
 
 Phase 5: Resolution and file size for fetched results
-- [ ] Display dimensions on every image card (benefits from #97 probing)
+- [x] Display dimensions on every image card (benefits from #97 probing)
 
 Phase 6: Configurable confirmation on save/delete
-- [ ] Save and delete use confirmation dialog with "Don't ask again" (shared from #100)
+- [x] Save and delete use confirmation dialog with "Don't ask again" (shared from #100)
 
 Testing and PR
-- [ ] Tests pass: `go test ./...`
-- [ ] Lint passes: `golangci-lint run ./...`
+- [x] Tests pass: `go test ./...`
+- [x] Lint passes: `golangci-lint run ./...`
 - [ ] Manual acceptance test: auto-search works, local image shown, compare panel works, upload/crop inline
-- [ ] PR created and merged
-- [ ] PR checks pass (no CI failures)
-- [ ] PR reviewed (check for copilot feedback)
+- [x] PR created and merged -- PR #119
+- [x] PR checks pass (no CI failures)
+- [x] PR reviewed (Copilot: 1 comment -- DOM XSS in populateCompare, fixed with createElement)
 
 **Files:**
 - `web/templates/image_search.templ` -- auto-search, type pre-selection, layout consolidation
@@ -415,10 +415,10 @@ These tags go in the GitHub issue body to guide Claude Code and Copilot:
 
 ## Notes
 
-- Items 1-5 (bugs + clobber detection + image previews + metadata refresh) are complete.
+- Items 1-7 (bugs + clobber detection + image previews + metadata refresh + settings overhaul + image management) are complete.
 - #98 and #100 were originally combined but split back into separate PRs to manage session scope. #98 provides the icon infrastructure and image serving endpoints. #100 builds on that with metadata editing and provider fetch. Both now merged.
 - Item 6 consolidates #91 and #95 into one PR since both rewrite `settings.templ`. Tab navigation wraps around the new provider chip design.
-- Item 7 (#99) depends on #98 for the local image serving endpoint and edit icon entry point. Now unblocked.
+- Item 7 (#99) depended on #98 for the local image serving endpoint and edit icon entry point. Now complete (PR #119).
 - Item 8 (#94) should be the last item. It cleans up completed plan files and this workplan.
 - All icon work uses Heroicons inline SVGs via reusable Templ components in `web/components/icon.templ`. No Unicode emoji, no icon fonts.
 - Two new issues (#105 hamburger menu nav, #106 contextual menus audit) were opened but are not part of this workplan.
