@@ -194,6 +194,9 @@ func (r *Router) handleArtistImagesPage(w http.ResponseWriter, req *http.Request
 
 	webSearchEnabled, _ := r.providerSettings.AnyWebSearchEnabled(req.Context())
 	autoFetch := r.getBoolSetting(req.Context(), "auto_fetch_images", false)
+	if req.URL.Query().Get("fetch") == "1" {
+		autoFetch = true
+	}
 
 	selectedType := req.URL.Query().Get("type")
 	if selectedType != "" && !validImageTypes[selectedType] {

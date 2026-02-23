@@ -13,6 +13,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/auth"
 	"github.com/sydlexius/stillwater/internal/database"
 	"github.com/sydlexius/stillwater/internal/nfo"
+	"github.com/sydlexius/stillwater/internal/provider"
 	"github.com/sydlexius/stillwater/internal/rule"
 )
 
@@ -39,6 +40,7 @@ func testRouter(t *testing.T) (*Router, *artist.Service) {
 	}
 	ruleEngine := rule.NewEngine(ruleSvc, db, logger)
 	nfoSnapSvc := nfo.NewSnapshotService(db)
+	providerSettings := provider.NewSettingsService(db, nil)
 
 	r := NewRouter(RouterDeps{
 		AuthService:        authSvc,
@@ -46,6 +48,7 @@ func testRouter(t *testing.T) (*Router, *artist.Service) {
 		RuleService:        ruleSvc,
 		RuleEngine:         ruleEngine,
 		NFOSnapshotService: nfoSnapSvc,
+		ProviderSettings:   providerSettings,
 		DB:                 db,
 		Logger:             logger,
 		StaticDir:          "../../web/static",

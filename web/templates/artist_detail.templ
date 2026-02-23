@@ -216,7 +216,7 @@ templ ImagePreviewCard(artistID, imageType string, exists bool, label string) {
 			</div>
 		} else {
 			<a
-				href={ templ.SafeURL(fmt.Sprintf("/artists/%s/images?type=%s", artistID, imageType)) }
+				href={ templ.SafeURL(fmt.Sprintf("/artists/%s/images?type=%s&fetch=1", artistID, imageType)) }
 				class="aspect-square flex items-center justify-center bg-gray-50 dark:bg-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors group/add"
 				title={ "Add " + label }
 			>
