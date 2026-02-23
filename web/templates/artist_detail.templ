@@ -1,6 +1,9 @@
 package templates
 
 import (
+	"fmt"
+	"strconv"
+
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/web/components"
 )
@@ -169,20 +172,16 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 						</dl>
 					</section>
 					<section class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
-						<h2 class="text-lg font-semibold mb-3">File Status</h2>
-						<div class="space-y-2">
-							@components.StatusBadge(data.Artist.NFOExists, "NFO")
-							@components.StatusBadge(data.Artist.ThumbExists, "Thumbnail")
-							@components.StatusBadge(data.Artist.FanartExists, "Fanart")
-							@components.StatusBadge(data.Artist.LogoExists, "Logo")
-							@components.StatusBadge(data.Artist.BannerExists, "Banner")
+						<h2 class="text-lg font-semibold mb-3">Images</h2>
+						<div class="grid grid-cols-2 gap-3">
+							@ImagePreviewCard(data.Artist.ID, "thumb", data.Artist.ThumbExists, "Thumbnail")
+							@ImagePreviewCard(data.Artist.ID, "fanart", data.Artist.FanartExists, "Fanart")
+							@ImagePreviewCard(data.Artist.ID, "logo", data.Artist.LogoExists, "Logo")
+							@ImagePreviewCard(data.Artist.ID, "banner", data.Artist.BannerExists, "Banner")
 						</div>
-						<a
-							href={ templ.SafeURL("/artists/" + data.Artist.ID + "/images") }
-							class="mt-3 inline-block text-sm text-blue-600 dark:text-blue-400 hover:underline"
-						>
-							Manage Images
-						</a>
+						<div class="mt-3">
+							@components.StatusBadge(data.Artist.NFOExists, "NFO")
+						</div>
 					</section>
 					<section class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
 						<h2 class="text-lg font-semibold mb-3">Provider IDs</h2>
@@ -252,4 +251,99 @@ templ providerID(name, value string) {
 			<dd class="text-gray-400 italic">Not set</dd>
 		}
 	</div>
+}
+
+// ImagePreviewCard renders an image preview card for the artist detail page.
+// Exported so the delete handler can return it as an HTMX fragment.
+templ ImagePreviewCard(artistID, imageType string, exists bool, label string) {
+	<div
+		id={ "image-preview-" + imageType + "-" + artistID }
+		class="rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden"
+	>
+		if exists {
+			<div class="relative group">
+				<div
+					class={
+						"aspect-square flex items-center justify-center overflow-hidden",
+						templ.KV("checkered-bg", imageType == "logo"),
+						templ.KV("bg-gray-100 dark:bg-gray-900", imageType != "logo"),
+					}
+				>
+					<img
+						src={ fmt.Sprintf("/api/v1/artists/%s/images/%s/file", artistID, imageType) }
+						alt={ label }
+						class="max-w-full max-h-full object-contain"
+						loading="lazy"
+					/>
+				</div>
+				<div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
+					<a
+						href={ templ.SafeURL(fmt.Sprintf("/artists/%s/images?type=%s", artistID, imageType)) }
+						class="rounded-full bg-white/20 p-2 text-white hover:bg-white/40 transition-colors"
+						title="Edit image"
+					>
+						@components.IconPencilSquare("h-5 w-5")
+					</a>
+					<button
+						type="button"
+						class="rounded-full bg-white/20 p-2 text-white hover:bg-red-500/80 transition-colors"
+						title="Delete image"
+						hx-delete={ fmt.Sprintf("/api/v1/artists/%s/images/%s", artistID, imageType) }
+						hx-target={ "#image-preview-" + imageType + "-" + artistID }
+						hx-swap="outerHTML"
+						hx-confirm={ "Delete this " + label + " image?" }
+					>
+						@components.IconTrash("h-5 w-5")
+					</button>
+				</div>
+			</div>
+			<div class="p-1.5 text-center">
+				<span class="text-xs font-medium text-gray-600 dark:text-gray-400">{ label }</span>
+				<div
+					hx-get={ fmt.Sprintf("/api/v1/artists/%s/images/%s/info", artistID, imageType) }
+					hx-trigger="load"
+					hx-swap="innerHTML"
+				></div>
+			</div>
+		} else {
+			<a
+				href={ templ.SafeURL(fmt.Sprintf("/artists/%s/images?type=%s", artistID, imageType)) }
+				class="aspect-square flex items-center justify-center bg-gray-50 dark:bg-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors group/add"
+				title={ "Add " + label }
+			>
+				<div class="text-center text-gray-400 group-hover/add:text-blue-500 dark:group-hover/add:text-blue-400 transition-colors">
+					@components.IconPlusCircle("mx-auto h-8 w-8")
+					<span class="text-xs mt-1 block">{ label }</span>
+				</div>
+			</a>
+			<div class="p-1.5 text-center">
+				<span class="text-xs font-medium text-gray-600 dark:text-gray-400">{ label }</span>
+			</div>
+		}
+	</div>
+}
+
+// ImageInfoBadge renders dimensions and file size as a small text badge.
+// Used as an HTMX partial loaded by the image preview card.
+templ ImageInfoBadge(width, height int, size int64) {
+	<span class="text-xs text-gray-500 dark:text-gray-400">
+		if width > 0 && height > 0 {
+			{ strconv.Itoa(width) + "x" + strconv.Itoa(height) + " " }
+		}
+		{ formatFileSizeTempl(size) }
+	</span>
+}
+
+// formatFileSizeTempl formats a byte count as a human-readable string for templates.
+func formatFileSizeTempl(bytes int64) string {
+	switch {
+	case bytes >= 1<<20:
+		mb := float64(bytes) / float64(1<<20)
+		return strconv.FormatFloat(mb, 'f', 1, 64) + " MB"
+	case bytes >= 1<<10:
+		kb := bytes / (1 << 10)
+		return strconv.FormatInt(kb, 10) + " KB"
+	default:
+		return strconv.FormatInt(bytes, 10) + " B"
+	}
 }

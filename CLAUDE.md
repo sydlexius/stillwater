@@ -126,6 +126,28 @@ Static files (CSS, JS) are served with content-hash-based cache busting:
 - When files change (new deploy), the hash changes and browsers fetch the new version
 - No manual cache clearing needed during development or UAT
 
+## Docker (Local Development)
+
+Always use `docker-compose.local.yml` when building and running containers locally. This compose file mounts the persistent data and music volumes from `D:/appdata/stillwater/`:
+
+```bash
+docker build -f build/docker/Dockerfile -t ghcr.io/sydlexius/stillwater:latest .
+docker compose -f docker-compose.local.yml up -d
+```
+
+If an existing container named `stillwater` is already running, stop and remove it first:
+
+```bash
+docker stop stillwater && docker rm stillwater
+```
+
+The local compose mounts:
+
+- `D:/appdata/stillwater/data` -> `/data` (database, encryption key, backups)
+- `D:/appdata/stillwater/music` -> `/music` (artist directories with NFO/images)
+
+The app is available at `http://localhost:1973` once started.
+
 ## License
 
 GPL-3.0

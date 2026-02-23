@@ -10,7 +10,7 @@ import templruntime "github.com/a-h/templ/runtime"
 
 import "fmt"
 
-func ImageUpload(artistID string) templ.Component {
+func ImageUpload(artistID string, selectedType string) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -44,7 +44,47 @@ func ImageUpload(artistID string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "\" hx-encoding=\"multipart/form-data\" hx-target=\"#upload-result\" hx-swap=\"innerHTML\" hx-indicator=\"#upload-spinner\" class=\"space-y-3\"><div><label for=\"image-type\" class=\"block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1\">Image Type</label> <select id=\"image-type\" name=\"type\" class=\"w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500\"><option value=\"thumb\">Thumbnail</option> <option value=\"fanart\">Fanart</option> <option value=\"logo\">Logo</option> <option value=\"banner\">Banner</option></select></div><div><label for=\"image-file\" class=\"block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1\">File</label><div id=\"drop-zone\" class=\"relative border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-6 text-center hover:border-blue-400 dark:hover:border-blue-500 transition-colors cursor-pointer\"><input type=\"file\" id=\"image-file\" name=\"file\" accept=\"image/jpeg,image/png,image/webp\" class=\"absolute inset-0 w-full h-full opacity-0 cursor-pointer\"><p class=\"text-sm text-gray-500 dark:text-gray-400\">Drop image here or click to browse</p><p class=\"text-xs text-gray-400 dark:text-gray-500 mt-1\">JPEG, PNG, or WebP (max 25MB)</p></div></div><button type=\"submit\" class=\"w-full px-4 py-2 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700 transition-colors\">Upload</button></form><div class=\"border-t border-gray-200 dark:border-gray-700 pt-4\"><h3 class=\"text-sm font-medium text-gray-700 dark:text-gray-300 mb-2\">Or fetch from URL</h3><form hx-post=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "\" hx-encoding=\"multipart/form-data\" hx-target=\"#upload-result\" hx-swap=\"innerHTML\" hx-indicator=\"#upload-spinner\" class=\"space-y-3\"><div><label for=\"image-type\" class=\"block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1\">Image Type</label> <select id=\"image-type\" name=\"type\" class=\"w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500\"><option value=\"thumb\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		if selectedType == "thumb" || selectedType == "" {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, " selected")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, ">Thumbnail</option> <option value=\"fanart\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		if selectedType == "fanart" {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, " selected")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, ">Fanart</option> <option value=\"logo\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		if selectedType == "logo" {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, " selected")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, ">Logo</option> <option value=\"banner\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		if selectedType == "banner" {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, " selected")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, ">Banner</option></select></div><div><label for=\"image-file\" class=\"block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1\">File</label><div id=\"drop-zone\" class=\"relative border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-6 text-center hover:border-blue-400 dark:hover:border-blue-500 transition-colors cursor-pointer\"><input type=\"file\" id=\"image-file\" name=\"file\" accept=\"image/jpeg,image/png,image/webp\" class=\"absolute inset-0 w-full h-full opacity-0 cursor-pointer\"><p class=\"text-sm text-gray-500 dark:text-gray-400\">Drop image here or click to browse</p><p class=\"text-xs text-gray-400 dark:text-gray-500 mt-1\">JPEG, PNG, or WebP (max 25MB)</p></div></div><button type=\"submit\" class=\"w-full px-4 py-2 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700 transition-colors\">Upload</button></form><div class=\"border-t border-gray-200 dark:border-gray-700 pt-4\"><h3 class=\"text-sm font-medium text-gray-700 dark:text-gray-300 mb-2\">Or fetch from URL</h3><form hx-post=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -57,7 +97,35 @@ func ImageUpload(artistID string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "\" hx-target=\"#upload-result\" hx-swap=\"innerHTML\" hx-indicator=\"#upload-spinner\" class=\"flex flex-col gap-2 sm:flex-row\"><input type=\"hidden\" name=\"type\" value=\"thumb\" id=\"fetch-type\"> <input type=\"url\" name=\"url\" placeholder=\"https://example.com/image.jpg\" class=\"flex-1 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500\" required> <button type=\"submit\" class=\"px-4 py-2.5 text-sm rounded-md bg-green-600 text-white hover:bg-green-700 transition-colors\">Fetch</button></form></div><div id=\"upload-spinner\" class=\"htmx-indicator text-center py-2\"><span class=\"text-sm text-gray-500 dark:text-gray-400\">Processing...</span></div><div id=\"upload-result\"></div></div></section>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "\" hx-target=\"#upload-result\" hx-swap=\"innerHTML\" hx-indicator=\"#upload-spinner\" class=\"flex flex-col gap-2 sm:flex-row\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		if selectedType != "" {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<input type=\"hidden\" name=\"type\" value=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var4 string
+			templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(selectedType)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/image_upload.templ`, Line: 72, Col: 59}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "\" id=\"fetch-type\"> ")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		} else {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "<input type=\"hidden\" name=\"type\" value=\"thumb\" id=\"fetch-type\"> ")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "<input type=\"url\" name=\"url\" placeholder=\"https://example.com/image.jpg\" class=\"flex-1 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500\" required> <button type=\"submit\" class=\"px-4 py-2.5 text-sm rounded-md bg-green-600 text-white hover:bg-green-700 transition-colors\">Fetch</button></form></div><div id=\"upload-spinner\" class=\"htmx-indicator text-center py-2\"><span class=\"text-sm text-gray-500 dark:text-gray-400\">Processing...</span></div><div id=\"upload-result\"></div></div></section>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

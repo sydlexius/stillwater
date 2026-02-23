@@ -189,9 +189,16 @@ func (r *Router) handleArtistImagesPage(w http.ResponseWriter, req *http.Request
 	}
 
 	webSearchEnabled, _ := r.providerSettings.AnyWebSearchEnabled(req.Context())
+
+	selectedType := req.URL.Query().Get("type")
+	if selectedType != "" && !validImageTypes[selectedType] {
+		selectedType = ""
+	}
+
 	data := templates.ImageSearchData{
 		Artist:           *a,
 		WebSearchEnabled: webSearchEnabled,
+		SelectedType:     selectedType,
 	}
 	renderTempl(w, req, templates.ImageSearchPage(r.assets(), data))
 }

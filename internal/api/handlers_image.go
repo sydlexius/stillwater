@@ -9,6 +9,8 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -473,22 +475,200 @@ func (r *Router) probeImageDimensions(ctx context.Context, images []provider.Ima
 	return images
 }
 
-// updateArtistImageFlag updates the image existence flag on the artist and persists it.
-func (r *Router) updateArtistImageFlag(ctx context.Context, a *artist.Artist, imageType string) {
+// setArtistImageFlag sets the image existence flag and persists it.
+func (r *Router) setArtistImageFlag(ctx context.Context, a *artist.Artist, imageType string, exists bool) {
 	switch imageType {
 	case "thumb":
-		a.ThumbExists = true
+		a.ThumbExists = exists
 	case "fanart":
-		a.FanartExists = true
+		a.FanartExists = exists
 	case "logo":
-		a.LogoExists = true
+		a.LogoExists = exists
 	case "banner":
-		a.BannerExists = true
+		a.BannerExists = exists
 	}
 
 	if err := r.artistService.Update(ctx, a); err != nil {
-		r.logger.Warn("updating artist image flags",
+		r.logger.Warn("setting artist image flag",
 			slog.String("artist_id", a.ID),
+			slog.String("image_type", imageType),
 			slog.String("error", err.Error()))
+	}
+}
+
+// updateArtistImageFlag sets the image existence flag to true and persists it.
+func (r *Router) updateArtistImageFlag(ctx context.Context, a *artist.Artist, imageType string) {
+	r.setArtistImageFlag(ctx, a, imageType, true)
+}
+
+// handleServeImage serves a local artist image file from disk.
+// GET /api/v1/artists/{id}/images/{type}/file
+func (r *Router) handleServeImage(w http.ResponseWriter, req *http.Request) {
+	artistID := req.PathValue("id")
+	if artistID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing artist id"})
+		return
+	}
+
+	imageType := req.PathValue("type")
+	if !validImageTypes[imageType] {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid image type"})
+		return
+	}
+
+	a, err := r.artistService.GetByID(req.Context(), artistID)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "artist not found"})
+		return
+	}
+
+	patterns := r.getActiveNamingConfig(req.Context(), imageType)
+	filePath, found := findExistingImage(a.Path, patterns)
+	if !found {
+		http.NotFound(w, req)
+		return
+	}
+
+	w.Header().Set("Cache-Control", "private, max-age=3600")
+	http.ServeFile(w, req, filePath)
+}
+
+// handleImageInfo returns metadata about a local artist image (dimensions, file size).
+// GET /api/v1/artists/{id}/images/{type}/info
+func (r *Router) handleImageInfo(w http.ResponseWriter, req *http.Request) {
+	artistID := req.PathValue("id")
+	if artistID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing artist id"})
+		return
+	}
+
+	imageType := req.PathValue("type")
+	if !validImageTypes[imageType] {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid image type"})
+		return
+	}
+
+	a, err := r.artistService.GetByID(req.Context(), artistID)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "artist not found"})
+		return
+	}
+
+	patterns := r.getActiveNamingConfig(req.Context(), imageType)
+	filePath, found := findExistingImage(a.Path, patterns)
+	if !found {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "image not found"})
+		return
+	}
+
+	stat, err := os.Stat(filePath) //nolint:gosec // path built from trusted naming patterns, not user input
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to stat image"})
+		return
+	}
+
+	var width, height int
+	f, err := os.Open(filePath) //nolint:gosec // path is constructed from trusted patterns
+	if err == nil {
+		defer func() { _ = f.Close() }()
+		width, height, _ = img.GetDimensions(f)
+	}
+
+	if req.Header.Get("HX-Request") == "true" {
+		renderTempl(w, req, templates.ImageInfoBadge(width, height, stat.Size()))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"type":     imageType,
+		"filename": filepath.Base(filePath),
+		"width":    width,
+		"height":   height,
+		"size":     stat.Size(),
+		"modified": stat.ModTime().UTC().Format(time.RFC3339),
+	})
+}
+
+// handleDeleteImage deletes a local artist image file.
+// DELETE /api/v1/artists/{id}/images/{type}
+func (r *Router) handleDeleteImage(w http.ResponseWriter, req *http.Request) {
+	artistID := req.PathValue("id")
+	if artistID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing artist id"})
+		return
+	}
+
+	imageType := req.PathValue("type")
+	if !validImageTypes[imageType] {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid image type"})
+		return
+	}
+
+	a, err := r.artistService.GetByID(req.Context(), artistID)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "artist not found"})
+		return
+	}
+
+	patterns := r.getActiveNamingConfig(req.Context(), imageType)
+	deleted := deleteImageFiles(a.Path, patterns, r.logger)
+
+	r.clearArtistImageFlag(req.Context(), a, imageType)
+
+	if req.Header.Get("HX-Request") == "true" {
+		renderTempl(w, req, templates.ImagePreviewCard(a.ID, imageType, false, imageTypeLabel(imageType)))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":  "deleted",
+		"deleted": deleted,
+	})
+}
+
+// clearArtistImageFlag sets the image existence flag to false and persists it.
+func (r *Router) clearArtistImageFlag(ctx context.Context, a *artist.Artist, imageType string) {
+	r.setArtistImageFlag(ctx, a, imageType, false)
+}
+
+// findExistingImage searches for the first matching image file in a directory.
+// Patterns are trusted naming conventions, not user input.
+func findExistingImage(dir string, patterns []string) (string, bool) {
+	for _, pattern := range patterns {
+		p := filepath.Join(dir, pattern)
+		if _, err := os.Stat(p); err == nil { //nolint:gosec // path from trusted naming patterns
+			return p, true
+		}
+	}
+	return "", false
+}
+
+// deleteImageFiles removes all matching image files from a directory and returns deleted filenames.
+// Patterns are trusted naming conventions, not user input.
+func deleteImageFiles(dir string, patterns []string, logger *slog.Logger) []string {
+	var deleted []string
+	for _, pattern := range patterns {
+		p := filepath.Join(dir, pattern)
+		if err := os.Remove(p); err == nil { //nolint:gosec // path from trusted naming patterns
+			logger.Info("deleted image file", slog.String("path", p))
+			deleted = append(deleted, pattern)
+		}
+	}
+	return deleted
+}
+
+// imageTypeLabel returns a human-readable label for an image type.
+func imageTypeLabel(imageType string) string {
+	switch imageType {
+	case "thumb":
+		return "Thumbnail"
+	case "fanart":
+		return "Fanart"
+	case "logo":
+		return "Logo"
+	case "banner":
+		return "Banner"
+	default:
+		return imageType
 	}
 }

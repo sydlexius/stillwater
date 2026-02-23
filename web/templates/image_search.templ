@@ -13,6 +13,7 @@ import (
 type ImageSearchData struct {
 	Artist           artist.Artist
 	WebSearchEnabled bool
+	SelectedType     string // "thumb", "fanart", "logo", "banner", or "" for generic
 }
 
 templ ImageSearchPage(assets AssetPaths, data ImageSearchData) {
@@ -29,91 +30,17 @@ templ ImageSearchPage(assets AssetPaths, data ImageSearchData) {
 					</a>
 					<span class="text-gray-400">/</span>
 				</div>
-				<h1 class="mt-2 text-2xl font-bold">Image Management</h1>
+				if data.SelectedType != "" {
+					<h1 class="mt-2 text-2xl font-bold">{ imageTypeLabel(data.SelectedType) }</h1>
+				} else {
+					<h1 class="mt-2 text-2xl font-bold">Image Management</h1>
+				}
 			</div>
-			<div class="grid grid-cols-1 gap-6 md:grid-cols-3">
-				<div class="md:col-span-2 space-y-6">
-					@components.ImageUpload(data.Artist.ID)
-					if data.Artist.MusicBrainzID != "" {
-						<section class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
-							<h2 class="text-lg font-semibold mb-4">Search Providers</h2>
-							<div class="flex flex-wrap gap-2 mb-4" id="image-type-tabs">
-								for _, t := range []string{"thumb", "fanart", "logo", "banner"} {
-									<button
-										type="button"
-										class="px-3 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-										hx-get={ fmt.Sprintf("/api/v1/artists/%s/images/search?type=%s", data.Artist.ID, t) }
-										hx-target="#search-results"
-										hx-swap="innerHTML"
-										hx-indicator="#search-spinner"
-									>
-										{ t }
-									</button>
-								}
-								<button
-									type="button"
-									class="px-3 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-									hx-get={ fmt.Sprintf("/api/v1/artists/%s/images/search", data.Artist.ID) }
-									hx-target="#search-results"
-									hx-swap="innerHTML"
-									hx-indicator="#search-spinner"
-								>
-									all
-								</button>
-							</div>
-							<div id="search-spinner" class="htmx-indicator text-center py-4">
-								<span class="text-sm text-gray-500 dark:text-gray-400">Searching providers...</span>
-							</div>
-							<div id="search-results"></div>
-						</section>
-					} else if !data.WebSearchEnabled {
-						<section class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
-							<p class="text-sm text-gray-500 dark:text-gray-400">
-								This artist has no MusicBrainz ID. Provider image search requires an MBID.
-								Use the upload form above to add images manually.
-							</p>
-						</section>
-					}
-					if data.WebSearchEnabled {
-						<section class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
-							<div class="flex items-center justify-between mb-3">
-								<h3 class="text-sm font-semibold text-gray-500 dark:text-gray-400">Web Search Results</h3>
-								<span id="web-search-spinner" class="htmx-indicator text-xs text-gray-500 dark:text-gray-400">Searching...</span>
-							</div>
-							<div class="flex flex-wrap gap-2 mb-4">
-								for _, t := range []string{"thumb", "fanart", "logo", "banner"} {
-									<button
-										type="button"
-										class="px-3 py-2 text-sm rounded-md border border-dashed border-purple-300 dark:border-purple-700 text-purple-700 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors"
-										hx-get={ fmt.Sprintf("/api/v1/artists/%s/images/websearch?type=%s", data.Artist.ID, t) }
-										hx-target="#web-search-results"
-										hx-swap="innerHTML"
-										hx-indicator="#web-search-spinner"
-									>
-										Extend: { t }
-									</button>
-								}
-							</div>
-							<div id="web-search-results"></div>
-						</section>
-					}
-				</div>
-				<div class="space-y-6">
-					<section class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
-						<h2 class="text-lg font-semibold mb-3">Current Images</h2>
-						<div class="space-y-2">
-							@components.StatusBadge(data.Artist.ThumbExists, "Thumbnail")
-							@components.StatusBadge(data.Artist.FanartExists, "Fanart")
-							@components.StatusBadge(data.Artist.LogoExists, "Logo")
-							@components.StatusBadge(data.Artist.BannerExists, "Banner")
-						</div>
-					</section>
-					<section id="compare-panel" class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow hidden">
-						<h2 class="text-lg font-semibold mb-3">Compare</h2>
-						@components.ImageCompare(data.Artist.ID)
-					</section>
-				</div>
-			</div>
+			if data.SelectedType != "" {
+				@imageSearchContextualized(data)
+			} else {
+				@imageSearchGeneric(data)
+			}
 			@components.ImageCropModal(data.Artist.ID)
 			<link rel="stylesheet" href={ assets.CropperCSS }/>
 			<script src={ assets.CropperJS }></script>
@@ -126,7 +53,6 @@ templ ImageSearchPage(assets AssetPaths, data ImageSearchData) {
 					cropImage.src = imgSrc;
 					if (imageType) cropType.value = imageType;
 					modal.classList.remove('hidden');
-					// Initialize Cropper.js after the image loads
 					cropImage.onload = function() {
 						if (_cropper) _cropper.destroy();
 						_cropper = new Cropper(cropImage, {
@@ -150,6 +76,316 @@ templ ImageSearchPage(assets AssetPaths, data ImageSearchData) {
 			</script>
 		</div>
 	}
+}
+
+// imageSearchContextualized renders the single-type image editing layout.
+templ imageSearchContextualized(data ImageSearchData) {
+	<div class="max-w-4xl mx-auto space-y-6" data-artist-id={ data.Artist.ID } data-image-type={ data.SelectedType }>
+		<section class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
+			<h2 class="text-lg font-semibold mb-4">Current { imageTypeLabel(data.SelectedType) }</h2>
+			// -- Image display / drag-drop target --
+			<div
+				id="image-drop-zone"
+				class={
+					"relative flex items-center justify-center overflow-hidden rounded-lg max-h-96 transition-colors border-2 border-transparent",
+					templ.KV("checkered-bg", data.SelectedType == "logo" && imageExistsForType(data.Artist, data.SelectedType)),
+					templ.KV("bg-gray-100 dark:bg-gray-900", data.SelectedType != "logo" && imageExistsForType(data.Artist, data.SelectedType)),
+					templ.KV("bg-gray-50 dark:bg-gray-800/50 py-16", !imageExistsForType(data.Artist, data.SelectedType)),
+				}
+			>
+				if imageExistsForType(data.Artist, data.SelectedType) {
+					<img
+						src={ fmt.Sprintf("/api/v1/artists/%s/images/%s/file", data.Artist.ID, data.SelectedType) }
+						alt={ imageTypeLabel(data.SelectedType) }
+						class="max-w-full max-h-96 object-contain"
+					/>
+				} else {
+					<div class="text-center text-gray-400">
+						@components.IconPlusCircle("mx-auto h-12 w-12")
+						<p class="mt-2 text-sm">No { imageTypeLabel(data.SelectedType) } image yet</p>
+					</div>
+				}
+				<div id="drop-hint" class="hidden absolute inset-0 bg-blue-500/10 border-2 border-dashed border-blue-400 rounded-lg flex items-center justify-center">
+					<p class="text-sm font-medium text-blue-500">Drop image here</p>
+				</div>
+			</div>
+			<p class="mt-1 text-xs text-gray-400 dark:text-gray-500 text-center">Drag and drop an image to replace</p>
+			if imageExistsForType(data.Artist, data.SelectedType) {
+				<div
+					class="mt-1 text-center"
+					hx-get={ fmt.Sprintf("/api/v1/artists/%s/images/%s/info", data.Artist.ID, data.SelectedType) }
+					hx-trigger="load"
+					hx-swap="innerHTML"
+				></div>
+			}
+			// -- Action button row --
+			<div class="mt-4 flex flex-wrap items-center gap-2">
+				if data.Artist.MusicBrainzID != "" {
+					<button
+						type="button"
+						class="px-3 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+						hx-get={ fmt.Sprintf("/api/v1/artists/%s/images/search?type=%s", data.Artist.ID, data.SelectedType) }
+						hx-target="#image-results"
+						hx-swap="innerHTML"
+						hx-indicator="#search-spinner"
+					>
+						Fetch
+					</button>
+				}
+				if data.WebSearchEnabled {
+					<button
+						type="button"
+						class="px-3 py-2 text-sm rounded-md border border-dashed border-purple-300 dark:border-purple-700 text-purple-700 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors"
+						hx-get={ fmt.Sprintf("/api/v1/artists/%s/images/websearch?type=%s", data.Artist.ID, data.SelectedType) }
+						hx-target="#image-results"
+						hx-swap="innerHTML"
+						hx-indicator="#search-spinner"
+					>
+						Web Search
+					</button>
+				}
+				<button
+					type="button"
+					class="px-3 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+					onclick="document.getElementById('image-file-input').click()"
+				>
+					Browse
+				</button>
+				<button
+					type="button"
+					class="px-3 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+					onclick="document.getElementById('fetch-url-modal').classList.remove('hidden')"
+				>
+					Fetch from URL
+				</button>
+				if imageExistsForType(data.Artist, data.SelectedType) {
+					<button
+						type="button"
+						class="px-3 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+						onclick={ openCropForType(fmt.Sprintf("/api/v1/artists/%s/images/%s/file", data.Artist.ID, data.SelectedType), data.SelectedType) }
+					>
+						Crop
+					</button>
+					<button
+						type="button"
+						class="px-3 py-2 text-sm rounded-md border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+						hx-delete={ fmt.Sprintf("/api/v1/artists/%s/images/%s", data.Artist.ID, data.SelectedType) }
+						hx-confirm={ "Delete this " + imageTypeLabel(data.SelectedType) + " image?" }
+						hx-target="body"
+						hx-swap="none"
+					>
+						Delete
+					</button>
+				}
+				<span id="search-spinner" class="htmx-indicator text-xs text-gray-500 dark:text-gray-400">Searching...</span>
+			</div>
+			// -- Upload status --
+			<div id="upload-status" class="mt-2"></div>
+		</section>
+		// -- Search results (single shared area) --
+		<div id="image-results" class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow hidden"></div>
+		// -- Hidden file input for Browse button --
+		<input
+			type="file"
+			id="image-file-input"
+			accept="image/jpeg,image/png,image/webp"
+			class="hidden"
+		/>
+		// -- Fetch from URL modal --
+		<div id="fetch-url-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+			<div class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow-xl w-full max-w-md mx-4">
+				<h3 class="text-lg font-semibold mb-4">Fetch from URL</h3>
+				<input
+					type="url"
+					id="fetch-url-input"
+					placeholder="https://example.com/image.jpg"
+					class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"
+				/>
+				<div class="flex justify-end gap-2">
+					<button
+						type="button"
+						class="px-4 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+						onclick="document.getElementById('fetch-url-modal').classList.add('hidden')"
+					>
+						Cancel
+					</button>
+					<button
+						type="button"
+						id="fetch-url-submit"
+						class="px-4 py-2 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+					>
+						Fetch
+					</button>
+				</div>
+			</div>
+		</div>
+		// -- Drag-drop, browse, and fetch-URL JS --
+		<script>
+			(function() {
+				var container = document.querySelector('[data-artist-id]');
+				if (!container) return;
+				var artistID = container.dataset.artistId;
+				var imageType = container.dataset.imageType;
+				if (!artistID || !imageType) return;
+
+				var dropZone = document.getElementById('image-drop-zone');
+				var dropHint = document.getElementById('drop-hint');
+				var fileInput = document.getElementById('image-file-input');
+				var statusEl = document.getElementById('upload-status');
+
+				function csrfToken() {
+					return document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*\=\s*([^;]*).*$)|^.*$/, "$1");
+				}
+
+				function setStatus(msg, cls) {
+					var s = document.createElement('span');
+					s.className = 'text-sm ' + cls;
+					s.textContent = msg;
+					statusEl.replaceChildren(s);
+				}
+
+				function uploadFile(file) {
+					var fd = new FormData();
+					fd.append('file', file);
+					fd.append('type', imageType);
+					setStatus('Uploading...', 'text-gray-500');
+					fetch('/api/v1/artists/' + artistID + '/images/upload', {
+						method: 'POST',
+						headers: {'X-CSRF-Token': csrfToken()},
+						body: fd,
+						credentials: 'same-origin'
+					}).then(function(r) {
+						if (r.ok) { window.location.reload(); }
+						else { r.text().then(function(t) { setStatus(t, 'text-red-500'); }); }
+					}).catch(function() { setStatus('Upload failed', 'text-red-500'); });
+				}
+
+				dropZone.addEventListener('dragover', function(e) { e.preventDefault(); dropHint.classList.remove('hidden'); });
+				dropZone.addEventListener('dragenter', function(e) { e.preventDefault(); dropHint.classList.remove('hidden'); });
+				dropZone.addEventListener('dragleave', function(e) { if (!dropZone.contains(e.relatedTarget)) dropHint.classList.add('hidden'); });
+				dropZone.addEventListener('drop', function(e) {
+					e.preventDefault();
+					dropHint.classList.add('hidden');
+					if (e.dataTransfer.files.length > 0) uploadFile(e.dataTransfer.files[0]);
+				});
+
+				fileInput.addEventListener('change', function() {
+					if (fileInput.files.length > 0) uploadFile(fileInput.files[0]);
+				});
+
+				document.getElementById('fetch-url-submit').addEventListener('click', function() {
+					var url = document.getElementById('fetch-url-input').value.trim();
+					if (!url) return;
+					var modal = document.getElementById('fetch-url-modal');
+					setStatus('Fetching...', 'text-gray-500');
+					modal.classList.add('hidden');
+					fetch('/api/v1/artists/' + artistID + '/images/fetch', {
+						method: 'POST',
+						headers: {'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRF-Token': csrfToken()},
+						body: 'url=' + encodeURIComponent(url) + '&type=' + imageType,
+						credentials: 'same-origin'
+					}).then(function(r) {
+						if (r.ok) { window.location.reload(); }
+						else { r.text().then(function(t) { setStatus(t, 'text-red-500'); }); }
+					}).catch(function() { setStatus('Fetch failed', 'text-red-500'); });
+				});
+
+				// Show results panel when HTMX swap completes
+				document.body.addEventListener('htmx:afterSwap', function(e) {
+					if (e.detail.target && e.detail.target.id === 'image-results') {
+						e.detail.target.classList.remove('hidden');
+					}
+				});
+			})();
+		</script>
+	</div>
+}
+
+// imageSearchGeneric renders the original multi-type image management layout.
+templ imageSearchGeneric(data ImageSearchData) {
+	<div class="grid grid-cols-1 gap-6 md:grid-cols-3">
+		<div class="md:col-span-2 space-y-6">
+			@components.ImageUpload(data.Artist.ID, "")
+			if data.Artist.MusicBrainzID != "" {
+				<section class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
+					<h2 class="text-lg font-semibold mb-4">Search Providers</h2>
+					<div class="flex flex-wrap gap-2 mb-4" id="image-type-tabs">
+						for _, t := range []string{"thumb", "fanart", "logo", "banner"} {
+							<button
+								type="button"
+								class="px-3 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+								hx-get={ fmt.Sprintf("/api/v1/artists/%s/images/search?type=%s", data.Artist.ID, t) }
+								hx-target="#search-results"
+								hx-swap="innerHTML"
+								hx-indicator="#search-spinner"
+							>
+								{ t }
+							</button>
+						}
+						<button
+							type="button"
+							class="px-3 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+							hx-get={ fmt.Sprintf("/api/v1/artists/%s/images/search", data.Artist.ID) }
+							hx-target="#search-results"
+							hx-swap="innerHTML"
+							hx-indicator="#search-spinner"
+						>
+							all
+						</button>
+					</div>
+					<div id="search-spinner" class="htmx-indicator text-center py-4">
+						<span class="text-sm text-gray-500 dark:text-gray-400">Searching providers...</span>
+					</div>
+					<div id="search-results"></div>
+				</section>
+			} else if !data.WebSearchEnabled {
+				<section class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
+					<p class="text-sm text-gray-500 dark:text-gray-400">
+						This artist has no MusicBrainz ID. Provider image search requires an MBID.
+						Use the upload form above to add images manually.
+					</p>
+				</section>
+			}
+			if data.WebSearchEnabled {
+				<section class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
+					<div class="flex items-center justify-between mb-3">
+						<h3 class="text-sm font-semibold text-gray-500 dark:text-gray-400">Web Search Results</h3>
+						<span id="web-search-spinner" class="htmx-indicator text-xs text-gray-500 dark:text-gray-400">Searching...</span>
+					</div>
+					<div class="flex flex-wrap gap-2 mb-4">
+						for _, t := range []string{"thumb", "fanart", "logo", "banner"} {
+							<button
+								type="button"
+								class="px-3 py-2 text-sm rounded-md border border-dashed border-purple-300 dark:border-purple-700 text-purple-700 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors"
+								hx-get={ fmt.Sprintf("/api/v1/artists/%s/images/websearch?type=%s", data.Artist.ID, t) }
+								hx-target="#web-search-results"
+								hx-swap="innerHTML"
+								hx-indicator="#web-search-spinner"
+							>
+								Extend: { t }
+							</button>
+						}
+					</div>
+					<div id="web-search-results"></div>
+				</section>
+			}
+		</div>
+		<div class="space-y-6">
+			<section class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
+				<h2 class="text-lg font-semibold mb-3">Current Images</h2>
+				<div class="space-y-2">
+					@components.StatusBadge(data.Artist.ThumbExists, "Thumbnail")
+					@components.StatusBadge(data.Artist.FanartExists, "Fanart")
+					@components.StatusBadge(data.Artist.LogoExists, "Logo")
+					@components.StatusBadge(data.Artist.BannerExists, "Banner")
+				</div>
+			</section>
+			<section id="compare-panel" class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow hidden">
+				<h2 class="text-lg font-semibold mb-3">Compare</h2>
+				@components.ImageCompare(data.Artist.ID)
+			</section>
+		</div>
+	</div>
 }
 
 // ImageSearchResults renders the grid of image results from providers.
@@ -189,4 +425,38 @@ func imageResolution(w, h int) string {
 		return strconv.Itoa(w) + "x" + strconv.Itoa(h)
 	}
 	return ""
+}
+
+func imageExistsForType(a artist.Artist, t string) bool {
+	switch t {
+	case "thumb":
+		return a.ThumbExists
+	case "fanart":
+		return a.FanartExists
+	case "logo":
+		return a.LogoExists
+	case "banner":
+		return a.BannerExists
+	default:
+		return false
+	}
+}
+
+func imageTypeLabel(t string) string {
+	switch t {
+	case "thumb":
+		return "Thumbnail"
+	case "fanart":
+		return "Fanart"
+	case "logo":
+		return "Logo"
+	case "banner":
+		return "Banner"
+	default:
+		return t
+	}
+}
+
+script openCropForType(imgSrc string, imageType string) {
+	openCropModal(imgSrc, imageType);
 }
