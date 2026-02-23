@@ -383,6 +383,16 @@ func extractFieldForComparison(fpr *FieldProviderResult, field string, meta *Art
 			fpr.Value = meta.YearsActive
 			fpr.HasData = true
 		}
+	case "type":
+		if meta.Type != "" {
+			fpr.Value = meta.Type
+			fpr.HasData = true
+		}
+	case "gender":
+		if meta.Gender != "" {
+			fpr.Value = meta.Gender
+			fpr.HasData = true
+		}
 	}
 }
 

@@ -1,6 +1,7 @@
 package templates
 
 import (
+	"encoding/json"
 	"strings"
 
 	"github.com/sydlexius/stillwater/internal/provider"
@@ -97,12 +98,12 @@ func truncateText(s string, maxLen int) string {
 // escapeJSONValue escapes special characters in a string for safe embedding
 // in a JSON value within an HTML attribute.
 func escapeJSONValue(s string) string {
-	s = strings.ReplaceAll(s, `\`, `\\`)
-	s = strings.ReplaceAll(s, `"`, `\"`)
-	s = strings.ReplaceAll(s, "\n", `\n`)
-	s = strings.ReplaceAll(s, "\r", `\r`)
-	s = strings.ReplaceAll(s, "\t", `\t`)
-	return s
+	b, err := json.Marshal(s)
+	if err != nil {
+		return s
+	}
+	// json.Marshal wraps the string in quotes; strip them for embedding in hx-vals.
+	return string(b[1 : len(b)-1])
 }
 
 // mergeSliceValues combines current and provider slices, deduplicating
