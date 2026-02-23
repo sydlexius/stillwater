@@ -217,6 +217,126 @@ func (r *Router) handleProviderFetch(w http.ResponseWriter, req *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
+// handleGetWebSearchProviders returns the enabled state of all web search providers.
+// GET /api/v1/providers/websearch
+func (r *Router) handleGetWebSearchProviders(w http.ResponseWriter, req *http.Request) {
+	statuses, err := r.providerSettings.ListWebSearchStatuses(req.Context())
+	if err != nil {
+		r.logger.Error("listing web search statuses", "error", err)
+		writeError(w, req, http.StatusInternalServerError, "failed to list web search providers")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"providers": statuses})
+}
+
+// handleSetWebSearchEnabled toggles the enabled state of a web search provider.
+// When enabled, the provider is added to image field priority lists at lowest position.
+// When disabled, it is removed from all priority lists.
+// PUT /api/v1/providers/websearch/{name}/toggle
+func (r *Router) handleSetWebSearchEnabled(w http.ResponseWriter, req *http.Request) {
+	name := provider.ProviderName(req.PathValue("name"))
+
+	valid := false
+	for _, n := range provider.AllWebSearchProviderNames() {
+		if n == name {
+			valid = true
+			break
+		}
+	}
+	if !valid {
+		writeError(w, req, http.StatusBadRequest, "unknown web search provider")
+		return
+	}
+
+	var enabled bool
+	contentType := req.Header.Get("Content-Type")
+	if strings.HasPrefix(contentType, "application/json") {
+		var body struct {
+			Enabled bool `json:"enabled"`
+		}
+		if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+			writeError(w, req, http.StatusBadRequest, "invalid request body")
+			return
+		}
+		enabled = body.Enabled
+	} else {
+		if err := req.ParseForm(); err != nil {
+			writeError(w, req, http.StatusBadRequest, "invalid form data")
+			return
+		}
+		enabled = req.FormValue("enabled") == "true"
+	}
+
+	if err := r.providerSettings.SetWebSearchEnabled(req.Context(), name, enabled); err != nil {
+		r.logger.Error("setting web search enabled", "provider", name, "error", err)
+		writeError(w, req, http.StatusInternalServerError, "failed to update setting")
+		return
+	}
+
+	// Update image field priority lists
+	imageFields := []string{"thumb", "fanart", "logo", "banner"}
+	priorities, err := r.providerSettings.GetPriorities(req.Context())
+	if err != nil {
+		r.logger.Error("getting priorities for web search toggle", "error", err)
+		writeError(w, req, http.StatusInternalServerError, "failed to update priorities")
+		return
+	}
+	for _, pri := range priorities {
+		isImageField := false
+		for _, f := range imageFields {
+			if pri.Field == f {
+				isImageField = true
+				break
+			}
+		}
+		if !isImageField {
+			continue
+		}
+
+		if enabled {
+			// Add at end if not already present
+			found := false
+			for _, p := range pri.Providers {
+				if p == name {
+					found = true
+					break
+				}
+			}
+			if !found {
+				pri.Providers = append(pri.Providers, name)
+				if err := r.providerSettings.SetPriority(req.Context(), pri.Field, pri.Providers); err != nil {
+					r.logger.Error("adding web search to priority", "field", pri.Field, "error", err)
+					writeError(w, req, http.StatusInternalServerError, "failed to update priorities")
+					return
+				}
+			}
+		} else {
+			// Remove from list
+			var filtered []provider.ProviderName
+			for _, p := range pri.Providers {
+				if p != name {
+					filtered = append(filtered, p)
+				}
+			}
+			if len(filtered) != len(pri.Providers) {
+				if err := r.providerSettings.SetPriority(req.Context(), pri.Field, filtered); err != nil {
+					r.logger.Error("removing web search from priority", "field", pri.Field, "error", err)
+					writeError(w, req, http.StatusInternalServerError, "failed to update priorities")
+					return
+				}
+			}
+		}
+	}
+
+	// For HTMX, trigger a full page refresh so toggle + priority rows update
+	if isHTMXRequest(req) {
+		w.Header().Set("HX-Refresh", "true")
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
 // isValidProviderName checks if a provider name is one of the known providers.
 func isValidProviderName(name provider.ProviderName) bool {
 	for _, n := range provider.AllProviderNames() {

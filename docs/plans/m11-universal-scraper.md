@@ -13,16 +13,16 @@ Per-field provider assignment, fallback chains, connection-scoped configuration,
 
 | # | Title | Mode | Model | Status |
 |---|-------|------|-------|--------|
-| 51 | Universal Music Scraper: per-field provider assignment, fallback chains, REST API and UI config | plan | opus | Backend complete (PR #87), UI pending |
-| 86 | Settings UI Refactor: card-based layout with service logos | plan | opus | In progress (branch: feature/m11-settings-card-layout) |
-| 56 | Web Image Search Provider Tier: targeted scraping for artist images (blocked by #51) | plan | opus | Not started |
+| 51 | Universal Music Scraper: per-field provider assignment, fallback chains, REST API and UI config | plan | opus | Backend complete (PR #87). UI (Step 4) DESCOPED -- per-field scraper config UI was overengineered; web search providers integrate into existing Provider Priorities + image search page instead. |
+| 86 | Settings UI Refactor: card-based layout with service logos | plan | opus | Complete (merged, PR #89) |
+| 56 | Web Image Search Provider Tier: targeted scraping for artist images (blocked by #51) | plan | opus | In progress -- see design notes below |
 
 ## Execution Order
 
 1. **#51 Steps 1-3, 5** -- Scraper backend (config model, service/executor, REST API, rule engine) -- DONE (PR #87)
-2. **#86** -- Settings UI refactor (card-based layout with service logos) -- NEXT
-3. **#51 Step 4** -- Scraper UI (scraper.templ, built on #86 patterns) -- after #86
-4. **#56** -- Web image search provider -- after #51 is fully complete
+2. **#86** -- Settings UI refactor (card-based layout with service logos) -- DONE (merged)
+3. ~~**#51 Step 4** -- Scraper UI~~ -- DESCOPED. The per-field scraper config page (scraper.templ) was prototyped and rejected during UAT. The user's actual need is simpler: web image search providers as a fallback tier on the image search page, with enable/disable in Provider Priorities. This is covered by #56.
+4. **#56** -- Web image search provider -- IN PROGRESS
 
 Each issue gets its own feature branch and PR against main.
 
@@ -100,9 +100,17 @@ Connection ID validated against `connectionService.GetByID()` (404 if not found)
 - Added `ScraperService *scraper.Service` to `RouterDeps` and `scraperService` to `Router`
 - Registered 6 API routes in `Handler()`
 
-### Step 4: Scraper UI -- PENDING (after #86)
+### Step 4: Scraper UI -- DESCOPED
 
-Requires #86 (Settings UI refactor) to establish card-based patterns with service logos.
+The per-field scraper config page (scraper.templ with per-field provider dropdowns, enable/disable toggles, fallback chain reordering, connection-scoped overrides) was prototyped and rejected during UAT. The approach was overengineered for the actual user need.
+
+**What the user actually wants (#56):**
+
+- Web image search providers (Google Images, Bing, etc.) appear as additional options in the existing Provider Priorities section for image fields (thumb, fanart, logo, banner), disabled by default at lowest priority
+- On the artist image search page, authoritative providers (Fanart.tv, AudioDB) run first as they do today
+- An "Extend Search" button appears when results are insufficient, triggering the enabled web search providers
+- Web search results appear alongside existing results with distinct source badges
+- The scraper backend (Steps 1-3, 5) still provides the infrastructure; the UI surface is just the existing settings + image search pages
 
 ### Step 5: Rule Engine Integration -- DONE
 
@@ -163,8 +171,8 @@ Requires #86 (Settings UI refactor) to establish card-based patterns with servic
 - [x] `golangci-lint run ./...` passes (0 issues)
 - [ ] Fallback chain executes in order when primary fails (needs integration test with mock providers)
 - [ ] Connection config inherits from global correctly (unit tested, needs manual API test)
-- [ ] Connection overrides are visually distinct in UI (Step 4)
-- [ ] "Reset to global" / "Reset to defaults" buttons work (Step 4)
+- ~~[ ] Connection overrides are visually distinct in UI (Step 4)~~ -- DESCOPED
+- ~~[ ] "Reset to global" / "Reset to defaults" buttons work (Step 4)~~ -- DESCOPED
 - [ ] Provider capabilities endpoint returns accurate field support
 - [ ] Fallback audit rule fires when fallback provider used (needs artist with MetadataSources populated)
 - [ ] Web image search returns results for known artists (#56)

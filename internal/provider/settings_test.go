@@ -251,3 +251,107 @@ func TestPriorityRoundTrip(t *testing.T) {
 		}
 	}
 }
+
+func TestWebSearchEnabledRoundTrip(t *testing.T) {
+	db := setupTestDB(t)
+	enc := setupTestEncryptor(t)
+	svc := NewSettingsService(db, enc)
+	ctx := context.Background()
+
+	// Initially disabled
+	enabled, err := svc.IsWebSearchEnabled(ctx, NameDuckDuckGo)
+	if err != nil {
+		t.Fatalf("IsWebSearchEnabled: %v", err)
+	}
+	if enabled {
+		t.Error("expected disabled by default")
+	}
+
+	// Enable
+	if err := svc.SetWebSearchEnabled(ctx, NameDuckDuckGo, true); err != nil {
+		t.Fatalf("SetWebSearchEnabled(true): %v", err)
+	}
+	enabled, err = svc.IsWebSearchEnabled(ctx, NameDuckDuckGo)
+	if err != nil {
+		t.Fatalf("IsWebSearchEnabled after enable: %v", err)
+	}
+	if !enabled {
+		t.Error("expected enabled after set")
+	}
+
+	// Disable again
+	if err := svc.SetWebSearchEnabled(ctx, NameDuckDuckGo, false); err != nil {
+		t.Fatalf("SetWebSearchEnabled(false): %v", err)
+	}
+	enabled, err = svc.IsWebSearchEnabled(ctx, NameDuckDuckGo)
+	if err != nil {
+		t.Fatalf("IsWebSearchEnabled after disable: %v", err)
+	}
+	if enabled {
+		t.Error("expected disabled after set false")
+	}
+}
+
+func TestListWebSearchStatuses(t *testing.T) {
+	db := setupTestDB(t)
+	enc := setupTestEncryptor(t)
+	svc := NewSettingsService(db, enc)
+	ctx := context.Background()
+
+	statuses, err := svc.ListWebSearchStatuses(ctx)
+	if err != nil {
+		t.Fatalf("ListWebSearchStatuses: %v", err)
+	}
+	if len(statuses) != len(AllWebSearchProviderNames()) {
+		t.Fatalf("expected %d statuses, got %d", len(AllWebSearchProviderNames()), len(statuses))
+	}
+
+	ddg := statuses[0]
+	if ddg.Name != NameDuckDuckGo {
+		t.Errorf("expected duckduckgo, got %s", ddg.Name)
+	}
+	if ddg.DisplayName != "DuckDuckGo" {
+		t.Errorf("expected display name DuckDuckGo, got %s", ddg.DisplayName)
+	}
+	if ddg.Enabled {
+		t.Error("expected disabled by default")
+	}
+
+	// Enable and re-check
+	if err := svc.SetWebSearchEnabled(ctx, NameDuckDuckGo, true); err != nil {
+		t.Fatalf("SetWebSearchEnabled: %v", err)
+	}
+	statuses, err = svc.ListWebSearchStatuses(ctx)
+	if err != nil {
+		t.Fatalf("ListWebSearchStatuses after enable: %v", err)
+	}
+	if !statuses[0].Enabled {
+		t.Error("expected enabled after set")
+	}
+}
+
+func TestAnyWebSearchEnabled(t *testing.T) {
+	db := setupTestDB(t)
+	enc := setupTestEncryptor(t)
+	svc := NewSettingsService(db, enc)
+	ctx := context.Background()
+
+	any, err := svc.AnyWebSearchEnabled(ctx)
+	if err != nil {
+		t.Fatalf("AnyWebSearchEnabled: %v", err)
+	}
+	if any {
+		t.Error("expected false when none enabled")
+	}
+
+	if err := svc.SetWebSearchEnabled(ctx, NameDuckDuckGo, true); err != nil {
+		t.Fatalf("SetWebSearchEnabled: %v", err)
+	}
+	any, err = svc.AnyWebSearchEnabled(ctx)
+	if err != nil {
+		t.Fatalf("AnyWebSearchEnabled after enable: %v", err)
+	}
+	if !any {
+		t.Error("expected true when duckduckgo enabled")
+	}
+}

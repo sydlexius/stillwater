@@ -28,6 +28,7 @@ type RouterDeps struct {
 	PlatformService    *platform.Service
 	ProviderSettings   *provider.SettingsService
 	ProviderRegistry   *provider.Registry
+	WebSearchRegistry  *provider.WebSearchRegistry
 	Orchestrator       *provider.Orchestrator
 	RuleService        *rule.Service
 	RuleEngine         *rule.Engine
@@ -54,6 +55,7 @@ type Router struct {
 	platformService    *platform.Service
 	providerSettings   *provider.SettingsService
 	providerRegistry   *provider.Registry
+	webSearchRegistry  *provider.WebSearchRegistry
 	orchestrator       *provider.Orchestrator
 	ruleService        *rule.Service
 	ruleEngine         *rule.Engine
@@ -81,6 +83,7 @@ func NewRouter(deps RouterDeps) *Router {
 		platformService:    deps.PlatformService,
 		providerSettings:   deps.ProviderSettings,
 		providerRegistry:   deps.ProviderRegistry,
+		webSearchRegistry:  deps.WebSearchRegistry,
 		orchestrator:       deps.Orchestrator,
 		ruleService:        deps.RuleService,
 		ruleEngine:         deps.RuleEngine,
@@ -168,6 +171,9 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("PUT "+bp+"/api/v1/providers/priorities", wrapAuth(r.handleSetPriorities, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/providers/search", wrapAuth(r.handleProviderSearch, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/providers/fetch", wrapAuth(r.handleProviderFetch, authMw))
+	// Web search provider routes
+	mux.HandleFunc("GET "+bp+"/api/v1/providers/websearch", wrapAuth(r.handleGetWebSearchProviders, authMw))
+	mux.HandleFunc("PUT "+bp+"/api/v1/providers/websearch/{name}/toggle", wrapAuth(r.handleSetWebSearchEnabled, authMw))
 
 	// Scraper config routes
 	mux.HandleFunc("GET "+bp+"/api/v1/scraper/config", wrapAuth(r.handleGetScraperConfig, authMw))
@@ -208,6 +214,7 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/images/upload", wrapAuth(r.handleImageUpload, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/images/fetch", wrapAuth(r.handleImageFetch, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/images/search", wrapAuth(r.handleImageSearch, authMw))
+	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/images/websearch", wrapAuth(r.handleWebImageSearch, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/images/crop", wrapAuth(r.handleImageCrop, authMw))
 
 	// Push routes

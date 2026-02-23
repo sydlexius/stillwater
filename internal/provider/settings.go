@@ -196,3 +196,78 @@ func (s *SettingsService) SetPriority(ctx context.Context, field string, provide
 	}
 	return nil
 }
+
+// webSearchEnabledKey returns the settings table key for a web search provider's enabled state.
+func webSearchEnabledKey(name ProviderName) string {
+	return fmt.Sprintf("provider.websearch.%s.enabled", name)
+}
+
+// WebSearchProviderStatus describes the enabled state of a web search provider.
+type WebSearchProviderStatus struct {
+	Name        ProviderName `json:"name"`
+	DisplayName string       `json:"display_name"`
+	Enabled     bool         `json:"enabled"`
+}
+
+// IsWebSearchEnabled checks whether a web search provider is enabled.
+// Returns false if not configured (disabled by default).
+func (s *SettingsService) IsWebSearchEnabled(ctx context.Context, name ProviderName) (bool, error) {
+	key := webSearchEnabledKey(name)
+	var value string
+	err := s.db.QueryRowContext(ctx, "SELECT value FROM settings WHERE key = ?", key).Scan(&value)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("reading web search enabled for %s: %w", name, err)
+	}
+	return value == "true", nil
+}
+
+// SetWebSearchEnabled stores the enabled state for a web search provider.
+func (s *SettingsService) SetWebSearchEnabled(ctx context.Context, name ProviderName, enabled bool) error {
+	key := webSearchEnabledKey(name)
+	val := "false"
+	if enabled {
+		val = "true"
+	}
+	_, err := s.db.ExecContext(ctx,
+		"INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = datetime('now')",
+		key, val, val,
+	)
+	if err != nil {
+		return fmt.Errorf("storing web search enabled for %s: %w", name, err)
+	}
+	return nil
+}
+
+// ListWebSearchStatuses returns the enabled state for all known web search providers.
+func (s *SettingsService) ListWebSearchStatuses(ctx context.Context) ([]WebSearchProviderStatus, error) {
+	var statuses []WebSearchProviderStatus
+	for _, name := range AllWebSearchProviderNames() {
+		enabled, err := s.IsWebSearchEnabled(ctx, name)
+		if err != nil {
+			return nil, err
+		}
+		statuses = append(statuses, WebSearchProviderStatus{
+			Name:        name,
+			DisplayName: name.DisplayName(),
+			Enabled:     enabled,
+		})
+	}
+	return statuses, nil
+}
+
+// AnyWebSearchEnabled returns true if any web search provider is enabled.
+func (s *SettingsService) AnyWebSearchEnabled(ctx context.Context) (bool, error) {
+	for _, name := range AllWebSearchProviderNames() {
+		enabled, err := s.IsWebSearchEnabled(ctx, name)
+		if err != nil {
+			return false, err
+		}
+		if enabled {
+			return true, nil
+		}
+	}
+	return false, nil
+}

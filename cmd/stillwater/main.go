@@ -26,6 +26,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/provider"
 	"github.com/sydlexius/stillwater/internal/provider/audiodb"
 	"github.com/sydlexius/stillwater/internal/provider/discogs"
+	"github.com/sydlexius/stillwater/internal/provider/duckduckgo"
 	"github.com/sydlexius/stillwater/internal/provider/fanarttv"
 	"github.com/sydlexius/stillwater/internal/provider/lastfm"
 	"github.com/sydlexius/stillwater/internal/provider/musicbrainz"
@@ -146,6 +147,9 @@ func run() error {
 	providerRegistry.Register(lastfm.New(rateLimiters, providerSettings, logger))
 	providerRegistry.Register(wikidata.New(rateLimiters, logger))
 
+	webSearchRegistry := provider.NewWebSearchRegistry()
+	webSearchRegistry.Register(duckduckgo.New(rateLimiters, logger))
+
 	orchestrator := provider.NewOrchestrator(providerRegistry, providerSettings, logger)
 
 	// Initialize scraper configuration and executor
@@ -213,6 +217,7 @@ func run() error {
 		PlatformService:    platformService,
 		ProviderSettings:   providerSettings,
 		ProviderRegistry:   providerRegistry,
+		WebSearchRegistry:  webSearchRegistry,
 		Orchestrator:       orchestrator,
 		RuleService:        ruleService,
 		RuleEngine:         ruleEngine,

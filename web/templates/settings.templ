@@ -17,12 +17,13 @@ func joinNames(names []string) string {
 
 // SettingsData holds the data for the settings page.
 type SettingsData struct {
-	Profiles      []platform.Profile
-	ActiveProfile *platform.Profile
-	ProviderKeys  []provider.ProviderKeyStatus
-	Priorities    []provider.FieldPriority
-	Connections   []connection.Connection
-	Webhooks      []webhook.Webhook
+	Profiles           []platform.Profile
+	ActiveProfile      *platform.Profile
+	ProviderKeys       []provider.ProviderKeyStatus
+	Priorities         []provider.FieldPriority
+	Connections        []connection.Connection
+	Webhooks           []webhook.Webhook
+	WebSearchProviders []provider.WebSearchProviderStatus
 }
 
 // logoSrc returns the static path to a logo file for the given key.
@@ -102,6 +103,24 @@ func providerHelpURL(name provider.ProviderName) string {
 	}
 }
 
+// webSearchToggleJSON generates the JSON body for a web search toggle request.
+func webSearchToggleJSON(enabled bool) string {
+	if enabled {
+		return `{"enabled":true}`
+	}
+	return `{"enabled":false}`
+}
+
+// isWebSearchProvider returns true if the provider is a web search provider.
+func isWebSearchProvider(name provider.ProviderName) bool {
+	for _, n := range provider.AllWebSearchProviderNames() {
+		if n == name {
+			return true
+		}
+	}
+	return false
+}
+
 templ SettingsPage(assets AssetPaths, data SettingsData) {
 	@Layout("Settings", assets) {
 		<div class="space-y-6">
@@ -176,6 +195,21 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 							<div id={ "provider-card-" + string(pk.Name) }>
 								@ProviderKeyCard(pk)
 							</div>
+						}
+					</div>
+				</div>
+			}
+			if len(data.WebSearchProviders) > 0 {
+				<div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+						<h2 class="text-lg font-semibold">Web Image Search</h2>
+						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+							Enable web search providers to find additional artist images beyond authoritative sources. No API key required.
+						</p>
+					</div>
+					<div class="px-6 py-4 space-y-4">
+						for _, ws := range data.WebSearchProviders {
+							@WebSearchToggle(ws)
 						}
 					</div>
 				</div>
@@ -431,7 +465,13 @@ templ PriorityRow(pri provider.FieldPriority) {
 		<div class="flex flex-wrap items-center gap-1.5 flex-1">
 			for i, prov := range pri.Providers {
 				<div class="flex items-center gap-0.5">
-					<span class="text-xs px-2 py-1 rounded bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300">
+					<span
+						class={
+							"text-xs px-2 py-1 rounded",
+							templ.KV("bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300", !isWebSearchProvider(prov)),
+							templ.KV("bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300 border border-dashed border-purple-300 dark:border-purple-700", isWebSearchProvider(prov)),
+						}
+					>
 						{ prov.DisplayName() }
 					</span>
 					<div class="flex flex-col">
@@ -463,6 +503,42 @@ templ PriorityRow(pri provider.FieldPriority) {
 				</div>
 			}
 		</div>
+	</div>
+}
+
+templ WebSearchToggle(ws provider.WebSearchProviderStatus) {
+	<div class="flex flex-col gap-2 rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+		<div class="flex items-center gap-3">
+			<img src={ logoSrc(string(ws.Name)) } alt="" class="h-6 w-6 shrink-0" aria-hidden="true"/>
+			<div
+				class={
+					"h-2.5 w-2.5 shrink-0 rounded-full",
+					templ.KV("bg-green-500", ws.Enabled),
+					templ.KV("bg-gray-400 dark:bg-gray-500", !ws.Enabled),
+				}
+			></div>
+			<div>
+				<div class="font-medium text-sm">{ ws.DisplayName }</div>
+				<div class="text-xs text-gray-500 dark:text-gray-400">No API key required</div>
+			</div>
+		</div>
+		<button
+			type="button"
+			class={
+				"text-sm px-3 py-1.5 rounded border transition-colors",
+				templ.KV("border-green-300 dark:border-green-700 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300 hover:bg-green-100 dark:hover:bg-green-900/40", ws.Enabled),
+				templ.KV("border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700", !ws.Enabled),
+			}
+			hx-put={ "/api/v1/providers/websearch/" + string(ws.Name) + "/toggle" }
+			hx-vals={ webSearchToggleJSON(!ws.Enabled) }
+			hx-swap="none"
+		>
+			if ws.Enabled {
+				Enabled
+			} else {
+				Disabled
+			}
+		</button>
 	</div>
 }
 

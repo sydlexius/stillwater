@@ -30,6 +30,9 @@ Thumbs.db
 # Build artifacts
 web/static/css/styles.css
 
+# Local overrides
+docker-compose.local.yml
+
 # Temp
 *.tmp
 *.log

@@ -222,6 +222,59 @@ func (r *Router) handleImageSearch(w http.ResponseWriter, req *http.Request) {
 	})
 }
 
+// validWebSearchImageTypes is the set of image types supported by web search.
+var validWebSearchImageTypes = map[string]bool{
+	"thumb": true, "fanart": true, "logo": true, "banner": true,
+}
+
+// handleWebImageSearch queries enabled web search providers for artist images.
+// GET /api/v1/artists/{id}/images/websearch?type=thumb
+func (r *Router) handleWebImageSearch(w http.ResponseWriter, req *http.Request) {
+	artistID := req.PathValue("id")
+	if artistID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing artist id"})
+		return
+	}
+
+	a, err := r.artistService.GetByID(req.Context(), artistID)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "artist not found"})
+		return
+	}
+
+	typeFilter := req.URL.Query().Get("type")
+	if typeFilter == "" || !validWebSearchImageTypes[typeFilter] {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "type is required (thumb, fanart, logo, banner)"})
+		return
+	}
+
+	imageType := provider.ImageType(typeFilter)
+
+	var allImages []provider.ImageResult
+	for _, p := range r.webSearchRegistry.All() {
+		enabled, err := r.providerSettings.IsWebSearchEnabled(req.Context(), p.Name())
+		if err != nil || !enabled {
+			continue
+		}
+		images, err := p.SearchImages(req.Context(), a.Name, imageType)
+		if err != nil {
+			r.logger.Warn("web image search failed",
+				slog.String("provider", string(p.Name())),
+				slog.String("artist", a.Name),
+				slog.String("error", err.Error()))
+			continue
+		}
+		allImages = append(allImages, images...)
+	}
+
+	if isHTMXRequest(req) {
+		renderTempl(w, req, templates.WebImageSearchResults(artistID, allImages))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"images": allImages})
+}
+
 // handleImageCrop accepts cropped image data and saves it.
 // POST /api/v1/artists/{id}/images/crop
 func (r *Router) handleImageCrop(w http.ResponseWriter, req *http.Request) {
