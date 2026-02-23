@@ -1838,8 +1838,8 @@ func FieldProviderNoChanges(field string) templ.Component {
 // swaps the members section, and closes the modal.
 func saveMembers(url string, targetSelector string) templ.ComponentScript {
 	return templ.ComponentScript{
-		Name: `__templ_saveMembers_29b7`,
-		Function: `function __templ_saveMembers_29b7(url, targetSelector){var btn = event.currentTarget;
+		Name: `__templ_saveMembers_b3a8`,
+		Function: `function __templ_saveMembers_b3a8(url, targetSelector){var btn = this;
 	var members = btn.getAttribute('data-members');
 	var csrf = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, '$1');
 	fetch(url, {
@@ -1857,15 +1857,18 @@ func saveMembers(url string, targetSelector string) templ.ComponentScript {
 				var target = document.querySelector(targetSelector);
 				if (target) {
 					target.outerHTML = html;
-					htmx.process(document.querySelector(targetSelector));
+					var newTarget = document.querySelector(targetSelector);
+					if (newTarget) {
+						htmx.process(newTarget);
+					}
 				}
 				hideFieldProviderModal();
 			});
 		}
 	});
 }`,
-		Call:       templ.SafeScript(`__templ_saveMembers_29b7`, url, targetSelector),
-		CallInline: templ.SafeScriptInline(`__templ_saveMembers_29b7`, url, targetSelector),
+		Call:       templ.SafeScript(`__templ_saveMembers_b3a8`, url, targetSelector),
+		CallInline: templ.SafeScriptInline(`__templ_saveMembers_b3a8`, url, targetSelector),
 	}
 }
 
@@ -1906,7 +1909,7 @@ func editFormButtons(artistID, field string) templ.Component {
 		var templ_7745c5c3_Var95 string
 		templ_7745c5c3_Var95, templ_7745c5c3_Err = templ.JoinStringErrs("/api/v1/artists/" + artistID + "/fields/" + field + "/display")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_field.templ`, Line: 495, Col: 75}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_field.templ`, Line: 498, Col: 75}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var95))
 		if templ_7745c5c3_Err != nil {
@@ -1919,7 +1922,7 @@ func editFormButtons(artistID, field string) templ.Component {
 		var templ_7745c5c3_Var96 string
 		templ_7745c5c3_Var96, templ_7745c5c3_Err = templ.JoinStringErrs("#field-" + field + "-" + artistID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_field.templ`, Line: 496, Col: 49}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_field.templ`, Line: 499, Col: 49}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var96))
 		if templ_7745c5c3_Err != nil {

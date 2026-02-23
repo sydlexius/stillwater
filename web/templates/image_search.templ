@@ -131,7 +131,7 @@ templ imageSearchContextualized(data ImageSearchData) {
 							type="button"
 							role="menuitem"
 							class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-							onclick="this.closest('[data-context-menu]').querySelector('[role=menu]').classList.add('hidden');document.getElementById('image-file-input').click()"
+							onclick="var m=this.closest('[data-context-menu]');m.querySelector('[role=menu]').classList.add('hidden');m.querySelector('[aria-haspopup]').setAttribute('aria-expanded','false');document.getElementById('image-file-input').click()"
 						>
 							Browse...
 						</button>
@@ -139,7 +139,7 @@ templ imageSearchContextualized(data ImageSearchData) {
 							type="button"
 							role="menuitem"
 							class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-							onclick="this.closest('[data-context-menu]').querySelector('[role=menu]').classList.add('hidden');document.getElementById('fetch-url-modal').classList.remove('hidden')"
+							onclick="var m=this.closest('[data-context-menu]');m.querySelector('[role=menu]').classList.add('hidden');m.querySelector('[aria-haspopup]').setAttribute('aria-expanded','false');document.getElementById('fetch-url-modal').classList.remove('hidden')"
 						>
 							Fetch from URL
 						</button>

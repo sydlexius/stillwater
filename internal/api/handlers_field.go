@@ -177,7 +177,12 @@ func (r *Router) handleSaveMembers(w http.ResponseWriter, req *http.Request) {
 	}
 
 	if isHTMXRequest(req) {
-		saved, _ := r.artistService.ListMembersByArtistID(req.Context(), artistID)
+		saved, err := r.artistService.ListMembersByArtistID(req.Context(), artistID)
+		if err != nil {
+			r.logger.Error("listing members after save", "artist_id", artistID, "error", err)
+			writeError(w, req, http.StatusInternalServerError, "failed to reload members")
+			return
+		}
 		providers := r.fieldProviderNames(req, "members")
 		w.Header().Set("HX-Trigger", "hideFieldProviderModal")
 		renderTempl(w, req, templates.MembersSection(artistID, saved, providers))

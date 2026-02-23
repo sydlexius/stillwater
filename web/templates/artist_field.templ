@@ -452,7 +452,7 @@ templ FieldProviderNoChanges(field string) {
 // saveMembers posts member data from a provider result to the save endpoint,
 // swaps the members section, and closes the modal.
 script saveMembers(url string, targetSelector string) {
-	var btn = event.currentTarget;
+	var btn = this;
 	var members = btn.getAttribute('data-members');
 	var csrf = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, '$1');
 	fetch(url, {
@@ -470,7 +470,10 @@ script saveMembers(url string, targetSelector string) {
 				var target = document.querySelector(targetSelector);
 				if (target) {
 					target.outerHTML = html;
-					htmx.process(document.querySelector(targetSelector));
+					var newTarget = document.querySelector(targetSelector);
+					if (newTarget) {
+						htmx.process(newTarget);
+					}
 				}
 				hideFieldProviderModal();
 			});
