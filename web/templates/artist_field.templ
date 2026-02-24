@@ -147,7 +147,7 @@ templ fieldActions(artistID, field string, hasValue bool, providers []string) {
 // --- Biography ---
 
 templ biographyDisplay(a *artist.Artist, providers []string) {
-	<div id={ "field-biography-" + a.ID } class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
+	<div id={ "field-biography-" + a.ID } class="sw-card rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
 		<div class="flex items-center justify-between mb-3">
 			<h2 class="text-lg font-semibold">Biography</h2>
 			@fieldActions(a.ID, "biography", a.Biography != "", providers)
@@ -161,7 +161,7 @@ templ biographyDisplay(a *artist.Artist, providers []string) {
 }
 
 templ biographyEdit(a *artist.Artist) {
-	<div id={ "field-biography-" + a.ID } class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
+	<div id={ "field-biography-" + a.ID } class="sw-card rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
 		<div class="flex items-center justify-between mb-3">
 			<h2 class="text-lg font-semibold">Biography</h2>
 		</div>

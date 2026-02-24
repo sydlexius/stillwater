@@ -221,6 +221,76 @@ func ValidateAspectRatio(width, height int, expected, tolerance float64) bool {
 	return math.Abs(actual-expected)/expected <= tolerance
 }
 
+// TrimAlpha crops the transparent border from a PNG image by finding the
+// tightest bounding box that contains all pixels with alpha > threshold (0-255).
+// Non-PNG images are returned as-is. If no visible pixels are found, the
+// original image is returned unchanged.
+func TrimAlpha(src io.Reader, threshold uint8) ([]byte, string, error) {
+	format, replay, err := DetectFormat(src)
+	if err != nil {
+		return nil, "", fmt.Errorf("detecting format: %w", err)
+	}
+	if format != FormatPNG {
+		data, readErr := io.ReadAll(replay)
+		return data, format, readErr
+	}
+
+	decoded, _, err := image.Decode(replay)
+	if err != nil {
+		return nil, "", fmt.Errorf("decoding image: %w", err)
+	}
+
+	bounds := decoded.Bounds()
+	minX, minY := bounds.Max.X, bounds.Max.Y
+	maxX, maxY := bounds.Min.X-1, bounds.Min.Y-1
+
+	thresh := uint32(threshold) << 8
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			// RGBA() returns 16-bit pre-multiplied values (0-65535).
+			_, _, _, a := decoded.At(x, y).RGBA()
+			if a > thresh {
+				if x < minX {
+					minX = x
+				}
+				if x > maxX {
+					maxX = x
+				}
+				if y < minY {
+					minY = y
+				}
+				if y > maxY {
+					maxY = y
+				}
+			}
+		}
+	}
+
+	// No visible pixels found -- return original unchanged.
+	if maxX < minX || maxY < minY {
+		data, err := encode(decoded, FormatPNG, 0)
+		return data, FormatPNG, err
+	}
+
+	// maxX/maxY are inclusive, so add 1 for the rectangle's exclusive bound.
+	rect := image.Rect(minX, minY, maxX+1, maxY+1)
+
+	type subImager interface {
+		SubImage(r image.Rectangle) image.Image
+	}
+	var cropped image.Image
+	if si, ok := decoded.(subImager); ok {
+		cropped = si.SubImage(rect)
+	} else {
+		dst := image.NewRGBA(image.Rect(0, 0, rect.Dx(), rect.Dy()))
+		draw.Copy(dst, image.Point{}, decoded, rect, draw.Src, nil)
+		cropped = dst
+	}
+
+	data, err := encode(cropped, FormatPNG, 0)
+	return data, FormatPNG, err
+}
+
 // Crop extracts a sub-rectangle from the source image and returns the result.
 func Crop(src io.Reader, x, y, w, h int) ([]byte, string, error) {
 	format, replay, err := DetectFormat(src)
