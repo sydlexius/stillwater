@@ -178,13 +178,14 @@ func (a *Adapter) fetchArtists(ctx context.Context, reqURL string, apiKey string
 	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode != http.StatusOK {
+		_, _ = io.Copy(io.Discard, resp.Body)
 		return nil, &provider.ErrProviderUnavailable{
 			Provider: provider.NameAudioDB,
 			Cause:    fmt.Errorf("HTTP %d", resp.StatusCode),
 		}
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 512*1024))
 	if err != nil {
 		return nil, fmt.Errorf("reading response: %w", err)
 	}

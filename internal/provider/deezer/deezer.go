@@ -181,13 +181,16 @@ func (a *Adapter) doRequest(ctx context.Context, reqURL string) ([]byte, error) 
 	case http.StatusOK:
 		// continue
 	case http.StatusNotFound:
+		_, _ = io.Copy(io.Discard, resp.Body)
 		return nil, &provider.ErrNotFound{Provider: provider.NameDeezer, ID: reqURL}
 	case http.StatusTooManyRequests:
+		_, _ = io.Copy(io.Discard, resp.Body)
 		return nil, &provider.ErrProviderUnavailable{
 			Provider: provider.NameDeezer,
 			Cause:    fmt.Errorf("rate limited by server"),
 		}
 	default:
+		_, _ = io.Copy(io.Discard, resp.Body)
 		return nil, &provider.ErrProviderUnavailable{
 			Provider: provider.NameDeezer,
 			Cause:    fmt.Errorf("unexpected status %d", resp.StatusCode),

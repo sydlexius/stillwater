@@ -92,16 +92,18 @@ func (a *Adapter) GetImages(ctx context.Context, mbid string) ([]provider.ImageR
 	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode == http.StatusNotFound {
+		_, _ = io.Copy(io.Discard, resp.Body)
 		return nil, &provider.ErrNotFound{Provider: provider.NameFanartTV, ID: mbid}
 	}
 	if resp.StatusCode != http.StatusOK {
+		_, _ = io.Copy(io.Discard, resp.Body)
 		return nil, &provider.ErrProviderUnavailable{
 			Provider: provider.NameFanartTV,
 			Cause:    fmt.Errorf("HTTP %d", resp.StatusCode),
 		}
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 512*1024))
 	if err != nil {
 		return nil, fmt.Errorf("reading response: %w", err)
 	}

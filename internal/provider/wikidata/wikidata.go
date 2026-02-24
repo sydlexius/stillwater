@@ -110,13 +110,14 @@ func (a *Adapter) executeSPARQL(ctx context.Context, query string) ([]SPARQLBind
 	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode != http.StatusOK {
+		_, _ = io.Copy(io.Discard, resp.Body)
 		return nil, &provider.ErrProviderUnavailable{
 			Provider: provider.NameWikidata,
 			Cause:    fmt.Errorf("HTTP %d", resp.StatusCode),
 		}
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1*1024*1024))
 	if err != nil {
 		return nil, fmt.Errorf("reading response: %w", err)
 	}
