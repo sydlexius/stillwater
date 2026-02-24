@@ -52,7 +52,7 @@ func HealthSummaryFragment(data HealthSummaryData) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		var templ_7745c5c3_Var2 = []any{"rounded-lg bg-white dark:bg-gray-800 p-6 shadow"}
+		var templ_7745c5c3_Var2 = []any{"sw-card rounded-lg bg-white dark:bg-gray-800 p-6 shadow"}
 		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var2...)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
@@ -152,7 +152,7 @@ func HealthSummaryFragment(data HealthSummaryData) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		if len(data.TopViolations) > 0 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "<div class=\"sm:col-span-2 lg:col-span-4 rounded-lg bg-white dark:bg-gray-800 p-6 shadow\"><h3 class=\"text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3\">Top Violations</h3><div class=\"space-y-2\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "<div class=\"sw-card sm:col-span-2 lg:col-span-4 rounded-lg bg-white dark:bg-gray-800 p-6 shadow\"><h3 class=\"text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3\">Top Violations</h3><div class=\"space-y-2\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -257,7 +257,7 @@ func quickStatCard(label string, count int, link string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "\" class=\"block rounded-lg bg-white dark:bg-gray-800 p-6 shadow hover:shadow-md transition-shadow\"><p class=\"text-sm font-medium text-gray-500 dark:text-gray-400\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "\" class=\"sw-card block rounded-lg bg-white dark:bg-gray-800 p-6 shadow hover:shadow-md transition-shadow\"><p class=\"text-sm font-medium text-gray-500 dark:text-gray-400\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

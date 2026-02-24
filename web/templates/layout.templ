@@ -37,7 +37,9 @@ templ Layout(title string, assets AssetPaths) {
 				});
 			</script>
 		</head>
-		<body class="h-full bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
+		<body class="h-full text-gray-900 dark:text-gray-100">
+			<img src={ assets.LoginBG } alt="" class="fixed inset-0 -z-20 h-screen w-screen object-cover pointer-events-none select-none" aria-hidden="true"/>
+			<div class="fixed inset-0 -z-10 bg-black/15 dark:bg-black/45 pointer-events-none" aria-hidden="true"></div>
 			<div class="min-h-full">
 				@navbar()
 				<main class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
@@ -210,7 +212,7 @@ templ themeToggleButton() {
 }
 
 templ navbar() {
-	<nav class="bg-white dark:bg-gray-800 shadow">
+	<nav class="bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm shadow">
 		<div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
 			<div class="flex h-16 items-center justify-between">
 				<div class="flex items-center">

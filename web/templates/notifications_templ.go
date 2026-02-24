@@ -57,7 +57,7 @@ func NotificationsPage(assets AssetPaths, data NotificationsData) templ.Componen
 				return templ_7745c5c3_Err
 			}
 			if len(data.Violations) == 0 {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<div class=\"rounded-lg border border-gray-200 bg-blue-50 p-4\"><p class=\"text-gray-600\">No violations. Your library is clean!</p></div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<div class=\"sw-card rounded-lg border border-gray-200 bg-blue-50 p-4\"><p class=\"text-gray-600\">No violations. Your library is clean!</p></div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -111,7 +111,7 @@ func NotificationsTable(data NotificationsData) templ.Component {
 		}
 		ctx = templ.ClearChildren(ctx)
 		if len(data.Violations) == 0 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<div class=\"rounded-lg border border-gray-200 bg-blue-50 p-4\"><p class=\"text-gray-600\">No violations. Your library is clean!</p></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<div class=\"sw-card rounded-lg border border-gray-200 bg-blue-50 p-4\"><p class=\"text-gray-600\">No violations. Your library is clean!</p></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -146,7 +146,7 @@ func notificationsTableContent(data NotificationsData) templ.Component {
 			templ_7745c5c3_Var4 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<div class=\"rounded-lg border border-gray-200 overflow-hidden\"><table class=\"min-w-full divide-y divide-gray-200\"><thead class=\"bg-gray-50\"><tr><th class=\"px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase\">Artist</th><th class=\"px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase\">Rule</th><th class=\"px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase\">Severity</th><th class=\"px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase\">Message</th><th class=\"px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase\">Age</th><th class=\"px-6 py-3 text-right text-xs font-semibold text-gray-700 uppercase\">Actions</th></tr></thead> <tbody class=\"divide-y divide-gray-200\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<div class=\"sw-card rounded-lg border border-gray-200 overflow-hidden\"><table class=\"min-w-full divide-y divide-gray-200\"><thead class=\"bg-gray-50\"><tr><th class=\"px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase\">Artist</th><th class=\"px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase\">Rule</th><th class=\"px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase\">Severity</th><th class=\"px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase\">Message</th><th class=\"px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase\">Age</th><th class=\"px-6 py-3 text-right text-xs font-semibold text-gray-700 uppercase\">Actions</th></tr></thead> <tbody class=\"divide-y divide-gray-200\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
