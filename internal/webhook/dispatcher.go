@@ -13,8 +13,8 @@ import (
 )
 
 const (
-	maxRetries             = 3
-	requestTimeout         = 10 * time.Second
+	maxRetries              = 3
+	requestTimeout          = 10 * time.Second
 	maxConcurrentDeliveries = 20
 )
 
