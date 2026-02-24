@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 
+	img "github.com/sydlexius/stillwater/internal/image"
 	"github.com/sydlexius/stillwater/internal/provider"
 )
 
@@ -26,22 +27,8 @@ func sourceBadgeColor(source string) string {
 }
 
 // isLowResolution returns true if the image dimensions indicate low quality for the given type.
-// imageType is normalized via normalizeCardImageType so provider-specific aliases
-// (hdlogo, background, widethumb) map to their base types before comparison.
 func isLowResolution(w, h int, imageType string) bool {
-	if w == 0 || h == 0 {
-		return false
-	}
-	switch normalizeCardImageType(imageType) {
-	case "banner":
-		return w < 758 || h < 140
-	case "fanart":
-		return w < 960 || h < 540
-	case "logo":
-		return w < 400 || h < 155
-	default: // thumb, poster, folder, widethumb
-		return w < 500 || h < 500
-	}
+	return img.IsLowResolution(w, h, imageType)
 }
 
 // normalizeCardImageType maps provider-specific types to base types for crop/compare.
@@ -107,7 +94,7 @@ templ ImageCard(artistID string, img provider.ImageResult) {
 					<span>{ strconv.Itoa(img.Likes) } likes</span>
 				}
 			</div>
-			if isLowResolution(img.Width, img.Height, normalizeCardImageType(string(img.Type))) {
+			if isLowResolution(img.Width, img.Height, string(img.Type)) {
 				<div class="text-xs text-amber-600 dark:text-amber-400">Low resolution</div>
 			}
 			if (string(img.Type) == "logo" || string(img.Type) == "hdlogo") && img.Source == "duckduckgo" {

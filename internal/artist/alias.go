@@ -260,6 +260,7 @@ func scanArtistWithExtra(row interface{ Scan(...any) error }, n int) (*artistWit
 	var metadataSources string
 	var lastScannedAt sql.NullString
 	var nfo, thumb, fanart, logo, banner int
+	var thumbLowRes, fanartLowRes, logoLowRes, bannerLowRes int
 	var isExcluded, isClassical int
 	var createdAt, updatedAt string
 
@@ -269,6 +270,7 @@ func scanArtistWithExtra(row interface{ Scan(...any) error }, n int) (*artistWit
 		&genres, &styles, &moods,
 		&a.YearsActive, &a.Born, &a.Formed, &a.Died, &a.Disbanded, &a.Biography,
 		&a.Path, &nfo, &thumb, &fanart, &logo, &banner,
+		&thumbLowRes, &fanartLowRes, &logoLowRes, &bannerLowRes,
 		&a.HealthScore, &isExcluded, &a.ExclusionReason, &isClassical,
 		&metadataSources,
 		&lastScannedAt, &createdAt, &updatedAt,
@@ -287,6 +289,10 @@ func scanArtistWithExtra(row interface{ Scan(...any) error }, n int) (*artistWit
 	a.FanartExists = fanart == 1
 	a.LogoExists = logo == 1
 	a.BannerExists = banner == 1
+	a.ThumbLowRes = thumbLowRes == 1
+	a.FanartLowRes = fanartLowRes == 1
+	a.LogoLowRes = logoLowRes == 1
+	a.BannerLowRes = bannerLowRes == 1
 	a.IsExcluded = isExcluded == 1
 	a.IsClassical = isClassical == 1
 	a.MetadataSources = UnmarshalStringMap(metadataSources)

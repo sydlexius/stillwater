@@ -183,13 +183,13 @@ templ ArtistRow(a artist.Artist) {
 			@components.StatusBadge(a.NFOExists, "NFO")
 		</td>
 		<td class="px-4 py-3 text-center">
-			@components.StatusBadge(a.ThumbExists, "Thumb")
+			@components.ImageStatusBadge(a.ThumbExists, a.ThumbLowRes, "Thumb")
 		</td>
 		<td class="px-4 py-3 text-center">
-			@components.StatusBadge(a.FanartExists, "Fanart")
+			@components.ImageStatusBadge(a.FanartExists, a.FanartLowRes, "Fanart")
 		</td>
 		<td class="px-4 py-3 text-center">
-			@components.StatusBadge(a.LogoExists, "Logo")
+			@components.ImageStatusBadge(a.LogoExists, a.LogoLowRes, "Logo")
 		</td>
 		<td class="px-4 py-3 text-center">
 			@components.StatusBadge(a.MusicBrainzID != "", "MBID")

@@ -1,9 +1,12 @@
 package scanner
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"fmt"
+	"image"
+	"image/png"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -491,21 +494,81 @@ func TestDetectFiles(t *testing.T) {
 		os.WriteFile(filepath.Join(dir, name), []byte("test"), 0o644) //nolint:errcheck
 	}
 
-	nfoExists, thumbExists, fanartExists, logoExists, bannerExists := detectFiles(dir)
+	d := detectFiles(dir)
 
-	if !nfoExists {
-		t.Error("nfoExists should be true")
+	if !d.NFOExists {
+		t.Error("NFOExists should be true")
 	}
-	if !thumbExists {
-		t.Error("thumbExists should be true (folder.jpg)")
+	if !d.ThumbExists {
+		t.Error("ThumbExists should be true (folder.jpg)")
 	}
-	if !fanartExists {
-		t.Error("fanartExists should be true (backdrop.jpg)")
+	if !d.FanartExists {
+		t.Error("FanartExists should be true (backdrop.jpg)")
 	}
-	if !logoExists {
-		t.Error("logoExists should be true (logo.png)")
+	if !d.LogoExists {
+		t.Error("LogoExists should be true (logo.png)")
 	}
-	if !bannerExists {
-		t.Error("bannerExists should be true (banner.jpg)")
+	if !d.BannerExists {
+		t.Error("BannerExists should be true (banner.jpg)")
 	}
+}
+
+func TestDetectFiles_LowRes(t *testing.T) {
+	dir := t.TempDir()
+
+	// Write real PNG images with known dimensions so probeLowRes can decode them.
+	writeTestPNG := func(name string, w, h int) {
+		t.Helper()
+		data := makeScannerPNG(t, w, h)
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
+			t.Fatalf("writing %s: %v", name, err)
+		}
+	}
+
+	// folder.jpg (thumb) 300x300 - below 500x500 threshold, low-res expected
+	writeTestPNG("folder.jpg", 300, 300)
+	// fanart.png 1920x1080 - above 960x540, not low-res
+	writeTestPNG("fanart.png", 1920, 1080)
+	// logo.png 800x310 - above 400x155, not low-res
+	writeTestPNG("logo.png", 800, 310)
+	// banner.png 1000x185 - above 758x140, not low-res
+	writeTestPNG("banner.png", 1000, 185)
+
+	d := detectFiles(dir)
+
+	if !d.ThumbExists {
+		t.Fatal("ThumbExists should be true")
+	}
+	if !d.ThumbLowRes {
+		t.Error("ThumbLowRes should be true for 300x300 thumb")
+	}
+	if !d.FanartExists {
+		t.Fatal("FanartExists should be true")
+	}
+	if d.FanartLowRes {
+		t.Error("FanartLowRes should be false for 1920x1080 fanart")
+	}
+	if !d.LogoExists {
+		t.Fatal("LogoExists should be true")
+	}
+	if d.LogoLowRes {
+		t.Error("LogoLowRes should be false for 800x310 logo")
+	}
+	if !d.BannerExists {
+		t.Fatal("BannerExists should be true")
+	}
+	if d.BannerLowRes {
+		t.Error("BannerLowRes should be false for 1000x185 banner")
+	}
+}
+
+// makeScannerPNG creates a minimal PNG image with the given dimensions.
+func makeScannerPNG(t *testing.T, w, h int) []byte {
+	t.Helper()
+	m := image.NewGray(image.Rect(0, 0, w, h))
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, m); err != nil {
+		t.Fatalf("encoding PNG: %v", err)
+	}
+	return buf.Bytes()
 }

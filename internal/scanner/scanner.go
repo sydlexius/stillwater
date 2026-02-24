@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/event"
+	img "github.com/sydlexius/stillwater/internal/image"
 	"github.com/sydlexius/stillwater/internal/nfo"
 	"github.com/sydlexius/stillwater/internal/rule"
 )
@@ -170,7 +171,7 @@ func (s *Service) runScan(ctx context.Context, result *ScanResult) {
 }
 
 func (s *Service) processDirectory(ctx context.Context, dirPath, name string, result *ScanResult) error {
-	nfoExists, thumbExists, fanartExists, logoExists, bannerExists := detectFiles(dirPath)
+	detected := detectFiles(dirPath)
 
 	// Check if directory name matches exclusion list
 	excluded := s.exclusions[strings.ToLower(name)]
@@ -186,11 +187,15 @@ func (s *Service) processDirectory(ctx context.Context, dirPath, name string, re
 			Name:         name,
 			SortName:     name,
 			Path:         dirPath,
-			NFOExists:    nfoExists,
-			ThumbExists:  thumbExists,
-			FanartExists: fanartExists,
-			LogoExists:   logoExists,
-			BannerExists: bannerExists,
+			NFOExists:    detected.NFOExists,
+			ThumbExists:  detected.ThumbExists,
+			FanartExists: detected.FanartExists,
+			LogoExists:   detected.LogoExists,
+			BannerExists: detected.BannerExists,
+			ThumbLowRes:  detected.ThumbLowRes,
+			FanartLowRes: detected.FanartLowRes,
+			LogoLowRes:   detected.LogoLowRes,
+			BannerLowRes: detected.BannerLowRes,
 		}
 		if excluded {
 			a.IsExcluded = true
@@ -198,7 +203,7 @@ func (s *Service) processDirectory(ctx context.Context, dirPath, name string, re
 		}
 
 		// Parse NFO if it exists for metadata
-		if nfoExists {
+		if detected.NFOExists {
 			s.populateFromNFO(dirPath, a)
 		}
 
@@ -216,20 +221,28 @@ func (s *Service) processDirectory(ctx context.Context, dirPath, name string, re
 		s.mu.Unlock()
 		s.logger.Debug("new artist discovered", "name", name, "path", dirPath)
 	} else {
-		// Update file existence flags
-		changed := existing.NFOExists != nfoExists ||
-			existing.ThumbExists != thumbExists ||
-			existing.FanartExists != fanartExists ||
-			existing.LogoExists != logoExists ||
-			existing.BannerExists != bannerExists ||
+		// Update file existence and low-resolution flags
+		changed := existing.NFOExists != detected.NFOExists ||
+			existing.ThumbExists != detected.ThumbExists ||
+			existing.FanartExists != detected.FanartExists ||
+			existing.LogoExists != detected.LogoExists ||
+			existing.BannerExists != detected.BannerExists ||
+			existing.ThumbLowRes != detected.ThumbLowRes ||
+			existing.FanartLowRes != detected.FanartLowRes ||
+			existing.LogoLowRes != detected.LogoLowRes ||
+			existing.BannerLowRes != detected.BannerLowRes ||
 			existing.IsExcluded != excluded
 
-		if changed || nfoExists {
-			existing.NFOExists = nfoExists
-			existing.ThumbExists = thumbExists
-			existing.FanartExists = fanartExists
-			existing.LogoExists = logoExists
-			existing.BannerExists = bannerExists
+		if changed || detected.NFOExists {
+			existing.NFOExists = detected.NFOExists
+			existing.ThumbExists = detected.ThumbExists
+			existing.FanartExists = detected.FanartExists
+			existing.LogoExists = detected.LogoExists
+			existing.BannerExists = detected.BannerExists
+			existing.ThumbLowRes = detected.ThumbLowRes
+			existing.FanartLowRes = detected.FanartLowRes
+			existing.LogoLowRes = detected.LogoLowRes
+			existing.BannerLowRes = detected.BannerLowRes
 
 			// Update exclusion status
 			if excluded {
@@ -241,7 +254,7 @@ func (s *Service) processDirectory(ctx context.Context, dirPath, name string, re
 			}
 
 			// Re-parse NFO for updated metadata
-			if nfoExists {
+			if detected.NFOExists {
 				s.populateFromNFO(dirPath, existing)
 			}
 
@@ -413,14 +426,28 @@ func (s *Service) detectRemoved(ctx context.Context, discoveredPaths map[string]
 	}
 }
 
-// detectFiles checks for the presence of known files in an artist directory.
-func detectFiles(dirPath string) (nfoExists, thumbExists, fanartExists, logoExists, bannerExists bool) {
+// detectedFiles holds file existence and low-resolution flags for an artist directory.
+type detectedFiles struct {
+	NFOExists    bool
+	ThumbExists  bool
+	FanartExists bool
+	LogoExists   bool
+	BannerExists bool
+	ThumbLowRes  bool
+	FanartLowRes bool
+	LogoLowRes   bool
+	BannerLowRes bool
+}
+
+// detectFiles checks for the presence of known image and NFO files in an artist
+// directory and probes each found image for low-resolution status.
+func detectFiles(dirPath string) detectedFiles {
 	entries, err := os.ReadDir(dirPath)
 	if err != nil {
-		return
+		return detectedFiles{}
 	}
 
-	// Build a set of lowercase filenames for efficient lookup
+	// Build a set of lowercase filenames for efficient lookup.
 	files := make(map[string]bool, len(entries))
 	for _, e := range entries {
 		if !e.IsDir() {
@@ -428,32 +455,53 @@ func detectFiles(dirPath string) (nfoExists, thumbExists, fanartExists, logoExis
 		}
 	}
 
-	nfoExists = files["artist.nfo"]
+	var d detectedFiles
+	d.NFOExists = files["artist.nfo"]
 
 	for _, p := range thumbPatterns {
 		if files[strings.ToLower(p)] {
-			thumbExists = true
+			d.ThumbExists = true
+			d.ThumbLowRes = probeLowRes(filepath.Join(dirPath, p), "thumb")
 			break
 		}
 	}
 	for _, p := range fanartPatterns {
 		if files[strings.ToLower(p)] {
-			fanartExists = true
+			d.FanartExists = true
+			d.FanartLowRes = probeLowRes(filepath.Join(dirPath, p), "fanart")
 			break
 		}
 	}
 	for _, p := range logoPatterns {
 		if files[strings.ToLower(p)] {
-			logoExists = true
+			d.LogoExists = true
+			d.LogoLowRes = probeLowRes(filepath.Join(dirPath, p), "logo")
 			break
 		}
 	}
 	for _, p := range bannerPatterns {
 		if files[strings.ToLower(p)] {
-			bannerExists = true
+			d.BannerExists = true
+			d.BannerLowRes = probeLowRes(filepath.Join(dirPath, p), "banner")
 			break
 		}
 	}
 
-	return
+	return d
+}
+
+// probeLowRes opens a file, decodes its dimensions, and reports whether those
+// dimensions fall below the threshold for the given image type.
+// Returns false on any read or decode error.
+func probeLowRes(filePath, imageType string) bool {
+	f, err := os.Open(filePath) //nolint:gosec // path built from trusted naming patterns
+	if err != nil {
+		return false
+	}
+	defer func() { _ = f.Close() }()
+	w, h, err := img.GetDimensions(f)
+	if err != nil {
+		return false
+	}
+	return img.IsLowResolution(w, h, imageType)
 }
