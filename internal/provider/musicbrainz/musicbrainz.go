@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -149,6 +150,7 @@ func (a *Adapter) doRequest(ctx context.Context, reqURL string) ([]byte, error) 
 	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode == http.StatusNotFound {
+		_, _ = io.Copy(io.Discard, resp.Body)
 		return nil, &provider.ErrNotFound{
 			Provider: provider.NameMusicBrainz,
 			ID:       reqURL,
@@ -156,6 +158,7 @@ func (a *Adapter) doRequest(ctx context.Context, reqURL string) ([]byte, error) 
 	}
 
 	if resp.StatusCode == http.StatusServiceUnavailable || resp.StatusCode == http.StatusTooManyRequests {
+		_, _ = io.Copy(io.Discard, resp.Body)
 		return nil, &provider.ErrProviderUnavailable{
 			Provider:   provider.NameMusicBrainz,
 			Cause:      fmt.Errorf("HTTP %d", resp.StatusCode),
@@ -164,25 +167,14 @@ func (a *Adapter) doRequest(ctx context.Context, reqURL string) ([]byte, error) 
 	}
 
 	if resp.StatusCode != http.StatusOK {
+		_, _ = io.Copy(io.Discard, resp.Body)
 		return nil, &provider.ErrProviderUnavailable{
 			Provider: provider.NameMusicBrainz,
 			Cause:    fmt.Errorf("unexpected HTTP %d", resp.StatusCode),
 		}
 	}
 
-	body := make([]byte, 0, 64*1024)
-	buf := make([]byte, 4096)
-	for {
-		n, readErr := resp.Body.Read(buf)
-		if n > 0 {
-			body = append(body, buf[:n]...)
-		}
-		if readErr != nil {
-			break
-		}
-	}
-
-	return body, nil
+	return io.ReadAll(io.LimitReader(resp.Body, 512*1024))
 }
 
 // mapArtist converts a MusicBrainz artist to the common ArtistMetadata type.

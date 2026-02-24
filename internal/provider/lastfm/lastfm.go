@@ -191,16 +191,18 @@ func (a *Adapter) doRequest(ctx context.Context, reqURL string) ([]byte, error) 
 	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusUnauthorized {
+		_, _ = io.Copy(io.Discard, resp.Body)
 		return nil, &provider.ErrAuthRequired{Provider: provider.NameLastFM}
 	}
 	if resp.StatusCode != http.StatusOK {
+		_, _ = io.Copy(io.Discard, resp.Body)
 		return nil, &provider.ErrProviderUnavailable{
 			Provider: provider.NameLastFM,
 			Cause:    fmt.Errorf("HTTP %d", resp.StatusCode),
 		}
 	}
 
-	return io.ReadAll(resp.Body)
+	return io.ReadAll(io.LimitReader(resp.Body, 512*1024))
 }
 
 func mapArtist(info *ArtistInfo) *provider.ArtistMetadata {

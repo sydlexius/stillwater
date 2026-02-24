@@ -204,19 +204,22 @@ func (a *Adapter) doRequest(ctx context.Context, reqURL, token string) ([]byte, 
 	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode == http.StatusNotFound {
+		_, _ = io.Copy(io.Discard, resp.Body)
 		return nil, &provider.ErrNotFound{Provider: provider.NameDiscogs, ID: reqURL}
 	}
 	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		_, _ = io.Copy(io.Discard, resp.Body)
 		return nil, &provider.ErrAuthRequired{Provider: provider.NameDiscogs}
 	}
 	if resp.StatusCode != http.StatusOK {
+		_, _ = io.Copy(io.Discard, resp.Body)
 		return nil, &provider.ErrProviderUnavailable{
 			Provider: provider.NameDiscogs,
 			Cause:    fmt.Errorf("HTTP %d", resp.StatusCode),
 		}
 	}
 
-	return io.ReadAll(resp.Body)
+	return io.ReadAll(io.LimitReader(resp.Body, 512*1024))
 }
 
 func mapArtist(d *ArtistDetail) *provider.ArtistMetadata {
