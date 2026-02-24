@@ -546,7 +546,11 @@ func (r *Router) handleServeImage(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	w.Header().Set("Cache-Control", "private, max-age=3600")
+	// no-cache: browser must revalidate before reusing. http.ServeFile sets
+	// ETag/Last-Modified from the file mtime, so an unchanged file returns
+	// 304 Not Modified with no data transfer, while a replaced image is
+	// served fresh on the very next request (including a normal F5 reload).
+	w.Header().Set("Cache-Control", "no-cache")
 	http.ServeFile(w, req, filePath)
 }
 
