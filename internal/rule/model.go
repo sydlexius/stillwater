@@ -5,16 +5,24 @@ import (
 	"time"
 )
 
+// Automation modes for rules
+const (
+	AutomationModeAuto     = "auto"
+	AutomationModeInbox    = "inbox"
+	AutomationModeDisabled = "disabled"
+)
+
 // Rule represents a validation rule stored in the database.
 type Rule struct {
-	ID          string     `json:"id"`
-	Name        string     `json:"name"`
-	Description string     `json:"description"`
-	Category    string     `json:"category"` // "nfo", "image", "metadata"
-	Enabled     bool       `json:"enabled"`
-	Config      RuleConfig `json:"config"`
-	CreatedAt   time.Time  `json:"created_at"`
-	UpdatedAt   time.Time  `json:"updated_at"`
+	ID             string     `json:"id"`
+	Name           string     `json:"name"`
+	Description    string     `json:"description"`
+	Category       string     `json:"category"` // "nfo", "image", "metadata"
+	Enabled        bool       `json:"enabled"`
+	AutomationMode string     `json:"automation_mode"` // "auto", "inbox", "disabled"
+	Config         RuleConfig `json:"config"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
 }
 
 // RuleConfig holds configurable acceptance criteria for a rule.
@@ -55,6 +63,29 @@ type HealthSnapshot struct {
 	CompliantArtists int       `json:"compliant_artists"`
 	Score            float64   `json:"score"`
 	RecordedAt       time.Time `json:"recorded_at"`
+}
+
+// Violation status constants
+const (
+	ViolationStatusOpen      = "open"
+	ViolationStatusDismissed = "dismissed"
+	ViolationStatusResolved  = "resolved"
+)
+
+// RuleViolation represents a persisted rule violation in the inbox.
+type RuleViolation struct {
+	ID          string     `json:"id"`
+	RuleID      string     `json:"rule_id"`
+	ArtistID    string     `json:"artist_id"`
+	ArtistName  string     `json:"artist_name"`
+	Severity    string     `json:"severity"`
+	Message     string     `json:"message"`
+	Fixable     bool       `json:"fixable"`
+	Status      string     `json:"status"` // "open", "dismissed", "resolved"
+	DismissedAt *time.Time `json:"dismissed_at,omitempty"`
+	ResolvedAt  *time.Time `json:"resolved_at,omitempty"`
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at"`
 }
 
 // MarshalConfig serializes a RuleConfig to a JSON string.

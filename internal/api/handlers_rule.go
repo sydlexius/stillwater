@@ -35,8 +35,9 @@ func (r *Router) handleUpdateRule(w http.ResponseWriter, req *http.Request) {
 	}
 
 	var body struct {
-		Enabled *bool            `json:"enabled"`
-		Config  *rule.RuleConfig `json:"config"`
+		Enabled        *bool            `json:"enabled"`
+		AutomationMode *string          `json:"automation_mode"`
+		Config         *rule.RuleConfig `json:"config"`
 	}
 	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
@@ -45,6 +46,15 @@ func (r *Router) handleUpdateRule(w http.ResponseWriter, req *http.Request) {
 
 	if body.Enabled != nil {
 		existing.Enabled = *body.Enabled
+	}
+	if body.AutomationMode != nil {
+		switch *body.AutomationMode {
+		case rule.AutomationModeAuto, rule.AutomationModeInbox, rule.AutomationModeDisabled:
+			existing.AutomationMode = *body.AutomationMode
+		default:
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid automation_mode"})
+			return
+		}
 	}
 	if body.Config != nil {
 		existing.Config = *body.Config

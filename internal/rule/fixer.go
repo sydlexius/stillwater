@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
 )
@@ -36,15 +37,17 @@ type RunResult struct {
 type Pipeline struct {
 	engine        *Engine
 	artistService *artist.Service
+	ruleService   *Service
 	fixers        []Fixer
 	logger        *slog.Logger
 }
 
 // NewPipeline creates a new fix pipeline.
-func NewPipeline(engine *Engine, artistService *artist.Service, fixers []Fixer, logger *slog.Logger) *Pipeline {
+func NewPipeline(engine *Engine, artistService *artist.Service, ruleService *Service, fixers []Fixer, logger *slog.Logger) *Pipeline {
 	return &Pipeline{
 		engine:        engine,
 		artistService: artistService,
+		ruleService:   ruleService,
 		fixers:        fixers,
 		logger:        logger.With(slog.String("component", "fix-pipeline")),
 	}
@@ -53,6 +56,12 @@ func NewPipeline(engine *Engine, artistService *artist.Service, fixers []Fixer, 
 // RunRule evaluates a single rule against all non-excluded artists and attempts fixes.
 func (p *Pipeline) RunRule(ctx context.Context, ruleID string) (*RunResult, error) {
 	result := &RunResult{}
+
+	// Fetch the rule once to check automation mode for all violations.
+	targetRule, err := p.ruleService.GetByID(ctx, ruleID)
+	if err != nil {
+		return nil, fmt.Errorf("getting rule %s: %w", ruleID, err)
+	}
 
 	const pageSize = 200
 	params := artist.ListParams{Page: 1, PageSize: pageSize, Sort: "name"}
@@ -91,15 +100,72 @@ func (p *Pipeline) RunRule(ctx context.Context, ruleID string) (*RunResult, erro
 				}
 				result.ViolationsFound++
 
+				// Skip if automation is disabled
+				if targetRule.AutomationMode == AutomationModeDisabled {
+					continue
+				}
+
+				// Inbox mode: persist without attempting fix
+				if targetRule.AutomationMode == AutomationModeInbox {
+					rv := &RuleViolation{
+						RuleID:     v.RuleID,
+						ArtistID:   a.ID,
+						ArtistName: a.Name,
+						Severity:   v.Severity,
+						Message:    v.Message,
+						Fixable:    v.Fixable,
+						Status:     ViolationStatusOpen,
+					}
+					if err := p.ruleService.UpsertViolation(ctx, rv); err != nil {
+						p.logger.Warn("persisting inbox violation", "rule_id", ruleID, "artist", a.Name, "error", err)
+					}
+					continue
+				}
+
+				// Auto mode (default): attempt fix if fixable
 				if !v.Fixable {
+					// Persist unfixable violation as open
+					rv := &RuleViolation{
+						RuleID:     v.RuleID,
+						ArtistID:   a.ID,
+						ArtistName: a.Name,
+						Severity:   v.Severity,
+						Message:    v.Message,
+						Fixable:    false,
+						Status:     ViolationStatusOpen,
+					}
+					if err := p.ruleService.UpsertViolation(ctx, rv); err != nil {
+						p.logger.Warn("persisting unfixable violation", "rule_id", ruleID, "artist", a.Name, "error", err)
+					}
 					continue
 				}
 
 				fr := p.attemptFix(ctx, a, v)
 				result.Results = append(result.Results, *fr)
 				result.FixesAttempted++
+
+				// Persist violation with appropriate status after fix attempt
+				status := ViolationStatusOpen
 				if fr.Fixed {
 					result.FixesSucceeded++
+					status = ViolationStatusResolved
+				}
+
+				rv := &RuleViolation{
+					RuleID:     v.RuleID,
+					ArtistID:   a.ID,
+					ArtistName: a.Name,
+					Severity:   v.Severity,
+					Message:    v.Message,
+					Fixable:    true,
+					Status:     status,
+				}
+				if status == ViolationStatusResolved {
+					now := time.Now().UTC()
+					rv.ResolvedAt = &now
+				}
+				if err := p.ruleService.UpsertViolation(ctx, rv); err != nil {
+					p.logger.Warn("persisting fix result violation", "rule_id", ruleID, "artist", a.Name, "error", err)
 				}
 			}
 

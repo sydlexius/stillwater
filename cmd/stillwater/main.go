@@ -170,7 +170,7 @@ func run() error {
 		rule.NewMetadataFixer(orchestrator, nfoSnapshotService),
 		rule.NewImageFixer(orchestrator, logger),
 	}
-	pipeline := rule.NewPipeline(ruleEngine, artistService, fixers, logger)
+	pipeline := rule.NewPipeline(ruleEngine, artistService, ruleService, fixers, logger)
 
 	// Initialize bulk operations
 	bulkService := rule.NewBulkService(db)
