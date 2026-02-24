@@ -734,15 +734,15 @@ templ resetConfirmPrefsScript() {
 }
 
 templ settingsTabBar(activeTab string) {
-	<div class="border-b border-gray-200 dark:border-gray-700">
-		<nav class="flex overflow-x-auto -mb-px" aria-label="Settings tabs">
+	<div class="sw-card rounded-lg p-1.5">
+		<nav class="flex overflow-x-auto gap-0.5" aria-label="Settings tabs">
 			for _, tab := range settingsTabs() {
 				<a
 					href={ templ.SafeURL("/settings?tab=" + tab.ID) }
 					class={
-						"whitespace-nowrap border-b-2 py-3 px-4 text-sm font-medium transition-colors cursor-pointer",
-						templ.KV("border-blue-500 text-blue-600 dark:text-blue-400", tab.ID == activeTab),
-						templ.KV("border-transparent text-gray-700 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:border-gray-300 dark:hover:border-gray-600", tab.ID != activeTab),
+						"whitespace-nowrap rounded-md px-4 py-2 text-sm font-medium transition-all cursor-pointer",
+						templ.KV("bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-300 shadow-sm", tab.ID == activeTab),
+						templ.KV("text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-white/60 dark:hover:bg-gray-700/60", tab.ID != activeTab),
 					}
 					data-tab={ tab.ID }
 					onclick="switchSettingsTab(event, this)"
@@ -815,11 +815,11 @@ templ settingsTabScript() {
 			});
 			if (panel) panel.classList.remove('hidden');
 			document.querySelectorAll('[data-tab]').forEach(function(t) {
-				t.classList.remove('border-blue-500', 'text-blue-600', 'dark:text-blue-400');
-				t.classList.add('border-transparent', 'text-gray-500', 'dark:text-gray-400');
+				t.classList.remove('bg-white', 'dark:bg-gray-700', 'text-blue-600', 'dark:text-blue-300', 'shadow-sm');
+				t.classList.add('text-gray-600', 'dark:text-gray-400');
 			});
-			el.classList.remove('border-transparent', 'text-gray-500', 'dark:text-gray-400');
-			el.classList.add('border-blue-500', 'text-blue-600', 'dark:text-blue-400');
+			el.classList.remove('text-gray-600', 'dark:text-gray-400');
+			el.classList.add('bg-white', 'dark:bg-gray-700', 'text-blue-600', 'dark:text-blue-300', 'shadow-sm');
 			history.replaceState(null, '', '/settings?tab=' + encodeURIComponent(tabId));
 		}
 	</script>
