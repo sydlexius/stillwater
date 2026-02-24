@@ -37,8 +37,8 @@ templ Layout(title string, assets AssetPaths) {
 				});
 			</script>
 		</head>
-		<body class="h-full text-gray-900 dark:text-gray-100">
-			<img src={ assets.LoginBG } alt="" class="fixed inset-0 -z-20 h-screen w-screen object-cover pointer-events-none select-none" aria-hidden="true"/>
+		<body class="h-full bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
+			<img src={ assets.LoginBG } alt="" class="fixed inset-0 -z-20 h-full w-full object-cover pointer-events-none select-none" aria-hidden="true"/>
 			<div class="fixed inset-0 -z-10 bg-black/15 dark:bg-black/45 pointer-events-none" aria-hidden="true"></div>
 			<div class="min-h-full">
 				@navbar()

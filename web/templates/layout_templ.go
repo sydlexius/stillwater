@@ -89,7 +89,7 @@ func Layout(title string, assets AssetPaths) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "\"></script><script>\n\t\t\t\tdocument.addEventListener('htmx:configRequest', function(evt) {\n\t\t\t\t\tvar csrfToken = document.cookie.replace(/(?:(?:^|.*;\\s*)csrf_token\\s*\\=\\s*([^;]*).*$)|^.*$/, \"$1\");\n\t\t\t\t\tif (csrfToken) {\n\t\t\t\t\t\tevt.detail.headers['X-CSRF-Token'] = csrfToken;\n\t\t\t\t\t}\n\t\t\t\t});\n\t\t\t</script></head><body class=\"h-full text-gray-900 dark:text-gray-100\"><img src=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "\"></script><script>\n\t\t\t\tdocument.addEventListener('htmx:configRequest', function(evt) {\n\t\t\t\t\tvar csrfToken = document.cookie.replace(/(?:(?:^|.*;\\s*)csrf_token\\s*\\=\\s*([^;]*).*$)|^.*$/, \"$1\");\n\t\t\t\t\tif (csrfToken) {\n\t\t\t\t\t\tevt.detail.headers['X-CSRF-Token'] = csrfToken;\n\t\t\t\t\t}\n\t\t\t\t});\n\t\t\t</script></head><body class=\"h-full bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100\"><img src=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -102,7 +102,7 @@ func Layout(title string, assets AssetPaths) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "\" alt=\"\" class=\"fixed inset-0 -z-20 h-screen w-screen object-cover pointer-events-none select-none\" aria-hidden=\"true\"><div class=\"fixed inset-0 -z-10 bg-black/15 dark:bg-black/45 pointer-events-none\" aria-hidden=\"true\"></div><div class=\"min-h-full\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "\" alt=\"\" class=\"fixed inset-0 -z-20 h-full w-full object-cover pointer-events-none select-none\" aria-hidden=\"true\"><div class=\"fixed inset-0 -z-10 bg-black/15 dark:bg-black/45 pointer-events-none\" aria-hidden=\"true\"></div><div class=\"min-h-full\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

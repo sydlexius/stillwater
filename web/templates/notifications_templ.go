@@ -57,7 +57,7 @@ func NotificationsPage(assets AssetPaths, data NotificationsData) templ.Componen
 				return templ_7745c5c3_Err
 			}
 			if len(data.Violations) == 0 {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<div class=\"sw-card rounded-lg border border-gray-200 bg-blue-50 p-4\"><p class=\"text-gray-600\">No violations. Your library is clean!</p></div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<div class=\"sw-card rounded-lg border border-gray-200 bg-blue-50 p-4\"><p class=\"text-gray-600 dark:text-gray-300\">No violations. Your library is clean!</p></div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -111,7 +111,7 @@ func NotificationsTable(data NotificationsData) templ.Component {
 		}
 		ctx = templ.ClearChildren(ctx)
 		if len(data.Violations) == 0 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<div class=\"sw-card rounded-lg border border-gray-200 bg-blue-50 p-4\"><p class=\"text-gray-600\">No violations. Your library is clean!</p></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<div class=\"sw-card rounded-lg border border-gray-200 bg-blue-50 p-4\"><p class=\"text-gray-600 dark:text-gray-300\">No violations. Your library is clean!</p></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

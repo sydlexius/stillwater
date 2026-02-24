@@ -21,7 +21,7 @@ templ NotificationsPage(assets AssetPaths, data NotificationsData) {
 
 			if len(data.Violations) == 0 {
 				<div class="sw-card rounded-lg border border-gray-200 bg-blue-50 p-4">
-					<p class="text-gray-600">No violations. Your library is clean!</p>
+					<p class="text-gray-600 dark:text-gray-300">No violations. Your library is clean!</p>
 				</div>
 			} else {
 				<div
@@ -40,7 +40,7 @@ templ NotificationsPage(assets AssetPaths, data NotificationsData) {
 templ NotificationsTable(data NotificationsData) {
 	if len(data.Violations) == 0 {
 		<div class="sw-card rounded-lg border border-gray-200 bg-blue-50 p-4">
-			<p class="text-gray-600">No violations. Your library is clean!</p>
+			<p class="text-gray-600 dark:text-gray-300">No violations. Your library is clean!</p>
 		</div>
 	} else {
 		@notificationsTableContent(data)
