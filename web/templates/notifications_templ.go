@@ -52,7 +52,7 @@ func NotificationsPage(assets AssetPaths, data NotificationsData) templ.Componen
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"space-y-6\"><div class=\"pb-2\"><h1 class=\"text-2xl font-bold\">Rule Violation Notifications</h1><p class=\"text-gray-700 dark:text-gray-400\">Review and manage unresolved rule violations</p></div><div id=\"notifications-table\" hx-get=\"/notifications/table\" hx-trigger=\"load\" hx-swap=\"innerHTML\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"space-y-6\"><div class=\"pb-2\"><h1 class=\"text-2xl font-bold\">Rule Violation Notifications</h1><p class=\"text-gray-900 dark:text-gray-400\">Review and manage unresolved rule violations</p></div><div id=\"notifications-table\" hx-get=\"/notifications/table\" hx-trigger=\"load\" hx-swap=\"innerHTML\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
