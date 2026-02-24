@@ -161,6 +161,7 @@ templ notificationsTableContent(data NotificationsData) {
 													onclick="openCandidatePreview(this.dataset.violationId, this.dataset.url, this.dataset.imageType, this.dataset.source)"
 													class="group absolute inset-0 flex items-center justify-center bg-black/0 hover:bg-black/40 transition-colors"
 													title="Preview full size"
+													aria-label="Preview full size"
 												>
 													<span class="opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity bg-white/90 dark:bg-gray-900/90 rounded-full p-2 pointer-events-none">
 														<!-- Magnifying glass icon -->
@@ -308,6 +309,7 @@ templ candidateScript() {
 
 	// ---- Candidate preview modal ----
 	var _previewViolationID, _previewURL, _previewImageType;
+	var _previewTriggerEl = null;
 
 	function _providerDisplayName(source) {
 		var names = {
@@ -356,8 +358,11 @@ templ candidateScript() {
 		}
 
 		img.src = url;
+		_previewTriggerEl = document.activeElement;
 		document.getElementById('candidate-preview-modal').classList.remove('hidden');
 		document.body.style.overflow = 'hidden';
+		var closeBtn = document.querySelector('#candidate-preview-modal button[aria-label="Close preview"]');
+		if (closeBtn) closeBtn.focus();
 	}
 
 	function closeCandidatePreview() {
@@ -365,6 +370,7 @@ templ candidateScript() {
 		document.body.style.overflow = '';
 		// Clear src to stop any in-progress load
 		document.getElementById('preview-image').src = '';
+		if (_previewTriggerEl) { _previewTriggerEl.focus(); _previewTriggerEl = null; }
 	}
 
 	function updatePreviewDims(img) {
@@ -380,9 +386,13 @@ templ candidateScript() {
 		applyCandidate(vid, url, type);
 	}
 
-	// Close on Escape key
-	document.addEventListener('keydown', function(e) {
-		if (e.key === 'Escape') closeCandidatePreview();
+	// Close on Escape key (guard against multiple registrations on HTMX swaps)
+	if (!window.__candidateEscapeListenerRegistered) {
+		document.addEventListener('keydown', function(e) {
+			if (e.key === 'Escape') closeCandidatePreview();
+		});
+		window.__candidateEscapeListenerRegistered = true;
+	}
 	});
 
 	// ---- Bulk selection ----
@@ -479,11 +489,3 @@ func formatAge(t time.Time) string {
 	}
 	return fmt.Sprintf("%dd", int(ago.Hours()/24))
 }
-
-func candidateDims(c rule.ImageCandidate) string {
-	if c.Width > 0 && c.Height > 0 {
-		return fmt.Sprintf("%dx%d", c.Width, c.Height)
-	}
-	return "unknown"
-}
-
