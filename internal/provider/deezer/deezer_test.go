@@ -242,4 +242,3 @@ func TestIsDeezerID(t *testing.T) {
 		}
 	}
 }
-
