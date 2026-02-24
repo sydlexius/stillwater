@@ -1,0 +1,26 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+# Go and Templ: tabs (enforced by gofmt/templ fmt)
+[*.{go,templ}]
+indent_style = tab
+indent_size = 4
+
+# SQL migrations: tabs
+[*.sql]
+indent_style = tab
+indent_size = 4
+
+# Web assets and config: 2-space indent
+[*.{html,css,js,json,yaml,yml,toml,md}]
+indent_style = space
+indent_size = 2
+
+# Makefile: must use tabs
+[Makefile]
+indent_style = tab
