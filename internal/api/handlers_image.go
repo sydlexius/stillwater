@@ -355,11 +355,19 @@ func (r *Router) handleImageCrop(w http.ResponseWriter, req *http.Request) {
 }
 
 // processAndSaveImage processes image data (resize if oversized, optimize) and saves it.
+// For logos, transparent borders are automatically trimmed before saving.
 func (r *Router) processAndSaveImage(ctx context.Context, dir string, imageType string, data []byte) ([]string, error) {
 	// Resize if oversized (max 3000px on any dimension)
 	resized, _, err := img.Resize(bytes.NewReader(data), 3000, 3000)
 	if err != nil {
 		return nil, fmt.Errorf("resizing: %w", err)
+	}
+
+	// Logos: trim transparent borders so the image renders without padding.
+	if imageType == "logo" {
+		if trimmed, _, trimErr := img.TrimAlpha(bytes.NewReader(resized), 10); trimErr == nil {
+			resized = trimmed
+		}
 	}
 
 	naming := r.getActiveNamingConfig(ctx, imageType)
@@ -724,6 +732,64 @@ func normalizeImageType(t string) string {
 	default:
 		return t
 	}
+}
+
+// handleLogoTrim trims the transparent border from an artist's existing logo.
+// POST /api/v1/artists/{id}/images/logo/trim
+func (r *Router) handleLogoTrim(w http.ResponseWriter, req *http.Request) {
+	artistID := req.PathValue("id")
+	if artistID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing artist id"})
+		return
+	}
+
+	a, err := r.artistService.GetByID(req.Context(), artistID)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "artist not found"})
+		return
+	}
+
+	patterns := r.getActiveNamingConfig(req.Context(), "logo")
+	filePath, found := findExistingImage(a.Path, patterns)
+	if !found {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "logo not found"})
+		return
+	}
+
+	f, err := os.Open(filePath) //nolint:gosec // path built from trusted naming patterns
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to read logo"})
+		return
+	}
+	data, readErr := io.ReadAll(f)
+	_ = f.Close()
+	if readErr != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to read logo"})
+		return
+	}
+
+	trimmed, _, err := img.TrimAlpha(bytes.NewReader(data), 10)
+	if err != nil {
+		r.logger.Error("trimming logo alpha", "artist_id", artistID, "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to trim logo"})
+		return
+	}
+
+	if _, err := img.Save(a.Path, "logo", trimmed, patterns, r.logger); err != nil {
+		r.logger.Error("saving trimmed logo", "artist_id", artistID, "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to save trimmed logo"})
+		return
+	}
+
+	r.updateArtistImageFlag(req.Context(), a, "logo")
+
+	if isHTMXRequest(req) {
+		w.Header().Set("HX-Refresh", "true")
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
 }
 
 // imageTypeLabel returns a human-readable label for an image type.
