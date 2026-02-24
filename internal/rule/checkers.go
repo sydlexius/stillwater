@@ -1,7 +1,6 @@
 package rule
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,8 +8,6 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/image"
-	"github.com/sydlexius/stillwater/internal/provider"
-	"github.com/sydlexius/stillwater/internal/scraper"
 )
 
 // Checker evaluates a single rule against an artist.
@@ -23,6 +20,10 @@ var thumbPatterns = []string{
 	"artist.jpg", "artist.png",
 	"poster.jpg", "poster.png",
 }
+
+var fanartPatterns = []string{"fanart.jpg", "fanart.png", "backdrop.jpg", "backdrop.png"}
+var logoPatterns = []string{"logo.png", "logo.jpg", "clearlogo.png"}
+var bannerPatterns = []string{"banner.jpg", "banner.png"}
 
 func checkNFOExists(a *artist.Artist, _ RuleConfig) *Violation {
 	if a.NFOExists {
@@ -186,30 +187,29 @@ func checkBioExists(a *artist.Artist, cfg RuleConfig) *Violation {
 	}
 }
 
-// getThumbDimensions finds and reads the dimensions of the thumbnail image
-// in the given artist directory.
-func getThumbDimensions(dirPath string) (int, int, error) {
+// getImageDimensions finds the first matching file in the directory and returns its dimensions.
+func getImageDimensions(dirPath string, patterns []string) (int, int, error) {
 	entries, err := os.ReadDir(dirPath)
 	if err != nil {
 		return 0, 0, fmt.Errorf("reading directory: %w", err)
 	}
 
-	files := make(map[string]string, len(entries))
+	files := make(map[string]bool, len(entries))
 	for _, e := range entries {
 		if !e.IsDir() {
-			files[strings.ToLower(e.Name())] = e.Name()
+			files[strings.ToLower(e.Name())] = true
 		}
 	}
 
-	for _, pattern := range thumbPatterns {
-		if _, ok := files[strings.ToLower(pattern)]; ok {
-			thumbPath := filepath.Join(dirPath, pattern)
-			f, err := os.Open(thumbPath) //nolint:gosec // G304: path from trusted library root
+	for _, pattern := range patterns {
+		if files[strings.ToLower(pattern)] {
+			p := filepath.Join(dirPath, pattern)
+			f, err := os.Open(p) //nolint:gosec // G304: path from trusted library root
 			if err != nil {
 				continue
 			}
 			w, h, err := image.GetDimensions(f)
-			f.Close() //nolint:errcheck,gosec
+			f.Close() //nolint:errcheck
 			if err != nil {
 				continue
 			}
@@ -217,39 +217,137 @@ func getThumbDimensions(dirPath string) (int, int, error) {
 		}
 	}
 
-	return 0, 0, fmt.Errorf("no thumbnail found in %s", dirPath)
+	return 0, 0, fmt.Errorf("no matching image in %s", dirPath)
 }
 
-// makeFallbackChecker returns a Checker that flags artists whose metadata
-// was populated by a fallback provider instead of the configured primary.
-func makeFallbackChecker(scraperSvc *scraper.Service) Checker {
-	return func(a *artist.Artist, cfg RuleConfig) *Violation {
-		if len(a.MetadataSources) == 0 {
-			return nil
-		}
-		scraperCfg, err := scraperSvc.GetConfig(context.Background(), scraper.ScopeGlobal)
-		if err != nil {
-			return nil
-		}
-		var fallbackFields []string
-		for _, fc := range scraperCfg.Fields {
-			source, ok := a.MetadataSources[string(fc.Field)]
-			if ok && provider.ProviderName(source) != fc.Primary {
-				fallbackFields = append(fallbackFields, string(fc.Field)+" ("+source+")")
-			}
-		}
-		if len(fallbackFields) == 0 {
-			return nil
-		}
-		return &Violation{
-			RuleID:   RuleFallbackUsed,
-			RuleName: "Fallback provider used",
-			Category: "metadata",
-			Severity: effectiveSeverity(cfg),
-			Message: fmt.Sprintf("artist %q: %d field(s) from fallback providers: %s",
-				a.Name, len(fallbackFields), strings.Join(fallbackFields, ", ")),
-			Fixable: false,
-		}
+// getThumbDimensions finds and reads the dimensions of the thumbnail image
+// in the given artist directory.
+func getThumbDimensions(dirPath string) (int, int, error) {
+	return getImageDimensions(dirPath, thumbPatterns)
+}
+
+func checkFanartMinRes(a *artist.Artist, cfg RuleConfig) *Violation {
+	if !a.FanartExists {
+		return nil // fanart_exists handles missing fanart
+	}
+	w, h, err := getImageDimensions(a.Path, fanartPatterns)
+	if err != nil {
+		return nil
+	}
+	minW, minH := cfg.MinWidth, cfg.MinHeight
+	if minW == 0 {
+		minW = 1920
+	}
+	if minH == 0 {
+		minH = 1080
+	}
+	if w >= minW && h >= minH {
+		return nil
+	}
+	return &Violation{
+		RuleID:   RuleFanartMinRes,
+		RuleName: "Fanart minimum resolution",
+		Category: "image",
+		Severity: effectiveSeverity(cfg),
+		Message:  fmt.Sprintf("artist %q fanart is %dx%d, minimum required is %dx%d", a.Name, w, h, minW, minH),
+		Fixable:  true,
+	}
+}
+
+func checkFanartAspect(a *artist.Artist, cfg RuleConfig) *Violation {
+	if !a.FanartExists {
+		return nil
+	}
+	w, h, err := getImageDimensions(a.Path, fanartPatterns)
+	if err != nil {
+		return nil
+	}
+	ratio := cfg.AspectRatio
+	if ratio == 0 {
+		ratio = 16.0 / 9.0
+	}
+	tol := cfg.Tolerance
+	if tol == 0 {
+		tol = 0.1
+	}
+	if image.ValidateAspectRatio(w, h, ratio, tol) {
+		return nil
+	}
+	actual := float64(w) / float64(h)
+	return &Violation{
+		RuleID:   RuleFanartAspect,
+		RuleName: "Fanart aspect ratio",
+		Category: "image",
+		Severity: effectiveSeverity(cfg),
+		Message:  fmt.Sprintf("artist %q fanart aspect ratio %.3f, expected %.3f", a.Name, actual, ratio),
+		Fixable:  true,
+	}
+}
+
+func checkLogoMinRes(a *artist.Artist, cfg RuleConfig) *Violation {
+	if !a.LogoExists {
+		return nil
+	}
+	w, _, err := getImageDimensions(a.Path, logoPatterns)
+	if err != nil {
+		return nil
+	}
+	minW := cfg.MinWidth
+	if minW == 0 {
+		minW = 400
+	}
+	if w >= minW {
+		return nil
+	}
+	return &Violation{
+		RuleID:   RuleLogoMinRes,
+		RuleName: "Logo minimum width",
+		Category: "image",
+		Severity: effectiveSeverity(cfg),
+		Message:  fmt.Sprintf("artist %q logo is %dpx wide, minimum is %dpx", a.Name, w, minW),
+		Fixable:  true,
+	}
+}
+
+func checkBannerExists(a *artist.Artist, _ RuleConfig) *Violation {
+	if a.BannerExists {
+		return nil
+	}
+	return &Violation{
+		RuleID:   RuleBannerExists,
+		RuleName: "Banner image exists",
+		Category: "image",
+		Severity: "info",
+		Message:  fmt.Sprintf("artist %q has no banner image", a.Name),
+		Fixable:  true,
+	}
+}
+
+func checkBannerMinRes(a *artist.Artist, cfg RuleConfig) *Violation {
+	if !a.BannerExists {
+		return nil
+	}
+	w, h, err := getImageDimensions(a.Path, bannerPatterns)
+	if err != nil {
+		return nil
+	}
+	minW, minH := cfg.MinWidth, cfg.MinHeight
+	if minW == 0 {
+		minW = 1000
+	}
+	if minH == 0 {
+		minH = 185
+	}
+	if w >= minW && h >= minH {
+		return nil
+	}
+	return &Violation{
+		RuleID:   RuleBannerMinRes,
+		RuleName: "Banner minimum resolution",
+		Category: "image",
+		Severity: effectiveSeverity(cfg),
+		Message:  fmt.Sprintf("artist %q banner is %dx%d, minimum required is %dx%d", a.Name, w, h, minW, minH),
+		Fixable:  true,
 	}
 }
 

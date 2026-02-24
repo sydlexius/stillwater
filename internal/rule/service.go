@@ -19,7 +19,12 @@ const (
 	RuleFanartExists = "fanart_exists"
 	RuleLogoExists   = "logo_exists"
 	RuleBioExists    = "bio_exists"
-	RuleFallbackUsed = "fallback_used"
+	// Image quality rule IDs.
+	RuleFanartMinRes = "fanart_min_res"
+	RuleFanartAspect = "fanart_aspect"
+	RuleLogoMinRes   = "logo_min_res"
+	RuleBannerExists = "banner_exists"
+	RuleBannerMinRes = "banner_min_res"
 )
 
 // defaultRules defines the built-in rules seeded on first startup.
@@ -51,7 +56,7 @@ var defaultRules = []Rule{
 	{
 		ID:          RuleThumbSquare,
 		Name:        "Thumbnail is square",
-		Description: "Thumbnail image must have approximately 1:1 aspect ratio",
+		Description: "Thumbnail must be approximately square (1:1 ratio). Violations are fixed by fetching a square replacement from providers; the existing image is not cropped.",
 		Category:    "image",
 		Enabled:     true,
 		Config:      RuleConfig{AspectRatio: 1.0, Tolerance: 0.1, Severity: "warning"},
@@ -59,7 +64,7 @@ var defaultRules = []Rule{
 	{
 		ID:          RuleThumbMinRes,
 		Name:        "Thumbnail minimum resolution",
-		Description: "Thumbnail image must meet minimum resolution requirements",
+		Description: "Thumbnail must meet the minimum resolution. Violations are fixed by fetching a higher-resolution replacement from providers.",
 		Category:    "image",
 		Enabled:     true,
 		Config:      RuleConfig{MinWidth: 500, MinHeight: 500, Severity: "warning"},
@@ -89,12 +94,44 @@ var defaultRules = []Rule{
 		Config:      RuleConfig{MinLength: 10, Severity: "warning"},
 	},
 	{
-		ID:          RuleFallbackUsed,
-		Name:        "Fallback provider used",
-		Description: "Flags when metadata fields were populated by a fallback provider instead of the configured primary",
-		Category:    "metadata",
-		Enabled:     true,
+		ID:          RuleFanartMinRes,
+		Name:        "Fanart minimum resolution",
+		Description: "Fanart/backdrop must meet the minimum resolution. Violations are fixed by fetching a higher-resolution replacement from providers.",
+		Category:    "image",
+		Enabled:     false,
+		Config:      RuleConfig{MinWidth: 1920, MinHeight: 1080, Severity: "warning"},
+	},
+	{
+		ID:          RuleFanartAspect,
+		Name:        "Fanart aspect ratio",
+		Description: "Fanart/backdrop should match the target aspect ratio. Violations are fixed by fetching a correctly-proportioned replacement from providers; the existing image is not cropped.",
+		Category:    "image",
+		Enabled:     false,
+		Config:      RuleConfig{AspectRatio: 16.0 / 9.0, Tolerance: 0.1, Severity: "info"},
+	},
+	{
+		ID:          RuleLogoMinRes,
+		Name:        "Logo minimum width",
+		Description: "Logo should meet the minimum width for legibility. Violations are fixed by fetching a higher-resolution logo from providers.",
+		Category:    "image",
+		Enabled:     false,
+		Config:      RuleConfig{MinWidth: 400, Severity: "info"},
+	},
+	{
+		ID:          RuleBannerExists,
+		Name:        "Banner image exists",
+		Description: "Artist directory should contain a banner image",
+		Category:    "image",
+		Enabled:     false,
 		Config:      RuleConfig{Severity: "info"},
+	},
+	{
+		ID:          RuleBannerMinRes,
+		Name:        "Banner minimum resolution",
+		Description: "Banner must meet the minimum resolution. Violations are fixed by fetching a higher-resolution replacement from providers.",
+		Category:    "image",
+		Enabled:     false,
+		Config:      RuleConfig{MinWidth: 1000, MinHeight: 185, Severity: "info"},
 	},
 }
 
@@ -108,13 +145,19 @@ func NewService(db *sql.DB) *Service {
 	return &Service{db: db}
 }
 
-// SeedDefaults inserts the built-in rules if they do not already exist.
+// SeedDefaults inserts built-in rules and updates their name and description on conflict.
+// The enabled state, automation_mode, and config of existing rules are never overwritten,
+// so user customisations are preserved across upgrades.
 func (s *Service) SeedDefaults(ctx context.Context) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 	for _, r := range defaultRules {
 		_, err := s.db.ExecContext(ctx, `
-			INSERT OR IGNORE INTO rules (id, name, description, category, enabled, config, created_at, updated_at)
+			INSERT INTO rules (id, name, description, category, enabled, config, created_at, updated_at)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT(id) DO UPDATE SET
+				name        = excluded.name,
+				description = excluded.description,
+				updated_at  = excluded.updated_at
 		`, r.ID, r.Name, r.Description, r.Category, boolToInt(r.Enabled),
 			MarshalConfig(r.Config), now, now)
 		if err != nil {

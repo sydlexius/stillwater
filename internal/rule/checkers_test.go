@@ -250,6 +250,169 @@ func createTestJPEG(t *testing.T, path string, width, height int) {
 	}
 }
 
+func TestCheckFanartMinRes(t *testing.T) {
+	// Missing fanart: skip check
+	a := artist.Artist{Name: "Test", FanartExists: false}
+	if v := checkFanartMinRes(&a, RuleConfig{}); v != nil {
+		t.Errorf("expected nil when FanartExists is false, got %v", v)
+	}
+
+	// High-res fanart: pass
+	dir := t.TempDir()
+	createTestJPEG(t, filepath.Join(dir, "fanart.jpg"), 1920, 1080)
+	a = artist.Artist{Name: "Test", FanartExists: true, Path: dir}
+	if v := checkFanartMinRes(&a, RuleConfig{MinWidth: 1920, MinHeight: 1080}); v != nil {
+		t.Errorf("expected nil for 1920x1080 fanart, got %v", v)
+	}
+
+	// Low-res fanart: violation
+	dir2 := t.TempDir()
+	createTestJPEG(t, filepath.Join(dir2, "fanart.jpg"), 800, 450)
+	a2 := artist.Artist{Name: "Test2", FanartExists: true, Path: dir2}
+	v := checkFanartMinRes(&a2, RuleConfig{MinWidth: 1920, MinHeight: 1080})
+	if v == nil {
+		t.Error("expected violation for low-res fanart")
+	}
+	if v != nil && v.RuleID != RuleFanartMinRes {
+		t.Errorf("RuleID = %q, want %q", v.RuleID, RuleFanartMinRes)
+	}
+
+	// Zero config uses defaults
+	dir3 := t.TempDir()
+	createTestJPEG(t, filepath.Join(dir3, "fanart.jpg"), 2000, 1200)
+	a3 := artist.Artist{Name: "Test3", FanartExists: true, Path: dir3}
+	if v := checkFanartMinRes(&a3, RuleConfig{}); v != nil {
+		t.Errorf("expected nil for 2000x1200 with default 1920x1080, got %v", v)
+	}
+}
+
+func TestCheckFanartAspect(t *testing.T) {
+	// Missing fanart: skip
+	a := artist.Artist{Name: "Test", FanartExists: false}
+	if v := checkFanartAspect(&a, RuleConfig{}); v != nil {
+		t.Errorf("expected nil when FanartExists is false, got %v", v)
+	}
+
+	// Correct 16:9 fanart: pass
+	dir := t.TempDir()
+	createTestJPEG(t, filepath.Join(dir, "fanart.jpg"), 1920, 1080)
+	a = artist.Artist{Name: "Test", FanartExists: true, Path: dir}
+	if v := checkFanartAspect(&a, RuleConfig{AspectRatio: 16.0 / 9.0, Tolerance: 0.1}); v != nil {
+		t.Errorf("expected nil for 16:9 fanart, got %v", v)
+	}
+
+	// Square fanart: violation
+	dir2 := t.TempDir()
+	createTestJPEG(t, filepath.Join(dir2, "fanart.jpg"), 1000, 1000)
+	a2 := artist.Artist{Name: "Test2", FanartExists: true, Path: dir2}
+	v := checkFanartAspect(&a2, RuleConfig{AspectRatio: 16.0 / 9.0, Tolerance: 0.1})
+	if v == nil {
+		t.Error("expected violation for square fanart with 16:9 check")
+	}
+	if v != nil && v.RuleID != RuleFanartAspect {
+		t.Errorf("RuleID = %q, want %q", v.RuleID, RuleFanartAspect)
+	}
+}
+
+func TestCheckLogoMinRes(t *testing.T) {
+	// Missing logo: skip
+	a := artist.Artist{Name: "Test", LogoExists: false}
+	if v := checkLogoMinRes(&a, RuleConfig{}); v != nil {
+		t.Errorf("expected nil when LogoExists is false, got %v", v)
+	}
+
+	// Wide-enough logo: pass
+	dir := t.TempDir()
+	createTestJPEG(t, filepath.Join(dir, "logo.png"), 500, 200)
+	a = artist.Artist{Name: "Test", LogoExists: true, Path: dir}
+	if v := checkLogoMinRes(&a, RuleConfig{MinWidth: 400}); v != nil {
+		t.Errorf("expected nil for 500px logo, got %v", v)
+	}
+
+	// Narrow logo: violation
+	dir2 := t.TempDir()
+	createTestJPEG(t, filepath.Join(dir2, "logo.png"), 200, 100)
+	a2 := artist.Artist{Name: "Test2", LogoExists: true, Path: dir2}
+	v := checkLogoMinRes(&a2, RuleConfig{MinWidth: 400})
+	if v == nil {
+		t.Error("expected violation for 200px logo with 400px minimum")
+	}
+	if v != nil && v.RuleID != RuleLogoMinRes {
+		t.Errorf("RuleID = %q, want %q", v.RuleID, RuleLogoMinRes)
+	}
+
+	// Zero config defaults to 400px
+	dir3 := t.TempDir()
+	createTestJPEG(t, filepath.Join(dir3, "logo.png"), 500, 200)
+	a3 := artist.Artist{Name: "Test3", LogoExists: true, Path: dir3}
+	if v := checkLogoMinRes(&a3, RuleConfig{}); v != nil {
+		t.Errorf("expected nil for 500px with default 400px minimum, got %v", v)
+	}
+}
+
+func TestCheckBannerExists(t *testing.T) {
+	a := artist.Artist{Name: "Test", BannerExists: true}
+	if v := checkBannerExists(&a, RuleConfig{}); v != nil {
+		t.Errorf("expected nil for artist with banner, got %v", v)
+	}
+
+	a.BannerExists = false
+	v := checkBannerExists(&a, RuleConfig{})
+	if v == nil {
+		t.Fatal("expected violation for artist without banner")
+	}
+	if v.RuleID != RuleBannerExists {
+		t.Errorf("RuleID = %q, want %q", v.RuleID, RuleBannerExists)
+	}
+	if v.Severity != "info" {
+		t.Errorf("Severity = %q, want info", v.Severity)
+	}
+}
+
+func TestCheckBannerMinRes(t *testing.T) {
+	// Missing banner: skip
+	a := artist.Artist{Name: "Test", BannerExists: false}
+	if v := checkBannerMinRes(&a, RuleConfig{}); v != nil {
+		t.Errorf("expected nil when BannerExists is false, got %v", v)
+	}
+
+	// Large-enough banner: pass
+	dir := t.TempDir()
+	createTestJPEG(t, filepath.Join(dir, "banner.jpg"), 1000, 185)
+	a = artist.Artist{Name: "Test", BannerExists: true, Path: dir}
+	if v := checkBannerMinRes(&a, RuleConfig{MinWidth: 1000, MinHeight: 185}); v != nil {
+		t.Errorf("expected nil for 1000x185 banner, got %v", v)
+	}
+
+	// Small banner: violation
+	dir2 := t.TempDir()
+	createTestJPEG(t, filepath.Join(dir2, "banner.jpg"), 500, 100)
+	a2 := artist.Artist{Name: "Test2", BannerExists: true, Path: dir2}
+	v := checkBannerMinRes(&a2, RuleConfig{MinWidth: 1000, MinHeight: 185})
+	if v == nil {
+		t.Error("expected violation for small banner")
+	}
+	if v != nil && v.RuleID != RuleBannerMinRes {
+		t.Errorf("RuleID = %q, want %q", v.RuleID, RuleBannerMinRes)
+	}
+
+	// Zero config uses defaults
+	dir3 := t.TempDir()
+	createTestJPEG(t, filepath.Join(dir3, "banner.jpg"), 1200, 200)
+	a3 := artist.Artist{Name: "Test3", BannerExists: true, Path: dir3}
+	if v := checkBannerMinRes(&a3, RuleConfig{}); v != nil {
+		t.Errorf("expected nil for 1200x200 with default 1000x185, got %v", v)
+	}
+}
+
+func TestGetImageDimensions_NoMatch(t *testing.T) {
+	dir := t.TempDir()
+	_, _, err := getImageDimensions(dir, []string{"fanart.jpg", "fanart.png"})
+	if err == nil {
+		t.Error("expected error when no matching images exist")
+	}
+}
+
 func TestEffectiveSeverity(t *testing.T) {
 	if s := effectiveSeverity(RuleConfig{Severity: "error"}); s != "error" {
 		t.Errorf("expected error, got %q", s)
