@@ -12,6 +12,8 @@ type ArtistNFO struct {
 	Disambiguation      string       `xml:"disambiguation,omitempty"`
 	MusicBrainzArtistID string       `xml:"musicbrainzartistid,omitempty"`
 	AudioDBArtistID     string       `xml:"audiodbartistid,omitempty"`
+	DiscogsArtistID     string       `xml:"discogsartistid,omitempty"`
+	WikidataID          string       `xml:"wikidataid,omitempty"`
 	Genres              []string     `xml:"genre,omitempty"`
 	Styles              []string     `xml:"style,omitempty"`
 	Moods               []string     `xml:"mood,omitempty"`

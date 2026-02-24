@@ -193,6 +193,8 @@ func TestWrite_BasicNFO(t *testing.T) {
 		Type:                "group",
 		MusicBrainzArtistID: "5b11f4ce-a62d-471e-81fc-a69a8278c7da",
 		AudioDBArtistID:     "111239",
+		DiscogsArtistID:     "125246",
+		WikidataID:          "Q11649",
 		Genres:              []string{"Rock", "Grunge"},
 		Styles:              []string{"Grunge"},
 		Moods:               []string{"Aggressive"},
@@ -231,6 +233,12 @@ func TestWrite_BasicNFO(t *testing.T) {
 	}
 	if !strings.Contains(output, "<audiodbartistid>111239</audiodbartistid>") {
 		t.Error("output missing audiodbartistid")
+	}
+	if !strings.Contains(output, "<discogsartistid>125246</discogsartistid>") {
+		t.Error("output missing discogsartistid")
+	}
+	if !strings.Contains(output, "<wikidataid>Q11649</wikidataid>") {
+		t.Error("output missing wikidataid")
 	}
 	if !strings.Contains(output, "<genre>Rock</genre>") {
 		t.Error("output missing genre Rock")
