@@ -26,8 +26,8 @@ func ToArtist(n *ArtistNFO) *artist.Artist {
 }
 
 // FromArtist converts a domain Artist model to an ArtistNFO.
-// Only writes musicbrainzartistid and audiodbartistid to the NFO
-// (DiscogsID and WikidataID are not read by any media platform from NFO files).
+// Writes musicbrainzartistid, audiodbartistid, discogsartistid, and wikidataid to NFO.
+// Unknown ID elements are safely ignored by media platforms.
 func FromArtist(a *artist.Artist) *ArtistNFO {
 	var fanart *Fanart
 	// Fanart is not stored on the Artist model; callers can set it directly.
@@ -40,6 +40,8 @@ func FromArtist(a *artist.Artist) *ArtistNFO {
 		Disambiguation:      a.Disambiguation,
 		MusicBrainzArtistID: a.MusicBrainzID,
 		AudioDBArtistID:     a.AudioDBID,
+		DiscogsArtistID:     a.DiscogsID,
+		WikidataID:          a.WikidataID,
 		Genres:              a.Genres,
 		Styles:              a.Styles,
 		Moods:               a.Moods,
