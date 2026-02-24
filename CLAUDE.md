@@ -148,6 +148,16 @@ The local compose mounts:
 
 The app is available at `http://localhost:1973` once started.
 
+### setupdocker.sh
+
+A local helper script `setupdocker.sh` automates the full stop/build/start cycle. It is gitignored and not committed. Use it whenever a container rebuild and reload is needed:
+
+```bash
+bash setupdocker.sh
+```
+
+The script stops and removes any running `stillwater*` containers, rebuilds the image, runs `docker compose -f docker-compose.local.yml up -d`, and tails the startup logs.
+
 ## Milestone Work Protocol
 
 When asked to work on a milestone (e.g. "implement Milestone 14"), follow this process:

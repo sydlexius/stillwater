@@ -161,7 +161,6 @@ func run() error {
 	}
 	scraperExecutor := scraper.NewExecutor(scraperService, providerRegistry, logger)
 	orchestrator.SetExecutor(scraperExecutor)
-	ruleEngine.SetScraperService(scraperService)
 
 	// Initialize NFO snapshot service
 	nfoSnapshotService := nfo.NewSnapshotService(db)

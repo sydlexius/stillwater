@@ -36,8 +36,8 @@ func TestSeedDefaults(t *testing.T) {
 		t.Fatalf("List: %v", err)
 	}
 
-	if len(rules) != 9 {
-		t.Fatalf("expected 9 rules, got %d", len(rules))
+	if len(rules) != len(defaultRules) {
+		t.Fatalf("expected %d rules, got %d", len(defaultRules), len(rules))
 	}
 
 	// Verify known rule IDs exist
@@ -50,7 +50,9 @@ func TestSeedDefaults(t *testing.T) {
 		RuleNFOExists, RuleNFOHasMBID,
 		RuleThumbExists, RuleThumbSquare, RuleThumbMinRes,
 		RuleFanartExists, RuleLogoExists,
-		RuleBioExists, RuleFallbackUsed,
+		RuleBioExists,
+		RuleFanartMinRes, RuleFanartAspect,
+		RuleLogoMinRes, RuleBannerExists, RuleBannerMinRes,
 	}
 	for _, id := range expected {
 		if !ids[id] {
@@ -75,8 +77,8 @@ func TestSeedDefaults_Idempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
-	if len(rules) != 9 {
-		t.Errorf("expected 9 rules after double seed, got %d", len(rules))
+	if len(rules) != len(defaultRules) {
+		t.Errorf("expected %d rules after double seed, got %d", len(defaultRules), len(rules))
 	}
 }
 
