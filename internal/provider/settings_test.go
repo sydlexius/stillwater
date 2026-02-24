@@ -173,6 +173,19 @@ func TestListProviderKeyStatuses(t *testing.T) {
 		t.Errorf("expected status 'not_required', got %s", mb.Status)
 	}
 
+	// MusicBrainz: free tier, no help URL, rate limit set
+	if mb.AccessTier != TierFree {
+		t.Errorf("expected MusicBrainz access tier %q, got %q", TierFree, mb.AccessTier)
+	}
+	if mb.HelpURL != "" {
+		t.Errorf("expected MusicBrainz to have no help URL, got %q", mb.HelpURL)
+	}
+	if mb.RateLimit == nil {
+		t.Error("expected MusicBrainz to have rate limit info")
+	} else if mb.RateLimit.RequestsPerSecond != 1 {
+		t.Errorf("expected MusicBrainz rate limit 1 req/s, got %v", mb.RateLimit.RequestsPerSecond)
+	}
+
 	// Fanart.tv: has key
 	fanart := statuses[1]
 	if fanart.Name != NameFanartTV {
@@ -183,6 +196,15 @@ func TestListProviderKeyStatuses(t *testing.T) {
 	}
 	if fanart.Status != "untested" {
 		t.Errorf("expected status 'untested', got %s", fanart.Status)
+	}
+	if fanart.AccessTier != TierFreeKey {
+		t.Errorf("expected Fanart.tv access tier %q, got %q", TierFreeKey, fanart.AccessTier)
+	}
+	if fanart.HelpURL == "" {
+		t.Error("expected Fanart.tv to have a help URL")
+	}
+	if fanart.RateLimit == nil {
+		t.Error("expected Fanart.tv to have rate limit info")
 	}
 
 	// Discogs: no key configured
@@ -195,6 +217,15 @@ func TestListProviderKeyStatuses(t *testing.T) {
 	}
 	if discogs.Status != "unconfigured" {
 		t.Errorf("expected status 'unconfigured', got %s", discogs.Status)
+	}
+	if discogs.AccessTier != TierFreeKey {
+		t.Errorf("expected Discogs access tier %q, got %q", TierFreeKey, discogs.AccessTier)
+	}
+	if discogs.HelpURL == "" {
+		t.Error("expected Discogs to have a help URL")
+	}
+	if discogs.RateLimit == nil {
+		t.Error("expected Discogs to have rate limit info")
 	}
 }
 
