@@ -30,8 +30,12 @@ templ ImageCropModal(artistID string) {
 						5.4:1 (Banner)
 					</button>
 					<button type="button" class="crop-ratio-btn px-3 py-1.5 text-sm rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700" onclick="setCropRatio(NaN)">
-						Free (Logo)
+						Free
 					</button>
+					<label class="ml-2 flex items-center gap-1.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
+						<input type="checkbox" id="crop-lock-ratio" class="rounded" onchange="toggleRatioLock(this.checked)"/>
+						Lock ratio
+					</label>
 				</div>
 				<div id="crop-container" class="max-h-[50vh] overflow-hidden">
 					<img id="crop-image" src="" alt="Crop preview" class="max-w-full"/>
@@ -70,11 +74,18 @@ script saveCroppedImage(artistID string) {
 	if (!window._cropper) return;
 	const canvas = window._cropper.getCroppedCanvas();
 	if (!canvas) return;
-	const base64 = canvas.toDataURL('image/png');
 	const cropType = document.getElementById('crop-type').value;
+	// Logos must be PNG to preserve alpha; all other types stay JPEG to avoid
+	// unnecessary format conversion and larger file sizes.
+	const mimeType = cropType === 'logo' ? 'image/png' : 'image/jpeg';
+	const base64 = canvas.toDataURL(mimeType, 0.92);
+	const csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*\=\s*([^;]*).*$)|^.*$/, "$1");
 	fetch('/api/v1/artists/' + artistID + '/images/crop', {
 		method: 'POST',
-		headers: {'Content-Type': 'application/json'},
+		headers: {
+			'Content-Type': 'application/json',
+			'X-CSRF-Token': csrfToken
+		},
 		body: JSON.stringify({
 			image_data: base64,
 			type: cropType,

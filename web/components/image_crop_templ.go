@@ -30,7 +30,7 @@ func ImageCropModal(artistID string) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div id=\"crop-modal\" class=\"fixed inset-0 z-50 hidden bg-black/50 flex items-center justify-center p-4\"><div class=\"bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto\"><div class=\"flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700\"><h3 class=\"text-lg font-semibold\">Crop Image</h3><button type=\"button\" class=\"text-gray-400 hover:text-gray-600 dark:hover:text-gray-200\" onclick=\"closeCropModal()\">X</button></div><div class=\"p-4\"><div class=\"mb-3 flex flex-wrap items-center gap-2\"><label class=\"text-sm font-medium text-gray-700 dark:text-gray-300\">Aspect Ratio:</label> <button type=\"button\" class=\"crop-ratio-btn px-3 py-1.5 text-sm rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700\" onclick=\"setCropRatio(1)\">1:1 (Thumb)</button> <button type=\"button\" class=\"crop-ratio-btn px-3 py-1.5 text-sm rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700\" onclick=\"setCropRatio(16/9)\">16:9 (Fanart)</button> <button type=\"button\" class=\"crop-ratio-btn px-3 py-1.5 text-sm rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700\" onclick=\"setCropRatio(5.4)\">5.4:1 (Banner)</button> <button type=\"button\" class=\"crop-ratio-btn px-3 py-1.5 text-sm rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700\" onclick=\"setCropRatio(NaN)\">Free (Logo)</button></div><div id=\"crop-container\" class=\"max-h-[50vh] overflow-hidden\"><img id=\"crop-image\" src=\"\" alt=\"Crop preview\" class=\"max-w-full\"></div><div class=\"mt-3\"><label class=\"block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1\">Save as:</label> <select id=\"crop-type\" class=\"rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm\"><option value=\"thumb\">Thumbnail</option> <option value=\"fanart\">Fanart</option> <option value=\"logo\">Logo</option> <option value=\"banner\">Banner</option></select></div></div><div class=\"flex justify-end gap-2 p-4 border-t border-gray-200 dark:border-gray-700\"><button type=\"button\" class=\"px-4 py-2.5 text-sm rounded-md border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700\" onclick=\"closeCropModal()\">Cancel</button> ")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div id=\"crop-modal\" class=\"fixed inset-0 z-50 hidden bg-black/50 flex items-center justify-center p-4\"><div class=\"bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto\"><div class=\"flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700\"><h3 class=\"text-lg font-semibold\">Crop Image</h3><button type=\"button\" class=\"text-gray-400 hover:text-gray-600 dark:hover:text-gray-200\" onclick=\"closeCropModal()\">X</button></div><div class=\"p-4\"><div class=\"mb-3 flex flex-wrap items-center gap-2\"><label class=\"text-sm font-medium text-gray-700 dark:text-gray-300\">Aspect Ratio:</label> <button type=\"button\" class=\"crop-ratio-btn px-3 py-1.5 text-sm rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700\" onclick=\"setCropRatio(1)\">1:1 (Thumb)</button> <button type=\"button\" class=\"crop-ratio-btn px-3 py-1.5 text-sm rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700\" onclick=\"setCropRatio(16/9)\">16:9 (Fanart)</button> <button type=\"button\" class=\"crop-ratio-btn px-3 py-1.5 text-sm rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700\" onclick=\"setCropRatio(5.4)\">5.4:1 (Banner)</button> <button type=\"button\" class=\"crop-ratio-btn px-3 py-1.5 text-sm rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700\" onclick=\"setCropRatio(NaN)\">Free</button> <label class=\"ml-2 flex items-center gap-1.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none\"><input type=\"checkbox\" id=\"crop-lock-ratio\" class=\"rounded\" onchange=\"toggleRatioLock(this.checked)\"> Lock ratio</label></div><div id=\"crop-container\" class=\"max-h-[50vh] overflow-hidden\"><img id=\"crop-image\" src=\"\" alt=\"Crop preview\" class=\"max-w-full\"></div><div class=\"mt-3\"><label class=\"block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1\">Save as:</label> <select id=\"crop-type\" class=\"rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm\"><option value=\"thumb\">Thumbnail</option> <option value=\"fanart\">Fanart</option> <option value=\"logo\">Logo</option> <option value=\"banner\">Banner</option></select></div></div><div class=\"flex justify-end gap-2 p-4 border-t border-gray-200 dark:border-gray-700\"><button type=\"button\" class=\"px-4 py-2.5 text-sm rounded-md border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700\" onclick=\"closeCropModal()\">Cancel</button> ")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -57,15 +57,22 @@ func ImageCropModal(artistID string) templ.Component {
 
 func saveCroppedImage(artistID string) templ.ComponentScript {
 	return templ.ComponentScript{
-		Name: `__templ_saveCroppedImage_4575`,
-		Function: `function __templ_saveCroppedImage_4575(artistID){if (!window._cropper) return;
+		Name: `__templ_saveCroppedImage_dfcf`,
+		Function: `function __templ_saveCroppedImage_dfcf(artistID){if (!window._cropper) return;
 	const canvas = window._cropper.getCroppedCanvas();
 	if (!canvas) return;
-	const base64 = canvas.toDataURL('image/png');
 	const cropType = document.getElementById('crop-type').value;
+	// Logos must be PNG to preserve alpha; all other types stay JPEG to avoid
+	// unnecessary format conversion and larger file sizes.
+	const mimeType = cropType === 'logo' ? 'image/png' : 'image/jpeg';
+	const base64 = canvas.toDataURL(mimeType, 0.92);
+	const csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*\=\s*([^;]*).*$)|^.*$/, "$1");
 	fetch('/api/v1/artists/' + artistID + '/images/crop', {
 		method: 'POST',
-		headers: {'Content-Type': 'application/json'},
+		headers: {
+			'Content-Type': 'application/json',
+			'X-CSRF-Token': csrfToken
+		},
 		body: JSON.stringify({
 			image_data: base64,
 			type: cropType,
@@ -80,8 +87,8 @@ func saveCroppedImage(artistID string) templ.ComponentScript {
 		}
 	});
 }`,
-		Call:       templ.SafeScript(`__templ_saveCroppedImage_4575`, artistID),
-		CallInline: templ.SafeScriptInline(`__templ_saveCroppedImage_4575`, artistID),
+		Call:       templ.SafeScript(`__templ_saveCroppedImage_dfcf`, artistID),
+		CallInline: templ.SafeScriptInline(`__templ_saveCroppedImage_dfcf`, artistID),
 	}
 }
 
