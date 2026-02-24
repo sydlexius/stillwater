@@ -148,6 +148,80 @@ The local compose mounts:
 
 The app is available at `http://localhost:1973` once started.
 
+## Milestone Work Protocol
+
+When asked to work on a milestone (e.g. "implement Milestone 14"), follow this process:
+
+### 1. Scope Assessment
+
+Before writing any code:
+- Read the umbrella issue and all sub-issues on GitHub.
+- Identify the dependency order among sub-issues.
+- Note any `[mode:]` and `[model:]` hints in issue bodies.
+- Check the current state of `main` and any in-progress branches.
+
+### 2. Plan File
+
+Create `docs/plans/m<N>-plan.md` (e.g. `docs/plans/m14-plan.md`) before starting. The plan file must include:
+- Milestone goal and acceptance criteria (summarised from the umbrella issue)
+- Sub-issue dependency map (which issues block which)
+- A checklist for every sub-issue and every PR: use `- [ ]` for pending, `- [x]` for done
+- A notes/observations section for decisions, blockers, and findings discovered during work
+- The UAT and merge order (which PRs land first, which are stacked)
+
+Commit the plan file to `main` before opening any feature branches so it survives context resets.
+
+Example structure:
+
+```markdown
+# Milestone N -- <Title>
+
+## Goal
+<one-paragraph summary>
+
+## Acceptance Criteria
+- [ ] criterion one
+- [ ] criterion two
+
+## Dependency Map
+#X --> #Y --> #Z
+#W (parallel)
+
+## Checklist
+### Issue #X -- <title>
+- [ ] Implementation
+- [ ] Tests
+- [ ] PR opened (#?)
+- [ ] CI passing
+- [ ] PR merged
+
+### Issue #Y -- <title>
+...
+
+## UAT / Merge Order
+1. PR #? (base: main)
+2. PR #? (stacked on #?)
+
+## Notes
+- <date>: <observation or decision>
+```
+
+### 3. During Work
+
+- Update the plan file checklist as work progresses (tick items, add notes).
+- Run `gofmt -d` and `go test ./...` before every commit. Do not push code that fails either.
+- Use `docker-compose.local.yml` for UAT builds whenever the PR/check cycle warrants a container test.
+- After addressing PR review feedback, update the relevant checklist items.
+
+### 4. Cleanup (After All PRs Are Merged)
+
+Once every sub-issue PR is merged to `main`:
+1. Post findings comments to all research/analysis issues and close them.
+2. Post a summary comment to the umbrella issue and close it.
+3. Delete all merged feature branches (remote and local): `gh api repos/.../git/refs/heads/<branch> -X DELETE` then `git branch -d`.
+4. Run `git fetch --prune` to remove stale tracking refs.
+5. Delete the plan file: `git rm docs/plans/m<N>-plan.md` and commit directly to `main`.
+
 ## License
 
 GPL-3.0
