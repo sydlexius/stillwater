@@ -11,10 +11,10 @@ type AccessTier string
 
 // Access tier constants for classifying a provider's access model.
 const (
-	TierFree     AccessTier = "free"      // No key, no limit known
-	TierFreeKey  AccessTier = "free_key"  // Free account/sign-up required
-	TierFreemium AccessTier = "freemium"  // Free tier with quota, paid for more
-	TierPaid     AccessTier = "paid"      // Paid access only
+	TierFree     AccessTier = "free"     // No key, no limit known
+	TierFreeKey  AccessTier = "free_key" // Free account/sign-up required
+	TierFreemium AccessTier = "freemium" // Free tier with quota, paid for more
+	TierPaid     AccessTier = "paid"     // Paid access only
 )
 
 // RateLimitInfo documents the known rate limits for a provider.
