@@ -8,9 +8,9 @@ import (
 	"github.com/sydlexius/stillwater/web/templates"
 )
 
-// handleListInbox returns all open rule violations.
-// GET /api/v1/inbox?status=open
-func (r *Router) handleListInbox(w http.ResponseWriter, req *http.Request) {
+// handleListNotifications returns all open rule violations.
+// GET /api/v1/notifications?status=open
+func (r *Router) handleListNotifications(w http.ResponseWriter, req *http.Request) {
 	status := req.URL.Query().Get("status")
 	if status == "" {
 		status = rule.ViolationStatusOpen
@@ -33,7 +33,7 @@ func (r *Router) handleListInbox(w http.ResponseWriter, req *http.Request) {
 }
 
 // handleDismissViolation dismisses a rule violation.
-// POST /api/v1/inbox/{id}/dismiss
+// POST /api/v1/notifications/{id}/dismiss
 func (r *Router) handleDismissViolation(w http.ResponseWriter, req *http.Request) {
 	id := req.PathValue("id")
 	if id == "" {
@@ -53,7 +53,7 @@ func (r *Router) handleDismissViolation(w http.ResponseWriter, req *http.Request
 }
 
 // handleResolveViolation marks a violation as resolved.
-// POST /api/v1/inbox/{id}/resolve
+// POST /api/v1/notifications/{id}/resolve
 func (r *Router) handleResolveViolation(w http.ResponseWriter, req *http.Request) {
 	id := req.PathValue("id")
 	if id == "" {
@@ -71,7 +71,7 @@ func (r *Router) handleResolveViolation(w http.ResponseWriter, req *http.Request
 }
 
 // handleClearResolvedViolations deletes resolved violations older than 7 days.
-// DELETE /api/v1/inbox/resolved
+// DELETE /api/v1/notifications/resolved
 func (r *Router) handleClearResolvedViolations(w http.ResponseWriter, req *http.Request) {
 	daysOld := 7
 
@@ -84,9 +84,9 @@ func (r *Router) handleClearResolvedViolations(w http.ResponseWriter, req *http.
 	writeJSON(w, http.StatusOK, map[string]string{"status": "cleared"})
 }
 
-// handleInboxPage renders the inbox page.
-// GET /inbox
-func (r *Router) handleInboxPage(w http.ResponseWriter, req *http.Request) {
+// handleNotificationsPage renders the notifications page.
+// GET /notifications
+func (r *Router) handleNotificationsPage(w http.ResponseWriter, req *http.Request) {
 	violations, err := r.ruleService.ListViolations(req.Context(), rule.ViolationStatusOpen)
 	if err != nil {
 		writeError(w, req, http.StatusInternalServerError, "failed to load violations")
@@ -97,17 +97,17 @@ func (r *Router) handleInboxPage(w http.ResponseWriter, req *http.Request) {
 		violations = []rule.RuleViolation{}
 	}
 
-	data := templates.InboxData{
+	data := templates.NotificationsData{
 		Violations: violations,
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = templates.InboxPage(r.assets(), data).Render(req.Context(), w)
+	_ = templates.NotificationsPage(r.assets(), data).Render(req.Context(), w)
 }
 
-// handleInboxTable renders the inbox table for HTMX swaps.
-// GET /inbox/table
-func (r *Router) handleInboxTable(w http.ResponseWriter, req *http.Request) {
+// handleNotificationsTable renders the notifications table for HTMX swaps.
+// GET /notifications/table
+func (r *Router) handleNotificationsTable(w http.ResponseWriter, req *http.Request) {
 	violations, err := r.ruleService.ListViolations(req.Context(), rule.ViolationStatusOpen)
 	if err != nil {
 		writeError(w, req, http.StatusInternalServerError, "failed to load violations")
@@ -118,10 +118,10 @@ func (r *Router) handleInboxTable(w http.ResponseWriter, req *http.Request) {
 		violations = []rule.RuleViolation{}
 	}
 
-	data := templates.InboxData{
+	data := templates.NotificationsData{
 		Violations: violations,
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = templates.InboxTable(data).Render(req.Context(), w)
+	_ = templates.NotificationsTable(data).Render(req.Context(), w)
 }

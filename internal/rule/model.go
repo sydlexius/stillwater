@@ -8,7 +8,7 @@ import (
 // Automation modes for rules
 const (
 	AutomationModeAuto     = "auto"
-	AutomationModeInbox    = "inbox"
+	AutomationModeNotify   = "notify"
 	AutomationModeDisabled = "disabled"
 )
 
@@ -19,7 +19,7 @@ type Rule struct {
 	Description    string     `json:"description"`
 	Category       string     `json:"category"` // "nfo", "image", "metadata"
 	Enabled        bool       `json:"enabled"`
-	AutomationMode string     `json:"automation_mode"` // "auto", "inbox", "disabled"
+	AutomationMode string     `json:"automation_mode"` // "auto", "notify", "disabled"
 	Config         RuleConfig `json:"config"`
 	CreatedAt      time.Time  `json:"created_at"`
 	UpdatedAt      time.Time  `json:"updated_at"`
@@ -72,7 +72,7 @@ const (
 	ViolationStatusResolved  = "resolved"
 )
 
-// RuleViolation represents a persisted rule violation in the inbox.
+// RuleViolation represents a persisted rule violation for the notifications view.
 type RuleViolation struct {
 	ID          string     `json:"id"`
 	RuleID      string     `json:"rule_id"`

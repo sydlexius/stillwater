@@ -1,0 +1,123 @@
+package templates
+
+import (
+	"fmt"
+	"time"
+	"github.com/sydlexius/stillwater/internal/rule"
+)
+
+type NotificationsData struct {
+	Violations []rule.RuleViolation
+}
+
+// NotificationsPage renders the full notifications page.
+templ NotificationsPage(assets AssetPaths, data NotificationsData) {
+	@Layout("Notifications", assets) {
+		<div class="space-y-6">
+			<div class="pb-2">
+				<h1 class="text-2xl font-bold">Rule Violation Notifications</h1>
+				<p class="text-gray-500">Review and manage unresolved rule violations</p>
+			</div>
+
+			if len(data.Violations) == 0 {
+				<div class="rounded-lg border border-gray-200 bg-blue-50 p-4">
+					<p class="text-gray-600">No violations. Your library is clean!</p>
+				</div>
+			} else {
+				<div
+					id="notifications-table"
+					hx-get="/notifications/table"
+					hx-trigger="load"
+					hx-swap="innerHTML"
+				>
+					@notificationsTableContent(data)
+				</div>
+			}
+		</div>
+	}
+}
+
+templ NotificationsTable(data NotificationsData) {
+	if len(data.Violations) == 0 {
+		<div class="rounded-lg border border-gray-200 bg-blue-50 p-4">
+			<p class="text-gray-600">No violations. Your library is clean!</p>
+		</div>
+	} else {
+		@notificationsTableContent(data)
+	}
+}
+
+templ notificationsTableContent(data NotificationsData) {
+	<div class="rounded-lg border border-gray-200 overflow-hidden">
+		<table class="min-w-full divide-y divide-gray-200">
+			<thead class="bg-gray-50">
+				<tr>
+					<th class="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Artist</th>
+					<th class="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Rule</th>
+					<th class="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Severity</th>
+					<th class="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Message</th>
+					<th class="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Age</th>
+					<th class="px-6 py-3 text-right text-xs font-semibold text-gray-700 uppercase">Actions</th>
+				</tr>
+			</thead>
+			<tbody class="divide-y divide-gray-200">
+				for _, v := range data.Violations {
+					<tr class="hover:bg-gray-50 transition">
+						<td class="px-6 py-4 text-sm text-gray-900">{ v.ArtistName }</td>
+						<td class="px-6 py-4 text-sm text-gray-600">{ v.RuleID }</td>
+						<td class="px-6 py-4 text-sm">
+							<span class={
+								"inline-block px-2 py-1 rounded text-xs font-semibold",
+								severityClass(v.Severity),
+							}>
+								{ v.Severity }
+							</span>
+						</td>
+						<td class="px-6 py-4 text-sm text-gray-600">{ v.Message }</td>
+						<td class="px-6 py-4 text-sm text-gray-500">
+							{ formatAge(v.CreatedAt) }
+						</td>
+						<td class="px-6 py-4 text-right text-sm space-x-2">
+							<button
+								hx-post={ "/api/v1/notifications/" + v.ID + "/dismiss" }
+								hx-confirm="Dismiss this violation?"
+								hx-target="closest tr"
+								hx-swap="outerHTML swap:1s"
+								class="text-red-600 hover:text-red-900 font-semibold"
+							>
+								Dismiss
+							</button>
+						</td>
+					</tr>
+				}
+			</tbody>
+		</table>
+	</div>
+}
+
+func severityClass(severity string) string {
+	switch severity {
+	case "error":
+		return "bg-red-100 text-red-800"
+	case "warning":
+		return "bg-yellow-100 text-yellow-800"
+	case "info":
+		return "bg-blue-100 text-blue-800"
+	default:
+		return "bg-gray-100 text-gray-800"
+	}
+}
+
+func formatAge(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	ago := time.Since(t)
+	if ago.Hours() < 1 {
+		return fmt.Sprintf("%dm", int(ago.Minutes()))
+	}
+	if ago.Hours() < 24 {
+		return fmt.Sprintf("%dh", int(ago.Hours()))
+	}
+	return fmt.Sprintf("%dd", int(ago.Hours()/24))
+}
