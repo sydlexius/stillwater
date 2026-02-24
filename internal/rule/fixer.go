@@ -19,9 +19,10 @@ type Fixer interface {
 
 // FixResult describes the outcome of a fix attempt.
 type FixResult struct {
-	RuleID  string `json:"rule_id"`
-	Fixed   bool   `json:"fixed"`
-	Message string `json:"message"`
+	RuleID     string           `json:"rule_id"`
+	Fixed      bool             `json:"fixed"`
+	Message    string           `json:"message"`
+	Candidates []ImageCandidate `json:"candidates,omitempty"` // set when multiple candidates need user selection
 }
 
 // RunResult describes the outcome of running rules against multiple artists.
@@ -149,6 +150,8 @@ func (p *Pipeline) RunRule(ctx context.Context, ruleID string) (*RunResult, erro
 				if fr.Fixed {
 					result.FixesSucceeded++
 					status = ViolationStatusResolved
+				} else if len(fr.Candidates) > 0 {
+					status = ViolationStatusPendingChoice
 				}
 
 				rv := &RuleViolation{
@@ -159,6 +162,7 @@ func (p *Pipeline) RunRule(ctx context.Context, ruleID string) (*RunResult, erro
 					Message:    v.Message,
 					Fixable:    true,
 					Status:     status,
+					Candidates: fr.Candidates,
 				}
 				if status == ViolationStatusResolved {
 					now := time.Now().UTC()
@@ -227,8 +231,31 @@ func (p *Pipeline) RunAll(ctx context.Context) (*RunResult, error) {
 				fr := p.attemptFix(ctx, a, v)
 				result.Results = append(result.Results, *fr)
 				result.FixesAttempted++
+
+				status := ViolationStatusOpen
 				if fr.Fixed {
 					result.FixesSucceeded++
+					status = ViolationStatusResolved
+				} else if len(fr.Candidates) > 0 {
+					status = ViolationStatusPendingChoice
+				}
+
+				rv := &RuleViolation{
+					RuleID:     v.RuleID,
+					ArtistID:   a.ID,
+					ArtistName: a.Name,
+					Severity:   v.Severity,
+					Message:    v.Message,
+					Fixable:    true,
+					Status:     status,
+					Candidates: fr.Candidates,
+				}
+				if status == ViolationStatusResolved {
+					now := time.Now().UTC()
+					rv.ResolvedAt = &now
+				}
+				if err := p.ruleService.UpsertViolation(ctx, rv); err != nil {
+					p.logger.Warn("persisting fix result violation", "rule_id", v.RuleID, "artist", a.Name, "error", err)
 				}
 			}
 

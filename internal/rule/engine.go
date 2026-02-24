@@ -82,6 +82,7 @@ func (e *Engine) Evaluate(ctx context.Context, a *artist.Artist) (*EvaluationRes
 			if v.Severity == "" {
 				v.Severity = r.Config.Severity
 			}
+			v.Config = r.Config
 			result.Violations = append(result.Violations, *v)
 		} else {
 			result.RulesPassed++

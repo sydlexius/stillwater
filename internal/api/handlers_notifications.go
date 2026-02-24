@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 
@@ -87,7 +88,7 @@ func (r *Router) handleClearResolvedViolations(w http.ResponseWriter, req *http.
 // handleNotificationsPage renders the notifications page.
 // GET /notifications
 func (r *Router) handleNotificationsPage(w http.ResponseWriter, req *http.Request) {
-	violations, err := r.ruleService.ListViolations(req.Context(), rule.ViolationStatusOpen)
+	violations, err := r.ruleService.ListViolations(req.Context(), "active")
 	if err != nil {
 		writeError(w, req, http.StatusInternalServerError, "failed to load violations")
 		return
@@ -105,10 +106,94 @@ func (r *Router) handleNotificationsPage(w http.ResponseWriter, req *http.Reques
 	_ = templates.NotificationsPage(r.assets(), data).Render(req.Context(), w)
 }
 
+// handleApplyViolationCandidate downloads and applies a chosen image candidate.
+// POST /api/v1/notifications/{id}/apply-candidate
+func (r *Router) handleApplyViolationCandidate(w http.ResponseWriter, req *http.Request) {
+	id := req.PathValue("id")
+	if id == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "violation id required"})
+		return
+	}
+
+	var body struct {
+		URL       string `json:"url"`
+		ImageType string `json:"image_type"`
+	}
+	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
+		return
+	}
+	if body.URL == "" || body.ImageType == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "url and image_type are required"})
+		return
+	}
+
+	// Load violation to get artist_id and validate the candidate
+	v, err := r.ruleService.GetViolationByID(req.Context(), id)
+	if err != nil {
+		writeError(w, req, http.StatusNotFound, fmt.Sprintf("violation not found: %v", err))
+		return
+	}
+
+	if v.Status != rule.ViolationStatusPendingChoice {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "violation is not pending candidate selection"})
+		return
+	}
+
+	// Validate the URL+imageType against stored candidates (prevents SSRF with arbitrary URLs)
+	var matched bool
+	for _, c := range v.Candidates {
+		if c.URL == body.URL && c.ImageType == body.ImageType {
+			matched = true
+			break
+		}
+	}
+	if !matched {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "url does not match any stored candidate for this violation"})
+		return
+	}
+
+	// Load artist
+	a, err := r.artistService.GetByID(req.Context(), v.ArtistID)
+	if err != nil {
+		writeError(w, req, http.StatusNotFound, fmt.Sprintf("artist not found: %v", err))
+		return
+	}
+
+	// Download and save the chosen image
+	if err := rule.ApplyImageCandidate(req.Context(), a, body.ImageType, body.URL, r.logger); err != nil {
+		writeError(w, req, http.StatusInternalServerError, fmt.Sprintf("applying candidate: %v", err))
+		return
+	}
+
+	// Persist artist update (image flag set by ApplyImageCandidate)
+	if err := r.artistService.Update(req.Context(), a); err != nil {
+		writeError(w, req, http.StatusInternalServerError, fmt.Sprintf("updating artist after apply-candidate: %v", err))
+		return
+	}
+
+	// Mark violation resolved
+	if err := r.ruleService.ResolveViolation(req.Context(), id); err != nil {
+		writeError(w, req, http.StatusInternalServerError, fmt.Sprintf("resolving violation after apply-candidate: %v", err))
+		return
+	}
+
+	// Re-evaluate and persist health score
+	if eval, err := r.ruleEngine.Evaluate(req.Context(), a); err == nil {
+		a.HealthScore = eval.HealthScore
+		if err := r.artistService.Update(req.Context(), a); err != nil {
+			r.logger.Warn("persisting health score after apply-candidate", "artist", a.Name, "error", err)
+		}
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+}
+
 // handleNotificationsTable renders the notifications table for HTMX swaps.
 // GET /notifications/table
 func (r *Router) handleNotificationsTable(w http.ResponseWriter, req *http.Request) {
-	violations, err := r.ruleService.ListViolations(req.Context(), rule.ViolationStatusOpen)
+	violations, err := r.ruleService.ListViolations(req.Context(), "active")
 	if err != nil {
 		writeError(w, req, http.StatusInternalServerError, "failed to load violations")
 		return

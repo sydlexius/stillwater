@@ -280,7 +280,7 @@ func (e *BulkExecutor) fetchImages(ctx context.Context, a *artist.Artist, mode s
 
 	fixed := 0
 	for imageType := range needed {
-		if e.saveBestImage(a, imageType, imgResult) {
+		if e.saveBestImage(ctx, a, imageType, imgResult) {
 			fixed++
 		}
 	}
@@ -296,7 +296,7 @@ func (e *BulkExecutor) fetchImages(ctx context.Context, a *artist.Artist, mode s
 	return BulkItemFixed, fmt.Sprintf("saved %d image(s)", fixed)
 }
 
-func (e *BulkExecutor) saveBestImage(a *artist.Artist, imageType string, result *provider.FetchResult) bool {
+func (e *BulkExecutor) saveBestImage(ctx context.Context, a *artist.Artist, imageType string, result *provider.FetchResult) bool {
 	var candidates []provider.ImageResult
 	for _, im := range result.Images {
 		if string(im.Type) == imageType {
@@ -315,7 +315,7 @@ func (e *BulkExecutor) saveBestImage(a *artist.Artist, imageType string, result 
 	})
 
 	for _, c := range candidates {
-		data, err := fetchImageURL(c.URL)
+		data, err := fetchImageURL(ctx, c.URL)
 		if err != nil {
 			e.logger.Debug("image download failed", "url", c.URL, "error", err)
 			continue

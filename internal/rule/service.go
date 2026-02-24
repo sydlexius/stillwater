@@ -3,6 +3,7 @@ package rule
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -292,19 +293,21 @@ func (s *Service) UpsertViolation(ctx context.Context, v *RuleViolation) error {
 	}
 
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO rule_violations (id, rule_id, artist_id, artist_name, severity, message, fixable, status, dismissed_at, resolved_at, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO rule_violations (id, rule_id, artist_id, artist_name, severity, message, fixable, status, candidates, dismissed_at, resolved_at, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(rule_id, artist_id) DO UPDATE SET
 			artist_name = excluded.artist_name,
 			severity = excluded.severity,
 			message = excluded.message,
 			fixable = excluded.fixable,
 			status = excluded.status,
+			candidates = excluded.candidates,
 			dismissed_at = excluded.dismissed_at,
 			resolved_at = excluded.resolved_at,
 			updated_at = excluded.updated_at
 	`, v.ID, v.RuleID, v.ArtistID, v.ArtistName, v.Severity, v.Message,
-		boolToInt(v.Fixable), v.Status, nilableTime(v.DismissedAt), nilableTime(v.ResolvedAt),
+		boolToInt(v.Fixable), v.Status, marshalCandidates(v.Candidates),
+		nilableTime(v.DismissedAt), nilableTime(v.ResolvedAt),
 		v.CreatedAt.Format(time.RFC3339), v.UpdatedAt.Format(time.RFC3339))
 	if err != nil {
 		return fmt.Errorf("upserting violation: %w", err)
@@ -315,9 +318,13 @@ func (s *Service) UpsertViolation(ctx context.Context, v *RuleViolation) error {
 // ListViolations returns rule violations filtered by status.
 // If status is empty, returns all violations.
 func (s *Service) ListViolations(ctx context.Context, status string) ([]RuleViolation, error) {
-	query := `SELECT id, rule_id, artist_id, artist_name, severity, message, fixable, status, dismissed_at, resolved_at, created_at, updated_at FROM rule_violations`
+	query := `SELECT id, rule_id, artist_id, artist_name, severity, message, fixable, status, candidates, dismissed_at, resolved_at, created_at, updated_at FROM rule_violations`
 	args := []any{}
-	if status != "" {
+	if status == "active" {
+		// active = open + pending_choice (violations that need attention)
+		query += ` WHERE status IN (?, ?)`
+		args = append(args, ViolationStatusOpen, ViolationStatusPendingChoice)
+	} else if status != "" {
 		query += ` WHERE status = ?`
 		args = append(args, status)
 	}
@@ -338,6 +345,22 @@ func (s *Service) ListViolations(ctx context.Context, status string) ([]RuleViol
 		violations = append(violations, *v)
 	}
 	return violations, rows.Err()
+}
+
+// GetViolationByID retrieves a single rule violation by its primary key.
+func (s *Service) GetViolationByID(ctx context.Context, id string) (*RuleViolation, error) {
+	row := s.db.QueryRowContext(ctx, `
+		SELECT id, rule_id, artist_id, artist_name, severity, message, fixable, status, candidates, dismissed_at, resolved_at, created_at, updated_at
+		FROM rule_violations WHERE id = ?
+	`, id)
+	v, err := scanViolation(row)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("violation not found: %s", id)
+		}
+		return nil, fmt.Errorf("getting violation by id: %w", err)
+	}
+	return v, nil
 }
 
 // DismissViolation marks a violation as dismissed.
@@ -391,15 +414,17 @@ func scanHealthSnapshot(row interface{ Scan(...any) error }) (*HealthSnapshot, e
 func scanViolation(row interface{ Scan(...any) error }) (*RuleViolation, error) {
 	var v RuleViolation
 	var fixable int
+	var candidates string
 	var createdAt, updatedAt, dismissedAt, resolvedAt sql.NullString
 
 	err := row.Scan(&v.ID, &v.RuleID, &v.ArtistID, &v.ArtistName, &v.Severity, &v.Message,
-		&fixable, &v.Status, &dismissedAt, &resolvedAt, &createdAt, &updatedAt)
+		&fixable, &v.Status, &candidates, &dismissedAt, &resolvedAt, &createdAt, &updatedAt)
 	if err != nil {
 		return nil, err
 	}
 
 	v.Fixable = fixable == 1
+	v.Candidates = unmarshalCandidates(candidates)
 	v.CreatedAt = parseTime(createdAt.String)
 	v.UpdatedAt = parseTime(updatedAt.String)
 	if dismissedAt.Valid {
@@ -458,4 +483,21 @@ func parseTime(s string) time.Time {
 		return t
 	}
 	return time.Time{}
+}
+
+func marshalCandidates(cs []ImageCandidate) string {
+	if len(cs) == 0 {
+		return "[]"
+	}
+	b, _ := json.Marshal(cs)
+	return string(b)
+}
+
+func unmarshalCandidates(s string) []ImageCandidate {
+	if s == "" || s == "[]" {
+		return nil
+	}
+	var cs []ImageCandidate
+	_ = json.Unmarshal([]byte(s), &cs)
+	return cs
 }
