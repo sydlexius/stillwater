@@ -1,0 +1,15 @@
+{
+  "id": 9999999,
+  "name": "Obscure Artist",
+  "link": "https://www.deezer.com/artist/9999999",
+  "picture": "https://api.deezer.com/artist/9999999/image",
+  "picture_small": "https://e-cdns-images.dzcdn.net/images/artist//56x56-000000-80-0-0.jpg",
+  "picture_medium": "https://e-cdns-images.dzcdn.net/images/artist//250x250-000000-80-0-0.jpg",
+  "picture_big": "https://e-cdns-images.dzcdn.net/images/artist//500x500-000000-80-0-0.jpg",
+  "picture_xl": "https://e-cdns-images.dzcdn.net/images/artist//1000x1000-000000-80-0-0.jpg",
+  "nb_album": 1,
+  "nb_fan": 42,
+  "radio": false,
+  "tracklist": "https://api.deezer.com/artist/9999999/top",
+  "type": "artist"
+}
