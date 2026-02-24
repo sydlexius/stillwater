@@ -13,6 +13,8 @@ func ToArtist(n *ArtistNFO) *artist.Artist {
 		Disambiguation: n.Disambiguation,
 		MusicBrainzID:  n.MusicBrainzArtistID,
 		AudioDBID:      n.AudioDBArtistID,
+		DiscogsID:      n.DiscogsArtistID,
+		WikidataID:     n.WikidataID,
 		Genres:         n.Genres,
 		Styles:         n.Styles,
 		Moods:          n.Moods,

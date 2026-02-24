@@ -9,6 +9,8 @@ func TestToArtist(t *testing.T) {
 		Type:                "group",
 		MusicBrainzArtistID: "5b11f4ce-a62d-471e-81fc-a69a8278c7da",
 		AudioDBArtistID:     "111239",
+		DiscogsArtistID:     "125246",
+		WikidataID:          "Q11649",
 		Genres:              []string{"Rock", "Grunge"},
 		Styles:              []string{"Grunge"},
 		Moods:               []string{"Aggressive"},
@@ -28,6 +30,12 @@ func TestToArtist(t *testing.T) {
 	}
 	if a.AudioDBID != "111239" {
 		t.Errorf("AudioDBID = %q", a.AudioDBID)
+	}
+	if a.DiscogsID != "125246" {
+		t.Errorf("DiscogsID = %q, want %q", a.DiscogsID, "125246")
+	}
+	if a.WikidataID != "Q11649" {
+		t.Errorf("WikidataID = %q, want %q", a.WikidataID, "Q11649")
 	}
 	if len(a.Genres) != 2 {
 		t.Errorf("Genres count = %d, want 2", len(a.Genres))
@@ -60,7 +68,12 @@ func TestFromArtist(t *testing.T) {
 	if n.AudioDBArtistID != "111234" {
 		t.Errorf("AudioDBArtistID = %q", n.AudioDBArtistID)
 	}
-	// DiscogsID and WikidataID should NOT appear in the NFO
+	if n.DiscogsArtistID != "3840" {
+		t.Errorf("DiscogsArtistID = %q, want %q", n.DiscogsArtistID, "3840")
+	}
+	if n.WikidataID != "Q44191" {
+		t.Errorf("WikidataID = %q, want %q", n.WikidataID, "Q44191")
+	}
 	if len(n.Genres) != 1 || n.Genres[0] != "Alternative Rock" {
 		t.Errorf("Genres = %v", n.Genres)
 	}
@@ -73,6 +86,8 @@ func TestConversionRoundTrip(t *testing.T) {
 		Type:                "group",
 		Disambiguation:      "English rock band",
 		MusicBrainzArtistID: "83d91898-7763-47d7-b03b-b92132375c47",
+		DiscogsArtistID:     "60317",
+		WikidataID:          "Q2306",
 		Genres:              []string{"Progressive Rock", "Psychedelic Rock"},
 		Styles:              []string{"Art Rock"},
 		Moods:               []string{"Atmospheric"},
@@ -90,6 +105,12 @@ func TestConversionRoundTrip(t *testing.T) {
 	}
 	if result.MusicBrainzArtistID != original.MusicBrainzArtistID {
 		t.Errorf("MBID mismatch")
+	}
+	if result.DiscogsArtistID != original.DiscogsArtistID {
+		t.Errorf("DiscogsArtistID mismatch: %q vs %q", result.DiscogsArtistID, original.DiscogsArtistID)
+	}
+	if result.WikidataID != original.WikidataID {
+		t.Errorf("WikidataID mismatch: %q vs %q", result.WikidataID, original.WikidataID)
 	}
 	if len(result.Genres) != len(original.Genres) {
 		t.Errorf("Genres count mismatch: %d vs %d", len(result.Genres), len(original.Genres))
