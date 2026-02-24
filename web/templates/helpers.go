@@ -141,6 +141,14 @@ func membersJSON(members []provider.MemberInfo) string {
 	return string(b)
 }
 
+// boolAttr returns "true" or "false" for use in HTML attributes like aria-checked.
+func boolAttr(b bool) string {
+	if b {
+		return "true"
+	}
+	return "false"
+}
+
 // disambiguationHxVals builds the hx-vals JSON string for a disambiguation result card.
 func disambiguationHxVals(r provider.ArtistSearchResult) string {
 	var parts []string

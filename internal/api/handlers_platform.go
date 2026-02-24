@@ -179,6 +179,7 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 		Connections:        conns,
 		Webhooks:           webhooks,
 		WebSearchProviders: webSearchProviders,
+		AutoFetchImages:    r.getBoolSetting(req.Context(), "auto_fetch_images", false),
 	}
 	renderTempl(w, req, templates.SettingsPage(r.assets(), data))
 }

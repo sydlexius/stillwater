@@ -25,6 +25,7 @@ type SettingsData struct {
 	Connections        []connection.Connection
 	Webhooks           []webhook.Webhook
 	WebSearchProviders []provider.WebSearchProviderStatus
+	AutoFetchImages    bool
 }
 
 // settingsTab defines a tab in the settings page navigation.
@@ -139,6 +140,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 	@Layout("Settings", assets) {
 		@resetConfirmPrefsScript()
 		@settingsTabScript()
+		@autoFetchToggleScript()
 		<script src={ assets.SortableJS }></script>
 		<div class="space-y-6">
 			<div class="pb-2">
@@ -208,6 +210,44 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 						</div>
 					</div>
 				}
+				<div class="bg-white dark:bg-gray-800 shadow rounded-lg">
+					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+						<h2 class="text-lg font-semibold">Behavior</h2>
+						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+							Configure default behaviors for image management and metadata workflows.
+						</p>
+					</div>
+					<div class="px-6 py-4">
+						<div class="flex items-center justify-between">
+							<div>
+								<div class="font-medium text-sm">Auto-fetch images</div>
+								<div class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+									Automatically search providers for images when opening the image management page.
+								</div>
+							</div>
+							<button
+								type="button"
+								id="auto-fetch-toggle"
+								class={
+									"relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800",
+									templ.KV("bg-blue-600", data.AutoFetchImages),
+									templ.KV("bg-gray-200 dark:bg-gray-600", !data.AutoFetchImages),
+								}
+								role="switch"
+								aria-checked={ boolAttr(data.AutoFetchImages) }
+								onclick="toggleAutoFetch(this)"
+							>
+								<span
+									class={
+										"pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out",
+										templ.KV("translate-x-5", data.AutoFetchImages),
+										templ.KV("translate-x-0", !data.AutoFetchImages),
+									}
+								></span>
+							</button>
+						</div>
+					</div>
+				</div>
 			</div>
 			<!-- Providers tab -->
 			<div
@@ -464,6 +504,43 @@ templ settingsTabBar(activeTab string) {
 			}
 		</nav>
 	</div>
+}
+
+templ autoFetchToggleScript() {
+	<script>
+		function toggleAutoFetch(btn) {
+			var isOn = btn.getAttribute('aria-checked') === 'true';
+			var newVal = !isOn;
+			var csrfToken = document.cookie.replace(
+				/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1"
+			);
+			fetch('/api/v1/settings', {
+				method: 'PUT',
+				headers: {
+					'Content-Type': 'application/json',
+					'X-CSRF-Token': csrfToken
+				},
+				body: JSON.stringify({'auto_fetch_images': String(newVal)}),
+				credentials: 'same-origin'
+			}).then(function(r) {
+				if (r.ok) {
+					btn.setAttribute('aria-checked', String(newVal));
+					var knob = btn.querySelector('span');
+					if (newVal) {
+						btn.classList.remove('bg-gray-200', 'dark:bg-gray-600');
+						btn.classList.add('bg-blue-600');
+						knob.classList.remove('translate-x-0');
+						knob.classList.add('translate-x-5');
+					} else {
+						btn.classList.remove('bg-blue-600');
+						btn.classList.add('bg-gray-200', 'dark:bg-gray-600');
+						knob.classList.remove('translate-x-5');
+						knob.classList.add('translate-x-0');
+					}
+				}
+			});
+		}
+	</script>
 }
 
 templ settingsTabScript() {
