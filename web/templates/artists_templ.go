@@ -162,7 +162,7 @@ func ArtistsPage(assets AssetPaths, data ArtistListData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "</div><script>\n\t\t\t(function() {\n\t\t\t\tvar btn = document.getElementById('scan-btn');\n\t\t\t\tif (!btn) return;\n\n\t\t\t\tdocument.body.addEventListener('htmx:afterRequest', function(evt) {\n\t\t\t\t\tif (evt.detail.elt !== btn) return;\n\t\t\t\t\tif (!evt.detail.successful) return;\n\n\t\t\t\t\tvar spinner = document.getElementById('scan-spinner');\n\t\t\t\t\tvar label = document.getElementById('scan-label');\n\t\t\t\t\tbtn.disabled = true;\n\t\t\t\t\tspinner.style.opacity = '1';\n\t\t\t\t\tlabel.textContent = 'Scanning...';\n\n\t\t\t\t\tvar poll = setInterval(function() {\n\t\t\t\t\t\tfetch('/api/v1/scanner/status')\n\t\t\t\t\t\t\t.then(function(r) { return r.json(); })\n\t\t\t\t\t\t\t.then(function(data) {\n\t\t\t\t\t\t\t\tif (data.status === 'completed' || data.status === 'failed') {\n\t\t\t\t\t\t\t\t\tclearInterval(poll);\n\t\t\t\t\t\t\t\t\tbtn.disabled = false;\n\t\t\t\t\t\t\t\t\tspinner.style.opacity = '';\n\t\t\t\t\t\t\t\t\tlabel.textContent = 'Scan Library';\n\t\t\t\t\t\t\t\t\thtmx.ajax('GET', window.location.pathname + window.location.search, {target: '#artist-table', swap: 'outerHTML'});\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t})\n\t\t\t\t\t\t\t.catch(function() {\n\t\t\t\t\t\t\t\tclearInterval(poll);\n\t\t\t\t\t\t\t\tbtn.disabled = false;\n\t\t\t\t\t\t\t\tspinner.style.opacity = '';\n\t\t\t\t\t\t\t\tlabel.textContent = 'Scan Library';\n\t\t\t\t\t\t\t});\n\t\t\t\t\t}, 2000);\n\t\t\t\t});\n\t\t\t})();\n\t\t</script>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "</div><script>\n\t\t\t// Reload the artist table when the page is restored from bfcache (browser\n\t\t\t// back/forward navigation) so status badges reflect the latest state.\n\t\t\twindow.addEventListener('pageshow', function(evt) {\n\t\t\t\tif (evt.persisted) {\n\t\t\t\t\thtmx.ajax('GET', window.location.pathname + window.location.search, {target: '#artist-table', swap: 'outerHTML'});\n\t\t\t\t}\n\t\t\t});\n\n\t\t\t(function() {\n\t\t\t\tvar btn = document.getElementById('scan-btn');\n\t\t\t\tif (!btn) return;\n\n\t\t\t\tdocument.body.addEventListener('htmx:afterRequest', function(evt) {\n\t\t\t\t\tif (evt.detail.elt !== btn) return;\n\t\t\t\t\tif (!evt.detail.successful) return;\n\n\t\t\t\t\tvar spinner = document.getElementById('scan-spinner');\n\t\t\t\t\tvar label = document.getElementById('scan-label');\n\t\t\t\t\tbtn.disabled = true;\n\t\t\t\t\tspinner.style.opacity = '1';\n\t\t\t\t\tlabel.textContent = 'Scanning...';\n\n\t\t\t\t\tvar poll = setInterval(function() {\n\t\t\t\t\t\tfetch('/api/v1/scanner/status')\n\t\t\t\t\t\t\t.then(function(r) { return r.json(); })\n\t\t\t\t\t\t\t.then(function(data) {\n\t\t\t\t\t\t\t\tif (data.status === 'completed' || data.status === 'failed') {\n\t\t\t\t\t\t\t\t\tclearInterval(poll);\n\t\t\t\t\t\t\t\t\tbtn.disabled = false;\n\t\t\t\t\t\t\t\t\tspinner.style.opacity = '';\n\t\t\t\t\t\t\t\t\tlabel.textContent = 'Scan Library';\n\t\t\t\t\t\t\t\t\thtmx.ajax('GET', window.location.pathname + window.location.search, {target: '#artist-table', swap: 'outerHTML'});\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t})\n\t\t\t\t\t\t\t.catch(function() {\n\t\t\t\t\t\t\t\tclearInterval(poll);\n\t\t\t\t\t\t\t\tbtn.disabled = false;\n\t\t\t\t\t\t\t\tspinner.style.opacity = '';\n\t\t\t\t\t\t\t\tlabel.textContent = 'Scan Library';\n\t\t\t\t\t\t\t});\n\t\t\t\t\t}, 2000);\n\t\t\t\t});\n\t\t\t})();\n\t\t</script>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -276,7 +276,7 @@ func ArtistRow(a artist.Artist) templ.Component {
 		var templ_7745c5c3_Var9 templ.SafeURL
 		templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/artists/" + a.ID))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 170, Col: 44}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 178, Col: 44}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 		if templ_7745c5c3_Err != nil {
@@ -289,7 +289,7 @@ func ArtistRow(a artist.Artist) templ.Component {
 		var templ_7745c5c3_Var10 string
 		templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(a.Name)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 173, Col: 12}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 181, Col: 12}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 		if templ_7745c5c3_Err != nil {
@@ -307,7 +307,7 @@ func ArtistRow(a artist.Artist) templ.Component {
 			var templ_7745c5c3_Var11 string
 			templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(a.SortName)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 176, Col: 58}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 184, Col: 58}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 			if templ_7745c5c3_Err != nil {
@@ -336,7 +336,7 @@ func ArtistRow(a artist.Artist) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = components.StatusBadge(a.ThumbExists, "Thumb").Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = components.ImageStatusBadge(a.ThumbExists, a.ThumbLowRes, "Thumb").Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -344,7 +344,7 @@ func ArtistRow(a artist.Artist) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = components.StatusBadge(a.FanartExists, "Fanart").Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = components.ImageStatusBadge(a.FanartExists, a.FanartLowRes, "Fanart").Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -352,7 +352,7 @@ func ArtistRow(a artist.Artist) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = components.StatusBadge(a.LogoExists, "Logo").Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = components.ImageStatusBadge(a.LogoExists, a.LogoLowRes, "Logo").Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

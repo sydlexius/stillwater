@@ -79,6 +79,14 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 			@ArtistTable(data)
 		</div>
 		<script>
+			// Reload the artist table when the page is restored from bfcache (browser
+			// back/forward navigation) so status badges reflect the latest state.
+			window.addEventListener('pageshow', function(evt) {
+				if (evt.persisted) {
+					htmx.ajax('GET', window.location.pathname + window.location.search, {target: '#artist-table', swap: 'outerHTML'});
+				}
+			});
+
 			(function() {
 				var btn = document.getElementById('scan-btn');
 				if (!btn) return;
@@ -183,13 +191,13 @@ templ ArtistRow(a artist.Artist) {
 			@components.StatusBadge(a.NFOExists, "NFO")
 		</td>
 		<td class="px-4 py-3 text-center">
-			@components.StatusBadge(a.ThumbExists, "Thumb")
+			@components.ImageStatusBadge(a.ThumbExists, a.ThumbLowRes, "Thumb")
 		</td>
 		<td class="px-4 py-3 text-center">
-			@components.StatusBadge(a.FanartExists, "Fanart")
+			@components.ImageStatusBadge(a.FanartExists, a.FanartLowRes, "Fanart")
 		</td>
 		<td class="px-4 py-3 text-center">
-			@components.StatusBadge(a.LogoExists, "Logo")
+			@components.ImageStatusBadge(a.LogoExists, a.LogoLowRes, "Logo")
 		</td>
 		<td class="px-4 py-3 text-center">
 			@components.StatusBadge(a.MusicBrainzID != "", "MBID")

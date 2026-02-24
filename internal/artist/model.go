@@ -32,6 +32,10 @@ type Artist struct {
 	FanartExists    bool              `json:"fanart_exists"`
 	LogoExists      bool              `json:"logo_exists"`
 	BannerExists    bool              `json:"banner_exists"`
+	ThumbLowRes     bool              `json:"thumb_low_res"`
+	FanartLowRes    bool              `json:"fanart_low_res"`
+	LogoLowRes      bool              `json:"logo_low_res"`
+	BannerLowRes    bool              `json:"banner_low_res"`
 	HealthScore     float64           `json:"health_score"`
 	IsExcluded      bool              `json:"is_excluded"`
 	ExclusionReason string            `json:"exclusion_reason,omitempty"`

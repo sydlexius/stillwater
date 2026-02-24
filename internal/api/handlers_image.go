@@ -474,17 +474,35 @@ func (r *Router) probeImageDimensions(ctx context.Context, images []provider.Ima
 	return images
 }
 
-// setArtistImageFlag sets the image existence flag and persists it.
+// setArtistImageFlag sets the image existence (and low-resolution) flags and persists them.
+// When exists is true the image file is probed for dimensions so the low-res flag is accurate.
+// When exists is false the low-res flag is cleared.
 func (r *Router) setArtistImageFlag(ctx context.Context, a *artist.Artist, imageType string, exists bool) {
+	var lowRes bool
+	if exists {
+		patterns := r.getActiveNamingConfig(ctx, imageType)
+		if filePath, found := findExistingImage(a.Path, patterns); found {
+			if f, err := os.Open(filePath); err == nil { //nolint:gosec // path from trusted naming patterns
+				w, h, _ := img.GetDimensions(f)
+				_ = f.Close()
+				lowRes = img.IsLowResolution(w, h, imageType)
+			}
+		}
+	}
+
 	switch imageType {
 	case "thumb":
 		a.ThumbExists = exists
+		a.ThumbLowRes = lowRes
 	case "fanart":
 		a.FanartExists = exists
+		a.FanartLowRes = lowRes
 	case "logo":
 		a.LogoExists = exists
+		a.LogoLowRes = lowRes
 	case "banner":
 		a.BannerExists = exists
+		a.BannerLowRes = lowRes
 	}
 
 	if err := r.artistService.Update(ctx, a); err != nil {
@@ -528,7 +546,11 @@ func (r *Router) handleServeImage(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	w.Header().Set("Cache-Control", "private, max-age=3600")
+	// no-cache: browser must revalidate before reusing. http.ServeFile sets
+	// ETag/Last-Modified from the file mtime, so an unchanged file returns
+	// 304 Not Modified with no data transfer, while a replaced image is
+	// served fresh on the very next request (including a normal F5 reload).
+	w.Header().Set("Cache-Control", "no-cache")
 	http.ServeFile(w, req, filePath)
 }
 

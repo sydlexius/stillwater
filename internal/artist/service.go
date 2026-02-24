@@ -17,6 +17,7 @@ const artistColumns = `id, name, sort_name, type, gender, disambiguation,
 	genres, styles, moods,
 	years_active, born, formed, died, disbanded, biography,
 	path, nfo_exists, thumb_exists, fanart_exists, logo_exists, banner_exists,
+	thumb_low_res, fanart_low_res, logo_low_res, banner_low_res,
 	health_score, is_excluded, exclusion_reason, is_classical, metadata_sources,
 	last_scanned_at, created_at, updated_at`
 
@@ -46,9 +47,10 @@ func (s *Service) Create(ctx context.Context, a *Artist) error {
 			genres, styles, moods,
 			years_active, born, formed, died, disbanded, biography,
 			path, nfo_exists, thumb_exists, fanart_exists, logo_exists, banner_exists,
+			thumb_low_res, fanart_low_res, logo_low_res, banner_low_res,
 			health_score, is_excluded, exclusion_reason, is_classical, metadata_sources,
 			last_scanned_at, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		a.ID, a.Name, a.SortName, a.Type, a.Gender, a.Disambiguation,
 		a.MusicBrainzID, a.AudioDBID, a.DiscogsID, a.WikidataID,
@@ -56,6 +58,8 @@ func (s *Service) Create(ctx context.Context, a *Artist) error {
 		a.YearsActive, a.Born, a.Formed, a.Died, a.Disbanded, a.Biography,
 		a.Path, boolToInt(a.NFOExists), boolToInt(a.ThumbExists),
 		boolToInt(a.FanartExists), boolToInt(a.LogoExists), boolToInt(a.BannerExists),
+		boolToInt(a.ThumbLowRes), boolToInt(a.FanartLowRes),
+		boolToInt(a.LogoLowRes), boolToInt(a.BannerLowRes),
 		a.HealthScore, boolToInt(a.IsExcluded), a.ExclusionReason, boolToInt(a.IsClassical),
 		MarshalStringMap(a.MetadataSources),
 		formatNullableTime(a.LastScannedAt),
@@ -196,6 +200,7 @@ func (s *Service) Update(ctx context.Context, a *Artist) error {
 			genres = ?, styles = ?, moods = ?,
 			years_active = ?, born = ?, formed = ?, died = ?, disbanded = ?, biography = ?,
 			path = ?, nfo_exists = ?, thumb_exists = ?, fanart_exists = ?, logo_exists = ?, banner_exists = ?,
+			thumb_low_res = ?, fanart_low_res = ?, logo_low_res = ?, banner_low_res = ?,
 			health_score = ?, is_excluded = ?, exclusion_reason = ?, is_classical = ?,
 			metadata_sources = ?,
 			last_scanned_at = ?, updated_at = ?
@@ -207,6 +212,8 @@ func (s *Service) Update(ctx context.Context, a *Artist) error {
 		a.YearsActive, a.Born, a.Formed, a.Died, a.Disbanded, a.Biography,
 		a.Path, boolToInt(a.NFOExists), boolToInt(a.ThumbExists),
 		boolToInt(a.FanartExists), boolToInt(a.LogoExists), boolToInt(a.BannerExists),
+		boolToInt(a.ThumbLowRes), boolToInt(a.FanartLowRes),
+		boolToInt(a.LogoLowRes), boolToInt(a.BannerLowRes),
 		a.HealthScore, boolToInt(a.IsExcluded), a.ExclusionReason, boolToInt(a.IsClassical),
 		MarshalStringMap(a.MetadataSources),
 		formatNullableTime(a.LastScannedAt),
@@ -511,6 +518,7 @@ func scanArtist(row interface{ Scan(...any) error }) (*Artist, error) {
 	var metadataSources string
 	var lastScannedAt sql.NullString
 	var nfo, thumb, fanart, logo, banner int
+	var thumbLowRes, fanartLowRes, logoLowRes, bannerLowRes int
 	var isExcluded, isClassical int
 	var createdAt, updatedAt string
 
@@ -520,6 +528,7 @@ func scanArtist(row interface{ Scan(...any) error }) (*Artist, error) {
 		&genres, &styles, &moods,
 		&a.YearsActive, &a.Born, &a.Formed, &a.Died, &a.Disbanded, &a.Biography,
 		&a.Path, &nfo, &thumb, &fanart, &logo, &banner,
+		&thumbLowRes, &fanartLowRes, &logoLowRes, &bannerLowRes,
 		&a.HealthScore, &isExcluded, &a.ExclusionReason, &isClassical,
 		&metadataSources,
 		&lastScannedAt,
@@ -537,6 +546,10 @@ func scanArtist(row interface{ Scan(...any) error }) (*Artist, error) {
 	a.FanartExists = fanart == 1
 	a.LogoExists = logo == 1
 	a.BannerExists = banner == 1
+	a.ThumbLowRes = thumbLowRes == 1
+	a.FanartLowRes = fanartLowRes == 1
+	a.LogoLowRes = logoLowRes == 1
+	a.BannerLowRes = bannerLowRes == 1
 	a.IsExcluded = isExcluded == 1
 	a.IsClassical = isClassical == 1
 	a.MetadataSources = UnmarshalStringMap(metadataSources)
