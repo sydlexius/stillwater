@@ -162,9 +162,14 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 		r.logger.Error("listing web search statuses for settings page", "error", err)
 	}
 
+	rules, err := r.ruleService.List(req.Context())
+	if err != nil {
+		r.logger.Warn("fetching rules for settings page", "error", err)
+	}
+
 	tab := req.URL.Query().Get("tab")
 	switch tab {
-	case "general", "providers", "connections", "notifications", "maintenance":
+	case "general", "providers", "connections", "notifications", "rules", "maintenance":
 		// Valid tab.
 	default:
 		tab = "general"
@@ -180,6 +185,7 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 		Webhooks:           webhooks,
 		WebSearchProviders: webSearchProviders,
 		AutoFetchImages:    r.getBoolSetting(req.Context(), "auto_fetch_images", false),
+		Rules:              rules,
 	}
 	renderTempl(w, req, templates.SettingsPage(r.assets(), data))
 }

@@ -1,11 +1,13 @@
 package templates
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/platform"
 	"github.com/sydlexius/stillwater/internal/provider"
+	"github.com/sydlexius/stillwater/internal/rule"
 	"github.com/sydlexius/stillwater/internal/webhook"
 	"github.com/sydlexius/stillwater/web/components"
 )
@@ -26,6 +28,7 @@ type SettingsData struct {
 	Webhooks           []webhook.Webhook
 	WebSearchProviders []provider.WebSearchProviderStatus
 	AutoFetchImages    bool
+	Rules              []rule.Rule
 }
 
 // settingsTab defines a tab in the settings page navigation.
@@ -41,8 +44,238 @@ func settingsTabs() []settingsTab {
 		{ID: "providers", Label: "Providers"},
 		{ID: "connections", Label: "Connections"},
 		{ID: "notifications", Label: "Notifications"},
+		{ID: "rules", Label: "Rules"},
 		{ID: "maintenance", Label: "Maintenance"},
 	}
+}
+
+// rulesForCategory filters rules by category.
+func rulesForCategory(rules []rule.Rule, category string) []rule.Rule {
+	var result []rule.Rule
+	for _, r := range rules {
+		if r.Category == category {
+			result = append(result, r)
+		}
+	}
+	return result
+}
+
+// categoryLabel returns a human-readable label for a rule category.
+func categoryLabel(category string) string {
+	switch category {
+	case "nfo":
+		return "NFO"
+	case "image":
+		return "Images"
+	case "metadata":
+		return "Metadata"
+	default:
+		return category
+	}
+}
+
+// ruleToggleBtnClasses returns CSS classes for the enabled/disabled toggle button.
+func ruleToggleBtnClasses(enabled bool) string {
+	base := "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800"
+	if enabled {
+		return base + " bg-blue-600"
+	}
+	return base + " bg-gray-200 dark:bg-gray-600"
+}
+
+// ruleToggleKnobClasses returns CSS classes for the toggle knob span.
+func ruleToggleKnobClasses(enabled bool) string {
+	base := "pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"
+	if enabled {
+		return base + " translate-x-5"
+	}
+	return base + " translate-x-0"
+}
+
+// severityBadgeClasses returns Tailwind CSS classes for a severity badge.
+func severityBadgeClasses(severity string) string {
+	switch severity {
+	case "error":
+		return "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300"
+	case "warning":
+		return "bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300"
+	default:
+		return "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300"
+	}
+}
+
+// ruleHasConfig returns true if the rule has user-configurable parameters.
+func ruleHasConfig(id string) bool {
+	switch id {
+	case "thumb_min_res", "thumb_square", "fanart_min_res", "fanart_aspect",
+		"logo_min_res", "banner_min_res", "bio_exists":
+		return true
+	}
+	return false
+}
+
+// intOrDefault formats an int for use in an HTML input value, using def when v is zero.
+func intOrDefault(v, def int) string {
+	if v == 0 {
+		return fmt.Sprintf("%d", def)
+	}
+	return fmt.Sprintf("%d", v)
+}
+
+// floatOrDefault formats a float64 for use in an HTML input value, using def when v is zero.
+func floatOrDefault(v, def float64) string {
+	val := v
+	if val == 0 {
+		val = def
+	}
+	return fmt.Sprintf("%g", val)
+}
+
+// defaultMinWidth returns the default minimum width for a given rule.
+func defaultMinWidth(id string) int {
+	switch id {
+	case "thumb_min_res":
+		return 500
+	case "fanart_min_res":
+		return 1920
+	case "logo_min_res":
+		return 400
+	case "banner_min_res":
+		return 1000
+	}
+	return 0
+}
+
+// defaultMinHeight returns the default minimum height for a given rule.
+func defaultMinHeight(id string) int {
+	switch id {
+	case "thumb_min_res":
+		return 500
+	case "fanart_min_res":
+		return 1080
+	case "banner_min_res":
+		return 185
+	}
+	return 0
+}
+
+// defaultAspectRatio returns the default aspect ratio for a given rule.
+func defaultAspectRatio(id string) float64 {
+	switch id {
+	case "thumb_square":
+		return 1.0
+	case "fanart_aspect":
+		return 16.0 / 9.0
+	}
+	return 1.0
+}
+
+// floatNear returns true if a and b are within 0.001 of each other.
+func floatNear(a, b float64) bool {
+	d := a - b
+	if d < 0 {
+		d = -d
+	}
+	return d < 0.001
+}
+
+// fanartResPresetKey returns the preset key matching the given fanart resolution,
+// defaulting to 1080p when both values are zero.
+func fanartResPresetKey(w, h int) string {
+	if w == 0 {
+		w = 1920
+	}
+	if h == 0 {
+		h = 1080
+	}
+	switch {
+	case w == 1280 && h == 720:
+		return "720p"
+	case w == 1920 && h == 1080:
+		return "1080p"
+	case w == 2560 && h == 1440:
+		return "1440p"
+	case w == 3840 && h == 2160:
+		return "4k"
+	}
+	return "custom"
+}
+
+// thumbResPresetKey returns the preset key for a thumbnail resolution.
+func thumbResPresetKey(w, h int) string {
+	if w == 0 {
+		w = 500
+	}
+	if h == 0 {
+		h = 500
+	}
+	switch {
+	case w == 500 && h == 500:
+		return "std"
+	case w == 1000 && h == 1000:
+		return "hd"
+	case w == 2000 && h == 2000:
+		return "ultra"
+	}
+	return "custom"
+}
+
+// logoWidthPresetKey returns the preset key for a logo minimum width.
+func logoWidthPresetKey(w int) string {
+	if w == 0 {
+		w = 400
+	}
+	switch w {
+	case 400:
+		return "std"
+	case 800:
+		return "large"
+	}
+	return "custom"
+}
+
+// bannerResPresetKey returns the preset key for a banner resolution.
+func bannerResPresetKey(w, h int) string {
+	if w == 0 {
+		w = 1000
+	}
+	if h == 0 {
+		h = 185
+	}
+	switch {
+	case w == 758 && h == 140:
+		return "kodi"
+	case w == 1000 && h == 185:
+		return "wide"
+	}
+	return "custom"
+}
+
+// fanartAspectPresetKey returns the preset key for a fanart aspect ratio.
+func fanartAspectPresetKey(ratio float64) string {
+	if ratio == 0 {
+		ratio = 16.0 / 9.0
+	}
+	switch {
+	case floatNear(ratio, 16.0/9.0):
+		return "16:9"
+	case floatNear(ratio, 1.6):
+		return "16:10"
+	case floatNear(ratio, 2.0):
+		return "2:1"
+	}
+	return "custom"
+}
+
+// thumbAspectPresetKey returns the preset key for a thumbnail aspect ratio.
+func thumbAspectPresetKey(ratio float64) string {
+	if ratio == 0 {
+		ratio = 1.0
+	}
+	if floatNear(ratio, 1.0) {
+		return "1:1"
+	}
+	return "custom"
 }
 
 // providerIsAvailable returns true if a provider has a key configured or does not require one.
@@ -125,6 +358,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 		@resetConfirmPrefsScript()
 		@settingsTabScript()
 		@autoFetchToggleScript()
+		@ruleToggleScript()
 		<script src={ assets.SortableJS }></script>
 		<div class="space-y-6">
 			<div class="pb-2">
@@ -381,6 +615,35 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 						</div>
 					</div>
 				</div>
+			</div>
+			<!-- Rules tab -->
+			<div
+				data-tab-panel="rules"
+				class={
+					"space-y-6",
+					templ.KV("hidden", data.ActiveTab != "rules"),
+				}
+			>
+				for _, cat := range []string{"nfo", "image", "metadata"} {
+					{{ catRules := rulesForCategory(data.Rules, cat) }}
+					if len(catRules) > 0 {
+						<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
+							<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+								<h2 class="text-lg font-semibold">{ categoryLabel(cat) } Rules</h2>
+							</div>
+							<div class="px-6 divide-y divide-gray-100 dark:divide-gray-700">
+								for _, rl := range catRules {
+									@ruleRow(rl)
+								}
+							</div>
+						</div>
+					}
+				}
+				if len(data.Rules) == 0 {
+					<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg px-6 py-8 text-center">
+						<p class="text-sm text-gray-500 dark:text-gray-400">No rules found.</p>
+					</div>
+				}
 			</div>
 			<!-- Maintenance tab -->
 			<div
@@ -1108,4 +1371,334 @@ templ profileCard(p platform.Profile) {
 			<div>Fanart: { joinNames(p.ImageNaming.Fanart) }</div>
 		</div>
 	</div>
+}
+
+templ ruleRow(rl rule.Rule) {
+	<div class="py-4 space-y-2">
+		<div class="flex items-center justify-between gap-4">
+			<div class="flex-1 min-w-0">
+				<div class="flex items-center gap-2">
+					<span class="font-medium text-sm">{ rl.Name }</span>
+					@severityBadge(rl.Config.Severity)
+				</div>
+				<p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{ rl.Description }</p>
+			</div>
+			<div class="flex items-center gap-3 shrink-0">
+				<select
+					class="text-xs rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
+					data-rule-id={ rl.ID }
+					onchange="patchRule(this.dataset.ruleId, {automation_mode: this.value})"
+					disabled?={ !rl.Enabled }
+				>
+					<option value="auto" selected?={ rl.AutomationMode == "auto" || rl.AutomationMode == "" }>Auto-fix</option>
+					<option value="notify" selected?={ rl.AutomationMode == "notify" }>Notify only</option>
+					<option value="disabled" selected?={ rl.AutomationMode == "disabled" }>Disabled</option>
+				</select>
+				<button
+					type="button"
+					class={ ruleToggleBtnClasses(rl.Enabled) }
+					role="switch"
+					aria-checked={ boolAttr(rl.Enabled) }
+					data-rule-id={ rl.ID }
+					onclick="toggleRuleEnabled(this)"
+					aria-label={ "Enable " + rl.Name }
+				>
+					<span class={ ruleToggleKnobClasses(rl.Enabled) }></span>
+				</button>
+			</div>
+		</div>
+		if ruleHasConfig(rl.ID) {
+			<div>
+				<button
+					type="button"
+					class="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+					onclick={ toggleRuleConfig(rl.ID) }
+				>Configure</button>
+				<div id={ "rule-cfg-" + rl.ID } class="hidden mt-2">
+					@ruleConfigForm(rl)
+				</div>
+			</div>
+		}
+	</div>
+}
+
+templ severityBadge(severity string) {
+	{{ cls := severityBadgeClasses(severity) }}
+	<span class={ "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium", cls }>
+		{ severity }
+	</span>
+}
+
+templ ruleConfigForm(rl rule.Rule) {
+	<form
+		class="grid grid-cols-2 gap-3 sm:grid-cols-3 items-end"
+		data-rule-id={ rl.ID }
+		onsubmit="handleRuleConfigSubmit(event)"
+	>
+		if rl.ID == "thumb_min_res" || rl.ID == "fanart_min_res" || rl.ID == "banner_min_res" || rl.ID == "logo_min_res" {
+			<div class="col-span-full">
+				<label class="block">
+					<span class="text-xs text-gray-600 dark:text-gray-400">Resolution preset</span>
+					<select
+						class="mt-0.5 w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+						onchange="applyResPreset(this)"
+					>
+						@resolutionPresetOptions(rl)
+					</select>
+				</label>
+			</div>
+		}
+		if rl.ID == "thumb_min_res" || rl.ID == "fanart_min_res" || rl.ID == "banner_min_res" {
+			<label class="block">
+				<span class="text-xs text-gray-600 dark:text-gray-400">Min width (px)</span>
+				<input
+					type="number"
+					name="min_width"
+					min="1"
+					value={ intOrDefault(rl.Config.MinWidth, defaultMinWidth(rl.ID)) }
+					class="mt-0.5 w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+				/>
+			</label>
+			<label class="block">
+				<span class="text-xs text-gray-600 dark:text-gray-400">Min height (px)</span>
+				<input
+					type="number"
+					name="min_height"
+					min="1"
+					value={ intOrDefault(rl.Config.MinHeight, defaultMinHeight(rl.ID)) }
+					class="mt-0.5 w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+				/>
+			</label>
+		}
+		if rl.ID == "logo_min_res" {
+			<label class="block">
+				<span class="text-xs text-gray-600 dark:text-gray-400">Min width (px)</span>
+				<input
+					type="number"
+					name="min_width"
+					min="1"
+					value={ intOrDefault(rl.Config.MinWidth, 400) }
+					class="mt-0.5 w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+				/>
+			</label>
+		}
+		if rl.ID == "thumb_square" || rl.ID == "fanart_aspect" {
+			<div class="col-span-full">
+				<label class="block">
+					<span class="text-xs text-gray-600 dark:text-gray-400">Aspect ratio preset</span>
+					<select
+						class="mt-0.5 w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+						onchange="applyAspectPreset(this)"
+					>
+						@aspectPresetOptions(rl)
+					</select>
+				</label>
+			</div>
+			<label class="block">
+				<span class="text-xs text-gray-600 dark:text-gray-400">Aspect ratio (decimal)</span>
+				<input
+					type="number"
+					name="aspect_ratio"
+					step="0.001"
+					min="0.1"
+					value={ floatOrDefault(rl.Config.AspectRatio, defaultAspectRatio(rl.ID)) }
+					class="mt-0.5 w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+				/>
+			</label>
+			<label class="block">
+				<span class="text-xs text-gray-600 dark:text-gray-400">Tolerance (e.g. 0.1)</span>
+				<input
+					type="number"
+					name="tolerance"
+					step="0.01"
+					min="0"
+					max="0.5"
+					value={ floatOrDefault(rl.Config.Tolerance, 0.1) }
+					class="mt-0.5 w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+				/>
+			</label>
+		}
+		if rl.ID == "bio_exists" {
+			<label class="block">
+				<span class="text-xs text-gray-600 dark:text-gray-400">Min length (chars)</span>
+				<input
+					type="number"
+					name="min_length"
+					min="1"
+					value={ intOrDefault(rl.Config.MinLength, 10) }
+					class="mt-0.5 w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+				/>
+			</label>
+		}
+		<label class="block">
+			<span class="text-xs text-gray-600 dark:text-gray-400">Severity</span>
+			<select
+				name="severity"
+				class="mt-0.5 w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+			>
+				<option value="error" selected?={ rl.Config.Severity == "error" }>Error</option>
+				<option value="warning" selected?={ rl.Config.Severity == "warning" || rl.Config.Severity == "" }>Warning</option>
+				<option value="info" selected?={ rl.Config.Severity == "info" }>Info</option>
+			</select>
+		</label>
+		<div class="flex gap-2 col-span-full">
+			<button
+				type="submit"
+				class="text-xs px-3 py-1.5 rounded bg-green-600 text-white hover:bg-green-700 transition-colors"
+			>
+				Save
+			</button>
+			<button
+				type="button"
+				class="text-xs px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+				onclick={ toggleRuleConfig(rl.ID) }
+			>
+				Cancel
+			</button>
+		</div>
+	</form>
+}
+
+templ resolutionPresetOptions(rl rule.Rule) {
+	if rl.ID == "fanart_min_res" {
+		{{ key := fanartResPresetKey(rl.Config.MinWidth, rl.Config.MinHeight) }}
+		<option value="">-- select preset --</option>
+		<option value="1280,720" selected?={ key == "720p" }>720p HD (1280x720)</option>
+		<option value="1920,1080" selected?={ key == "1080p" }>1080p Full HD (1920x1080)</option>
+		<option value="2560,1440" selected?={ key == "1440p" }>1440p QHD (2560x1440)</option>
+		<option value="3840,2160" selected?={ key == "4k" }>4K UHD (3840x2160)</option>
+		<option value="custom" selected?={ key == "custom" }>Custom</option>
+	}
+	if rl.ID == "thumb_min_res" {
+		{{ key := thumbResPresetKey(rl.Config.MinWidth, rl.Config.MinHeight) }}
+		<option value="">-- select preset --</option>
+		<option value="500,500" selected?={ key == "std" }>Standard (500x500)</option>
+		<option value="1000,1000" selected?={ key == "hd" }>HD (1000x1000)</option>
+		<option value="2000,2000" selected?={ key == "ultra" }>Ultra (2000x2000)</option>
+		<option value="custom" selected?={ key == "custom" }>Custom</option>
+	}
+	if rl.ID == "banner_min_res" {
+		{{ key := bannerResPresetKey(rl.Config.MinWidth, rl.Config.MinHeight) }}
+		<option value="">-- select preset --</option>
+		<option value="758,140" selected?={ key == "kodi" }>Kodi standard (758x140)</option>
+		<option value="1000,185" selected?={ key == "wide" }>Wide (1000x185)</option>
+		<option value="custom" selected?={ key == "custom" }>Custom</option>
+	}
+	if rl.ID == "logo_min_res" {
+		{{ key := logoWidthPresetKey(rl.Config.MinWidth) }}
+		<option value="">-- select preset --</option>
+		<option value="400" selected?={ key == "std" }>Standard (400px)</option>
+		<option value="800" selected?={ key == "large" }>Large (800px)</option>
+		<option value="custom" selected?={ key == "custom" }>Custom</option>
+	}
+}
+
+templ aspectPresetOptions(rl rule.Rule) {
+	if rl.ID == "fanart_aspect" {
+		{{ key := fanartAspectPresetKey(rl.Config.AspectRatio) }}
+		<option value="">-- select preset --</option>
+		<option value="1.7778" selected?={ key == "16:9" }>16:9 widescreen (1.778)</option>
+		<option value="1.6" selected?={ key == "16:10" }>16:10 (1.6)</option>
+		<option value="2.0" selected?={ key == "2:1" }>2:1 ultra-wide (2.0)</option>
+		<option value="custom" selected?={ key == "custom" }>Custom</option>
+	}
+	if rl.ID == "thumb_square" {
+		{{ key := thumbAspectPresetKey(rl.Config.AspectRatio) }}
+		<option value="">-- select preset --</option>
+		<option value="1.0" selected?={ key == "1:1" }>1:1 square (1.0)</option>
+		<option value="custom" selected?={ key == "custom" }>Custom</option>
+	}
+}
+
+script toggleRuleConfig(ruleID string) {
+	var el = document.getElementById("rule-cfg-" + ruleID);
+	if (el) {
+		el.classList.toggle("hidden");
+	}
+}
+
+templ ruleToggleScript() {
+	<script>
+		function patchRule(ruleID, changes) {
+			var csrfToken = document.cookie.replace(
+				/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1"
+			);
+			fetch('/api/v1/rules/' + ruleID, {
+				method: 'PUT',
+				headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
+				body: JSON.stringify(changes),
+				credentials: 'same-origin'
+			}).then(function(r) {
+				if (!r.ok && typeof showToast === 'function') {
+					showToast('Failed to update rule.');
+				}
+			}).catch(function() {
+				if (typeof showToast === 'function') {
+					showToast('Network error updating rule.');
+				}
+			});
+		}
+
+		function toggleRuleEnabled(btn) {
+			var ruleID = btn.dataset.ruleId;
+			var isOn = btn.getAttribute('aria-checked') === 'true';
+			var newVal = !isOn;
+			patchRule(ruleID, {enabled: newVal});
+			// Optimistic update
+			btn.setAttribute('aria-checked', String(newVal));
+			var knob = btn.querySelector('span');
+			if (newVal) {
+				btn.classList.remove('bg-gray-200', 'dark:bg-gray-600');
+				btn.classList.add('bg-blue-600');
+				knob.classList.remove('translate-x-0');
+				knob.classList.add('translate-x-5');
+			} else {
+				btn.classList.remove('bg-blue-600');
+				btn.classList.add('bg-gray-200', 'dark:bg-gray-600');
+				knob.classList.remove('translate-x-5');
+				knob.classList.add('translate-x-0');
+				// Also disable the automation mode select
+				var row = btn.closest('.py-4');
+				if (row) {
+					var sel = row.querySelector('select[data-rule-id]');
+					if (sel) sel.disabled = true;
+				}
+			}
+		}
+
+		function handleRuleConfigSubmit(event) {
+			event.preventDefault();
+			var form = event.target;
+			var ruleID = form.dataset.ruleId;
+			var cfg = {};
+			['min_width', 'min_height', 'aspect_ratio', 'tolerance', 'min_length'].forEach(function(f) {
+				var el = form.elements[f];
+				if (el && el.value !== '') cfg[f] = parseFloat(el.value);
+			});
+			var sev = form.elements['severity'];
+			if (sev) cfg['severity'] = sev.value;
+			patchRule(ruleID, {config: cfg});
+			var panel = document.getElementById('rule-cfg-' + ruleID);
+			if (panel) panel.classList.add('hidden');
+		}
+
+		function applyResPreset(select) {
+			var val = select.value;
+			if (!val || val === 'custom') return;
+			var parts = val.split(',');
+			var form = select.closest('form');
+			var w = form.elements['min_width'];
+			var h = form.elements['min_height'];
+			if (w && parts[0]) w.value = parts[0];
+			if (h && parts.length > 1 && parts[1]) h.value = parts[1];
+		}
+
+		function applyAspectPreset(select) {
+			var val = select.value;
+			if (!val || val === 'custom') return;
+			var form = select.closest('form');
+			var ar = form.elements['aspect_ratio'];
+			if (ar) ar.value = val;
+		}
+	</script>
 }
