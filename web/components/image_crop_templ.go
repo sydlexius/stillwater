@@ -57,12 +57,15 @@ func ImageCropModal(artistID string) templ.Component {
 
 func saveCroppedImage(artistID string) templ.ComponentScript {
 	return templ.ComponentScript{
-		Name: `__templ_saveCroppedImage_e7e8`,
-		Function: `function __templ_saveCroppedImage_e7e8(artistID){if (!window._cropper) return;
+		Name: `__templ_saveCroppedImage_dfcf`,
+		Function: `function __templ_saveCroppedImage_dfcf(artistID){if (!window._cropper) return;
 	const canvas = window._cropper.getCroppedCanvas();
 	if (!canvas) return;
-	const base64 = canvas.toDataURL('image/png');
 	const cropType = document.getElementById('crop-type').value;
+	// Logos must be PNG to preserve alpha; all other types stay JPEG to avoid
+	// unnecessary format conversion and larger file sizes.
+	const mimeType = cropType === 'logo' ? 'image/png' : 'image/jpeg';
+	const base64 = canvas.toDataURL(mimeType, 0.92);
 	const csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*\=\s*([^;]*).*$)|^.*$/, "$1");
 	fetch('/api/v1/artists/' + artistID + '/images/crop', {
 		method: 'POST',
@@ -84,8 +87,8 @@ func saveCroppedImage(artistID string) templ.ComponentScript {
 		}
 	});
 }`,
-		Call:       templ.SafeScript(`__templ_saveCroppedImage_e7e8`, artistID),
-		CallInline: templ.SafeScriptInline(`__templ_saveCroppedImage_e7e8`, artistID),
+		Call:       templ.SafeScript(`__templ_saveCroppedImage_dfcf`, artistID),
+		CallInline: templ.SafeScriptInline(`__templ_saveCroppedImage_dfcf`, artistID),
 	}
 }
 

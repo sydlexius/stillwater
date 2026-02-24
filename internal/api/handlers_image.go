@@ -653,12 +653,25 @@ func (r *Router) clearArtistImageFlag(ctx context.Context, a *artist.Artist, ima
 }
 
 // findExistingImage searches for the first matching image file in a directory.
-// Patterns are trusted naming conventions, not user input.
+// For each configured pattern it first checks the exact filename, then probes
+// alternate supported extensions (.jpg, .png) to handle cases where the saved
+// format differs from the configured name (e.g. a PNG crop saved over folder.jpg).
 func findExistingImage(dir string, patterns []string) (string, bool) {
 	for _, pattern := range patterns {
 		p := filepath.Join(dir, pattern)
 		if _, err := os.Stat(p); err == nil { //nolint:gosec // path from trusted naming patterns
 			return p, true
+		}
+		// Check alternate extensions in case the format changed after save.
+		base := strings.TrimSuffix(pattern, filepath.Ext(pattern))
+		for _, ext := range []string{".jpg", ".jpeg", ".png"} {
+			if ext == filepath.Ext(pattern) {
+				continue
+			}
+			alt := filepath.Join(dir, base+ext)
+			if _, err := os.Stat(alt); err == nil { //nolint:gosec // path from trusted naming patterns
+				return alt, true
+			}
 		}
 	}
 	return "", false
