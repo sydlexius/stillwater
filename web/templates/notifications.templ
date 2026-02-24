@@ -16,23 +16,17 @@ templ NotificationsPage(assets AssetPaths, data NotificationsData) {
 		<div class="space-y-6">
 			<div class="pb-2">
 				<h1 class="text-2xl font-bold">Rule Violation Notifications</h1>
-				<p class="text-gray-500">Review and manage unresolved rule violations</p>
+				<p class="text-gray-500 dark:text-gray-400">Review and manage unresolved rule violations</p>
 			</div>
 
-			if len(data.Violations) == 0 {
-				<div class="sw-card rounded-lg border border-gray-200 bg-blue-50 p-4">
-					<p class="text-gray-600 dark:text-gray-300">No violations. Your library is clean!</p>
-				</div>
-			} else {
-				<div
-					id="notifications-table"
-					hx-get="/notifications/table"
-					hx-trigger="load"
-					hx-swap="innerHTML"
-				>
-					@notificationsTableContent(data)
-				</div>
-			}
+			<div
+				id="notifications-table"
+				hx-get="/notifications/table"
+				hx-trigger="load"
+				hx-swap="innerHTML"
+			>
+				@NotificationsTable(data)
+			</div>
 		</div>
 		@candidateScript()
 	}
@@ -40,7 +34,7 @@ templ NotificationsPage(assets AssetPaths, data NotificationsData) {
 
 templ NotificationsTable(data NotificationsData) {
 	if len(data.Violations) == 0 {
-		<div class="sw-card rounded-lg border border-gray-200 bg-blue-50 p-4">
+		<div class="sw-card rounded-lg border border-gray-200 dark:border-gray-700 bg-blue-50 dark:bg-blue-950 p-6">
 			<p class="text-gray-600 dark:text-gray-300">No violations. Your library is clean!</p>
 		</div>
 	} else {
@@ -49,62 +43,103 @@ templ NotificationsTable(data NotificationsData) {
 }
 
 templ notificationsTableContent(data NotificationsData) {
-	<div class="sw-card rounded-lg border border-gray-200 overflow-hidden">
-		<table class="min-w-full divide-y divide-gray-200">
-			<thead class="bg-gray-50">
+	<!-- Toolbar -->
+	<div class="mb-3 flex items-center gap-3">
+		<button
+			type="button"
+			id="bulk-dismiss-btn"
+			onclick="bulkDismissSelected()"
+			class="hidden rounded border border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/30 px-3 py-1.5 text-xs font-semibold text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/50 transition-colors"
+		>
+			Dismiss selected
+		</button>
+		<button
+			type="button"
+			onclick="bulkDismissAll()"
+			class="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-1.5 text-xs font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+		>
+			Dismiss all
+		</button>
+	</div>
+	<!-- Table -->
+	<div class="sw-card rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+		<table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+			<thead class="bg-gray-50 dark:bg-gray-800">
 				<tr>
-					<th class="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Artist</th>
-					<th class="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Rule</th>
-					<th class="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Severity</th>
-					<th class="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Message</th>
-					<th class="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Age</th>
-					<th class="px-6 py-3 text-right text-xs font-semibold text-gray-700 uppercase">Actions</th>
+					<th class="px-4 py-3 text-left">
+						<input
+							type="checkbox"
+							id="select-all-violations"
+							onchange="toggleSelectAll(this)"
+							class="rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
+						/>
+					</th>
+					<th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Artist</th>
+					<th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Rule</th>
+					<th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Severity</th>
+					<th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Message</th>
+					<th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Age</th>
+					<th class="px-4 py-3 text-right text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Actions</th>
 				</tr>
 			</thead>
 			for _, v := range data.Violations {
-				<tbody id={ "notif-" + v.ID }>
-					<tr class="hover:bg-gray-50 transition">
-						<td class="px-6 py-4 text-sm text-gray-900">{ v.ArtistName }</td>
-						<td class="px-6 py-4 text-sm text-gray-600">{ v.RuleID }</td>
-						<td class="px-6 py-4 text-sm">
-							<span class={
-								"inline-block px-2 py-1 rounded text-xs font-semibold",
-								severityClass(v.Severity),
-							}>
+				<tbody id={ "notif-" + v.ID } class="bg-white dark:bg-gray-900 divide-y divide-gray-100 dark:divide-gray-800">
+					<tr class="hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+						<td class="px-4 py-4">
+							<input
+								type="checkbox"
+								class="violation-checkbox rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
+								data-violation-id={ v.ID }
+								onchange="updateBulkButton()"
+							/>
+						</td>
+						<td class="px-4 py-4 text-sm font-medium text-gray-900 dark:text-gray-100">{ v.ArtistName }</td>
+						<td class="px-4 py-4 text-sm text-gray-600 dark:text-gray-400">{ v.RuleID }</td>
+						<td class="px-4 py-4 text-sm">
+							<span class={ "inline-block px-2 py-0.5 rounded text-xs font-semibold", severityClass(v.Severity) }>
 								{ v.Severity }
 							</span>
 						</td>
-						<td class="px-6 py-4 text-sm text-gray-600">{ v.Message }</td>
-						<td class="px-6 py-4 text-sm text-gray-500">
+						<td class="px-4 py-4 text-sm text-gray-600 dark:text-gray-300">{ v.Message }</td>
+						<td class="px-4 py-4 text-sm text-gray-500 dark:text-gray-400">
 							{ formatAge(v.CreatedAt) }
 						</td>
-						<td class="px-6 py-4 text-right text-sm space-x-2">
-							if v.Status == rule.ViolationStatusPendingChoice && len(v.Candidates) > 0 {
+						<td class="px-4 py-4 text-right text-sm">
+							<div class="flex items-center justify-end gap-3">
+								if v.Status == rule.ViolationStatusPendingChoice && len(v.Candidates) > 0 {
+									<button
+										type="button"
+										data-candidates-id={ "candidates-" + v.ID }
+										onclick="toggleCandidates(this.dataset.candidatesId)"
+										class="font-semibold text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300"
+									>
+										Select image
+									</button>
+								}
 								<button
-									type="button"
-									data-candidates-id={ "candidates-" + v.ID }
-									onclick="toggleCandidates(this.dataset.candidatesId)"
-									class="text-blue-600 hover:text-blue-900 font-semibold"
+									hx-post={ "/api/v1/notifications/" + v.ID + "/dismiss" }
+									hx-confirm="Dismiss this violation?"
+									hx-target={ "#notif-" + v.ID }
+									hx-swap="outerHTML swap:300ms"
+									class="font-semibold text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300"
 								>
-									Select image
+									Dismiss
 								</button>
-							}
-							<button
-								hx-post={ "/api/v1/notifications/" + v.ID + "/dismiss" }
-								hx-confirm="Dismiss this violation?"
-								hx-target={ "#notif-" + v.ID }
-								hx-swap="outerHTML swap:1s"
-								class="text-red-600 hover:text-red-900 font-semibold"
-							>
-								Dismiss
-							</button>
+							</div>
 						</td>
 					</tr>
 					if v.Status == rule.ViolationStatusPendingChoice && len(v.Candidates) > 0 {
-						<tr id={ "candidates-" + v.ID } class="hidden">
-							<td colspan="6" class="px-4 pb-4 bg-gray-50">
-								<p class="text-xs text-gray-500 mb-2 pt-3">Select a replacement image:</p>
-								<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+						<tr id={ "candidates-" + v.ID } class="hidden bg-gray-50 dark:bg-gray-800/50">
+							<td colspan="7" class="px-6 py-4">
+								<div class="mb-3 flex items-center justify-between">
+									<p class="text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wide">
+										Select a replacement image
+									</p>
+									<p class="text-xs text-gray-400 dark:text-gray-500">
+										{ fmt.Sprintf("%d candidate(s) available", len(v.Candidates)) }
+									</p>
+								</div>
+								<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
 									for _, c := range v.Candidates {
 										<button
 											type="button"
@@ -112,11 +147,25 @@ templ notificationsTableContent(data NotificationsData) {
 											data-url={ c.URL }
 											data-image-type={ c.ImageType }
 											onclick="applyCandidate(this.dataset.violationId, this.dataset.url, this.dataset.imageType)"
-											class="rounded border border-gray-200 overflow-hidden cursor-pointer hover:ring-2 hover:ring-blue-500 text-left w-full"
+											class="group rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden cursor-pointer hover:ring-2 hover:ring-blue-500 dark:hover:ring-blue-400 text-left w-full bg-white dark:bg-gray-900 transition-all"
 										>
-											<img src={ c.URL } alt={ fmt.Sprintf("%s (%s)", c.Source, candidateDims(c)) } class="w-full h-20 object-cover" loading="lazy"/>
-											<div class="px-2 py-1 text-xs text-gray-500">
-												{ c.Source } &middot; { candidateDims(c) }
+											<div class="relative">
+												<img
+													src={ c.URL }
+													alt={ fmt.Sprintf("%s (%s)", c.Source, candidateDims(c)) }
+													class="w-full h-28 object-cover"
+													loading="lazy"
+												/>
+											</div>
+											<div class="px-2 py-2 space-y-0.5">
+												<p class="text-xs font-medium text-gray-700 dark:text-gray-300 truncate">{ c.Source }</p>
+												<p class="text-xs text-gray-500 dark:text-gray-400">
+													if c.Width > 0 && c.Height > 0 {
+														{ fmt.Sprintf("%dx%d", c.Width, c.Height) }
+													} else {
+														Unknown dimensions
+													}
+												</p>
 											</div>
 										</button>
 									}
@@ -150,11 +199,80 @@ templ candidateScript() {
 			if (r.ok) {
 				var tbody = document.getElementById('notif-' + violationID);
 				if (tbody) tbody.remove();
+				updateBulkButton();
 			} else if (typeof showToast === 'function') {
 				showToast('Failed to apply image.');
 			}
 		}).catch(function() {
 			if (typeof showToast === 'function') showToast('Network error applying image.');
+		});
+	}
+
+	function toggleSelectAll(cb) {
+		document.querySelectorAll('.violation-checkbox').forEach(function(c) {
+			c.checked = cb.checked;
+		});
+		updateBulkButton();
+	}
+
+	function updateBulkButton() {
+		var checked = document.querySelectorAll('.violation-checkbox:checked');
+		var btn = document.getElementById('bulk-dismiss-btn');
+		if (!btn) return;
+		if (checked.length > 0) {
+			btn.textContent = 'Dismiss ' + checked.length + ' selected';
+			btn.classList.remove('hidden');
+		} else {
+			btn.classList.add('hidden');
+		}
+	}
+
+	function bulkDismissAll() {
+		if (!confirm('Dismiss all active violations?')) return;
+		var csrfToken = document.cookie.replace(
+			/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, '$1'
+		);
+		fetch('/api/v1/notifications/bulk-dismiss', {
+			method: 'POST',
+			headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
+			body: '{}',
+			credentials: 'same-origin'
+		}).then(function(r) {
+			if (r.ok) {
+				htmx.ajax('GET', '/notifications/table', {target: '#notifications-table', swap: 'innerHTML'});
+			} else if (typeof showToast === 'function') {
+				showToast('Failed to dismiss violations.');
+			}
+		}).catch(function() {
+			if (typeof showToast === 'function') showToast('Network error dismissing violations.');
+		});
+	}
+
+	function bulkDismissSelected() {
+		var ids = [];
+		document.querySelectorAll('.violation-checkbox:checked').forEach(function(c) {
+			ids.push(c.dataset.violationId);
+		});
+		if (ids.length === 0) return;
+		var csrfToken = document.cookie.replace(
+			/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, '$1'
+		);
+		fetch('/api/v1/notifications/bulk-dismiss', {
+			method: 'POST',
+			headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
+			body: JSON.stringify({ids: ids}),
+			credentials: 'same-origin'
+		}).then(function(r) {
+			if (r.ok) {
+				var container = document.getElementById('notifications-table');
+				if (container) {
+					htmx.ajax('GET', '/notifications/table', {target: '#notifications-table', swap: 'innerHTML'});
+				}
+			} else if (typeof showToast === 'function') {
+				showToast('Failed to dismiss violations.');
+			}
+		}).catch(function() {
+			if (typeof showToast === 'function') showToast('Network error dismissing violations.');
 		});
 	}
 	</script>
@@ -163,13 +281,13 @@ templ candidateScript() {
 func severityClass(severity string) string {
 	switch severity {
 	case "error":
-		return "bg-red-100 text-red-800"
+		return "bg-red-100 dark:bg-red-900/50 text-red-800 dark:text-red-300"
 	case "warning":
-		return "bg-yellow-100 text-yellow-800"
+		return "bg-yellow-100 dark:bg-yellow-900/50 text-yellow-800 dark:text-yellow-300"
 	case "info":
-		return "bg-blue-100 text-blue-800"
+		return "bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-300"
 	default:
-		return "bg-gray-100 text-gray-800"
+		return "bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300"
 	}
 }
 
@@ -191,5 +309,5 @@ func candidateDims(c rule.ImageCandidate) string {
 	if c.Width > 0 && c.Height > 0 {
 		return fmt.Sprintf("%dx%d", c.Width, c.Height)
 	}
-	return ""
+	return "unknown"
 }

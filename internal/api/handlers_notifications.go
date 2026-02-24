@@ -71,6 +71,27 @@ func (r *Router) handleResolveViolation(w http.ResponseWriter, req *http.Request
 	writeJSON(w, http.StatusOK, map[string]string{"status": "resolved"})
 }
 
+// handleBulkDismissViolations dismisses all active violations, or a specific subset.
+// POST /api/v1/notifications/bulk-dismiss
+// Body (optional): {"ids": ["id1", "id2"]} -- omit or send empty ids to dismiss all active
+func (r *Router) handleBulkDismissViolations(w http.ResponseWriter, req *http.Request) {
+	var body struct {
+		IDs []string `json:"ids"`
+	}
+	// Ignore decode error -- empty body means dismiss all
+	_ = json.NewDecoder(req.Body).Decode(&body)
+
+	n, err := r.ruleService.BulkDismissViolations(req.Context(), body.IDs)
+	if err != nil {
+		writeError(w, req, http.StatusInternalServerError, fmt.Sprintf("bulk dismiss: %v", err))
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprintf(w, "%d", n) //nolint:errcheck,gosec // G705: n is int, no XSS risk
+}
+
 // handleClearResolvedViolations deletes resolved violations older than 7 days.
 // DELETE /api/v1/notifications/resolved
 func (r *Router) handleClearResolvedViolations(w http.ResponseWriter, req *http.Request) {

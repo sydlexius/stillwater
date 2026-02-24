@@ -972,7 +972,7 @@ func settingsTabBar(activeTab string) templ.Component {
 		for _, tab := range settingsTabs() {
 			var templ_7745c5c3_Var30 = []any{"whitespace-nowrap border-b-2 py-3 px-4 text-sm font-medium transition-colors cursor-pointer",
 				templ.KV("border-blue-500 text-blue-600 dark:text-blue-400", tab.ID == activeTab),
-				templ.KV("border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:border-gray-300 dark:hover:border-gray-600", tab.ID != activeTab),
+				templ.KV("border-transparent text-gray-700 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:border-gray-300 dark:hover:border-gray-600", tab.ID != activeTab),
 			}
 			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var30...)
 			if templ_7745c5c3_Err != nil {

@@ -375,6 +375,39 @@ func (s *Service) DismissViolation(ctx context.Context, id string) error {
 	return nil
 }
 
+// BulkDismissViolations marks all active (open + pending_choice) violations as dismissed.
+// If ids is non-empty, only those violations are dismissed; otherwise all active violations are dismissed.
+func (s *Service) BulkDismissViolations(ctx context.Context, ids []string) (int, error) {
+	now := time.Now().UTC().Format(time.RFC3339)
+	var res sql.Result
+	var err error
+	if len(ids) > 0 {
+		// Build a parameterised IN clause
+		placeholders := make([]string, len(ids))
+		args := make([]any, 0, len(ids)+3)
+		args = append(args, ViolationStatusDismissed, now, now)
+		for i, id := range ids {
+			placeholders[i] = "?"
+			args = append(args, id)
+		}
+		//nolint:gosec // G202: only "?" placeholders concatenated, no user input
+		query := "UPDATE rule_violations SET status = ?, dismissed_at = ?, updated_at = ? WHERE id IN (" +
+			joinStrings(placeholders, ",") + ") AND status IN (?, ?)"
+		args = append(args, ViolationStatusOpen, ViolationStatusPendingChoice)
+		res, err = s.db.ExecContext(ctx, query, args...)
+	} else {
+		res, err = s.db.ExecContext(ctx, `
+			UPDATE rule_violations SET status = ?, dismissed_at = ?, updated_at = ?
+			WHERE status IN (?, ?)
+		`, ViolationStatusDismissed, now, now, ViolationStatusOpen, ViolationStatusPendingChoice)
+	}
+	if err != nil {
+		return 0, fmt.Errorf("bulk dismissing violations: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return int(n), nil
+}
+
 // ResolveViolation marks a violation as resolved.
 func (s *Service) ResolveViolation(ctx context.Context, id string) error {
 	now := time.Now().UTC()
@@ -483,6 +516,17 @@ func parseTime(s string) time.Time {
 		return t
 	}
 	return time.Time{}
+}
+
+func joinStrings(ss []string, sep string) string {
+	result := ""
+	for i, s := range ss {
+		if i > 0 {
+			result += sep
+		}
+		result += s
+	}
+	return result
 }
 
 func marshalCandidates(cs []ImageCandidate) string {
