@@ -19,27 +19,9 @@ type ArtistDetailData struct {
 
 templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 	@Layout(data.Artist.Name, assets) {
-		if data.Artist.FanartExists {
-			<style>
-				body { overflow-x: clip; }
-				.sw-card {
-					background-color: rgba(255, 255, 255, 0.80) !important;
-					backdrop-filter: blur(18px) saturate(180%);
-					-webkit-backdrop-filter: blur(18px) saturate(180%);
-					border-width: 1px;
-					border-style: solid;
-					border-color: rgba(255, 255, 255, 0.28) !important;
-					box-shadow: 0 4px 24px rgba(0, 0, 0, 0.20) !important;
-				}
-				.dark .sw-card {
-					background-color: rgba(15, 23, 42, 0.80) !important;
-					border-color: rgba(255, 255, 255, 0.09) !important;
-				}
-			</style>
-		}
-		<div class="relative min-h-[calc(100vh-5rem)] space-y-6">
+		<div class="space-y-6">
 			if data.Artist.FanartExists {
-				<div class="absolute top-0 left-1/2 -translate-x-1/2 -z-10 w-screen h-full overflow-hidden pointer-events-none" aria-hidden="true">
+				<div class="fixed inset-0 -z-[5] overflow-hidden pointer-events-none" aria-hidden="true">
 					<img
 						src={ fmt.Sprintf("/api/v1/artists/%s/images/fanart/file", data.Artist.ID) }
 						alt=""

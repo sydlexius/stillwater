@@ -20,8 +20,8 @@ templ NotificationsPage(assets AssetPaths, data NotificationsData) {
 			</div>
 
 			if len(data.Violations) == 0 {
-				<div class="rounded-lg border border-gray-200 bg-blue-50 p-4">
-					<p class="text-gray-600">No violations. Your library is clean!</p>
+				<div class="sw-card rounded-lg border border-gray-200 bg-blue-50 p-4">
+					<p class="text-gray-600 dark:text-gray-300">No violations. Your library is clean!</p>
 				</div>
 			} else {
 				<div
@@ -39,8 +39,8 @@ templ NotificationsPage(assets AssetPaths, data NotificationsData) {
 
 templ NotificationsTable(data NotificationsData) {
 	if len(data.Violations) == 0 {
-		<div class="rounded-lg border border-gray-200 bg-blue-50 p-4">
-			<p class="text-gray-600">No violations. Your library is clean!</p>
+		<div class="sw-card rounded-lg border border-gray-200 bg-blue-50 p-4">
+			<p class="text-gray-600 dark:text-gray-300">No violations. Your library is clean!</p>
 		</div>
 	} else {
 		@notificationsTableContent(data)
@@ -48,7 +48,7 @@ templ NotificationsTable(data NotificationsData) {
 }
 
 templ notificationsTableContent(data NotificationsData) {
-	<div class="rounded-lg border border-gray-200 overflow-hidden">
+	<div class="sw-card rounded-lg border border-gray-200 overflow-hidden">
 		<table class="min-w-full divide-y divide-gray-200">
 			<thead class="bg-gray-50">
 				<tr>

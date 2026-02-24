@@ -25,7 +25,7 @@ type ViolationSummaryData struct {
 // HealthSummaryFragment renders the quick stat cards for the dashboard.
 templ HealthSummaryFragment(data HealthSummaryData) {
 	<div
-		class={ "rounded-lg bg-white dark:bg-gray-800 p-6 shadow", }
+		class={ "sw-card rounded-lg bg-white dark:bg-gray-800 p-6 shadow", }
 	>
 		<p class="text-sm font-medium text-gray-500 dark:text-gray-400">Compliance Score</p>
 		<p
@@ -46,7 +46,7 @@ templ HealthSummaryFragment(data HealthSummaryData) {
 	@quickStatCard("Missing Thumb", data.MissingThumb, "/reports/compliance?filter=missing_thumb")
 	@quickStatCard("Missing MBID", data.MissingMBID, "/reports/compliance?filter=missing_mbid")
 	if len(data.TopViolations) > 0 {
-		<div class="sm:col-span-2 lg:col-span-4 rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
+		<div class="sw-card sm:col-span-2 lg:col-span-4 rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
 			<h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Top Violations</h3>
 			<div class="space-y-2">
 				for _, v := range data.TopViolations {
@@ -74,7 +74,7 @@ templ HealthSummaryFragment(data HealthSummaryData) {
 templ quickStatCard(label string, count int, link string) {
 	<a
 		href={ templ.SafeURL(link) }
-		class="block rounded-lg bg-white dark:bg-gray-800 p-6 shadow hover:shadow-md transition-shadow"
+		class="sw-card block rounded-lg bg-white dark:bg-gray-800 p-6 shadow hover:shadow-md transition-shadow"
 	>
 		<p class="text-sm font-medium text-gray-500 dark:text-gray-400">{ label }</p>
 		<p
