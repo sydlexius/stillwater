@@ -194,11 +194,11 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("PUT "+bp+"/api/v1/rules/classical-mode", wrapAuth(r.handleSetClassicalMode, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/health", wrapAuth(r.handleEvaluateArtist, authMw))
 
-	// Inbox (rule violations) routes
-	mux.HandleFunc("GET "+bp+"/api/v1/inbox", wrapAuth(r.handleListInbox, authMw))
-	mux.HandleFunc("POST "+bp+"/api/v1/inbox/{id}/dismiss", wrapAuth(r.handleDismissViolation, authMw))
-	mux.HandleFunc("POST "+bp+"/api/v1/inbox/{id}/resolve", wrapAuth(r.handleResolveViolation, authMw))
-	mux.HandleFunc("DELETE "+bp+"/api/v1/inbox/resolved", wrapAuth(r.handleClearResolvedViolations, authMw))
+	// Notifications (rule violations) routes
+	mux.HandleFunc("GET "+bp+"/api/v1/notifications", wrapAuth(r.handleListNotifications, authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/notifications/{id}/dismiss", wrapAuth(r.handleDismissViolation, authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/notifications/{id}/resolve", wrapAuth(r.handleResolveViolation, authMw))
+	mux.HandleFunc("DELETE "+bp+"/api/v1/notifications/resolved", wrapAuth(r.handleClearResolvedViolations, authMw))
 
 	// Bulk operation routes
 	mux.HandleFunc("POST "+bp+"/api/v1/bulk/fetch-metadata", wrapAuth(r.handleBulkFetchMetadata, authMw))
@@ -252,8 +252,8 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("GET "+bp+"/artists/{id}/nfo", wrapOptionalAuth(r.handleNFODiffPage, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/settings", wrapOptionalAuth(r.handleSettingsPage, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/setup/wizard", wrapOptionalAuth(r.handleOnboardingPage, optAuthMw))
-	mux.HandleFunc("GET "+bp+"/inbox", wrapAuth(r.handleInboxPage, authMw))
-	mux.HandleFunc("GET "+bp+"/inbox/table", wrapAuth(r.handleInboxTable, authMw))
+	mux.HandleFunc("GET "+bp+"/notifications", wrapAuth(r.handleNotificationsPage, authMw))
+	mux.HandleFunc("GET "+bp+"/notifications/table", wrapAuth(r.handleNotificationsTable, authMw))
 
 	// Apply middleware chain: security headers > logging > CSRF
 	// Login and setup are exempt from CSRF (registered with rate limiter above)

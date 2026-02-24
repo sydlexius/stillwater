@@ -237,7 +237,7 @@ func (s *Service) GetLatestHealthSnapshot(ctx context.Context) (*HealthSnapshot,
 	return snap, nil
 }
 
-// UpsertViolation inserts or updates a rule violation in the inbox.
+// UpsertViolation inserts or updates a rule violation in the notifications store.
 // Uses (rule_id, artist_id) as the natural key for upsert.
 func (s *Service) UpsertViolation(ctx context.Context, v *RuleViolation) error {
 	if v.ID == "" {
