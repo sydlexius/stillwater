@@ -94,7 +94,7 @@ templ ImageCard(artistID string, img provider.ImageResult) {
 					<span>{ strconv.Itoa(img.Likes) } likes</span>
 				}
 			</div>
-			if isLowResolution(img.Width, img.Height, string(img.Type)) {
+			if isLowResolution(img.Width, img.Height, normalizeCardImageType(string(img.Type))) {
 				<div class="text-xs text-amber-600 dark:text-amber-400">Low resolution</div>
 			}
 			if (string(img.Type) == "logo" || string(img.Type) == "hdlogo") && img.Source == "duckduckgo" {

@@ -371,6 +371,12 @@ func TestIsLowResolution(t *testing.T) {
 		{"logo below height", 800, 154, "logo", true},
 		{"hdlogo good", 800, 310, "hdlogo", false},
 		{"hdlogo low", 200, 80, "hdlogo", true},
+
+		// Provider alias normalization.
+		{"background alias maps to fanart", 1920, 1080, "background", false},
+		{"background alias low", 800, 400, "background", true},
+		{"widethumb alias maps to thumb", 500, 500, "widethumb", false},
+		{"widethumb alias low", 400, 400, "widethumb", true},
 	}
 
 	for _, tt := range tests {

@@ -117,17 +117,28 @@ func GetDimensions(r io.Reader) (width, height int, err error) {
 //   - logo/hdlogo:      400 x 155
 //   - default:          500 x 500 (thumb, poster, folder)
 //
+// Provider-specific aliases (hdlogo, background, widethumb) are normalized to
+// their base types before the threshold is applied.
 // Returns false if either dimension is zero (unknown).
 func IsLowResolution(w, h int, imageType string) bool {
 	if w == 0 || h == 0 {
 		return false
 	}
+	// Normalize provider-specific aliases to base types.
+	switch imageType {
+	case "hdlogo":
+		imageType = "logo"
+	case "background":
+		imageType = "fanart"
+	case "widethumb":
+		imageType = "thumb"
+	}
 	switch imageType {
 	case "banner":
 		return w < 758 || h < 140
-	case "fanart", "background":
+	case "fanart":
 		return w < 960 || h < 540
-	case "logo", "hdlogo":
+	case "logo":
 		return w < 400 || h < 155
 	default: // thumb, poster, folder
 		return w < 500 || h < 500
