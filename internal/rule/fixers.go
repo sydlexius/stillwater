@@ -260,7 +260,7 @@ func (f *ImageFixer) Fix(ctx context.Context, a *artist.Artist, v *Violation) (*
 
 	// Try downloading candidates until one succeeds
 	for _, c := range candidates {
-		data, err := fetchImageURL(c.URL)
+		data, err := fetchImageURL(ctx, c.URL)
 		if err != nil {
 			f.logger.Debug("image download failed", "url", c.URL, "error", err)
 			continue
@@ -328,7 +328,7 @@ func setImageFlag(a *artist.Artist, imageType string) {
 // ApplyImageCandidate downloads a candidate URL and saves it as an image in the
 // artist directory. Used by the apply-candidate API handler.
 func ApplyImageCandidate(ctx context.Context, a *artist.Artist, imageType, rawURL string, logger *slog.Logger) error {
-	data, err := fetchImageURL(rawURL)
+	data, err := fetchImageURL(ctx, rawURL)
 	if err != nil {
 		return fmt.Errorf("downloading image: %w", err)
 	}
@@ -368,10 +368,14 @@ func writeArtistNFO(a *artist.Artist, ss *nfo.SnapshotService) {
 }
 
 // fetchImageURL downloads image data from a URL with timeout and size limits.
-func fetchImageURL(rawURL string) ([]byte, error) {
+func fetchImageURL(ctx context.Context, rawURL string) ([]byte, error) {
 	client := &http.Client{Timeout: fetchTimeout}
 
-	resp, err := client.Get(rawURL) //nolint:gosec,noctx // URL from trusted provider results
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil) //nolint:gosec // URL from trusted provider results
+	if err != nil {
+		return nil, err
+	}
+	resp, err := client.Do(req) //nolint:gosec // G704: URL validated against stored provider results before reaching this point
 	if err != nil {
 		return nil, err
 	}

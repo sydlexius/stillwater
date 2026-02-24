@@ -128,10 +128,28 @@ func (r *Router) handleApplyViolationCandidate(w http.ResponseWriter, req *http.
 		return
 	}
 
-	// Load violation to get artist_id
+	// Load violation to get artist_id and validate the candidate
 	v, err := r.ruleService.GetViolationByID(req.Context(), id)
 	if err != nil {
 		writeError(w, req, http.StatusNotFound, fmt.Sprintf("violation not found: %v", err))
+		return
+	}
+
+	if v.Status != rule.ViolationStatusPendingChoice {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "violation is not pending candidate selection"})
+		return
+	}
+
+	// Validate the URL+imageType against stored candidates (prevents SSRF with arbitrary URLs)
+	var matched bool
+	for _, c := range v.Candidates {
+		if c.URL == body.URL && c.ImageType == body.ImageType {
+			matched = true
+			break
+		}
+	}
+	if !matched {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "url does not match any stored candidate for this violation"})
 		return
 	}
 
@@ -150,12 +168,14 @@ func (r *Router) handleApplyViolationCandidate(w http.ResponseWriter, req *http.
 
 	// Persist artist update (image flag set by ApplyImageCandidate)
 	if err := r.artistService.Update(req.Context(), a); err != nil {
-		r.logger.Warn("updating artist after apply-candidate", "artist", a.Name, "error", err)
+		writeError(w, req, http.StatusInternalServerError, fmt.Sprintf("updating artist after apply-candidate: %v", err))
+		return
 	}
 
 	// Mark violation resolved
 	if err := r.ruleService.ResolveViolation(req.Context(), id); err != nil {
-		r.logger.Warn("resolving violation after apply-candidate", "id", id, "error", err)
+		writeError(w, req, http.StatusInternalServerError, fmt.Sprintf("resolving violation after apply-candidate: %v", err))
+		return
 	}
 
 	// Re-evaluate and persist health score

@@ -322,7 +322,8 @@ func (s *Service) ListViolations(ctx context.Context, status string) ([]RuleViol
 	args := []any{}
 	if status == "active" {
 		// active = open + pending_choice (violations that need attention)
-		query += ` WHERE status IN ('open', 'pending_choice')`
+		query += ` WHERE status IN (?, ?)`
+		args = append(args, ViolationStatusOpen, ViolationStatusPendingChoice)
 	} else if status != "" {
 		query += ` WHERE status = ?`
 		args = append(args, status)
