@@ -25,9 +25,21 @@ func sourceBadgeColor(source string) string {
 	}
 }
 
-// isLowResolution returns true if the image dimensions indicate low quality.
-func isLowResolution(w, h int) bool {
-	return (w > 0 && w < 500) || (h > 0 && h < 500)
+// isLowResolution returns true if the image dimensions indicate low quality for the given type.
+func isLowResolution(w, h int, imageType string) bool {
+	if w == 0 || h == 0 {
+		return false
+	}
+	switch imageType {
+	case "banner":
+		return w < 758 || h < 140
+	case "fanart", "background":
+		return w < 960 || h < 540
+	case "logo", "hdlogo":
+		return w < 400 || h < 155
+	default: // thumb, poster, folder
+		return w < 500 || h < 500
+	}
 }
 
 // normalizeCardImageType maps provider-specific types to base types for crop/compare.
@@ -93,7 +105,7 @@ templ ImageCard(artistID string, img provider.ImageResult) {
 					<span>{ strconv.Itoa(img.Likes) } likes</span>
 				}
 			</div>
-			if isLowResolution(img.Width, img.Height) {
+			if isLowResolution(img.Width, img.Height, string(img.Type)) {
 				<div class="text-xs text-amber-600 dark:text-amber-400">Low resolution</div>
 			}
 			if (string(img.Type) == "logo" || string(img.Type) == "hdlogo") && img.Source == "duckduckgo" {
