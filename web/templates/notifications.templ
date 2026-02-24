@@ -143,7 +143,7 @@ templ notificationsTableContent(data NotificationsData) {
 								<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
 									for _, c := range v.Candidates {
 										<div class="candidate-card flex flex-col rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden bg-white dark:bg-gray-900">
-											<!-- Image with zoom overlay -->
+											<!-- Image with magnifying glass overlay -->
 											<div class="relative bg-gray-100 dark:bg-gray-800" style="height:120px">
 												<img
 													src={ c.URL }
@@ -151,7 +151,7 @@ templ notificationsTableContent(data NotificationsData) {
 													class="candidate-img w-full h-full object-contain"
 													onload="updateCandidateCardDims(this)"
 												/>
-												<!-- Zoom / preview button -->
+												<!-- Preview button: magnifying glass on hover -->
 												<button
 													type="button"
 													data-violation-id={ v.ID }
@@ -159,43 +159,40 @@ templ notificationsTableContent(data NotificationsData) {
 													data-image-type={ c.ImageType }
 													data-source={ c.Source }
 													onclick="openCandidatePreview(this.dataset.violationId, this.dataset.url, this.dataset.imageType, this.dataset.source)"
-													class="absolute inset-0 flex items-center justify-center bg-black/0 hover:bg-black/40 transition-colors"
+													class="group absolute inset-0 flex items-center justify-center bg-black/0 hover:bg-black/40 transition-colors"
 													title="Preview full size"
 												>
-													<span class="opacity-0 hover:opacity-100 flex items-center justify-center transition-opacity bg-white/90 dark:bg-gray-900/90 rounded-full p-2 pointer-events-none">
-														<!-- Arrows-pointing-out (expand) icon -->
+													<span class="opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity bg-white/90 dark:bg-gray-900/90 rounded-full p-2 pointer-events-none">
+														<!-- Magnifying glass icon -->
 														<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="h-5 w-5 text-gray-700 dark:text-gray-200">
-															<path stroke-linecap="round" stroke-linejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15"/>
+															<path stroke-linecap="round" stroke-linejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 15.803a7.5 7.5 0 0 0 10.607 0Z"/>
 														</svg>
 													</span>
 												</button>
 											</div>
-											<!-- Footer: provider + dims -->
-											<div class="px-2 pt-2 flex items-center justify-between gap-1 min-w-0">
-												<div class="flex items-center gap-1.5 min-w-0">
-													if logoSrc(c.Source) != "" {
-														<img
-															src={ logoSrc(c.Source) }
-															alt={ providerDisplayName(c.Source) }
-															title={ providerDisplayName(c.Source) }
-															class="h-4 w-4 object-contain shrink-0"
-														/>
-													}
-													<span class="text-xs text-gray-500 dark:text-gray-400 truncate" title={ providerDisplayName(c.Source) }>
-														{ providerDisplayName(c.Source) }
-													</span>
-												</div>
-												<span class="candidate-dims text-xs text-gray-400 dark:text-gray-500 font-mono shrink-0"></span>
+											<!-- Dimensions centered below image -->
+											<div class="py-1 text-center">
+												<span class="candidate-dims text-xs text-gray-400 dark:text-gray-500 font-mono">&nbsp;</span>
 											</div>
-											<!-- Apply button -->
-											<div class="px-2 py-2">
+											<!-- Footer: provider logo (tooltip only) + Apply button -->
+											<div class="px-2 pb-2 flex items-center justify-between gap-2">
+												if logoSrc(c.Source) != "" {
+													<img
+														src={ logoSrc(c.Source) }
+														alt={ providerDisplayName(c.Source) }
+														title={ providerDisplayName(c.Source) }
+														class="h-5 w-5 object-contain shrink-0"
+													/>
+												} else {
+													<span></span>
+												}
 												<button
 													type="button"
 													data-violation-id={ v.ID }
 													data-url={ c.URL }
 													data-image-type={ c.ImageType }
 													onclick="applyCandidate(this.dataset.violationId, this.dataset.url, this.dataset.imageType)"
-													class="w-full rounded bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-600 text-white text-xs font-semibold py-1.5 transition-colors"
+													class="rounded bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-600 text-white text-xs font-semibold px-3 py-1.5 transition-colors"
 												>
 													Apply
 												</button>

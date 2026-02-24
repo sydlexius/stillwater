@@ -346,7 +346,7 @@ func notificationsTableContent(data NotificationsData) templ.Component {
 					return templ_7745c5c3_Err
 				}
 				for _, c := range v.Candidates {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "<div class=\"candidate-card flex flex-col rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden bg-white dark:bg-gray-900\"><!-- Image with zoom overlay --><div class=\"relative bg-gray-100 dark:bg-gray-800\" style=\"height:120px\"><img src=\"")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "<div class=\"candidate-card flex flex-col rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden bg-white dark:bg-gray-900\"><!-- Image with magnifying glass overlay --><div class=\"relative bg-gray-100 dark:bg-gray-800\" style=\"height:120px\"><img src=\"")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -372,7 +372,7 @@ func notificationsTableContent(data NotificationsData) templ.Component {
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "\" class=\"candidate-img w-full h-full object-contain\" onload=\"updateCandidateCardDims(this)\"><!-- Zoom / preview button --><button type=\"button\" data-violation-id=\"")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "\" class=\"candidate-img w-full h-full object-contain\" onload=\"updateCandidateCardDims(this)\"><!-- Preview button: magnifying glass on hover --><button type=\"button\" data-violation-id=\"")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -424,7 +424,7 @@ func notificationsTableContent(data NotificationsData) templ.Component {
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "\" onclick=\"openCandidatePreview(this.dataset.violationId, this.dataset.url, this.dataset.imageType, this.dataset.source)\" class=\"absolute inset-0 flex items-center justify-center bg-black/0 hover:bg-black/40 transition-colors\" title=\"Preview full size\"><span class=\"opacity-0 hover:opacity-100 flex items-center justify-center transition-opacity bg-white/90 dark:bg-gray-900/90 rounded-full p-2 pointer-events-none\"><!-- Arrows-pointing-out (expand) icon --><svg xmlns=\"http://www.w3.org/2000/svg\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1.5\" stroke=\"currentColor\" class=\"h-5 w-5 text-gray-700 dark:text-gray-200\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15\"></path></svg></span></button></div><!-- Footer: provider + dims --><div class=\"px-2 pt-2 flex items-center justify-between gap-1 min-w-0\"><div class=\"flex items-center gap-1.5 min-w-0\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "\" onclick=\"openCandidatePreview(this.dataset.violationId, this.dataset.url, this.dataset.imageType, this.dataset.source)\" class=\"group absolute inset-0 flex items-center justify-center bg-black/0 hover:bg-black/40 transition-colors\" title=\"Preview full size\"><span class=\"opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity bg-white/90 dark:bg-gray-900/90 rounded-full p-2 pointer-events-none\"><!-- Magnifying glass icon --><svg xmlns=\"http://www.w3.org/2000/svg\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1.5\" stroke=\"currentColor\" class=\"h-5 w-5 text-gray-700 dark:text-gray-200\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 15.803a7.5 7.5 0 0 0 10.607 0Z\"></path></svg></span></button></div><!-- Dimensions centered below image --><div class=\"py-1 text-center\"><span class=\"candidate-dims text-xs text-gray-400 dark:text-gray-500 font-mono\">&nbsp;</span></div><!-- Footer: provider logo (tooltip only) + Apply button --><div class=\"px-2 pb-2 flex items-center justify-between gap-2\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -436,7 +436,7 @@ func notificationsTableContent(data NotificationsData) templ.Component {
 						var templ_7745c5c3_Var25 string
 						templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.JoinStringErrs(logoSrc(c.Source))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 178, Col: 38}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 181, Col: 37}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var25))
 						if templ_7745c5c3_Err != nil {
@@ -449,7 +449,7 @@ func notificationsTableContent(data NotificationsData) templ.Component {
 						var templ_7745c5c3_Var26 string
 						templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.JoinStringErrs(providerDisplayName(c.Source))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 179, Col: 50}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 182, Col: 49}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var26))
 						if templ_7745c5c3_Err != nil {
@@ -462,98 +462,77 @@ func notificationsTableContent(data NotificationsData) templ.Component {
 						var templ_7745c5c3_Var27 string
 						templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.JoinStringErrs(providerDisplayName(c.Source))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 180, Col: 52}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 183, Col: 51}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var27))
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "\" class=\"h-4 w-4 object-contain shrink-0\"> ")
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "\" class=\"h-5 w-5 object-contain shrink-0\"> ")
+						if templ_7745c5c3_Err != nil {
+							return templ_7745c5c3_Err
+						}
+					} else {
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "<span></span> ")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "<span class=\"text-xs text-gray-500 dark:text-gray-400 truncate\" title=\"")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "<button type=\"button\" data-violation-id=\"")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var28 string
-					templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.JoinStringErrs(providerDisplayName(c.Source))
+					templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.JoinStringErrs(v.ID)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 184, Col: 114}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 191, Col: 37}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var28))
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 37, "\" data-url=\"")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var29 string
-					templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.JoinStringErrs(providerDisplayName(c.Source))
+					templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.JoinStringErrs(c.URL)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 185, Col: 45}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 192, Col: 29}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var29))
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 37, "</span></div><span class=\"candidate-dims text-xs text-gray-400 dark:text-gray-500 font-mono shrink-0\"></span></div><!-- Apply button --><div class=\"px-2 py-2\"><button type=\"button\" data-violation-id=\"")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "\" data-image-type=\"")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var30 string
-					templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.JoinStringErrs(v.ID)
+					templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.JoinStringErrs(c.ImageType)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 194, Col: 37}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 193, Col: 42}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var30))
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "\" data-url=\"")
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					var templ_7745c5c3_Var31 string
-					templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.JoinStringErrs(c.URL)
-					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 195, Col: 29}
-					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var31))
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 39, "\" data-image-type=\"")
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					var templ_7745c5c3_Var32 string
-					templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.JoinStringErrs(c.ImageType)
-					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 196, Col: 42}
-					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var32))
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 40, "\" onclick=\"applyCandidate(this.dataset.violationId, this.dataset.url, this.dataset.imageType)\" class=\"w-full rounded bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-600 text-white text-xs font-semibold py-1.5 transition-colors\">Apply</button></div></div>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 39, "\" onclick=\"applyCandidate(this.dataset.violationId, this.dataset.url, this.dataset.imageType)\" class=\"rounded bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-600 text-white text-xs font-semibold px-3 py-1.5 transition-colors\">Apply</button></div></div>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "</div></td></tr>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 40, "</div></td></tr>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 42, "</tbody>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "</tbody>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 43, "</table></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 42, "</table></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -578,12 +557,12 @@ func candidatePreviewModal() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var33 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var33 == nil {
-			templ_7745c5c3_Var33 = templ.NopComponent
+		templ_7745c5c3_Var31 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var31 == nil {
+			templ_7745c5c3_Var31 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 44, "<div id=\"candidate-preview-modal\" class=\"hidden fixed inset-0 z-50 flex items-center justify-center p-4\" role=\"dialog\" aria-modal=\"true\"><!-- Backdrop --><div class=\"absolute inset-0 bg-black/60 backdrop-blur-sm\" onclick=\"closeCandidatePreview()\"></div><!-- Panel --><div class=\"relative z-10 w-full max-w-4xl bg-white dark:bg-gray-900 rounded-xl shadow-2xl overflow-hidden flex flex-col\" style=\"max-height:90vh\"><!-- Header --><div class=\"flex items-center justify-between px-5 py-3 border-b border-gray-200 dark:border-gray-700 shrink-0\"><div class=\"flex items-center gap-3\"><img id=\"preview-provider-logo\" src=\"\" alt=\"\" class=\"h-5 w-5 object-contain hidden\"> <span id=\"preview-provider-name\" class=\"text-sm font-semibold text-gray-700 dark:text-gray-200\"></span> <span id=\"preview-dims\" class=\"text-xs text-gray-400 dark:text-gray-500 font-mono\"></span></div><button onclick=\"closeCandidatePreview()\" class=\"rounded-full p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors\" aria-label=\"Close preview\"><!-- X icon --><svg xmlns=\"http://www.w3.org/2000/svg\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1.5\" stroke=\"currentColor\" class=\"h-5 w-5\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M6 18 18 6M6 6l12 12\"></path></svg></button></div><!-- Image --><div class=\"flex-1 overflow-auto bg-gray-100 dark:bg-gray-800 flex items-center justify-center p-4\"><img id=\"preview-image\" src=\"\" alt=\"Preview\" class=\"max-w-full max-h-full object-contain\" onload=\"updatePreviewDims(this)\"></div><!-- Footer --><div class=\"px-5 py-3 border-t border-gray-200 dark:border-gray-700 flex items-center justify-end gap-3 shrink-0\"><button onclick=\"closeCandidatePreview()\" class=\"rounded border border-gray-300 dark:border-gray-600 px-4 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors\">Cancel</button> <button id=\"preview-apply-btn\" onclick=\"applyFromPreview()\" class=\"rounded bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-600 px-4 py-1.5 text-sm font-semibold text-white transition-colors\">Apply this image</button></div></div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 43, "<div id=\"candidate-preview-modal\" class=\"hidden fixed inset-0 z-50 flex items-center justify-center p-4\" role=\"dialog\" aria-modal=\"true\"><!-- Backdrop --><div class=\"absolute inset-0 bg-black/60 backdrop-blur-sm\" onclick=\"closeCandidatePreview()\"></div><!-- Panel --><div class=\"relative z-10 w-full max-w-4xl bg-white dark:bg-gray-900 rounded-xl shadow-2xl overflow-hidden flex flex-col\" style=\"max-height:90vh\"><!-- Header --><div class=\"flex items-center justify-between px-5 py-3 border-b border-gray-200 dark:border-gray-700 shrink-0\"><div class=\"flex items-center gap-3\"><img id=\"preview-provider-logo\" src=\"\" alt=\"\" class=\"h-5 w-5 object-contain hidden\"> <span id=\"preview-provider-name\" class=\"text-sm font-semibold text-gray-700 dark:text-gray-200\"></span> <span id=\"preview-dims\" class=\"text-xs text-gray-400 dark:text-gray-500 font-mono\"></span></div><button onclick=\"closeCandidatePreview()\" class=\"rounded-full p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors\" aria-label=\"Close preview\"><!-- X icon --><svg xmlns=\"http://www.w3.org/2000/svg\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1.5\" stroke=\"currentColor\" class=\"h-5 w-5\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M6 18 18 6M6 6l12 12\"></path></svg></button></div><!-- Image --><div class=\"flex-1 overflow-auto bg-gray-100 dark:bg-gray-800 flex items-center justify-center p-4\"><img id=\"preview-image\" src=\"\" alt=\"Preview\" class=\"max-w-full max-h-full object-contain\" onload=\"updatePreviewDims(this)\"></div><!-- Footer --><div class=\"px-5 py-3 border-t border-gray-200 dark:border-gray-700 flex items-center justify-end gap-3 shrink-0\"><button onclick=\"closeCandidatePreview()\" class=\"rounded border border-gray-300 dark:border-gray-600 px-4 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors\">Cancel</button> <button id=\"preview-apply-btn\" onclick=\"applyFromPreview()\" class=\"rounded bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-600 px-4 py-1.5 text-sm font-semibold text-white transition-colors\">Apply this image</button></div></div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -607,12 +586,12 @@ func candidateScript() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var34 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var34 == nil {
-			templ_7745c5c3_Var34 = templ.NopComponent
+		templ_7745c5c3_Var32 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var32 == nil {
+			templ_7745c5c3_Var32 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 45, "<script>\n\t// ---- Violation row toggle ----\n\tfunction toggleCandidates(id) {\n\t\tvar row = document.getElementById(id);\n\t\tif (row) row.classList.toggle('hidden');\n\t}\n\n\t// ---- Apply candidate (shared by card button and modal) ----\n\tfunction applyCandidate(violationID, url, imageType) {\n\t\tvar csrfToken = document.cookie.replace(\n\t\t\t/(?:(?:^|.*;\\s*)csrf_token\\s*=\\s*([^;]*).*$)|^.*$/, '$1'\n\t\t);\n\t\tfetch('/api/v1/notifications/' + violationID + '/apply-candidate', {\n\t\t\tmethod: 'POST',\n\t\t\theaders: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},\n\t\t\tbody: JSON.stringify({url: url, image_type: imageType}),\n\t\t\tcredentials: 'same-origin'\n\t\t}).then(function(r) {\n\t\t\tif (r.ok) {\n\t\t\t\tvar tbody = document.getElementById('notif-' + violationID);\n\t\t\t\tif (tbody) tbody.remove();\n\t\t\t\tupdateBulkButton();\n\t\t\t} else if (typeof showToast === 'function') {\n\t\t\t\tshowToast('Failed to apply image.');\n\t\t\t}\n\t\t}).catch(function() {\n\t\t\tif (typeof showToast === 'function') showToast('Network error applying image.');\n\t\t});\n\t}\n\n\t// ---- Card dimension update (fires on img load) ----\n\tfunction updateCandidateCardDims(img) {\n\t\tif (img.naturalWidth > 0) {\n\t\t\tvar card = img.closest('.candidate-card');\n\t\t\tif (card) {\n\t\t\t\tvar el = card.querySelector('.candidate-dims');\n\t\t\t\tif (el) el.textContent = img.naturalWidth + 'x' + img.naturalHeight;\n\t\t\t}\n\t\t}\n\t}\n\n\t// ---- Candidate preview modal ----\n\tvar _previewViolationID, _previewURL, _previewImageType;\n\n\tfunction _providerDisplayName(source) {\n\t\tvar names = {\n\t\t\t'fanarttv':    'Fanart.tv',\n\t\t\t'audiodb':     'TheAudioDB',\n\t\t\t'discogs':     'Discogs',\n\t\t\t'musicbrainz': 'MusicBrainz',\n\t\t\t'lastfm':      'Last.fm',\n\t\t\t'deezer':      'Deezer',\n\t\t\t'duckduckgo':  'DuckDuckGo'\n\t\t};\n\t\treturn names[source] || source;\n\t}\n\n\tfunction _providerLogoURL(source) {\n\t\tvar logos = {\n\t\t\t'fanarttv':    '/static/img/logos/fanarttv.svg',\n\t\t\t'audiodb':     '/static/img/logos/audiodb-32.png',\n\t\t\t'discogs':     '/static/img/logos/discogs.svg',\n\t\t\t'musicbrainz': '/static/img/logos/musicbrainz.svg',\n\t\t\t'lastfm':      '/static/img/logos/lastfm.svg',\n\t\t\t'deezer':      '/static/img/logos/deezer.svg'\n\t\t};\n\t\treturn logos[source] || '';\n\t}\n\n\tfunction openCandidatePreview(violationID, url, imageType, source) {\n\t\t_previewViolationID = violationID;\n\t\t_previewURL = url;\n\t\t_previewImageType = imageType;\n\n\t\tvar img = document.getElementById('preview-image');\n\t\timg.src = '';\n\t\tdocument.getElementById('preview-dims').textContent = 'Loading...';\n\t\tdocument.getElementById('preview-provider-name').textContent = _providerDisplayName(source);\n\n\t\tvar logo = document.getElementById('preview-provider-logo');\n\t\tvar logoURL = _providerLogoURL(source);\n\t\tif (logoURL) {\n\t\t\tlogo.src = logoURL;\n\t\t\tlogo.alt = _providerDisplayName(source);\n\t\t\tlogo.title = _providerDisplayName(source);\n\t\t\tlogo.classList.remove('hidden');\n\t\t} else {\n\t\t\tlogo.classList.add('hidden');\n\t\t}\n\n\t\timg.src = url;\n\t\tdocument.getElementById('candidate-preview-modal').classList.remove('hidden');\n\t\tdocument.body.style.overflow = 'hidden';\n\t}\n\n\tfunction closeCandidatePreview() {\n\t\tdocument.getElementById('candidate-preview-modal').classList.add('hidden');\n\t\tdocument.body.style.overflow = '';\n\t\t// Clear src to stop any in-progress load\n\t\tdocument.getElementById('preview-image').src = '';\n\t}\n\n\tfunction updatePreviewDims(img) {\n\t\tvar el = document.getElementById('preview-dims');\n\t\tif (el) {\n\t\t\tel.textContent = img.naturalWidth > 0 ? img.naturalWidth + 'x' + img.naturalHeight : '';\n\t\t}\n\t}\n\n\tfunction applyFromPreview() {\n\t\tvar vid = _previewViolationID, url = _previewURL, type = _previewImageType;\n\t\tcloseCandidatePreview();\n\t\tapplyCandidate(vid, url, type);\n\t}\n\n\t// Close on Escape key\n\tdocument.addEventListener('keydown', function(e) {\n\t\tif (e.key === 'Escape') closeCandidatePreview();\n\t});\n\n\t// ---- Bulk selection ----\n\tfunction toggleSelectAll(cb) {\n\t\tdocument.querySelectorAll('.violation-checkbox').forEach(function(c) {\n\t\t\tc.checked = cb.checked;\n\t\t});\n\t\tupdateBulkButton();\n\t}\n\n\tfunction updateBulkButton() {\n\t\tvar checked = document.querySelectorAll('.violation-checkbox:checked');\n\t\tvar btn = document.getElementById('bulk-dismiss-btn');\n\t\tif (!btn) return;\n\t\tif (checked.length > 0) {\n\t\t\tbtn.textContent = 'Dismiss ' + checked.length + ' selected';\n\t\t\tbtn.classList.remove('hidden');\n\t\t} else {\n\t\t\tbtn.classList.add('hidden');\n\t\t}\n\t}\n\n\tfunction bulkDismissAll() {\n\t\tif (!confirm('Dismiss all active violations?')) return;\n\t\tvar csrfToken = document.cookie.replace(\n\t\t\t/(?:(?:^|.*;\\s*)csrf_token\\s*=\\s*([^;]*).*$)|^.*$/, '$1'\n\t\t);\n\t\tfetch('/api/v1/notifications/bulk-dismiss', {\n\t\t\tmethod: 'POST',\n\t\t\theaders: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},\n\t\t\tbody: '{}',\n\t\t\tcredentials: 'same-origin'\n\t\t}).then(function(r) {\n\t\t\tif (r.ok) {\n\t\t\t\thtmx.ajax('GET', '/notifications/table', {target: '#notifications-table', swap: 'innerHTML'});\n\t\t\t} else if (typeof showToast === 'function') {\n\t\t\t\tshowToast('Failed to dismiss violations.');\n\t\t\t}\n\t\t}).catch(function() {\n\t\t\tif (typeof showToast === 'function') showToast('Network error dismissing violations.');\n\t\t});\n\t}\n\n\tfunction bulkDismissSelected() {\n\t\tvar ids = [];\n\t\tdocument.querySelectorAll('.violation-checkbox:checked').forEach(function(c) {\n\t\t\tids.push(c.dataset.violationId);\n\t\t});\n\t\tif (ids.length === 0) return;\n\t\tvar csrfToken = document.cookie.replace(\n\t\t\t/(?:(?:^|.*;\\s*)csrf_token\\s*=\\s*([^;]*).*$)|^.*$/, '$1'\n\t\t);\n\t\tfetch('/api/v1/notifications/bulk-dismiss', {\n\t\t\tmethod: 'POST',\n\t\t\theaders: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},\n\t\t\tbody: JSON.stringify({ids: ids}),\n\t\t\tcredentials: 'same-origin'\n\t\t}).then(function(r) {\n\t\t\tif (r.ok) {\n\t\t\t\thtmx.ajax('GET', '/notifications/table', {target: '#notifications-table', swap: 'innerHTML'});\n\t\t\t} else if (typeof showToast === 'function') {\n\t\t\t\tshowToast('Failed to dismiss violations.');\n\t\t\t}\n\t\t}).catch(function() {\n\t\t\tif (typeof showToast === 'function') showToast('Network error dismissing violations.');\n\t\t});\n\t}\n\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 44, "<script>\n\t// ---- Violation row toggle ----\n\tfunction toggleCandidates(id) {\n\t\tvar row = document.getElementById(id);\n\t\tif (row) row.classList.toggle('hidden');\n\t}\n\n\t// ---- Apply candidate (shared by card button and modal) ----\n\tfunction applyCandidate(violationID, url, imageType) {\n\t\tvar csrfToken = document.cookie.replace(\n\t\t\t/(?:(?:^|.*;\\s*)csrf_token\\s*=\\s*([^;]*).*$)|^.*$/, '$1'\n\t\t);\n\t\tfetch('/api/v1/notifications/' + violationID + '/apply-candidate', {\n\t\t\tmethod: 'POST',\n\t\t\theaders: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},\n\t\t\tbody: JSON.stringify({url: url, image_type: imageType}),\n\t\t\tcredentials: 'same-origin'\n\t\t}).then(function(r) {\n\t\t\tif (r.ok) {\n\t\t\t\tvar tbody = document.getElementById('notif-' + violationID);\n\t\t\t\tif (tbody) tbody.remove();\n\t\t\t\tupdateBulkButton();\n\t\t\t} else if (typeof showToast === 'function') {\n\t\t\t\tshowToast('Failed to apply image.');\n\t\t\t}\n\t\t}).catch(function() {\n\t\t\tif (typeof showToast === 'function') showToast('Network error applying image.');\n\t\t});\n\t}\n\n\t// ---- Card dimension update (fires on img load) ----\n\tfunction updateCandidateCardDims(img) {\n\t\tif (img.naturalWidth > 0) {\n\t\t\tvar card = img.closest('.candidate-card');\n\t\t\tif (card) {\n\t\t\t\tvar el = card.querySelector('.candidate-dims');\n\t\t\t\tif (el) el.textContent = img.naturalWidth + 'x' + img.naturalHeight;\n\t\t\t}\n\t\t}\n\t}\n\n\t// ---- Candidate preview modal ----\n\tvar _previewViolationID, _previewURL, _previewImageType;\n\n\tfunction _providerDisplayName(source) {\n\t\tvar names = {\n\t\t\t'fanarttv':    'Fanart.tv',\n\t\t\t'audiodb':     'TheAudioDB',\n\t\t\t'discogs':     'Discogs',\n\t\t\t'musicbrainz': 'MusicBrainz',\n\t\t\t'lastfm':      'Last.fm',\n\t\t\t'deezer':      'Deezer',\n\t\t\t'duckduckgo':  'DuckDuckGo'\n\t\t};\n\t\treturn names[source] || source;\n\t}\n\n\tfunction _providerLogoURL(source) {\n\t\tvar logos = {\n\t\t\t'fanarttv':    '/static/img/logos/fanarttv.svg',\n\t\t\t'audiodb':     '/static/img/logos/audiodb-32.png',\n\t\t\t'discogs':     '/static/img/logos/discogs.svg',\n\t\t\t'musicbrainz': '/static/img/logos/musicbrainz.svg',\n\t\t\t'lastfm':      '/static/img/logos/lastfm.svg',\n\t\t\t'deezer':      '/static/img/logos/deezer.svg'\n\t\t};\n\t\treturn logos[source] || '';\n\t}\n\n\tfunction openCandidatePreview(violationID, url, imageType, source) {\n\t\t_previewViolationID = violationID;\n\t\t_previewURL = url;\n\t\t_previewImageType = imageType;\n\n\t\tvar img = document.getElementById('preview-image');\n\t\timg.src = '';\n\t\tdocument.getElementById('preview-dims').textContent = 'Loading...';\n\t\tdocument.getElementById('preview-provider-name').textContent = _providerDisplayName(source);\n\n\t\tvar logo = document.getElementById('preview-provider-logo');\n\t\tvar logoURL = _providerLogoURL(source);\n\t\tif (logoURL) {\n\t\t\tlogo.src = logoURL;\n\t\t\tlogo.alt = _providerDisplayName(source);\n\t\t\tlogo.title = _providerDisplayName(source);\n\t\t\tlogo.classList.remove('hidden');\n\t\t} else {\n\t\t\tlogo.classList.add('hidden');\n\t\t}\n\n\t\timg.src = url;\n\t\tdocument.getElementById('candidate-preview-modal').classList.remove('hidden');\n\t\tdocument.body.style.overflow = 'hidden';\n\t}\n\n\tfunction closeCandidatePreview() {\n\t\tdocument.getElementById('candidate-preview-modal').classList.add('hidden');\n\t\tdocument.body.style.overflow = '';\n\t\t// Clear src to stop any in-progress load\n\t\tdocument.getElementById('preview-image').src = '';\n\t}\n\n\tfunction updatePreviewDims(img) {\n\t\tvar el = document.getElementById('preview-dims');\n\t\tif (el) {\n\t\t\tel.textContent = img.naturalWidth > 0 ? img.naturalWidth + 'x' + img.naturalHeight : '';\n\t\t}\n\t}\n\n\tfunction applyFromPreview() {\n\t\tvar vid = _previewViolationID, url = _previewURL, type = _previewImageType;\n\t\tcloseCandidatePreview();\n\t\tapplyCandidate(vid, url, type);\n\t}\n\n\t// Close on Escape key\n\tdocument.addEventListener('keydown', function(e) {\n\t\tif (e.key === 'Escape') closeCandidatePreview();\n\t});\n\n\t// ---- Bulk selection ----\n\tfunction toggleSelectAll(cb) {\n\t\tdocument.querySelectorAll('.violation-checkbox').forEach(function(c) {\n\t\t\tc.checked = cb.checked;\n\t\t});\n\t\tupdateBulkButton();\n\t}\n\n\tfunction updateBulkButton() {\n\t\tvar checked = document.querySelectorAll('.violation-checkbox:checked');\n\t\tvar btn = document.getElementById('bulk-dismiss-btn');\n\t\tif (!btn) return;\n\t\tif (checked.length > 0) {\n\t\t\tbtn.textContent = 'Dismiss ' + checked.length + ' selected';\n\t\t\tbtn.classList.remove('hidden');\n\t\t} else {\n\t\t\tbtn.classList.add('hidden');\n\t\t}\n\t}\n\n\tfunction bulkDismissAll() {\n\t\tif (!confirm('Dismiss all active violations?')) return;\n\t\tvar csrfToken = document.cookie.replace(\n\t\t\t/(?:(?:^|.*;\\s*)csrf_token\\s*=\\s*([^;]*).*$)|^.*$/, '$1'\n\t\t);\n\t\tfetch('/api/v1/notifications/bulk-dismiss', {\n\t\t\tmethod: 'POST',\n\t\t\theaders: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},\n\t\t\tbody: '{}',\n\t\t\tcredentials: 'same-origin'\n\t\t}).then(function(r) {\n\t\t\tif (r.ok) {\n\t\t\t\thtmx.ajax('GET', '/notifications/table', {target: '#notifications-table', swap: 'innerHTML'});\n\t\t\t} else if (typeof showToast === 'function') {\n\t\t\t\tshowToast('Failed to dismiss violations.');\n\t\t\t}\n\t\t}).catch(function() {\n\t\t\tif (typeof showToast === 'function') showToast('Network error dismissing violations.');\n\t\t});\n\t}\n\n\tfunction bulkDismissSelected() {\n\t\tvar ids = [];\n\t\tdocument.querySelectorAll('.violation-checkbox:checked').forEach(function(c) {\n\t\t\tids.push(c.dataset.violationId);\n\t\t});\n\t\tif (ids.length === 0) return;\n\t\tvar csrfToken = document.cookie.replace(\n\t\t\t/(?:(?:^|.*;\\s*)csrf_token\\s*=\\s*([^;]*).*$)|^.*$/, '$1'\n\t\t);\n\t\tfetch('/api/v1/notifications/bulk-dismiss', {\n\t\t\tmethod: 'POST',\n\t\t\theaders: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},\n\t\t\tbody: JSON.stringify({ids: ids}),\n\t\t\tcredentials: 'same-origin'\n\t\t}).then(function(r) {\n\t\t\tif (r.ok) {\n\t\t\t\thtmx.ajax('GET', '/notifications/table', {target: '#notifications-table', swap: 'innerHTML'});\n\t\t\t} else if (typeof showToast === 'function') {\n\t\t\t\tshowToast('Failed to dismiss violations.');\n\t\t\t}\n\t\t}).catch(function() {\n\t\t\tif (typeof showToast === 'function') showToast('Network error dismissing violations.');\n\t\t});\n\t}\n\t</script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
