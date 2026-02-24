@@ -9,6 +9,7 @@ import (
 // AccessTier classifies a provider's access model.
 type AccessTier string
 
+// Access tier constants for classifying a provider's access model.
 const (
 	TierFree     AccessTier = "free"      // No key, no limit known
 	TierFreeKey  AccessTier = "free_key"  // Free account/sign-up required
