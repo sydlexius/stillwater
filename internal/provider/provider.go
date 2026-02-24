@@ -6,6 +6,74 @@ import (
 	"time"
 )
 
+// AccessTier classifies a provider's access model.
+type AccessTier string
+
+// Access tier constants for classifying a provider's access model.
+const (
+	TierFree     AccessTier = "free"     // No key, no limit known
+	TierFreeKey  AccessTier = "free_key" // Free account/sign-up required
+	TierFreemium AccessTier = "freemium" // Free tier with quota, paid for more
+	TierPaid     AccessTier = "paid"     // Paid access only
+)
+
+// RateLimitInfo documents the known rate limits for a provider.
+type RateLimitInfo struct {
+	RequestsPerSecond float64    `json:"requests_per_second,omitempty"`
+	RequestsPerDay    int        `json:"requests_per_day,omitempty"`   // 0 = unknown/unlimited
+	RequestsPerMonth  int        `json:"requests_per_month,omitempty"` // 0 = unknown/unlimited
+	ResetAt           *time.Time `json:"reset_at,omitempty"`
+}
+
+// ProviderCapability describes a provider's access model and documented rate limits.
+type ProviderCapability struct {
+	Tier      AccessTier     `json:"tier"`
+	HelpURL   string         `json:"help_url,omitempty"`
+	RateLimit *RateLimitInfo `json:"rate_limit,omitempty"`
+}
+
+// ProviderCapabilities returns the known capability metadata for each provider.
+func ProviderCapabilities() map[ProviderName]ProviderCapability {
+	return map[ProviderName]ProviderCapability{
+		NameMusicBrainz: {
+			Tier:      TierFree,
+			RateLimit: &RateLimitInfo{RequestsPerSecond: 1},
+		},
+		NameFanartTV: {
+			Tier:      TierFreeKey,
+			HelpURL:   "https://fanart.tv/get-an-api-key/",
+			RateLimit: &RateLimitInfo{RequestsPerSecond: 3},
+		},
+		NameAudioDB: {
+			Tier:      TierFreemium,
+			HelpURL:   "https://www.patreon.com/thedatadb",
+			RateLimit: &RateLimitInfo{RequestsPerSecond: 2},
+		},
+		NameDiscogs: {
+			Tier:      TierFreeKey,
+			HelpURL:   "https://www.discogs.com/settings/developers",
+			RateLimit: &RateLimitInfo{RequestsPerSecond: 1, RequestsPerDay: 1000},
+		},
+		NameLastFM: {
+			Tier:      TierFreeKey,
+			HelpURL:   "https://www.last.fm/api/account/create",
+			RateLimit: &RateLimitInfo{RequestsPerSecond: 5},
+		},
+		NameWikidata: {
+			Tier:      TierFree,
+			RateLimit: &RateLimitInfo{RequestsPerSecond: 5},
+		},
+		NameDuckDuckGo: {
+			Tier:      TierFree,
+			RateLimit: &RateLimitInfo{RequestsPerSecond: 1},
+		},
+		NameDeezer: {
+			Tier:      TierFree,
+			RateLimit: &RateLimitInfo{RequestsPerSecond: 5},
+		},
+	}
+}
+
 // ProviderName uniquely identifies a metadata provider.
 type ProviderName string
 
@@ -18,6 +86,7 @@ const (
 	NameLastFM      ProviderName = "lastfm"
 	NameWikidata    ProviderName = "wikidata"
 	NameDuckDuckGo  ProviderName = "duckduckgo"
+	NameDeezer      ProviderName = "deezer"
 )
 
 // AllProviderNames returns all known provider names in display order.
@@ -29,6 +98,7 @@ func AllProviderNames() []ProviderName {
 		NameDiscogs,
 		NameLastFM,
 		NameWikidata,
+		NameDeezer,
 	}
 }
 
@@ -49,6 +119,8 @@ func (n ProviderName) DisplayName() string {
 		return "Wikidata"
 	case NameDuckDuckGo:
 		return "DuckDuckGo"
+	case NameDeezer:
+		return "Deezer"
 	default:
 		return string(n)
 	}

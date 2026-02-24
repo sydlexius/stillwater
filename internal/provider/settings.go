@@ -94,15 +94,19 @@ func (s *SettingsService) HasAPIKey(ctx context.Context, name ProviderName) (boo
 
 // ProviderKeyStatus describes the API key configuration state for a provider.
 type ProviderKeyStatus struct {
-	Name        ProviderName `json:"name"`
-	DisplayName string       `json:"display_name"`
-	RequiresKey bool         `json:"requires_key"`
-	HasKey      bool         `json:"has_key"`
-	Status      string       `json:"status"` // "ok", "invalid", "untested", "not_required", "unconfigured"
+	Name        ProviderName   `json:"name"`
+	DisplayName string         `json:"display_name"`
+	RequiresKey bool           `json:"requires_key"`
+	HasKey      bool           `json:"has_key"`
+	Status      string         `json:"status"` // "ok", "invalid", "untested", "not_required", "unconfigured"
+	AccessTier  AccessTier     `json:"access_tier"`
+	HelpURL     string         `json:"help_url,omitempty"`
+	RateLimit   *RateLimitInfo `json:"rate_limit,omitempty"`
 }
 
 // ListProviderKeyStatuses returns the key configuration status for all known providers.
 func (s *SettingsService) ListProviderKeyStatuses(ctx context.Context) ([]ProviderKeyStatus, error) {
+	caps := ProviderCapabilities()
 	var statuses []ProviderKeyStatus
 	for _, name := range AllProviderNames() {
 		requiresKey := providerRequiresKey(name)
@@ -116,12 +120,16 @@ func (s *SettingsService) ListProviderKeyStatuses(ctx context.Context) ([]Provid
 		} else if hasKey {
 			status = "untested"
 		}
+		cap := caps[name]
 		statuses = append(statuses, ProviderKeyStatus{
 			Name:        name,
 			DisplayName: name.DisplayName(),
 			RequiresKey: requiresKey,
 			HasKey:      hasKey,
 			Status:      status,
+			AccessTier:  cap.Tier,
+			HelpURL:     cap.HelpURL,
+			RateLimit:   cap.RateLimit,
 		})
 	}
 	return statuses, nil
@@ -130,7 +138,7 @@ func (s *SettingsService) ListProviderKeyStatuses(ctx context.Context) ([]Provid
 // providerRequiresKey returns whether a provider needs an API key.
 func providerRequiresKey(name ProviderName) bool {
 	switch name {
-	case NameMusicBrainz, NameWikidata:
+	case NameMusicBrainz, NameWikidata, NameDeezer:
 		return false
 	default:
 		return true
@@ -171,7 +179,7 @@ func DefaultPriorities() []FieldPriority {
 		{Field: "moods", Providers: []ProviderName{NameAudioDB}},
 		{Field: "members", Providers: []ProviderName{NameMusicBrainz, NameWikidata}},
 		{Field: "formed", Providers: []ProviderName{NameMusicBrainz, NameWikidata, NameAudioDB}},
-		{Field: "thumb", Providers: []ProviderName{NameFanartTV, NameAudioDB}},
+		{Field: "thumb", Providers: []ProviderName{NameFanartTV, NameAudioDB, NameDeezer}},
 		{Field: "fanart", Providers: []ProviderName{NameFanartTV, NameAudioDB}},
 		{Field: "logo", Providers: []ProviderName{NameFanartTV, NameAudioDB}},
 		{Field: "banner", Providers: []ProviderName{NameFanartTV, NameAudioDB}},
@@ -195,6 +203,18 @@ func (s *SettingsService) GetPriorities(ctx context.Context) ([]FieldPriority, e
 			if err := json.Unmarshal([]byte(value), &providers); err != nil {
 				result[i] = d
 			} else {
+				// Append any default providers not present in the stored list.
+				// This ensures newly-added providers appear without requiring a
+				// manual settings reset.
+				inStored := make(map[ProviderName]bool, len(providers))
+				for _, p := range providers {
+					inStored[p] = true
+				}
+				for _, p := range d.Providers {
+					if !inStored[p] {
+						providers = append(providers, p)
+					}
+				}
 				result[i] = FieldPriority{Field: d.Field, Providers: providers}
 			}
 		}

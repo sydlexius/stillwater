@@ -173,6 +173,19 @@ func TestListProviderKeyStatuses(t *testing.T) {
 		t.Errorf("expected status 'not_required', got %s", mb.Status)
 	}
 
+	// MusicBrainz: free tier, no help URL, rate limit set
+	if mb.AccessTier != TierFree {
+		t.Errorf("expected MusicBrainz access tier %q, got %q", TierFree, mb.AccessTier)
+	}
+	if mb.HelpURL != "" {
+		t.Errorf("expected MusicBrainz to have no help URL, got %q", mb.HelpURL)
+	}
+	if mb.RateLimit == nil {
+		t.Error("expected MusicBrainz to have rate limit info")
+	} else if mb.RateLimit.RequestsPerSecond != 1 {
+		t.Errorf("expected MusicBrainz rate limit 1 req/s, got %v", mb.RateLimit.RequestsPerSecond)
+	}
+
 	// Fanart.tv: has key
 	fanart := statuses[1]
 	if fanart.Name != NameFanartTV {
@@ -183,6 +196,15 @@ func TestListProviderKeyStatuses(t *testing.T) {
 	}
 	if fanart.Status != "untested" {
 		t.Errorf("expected status 'untested', got %s", fanart.Status)
+	}
+	if fanart.AccessTier != TierFreeKey {
+		t.Errorf("expected Fanart.tv access tier %q, got %q", TierFreeKey, fanart.AccessTier)
+	}
+	if fanart.HelpURL == "" {
+		t.Error("expected Fanart.tv to have a help URL")
+	}
+	if fanart.RateLimit == nil {
+		t.Error("expected Fanart.tv to have rate limit info")
 	}
 
 	// Discogs: no key configured
@@ -195,6 +217,15 @@ func TestListProviderKeyStatuses(t *testing.T) {
 	}
 	if discogs.Status != "unconfigured" {
 		t.Errorf("expected status 'unconfigured', got %s", discogs.Status)
+	}
+	if discogs.AccessTier != TierFreeKey {
+		t.Errorf("expected Discogs access tier %q, got %q", TierFreeKey, discogs.AccessTier)
+	}
+	if discogs.HelpURL == "" {
+		t.Error("expected Discogs to have a help URL")
+	}
+	if discogs.RateLimit == nil {
+		t.Error("expected Discogs to have rate limit info")
 	}
 }
 
@@ -228,21 +259,33 @@ func TestPriorityRoundTrip(t *testing.T) {
 		t.Errorf("expected first biography provider to be musicbrainz, got %s", bio.Providers[0])
 	}
 
-	// Override biography
+	// Override biography with a subset of providers (simulating a user reorder).
+	// The stored list is [lastfm, musicbrainz, audiodb]; GetPriorities should
+	// reconcile by appending any default providers absent from the stored list
+	// (discogs, wikidata) so newly-added defaults surface without a manual reset.
 	newOrder := []ProviderName{NameLastFM, NameMusicBrainz, NameAudioDB}
 	if err := svc.SetPriority(ctx, "biography", newOrder); err != nil {
 		t.Fatalf("SetPriority: %v", err)
 	}
 
-	// Read back
+	// Read back: user-ordered providers first, then reconciled defaults appended.
 	priorities, err = svc.GetPriorities(ctx)
 	if err != nil {
 		t.Fatalf("GetPriorities after set: %v", err)
 	}
+	biographyDefault := DefaultPriorities()
+	var defaultBioCount int
+	for _, d := range biographyDefault {
+		if d.Field == "biography" {
+			defaultBioCount = len(d.Providers)
+			break
+		}
+	}
 	for _, p := range priorities {
 		if p.Field == "biography" {
-			if len(p.Providers) != 3 {
-				t.Fatalf("expected 3 providers, got %d", len(p.Providers))
+			// Stored order is preserved at the front; missing defaults are appended.
+			if len(p.Providers) != defaultBioCount {
+				t.Fatalf("expected %d providers after reconciliation, got %d", defaultBioCount, len(p.Providers))
 			}
 			if p.Providers[0] != NameLastFM {
 				t.Errorf("expected first provider to be lastfm, got %s", p.Providers[0])
