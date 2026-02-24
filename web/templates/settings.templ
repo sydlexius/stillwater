@@ -1386,6 +1386,7 @@ templ ruleRow(rl rule.Rule) {
 			<div class="flex items-center gap-3 shrink-0">
 				<select
 					class="text-xs rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
+					aria-label={ "Automation mode for " + rl.Name }
 					data-rule-id={ rl.ID }
 					onchange="patchRule(this.dataset.ruleId, {automation_mode: this.value})"
 					disabled?={ !rl.Enabled }
@@ -1537,7 +1538,7 @@ templ ruleConfigForm(rl rule.Rule) {
 				class="mt-0.5 w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
 			>
 				<option value="error" selected?={ rl.Config.Severity == "error" }>Error</option>
-				<option value="warning" selected?={ rl.Config.Severity == "warning" || rl.Config.Severity == "" }>Warning</option>
+				<option value="warning" selected?={ rl.Config.Severity == "warning" }>Warning</option>
 				<option value="info" selected?={ rl.Config.Severity == "info" }>Info</option>
 			</select>
 		</label>
@@ -1647,22 +1648,20 @@ templ ruleToggleScript() {
 			// Optimistic update
 			btn.setAttribute('aria-checked', String(newVal));
 			var knob = btn.querySelector('span');
+			var row = btn.closest('.py-4');
+			var sel = row ? row.querySelector('select[data-rule-id]') : null;
 			if (newVal) {
 				btn.classList.remove('bg-gray-200', 'dark:bg-gray-600');
 				btn.classList.add('bg-blue-600');
 				knob.classList.remove('translate-x-0');
 				knob.classList.add('translate-x-5');
+				if (sel) sel.disabled = false;
 			} else {
 				btn.classList.remove('bg-blue-600');
 				btn.classList.add('bg-gray-200', 'dark:bg-gray-600');
 				knob.classList.remove('translate-x-5');
 				knob.classList.add('translate-x-0');
-				// Also disable the automation mode select
-				var row = btn.closest('.py-4');
-				if (row) {
-					var sel = row.querySelector('select[data-rule-id]');
-					if (sel) sel.disabled = true;
-				}
+				if (sel) sel.disabled = true;
 			}
 		}
 
