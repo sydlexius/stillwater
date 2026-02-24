@@ -197,7 +197,7 @@ func TestPipeline_RunAll(t *testing.T) {
 
 	engine := NewEngine(ruleSvc, db, testLogger())
 	fixer := &mockFixer{canFix: true}
-	pipeline := NewPipeline(engine, artistSvc, []Fixer{fixer}, testLogger())
+	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{fixer}, testLogger())
 
 	result, err := pipeline.RunAll(ctx)
 	if err != nil {
@@ -236,7 +236,7 @@ func TestPipeline_RunRule(t *testing.T) {
 
 	engine := NewEngine(ruleSvc, db, testLogger())
 	fixer := &mockFixer{canFix: true}
-	pipeline := NewPipeline(engine, artistSvc, []Fixer{fixer}, testLogger())
+	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{fixer}, testLogger())
 
 	result, err := pipeline.RunRule(ctx, RuleNFOExists)
 	if err != nil {
@@ -277,7 +277,7 @@ func TestPipeline_SkipsExcludedArtists(t *testing.T) {
 
 	engine := NewEngine(ruleSvc, db, testLogger())
 	fixer := &mockFixer{canFix: true}
-	pipeline := NewPipeline(engine, artistSvc, []Fixer{fixer}, testLogger())
+	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{fixer}, testLogger())
 
 	result, err := pipeline.RunAll(ctx)
 	if err != nil {
@@ -311,7 +311,7 @@ func TestPipeline_NoFixerAvailable(t *testing.T) {
 	engine := NewEngine(ruleSvc, db, testLogger())
 	// Register a fixer that can't fix anything
 	fixer := &mockFixer{canFix: false}
-	pipeline := NewPipeline(engine, artistSvc, []Fixer{fixer}, testLogger())
+	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{fixer}, testLogger())
 
 	result, err := pipeline.RunAll(ctx)
 	if err != nil {
