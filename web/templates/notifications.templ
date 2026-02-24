@@ -34,6 +34,7 @@ templ NotificationsPage(assets AssetPaths, data NotificationsData) {
 				</div>
 			}
 		</div>
+		@candidateScript()
 	}
 }
 
@@ -60,8 +61,8 @@ templ notificationsTableContent(data NotificationsData) {
 					<th class="px-6 py-3 text-right text-xs font-semibold text-gray-700 uppercase">Actions</th>
 				</tr>
 			</thead>
-			<tbody class="divide-y divide-gray-200">
-				for _, v := range data.Violations {
+			for _, v := range data.Violations {
+				<tbody id={ "notif-" + v.ID }>
 					<tr class="hover:bg-gray-50 transition">
 						<td class="px-6 py-4 text-sm text-gray-900">{ v.ArtistName }</td>
 						<td class="px-6 py-4 text-sm text-gray-600">{ v.RuleID }</td>
@@ -78,10 +79,20 @@ templ notificationsTableContent(data NotificationsData) {
 							{ formatAge(v.CreatedAt) }
 						</td>
 						<td class="px-6 py-4 text-right text-sm space-x-2">
+							if v.Status == rule.ViolationStatusPendingChoice && len(v.Candidates) > 0 {
+								<button
+									type="button"
+									data-candidates-id={ "candidates-" + v.ID }
+									onclick="toggleCandidates(this.dataset.candidatesId)"
+									class="text-blue-600 hover:text-blue-900 font-semibold"
+								>
+									Select image
+								</button>
+							}
 							<button
 								hx-post={ "/api/v1/notifications/" + v.ID + "/dismiss" }
 								hx-confirm="Dismiss this violation?"
-								hx-target="closest tr"
+								hx-target={ "#notif-" + v.ID }
 								hx-swap="outerHTML swap:1s"
 								class="text-red-600 hover:text-red-900 font-semibold"
 							>
@@ -89,10 +100,64 @@ templ notificationsTableContent(data NotificationsData) {
 							</button>
 						</td>
 					</tr>
-				}
-			</tbody>
+					if v.Status == rule.ViolationStatusPendingChoice && len(v.Candidates) > 0 {
+						<tr id={ "candidates-" + v.ID } class="hidden">
+							<td colspan="6" class="px-4 pb-4 bg-gray-50">
+								<p class="text-xs text-gray-500 mb-2 pt-3">Select a replacement image:</p>
+								<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+									for _, c := range v.Candidates {
+										<button
+											type="button"
+											data-violation-id={ v.ID }
+											data-url={ c.URL }
+											data-image-type={ c.ImageType }
+											onclick="applyCandidate(this.dataset.violationId, this.dataset.url, this.dataset.imageType)"
+											class="rounded border border-gray-200 overflow-hidden cursor-pointer hover:ring-2 hover:ring-blue-500 text-left w-full"
+										>
+											<img src={ c.URL } class="w-full h-20 object-cover" loading="lazy"/>
+											<div class="px-2 py-1 text-xs text-gray-500">
+												{ c.Source } &middot; { candidateDims(c) }
+											</div>
+										</button>
+									}
+								</div>
+							</td>
+						</tr>
+					}
+				</tbody>
+			}
 		</table>
 	</div>
+}
+
+templ candidateScript() {
+	<script>
+	function toggleCandidates(id) {
+		var row = document.getElementById(id);
+		if (row) row.classList.toggle('hidden');
+	}
+
+	function applyCandidate(violationID, url, imageType) {
+		var csrfToken = document.cookie.replace(
+			/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, '$1'
+		);
+		fetch('/api/v1/notifications/' + violationID + '/apply-candidate', {
+			method: 'POST',
+			headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
+			body: JSON.stringify({url: url, image_type: imageType}),
+			credentials: 'same-origin'
+		}).then(function(r) {
+			if (r.ok) {
+				var tbody = document.getElementById('notif-' + violationID);
+				if (tbody) tbody.remove();
+			} else if (typeof showToast === 'function') {
+				showToast('Failed to apply image.');
+			}
+		}).catch(function() {
+			if (typeof showToast === 'function') showToast('Network error applying image.');
+		});
+	}
+	</script>
 }
 
 func severityClass(severity string) string {
@@ -120,4 +185,11 @@ func formatAge(t time.Time) string {
 		return fmt.Sprintf("%dh", int(ago.Hours()))
 	}
 	return fmt.Sprintf("%dd", int(ago.Hours()/24))
+}
+
+func candidateDims(c rule.ImageCandidate) string {
+	if c.Width > 0 && c.Height > 0 {
+		return fmt.Sprintf("%dx%d", c.Width, c.Height)
+	}
+	return ""
 }

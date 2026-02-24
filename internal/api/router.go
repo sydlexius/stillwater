@@ -198,6 +198,7 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("GET "+bp+"/api/v1/notifications", wrapAuth(r.handleListNotifications, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/notifications/{id}/dismiss", wrapAuth(r.handleDismissViolation, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/notifications/{id}/resolve", wrapAuth(r.handleResolveViolation, authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/notifications/{id}/apply-candidate", wrapAuth(r.handleApplyViolationCandidate, authMw))
 	mux.HandleFunc("DELETE "+bp+"/api/v1/notifications/resolved", wrapAuth(r.handleClearResolvedViolations, authMw))
 
 	// Bulk operation routes

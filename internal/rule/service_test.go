@@ -252,6 +252,153 @@ func TestGetLatestHealthSnapshot_Empty(t *testing.T) {
 	}
 }
 
+func TestGetViolationByID(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	rv := &RuleViolation{
+		RuleID:     RuleNFOExists,
+		ArtistID:   "artist-1",
+		ArtistName: "Test Artist",
+		Severity:   "error",
+		Message:    "missing nfo",
+		Fixable:    true,
+		Status:     ViolationStatusOpen,
+	}
+	if err := svc.UpsertViolation(ctx, rv); err != nil {
+		t.Fatalf("UpsertViolation: %v", err)
+	}
+
+	got, err := svc.GetViolationByID(ctx, rv.ID)
+	if err != nil {
+		t.Fatalf("GetViolationByID: %v", err)
+	}
+	if got.RuleID != rv.RuleID {
+		t.Errorf("RuleID = %q, want %q", got.RuleID, rv.RuleID)
+	}
+	if got.ArtistName != rv.ArtistName {
+		t.Errorf("ArtistName = %q, want %q", got.ArtistName, rv.ArtistName)
+	}
+}
+
+func TestGetViolationByID_NotFound(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	_, err := svc.GetViolationByID(ctx, "nonexistent-id")
+	if err == nil {
+		t.Fatal("expected error for nonexistent violation")
+	}
+}
+
+func TestListViolations_ActiveStatus(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	open := &RuleViolation{
+		RuleID: RuleNFOExists, ArtistID: "a1", ArtistName: "A1",
+		Severity: "error", Message: "open", Fixable: true, Status: ViolationStatusOpen,
+	}
+	pending := &RuleViolation{
+		RuleID: RuleThumbExists, ArtistID: "a2", ArtistName: "A2",
+		Severity: "warning", Message: "pending", Fixable: true,
+		Status:     ViolationStatusPendingChoice,
+		Candidates: []ImageCandidate{{URL: "http://example.com/img.jpg", Width: 500, Height: 500, Source: "test", ImageType: "thumb"}},
+	}
+	dismissed := &RuleViolation{
+		RuleID: RuleFanartExists, ArtistID: "a3", ArtistName: "A3",
+		Severity: "info", Message: "dismissed", Fixable: true, Status: ViolationStatusDismissed,
+	}
+
+	for _, v := range []*RuleViolation{open, pending, dismissed} {
+		if err := svc.UpsertViolation(ctx, v); err != nil {
+			t.Fatalf("UpsertViolation: %v", err)
+		}
+	}
+
+	active, err := svc.ListViolations(ctx, "active")
+	if err != nil {
+		t.Fatalf("ListViolations(active): %v", err)
+	}
+	if len(active) != 2 {
+		t.Errorf("active violations = %d, want 2 (open + pending_choice)", len(active))
+	}
+	for _, v := range active {
+		if v.Status == ViolationStatusDismissed {
+			t.Errorf("dismissed violation should not appear in active results")
+		}
+	}
+}
+
+func TestUpsertViolation_WithCandidates(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	candidates := []ImageCandidate{
+		{URL: "http://example.com/fanart1.jpg", Width: 1920, Height: 1080, Source: "fanarttv", ImageType: "fanart"},
+		{URL: "http://example.com/fanart2.jpg", Width: 3840, Height: 2160, Source: "fanarttv", ImageType: "fanart"},
+	}
+	rv := &RuleViolation{
+		RuleID:     RuleFanartMinRes,
+		ArtistID:   "artist-x",
+		ArtistName: "Candidate Artist",
+		Severity:   "warning",
+		Message:    "low res fanart",
+		Fixable:    true,
+		Status:     ViolationStatusPendingChoice,
+		Candidates: candidates,
+	}
+	if err := svc.UpsertViolation(ctx, rv); err != nil {
+		t.Fatalf("UpsertViolation: %v", err)
+	}
+
+	got, err := svc.GetViolationByID(ctx, rv.ID)
+	if err != nil {
+		t.Fatalf("GetViolationByID: %v", err)
+	}
+	if len(got.Candidates) != 2 {
+		t.Fatalf("Candidates len = %d, want 2", len(got.Candidates))
+	}
+	if got.Candidates[0].Width != 1920 {
+		t.Errorf("Candidates[0].Width = %d, want 1920", got.Candidates[0].Width)
+	}
+	if got.Candidates[1].Source != "fanarttv" {
+		t.Errorf("Candidates[1].Source = %q, want fanarttv", got.Candidates[1].Source)
+	}
+}
+
+func TestMarshalUnmarshalCandidates(t *testing.T) {
+	cs := []ImageCandidate{
+		{URL: "http://example.com/img.jpg", Width: 800, Height: 600, Source: "test", ImageType: "thumb"},
+	}
+	s := marshalCandidates(cs)
+	if s == "" || s == "[]" {
+		t.Fatal("marshalCandidates returned empty for non-empty slice")
+	}
+	got := unmarshalCandidates(s)
+	if len(got) != 1 {
+		t.Fatalf("unmarshalCandidates returned %d items, want 1", len(got))
+	}
+	if got[0].URL != cs[0].URL {
+		t.Errorf("URL = %q, want %q", got[0].URL, cs[0].URL)
+	}
+	if got[0].Width != 800 {
+		t.Errorf("Width = %d, want 800", got[0].Width)
+	}
+
+	// Empty cases
+	if got2 := unmarshalCandidates(""); len(got2) != 0 {
+		t.Errorf("unmarshalCandidates(\"\") = %v, want empty", got2)
+	}
+	if got3 := unmarshalCandidates("[]"); len(got3) != 0 {
+		t.Errorf("unmarshalCandidates(\"[]\") = %v, want empty", got3)
+	}
+}
+
 func TestList_OrderedByCategoryAndName(t *testing.T) {
 	db := setupTestDB(t)
 	svc := NewService(db)

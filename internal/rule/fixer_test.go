@@ -150,6 +150,109 @@ func TestSetImageFlag(t *testing.T) {
 	if !a.LogoExists {
 		t.Error("LogoExists should be true")
 	}
+
+	setImageFlag(a, "banner")
+	if !a.BannerExists {
+		t.Error("BannerExists should be true")
+	}
+}
+
+func TestImageFixer_CanFix_NewRules(t *testing.T) {
+	f := &ImageFixer{}
+
+	newRules := []string{
+		RuleFanartMinRes, RuleFanartAspect, RuleLogoMinRes, RuleBannerExists, RuleBannerMinRes,
+	}
+	for _, ruleID := range newRules {
+		if !f.CanFix(&Violation{RuleID: ruleID}) {
+			t.Errorf("ImageFixer should handle %s", ruleID)
+		}
+	}
+}
+
+func TestRuleToImageType_NewRules(t *testing.T) {
+	tests := []struct {
+		ruleID string
+		want   string
+	}{
+		{RuleFanartMinRes, "fanart"},
+		{RuleFanartAspect, "fanart"},
+		{RuleLogoMinRes, "logo"},
+		{RuleBannerExists, "banner"},
+		{RuleBannerMinRes, "banner"},
+	}
+	for _, tt := range tests {
+		if got := ruleToImageType(tt.ruleID); got != tt.want {
+			t.Errorf("ruleToImageType(%q) = %q, want %q", tt.ruleID, got, tt.want)
+		}
+	}
+}
+
+func TestPipeline_PendingChoiceViolation(t *testing.T) {
+	db := setupTestDB(t)
+	artistSvc := artist.NewService(db)
+	ruleSvc := NewService(db)
+	ctx := context.Background()
+
+	if err := ruleSvc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("seeding rules: %v", err)
+	}
+
+	a := &artist.Artist{
+		Name:     "Candidate Test",
+		SortName: "Candidate Test",
+		Path:     t.TempDir(),
+	}
+	if err := artistSvc.Create(ctx, a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	candidates := []ImageCandidate{
+		{URL: "http://example.com/img1.jpg", Width: 1920, Height: 1080, Source: "prov", ImageType: "fanart"},
+		{URL: "http://example.com/img2.jpg", Width: 3840, Height: 2160, Source: "prov", ImageType: "fanart"},
+	}
+	// Fixer returns multiple candidates (pending_choice)
+	fixer := &mockFixer{
+		canFix: true,
+		result: &FixResult{
+			RuleID:     RuleNFOExists,
+			Fixed:      false,
+			Message:    "multiple candidates",
+			Candidates: candidates,
+		},
+	}
+
+	engine := NewEngine(ruleSvc, db, testLogger())
+	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{fixer}, testLogger())
+
+	result, err := pipeline.RunAll(ctx)
+	if err != nil {
+		t.Fatalf("RunAll: %v", err)
+	}
+	if result.FixesSucceeded != 0 {
+		t.Errorf("FixesSucceeded = %d, want 0 (pending_choice)", result.FixesSucceeded)
+	}
+
+	// Verify violation was persisted as pending_choice with candidates
+	violations, err := ruleSvc.ListViolations(ctx, ViolationStatusPendingChoice)
+	if err != nil {
+		t.Fatalf("ListViolations: %v", err)
+	}
+	found := false
+	for _, v := range violations {
+		if v.ArtistID == a.ID {
+			found = true
+			if v.Status != ViolationStatusPendingChoice {
+				t.Errorf("status = %q, want %q", v.Status, ViolationStatusPendingChoice)
+			}
+			if len(v.Candidates) != 2 {
+				t.Errorf("Candidates len = %d, want 2", len(v.Candidates))
+			}
+		}
+	}
+	if !found {
+		t.Error("expected pending_choice violation for artist, none found")
+	}
 }
 
 // mockFixer is a test helper that records calls.

@@ -186,7 +186,8 @@ func NewImageFixer(orchestrator *provider.Orchestrator, logger *slog.Logger) *Im
 // CanFix returns true for image-related rules.
 func (f *ImageFixer) CanFix(v *Violation) bool {
 	switch v.RuleID {
-	case RuleThumbExists, RuleFanartExists, RuleLogoExists, RuleThumbSquare, RuleThumbMinRes:
+	case RuleThumbExists, RuleFanartExists, RuleLogoExists, RuleThumbSquare, RuleThumbMinRes,
+		RuleFanartMinRes, RuleFanartAspect, RuleLogoMinRes, RuleBannerExists, RuleBannerMinRes:
 		return true
 	default:
 		return false
@@ -236,6 +237,27 @@ func (f *ImageFixer) Fix(ctx context.Context, a *artist.Artist, v *Violation) (*
 		return (candidates[i].Width * candidates[i].Height) > (candidates[j].Width * candidates[j].Height)
 	})
 
+	// When multiple candidates exist and SelectBestCandidate is not set,
+	// return the list for the user to choose from the Notifications inbox.
+	if len(candidates) > 1 && !v.Config.SelectBestCandidate {
+		imageCandidates := make([]ImageCandidate, 0, len(candidates))
+		for _, c := range candidates {
+			imageCandidates = append(imageCandidates, ImageCandidate{
+				URL:       c.URL,
+				Width:     c.Width,
+				Height:    c.Height,
+				Source:    c.Source,
+				ImageType: imageType,
+			})
+		}
+		return &FixResult{
+			RuleID:     v.RuleID,
+			Fixed:      false,
+			Message:    fmt.Sprintf("found %d %s candidates; awaiting user selection", len(candidates), imageType),
+			Candidates: imageCandidates,
+		}, nil
+	}
+
 	// Try downloading candidates until one succeeds
 	for _, c := range candidates {
 		data, err := fetchImageURL(c.URL)
@@ -278,10 +300,12 @@ func ruleToImageType(ruleID string) string {
 	switch ruleID {
 	case RuleThumbExists, RuleThumbSquare, RuleThumbMinRes:
 		return "thumb"
-	case RuleFanartExists:
+	case RuleFanartExists, RuleFanartMinRes, RuleFanartAspect:
 		return "fanart"
-	case RuleLogoExists:
+	case RuleLogoExists, RuleLogoMinRes:
 		return "logo"
+	case RuleBannerExists, RuleBannerMinRes:
+		return "banner"
 	default:
 		return ""
 	}
@@ -296,7 +320,31 @@ func setImageFlag(a *artist.Artist, imageType string) {
 		a.FanartExists = true
 	case "logo":
 		a.LogoExists = true
+	case "banner":
+		a.BannerExists = true
 	}
+}
+
+// ApplyImageCandidate downloads a candidate URL and saves it as an image in the
+// artist directory. Used by the apply-candidate API handler.
+func ApplyImageCandidate(ctx context.Context, a *artist.Artist, imageType, rawURL string, logger *slog.Logger) error {
+	data, err := fetchImageURL(rawURL)
+	if err != nil {
+		return fmt.Errorf("downloading image: %w", err)
+	}
+
+	resized, _, err := img.Resize(bytes.NewReader(data), 3000, 3000)
+	if err != nil {
+		return fmt.Errorf("resizing image: %w", err)
+	}
+
+	naming := img.FileNamesForType(img.DefaultFileNames, imageType)
+	if _, err := img.Save(a.Path, imageType, resized, naming, logger); err != nil {
+		return fmt.Errorf("saving image: %w", err)
+	}
+
+	setImageFlag(a, imageType)
+	return nil
 }
 
 // writeArtistNFO writes the artist's current metadata to an artist.nfo file (best effort).
