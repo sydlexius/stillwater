@@ -193,6 +193,10 @@ func (r *Router) handleArtistImagesPage(w http.ResponseWriter, req *http.Request
 	}
 
 	webSearchEnabled, _ := r.providerSettings.AnyWebSearchEnabled(req.Context())
+	autoFetch := r.getBoolSetting(req.Context(), "auto_fetch_images", false)
+	if req.URL.Query().Get("fetch") == "1" {
+		autoFetch = true
+	}
 
 	selectedType := req.URL.Query().Get("type")
 	if selectedType != "" && !validImageTypes[selectedType] {
@@ -202,6 +206,7 @@ func (r *Router) handleArtistImagesPage(w http.ResponseWriter, req *http.Request
 	data := templates.ImageSearchData{
 		Artist:           *a,
 		WebSearchEnabled: webSearchEnabled,
+		AutoFetchImages:  autoFetch,
 		SelectedType:     selectedType,
 	}
 	renderTempl(w, req, templates.ImageSearchPage(r.assets(), data))
