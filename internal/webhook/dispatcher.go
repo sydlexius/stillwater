@@ -15,7 +15,7 @@ import (
 const (
 	maxRetries              = 3
 	requestTimeout          = 10 * time.Second
-	maxConcurrentDeliveries = 20
+	maxConcurrentDeliveries = 20 // cap in-flight delivery goroutines; well above typical webhook counts per event
 )
 
 // Dispatcher sends events to matching webhooks.
