@@ -203,6 +203,18 @@ func (s *SettingsService) GetPriorities(ctx context.Context) ([]FieldPriority, e
 			if err := json.Unmarshal([]byte(value), &providers); err != nil {
 				result[i] = d
 			} else {
+				// Append any default providers not present in the stored list.
+				// This ensures newly-added providers appear without requiring a
+				// manual settings reset.
+				inStored := make(map[ProviderName]bool, len(providers))
+				for _, p := range providers {
+					inStored[p] = true
+				}
+				for _, p := range d.Providers {
+					if !inStored[p] {
+						providers = append(providers, p)
+					}
+				}
 				result[i] = FieldPriority{Field: d.Field, Providers: providers}
 			}
 		}
