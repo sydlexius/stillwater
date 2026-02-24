@@ -336,7 +336,7 @@ func ArtistRow(a artist.Artist) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = components.StatusBadge(a.ThumbExists, "Thumb").Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = components.ImageStatusBadge(a.ThumbExists, a.ThumbLowRes, "Thumb").Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -344,7 +344,7 @@ func ArtistRow(a artist.Artist) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = components.StatusBadge(a.FanartExists, "Fanart").Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = components.ImageStatusBadge(a.FanartExists, a.FanartLowRes, "Fanart").Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -352,7 +352,7 @@ func ArtistRow(a artist.Artist) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = components.StatusBadge(a.LogoExists, "Logo").Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = components.ImageStatusBadge(a.LogoExists, a.LogoLowRes, "Logo").Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

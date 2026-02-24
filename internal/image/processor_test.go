@@ -329,3 +329,57 @@ func TestFitDimensions(t *testing.T) {
 		})
 	}
 }
+
+func TestIsLowResolution(t *testing.T) {
+	tests := []struct {
+		name      string
+		w, h      int
+		imageType string
+		want      bool
+	}{
+		// Unknown dimensions are never low-res.
+		{"zero width", 0, 500, "thumb", false},
+		{"zero height", 500, 0, "thumb", false},
+		{"both zero", 0, 0, "thumb", false},
+
+		// Thumb / default type.
+		{"thumb at minimum", 500, 500, "thumb", false},
+		{"thumb below width", 499, 500, "thumb", true},
+		{"thumb below height", 500, 499, "thumb", true},
+		{"thumb good", 1000, 1000, "thumb", false},
+		{"poster same as thumb", 500, 500, "poster", false},
+		{"poster low", 400, 400, "poster", true},
+
+		// Fanart / backdrop.
+		{"fanart at minimum", 960, 540, "fanart", false},
+		{"fanart below width", 959, 540, "fanart", true},
+		{"fanart below height", 960, 539, "fanart", true},
+		{"fanart HD", 1920, 1080, "fanart", false},
+		{"background alias", 960, 540, "background", false},
+		{"background low", 800, 400, "background", true},
+
+		// Banner.
+		{"banner at minimum", 758, 140, "banner", false},
+		{"banner standard", 1000, 185, "banner", false},
+		{"banner below width", 757, 185, "banner", true},
+		{"banner below height", 1000, 139, "banner", true},
+
+		// Logo / hdlogo.
+		{"logo at minimum", 400, 155, "logo", false},
+		{"logo standard", 800, 310, "logo", false},
+		{"logo below width", 399, 310, "logo", true},
+		{"logo below height", 800, 154, "logo", true},
+		{"hdlogo good", 800, 310, "hdlogo", false},
+		{"hdlogo low", 200, 80, "hdlogo", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := IsLowResolution(tt.w, tt.h, tt.imageType)
+			if got != tt.want {
+				t.Errorf("IsLowResolution(%d, %d, %q) = %v, want %v",
+					tt.w, tt.h, tt.imageType, got, tt.want)
+			}
+		})
+	}
+}
