@@ -57,6 +57,12 @@ func NewPipeline(engine *Engine, artistService *artist.Service, ruleService *Ser
 func (p *Pipeline) RunRule(ctx context.Context, ruleID string) (*RunResult, error) {
 	result := &RunResult{}
 
+	// Fetch the rule once to check automation mode for all violations.
+	targetRule, err := p.ruleService.GetByID(ctx, ruleID)
+	if err != nil {
+		return nil, fmt.Errorf("getting rule %s: %w", ruleID, err)
+	}
+
 	const pageSize = 200
 	params := artist.ListParams{Page: 1, PageSize: pageSize, Sort: "name"}
 
@@ -94,20 +100,13 @@ func (p *Pipeline) RunRule(ctx context.Context, ruleID string) (*RunResult, erro
 				}
 				result.ViolationsFound++
 
-				// Get the rule to check automation mode
-				rule, err := p.ruleService.GetByID(ctx, ruleID)
-				if err != nil {
-					p.logger.Warn("getting rule for violation", "rule_id", ruleID, "error", err)
-					continue
-				}
-
 				// Skip if automation is disabled
-				if rule.AutomationMode == AutomationModeDisabled {
+				if targetRule.AutomationMode == AutomationModeDisabled {
 					continue
 				}
 
 				// Inbox mode: persist without attempting fix
-				if rule.AutomationMode == AutomationModeInbox {
+				if targetRule.AutomationMode == AutomationModeInbox {
 					rv := &RuleViolation{
 						RuleID:     v.RuleID,
 						ArtistID:   a.ID,

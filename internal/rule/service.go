@@ -249,8 +249,17 @@ func (s *Service) UpsertViolation(ctx context.Context, v *RuleViolation) error {
 	}
 
 	_, err := s.db.ExecContext(ctx, `
-		INSERT OR REPLACE INTO rule_violations (id, rule_id, artist_id, artist_name, severity, message, fixable, status, dismissed_at, resolved_at, created_at, updated_at)
+		INSERT INTO rule_violations (id, rule_id, artist_id, artist_name, severity, message, fixable, status, dismissed_at, resolved_at, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(rule_id, artist_id) DO UPDATE SET
+			artist_name = excluded.artist_name,
+			severity = excluded.severity,
+			message = excluded.message,
+			fixable = excluded.fixable,
+			status = excluded.status,
+			dismissed_at = excluded.dismissed_at,
+			resolved_at = excluded.resolved_at,
+			updated_at = excluded.updated_at
 	`, v.ID, v.RuleID, v.ArtistID, v.ArtistName, v.Severity, v.Message,
 		boolToInt(v.Fixable), v.Status, nilableTime(v.DismissedAt), nilableTime(v.ResolvedAt),
 		v.CreatedAt.Format(time.RFC3339), v.UpdatedAt.Format(time.RFC3339))

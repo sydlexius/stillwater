@@ -47,7 +47,9 @@ func (r *Router) handleDismissViolation(w http.ResponseWriter, req *http.Request
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{"status": "dismissed"})
+	// Return empty HTML for HTMX hx-swap="outerHTML" to remove the row.
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
 }
 
 // handleResolveViolation marks a violation as resolved.

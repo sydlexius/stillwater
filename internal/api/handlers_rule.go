@@ -48,7 +48,13 @@ func (r *Router) handleUpdateRule(w http.ResponseWriter, req *http.Request) {
 		existing.Enabled = *body.Enabled
 	}
 	if body.AutomationMode != nil {
-		existing.AutomationMode = *body.AutomationMode
+		switch *body.AutomationMode {
+		case rule.AutomationModeAuto, rule.AutomationModeInbox, rule.AutomationModeDisabled:
+			existing.AutomationMode = *body.AutomationMode
+		default:
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid automation_mode"})
+			return
+		}
 	}
 	if body.Config != nil {
 		existing.Config = *body.Config
