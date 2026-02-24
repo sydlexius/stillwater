@@ -79,6 +79,14 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 			@ArtistTable(data)
 		</div>
 		<script>
+			// Reload the artist table when the page is restored from bfcache (browser
+			// back/forward navigation) so status badges reflect the latest state.
+			window.addEventListener('pageshow', function(evt) {
+				if (evt.persisted) {
+					htmx.ajax('GET', window.location.pathname + window.location.search, {target: '#artist-table', swap: 'outerHTML'});
+				}
+			});
+
 			(function() {
 				var btn = document.getElementById('scan-btn');
 				if (!btn) return;
