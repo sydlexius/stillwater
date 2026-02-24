@@ -13,8 +13,9 @@ import (
 )
 
 const (
-	maxRetries     = 3
-	requestTimeout = 10 * time.Second
+	maxRetries             = 3
+	requestTimeout         = 10 * time.Second
+	maxConcurrentDeliveries = 20
 )
 
 // Dispatcher sends events to matching webhooks.
@@ -22,6 +23,7 @@ type Dispatcher struct {
 	service    *Service
 	httpClient *http.Client
 	logger     *slog.Logger
+	sem        chan struct{} // semaphore to cap concurrent delivery goroutines
 }
 
 // NewDispatcher creates a webhook dispatcher.
@@ -30,6 +32,7 @@ func NewDispatcher(service *Service, logger *slog.Logger) *Dispatcher {
 		service:    service,
 		httpClient: &http.Client{Timeout: requestTimeout},
 		logger:     logger.With(slog.String("component", "webhook-dispatcher")),
+		sem:        make(chan struct{}, maxConcurrentDeliveries),
 	}
 }
 
@@ -39,6 +42,7 @@ func NewDispatcherWithHTTPClient(service *Service, httpClient *http.Client, logg
 		service:    service,
 		httpClient: httpClient,
 		logger:     logger.With(slog.String("component", "webhook-dispatcher")),
+		sem:        make(chan struct{}, maxConcurrentDeliveries),
 	}
 }
 
@@ -55,7 +59,11 @@ func (d *Dispatcher) HandleEvent(e event.Event) {
 
 	for i := range webhooks {
 		w := webhooks[i]
-		go d.deliver(w, e)
+		d.sem <- struct{}{}
+		go func(w Webhook) {
+			defer func() { <-d.sem }()
+			d.deliver(w, e)
+		}(w)
 	}
 }
 
