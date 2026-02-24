@@ -102,22 +102,6 @@ func hasOKConnection(conns []connection.Connection) bool {
 	return false
 }
 
-// providerHelpURL returns the registration URL for a provider's API key.
-func providerHelpURL(name provider.ProviderName) string {
-	switch name {
-	case provider.NameFanartTV:
-		return "https://fanart.tv/get-an-api-key/"
-	case provider.NameAudioDB:
-		return "https://www.patreon.com/thedatadb"
-	case provider.NameDiscogs:
-		return "https://www.discogs.com/settings/developers"
-	case provider.NameLastFM:
-		return "https://www.last.fm/api/account/create"
-	default:
-		return ""
-	}
-}
-
 // webSearchToggleJSON generates the JSON body for a web search toggle request.
 func webSearchToggleJSON(enabled bool) string {
 	if enabled {
@@ -669,26 +653,44 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 				}
 			></div>
 			<div>
-				<div class="font-medium text-sm">{ pk.DisplayName }</div>
-				if !pk.RequiresKey {
-					<div class="text-xs text-gray-500 dark:text-gray-400">No API key required</div>
-				} else if pk.HasKey {
-					<div class="text-xs text-gray-500 dark:text-gray-400">Key configured</div>
-				} else {
-					<div class="text-xs text-amber-600 dark:text-amber-400">API key required</div>
-				}
+				<div class="flex items-center gap-2">
+					<span class="font-medium text-sm">{ pk.DisplayName }</span>
+					if pk.AccessTier != "" {
+						<span
+							class={ "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium", tierBadgeClasses(pk.AccessTier) }
+							title={ tierTooltip(pk.AccessTier) }
+							aria-describedby={ "tier-tooltip-" + string(pk.Name) }
+						>
+							{ tierBadgeLabel(pk.AccessTier) }
+						</span>
+						<span id={ "tier-tooltip-" + string(pk.Name) } class="sr-only">{ tierTooltip(pk.AccessTier) }</span>
+					}
+				</div>
+				{{ rlText := rateLimitText(pk.RateLimit) }}
+				<div class="flex items-center gap-2 mt-0.5">
+					if !pk.RequiresKey {
+						<span class="text-xs text-gray-500 dark:text-gray-400">No API key required</span>
+					} else if pk.HasKey {
+						<span class="text-xs text-gray-500 dark:text-gray-400">Key configured</span>
+					} else {
+						<span class="text-xs text-amber-600 dark:text-amber-400">API key required</span>
+					}
+					if rlText != "" {
+						<span class="text-xs text-gray-400 dark:text-gray-500">{ rlText }</span>
+					}
+				</div>
 			</div>
 		</div>
 		<div class="flex items-center gap-2">
 			if pk.RequiresKey {
-				if providerHelpURL(pk.Name) != "" {
+				if pk.HelpURL != "" {
 					<a
-						href={ templ.SafeURL(providerHelpURL(pk.Name)) }
+						href={ templ.SafeURL(pk.HelpURL) }
 						target="_blank"
 						rel="noopener noreferrer"
 						class="text-sm text-blue-600 dark:text-blue-400 hover:underline"
 					>
-						Get key
+						{ getKeyLinkText(pk.AccessTier) }
 					</a>
 				}
 				<button
