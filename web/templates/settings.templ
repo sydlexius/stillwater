@@ -235,6 +235,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 								}
 								role="switch"
 								aria-checked={ boolAttr(data.AutoFetchImages) }
+								aria-label="Auto-fetch images"
 								onclick="toggleAutoFetch(this)"
 							>
 								<span
@@ -537,6 +538,14 @@ templ autoFetchToggleScript() {
 						knob.classList.remove('translate-x-5');
 						knob.classList.add('translate-x-0');
 					}
+				} else {
+					if (typeof showToast === 'function') {
+						showToast('Failed to update auto-fetch setting.');
+					}
+				}
+			}).catch(function() {
+				if (typeof showToast === 'function') {
+					showToast('Network error while updating setting.');
 				}
 			});
 		}
