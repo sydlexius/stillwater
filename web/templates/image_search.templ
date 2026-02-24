@@ -47,14 +47,18 @@ templ ImageSearchPage(assets AssetPaths, data ImageSearchData) {
 			<script src={ assets.CropperJS }></script>
 			<script>
 				var _cropper = null;
+				var _currentRatio = NaN;
 				function openCropModal(imgSrc, imageType) {
 					var modal = document.getElementById('crop-modal');
 					var cropImage = document.getElementById('crop-image');
 					var cropType = document.getElementById('crop-type');
+					var lockCb = document.getElementById('crop-lock-ratio');
 					cropImage.crossOrigin = 'anonymous';
 					cropImage.src = imgSrc;
 					if (imageType) cropType.value = imageType;
 					modal.classList.remove('hidden');
+					_currentRatio = NaN;
+					if (lockCb) lockCb.checked = false;
 					cropImage.onload = function() {
 						if (_cropper) _cropper.destroy();
 						_cropper = new Cropper(cropImage, {
@@ -83,7 +87,20 @@ templ ImageSearchPage(assets AssetPaths, data ImageSearchData) {
 					}
 				}
 				function setCropRatio(ratio) {
-					if (_cropper) _cropper.setAspectRatio(ratio);
+					_currentRatio = ratio;
+					var lockCb = document.getElementById('crop-lock-ratio');
+					if (isNaN(ratio)) {
+						if (lockCb) lockCb.checked = false;
+						if (_cropper) _cropper.setAspectRatio(NaN);
+					} else {
+						if (lockCb) lockCb.checked = true;
+						if (_cropper) _cropper.setAspectRatio(ratio);
+					}
+				}
+				function toggleRatioLock(checked) {
+					if (_cropper) {
+						_cropper.setAspectRatio(checked && !isNaN(_currentRatio) ? _currentRatio : NaN);
+					}
 				}
 			</script>
 		</div>

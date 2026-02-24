@@ -157,7 +157,7 @@ func ImageSearchPage(assets AssetPaths, data ImageSearchData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "\"></script><script>\n\t\t\t\tvar _cropper = null;\n\t\t\t\tfunction openCropModal(imgSrc, imageType) {\n\t\t\t\t\tvar modal = document.getElementById('crop-modal');\n\t\t\t\t\tvar cropImage = document.getElementById('crop-image');\n\t\t\t\t\tvar cropType = document.getElementById('crop-type');\n\t\t\t\t\tcropImage.crossOrigin = 'anonymous';\n\t\t\t\t\tcropImage.src = imgSrc;\n\t\t\t\t\tif (imageType) cropType.value = imageType;\n\t\t\t\t\tmodal.classList.remove('hidden');\n\t\t\t\t\tcropImage.onload = function() {\n\t\t\t\t\t\tif (_cropper) _cropper.destroy();\n\t\t\t\t\t\t_cropper = new Cropper(cropImage, {\n\t\t\t\t\t\t\tviewMode: 1,\n\t\t\t\t\t\t\tautoCropArea: 0.8,\n\t\t\t\t\t\t});\n\t\t\t\t\t\twindow._cropper = _cropper;\n\t\t\t\t\t};\n\t\t\t\t\tcropImage.onerror = function() {\n\t\t\t\t\t\tcloseCropModal();\n\t\t\t\t\t\tvar statusEl = document.getElementById('upload-status');\n\t\t\t\t\t\tif (statusEl) {\n\t\t\t\t\t\t\tvar s = document.createElement('span');\n\t\t\t\t\t\t\ts.className = 'text-sm text-amber-600';\n\t\t\t\t\t\t\ts.textContent = 'Cannot crop this image directly (CORS). Save it first, then crop.';\n\t\t\t\t\t\t\tstatusEl.replaceChildren(s);\n\t\t\t\t\t\t}\n\t\t\t\t\t};\n\t\t\t\t}\n\t\t\t\tfunction closeCropModal() {\n\t\t\t\t\tvar modal = document.getElementById('crop-modal');\n\t\t\t\t\tmodal.classList.add('hidden');\n\t\t\t\t\tif (_cropper) {\n\t\t\t\t\t\t_cropper.destroy();\n\t\t\t\t\t\t_cropper = null;\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t\tfunction setCropRatio(ratio) {\n\t\t\t\t\tif (_cropper) _cropper.setAspectRatio(ratio);\n\t\t\t\t}\n\t\t\t</script></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "\"></script><script>\n\t\t\t\tvar _cropper = null;\n\t\t\t\tvar _currentRatio = NaN;\n\t\t\t\tfunction openCropModal(imgSrc, imageType) {\n\t\t\t\t\tvar modal = document.getElementById('crop-modal');\n\t\t\t\t\tvar cropImage = document.getElementById('crop-image');\n\t\t\t\t\tvar cropType = document.getElementById('crop-type');\n\t\t\t\t\tvar lockCb = document.getElementById('crop-lock-ratio');\n\t\t\t\t\tcropImage.crossOrigin = 'anonymous';\n\t\t\t\t\tcropImage.src = imgSrc;\n\t\t\t\t\tif (imageType) cropType.value = imageType;\n\t\t\t\t\tmodal.classList.remove('hidden');\n\t\t\t\t\t_currentRatio = NaN;\n\t\t\t\t\tif (lockCb) lockCb.checked = false;\n\t\t\t\t\tcropImage.onload = function() {\n\t\t\t\t\t\tif (_cropper) _cropper.destroy();\n\t\t\t\t\t\t_cropper = new Cropper(cropImage, {\n\t\t\t\t\t\t\tviewMode: 1,\n\t\t\t\t\t\t\tautoCropArea: 0.8,\n\t\t\t\t\t\t});\n\t\t\t\t\t\twindow._cropper = _cropper;\n\t\t\t\t\t};\n\t\t\t\t\tcropImage.onerror = function() {\n\t\t\t\t\t\tcloseCropModal();\n\t\t\t\t\t\tvar statusEl = document.getElementById('upload-status');\n\t\t\t\t\t\tif (statusEl) {\n\t\t\t\t\t\t\tvar s = document.createElement('span');\n\t\t\t\t\t\t\ts.className = 'text-sm text-amber-600';\n\t\t\t\t\t\t\ts.textContent = 'Cannot crop this image directly (CORS). Save it first, then crop.';\n\t\t\t\t\t\t\tstatusEl.replaceChildren(s);\n\t\t\t\t\t\t}\n\t\t\t\t\t};\n\t\t\t\t}\n\t\t\t\tfunction closeCropModal() {\n\t\t\t\t\tvar modal = document.getElementById('crop-modal');\n\t\t\t\t\tmodal.classList.add('hidden');\n\t\t\t\t\tif (_cropper) {\n\t\t\t\t\t\t_cropper.destroy();\n\t\t\t\t\t\t_cropper = null;\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t\tfunction setCropRatio(ratio) {\n\t\t\t\t\t_currentRatio = ratio;\n\t\t\t\t\tvar lockCb = document.getElementById('crop-lock-ratio');\n\t\t\t\t\tif (isNaN(ratio)) {\n\t\t\t\t\t\tif (lockCb) lockCb.checked = false;\n\t\t\t\t\t\tif (_cropper) _cropper.setAspectRatio(NaN);\n\t\t\t\t\t} else {\n\t\t\t\t\t\tif (lockCb) lockCb.checked = true;\n\t\t\t\t\t\tif (_cropper) _cropper.setAspectRatio(ratio);\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t\tfunction toggleRatioLock(checked) {\n\t\t\t\t\tif (_cropper) {\n\t\t\t\t\t\t_cropper.setAspectRatio(checked && !isNaN(_currentRatio) ? _currentRatio : NaN);\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t</script></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -200,7 +200,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 		var templ_7745c5c3_Var9 string
 		templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(data.Artist.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 95, Col: 73}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 112, Col: 73}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 		if templ_7745c5c3_Err != nil {
@@ -213,7 +213,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 		var templ_7745c5c3_Var10 string
 		templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(data.SelectedType)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 95, Col: 111}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 112, Col: 111}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 		if templ_7745c5c3_Err != nil {
@@ -226,7 +226,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 		var templ_7745c5c3_Var11 string
 		templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(imageTypeLabel(data.SelectedType))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 98, Col: 81}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 115, Col: 81}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 		if templ_7745c5c3_Err != nil {
@@ -256,7 +256,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 				var templ_7745c5c3_Var13 string
 				templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/api/v1/artists/%s/images/search?type=%s", data.Artist.ID, data.SelectedType))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 106, Col: 107}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 123, Col: 107}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 				if templ_7745c5c3_Err != nil {
@@ -279,7 +279,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 				var templ_7745c5c3_Var14 string
 				templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/api/v1/artists/%s/images/websearch?type=%s", data.Artist.ID, data.SelectedType))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 119, Col: 110}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 136, Col: 110}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 				if templ_7745c5c3_Err != nil {
@@ -329,7 +329,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 				var templ_7745c5c3_Var16 string
 				templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/api/v1/artists/%s/images/%s", data.Artist.ID, data.SelectedType))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 160, Col: 98}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 177, Col: 98}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 				if templ_7745c5c3_Err != nil {
@@ -342,7 +342,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 				var templ_7745c5c3_Var17 string
 				templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs("Delete this " + imageTypeLabel(data.SelectedType) + " image?")
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 161, Col: 83}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 178, Col: 83}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 				if templ_7745c5c3_Err != nil {
@@ -397,7 +397,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 			var templ_7745c5c3_Var20 string
 			templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/api/v1/artists/%s/images/%s/file", data.Artist.ID, data.SelectedType))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 190, Col: 95}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 207, Col: 95}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
 			if templ_7745c5c3_Err != nil {
@@ -410,7 +410,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 			var templ_7745c5c3_Var21 string
 			templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.JoinStringErrs(imageTypeLabel(data.SelectedType))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 191, Col: 45}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 208, Col: 45}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var21))
 			if templ_7745c5c3_Err != nil {
@@ -436,7 +436,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 			var templ_7745c5c3_Var22 string
 			templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinStringErrs(imageTypeLabel(data.SelectedType))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 197, Col: 68}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 214, Col: 68}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
 			if templ_7745c5c3_Err != nil {
@@ -459,7 +459,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 			var templ_7745c5c3_Var23 string
 			templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/api/v1/artists/%s/images/%s/info", data.Artist.ID, data.SelectedType))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 208, Col: 97}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 225, Col: 97}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
 			if templ_7745c5c3_Err != nil {
@@ -482,7 +482,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 			var templ_7745c5c3_Var24 string
 			templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/api/v1/artists/%s/images/search?type=%s", data.Artist.ID, data.SelectedType))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 221, Col: 103}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 238, Col: 103}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
 			if templ_7745c5c3_Err != nil {
@@ -531,7 +531,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 			var templ_7745c5c3_Var27 string
 			templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/api/v1/artists/%s/images/%s/file", data.Artist.ID, data.SelectedType))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 253, Col: 97}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 270, Col: 97}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var27))
 			if templ_7745c5c3_Err != nil {
@@ -544,7 +544,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 			var templ_7745c5c3_Var28 string
 			templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/api/v1/artists/%s/images/%s/info", data.Artist.ID, data.SelectedType))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 260, Col: 99}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 277, Col: 99}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var28))
 			if templ_7745c5c3_Err != nil {
@@ -557,7 +557,7 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 			var templ_7745c5c3_Var29 string
 			templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/api/v1/artists/%s/images/fetch", data.Artist.ID))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 275, Col: 79}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 292, Col: 79}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var29))
 			if templ_7745c5c3_Err != nil {
@@ -619,7 +619,7 @@ func imageSearchGeneric(data ImageSearchData) templ.Component {
 				var templ_7745c5c3_Var31 string
 				templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/api/v1/artists/%s/images/search?type=%s", data.Artist.ID, t))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 461, Col: 91}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 478, Col: 91}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var31))
 				if templ_7745c5c3_Err != nil {
@@ -632,7 +632,7 @@ func imageSearchGeneric(data ImageSearchData) templ.Component {
 				var templ_7745c5c3_Var32 string
 				templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.JoinStringErrs(t)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 466, Col: 11}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 483, Col: 11}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var32))
 				if templ_7745c5c3_Err != nil {
@@ -650,7 +650,7 @@ func imageSearchGeneric(data ImageSearchData) templ.Component {
 			var templ_7745c5c3_Var33 string
 			templ_7745c5c3_Var33, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/api/v1/artists/%s/images/search", data.Artist.ID))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 472, Col: 79}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 489, Col: 79}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var33))
 			if templ_7745c5c3_Err != nil {
@@ -679,7 +679,7 @@ func imageSearchGeneric(data ImageSearchData) templ.Component {
 				var templ_7745c5c3_Var34 string
 				templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/api/v1/artists/%s/images/websearch?type=%s", data.Artist.ID, t))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 504, Col: 94}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 521, Col: 94}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var34))
 				if templ_7745c5c3_Err != nil {
@@ -692,7 +692,7 @@ func imageSearchGeneric(data ImageSearchData) templ.Component {
 				var templ_7745c5c3_Var35 string
 				templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.JoinStringErrs(t)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 509, Col: 19}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 526, Col: 19}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var35))
 				if templ_7745c5c3_Err != nil {
