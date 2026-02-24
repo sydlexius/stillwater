@@ -50,6 +50,8 @@ func providerDisplayName(key string) string {
 		return "Wikidata"
 	case "duckduckgo":
 		return "DuckDuckGo"
+	case "deezer":
+		return "Deezer"
 	default:
 		return key
 	}

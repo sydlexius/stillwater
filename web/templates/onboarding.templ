@@ -407,14 +407,14 @@ templ onboardingProviderCard(pk provider.ProviderKeyStatus) {
 			</div>
 			if pk.RequiresKey {
 				<div class="flex items-center gap-2">
-					if providerHelpURL(pk.Name) != "" {
+					if pk.HelpURL != "" {
 						<a
-							href={ templ.SafeURL(providerHelpURL(pk.Name)) }
+							href={ templ.SafeURL(pk.HelpURL) }
 							target="_blank"
 							rel="noopener noreferrer"
 							class="text-sm text-blue-600 dark:text-blue-400 hover:underline"
 						>
-							Get key
+							{ getKeyLinkText(pk.AccessTier) }
 						</a>
 					}
 					<button
