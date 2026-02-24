@@ -320,7 +320,7 @@ func ImageCard(artistID string, img provider.ImageResult) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		if isLowResolution(img.Width, img.Height, string(img.Type)) {
+		if isLowResolution(img.Width, img.Height, normalizeCardImageType(string(img.Type))) {
 			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "<div class=\"text-xs text-amber-600 dark:text-amber-400\">Low resolution</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
