@@ -157,9 +157,8 @@ func TestGetArtistRejectsNonNumericID(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for non-Deezer ID")
 	}
-	var notFound *provider.ErrNotFound
-	if !isErrNotFound(err, &notFound) {
-		t.Errorf("expected ErrNotFound, got %T: %v", err, err)
+	if _, ok := err.(*provider.ErrNotFound); !ok {
+		t.Errorf("expected *provider.ErrNotFound, got %T: %v", err, err)
 	}
 }
 
@@ -168,9 +167,13 @@ func TestGetArtistNotFound(t *testing.T) {
 	defer srv.Close()
 	a := newTestAdapter(t, srv.URL)
 
+	// "not-found" is non-numeric so the adapter rejects it immediately
 	_, err := a.GetArtist(context.Background(), "not-found")
 	if err == nil {
 		t.Fatal("expected error for non-numeric ID")
+	}
+	if _, ok := err.(*provider.ErrNotFound); !ok {
+		t.Errorf("expected *provider.ErrNotFound, got %T: %v", err, err)
 	}
 }
 
@@ -240,10 +243,3 @@ func TestIsDeezerID(t *testing.T) {
 	}
 }
 
-func isErrNotFound(err error, target **provider.ErrNotFound) bool {
-	if e, ok := err.(*provider.ErrNotFound); ok {
-		*target = e
-		return true
-	}
-	return false
-}
