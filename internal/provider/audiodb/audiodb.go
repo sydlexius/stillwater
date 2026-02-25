@@ -14,39 +14,58 @@ import (
 	"github.com/sydlexius/stillwater/internal/provider"
 )
 
-const defaultBaseURL = "https://www.theaudiodb.com/api/v2/json"
+const (
+	defaultV1BaseURL = "https://www.theaudiodb.com/api/v1/json"
+	defaultV2BaseURL = "https://www.theaudiodb.com/api/v2/json"
 
-// Adapter implements the provider.Provider interface for TheAudioDB V2 API.
-// Requires a paid Patreon subscription key for API access.
+	// freeAPIKey is TheAudioDB's public free-tier key (30 req/min, no sign-up required).
+	freeAPIKey = "123"
+)
+
+// Adapter implements the provider.Provider interface for TheAudioDB.
+// Without a configured API key it uses the free v1 API (30 req/min).
+// With a premium Patreon key it upgrades to the v2 API (100 req/min).
 type Adapter struct {
-	client   *http.Client
-	limiter  *provider.RateLimiterMap
-	settings *provider.SettingsService
-	logger   *slog.Logger
-	baseURL  string
+	client    *http.Client
+	limiter   *provider.RateLimiterMap
+	settings  *provider.SettingsService
+	logger    *slog.Logger
+	v1BaseURL string
+	v2BaseURL string
 }
 
-// New creates a TheAudioDB adapter with the default V2 base URL.
+// New creates a TheAudioDB adapter with the default base URLs.
 func New(limiter *provider.RateLimiterMap, settings *provider.SettingsService, logger *slog.Logger) *Adapter {
-	return NewWithBaseURL(limiter, settings, logger, defaultBaseURL)
+	return &Adapter{
+		client:    &http.Client{Timeout: 10 * time.Second},
+		limiter:   limiter,
+		settings:  settings,
+		logger:    logger.With(slog.String("provider", "audiodb")),
+		v1BaseURL: defaultV1BaseURL,
+		v2BaseURL: defaultV2BaseURL,
+	}
 }
 
 // NewWithBaseURL creates a TheAudioDB adapter with a custom base URL (for testing).
+// Both v1 and v2 paths are rooted at baseURL in test mode.
 func NewWithBaseURL(limiter *provider.RateLimiterMap, settings *provider.SettingsService, logger *slog.Logger, baseURL string) *Adapter {
+	base := strings.TrimRight(baseURL, "/")
 	return &Adapter{
-		client:   &http.Client{Timeout: 10 * time.Second},
-		limiter:  limiter,
-		settings: settings,
-		logger:   logger.With(slog.String("provider", "audiodb")),
-		baseURL:  strings.TrimRight(baseURL, "/"),
+		client:    &http.Client{Timeout: 10 * time.Second},
+		limiter:   limiter,
+		settings:  settings,
+		logger:    logger.With(slog.String("provider", "audiodb")),
+		v1BaseURL: base,
+		v2BaseURL: base,
 	}
 }
 
 // Name returns the provider name.
 func (a *Adapter) Name() provider.ProviderName { return provider.NameAudioDB }
 
-// RequiresAuth returns true because TheAudioDB requires a paid Patreon key.
-func (a *Adapter) RequiresAuth() bool { return true }
+// RequiresAuth returns false because TheAudioDB has a free tier (key 123, 30 req/min).
+// A premium Patreon key can be configured to unlock the v2 API (100 req/min).
+func (a *Adapter) RequiresAuth() bool { return false }
 
 // SearchArtist searches TheAudioDB by artist name.
 func (a *Adapter) SearchArtist(ctx context.Context, name string) ([]provider.ArtistSearchResult, error) {
@@ -62,7 +81,7 @@ func (a *Adapter) SearchArtist(ctx context.Context, name string) ([]provider.Art
 		}
 	}
 
-	reqURL := fmt.Sprintf("%s/search/artist/%s", a.baseURL, url.PathEscape(name))
+	reqURL := a.buildSearchURL(apiKey, name)
 	artists, err := a.fetchArtists(ctx, reqURL, apiKey)
 	if err != nil {
 		return nil, err
@@ -96,7 +115,7 @@ func (a *Adapter) GetArtist(ctx context.Context, mbid string) (*provider.ArtistM
 		}
 	}
 
-	reqURL := fmt.Sprintf("%s/lookup/artist_mb/%s", a.baseURL, url.PathEscape(mbid))
+	reqURL := a.buildLookupURL(apiKey, mbid)
 	artists, err := a.fetchArtists(ctx, reqURL, apiKey)
 	if err != nil {
 		return nil, err
@@ -122,7 +141,7 @@ func (a *Adapter) GetImages(ctx context.Context, mbid string) ([]provider.ImageR
 		}
 	}
 
-	reqURL := fmt.Sprintf("%s/lookup/artist_mb/%s", a.baseURL, url.PathEscape(mbid))
+	reqURL := a.buildLookupURL(apiKey, mbid)
 	artists, err := a.fetchArtists(ctx, reqURL, apiKey)
 	if err != nil {
 		return nil, err
@@ -134,37 +153,60 @@ func (a *Adapter) GetImages(ctx context.Context, mbid string) ([]provider.ImageR
 	return mapImages(&artists[0]), nil
 }
 
-// TestConnection verifies the API key is valid by searching for a known artist.
+// TestConnection verifies connectivity by searching for a known artist.
 func (a *Adapter) TestConnection(ctx context.Context) error {
 	apiKey, err := a.getAPIKey(ctx)
 	if err != nil {
 		return err
 	}
-
-	reqURL := fmt.Sprintf("%s/search/artist/%s", a.baseURL, url.PathEscape("Radiohead"))
+	reqURL := a.buildSearchURL(apiKey, "Radiohead")
 	_, err = a.fetchArtists(ctx, reqURL, apiKey)
 	return err
 }
 
+// getAPIKey returns the stored API key, falling back to the free-tier key.
 func (a *Adapter) getAPIKey(ctx context.Context) (string, error) {
 	apiKey, err := a.settings.GetAPIKey(ctx, provider.NameAudioDB)
 	if err != nil {
 		return "", fmt.Errorf("getting API key: %w", err)
 	}
 	if apiKey == "" {
-		return "", &provider.ErrAuthRequired{Provider: provider.NameAudioDB}
+		return freeAPIKey, nil
 	}
 	return apiKey, nil
 }
 
-// fetchArtists performs an HTTP GET request with the API key sent in the
-// X-API-KEY header (V2 authentication).
+// isPremiumKey returns true when the key is a paid Patreon key (not the free key).
+func isPremiumKey(apiKey string) bool {
+	return apiKey != freeAPIKey
+}
+
+// buildSearchURL constructs the search endpoint URL for the appropriate API tier.
+func (a *Adapter) buildSearchURL(apiKey, name string) string {
+	if isPremiumKey(apiKey) {
+		return fmt.Sprintf("%s/search/artist/%s", a.v2BaseURL, url.PathEscape(name))
+	}
+	return fmt.Sprintf("%s/%s/search.php?s=%s", a.v1BaseURL, apiKey, url.QueryEscape(name))
+}
+
+// buildLookupURL constructs the MBID lookup endpoint URL for the appropriate API tier.
+func (a *Adapter) buildLookupURL(apiKey, mbid string) string {
+	if isPremiumKey(apiKey) {
+		return fmt.Sprintf("%s/lookup/artist_mb/%s", a.v2BaseURL, url.PathEscape(mbid))
+	}
+	return fmt.Sprintf("%s/%s/artist-mb.php?i=%s", a.v1BaseURL, apiKey, url.QueryEscape(mbid))
+}
+
+// fetchArtists performs an HTTP GET and parses the artist list from the response.
+// Premium keys are sent in the X-API-KEY header (v2); the free key is embedded in the URL (v1).
 func (a *Adapter) fetchArtists(ctx context.Context, reqURL string, apiKey string) ([]AudioDBArtist, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
-	req.Header.Set("X-API-KEY", apiKey)
+	if isPremiumKey(apiKey) {
+		req.Header.Set("X-API-KEY", apiKey)
+	}
 
 	a.logger.Debug("requesting", slog.String("url", reqURL))
 
@@ -195,7 +237,7 @@ func (a *Adapter) fetchArtists(ctx context.Context, reqURL string, apiKey string
 		return nil, fmt.Errorf("parsing response: %w", err)
 	}
 
-	return artistResp.Artists, nil
+	return artistResp.results(), nil
 }
 
 func mapArtist(art *AudioDBArtist) *provider.ArtistMetadata {

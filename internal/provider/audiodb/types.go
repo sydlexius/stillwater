@@ -3,8 +3,22 @@ package audiodb
 // TheAudioDB API response types.
 
 // ArtistResponse is the top-level response from TheAudioDB artist endpoints.
+// The v1 API uses "artists", v2 uses "search" or "lookup" depending on endpoint.
 type ArtistResponse struct {
-	Artists []AudioDBArtist `json:"artists"`
+	Artists []AudioDBArtist `json:"artists"` // v1
+	Search  []AudioDBArtist `json:"search"`  // v2 search endpoint
+	Lookup  []AudioDBArtist `json:"lookup"`  // v2 lookup endpoint
+}
+
+// results returns whichever populated slice was returned by the API.
+func (r ArtistResponse) results() []AudioDBArtist {
+	if len(r.Lookup) > 0 {
+		return r.Lookup
+	}
+	if len(r.Search) > 0 {
+		return r.Search
+	}
+	return r.Artists
 }
 
 // AudioDBArtist represents a TheAudioDB artist entity.
