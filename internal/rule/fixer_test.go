@@ -18,7 +18,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/provider"
 )
 
-// makeTestJPEG encodes a solid-colour JPEG of the given dimensions.
+// makeTestJPEG encodes a solid-color JPEG of the given dimensions.
 func makeTestJPEG(t *testing.T, w, h int) []byte {
 	t.Helper()
 	img := image.NewRGBA(image.Rect(0, 0, w, h))
@@ -470,7 +470,7 @@ func TestFilterCandidatesByResolution(t *testing.T) {
 	logger := testLogger()
 
 	candidates := []provider.ImageResult{
-		{URL: "a", Width: 200, Height: 200}, // below minimum
+		{URL: "a", Width: 200, Height: 200},   // below minimum
 		{URL: "b", Width: 1000, Height: 1000}, // passes
 		{URL: "c", Width: 0, Height: 0},       // unknown dims, always passes
 		{URL: "d", Width: 800, Height: 800},   // below existing (900x900)

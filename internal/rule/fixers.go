@@ -452,17 +452,6 @@ func existingImageFileNames(dir, imageType string) []string {
 	return found
 }
 
-// isMinResRule returns true for rules that enforce minimum resolution on an
-// existing image (i.e. an image is already on disk and must not be downgraded).
-func isMinResRule(ruleID string) bool {
-	switch ruleID {
-	case RuleThumbMinRes, RuleFanartMinRes, RuleLogoMinRes, RuleBannerMinRes:
-		return true
-	default:
-		return false
-	}
-}
-
 // filterCandidatesByResolution removes candidates whose declared dimensions are
 // below the configured minimum or below the existing image's pixel count.
 // Candidates with unknown dimensions (0x0) are kept.
@@ -493,7 +482,7 @@ func filterCandidatesByResolution(
 }
 
 // readExistingImageDimensions returns the pixel dimensions of the first
-// recognisable image found in dir for the given image type.
+// recognizable image found in dir for the given image type.
 func readExistingImageDimensions(dir, imageType string) (int, int) {
 	for _, name := range img.FileNamesForType(img.DefaultFileNames, imageType) {
 		if w, h, ok := readFileDimensions(filepath.Join(dir, name)); ok {
