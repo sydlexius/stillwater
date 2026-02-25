@@ -29,9 +29,27 @@ func setupTest(t *testing.T) (*provider.RateLimiterMap, *provider.SettingsServic
 	enc, _, _ := encryption.NewEncryptor("")
 	limiter := provider.NewRateLimiterMap()
 	settings := provider.NewSettingsService(db, enc)
-	if err := settings.SetAPIKey(context.Background(), provider.NameAudioDB, "test-key"); err != nil {
+	if err := settings.SetAPIKey(context.Background(), provider.NameAudioDB, "test-premium-key"); err != nil {
 		t.Fatalf("setting test key: %v", err)
 	}
+	return limiter, settings
+}
+
+func setupFreeTest(t *testing.T) (*provider.RateLimiterMap, *provider.SettingsService) {
+	t.Helper()
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("opening test db: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+	_, err = db.ExecContext(context.Background(), `CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT (datetime('now')))`)
+	if err != nil {
+		t.Fatalf("creating settings table: %v", err)
+	}
+	enc, _, _ := encryption.NewEncryptor("")
+	limiter := provider.NewRateLimiterMap()
+	settings := provider.NewSettingsService(db, enc)
+	// No API key stored -- adapter should use free key 123.
 	return limiter, settings
 }
 
@@ -44,34 +62,46 @@ func loadFixture(t *testing.T, name string) []byte {
 	return data
 }
 
-// newTestServerV2 creates a test server that mimics TheAudioDB V2 API.
-// It verifies that the API key is sent in the X-API-KEY header and uses
-// V2-style path-based routes (/search/artist/, /lookup/artist_mb/).
-func newTestServerV2(t *testing.T, capturedKey *string) *httptest.Server {
+// newTestServer creates a test server that handles both v1 and v2 path patterns.
+func newTestServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	return newTestServerCapturing(t, nil, nil)
+}
+
+// newTestServerCapturing creates a test server that also records the API key header and request path.
+func newTestServerCapturing(t *testing.T, capturedKey *string, capturedPath *string) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 
-		// Capture the API key from the V2 header
 		if capturedKey != nil {
 			*capturedKey = r.Header.Get("X-API-KEY")
 		}
+		if capturedPath != nil {
+			*capturedPath = r.URL.Path
+		}
 
 		switch {
+		// v2 paths
 		case strings.Contains(r.URL.Path, "/search/artist/"):
 			w.Write(loadFixture(t, "search_radiohead.json"))
 		case strings.Contains(r.URL.Path, "/lookup/artist_mb/not-found"):
-			w.Write([]byte(`{"artists":null}`))
+			w.Write([]byte(`{"lookup":null}`))
 		case strings.Contains(r.URL.Path, "/lookup/artist_mb/"):
+			w.Write(loadFixture(t, "lookup_radiohead.json"))
+		// v1 paths
+		case strings.Contains(r.URL.Path, "/search.php"):
 			w.Write(loadFixture(t, "search_radiohead.json"))
+		case strings.Contains(r.URL.Path, "/artist-mb.php"):
+			if r.URL.Query().Get("i") == "not-found" {
+				w.Write([]byte(`{"artists":null}`))
+			} else {
+				w.Write(loadFixture(t, "search_radiohead.json"))
+			}
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
 	}))
-}
-
-func newTestServer(t *testing.T) *httptest.Server {
-	return newTestServerV2(t, nil)
 }
 
 func TestSearchArtist(t *testing.T) {
@@ -156,10 +186,10 @@ func TestGetImages(t *testing.T) {
 	}
 }
 
-func TestAPIKeyInHeader(t *testing.T) {
+func TestPremiumKeyUsesV2Header(t *testing.T) {
 	limiter, settings := setupTest(t)
-	var capturedKey string
-	srv := newTestServerV2(t, &capturedKey)
+	var capturedKey, capturedPath string
+	srv := newTestServerCapturing(t, &capturedKey, &capturedPath)
 	defer srv.Close()
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	a := NewWithBaseURL(limiter, settings, logger, srv.URL)
@@ -168,8 +198,31 @@ func TestAPIKeyInHeader(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SearchArtist: %v", err)
 	}
-	if capturedKey != "test-key" {
-		t.Errorf("expected X-API-KEY header to be %q, got %q", "test-key", capturedKey)
+	if capturedKey != "test-premium-key" {
+		t.Errorf("expected X-API-KEY header %q, got %q", "test-premium-key", capturedKey)
+	}
+	if !strings.Contains(capturedPath, "/search/artist/") {
+		t.Errorf("expected v2 search path, got %q", capturedPath)
+	}
+}
+
+func TestFreeKeyUsesV1URL(t *testing.T) {
+	limiter, settings := setupFreeTest(t)
+	var capturedKey, capturedPath string
+	srv := newTestServerCapturing(t, &capturedKey, &capturedPath)
+	defer srv.Close()
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	a := NewWithBaseURL(limiter, settings, logger, srv.URL)
+
+	_, err := a.SearchArtist(context.Background(), "Radiohead")
+	if err != nil {
+		t.Fatalf("SearchArtist: %v", err)
+	}
+	if capturedKey != "" {
+		t.Errorf("expected no X-API-KEY header for free tier, got %q", capturedKey)
+	}
+	if !strings.Contains(capturedPath, "/search.php") {
+		t.Errorf("expected v1 search.php path, got %q", capturedPath)
 	}
 }
 
@@ -178,35 +231,7 @@ func TestRequiresAuth(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	a := NewWithBaseURL(limiter, settings, logger, "http://unused")
 
-	if !a.RequiresAuth() {
-		t.Error("expected RequiresAuth to return true")
-	}
-}
-
-func TestNoKeyReturnsAuthError(t *testing.T) {
-	db, err := sql.Open("sqlite", ":memory:")
-	if err != nil {
-		t.Fatalf("opening test db: %v", err)
-	}
-	t.Cleanup(func() { db.Close() })
-	_, err = db.ExecContext(context.Background(), `CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT (datetime('now')))`)
-	if err != nil {
-		t.Fatalf("creating settings table: %v", err)
-	}
-	enc, _, _ := encryption.NewEncryptor("")
-	limiter := provider.NewRateLimiterMap()
-	settings := provider.NewSettingsService(db, enc)
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-
-	srv := newTestServer(t)
-	defer srv.Close()
-	a := NewWithBaseURL(limiter, settings, logger, srv.URL)
-
-	_, err = a.SearchArtist(context.Background(), "Radiohead")
-	if err == nil {
-		t.Fatal("expected error when no key configured")
-	}
-	if _, ok := err.(*provider.ErrAuthRequired); !ok {
-		t.Errorf("expected ErrAuthRequired, got %T: %v", err, err)
+	if a.RequiresAuth() {
+		t.Error("expected RequiresAuth to return false (free tier available)")
 	}
 }
