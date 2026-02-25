@@ -19,6 +19,7 @@ const artistColumns = `id, name, sort_name, type, gender, disambiguation,
 	path, nfo_exists, thumb_exists, fanart_exists, logo_exists, banner_exists,
 	thumb_low_res, fanart_low_res, logo_low_res, banner_low_res,
 	health_score, is_excluded, exclusion_reason, is_classical, metadata_sources,
+	audiodb_id_fetched_at, discogs_id_fetched_at, wikidata_id_fetched_at, lastfm_id_fetched_at,
 	last_scanned_at, created_at, updated_at`
 
 // Service provides artist and band member data operations.
@@ -49,8 +50,9 @@ func (s *Service) Create(ctx context.Context, a *Artist) error {
 			path, nfo_exists, thumb_exists, fanart_exists, logo_exists, banner_exists,
 			thumb_low_res, fanart_low_res, logo_low_res, banner_low_res,
 			health_score, is_excluded, exclusion_reason, is_classical, metadata_sources,
+			audiodb_id_fetched_at, discogs_id_fetched_at, wikidata_id_fetched_at, lastfm_id_fetched_at,
 			last_scanned_at, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		a.ID, a.Name, a.SortName, a.Type, a.Gender, a.Disambiguation,
 		a.MusicBrainzID, a.AudioDBID, a.DiscogsID, a.WikidataID,
@@ -62,6 +64,8 @@ func (s *Service) Create(ctx context.Context, a *Artist) error {
 		boolToInt(a.LogoLowRes), boolToInt(a.BannerLowRes),
 		a.HealthScore, boolToInt(a.IsExcluded), a.ExclusionReason, boolToInt(a.IsClassical),
 		MarshalStringMap(a.MetadataSources),
+		formatNullableTime(a.AudioDBIDFetchedAt), formatNullableTime(a.DiscogsIDFetchedAt),
+		formatNullableTime(a.WikidataIDFetchedAt), formatNullableTime(a.LastFMIDFetchedAt),
 		formatNullableTime(a.LastScannedAt),
 		now.Format(time.RFC3339), now.Format(time.RFC3339),
 	)
@@ -203,6 +207,7 @@ func (s *Service) Update(ctx context.Context, a *Artist) error {
 			thumb_low_res = ?, fanart_low_res = ?, logo_low_res = ?, banner_low_res = ?,
 			health_score = ?, is_excluded = ?, exclusion_reason = ?, is_classical = ?,
 			metadata_sources = ?,
+			audiodb_id_fetched_at = ?, discogs_id_fetched_at = ?, wikidata_id_fetched_at = ?, lastfm_id_fetched_at = ?,
 			last_scanned_at = ?, updated_at = ?
 		WHERE id = ?
 	`,
@@ -216,6 +221,8 @@ func (s *Service) Update(ctx context.Context, a *Artist) error {
 		boolToInt(a.LogoLowRes), boolToInt(a.BannerLowRes),
 		a.HealthScore, boolToInt(a.IsExcluded), a.ExclusionReason, boolToInt(a.IsClassical),
 		MarshalStringMap(a.MetadataSources),
+		formatNullableTime(a.AudioDBIDFetchedAt), formatNullableTime(a.DiscogsIDFetchedAt),
+		formatNullableTime(a.WikidataIDFetchedAt), formatNullableTime(a.LastFMIDFetchedAt),
 		formatNullableTime(a.LastScannedAt),
 		a.UpdatedAt.Format(time.RFC3339),
 		a.ID,
@@ -367,6 +374,29 @@ func IsSliceField(field string) bool {
 	return sliceFields[field]
 }
 
+// UpdateProviderFetchedAt records when a provider ID fetch was last attempted.
+// The provider argument must be one of "audiodb", "discogs", "wikidata", "lastfm".
+func (s *Service) UpdateProviderFetchedAt(ctx context.Context, artistID, prov string) error {
+	col, ok := map[string]string{
+		"audiodb":  "audiodb_id_fetched_at",
+		"discogs":  "discogs_id_fetched_at",
+		"wikidata": "wikidata_id_fetched_at",
+		"lastfm":   "lastfm_id_fetched_at",
+	}[prov]
+	if !ok {
+		return fmt.Errorf("unknown provider for fetched_at: %s", prov)
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	_, err := s.db.ExecContext(ctx,
+		"UPDATE artists SET "+col+" = ?, updated_at = ? WHERE id = ?", //nolint:gosec // col is from validated map
+		now, now, artistID,
+	)
+	if err != nil {
+		return fmt.Errorf("updating %s fetched_at for artist %s: %w", prov, artistID, err)
+	}
+	return nil
+}
+
 // Delete removes an artist by ID. Cascade deletes related rows.
 func (s *Service) Delete(ctx context.Context, id string) error {
 	result, err := s.db.ExecContext(ctx, `DELETE FROM artists WHERE id = ?`, id)
@@ -516,6 +546,7 @@ func scanArtist(row interface{ Scan(...any) error }) (*Artist, error) {
 	var a Artist
 	var genres, styles, moods string
 	var metadataSources string
+	var audiodbFetchedAt, discogsFetchedAt, wikidataFetchedAt, lastfmFetchedAt sql.NullString
 	var lastScannedAt sql.NullString
 	var nfo, thumb, fanart, logo, banner int
 	var thumbLowRes, fanartLowRes, logoLowRes, bannerLowRes int
@@ -531,6 +562,7 @@ func scanArtist(row interface{ Scan(...any) error }) (*Artist, error) {
 		&thumbLowRes, &fanartLowRes, &logoLowRes, &bannerLowRes,
 		&a.HealthScore, &isExcluded, &a.ExclusionReason, &isClassical,
 		&metadataSources,
+		&audiodbFetchedAt, &discogsFetchedAt, &wikidataFetchedAt, &lastfmFetchedAt,
 		&lastScannedAt,
 		&createdAt, &updatedAt,
 	)
@@ -556,6 +588,22 @@ func scanArtist(row interface{ Scan(...any) error }) (*Artist, error) {
 	a.CreatedAt = parseTime(createdAt)
 	a.UpdatedAt = parseTime(updatedAt)
 
+	if audiodbFetchedAt.Valid {
+		t := parseTime(audiodbFetchedAt.String)
+		a.AudioDBIDFetchedAt = &t
+	}
+	if discogsFetchedAt.Valid {
+		t := parseTime(discogsFetchedAt.String)
+		a.DiscogsIDFetchedAt = &t
+	}
+	if wikidataFetchedAt.Valid {
+		t := parseTime(wikidataFetchedAt.String)
+		a.WikidataIDFetchedAt = &t
+	}
+	if lastfmFetchedAt.Valid {
+		t := parseTime(lastfmFetchedAt.String)
+		a.LastFMIDFetchedAt = &t
+	}
 	if lastScannedAt.Valid {
 		t := parseTime(lastScannedAt.String)
 		a.LastScannedAt = &t
