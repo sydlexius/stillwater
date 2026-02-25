@@ -1,6 +1,7 @@
 package rule
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/image"
+	"github.com/sydlexius/stillwater/internal/platform"
 )
 
 // Checker evaluates a single rule against an artist.
@@ -356,4 +358,83 @@ func effectiveSeverity(cfg RuleConfig) string {
 		return cfg.Severity
 	}
 	return "warning"
+}
+
+// imageExtensions is the set of file extensions considered as image files.
+var imageExtensions = map[string]bool{
+	".jpg": true, ".jpeg": true, ".png": true,
+}
+
+// makeExtraneousImagesChecker returns a Checker closure that detects non-canonical
+// image files in an artist directory. The canonical set is derived from the active
+// platform profile: for each image type, the primary name plus its alternate
+// extension variant (e.g. folder.jpg and folder.png) are considered expected.
+func (e *Engine) makeExtraneousImagesChecker() Checker {
+	return func(a *artist.Artist, cfg RuleConfig) *Violation {
+		if a.Path == "" {
+			return nil
+		}
+
+		// Build the set of expected filenames from the active platform profile.
+		expected := make(map[string]bool)
+		expected["artist.nfo"] = true
+
+		var profile *platform.Profile
+		if e.platformService != nil {
+			profile, _ = e.platformService.GetActive(context.Background())
+		}
+		imageTypes := []string{"thumb", "fanart", "logo", "banner"}
+
+		for _, imageType := range imageTypes {
+			var primary string
+			if profile != nil {
+				primary = profile.ImageNaming.PrimaryName(imageType)
+			}
+			if primary == "" {
+				primary = image.PrimaryFileName(image.DefaultFileNames, imageType)
+			}
+			if primary == "" {
+				continue
+			}
+			expected[strings.ToLower(primary)] = true
+			// Also allow the alternate extension variant.
+			base := strings.TrimSuffix(primary, filepath.Ext(primary))
+			for ext := range imageExtensions {
+				expected[strings.ToLower(base+ext)] = true
+			}
+		}
+
+		entries, readErr := os.ReadDir(a.Path)
+		if readErr != nil {
+			return nil
+		}
+
+		var extraneous []string
+		for _, entry := range entries {
+			if entry.IsDir() {
+				continue
+			}
+			name := entry.Name()
+			ext := strings.ToLower(filepath.Ext(name))
+			if !imageExtensions[ext] {
+				continue
+			}
+			if !expected[strings.ToLower(name)] {
+				extraneous = append(extraneous, name)
+			}
+		}
+
+		if len(extraneous) == 0 {
+			return nil
+		}
+
+		return &Violation{
+			RuleID:   RuleExtraneousImages,
+			RuleName: "Extraneous image files",
+			Category: "image",
+			Severity: effectiveSeverity(cfg),
+			Message:  fmt.Sprintf("artist %q has %d extraneous image file(s): %s", a.Name, len(extraneous), strings.Join(extraneous, ", ")),
+			Fixable:  true,
+		}
+	}
 }

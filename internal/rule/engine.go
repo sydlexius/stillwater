@@ -7,22 +7,25 @@ import (
 	"math"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/platform"
 )
 
 // Engine evaluates rules against artists.
 type Engine struct {
-	service  *Service
-	db       *sql.DB
-	checkers map[string]Checker
-	logger   *slog.Logger
+	service         *Service
+	db              *sql.DB
+	platformService *platform.Service
+	checkers        map[string]Checker
+	logger          *slog.Logger
 }
 
 // NewEngine creates a rule evaluation engine with all built-in checkers registered.
-func NewEngine(service *Service, db *sql.DB, logger *slog.Logger) *Engine {
+func NewEngine(service *Service, db *sql.DB, platformService *platform.Service, logger *slog.Logger) *Engine {
 	e := &Engine{
-		service: service,
-		db:      db,
-		logger:  logger.With(slog.String("component", "rule-engine")),
+		service:         service,
+		db:              db,
+		platformService: platformService,
+		logger:          logger.With(slog.String("component", "rule-engine")),
 		checkers: map[string]Checker{
 			RuleNFOExists:    checkNFOExists,
 			RuleNFOHasMBID:   checkNFOHasMBID,
@@ -39,6 +42,7 @@ func NewEngine(service *Service, db *sql.DB, logger *slog.Logger) *Engine {
 			RuleBannerMinRes: checkBannerMinRes,
 		},
 	}
+	e.checkers[RuleExtraneousImages] = e.makeExtraneousImagesChecker()
 	return e
 }
 

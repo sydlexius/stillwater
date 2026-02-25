@@ -131,7 +131,7 @@ func run() error {
 	if err := ruleService.SeedDefaults(context.Background()); err != nil {
 		return fmt.Errorf("seeding default rules: %w", err)
 	}
-	ruleEngine := rule.NewEngine(ruleService, db, logger)
+	ruleEngine := rule.NewEngine(ruleService, db, platformService, logger)
 
 	// Initialize scanner (depends on rule engine for health scoring)
 	scannerService := scanner.NewService(artistService, ruleEngine, ruleService, logger, cfg.Music.LibraryPath, cfg.Scanner.Exclusions)
@@ -170,6 +170,7 @@ func run() error {
 		&rule.NFOFixer{SnapshotService: nfoSnapshotService},
 		rule.NewMetadataFixer(orchestrator, nfoSnapshotService),
 		rule.NewImageFixer(orchestrator, logger),
+		rule.NewExtraneousImagesFixer(platformService, logger),
 	}
 	pipeline := rule.NewPipeline(ruleEngine, artistService, ruleService, fixers, logger)
 

@@ -21,11 +21,12 @@ const (
 	RuleLogoExists   = "logo_exists"
 	RuleBioExists    = "bio_exists"
 	// Image quality rule IDs.
-	RuleFanartMinRes = "fanart_min_res"
-	RuleFanartAspect = "fanart_aspect"
-	RuleLogoMinRes   = "logo_min_res"
-	RuleBannerExists = "banner_exists"
-	RuleBannerMinRes = "banner_min_res"
+	RuleFanartMinRes     = "fanart_min_res"
+	RuleFanartAspect     = "fanart_aspect"
+	RuleLogoMinRes       = "logo_min_res"
+	RuleBannerExists     = "banner_exists"
+	RuleBannerMinRes     = "banner_min_res"
+	RuleExtraneousImages = "extraneous_images"
 )
 
 // defaultRules defines the built-in rules seeded on first startup.
@@ -134,6 +135,15 @@ var defaultRules = []Rule{
 		Enabled:     false,
 		Config:      RuleConfig{MinWidth: 1000, MinHeight: 185, Severity: "info"},
 	},
+	{
+		ID:             RuleExtraneousImages,
+		Name:           "Extraneous image files",
+		Description:    "Detects non-canonical image files that may cause display issues on media servers",
+		Category:       "image",
+		Enabled:        true,
+		AutomationMode: "notify",
+		Config:         RuleConfig{Severity: "warning"},
+	},
 }
 
 // Service provides rule data operations.
@@ -152,15 +162,19 @@ func NewService(db *sql.DB) *Service {
 func (s *Service) SeedDefaults(ctx context.Context) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 	for _, r := range defaultRules {
+		autoMode := r.AutomationMode
+		if autoMode == "" {
+			autoMode = "auto"
+		}
 		_, err := s.db.ExecContext(ctx, `
-			INSERT INTO rules (id, name, description, category, enabled, config, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+			INSERT INTO rules (id, name, description, category, enabled, automation_mode, config, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(id) DO UPDATE SET
 				name        = excluded.name,
 				description = excluded.description,
 				updated_at  = excluded.updated_at
 		`, r.ID, r.Name, r.Description, r.Category, boolToInt(r.Enabled),
-			MarshalConfig(r.Config), now, now)
+			autoMode, MarshalConfig(r.Config), now, now)
 		if err != nil {
 			return fmt.Errorf("seeding rule %s: %w", r.ID, err)
 		}

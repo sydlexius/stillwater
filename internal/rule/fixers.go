@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/filesystem"
 	img "github.com/sydlexius/stillwater/internal/image"
 	"github.com/sydlexius/stillwater/internal/nfo"
+	"github.com/sydlexius/stillwater/internal/platform"
 	"github.com/sydlexius/stillwater/internal/provider"
 )
 
@@ -526,6 +528,105 @@ func readFileDimensions(path string) (int, int, bool) {
 		return 0, 0, false
 	}
 	return w, h, true
+}
+
+// ExtraneousImagesFixer deletes non-canonical image files from artist directories.
+type ExtraneousImagesFixer struct {
+	platformService *platform.Service
+	logger          *slog.Logger
+}
+
+// NewExtraneousImagesFixer creates an ExtraneousImagesFixer.
+func NewExtraneousImagesFixer(platformService *platform.Service, logger *slog.Logger) *ExtraneousImagesFixer {
+	return &ExtraneousImagesFixer{
+		platformService: platformService,
+		logger:          logger,
+	}
+}
+
+// CanFix returns true for the extraneous_images rule.
+func (f *ExtraneousImagesFixer) CanFix(v *Violation) bool {
+	return v.RuleID == RuleExtraneousImages
+}
+
+// Fix deletes all extraneous image files from the artist directory.
+func (f *ExtraneousImagesFixer) Fix(ctx context.Context, a *artist.Artist, _ *Violation) (*FixResult, error) {
+	if a.Path == "" {
+		return &FixResult{
+			RuleID:  RuleExtraneousImages,
+			Fixed:   false,
+			Message: "artist has no path",
+		}, nil
+	}
+
+	// Build expected set (same logic as checker).
+	expected := make(map[string]bool)
+	expected["artist.nfo"] = true
+
+	var profile *platform.Profile
+	if f.platformService != nil {
+		profile, _ = f.platformService.GetActive(ctx)
+	}
+	imageTypes := []string{"thumb", "fanart", "logo", "banner"}
+	for _, imageType := range imageTypes {
+		var primary string
+		if profile != nil {
+			primary = profile.ImageNaming.PrimaryName(imageType)
+		}
+		if primary == "" {
+			primary = img.PrimaryFileName(img.DefaultFileNames, imageType)
+		}
+		if primary == "" {
+			continue
+		}
+		expected[strings.ToLower(primary)] = true
+		base := strings.TrimSuffix(primary, filepath.Ext(primary))
+		for ext := range imageExtensions {
+			expected[strings.ToLower(base+ext)] = true
+		}
+	}
+
+	entries, readErr := os.ReadDir(a.Path)
+	if readErr != nil {
+		return nil, fmt.Errorf("reading directory: %w", readErr)
+	}
+
+	var deleted []string
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		ext := strings.ToLower(filepath.Ext(name))
+		if !imageExtensions[ext] {
+			continue
+		}
+		if expected[strings.ToLower(name)] {
+			continue
+		}
+		target := filepath.Join(a.Path, name)
+		if rmErr := os.Remove(target); rmErr != nil {
+			f.logger.Warn("failed to delete extraneous image",
+				slog.String("path", target), slog.String("error", rmErr.Error()))
+			continue
+		}
+		f.logger.Info("deleted extraneous image", slog.String("path", target))
+		deleted = append(deleted, name)
+	}
+
+	if len(deleted) == 0 {
+		return &FixResult{
+			RuleID:  RuleExtraneousImages,
+			Fixed:   false,
+			Message: "no extraneous files to delete",
+		}, nil
+	}
+
+	return &FixResult{
+		RuleID:  RuleExtraneousImages,
+		Fixed:   true,
+		Message: fmt.Sprintf("deleted %d extraneous file(s): %s", len(deleted), strings.Join(deleted, ", ")),
+	}, nil
 }
 
 // fetchImageURL downloads image data from a URL with timeout and size limits.
