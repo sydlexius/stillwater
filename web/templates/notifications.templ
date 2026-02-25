@@ -14,9 +14,9 @@ type NotificationsData struct {
 templ NotificationsPage(assets AssetPaths, data NotificationsData) {
 	@Layout("Notifications", assets) {
 		<div class="space-y-6">
-			<div class="pb-2">
+			<div class="sw-card rounded-lg px-6 py-4">
 				<h1 class="text-2xl font-bold">Rule Violation Notifications</h1>
-				<p class="text-gray-500 dark:text-gray-400">Review and manage unresolved rule violations</p>
+				<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Review and manage unresolved rule violations</p>
 			</div>
 
 			<div
@@ -28,6 +28,7 @@ templ NotificationsPage(assets AssetPaths, data NotificationsData) {
 				@NotificationsTable(data)
 			</div>
 		</div>
+		@candidatePreviewModal()
 		@candidateScript()
 	}
 }
@@ -136,38 +137,68 @@ templ notificationsTableContent(data NotificationsData) {
 										Select a replacement image
 									</p>
 									<p class="text-xs text-gray-400 dark:text-gray-500">
-										{ fmt.Sprintf("%d candidate(s) available", len(v.Candidates)) }
+										{ fmt.Sprintf("%d candidate(s) -- click image to preview, then apply", len(v.Candidates)) }
 									</p>
 								</div>
 								<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
 									for _, c := range v.Candidates {
-										<button
-											type="button"
-											data-violation-id={ v.ID }
-											data-url={ c.URL }
-											data-image-type={ c.ImageType }
-											onclick="applyCandidate(this.dataset.violationId, this.dataset.url, this.dataset.imageType)"
-											class="group rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden cursor-pointer hover:ring-2 hover:ring-blue-500 dark:hover:ring-blue-400 text-left w-full bg-white dark:bg-gray-900 transition-all"
-										>
-											<div class="relative">
+										<div class="candidate-card flex flex-col rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden bg-white dark:bg-gray-900">
+											<!-- Image with magnifying glass overlay -->
+											<div class="relative bg-gray-100 dark:bg-gray-800" style="height:120px">
 												<img
 													src={ c.URL }
-													alt={ fmt.Sprintf("%s (%s)", c.Source, candidateDims(c)) }
-													class="w-full h-28 object-cover"
-													loading="lazy"
+													alt={ providerDisplayName(c.Source) }
+													class="candidate-img w-full h-full object-contain"
+													onload="updateCandidateCardDims(this)"
 												/>
+												<!-- Preview button: magnifying glass on hover -->
+												<button
+													type="button"
+													data-violation-id={ v.ID }
+													data-url={ c.URL }
+													data-image-type={ c.ImageType }
+													data-source={ c.Source }
+													onclick="openCandidatePreview(this.dataset.violationId, this.dataset.url, this.dataset.imageType, this.dataset.source)"
+													class="group absolute inset-0 flex items-center justify-center bg-black/0 hover:bg-black/40 transition-colors"
+													title="Preview full size"
+													aria-label="Preview full size"
+												>
+													<span class="opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity bg-white/90 dark:bg-gray-900/90 rounded-full p-2 pointer-events-none">
+														<!-- Magnifying glass icon -->
+														<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="h-5 w-5 text-gray-700 dark:text-gray-200">
+															<path stroke-linecap="round" stroke-linejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 15.803a7.5 7.5 0 0 0 10.607 0Z"/>
+														</svg>
+													</span>
+												</button>
 											</div>
-											<div class="px-2 py-2 space-y-0.5">
-												<p class="text-xs font-medium text-gray-700 dark:text-gray-300 truncate">{ c.Source }</p>
-												<p class="text-xs text-gray-500 dark:text-gray-400">
-													if c.Width > 0 && c.Height > 0 {
-														{ fmt.Sprintf("%dx%d", c.Width, c.Height) }
-													} else {
-														Unknown dimensions
-													}
-												</p>
+											<!-- Dimensions centered below image -->
+											<div class="py-1 text-center">
+												<span class="candidate-dims text-xs text-gray-400 dark:text-gray-500 font-mono">&nbsp;</span>
 											</div>
-										</button>
+											<!-- Footer: provider logo (tooltip only) + Apply button -->
+											<div class="px-2 pb-2 flex items-center justify-between gap-2">
+												if logoSrc(c.Source) != "" {
+													<img
+														src={ logoSrc(c.Source) }
+														alt={ providerDisplayName(c.Source) }
+														title={ providerDisplayName(c.Source) }
+														class="h-5 w-5 object-contain shrink-0"
+													/>
+												} else {
+													<span></span>
+												}
+												<button
+													type="button"
+													data-violation-id={ v.ID }
+													data-url={ c.URL }
+													data-image-type={ c.ImageType }
+													onclick="applyCandidate(this.dataset.violationId, this.dataset.url, this.dataset.imageType)"
+													class="rounded bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-600 text-white text-xs font-semibold px-3 py-1.5 transition-colors"
+												>
+													Apply
+												</button>
+											</div>
+										</div>
 									}
 								</div>
 							</td>
@@ -179,13 +210,70 @@ templ notificationsTableContent(data NotificationsData) {
 	</div>
 }
 
+// candidatePreviewModal renders the hidden fullscreen preview modal for image candidates.
+templ candidatePreviewModal() {
+	<div id="candidate-preview-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
+		<!-- Backdrop -->
+		<div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="closeCandidatePreview()"></div>
+		<!-- Panel -->
+		<div class="relative z-10 w-full max-w-4xl bg-white dark:bg-gray-900 rounded-xl shadow-2xl overflow-hidden flex flex-col" style="max-height:90vh">
+			<!-- Header -->
+			<div class="flex items-center justify-between px-5 py-3 border-b border-gray-200 dark:border-gray-700 shrink-0">
+				<div class="flex items-center gap-3">
+					<img id="preview-provider-logo" src="" alt="" class="h-5 w-5 object-contain hidden"/>
+					<span id="preview-provider-name" class="text-sm font-semibold text-gray-700 dark:text-gray-200"></span>
+					<span id="preview-dims" class="text-xs text-gray-400 dark:text-gray-500 font-mono"></span>
+				</div>
+				<button
+					onclick="closeCandidatePreview()"
+					class="rounded-full p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+					aria-label="Close preview"
+				>
+					<!-- X icon -->
+					<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="h-5 w-5">
+						<path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/>
+					</svg>
+				</button>
+			</div>
+			<!-- Image -->
+			<div class="flex-1 overflow-auto bg-gray-100 dark:bg-gray-800 flex items-center justify-center p-4">
+				<img
+					id="preview-image"
+					src=""
+					alt="Preview"
+					class="max-w-full max-h-full object-contain"
+					onload="updatePreviewDims(this)"
+				/>
+			</div>
+			<!-- Footer -->
+			<div class="px-5 py-3 border-t border-gray-200 dark:border-gray-700 flex items-center justify-end gap-3 shrink-0">
+				<button
+					onclick="closeCandidatePreview()"
+					class="rounded border border-gray-300 dark:border-gray-600 px-4 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+				>
+					Cancel
+				</button>
+				<button
+					id="preview-apply-btn"
+					onclick="applyFromPreview()"
+					class="rounded bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-600 px-4 py-1.5 text-sm font-semibold text-white transition-colors"
+				>
+					Apply this image
+				</button>
+			</div>
+		</div>
+	</div>
+}
+
 templ candidateScript() {
 	<script>
+	// ---- Violation row toggle ----
 	function toggleCandidates(id) {
 		var row = document.getElementById(id);
 		if (row) row.classList.toggle('hidden');
 	}
 
+	// ---- Apply candidate (shared by card button and modal) ----
 	function applyCandidate(violationID, url, imageType) {
 		var csrfToken = document.cookie.replace(
 			/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, '$1'
@@ -208,6 +296,105 @@ templ candidateScript() {
 		});
 	}
 
+	// ---- Card dimension update (fires on img load) ----
+	function updateCandidateCardDims(img) {
+		if (img.naturalWidth > 0) {
+			var card = img.closest('.candidate-card');
+			if (card) {
+				var el = card.querySelector('.candidate-dims');
+				if (el) el.textContent = img.naturalWidth + 'x' + img.naturalHeight;
+			}
+		}
+	}
+
+	// ---- Candidate preview modal ----
+	var _previewViolationID, _previewURL, _previewImageType;
+	var _previewTriggerEl = null;
+
+	function _providerDisplayName(source) {
+		var names = {
+			'fanarttv':    'Fanart.tv',
+			'audiodb':     'TheAudioDB',
+			'discogs':     'Discogs',
+			'musicbrainz': 'MusicBrainz',
+			'lastfm':      'Last.fm',
+			'deezer':      'Deezer',
+			'duckduckgo':  'DuckDuckGo'
+		};
+		return names[source] || source;
+	}
+
+	function _providerLogoURL(source) {
+		var logos = {
+			'fanarttv':    '/static/img/logos/fanarttv.svg',
+			'audiodb':     '/static/img/logos/audiodb-32.png',
+			'discogs':     '/static/img/logos/discogs.svg',
+			'musicbrainz': '/static/img/logos/musicbrainz.svg',
+			'lastfm':      '/static/img/logos/lastfm.svg',
+			'deezer':      '/static/img/logos/deezer.svg'
+		};
+		return logos[source] || '';
+	}
+
+	function openCandidatePreview(violationID, url, imageType, source) {
+		_previewViolationID = violationID;
+		_previewURL = url;
+		_previewImageType = imageType;
+
+		var img = document.getElementById('preview-image');
+		img.src = '';
+		document.getElementById('preview-dims').textContent = 'Loading...';
+		document.getElementById('preview-provider-name').textContent = _providerDisplayName(source);
+
+		var logo = document.getElementById('preview-provider-logo');
+		var logoURL = _providerLogoURL(source);
+		if (logoURL) {
+			logo.src = logoURL;
+			logo.alt = _providerDisplayName(source);
+			logo.title = _providerDisplayName(source);
+			logo.classList.remove('hidden');
+		} else {
+			logo.classList.add('hidden');
+		}
+
+		img.src = url;
+		_previewTriggerEl = document.activeElement;
+		document.getElementById('candidate-preview-modal').classList.remove('hidden');
+		document.body.style.overflow = 'hidden';
+		var closeBtn = document.querySelector('#candidate-preview-modal button[aria-label="Close preview"]');
+		if (closeBtn) closeBtn.focus();
+	}
+
+	function closeCandidatePreview() {
+		document.getElementById('candidate-preview-modal').classList.add('hidden');
+		document.body.style.overflow = '';
+		// Clear src to stop any in-progress load
+		document.getElementById('preview-image').src = '';
+		if (_previewTriggerEl) { _previewTriggerEl.focus(); _previewTriggerEl = null; }
+	}
+
+	function updatePreviewDims(img) {
+		var el = document.getElementById('preview-dims');
+		if (el) {
+			el.textContent = img.naturalWidth > 0 ? img.naturalWidth + 'x' + img.naturalHeight : '';
+		}
+	}
+
+	function applyFromPreview() {
+		var vid = _previewViolationID, url = _previewURL, type = _previewImageType;
+		closeCandidatePreview();
+		applyCandidate(vid, url, type);
+	}
+
+	// Close on Escape key (guard against multiple registrations on HTMX swaps)
+	if (!window.__candidateEscapeListenerRegistered) {
+		document.addEventListener('keydown', function(e) {
+			if (e.key === 'Escape') closeCandidatePreview();
+		});
+		window.__candidateEscapeListenerRegistered = true;
+	}
+
+	// ---- Bulk selection ----
 	function toggleSelectAll(cb) {
 		document.querySelectorAll('.violation-checkbox').forEach(function(c) {
 			c.checked = cb.checked;
@@ -264,10 +451,7 @@ templ candidateScript() {
 			credentials: 'same-origin'
 		}).then(function(r) {
 			if (r.ok) {
-				var container = document.getElementById('notifications-table');
-				if (container) {
-					htmx.ajax('GET', '/notifications/table', {target: '#notifications-table', swap: 'innerHTML'});
-				}
+				htmx.ajax('GET', '/notifications/table', {target: '#notifications-table', swap: 'innerHTML'});
 			} else if (typeof showToast === 'function') {
 				showToast('Failed to dismiss violations.');
 			}
@@ -303,11 +487,4 @@ func formatAge(t time.Time) string {
 		return fmt.Sprintf("%dh", int(ago.Hours()))
 	}
 	return fmt.Sprintf("%dd", int(ago.Hours()/24))
-}
-
-func candidateDims(c rule.ImageCandidate) string {
-	if c.Width > 0 && c.Height > 0 {
-		return fmt.Sprintf("%dx%d", c.Width, c.Height)
-	}
-	return "unknown"
 }

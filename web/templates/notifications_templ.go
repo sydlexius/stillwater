@@ -52,7 +52,7 @@ func NotificationsPage(assets AssetPaths, data NotificationsData) templ.Componen
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"space-y-6\"><div class=\"pb-2\"><h1 class=\"text-2xl font-bold\">Rule Violation Notifications</h1><p class=\"text-gray-500 dark:text-gray-400\">Review and manage unresolved rule violations</p></div><div id=\"notifications-table\" hx-get=\"/notifications/table\" hx-trigger=\"load\" hx-swap=\"innerHTML\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"space-y-6\"><div class=\"sw-card rounded-lg px-6 py-4\"><h1 class=\"text-2xl font-bold\">Rule Violation Notifications</h1><p class=\"mt-1 text-sm text-gray-500 dark:text-gray-400\">Review and manage unresolved rule violations</p></div><div id=\"notifications-table\" hx-get=\"/notifications/table\" hx-trigger=\"load\" hx-swap=\"innerHTML\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -61,6 +61,14 @@ func NotificationsPage(assets AssetPaths, data NotificationsData) templ.Componen
 				return templ_7745c5c3_Err
 			}
 			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "</div></div>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = candidatePreviewModal().Render(ctx, templ_7745c5c3_Buffer)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, " ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -100,7 +108,7 @@ func NotificationsTable(data NotificationsData) templ.Component {
 		}
 		ctx = templ.ClearChildren(ctx)
 		if len(data.Violations) == 0 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<div class=\"sw-card rounded-lg border border-gray-200 dark:border-gray-700 bg-blue-50 dark:bg-blue-950 p-6\"><p class=\"text-gray-600 dark:text-gray-300\">No violations. Your library is clean!</p></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<div class=\"sw-card rounded-lg border border-gray-200 dark:border-gray-700 bg-blue-50 dark:bg-blue-950 p-6\"><p class=\"text-gray-600 dark:text-gray-300\">No violations. Your library is clean!</p></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -135,64 +143,64 @@ func notificationsTableContent(data NotificationsData) templ.Component {
 			templ_7745c5c3_Var4 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<!-- Toolbar --><div class=\"mb-3 flex items-center gap-3\"><button type=\"button\" id=\"bulk-dismiss-btn\" onclick=\"bulkDismissSelected()\" class=\"hidden rounded border border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/30 px-3 py-1.5 text-xs font-semibold text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/50 transition-colors\">Dismiss selected</button> <button type=\"button\" onclick=\"bulkDismissAll()\" class=\"rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-1.5 text-xs font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors\">Dismiss all</button></div><!-- Table --><div class=\"sw-card rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden\"><table class=\"min-w-full divide-y divide-gray-200 dark:divide-gray-700\"><thead class=\"bg-gray-50 dark:bg-gray-800\"><tr><th class=\"px-4 py-3 text-left\"><input type=\"checkbox\" id=\"select-all-violations\" onchange=\"toggleSelectAll(this)\" class=\"rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500\"></th><th class=\"px-4 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider\">Artist</th><th class=\"px-4 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider\">Rule</th><th class=\"px-4 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider\">Severity</th><th class=\"px-4 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider\">Message</th><th class=\"px-4 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider\">Age</th><th class=\"px-4 py-3 text-right text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider\">Actions</th></tr></thead> ")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<!-- Toolbar --><div class=\"mb-3 flex items-center gap-3\"><button type=\"button\" id=\"bulk-dismiss-btn\" onclick=\"bulkDismissSelected()\" class=\"hidden rounded border border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/30 px-3 py-1.5 text-xs font-semibold text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/50 transition-colors\">Dismiss selected</button> <button type=\"button\" onclick=\"bulkDismissAll()\" class=\"rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-1.5 text-xs font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors\">Dismiss all</button></div><!-- Table --><div class=\"sw-card rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden\"><table class=\"min-w-full divide-y divide-gray-200 dark:divide-gray-700\"><thead class=\"bg-gray-50 dark:bg-gray-800\"><tr><th class=\"px-4 py-3 text-left\"><input type=\"checkbox\" id=\"select-all-violations\" onchange=\"toggleSelectAll(this)\" class=\"rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500\"></th><th class=\"px-4 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider\">Artist</th><th class=\"px-4 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider\">Rule</th><th class=\"px-4 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider\">Severity</th><th class=\"px-4 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider\">Message</th><th class=\"px-4 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider\">Age</th><th class=\"px-4 py-3 text-right text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider\">Actions</th></tr></thead> ")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		for _, v := range data.Violations {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<tbody id=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<tbody id=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var5 string
 			templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs("notif-" + v.ID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 86, Col: 31}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 87, Col: 31}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "\" class=\"bg-white dark:bg-gray-900 divide-y divide-gray-100 dark:divide-gray-800\"><tr class=\"hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors\"><td class=\"px-4 py-4\"><input type=\"checkbox\" class=\"violation-checkbox rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500\" data-violation-id=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "\" class=\"bg-white dark:bg-gray-900 divide-y divide-gray-100 dark:divide-gray-800\"><tr class=\"hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors\"><td class=\"px-4 py-4\"><input type=\"checkbox\" class=\"violation-checkbox rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500\" data-violation-id=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var6 string
 			templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(v.ID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 92, Col: 32}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 93, Col: 32}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "\" onchange=\"updateBulkButton()\"></td><td class=\"px-4 py-4 text-sm font-medium text-gray-900 dark:text-gray-100\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "\" onchange=\"updateBulkButton()\"></td><td class=\"px-4 py-4 text-sm font-medium text-gray-900 dark:text-gray-100\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var7 string
 			templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(v.ArtistName)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 96, Col: 95}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 97, Col: 95}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</td><td class=\"px-4 py-4 text-sm text-gray-600 dark:text-gray-400\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</td><td class=\"px-4 py-4 text-sm text-gray-600 dark:text-gray-400\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var8 string
 			templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(v.RuleID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 97, Col: 79}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 98, Col: 79}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</td><td class=\"px-4 py-4 text-sm\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "</td><td class=\"px-4 py-4 text-sm\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -201,7 +209,7 @@ func notificationsTableContent(data NotificationsData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<span class=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "<span class=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -214,244 +222,347 @@ func notificationsTableContent(data NotificationsData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var11 string
 			templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(v.Severity)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 100, Col: 20}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 101, Col: 20}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "</span></td><td class=\"px-4 py-4 text-sm text-gray-600 dark:text-gray-300\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "</span></td><td class=\"px-4 py-4 text-sm text-gray-600 dark:text-gray-300\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var12 string
 			templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(v.Message)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 103, Col: 80}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 104, Col: 80}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "</td><td class=\"px-4 py-4 text-sm text-gray-500 dark:text-gray-400\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "</td><td class=\"px-4 py-4 text-sm text-gray-500 dark:text-gray-400\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var13 string
 			templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(formatAge(v.CreatedAt))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 105, Col: 31}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 106, Col: 31}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "</td><td class=\"px-4 py-4 text-right text-sm\"><div class=\"flex items-center justify-end gap-3\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "</td><td class=\"px-4 py-4 text-right text-sm\"><div class=\"flex items-center justify-end gap-3\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if v.Status == rule.ViolationStatusPendingChoice && len(v.Candidates) > 0 {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "<button type=\"button\" data-candidates-id=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "<button type=\"button\" data-candidates-id=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var14 string
 				templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs("candidates-" + v.ID)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 112, Col: 51}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 113, Col: 51}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "\" onclick=\"toggleCandidates(this.dataset.candidatesId)\" class=\"font-semibold text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300\">Select image</button> ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "\" onclick=\"toggleCandidates(this.dataset.candidatesId)\" class=\"font-semibold text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300\">Select image</button> ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "<button hx-post=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "<button hx-post=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var15 string
 			templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs("/api/v1/notifications/" + v.ID + "/dismiss")
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 120, Col: 63}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 121, Col: 63}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "\" hx-confirm=\"Dismiss this violation?\" hx-target=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "\" hx-confirm=\"Dismiss this violation?\" hx-target=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var16 string
 			templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs("#notif-" + v.ID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 122, Col: 37}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 123, Col: 37}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "\" hx-swap=\"outerHTML swap:300ms\" class=\"font-semibold text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300\">Dismiss</button></div></td></tr>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "\" hx-swap=\"outerHTML swap:300ms\" class=\"font-semibold text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300\">Dismiss</button></div></td></tr>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if v.Status == rule.ViolationStatusPendingChoice && len(v.Candidates) > 0 {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "<tr id=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "<tr id=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var17 string
 				templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs("candidates-" + v.ID)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 132, Col: 35}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 133, Col: 35}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "\" class=\"hidden bg-gray-50 dark:bg-gray-800/50\"><td colspan=\"7\" class=\"px-6 py-4\"><div class=\"mb-3 flex items-center justify-between\"><p class=\"text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wide\">Select a replacement image</p><p class=\"text-xs text-gray-400 dark:text-gray-500\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "\" class=\"hidden bg-gray-50 dark:bg-gray-800/50\"><td colspan=\"7\" class=\"px-6 py-4\"><div class=\"mb-3 flex items-center justify-between\"><p class=\"text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wide\">Select a replacement image</p><p class=\"text-xs text-gray-400 dark:text-gray-500\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var18 string
-				templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d candidate(s) available", len(v.Candidates)))
+				templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d candidate(s) -- click image to preview, then apply", len(v.Candidates)))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 139, Col: 71}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 140, Col: 99}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "</p></div><div class=\"grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "</p></div><div class=\"grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				for _, c := range v.Candidates {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "<button type=\"button\" data-violation-id=\"")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "<div class=\"candidate-card flex flex-col rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden bg-white dark:bg-gray-900\"><!-- Image with magnifying glass overlay --><div class=\"relative bg-gray-100 dark:bg-gray-800\" style=\"height:120px\"><img src=\"")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var19 string
-					templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(v.ID)
+					templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(c.URL)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 146, Col: 35}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 149, Col: 24}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "\" data-url=\"")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "\" alt=\"")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var20 string
-					templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(c.URL)
+					templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(providerDisplayName(c.Source))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 147, Col: 27}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 150, Col: 48}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "\" data-image-type=\"")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "\" class=\"candidate-img w-full h-full object-contain\" onload=\"updateCandidateCardDims(this)\"><!-- Preview button: magnifying glass on hover --><button type=\"button\" data-violation-id=\"")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var21 string
-					templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.JoinStringErrs(c.ImageType)
+					templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.JoinStringErrs(v.ID)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 148, Col: 40}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 157, Col: 37}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var21))
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "\" onclick=\"applyCandidate(this.dataset.violationId, this.dataset.url, this.dataset.imageType)\" class=\"group rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden cursor-pointer hover:ring-2 hover:ring-blue-500 dark:hover:ring-blue-400 text-left w-full bg-white dark:bg-gray-900 transition-all\"><div class=\"relative\"><img src=\"")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "\" data-url=\"")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var22 string
 					templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinStringErrs(c.URL)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 154, Col: 24}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 158, Col: 29}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "\" alt=\"")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "\" data-image-type=\"")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var23 string
-					templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%s (%s)", c.Source, candidateDims(c)))
+					templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(c.ImageType)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 155, Col: 69}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 159, Col: 42}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "\" class=\"w-full h-28 object-cover\" loading=\"lazy\"></div><div class=\"px-2 py-2 space-y-0.5\"><p class=\"text-xs font-medium text-gray-700 dark:text-gray-300 truncate\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "\" data-source=\"")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var24 string
 					templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinStringErrs(c.Source)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 161, Col: 95}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 160, Col: 35}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "</p><p class=\"text-xs text-gray-500 dark:text-gray-400\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "\" onclick=\"openCandidatePreview(this.dataset.violationId, this.dataset.url, this.dataset.imageType, this.dataset.source)\" class=\"group absolute inset-0 flex items-center justify-center bg-black/0 hover:bg-black/40 transition-colors\" title=\"Preview full size\" aria-label=\"Preview full size\"><span class=\"opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity bg-white/90 dark:bg-gray-900/90 rounded-full p-2 pointer-events-none\"><!-- Magnifying glass icon --><svg xmlns=\"http://www.w3.org/2000/svg\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1.5\" stroke=\"currentColor\" class=\"h-5 w-5 text-gray-700 dark:text-gray-200\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 15.803a7.5 7.5 0 0 0 10.607 0Z\"></path></svg></span></button></div><!-- Dimensions centered below image --><div class=\"py-1 text-center\"><span class=\"candidate-dims text-xs text-gray-400 dark:text-gray-500 font-mono\">&nbsp;</span></div><!-- Footer: provider logo (tooltip only) + Apply button --><div class=\"px-2 pb-2 flex items-center justify-between gap-2\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					if c.Width > 0 && c.Height > 0 {
-						var templ_7745c5c3_Var25 string
-						templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%dx%d", c.Width, c.Height))
+					if logoSrc(c.Source) != "" {
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "<img src=\"")
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 164, Col: 55}
+							return templ_7745c5c3_Err
+						}
+						var templ_7745c5c3_Var25 string
+						templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.JoinStringErrs(logoSrc(c.Source))
+						if templ_7745c5c3_Err != nil {
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 182, Col: 37}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var25))
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "\" alt=\"")
+						if templ_7745c5c3_Err != nil {
+							return templ_7745c5c3_Err
+						}
+						var templ_7745c5c3_Var26 string
+						templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.JoinStringErrs(providerDisplayName(c.Source))
+						if templ_7745c5c3_Err != nil {
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 183, Col: 49}
+						}
+						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var26))
+						if templ_7745c5c3_Err != nil {
+							return templ_7745c5c3_Err
+						}
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "\" title=\"")
+						if templ_7745c5c3_Err != nil {
+							return templ_7745c5c3_Err
+						}
+						var templ_7745c5c3_Var27 string
+						templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.JoinStringErrs(providerDisplayName(c.Source))
+						if templ_7745c5c3_Err != nil {
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 184, Col: 51}
+						}
+						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var27))
+						if templ_7745c5c3_Err != nil {
+							return templ_7745c5c3_Err
+						}
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "\" class=\"h-5 w-5 object-contain shrink-0\"> ")
+						if templ_7745c5c3_Err != nil {
+							return templ_7745c5c3_Err
+						}
 					} else {
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "Unknown dimensions")
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "<span></span> ")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "</p></div></button>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "<button type=\"button\" data-violation-id=\"")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var28 string
+					templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.JoinStringErrs(v.ID)
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 192, Col: 37}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var28))
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 37, "\" data-url=\"")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var29 string
+					templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.JoinStringErrs(c.URL)
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 193, Col: 29}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var29))
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "\" data-image-type=\"")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var30 string
+					templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.JoinStringErrs(c.ImageType)
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 194, Col: 42}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var30))
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 39, "\" onclick=\"applyCandidate(this.dataset.violationId, this.dataset.url, this.dataset.imageType)\" class=\"rounded bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-600 text-white text-xs font-semibold px-3 py-1.5 transition-colors\">Apply</button></div></div>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "</div></td></tr>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 40, "</div></td></tr>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "</tbody>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "</tbody>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "</table></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 42, "</table></div>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		return nil
+	})
+}
+
+// candidatePreviewModal renders the hidden fullscreen preview modal for image candidates.
+func candidatePreviewModal() templ.Component {
+	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
+			return templ_7745c5c3_CtxErr
+		}
+		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+		if !templ_7745c5c3_IsBuffer {
+			defer func() {
+				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err == nil {
+					templ_7745c5c3_Err = templ_7745c5c3_BufErr
+				}
+			}()
+		}
+		ctx = templ.InitializeContext(ctx)
+		templ_7745c5c3_Var31 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var31 == nil {
+			templ_7745c5c3_Var31 = templ.NopComponent
+		}
+		ctx = templ.ClearChildren(ctx)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 43, "<div id=\"candidate-preview-modal\" class=\"hidden fixed inset-0 z-50 flex items-center justify-center p-4\" role=\"dialog\" aria-modal=\"true\"><!-- Backdrop --><div class=\"absolute inset-0 bg-black/60 backdrop-blur-sm\" onclick=\"closeCandidatePreview()\"></div><!-- Panel --><div class=\"relative z-10 w-full max-w-4xl bg-white dark:bg-gray-900 rounded-xl shadow-2xl overflow-hidden flex flex-col\" style=\"max-height:90vh\"><!-- Header --><div class=\"flex items-center justify-between px-5 py-3 border-b border-gray-200 dark:border-gray-700 shrink-0\"><div class=\"flex items-center gap-3\"><img id=\"preview-provider-logo\" src=\"\" alt=\"\" class=\"h-5 w-5 object-contain hidden\"> <span id=\"preview-provider-name\" class=\"text-sm font-semibold text-gray-700 dark:text-gray-200\"></span> <span id=\"preview-dims\" class=\"text-xs text-gray-400 dark:text-gray-500 font-mono\"></span></div><button onclick=\"closeCandidatePreview()\" class=\"rounded-full p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors\" aria-label=\"Close preview\"><!-- X icon --><svg xmlns=\"http://www.w3.org/2000/svg\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1.5\" stroke=\"currentColor\" class=\"h-5 w-5\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M6 18 18 6M6 6l12 12\"></path></svg></button></div><!-- Image --><div class=\"flex-1 overflow-auto bg-gray-100 dark:bg-gray-800 flex items-center justify-center p-4\"><img id=\"preview-image\" src=\"\" alt=\"Preview\" class=\"max-w-full max-h-full object-contain\" onload=\"updatePreviewDims(this)\"></div><!-- Footer --><div class=\"px-5 py-3 border-t border-gray-200 dark:border-gray-700 flex items-center justify-end gap-3 shrink-0\"><button onclick=\"closeCandidatePreview()\" class=\"rounded border border-gray-300 dark:border-gray-600 px-4 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors\">Cancel</button> <button id=\"preview-apply-btn\" onclick=\"applyFromPreview()\" class=\"rounded bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-600 px-4 py-1.5 text-sm font-semibold text-white transition-colors\">Apply this image</button></div></div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -475,12 +586,12 @@ func candidateScript() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var26 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var26 == nil {
-			templ_7745c5c3_Var26 = templ.NopComponent
+		templ_7745c5c3_Var32 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var32 == nil {
+			templ_7745c5c3_Var32 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "<script>\n\tfunction toggleCandidates(id) {\n\t\tvar row = document.getElementById(id);\n\t\tif (row) row.classList.toggle('hidden');\n\t}\n\n\tfunction applyCandidate(violationID, url, imageType) {\n\t\tvar csrfToken = document.cookie.replace(\n\t\t\t/(?:(?:^|.*;\\s*)csrf_token\\s*=\\s*([^;]*).*$)|^.*$/, '$1'\n\t\t);\n\t\tfetch('/api/v1/notifications/' + violationID + '/apply-candidate', {\n\t\t\tmethod: 'POST',\n\t\t\theaders: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},\n\t\t\tbody: JSON.stringify({url: url, image_type: imageType}),\n\t\t\tcredentials: 'same-origin'\n\t\t}).then(function(r) {\n\t\t\tif (r.ok) {\n\t\t\t\tvar tbody = document.getElementById('notif-' + violationID);\n\t\t\t\tif (tbody) tbody.remove();\n\t\t\t\tupdateBulkButton();\n\t\t\t} else if (typeof showToast === 'function') {\n\t\t\t\tshowToast('Failed to apply image.');\n\t\t\t}\n\t\t}).catch(function() {\n\t\t\tif (typeof showToast === 'function') showToast('Network error applying image.');\n\t\t});\n\t}\n\n\tfunction toggleSelectAll(cb) {\n\t\tdocument.querySelectorAll('.violation-checkbox').forEach(function(c) {\n\t\t\tc.checked = cb.checked;\n\t\t});\n\t\tupdateBulkButton();\n\t}\n\n\tfunction updateBulkButton() {\n\t\tvar checked = document.querySelectorAll('.violation-checkbox:checked');\n\t\tvar btn = document.getElementById('bulk-dismiss-btn');\n\t\tif (!btn) return;\n\t\tif (checked.length > 0) {\n\t\t\tbtn.textContent = 'Dismiss ' + checked.length + ' selected';\n\t\t\tbtn.classList.remove('hidden');\n\t\t} else {\n\t\t\tbtn.classList.add('hidden');\n\t\t}\n\t}\n\n\tfunction bulkDismissAll() {\n\t\tif (!confirm('Dismiss all active violations?')) return;\n\t\tvar csrfToken = document.cookie.replace(\n\t\t\t/(?:(?:^|.*;\\s*)csrf_token\\s*=\\s*([^;]*).*$)|^.*$/, '$1'\n\t\t);\n\t\tfetch('/api/v1/notifications/bulk-dismiss', {\n\t\t\tmethod: 'POST',\n\t\t\theaders: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},\n\t\t\tbody: '{}',\n\t\t\tcredentials: 'same-origin'\n\t\t}).then(function(r) {\n\t\t\tif (r.ok) {\n\t\t\t\thtmx.ajax('GET', '/notifications/table', {target: '#notifications-table', swap: 'innerHTML'});\n\t\t\t} else if (typeof showToast === 'function') {\n\t\t\t\tshowToast('Failed to dismiss violations.');\n\t\t\t}\n\t\t}).catch(function() {\n\t\t\tif (typeof showToast === 'function') showToast('Network error dismissing violations.');\n\t\t});\n\t}\n\n\tfunction bulkDismissSelected() {\n\t\tvar ids = [];\n\t\tdocument.querySelectorAll('.violation-checkbox:checked').forEach(function(c) {\n\t\t\tids.push(c.dataset.violationId);\n\t\t});\n\t\tif (ids.length === 0) return;\n\t\tvar csrfToken = document.cookie.replace(\n\t\t\t/(?:(?:^|.*;\\s*)csrf_token\\s*=\\s*([^;]*).*$)|^.*$/, '$1'\n\t\t);\n\t\tfetch('/api/v1/notifications/bulk-dismiss', {\n\t\t\tmethod: 'POST',\n\t\t\theaders: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},\n\t\t\tbody: JSON.stringify({ids: ids}),\n\t\t\tcredentials: 'same-origin'\n\t\t}).then(function(r) {\n\t\t\tif (r.ok) {\n\t\t\t\tvar container = document.getElementById('notifications-table');\n\t\t\t\tif (container) {\n\t\t\t\t\thtmx.ajax('GET', '/notifications/table', {target: '#notifications-table', swap: 'innerHTML'});\n\t\t\t\t}\n\t\t\t} else if (typeof showToast === 'function') {\n\t\t\t\tshowToast('Failed to dismiss violations.');\n\t\t\t}\n\t\t}).catch(function() {\n\t\t\tif (typeof showToast === 'function') showToast('Network error dismissing violations.');\n\t\t});\n\t}\n\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 44, "<script>\n\t// ---- Violation row toggle ----\n\tfunction toggleCandidates(id) {\n\t\tvar row = document.getElementById(id);\n\t\tif (row) row.classList.toggle('hidden');\n\t}\n\n\t// ---- Apply candidate (shared by card button and modal) ----\n\tfunction applyCandidate(violationID, url, imageType) {\n\t\tvar csrfToken = document.cookie.replace(\n\t\t\t/(?:(?:^|.*;\\s*)csrf_token\\s*=\\s*([^;]*).*$)|^.*$/, '$1'\n\t\t);\n\t\tfetch('/api/v1/notifications/' + violationID + '/apply-candidate', {\n\t\t\tmethod: 'POST',\n\t\t\theaders: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},\n\t\t\tbody: JSON.stringify({url: url, image_type: imageType}),\n\t\t\tcredentials: 'same-origin'\n\t\t}).then(function(r) {\n\t\t\tif (r.ok) {\n\t\t\t\tvar tbody = document.getElementById('notif-' + violationID);\n\t\t\t\tif (tbody) tbody.remove();\n\t\t\t\tupdateBulkButton();\n\t\t\t} else if (typeof showToast === 'function') {\n\t\t\t\tshowToast('Failed to apply image.');\n\t\t\t}\n\t\t}).catch(function() {\n\t\t\tif (typeof showToast === 'function') showToast('Network error applying image.');\n\t\t});\n\t}\n\n\t// ---- Card dimension update (fires on img load) ----\n\tfunction updateCandidateCardDims(img) {\n\t\tif (img.naturalWidth > 0) {\n\t\t\tvar card = img.closest('.candidate-card');\n\t\t\tif (card) {\n\t\t\t\tvar el = card.querySelector('.candidate-dims');\n\t\t\t\tif (el) el.textContent = img.naturalWidth + 'x' + img.naturalHeight;\n\t\t\t}\n\t\t}\n\t}\n\n\t// ---- Candidate preview modal ----\n\tvar _previewViolationID, _previewURL, _previewImageType;\n\tvar _previewTriggerEl = null;\n\n\tfunction _providerDisplayName(source) {\n\t\tvar names = {\n\t\t\t'fanarttv':    'Fanart.tv',\n\t\t\t'audiodb':     'TheAudioDB',\n\t\t\t'discogs':     'Discogs',\n\t\t\t'musicbrainz': 'MusicBrainz',\n\t\t\t'lastfm':      'Last.fm',\n\t\t\t'deezer':      'Deezer',\n\t\t\t'duckduckgo':  'DuckDuckGo'\n\t\t};\n\t\treturn names[source] || source;\n\t}\n\n\tfunction _providerLogoURL(source) {\n\t\tvar logos = {\n\t\t\t'fanarttv':    '/static/img/logos/fanarttv.svg',\n\t\t\t'audiodb':     '/static/img/logos/audiodb-32.png',\n\t\t\t'discogs':     '/static/img/logos/discogs.svg',\n\t\t\t'musicbrainz': '/static/img/logos/musicbrainz.svg',\n\t\t\t'lastfm':      '/static/img/logos/lastfm.svg',\n\t\t\t'deezer':      '/static/img/logos/deezer.svg'\n\t\t};\n\t\treturn logos[source] || '';\n\t}\n\n\tfunction openCandidatePreview(violationID, url, imageType, source) {\n\t\t_previewViolationID = violationID;\n\t\t_previewURL = url;\n\t\t_previewImageType = imageType;\n\n\t\tvar img = document.getElementById('preview-image');\n\t\timg.src = '';\n\t\tdocument.getElementById('preview-dims').textContent = 'Loading...';\n\t\tdocument.getElementById('preview-provider-name').textContent = _providerDisplayName(source);\n\n\t\tvar logo = document.getElementById('preview-provider-logo');\n\t\tvar logoURL = _providerLogoURL(source);\n\t\tif (logoURL) {\n\t\t\tlogo.src = logoURL;\n\t\t\tlogo.alt = _providerDisplayName(source);\n\t\t\tlogo.title = _providerDisplayName(source);\n\t\t\tlogo.classList.remove('hidden');\n\t\t} else {\n\t\t\tlogo.classList.add('hidden');\n\t\t}\n\n\t\timg.src = url;\n\t\t_previewTriggerEl = document.activeElement;\n\t\tdocument.getElementById('candidate-preview-modal').classList.remove('hidden');\n\t\tdocument.body.style.overflow = 'hidden';\n\t\tvar closeBtn = document.querySelector('#candidate-preview-modal button[aria-label=\"Close preview\"]');\n\t\tif (closeBtn) closeBtn.focus();\n\t}\n\n\tfunction closeCandidatePreview() {\n\t\tdocument.getElementById('candidate-preview-modal').classList.add('hidden');\n\t\tdocument.body.style.overflow = '';\n\t\t// Clear src to stop any in-progress load\n\t\tdocument.getElementById('preview-image').src = '';\n\t\tif (_previewTriggerEl) { _previewTriggerEl.focus(); _previewTriggerEl = null; }\n\t}\n\n\tfunction updatePreviewDims(img) {\n\t\tvar el = document.getElementById('preview-dims');\n\t\tif (el) {\n\t\t\tel.textContent = img.naturalWidth > 0 ? img.naturalWidth + 'x' + img.naturalHeight : '';\n\t\t}\n\t}\n\n\tfunction applyFromPreview() {\n\t\tvar vid = _previewViolationID, url = _previewURL, type = _previewImageType;\n\t\tcloseCandidatePreview();\n\t\tapplyCandidate(vid, url, type);\n\t}\n\n\t// Close on Escape key (guard against multiple registrations on HTMX swaps)\n\tif (!window.__candidateEscapeListenerRegistered) {\n\t\tdocument.addEventListener('keydown', function(e) {\n\t\t\tif (e.key === 'Escape') closeCandidatePreview();\n\t\t});\n\t\twindow.__candidateEscapeListenerRegistered = true;\n\t}\n\n\t// ---- Bulk selection ----\n\tfunction toggleSelectAll(cb) {\n\t\tdocument.querySelectorAll('.violation-checkbox').forEach(function(c) {\n\t\t\tc.checked = cb.checked;\n\t\t});\n\t\tupdateBulkButton();\n\t}\n\n\tfunction updateBulkButton() {\n\t\tvar checked = document.querySelectorAll('.violation-checkbox:checked');\n\t\tvar btn = document.getElementById('bulk-dismiss-btn');\n\t\tif (!btn) return;\n\t\tif (checked.length > 0) {\n\t\t\tbtn.textContent = 'Dismiss ' + checked.length + ' selected';\n\t\t\tbtn.classList.remove('hidden');\n\t\t} else {\n\t\t\tbtn.classList.add('hidden');\n\t\t}\n\t}\n\n\tfunction bulkDismissAll() {\n\t\tif (!confirm('Dismiss all active violations?')) return;\n\t\tvar csrfToken = document.cookie.replace(\n\t\t\t/(?:(?:^|.*;\\s*)csrf_token\\s*=\\s*([^;]*).*$)|^.*$/, '$1'\n\t\t);\n\t\tfetch('/api/v1/notifications/bulk-dismiss', {\n\t\t\tmethod: 'POST',\n\t\t\theaders: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},\n\t\t\tbody: '{}',\n\t\t\tcredentials: 'same-origin'\n\t\t}).then(function(r) {\n\t\t\tif (r.ok) {\n\t\t\t\thtmx.ajax('GET', '/notifications/table', {target: '#notifications-table', swap: 'innerHTML'});\n\t\t\t} else if (typeof showToast === 'function') {\n\t\t\t\tshowToast('Failed to dismiss violations.');\n\t\t\t}\n\t\t}).catch(function() {\n\t\t\tif (typeof showToast === 'function') showToast('Network error dismissing violations.');\n\t\t});\n\t}\n\n\tfunction bulkDismissSelected() {\n\t\tvar ids = [];\n\t\tdocument.querySelectorAll('.violation-checkbox:checked').forEach(function(c) {\n\t\t\tids.push(c.dataset.violationId);\n\t\t});\n\t\tif (ids.length === 0) return;\n\t\tvar csrfToken = document.cookie.replace(\n\t\t\t/(?:(?:^|.*;\\s*)csrf_token\\s*=\\s*([^;]*).*$)|^.*$/, '$1'\n\t\t);\n\t\tfetch('/api/v1/notifications/bulk-dismiss', {\n\t\t\tmethod: 'POST',\n\t\t\theaders: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},\n\t\t\tbody: JSON.stringify({ids: ids}),\n\t\t\tcredentials: 'same-origin'\n\t\t}).then(function(r) {\n\t\t\tif (r.ok) {\n\t\t\t\thtmx.ajax('GET', '/notifications/table', {target: '#notifications-table', swap: 'innerHTML'});\n\t\t\t} else if (typeof showToast === 'function') {\n\t\t\t\tshowToast('Failed to dismiss violations.');\n\t\t\t}\n\t\t}).catch(function() {\n\t\t\tif (typeof showToast === 'function') showToast('Network error dismissing violations.');\n\t\t});\n\t}\n\t</script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -513,13 +624,6 @@ func formatAge(t time.Time) string {
 		return fmt.Sprintf("%dh", int(ago.Hours()))
 	}
 	return fmt.Sprintf("%dd", int(ago.Hours()/24))
-}
-
-func candidateDims(c rule.ImageCandidate) string {
-	if c.Width > 0 && c.Height > 0 {
-		return fmt.Sprintf("%dx%d", c.Width, c.Height)
-	}
-	return "unknown"
 }
 
 var _ = templruntime.GeneratedTemplate

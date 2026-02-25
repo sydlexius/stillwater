@@ -65,7 +65,7 @@ func CompliancePage(assets AssetPaths, data ComplianceData) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"space-y-6\"><div class=\"border-b border-gray-200 dark:border-gray-700 pb-4\"><h1 class=\"text-2xl font-bold\">Compliance Report</h1><p class=\"mt-1 text-sm text-gray-500 dark:text-gray-400\">Per-artist rule compliance with actionable details.</p></div><div class=\"flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between\"><div class=\"relative flex-1 max-w-sm\"><input type=\"search\" name=\"search\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"space-y-6\"><div class=\"sw-card rounded-lg px-6 py-4\"><h1 class=\"text-2xl font-bold\">Compliance Report</h1><p class=\"mt-1 text-sm text-gray-500 dark:text-gray-400\">Per-artist rule compliance with actionable details.</p></div><div class=\"flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between\"><div class=\"relative flex-1 max-w-sm\"><input type=\"search\" name=\"search\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
