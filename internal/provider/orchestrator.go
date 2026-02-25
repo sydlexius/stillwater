@@ -16,10 +16,11 @@ type FieldSource struct {
 
 // FetchResult holds the merged result of querying multiple providers.
 type FetchResult struct {
-	Metadata *ArtistMetadata `json:"metadata"`
-	Images   []ImageResult   `json:"images"`
-	Sources  []FieldSource   `json:"sources"`
-	Errors   []string        `json:"errors"`
+	Metadata           *ArtistMetadata `json:"metadata"`
+	Images             []ImageResult   `json:"images"`
+	Sources            []FieldSource   `json:"sources"`
+	Errors             []string        `json:"errors"`
+	AttemptedProviders []ProviderName  `json:"attempted_providers,omitempty"`
 }
 
 // ScraperExecutor is implemented by the scraper.Executor to avoid circular imports.
@@ -90,6 +91,12 @@ func (o *Orchestrator) FetchMetadata(ctx context.Context, mbid string, name stri
 	// Backfill provider IDs from MusicBrainz URL relations when not already set.
 	// MusicBrainz returns discogs and wikidata URLs; extract the numeric/Q IDs.
 	extractProviderIDsFromURLs(result.Metadata)
+
+	// Record which providers were actually queried so callers can update
+	// per-provider fetch timestamps on the artist record.
+	for provName := range cache {
+		result.AttemptedProviders = append(result.AttemptedProviders, provName)
+	}
 
 	return result, nil
 }

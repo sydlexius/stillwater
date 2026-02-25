@@ -162,6 +162,16 @@ func (r *Router) executeRefresh(req *http.Request, a *artist.Artist) ([]provider
 		return nil, err
 	}
 
+	// Update per-provider fetch timestamps so the UI can show "Not found" vs "Not set".
+	for _, prov := range result.AttemptedProviders {
+		if err := r.artistService.UpdateProviderFetchedAt(req.Context(), a.ID, string(prov)); err != nil {
+			r.logger.Warn("updating provider fetched_at",
+				"artist_id", a.ID,
+				"provider", prov,
+				"error", err)
+		}
+	}
+
 	// Update members if provided
 	if result.Metadata != nil && len(result.Metadata.Members) > 0 {
 		members := convertProviderMembers(a.ID, result.Metadata.Members)

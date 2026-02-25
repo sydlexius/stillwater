@@ -230,6 +230,16 @@ func (e *BulkExecutor) fetchMetadata(ctx context.Context, a *artist.Artist, mode
 		return BulkItemFailed, fmt.Sprintf("update failed: %v", err)
 	}
 
+	// Update per-provider fetch timestamps so the UI can show "Not found" vs "Not set".
+	for _, prov := range result.AttemptedProviders {
+		if err := e.artistService.UpdateProviderFetchedAt(ctx, a.ID, string(prov)); err != nil {
+			e.logger.Warn("updating provider fetched_at",
+				"artist_id", a.ID,
+				"provider", prov,
+				"error", err)
+		}
+	}
+
 	if a.NFOExists {
 		writeArtistNFO(a, e.snapshotService)
 	}
