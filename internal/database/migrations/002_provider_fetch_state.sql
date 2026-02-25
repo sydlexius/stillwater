@@ -7,11 +7,11 @@
 ALTER TABLE artists ADD COLUMN audiodb_id_fetched_at TEXT;
 ALTER TABLE artists ADD COLUMN discogs_id_fetched_at TEXT;
 ALTER TABLE artists ADD COLUMN wikidata_id_fetched_at TEXT;
-ALTER TABLE artists ADD COLUMN lastfm_fetched_at TEXT;
+ALTER TABLE artists ADD COLUMN lastfm_id_fetched_at TEXT;
 
 -- +goose Down
 
-ALTER TABLE artists DROP COLUMN lastfm_fetched_at;
+ALTER TABLE artists DROP COLUMN lastfm_id_fetched_at;
 ALTER TABLE artists DROP COLUMN wikidata_id_fetched_at;
 ALTER TABLE artists DROP COLUMN discogs_id_fetched_at;
 ALTER TABLE artists DROP COLUMN audiodb_id_fetched_at;
