@@ -312,7 +312,7 @@ func scanArtistWithExtra(row interface{ Scan(...any) error }, n int) (*artistWit
 	}
 	if lastfmFetchedAt.Valid {
 		t := parseTime(lastfmFetchedAt.String)
-		a.LastFMIDFetchedAt = &t
+		a.LastFMFetchedAt = &t
 	}
 	if lastScannedAt.Valid {
 		t := parseTime(lastScannedAt.String)

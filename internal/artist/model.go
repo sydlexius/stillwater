@@ -43,7 +43,7 @@ type Artist struct {
 	AudioDBIDFetchedAt  *time.Time        `json:"audiodb_id_fetched_at,omitempty"`
 	DiscogsIDFetchedAt  *time.Time        `json:"discogs_id_fetched_at,omitempty"`
 	WikidataIDFetchedAt *time.Time        `json:"wikidata_id_fetched_at,omitempty"`
-	LastFMIDFetchedAt   *time.Time        `json:"lastfm_id_fetched_at,omitempty"`
+	LastFMFetchedAt     *time.Time        `json:"lastfm_fetched_at,omitempty"`
 	MetadataSources     map[string]string `json:"metadata_sources,omitempty"`
 	LastScannedAt       *time.Time        `json:"last_scanned_at,omitempty"`
 	CreatedAt           time.Time         `json:"created_at"`

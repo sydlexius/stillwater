@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/encryption"
 	"github.com/sydlexius/stillwater/internal/provider"
@@ -24,6 +25,9 @@ import (
 const (
 	aHaMBID = "7364dea6-ca9a-48e3-be01-b44ad0d19897"
 	aHaName = "a-ha"
+
+	// testTimeout bounds each integration test so network stalls surface quickly.
+	testTimeout = 30 * time.Second
 )
 
 // setupIntegrationSettings creates an in-memory settings service with API keys
@@ -59,7 +63,6 @@ func setupIntegrationSettings(t *testing.T) *provider.SettingsService {
 		}
 	}
 
-	storeKey(provider.NameFanartTV, "FANART_API_KEY")
 	storeKey(provider.NameAudioDB, "AUDIODB_API_KEY")
 	storeKey(provider.NameDiscogs, "DISCOGS_TOKEN")
 	storeKey(provider.NameLastFM, "LASTFM_API_KEY")
@@ -75,12 +78,18 @@ func silentLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 }
 
+func testCtx(t *testing.T) context.Context {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+	t.Cleanup(cancel)
+	return ctx
+}
+
 func TestIntegration_MusicBrainz_AHa(t *testing.T) {
 	limiter := newLimiter()
 	mb := musicbrainz.New(limiter, silentLogger())
 
-	ctx := context.Background()
-	meta, err := mb.GetArtist(ctx, aHaMBID)
+	meta, err := mb.GetArtist(testCtx(t), aHaMBID)
 	if err != nil {
 		t.Fatalf("GetArtist: %v", err)
 	}
@@ -112,8 +121,7 @@ func TestIntegration_AudioDB_AHa(t *testing.T) {
 	limiter := newLimiter()
 	adb := audiodb.New(limiter, settings, silentLogger())
 
-	ctx := context.Background()
-	meta, err := adb.GetArtist(ctx, aHaMBID)
+	meta, err := adb.GetArtist(testCtx(t), aHaMBID)
 	if err != nil {
 		t.Fatalf("GetArtist: %v", err)
 	}
@@ -139,7 +147,7 @@ func TestIntegration_Discogs_AHa(t *testing.T) {
 	limiter := newLimiter()
 	dg := discogs.New(limiter, settings, silentLogger())
 
-	ctx := context.Background()
+	ctx := testCtx(t)
 	results, err := dg.SearchArtist(ctx, aHaName)
 	if err != nil {
 		t.Fatalf("SearchArtist: %v", err)
@@ -174,8 +182,7 @@ func TestIntegration_Wikidata_AHa(t *testing.T) {
 	limiter := newLimiter()
 	wd := wikidata.New(limiter, silentLogger())
 
-	ctx := context.Background()
-	meta, err := wd.GetArtist(ctx, aHaMBID)
+	meta, err := wd.GetArtist(testCtx(t), aHaMBID)
 	if err != nil {
 		t.Fatalf("GetArtist: %v", err)
 	}
@@ -202,8 +209,7 @@ func TestIntegration_LastFM_AHa(t *testing.T) {
 	limiter := newLimiter()
 	lfm := lastfm.New(limiter, settings, silentLogger())
 
-	ctx := context.Background()
-	meta, err := lfm.GetArtist(ctx, aHaMBID)
+	meta, err := lfm.GetArtist(testCtx(t), aHaMBID)
 	if err != nil {
 		t.Fatalf("GetArtist: %v", err)
 	}
@@ -224,6 +230,8 @@ func TestIntegration_Orchestrator_AHa(t *testing.T) {
 	limiter := newLimiter()
 	logger := silentLogger()
 
+	// Register MusicBrainz only (no Discogs) so DiscogsID must come from
+	// MusicBrainz URL relations via extractProviderIDsFromURLs.
 	registry := provider.NewRegistry()
 	registry.Register(musicbrainz.New(limiter, logger))
 	registry.Register(wikidata.New(limiter, logger))
@@ -237,8 +245,7 @@ func TestIntegration_Orchestrator_AHa(t *testing.T) {
 
 	orch := provider.NewOrchestrator(registry, settings, logger)
 
-	ctx := context.Background()
-	result, err := orch.FetchMetadata(ctx, aHaMBID, aHaName)
+	result, err := orch.FetchMetadata(testCtx(t), aHaMBID, aHaName)
 	if err != nil {
 		t.Fatalf("FetchMetadata: %v", err)
 	}
@@ -257,5 +264,10 @@ func TestIntegration_Orchestrator_AHa(t *testing.T) {
 	}
 	if len(result.Sources) == 0 {
 		t.Error("expected at least one field source recorded")
+	}
+	// DiscogsID must be backfilled from MusicBrainz URL relations since
+	// the Discogs provider is not registered in this test.
+	if result.Metadata.DiscogsID == "" {
+		t.Error("expected DiscogsID backfilled from MusicBrainz URL relations")
 	}
 }
