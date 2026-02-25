@@ -144,14 +144,7 @@ templ complianceRow(row ComplianceRow) {
 			</a>
 		</td>
 		<td class="px-4 py-3 text-sm text-center">
-			<span
-				class={
-					"font-semibold",
-					templ.KV("text-green-600 dark:text-green-400", row.HealthScore >= 100),
-					templ.KV("text-yellow-600 dark:text-yellow-400", row.HealthScore >= 50 && row.HealthScore < 100),
-					templ.KV("text-red-600 dark:text-red-400", row.HealthScore < 50),
-				}
-			>
+			<span class={ "font-semibold", components.HealthScoreClass(row.HealthScore) }>
 				{ fmt.Sprintf("%.0f%%", row.HealthScore) }
 			</span>
 		</td>

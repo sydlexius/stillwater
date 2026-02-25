@@ -15,6 +15,7 @@ type ArtistListData struct {
 	Sort       string
 	Order      string
 	Filter     string
+	View       string // "table" or "grid"
 }
 
 templ ArtistsPage(assets AssetPaths, data ArtistListData) {
@@ -43,6 +44,7 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 					<span id="scan-label">Scan Library</span>
 				</button>
 			</div>
+			<input type="hidden" name="view" id="artist-view-input" value={ data.View }/>
 			<div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
 				<div class="relative flex-1 max-w-sm">
 					<input
@@ -52,38 +54,88 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 						placeholder="Search artists..."
 						hx-get="/artists"
 						hx-trigger="keyup changed delay:300ms"
-						hx-target="#artist-table"
+						hx-target="#artist-content"
 						hx-swap="outerHTML"
-						hx-include="[name='filter']"
+						hx-include="[name='filter'],[name='view']"
 						class="block w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
 					/>
 				</div>
-				<select
-					name="filter"
-					hx-get="/artists"
-					hx-trigger="change"
-					hx-target="#artist-table"
-					hx-swap="outerHTML"
-					hx-include="[name='search']"
-					class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-				>
-					<option value="" selected?={ data.Filter == "" }>All Artists</option>
-					<option value="missing_nfo" selected?={ data.Filter == "missing_nfo" }>Missing NFO</option>
-					<option value="missing_thumb" selected?={ data.Filter == "missing_thumb" }>Missing Thumbnail</option>
-					<option value="missing_fanart" selected?={ data.Filter == "missing_fanart" }>Missing Fanart</option>
-					<option value="missing_mbid" selected?={ data.Filter == "missing_mbid" }>Missing MBID</option>
-					<option value="excluded" selected?={ data.Filter == "excluded" }>Excluded</option>
-					<option value="not_excluded" selected?={ data.Filter == "not_excluded" }>Not Excluded</option>
-				</select>
+				<div class="flex items-center gap-3">
+					<select
+						name="filter"
+						hx-get="/artists"
+						hx-trigger="change"
+						hx-target="#artist-content"
+						hx-swap="outerHTML"
+						hx-include="[name='search'],[name='view']"
+						class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+					>
+						<option value="" selected?={ data.Filter == "" }>All Artists</option>
+						<option value="missing_nfo" selected?={ data.Filter == "missing_nfo" }>Missing NFO</option>
+						<option value="missing_thumb" selected?={ data.Filter == "missing_thumb" }>Missing Thumbnail</option>
+						<option value="missing_fanart" selected?={ data.Filter == "missing_fanart" }>Missing Fanart</option>
+						<option value="missing_mbid" selected?={ data.Filter == "missing_mbid" }>Missing MBID</option>
+						<option value="excluded" selected?={ data.Filter == "excluded" }>Excluded</option>
+						<option value="not_excluded" selected?={ data.Filter == "not_excluded" }>Not Excluded</option>
+					</select>
+					<div class="flex rounded-md border border-gray-300 dark:border-gray-600 overflow-hidden">
+						<button
+							type="button"
+							title="Table view"
+							hx-get="/artists"
+							hx-target="#artist-content"
+							hx-swap="outerHTML"
+							hx-include="[name='search'],[name='filter']"
+							hx-vals='{"view":"table","page":"1"}'
+							onclick="setView('table')"
+							class={ "p-2 transition-colors", templ.KV("bg-blue-600 text-white", data.View == "table"), templ.KV("bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700", data.View != "table") }
+						>
+							<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+								<path stroke-linecap="round" stroke-linejoin="round" d="M3.75 5.25h16.5m-16.5 4.5h16.5m-16.5 4.5h16.5m-16.5 4.5h16.5"></path>
+							</svg>
+						</button>
+						<button
+							type="button"
+							title="Grid view"
+							hx-get="/artists"
+							hx-target="#artist-content"
+							hx-swap="outerHTML"
+							hx-include="[name='search'],[name='filter']"
+							hx-vals='{"view":"grid","page":"1"}'
+							onclick="setView('grid')"
+							class={ "p-2 transition-colors", templ.KV("bg-blue-600 text-white", data.View == "grid"), templ.KV("bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700", data.View != "grid") }
+						>
+							<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+								<path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z"></path>
+							</svg>
+						</button>
+					</div>
+				</div>
 			</div>
-			@ArtistTable(data)
+			if data.View == "grid" {
+				@ArtistGrid(data)
+			} else {
+				@ArtistTable(data)
+			}
 		</div>
 		<script>
-			// Reload the artist table when the page is restored from bfcache (browser
+			function setView(view) {
+				var input = document.getElementById('artist-view-input');
+				if (input) input.value = view;
+				// Fire-and-forget save preference
+				var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*\=\s*([^;]*).*$)|^.*$/, "$1");
+				fetch('/api/v1/settings', {
+					method: 'PUT',
+					headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
+					body: JSON.stringify({"ui.artists_view": view})
+				}).catch(function() {});
+			}
+
+			// Reload the artist content when the page is restored from bfcache (browser
 			// back/forward navigation) so status badges reflect the latest state.
 			window.addEventListener('pageshow', function(evt) {
 				if (evt.persisted) {
-					htmx.ajax('GET', window.location.pathname + window.location.search, {target: '#artist-table', swap: 'outerHTML'});
+					htmx.ajax('GET', window.location.pathname + window.location.search, {target: '#artist-content', swap: 'outerHTML'});
 				}
 			});
 
@@ -110,7 +162,7 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 									btn.disabled = false;
 									spinner.style.opacity = '';
 									label.textContent = 'Scan Library';
-									htmx.ajax('GET', window.location.pathname + window.location.search, {target: '#artist-table', swap: 'outerHTML'});
+									htmx.ajax('GET', window.location.pathname + window.location.search, {target: '#artist-content', swap: 'outerHTML'});
 								}
 							})
 							.catch(function() {
@@ -128,7 +180,7 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 
 // ArtistTable is the HTMX-swappable table fragment.
 templ ArtistTable(data ArtistListData) {
-	<div id="artist-table">
+	<div id="artist-content">
 		<div class="overflow-x-auto">
 			<table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
 				<thead class="bg-gray-50 dark:bg-gray-800">
@@ -203,4 +255,54 @@ templ ArtistRow(a artist.Artist) {
 			@components.StatusBadge(a.MusicBrainzID != "", "MBID")
 		</td>
 	</tr>
+}
+
+// ArtistGrid is the HTMX-swappable grid fragment.
+templ ArtistGrid(data ArtistListData) {
+	<div id="artist-content">
+		if len(data.Artists) == 0 {
+			<div class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+				No artists found. Run a library scan to discover artists.
+			</div>
+		} else {
+			<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+				for _, a := range data.Artists {
+					@ArtistCard(a)
+				}
+			</div>
+		}
+		@components.Pagination(data.Pagination)
+	</div>
+}
+
+templ ArtistCard(a artist.Artist) {
+	<a
+		href={ templ.SafeURL("/artists/" + a.ID) }
+		class={ "group block rounded-lg overflow-hidden bg-white dark:bg-gray-800 shadow hover:shadow-md transition-shadow", templ.KV("opacity-50", a.IsExcluded) }
+	>
+		<div class="aspect-square bg-gray-100 dark:bg-gray-700 relative overflow-hidden">
+			if a.ThumbExists {
+				<img
+					src={ "/api/v1/artists/" + a.ID + "/images/thumb/file" }
+					alt={ a.Name }
+					loading="lazy"
+					class="h-full w-full object-cover group-hover:scale-105 transition-transform duration-200"
+				/>
+			} else {
+				<div class="h-full w-full flex items-center justify-center">
+					<svg class="h-12 w-12 text-gray-300 dark:text-gray-600" fill="none" viewBox="0 0 24 24" stroke-width="1" stroke="currentColor">
+						<path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"></path>
+					</svg>
+				</div>
+			}
+		</div>
+		<div class="px-2 py-2">
+			<p class="text-sm font-medium text-gray-900 dark:text-gray-100 truncate" title={ a.Name }>
+				{ a.Name }
+			</p>
+			<p class={ "mt-0.5 text-xs font-medium", components.HealthScoreClass(a.HealthScore) }>
+				{ fmt.Sprintf("%.0f%%", a.HealthScore) }
+			</p>
+		</div>
+	</a>
 }
