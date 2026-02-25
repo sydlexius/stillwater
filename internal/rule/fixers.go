@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -18,6 +19,17 @@ import (
 	"github.com/sydlexius/stillwater/internal/nfo"
 	"github.com/sydlexius/stillwater/internal/provider"
 )
+
+// imageProvider is the subset of provider.Orchestrator used by ImageFixer.
+type imageProvider interface {
+	FetchImages(ctx context.Context, mbid string, providerIDs map[provider.ProviderName]string) (*provider.FetchResult, error)
+}
+
+// imageCacheEntry holds a cached FetchImages result (or error) for one MBID.
+type imageCacheEntry struct {
+	result *provider.FetchResult
+	err    error
+}
 
 const (
 	fetchTimeout  = 30 * time.Second
@@ -171,16 +183,31 @@ func (f *MetadataFixer) fixBio(ctx context.Context, a *artist.Artist) (*FixResul
 
 // ImageFixer fetches missing or low-quality images from providers.
 type ImageFixer struct {
-	orchestrator *provider.Orchestrator
+	orchestrator imageProvider
 	logger       *slog.Logger
+	imageCache   sync.Map // keyed by MBID; value: *imageCacheEntry
 }
 
 // NewImageFixer creates an ImageFixer.
-func NewImageFixer(orchestrator *provider.Orchestrator, logger *slog.Logger) *ImageFixer {
+func NewImageFixer(orchestrator imageProvider, logger *slog.Logger) *ImageFixer {
 	return &ImageFixer{
 		orchestrator: orchestrator,
 		logger:       logger,
 	}
+}
+
+// fetchImages returns provider images for the given MBID, using a per-instance
+// cache to avoid duplicate provider calls when an artist has multiple violations.
+func (f *ImageFixer) fetchImages(ctx context.Context, mbid, deezerID string) (*provider.FetchResult, error) {
+	if entry, ok := f.imageCache.Load(mbid); ok {
+		e := entry.(*imageCacheEntry)
+		return e.result, e.err
+	}
+	result, err := f.orchestrator.FetchImages(ctx, mbid, map[provider.ProviderName]string{
+		provider.NameDeezer: deezerID,
+	})
+	f.imageCache.Store(mbid, &imageCacheEntry{result: result, err: err})
+	return result, err
 }
 
 // CanFix returns true for image-related rules.
@@ -209,9 +236,7 @@ func (f *ImageFixer) Fix(ctx context.Context, a *artist.Artist, v *Violation) (*
 		return nil, fmt.Errorf("no image type for rule %s", v.RuleID)
 	}
 
-	result, err := f.orchestrator.FetchImages(ctx, a.MusicBrainzID, map[provider.ProviderName]string{
-		provider.NameDeezer: a.DeezerID,
-	})
+	result, err := f.fetchImages(ctx, a.MusicBrainzID, a.DeezerID)
 	if err != nil {
 		return nil, fmt.Errorf("fetching images: %w", err)
 	}
@@ -238,6 +263,23 @@ func (f *ImageFixer) Fix(ctx context.Context, a *artist.Artist, v *Violation) (*
 		}
 		return (candidates[i].Width * candidates[i].Height) > (candidates[j].Width * candidates[j].Height)
 	})
+
+	// Resolution gate: drop candidates below the configured minimum or below
+	// the existing image's pixel count (to prevent accidental downgrades).
+	// Existing dimensions are read for all image rules, not only min-res ones,
+	// because rules like thumb_square can also fire on a high-res image and
+	// must not replace it with a lower-res candidate.
+	minW, minH := v.Config.MinWidth, v.Config.MinHeight
+	existW, existH := readExistingImageDimensions(a.Path, imageType)
+	candidates = filterCandidatesByResolution(candidates, minW, minH, existW, existH, f.logger)
+
+	if len(candidates) == 0 {
+		return &FixResult{
+			RuleID:  v.RuleID,
+			Fixed:   false,
+			Message: fmt.Sprintf("no %s candidates meet minimum resolution requirements", imageType),
+		}, nil
+	}
 
 	// When multiple candidates exist and SelectBestCandidate is not set,
 	// return the list for the user to choose from the Notifications inbox.
@@ -268,13 +310,34 @@ func (f *ImageFixer) Fix(ctx context.Context, a *artist.Artist, v *Violation) (*
 			continue
 		}
 
+		// Verify actual image dimensions post-download. Providers (FanartTV, Deezer)
+		// do not report dimensions in their API responses, so all candidates arrive
+		// with Width=0/Height=0 and slip past the pre-filter above. Checking here
+		// catches low-res downloads before they overwrite a better existing image.
+		if minW > 0 || minH > 0 || (existW > 0 && existH > 0) {
+			if dw, dh, dimErr := img.GetDimensions(bytes.NewReader(data)); dimErr == nil && dw > 0 && dh > 0 {
+				if (minW > 0 && dw < minW) || (minH > 0 && dh < minH) {
+					f.logger.Debug("skipping candidate below configured minimum (actual)",
+						"url", c.URL, "actual_width", dw, "actual_height", dh,
+						"min_width", minW, "min_height", minH)
+					continue
+				}
+				if existW > 0 && existH > 0 && dw*dh < existW*existH {
+					f.logger.Debug("skipping candidate below existing resolution (actual)",
+						"url", c.URL, "actual_width", dw, "actual_height", dh,
+						"existing_width", existW, "existing_height", existH)
+					continue
+				}
+			}
+		}
+
 		resized, _, err := img.Resize(bytes.NewReader(data), 3000, 3000)
 		if err != nil {
 			f.logger.Debug("image resize failed", "url", c.URL, "error", err)
 			continue
 		}
 
-		naming := img.FileNamesForType(img.DefaultFileNames, imageType)
+		naming := existingImageFileNames(a.Path, imageType)
 		saved, err := img.Save(a.Path, imageType, resized, naming, f.logger)
 		if err != nil {
 			f.logger.Debug("image save failed", "url", c.URL, "error", err)
@@ -367,6 +430,90 @@ func writeArtistNFO(a *artist.Artist, ss *nfo.SnapshotService) {
 		return
 	}
 	_ = filesystem.WriteFileAtomic(target, buf.Bytes(), 0o644)
+}
+
+// existingImageFileNames returns the subset of canonical filenames for imageType
+// that actually exist in dir. If none exist, returns a single-element slice with
+// the primary filename so that img.Save creates it fresh.
+// This prevents img.Save from writing to every canonical filename (e.g.
+// folder.jpg, artist.jpg, poster.jpg) when only one of them exists, which would
+// otherwise clobber high-res files that are not causing the violation.
+func existingImageFileNames(dir, imageType string) []string {
+	all := img.FileNamesForType(img.DefaultFileNames, imageType)
+	var found []string
+	for _, name := range all {
+		if _, err := os.Stat(filepath.Join(dir, name)); err == nil {
+			found = append(found, name)
+		}
+	}
+	if len(found) == 0 && len(all) > 0 {
+		return all[:1] // create only the primary filename
+	}
+	return found
+}
+
+// isMinResRule returns true for rules that enforce minimum resolution on an
+// existing image (i.e. an image is already on disk and must not be downgraded).
+func isMinResRule(ruleID string) bool {
+	switch ruleID {
+	case RuleThumbMinRes, RuleFanartMinRes, RuleLogoMinRes, RuleBannerMinRes:
+		return true
+	default:
+		return false
+	}
+}
+
+// filterCandidatesByResolution removes candidates whose declared dimensions are
+// below the configured minimum or below the existing image's pixel count.
+// Candidates with unknown dimensions (0x0) are kept.
+func filterCandidatesByResolution(
+	candidates []provider.ImageResult,
+	minW, minH, existingW, existingH int,
+	logger *slog.Logger,
+) []provider.ImageResult {
+	filtered := candidates[:0]
+	for _, c := range candidates {
+		if c.Width > 0 && c.Height > 0 {
+			if (minW > 0 && c.Width < minW) || (minH > 0 && c.Height < minH) {
+				logger.Debug("skipping candidate below configured minimum",
+					"url", c.URL, "width", c.Width, "height", c.Height,
+					"min_width", minW, "min_height", minH)
+				continue
+			}
+			if existingW > 0 && existingH > 0 && c.Width*c.Height < existingW*existingH {
+				logger.Debug("skipping candidate below existing resolution",
+					"url", c.URL, "width", c.Width, "height", c.Height,
+					"existing_width", existingW, "existing_height", existingH)
+				continue
+			}
+		}
+		filtered = append(filtered, c)
+	}
+	return filtered
+}
+
+// readExistingImageDimensions returns the pixel dimensions of the first
+// recognisable image found in dir for the given image type.
+func readExistingImageDimensions(dir, imageType string) (int, int) {
+	for _, name := range img.FileNamesForType(img.DefaultFileNames, imageType) {
+		if w, h, ok := readFileDimensions(filepath.Join(dir, name)); ok {
+			return w, h
+		}
+	}
+	return 0, 0
+}
+
+func readFileDimensions(path string) (int, int, bool) {
+	f, err := os.Open(path) //nolint:gosec
+	if err != nil {
+		return 0, 0, false
+	}
+	defer f.Close() //nolint:errcheck
+	w, h, err := img.GetDimensions(f)
+	if err != nil || w == 0 || h == 0 {
+		return 0, 0, false
+	}
+	return w, h, true
 }
 
 // fetchImageURL downloads image data from a URL with timeout and size limits.
