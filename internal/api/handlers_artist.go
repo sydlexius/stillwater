@@ -97,6 +97,14 @@ func (r *Router) handleArtistsPage(w http.ResponseWriter, req *http.Request) {
 	}
 	params.Validate()
 
+	view := req.URL.Query().Get("view")
+	if view != "grid" && view != "table" {
+		view = r.getStringSetting(req.Context(), "ui.artists_view", "table")
+	}
+	if view != "grid" {
+		view = "table"
+	}
+
 	artists, total, err := r.artistService.List(req.Context(), params)
 	if err != nil {
 		r.logger.Error("listing artists for page", "error", err)
@@ -121,15 +129,21 @@ func (r *Router) handleArtistsPage(w http.ResponseWriter, req *http.Request) {
 			Order:       params.Order,
 			Search:      params.Search,
 			Filter:      params.Filter,
+			View:        view,
 		},
 		Search: params.Search,
 		Sort:   params.Sort,
 		Order:  params.Order,
 		Filter: params.Filter,
+		View:   view,
 	}
 
 	if isHTMXRequest(req) {
-		renderTempl(w, req, templates.ArtistTable(data))
+		if view == "grid" {
+			renderTempl(w, req, templates.ArtistGrid(data))
+		} else {
+			renderTempl(w, req, templates.ArtistTable(data))
+		}
 		return
 	}
 	renderTempl(w, req, templates.ArtistsPage(r.assets(), data))

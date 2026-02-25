@@ -67,3 +67,14 @@ func (r *Router) getBoolSetting(ctx context.Context, key string, fallback bool) 
 	}
 	return v == "true" || v == "1"
 }
+
+// getStringSetting reads a string setting from the key-value table.
+// Returns the fallback value if the key does not exist.
+func (r *Router) getStringSetting(ctx context.Context, key string, fallback string) string {
+	var v string
+	err := r.db.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = ?`, key).Scan(&v)
+	if err != nil || v == "" {
+		return fallback
+	}
+	return v
+}
