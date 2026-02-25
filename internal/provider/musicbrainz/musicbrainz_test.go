@@ -276,9 +276,9 @@ func TestNormalizeHyphens(t *testing.T) {
 		input string
 		want  string
 	}{
-		{"a\u2010ha", "a-ha"},          // U+2010 HYPHEN
-		{"a\u2011ha", "a-ha"},          // U+2011 NON-BREAKING HYPHEN
-		{"a-ha", "a-ha"},               // already ASCII, unchanged
+		{"a\u2010ha", "a-ha"},                    // U+2010 HYPHEN
+		{"a\u2011ha", "a-ha"},                    // U+2011 NON-BREAKING HYPHEN
+		{"a-ha", "a-ha"},                         // already ASCII, unchanged
 		{"Sigur \u2013 Ros", "Sigur \u2013 Ros"}, // en-dash left as-is
 		{"", ""},
 	}
