@@ -45,8 +45,8 @@ func ProviderCapabilities() map[ProviderName]ProviderCapability {
 			RateLimit: &RateLimitInfo{RequestsPerSecond: 3},
 		},
 		NameAudioDB: {
-			Tier:      TierFreemium,
-			HelpURL:   "https://www.patreon.com/thedatadb",
+			Tier:      TierPaid,
+			HelpURL:   "https://www.theaudiodb.com/pricing",
 			RateLimit: &RateLimitInfo{RequestsPerSecond: 2},
 		},
 		NameDiscogs: {
