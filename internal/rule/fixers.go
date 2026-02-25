@@ -209,7 +209,9 @@ func (f *ImageFixer) Fix(ctx context.Context, a *artist.Artist, v *Violation) (*
 		return nil, fmt.Errorf("no image type for rule %s", v.RuleID)
 	}
 
-	result, err := f.orchestrator.FetchImages(ctx, a.MusicBrainzID)
+	result, err := f.orchestrator.FetchImages(ctx, a.MusicBrainzID, map[provider.ProviderName]string{
+		provider.NameDeezer: a.DeezerID,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("fetching images: %w", err)
 	}

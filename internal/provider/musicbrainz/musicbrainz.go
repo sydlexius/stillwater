@@ -255,7 +255,7 @@ func (a *Adapter) mapArtist(mb *MBArtist) *provider.ArtistMetadata {
 			member.Instruments = append(member.Instruments, rel.Attributes...)
 			meta.Members = append(meta.Members, member)
 		case rel.URL != nil && rel.URL.Resource != "":
-			urlType := mapURLType(rel.Type)
+			urlType := mapURLType(rel.Type, rel.URL.Resource)
 			if urlType != "" {
 				meta.URLs[urlType] = rel.URL.Resource
 			}
@@ -284,7 +284,8 @@ func mapArtistType(mbType string) string {
 }
 
 // mapURLType maps a MusicBrainz URL relation type to a simple key.
-func mapURLType(relType string) string {
+// For "streaming music" relations, the URL is inspected to identify the specific service.
+func mapURLType(relType, resourceURL string) string {
 	switch relType {
 	case "official homepage":
 		return "official"
@@ -302,7 +303,10 @@ func mapURLType(relType string) string {
 		return "allmusic"
 	case "social network":
 		return "social"
-	case "streaming":
+	case "streaming music", "free streaming", "streaming":
+		if strings.Contains(resourceURL, "deezer.com") {
+			return "deezer"
+		}
 		return "streaming"
 	default:
 		return relType

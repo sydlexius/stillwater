@@ -270,4 +270,8 @@ func TestIntegration_Orchestrator_AHa(t *testing.T) {
 	if result.Metadata.DiscogsID == "" {
 		t.Error("expected DiscogsID backfilled from MusicBrainz URL relations")
 	}
+	// DeezerID must be backfilled from the MusicBrainz "streaming music" URL relation.
+	if result.Metadata.DeezerID == "" {
+		t.Error("expected DeezerID backfilled from MusicBrainz URL relations")
+	}
 }

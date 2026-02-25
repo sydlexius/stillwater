@@ -1,5 +1,5 @@
 -- +goose Up
--- Consolidated baseline schema (squashed from migrations 001-014).
+-- Consolidated baseline schema (squashed from migrations 001-003).
 
 CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
@@ -51,6 +51,7 @@ CREATE TABLE IF NOT EXISTS artists (
     audiodb_id TEXT,
     discogs_id TEXT,
     wikidata_id TEXT,
+    deezer_id TEXT NOT NULL DEFAULT '',
     genres TEXT NOT NULL DEFAULT '[]',
     styles TEXT NOT NULL DEFAULT '[]',
     moods TEXT NOT NULL DEFAULT '[]',
@@ -75,6 +76,10 @@ CREATE TABLE IF NOT EXISTS artists (
     exclusion_reason TEXT NOT NULL DEFAULT '',
     is_classical INTEGER NOT NULL DEFAULT 0,
     metadata_sources TEXT NOT NULL DEFAULT '{}',
+    audiodb_id_fetched_at TEXT,
+    discogs_id_fetched_at TEXT,
+    wikidata_id_fetched_at TEXT,
+    lastfm_id_fetched_at TEXT,
     last_scanned_at TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -85,6 +90,7 @@ CREATE INDEX idx_artists_musicbrainz_id ON artists(musicbrainz_id);
 CREATE INDEX idx_artists_audiodb_id ON artists(audiodb_id);
 CREATE INDEX idx_artists_discogs_id ON artists(discogs_id);
 CREATE INDEX idx_artists_wikidata_id ON artists(wikidata_id);
+CREATE INDEX idx_artists_deezer_id ON artists(deezer_id);
 CREATE INDEX idx_artists_path ON artists(path);
 
 CREATE TABLE IF NOT EXISTS artist_aliases (
@@ -245,7 +251,7 @@ INSERT OR IGNORE INTO settings (key, value) VALUES
     ('provider.priority.moods',     '["audiodb"]'),
     ('provider.priority.members',   '["musicbrainz","wikidata"]'),
     ('provider.priority.formed',    '["musicbrainz","wikidata","audiodb"]'),
-    ('provider.priority.thumb',     '["fanarttv","audiodb"]'),
+    ('provider.priority.thumb',     '["fanarttv","audiodb","deezer"]'),
     ('provider.priority.fanart',    '["fanarttv","audiodb"]'),
     ('provider.priority.logo',      '["fanarttv","audiodb"]'),
     ('provider.priority.banner',    '["fanarttv","audiodb"]');
@@ -274,6 +280,7 @@ DROP TABLE IF EXISTS nfo_snapshots;
 DROP INDEX IF EXISTS idx_artist_aliases_artist_id;
 DROP TABLE IF EXISTS artist_aliases;
 DROP INDEX IF EXISTS idx_artists_path;
+DROP INDEX IF EXISTS idx_artists_deezer_id;
 DROP INDEX IF EXISTS idx_artists_wikidata_id;
 DROP INDEX IF EXISTS idx_artists_discogs_id;
 DROP INDEX IF EXISTS idx_artists_audiodb_id;

@@ -239,6 +239,9 @@ func applyRefreshResult(a *artist.Artist, result *provider.FetchResult) {
 	if m.WikidataID != "" && a.WikidataID == "" {
 		a.WikidataID = m.WikidataID
 	}
+	if m.DeezerID != "" && a.DeezerID == "" {
+		a.DeezerID = m.DeezerID
+	}
 
 	// Update metadata sources
 	if a.MetadataSources == nil {

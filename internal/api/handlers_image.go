@@ -182,7 +182,9 @@ func (r *Router) handleImageSearch(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	result, err := r.orchestrator.FetchImages(req.Context(), a.MusicBrainzID)
+	result, err := r.orchestrator.FetchImages(req.Context(), a.MusicBrainzID, map[provider.ProviderName]string{
+		provider.NameDeezer: a.DeezerID,
+	})
 	if err != nil {
 		r.logger.Error("fetching images from providers", "artist_id", artistID, "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to fetch images from providers"})

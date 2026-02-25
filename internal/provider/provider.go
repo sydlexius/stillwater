@@ -165,6 +165,7 @@ type ArtistMetadata struct {
 	AudioDBID      string            `json:"audiodb_id,omitempty"`
 	DiscogsID      string            `json:"discogs_id,omitempty"`
 	WikidataID     string            `json:"wikidata_id,omitempty"`
+	DeezerID       string            `json:"deezer_id,omitempty"`
 	Name           string            `json:"name"`
 	SortName       string            `json:"sort_name,omitempty"`
 	Type           string            `json:"type,omitempty"`
