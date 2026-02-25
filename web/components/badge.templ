@@ -1,5 +1,17 @@
 package components
 
+// HealthScoreClass returns the Tailwind color classes for a health score value.
+// Thresholds: 100 = green, 50-99 = yellow, <50 = red.
+func HealthScoreClass(score float64) string {
+	if score >= 100 {
+		return "text-green-600 dark:text-green-400"
+	}
+	if score >= 50 {
+		return "text-yellow-600 dark:text-yellow-400"
+	}
+	return "text-red-600 dark:text-red-400"
+}
+
 // StatusBadge renders a colored indicator for a boolean status.
 templ StatusBadge(exists bool, label string) {
 	if exists {

@@ -13,14 +13,15 @@ type PaginationData struct {
 	Order       string
 	Search      string
 	Filter      string
-	TargetID    string // HTMX target element ID (defaults to "artist-table")
+	View        string // "table" or "grid"
+	TargetID    string // HTMX target element ID (defaults to "artist-content")
 }
 
 func (p PaginationData) target() string {
 	if p.TargetID != "" {
 		return "#" + p.TargetID
 	}
-	return "#artist-table"
+	return "#artist-content"
 }
 
 func (p PaginationData) pageURL(page int) string {
@@ -36,6 +37,9 @@ func (p PaginationData) pageURL(page int) string {
 	}
 	if p.Filter != "" {
 		url += "&filter=" + p.Filter
+	}
+	if p.View != "" {
+		url += "&view=" + p.View
 	}
 	return url
 }
