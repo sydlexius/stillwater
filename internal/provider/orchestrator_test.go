@@ -241,6 +241,7 @@ func TestExtractProviderIDsFromURLs(t *testing.T) {
 		urls           map[string]string
 		wantDiscogsID  string
 		wantWikidataID string
+		wantDeezerID   string
 	}{
 		{
 			name:          "plain numeric discogs URL",
@@ -263,30 +264,35 @@ func TestExtractProviderIDsFromURLs(t *testing.T) {
 			wantWikidataID: "Q44190",
 		},
 		{
-			name: "both providers",
+			name:         "deezer artist URL",
+			urls:         map[string]string{"deezer": "https://www.deezer.com/artist/3106"},
+			wantDeezerID: "3106",
+		},
+		{
+			name: "all three providers",
 			urls: map[string]string{
 				"discogs":  "https://www.discogs.com/artist/24941-a-ha",
 				"wikidata": "https://www.wikidata.org/wiki/Q44190",
+				"deezer":   "https://www.deezer.com/artist/3106",
 			},
 			wantDiscogsID:  "24941",
 			wantWikidataID: "Q44190",
-		},
-		{
-			name: "existing IDs are not overwritten",
+			wantDeezerID:   "3106",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			meta := &ArtistMetadata{
-				URLs: tt.urls,
-			}
+			meta := &ArtistMetadata{URLs: tt.urls}
 			extractProviderIDsFromURLs(meta)
 			if meta.DiscogsID != tt.wantDiscogsID {
 				t.Errorf("DiscogsID: got %q, want %q", meta.DiscogsID, tt.wantDiscogsID)
 			}
 			if meta.WikidataID != tt.wantWikidataID {
 				t.Errorf("WikidataID: got %q, want %q", meta.WikidataID, tt.wantWikidataID)
+			}
+			if meta.DeezerID != tt.wantDeezerID {
+				t.Errorf("DeezerID: got %q, want %q", meta.DeezerID, tt.wantDeezerID)
 			}
 		})
 	}
@@ -295,9 +301,11 @@ func TestExtractProviderIDsFromURLs(t *testing.T) {
 		meta := &ArtistMetadata{
 			DiscogsID:  "existing",
 			WikidataID: "Q999",
+			DeezerID:   "111",
 			URLs: map[string]string{
 				"discogs":  "https://www.discogs.com/artist/24941",
 				"wikidata": "https://www.wikidata.org/wiki/Q44190",
+				"deezer":   "https://www.deezer.com/artist/3106",
 			},
 		}
 		extractProviderIDsFromURLs(meta)
@@ -306,6 +314,9 @@ func TestExtractProviderIDsFromURLs(t *testing.T) {
 		}
 		if meta.WikidataID != "Q999" {
 			t.Errorf("WikidataID was overwritten: got %q", meta.WikidataID)
+		}
+		if meta.DeezerID != "111" {
+			t.Errorf("DeezerID was overwritten: got %q", meta.DeezerID)
 		}
 	})
 }

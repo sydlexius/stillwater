@@ -102,13 +102,23 @@ func (o *Orchestrator) FetchMetadata(ctx context.Context, mbid string, name stri
 }
 
 // FetchImages queries all image-capable providers and merges results by priority.
-func (o *Orchestrator) FetchImages(ctx context.Context, mbid string) (*FetchResult, error) {
+// providerIDs supplies provider-specific IDs for providers that do not accept MBIDs
+// (e.g. Deezer uses its own numeric ID). Providers without an entry in providerIDs
+// receive the MBID. Providers with an empty entry are skipped.
+func (o *Orchestrator) FetchImages(ctx context.Context, mbid string, providerIDs map[ProviderName]string) (*FetchResult, error) {
 	result := &FetchResult{
 		Metadata: &ArtistMetadata{},
 	}
 
 	for _, p := range o.registry.All() {
-		images, err := p.GetImages(ctx, mbid)
+		id := mbid
+		if pid, ok := providerIDs[p.Name()]; ok {
+			if pid == "" {
+				continue // provider-specific ID not known; skip rather than fail
+			}
+			id = pid
+		}
+		images, err := p.GetImages(ctx, id)
 		if err != nil {
 			o.logger.Warn("provider image fetch failed",
 				slog.String("provider", string(p.Name())),
@@ -269,6 +279,9 @@ func applyField(result *FetchResult, field string, pr *providerResult, source Pr
 	}
 	if meta.WikidataID != "" && result.Metadata.WikidataID == "" {
 		result.Metadata.WikidataID = meta.WikidataID
+	}
+	if meta.DeezerID != "" && result.Metadata.DeezerID == "" {
+		result.Metadata.DeezerID = meta.DeezerID
 	}
 	if meta.Name != "" && result.Metadata.Name == "" {
 		result.Metadata.Name = meta.Name
@@ -456,14 +469,15 @@ func containsString(slice []string, s string) bool {
 	return false
 }
 
-// extractProviderIDsFromURLs backfills DiscogsID and WikidataID from URL
-// relations returned by MusicBrainz when the IDs are not yet set.
+// extractProviderIDsFromURLs backfills provider IDs from URL relations returned
+// by MusicBrainz when the IDs are not yet set.
 //
 // MusicBrainz URL relations look like:
 //
 //	discogs:  "https://www.discogs.com/artist/24941"       -> "24941"
 //	discogs:  "https://www.discogs.com/artist/24941-a-ha"  -> "24941"
 //	wikidata: "https://www.wikidata.org/wiki/Q44190"       -> "Q44190"
+//	deezer:   "https://www.deezer.com/artist/3106"         -> "3106"
 func extractProviderIDsFromURLs(meta *ArtistMetadata) {
 	if meta == nil {
 		return
@@ -496,6 +510,22 @@ func extractProviderIDsFromURLs(meta *ArtistMetadata) {
 				candidate := u[idx+1:]
 				if len(candidate) > 1 && candidate[0] == 'Q' {
 					meta.WikidataID = candidate
+				}
+			}
+		}
+	}
+
+	if meta.DeezerID == "" {
+		if u, ok := meta.URLs["deezer"]; ok && u != "" {
+			// Last path segment is the numeric Deezer artist ID.
+			if idx := strings.LastIndex(u, "/"); idx >= 0 {
+				segment := u[idx+1:]
+				end := strings.IndexFunc(segment, func(r rune) bool { return r < '0' || r > '9' })
+				if end < 0 {
+					end = len(segment)
+				}
+				if end > 0 {
+					meta.DeezerID = segment[:end]
 				}
 			}
 		}

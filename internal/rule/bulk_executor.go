@@ -217,6 +217,10 @@ func (e *BulkExecutor) fetchMetadata(ctx context.Context, a *artist.Artist, mode
 		a.WikidataID = result.Metadata.WikidataID
 		changed = true
 	}
+	if a.DeezerID == "" && result.Metadata.DeezerID != "" {
+		a.DeezerID = result.Metadata.DeezerID
+		changed = true
+	}
 	if len(a.Genres) == 0 && len(result.Metadata.Genres) > 0 {
 		a.Genres = result.Metadata.Genres
 		changed = true
@@ -283,7 +287,9 @@ func (e *BulkExecutor) fetchImages(ctx context.Context, a *artist.Artist, mode s
 		return BulkItemSkipped, "all images present"
 	}
 
-	imgResult, err := e.orchestrator.FetchImages(ctx, a.MusicBrainzID)
+	imgResult, err := e.orchestrator.FetchImages(ctx, a.MusicBrainzID, map[provider.ProviderName]string{
+		provider.NameDeezer: a.DeezerID,
+	})
 	if err != nil {
 		return BulkItemFailed, fmt.Sprintf("image fetch failed: %v", err)
 	}
