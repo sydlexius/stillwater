@@ -434,7 +434,7 @@ func TestScan_HealthScoreIntegration(t *testing.T) {
 	if err := ruleSvc.SeedDefaults(context.Background()); err != nil {
 		t.Fatalf("seeding rules: %v", err)
 	}
-	ruleEng := rule.NewEngine(ruleSvc, db, logger)
+	ruleEng := rule.NewEngine(ruleSvc, db, nil, logger)
 
 	svc := NewService(artistSvc, ruleEng, ruleSvc, logger, libDir, nil)
 	ctx := context.Background()

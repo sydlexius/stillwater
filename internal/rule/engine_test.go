@@ -31,7 +31,7 @@ func TestEvaluate_FullyCompliant(t *testing.T) {
 		}
 	}
 
-	engine := NewEngine(svc, db, testLogger())
+	engine := NewEngine(svc, db, nil, testLogger())
 
 	a := &artist.Artist{
 		ID:            "test-1",
@@ -79,7 +79,7 @@ func TestEvaluate_EmptyArtist(t *testing.T) {
 		}
 	}
 
-	engine := NewEngine(svc, db, testLogger())
+	engine := NewEngine(svc, db, nil, testLogger())
 
 	a := &artist.Artist{
 		ID:   "test-2",
@@ -92,15 +92,16 @@ func TestEvaluate_EmptyArtist(t *testing.T) {
 		t.Fatalf("Evaluate: %v", err)
 	}
 
-	// Should fail all 6 remaining enabled rules
-	if result.RulesTotal != 6 {
-		t.Errorf("RulesTotal = %d, want 6", result.RulesTotal)
+	// Should fail 6 of 7 remaining enabled rules (extraneous_images passes on empty dir)
+	if result.RulesTotal != 7 {
+		t.Errorf("RulesTotal = %d, want 7", result.RulesTotal)
 	}
-	if result.RulesPassed != 0 {
-		t.Errorf("RulesPassed = %d, want 0", result.RulesPassed)
+	if result.RulesPassed != 1 {
+		t.Errorf("RulesPassed = %d, want 1", result.RulesPassed)
 	}
-	if result.HealthScore != 0.0 {
-		t.Errorf("HealthScore = %.1f, want 0.0", result.HealthScore)
+	expectedScore := 14.3 // 1/7 * 100, rounded to 1 decimal
+	if result.HealthScore != expectedScore {
+		t.Errorf("HealthScore = %.1f, want %.1f", result.HealthScore, expectedScore)
 	}
 	if len(result.Violations) != 6 {
 		t.Errorf("Violations = %d, want 6", len(result.Violations))
@@ -125,7 +126,7 @@ func TestEvaluate_PartialCompliance(t *testing.T) {
 		}
 	}
 
-	engine := NewEngine(svc, db, testLogger())
+	engine := NewEngine(svc, db, nil, testLogger())
 
 	// Artist has NFO and MBID but nothing else
 	a := &artist.Artist{
@@ -141,15 +142,15 @@ func TestEvaluate_PartialCompliance(t *testing.T) {
 		t.Fatalf("Evaluate: %v", err)
 	}
 
-	// Passes: nfo_exists, nfo_has_mbid (2 of 6)
-	if result.RulesPassed != 2 {
-		t.Errorf("RulesPassed = %d, want 2", result.RulesPassed)
+	// Passes: nfo_exists, nfo_has_mbid, extraneous_images (3 of 7)
+	if result.RulesPassed != 3 {
+		t.Errorf("RulesPassed = %d, want 3", result.RulesPassed)
 	}
-	if result.RulesTotal != 6 {
-		t.Errorf("RulesTotal = %d, want 6", result.RulesTotal)
+	if result.RulesTotal != 7 {
+		t.Errorf("RulesTotal = %d, want 7", result.RulesTotal)
 	}
 
-	expectedScore := 33.3 // 2/6 * 100, rounded to 1 decimal
+	expectedScore := 42.9 // 3/7 * 100, rounded to 1 decimal
 	if result.HealthScore != expectedScore {
 		t.Errorf("HealthScore = %.1f, want %.1f", result.HealthScore, expectedScore)
 	}
@@ -173,7 +174,7 @@ func TestEvaluate_DisabledRulesSkipped(t *testing.T) {
 		}
 	}
 
-	engine := NewEngine(svc, db, testLogger())
+	engine := NewEngine(svc, db, nil, testLogger())
 
 	a := &artist.Artist{
 		ID:   "test-4",
@@ -212,7 +213,7 @@ func TestEvaluateAll(t *testing.T) {
 		}
 	}
 
-	engine := NewEngine(svc, db, testLogger())
+	engine := NewEngine(svc, db, nil, testLogger())
 
 	artists := []artist.Artist{
 		{ID: "a1", Name: "Has NFO", NFOExists: true, Path: t.TempDir()},
@@ -274,13 +275,13 @@ func TestEngine_WithRealDB(t *testing.T) {
 		t.Fatalf("seeding: %v", err)
 	}
 
-	engine := NewEngine(svc, db, slog.Default())
+	engine := NewEngine(svc, db, nil, slog.Default())
 	if engine == nil {
 		t.Fatal("expected non-nil engine")
 	}
 
-	// Verify all checkers are registered (8 core rules + 5 new image quality rules = 13)
-	if len(engine.checkers) != 13 {
-		t.Errorf("expected 13 checkers, got %d", len(engine.checkers))
+	// Verify all checkers are registered (8 core + 5 image quality + 1 extraneous = 14)
+	if len(engine.checkers) != 14 {
+		t.Errorf("expected 14 checkers, got %d", len(engine.checkers))
 	}
 }

@@ -405,6 +405,58 @@ func TestCheckBannerMinRes(t *testing.T) {
 	}
 }
 
+func TestCheckExtraneousImages(t *testing.T) {
+	// Create a temp dir with canonical + extraneous files.
+	dir := t.TempDir()
+	createTestJPEG(t, filepath.Join(dir, "folder.jpg"), 500, 500)   // canonical thumb
+	createTestJPEG(t, filepath.Join(dir, "fanart.jpg"), 1920, 1080) // canonical fanart
+	createTestJPEG(t, filepath.Join(dir, "artist.jpg"), 500, 500)   // extraneous
+	createTestJPEG(t, filepath.Join(dir, "poster.jpg"), 500, 500)   // extraneous
+
+	// Engine with nil platformService uses DefaultFileNames.
+	e := &Engine{platformService: nil}
+	checker := e.makeExtraneousImagesChecker()
+
+	a := artist.Artist{Name: "Test", Path: dir}
+	v := checker(&a, RuleConfig{Severity: "warning"})
+	if v == nil {
+		t.Fatal("expected violation for extraneous images")
+	}
+	if v.RuleID != RuleExtraneousImages {
+		t.Errorf("RuleID = %q, want %q", v.RuleID, RuleExtraneousImages)
+	}
+	if !v.Fixable {
+		t.Error("expected Fixable to be true")
+	}
+}
+
+func TestCheckExtraneousImages_NoExtraneous(t *testing.T) {
+	// Only canonical files present.
+	dir := t.TempDir()
+	createTestJPEG(t, filepath.Join(dir, "folder.jpg"), 500, 500)
+	createTestJPEG(t, filepath.Join(dir, "fanart.jpg"), 1920, 1080)
+
+	e := &Engine{platformService: nil}
+	checker := e.makeExtraneousImagesChecker()
+
+	a := artist.Artist{Name: "Test", Path: dir}
+	v := checker(&a, RuleConfig{})
+	if v != nil {
+		t.Errorf("expected nil for directory with only canonical files, got %v", v)
+	}
+}
+
+func TestCheckExtraneousImages_EmptyPath(t *testing.T) {
+	e := &Engine{platformService: nil}
+	checker := e.makeExtraneousImagesChecker()
+
+	a := artist.Artist{Name: "Test", Path: ""}
+	v := checker(&a, RuleConfig{})
+	if v != nil {
+		t.Errorf("expected nil for empty path, got %v", v)
+	}
+}
+
 func TestGetImageDimensions_NoMatch(t *testing.T) {
 	dir := t.TempDir()
 	_, _, err := getImageDimensions(dir, []string{"fanart.jpg", "fanart.png"})

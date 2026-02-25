@@ -21,11 +21,12 @@ const (
 	RuleLogoExists   = "logo_exists"
 	RuleBioExists    = "bio_exists"
 	// Image quality rule IDs.
-	RuleFanartMinRes = "fanart_min_res"
-	RuleFanartAspect = "fanart_aspect"
-	RuleLogoMinRes   = "logo_min_res"
-	RuleBannerExists = "banner_exists"
-	RuleBannerMinRes = "banner_min_res"
+	RuleFanartMinRes     = "fanart_min_res"
+	RuleFanartAspect     = "fanart_aspect"
+	RuleLogoMinRes       = "logo_min_res"
+	RuleBannerExists     = "banner_exists"
+	RuleBannerMinRes     = "banner_min_res"
+	RuleExtraneousImages = "extraneous_images"
 )
 
 // defaultRules defines the built-in rules seeded on first startup.
@@ -133,6 +134,14 @@ var defaultRules = []Rule{
 		Category:    "image",
 		Enabled:     false,
 		Config:      RuleConfig{MinWidth: 1000, MinHeight: 185, Severity: "info"},
+	},
+	{
+		ID:          RuleExtraneousImages,
+		Name:        "Extraneous image files",
+		Description: "Detects non-canonical image files that may cause display issues on media servers",
+		Category:    "image",
+		Enabled:     true,
+		Config:      RuleConfig{Severity: "warning"},
 	},
 }
 

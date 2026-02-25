@@ -382,17 +382,26 @@ func (r *Router) processAndSaveImage(ctx context.Context, dir string, imageType 
 	return saved, nil
 }
 
-// getActiveNamingConfig returns the filenames for the given image type from the active platform profile.
+// getActiveNamingConfig returns the canonical filename for the given image type
+// from the active platform profile. Only the primary name is returned so that
+// image saves write exactly one file per type (deduplication).
 func (r *Router) getActiveNamingConfig(ctx context.Context, imageType string) []string {
 	profile, err := r.platformService.GetActive(ctx)
 	if err != nil || profile == nil {
+		primary := img.PrimaryFileName(img.DefaultFileNames, imageType)
+		if primary == "" {
+			return img.FileNamesForType(img.DefaultFileNames, imageType)
+		}
+		return []string{primary}
+	}
+	primary := profile.ImageNaming.PrimaryName(imageType)
+	if primary == "" {
+		primary = img.PrimaryFileName(img.DefaultFileNames, imageType)
+	}
+	if primary == "" {
 		return img.FileNamesForType(img.DefaultFileNames, imageType)
 	}
-	names := img.FileNamesForType(profile.ImageNaming.ToMap(), imageType)
-	if len(names) == 0 {
-		return img.FileNamesForType(img.DefaultFileNames, imageType)
-	}
-	return names
+	return []string{primary}
 }
 
 // fetchImageFromURL downloads an image from the given URL with timeout and size limits.
