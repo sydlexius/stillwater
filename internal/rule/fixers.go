@@ -199,14 +199,15 @@ func NewImageFixer(orchestrator imageProvider, logger *slog.Logger) *ImageFixer 
 // fetchImages returns provider images for the given MBID, using a per-instance
 // cache to avoid duplicate provider calls when an artist has multiple violations.
 func (f *ImageFixer) fetchImages(ctx context.Context, mbid, deezerID string) (*provider.FetchResult, error) {
-	if entry, ok := f.imageCache.Load(mbid); ok {
+	cacheKey := mbid + ":" + deezerID
+	if entry, ok := f.imageCache.Load(cacheKey); ok {
 		e := entry.(*imageCacheEntry)
 		return e.result, e.err
 	}
 	result, err := f.orchestrator.FetchImages(ctx, mbid, map[provider.ProviderName]string{
 		provider.NameDeezer: deezerID,
 	})
-	f.imageCache.Store(mbid, &imageCacheEntry{result: result, err: err})
+	f.imageCache.Store(cacheKey, &imageCacheEntry{result: result, err: err})
 	return result, err
 }
 
@@ -274,10 +275,25 @@ func (f *ImageFixer) Fix(ctx context.Context, a *artist.Artist, v *Violation) (*
 	candidates = filterCandidatesByResolution(candidates, minW, minH, existW, existH, f.logger)
 
 	if len(candidates) == 0 {
+		hasMinConstraint := minW > 0 || minH > 0
+		hasExistingConstraint := existW > 0 && existH > 0
+
+		var constraintDesc string
+		switch {
+		case hasMinConstraint && hasExistingConstraint:
+			constraintDesc = "minimum and existing image resolution requirements"
+		case hasMinConstraint:
+			constraintDesc = "minimum resolution requirements"
+		case hasExistingConstraint:
+			constraintDesc = "existing image resolution requirements"
+		default:
+			constraintDesc = "resolution requirements"
+		}
+
 		return &FixResult{
 			RuleID:  v.RuleID,
 			Fixed:   false,
-			Message: fmt.Sprintf("no %s candidates meet minimum resolution requirements", imageType),
+			Message: fmt.Sprintf("no %s candidates meet %s", imageType, constraintDesc),
 		}, nil
 	}
 
@@ -481,15 +497,22 @@ func filterCandidatesByResolution(
 	return filtered
 }
 
-// readExistingImageDimensions returns the pixel dimensions of the first
-// recognizable image found in dir for the given image type.
+// readExistingImageDimensions returns the pixel dimensions of the highest
+// resolution recognizable image found in dir for the given image type.
 func readExistingImageDimensions(dir, imageType string) (int, int) {
+	maxW, maxH := 0, 0
+	maxPixels := 0
+
 	for _, name := range img.FileNamesForType(img.DefaultFileNames, imageType) {
 		if w, h, ok := readFileDimensions(filepath.Join(dir, name)); ok {
-			return w, h
+			if pixels := w * h; pixels > maxPixels {
+				maxPixels = pixels
+				maxW, maxH = w, h
+			}
 		}
 	}
-	return 0, 0
+
+	return maxW, maxH
 }
 
 func readFileDimensions(path string) (int, int, bool) {
