@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 )
 
@@ -15,10 +16,11 @@ type FieldSource struct {
 
 // FetchResult holds the merged result of querying multiple providers.
 type FetchResult struct {
-	Metadata *ArtistMetadata `json:"metadata"`
-	Images   []ImageResult   `json:"images"`
-	Sources  []FieldSource   `json:"sources"`
-	Errors   []string        `json:"errors"`
+	Metadata           *ArtistMetadata `json:"metadata"`
+	Images             []ImageResult   `json:"images"`
+	Sources            []FieldSource   `json:"sources"`
+	Errors             []string        `json:"errors"`
+	AttemptedProviders []ProviderName  `json:"attempted_providers,omitempty"`
 }
 
 // ScraperExecutor is implemented by the scraper.Executor to avoid circular imports.
@@ -84,6 +86,16 @@ func (o *Orchestrator) FetchMetadata(ctx context.Context, mbid string, name stri
 				break
 			}
 		}
+	}
+
+	// Backfill provider IDs from MusicBrainz URL relations when not already set.
+	// MusicBrainz returns discogs and wikidata URLs; extract the numeric/Q IDs.
+	extractProviderIDsFromURLs(result.Metadata)
+
+	// Record which providers were actually queried so callers can update
+	// per-provider fetch timestamps on the artist record.
+	for provName := range cache {
+		result.AttemptedProviders = append(result.AttemptedProviders, provName)
 	}
 
 	return result, nil
@@ -442,4 +454,50 @@ func containsString(slice []string, s string) bool {
 		}
 	}
 	return false
+}
+
+// extractProviderIDsFromURLs backfills DiscogsID and WikidataID from URL
+// relations returned by MusicBrainz when the IDs are not yet set.
+//
+// MusicBrainz URL relations look like:
+//
+//	discogs:  "https://www.discogs.com/artist/24941"       -> "24941"
+//	discogs:  "https://www.discogs.com/artist/24941-a-ha"  -> "24941"
+//	wikidata: "https://www.wikidata.org/wiki/Q44190"       -> "Q44190"
+func extractProviderIDsFromURLs(meta *ArtistMetadata) {
+	if meta == nil {
+		return
+	}
+
+	if meta.DiscogsID == "" {
+		if u, ok := meta.URLs["discogs"]; ok && u != "" {
+			// Last path segment may be "24941" or "24941-artist-name".
+			// Extract only the leading numeric portion.
+			if idx := strings.LastIndex(u, "/"); idx >= 0 {
+				segment := u[idx+1:]
+				end := strings.IndexFunc(segment, func(r rune) bool { return r < '0' || r > '9' })
+				if end < 0 {
+					end = len(segment)
+				}
+				if end > 0 {
+					meta.DiscogsID = segment[:end]
+				}
+			}
+		}
+	}
+
+	if meta.WikidataID == "" {
+		if u, ok := meta.URLs["wikidata"]; ok && u != "" {
+			// Last path segment is the Q-item ID; strip any query/fragment first.
+			if qIdx := strings.IndexAny(u, "?#"); qIdx >= 0 {
+				u = u[:qIdx]
+			}
+			if idx := strings.LastIndex(u, "/"); idx >= 0 {
+				candidate := u[idx+1:]
+				if len(candidate) > 1 && candidate[0] == 'Q' {
+					meta.WikidataID = candidate
+				}
+			}
+		}
+	}
 }
