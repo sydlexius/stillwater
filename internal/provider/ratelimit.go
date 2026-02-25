@@ -11,7 +11,7 @@ import (
 var defaultRateLimits = map[ProviderName]rate.Limit{
 	NameMusicBrainz: 1,
 	NameFanartTV:    3,
-	NameAudioDB:     2,
+	NameAudioDB:     0.5, // free tier: 30 req/min; premium key does not change this limiter
 	NameDiscogs:     1,
 	NameLastFM:      5,
 	NameWikidata:    5,

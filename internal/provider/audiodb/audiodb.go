@@ -36,7 +36,14 @@ type Adapter struct {
 
 // New creates a TheAudioDB adapter with the default base URLs.
 func New(limiter *provider.RateLimiterMap, settings *provider.SettingsService, logger *slog.Logger) *Adapter {
-	return NewWithBaseURL(limiter, settings, logger, defaultV1BaseURL)
+	return &Adapter{
+		client:    &http.Client{Timeout: 10 * time.Second},
+		limiter:   limiter,
+		settings:  settings,
+		logger:    logger.With(slog.String("provider", "audiodb")),
+		v1BaseURL: defaultV1BaseURL,
+		v2BaseURL: defaultV2BaseURL,
+	}
 }
 
 // NewWithBaseURL creates a TheAudioDB adapter with a custom base URL (for testing).

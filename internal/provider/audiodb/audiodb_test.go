@@ -84,7 +84,9 @@ func newTestServerCapturing(t *testing.T, capturedKey *string, capturedPath *str
 		switch {
 		// v2 paths
 		case strings.Contains(r.URL.Path, "/search/artist/"):
-			w.Write(loadFixture(t, "search_radiohead.json"))
+			// v2 search response uses the "search" top-level key
+			v2Data := []byte(strings.Replace(string(loadFixture(t, "search_radiohead.json")), `"artists"`, `"search"`, 1))
+			w.Write(v2Data)
 		case strings.Contains(r.URL.Path, "/lookup/artist_mb/not-found"):
 			w.Write([]byte(`{"lookup":null}`))
 		case strings.Contains(r.URL.Path, "/lookup/artist_mb/"):
