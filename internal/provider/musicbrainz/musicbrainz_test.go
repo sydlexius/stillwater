@@ -271,6 +271,25 @@ func TestUserAgent(t *testing.T) {
 	}
 }
 
+func TestNormalizeHyphens(t *testing.T) {
+	cases := []struct {
+		input string
+		want  string
+	}{
+		{"a\u2010ha", "a-ha"},          // U+2010 HYPHEN
+		{"a\u2011ha", "a-ha"},          // U+2011 NON-BREAKING HYPHEN
+		{"a-ha", "a-ha"},               // already ASCII, unchanged
+		{"Sigur \u2013 Ros", "Sigur \u2013 Ros"}, // en-dash left as-is
+		{"", ""},
+	}
+	for _, c := range cases {
+		got := normalizeHyphens(c.input)
+		if got != c.want {
+			t.Errorf("normalizeHyphens(%q) = %q, want %q", c.input, got, c.want)
+		}
+	}
+}
+
 func isErrNotFound(err error) bool {
 	_, ok := err.(*provider.ErrNotFound)
 	return ok

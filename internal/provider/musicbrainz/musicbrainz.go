@@ -177,13 +177,25 @@ func (a *Adapter) doRequest(ctx context.Context, reqURL string) ([]byte, error) 
 	return io.ReadAll(io.LimitReader(resp.Body, 512*1024))
 }
 
+// hyphenReplacer normalizes Unicode hyphen variants to ASCII hyphen-minus.
+// MusicBrainz uses U+2010 (HYPHEN) in some artist names (e.g. "a‐ha").
+var hyphenReplacer = strings.NewReplacer(
+	"\u2010", "-", // HYPHEN
+	"\u2011", "-", // NON-BREAKING HYPHEN
+)
+
+// normalizeHyphens replaces Unicode hyphen characters with ASCII hyphen-minus.
+func normalizeHyphens(s string) string {
+	return hyphenReplacer.Replace(s)
+}
+
 // mapArtist converts a MusicBrainz artist to the common ArtistMetadata type.
 func (a *Adapter) mapArtist(mb *MBArtist) *provider.ArtistMetadata {
 	meta := &provider.ArtistMetadata{
 		ProviderID:     mb.ID,
 		MusicBrainzID:  mb.ID,
-		Name:           mb.Name,
-		SortName:       mb.SortName,
+		Name:           normalizeHyphens(mb.Name),
+		SortName:       normalizeHyphens(mb.SortName),
 		Type:           mapArtistType(mb.Type),
 		Gender:         strings.ToLower(mb.Gender),
 		Disambiguation: mb.Disambiguation,
