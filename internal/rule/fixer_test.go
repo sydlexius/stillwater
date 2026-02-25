@@ -3,13 +3,48 @@ package rule
 import (
 	"bytes"
 	"context"
+	"image"
+	"image/color"
+	"image/jpeg"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/nfo"
+	"github.com/sydlexius/stillwater/internal/provider"
 )
+
+// makeTestJPEG encodes a solid-color JPEG of the given dimensions.
+func makeTestJPEG(t *testing.T, w, h int) []byte {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, w, h))
+	for y := range h {
+		for x := range w {
+			img.Set(x, y, color.RGBA{R: 128, G: 64, B: 32, A: 255})
+		}
+	}
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: 80}); err != nil {
+		t.Fatalf("encoding test jpeg: %v", err)
+	}
+	return buf.Bytes()
+}
+
+// mockImageProvider records FetchImages calls for testing.
+type mockImageProvider struct {
+	result *provider.FetchResult
+	err    error
+	calls  int
+}
+
+func (m *mockImageProvider) FetchImages(_ context.Context, _ string, _ map[provider.ProviderName]string) (*provider.FetchResult, error) {
+	m.calls++
+	return m.result, m.err
+}
 
 func TestNFOFixer_CanFix(t *testing.T) {
 	f := &NFOFixer{}
@@ -428,6 +463,259 @@ func TestPipeline_NoFixerAvailable(t *testing.T) {
 		if fr.Message != "no fixer available" {
 			t.Errorf("Message = %q, want 'no fixer available'", fr.Message)
 		}
+	}
+}
+
+func TestFilterCandidatesByResolution(t *testing.T) {
+	logger := testLogger()
+
+	candidates := []provider.ImageResult{
+		{URL: "a", Width: 200, Height: 200},   // below minimum
+		{URL: "b", Width: 1000, Height: 1000}, // passes
+		{URL: "c", Width: 0, Height: 0},       // unknown dims, always passes
+		{URL: "d", Width: 800, Height: 800},   // below existing (900x900)
+	}
+
+	got := filterCandidatesByResolution(candidates, 500, 500, 900, 900, logger)
+
+	if len(got) != 2 {
+		t.Fatalf("want 2 candidates, got %d: %v", len(got), got)
+	}
+	if got[0].URL != "b" {
+		t.Errorf("first candidate URL = %q, want %q", got[0].URL, "b")
+	}
+	if got[1].URL != "c" {
+		t.Errorf("second candidate URL = %q, want %q", got[1].URL, "c")
+	}
+}
+
+func TestFilterCandidatesByResolution_NoConstraints(t *testing.T) {
+	logger := testLogger()
+	candidates := []provider.ImageResult{
+		{URL: "a", Width: 100, Height: 100},
+		{URL: "b", Width: 50, Height: 50},
+	}
+	got := filterCandidatesByResolution(candidates, 0, 0, 0, 0, logger)
+	if len(got) != 2 {
+		t.Errorf("want 2 candidates with no constraints, got %d", len(got))
+	}
+}
+
+func TestImageFixer_Fix_ResolutionGate(t *testing.T) {
+	mock := &mockImageProvider{
+		result: &provider.FetchResult{
+			Images: []provider.ImageResult{
+				{URL: "http://example.com/low.jpg", Type: "thumb", Width: 300, Height: 300},
+			},
+		},
+	}
+
+	f := NewImageFixer(mock, testLogger())
+	a := &artist.Artist{
+		Name:          "Gate Test",
+		MusicBrainzID: "mbid-gate",
+		Path:          t.TempDir(),
+	}
+	v := &Violation{
+		RuleID: RuleThumbMinRes,
+		Config: RuleConfig{MinWidth: 1000, MinHeight: 1000},
+	}
+
+	fr, err := f.Fix(context.Background(), a, v)
+	if err != nil {
+		t.Fatalf("Fix: %v", err)
+	}
+	if fr.Fixed {
+		t.Error("Fixed = true; want false when all candidates are below minimum")
+	}
+	if !strings.Contains(fr.Message, "no thumb candidates meet minimum resolution requirements") {
+		t.Errorf("Message = %q; want 'no thumb candidates meet minimum resolution requirements'", fr.Message)
+	}
+}
+
+func TestImageFixer_FetchImages_Cached(t *testing.T) {
+	mock := &mockImageProvider{
+		result: &provider.FetchResult{
+			Images: []provider.ImageResult{
+				{URL: "http://example.com/img.jpg", Type: "thumb", Width: 1920, Height: 1080},
+			},
+		},
+	}
+
+	f := NewImageFixer(mock, testLogger())
+	a := &artist.Artist{
+		Name:          "Cache Test",
+		MusicBrainzID: "mbid-cache",
+		Path:          t.TempDir(),
+	}
+
+	// First call: thumb_min_res -- one candidate passes, SelectBestCandidate=false
+	// so it returns pending_choice (multiple not needed here -- just one candidate
+	// means it would try to download; use SelectBestCandidate to avoid HTTP).
+	// Use a resolution constraint to get a predictable no-download path instead.
+	v1 := &Violation{
+		RuleID: RuleThumbMinRes,
+		Config: RuleConfig{MinWidth: 5000, MinHeight: 5000}, // forces "no candidates" path
+	}
+	if _, err := f.Fix(context.Background(), a, v1); err != nil {
+		t.Fatalf("Fix v1: %v", err)
+	}
+
+	// Second call: fanart_min_res -- different rule, same MBID
+	v2 := &Violation{
+		RuleID: RuleFanartMinRes,
+		Config: RuleConfig{MinWidth: 5000, MinHeight: 5000},
+	}
+	if _, err := f.Fix(context.Background(), a, v2); err != nil {
+		t.Fatalf("Fix v2: %v", err)
+	}
+
+	if mock.calls != 1 {
+		t.Errorf("FetchImages called %d times; want 1 (cache hit on second call)", mock.calls)
+	}
+}
+
+// TestImageFixer_Fix_PostDownloadDimensionGate verifies that a candidate with
+// unknown provider dimensions (Width=0, Height=0 -- as returned by FanartTV and
+// Deezer) is still rejected when its actual downloaded pixels fall below the
+// existing image's resolution. This is the real-world "Adie thumbnail clobber"
+// scenario.
+func TestImageFixer_Fix_PostDownloadDimensionGate(t *testing.T) {
+	// Serve a 200x200 JPEG from an HTTP test server (simulates a low-res FanartTV candidate).
+	smallJPEG := makeTestJPEG(t, 200, 200)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "image/jpeg")
+		_, _ = w.Write(smallJPEG)
+	}))
+	defer srv.Close()
+
+	// The mock provider returns a candidate with NO dimension info (0x0) -- exactly
+	// what FanartTV and Deezer produce.
+	mock := &mockImageProvider{
+		result: &provider.FetchResult{
+			Images: []provider.ImageResult{
+				{URL: srv.URL + "/low.jpg", Type: "thumb", Width: 0, Height: 0, Source: "fanarttv"},
+			},
+		},
+	}
+
+	dir := t.TempDir()
+
+	// Write a high-res existing thumbnail (1500x1500) so the gate can compare.
+	highResJPEG := makeTestJPEG(t, 1500, 1500)
+	if err := os.WriteFile(filepath.Join(dir, "folder.jpg"), highResJPEG, 0o644); err != nil {
+		t.Fatalf("writing existing thumb: %v", err)
+	}
+
+	f := NewImageFixer(mock, testLogger())
+	a := &artist.Artist{
+		Name:          "Adie",
+		MusicBrainzID: "mbid-adie",
+		Path:          dir,
+		ThumbExists:   true,
+	}
+	v := &Violation{
+		RuleID: RuleThumbMinRes,
+		Config: RuleConfig{MinWidth: 500, MinHeight: 500, SelectBestCandidate: true},
+	}
+
+	fr, err := f.Fix(context.Background(), a, v)
+	if err != nil {
+		t.Fatalf("Fix: %v", err)
+	}
+	if fr.Fixed {
+		t.Error("Fixed = true; low-res candidate should not overwrite higher-res existing image")
+	}
+
+	// Confirm the original high-res file is still in place and unchanged.
+	remaining, err := os.ReadFile(filepath.Join(dir, "folder.jpg"))
+	if err != nil {
+		t.Fatalf("reading existing thumb after fix: %v", err)
+	}
+	if !bytes.Equal(remaining, highResJPEG) {
+		t.Error("existing thumbnail was modified; it should have been left untouched")
+	}
+}
+
+// TestImageFixer_Fix_ThumbSquare_ResolutionGate verifies that a thumb_square
+// violation (not a min-res rule) still protects a high-res existing image from
+// being overwritten by a lower-res candidate.
+func TestImageFixer_Fix_ThumbSquare_ResolutionGate(t *testing.T) {
+	smallJPEG := makeTestJPEG(t, 300, 300)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "image/jpeg")
+		_, _ = w.Write(smallJPEG)
+	}))
+	defer srv.Close()
+
+	mock := &mockImageProvider{
+		result: &provider.FetchResult{
+			Images: []provider.ImageResult{
+				{URL: srv.URL + "/square.jpg", Type: "thumb", Width: 0, Height: 0, Source: "fanarttv"},
+			},
+		},
+	}
+
+	dir := t.TempDir()
+	highResJPEG := makeTestJPEG(t, 1200, 800) // non-square, high-res
+	if err := os.WriteFile(filepath.Join(dir, "folder.jpg"), highResJPEG, 0o644); err != nil {
+		t.Fatalf("writing existing thumb: %v", err)
+	}
+
+	f := NewImageFixer(mock, testLogger())
+	a := &artist.Artist{
+		Name:          "Adie",
+		MusicBrainzID: "mbid-adie-sq",
+		Path:          dir,
+		ThumbExists:   true,
+	}
+	v := &Violation{
+		RuleID: RuleThumbSquare,
+		// No MinWidth/MinHeight; AspectRatio/Tolerance only
+		Config: RuleConfig{AspectRatio: 1.0, Tolerance: 0.1, SelectBestCandidate: true},
+	}
+
+	fr, err := f.Fix(context.Background(), a, v)
+	if err != nil {
+		t.Fatalf("Fix: %v", err)
+	}
+	if fr.Fixed {
+		t.Error("Fixed = true; 300x300 candidate should not overwrite 1200x800 (960000 px) existing image")
+	}
+
+	remaining, err := os.ReadFile(filepath.Join(dir, "folder.jpg"))
+	if err != nil {
+		t.Fatalf("reading existing thumb: %v", err)
+	}
+	if !bytes.Equal(remaining, highResJPEG) {
+		t.Error("existing high-res thumbnail was modified; it should have been left untouched")
+	}
+}
+
+func TestExistingImageFileNames_OnlyWritesExistingFiles(t *testing.T) {
+	dir := t.TempDir()
+
+	// Only folder.jpg exists; artist.jpg and poster.jpg do not
+	if err := os.WriteFile(filepath.Join(dir, "folder.jpg"), []byte("x"), 0o644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	got := existingImageFileNames(dir, "thumb")
+	if len(got) != 1 || got[0] != "folder.jpg" {
+		t.Errorf("existingImageFileNames = %v; want [folder.jpg]", got)
+	}
+}
+
+func TestExistingImageFileNames_FallsBackToPrimary(t *testing.T) {
+	dir := t.TempDir() // empty -- no existing files
+
+	got := existingImageFileNames(dir, "thumb")
+	if len(got) != 1 {
+		t.Fatalf("want 1 (primary fallback), got %d: %v", len(got), got)
+	}
+	// primary for thumb is folder.jpg
+	if got[0] != "folder.jpg" {
+		t.Errorf("primary fallback = %q; want folder.jpg", got[0])
 	}
 }
 

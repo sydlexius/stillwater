@@ -32,7 +32,7 @@ web/static/css/styles.css
 
 # Local overrides
 docker-compose.local.yml
-setupdocker.sh
+setupdocker.ps1
 .env.integration
 
 # Temp

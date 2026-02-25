@@ -148,15 +148,15 @@ The local compose mounts:
 
 The app is available at `http://localhost:1973` once started.
 
-### setupdocker.sh
+### setupdocker.ps1
 
-A local helper script `setupdocker.sh` automates the full stop/build/start cycle. It is gitignored and not committed. Use it whenever a container rebuild and reload is needed:
+A local helper script `setupdocker.ps1` automates the full stop/build/start cycle. It is gitignored and not committed. Use it whenever a container rebuild and reload is needed:
 
-```bash
-bash setupdocker.sh
+```powershell
+.\setupdocker.ps1
 ```
 
-The script stops and removes any running `stillwater*` containers, rebuilds the image, runs `docker compose -f docker-compose.local.yml up -d`, and tails the startup logs.
+Run from PowerShell, not Git Bash -- MSYS2 path conversion in Git Bash breaks Docker volume mounts on Windows. The script stops and removes any running `stillwater*` containers, rebuilds the image, runs `docker compose -f docker-compose.local.yml up -d`, and tails the startup logs.
 
 ## Milestone Work Protocol
 
