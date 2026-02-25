@@ -191,7 +191,7 @@ CREATE TABLE IF NOT EXISTS platform_profiles (
 );
 
 -- Seed built-in platform profiles (image_naming in array format).
-INSERT INTO platform_profiles (id, name, is_builtin, is_active, nfo_enabled, nfo_format, image_naming) VALUES
+INSERT OR IGNORE INTO platform_profiles (id, name, is_builtin, is_active, nfo_enabled, nfo_format, image_naming) VALUES
     ('emby',     'Emby',     1, 0, 1, 'kodi', '{"thumb":["folder.jpg"],"fanart":["backdrop.jpg"],"logo":["logo.png"],"banner":["banner.jpg"]}'),
     ('jellyfin', 'Jellyfin', 1, 0, 1, 'kodi', '{"thumb":["folder.jpg"],"fanart":["backdrop.jpg"],"logo":["logo.png"],"banner":["banner.jpg"]}'),
     ('kodi',     'Kodi',     1, 1, 1, 'kodi', '{"thumb":["folder.jpg"],"fanart":["fanart.jpg"],"logo":["logo.png"],"banner":["banner.jpg"]}'),
@@ -226,7 +226,7 @@ CREATE TABLE IF NOT EXISTS bulk_job_items (
 
 CREATE INDEX idx_bulk_job_items_job_id ON bulk_job_items(job_id);
 
-CREATE TABLE scraper_config (
+CREATE TABLE IF NOT EXISTS scraper_config (
     id TEXT PRIMARY KEY,
     scope TEXT NOT NULL UNIQUE,
     config_json TEXT NOT NULL DEFAULT '{}',
@@ -252,6 +252,7 @@ INSERT OR IGNORE INTO settings (key, value) VALUES
 
 -- +goose Down
 
+DROP INDEX IF EXISTS idx_scraper_config_scope;
 DROP TABLE IF EXISTS scraper_config;
 DROP INDEX IF EXISTS idx_bulk_job_items_job_id;
 DROP TABLE IF EXISTS bulk_job_items;
