@@ -258,6 +258,7 @@ func scanArtistWithExtra(row interface{ Scan(...any) error }, n int) (*artistWit
 	var a Artist
 	var genres, styles, moods string
 	var metadataSources string
+	var audiodbFetchedAt, discogsFetchedAt, wikidataFetchedAt, lastfmFetchedAt sql.NullString
 	var lastScannedAt sql.NullString
 	var nfo, thumb, fanart, logo, banner int
 	var thumbLowRes, fanartLowRes, logoLowRes, bannerLowRes int
@@ -273,6 +274,7 @@ func scanArtistWithExtra(row interface{ Scan(...any) error }, n int) (*artistWit
 		&thumbLowRes, &fanartLowRes, &logoLowRes, &bannerLowRes,
 		&a.HealthScore, &isExcluded, &a.ExclusionReason, &isClassical,
 		&metadataSources,
+		&audiodbFetchedAt, &discogsFetchedAt, &wikidataFetchedAt, &lastfmFetchedAt,
 		&lastScannedAt, &createdAt, &updatedAt,
 	}
 	args = append(args, extraPtrs...)
@@ -296,6 +298,22 @@ func scanArtistWithExtra(row interface{ Scan(...any) error }, n int) (*artistWit
 	a.IsExcluded = isExcluded == 1
 	a.IsClassical = isClassical == 1
 	a.MetadataSources = UnmarshalStringMap(metadataSources)
+	if audiodbFetchedAt.Valid {
+		t := parseTime(audiodbFetchedAt.String)
+		a.AudioDBIDFetchedAt = &t
+	}
+	if discogsFetchedAt.Valid {
+		t := parseTime(discogsFetchedAt.String)
+		a.DiscogsIDFetchedAt = &t
+	}
+	if wikidataFetchedAt.Valid {
+		t := parseTime(wikidataFetchedAt.String)
+		a.WikidataIDFetchedAt = &t
+	}
+	if lastfmFetchedAt.Valid {
+		t := parseTime(lastfmFetchedAt.String)
+		a.LastFMIDFetchedAt = &t
+	}
 	if lastScannedAt.Valid {
 		t := parseTime(lastScannedAt.String)
 		a.LastScannedAt = &t

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 )
 
@@ -85,6 +86,10 @@ func (o *Orchestrator) FetchMetadata(ctx context.Context, mbid string, name stri
 			}
 		}
 	}
+
+	// Backfill provider IDs from MusicBrainz URL relations when not already set.
+	// MusicBrainz returns discogs and wikidata URLs; extract the numeric/Q IDs.
+	extractProviderIDsFromURLs(result.Metadata)
 
 	return result, nil
 }
@@ -442,4 +447,41 @@ func containsString(slice []string, s string) bool {
 		}
 	}
 	return false
+}
+
+// extractProviderIDsFromURLs backfills DiscogsID and WikidataID from URL
+// relations returned by MusicBrainz when the IDs are not yet set.
+//
+// MusicBrainz URL relations look like:
+//
+//	discogs:  "https://www.discogs.com/artist/24941"  -> "24941"
+//	wikidata: "https://www.wikidata.org/wiki/Q44190"  -> "Q44190"
+func extractProviderIDsFromURLs(meta *ArtistMetadata) {
+	if meta == nil {
+		return
+	}
+
+	if meta.DiscogsID == "" {
+		if u, ok := meta.URLs["discogs"]; ok && u != "" {
+			// Last path segment is the numeric ID.
+			if idx := strings.LastIndex(u, "/"); idx >= 0 {
+				candidate := u[idx+1:]
+				if candidate != "" && candidate != "artist" {
+					meta.DiscogsID = candidate
+				}
+			}
+		}
+	}
+
+	if meta.WikidataID == "" {
+		if u, ok := meta.URLs["wikidata"]; ok && u != "" {
+			// Last path segment is the Q-item ID.
+			if idx := strings.LastIndex(u, "/"); idx >= 0 {
+				candidate := u[idx+1:]
+				if len(candidate) > 1 && candidate[0] == 'Q' {
+					meta.WikidataID = candidate
+				}
+			}
+		}
+	}
 }
