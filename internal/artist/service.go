@@ -19,7 +19,7 @@ const artistColumns = `id, name, sort_name, type, gender, disambiguation,
 	path, nfo_exists, thumb_exists, fanart_exists, logo_exists, banner_exists,
 	thumb_low_res, fanart_low_res, logo_low_res, banner_low_res,
 	health_score, is_excluded, exclusion_reason, is_classical, metadata_sources,
-	audiodb_id_fetched_at, discogs_id_fetched_at, wikidata_id_fetched_at, lastfm_id_fetched_at,
+	audiodb_id_fetched_at, discogs_id_fetched_at, wikidata_id_fetched_at, lastfm_fetched_at,
 	last_scanned_at, created_at, updated_at`
 
 // Service provides artist and band member data operations.
@@ -50,7 +50,7 @@ func (s *Service) Create(ctx context.Context, a *Artist) error {
 			path, nfo_exists, thumb_exists, fanart_exists, logo_exists, banner_exists,
 			thumb_low_res, fanart_low_res, logo_low_res, banner_low_res,
 			health_score, is_excluded, exclusion_reason, is_classical, metadata_sources,
-			audiodb_id_fetched_at, discogs_id_fetched_at, wikidata_id_fetched_at, lastfm_id_fetched_at,
+			audiodb_id_fetched_at, discogs_id_fetched_at, wikidata_id_fetched_at, lastfm_fetched_at,
 			last_scanned_at, created_at, updated_at
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
@@ -65,7 +65,7 @@ func (s *Service) Create(ctx context.Context, a *Artist) error {
 		a.HealthScore, boolToInt(a.IsExcluded), a.ExclusionReason, boolToInt(a.IsClassical),
 		MarshalStringMap(a.MetadataSources),
 		formatNullableTime(a.AudioDBIDFetchedAt), formatNullableTime(a.DiscogsIDFetchedAt),
-		formatNullableTime(a.WikidataIDFetchedAt), formatNullableTime(a.LastFMIDFetchedAt),
+		formatNullableTime(a.WikidataIDFetchedAt), formatNullableTime(a.LastFMFetchedAt),
 		formatNullableTime(a.LastScannedAt),
 		now.Format(time.RFC3339), now.Format(time.RFC3339),
 	)
@@ -207,7 +207,7 @@ func (s *Service) Update(ctx context.Context, a *Artist) error {
 			thumb_low_res = ?, fanart_low_res = ?, logo_low_res = ?, banner_low_res = ?,
 			health_score = ?, is_excluded = ?, exclusion_reason = ?, is_classical = ?,
 			metadata_sources = ?,
-			audiodb_id_fetched_at = ?, discogs_id_fetched_at = ?, wikidata_id_fetched_at = ?, lastfm_id_fetched_at = ?,
+			audiodb_id_fetched_at = ?, discogs_id_fetched_at = ?, wikidata_id_fetched_at = ?, lastfm_fetched_at = ?,
 			last_scanned_at = ?, updated_at = ?
 		WHERE id = ?
 	`,
@@ -222,7 +222,7 @@ func (s *Service) Update(ctx context.Context, a *Artist) error {
 		a.HealthScore, boolToInt(a.IsExcluded), a.ExclusionReason, boolToInt(a.IsClassical),
 		MarshalStringMap(a.MetadataSources),
 		formatNullableTime(a.AudioDBIDFetchedAt), formatNullableTime(a.DiscogsIDFetchedAt),
-		formatNullableTime(a.WikidataIDFetchedAt), formatNullableTime(a.LastFMIDFetchedAt),
+		formatNullableTime(a.WikidataIDFetchedAt), formatNullableTime(a.LastFMFetchedAt),
 		formatNullableTime(a.LastScannedAt),
 		a.UpdatedAt.Format(time.RFC3339),
 		a.ID,
@@ -381,7 +381,7 @@ func (s *Service) UpdateProviderFetchedAt(ctx context.Context, artistID, prov st
 		"audiodb":  "audiodb_id_fetched_at",
 		"discogs":  "discogs_id_fetched_at",
 		"wikidata": "wikidata_id_fetched_at",
-		"lastfm":   "lastfm_id_fetched_at",
+		"lastfm":   "lastfm_fetched_at",
 	}[prov]
 	if !ok {
 		return fmt.Errorf("unknown provider for fetched_at: %s", prov)
@@ -602,7 +602,7 @@ func scanArtist(row interface{ Scan(...any) error }) (*Artist, error) {
 	}
 	if lastfmFetchedAt.Valid {
 		t := parseTime(lastfmFetchedAt.String)
-		a.LastFMIDFetchedAt = &t
+		a.LastFMFetchedAt = &t
 	}
 	if lastScannedAt.Valid {
 		t := parseTime(lastScannedAt.String)

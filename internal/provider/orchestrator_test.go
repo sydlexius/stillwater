@@ -234,3 +234,78 @@ func findSource(sources []FieldSource, field string) *FieldSource {
 	}
 	return nil
 }
+
+func TestExtractProviderIDsFromURLs(t *testing.T) {
+	tests := []struct {
+		name           string
+		urls           map[string]string
+		wantDiscogsID  string
+		wantWikidataID string
+	}{
+		{
+			name:          "plain numeric discogs URL",
+			urls:          map[string]string{"discogs": "https://www.discogs.com/artist/24941"},
+			wantDiscogsID: "24941",
+		},
+		{
+			name:          "slugged discogs URL extracts numeric prefix only",
+			urls:          map[string]string{"discogs": "https://www.discogs.com/artist/24941-a-ha"},
+			wantDiscogsID: "24941",
+		},
+		{
+			name:           "wikidata Q-item",
+			urls:           map[string]string{"wikidata": "https://www.wikidata.org/wiki/Q44190"},
+			wantWikidataID: "Q44190",
+		},
+		{
+			name:           "wikidata URL with query string strips it",
+			urls:           map[string]string{"wikidata": "https://www.wikidata.org/wiki/Q44190?uselang=en"},
+			wantWikidataID: "Q44190",
+		},
+		{
+			name: "both providers",
+			urls: map[string]string{
+				"discogs":  "https://www.discogs.com/artist/24941-a-ha",
+				"wikidata": "https://www.wikidata.org/wiki/Q44190",
+			},
+			wantDiscogsID:  "24941",
+			wantWikidataID: "Q44190",
+		},
+		{
+			name: "existing IDs are not overwritten",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			meta := &ArtistMetadata{
+				URLs: tt.urls,
+			}
+			extractProviderIDsFromURLs(meta)
+			if meta.DiscogsID != tt.wantDiscogsID {
+				t.Errorf("DiscogsID: got %q, want %q", meta.DiscogsID, tt.wantDiscogsID)
+			}
+			if meta.WikidataID != tt.wantWikidataID {
+				t.Errorf("WikidataID: got %q, want %q", meta.WikidataID, tt.wantWikidataID)
+			}
+		})
+	}
+
+	t.Run("existing IDs are not overwritten", func(t *testing.T) {
+		meta := &ArtistMetadata{
+			DiscogsID:  "existing",
+			WikidataID: "Q999",
+			URLs: map[string]string{
+				"discogs":  "https://www.discogs.com/artist/24941",
+				"wikidata": "https://www.wikidata.org/wiki/Q44190",
+			},
+		}
+		extractProviderIDsFromURLs(meta)
+		if meta.DiscogsID != "existing" {
+			t.Errorf("DiscogsID was overwritten: got %q", meta.DiscogsID)
+		}
+		if meta.WikidataID != "Q999" {
+			t.Errorf("WikidataID was overwritten: got %q", meta.WikidataID)
+		}
+	})
+}
