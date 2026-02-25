@@ -136,12 +136,13 @@ var defaultRules = []Rule{
 		Config:      RuleConfig{MinWidth: 1000, MinHeight: 185, Severity: "info"},
 	},
 	{
-		ID:          RuleExtraneousImages,
-		Name:        "Extraneous image files",
-		Description: "Detects non-canonical image files that may cause display issues on media servers",
-		Category:    "image",
-		Enabled:     true,
-		Config:      RuleConfig{Severity: "warning"},
+		ID:             RuleExtraneousImages,
+		Name:           "Extraneous image files",
+		Description:    "Detects non-canonical image files that may cause display issues on media servers",
+		Category:       "image",
+		Enabled:        true,
+		AutomationMode: "notify",
+		Config:         RuleConfig{Severity: "warning"},
 	},
 }
 
@@ -161,15 +162,19 @@ func NewService(db *sql.DB) *Service {
 func (s *Service) SeedDefaults(ctx context.Context) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 	for _, r := range defaultRules {
+		autoMode := r.AutomationMode
+		if autoMode == "" {
+			autoMode = "auto"
+		}
 		_, err := s.db.ExecContext(ctx, `
-			INSERT INTO rules (id, name, description, category, enabled, config, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+			INSERT INTO rules (id, name, description, category, enabled, automation_mode, config, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(id) DO UPDATE SET
 				name        = excluded.name,
 				description = excluded.description,
 				updated_at  = excluded.updated_at
 		`, r.ID, r.Name, r.Description, r.Category, boolToInt(r.Enabled),
-			MarshalConfig(r.Config), now, now)
+			autoMode, MarshalConfig(r.Config), now, now)
 		if err != nil {
 			return fmt.Errorf("seeding rule %s: %w", r.ID, err)
 		}

@@ -25,11 +25,16 @@ type itemUpdateBody struct {
 
 // PushMetadata updates metadata for an artist item on the Jellyfin server.
 func (c *Client) PushMetadata(ctx context.Context, platformArtistID string, data connection.ArtistPushData) error {
+	// Styles map to Tags; Moods are appended as additional tags since
+	// Jellyfin has no dedicated moods field. Disambiguation and YearsActive
+	// have no corresponding Jellyfin fields and are omitted.
+	tags := append([]string{}, data.Styles...)
+	tags = append(tags, data.Moods...)
 	body := itemUpdateBody{
 		Name:     data.Name,
 		Overview: data.Biography,
 		Genres:   data.Genres,
-		Tags:     data.Styles,
+		Tags:     tags,
 	}
 	if data.SortName != "" {
 		body.ForcedSortName = data.SortName
@@ -101,7 +106,8 @@ func (c *Client) UploadImage(ctx context.Context, platformArtistID string, image
 	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode >= 300 {
-		respBody, _ := io.ReadAll(resp.Body)
+		const maxErrBody = 1 << 20 // 1 MB
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrBody))
 		return fmt.Errorf("image upload failed with status %d: %s", resp.StatusCode, string(respBody))
 	}
 

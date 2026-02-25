@@ -563,11 +563,14 @@ func (f *ExtraneousImagesFixer) Fix(ctx context.Context, a *artist.Artist, _ *Vi
 	expected := make(map[string]bool)
 	expected["artist.nfo"] = true
 
-	profile, err := f.platformService.GetActive(ctx)
+	var profile *platform.Profile
+	if f.platformService != nil {
+		profile, _ = f.platformService.GetActive(ctx)
+	}
 	imageTypes := []string{"thumb", "fanart", "logo", "banner"}
 	for _, imageType := range imageTypes {
 		var primary string
-		if err == nil && profile != nil {
+		if profile != nil {
 			primary = profile.ImageNaming.PrimaryName(imageType)
 		}
 		if primary == "" {
@@ -578,7 +581,7 @@ func (f *ExtraneousImagesFixer) Fix(ctx context.Context, a *artist.Artist, _ *Vi
 		}
 		expected[strings.ToLower(primary)] = true
 		base := strings.TrimSuffix(primary, filepath.Ext(primary))
-		for _, ext := range []string{".jpg", ".jpeg", ".png"} {
+		for ext := range imageExtensions {
 			expected[strings.ToLower(base+ext)] = true
 		}
 	}
@@ -595,7 +598,7 @@ func (f *ExtraneousImagesFixer) Fix(ctx context.Context, a *artist.Artist, _ *Vi
 		}
 		name := entry.Name()
 		ext := strings.ToLower(filepath.Ext(name))
-		if ext != ".jpg" && ext != ".jpeg" && ext != ".png" {
+		if !imageExtensions[ext] {
 			continue
 		}
 		if expected[strings.ToLower(name)] {

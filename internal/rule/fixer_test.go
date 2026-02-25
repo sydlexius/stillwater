@@ -746,3 +746,94 @@ func TestWriteArtistNFO(t *testing.T) {
 		t.Errorf("MBID = %q, want 'test-mbid'", parsed.MusicBrainzArtistID)
 	}
 }
+
+func TestExtraneousImagesFixer_CanFix(t *testing.T) {
+	f := NewExtraneousImagesFixer(nil, testLogger())
+	if !f.CanFix(&Violation{RuleID: RuleExtraneousImages}) {
+		t.Error("should handle extraneous_images")
+	}
+	if f.CanFix(&Violation{RuleID: RuleNFOExists}) {
+		t.Error("should not handle nfo_exists")
+	}
+}
+
+func TestExtraneousImagesFixer_Fix_DeletesExtraneous(t *testing.T) {
+	dir := t.TempDir()
+	// Create canonical files
+	if err := os.WriteFile(filepath.Join(dir, "folder.jpg"), []byte("thumb"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "fanart.jpg"), []byte("fanart"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Create extraneous files
+	if err := os.WriteFile(filepath.Join(dir, "random.jpg"), []byte("extra1"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "old-poster.png"), []byte("extra2"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	a := &artist.Artist{Name: "Fixer Test", Path: dir}
+	f := NewExtraneousImagesFixer(nil, testLogger())
+
+	result, err := f.Fix(context.Background(), a, &Violation{RuleID: RuleExtraneousImages})
+	if err != nil {
+		t.Fatalf("Fix: %v", err)
+	}
+	if !result.Fixed {
+		t.Error("Fixed = false, want true")
+	}
+	if !strings.Contains(result.Message, "random.jpg") {
+		t.Errorf("Message should mention random.jpg: %s", result.Message)
+	}
+
+	// Canonical files should remain
+	if _, err := os.Stat(filepath.Join(dir, "folder.jpg")); err != nil {
+		t.Error("folder.jpg should not have been deleted")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "fanart.jpg")); err != nil {
+		t.Error("fanart.jpg should not have been deleted")
+	}
+	// Extraneous files should be gone
+	if _, err := os.Stat(filepath.Join(dir, "random.jpg")); !os.IsNotExist(err) {
+		t.Error("random.jpg should have been deleted")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "old-poster.png")); !os.IsNotExist(err) {
+		t.Error("old-poster.png should have been deleted")
+	}
+}
+
+func TestExtraneousImagesFixer_Fix_NoExtraneous(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "folder.jpg"), []byte("thumb"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	a := &artist.Artist{Name: "Clean Artist", Path: dir}
+	f := NewExtraneousImagesFixer(nil, testLogger())
+
+	result, err := f.Fix(context.Background(), a, &Violation{RuleID: RuleExtraneousImages})
+	if err != nil {
+		t.Fatalf("Fix: %v", err)
+	}
+	if result.Fixed {
+		t.Error("Fixed = true, want false when no extraneous files exist")
+	}
+}
+
+func TestExtraneousImagesFixer_Fix_EmptyPath(t *testing.T) {
+	a := &artist.Artist{Name: "No Path"}
+	f := NewExtraneousImagesFixer(nil, testLogger())
+
+	result, err := f.Fix(context.Background(), a, &Violation{RuleID: RuleExtraneousImages})
+	if err != nil {
+		t.Fatalf("Fix: %v", err)
+	}
+	if result.Fixed {
+		t.Error("Fixed = true, want false for empty path")
+	}
+	if result.Message != "artist has no path" {
+		t.Errorf("Message = %q, want 'artist has no path'", result.Message)
+	}
+}
