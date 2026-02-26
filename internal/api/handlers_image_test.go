@@ -114,8 +114,9 @@ func TestRequireArtistPath_Degraded(t *testing.T) {
 	// Artist with empty path (degraded library)
 	a := &artist.Artist{Name: "API Only Artist", SortName: "API Only Artist", Path: ""}
 
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/artists/test/images", nil)
 	w := httptest.NewRecorder()
-	ok := r.requireArtistPath(w, a)
+	ok := r.requireArtistPath(w, req, a)
 	if ok {
 		t.Fatal("expected requireArtistPath to return false for empty path")
 	}
@@ -126,7 +127,7 @@ func TestRequireArtistPath_Degraded(t *testing.T) {
 	// Artist with a path should pass
 	a.Path = "/music/some-artist"
 	w = httptest.NewRecorder()
-	ok = r.requireArtistPath(w, a)
+	ok = r.requireArtistPath(w, req, a)
 	if !ok {
 		t.Fatal("expected requireArtistPath to return true for non-empty path")
 	}

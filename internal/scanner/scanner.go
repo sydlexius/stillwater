@@ -167,9 +167,9 @@ func (s *Service) runScan(ctx context.Context, result *ScanResult) {
 	if len(targets) == 0 {
 		s.mu.Lock()
 		result.Status = "failed"
-		result.Error = "no library paths configured"
+		result.Error = "no scannable libraries (all libraries are API-only or no paths configured)"
 		s.mu.Unlock()
-		s.logger.Error("scan failed: no library paths configured")
+		s.logger.Error("scan failed: no scannable libraries (all libraries are API-only or no paths configured)")
 		return
 	}
 

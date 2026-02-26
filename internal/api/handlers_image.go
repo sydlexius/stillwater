@@ -29,11 +29,10 @@ const (
 // requireArtistPath checks that the artist has a filesystem path. Returns true
 // if the path is present (caller may proceed). Returns false and writes a 409
 // response if the artist belongs to a degraded (pathless) library.
-func (r *Router) requireArtistPath(w http.ResponseWriter, a *artist.Artist) bool {
+func (r *Router) requireArtistPath(w http.ResponseWriter, req *http.Request, a *artist.Artist) bool {
 	if a.Path == "" {
-		writeJSON(w, http.StatusConflict, map[string]string{
-			"error": "filesystem operations are not available for this artist (library has no path configured)",
-		})
+		writeError(w, req, http.StatusConflict,
+			"filesystem operations are not available for this artist (library has no path configured)")
 		return false
 	}
 	return true
@@ -65,7 +64,7 @@ func (r *Router) handleImageUpload(w http.ResponseWriter, req *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "artist not found"})
 		return
 	}
-	if !r.requireArtistPath(w, a) {
+	if !r.requireArtistPath(w, req, a) {
 		return
 	}
 
@@ -133,7 +132,7 @@ func (r *Router) handleImageFetch(w http.ResponseWriter, req *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "artist not found"})
 		return
 	}
-	if !r.requireArtistPath(w, a) {
+	if !r.requireArtistPath(w, req, a) {
 		return
 	}
 
@@ -314,7 +313,7 @@ func (r *Router) handleImageCrop(w http.ResponseWriter, req *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "artist not found"})
 		return
 	}
-	if !r.requireArtistPath(w, a) {
+	if !r.requireArtistPath(w, req, a) {
 		return
 	}
 
@@ -671,7 +670,7 @@ func (r *Router) handleDeleteImage(w http.ResponseWriter, req *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "artist not found"})
 		return
 	}
-	if !r.requireArtistPath(w, a) {
+	if !r.requireArtistPath(w, req, a) {
 		return
 	}
 
@@ -784,7 +783,7 @@ func (r *Router) handleLogoTrim(w http.ResponseWriter, req *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "artist not found"})
 		return
 	}
-	if !r.requireArtistPath(w, a) {
+	if !r.requireArtistPath(w, req, a) {
 		return
 	}
 

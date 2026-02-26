@@ -32,7 +32,7 @@ func (r *Router) handleNFODiff(w http.ResponseWriter, req *http.Request) {
 		writeError(w, req, http.StatusNotFound, "artist not found")
 		return
 	}
-	if !r.requireArtistPath(w, a) {
+	if !r.requireArtistPath(w, req, a) {
 		return
 	}
 
@@ -115,7 +115,7 @@ func (r *Router) handleNFOSnapshotRestore(w http.ResponseWriter, req *http.Reque
 		writeError(w, req, http.StatusNotFound, "artist not found")
 		return
 	}
-	if !r.requireArtistPath(w, a) {
+	if !r.requireArtistPath(w, req, a) {
 		return
 	}
 
@@ -197,7 +197,7 @@ func (r *Router) handleNFOConflictCheck(w http.ResponseWriter, req *http.Request
 		writeError(w, req, http.StatusNotFound, "artist not found")
 		return
 	}
-	if !r.requireArtistPath(w, a) {
+	if !r.requireArtistPath(w, req, a) {
 		return
 	}
 

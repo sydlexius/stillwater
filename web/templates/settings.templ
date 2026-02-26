@@ -990,6 +990,8 @@ templ settingsLibraryScript() {
 					} else {
 						res.json().then(function(data) { alert(data.error || "Failed to delete library"); });
 					}
+				}).catch(function() {
+					alert("Failed to delete library");
 				});
 			}
 
