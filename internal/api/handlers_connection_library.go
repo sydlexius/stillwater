@@ -133,7 +133,8 @@ func (r *Router) handleDiscoverLibraries(w http.ResponseWriter, req *http.Reques
 				Imported:   d.Imported,
 			}
 		}
-		renderTempl(w, req, templates.DiscoverResults(connID, templLibs))
+		isOOBE := strings.Contains(req.Header.Get("HX-Current-URL"), "/setup/wizard")
+		renderTempl(w, req, templates.DiscoverResults(connID, templLibs, isOOBE))
 		return
 	}
 	writeJSON(w, http.StatusOK, discovered)
