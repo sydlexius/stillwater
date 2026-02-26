@@ -59,13 +59,18 @@ func (r *Router) handleSetProviderKey(w http.ResponseWriter, req *http.Request) 
 		return
 	}
 
-	// For HTMX requests, re-render the provider card with updated status
+	// For HTMX requests, re-render the provider card with updated status.
+	// Use the OOBE card variant when the request originated from the setup wizard.
 	if req.Header.Get("HX-Request") == "true" {
 		statuses, err := r.providerSettings.ListProviderKeyStatuses(req.Context())
 		if err == nil {
 			for _, s := range statuses {
 				if s.Name == name {
-					renderTempl(w, req, templates.ProviderKeyCard(s))
+					if strings.Contains(req.Header.Get("HX-Current-URL"), "/setup/wizard") {
+						renderTempl(w, req, templates.OnboardingProviderCard(s))
+					} else {
+						renderTempl(w, req, templates.ProviderKeyCard(s))
+					}
 					return
 				}
 			}
@@ -411,8 +416,20 @@ func (r *Router) handleSetWebSearchEnabled(w http.ResponseWriter, req *http.Requ
 		}
 	}
 
-	// For HTMX, trigger a full page refresh so toggle + priority rows update
+	// For HTMX in OOBE context, re-render just the toggle card (avoids full page reload).
+	// In Settings context, trigger a full page refresh so toggle + priority rows update.
 	if isHTMXRequest(req) {
+		if strings.Contains(req.Header.Get("HX-Current-URL"), "/setup/wizard") {
+			status, err := r.providerSettings.ListWebSearchStatuses(req.Context())
+			if err == nil {
+				for _, s := range status {
+					if s.Name == name {
+						renderTempl(w, req, templates.OnboardingWebSearchToggle(s))
+						return
+					}
+				}
+			}
+		}
 		w.Header().Set("HX-Refresh", "true")
 		w.WriteHeader(http.StatusOK)
 		return

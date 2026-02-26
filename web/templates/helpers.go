@@ -215,10 +215,14 @@ func tierTooltip(tier provider.AccessTier) string {
 
 // getKeyLinkText returns the link label for obtaining a provider API key.
 func getKeyLinkText(tier provider.AccessTier) string {
-	if tier == provider.TierPaid {
+	switch tier {
+	case provider.TierPaid:
 		return "Purchase access"
+	case provider.TierFreemium:
+		return "Get premium key"
+	default:
+		return "Get free key"
 	}
-	return "Get free key"
 }
 
 // rateLimitText formats a RateLimitInfo into a short human-readable string.

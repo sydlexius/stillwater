@@ -252,12 +252,18 @@ func (r *Router) handleOnboardingPage(w http.ResponseWriter, req *http.Request) 
 		}
 	}
 
+	webSearchProviders, err := r.providerSettings.ListWebSearchStatuses(req.Context())
+	if err != nil {
+		r.logger.Error("listing web search providers for onboarding", "error", err)
+	}
+
 	data := templates.OnboardingData{
-		Libraries:    libs,
-		Profiles:     profiles,
-		ProviderKeys: providerKeys,
-		Connections:  conns,
-		CurrentStep:  currentStep,
+		Libraries:          libs,
+		Profiles:           profiles,
+		ProviderKeys:       providerKeys,
+		WebSearchProviders: webSearchProviders,
+		Connections:        conns,
+		CurrentStep:        currentStep,
 	}
 	renderTempl(w, req, templates.OnboardingPage(r.assets(), data))
 }

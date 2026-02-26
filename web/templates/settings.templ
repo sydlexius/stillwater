@@ -1274,8 +1274,12 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 				</div>
 				{{ rlText := rateLimitText(pk.RateLimit) }}
 				<div class="flex items-center gap-2 mt-0.5">
-					if !pk.RequiresKey {
+					if !pk.RequiresKey && !pk.OptionalKey {
 						<span class="text-xs text-gray-500 dark:text-gray-400">No API key required</span>
+					} else if pk.OptionalKey && pk.HasKey {
+						<span class="text-xs text-gray-500 dark:text-gray-400">Premium key configured</span>
+					} else if pk.OptionalKey {
+						<span class="text-xs text-gray-500 dark:text-gray-400">Free tier (optional premium upgrade)</span>
 					} else if pk.HasKey {
 						<span class="text-xs text-gray-500 dark:text-gray-400">Key configured</span>
 					} else {
@@ -1288,7 +1292,7 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 			</div>
 		</div>
 		<div class="flex items-center gap-2">
-			if pk.RequiresKey {
+			if pk.RequiresKey || pk.OptionalKey {
 				if pk.HelpURL != "" {
 					<a
 						href={ templ.SafeURL(pk.HelpURL) }
@@ -1324,42 +1328,48 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 			}
 		</div>
 	</div>
-	<div id={ "key-input-" + string(pk.Name) } class="hidden mt-2 sm:ml-8">
-		<form
-			class="flex flex-col gap-2 sm:flex-row sm:items-center"
-			hx-put={ "/api/v1/providers/" + string(pk.Name) + "/key" }
-			hx-target={ "#provider-card-" + string(pk.Name) }
-			hx-swap="innerHTML"
-			hx-on::after-request="if(event.detail.successful) this.closest('[id^=key-input-]').classList.add('hidden')"
-		>
-			<input
-				type="text"
-				name="api_key"
-				placeholder="Enter API key..."
-				autocomplete="off"
-				data-1p-ignore
-				data-lpignore="true"
-				class="flex-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-				required
-			/>
-			<div class="flex gap-2">
-				<button
-					type="submit"
-					class="text-sm px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 transition-colors"
-				>
-					Save
-				</button>
-				<button
-					type="button"
-					class="text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-					onclick={ toggleKeyInput(string(pk.Name)) }
-				>
-					Cancel
-				</button>
-			</div>
-		</form>
-	</div>
-	<div id={ "test-result-" + string(pk.Name) } class="ml-8 text-xs mt-1"></div>
+	if pk.RequiresKey || pk.OptionalKey {
+		<div id={ "key-input-" + string(pk.Name) } class="hidden mt-2 sm:ml-8">
+			<form
+				class="flex flex-col gap-2 sm:flex-row sm:items-center"
+				hx-put={ "/api/v1/providers/" + string(pk.Name) + "/key" }
+				hx-target={ "#provider-card-" + string(pk.Name) }
+				hx-swap="innerHTML"
+				hx-on::after-request="if(event.detail.successful) this.closest('[id^=key-input-]').classList.add('hidden')"
+			>
+				<input
+					type="text"
+					name="api_key"
+					if pk.OptionalKey {
+						placeholder="Enter premium API key..."
+					} else {
+						placeholder="Enter API key..."
+					}
+					autocomplete="off"
+					data-1p-ignore
+					data-lpignore="true"
+					class="flex-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+					required
+				/>
+				<div class="flex gap-2">
+					<button
+						type="submit"
+						class="text-sm px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 transition-colors"
+					>
+						Save
+					</button>
+					<button
+						type="button"
+						class="text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+						onclick={ toggleKeyInput(string(pk.Name)) }
+					>
+						Cancel
+					</button>
+				</div>
+			</form>
+		</div>
+		<div id={ "test-result-" + string(pk.Name) } class="ml-8 text-xs mt-1"></div>
+	}
 }
 
 script toggleKeyInput(providerName string) {

@@ -229,6 +229,67 @@ func TestListProviderKeyStatuses(t *testing.T) {
 	}
 }
 
+func TestOptionalKeyField(t *testing.T) {
+	db := setupTestDB(t)
+	enc := setupTestEncryptor(t)
+	svc := NewSettingsService(db, enc)
+	ctx := context.Background()
+
+	statuses, err := svc.ListProviderKeyStatuses(ctx)
+	if err != nil {
+		t.Fatalf("ListProviderKeyStatuses: %v", err)
+	}
+
+	// AudioDB should have OptionalKey=true
+	var audiodb ProviderKeyStatus
+	for _, s := range statuses {
+		if s.Name == NameAudioDB {
+			audiodb = s
+			break
+		}
+	}
+	if !audiodb.OptionalKey {
+		t.Error("expected AudioDB to have OptionalKey=true")
+	}
+	if audiodb.RequiresKey {
+		t.Error("expected AudioDB RequiresKey=false")
+	}
+	// Without a key: status should be not_required
+	if audiodb.Status != "not_required" {
+		t.Errorf("expected AudioDB status 'not_required' without key, got %s", audiodb.Status)
+	}
+
+	// Set a premium key for AudioDB
+	if err := svc.SetAPIKey(ctx, NameAudioDB, "premium-key-123"); err != nil {
+		t.Fatalf("SetAPIKey: %v", err)
+	}
+	statuses, err = svc.ListProviderKeyStatuses(ctx)
+	if err != nil {
+		t.Fatalf("ListProviderKeyStatuses after key set: %v", err)
+	}
+	for _, s := range statuses {
+		if s.Name == NameAudioDB {
+			audiodb = s
+			break
+		}
+	}
+	if !audiodb.HasKey {
+		t.Error("expected AudioDB HasKey=true after setting key")
+	}
+	if audiodb.Status != "untested" {
+		t.Errorf("expected AudioDB status 'untested' with key, got %s", audiodb.Status)
+	}
+
+	// Other no-key providers should NOT have OptionalKey
+	for _, s := range statuses {
+		if s.Name == NameMusicBrainz || s.Name == NameWikidata || s.Name == NameDeezer {
+			if s.OptionalKey {
+				t.Errorf("expected %s OptionalKey=false, got true", s.Name)
+			}
+		}
+	}
+}
+
 func TestPriorityRoundTrip(t *testing.T) {
 	db := setupTestDB(t)
 	enc := setupTestEncryptor(t)
