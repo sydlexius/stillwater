@@ -16,31 +16,37 @@ import (
 
 // connectionResponse is a Connection without the raw API key for list responses.
 type connectionResponse struct {
-	ID            string  `json:"id"`
-	Name          string  `json:"name"`
-	Type          string  `json:"type"`
-	URL           string  `json:"url"`
-	HasKey        bool    `json:"has_key"`
-	Enabled       bool    `json:"enabled"`
-	Status        string  `json:"status"`
-	StatusMessage string  `json:"status_message,omitempty"`
-	LastCheckedAt *string `json:"last_checked_at,omitempty"`
-	CreatedAt     string  `json:"created_at"`
-	UpdatedAt     string  `json:"updated_at"`
+	ID                   string  `json:"id"`
+	Name                 string  `json:"name"`
+	Type                 string  `json:"type"`
+	URL                  string  `json:"url"`
+	HasKey               bool    `json:"has_key"`
+	Enabled              bool    `json:"enabled"`
+	Status               string  `json:"status"`
+	StatusMessage        string  `json:"status_message,omitempty"`
+	LastCheckedAt        *string `json:"last_checked_at,omitempty"`
+	CreatedAt            string  `json:"created_at"`
+	UpdatedAt            string  `json:"updated_at"`
+	FeatureLibraryImport bool    `json:"feature_library_import"`
+	FeatureNFOWrite      bool    `json:"feature_nfo_write"`
+	FeatureImageWrite    bool    `json:"feature_image_write"`
 }
 
 func toConnectionResponse(c connection.Connection) connectionResponse {
 	resp := connectionResponse{
-		ID:            c.ID,
-		Name:          c.Name,
-		Type:          c.Type,
-		URL:           c.URL,
-		HasKey:        c.APIKey != "",
-		Enabled:       c.Enabled,
-		Status:        c.Status,
-		StatusMessage: c.StatusMessage,
-		CreatedAt:     c.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
-		UpdatedAt:     c.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		ID:                   c.ID,
+		Name:                 c.Name,
+		Type:                 c.Type,
+		URL:                  c.URL,
+		HasKey:               c.APIKey != "",
+		Enabled:              c.Enabled,
+		Status:               c.Status,
+		StatusMessage:        c.StatusMessage,
+		CreatedAt:            c.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		UpdatedAt:            c.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		FeatureLibraryImport: c.FeatureLibraryImport,
+		FeatureNFOWrite:      c.FeatureNFOWrite,
+		FeatureImageWrite:    c.FeatureImageWrite,
 	}
 	if c.LastCheckedAt != nil {
 		s := c.LastCheckedAt.Format("2006-01-02T15:04:05Z07:00")
@@ -87,19 +93,22 @@ func (r *Router) handleGetConnection(w http.ResponseWriter, req *http.Request) {
 
 	resp := toConnectionResponse(*c)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"id":              resp.ID,
-		"name":            resp.Name,
-		"type":            resp.Type,
-		"url":             resp.URL,
-		"has_key":         resp.HasKey,
-		"enabled":         resp.Enabled,
-		"status":          resp.Status,
-		"status_message":  resp.StatusMessage,
-		"last_checked_at": resp.LastCheckedAt,
-		"created_at":      resp.CreatedAt,
-		"updated_at":      resp.UpdatedAt,
-		"library_count":   len(libs),
-		"artist_count":    artistCount,
+		"id":                     resp.ID,
+		"name":                   resp.Name,
+		"type":                   resp.Type,
+		"url":                    resp.URL,
+		"has_key":                resp.HasKey,
+		"enabled":                resp.Enabled,
+		"status":                 resp.Status,
+		"status_message":         resp.StatusMessage,
+		"last_checked_at":        resp.LastCheckedAt,
+		"created_at":             resp.CreatedAt,
+		"updated_at":             resp.UpdatedAt,
+		"feature_library_import": resp.FeatureLibraryImport,
+		"feature_nfo_write":      resp.FeatureNFOWrite,
+		"feature_image_write":    resp.FeatureImageWrite,
+		"library_count":          len(libs),
+		"artist_count":           artistCount,
 	})
 }
 
@@ -197,11 +206,14 @@ func (r *Router) handleCreateConnection(w http.ResponseWriter, req *http.Request
 	}
 
 	c := &connection.Connection{
-		Name:    body.Name,
-		Type:    body.Type,
-		URL:     body.URL,
-		APIKey:  body.APIKey,
-		Enabled: body.Enabled,
+		Name:                 body.Name,
+		Type:                 body.Type,
+		URL:                  body.URL,
+		APIKey:               body.APIKey,
+		Enabled:              body.Enabled,
+		FeatureLibraryImport: true,
+		FeatureNFOWrite:      true,
+		FeatureImageWrite:    true,
 	}
 	if err := r.connectionService.Create(req.Context(), c); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
@@ -255,11 +267,14 @@ func (r *Router) handleUpdateConnection(w http.ResponseWriter, req *http.Request
 	}
 
 	var body struct {
-		Name    string `json:"name"`
-		Type    string `json:"type"`
-		URL     string `json:"url"`
-		APIKey  string `json:"api_key"` //nolint:gosec // G101: not a hardcoded secret, this is a request field
-		Enabled *bool  `json:"enabled"`
+		Name                 string `json:"name"`
+		Type                 string `json:"type"`
+		URL                  string `json:"url"`
+		APIKey               string `json:"api_key"` //nolint:gosec // G101: not a hardcoded secret, this is a request field
+		Enabled              *bool  `json:"enabled"`
+		FeatureLibraryImport *bool  `json:"feature_library_import"`
+		FeatureNFOWrite      *bool  `json:"feature_nfo_write"`
+		FeatureImageWrite    *bool  `json:"feature_image_write"`
 	}
 	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
@@ -280,6 +295,15 @@ func (r *Router) handleUpdateConnection(w http.ResponseWriter, req *http.Request
 	}
 	if body.Enabled != nil {
 		existing.Enabled = *body.Enabled
+	}
+	if body.FeatureLibraryImport != nil {
+		existing.FeatureLibraryImport = *body.FeatureLibraryImport
+	}
+	if body.FeatureNFOWrite != nil {
+		existing.FeatureNFOWrite = *body.FeatureNFOWrite
+	}
+	if body.FeatureImageWrite != nil {
+		existing.FeatureImageWrite = *body.FeatureImageWrite
 	}
 
 	if err := r.connectionService.Update(req.Context(), existing); err != nil {
@@ -368,4 +392,47 @@ func (r *Router) handleTestConnection(w http.ResponseWriter, req *http.Request) 
 		r.logger.Error("updating connection status", "error", updateErr)
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": status, "message": msg})
+}
+
+func (r *Router) handleUpdateConnectionFeatures(w http.ResponseWriter, req *http.Request) {
+	id := req.PathValue("id")
+	existing, err := r.connectionService.GetByID(req.Context(), id)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "connection not found"})
+		return
+	}
+
+	var body struct {
+		FeatureLibraryImport *bool `json:"feature_library_import"`
+		FeatureNFOWrite      *bool `json:"feature_nfo_write"`
+		FeatureImageWrite    *bool `json:"feature_image_write"`
+	}
+	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+
+	libImport := existing.FeatureLibraryImport
+	nfoWrite := existing.FeatureNFOWrite
+	imageWrite := existing.FeatureImageWrite
+	if body.FeatureLibraryImport != nil {
+		libImport = *body.FeatureLibraryImport
+	}
+	if body.FeatureNFOWrite != nil {
+		nfoWrite = *body.FeatureNFOWrite
+	}
+	if body.FeatureImageWrite != nil {
+		imageWrite = *body.FeatureImageWrite
+	}
+
+	if err := r.connectionService.UpdateFeatures(req.Context(), id, libImport, nfoWrite, imageWrite); err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "connection not found"})
+			return
+		}
+		r.logger.Error("updating connection features", "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
 }

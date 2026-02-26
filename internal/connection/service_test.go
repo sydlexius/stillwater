@@ -372,6 +372,66 @@ func TestDeduplicateByTypeURL(t *testing.T) {
 	}
 }
 
+func TestCreateDefaultsFeatureFlags(t *testing.T) {
+	svc := setupTestService(t)
+	ctx := context.Background()
+
+	c := &Connection{Name: "Features", Type: TypeEmby, URL: "http://feat:8096", APIKey: "key", Enabled: true}
+	if err := svc.Create(ctx, c); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := svc.GetByID(ctx, c.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.FeatureLibraryImport {
+		t.Error("expected FeatureLibraryImport to default to true")
+	}
+	if !got.FeatureNFOWrite {
+		t.Error("expected FeatureNFOWrite to default to true")
+	}
+	if !got.FeatureImageWrite {
+		t.Error("expected FeatureImageWrite to default to true")
+	}
+}
+
+func TestUpdateFeatures(t *testing.T) {
+	svc := setupTestService(t)
+	ctx := context.Background()
+
+	c := &Connection{Name: "FeatUpdate", Type: TypeEmby, URL: "http://fu:8096", APIKey: "key", Enabled: true}
+	if err := svc.Create(ctx, c); err != nil {
+		t.Fatal(err)
+	}
+
+	// Disable NFO write only
+	if err := svc.UpdateFeatures(ctx, c.ID, true, false, true); err != nil {
+		t.Fatalf("UpdateFeatures: %v", err)
+	}
+
+	got, err := svc.GetByID(ctx, c.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.FeatureLibraryImport {
+		t.Error("expected FeatureLibraryImport to remain true")
+	}
+	if got.FeatureNFOWrite {
+		t.Error("expected FeatureNFOWrite to be false")
+	}
+	if !got.FeatureImageWrite {
+		t.Error("expected FeatureImageWrite to remain true")
+	}
+}
+
+func TestUpdateFeatures_NotFound(t *testing.T) {
+	svc := setupTestService(t)
+	if err := svc.UpdateFeatures(context.Background(), "nonexistent", true, true, true); err == nil {
+		t.Error("expected error updating features for nonexistent connection")
+	}
+}
+
 func TestUpdateStatus(t *testing.T) {
 	svc := setupTestService(t)
 	ctx := context.Background()
