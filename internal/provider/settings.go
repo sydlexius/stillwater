@@ -97,6 +97,7 @@ type ProviderKeyStatus struct {
 	Name        ProviderName   `json:"name"`
 	DisplayName string         `json:"display_name"`
 	RequiresKey bool           `json:"requires_key"`
+	OptionalKey bool           `json:"optional_key"`
 	HasKey      bool           `json:"has_key"`
 	Status      string         `json:"status"` // "ok", "invalid", "untested", "not_required", "unconfigured"
 	AccessTier  AccessTier     `json:"access_tier"`
@@ -110,12 +111,17 @@ func (s *SettingsService) ListProviderKeyStatuses(ctx context.Context) ([]Provid
 	var statuses []ProviderKeyStatus
 	for _, name := range AllProviderNames() {
 		requiresKey := providerRequiresKey(name)
+		optionalKey := providerHasOptionalKey(name)
 		hasKey, err := s.HasAPIKey(ctx, name)
 		if err != nil {
 			return nil, err
 		}
 		status := "unconfigured"
-		if !requiresKey {
+		if !requiresKey && !optionalKey {
+			status = "not_required"
+		} else if !requiresKey && optionalKey && hasKey {
+			status = "untested"
+		} else if !requiresKey && optionalKey {
 			status = "not_required"
 		} else if hasKey {
 			status = "untested"
@@ -125,6 +131,7 @@ func (s *SettingsService) ListProviderKeyStatuses(ctx context.Context) ([]Provid
 			Name:        name,
 			DisplayName: name.DisplayName(),
 			RequiresKey: requiresKey,
+			OptionalKey: optionalKey,
 			HasKey:      hasKey,
 			Status:      status,
 			AccessTier:  cap.Tier,
@@ -143,6 +150,12 @@ func providerRequiresKey(name ProviderName) bool {
 	default:
 		return true
 	}
+}
+
+// providerHasOptionalKey returns whether a provider accepts an optional API key
+// for enhanced functionality (e.g. TheAudioDB premium tier).
+func providerHasOptionalKey(name ProviderName) bool {
+	return name == NameAudioDB
 }
 
 // FieldPriority represents the ordered list of providers for a metadata field.

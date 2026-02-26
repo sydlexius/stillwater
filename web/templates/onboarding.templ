@@ -11,11 +11,12 @@ import (
 
 // OnboardingData holds the data for the onboarding wizard page.
 type OnboardingData struct {
-	Libraries    []library.Library
-	Profiles     []platform.Profile
-	ProviderKeys []provider.ProviderKeyStatus
-	Connections  []connection.Connection
-	CurrentStep  int
+	Libraries          []library.Library
+	Profiles           []platform.Profile
+	ProviderKeys       []provider.ProviderKeyStatus
+	WebSearchProviders []provider.WebSearchProviderStatus
+	Connections        []connection.Connection
+	CurrentStep        int
 }
 
 // findConnectionByType returns the first connection matching the given type, or nil.
@@ -164,9 +165,22 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 						</p>
 						<div class="space-y-3">
 							for _, pk := range data.ProviderKeys {
-								@onboardingProviderCard(pk)
+								@OnboardingProviderCard(pk)
 							}
 						</div>
+						if len(data.WebSearchProviders) > 0 {
+							<div class="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
+								<h3 class="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-1">Web Image Search</h3>
+								<p class="text-xs text-gray-500 dark:text-gray-400 mb-3">
+									Enable web search providers to find additional artist images via search engines. No API key required.
+								</p>
+								<div class="space-y-3">
+									for _, ws := range data.WebSearchProviders {
+										@OnboardingWebSearchToggle(ws)
+									}
+								</div>
+							</div>
+						}
 					</div>
 					<!-- Step 4: Server Connections -->
 					<div id="wizard-step-4" class="hidden rounded-lg bg-white dark:bg-gray-800 shadow p-6">
@@ -512,7 +526,7 @@ templ onboardingProfileCard(p platform.Profile) {
 	</div>
 }
 
-templ onboardingProviderCard(pk provider.ProviderKeyStatus) {
+templ OnboardingProviderCard(pk provider.ProviderKeyStatus) {
 	<div id={ "ob-provider-card-" + string(pk.Name) } class="rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3">
 		<div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
 			<div class="flex items-center gap-3">
@@ -543,8 +557,12 @@ templ onboardingProviderCard(pk provider.ProviderKeyStatus) {
 				></div>
 				<div>
 					<div class="font-medium text-sm text-gray-900 dark:text-gray-100">{ pk.DisplayName }</div>
-					if !pk.RequiresKey {
+					if !pk.RequiresKey && !pk.OptionalKey {
 						<div class="text-xs text-gray-500 dark:text-gray-400">No API key required</div>
+					} else if pk.OptionalKey && pk.HasKey {
+						<div class="text-xs text-green-600 dark:text-green-400">Premium key configured</div>
+					} else if pk.OptionalKey {
+						<div class="text-xs text-gray-500 dark:text-gray-400">Free tier (optional premium upgrade)</div>
 					} else if pk.HasKey {
 						<div class="text-xs text-green-600 dark:text-green-400">Key configured</div>
 					} else {
@@ -552,7 +570,7 @@ templ onboardingProviderCard(pk provider.ProviderKeyStatus) {
 					}
 				</div>
 			</div>
-			if pk.RequiresKey {
+			if pk.RequiresKey || pk.OptionalKey {
 				<div class="flex items-center gap-2">
 					if pk.HelpURL != "" {
 						<a
@@ -589,7 +607,7 @@ templ onboardingProviderCard(pk provider.ProviderKeyStatus) {
 				</div>
 			}
 		</div>
-		if pk.RequiresKey {
+		if pk.RequiresKey || pk.OptionalKey {
 			<div id={ "ob-key-input-" + string(pk.Name) } class="hidden mt-3">
 				<form
 					class="flex flex-col gap-2 sm:flex-row sm:items-center"
@@ -600,7 +618,11 @@ templ onboardingProviderCard(pk provider.ProviderKeyStatus) {
 					<input
 						type="text"
 						name="api_key"
-						placeholder="Enter API key..."
+						if pk.OptionalKey {
+							placeholder="Enter premium API key..."
+						} else {
+							placeholder="Enter API key..."
+						}
 						autocomplete="off"
 						data-1p-ignore
 						data-lpignore="true"
@@ -623,6 +645,45 @@ script toggleOnboardingKeyInput(providerName string) {
 	if (el) {
 		el.classList.toggle("hidden");
 	}
+}
+
+templ OnboardingWebSearchToggle(ws provider.WebSearchProviderStatus) {
+	<div id={ "ob-ws-card-" + string(ws.Name) } class="rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3">
+		<div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+			<div class="flex items-center gap-3">
+				<img src={ logoSrc(string(ws.Name)) } alt="" class="h-6 w-6 shrink-0" aria-hidden="true"/>
+				<div
+					class={
+						"h-2.5 w-2.5 shrink-0 rounded-full",
+						templ.KV("bg-green-500", ws.Enabled),
+						templ.KV("bg-gray-400 dark:bg-gray-500", !ws.Enabled),
+					}
+				></div>
+				<div>
+					<div class="font-medium text-sm text-gray-900 dark:text-gray-100">{ ws.DisplayName }</div>
+					<div class="text-xs text-gray-500 dark:text-gray-400">No API key required</div>
+				</div>
+			</div>
+			<button
+				type="button"
+				class={
+					"text-sm px-3 py-1.5 rounded border transition-colors",
+					templ.KV("border-green-300 dark:border-green-700 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300 hover:bg-green-100 dark:hover:bg-green-900/40", ws.Enabled),
+					templ.KV("border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700", !ws.Enabled),
+				}
+				hx-put={ "/api/v1/providers/websearch/" + string(ws.Name) + "/toggle" }
+				hx-vals={ webSearchToggleJSON(!ws.Enabled) }
+				hx-target={ "#ob-ws-card-" + string(ws.Name) }
+				hx-swap="outerHTML"
+			>
+				if ws.Enabled {
+					Enabled
+				} else {
+					Disabled
+				}
+			</button>
+		</div>
+	</div>
 }
 
 templ onboardingConnectionCard(connType string, displayName string, exampleURL string, conns []connection.Connection) {
