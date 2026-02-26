@@ -1,0 +1,25 @@
+meta {
+  name: Get Library
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{apiBase}}/libraries/{{libraryId}}
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("should include artist_count", function() {
+    expect(res.body).to.have.property("artist_count");
+  });
+}

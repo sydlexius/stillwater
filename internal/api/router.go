@@ -11,6 +11,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/auth"
 	"github.com/sydlexius/stillwater/internal/backup"
 	"github.com/sydlexius/stillwater/internal/connection"
+	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/nfo"
 	"github.com/sydlexius/stillwater/internal/platform"
 	"github.com/sydlexius/stillwater/internal/provider"
@@ -38,6 +39,7 @@ type RouterDeps struct {
 	NFOSnapshotService *nfo.SnapshotService
 	ConnectionService  *connection.Service
 	ScraperService     *scraper.Service
+	LibraryService     *library.Service
 	WebhookService     *webhook.Service
 	WebhookDispatcher  *webhook.Dispatcher
 	BackupService      *backup.Service
@@ -65,6 +67,7 @@ type Router struct {
 	nfoSnapshotService *nfo.SnapshotService
 	connectionService  *connection.Service
 	scraperService     *scraper.Service
+	libraryService     *library.Service
 	webhookService     *webhook.Service
 	webhookDispatcher  *webhook.Dispatcher
 	backupService      *backup.Service
@@ -93,6 +96,7 @@ func NewRouter(deps RouterDeps) *Router {
 		nfoSnapshotService: deps.NFOSnapshotService,
 		connectionService:  deps.ConnectionService,
 		scraperService:     deps.ScraperService,
+		libraryService:     deps.LibraryService,
 		webhookService:     deps.WebhookService,
 		webhookDispatcher:  deps.WebhookDispatcher,
 		backupService:      deps.BackupService,
@@ -135,6 +139,12 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("DELETE "+bp+"/api/v1/artists/{id}/aliases/{aliasId}", wrapAuth(r.handleRemoveAlias, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/scanner/run", wrapAuth(r.handleScannerRun, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/scanner/status", wrapAuth(r.handleScannerStatus, authMw))
+	// Library routes
+	mux.HandleFunc("GET "+bp+"/api/v1/libraries", wrapAuth(r.handleListLibraries, authMw))
+	mux.HandleFunc("GET "+bp+"/api/v1/libraries/{id}", wrapAuth(r.handleGetLibrary, authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/libraries", wrapAuth(r.handleCreateLibrary, authMw))
+	mux.HandleFunc("PUT "+bp+"/api/v1/libraries/{id}", wrapAuth(r.handleUpdateLibrary, authMw))
+	mux.HandleFunc("DELETE "+bp+"/api/v1/libraries/{id}", wrapAuth(r.handleDeleteLibrary, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/platforms", wrapAuth(r.handleListPlatforms, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/platforms/{id}", wrapAuth(r.handleGetPlatform, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/platforms", wrapAuth(r.handleCreatePlatform, authMw))

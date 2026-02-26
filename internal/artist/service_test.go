@@ -579,3 +579,118 @@ func TestList_SortOrder(t *testing.T) {
 		t.Errorf("desc sort: first = %q, want Zephyr", artists[0].Name)
 	}
 }
+
+func TestLibraryID_RoundTrip(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	// Create a library to reference
+	_, err := db.ExecContext(ctx, `
+		INSERT INTO libraries (id, name, path, type, created_at, updated_at)
+		VALUES ('lib-1', 'Test Library', '/music/test', 'regular', datetime('now'), datetime('now'))
+	`)
+	if err != nil {
+		t.Fatalf("creating library: %v", err)
+	}
+
+	// Create artist with library_id
+	a := testArtist("Library Artist", "/music/Library Artist")
+	a.LibraryID = "lib-1"
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	got, err := svc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if got.LibraryID != "lib-1" {
+		t.Errorf("LibraryID = %q, want %q", got.LibraryID, "lib-1")
+	}
+
+	// Update library_id
+	got.LibraryID = "lib-1" // same value, just verify update path works
+	if err := svc.Update(ctx, got); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	got2, _ := svc.GetByID(ctx, a.ID)
+	if got2.LibraryID != "lib-1" {
+		t.Errorf("LibraryID after update = %q, want %q", got2.LibraryID, "lib-1")
+	}
+}
+
+func TestLibraryID_NullOnEmpty(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	// Create artist without library_id (should store NULL, read back as "")
+	a := testArtist("No Library", "/music/No Library")
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	got, err := svc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if got.LibraryID != "" {
+		t.Errorf("LibraryID = %q, want empty string", got.LibraryID)
+	}
+}
+
+func TestList_LibraryIDFilter(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	// Create two libraries
+	for _, q := range []string{
+		`INSERT INTO libraries (id, name, path, type, created_at, updated_at) VALUES ('lib-a', 'Library A', '/music/a', 'regular', datetime('now'), datetime('now'))`,
+		`INSERT INTO libraries (id, name, path, type, created_at, updated_at) VALUES ('lib-b', 'Library B', '/music/b', 'regular', datetime('now'), datetime('now'))`,
+	} {
+		if _, err := db.ExecContext(ctx, q); err != nil {
+			t.Fatalf("creating library: %v", err)
+		}
+	}
+
+	a1 := testArtist("Artist A", "/music/Artist A")
+	a1.LibraryID = "lib-a"
+	a2 := testArtist("Artist B", "/music/Artist B")
+	a2.LibraryID = "lib-b"
+	a3 := testArtist("Artist C", "/music/Artist C")
+	a3.LibraryID = "lib-a"
+
+	for _, a := range []*Artist{a1, a2, a3} {
+		if err := svc.Create(ctx, a); err != nil {
+			t.Fatalf("Create %s: %v", a.Name, err)
+		}
+	}
+
+	// Filter by lib-a
+	artists, total, err := svc.List(ctx, ListParams{LibraryID: "lib-a"})
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if total != 2 {
+		t.Errorf("total = %d, want 2", total)
+	}
+	for _, a := range artists {
+		if a.LibraryID != "lib-a" {
+			t.Errorf("artist %q has LibraryID %q, want lib-a", a.Name, a.LibraryID)
+		}
+	}
+
+	// Filter by lib-b
+	artists, total, err = svc.List(ctx, ListParams{LibraryID: "lib-b"})
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if total != 1 {
+		t.Errorf("total = %d, want 1", total)
+	}
+	if artists[0].Name != "Artist B" {
+		t.Errorf("artist = %q, want Artist B", artists[0].Name)
+	}
+}

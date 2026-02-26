@@ -14,12 +14,13 @@ import (
 // GET /api/v1/artists
 func (r *Router) handleListArtists(w http.ResponseWriter, req *http.Request) {
 	params := artist.ListParams{
-		Page:     intQuery(req, "page", 1),
-		PageSize: intQuery(req, "page_size", 50),
-		Sort:     req.URL.Query().Get("sort"),
-		Order:    req.URL.Query().Get("order"),
-		Search:   req.URL.Query().Get("search"),
-		Filter:   req.URL.Query().Get("filter"),
+		Page:      intQuery(req, "page", 1),
+		PageSize:  intQuery(req, "page_size", 50),
+		Sort:      req.URL.Query().Get("sort"),
+		Order:     req.URL.Query().Get("order"),
+		Search:    req.URL.Query().Get("search"),
+		Filter:    req.URL.Query().Get("filter"),
+		LibraryID: req.URL.Query().Get("library_id"),
 	}
 	params.Validate()
 
@@ -88,12 +89,13 @@ func (r *Router) handleArtistsPage(w http.ResponseWriter, req *http.Request) {
 	}
 
 	params := artist.ListParams{
-		Page:     intQuery(req, "page", 1),
-		PageSize: intQuery(req, "page_size", 50),
-		Sort:     req.URL.Query().Get("sort"),
-		Order:    req.URL.Query().Get("order"),
-		Search:   req.URL.Query().Get("search"),
-		Filter:   req.URL.Query().Get("filter"),
+		Page:      intQuery(req, "page", 1),
+		PageSize:  intQuery(req, "page_size", 50),
+		Sort:      req.URL.Query().Get("sort"),
+		Order:     req.URL.Query().Get("order"),
+		Search:    req.URL.Query().Get("search"),
+		Filter:    req.URL.Query().Get("filter"),
+		LibraryID: req.URL.Query().Get("library_id"),
 	}
 	params.Validate()
 

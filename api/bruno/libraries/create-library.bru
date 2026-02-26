@@ -1,0 +1,36 @@
+meta {
+  name: Create Library
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{apiBase}}/libraries
+  body: json
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+body:json {
+  {
+    "name": "Test Library",
+    "path": "/music/test",
+    "type": "regular"
+  }
+}
+
+tests {
+  test("should return 201", function() {
+    expect(res.status).to.equal(201);
+  });
+
+  test("should return library with id", function() {
+    expect(res.body).to.have.property("id");
+    expect(res.body.name).to.equal("Test Library");
+    expect(res.body.path).to.equal("/music/test");
+    expect(res.body.type).to.equal("regular");
+  });
+}

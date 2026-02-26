@@ -2,12 +2,13 @@ package artist
 
 // ListParams configures paginated, sortable, filterable artist queries.
 type ListParams struct {
-	Page     int
-	PageSize int
-	Sort     string
-	Order    string
-	Search   string
-	Filter   string
+	Page      int
+	PageSize  int
+	Sort      string
+	Order     string
+	Search    string
+	Filter    string
+	LibraryID string
 }
 
 // Validate normalizes and validates list parameters.

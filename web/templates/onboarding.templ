@@ -4,12 +4,14 @@ import (
 	"strconv"
 
 	"github.com/sydlexius/stillwater/internal/connection"
+	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/platform"
 	"github.com/sydlexius/stillwater/internal/provider"
 )
 
 // OnboardingData holds the data for the onboarding wizard page.
 type OnboardingData struct {
+	Libraries    []library.Library
 	Profiles     []platform.Profile
 	ProviderKeys []provider.ProviderKeyStatus
 	Connections  []connection.Connection
@@ -66,21 +68,84 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 					<div class="flex items-center justify-center gap-0" id="progress-bar">
 						<div class="flex items-center gap-2">
 							<div id="step-dot-1" class="h-8 w-8 rounded-full bg-blue-600 text-white flex items-center justify-center text-sm font-medium">1</div>
-							<span id="step-label-1" class="text-sm font-medium text-gray-900 dark:text-gray-100 hidden sm:inline">Platform</span>
+							<span id="step-label-1" class="text-sm font-medium text-gray-900 dark:text-gray-100 hidden sm:inline">Libraries</span>
 						</div>
-						<div id="step-line-1" class="h-0.5 w-8 bg-gray-300 dark:bg-gray-600 mx-2 sm:w-12"></div>
+						<div id="step-line-1" class="h-0.5 w-8 bg-gray-300 dark:bg-gray-600 mx-2 sm:w-8"></div>
 						<div class="flex items-center gap-2">
 							<div id="step-dot-2" class="h-8 w-8 rounded-full bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 flex items-center justify-center text-sm font-medium">2</div>
-							<span id="step-label-2" class="text-sm text-gray-500 dark:text-gray-400 hidden sm:inline">Providers</span>
+							<span id="step-label-2" class="text-sm text-gray-500 dark:text-gray-400 hidden sm:inline">Platform</span>
 						</div>
-						<div id="step-line-2" class="h-0.5 w-8 bg-gray-300 dark:bg-gray-600 mx-2 sm:w-12"></div>
+						<div id="step-line-2" class="h-0.5 w-8 bg-gray-300 dark:bg-gray-600 mx-2 sm:w-8"></div>
 						<div class="flex items-center gap-2">
 							<div id="step-dot-3" class="h-8 w-8 rounded-full bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 flex items-center justify-center text-sm font-medium">3</div>
-							<span id="step-label-3" class="text-sm text-gray-500 dark:text-gray-400 hidden sm:inline">Connections</span>
+							<span id="step-label-3" class="text-sm text-gray-500 dark:text-gray-400 hidden sm:inline">Providers</span>
+						</div>
+						<div id="step-line-3" class="h-0.5 w-8 bg-gray-300 dark:bg-gray-600 mx-2 sm:w-8"></div>
+						<div class="flex items-center gap-2">
+							<div id="step-dot-4" class="h-8 w-8 rounded-full bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 flex items-center justify-center text-sm font-medium">4</div>
+							<span id="step-label-4" class="text-sm text-gray-500 dark:text-gray-400 hidden sm:inline">Connections</span>
 						</div>
 					</div>
-					<!-- Step 1: Platform Profile -->
+					<!-- Step 1: Music Libraries -->
 					<div id="wizard-step-1" class="rounded-lg bg-white dark:bg-gray-800 shadow p-6">
+						<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">Music Libraries</h2>
+						<p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+							Add your music library paths. Each library maps to a directory containing artist folders.
+						</p>
+						<div id="ob-library-list" class="space-y-2 mb-4">
+							for _, lib := range data.Libraries {
+								@onboardingLibraryRow(lib)
+							}
+							if len(data.Libraries) == 0 {
+								<p id="ob-no-libraries" class="text-sm text-gray-400 dark:text-gray-500 italic">No libraries configured yet.</p>
+							}
+						</div>
+						<div id="ob-library-form-wrapper">
+							<button
+								type="button"
+								id="ob-add-library-btn"
+								class="text-sm px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+								onclick="document.getElementById('ob-library-form').classList.remove('hidden'); this.classList.add('hidden');"
+							>
+								Add Library
+							</button>
+							<form
+								id="ob-library-form"
+								class="hidden mt-3 space-y-3"
+								hx-post="/api/v1/libraries"
+								hx-swap="none"
+								hx-on::after-request="if(event.detail.successful) { onLibrarySaved(); }"
+							>
+								<div class="grid grid-cols-1 gap-3">
+									<input
+										name="name"
+										placeholder="Library name (e.g. Music, Classical, Soundtracks)"
+										required
+										class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+									/>
+									<input
+										name="path"
+										placeholder="Path (e.g. /music or /music/classical)"
+										required
+										class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+									/>
+									<select
+										name="type"
+										class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+									>
+										<option value="regular">Regular</option>
+										<option value="classical">Classical</option>
+									</select>
+								</div>
+								<div class="flex gap-2">
+									<button type="submit" class="text-sm px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 transition-colors">Save</button>
+									<button type="button" class="text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" onclick="document.getElementById('ob-library-form').classList.add('hidden'); document.getElementById('ob-add-library-btn').classList.remove('hidden');">Cancel</button>
+								</div>
+							</form>
+						</div>
+					</div>
+					<!-- Step 2: Platform Profile -->
+					<div id="wizard-step-2" class="hidden rounded-lg bg-white dark:bg-gray-800 shadow p-6">
 						<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">Choose Your Platform</h2>
 						<p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
 							Select the media server you use. This controls NFO format and image naming conventions.
@@ -91,8 +156,8 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 							}
 						</div>
 					</div>
-					<!-- Step 2: Provider API Keys -->
-					<div id="wizard-step-2" class="hidden rounded-lg bg-white dark:bg-gray-800 shadow p-6">
+					<!-- Step 3: Provider API Keys -->
+					<div id="wizard-step-3" class="hidden rounded-lg bg-white dark:bg-gray-800 shadow p-6">
 						<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">Provider API Keys</h2>
 						<p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
 							Configure API keys for metadata and image providers. You can skip this and add keys later from Settings.
@@ -103,8 +168,8 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 							}
 						</div>
 					</div>
-					<!-- Step 3: Server Connections -->
-					<div id="wizard-step-3" class="hidden rounded-lg bg-white dark:bg-gray-800 shadow p-6">
+					<!-- Step 4: Server Connections -->
+					<div id="wizard-step-4" class="hidden rounded-lg bg-white dark:bg-gray-800 shadow p-6">
 						<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">Server Connections</h2>
 						<p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
 							Optionally connect to your media server or music manager. These are not required for core functionality and can be added later from Settings.
@@ -184,7 +249,7 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 			</div>
 			<script>
 				var currentStep = parseInt(document.body.dataset.currentStep, 10) || 1;
-				var totalSteps = 3;
+				var totalSteps = 4;
 
 				function getCsrfToken() {
 					return document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*\=\s*([^;]*).*$)|^.*$/, "$1");
@@ -218,8 +283,8 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 						}
 						if (line) {
 							line.className = i < step
-								? 'h-0.5 w-8 bg-blue-600 mx-2 sm:w-12'
-								: 'h-0.5 w-8 bg-gray-300 dark:bg-gray-600 mx-2 sm:w-12';
+								? 'h-0.5 w-8 bg-blue-600 mx-2 sm:w-8'
+								: 'h-0.5 w-8 bg-gray-300 dark:bg-gray-600 mx-2 sm:w-8';
 						}
 					}
 
@@ -252,6 +317,59 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 					});
 					el.closest('[data-profile-card]').classList.remove('border-gray-200', 'dark:border-gray-700');
 					el.closest('[data-profile-card]').classList.add('border-blue-500', 'bg-blue-50', 'dark:bg-blue-900/20');
+				}
+
+				function onLibrarySaved() {
+					document.getElementById('ob-library-form').reset();
+					document.getElementById('ob-library-form').classList.add('hidden');
+					document.getElementById('ob-add-library-btn').classList.remove('hidden');
+					refreshLibraryList();
+				}
+
+				function refreshLibraryList() {
+					fetch('/api/v1/libraries', {
+						headers: {'X-CSRF-Token': getCsrfToken()}
+					}).then(function(res) { return res.json(); })
+					.then(function(libs) {
+						var list = document.getElementById('ob-library-list');
+						if (!libs || libs.length === 0) {
+							list.innerHTML = '<p id="ob-no-libraries" class="text-sm text-gray-400 dark:text-gray-500 italic">No libraries configured yet.</p>';
+							return;
+						}
+						var html = '';
+						libs.forEach(function(lib) {
+							html += '<div class="flex items-center justify-between rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3" id="ob-lib-' + lib.id + '">'
+								+ '<div>'
+								+ '<div class="font-medium text-sm text-gray-900 dark:text-gray-100">' + escapeHtml(lib.name) + '</div>'
+								+ '<div class="text-xs text-gray-500 dark:text-gray-400">' + escapeHtml(lib.path) + '</div>'
+								+ '<span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300 mt-1">' + escapeHtml(lib.type) + '</span>'
+								+ '</div>'
+								+ '<button type="button" class="text-xs text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300" onclick="deleteLibrary(\'' + lib.id + '\')">'
+								+ 'Remove'
+								+ '</button>'
+								+ '</div>';
+						});
+						list.innerHTML = html;
+					});
+				}
+
+				function deleteLibrary(id) {
+					fetch('/api/v1/libraries/' + id, {
+						method: 'DELETE',
+						headers: {'X-CSRF-Token': getCsrfToken()}
+					}).then(function(res) {
+						if (res.ok) {
+							refreshLibraryList();
+						} else {
+							return res.json().then(function(data) { alert(data.error || 'Failed to delete library'); });
+						}
+					});
+				}
+
+				function escapeHtml(str) {
+					var div = document.createElement('div');
+					div.textContent = str;
+					return div.innerHTML;
 				}
 
 				function onConnectionSaved(connType, xhr) {
@@ -312,6 +430,23 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 			</script>
 		</body>
 	</html>
+}
+
+templ onboardingLibraryRow(lib library.Library) {
+	<div class="flex items-center justify-between rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3" id={ "ob-lib-" + lib.ID }>
+		<div>
+			<div class="font-medium text-sm text-gray-900 dark:text-gray-100">{ lib.Name }</div>
+			<div class="text-xs text-gray-500 dark:text-gray-400">{ lib.Path }</div>
+			<span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300 mt-1">{ lib.Type }</span>
+		</div>
+		<button
+			type="button"
+			class="text-xs text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300"
+			onclick={ onboardingDeleteLibrary(lib.ID) }
+		>
+			Remove
+		</button>
+	</div>
 }
 
 templ onboardingProfileCard(p platform.Profile) {
@@ -619,6 +754,10 @@ script toggleObConnectionInfo(connType string) {
 	if (info) {
 		info.classList.toggle("hidden");
 	}
+}
+
+script onboardingDeleteLibrary(id string) {
+	deleteLibrary(id);
 }
 
 script initTestConnection(connID string, connType string) {

@@ -16,7 +16,7 @@ const artistColumns = `id, name, sort_name, type, gender, disambiguation,
 	musicbrainz_id, audiodb_id, discogs_id, wikidata_id, deezer_id,
 	genres, styles, moods,
 	years_active, born, formed, died, disbanded, biography,
-	path, nfo_exists, thumb_exists, fanart_exists, logo_exists, banner_exists,
+	path, library_id, nfo_exists, thumb_exists, fanart_exists, logo_exists, banner_exists,
 	thumb_low_res, fanart_low_res, logo_low_res, banner_low_res,
 	health_score, is_excluded, exclusion_reason, is_classical, metadata_sources,
 	audiodb_id_fetched_at, discogs_id_fetched_at, wikidata_id_fetched_at, lastfm_id_fetched_at,
@@ -47,18 +47,18 @@ func (s *Service) Create(ctx context.Context, a *Artist) error {
 			musicbrainz_id, audiodb_id, discogs_id, wikidata_id, deezer_id,
 			genres, styles, moods,
 			years_active, born, formed, died, disbanded, biography,
-			path, nfo_exists, thumb_exists, fanart_exists, logo_exists, banner_exists,
+			path, library_id, nfo_exists, thumb_exists, fanart_exists, logo_exists, banner_exists,
 			thumb_low_res, fanart_low_res, logo_low_res, banner_low_res,
 			health_score, is_excluded, exclusion_reason, is_classical, metadata_sources,
 			audiodb_id_fetched_at, discogs_id_fetched_at, wikidata_id_fetched_at, lastfm_id_fetched_at,
 			last_scanned_at, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		a.ID, a.Name, a.SortName, a.Type, a.Gender, a.Disambiguation,
 		a.MusicBrainzID, a.AudioDBID, a.DiscogsID, a.WikidataID, a.DeezerID,
 		MarshalStringSlice(a.Genres), MarshalStringSlice(a.Styles), MarshalStringSlice(a.Moods),
 		a.YearsActive, a.Born, a.Formed, a.Died, a.Disbanded, a.Biography,
-		a.Path, boolToInt(a.NFOExists), boolToInt(a.ThumbExists),
+		a.Path, nullableString(a.LibraryID), boolToInt(a.NFOExists), boolToInt(a.ThumbExists),
 		boolToInt(a.FanartExists), boolToInt(a.LogoExists), boolToInt(a.BannerExists),
 		boolToInt(a.ThumbLowRes), boolToInt(a.FanartLowRes),
 		boolToInt(a.LogoLowRes), boolToInt(a.BannerLowRes),
@@ -205,7 +205,8 @@ func (s *Service) Update(ctx context.Context, a *Artist) error {
 			musicbrainz_id = ?, audiodb_id = ?, discogs_id = ?, wikidata_id = ?, deezer_id = ?,
 			genres = ?, styles = ?, moods = ?,
 			years_active = ?, born = ?, formed = ?, died = ?, disbanded = ?, biography = ?,
-			path = ?, nfo_exists = ?, thumb_exists = ?, fanart_exists = ?, logo_exists = ?, banner_exists = ?,
+			path = ?, library_id = ?,
+			nfo_exists = ?, thumb_exists = ?, fanart_exists = ?, logo_exists = ?, banner_exists = ?,
 			thumb_low_res = ?, fanart_low_res = ?, logo_low_res = ?, banner_low_res = ?,
 			health_score = ?, is_excluded = ?, exclusion_reason = ?, is_classical = ?,
 			metadata_sources = ?,
@@ -217,7 +218,8 @@ func (s *Service) Update(ctx context.Context, a *Artist) error {
 		a.MusicBrainzID, a.AudioDBID, a.DiscogsID, a.WikidataID, a.DeezerID,
 		MarshalStringSlice(a.Genres), MarshalStringSlice(a.Styles), MarshalStringSlice(a.Moods),
 		a.YearsActive, a.Born, a.Formed, a.Died, a.Disbanded, a.Biography,
-		a.Path, boolToInt(a.NFOExists), boolToInt(a.ThumbExists),
+		a.Path, nullableString(a.LibraryID),
+		boolToInt(a.NFOExists), boolToInt(a.ThumbExists),
 		boolToInt(a.FanartExists), boolToInt(a.LogoExists), boolToInt(a.BannerExists),
 		boolToInt(a.ThumbLowRes), boolToInt(a.FanartLowRes),
 		boolToInt(a.LogoLowRes), boolToInt(a.BannerLowRes),
@@ -547,6 +549,7 @@ func (s *Service) UpsertMembers(ctx context.Context, artistID string, members []
 func scanArtist(row interface{ Scan(...any) error }) (*Artist, error) {
 	var a Artist
 	var genres, styles, moods string
+	var libraryID sql.NullString
 	var metadataSources string
 	var audiodbFetchedAt, discogsFetchedAt, wikidataFetchedAt, lastfmFetchedAt sql.NullString
 	var lastScannedAt sql.NullString
@@ -560,7 +563,7 @@ func scanArtist(row interface{ Scan(...any) error }) (*Artist, error) {
 		&a.MusicBrainzID, &a.AudioDBID, &a.DiscogsID, &a.WikidataID, &a.DeezerID,
 		&genres, &styles, &moods,
 		&a.YearsActive, &a.Born, &a.Formed, &a.Died, &a.Disbanded, &a.Biography,
-		&a.Path, &nfo, &thumb, &fanart, &logo, &banner,
+		&a.Path, &libraryID, &nfo, &thumb, &fanart, &logo, &banner,
 		&thumbLowRes, &fanartLowRes, &logoLowRes, &bannerLowRes,
 		&a.HealthScore, &isExcluded, &a.ExclusionReason, &isClassical,
 		&metadataSources,
@@ -572,6 +575,9 @@ func scanArtist(row interface{ Scan(...any) error }) (*Artist, error) {
 		return nil, err
 	}
 
+	if libraryID.Valid {
+		a.LibraryID = libraryID.String
+	}
 	a.Genres = UnmarshalStringSlice(genres)
 	a.Styles = UnmarshalStringSlice(styles)
 	a.Moods = UnmarshalStringSlice(moods)
@@ -649,6 +655,11 @@ func buildWhereClause(params ListParams) (string, []any) {
 		args = append(args, "%"+params.Search+"%")
 	}
 
+	if params.LibraryID != "" {
+		conditions = append(conditions, "library_id = ?")
+		args = append(args, params.LibraryID)
+	}
+
 	switch params.Filter {
 	case "missing_nfo":
 		conditions = append(conditions, "nfo_exists = 0")
@@ -672,6 +683,13 @@ func buildWhereClause(params ListParams) (string, []any) {
 		return "", nil
 	}
 	return " WHERE " + strings.Join(conditions, " AND "), args
+}
+
+func nullableString(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
 }
 
 func boolToInt(b bool) int {

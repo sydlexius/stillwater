@@ -257,6 +257,7 @@ func scanArtistWithExtra(row interface{ Scan(...any) error }, n int) (*artistWit
 
 	var a Artist
 	var genres, styles, moods string
+	var libraryID sql.NullString
 	var metadataSources string
 	var audiodbFetchedAt, discogsFetchedAt, wikidataFetchedAt, lastfmFetchedAt sql.NullString
 	var lastScannedAt sql.NullString
@@ -270,7 +271,7 @@ func scanArtistWithExtra(row interface{ Scan(...any) error }, n int) (*artistWit
 		&a.MusicBrainzID, &a.AudioDBID, &a.DiscogsID, &a.WikidataID, &a.DeezerID,
 		&genres, &styles, &moods,
 		&a.YearsActive, &a.Born, &a.Formed, &a.Died, &a.Disbanded, &a.Biography,
-		&a.Path, &nfo, &thumb, &fanart, &logo, &banner,
+		&a.Path, &libraryID, &nfo, &thumb, &fanart, &logo, &banner,
 		&thumbLowRes, &fanartLowRes, &logoLowRes, &bannerLowRes,
 		&a.HealthScore, &isExcluded, &a.ExclusionReason, &isClassical,
 		&metadataSources,
@@ -283,6 +284,9 @@ func scanArtistWithExtra(row interface{ Scan(...any) error }, n int) (*artistWit
 		return nil, err
 	}
 
+	if libraryID.Valid {
+		a.LibraryID = libraryID.String
+	}
 	a.Genres = UnmarshalStringSlice(genres)
 	a.Styles = UnmarshalStringSlice(styles)
 	a.Moods = UnmarshalStringSlice(moods)
