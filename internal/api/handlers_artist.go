@@ -193,12 +193,20 @@ func (r *Router) handleArtistDetailPage(w http.ResponseWriter, req *http.Request
 	priorities, _ := r.providerSettings.GetPriorities(req.Context())
 	fieldProviders := buildFieldProvidersMap(priorities)
 
+	var libraryName string
+	if r.libraryService != nil && a.LibraryID != "" {
+		if lib, err := r.libraryService.GetByID(req.Context(), a.LibraryID); err == nil {
+			libraryName = lib.Name
+		}
+	}
+
 	data := templates.ArtistDetailData{
 		Artist:         *a,
 		Members:        members,
 		Aliases:        aliases,
 		HasConnections: len(conns) > 0,
 		FieldProviders: fieldProviders,
+		LibraryName:    libraryName,
 	}
 	renderTempl(w, req, templates.ArtistDetailPage(r.assets(), data))
 }

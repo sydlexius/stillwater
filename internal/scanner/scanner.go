@@ -152,9 +152,11 @@ func (s *Service) runScan(ctx context.Context, result *ScanResult) {
 			s.logger.Error("listing libraries for scan", "error", err)
 		}
 		for _, lib := range libs {
-			if lib.Path != "" {
-				targets = append(targets, scanTarget{path: lib.Path, libraryID: lib.ID})
+			if lib.Path == "" {
+				s.logger.Info("skipping degraded library (no path configured)", "library_id", lib.ID, "name", lib.Name)
+				continue
 			}
+			targets = append(targets, scanTarget{path: lib.Path, libraryID: lib.ID})
 		}
 	}
 	// Fallback: if no libraries found, use the legacy single path.

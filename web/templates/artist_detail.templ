@@ -16,6 +16,7 @@ type ArtistDetailData struct {
 	Aliases        []artist.Alias
 	HasConnections bool
 	FieldProviders map[string][]string
+	LibraryName    string
 }
 
 templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
@@ -40,7 +41,7 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 			>
 				<div class="flex items-center gap-2">
 					<a
-						href="/artists"
+						href={ templ.SafeURL(artistsBackURL(data.Artist.LibraryID)) }
 						class={
 							"text-sm",
 							templ.KV("text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200", !data.Artist.FanartExists),
@@ -93,6 +94,15 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 									templ.KV("text-white/70 drop-shadow", data.Artist.FanartExists),
 								}
 							>{ data.Artist.Disambiguation }</p>
+						}
+						if data.LibraryName != "" {
+							<p
+								class={
+									"mt-1 text-xs",
+									templ.KV("text-gray-400 dark:text-gray-500", !data.Artist.FanartExists),
+									templ.KV("text-white/60 drop-shadow", data.Artist.FanartExists),
+								}
+							>Library: { data.LibraryName }</p>
 						}
 					</div>
 					<button
@@ -335,6 +345,15 @@ func formatFileSizeTempl(bytes int64) string {
 	default:
 		return strconv.FormatInt(bytes, 10) + " B"
 	}
+}
+
+// artistsBackURL returns the URL for the "Artists" breadcrumb link.
+// When a library filter is active, it preserves the filter in the back-nav.
+func artistsBackURL(libraryID string) string {
+	if libraryID != "" {
+		return "/artists?library_id=" + libraryID
+	}
+	return "/artists"
 }
 
 // MembersSection renders the band members card with a contextual menu for

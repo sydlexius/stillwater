@@ -338,11 +338,16 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 						}
 						var html = '';
 						libs.forEach(function(lib) {
+							var pathLine = lib.path ? '<div class="text-xs text-gray-500 dark:text-gray-400">' + escapeHtml(lib.path) + '</div>' : '';
+							var degradedBadge = !lib.path ? '<span class="inline-flex items-center rounded-full bg-amber-100 dark:bg-amber-900/30 px-2 py-0.5 text-xs text-amber-700 dark:text-amber-400">No path (API only)</span>' : '';
 							html += '<div class="flex items-center justify-between rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3" id="ob-lib-' + lib.id + '">'
 								+ '<div>'
 								+ '<div class="font-medium text-sm text-gray-900 dark:text-gray-100">' + escapeHtml(lib.name) + '</div>'
-								+ '<div class="text-xs text-gray-500 dark:text-gray-400">' + escapeHtml(lib.path) + '</div>'
-								+ '<span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300 mt-1">' + escapeHtml(lib.type) + '</span>'
+								+ pathLine
+								+ '<div class="flex items-center gap-1.5 mt-1">'
+								+ '<span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300">' + escapeHtml(lib.type) + '</span>'
+								+ degradedBadge
+								+ '</div>'
 								+ '</div>'
 								+ '<button type="button" class="text-xs text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300" onclick="deleteLibrary(\'' + lib.id + '\')">'
 								+ 'Remove'
@@ -436,8 +441,15 @@ templ onboardingLibraryRow(lib library.Library) {
 	<div class="flex items-center justify-between rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3" id={ "ob-lib-" + lib.ID }>
 		<div>
 			<div class="font-medium text-sm text-gray-900 dark:text-gray-100">{ lib.Name }</div>
-			<div class="text-xs text-gray-500 dark:text-gray-400">{ lib.Path }</div>
-			<span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300 mt-1">{ lib.Type }</span>
+			if lib.Path != "" {
+				<div class="text-xs text-gray-500 dark:text-gray-400">{ lib.Path }</div>
+			}
+			<div class="flex items-center gap-1.5 mt-1">
+				<span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300">{ lib.Type }</span>
+				if lib.IsDegraded() {
+					<span class="inline-flex items-center rounded-full bg-amber-100 dark:bg-amber-900/30 px-2 py-0.5 text-xs text-amber-700 dark:text-amber-400">No path (API only)</span>
+				}
+			</div>
 		</div>
 		<button
 			type="button"

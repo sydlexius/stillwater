@@ -112,6 +112,9 @@ func (r *Router) handleNFOSnapshotRestore(w http.ResponseWriter, req *http.Reque
 		writeError(w, req, http.StatusNotFound, "artist not found")
 		return
 	}
+	if !r.requireArtistPath(w, a) {
+		return
+	}
 
 	snap, err := r.nfoSnapshotService.GetByID(req.Context(), snapshotID)
 	if err != nil {
