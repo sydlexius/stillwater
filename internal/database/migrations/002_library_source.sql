@@ -5,7 +5,7 @@ ALTER TABLE libraries ADD COLUMN external_id TEXT NOT NULL DEFAULT '';
 
 CREATE UNIQUE INDEX idx_libraries_connection_external
     ON libraries(connection_id, external_id)
-    WHERE connection_id IS NOT NULL AND external_id != '';
+    WHERE connection_id IS NOT NULL AND external_id <> '';
 
 -- +goose Down
 DROP INDEX IF EXISTS idx_libraries_connection_external;
