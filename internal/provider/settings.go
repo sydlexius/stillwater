@@ -83,36 +83,54 @@ func (s *SettingsService) GetAPIKey(ctx context.Context, name ProviderName) (str
 }
 
 // SetAPIKey encrypts and stores the API key for a provider.
-// Any previously persisted key status is cleared (new key = untested).
+// The key upsert and status clear are performed in a single transaction
+// so the key status never becomes stale if either operation fails.
 func (s *SettingsService) SetAPIKey(ctx context.Context, name ProviderName, apiKey string) error {
 	encrypted, err := s.encryptor.Encrypt(apiKey)
 	if err != nil {
 		return fmt.Errorf("encrypting API key for %s: %w", name, err)
 	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("beginning transaction for %s: %w", name, err)
+	}
+	defer tx.Rollback() //nolint:errcheck // rollback is a no-op after commit
 	key := apiKeySettingKey(name)
-	_, err = s.db.ExecContext(ctx,
+	if _, err := tx.ExecContext(ctx,
 		"INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = datetime('now')",
 		key, encrypted, encrypted,
-	)
-	if err != nil {
+	); err != nil {
 		return fmt.Errorf("storing API key for %s: %w", name, err)
 	}
 	// Clear stale status so the key shows as "untested" until re-verified.
-	if clearErr := s.SetKeyStatus(ctx, name, ""); clearErr != nil {
-		return fmt.Errorf("clearing key status for %s: %w", name, clearErr)
+	statusKey := keyStatusSettingKey(name)
+	if _, err := tx.ExecContext(ctx, "DELETE FROM settings WHERE key = ?", statusKey); err != nil {
+		return fmt.Errorf("clearing key status for %s: %w", name, err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("committing API key for %s: %w", name, err)
 	}
 	return nil
 }
 
-// DeleteAPIKey removes the API key for a provider and its associated status.
+// DeleteAPIKey removes the API key for a provider and its associated status
+// in a single transaction.
 func (s *SettingsService) DeleteAPIKey(ctx context.Context, name ProviderName) error {
-	key := apiKeySettingKey(name)
-	_, err := s.db.ExecContext(ctx, "DELETE FROM settings WHERE key = ?", key)
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
+		return fmt.Errorf("beginning transaction for %s: %w", name, err)
+	}
+	defer tx.Rollback() //nolint:errcheck // rollback is a no-op after commit
+	key := apiKeySettingKey(name)
+	if _, err := tx.ExecContext(ctx, "DELETE FROM settings WHERE key = ?", key); err != nil {
 		return fmt.Errorf("deleting API key for %s: %w", name, err)
 	}
-	if clearErr := s.SetKeyStatus(ctx, name, ""); clearErr != nil {
-		return fmt.Errorf("clearing key status for %s: %w", name, clearErr)
+	statusKey := keyStatusSettingKey(name)
+	if _, err := tx.ExecContext(ctx, "DELETE FROM settings WHERE key = ?", statusKey); err != nil {
+		return fmt.Errorf("clearing key status for %s: %w", name, err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("committing delete for %s: %w", name, err)
 	}
 	return nil
 }
@@ -205,7 +223,11 @@ func (s *SettingsService) ListProviderKeyStatuses(ctx context.Context) ([]Provid
 		}
 		// If a key is present, check for a persisted test status.
 		if hasKey {
-			if persisted, err := s.GetKeyStatus(ctx, name); err == nil && persisted != "" {
+			persisted, err := s.GetKeyStatus(ctx, name)
+			if err != nil {
+				return nil, err
+			}
+			if persisted != "" {
 				status = persisted
 			}
 		}

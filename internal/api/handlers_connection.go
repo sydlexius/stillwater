@@ -154,10 +154,11 @@ func (r *Router) handleCreateConnection(w http.ResponseWriter, req *http.Request
 					w.Header().Set("HX-Retarget", "#ob-conn-result-"+body.Type)
 					w.Header().Set("HX-Reswap", "innerHTML")
 				}
+				w.WriteHeader(http.StatusUnprocessableEntity)
 				renderTempl(w, req, templates.ConnectionTestSaveFailure(body.Type, body.Name, body.URL, body.APIKey, testErr.Error(), isOOBE))
 				return
 			}
-			writeJSON(w, http.StatusOK, map[string]string{
+			writeJSON(w, http.StatusUnprocessableEntity, map[string]string{
 				"status": "test_failed",
 				"error":  testErr.Error(),
 			})
@@ -230,9 +231,12 @@ func (r *Router) handleCreateConnectionSuccess(w http.ResponseWriter, req *http.
 			writeJSON(w, http.StatusOK, toConnectionResponse(c))
 			return
 		}
-		// Settings page: trigger full page refresh to show the new connection
+		// Settings page: trigger full page refresh to show the new connection.
+		// Use 204 and HX-Reswap: none to prevent HTMX from swapping an empty
+		// response into the target element before the refresh occurs.
 		w.Header().Set("HX-Refresh", "true")
-		w.WriteHeader(http.StatusOK)
+		w.Header().Set("HX-Reswap", "none")
+		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 	status := http.StatusCreated

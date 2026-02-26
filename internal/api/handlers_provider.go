@@ -81,10 +81,11 @@ func (r *Router) handleSetProviderKey(w http.ResponseWriter, req *http.Request) 
 							w.Header().Set("HX-Retarget", "#provider-save-result-"+string(name))
 							w.Header().Set("HX-Reswap", "innerHTML")
 						}
+						w.WriteHeader(http.StatusUnprocessableEntity)
 						renderTempl(w, req, templates.ProviderTestSaveFailure(name, apiKey, testErr.Error(), isOOBE))
 						return
 					}
-					writeJSON(w, http.StatusOK, map[string]string{
+					writeJSON(w, http.StatusUnprocessableEntity, map[string]string{
 						"status": "test_failed",
 						"error":  testErr.Error(),
 					})
@@ -139,6 +140,9 @@ func (r *Router) renderProviderCard(w http.ResponseWriter, req *http.Request, na
 			return
 		}
 	}
+
+	r.logger.Error("provider status not found for card render", "provider", name)
+	writeError(w, req, http.StatusNotFound, "unknown provider")
 }
 
 // handleDeleteProviderKey removes the API key for a provider.

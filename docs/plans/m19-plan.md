@@ -53,5 +53,5 @@ Test provider API keys and connection credentials before persisting them. Show i
 - 2026-02-26: Both issues implemented in a single session, single branch
 - Context override pattern (WithAPIKeyOverride) uses unexported struct key to avoid collisions
 - Connection test uses testConnectionDirect which constructs clients directly (no DB lookup needed)
-- OOBE connection form keeps the hx-on::after-request callback for onConnectionSaved; test failures render into a separate result div so the callback does not fire
+- OOBE connection form keeps the hx-on::after-request callback for onConnectionSaved; test failures return 422 so event.detail.successful is false and the callback does not fire
 - Settings connection form switches from hx-swap="none" + after-request reload to hx-target + HX-Refresh on success
