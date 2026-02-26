@@ -454,25 +454,47 @@ func (s *Service) recordHealthSnapshot(ctx context.Context) {
 
 // detectRemoved finds artists in the database whose paths no longer exist on disk.
 func (s *Service) detectRemoved(ctx context.Context, discoveredPaths map[string]bool, libraryPaths []string, result *ScanResult) {
-	// List all known artists
-	allArtists, _, err := s.artistService.List(ctx, artist.ListParams{
-		Page:     1,
-		PageSize: 200,
-		Sort:     "name",
-	})
+	const pageSize = 200
+	params := artist.ListParams{Page: 1, PageSize: pageSize, Sort: "name"}
+
+	firstPage, total, err := s.artistService.List(ctx, params)
 	if err != nil {
 		s.logger.Warn("failed to list artists for removal check", "error", err)
 		return
+	}
+
+	var allArtists []artist.Artist
+	allArtists = append(allArtists, firstPage...)
+	for len(allArtists) < total {
+		if ctx.Err() != nil {
+			return
+		}
+		params.Page++
+		more, _, err := s.artistService.List(ctx, params)
+		if err != nil {
+			s.logger.Warn("failed to list artists for removal check (page)", "page", params.Page, "error", err)
+			break
+		}
+		if len(more) == 0 {
+			break
+		}
+		allArtists = append(allArtists, more...)
 	}
 
 	for _, a := range allArtists {
 		if discoveredPaths[a.Path] {
 			continue
 		}
-		// Only remove artists whose path falls under a scanned library
+		// Only remove artists whose path falls under a scanned library.
+		// Use filepath.Rel to avoid false positives (e.g. /music matching /music2).
 		underScannedLib := false
+		aPath := filepath.Clean(a.Path)
 		for _, lp := range libraryPaths {
-			if strings.HasPrefix(a.Path, lp) {
+			rel, err := filepath.Rel(filepath.Clean(lp), aPath)
+			if err != nil {
+				continue
+			}
+			if rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 				underScannedLib = true
 				break
 			}

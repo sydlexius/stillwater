@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
+	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/platform"
 	"github.com/sydlexius/stillwater/web/templates"
 )
@@ -167,9 +168,12 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 		r.logger.Warn("fetching rules for settings page", "error", err)
 	}
 
-	libs, err := r.libraryService.List(req.Context())
-	if err != nil {
-		r.logger.Error("listing libraries for settings page", "error", err)
+	var libs []library.Library
+	if r.libraryService != nil {
+		libs, err = r.libraryService.List(req.Context())
+		if err != nil {
+			r.logger.Error("listing libraries for settings page", "error", err)
+		}
 	}
 
 	tab := req.URL.Query().Get("tab")

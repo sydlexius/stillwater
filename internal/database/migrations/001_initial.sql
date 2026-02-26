@@ -102,6 +102,7 @@ CREATE INDEX idx_artists_discogs_id ON artists(discogs_id);
 CREATE INDEX idx_artists_wikidata_id ON artists(wikidata_id);
 CREATE INDEX idx_artists_deezer_id ON artists(deezer_id);
 CREATE INDEX idx_artists_path ON artists(path);
+CREATE INDEX idx_artists_library_id ON artists(library_id);
 
 CREATE TABLE IF NOT EXISTS artist_aliases (
     id TEXT PRIMARY KEY,

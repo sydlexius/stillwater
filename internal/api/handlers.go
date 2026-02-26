@@ -10,6 +10,7 @@ import (
 
 	"github.com/a-h/templ"
 	"github.com/sydlexius/stillwater/internal/api/middleware"
+	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/version"
 	"github.com/sydlexius/stillwater/web/components"
 	"github.com/sydlexius/stillwater/web/templates"
@@ -243,9 +244,12 @@ func (r *Router) handleOnboardingPage(w http.ResponseWriter, req *http.Request) 
 		r.logger.Error("listing connections for onboarding", "error", err)
 	}
 
-	libs, err := r.libraryService.List(req.Context())
-	if err != nil {
-		r.logger.Error("listing libraries for onboarding", "error", err)
+	var libs []library.Library
+	if r.libraryService != nil {
+		libs, err = r.libraryService.List(req.Context())
+		if err != nil {
+			r.logger.Error("listing libraries for onboarding", "error", err)
+		}
 	}
 
 	data := templates.OnboardingData{

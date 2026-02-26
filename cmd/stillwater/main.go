@@ -367,23 +367,25 @@ func resetCredentials() error {
 		return fmt.Errorf("running migrations: %w", err)
 	}
 
+	ctx := context.Background()
+
 	// Clear provider API keys from settings
-	if _, err := db.Exec("DELETE FROM settings WHERE key LIKE 'provider.%.api_key'"); err != nil {
+	if _, err := db.ExecContext(ctx, "DELETE FROM settings WHERE key LIKE 'provider.%.api_key'"); err != nil {
 		return fmt.Errorf("clearing provider API keys: %w", err)
 	}
 
 	// Clear connection API keys
-	if _, err := db.Exec("UPDATE connections SET encrypted_api_key = ''"); err != nil {
+	if _, err := db.ExecContext(ctx, "UPDATE connections SET encrypted_api_key = ''"); err != nil {
 		return fmt.Errorf("clearing connection API keys: %w", err)
 	}
 
 	// Clear user accounts (forces re-setup)
-	if _, err := db.Exec("DELETE FROM users"); err != nil {
+	if _, err := db.ExecContext(ctx, "DELETE FROM users"); err != nil {
 		return fmt.Errorf("clearing user accounts: %w", err)
 	}
 
 	// Clear all sessions
-	if _, err := db.Exec("DELETE FROM sessions"); err != nil {
+	if _, err := db.ExecContext(ctx, "DELETE FROM sessions"); err != nil {
 		return fmt.Errorf("clearing sessions: %w", err)
 	}
 
@@ -404,7 +406,26 @@ func backfillDefaultLibrary(ctx context.Context, libService *library.Service, mu
 
 	var defaultID string
 	if len(libs) > 0 {
-		defaultID = libs[0].ID
+		// Prefer a library named "Default", then one matching the legacy
+		// musicPath, and fall back to the first listed library.
+		var pathMatchID string
+		cleanedMusic := filepath.Clean(musicPath)
+		for _, lib := range libs {
+			if lib.Name == "Default" {
+				defaultID = lib.ID
+				break
+			}
+			if musicPath != "" && pathMatchID == "" && filepath.Clean(lib.Path) == cleanedMusic {
+				pathMatchID = lib.ID
+			}
+		}
+		if defaultID == "" {
+			if pathMatchID != "" {
+				defaultID = pathMatchID
+			} else {
+				defaultID = libs[0].ID
+			}
+		}
 	} else {
 		// No libraries exist yet: create a Default library from SW_MUSIC_PATH
 		lib := &library.Library{

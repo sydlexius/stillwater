@@ -79,6 +79,12 @@ func (r *Router) handleCreateLibrary(w http.ResponseWriter, req *http.Request) {
 		Type: body.Type,
 	}
 	if err := r.libraryService.Create(req.Context(), lib); err != nil {
+		msg := err.Error()
+		lower := strings.ToLower(msg)
+		if strings.Contains(lower, "duplicate") || strings.Contains(lower, "unique") || strings.Contains(lower, "already exists") {
+			writeJSON(w, http.StatusConflict, map[string]string{"error": msg})
+			return
+		}
 		r.logger.Error("creating library", "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 		return
@@ -101,9 +107,15 @@ func (r *Router) handleUpdateLibrary(w http.ResponseWriter, req *http.Request) {
 		Path string `json:"path"`
 		Type string `json:"type"`
 	}
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
-		return
+	if strings.HasPrefix(req.Header.Get("Content-Type"), "application/json") {
+		if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+			return
+		}
+	} else {
+		body.Name = req.FormValue("name")
+		body.Path = req.FormValue("path")
+		body.Type = req.FormValue("type")
 	}
 
 	if body.Name != "" {

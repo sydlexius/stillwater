@@ -442,10 +442,7 @@ templ onboardingLibraryRow(lib library.Library) {
 		<button
 			type="button"
 			class="text-xs text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300"
-			hx-delete={ "/api/v1/libraries/" + lib.ID }
-			hx-target={ "#ob-lib-" + lib.ID }
-			hx-swap="outerHTML"
-			hx-confirm="Remove this library?"
+			onclick={ onboardingDeleteLibrary(lib.ID) }
 		>
 			Remove
 		</button>
@@ -757,6 +754,10 @@ script toggleObConnectionInfo(connType string) {
 	if (info) {
 		info.classList.toggle("hidden");
 	}
+}
+
+script onboardingDeleteLibrary(id string) {
+	deleteLibrary(id);
 }
 
 script initTestConnection(connID string, connType string) {
