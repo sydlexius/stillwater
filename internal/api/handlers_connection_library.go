@@ -30,7 +30,7 @@ type importRequest struct {
 	} `json:"libraries"`
 }
 
-// populateResult summarises the outcome of populating artists from a connection.
+// populateResult summarizes the outcome of populating artists from a connection.
 type populateResult struct {
 	Total   int `json:"total"`
 	Created int `json:"created"`
