@@ -74,6 +74,13 @@ func (r *Router) handleSetProviderKey(w http.ResponseWriter, req *http.Request) 
 				if testErr := testable.TestConnection(testCtx); testErr != nil {
 					r.logger.Info("provider key test failed before save", "provider", name, "error", testErr)
 					if isHTMXRequest(req) {
+						if isOOBE {
+							w.Header().Set("HX-Retarget", "#ob-provider-card-"+string(name))
+							w.Header().Set("HX-Reswap", "outerHTML")
+						} else {
+							w.Header().Set("HX-Retarget", "#provider-save-result-"+string(name))
+							w.Header().Set("HX-Reswap", "innerHTML")
+						}
 						renderTempl(w, req, templates.ProviderTestSaveFailure(name, apiKey, testErr.Error(), isOOBE))
 						return
 					}
@@ -119,6 +126,7 @@ func (r *Router) renderProviderCard(w http.ResponseWriter, req *http.Request, na
 	statuses, err := r.providerSettings.ListProviderKeyStatuses(req.Context())
 	if err != nil {
 		r.logger.Error("listing provider statuses for card render", "error", err)
+		writeError(w, req, http.StatusInternalServerError, "failed to list providers")
 		return
 	}
 	for _, s := range statuses {

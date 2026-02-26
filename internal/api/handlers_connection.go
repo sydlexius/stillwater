@@ -150,6 +150,10 @@ func (r *Router) handleCreateConnection(w http.ResponseWriter, req *http.Request
 		if testErr := r.testConnectionDirect(req.Context(), body.Type, body.URL, body.APIKey); testErr != nil {
 			r.logger.Info("connection test failed before save", "type", body.Type, "url", body.URL, "error", testErr)
 			if isHTMXRequest(req) {
+				if isOOBE {
+					w.Header().Set("HX-Retarget", "#ob-conn-result-"+body.Type)
+					w.Header().Set("HX-Reswap", "innerHTML")
+				}
 				renderTempl(w, req, templates.ConnectionTestSaveFailure(body.Type, body.Name, body.URL, body.APIKey, testErr.Error(), isOOBE))
 				return
 			}
@@ -220,7 +224,9 @@ func (r *Router) handleCreateConnection(w http.ResponseWriter, req *http.Request
 func (r *Router) handleCreateConnectionSuccess(w http.ResponseWriter, req *http.Request, c connection.Connection, isOOBE bool) {
 	if isHTMXRequest(req) {
 		if isOOBE {
-			// OOBE relies on the JSON response + onConnectionSaved callback
+			// OOBE relies on the JSON response + onConnectionSaved callback.
+			// Prevent HTMX from swapping the JSON into the page.
+			w.Header().Set("HX-Reswap", "none")
 			writeJSON(w, http.StatusOK, toConnectionResponse(c))
 			return
 		}

@@ -827,8 +827,7 @@ templ onboardingConnectionCard(connType string, displayName string, exampleURL s
 				class="space-y-3"
 				data-conn-type={ connType }
 				hx-post="/api/v1/connections"
-				hx-target={ "#ob-conn-result-" + connType }
-				hx-swap="innerHTML"
+				hx-swap="none"
 				hx-on::after-request="if(event.detail.successful) onConnectionSaved(this.dataset.connType, event.detail.xhr)"
 			>
 				<input type="hidden" name="type" value={ connType }/>

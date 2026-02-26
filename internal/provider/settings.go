@@ -44,9 +44,12 @@ type ctxKeyOverride struct{}
 // for the named provider. GetAPIKey will return this value instead of querying
 // the database.
 func WithAPIKeyOverride(ctx context.Context, name ProviderName, key string) context.Context {
-	overrides, _ := ctx.Value(ctxKeyOverride{}).(map[ProviderName]string)
-	if overrides == nil {
-		overrides = make(map[ProviderName]string)
+	parentOverrides, _ := ctx.Value(ctxKeyOverride{}).(map[ProviderName]string)
+
+	// Always create a fresh map to avoid mutating any map stored in a parent context.
+	overrides := make(map[ProviderName]string, len(parentOverrides)+1)
+	for k, v := range parentOverrides {
+		overrides[k] = v
 	}
 	overrides[name] = key
 	return context.WithValue(ctx, ctxKeyOverride{}, overrides)
