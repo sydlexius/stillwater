@@ -251,6 +251,29 @@ type ClobberCheckResponse struct {
 // handleClobberCheck checks all enabled connections for NFO/image writing configuration.
 // GET /api/v1/connections/clobber-check
 func (r *Router) handleClobberCheck(w http.ResponseWriter, req *http.Request) {
+	// If no library has a filesystem path, Stillwater cannot write NFO files,
+	// so there is no clobber risk regardless of server configuration.
+	if r.libraryService != nil {
+		libs, err := r.libraryService.List(req.Context())
+		if err == nil {
+			hasPath := false
+			for _, lib := range libs {
+				if lib.Path != "" {
+					hasPath = true
+					break
+				}
+			}
+			if !hasPath {
+				if isHTMXRequest(req) {
+					w.WriteHeader(http.StatusOK)
+					return
+				}
+				writeJSON(w, http.StatusOK, ClobberCheckResponse{Risks: []ClobberRisk{}})
+				return
+			}
+		}
+	}
+
 	conns, err := r.connectionService.List(req.Context())
 	if err != nil {
 		r.logger.Error("listing connections for clobber check", "error", err)

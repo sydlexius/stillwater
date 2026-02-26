@@ -979,17 +979,29 @@ templ settingsLibraryScript() {
 		}
 
 		function settingsDeleteLibrary_click(id) {
-			if (!confirm("Remove this library?")) return;
 			var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1");
+			function doDelete() {
+				fetch("/api/v1/libraries/" + id, {
+					method: "DELETE",
+					headers: {"X-CSRF-Token": csrfToken}
+				}).then(function(res) {
+					if (res.ok) {
+						refreshSettingsLibraryList();
+					} else {
+						res.json().then(function(data) { alert(data.error || "Failed to delete library"); });
+					}
+				});
+			}
+
 			fetch("/api/v1/libraries/" + id, {
-				method: "DELETE",
 				headers: {"X-CSRF-Token": csrfToken}
-			}).then(function(res) {
-				if (res.ok) {
-					refreshSettingsLibraryList();
-				} else {
-					res.json().then(function(data) { alert(data.error || "Failed to delete library"); });
-				}
+			}).then(function(res) { return res.json(); })
+			.then(function(data) {
+				var count = data.artist_count || 0;
+				var msg = count > 0
+					? "Remove this library? " + count + " artist" + (count !== 1 ? "s" : "") + " will be unassigned."
+					: "Remove this library?";
+				showConfirmDialog(msg, 'library-delete', doDelete);
 			});
 		}
 	</script>
