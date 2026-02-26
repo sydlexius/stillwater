@@ -13,11 +13,11 @@ in OOBE Step 3, library structure guidance in OOBE Step 1, and the /guide page.
 - [x] All existing provider behavior is unchanged
 - [x] Unit tests cover OptionalKey field logic
 - [x] OOBE introduction step (#203)
-- [ ] Library structure info callout in OOBE Step 1
-- [ ] In-app /guide page with all sections
-- [ ] Guide page linked in navbar
-- [ ] Guide handler tests pass
-- [ ] GitHub wiki pages (#125)
+- [x] Library structure info callout in OOBE Step 1
+- [x] In-app /guide page with all sections
+- [x] Guide page linked in navbar
+- [x] Guide handler tests pass
+- [x] GitHub wiki pages (#125)
 
 ## Dependency Map
 
@@ -52,22 +52,23 @@ enough OOBE template surface area to ship as a single PR.
 - [x] Route registration in router.go
 - [x] Navbar link in layout.templ (desktop + mobile)
 - [x] Handler tests (handlers_guide_test.go)
-- [ ] PR opened
-- [ ] CI passing
-- [ ] PR merged
+- [x] PR opened (#216)
+- [x] CI passing
+- [x] PR merged
 
 ### Issue #125 -- GitHub wiki
-- [ ] Wiki pages created
-- [ ] Issue closed
+- [x] Wiki pages created (Home, Installation, Configuration, User Guide, Reverse Proxy, Troubleshooting, FAQ)
+- [x] Issue closed
 
 ## UAT / Merge Order
 
 1. PR #214 covering #200 and #201 (base: main) -- merged
 2. PR #215 covering #203 (base: main) -- merged
-3. PR for #202 (base: main)
-4. Wiki pages for #125 (after #202 merges)
+3. PR #216 covering #202 (base: main) -- merged
+4. Wiki pages for #125 (pushed to wiki repo) -- done
 
 ## Notes
 
 - 2026-02-26: Issues #200, #201, #203 complete. PRs #214 and #215 merged.
 - 2026-02-26: Issue #202 implementation complete. Guide page, OOBE callout, tests all passing.
+- 2026-02-26: PR #216 merged. Wiki pages pushed. Issues #202 and #125 closed. Milestone 18 complete.
