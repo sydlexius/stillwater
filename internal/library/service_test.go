@@ -276,6 +276,18 @@ func TestCreate_Validation(t *testing.T) {
 	}
 }
 
+func TestIsDegraded(t *testing.T) {
+	lib := Library{Name: "API Only", Path: "", Type: TypeRegular}
+	if !lib.IsDegraded() {
+		t.Error("expected IsDegraded() = true for empty path")
+	}
+
+	lib.Path = "/music/lib"
+	if lib.IsDegraded() {
+		t.Error("expected IsDegraded() = false for non-empty path")
+	}
+}
+
 func TestCreate_DuplicateName(t *testing.T) {
 	db := setupTestDB(t)
 	svc := NewService(db)

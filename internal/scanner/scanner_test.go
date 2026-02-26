@@ -15,6 +15,7 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/database"
+	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/rule"
 )
 
@@ -78,6 +79,50 @@ func waitForScan(t *testing.T, svc *Service, timeout time.Duration) *ScanResult 
 	}
 	t.Fatal("scan did not complete within timeout")
 	return nil
+}
+
+// stubLibraryLister returns a fixed list of libraries.
+type stubLibraryLister struct {
+	libs []library.Library
+}
+
+func (s *stubLibraryLister) List(_ context.Context) ([]library.Library, error) {
+	return s.libs, nil
+}
+
+func TestScan_DegradedLibrarySkipped(t *testing.T) {
+	libDir := t.TempDir()
+	createArtistDir(t, libDir, "Visible Artist")
+	svc, artistSvc := setupScanner(t, libDir)
+
+	// Set up a library lister that returns one healthy library and one degraded (empty path).
+	svc.SetLibraryLister(&stubLibraryLister{
+		libs: []library.Library{
+			{ID: "lib-1", Name: "Main", Path: libDir, Type: library.TypeRegular},
+			{ID: "lib-2", Name: "API Only", Path: "", Type: library.TypeRegular},
+		},
+	})
+
+	ctx := context.Background()
+	if _, err := svc.Run(ctx); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	final := waitForScan(t, svc, 5*time.Second)
+
+	if final.Status != "completed" {
+		t.Errorf("status = %q, want completed", final.Status)
+	}
+	if final.NewArtists != 1 {
+		t.Errorf("NewArtists = %d, want 1 (degraded library should be skipped)", final.NewArtists)
+	}
+
+	a, _ := artistSvc.GetByPath(ctx, filepath.Join(libDir, "Visible Artist"))
+	if a == nil {
+		t.Fatal("expected artist from healthy library to be found")
+	}
+	if a.LibraryID != "lib-1" {
+		t.Errorf("LibraryID = %q, want lib-1", a.LibraryID)
+	}
 }
 
 func TestScan_EmptyDirectory(t *testing.T) {

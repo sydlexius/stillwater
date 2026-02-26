@@ -43,11 +43,11 @@ No issue blocks another. #161 gets migration 002, #159 gets migration 003.
 - [ ] PR merged
 
 ### Issue #159 -- Multi-Library Support
-- [ ] Phase 1: DB Schema + Libraries API
-- [ ] Phase 2: Onboarding + Settings UI
-- [ ] Phase 3: Scanner Multi-Library + Classical Mode
-- [ ] Phase 4: Degraded Mode UX
-- [ ] Tests
+- [x] Phase 1: DB Schema + Libraries API (PR #186)
+- [x] Phase 2: Onboarding + Settings UI (PR #186, #187)
+- [x] Phase 3: Scanner Multi-Library (PR #186; classical derivation dropped -- library type is authoritative)
+- [x] Phase 4: Degraded Mode UX + API guards
+- [x] Tests
 - [ ] PR opened (#?)
 - [ ] CI passing
 - [ ] PR merged
@@ -163,18 +163,17 @@ Keep `ImageNaming` struct as `[]string` fields. The migration stores single stri
 
 **Settings**: Add "Libraries" section to `web/templates/settings.templ` -- list/add/edit/remove
 
-#### Phase 3: Scanner Multi-Library + Classical Mode
+#### Phase 3: Scanner Multi-Library
 
 **Scanner refactor** (`internal/scanner/scanner.go`):
 - Replace `libraryPath string` field with `libraryService *library.Service`
-- `runScan()` iterates over all libraries; skips those with empty path
+- `runScan()` iterates over all libraries; skips those with empty path (logs info message)
 - `processDirectory()` receives library ID, sets `a.LibraryID`
-- Sets `a.IsClassical = (lib.Type == "classical")` during scan
 
-**Classical mode** (`internal/rule/classical.go`):
-- Keep `is_classical` on artist model, but derive from library type during scan
-- Global `rule.classical_mode` setting stays for skip/composer/performer behavior
-- Remove need to manually set is_classical per artist
+**Classical mode decision**: `IsClassical` is NOT derived from library type during scan.
+The library type (`regular`/`classical`) is the authoritative source; denormalizing it onto
+every artist row creates a data consistency problem when library types change. The rule
+engine should look up the library type directly when needed (future refactor).
 
 #### Phase 4: Degraded Mode UX
 
@@ -228,3 +227,5 @@ Libraries with `path = ""` operate in degraded (API-only) mode:
 - Partial #159 work on disk (not committed): `internal/library/model.go`, `003_multi_library.sql`
 - Migration 002 committed with PR #184
 - Issue #158 (migration consolidation) is CLOSED; baseline is `001_initial.sql`
+- 2026-02-25: #159 gap analysis PR: degraded mode API guards (409 for pathless artists), degraded mode UX badges, artist detail library context, scanner logs for skipped degraded libraries. Classical derivation dropped per review -- library type is authoritative.
+- 2026-02-25: #159 UAT blocked on Emby API access issue; PR ready for review but full end-to-end testing deferred.
