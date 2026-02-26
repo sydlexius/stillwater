@@ -8,11 +8,11 @@ all provider options during initial setup without needing to visit Settings afte
 
 ## Acceptance Criteria
 
-- [ ] TheAudioDB shows as "Free tier" with optional premium key input in OOBE and Settings
-- [ ] DuckDuckGo web search toggle appears in OOBE Step 3
-- [ ] HTMX re-renders use the correct card template based on page context (OOBE vs Settings)
-- [ ] All existing provider behavior is unchanged
-- [ ] Unit tests cover OptionalKey field logic
+- [x] TheAudioDB shows as "Free tier" with optional premium key input in OOBE and Settings
+- [x] DuckDuckGo web search toggle appears in OOBE Step 3
+- [x] HTMX re-renders use the correct card template based on page context (OOBE vs Settings)
+- [x] All existing provider behavior is unchanged
+- [x] Unit tests cover OptionalKey field logic
 
 ## Dependency Map
 
@@ -22,33 +22,34 @@ enough OOBE template surface area to ship as a single PR.
 ## Checklist
 
 ### Issue #200 -- Restore TheAudioDB optional premium API key input
-- [ ] Add `OptionalKey` field to `ProviderKeyStatus`
-- [ ] Add `providerHasOptionalKey` helper
-- [ ] Update `ListProviderKeyStatuses` status logic
-- [ ] Update `onboardingProviderCard` template
-- [ ] Update `ProviderKeyCard` template (Settings)
-- [ ] Update `getKeyLinkText` for freemium tier
-- [ ] Fix `handleSetProviderKey` OOBE context detection
-- [ ] Export `OnboardingProviderCard`
-- [ ] Tests for OptionalKey
-- [ ] PR opened (#?)
+- [x] Add `OptionalKey` field to `ProviderKeyStatus`
+- [x] Add `providerHasOptionalKey` helper
+- [x] Update `ListProviderKeyStatuses` status logic
+- [x] Update `onboardingProviderCard` template (exported as `OnboardingProviderCard`)
+- [x] Update `ProviderKeyCard` template (Settings)
+- [x] Update `getKeyLinkText` for freemium tier
+- [x] Fix `handleSetProviderKey` OOBE context detection
+- [x] Export `OnboardingProviderCard`
+- [x] Tests for OptionalKey
+- [x] PR opened (#214)
 - [ ] CI passing
 - [ ] PR merged
 
 ### Issue #201 -- Add web scraper enable/disable to OOBE
-- [ ] Add `WebSearchProviders` to `OnboardingData`
-- [ ] Add web search subsection to OOBE Step 3
-- [ ] Create `OnboardingWebSearchToggle` component
-- [ ] Load web search data in `handleOnboardingPage`
-- [ ] Fix `handleSetWebSearchEnabled` OOBE context detection
-- [ ] PR opened (same as #200)
+- [x] Add `WebSearchProviders` to `OnboardingData`
+- [x] Add web search subsection to OOBE Step 3
+- [x] Create `OnboardingWebSearchToggle` component
+- [x] Load web search data in `handleOnboardingPage`
+- [x] Fix `handleSetWebSearchEnabled` OOBE context detection
+- [x] PR opened (#214, same as #200)
 - [ ] CI passing
 - [ ] PR merged
 
 ## UAT / Merge Order
 
-1. Single PR covering both #200 and #201 (base: main)
+1. PR #214 covering both #200 and #201 (base: main)
 
 ## Notes
 
 - 2026-02-26: Both issues target OOBE Step 3 and share template code, shipping together.
+- 2026-02-26: All implementation complete. PR #214 opened. Awaiting CI and review.
