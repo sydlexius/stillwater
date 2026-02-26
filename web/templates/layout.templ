@@ -123,9 +123,13 @@ templ Layout(title string, assets AssetPaths) {
 						return modal;
 					}
 
-					function showModal(message, confirmKey) {
+					function showModal(message, confirmKey, opts) {
 						var m = getModal();
-						m.message.textContent = message;
+						if (opts && opts.html) {
+							m.message.innerHTML = message;
+						} else {
+							m.message.textContent = message;
+						}
 						m.remember.checked = false;
 						if (confirmKey) {
 							m.rememberLabel.classList.remove('hidden');
@@ -191,14 +195,14 @@ templ Layout(title string, assets AssetPaths) {
 					// Global API for programmatic confirmation dialogs.
 					// If the user previously chose "Don't ask again" for this key,
 					// onConfirm is called immediately without showing the modal.
-					window.showConfirmDialog = function(message, confirmKey, onConfirm) {
+					window.showConfirmDialog = function(message, confirmKey, onConfirm, opts) {
 						if (confirmKey && localStorage.getItem('ui.confirm.' + confirmKey) === 'skip') {
 							onConfirm();
 							return;
 						}
 						pendingCallback = onConfirm;
 						pendingConfirmKey = confirmKey;
-						showModal(message, confirmKey);
+						showModal(message, confirmKey, opts);
 					};
 				})();
 			</script>

@@ -11,9 +11,10 @@ import (
 
 // Executor performs per-field metadata scraping with fallback chain execution.
 type Executor struct {
-	service  *Service
-	registry *provider.Registry
-	logger   *slog.Logger
+	service          *Service
+	registry         *provider.Registry
+	providerSettings *provider.SettingsService
+	logger           *slog.Logger
 }
 
 // FieldResult records the outcome of scraping a single field.
@@ -25,11 +26,12 @@ type FieldResult struct {
 }
 
 // NewExecutor creates a new scraper executor.
-func NewExecutor(service *Service, registry *provider.Registry, logger *slog.Logger) *Executor {
+func NewExecutor(service *Service, registry *provider.Registry, settings *provider.SettingsService, logger *slog.Logger) *Executor {
 	return &Executor{
-		service:  service,
-		registry: registry,
-		logger:   logger.With(slog.String("component", "scraper-executor")),
+		service:          service,
+		registry:         registry,
+		providerSettings: settings,
+		logger:           logger.With(slog.String("component", "scraper-executor")),
 	}
 }
 
@@ -40,6 +42,11 @@ func (e *Executor) ScrapeAll(ctx context.Context, mbid, name, scope string) (*pr
 	cfg, err := e.service.GetConfig(ctx, scope)
 	if err != nil {
 		return nil, fmt.Errorf("loading scraper config: %w", err)
+	}
+
+	available, err := e.providerSettings.AvailableProviderNames(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("loading available providers: %w", err)
 	}
 
 	result := &provider.FetchResult{
@@ -63,7 +70,7 @@ func (e *Executor) ScrapeAll(ctx context.Context, mbid, name, scope string) (*pr
 			continue
 		}
 
-		fr := e.scrapeField(ctx, mbid, name, field, *chain, cache, &mu, result)
+		fr := e.scrapeField(ctx, mbid, name, field, *chain, available, cache, &mu, result)
 		if fr.Err != nil {
 			result.Errors = append(result.Errors,
 				fmt.Sprintf("%s: %s", fr.Field, fr.Err.Error()))
@@ -102,23 +109,26 @@ func (e *Executor) scrapeField(
 	mbid, name string,
 	field FieldConfig,
 	chain FallbackChain,
+	available map[provider.ProviderName]bool,
 	cache map[provider.ProviderName]*providerResult,
 	mu *sync.Mutex,
 	result *provider.FetchResult,
 ) FieldResult {
-	// Try primary provider first
-	pr := e.getProviderResult(ctx, field.Primary, mbid, name, cache, mu)
-	if pr.err == nil && applyFieldValue(field.Field, pr, result) {
-		return FieldResult{Field: field.Field, Provider: field.Primary}
+	// Try primary provider first (if configured)
+	if available[field.Primary] {
+		pr := e.getProviderResult(ctx, field.Primary, mbid, name, cache, mu)
+		if pr.err == nil && applyFieldValue(field.Field, pr, result) {
+			return FieldResult{Field: field.Field, Provider: field.Primary}
+		}
 	}
 
 	// Walk fallback chain
 	for _, provName := range chain.Providers {
-		if provName == field.Primary {
-			continue // already tried
+		if provName == field.Primary || !available[provName] {
+			continue
 		}
 
-		pr = e.getProviderResult(ctx, provName, mbid, name, cache, mu)
+		pr := e.getProviderResult(ctx, provName, mbid, name, cache, mu)
 		if pr.err != nil {
 			continue
 		}

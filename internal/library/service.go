@@ -212,6 +212,68 @@ func (s *Service) CountArtists(ctx context.Context, libraryID string) (int, erro
 	return count, nil
 }
 
+// DeleteWithArtists removes a library and all artists belonging to it in a
+// single transaction. Band members are cleaned up by ON DELETE CASCADE.
+func (s *Service) DeleteWithArtists(ctx context.Context, id string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("starting transaction: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM artists WHERE library_id = ?`, id); err != nil {
+		return fmt.Errorf("deleting library artists: %w", err)
+	}
+
+	result, err := tx.ExecContext(ctx, `DELETE FROM libraries WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("deleting library: %w", err)
+	}
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return fmt.Errorf("library not found: %s", id)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("committing delete: %w", err)
+	}
+	return nil
+}
+
+// ListByConnectionID returns all libraries associated with a connection.
+func (s *Service) ListByConnectionID(ctx context.Context, connectionID string) ([]Library, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT `+libraryColumns+` FROM libraries WHERE connection_id = ? ORDER BY name`, connectionID)
+	if err != nil {
+		return nil, fmt.Errorf("listing libraries by connection: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck
+
+	var libs []Library
+	for rows.Next() {
+		lib, err := scanLibrary(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scanning library: %w", err)
+		}
+		libs = append(libs, *lib)
+	}
+	return libs, rows.Err()
+}
+
+// CountArtistsByConnectionID returns the total number of artists across all
+// libraries belonging to a connection.
+func (s *Service) CountArtistsByConnectionID(ctx context.Context, connectionID string) (int, error) {
+	var count int
+	err := s.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM artists WHERE library_id IN (SELECT id FROM libraries WHERE connection_id = ?)`,
+		connectionID).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("counting artists for connection: %w", err)
+	}
+	return count, nil
+}
+
 // scanLibrary scans a database row into a Library struct.
 func scanLibrary(row interface{ Scan(...any) error }) (*Library, error) {
 	var lib Library

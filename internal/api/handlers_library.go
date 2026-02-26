@@ -140,11 +140,20 @@ func (r *Router) handleUpdateLibrary(w http.ResponseWriter, req *http.Request) {
 	writeJSON(w, http.StatusOK, existing)
 }
 
-// handleDeleteLibrary deletes a library, dereferencing any artists that belong to it.
+// handleDeleteLibrary deletes a library. When ?deleteArtists=true is set, all
+// artists belonging to the library are also deleted; otherwise they are
+// dereferenced (library_id set to NULL).
 // DELETE /api/v1/libraries/{id}
 func (r *Router) handleDeleteLibrary(w http.ResponseWriter, req *http.Request) {
 	id := req.PathValue("id")
-	if err := r.libraryService.Delete(req.Context(), id); err != nil {
+
+	var err error
+	if req.URL.Query().Get("deleteArtists") == "true" {
+		err = r.libraryService.DeleteWithArtists(req.Context(), id)
+	} else {
+		err = r.libraryService.Delete(req.Context(), id)
+	}
+	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}

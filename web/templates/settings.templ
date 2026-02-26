@@ -46,7 +46,7 @@ func settingsTabs() []settingsTab {
 		{ID: "providers", Label: "Providers"},
 		{ID: "connections", Label: "Connections"},
 		{ID: "libraries", Label: "Libraries"},
-		{ID: "notifications", Label: "Notifications"},
+		{ID: "automation", Label: "Automation"},
 		{ID: "rules", Label: "Rules"},
 		{ID: "maintenance", Label: "Maintenance"},
 	}
@@ -362,6 +362,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 		@settingsTabScript()
 		@autoFetchToggleScript()
 		@settingsLibraryScript()
+		@settingsConnectionScript()
 		@ruleToggleScript()
 		<script src={ assets.SortableJS }></script>
 		<div class="space-y-6">
@@ -632,12 +633,12 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 				</div>
 			</div>
 
-			<!-- Notifications tab -->
+			<!-- Automation tab -->
 			<div
-				data-tab-panel="notifications"
+				data-tab-panel="automation"
 				class={
 					"space-y-6",
-					templ.KV("hidden", data.ActiveTab != "notifications"),
+					templ.KV("hidden", data.ActiveTab != "automation"),
 				}
 			>
 				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
@@ -1027,8 +1028,10 @@ templ settingsLibraryScript() {
 
 		function settingsDeleteLibrary_click(id) {
 			var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1");
-			function doDelete() {
-				fetch("/api/v1/libraries/" + id, {
+			function doDelete(deleteArtists) {
+				var url = "/api/v1/libraries/" + id;
+				if (deleteArtists) { url += "?deleteArtists=true"; }
+				fetch(url, {
 					method: "DELETE",
 					headers: {"X-CSRF-Token": csrfToken}
 				}).then(function(res) {
@@ -1042,16 +1045,11 @@ templ settingsLibraryScript() {
 				});
 			}
 
-			if (localStorage.getItem('ui.confirm.library-delete') === 'skip') {
-				doDelete();
-				return;
-			}
-
 			fetch("/api/v1/libraries/" + id, {
 				headers: {"X-CSRF-Token": csrfToken}
 			}).then(function(res) {
 				if (!res.ok) {
-					showConfirmDialog("Remove this library?", 'library-delete', doDelete);
+					showConfirmDialog("Remove this library?", null, function() { doDelete(false); });
 					return;
 				}
 				return res.json();
@@ -1059,13 +1057,100 @@ templ settingsLibraryScript() {
 			.then(function(data) {
 				if (!data) return;
 				var count = data.artist_count || 0;
-				var msg = count > 0
-					? "Remove this library? " + count + " artist" + (count !== 1 ? "s" : "") + " will be unassigned."
-					: "Remove this library?";
-				showConfirmDialog(msg, 'library-delete', doDelete);
+				if (count === 0) {
+					showConfirmDialog("Remove this library?", null, function() { doDelete(false); });
+					return;
+				}
+				var noun = count === 1 ? "artist" : "artists";
+				var msg = '<p class="mb-3">This library has <strong>' + count + '</strong> ' + noun + '.</p>'
+					+ '<label class="flex items-center gap-2 mb-1 cursor-pointer">'
+					+ '<input type="radio" name="lib-delete-choice" value="delete" checked class="text-blue-600"/> Delete ' + noun
+					+ '</label>'
+					+ '<label class="flex items-center gap-2 cursor-pointer">'
+					+ '<input type="radio" name="lib-delete-choice" value="keep" class="text-blue-600"/> Keep ' + noun + ' (unassign from library)'
+					+ '</label>';
+				showConfirmDialog(msg, null, function() {
+					var checked = document.querySelector('input[name="lib-delete-choice"]:checked');
+					doDelete(checked && checked.value === 'delete');
+				}, {html: true});
 			})
 			.catch(function() {
-				showConfirmDialog("Remove this library?", 'library-delete', doDelete);
+				showConfirmDialog("Remove this library?", null, function() { doDelete(false); });
+			});
+		}
+	</script>
+}
+
+templ settingsConnectionScript() {
+	<script>
+		function settingsDeleteConnection_click(id) {
+			var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1");
+
+			function doDelete(params) {
+				var url = "/api/v1/connections/" + id;
+				if (params) { url += "?" + params; }
+				fetch(url, {
+					method: "DELETE",
+					headers: {"X-CSRF-Token": csrfToken}
+				}).then(function(res) {
+					if (res.ok) { window.location.reload(); }
+					else { res.json().then(function(data) { alert(data.error || "Failed to delete connection"); }); }
+				}).catch(function() {
+					alert("Failed to delete connection");
+				});
+			}
+
+			fetch("/api/v1/connections/" + id, {
+				headers: {"X-CSRF-Token": csrfToken}
+			}).then(function(res) {
+				if (!res.ok) {
+					showConfirmDialog("Delete this connection?", null, function() { doDelete(""); });
+					return;
+				}
+				return res.json();
+			}).then(function(data) {
+				if (!data) return;
+				var libCount = data.library_count || 0;
+				var artistCount = data.artist_count || 0;
+
+				if (libCount === 0 && artistCount === 0) {
+					showConfirmDialog("Delete this connection?", null, function() { doDelete(""); });
+					return;
+				}
+
+				var libNoun = libCount === 1 ? "library" : "libraries";
+				var artistNoun = artistCount === 1 ? "artist" : "artists";
+				var msg = '<p class="mb-3">This connection has <strong>' + libCount + '</strong> ' + libNoun;
+				if (artistCount > 0) {
+					msg += ' and <strong>' + artistCount + '</strong> ' + artistNoun;
+				}
+				msg += '.</p>';
+				msg += '<label class="flex items-center gap-2 mb-1 cursor-pointer">'
+					+ '<input type="radio" name="conn-delete-choice" value="all" checked class="text-blue-600"/>'
+					+ ' Delete connection, ' + libNoun + ', and ' + artistNoun
+					+ '</label>';
+				msg += '<label class="flex items-center gap-2 mb-1 cursor-pointer">'
+					+ '<input type="radio" name="conn-delete-choice" value="libs" class="text-blue-600"/>'
+					+ ' Delete connection and ' + libNoun + ' (keep ' + artistNoun + ')'
+					+ '</label>';
+				msg += '<label class="flex items-center gap-2 cursor-pointer">'
+					+ '<input type="radio" name="conn-delete-choice" value="conn" class="text-blue-600"/>'
+					+ ' Delete connection only (keep ' + libNoun + ' and ' + artistNoun + ')'
+					+ '</label>';
+
+				showConfirmDialog(msg, null, function() {
+					var checked = document.querySelector('input[name="conn-delete-choice"]:checked');
+					var val = checked ? checked.value : "conn";
+					if (val === "all") {
+						doDelete("deleteLibraries=true&deleteArtists=true");
+					} else if (val === "libs") {
+						doDelete("deleteLibraries=true");
+					} else {
+						doDelete("");
+					}
+				}, {html: true});
+			}).catch(function() {
+				showConfirmDialog("Delete this connection?", null, function() { doDelete(""); });
 			});
 		}
 	</script>
@@ -1457,10 +1542,7 @@ templ serviceConnectionCard(connType string, displayName string, exampleURL stri
 							<button
 								type="button"
 								class="text-xs px-2 py-1 rounded border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-								hx-delete={ "/api/v1/connections/" + c.ID }
-								hx-confirm="Delete this connection?"
-								hx-swap="none"
-								hx-on::after-request="window.location.reload()"
+								onclick={ settingsDeleteConnection(c.ID) }
 							>
 								Delete
 							</button>
@@ -1528,6 +1610,10 @@ script toggleConnectionForm(connType string) {
 	if (form) {
 		form.classList.toggle("hidden");
 	}
+}
+
+script settingsDeleteConnection(id string) {
+	settingsDeleteConnection_click(id);
 }
 
 templ webhookCard(wh webhook.Webhook) {

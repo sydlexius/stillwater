@@ -178,7 +178,7 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 
 	tab := req.URL.Query().Get("tab")
 	switch tab {
-	case "general", "providers", "connections", "libraries", "notifications", "rules", "maintenance":
+	case "general", "providers", "connections", "libraries", "automation", "rules", "maintenance":
 		// Valid tab.
 	default:
 		tab = "general"

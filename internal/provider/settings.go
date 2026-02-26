@@ -275,6 +275,28 @@ func (s *SettingsService) SetDisabledProviders(ctx context.Context, field string
 	return nil
 }
 
+// AvailableProviderNames returns the set of provider names that are configured
+// (either they do not require a key, or they have one stored). Unconfigured
+// providers are excluded so the orchestrator can skip them without producing
+// noisy ErrAuthRequired warnings.
+func (s *SettingsService) AvailableProviderNames(ctx context.Context) (map[ProviderName]bool, error) {
+	available := make(map[ProviderName]bool)
+	for _, name := range AllProviderNames() {
+		if !providerRequiresKey(name) {
+			available[name] = true
+			continue
+		}
+		hasKey, err := s.HasAPIKey(ctx, name)
+		if err != nil {
+			return nil, err
+		}
+		if hasKey {
+			available[name] = true
+		}
+	}
+	return available, nil
+}
+
 // webSearchEnabledKey returns the settings table key for a web search provider's enabled state.
 func webSearchEnabledKey(name ProviderName) string {
 	return fmt.Sprintf("provider.websearch.%s.enabled", name)

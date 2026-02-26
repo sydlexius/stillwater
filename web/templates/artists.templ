@@ -120,7 +120,7 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 						class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
 					>
 						<option value="" selected?={ data.Filter == "" }>All Artists</option>
-						<option value="missing_nfo" selected?={ data.Filter == "missing_nfo" }>Missing NFO</option>
+						<option value="missing_nfo" selected?={ data.Filter == "missing_nfo" }>Missing Metadata</option>
 						<option value="missing_thumb" selected?={ data.Filter == "missing_thumb" }>Missing Thumbnail</option>
 						<option value="missing_fanart" selected?={ data.Filter == "missing_fanart" }>Missing Fanart</option>
 						<option value="missing_mbid" selected?={ data.Filter == "missing_mbid" }>Missing MBID</option>
@@ -253,7 +253,7 @@ templ ArtistTable(data ArtistListData) {
 							Name
 						</th>
 						<th scope="col" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
-							NFO
+							Metadata
 						</th>
 						<th scope="col" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
 							Thumb

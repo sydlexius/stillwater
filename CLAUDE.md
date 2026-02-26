@@ -223,7 +223,32 @@ Example structure:
 - Use `docker-compose.local.yml` for UAT builds whenever the PR/check cycle warrants a container test.
 - After addressing PR review feedback, update the relevant checklist items.
 
-### 4. Cleanup (After All PRs Are Merged)
+### 4. Documentation Updates
+
+When any change (milestone work, bug fix, or standalone request) touches user-facing behavior, check whether it affects existing documentation and update accordingly. This applies to all work, not just milestones.
+
+**When to update docs:**
+- The change alters UI layout, navigation, or workflows described in the user guide or wiki
+- The change adds a new feature, setting, or page that users need to know about
+- The change renames, moves, or removes something that existing docs reference
+- The change introduces a concept or behavior that would not be self-evident to a user
+
+**What to update:**
+- In-app guide (`web/templates/guide.templ` and `/guide` route) -- once it exists
+- GitHub wiki pages (User Guide, Developer Guide) -- once they exist
+- OOBE step content if onboarding references the changed behavior
+- CLAUDE.md if the change affects architecture, commands, or conventions
+
+**How:**
+- Documentation changes ship in the same PR as the code change, not as a follow-up
+- In the PR description, note which doc pages were updated and why
+- If a doc page does not exist yet but the change would warrant one, note that in the PR description so it can be tracked
+
+**During milestone planning:**
+- The plan file should list which wiki/guide pages are affected by each sub-issue
+- The milestone checklist should include a `- [ ] Docs updated` item for any issue that touches user-facing behavior
+
+### 5. Cleanup (After All PRs Are Merged)
 
 Once every sub-issue PR is merged to `main`:
 1. Post findings comments to all research/analysis issues and close them.
