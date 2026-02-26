@@ -41,6 +41,12 @@ func (s *Service) Create(ctx context.Context, c *Connection) error {
 	if c.Status == "" {
 		c.Status = "unknown"
 	}
+	// Default feature toggles to enabled for new connections.
+	if !c.FeatureLibraryImport && !c.FeatureNFOWrite && !c.FeatureImageWrite {
+		c.FeatureLibraryImport = true
+		c.FeatureNFOWrite = true
+		c.FeatureImageWrite = true
+	}
 
 	encKey, err := s.encryptor.Encrypt(c.APIKey)
 	if err != nil {
@@ -237,7 +243,10 @@ func (s *Service) UpdateFeatures(ctx context.Context, id string, libImport, nfoW
 	if err != nil {
 		return fmt.Errorf("updating connection features: %w", err)
 	}
-	rows, _ := result.RowsAffected()
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("checking rows affected: %w", err)
+	}
 	if rows == 0 {
 		return fmt.Errorf("connection not found: %s", id)
 	}

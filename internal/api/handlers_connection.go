@@ -426,6 +426,10 @@ func (r *Router) handleUpdateConnectionFeatures(w http.ResponseWriter, req *http
 	}
 
 	if err := r.connectionService.UpdateFeatures(req.Context(), id, libImport, nfoWrite, imageWrite); err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "connection not found"})
+			return
+		}
 		r.logger.Error("updating connection features", "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 		return

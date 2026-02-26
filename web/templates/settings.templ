@@ -1644,6 +1644,9 @@ templ serviceConnectionCard(connType string, displayName string, exampleURL stri
 								class="text-xs p-1 rounded border border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
 								onclick={ toggleConnectionFeatures(c.ID) }
 								title="Feature toggles"
+								aria-label="Feature toggles"
+								aria-expanded="false"
+								aria-controls={ "features-" + c.ID }
 							>
 								@components.IconCog6Tooth("h-3.5 w-3.5")
 							</button>
@@ -1792,6 +1795,10 @@ script toggleConnectionFeatures(connID string) {
 	var panel = document.getElementById("features-" + connID);
 	if (panel) {
 		panel.classList.toggle("hidden");
+		var btn = document.querySelector('[aria-controls="features-' + connID + '"]');
+		if (btn) {
+			btn.setAttribute('aria-expanded', String(!panel.classList.contains('hidden')));
+		}
 	}
 }
 
@@ -1803,6 +1810,7 @@ templ connectionFeatureToggle(connID string, feature string, label string, enabl
 			class={ ruleToggleBtnClasses(enabled) }
 			role="switch"
 			aria-checked={ boolAttr(enabled) }
+			aria-label={ "Toggle " + label }
 			data-conn-id={ connID }
 			data-feature={ feature }
 			onclick="toggleConnectionFeature(this)"
