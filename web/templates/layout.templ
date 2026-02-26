@@ -266,6 +266,9 @@ templ navbar() {
 						<a href="/settings" class="rounded-md px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
 							Settings
 						</a>
+						<a href="/guide" class="rounded-md px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
+							Guide
+						</a>
 					</div>
 				</div>
 				<div class="hidden md:flex items-center gap-1">
@@ -314,6 +317,9 @@ templ navbar() {
 				</a>
 				<a href="/settings" class="block rounded-md px-3 py-3 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
 					Settings
+				</a>
+				<a href="/guide" class="block rounded-md px-3 py-3 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
+					Guide
 				</a>
 				<button
 					hx-post="/api/v1/auth/logout"
