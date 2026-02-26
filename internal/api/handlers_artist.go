@@ -6,6 +6,7 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/web/components"
 	"github.com/sydlexius/stillwater/web/templates"
 )
@@ -114,13 +115,22 @@ func (r *Router) handleArtistsPage(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	var libs []library.Library
+	if r.libraryService != nil {
+		libs, err = r.libraryService.List(req.Context())
+		if err != nil {
+			r.logger.Warn("listing libraries for artists page", "error", err)
+		}
+	}
+
 	totalPages := total / params.PageSize
 	if total%params.PageSize > 0 {
 		totalPages++
 	}
 
 	data := templates.ArtistListData{
-		Artists: artists,
+		Artists:   artists,
+		Libraries: libs,
 		Pagination: components.PaginationData{
 			CurrentPage: params.Page,
 			TotalPages:  totalPages,
@@ -132,12 +142,14 @@ func (r *Router) handleArtistsPage(w http.ResponseWriter, req *http.Request) {
 			Search:      params.Search,
 			Filter:      params.Filter,
 			View:        view,
+			LibraryID:   params.LibraryID,
 		},
-		Search: params.Search,
-		Sort:   params.Sort,
-		Order:  params.Order,
-		Filter: params.Filter,
-		View:   view,
+		Search:    params.Search,
+		Sort:      params.Sort,
+		Order:     params.Order,
+		Filter:    params.Filter,
+		LibraryID: params.LibraryID,
+		View:      view,
 	}
 
 	if isHTMXRequest(req) {

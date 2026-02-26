@@ -14,6 +14,7 @@ type PaginationData struct {
 	Search      string
 	Filter      string
 	View        string // "table" or "grid"
+	LibraryID   string // selected library filter
 	TargetID    string // HTMX target element ID (defaults to "artist-content")
 }
 
@@ -40,6 +41,9 @@ func (p PaginationData) pageURL(page int) string {
 	}
 	if p.View != "" {
 		url += "&view=" + p.View
+	}
+	if p.LibraryID != "" {
+		url += "&library_id=" + p.LibraryID
 	}
 	return url
 }
