@@ -14,9 +14,15 @@ import (
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/event"
 	img "github.com/sydlexius/stillwater/internal/image"
+	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/nfo"
 	"github.com/sydlexius/stillwater/internal/rule"
 )
+
+// LibraryLister retrieves the list of configured libraries.
+type LibraryLister interface {
+	List(ctx context.Context) ([]library.Library, error)
+}
 
 // Image filename patterns to detect for each type.
 var (
@@ -28,13 +34,15 @@ var (
 
 // Service runs filesystem scans against the music library.
 type Service struct {
-	artistService *artist.Service
-	ruleEngine    *rule.Engine
-	ruleService   *rule.Service
-	logger        *slog.Logger
-	libraryPath   string
-	exclusions    map[string]bool
-	eventBus      *event.Bus
+	artistService    *artist.Service
+	ruleEngine       *rule.Engine
+	ruleService      *rule.Service
+	logger           *slog.Logger
+	libraryPath      string
+	exclusions       map[string]bool
+	eventBus         *event.Bus
+	defaultLibraryID string
+	libraryLister    LibraryLister
 
 	mu          sync.Mutex
 	currentScan *ScanResult
@@ -43,6 +51,16 @@ type Service struct {
 // SetEventBus sets the event bus for publishing scan events.
 func (s *Service) SetEventBus(bus *event.Bus) {
 	s.eventBus = bus
+}
+
+// SetDefaultLibraryID sets the library ID assigned to newly discovered artists.
+func (s *Service) SetDefaultLibraryID(id string) {
+	s.defaultLibraryID = id
+}
+
+// SetLibraryLister sets the library lister used to discover all library paths.
+func (s *Service) SetLibraryLister(ll LibraryLister) {
+	s.libraryLister = ll
 }
 
 // NewService creates a scanner service.
@@ -121,56 +139,90 @@ func (s *Service) runScan(ctx context.Context, result *ScanResult) {
 		}
 	}()
 
-	entries, err := os.ReadDir(s.libraryPath)
-	if err != nil {
+	// Build the list of libraries to scan.
+	type scanTarget struct {
+		path      string
+		libraryID string
+	}
+	var targets []scanTarget
+
+	if s.libraryLister != nil {
+		libs, err := s.libraryLister.List(ctx)
+		if err != nil {
+			s.logger.Error("listing libraries for scan", "error", err)
+		}
+		for _, lib := range libs {
+			if lib.Path != "" {
+				targets = append(targets, scanTarget{path: lib.Path, libraryID: lib.ID})
+			}
+		}
+	}
+	// Fallback: if no libraries found, use the legacy single path.
+	if len(targets) == 0 && s.libraryPath != "" {
+		targets = append(targets, scanTarget{path: s.libraryPath, libraryID: s.defaultLibraryID})
+	}
+
+	if len(targets) == 0 {
 		s.mu.Lock()
 		result.Status = "failed"
-		result.Error = fmt.Sprintf("reading library directory: %v", err)
+		result.Error = "no library paths configured"
 		s.mu.Unlock()
-		s.logger.Error("scan failed", "error", err, "path", s.libraryPath)
+		s.logger.Error("scan failed: no library paths configured")
 		return
 	}
 
 	// Collect discovered paths for removal detection
 	discoveredPaths := make(map[string]bool)
+	var allLibraryPaths []string
 
-	for _, entry := range entries {
-		if ctx.Err() != nil {
+	for _, target := range targets {
+		allLibraryPaths = append(allLibraryPaths, target.path)
+		s.logger.Info("scanning library", "path", target.path, "library_id", target.libraryID)
+
+		entries, err := os.ReadDir(target.path)
+		if err != nil {
+			s.logger.Error("reading library directory", "error", err, "path", target.path)
+			continue
+		}
+
+		for _, entry := range entries {
+			if ctx.Err() != nil {
+				s.mu.Lock()
+				result.Status = "failed"
+				result.Error = "scan canceled"
+				s.mu.Unlock()
+				return
+			}
+
+			if !entry.IsDir() {
+				continue
+			}
+			// Skip hidden directories
+			if strings.HasPrefix(entry.Name(), ".") {
+				continue
+			}
+
 			s.mu.Lock()
-			result.Status = "failed"
-			result.Error = "scan canceled"
+			result.TotalDirectories++
 			s.mu.Unlock()
-			return
-		}
+			dirPath := filepath.Join(target.path, entry.Name())
+			discoveredPaths[dirPath] = true
 
-		if !entry.IsDir() {
-			continue
-		}
-		// Skip hidden directories
-		if strings.HasPrefix(entry.Name(), ".") {
-			continue
-		}
-
-		s.mu.Lock()
-		result.TotalDirectories++
-		s.mu.Unlock()
-		dirPath := filepath.Join(s.libraryPath, entry.Name())
-		discoveredPaths[dirPath] = true
-
-		if err := s.processDirectory(ctx, dirPath, entry.Name(), result); err != nil {
-			s.logger.Warn("error processing directory",
-				"path", dirPath, "error", err)
+			if err := s.processDirectory(ctx, dirPath, entry.Name(), target.libraryID, result); err != nil {
+				s.logger.Warn("error processing directory",
+					"path", dirPath, "error", err)
+			}
 		}
 	}
 
 	// Detect removed artists
-	s.detectRemoved(ctx, discoveredPaths, result)
+	s.detectRemoved(ctx, discoveredPaths, allLibraryPaths, result)
 
 	// Record health snapshot at end of scan
 	s.recordHealthSnapshot(ctx)
 }
 
-func (s *Service) processDirectory(ctx context.Context, dirPath, name string, result *ScanResult) error {
+func (s *Service) processDirectory(ctx context.Context, dirPath, name, libraryID string, result *ScanResult) error {
 	detected := detectFiles(dirPath)
 
 	// Check if directory name matches exclusion list
@@ -187,6 +239,7 @@ func (s *Service) processDirectory(ctx context.Context, dirPath, name string, re
 			Name:         name,
 			SortName:     name,
 			Path:         dirPath,
+			LibraryID:    libraryID,
 			NFOExists:    detected.NFOExists,
 			ThumbExists:  detected.ThumbExists,
 			FanartExists: detected.FanartExists,
@@ -400,7 +453,7 @@ func (s *Service) recordHealthSnapshot(ctx context.Context) {
 }
 
 // detectRemoved finds artists in the database whose paths no longer exist on disk.
-func (s *Service) detectRemoved(ctx context.Context, discoveredPaths map[string]bool, result *ScanResult) {
+func (s *Service) detectRemoved(ctx context.Context, discoveredPaths map[string]bool, libraryPaths []string, result *ScanResult) {
 	// List all known artists
 	allArtists, _, err := s.artistService.List(ctx, artist.ListParams{
 		Page:     1,
@@ -413,16 +466,28 @@ func (s *Service) detectRemoved(ctx context.Context, discoveredPaths map[string]
 	}
 
 	for _, a := range allArtists {
-		if !discoveredPaths[a.Path] && strings.HasPrefix(a.Path, s.libraryPath) {
-			if err := s.artistService.Delete(ctx, a.ID); err != nil {
-				s.logger.Warn("failed to remove artist", "id", a.ID, "error", err)
-				continue
-			}
-			s.mu.Lock()
-			result.RemovedArtists++
-			s.mu.Unlock()
-			s.logger.Debug("artist removed (directory gone)", "name", a.Name, "path", a.Path)
+		if discoveredPaths[a.Path] {
+			continue
 		}
+		// Only remove artists whose path falls under a scanned library
+		underScannedLib := false
+		for _, lp := range libraryPaths {
+			if strings.HasPrefix(a.Path, lp) {
+				underScannedLib = true
+				break
+			}
+		}
+		if !underScannedLib {
+			continue
+		}
+		if err := s.artistService.Delete(ctx, a.ID); err != nil {
+			s.logger.Warn("failed to remove artist", "id", a.ID, "error", err)
+			continue
+		}
+		s.mu.Lock()
+		result.RemovedArtists++
+		s.mu.Unlock()
+		s.logger.Debug("artist removed (directory gone)", "name", a.Name, "path", a.Path)
 	}
 }
 

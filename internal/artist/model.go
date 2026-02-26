@@ -28,6 +28,7 @@ type Artist struct {
 	Disbanded           string            `json:"disbanded"`
 	Biography           string            `json:"biography"`
 	Path                string            `json:"path"`
+	LibraryID           string            `json:"library_id"`
 	NFOExists           bool              `json:"nfo_exists"`
 	ThumbExists         bool              `json:"thumb_exists"`
 	FanartExists        bool              `json:"fanart_exists"`

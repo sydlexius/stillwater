@@ -1,0 +1,25 @@
+meta {
+  name: Delete Library
+  type: http
+  seq: 5
+}
+
+delete {
+  url: {{apiBase}}/libraries/{{libraryId}}
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+
+  test("should return deleted status", function() {
+    expect(res.body.status).to.equal("deleted");
+  });
+}

@@ -1,5 +1,5 @@
 -- +goose Up
--- Consolidated baseline schema (squashed from migrations 001-003).
+-- Consolidated baseline schema.
 
 CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
@@ -40,6 +40,15 @@ CREATE TABLE IF NOT EXISTS settings (
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS libraries (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    path TEXT NOT NULL DEFAULT '',
+    type TEXT NOT NULL DEFAULT 'regular' CHECK(type IN ('regular', 'classical')),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS artists (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -62,6 +71,7 @@ CREATE TABLE IF NOT EXISTS artists (
     disbanded TEXT NOT NULL DEFAULT '',
     biography TEXT NOT NULL DEFAULT '',
     path TEXT NOT NULL,
+    library_id TEXT REFERENCES libraries(id) DEFAULT NULL,
     nfo_exists INTEGER NOT NULL DEFAULT 0,
     thumb_exists INTEGER NOT NULL DEFAULT 0,
     fanart_exists INTEGER NOT NULL DEFAULT 0,
@@ -196,13 +206,13 @@ CREATE TABLE IF NOT EXISTS platform_profiles (
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
--- Seed built-in platform profiles (image_naming in array format).
+-- Seed built-in platform profiles (canonical single-filename format).
 INSERT OR IGNORE INTO platform_profiles (id, name, is_builtin, is_active, nfo_enabled, nfo_format, image_naming) VALUES
-    ('emby',     'Emby',     1, 0, 1, 'kodi', '{"thumb":["folder.jpg"],"fanart":["backdrop.jpg"],"logo":["logo.png"],"banner":["banner.jpg"]}'),
-    ('jellyfin', 'Jellyfin', 1, 0, 1, 'kodi', '{"thumb":["folder.jpg"],"fanart":["backdrop.jpg"],"logo":["logo.png"],"banner":["banner.jpg"]}'),
-    ('kodi',     'Kodi',     1, 1, 1, 'kodi', '{"thumb":["folder.jpg"],"fanart":["fanart.jpg"],"logo":["logo.png"],"banner":["banner.jpg"]}'),
-    ('plex',     'Plex',     1, 0, 0, 'kodi', '{"thumb":["artist.jpg"],"fanart":["fanart.jpg"],"logo":["logo.png"],"banner":["banner.jpg"]}'),
-    ('custom',   'Custom',   1, 0, 1, 'kodi', '{"thumb":["folder.jpg"],"fanart":["fanart.jpg"],"logo":["logo.png"],"banner":["banner.jpg"]}');
+    ('emby',     'Emby',     1, 0, 1, 'kodi', '{"thumb":"folder.jpg","fanart":"backdrop.jpg","logo":"logo.png","banner":"banner.jpg"}'),
+    ('jellyfin', 'Jellyfin', 1, 0, 1, 'kodi', '{"thumb":"folder.jpg","fanart":"backdrop.jpg","logo":"logo.png","banner":"banner.jpg"}'),
+    ('kodi',     'Kodi',     1, 1, 1, 'kodi', '{"thumb":"folder.jpg","fanart":"fanart.jpg","logo":"logo.png","banner":"banner.jpg"}'),
+    ('plex',     'Plex',     1, 0, 0, 'kodi', '{"thumb":"artist.jpg","fanart":"fanart.jpg","logo":"logo.png","banner":"banner.jpg"}'),
+    ('custom',   'Custom',   1, 0, 1, 'kodi', '{"thumb":"folder.jpg","fanart":"fanart.jpg","logo":"logo.png","banner":"banner.jpg"}');
 
 CREATE TABLE IF NOT EXISTS bulk_jobs (
     id TEXT PRIMARY KEY,
@@ -256,40 +266,9 @@ INSERT OR IGNORE INTO settings (key, value) VALUES
     ('provider.priority.logo',      '["fanarttv","audiodb"]'),
     ('provider.priority.banner',    '["fanarttv","audiodb"]');
 
--- +goose Down
+-- Seed extraneous images rule.
+INSERT OR IGNORE INTO rules (id, name, description, category, enabled, config, automation_mode, created_at, updated_at)
+VALUES ('extraneous_images', 'Extraneous image files', 'Detects non-canonical image files that may cause display issues on media servers', 'image', 1, '{"severity":"warning"}', 'notify', datetime('now'), datetime('now'));
 
-DROP INDEX IF EXISTS idx_scraper_config_scope;
-DROP TABLE IF EXISTS scraper_config;
-DROP INDEX IF EXISTS idx_bulk_job_items_job_id;
-DROP TABLE IF EXISTS bulk_job_items;
-DROP TABLE IF EXISTS bulk_jobs;
-DROP TABLE IF EXISTS platform_profiles;
-DROP TABLE IF EXISTS webhooks;
-DROP INDEX IF EXISTS idx_health_history_recorded_at;
-DROP TABLE IF EXISTS health_history;
-DROP INDEX IF EXISTS idx_rule_violations_status;
-DROP INDEX IF EXISTS idx_rule_violations_artist_id;
-DROP INDEX IF EXISTS idx_rule_violations_rule_id;
-DROP TABLE IF EXISTS rule_violations;
-DROP TABLE IF EXISTS rules;
-DROP INDEX IF EXISTS idx_band_members_member_mbid;
-DROP INDEX IF EXISTS idx_band_members_artist_id;
-DROP TABLE IF EXISTS band_members;
-DROP INDEX IF EXISTS idx_nfo_snapshots_artist_id;
-DROP TABLE IF EXISTS nfo_snapshots;
-DROP INDEX IF EXISTS idx_artist_aliases_artist_id;
-DROP TABLE IF EXISTS artist_aliases;
-DROP INDEX IF EXISTS idx_artists_path;
-DROP INDEX IF EXISTS idx_artists_deezer_id;
-DROP INDEX IF EXISTS idx_artists_wikidata_id;
-DROP INDEX IF EXISTS idx_artists_discogs_id;
-DROP INDEX IF EXISTS idx_artists_audiodb_id;
-DROP INDEX IF EXISTS idx_artists_musicbrainz_id;
-DROP INDEX IF EXISTS idx_artists_name;
-DROP TABLE IF EXISTS artists;
-DROP TABLE IF EXISTS settings;
-DROP TABLE IF EXISTS connections;
-DROP INDEX IF EXISTS idx_sessions_expires_at;
-DROP INDEX IF EXISTS idx_sessions_user_id;
-DROP TABLE IF EXISTS sessions;
-DROP TABLE IF EXISTS users;
+-- +goose Down
+-- Greenfield schema: no rollback needed.

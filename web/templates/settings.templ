@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/sydlexius/stillwater/internal/connection"
+	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/platform"
 	"github.com/sydlexius/stillwater/internal/provider"
 	"github.com/sydlexius/stillwater/internal/rule"
@@ -20,6 +21,7 @@ func joinNames(names []string) string {
 // SettingsData holds the data for the settings page.
 type SettingsData struct {
 	ActiveTab          string
+	Libraries          []library.Library
 	Profiles           []platform.Profile
 	ActiveProfile      *platform.Profile
 	ProviderKeys       []provider.ProviderKeyStatus
@@ -43,6 +45,7 @@ func settingsTabs() []settingsTab {
 		{ID: "general", Label: "General"},
 		{ID: "providers", Label: "Providers"},
 		{ID: "connections", Label: "Connections"},
+		{ID: "libraries", Label: "Libraries"},
 		{ID: "notifications", Label: "Notifications"},
 		{ID: "rules", Label: "Rules"},
 		{ID: "maintenance", Label: "Maintenance"},
@@ -358,6 +361,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 		@resetConfirmPrefsScript()
 		@settingsTabScript()
 		@autoFetchToggleScript()
+		@settingsLibraryScript()
 		@ruleToggleScript()
 		<script src={ assets.SortableJS }></script>
 		<div class="space-y-6">
@@ -557,6 +561,77 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 					</div>
 				</div>
 			</div>
+			<!-- Libraries tab -->
+			<div
+				data-tab-panel="libraries"
+				class={
+					"space-y-6",
+					templ.KV("hidden", data.ActiveTab != "libraries"),
+				}
+			>
+				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
+					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+						<h2 class="text-lg font-semibold">Music Libraries</h2>
+						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+							Manage your music library paths. Each library maps to a directory containing artist folders.
+						</p>
+					</div>
+					<div class="px-6 py-4">
+						<div id="settings-library-list" class="space-y-3 mb-4">
+							for _, lib := range data.Libraries {
+								@settingsLibraryRow(lib)
+							}
+							if len(data.Libraries) == 0 {
+								<p id="settings-no-libraries" class="text-sm text-gray-400 dark:text-gray-500 italic">No libraries configured.</p>
+							}
+						</div>
+						<div id="settings-library-form-wrapper">
+							<button
+								type="button"
+								id="settings-add-library-btn"
+								class="text-sm px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+								onclick="document.getElementById('settings-library-form').classList.remove('hidden'); this.classList.add('hidden');"
+							>
+								Add Library
+							</button>
+							<form
+								id="settings-library-form"
+								class="hidden mt-3 space-y-3"
+								hx-post="/api/v1/libraries"
+								hx-swap="none"
+								hx-on::after-request="if(event.detail.successful) { onSettingsLibrarySaved(); }"
+							>
+								<div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+									<input
+										name="name"
+										placeholder="Library name"
+										required
+										class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+									/>
+									<input
+										name="path"
+										placeholder="Path (e.g. /music)"
+										required
+										class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+									/>
+									<select
+										name="type"
+										class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+									>
+										<option value="regular">Regular</option>
+										<option value="classical">Classical</option>
+									</select>
+								</div>
+								<div class="flex gap-2">
+									<button type="submit" class="text-sm px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 transition-colors">Save</button>
+									<button type="button" class="text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" onclick="document.getElementById('settings-library-form').classList.add('hidden'); document.getElementById('settings-add-library-btn').classList.remove('hidden');">Cancel</button>
+								</div>
+							</form>
+						</div>
+					</div>
+				</div>
+			</div>
+
 			<!-- Notifications tab -->
 			<div
 				data-tab-panel="notifications"
@@ -821,6 +896,100 @@ templ settingsTabScript() {
 			el.classList.remove('text-gray-600', 'dark:text-gray-400');
 			el.classList.add('bg-white', 'dark:bg-gray-700', 'text-blue-600', 'dark:text-blue-300', 'shadow-sm');
 			history.replaceState(null, '', '/settings?tab=' + encodeURIComponent(tabId));
+		}
+	</script>
+}
+
+templ settingsLibraryRow(lib library.Library) {
+	<div class="flex items-center justify-between rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3" id={ "settings-lib-" + lib.ID }>
+		<div>
+			<div class="font-medium text-sm text-gray-900 dark:text-gray-100">{ lib.Name }</div>
+			<div class="text-xs text-gray-500 dark:text-gray-400">{ lib.Path }</div>
+			<span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300 mt-1">{ lib.Type }</span>
+		</div>
+		<button
+			type="button"
+			class="text-xs text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300"
+			onclick={ settingsDeleteLibrary(lib.ID) }
+		>
+			Remove
+		</button>
+	</div>
+}
+
+script settingsDeleteLibrary(id string) {
+	if (!confirm("Remove this library?")) return;
+	var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1");
+	fetch("/api/v1/libraries/" + id, {
+		method: "DELETE",
+		headers: {"X-CSRF-Token": csrfToken}
+	}).then(function(res) {
+		if (res.ok) {
+			refreshSettingsLibraryList();
+		} else {
+			res.json().then(function(data) { alert(data.error || "Failed to delete library"); });
+		}
+	});
+}
+
+templ settingsLibraryScript() {
+	<script>
+		function onSettingsLibrarySaved() {
+			var form = document.getElementById("settings-library-form");
+			if (form) { form.reset(); form.classList.add("hidden"); }
+			var btn = document.getElementById("settings-add-library-btn");
+			if (btn) btn.classList.remove("hidden");
+			refreshSettingsLibraryList();
+		}
+
+		function refreshSettingsLibraryList() {
+			var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1");
+			fetch("/api/v1/libraries", {
+				headers: {"X-CSRF-Token": csrfToken}
+			}).then(function(res) { return res.json(); })
+			.then(function(libs) {
+				var list = document.getElementById("settings-library-list");
+				if (!libs || libs.length === 0) {
+					list.innerHTML = '<p id="settings-no-libraries" class="text-sm text-gray-400 dark:text-gray-500 italic">No libraries configured.</p>';
+					return;
+				}
+				var html = "";
+				libs.forEach(function(lib) {
+					var div = document.createElement("div");
+					div.textContent = lib.name;
+					var safeName = div.innerHTML;
+					div.textContent = lib.path;
+					var safePath = div.innerHTML;
+					div.textContent = lib.type;
+					var safeType = div.innerHTML;
+					html += '<div class="flex items-center justify-between rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3" id="settings-lib-' + lib.id + '">'
+						+ '<div>'
+						+ '<div class="font-medium text-sm text-gray-900 dark:text-gray-100">' + safeName + '</div>'
+						+ '<div class="text-xs text-gray-500 dark:text-gray-400">' + safePath + '</div>'
+						+ '<span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300 mt-1">' + safeType + '</span>'
+						+ '</div>'
+						+ '<button type="button" class="text-xs text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300" onclick="settingsDeleteLibrary_click(&apos;' + lib.id + '&apos;)">'
+						+ 'Remove'
+						+ '</button>'
+						+ '</div>';
+				});
+				list.innerHTML = html;
+			});
+		}
+
+		function settingsDeleteLibrary_click(id) {
+			if (!confirm("Remove this library?")) return;
+			var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1");
+			fetch("/api/v1/libraries/" + id, {
+				method: "DELETE",
+				headers: {"X-CSRF-Token": csrfToken}
+			}).then(function(res) {
+				if (res.ok) {
+					refreshSettingsLibraryList();
+				} else {
+					res.json().then(function(data) { alert(data.error || "Failed to delete library"); });
+				}
+			});
 		}
 	</script>
 }

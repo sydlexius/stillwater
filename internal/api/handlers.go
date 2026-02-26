@@ -233,6 +233,8 @@ func (r *Router) handleOnboardingPage(w http.ResponseWriter, req *http.Request) 
 			currentStep = 2
 		case "3":
 			currentStep = 3
+		case "4":
+			currentStep = 4
 		}
 	}
 
@@ -241,7 +243,13 @@ func (r *Router) handleOnboardingPage(w http.ResponseWriter, req *http.Request) 
 		r.logger.Error("listing connections for onboarding", "error", err)
 	}
 
+	libs, err := r.libraryService.List(req.Context())
+	if err != nil {
+		r.logger.Error("listing libraries for onboarding", "error", err)
+	}
+
 	data := templates.OnboardingData{
+		Libraries:    libs,
 		Profiles:     profiles,
 		ProviderKeys: providerKeys,
 		Connections:  conns,

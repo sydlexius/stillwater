@@ -1,0 +1,29 @@
+meta {
+  name: Update Library
+  type: http
+  seq: 4
+}
+
+put {
+  url: {{apiBase}}/libraries/{{libraryId}}
+  body: json
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+body:json {
+  {
+    "name": "Updated Library",
+    "path": "/music/updated",
+    "type": "classical"
+  }
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+}
