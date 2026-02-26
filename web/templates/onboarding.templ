@@ -65,8 +65,8 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 							Configure your installation in a few quick steps.
 						</p>
 					</div>
-					<!-- Progress indicator -->
-					<div class="flex items-center justify-center gap-0" id="progress-bar">
+					<!-- Progress indicator (hidden on intro step) -->
+					<div class={ "flex items-center justify-center gap-0", templ.KV("hidden", data.CurrentStep == 0) } id="progress-bar">
 						<div class="flex items-center gap-2">
 							<div id="step-dot-1" class="h-8 w-8 rounded-full bg-blue-600 text-white flex items-center justify-center text-sm font-medium">1</div>
 							<span id="step-label-1" class="text-sm font-medium text-gray-900 dark:text-gray-100 hidden sm:inline">Libraries</span>
@@ -87,8 +87,52 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 							<span id="step-label-4" class="text-sm text-gray-500 dark:text-gray-400 hidden sm:inline">Connections</span>
 						</div>
 					</div>
+					<!-- Step 0: Introduction -->
+					<div id="wizard-step-0" class={ "rounded-lg bg-white dark:bg-gray-800 shadow p-6", templ.KV("hidden", data.CurrentStep != 0) }>
+						<p class="text-sm text-gray-600 dark:text-gray-300 mb-5">
+							Stillwater manages artist metadata and images for your self-hosted music library. It writes NFO files and organizes artwork so your media server displays rich artist information.
+						</p>
+						<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+							<div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+								<h3 class="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-1">Metadata (NFO Files)</h3>
+								<p class="text-xs text-gray-500 dark:text-gray-400">
+									Fetch biographies, genres, styles, moods, and formation dates from multiple sources and write them as standard NFO files your media server can read.
+								</p>
+							</div>
+							<div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+								<h3 class="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-1">Image Management</h3>
+								<p class="text-xs text-gray-500 dark:text-gray-400">
+									Download and manage artist thumbnails, fanart, logos, and banners. Compare options side-by-side, crop to fit, and save in the correct format for your platform.
+								</p>
+							</div>
+							<div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+								<h3 class="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-1">Provider System</h3>
+								<p class="text-xs text-gray-500 dark:text-gray-400">
+									Pull data from MusicBrainz, Fanart.tv, TheAudioDB, Last.fm, Discogs, Wikidata, and Deezer. Configure priority order per field so the best source wins.
+								</p>
+							</div>
+							<div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+								<h3 class="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-1">Platform Profiles</h3>
+								<p class="text-xs text-gray-500 dark:text-gray-400">
+									Choose your media server (Emby, Jellyfin, or Kodi) and Stillwater adapts NFO format and image naming conventions to match what it expects.
+								</p>
+							</div>
+							<div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+								<h3 class="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-1">Rule Engine</h3>
+								<p class="text-xs text-gray-500 dark:text-gray-400">
+									Define rules that automatically apply metadata decisions across your library. Set genre mappings, image preferences, and field overrides that run on every fetch.
+								</p>
+							</div>
+							<div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+								<h3 class="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-1">Scanner Exclusions</h3>
+								<p class="text-xs text-gray-500 dark:text-gray-400">
+									Directories named "Various Artists", "VA", "Soundtrack", or "OST" are excluded from scanning by default. These compilation folders lack meaningful artist metadata.
+								</p>
+							</div>
+						</div>
+					</div>
 					<!-- Step 1: Music Libraries -->
-					<div id="wizard-step-1" class="rounded-lg bg-white dark:bg-gray-800 shadow p-6">
+					<div id="wizard-step-1" class={ "rounded-lg bg-white dark:bg-gray-800 shadow p-6", templ.KV("hidden", data.CurrentStep != 1) }>
 						<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">Music Libraries</h2>
 						<p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
 							Add your music library paths. Each library maps to a directory containing artist folders.
@@ -146,7 +190,7 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 						</div>
 					</div>
 					<!-- Step 2: Platform Profile -->
-					<div id="wizard-step-2" class="hidden rounded-lg bg-white dark:bg-gray-800 shadow p-6">
+					<div id="wizard-step-2" class={ "rounded-lg bg-white dark:bg-gray-800 shadow p-6", templ.KV("hidden", data.CurrentStep != 2) }>
 						<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">Choose Your Platform</h2>
 						<p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
 							Select the media server you use. This controls NFO format and image naming conventions.
@@ -158,7 +202,7 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 						</div>
 					</div>
 					<!-- Step 3: Provider API Keys -->
-					<div id="wizard-step-3" class="hidden rounded-lg bg-white dark:bg-gray-800 shadow p-6">
+					<div id="wizard-step-3" class={ "rounded-lg bg-white dark:bg-gray-800 shadow p-6", templ.KV("hidden", data.CurrentStep != 3) }>
 						<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">Provider API Keys</h2>
 						<p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
 							Configure API keys for metadata and image providers. You can skip this and add keys later from Settings.
@@ -183,7 +227,7 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 						}
 					</div>
 					<!-- Step 4: Server Connections -->
-					<div id="wizard-step-4" class="hidden rounded-lg bg-white dark:bg-gray-800 shadow p-6">
+					<div id="wizard-step-4" class={ "rounded-lg bg-white dark:bg-gray-800 shadow p-6", templ.KV("hidden", data.CurrentStep != 4) }>
 						<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">Server Connections</h2>
 						<p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
 							Optionally connect to your media server or music manager. These are not required for core functionality and can be added later from Settings.
@@ -247,7 +291,11 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 								class="text-sm px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 transition-colors"
 								onclick="goToStep(currentStep + 1)"
 							>
-								Next
+								if data.CurrentStep == 0 {
+									Get Started
+								} else {
+									Next
+								}
 							</button>
 							<button
 								type="button"
@@ -262,7 +310,8 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 				</div>
 			</div>
 			<script>
-				var currentStep = parseInt(document.body.dataset.currentStep, 10) || 1;
+				var parsedStep = parseInt(document.body.dataset.currentStep, 10);
+				var currentStep = isNaN(parsedStep) ? 0 : parsedStep;
 				var totalSteps = 4;
 
 				function getCsrfToken() {
@@ -270,9 +319,15 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 				}
 
 				function goToStep(step) {
-					if (step < 1) step = 1;
+					if (step < 0) step = 0;
 					if (step > totalSteps) step = totalSteps;
 					currentStep = step;
+
+					// Step 0 (intro) is outside the progress bar
+					var introStep = document.getElementById('wizard-step-0');
+					var progressBar = document.getElementById('progress-bar');
+					if (introStep) introStep.classList.toggle('hidden', step !== 0);
+					if (progressBar) progressBar.classList.toggle('hidden', step === 0);
 
 					for (var i = 1; i <= totalSteps; i++) {
 						var el = document.getElementById('wizard-step-' + i);
@@ -302,8 +357,10 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 						}
 					}
 
-					document.getElementById('back-btn').classList.toggle('hidden', step <= 1);
-					document.getElementById('next-btn').classList.toggle('hidden', step >= totalSteps);
+					document.getElementById('back-btn').classList.toggle('hidden', step <= 0);
+					var nextBtn = document.getElementById('next-btn');
+					nextBtn.classList.toggle('hidden', step >= totalSteps);
+					nextBtn.textContent = step === 0 ? 'Get Started' : 'Next';
 					document.getElementById('finish-btn').classList.toggle('hidden', step < totalSteps);
 
 					fetch('/api/v1/settings', {
@@ -443,7 +500,7 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 				}
 
 				// Initialize to the correct step on page load
-				if (currentStep > 1) {
+				if (currentStep !== 0) {
 					goToStep(currentStep);
 				}
 			</script>
