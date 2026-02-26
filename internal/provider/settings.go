@@ -35,9 +35,34 @@ func priorityDisabledKey(field string) string {
 	return fmt.Sprintf("provider.priority.%s.disabled", field)
 }
 
+// ctxKeyOverride is the context key for per-request API key overrides.
+// This lets handlers inject an unsaved key so providers read it during
+// TestConnection without persisting first.
+type ctxKeyOverride struct{}
+
+// WithAPIKeyOverride returns a child context that overrides the stored API key
+// for the named provider. GetAPIKey will return this value instead of querying
+// the database.
+func WithAPIKeyOverride(ctx context.Context, name ProviderName, key string) context.Context {
+	overrides, _ := ctx.Value(ctxKeyOverride{}).(map[ProviderName]string)
+	if overrides == nil {
+		overrides = make(map[ProviderName]string)
+	}
+	overrides[name] = key
+	return context.WithValue(ctx, ctxKeyOverride{}, overrides)
+}
+
 // GetAPIKey retrieves and decrypts the API key for a provider.
 // Returns empty string if no key is configured.
+// If an override was injected via WithAPIKeyOverride, that value is returned
+// instead of querying the database.
 func (s *SettingsService) GetAPIKey(ctx context.Context, name ProviderName) (string, error) {
+	if overrides, ok := ctx.Value(ctxKeyOverride{}).(map[ProviderName]string); ok {
+		if v, found := overrides[name]; found {
+			return v, nil
+		}
+	}
+
 	key := apiKeySettingKey(name)
 	var encrypted string
 	err := s.db.QueryRowContext(ctx, "SELECT value FROM settings WHERE key = ?", key).Scan(&encrypted)
@@ -55,6 +80,7 @@ func (s *SettingsService) GetAPIKey(ctx context.Context, name ProviderName) (str
 }
 
 // SetAPIKey encrypts and stores the API key for a provider.
+// Any previously persisted key status is cleared (new key = untested).
 func (s *SettingsService) SetAPIKey(ctx context.Context, name ProviderName, apiKey string) error {
 	encrypted, err := s.encryptor.Encrypt(apiKey)
 	if err != nil {
@@ -68,17 +94,65 @@ func (s *SettingsService) SetAPIKey(ctx context.Context, name ProviderName, apiK
 	if err != nil {
 		return fmt.Errorf("storing API key for %s: %w", name, err)
 	}
+	// Clear stale status so the key shows as "untested" until re-verified.
+	if clearErr := s.SetKeyStatus(ctx, name, ""); clearErr != nil {
+		return fmt.Errorf("clearing key status for %s: %w", name, clearErr)
+	}
 	return nil
 }
 
-// DeleteAPIKey removes the API key for a provider.
+// DeleteAPIKey removes the API key for a provider and its associated status.
 func (s *SettingsService) DeleteAPIKey(ctx context.Context, name ProviderName) error {
 	key := apiKeySettingKey(name)
 	_, err := s.db.ExecContext(ctx, "DELETE FROM settings WHERE key = ?", key)
 	if err != nil {
 		return fmt.Errorf("deleting API key for %s: %w", name, err)
 	}
+	if clearErr := s.SetKeyStatus(ctx, name, ""); clearErr != nil {
+		return fmt.Errorf("clearing key status for %s: %w", name, clearErr)
+	}
 	return nil
+}
+
+// keyStatusSettingKey returns the settings table key for a provider's key test status.
+func keyStatusSettingKey(name ProviderName) string {
+	return fmt.Sprintf("provider.%s.key_status", name)
+}
+
+// SetKeyStatus persists the test result status ("ok", "invalid") for a provider key.
+// An empty string deletes the status row, reverting to "untested".
+func (s *SettingsService) SetKeyStatus(ctx context.Context, name ProviderName, status string) error {
+	key := keyStatusSettingKey(name)
+	if status == "" {
+		_, err := s.db.ExecContext(ctx, "DELETE FROM settings WHERE key = ?", key)
+		if err != nil {
+			return fmt.Errorf("clearing key status for %s: %w", name, err)
+		}
+		return nil
+	}
+	_, err := s.db.ExecContext(ctx,
+		"INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = datetime('now')",
+		key, status, status,
+	)
+	if err != nil {
+		return fmt.Errorf("storing key status for %s: %w", name, err)
+	}
+	return nil
+}
+
+// GetKeyStatus returns the persisted test status for a provider key.
+// Returns empty string if no status is stored.
+func (s *SettingsService) GetKeyStatus(ctx context.Context, name ProviderName) (string, error) {
+	key := keyStatusSettingKey(name)
+	var value string
+	err := s.db.QueryRowContext(ctx, "SELECT value FROM settings WHERE key = ?", key).Scan(&value)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("reading key status for %s: %w", name, err)
+	}
+	return value, nil
 }
 
 // HasAPIKey checks whether an API key is configured for a provider.
@@ -125,6 +199,12 @@ func (s *SettingsService) ListProviderKeyStatuses(ctx context.Context) ([]Provid
 			status = "not_required"
 		} else if hasKey {
 			status = "untested"
+		}
+		// If a key is present, check for a persisted test status.
+		if hasKey {
+			if persisted, err := s.GetKeyStatus(ctx, name); err == nil && persisted != "" {
+				status = persisted
+			}
 		}
 		cap := caps[name]
 		statuses = append(statuses, ProviderKeyStatus{

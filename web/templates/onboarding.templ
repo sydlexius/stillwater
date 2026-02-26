@@ -827,7 +827,8 @@ templ onboardingConnectionCard(connType string, displayName string, exampleURL s
 				class="space-y-3"
 				data-conn-type={ connType }
 				hx-post="/api/v1/connections"
-				hx-swap="none"
+				hx-target={ "#ob-conn-result-" + connType }
+				hx-swap="innerHTML"
 				hx-on::after-request="if(event.detail.successful) onConnectionSaved(this.dataset.connType, event.detail.xhr)"
 			>
 				<input type="hidden" name="type" value={ connType }/>
@@ -861,6 +862,7 @@ templ onboardingConnectionCard(connType string, displayName string, exampleURL s
 					<button type="button" class="text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" onclick={ toggleObConnectionForm(connType) }>Cancel</button>
 				</div>
 			</form>
+			<div id={ "ob-conn-result-" + connType } class="mt-2"></div>
 		</div>
 		if findConnectionByType(conns, connType) != nil {
 			<div class="mt-2 pl-6">

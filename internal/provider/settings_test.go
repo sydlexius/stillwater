@@ -530,6 +530,200 @@ func TestEnabledProvidersNoDisabled(t *testing.T) {
 	}
 }
 
+func TestAPIKeyContextOverride(t *testing.T) {
+	db := setupTestDB(t)
+	enc := setupTestEncryptor(t)
+	svc := NewSettingsService(db, enc)
+	ctx := context.Background()
+
+	// Store a key in the database.
+	if err := svc.SetAPIKey(ctx, NameFanartTV, "db-key"); err != nil {
+		t.Fatalf("SetAPIKey: %v", err)
+	}
+
+	// Without override: reads from DB.
+	key, err := svc.GetAPIKey(ctx, NameFanartTV)
+	if err != nil {
+		t.Fatalf("GetAPIKey: %v", err)
+	}
+	if key != "db-key" {
+		t.Errorf("expected 'db-key', got %q", key)
+	}
+
+	// With override: returns the injected value.
+	overrideCtx := WithAPIKeyOverride(ctx, NameFanartTV, "override-key")
+	key, err = svc.GetAPIKey(overrideCtx, NameFanartTV)
+	if err != nil {
+		t.Fatalf("GetAPIKey with override: %v", err)
+	}
+	if key != "override-key" {
+		t.Errorf("expected 'override-key', got %q", key)
+	}
+
+	// Override does not affect other providers.
+	key, err = svc.GetAPIKey(overrideCtx, NameDiscogs)
+	if err != nil {
+		t.Fatalf("GetAPIKey other provider: %v", err)
+	}
+	if key != "" {
+		t.Errorf("expected empty key for Discogs, got %q", key)
+	}
+}
+
+func TestKeyStatusRoundTrip(t *testing.T) {
+	db := setupTestDB(t)
+	enc := setupTestEncryptor(t)
+	svc := NewSettingsService(db, enc)
+	ctx := context.Background()
+
+	// Initially no status.
+	status, err := svc.GetKeyStatus(ctx, NameFanartTV)
+	if err != nil {
+		t.Fatalf("GetKeyStatus: %v", err)
+	}
+	if status != "" {
+		t.Errorf("expected empty status, got %q", status)
+	}
+
+	// Set status "ok".
+	if err := svc.SetKeyStatus(ctx, NameFanartTV, "ok"); err != nil {
+		t.Fatalf("SetKeyStatus ok: %v", err)
+	}
+	status, err = svc.GetKeyStatus(ctx, NameFanartTV)
+	if err != nil {
+		t.Fatalf("GetKeyStatus after set: %v", err)
+	}
+	if status != "ok" {
+		t.Errorf("expected 'ok', got %q", status)
+	}
+
+	// Set status "invalid".
+	if err := svc.SetKeyStatus(ctx, NameFanartTV, "invalid"); err != nil {
+		t.Fatalf("SetKeyStatus invalid: %v", err)
+	}
+	status, err = svc.GetKeyStatus(ctx, NameFanartTV)
+	if err != nil {
+		t.Fatalf("GetKeyStatus after invalid: %v", err)
+	}
+	if status != "invalid" {
+		t.Errorf("expected 'invalid', got %q", status)
+	}
+
+	// Clear status.
+	if err := svc.SetKeyStatus(ctx, NameFanartTV, ""); err != nil {
+		t.Fatalf("SetKeyStatus clear: %v", err)
+	}
+	status, err = svc.GetKeyStatus(ctx, NameFanartTV)
+	if err != nil {
+		t.Fatalf("GetKeyStatus after clear: %v", err)
+	}
+	if status != "" {
+		t.Errorf("expected empty status after clear, got %q", status)
+	}
+}
+
+func TestSetAPIKeyClearsStatus(t *testing.T) {
+	db := setupTestDB(t)
+	enc := setupTestEncryptor(t)
+	svc := NewSettingsService(db, enc)
+	ctx := context.Background()
+
+	// Set a key and mark it as "ok".
+	if err := svc.SetAPIKey(ctx, NameFanartTV, "key-1"); err != nil {
+		t.Fatalf("SetAPIKey: %v", err)
+	}
+	if err := svc.SetKeyStatus(ctx, NameFanartTV, "ok"); err != nil {
+		t.Fatalf("SetKeyStatus: %v", err)
+	}
+
+	// Update the key: status should be cleared.
+	if err := svc.SetAPIKey(ctx, NameFanartTV, "key-2"); err != nil {
+		t.Fatalf("SetAPIKey update: %v", err)
+	}
+	status, err := svc.GetKeyStatus(ctx, NameFanartTV)
+	if err != nil {
+		t.Fatalf("GetKeyStatus: %v", err)
+	}
+	if status != "" {
+		t.Errorf("expected cleared status after key update, got %q", status)
+	}
+}
+
+func TestDeleteAPIKeyClearsStatus(t *testing.T) {
+	db := setupTestDB(t)
+	enc := setupTestEncryptor(t)
+	svc := NewSettingsService(db, enc)
+	ctx := context.Background()
+
+	if err := svc.SetAPIKey(ctx, NameFanartTV, "key-1"); err != nil {
+		t.Fatalf("SetAPIKey: %v", err)
+	}
+	if err := svc.SetKeyStatus(ctx, NameFanartTV, "ok"); err != nil {
+		t.Fatalf("SetKeyStatus: %v", err)
+	}
+	if err := svc.DeleteAPIKey(ctx, NameFanartTV); err != nil {
+		t.Fatalf("DeleteAPIKey: %v", err)
+	}
+
+	status, err := svc.GetKeyStatus(ctx, NameFanartTV)
+	if err != nil {
+		t.Fatalf("GetKeyStatus: %v", err)
+	}
+	if status != "" {
+		t.Errorf("expected cleared status after delete, got %q", status)
+	}
+}
+
+func TestListProviderKeyStatusesWithPersistedStatus(t *testing.T) {
+	db := setupTestDB(t)
+	enc := setupTestEncryptor(t)
+	svc := NewSettingsService(db, enc)
+	ctx := context.Background()
+
+	// Set a key and mark it tested.
+	if err := svc.SetAPIKey(ctx, NameFanartTV, "key-1"); err != nil {
+		t.Fatalf("SetAPIKey: %v", err)
+	}
+	if err := svc.SetKeyStatus(ctx, NameFanartTV, "ok"); err != nil {
+		t.Fatalf("SetKeyStatus: %v", err)
+	}
+
+	statuses, err := svc.ListProviderKeyStatuses(ctx)
+	if err != nil {
+		t.Fatalf("ListProviderKeyStatuses: %v", err)
+	}
+	fanart := findStatus(t, statuses, NameFanartTV)
+	if fanart.Status != "ok" {
+		t.Errorf("expected status 'ok', got %q", fanart.Status)
+	}
+
+	// Mark as invalid.
+	if err := svc.SetKeyStatus(ctx, NameFanartTV, "invalid"); err != nil {
+		t.Fatalf("SetKeyStatus invalid: %v", err)
+	}
+	statuses, err = svc.ListProviderKeyStatuses(ctx)
+	if err != nil {
+		t.Fatalf("ListProviderKeyStatuses: %v", err)
+	}
+	fanart = findStatus(t, statuses, NameFanartTV)
+	if fanart.Status != "invalid" {
+		t.Errorf("expected status 'invalid', got %q", fanart.Status)
+	}
+
+	// Clear status: should revert to "untested".
+	if err := svc.SetKeyStatus(ctx, NameFanartTV, ""); err != nil {
+		t.Fatalf("SetKeyStatus clear: %v", err)
+	}
+	statuses, err = svc.ListProviderKeyStatuses(ctx)
+	if err != nil {
+		t.Fatalf("ListProviderKeyStatuses: %v", err)
+	}
+	fanart = findStatus(t, statuses, NameFanartTV)
+	if fanart.Status != "untested" {
+		t.Errorf("expected status 'untested' after clear, got %q", fanart.Status)
+	}
+}
+
 func TestAnyWebSearchEnabled(t *testing.T) {
 	db := setupTestDB(t)
 	enc := setupTestEncryptor(t)

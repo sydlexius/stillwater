@@ -1387,6 +1387,46 @@ templ ProviderTestResult(status string, message string) {
 	}
 }
 
+// ProviderTestSaveFailure renders inline error with "Save anyway" when a
+// provider key test fails during save. The isOOBE flag controls targeting
+// for the OOBE wizard vs Settings page.
+templ ProviderTestSaveFailure(name provider.ProviderName, apiKey string, errMsg string, isOOBE bool) {
+	<div class="mt-2 sm:ml-8">
+		<div class="rounded-md border border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/20 p-3">
+			<p class="text-sm text-red-700 dark:text-red-300 mb-2">
+				Test failed: { errMsg }
+			</p>
+			<form
+				class="flex gap-2"
+				hx-put={ "/api/v1/providers/" + string(name) + "/key" }
+				if isOOBE {
+					hx-target={ "#ob-provider-card-" + string(name) }
+					hx-swap="outerHTML"
+				} else {
+					hx-target={ "#provider-card-" + string(name) }
+					hx-swap="innerHTML"
+				}
+			>
+				<input type="hidden" name="api_key" value={ apiKey }/>
+				<input type="hidden" name="skip_test" value="true"/>
+				<button
+					type="submit"
+					class="text-sm px-3 py-1.5 rounded bg-amber-600 text-white hover:bg-amber-700 transition-colors"
+				>
+					Save anyway
+				</button>
+				<button
+					type="button"
+					class="text-sm px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+					onclick="window.location.reload()"
+				>
+					Cancel
+				</button>
+			</form>
+		</div>
+	</div>
+}
+
 templ PriorityChipRow(pri provider.FieldPriority, keys []provider.ProviderKeyStatus) {
 	@priorityChipRowInner(pri, availableProviders(pri, keys))
 }
@@ -1591,8 +1631,8 @@ templ serviceConnectionCard(connType string, displayName string, exampleURL stri
 			<form
 				class="space-y-2"
 				hx-post="/api/v1/connections"
-				hx-swap="none"
-				hx-on::after-request="if(event.detail.successful) { this.reset(); window.location.reload(); }"
+				hx-target={ "#conn-result-" + connType }
+				hx-swap="innerHTML"
 			>
 				<input type="hidden" name="type" value={ connType }/>
 				<input
@@ -1623,7 +1663,47 @@ templ serviceConnectionCard(connType string, displayName string, exampleURL stri
 					<button type="button" class="text-xs px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" onclick={ toggleConnectionForm(connType) }>Cancel</button>
 				</div>
 			</form>
+			<div id={ "conn-result-" + connType } class="mt-2"></div>
 		</div>
+	</div>
+}
+
+// ConnectionTestSaveFailure renders inline error with "Save anyway" when a
+// connection test fails during save. The isOOBE flag controls targeting.
+templ ConnectionTestSaveFailure(connType string, name string, url string, apiKey string, errMsg string, isOOBE bool) {
+	<div class="rounded-md border border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/20 p-3">
+		<p class="text-sm text-red-700 dark:text-red-300 mb-2">
+			Test failed: { errMsg }
+		</p>
+		<form
+			class="flex gap-2"
+			hx-post="/api/v1/connections"
+			if isOOBE {
+				hx-target={ "#ob-conn-result-" + connType }
+			} else {
+				hx-target={ "#conn-result-" + connType }
+			}
+			hx-swap="innerHTML"
+		>
+			<input type="hidden" name="type" value={ connType }/>
+			<input type="hidden" name="name" value={ name }/>
+			<input type="hidden" name="url" value={ url }/>
+			<input type="hidden" name="api_key" value={ apiKey }/>
+			<input type="hidden" name="skip_test" value="true"/>
+			<button
+				type="submit"
+				class="text-sm px-3 py-1.5 rounded bg-amber-600 text-white hover:bg-amber-700 transition-colors"
+			>
+				Save anyway
+			</button>
+			<button
+				type="button"
+				class="text-sm px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+				onclick="window.location.reload()"
+			>
+				Cancel
+			</button>
+		</form>
 	</div>
 }
 

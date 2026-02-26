@@ -1,14 +1,17 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/connection/emby"
 	"github.com/sydlexius/stillwater/internal/connection/jellyfin"
 	"github.com/sydlexius/stillwater/internal/connection/lidarr"
+	"github.com/sydlexius/stillwater/web/templates"
 )
 
 // connectionResponse is a Connection without the raw API key for list responses.
@@ -100,13 +103,31 @@ func (r *Router) handleGetConnection(w http.ResponseWriter, req *http.Request) {
 	})
 }
 
+// testConnectionDirect tests a connection without requiring it to be saved first.
+// The client is constructed directly from the provided URL and API key.
+func (r *Router) testConnectionDirect(ctx context.Context, connType, url, apiKey string) error {
+	testCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	switch connType {
+	case connection.TypeEmby:
+		return emby.New(url, apiKey, r.logger).TestConnection(testCtx)
+	case connection.TypeJellyfin:
+		return jellyfin.New(url, apiKey, r.logger).TestConnection(testCtx)
+	case connection.TypeLidarr:
+		return lidarr.New(url, apiKey, r.logger).TestConnection(testCtx)
+	default:
+		return nil
+	}
+}
+
 func (r *Router) handleCreateConnection(w http.ResponseWriter, req *http.Request) {
 	var body struct {
-		Name    string `json:"name"`
-		Type    string `json:"type"`
-		URL     string `json:"url"`
-		APIKey  string `json:"api_key"` //nolint:gosec // G101: not a hardcoded secret, this is a request field
-		Enabled bool   `json:"enabled"`
+		Name     string `json:"name"`
+		Type     string `json:"type"`
+		URL      string `json:"url"`
+		APIKey   string `json:"api_key"` //nolint:gosec // G101: not a hardcoded secret, this is a request field
+		Enabled  bool   `json:"enabled"`
+		SkipTest bool   `json:"skip_test"` //nolint:gosec // G101: not a credential
 	}
 	if strings.HasPrefix(req.Header.Get("Content-Type"), "application/json") {
 		if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
@@ -119,6 +140,25 @@ func (r *Router) handleCreateConnection(w http.ResponseWriter, req *http.Request
 		body.URL = req.FormValue("url")
 		body.APIKey = req.FormValue("api_key")
 		body.Enabled = true
+		body.SkipTest = req.FormValue("skip_test") == "true"
+	}
+
+	isOOBE := strings.Contains(req.Header.Get("HX-Current-URL"), "/setup/wizard")
+
+	// Test-before-save: verify the connection works before persisting.
+	if !body.SkipTest {
+		if testErr := r.testConnectionDirect(req.Context(), body.Type, body.URL, body.APIKey); testErr != nil {
+			r.logger.Info("connection test failed before save", "type", body.Type, "url", body.URL, "error", testErr)
+			if isHTMXRequest(req) {
+				renderTempl(w, req, templates.ConnectionTestSaveFailure(body.Type, body.Name, body.URL, body.APIKey, testErr.Error(), isOOBE))
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]string{
+				"status": "test_failed",
+				"error":  testErr.Error(),
+			})
+			return
+		}
 	}
 
 	// Prevent duplicate connections with the same type+url
@@ -139,7 +179,15 @@ func (r *Router) handleCreateConnection(w http.ResponseWriter, req *http.Request
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 			return
 		}
-		writeJSON(w, http.StatusOK, toConnectionResponse(*existing))
+		// Persist test status for the updated connection.
+		connStatus := "unknown"
+		if !body.SkipTest {
+			connStatus = "ok"
+		}
+		if updateErr := r.connectionService.UpdateStatus(req.Context(), existing.ID, connStatus, ""); updateErr != nil {
+			r.logger.Error("updating connection status after save", "error", updateErr)
+		}
+		r.handleCreateConnectionSuccess(w, req, *existing, isOOBE)
 		return
 	}
 
@@ -154,7 +202,38 @@ func (r *Router) handleCreateConnection(w http.ResponseWriter, req *http.Request
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusCreated, toConnectionResponse(*c))
+	// Persist test status for the new connection.
+	connStatus := "unknown"
+	if !body.SkipTest {
+		connStatus = "ok"
+	}
+	if updateErr := r.connectionService.UpdateStatus(req.Context(), c.ID, connStatus, ""); updateErr != nil {
+		r.logger.Error("updating connection status after create", "error", updateErr)
+	}
+	r.handleCreateConnectionSuccess(w, req, *c, isOOBE)
+}
+
+// handleCreateConnectionSuccess sends the appropriate response after a
+// successful connection create/update. For HTMX Settings requests, it triggers
+// a page refresh. For HTMX OOBE requests, it returns JSON for the JS callback.
+// For JSON API requests, it returns the connection response.
+func (r *Router) handleCreateConnectionSuccess(w http.ResponseWriter, req *http.Request, c connection.Connection, isOOBE bool) {
+	if isHTMXRequest(req) {
+		if isOOBE {
+			// OOBE relies on the JSON response + onConnectionSaved callback
+			writeJSON(w, http.StatusOK, toConnectionResponse(c))
+			return
+		}
+		// Settings page: trigger full page refresh to show the new connection
+		w.Header().Set("HX-Refresh", "true")
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	status := http.StatusCreated
+	if c.UpdatedAt.After(c.CreatedAt) {
+		status = http.StatusOK
+	}
+	writeJSON(w, status, toConnectionResponse(c))
 }
 
 func (r *Router) handleUpdateConnection(w http.ResponseWriter, req *http.Request) {

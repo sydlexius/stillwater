@@ -1,9 +1,11 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/provider"
 	"github.com/sydlexius/stillwater/web/templates"
@@ -21,7 +23,9 @@ func (r *Router) handleListProviders(w http.ResponseWriter, req *http.Request) {
 }
 
 // handleSetProviderKey stores an encrypted API key for a provider.
-// Supports both JSON body and form-encoded data (for HTMX forms).
+// By default, the key is tested before saving. If the test fails, an error is
+// returned with a "Save anyway" option (skip_test=true). Supports both JSON
+// body and form-encoded data (for HTMX forms).
 func (r *Router) handleSetProviderKey(w http.ResponseWriter, req *http.Request) {
 	name := provider.ProviderName(req.PathValue("name"))
 	if !isValidProviderName(name) {
@@ -30,6 +34,7 @@ func (r *Router) handleSetProviderKey(w http.ResponseWriter, req *http.Request) 
 	}
 
 	var apiKey string
+	var skipTest bool
 	contentType := req.Header.Get("Content-Type")
 	if strings.HasPrefix(contentType, "application/x-www-form-urlencoded") {
 		if err := req.ParseForm(); err != nil {
@@ -37,20 +42,49 @@ func (r *Router) handleSetProviderKey(w http.ResponseWriter, req *http.Request) 
 			return
 		}
 		apiKey = req.FormValue("api_key")
+		skipTest = req.FormValue("skip_test") == "true"
 	} else {
 		var body struct {
-			APIKey string `json:"api_key"` //nolint:gosec // G117: not a hardcoded credential, this is user input
+			APIKey   string `json:"api_key"`   //nolint:gosec // G117: not a hardcoded credential, this is user input
+			SkipTest bool   `json:"skip_test"` //nolint:gosec // G101: not a credential
 		}
 		if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
 			writeError(w, req, http.StatusBadRequest, "invalid request body")
 			return
 		}
 		apiKey = body.APIKey
+		skipTest = body.SkipTest
 	}
 
 	if apiKey == "" {
 		writeError(w, req, http.StatusBadRequest, "api_key is required")
 		return
+	}
+
+	isOOBE := strings.Contains(req.Header.Get("HX-Current-URL"), "/setup/wizard")
+
+	// Test-before-save: if the provider supports testing, verify the key works
+	// before persisting it. On failure, offer "Save anyway" (skip_test).
+	if !skipTest {
+		if p := r.providerRegistry.Get(name); p != nil {
+			if testable, ok := p.(provider.TestableProvider); ok {
+				testCtx, cancel := context.WithTimeout(req.Context(), 15*time.Second)
+				defer cancel()
+				testCtx = provider.WithAPIKeyOverride(testCtx, name, apiKey)
+				if testErr := testable.TestConnection(testCtx); testErr != nil {
+					r.logger.Info("provider key test failed before save", "provider", name, "error", testErr)
+					if isHTMXRequest(req) {
+						renderTempl(w, req, templates.ProviderTestSaveFailure(name, apiKey, testErr.Error(), isOOBE))
+						return
+					}
+					writeJSON(w, http.StatusOK, map[string]string{
+						"status": "test_failed",
+						"error":  testErr.Error(),
+					})
+					return
+				}
+			}
+		}
 	}
 
 	if err := r.providerSettings.SetAPIKey(req.Context(), name, apiKey); err != nil {
@@ -59,25 +93,44 @@ func (r *Router) handleSetProviderKey(w http.ResponseWriter, req *http.Request) 
 		return
 	}
 
-	// For HTMX requests, re-render the provider card with updated status.
-	// Use the OOBE card variant when the request originated from the setup wizard.
-	if req.Header.Get("HX-Request") == "true" {
-		statuses, err := r.providerSettings.ListProviderKeyStatuses(req.Context())
-		if err == nil {
-			for _, s := range statuses {
-				if s.Name == name {
-					if strings.Contains(req.Header.Get("HX-Current-URL"), "/setup/wizard") {
-						renderTempl(w, req, templates.OnboardingProviderCard(s))
-					} else {
-						renderTempl(w, req, templates.ProviderKeyCard(s))
-					}
-					return
+	// Persist test status: "ok" if we tested successfully, leave as "untested"
+	// if we skipped the test or if the provider is not testable.
+	if !skipTest {
+		if p := r.providerRegistry.Get(name); p != nil {
+			if _, ok := p.(provider.TestableProvider); ok {
+				if err := r.providerSettings.SetKeyStatus(req.Context(), name, "ok"); err != nil {
+					r.logger.Error("setting key status after save", "provider", name, "error", err)
 				}
 			}
 		}
 	}
 
+	// For HTMX requests, re-render the provider card with updated status.
+	if isHTMXRequest(req) {
+		r.renderProviderCard(w, req, name, isOOBE)
+		return
+	}
+
 	writeJSON(w, http.StatusOK, map[string]string{"status": "saved"})
+}
+
+// renderProviderCard renders the appropriate provider card (Settings or OOBE).
+func (r *Router) renderProviderCard(w http.ResponseWriter, req *http.Request, name provider.ProviderName, isOOBE bool) {
+	statuses, err := r.providerSettings.ListProviderKeyStatuses(req.Context())
+	if err != nil {
+		r.logger.Error("listing provider statuses for card render", "error", err)
+		return
+	}
+	for _, s := range statuses {
+		if s.Name == name {
+			if isOOBE {
+				renderTempl(w, req, templates.OnboardingProviderCard(s))
+			} else {
+				renderTempl(w, req, templates.ProviderKeyCard(s))
+			}
+			return
+		}
+	}
 }
 
 // handleDeleteProviderKey removes the API key for a provider.
@@ -96,8 +149,8 @@ func (r *Router) handleDeleteProviderKey(w http.ResponseWriter, req *http.Reques
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
-// handleTestProvider tests the connection to a provider.
-// For HTMX requests, returns an HTML fragment with the test result.
+// handleTestProvider tests the connection to a provider and persists the result.
+// For HTMX requests, re-renders the full provider card so the status dot updates.
 func (r *Router) handleTestProvider(w http.ResponseWriter, req *http.Request) {
 	name := provider.ProviderName(req.PathValue("name"))
 	p := r.providerRegistry.Get(name)
@@ -108,7 +161,7 @@ func (r *Router) handleTestProvider(w http.ResponseWriter, req *http.Request) {
 
 	testable, ok := p.(provider.TestableProvider)
 	if !ok {
-		if req.Header.Get("HX-Request") == "true" {
+		if isHTMXRequest(req) {
 			renderTempl(w, req, templates.ProviderTestResult("ok", ""))
 			return
 		}
@@ -116,17 +169,38 @@ func (r *Router) handleTestProvider(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	isOOBE := strings.Contains(req.Header.Get("HX-Current-URL"), "/setup/wizard")
+
 	if err := testable.TestConnection(req.Context()); err != nil {
-		if req.Header.Get("HX-Request") == "true" {
-			renderTempl(w, req, templates.ProviderTestResult("error", err.Error()))
+		if setErr := r.providerSettings.SetKeyStatus(req.Context(), name, "invalid"); setErr != nil {
+			r.logger.Error("persisting provider test failure status", "provider", name, "error", setErr)
+		}
+		if isHTMXRequest(req) {
+			// Re-render the full card so the status dot updates to red.
+			w.Header().Set("HX-Retarget", "#provider-card-"+string(name))
+			w.Header().Set("HX-Reswap", "innerHTML")
+			if isOOBE {
+				w.Header().Set("HX-Retarget", "#ob-provider-card-"+string(name))
+				w.Header().Set("HX-Reswap", "outerHTML")
+			}
+			r.renderProviderCard(w, req, name, isOOBE)
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]string{"status": "error", "error": err.Error()})
 		return
 	}
 
-	if req.Header.Get("HX-Request") == "true" {
-		renderTempl(w, req, templates.ProviderTestResult("ok", ""))
+	if setErr := r.providerSettings.SetKeyStatus(req.Context(), name, "ok"); setErr != nil {
+		r.logger.Error("persisting provider test success status", "provider", name, "error", setErr)
+	}
+	if isHTMXRequest(req) {
+		w.Header().Set("HX-Retarget", "#provider-card-"+string(name))
+		w.Header().Set("HX-Reswap", "innerHTML")
+		if isOOBE {
+			w.Header().Set("HX-Retarget", "#ob-provider-card-"+string(name))
+			w.Header().Set("HX-Reswap", "outerHTML")
+		}
+		r.renderProviderCard(w, req, name, isOOBE)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
