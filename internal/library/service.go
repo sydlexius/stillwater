@@ -129,23 +129,32 @@ func (s *Service) Update(ctx context.Context, lib *Library) error {
 	return nil
 }
 
-// Delete removes a library by ID. Fails if any artists reference it.
+// Delete removes a library by ID. Any artists referencing the library
+// are dereferenced (library_id set to NULL) before the row is removed.
 func (s *Service) Delete(ctx context.Context, id string) error {
-	count, err := s.CountArtists(ctx, id)
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return fmt.Errorf("starting transaction: %w", err)
 	}
-	if count > 0 {
-		return fmt.Errorf("cannot delete library: %d artists still reference it", count)
+	defer tx.Rollback() //nolint:errcheck
+
+	// Clear artist references so the foreign key constraint is satisfied.
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE artists SET library_id = NULL WHERE library_id = ?`, id); err != nil {
+		return fmt.Errorf("clearing artist references: %w", err)
 	}
 
-	result, err := s.db.ExecContext(ctx, `DELETE FROM libraries WHERE id = ?`, id)
+	result, err := tx.ExecContext(ctx, `DELETE FROM libraries WHERE id = ?`, id)
 	if err != nil {
 		return fmt.Errorf("deleting library: %w", err)
 	}
 	rows, _ := result.RowsAffected()
 	if rows == 0 {
 		return fmt.Errorf("library not found: %s", id)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("committing delete: %w", err)
 	}
 	return nil
 }

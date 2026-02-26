@@ -140,7 +140,7 @@ func (r *Router) handleUpdateLibrary(w http.ResponseWriter, req *http.Request) {
 	writeJSON(w, http.StatusOK, existing)
 }
 
-// handleDeleteLibrary deletes a library if no artists reference it.
+// handleDeleteLibrary deletes a library, dereferencing any artists that belong to it.
 // DELETE /api/v1/libraries/{id}
 func (r *Router) handleDeleteLibrary(w http.ResponseWriter, req *http.Request) {
 	id := req.PathValue("id")

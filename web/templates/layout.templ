@@ -97,9 +97,15 @@ templ Layout(title string, assets AssetPaths) {
 				// Confirmation modal interceptor for HTMX hx-confirm events.
 				// Replaces the native browser confirm() with a styled modal.
 				// Elements with data-confirm-key support "Don't ask again" via localStorage.
+				//
+				// Also exposes window.showConfirmDialog(message, confirmKey, onConfirm)
+				// for programmatic use (e.g. when the message must be built dynamically
+				// after an async fetch).
 				(function() {
 					var modal = null;
 					var pendingEvent = null;
+					var pendingCallback = null;
+					var pendingConfirmKey = null;
 
 					function getModal() {
 						if (!modal) {
@@ -133,6 +139,8 @@ templ Layout(title string, assets AssetPaths) {
 						var m = getModal();
 						m.el.classList.add('hidden');
 						pendingEvent = null;
+						pendingCallback = null;
+						pendingConfirmKey = null;
 					}
 
 					document.body.addEventListener('htmx:confirm', function(evt) {
@@ -154,14 +162,19 @@ templ Layout(title string, assets AssetPaths) {
 
 					document.addEventListener('click', function(e) {
 						if (e.target.id === 'confirm-modal-accept') {
+							var m = getModal();
 							if (pendingEvent) {
 								var trigger = pendingEvent.detail.elt;
 								var confirmKey = trigger.getAttribute('data-confirm-key');
-								var m = getModal();
 								if (confirmKey && m.remember.checked) {
 									localStorage.setItem('ui.confirm.' + confirmKey, 'skip');
 								}
 								pendingEvent.detail.issueRequest(true);
+							} else if (pendingCallback) {
+								if (pendingConfirmKey && m.remember.checked) {
+									localStorage.setItem('ui.confirm.' + pendingConfirmKey, 'skip');
+								}
+								pendingCallback();
 							}
 							hideModal();
 						} else if (e.target.id === 'confirm-modal-cancel' || e.target.id === 'confirm-backdrop') {
@@ -170,10 +183,23 @@ templ Layout(title string, assets AssetPaths) {
 					});
 
 					document.addEventListener('keydown', function(e) {
-						if (e.key === 'Escape' && pendingEvent) {
+						if (e.key === 'Escape' && (pendingEvent || pendingCallback)) {
 							hideModal();
 						}
 					});
+
+					// Global API for programmatic confirmation dialogs.
+					// If the user previously chose "Don't ask again" for this key,
+					// onConfirm is called immediately without showing the modal.
+					window.showConfirmDialog = function(message, confirmKey, onConfirm) {
+						if (confirmKey && localStorage.getItem('ui.confirm.' + confirmKey) === 'skip') {
+							onConfirm();
+							return;
+						}
+						pendingCallback = onConfirm;
+						pendingConfirmKey = confirmKey;
+						showModal(message, confirmKey);
+					};
 				})();
 			</script>
 		</body>

@@ -306,8 +306,17 @@ func TestHandleDeleteLibrary_WithArtists(t *testing.T) {
 
 	r.handleDeleteLibrary(w, req)
 
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusBadRequest, w.Body.String())
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	// Verify the artist was dereferenced, not deleted.
+	updated, err := artistSvc.GetByID(context.Background(), a.ID)
+	if err != nil {
+		t.Fatalf("artist should still exist: %v", err)
+	}
+	if updated.LibraryID != "" {
+		t.Errorf("artist library_id = %q, want empty (dereferenced)", updated.LibraryID)
 	}
 }
 
