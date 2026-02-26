@@ -269,6 +269,7 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("GET "+bp+"/reports/compliance", wrapOptionalAuth(r.handleCompliancePage, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/artists/{id}/nfo", wrapOptionalAuth(r.handleNFODiffPage, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/settings", wrapOptionalAuth(r.handleSettingsPage, optAuthMw))
+	mux.HandleFunc("GET "+bp+"/guide", wrapOptionalAuth(r.handleGuidePage, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/setup/wizard", wrapOptionalAuth(r.handleOnboardingPage, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/notifications", wrapAuth(r.handleNotificationsPage, authMw))
 	mux.HandleFunc("GET "+bp+"/notifications/table", wrapAuth(r.handleNotificationsTable, authMw))

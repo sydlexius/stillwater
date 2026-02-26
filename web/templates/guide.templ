@@ -1,0 +1,227 @@
+package templates
+
+templ GuidePage(assets AssetPaths) {
+	@Layout("User Guide", assets) {
+		<div class="space-y-8">
+			<!-- Page header -->
+			<div>
+				<h1 class="text-2xl font-bold text-gray-900 dark:text-gray-100">User Guide</h1>
+				<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+					Reference documentation for configuring and using Stillwater.
+				</p>
+			</div>
+			<!-- Table of contents -->
+			<nav class="rounded-lg bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm shadow p-4">
+				<h2 class="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-2">Contents</h2>
+				<ul class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-sm">
+					<li><a href="#library-structure" class="text-blue-600 dark:text-blue-400 hover:underline">Library Structure</a></li>
+					<li><a href="#scanner-exclusions" class="text-blue-600 dark:text-blue-400 hover:underline">Scanner Exclusions</a></li>
+					<li><a href="#platform-profiles" class="text-blue-600 dark:text-blue-400 hover:underline">Platform Profiles</a></li>
+					<li><a href="#providers" class="text-blue-600 dark:text-blue-400 hover:underline">Metadata Providers</a></li>
+					<li><a href="#images" class="text-blue-600 dark:text-blue-400 hover:underline">Image Management</a></li>
+					<li><a href="#connections" class="text-blue-600 dark:text-blue-400 hover:underline">Server Connections</a></li>
+					<li><a href="#rules" class="text-blue-600 dark:text-blue-400 hover:underline">Rule Engine</a></li>
+					<li><a href="#nfo-files" class="text-blue-600 dark:text-blue-400 hover:underline">NFO Files</a></li>
+				</ul>
+			</nav>
+			<!-- Sections -->
+			@guideSection("library-structure", "Library Structure") {
+				<p class="text-sm text-gray-600 dark:text-gray-300 mb-3">
+					Stillwater expects each top-level directory in your music library to represent a single album artist. The scanner reads these directory names to build the artist list.
+				</p>
+				<div class="rounded-md bg-gray-100 dark:bg-gray-700/50 p-3 font-mono text-xs text-gray-700 dark:text-gray-300 mb-3">
+					<div>/music/</div>
+					<div class="pl-4">Pink Floyd/</div>
+					<div class="pl-4">Radiohead/</div>
+					<div class="pl-4">Aphex Twin/</div>
+					<div class="pl-4">Johann Sebastian Bach/</div>
+				</div>
+				<ul class="list-disc list-inside text-sm text-gray-600 dark:text-gray-300 space-y-1.5">
+					<li>One album artist per top-level directory. Nested album folders inside each artist directory are fine.</li>
+					<li>Classical libraries can use a separate library with the "Classical" type, which adjusts scanner behavior for composer-oriented structures.</li>
+					<li>Compilation directories ("Various Artists", "Soundtrack", "OST") lack meaningful artist metadata and are excluded by default. See <a href="#scanner-exclusions" class="text-blue-600 dark:text-blue-400 hover:underline">Scanner Exclusions</a> below.</li>
+				</ul>
+				<div class="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
+					<p class="text-xs text-gray-500 dark:text-gray-400 mb-1">Tools for organizing your library:</p>
+					<ul class="list-disc list-inside text-xs text-gray-500 dark:text-gray-400 space-y-0.5">
+						<li><a href="https://picard.musicbrainz.org/" target="_blank" rel="noopener noreferrer" class="text-blue-600 dark:text-blue-400 hover:underline">MusicBrainz Picard</a> -- tag-based file organizer</li>
+						<li><a href="https://beets.io/" target="_blank" rel="noopener noreferrer" class="text-blue-600 dark:text-blue-400 hover:underline">Beets</a> -- CLI music library manager</li>
+						<li><a href="https://lidarr.audio/" target="_blank" rel="noopener noreferrer" class="text-blue-600 dark:text-blue-400 hover:underline">Lidarr</a> -- automated music collection manager</li>
+					</ul>
+				</div>
+			}
+			@guideSection("scanner-exclusions", "Scanner Exclusions") {
+				<p class="text-sm text-gray-600 dark:text-gray-300 mb-3">
+					The scanner skips directories that match known compilation or soundtrack folder names. These directories contain albums from multiple artists and lack the single-artist metadata that Stillwater manages.
+				</p>
+				<div class="flex flex-wrap gap-2 mb-3">
+					<span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2.5 py-0.5 text-xs font-medium text-gray-600 dark:text-gray-300">Various Artists</span>
+					<span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2.5 py-0.5 text-xs font-medium text-gray-600 dark:text-gray-300">Various</span>
+					<span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2.5 py-0.5 text-xs font-medium text-gray-600 dark:text-gray-300">VA</span>
+					<span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2.5 py-0.5 text-xs font-medium text-gray-600 dark:text-gray-300">Soundtrack</span>
+					<span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2.5 py-0.5 text-xs font-medium text-gray-600 dark:text-gray-300">OST</span>
+				</div>
+				<ul class="list-disc list-inside text-sm text-gray-600 dark:text-gray-300 space-y-1.5">
+					<li>Excluded directories appear greyed out in the artist list and cannot be fetched.</li>
+					<li>Exclusion matching is case-insensitive.</li>
+					<li>This list is not currently configurable from the Settings UI; a future release will allow customizing exclusions there. Advanced users can override the defaults via environment variable or config file.</li>
+				</ul>
+			}
+			@guideSection("platform-profiles", "Platform Profiles") {
+				<p class="text-sm text-gray-600 dark:text-gray-300 mb-3">
+					Platform profiles control how Stillwater writes NFO files and names image files. Each media server expects a slightly different format.
+				</p>
+				<div class="overflow-x-auto">
+					<table class="min-w-full text-sm">
+						<thead>
+							<tr class="border-b border-gray-200 dark:border-gray-700">
+								<th class="py-2 pr-4 text-left font-medium text-gray-900 dark:text-gray-100">Platform</th>
+								<th class="py-2 pr-4 text-left font-medium text-gray-900 dark:text-gray-100">Thumb</th>
+								<th class="py-2 pr-4 text-left font-medium text-gray-900 dark:text-gray-100">Fanart</th>
+								<th class="py-2 pr-4 text-left font-medium text-gray-900 dark:text-gray-100">Logo</th>
+								<th class="py-2 text-left font-medium text-gray-900 dark:text-gray-100">Banner</th>
+							</tr>
+						</thead>
+						<tbody class="text-gray-600 dark:text-gray-300">
+							<tr class="border-b border-gray-100 dark:border-gray-700/50">
+								<td class="py-2 pr-4 font-medium">Kodi</td>
+								<td class="py-2 pr-4"><code class="text-xs bg-gray-100 dark:bg-gray-700 px-1 rounded">folder.jpg</code></td>
+								<td class="py-2 pr-4"><code class="text-xs bg-gray-100 dark:bg-gray-700 px-1 rounded">fanart.jpg</code></td>
+								<td class="py-2 pr-4"><code class="text-xs bg-gray-100 dark:bg-gray-700 px-1 rounded">logo.png</code></td>
+								<td class="py-2"><code class="text-xs bg-gray-100 dark:bg-gray-700 px-1 rounded">banner.jpg</code></td>
+							</tr>
+							<tr class="border-b border-gray-100 dark:border-gray-700/50">
+								<td class="py-2 pr-4 font-medium">Emby</td>
+								<td class="py-2 pr-4"><code class="text-xs bg-gray-100 dark:bg-gray-700 px-1 rounded">folder.jpg</code></td>
+								<td class="py-2 pr-4"><code class="text-xs bg-gray-100 dark:bg-gray-700 px-1 rounded">backdrop.jpg</code></td>
+								<td class="py-2 pr-4"><code class="text-xs bg-gray-100 dark:bg-gray-700 px-1 rounded">logo.png</code></td>
+								<td class="py-2"><code class="text-xs bg-gray-100 dark:bg-gray-700 px-1 rounded">banner.jpg</code></td>
+							</tr>
+							<tr>
+								<td class="py-2 pr-4 font-medium">Jellyfin</td>
+								<td class="py-2 pr-4"><code class="text-xs bg-gray-100 dark:bg-gray-700 px-1 rounded">folder.jpg</code></td>
+								<td class="py-2 pr-4"><code class="text-xs bg-gray-100 dark:bg-gray-700 px-1 rounded">backdrop.jpg</code></td>
+								<td class="py-2 pr-4"><code class="text-xs bg-gray-100 dark:bg-gray-700 px-1 rounded">logo.png</code></td>
+								<td class="py-2"><code class="text-xs bg-gray-100 dark:bg-gray-700 px-1 rounded">banner.jpg</code></td>
+							</tr>
+						</tbody>
+					</table>
+				</div>
+				<p class="mt-3 text-sm text-gray-600 dark:text-gray-300">
+					Only one profile is active at a time. Switching profiles changes how new images and NFO files are written. You can change the active profile from the Settings page or during onboarding.
+				</p>
+			}
+			@guideSection("providers", "Metadata Providers") {
+				<p class="text-sm text-gray-600 dark:text-gray-300 mb-3">
+					Stillwater pulls artist metadata from multiple sources. Each provider offers different data, and you can configure which provider wins for each field via the priority system in Settings.
+				</p>
+				<div class="space-y-2">
+					@guideProviderRow("MusicBrainz", "No key required", "Artist identifiers (MBIDs), basic metadata, disambiguation, relationships. The foundation for cross-referencing other providers.")
+					@guideProviderRow("Fanart.tv", "API key required", "High-quality artist images: thumbs, fanart, logos, banners. The primary image source for most users.")
+					@guideProviderRow("TheAudioDB", "Free tier (optional premium key)", "Biographies, genres, styles, moods, formation year, artist images. Premium keys unlock higher rate limits.")
+					@guideProviderRow("Last.fm", "API key required", "Biographies, tags (used as genres/styles), similar artists. Good fallback for biography text.")
+					@guideProviderRow("Discogs", "API key required", "Detailed artist profiles, member lists, name variations. Useful for electronic and niche genres.")
+					@guideProviderRow("Wikidata", "No key required", "Structured data linked from MusicBrainz: formation date, country, genres, official website URLs.")
+					@guideProviderRow("Deezer", "No key required", "Artist images, basic metadata. Useful as a fallback image source when Fanart.tv has no results.")
+				</div>
+			}
+			@guideSection("images", "Image Management") {
+				<p class="text-sm text-gray-600 dark:text-gray-300 mb-3">
+					Stillwater manages four image types per artist. Each type serves a different purpose in your media server's UI.
+				</p>
+				<div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+					<div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+						<h4 class="text-sm font-medium text-gray-900 dark:text-gray-100">Thumb</h4>
+						<p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Primary artist portrait. Used in list views, grids, and search results. Typically JPG, but PNG is preserved when the source is PNG.</p>
+					</div>
+					<div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+						<h4 class="text-sm font-medium text-gray-900 dark:text-gray-100">Fanart</h4>
+						<p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Wide background image. Used as the backdrop on artist detail pages. Typically JPG, but PNG is preserved when the source is PNG.</p>
+					</div>
+					<div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+						<h4 class="text-sm font-medium text-gray-900 dark:text-gray-100">Logo</h4>
+						<p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Transparent artist logo/wordmark. Always saved as PNG to preserve the alpha channel.</p>
+					</div>
+					<div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+						<h4 class="text-sm font-medium text-gray-900 dark:text-gray-100">Banner</h4>
+						<p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Horizontal banner image. Used in some media server skins for top-of-page display. Typically JPG, but PNG is preserved when the source is PNG.</p>
+					</div>
+				</div>
+				<ul class="list-disc list-inside text-sm text-gray-600 dark:text-gray-300 space-y-1.5">
+					<li>Supported input formats: JPEG, PNG, and WebP. WebP images are converted to PNG on save.</li>
+					<li>Logos are always saved as PNG (to preserve transparency). Other types retain their decoded format (JPG or PNG).</li>
+					<li>When saving a new image, any existing file of the same type in a different format is automatically deleted to prevent duplicates.</li>
+					<li>Images can be fetched from providers, uploaded manually, or found via web image search.</li>
+				</ul>
+			}
+			@guideSection("connections", "Server Connections") {
+				<p class="text-sm text-gray-600 dark:text-gray-300 mb-3">
+					Connections let Stillwater communicate with your media server or music manager. They are optional and can be added at any time from Settings.
+				</p>
+				<div class="space-y-3">
+					<div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+						<h4 class="text-sm font-medium text-gray-900 dark:text-gray-100 mb-1">Emby / Jellyfin</h4>
+						<ul class="list-disc list-inside text-xs text-gray-500 dark:text-gray-400 space-y-0.5">
+							<li>Import artist lists from your media server's music libraries</li>
+							<li>Push metadata updates (biography, genres, sort name) to artist entries</li>
+							<li>Trigger per-artist or full library refreshes after image and NFO changes</li>
+							<li>Read MusicBrainz IDs from existing records for accurate provider matching</li>
+						</ul>
+					</div>
+					<div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+						<h4 class="text-sm font-medium text-gray-900 dark:text-gray-100 mb-1">Lidarr</h4>
+						<ul class="list-disc list-inside text-xs text-gray-500 dark:text-gray-400 space-y-0.5">
+							<li>Import monitored artist lists with filesystem paths and MusicBrainz IDs</li>
+							<li>Trigger per-artist metadata refreshes via Lidarr's command queue</li>
+							<li>Detect Lidarr NFO writer configuration to warn about write conflicts</li>
+							<li>Read metadata profiles for configuration awareness</li>
+						</ul>
+					</div>
+				</div>
+				<p class="mt-3 text-sm text-gray-600 dark:text-gray-300">
+					Each connection requires a server URL and API key. Use the "Test" button after saving to verify connectivity.
+				</p>
+			}
+			@guideSection("rules", "Rule Engine") {
+				<p class="text-sm text-gray-600 dark:text-gray-300 mb-3">
+					Rules define quality checks that Stillwater runs against your artist library. When an artist violates a rule, a notification is created so you can review and fix the issue.
+				</p>
+				<ul class="list-disc list-inside text-sm text-gray-600 dark:text-gray-300 space-y-1.5">
+					<li>Rules check for missing metadata fields (biography, genres), missing images, and data quality issues.</li>
+					<li>Each rule can be individually enabled or disabled from the Settings page.</li>
+					<li>Violations can be dismissed (ignored), resolved (fixed), or auto-fixed when a candidate value is available.</li>
+					<li>Rules can be run manually on a single artist or in bulk across the entire library.</li>
+					<li>Webhook notifications can be configured to fire when new violations are detected.</li>
+				</ul>
+			}
+			@guideSection("nfo-files", "NFO Files") {
+				<p class="text-sm text-gray-600 dark:text-gray-300 mb-3">
+					NFO files are XML-formatted metadata files placed in each artist's directory. Media servers read these files to display artist information.
+				</p>
+				<ul class="list-disc list-inside text-sm text-gray-600 dark:text-gray-300 space-y-1.5">
+					<li>Each NFO file contains biography, sort name, MusicBrainz ID, genres, styles, moods, formation/disbandment years, and band members.</li>
+					<li>NFO files are written to the artist's directory using the atomic write pattern: write to a temporary file, rename the original to a backup, then rename the temporary file into place.</li>
+					<li>Before overwriting, Stillwater checks the file's last-modified timestamp. If it was changed externally (e.g., by Kodi or another tool), a warning is shown instead of silently overwriting.</li>
+					<li>NFO snapshots track changes over time. You can view diffs between the current file and the last saved version, and restore previous snapshots if needed.</li>
+				</ul>
+			}
+		</div>
+	}
+}
+
+templ guideSection(id string, title string) {
+	<section id={ id } class="scroll-mt-20 rounded-lg bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm shadow p-6">
+		<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3">{ title }</h2>
+		{ children... }
+	</section>
+}
+
+templ guideProviderRow(name string, keyStatus string, description string) {
+	<div class="rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3">
+		<div class="flex items-baseline justify-between gap-2">
+			<span class="text-sm font-medium text-gray-900 dark:text-gray-100">{ name }</span>
+			<span class="text-xs text-gray-500 dark:text-gray-400 shrink-0">{ keyStatus }</span>
+		</div>
+		<p class="text-xs text-gray-500 dark:text-gray-400 mt-1">{ description }</p>
+	</div>
+}
