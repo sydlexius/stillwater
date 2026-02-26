@@ -33,6 +33,9 @@ func (s *Service) Create(ctx context.Context, lib *Library) error {
 	if lib.Source == "" {
 		lib.Source = SourceManual
 	}
+	if !isValidSource(lib.Source) {
+		return fmt.Errorf("library source must be one of %q, %q, %q, %q", SourceManual, SourceEmby, SourceJellyfin, SourceLidarr)
+	}
 
 	if lib.ID == "" {
 		lib.ID = uuid.New().String()
@@ -127,6 +130,12 @@ func (s *Service) Update(ctx context.Context, lib *Library) error {
 	}
 	if lib.Type != TypeRegular && lib.Type != TypeClassical {
 		return fmt.Errorf("library type must be %q or %q", TypeRegular, TypeClassical)
+	}
+	if lib.Source == "" {
+		lib.Source = SourceManual
+	}
+	if !isValidSource(lib.Source) {
+		return fmt.Errorf("library source must be one of %q, %q, %q, %q", SourceManual, SourceEmby, SourceJellyfin, SourceLidarr)
 	}
 
 	lib.UpdatedAt = time.Now().UTC()
@@ -232,6 +241,16 @@ func nullableString(s string) any {
 		return nil
 	}
 	return s
+}
+
+// isValidSource reports whether s is one of the allowed library source values.
+func isValidSource(s string) bool {
+	switch s {
+	case SourceManual, SourceEmby, SourceJellyfin, SourceLidarr:
+		return true
+	default:
+		return false
+	}
 }
 
 // parseTime parses a time string, handling both RFC3339 and SQLite datetime formats.

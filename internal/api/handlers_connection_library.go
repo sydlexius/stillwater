@@ -46,6 +46,10 @@ func (r *Router) handleDiscoverLibraries(w http.ResponseWriter, req *http.Reques
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "connection not found"})
 		return
 	}
+	if !conn.Enabled {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "connection is disabled"})
+		return
+	}
 	if conn.Status != "ok" {
 		writeJSON(w, http.StatusConflict, map[string]string{
 			"error": "connection must be tested successfully before discovering libraries",
@@ -66,7 +70,12 @@ func (r *Router) handleDiscoverLibraries(w http.ResponseWriter, req *http.Reques
 		}
 		for _, f := range folders {
 			d := discoveredLibrary{ExternalID: f.ItemID, Name: f.Name}
-			existing, _ := r.libraryService.GetByConnectionAndExternalID(req.Context(), connID, f.ItemID)
+			existing, lookupErr := r.libraryService.GetByConnectionAndExternalID(req.Context(), connID, f.ItemID)
+			if lookupErr != nil {
+				r.logger.Error("checking existing library", "external_id", f.ItemID, "error", lookupErr)
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to check existing library"})
+				return
+			}
 			d.Imported = existing != nil
 			discovered = append(discovered, d)
 		}
@@ -81,7 +90,12 @@ func (r *Router) handleDiscoverLibraries(w http.ResponseWriter, req *http.Reques
 		}
 		for _, f := range folders {
 			d := discoveredLibrary{ExternalID: f.ItemID, Name: f.Name}
-			existing, _ := r.libraryService.GetByConnectionAndExternalID(req.Context(), connID, f.ItemID)
+			existing, lookupErr := r.libraryService.GetByConnectionAndExternalID(req.Context(), connID, f.ItemID)
+			if lookupErr != nil {
+				r.logger.Error("checking existing library", "external_id", f.ItemID, "error", lookupErr)
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to check existing library"})
+				return
+			}
 			d.Imported = existing != nil
 			discovered = append(discovered, d)
 		}
@@ -91,7 +105,12 @@ func (r *Router) handleDiscoverLibraries(w http.ResponseWriter, req *http.Reques
 			ExternalID: "lidarr",
 			Name:       conn.Name + " Library",
 		}
-		existing, _ := r.libraryService.GetByConnectionAndExternalID(req.Context(), connID, "lidarr")
+		existing, lookupErr := r.libraryService.GetByConnectionAndExternalID(req.Context(), connID, "lidarr")
+		if lookupErr != nil {
+			r.logger.Error("checking existing library", "external_id", "lidarr", "error", lookupErr)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to check existing library"})
+			return
+		}
 		d.Imported = existing != nil
 		discovered = append(discovered, d)
 
@@ -129,6 +148,16 @@ func (r *Router) handleImportLibraries(w http.ResponseWriter, req *http.Request)
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "connection not found"})
 		return
 	}
+	if !conn.Enabled {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "connection is disabled"})
+		return
+	}
+	if conn.Status != "ok" {
+		writeJSON(w, http.StatusConflict, map[string]string{
+			"error": "connection must be tested successfully before importing libraries",
+		})
+		return
+	}
 
 	var body importRequest
 	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
@@ -142,17 +171,23 @@ func (r *Router) handleImportLibraries(w http.ResponseWriter, req *http.Request)
 
 	var created []library.Library
 	for _, entry := range body.Libraries {
+		// Skip entries with missing required fields
+		if entry.ExternalID == "" || entry.Name == "" {
+			continue
+		}
+
 		// Skip if already imported
-		existing, _ := r.libraryService.GetByConnectionAndExternalID(req.Context(), connID, entry.ExternalID)
+		existing, lookupErr := r.libraryService.GetByConnectionAndExternalID(req.Context(), connID, entry.ExternalID)
+		if lookupErr != nil {
+			r.logger.Error("checking existing library", "external_id", entry.ExternalID, "error", lookupErr)
+			continue
+		}
 		if existing != nil {
 			continue
 		}
 
 		name := entry.Name
 		// Check for name conflict and suffix with connection name if needed
-		existingByName, _ := r.libraryService.GetByPath(req.Context(), "")
-		_ = existingByName // GetByPath won't help here; check by trying to create
-
 		lib := &library.Library{
 			Name:         name,
 			Path:         "",
@@ -190,6 +225,16 @@ func (r *Router) handlePopulateLibrary(w http.ResponseWriter, req *http.Request)
 	conn, err := r.connectionService.GetByID(req.Context(), connID)
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "connection not found"})
+		return
+	}
+	if !conn.Enabled {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "connection is disabled"})
+		return
+	}
+	if conn.Status != "ok" {
+		writeJSON(w, http.StatusConflict, map[string]string{
+			"error": "connection must be tested successfully before populating libraries",
+		})
 		return
 	}
 
@@ -252,13 +297,23 @@ func (r *Router) populateFromEmby(req *http.Request, client *emby.Client, lib *l
 			mbid := item.ProviderIDs.MusicBrainzArtist
 
 			if mbid != "" {
-				existing, _ := r.artistService.GetByMBIDAndLibrary(req.Context(), mbid, lib.ID)
+				existing, lookupErr := r.artistService.GetByMBIDAndLibrary(req.Context(), mbid, lib.ID)
+				if lookupErr != nil {
+					r.logger.Warn("dedup lookup by mbid", "mbid", mbid, "error", lookupErr)
+					result.Skipped++
+					continue
+				}
 				if existing != nil {
 					result.Skipped++
 					continue
 				}
 			} else {
-				existing, _ := r.artistService.GetByNameAndLibrary(req.Context(), item.Name, lib.ID)
+				existing, lookupErr := r.artistService.GetByNameAndLibrary(req.Context(), item.Name, lib.ID)
+				if lookupErr != nil {
+					r.logger.Warn("dedup lookup by name", "name", item.Name, "error", lookupErr)
+					result.Skipped++
+					continue
+				}
 				if existing != nil {
 					result.Skipped++
 					continue
@@ -301,13 +356,23 @@ func (r *Router) populateFromJellyfin(req *http.Request, client *jellyfin.Client
 			mbid := item.ProviderIDs.MusicBrainzArtist
 
 			if mbid != "" {
-				existing, _ := r.artistService.GetByMBIDAndLibrary(req.Context(), mbid, lib.ID)
+				existing, lookupErr := r.artistService.GetByMBIDAndLibrary(req.Context(), mbid, lib.ID)
+				if lookupErr != nil {
+					r.logger.Warn("dedup lookup by mbid", "mbid", mbid, "error", lookupErr)
+					result.Skipped++
+					continue
+				}
 				if existing != nil {
 					result.Skipped++
 					continue
 				}
 			} else {
-				existing, _ := r.artistService.GetByNameAndLibrary(req.Context(), item.Name, lib.ID)
+				existing, lookupErr := r.artistService.GetByNameAndLibrary(req.Context(), item.Name, lib.ID)
+				if lookupErr != nil {
+					r.logger.Warn("dedup lookup by name", "name", item.Name, "error", lookupErr)
+					result.Skipped++
+					continue
+				}
 				if existing != nil {
 					result.Skipped++
 					continue
@@ -347,13 +412,23 @@ func (r *Router) populateFromLidarr(req *http.Request, client *lidarr.Client, li
 		mbid := la.ForeignArtistID
 
 		if mbid != "" {
-			existing, _ := r.artistService.GetByMBIDAndLibrary(req.Context(), mbid, lib.ID)
+			existing, lookupErr := r.artistService.GetByMBIDAndLibrary(req.Context(), mbid, lib.ID)
+			if lookupErr != nil {
+				r.logger.Warn("dedup lookup by mbid", "mbid", mbid, "error", lookupErr)
+				result.Skipped++
+				continue
+			}
 			if existing != nil {
 				result.Skipped++
 				continue
 			}
 		} else {
-			existing, _ := r.artistService.GetByNameAndLibrary(req.Context(), la.ArtistName, lib.ID)
+			existing, lookupErr := r.artistService.GetByNameAndLibrary(req.Context(), la.ArtistName, lib.ID)
+			if lookupErr != nil {
+				r.logger.Warn("dedup lookup by name", "name", la.ArtistName, "error", lookupErr)
+				result.Skipped++
+				continue
+			}
 			if existing != nil {
 				result.Skipped++
 				continue
