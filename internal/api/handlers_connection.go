@@ -68,7 +68,36 @@ func (r *Router) handleGetConnection(w http.ResponseWriter, req *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "connection not found"})
 		return
 	}
-	writeJSON(w, http.StatusOK, toConnectionResponse(*c))
+
+	libs, err := r.libraryService.ListByConnectionID(req.Context(), id)
+	if err != nil {
+		r.logger.Error("listing libraries for connection", "connection_id", id, "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		return
+	}
+	artistCount, err := r.libraryService.CountArtistsByConnectionID(req.Context(), id)
+	if err != nil {
+		r.logger.Error("counting artists for connection", "connection_id", id, "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		return
+	}
+
+	resp := toConnectionResponse(*c)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"id":              resp.ID,
+		"name":            resp.Name,
+		"type":            resp.Type,
+		"url":             resp.URL,
+		"has_key":         resp.HasKey,
+		"enabled":         resp.Enabled,
+		"status":          resp.Status,
+		"status_message":  resp.StatusMessage,
+		"last_checked_at": resp.LastCheckedAt,
+		"created_at":      resp.CreatedAt,
+		"updated_at":      resp.UpdatedAt,
+		"library_count":   len(libs),
+		"artist_count":    artistCount,
+	})
 }
 
 func (r *Router) handleCreateConnection(w http.ResponseWriter, req *http.Request) {
@@ -174,13 +203,39 @@ func (r *Router) handleUpdateConnection(w http.ResponseWriter, req *http.Request
 
 func (r *Router) handleDeleteConnection(w http.ResponseWriter, req *http.Request) {
 	id := req.PathValue("id")
+	deleteLibraries := req.URL.Query().Get("deleteLibraries") == "true"
+	deleteArtists := req.URL.Query().Get("deleteArtists") == "true"
 
-	// Clear library FK references before deleting the connection.
-	// Imported libraries keep their source/external_id for provenance.
-	if err := r.libraryService.ClearConnectionID(req.Context(), id); err != nil {
-		r.logger.Error("clearing library connection references", "error", err)
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
-		return
+	if deleteLibraries {
+		libs, err := r.libraryService.ListByConnectionID(req.Context(), id)
+		if err != nil {
+			r.logger.Error("listing connection libraries for deletion", "error", err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+			return
+		}
+		for _, lib := range libs {
+			if deleteArtists {
+				if err := r.libraryService.DeleteWithArtists(req.Context(), lib.ID); err != nil {
+					r.logger.Error("deleting library with artists", "library_id", lib.ID, "error", err)
+					writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+					return
+				}
+			} else {
+				if err := r.libraryService.Delete(req.Context(), lib.ID); err != nil {
+					r.logger.Error("deleting library", "library_id", lib.ID, "error", err)
+					writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+					return
+				}
+			}
+		}
+	} else {
+		// Default: clear library FK references. Imported libraries keep their
+		// source/external_id for provenance.
+		if err := r.libraryService.ClearConnectionID(req.Context(), id); err != nil {
+			r.logger.Error("clearing library connection references", "error", err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+			return
+		}
 	}
 
 	if err := r.connectionService.Delete(req.Context(), id); err != nil {

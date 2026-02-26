@@ -167,7 +167,7 @@ func run() error {
 	if err := scraperService.SeedDefaults(context.Background()); err != nil {
 		return fmt.Errorf("seeding default scraper config: %w", err)
 	}
-	scraperExecutor := scraper.NewExecutor(scraperService, providerRegistry, logger)
+	scraperExecutor := scraper.NewExecutor(scraperService, providerRegistry, providerSettings, logger)
 	orchestrator.SetExecutor(scraperExecutor)
 
 	// Initialize NFO snapshot service

@@ -42,7 +42,7 @@ templ HealthSummaryFragment(data HealthSummaryData) {
 			{ fmt.Sprint(data.CompliantArtists) } of { fmt.Sprint(data.TotalArtists) } fully compliant
 		</p>
 	</div>
-	@quickStatCard("Missing NFO", data.MissingNFO, "/reports/compliance?filter=missing_nfo")
+	@quickStatCard("Missing Metadata", data.MissingNFO, "/reports/compliance?filter=missing_nfo")
 	@quickStatCard("Missing Thumb", data.MissingThumb, "/reports/compliance?filter=missing_thumb")
 	@quickStatCard("Missing MBID", data.MissingMBID, "/reports/compliance?filter=missing_mbid")
 	if len(data.TopViolations) > 0 {

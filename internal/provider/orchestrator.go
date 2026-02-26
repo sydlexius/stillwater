@@ -65,6 +65,11 @@ func (o *Orchestrator) FetchMetadata(ctx context.Context, mbid string, name stri
 		return nil, fmt.Errorf("loading priorities: %w", err)
 	}
 
+	available, err := o.settings.AvailableProviderNames(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("loading available providers: %w", err)
+	}
+
 	result := &FetchResult{
 		Metadata: &ArtistMetadata{
 			URLs: make(map[string]string),
@@ -77,6 +82,9 @@ func (o *Orchestrator) FetchMetadata(ctx context.Context, mbid string, name stri
 
 	for _, pri := range priorities {
 		for _, provName := range pri.EnabledProviders() {
+			if !available[provName] {
+				continue
+			}
 			pr := o.getProviderResult(ctx, provName, mbid, name, cache, &mu)
 			if pr.err != nil {
 				continue
@@ -101,7 +109,7 @@ func (o *Orchestrator) FetchMetadata(ctx context.Context, mbid string, name stri
 	return result, nil
 }
 
-// FetchImages queries all image-capable providers and merges results by priority.
+// FetchImages queries all configured, image-capable providers and merges results by priority.
 // providerIDs supplies provider-specific IDs for providers that do not accept MBIDs
 // (e.g. Deezer uses its own numeric ID). Providers without an entry in providerIDs
 // receive the MBID. Providers with an empty entry are skipped.
@@ -110,7 +118,12 @@ func (o *Orchestrator) FetchImages(ctx context.Context, mbid string, providerIDs
 		Metadata: &ArtistMetadata{},
 	}
 
-	for _, p := range o.registry.All() {
+	providers, err := o.availableProviders(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, p := range providers {
 		id := mbid
 		if pid, ok := providerIDs[p.Name()]; ok {
 			if pid == "" {
@@ -132,11 +145,16 @@ func (o *Orchestrator) FetchImages(ctx context.Context, mbid string, providerIDs
 	return result, nil
 }
 
-// Search queries all providers that support search and merges results.
+// Search queries all configured providers that support search and merges results.
 func (o *Orchestrator) Search(ctx context.Context, name string) ([]ArtistSearchResult, error) {
 	var allResults []ArtistSearchResult
 
-	for _, p := range o.registry.All() {
+	providers, err := o.availableProviders(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, p := range providers {
 		results, err := p.SearchArtist(ctx, name)
 		if err != nil {
 			o.logger.Warn("provider search failed",
@@ -148,6 +166,23 @@ func (o *Orchestrator) Search(ctx context.Context, name string) ([]ArtistSearchR
 	}
 
 	return allResults, nil
+}
+
+// availableProviders returns only the registered providers whose API keys are
+// configured (or that do not require a key). This prevents the orchestrator
+// from calling unconfigured providers and producing noisy WARN logs.
+func (o *Orchestrator) availableProviders(ctx context.Context) ([]Provider, error) {
+	available, err := o.settings.AvailableProviderNames(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("loading available providers: %w", err)
+	}
+	var result []Provider
+	for _, p := range o.registry.All() {
+		if available[p.Name()] {
+			result = append(result, p)
+		}
+	}
+	return result, nil
 }
 
 type providerResult struct {
@@ -314,7 +349,7 @@ type FieldProviderResult struct {
 	Error    string       `json:"error,omitempty"`
 }
 
-// FetchFieldFromProviders queries all providers configured for a given field
+// FetchFieldFromProviders queries all configured providers for a given field
 // and returns each provider's result without merging. This enables a
 // side-by-side comparison UI where the user picks which provider's value to use.
 func (o *Orchestrator) FetchFieldFromProviders(ctx context.Context, mbid, name, field string) ([]FieldProviderResult, error) {
@@ -323,11 +358,20 @@ func (o *Orchestrator) FetchFieldFromProviders(ctx context.Context, mbid, name, 
 		return nil, fmt.Errorf("loading priorities: %w", err)
 	}
 
-	// Find which providers are enabled for this field
+	available, err := o.settings.AvailableProviderNames(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("loading available providers: %w", err)
+	}
+
+	// Find which providers are enabled and available for this field
 	var providers []ProviderName
 	for _, pri := range priorities {
 		if pri.Field == field {
-			providers = pri.EnabledProviders()
+			for _, p := range pri.EnabledProviders() {
+				if available[p] {
+					providers = append(providers, p)
+				}
+			}
 			break
 		}
 	}

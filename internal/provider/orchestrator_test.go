@@ -65,6 +65,11 @@ func setupOrchestratorTest(t *testing.T) (*Registry, *SettingsService) {
 func TestOrchestratorFallback(t *testing.T) {
 	registry, settings := setupOrchestratorTest(t)
 
+	// LastFM requires an API key; store a dummy so it passes availability check.
+	if err := settings.SetAPIKey(context.Background(), NameLastFM, "test-key"); err != nil {
+		t.Fatalf("SetAPIKey: %v", err)
+	}
+
 	// First provider returns empty biography, second has one
 	registry.Register(&mockProvider{
 		name: NameMusicBrainz,
@@ -153,6 +158,11 @@ func TestOrchestratorProviderError(t *testing.T) {
 
 func TestOrchestratorSearch(t *testing.T) {
 	registry, settings := setupOrchestratorTest(t)
+
+	// LastFM requires an API key; store a dummy so it passes availability check.
+	if err := settings.SetAPIKey(context.Background(), NameLastFM, "test-key"); err != nil {
+		t.Fatalf("SetAPIKey: %v", err)
+	}
 
 	registry.Register(&mockProvider{
 		name: NameMusicBrainz,
