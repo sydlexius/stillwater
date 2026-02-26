@@ -15,17 +15,20 @@ const (
 
 // Connection represents an external service connection.
 type Connection struct {
-	ID            string     `json:"id"`
-	Name          string     `json:"name"`
-	Type          string     `json:"type"`
-	URL           string     `json:"url"`
-	APIKey        string     `json:"api_key,omitempty"`
-	Enabled       bool       `json:"enabled"`
-	Status        string     `json:"status"`
-	StatusMessage string     `json:"status_message,omitempty"`
-	LastCheckedAt *time.Time `json:"last_checked_at,omitempty"`
-	CreatedAt     time.Time  `json:"created_at"`
-	UpdatedAt     time.Time  `json:"updated_at"`
+	ID                   string     `json:"id"`
+	Name                 string     `json:"name"`
+	Type                 string     `json:"type"`
+	URL                  string     `json:"url"`
+	APIKey               string     `json:"api_key,omitempty"`
+	Enabled              bool       `json:"enabled"`
+	Status               string     `json:"status"`
+	StatusMessage        string     `json:"status_message,omitempty"`
+	LastCheckedAt        *time.Time `json:"last_checked_at,omitempty"`
+	CreatedAt            time.Time  `json:"created_at"`
+	UpdatedAt            time.Time  `json:"updated_at"`
+	FeatureLibraryImport bool       `json:"feature_library_import"`
+	FeatureNFOWrite      bool       `json:"feature_nfo_write"`
+	FeatureImageWrite    bool       `json:"feature_image_write"`
 }
 
 // Validate checks required fields and constraints.

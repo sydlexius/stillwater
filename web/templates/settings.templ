@@ -363,6 +363,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 		@autoFetchToggleScript()
 		@settingsLibraryScript()
 		@settingsConnectionScript()
+		@connectionFeatureToggleScript()
 		@ruleToggleScript()
 		<script src={ assets.SortableJS }></script>
 		<div class="space-y-6">
@@ -1168,6 +1169,52 @@ templ settingsConnectionScript() {
 	</script>
 }
 
+templ connectionFeatureToggleScript() {
+	<script>
+		function toggleConnectionFeature(btn) {
+			var connID = btn.dataset.connId;
+			var feature = btn.dataset.feature;
+			var isOn = btn.getAttribute('aria-checked') === 'true';
+			var newVal = !isOn;
+
+			// Optimistic UI update
+			btn.setAttribute('aria-checked', String(newVal));
+			var knob = btn.querySelector('span');
+			if (newVal) {
+				btn.classList.remove('bg-gray-200', 'dark:bg-gray-600');
+				btn.classList.add('bg-blue-600');
+				knob.classList.remove('translate-x-0');
+				knob.classList.add('translate-x-5');
+			} else {
+				btn.classList.remove('bg-blue-600');
+				btn.classList.add('bg-gray-200', 'dark:bg-gray-600');
+				knob.classList.remove('translate-x-5');
+				knob.classList.add('translate-x-0');
+			}
+
+			var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1");
+			var body = {};
+			body['feature_' + feature] = newVal;
+			fetch('/api/v1/connections/' + connID + '/features', {
+				method: 'PATCH',
+				headers: {
+					'Content-Type': 'application/json',
+					'X-CSRF-Token': csrfToken
+				},
+				body: JSON.stringify(body)
+			}).then(function(r) {
+				if (!r.ok && typeof showToast === 'function') {
+					showToast('Failed to update feature toggle.');
+				}
+			}).catch(function() {
+				if (typeof showToast === 'function') {
+					showToast('Network error updating feature toggle.');
+				}
+			});
+		}
+	</script>
+}
+
 templ sortableInitScript() {
 	<script>
 		(function() {
@@ -1594,6 +1641,14 @@ templ serviceConnectionCard(connType string, displayName string, exampleURL stri
 						<div class="flex items-center gap-1.5 shrink-0">
 							<button
 								type="button"
+								class="text-xs p-1 rounded border border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+								onclick={ toggleConnectionFeatures(c.ID) }
+								title="Feature toggles"
+							>
+								@components.IconCog6Tooth("h-3.5 w-3.5")
+							</button>
+							<button
+								type="button"
 								class="text-xs px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
 								hx-post={ "/api/v1/connections/" + c.ID + "/test" }
 								hx-swap="none"
@@ -1622,6 +1677,14 @@ templ serviceConnectionCard(connType string, displayName string, exampleURL stri
 						</div>
 					</div>
 					<div id={ "discover-" + c.ID } class="mt-2"></div>
+					<div id={ "features-" + c.ID } class="hidden mt-2 rounded border border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 px-3 py-2">
+						<div class="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">Feature Toggles</div>
+						<div class="space-y-2">
+							@connectionFeatureToggle(c.ID, "library_import", "Library import", c.FeatureLibraryImport)
+							@connectionFeatureToggle(c.ID, "nfo_write", "NFO write detection", c.FeatureNFOWrite)
+							@connectionFeatureToggle(c.ID, "image_write", "Image download/write", c.FeatureImageWrite)
+						</div>
+					</div>
 				}
 			</div>
 		} else {
@@ -1723,6 +1786,30 @@ script toggleConnectionForm(connType string) {
 	if (form) {
 		form.classList.toggle("hidden");
 	}
+}
+
+script toggleConnectionFeatures(connID string) {
+	var panel = document.getElementById("features-" + connID);
+	if (panel) {
+		panel.classList.toggle("hidden");
+	}
+}
+
+templ connectionFeatureToggle(connID string, feature string, label string, enabled bool) {
+	<div class="flex items-center justify-between">
+		<span class="text-xs text-gray-700 dark:text-gray-300">{ label }</span>
+		<button
+			type="button"
+			class={ ruleToggleBtnClasses(enabled) }
+			role="switch"
+			aria-checked={ boolAttr(enabled) }
+			data-conn-id={ connID }
+			data-feature={ feature }
+			onclick="toggleConnectionFeature(this)"
+		>
+			<span class={ ruleToggleKnobClasses(enabled) }></span>
+		</button>
+	</div>
 }
 
 script settingsDeleteConnection(id string) {
