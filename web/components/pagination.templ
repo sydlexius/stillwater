@@ -1,6 +1,10 @@
 package components
 
-import "fmt"
+import (
+	"fmt"
+	"net/url"
+	"strconv"
+)
 
 // PaginationData holds the state for pagination controls.
 type PaginationData struct {
@@ -26,26 +30,28 @@ func (p PaginationData) target() string {
 }
 
 func (p PaginationData) pageURL(page int) string {
-	url := fmt.Sprintf("%s?page=%d&page_size=%d", p.BaseURL, page, p.PageSize)
+	v := url.Values{}
+	v.Set("page", strconv.Itoa(page))
+	v.Set("page_size", strconv.Itoa(p.PageSize))
 	if p.Sort != "" {
-		url += "&sort=" + p.Sort
+		v.Set("sort", p.Sort)
 	}
 	if p.Order != "" {
-		url += "&order=" + p.Order
+		v.Set("order", p.Order)
 	}
 	if p.Search != "" {
-		url += "&search=" + p.Search
+		v.Set("search", p.Search)
 	}
 	if p.Filter != "" {
-		url += "&filter=" + p.Filter
+		v.Set("filter", p.Filter)
 	}
 	if p.View != "" {
-		url += "&view=" + p.View
+		v.Set("view", p.View)
 	}
 	if p.LibraryID != "" {
-		url += "&library_id=" + p.LibraryID
+		v.Set("library_id", p.LibraryID)
 	}
-	return url
+	return p.BaseURL + "?" + v.Encode()
 }
 
 templ Pagination(data PaginationData) {
