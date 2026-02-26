@@ -190,7 +190,7 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 						</div>
 					</div>
 					<!-- Step 2: Platform Profile -->
-					<div id="wizard-step-2" class="hidden rounded-lg bg-white dark:bg-gray-800 shadow p-6">
+					<div id="wizard-step-2" class={ "rounded-lg bg-white dark:bg-gray-800 shadow p-6", templ.KV("hidden", data.CurrentStep != 2) }>
 						<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">Choose Your Platform</h2>
 						<p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
 							Select the media server you use. This controls NFO format and image naming conventions.
@@ -202,7 +202,7 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 						</div>
 					</div>
 					<!-- Step 3: Provider API Keys -->
-					<div id="wizard-step-3" class="hidden rounded-lg bg-white dark:bg-gray-800 shadow p-6">
+					<div id="wizard-step-3" class={ "rounded-lg bg-white dark:bg-gray-800 shadow p-6", templ.KV("hidden", data.CurrentStep != 3) }>
 						<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">Provider API Keys</h2>
 						<p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
 							Configure API keys for metadata and image providers. You can skip this and add keys later from Settings.
@@ -227,7 +227,7 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 						}
 					</div>
 					<!-- Step 4: Server Connections -->
-					<div id="wizard-step-4" class="hidden rounded-lg bg-white dark:bg-gray-800 shadow p-6">
+					<div id="wizard-step-4" class={ "rounded-lg bg-white dark:bg-gray-800 shadow p-6", templ.KV("hidden", data.CurrentStep != 4) }>
 						<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">Server Connections</h2>
 						<p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
 							Optionally connect to your media server or music manager. These are not required for core functionality and can be added later from Settings.
