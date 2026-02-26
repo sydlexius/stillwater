@@ -229,6 +229,18 @@ func TestListProviderKeyStatuses(t *testing.T) {
 	}
 }
 
+// findStatus returns the ProviderKeyStatus for the given name, or fails the test.
+func findStatus(t *testing.T, statuses []ProviderKeyStatus, name ProviderName) ProviderKeyStatus {
+	t.Helper()
+	for _, s := range statuses {
+		if s.Name == name {
+			return s
+		}
+	}
+	t.Fatalf("provider %s not found in statuses", name)
+	return ProviderKeyStatus{}
+}
+
 func TestOptionalKeyField(t *testing.T) {
 	db := setupTestDB(t)
 	enc := setupTestEncryptor(t)
@@ -241,13 +253,7 @@ func TestOptionalKeyField(t *testing.T) {
 	}
 
 	// AudioDB should have OptionalKey=true
-	var audiodb ProviderKeyStatus
-	for _, s := range statuses {
-		if s.Name == NameAudioDB {
-			audiodb = s
-			break
-		}
-	}
+	audiodb := findStatus(t, statuses, NameAudioDB)
 	if !audiodb.OptionalKey {
 		t.Error("expected AudioDB to have OptionalKey=true")
 	}
@@ -267,12 +273,7 @@ func TestOptionalKeyField(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListProviderKeyStatuses after key set: %v", err)
 	}
-	for _, s := range statuses {
-		if s.Name == NameAudioDB {
-			audiodb = s
-			break
-		}
-	}
+	audiodb = findStatus(t, statuses, NameAudioDB)
 	if !audiodb.HasKey {
 		t.Error("expected AudioDB HasKey=true after setting key")
 	}
