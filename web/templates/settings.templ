@@ -993,15 +993,30 @@ templ settingsLibraryScript() {
 				});
 			}
 
+			if (localStorage.getItem('ui.confirm.library-delete') === 'skip') {
+				doDelete();
+				return;
+			}
+
 			fetch("/api/v1/libraries/" + id, {
 				headers: {"X-CSRF-Token": csrfToken}
-			}).then(function(res) { return res.json(); })
+			}).then(function(res) {
+				if (!res.ok) {
+					showConfirmDialog("Remove this library?", 'library-delete', doDelete);
+					return;
+				}
+				return res.json();
+			})
 			.then(function(data) {
+				if (!data) return;
 				var count = data.artist_count || 0;
 				var msg = count > 0
 					? "Remove this library? " + count + " artist" + (count !== 1 ? "s" : "") + " will be unassigned."
 					: "Remove this library?";
 				showConfirmDialog(msg, 'library-delete', doDelete);
+			})
+			.catch(function() {
+				showConfirmDialog("Remove this library?", 'library-delete', doDelete);
 			});
 		}
 	</script>

@@ -32,6 +32,9 @@ func (r *Router) handleNFODiff(w http.ResponseWriter, req *http.Request) {
 		writeError(w, req, http.StatusNotFound, "artist not found")
 		return
 	}
+	if !r.requireArtistPath(w, a) {
+		return
+	}
 
 	// Parse the current on-disk NFO
 	nfoPath := filepath.Join(a.Path, "artist.nfo")
@@ -172,9 +175,10 @@ func (r *Router) handleNFODiffPage(w http.ResponseWriter, req *http.Request) {
 	}
 
 	data := templates.NFODiffPageData{
-		Artist:    *a,
-		Diff:      nfo.DiffResult{},
-		Snapshots: snapshots,
+		Artist:     *a,
+		Diff:       nfo.DiffResult{},
+		Snapshots:  snapshots,
+		IsDegraded: a.Path == "",
 	}
 	renderTempl(w, req, templates.NFODiffPage(r.assets(), data))
 }
@@ -191,6 +195,9 @@ func (r *Router) handleNFOConflictCheck(w http.ResponseWriter, req *http.Request
 	a, err := r.artistService.GetByID(req.Context(), artistID)
 	if err != nil {
 		writeError(w, req, http.StatusNotFound, "artist not found")
+		return
+	}
+	if !r.requireArtistPath(w, a) {
 		return
 	}
 
