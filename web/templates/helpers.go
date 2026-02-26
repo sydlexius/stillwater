@@ -242,3 +242,17 @@ func rateLimitText(rl *provider.RateLimitInfo) string {
 	}
 	return strings.Join(parts, " / ")
 }
+
+// sourceDisplayName returns a human-readable name for a library source key.
+func sourceDisplayName(source string) string {
+	switch source {
+	case "emby":
+		return "Emby"
+	case "jellyfin":
+		return "Jellyfin"
+	case "lidarr":
+		return "Lidarr"
+	default:
+		return ""
+	}
+}

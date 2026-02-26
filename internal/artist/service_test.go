@@ -640,6 +640,106 @@ func TestLibraryID_NullOnEmpty(t *testing.T) {
 	}
 }
 
+func TestGetByNameAndLibrary(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	// Create two libraries
+	for _, q := range []string{
+		`INSERT INTO libraries (id, name, path, type, created_at, updated_at) VALUES ('lib-x', 'Library X', '/music/x', 'regular', datetime('now'), datetime('now'))`,
+		`INSERT INTO libraries (id, name, path, type, created_at, updated_at) VALUES ('lib-y', 'Library Y', '/music/y', 'regular', datetime('now'), datetime('now'))`,
+	} {
+		if _, err := db.ExecContext(ctx, q); err != nil {
+			t.Fatalf("creating library: %v", err)
+		}
+	}
+
+	a := testArtist("Deftones", "/music/Deftones")
+	a.LibraryID = "lib-x"
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// Found in correct library
+	got, err := svc.GetByNameAndLibrary(ctx, "Deftones", "lib-x")
+	if err != nil {
+		t.Fatalf("GetByNameAndLibrary: %v", err)
+	}
+	if got == nil || got.Name != "Deftones" {
+		t.Errorf("expected Deftones, got %v", got)
+	}
+
+	// Not found in different library
+	got, err = svc.GetByNameAndLibrary(ctx, "Deftones", "lib-y")
+	if err != nil {
+		t.Fatalf("GetByNameAndLibrary different lib: %v", err)
+	}
+	if got != nil {
+		t.Errorf("expected nil for different library, got %+v", got)
+	}
+
+	// Not found (wrong name)
+	got, err = svc.GetByNameAndLibrary(ctx, "Nonexistent", "lib-x")
+	if err != nil {
+		t.Fatalf("GetByNameAndLibrary not found: %v", err)
+	}
+	if got != nil {
+		t.Errorf("expected nil for nonexistent name, got %+v", got)
+	}
+}
+
+func TestGetByMBIDAndLibrary(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	// Create two libraries
+	for _, q := range []string{
+		`INSERT INTO libraries (id, name, path, type, created_at, updated_at) VALUES ('lib-m', 'Library M', '/music/m', 'regular', datetime('now'), datetime('now'))`,
+		`INSERT INTO libraries (id, name, path, type, created_at, updated_at) VALUES ('lib-n', 'Library N', '/music/n', 'regular', datetime('now'), datetime('now'))`,
+	} {
+		if _, err := db.ExecContext(ctx, q); err != nil {
+			t.Fatalf("creating library: %v", err)
+		}
+	}
+
+	mbid := "a74b1b7f-71a5-4011-9441-d0b5e4122711"
+	a := testArtist("Radiohead", "/music/Radiohead-lib")
+	a.MusicBrainzID = mbid
+	a.LibraryID = "lib-m"
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// Found in correct library
+	got, err := svc.GetByMBIDAndLibrary(ctx, mbid, "lib-m")
+	if err != nil {
+		t.Fatalf("GetByMBIDAndLibrary: %v", err)
+	}
+	if got == nil || got.Name != "Radiohead" {
+		t.Errorf("expected Radiohead, got %v", got)
+	}
+
+	// Not found in different library
+	got, err = svc.GetByMBIDAndLibrary(ctx, mbid, "lib-n")
+	if err != nil {
+		t.Fatalf("GetByMBIDAndLibrary different lib: %v", err)
+	}
+	if got != nil {
+		t.Errorf("expected nil for different library, got %+v", got)
+	}
+
+	// Not found (wrong MBID)
+	got, err = svc.GetByMBIDAndLibrary(ctx, "nonexistent-mbid", "lib-m")
+	if err != nil {
+		t.Fatalf("GetByMBIDAndLibrary not found: %v", err)
+	}
+	if got != nil {
+		t.Errorf("expected nil for nonexistent MBID, got %+v", got)
+	}
+}
+
 func TestList_LibraryIDFilter(t *testing.T) {
 	db := setupTestDB(t)
 	svc := NewService(db)

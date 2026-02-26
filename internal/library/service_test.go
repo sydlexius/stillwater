@@ -316,3 +316,190 @@ func TestCreate_DuplicateName(t *testing.T) {
 		t.Fatal("expected error for duplicate name")
 	}
 }
+
+func TestCreate_InvalidSource(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	lib := &Library{Name: "Bad Source", Path: "/music/bad", Type: TypeRegular, Source: "spotify"}
+	err := svc.Create(ctx, lib)
+	if err == nil {
+		t.Fatal("expected error for invalid source")
+	}
+}
+
+func TestCreate_DefaultSource(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	lib := &Library{Name: "Default Source", Path: "/music/default", Type: TypeRegular}
+	if err := svc.Create(ctx, lib); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if lib.Source != SourceManual {
+		t.Errorf("Source = %q, want %q", lib.Source, SourceManual)
+	}
+
+	got, err := svc.GetByID(ctx, lib.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if got.Source != SourceManual {
+		t.Errorf("persisted Source = %q, want %q", got.Source, SourceManual)
+	}
+}
+
+func TestGetByConnectionAndExternalID(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	// Create a connection to reference
+	_, err := db.ExecContext(ctx, `
+		INSERT INTO connections (id, name, type, url, encrypted_api_key, enabled, status, created_at, updated_at)
+		VALUES ('conn-1', 'Emby', 'emby', 'http://emby:8096', 'enc-key', 1, 'ok', datetime('now'), datetime('now'))
+	`)
+	if err != nil {
+		t.Fatalf("creating connection: %v", err)
+	}
+
+	lib := &Library{
+		Name:         "Emby Music",
+		Type:         TypeRegular,
+		Source:       SourceEmby,
+		ConnectionID: "conn-1",
+		ExternalID:   "ext-123",
+	}
+	if err := svc.Create(ctx, lib); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// Found
+	got, err := svc.GetByConnectionAndExternalID(ctx, "conn-1", "ext-123")
+	if err != nil {
+		t.Fatalf("GetByConnectionAndExternalID: %v", err)
+	}
+	if got == nil || got.Name != "Emby Music" {
+		t.Errorf("expected Emby Music, got %v", got)
+	}
+
+	// Not found (wrong external ID)
+	got, err = svc.GetByConnectionAndExternalID(ctx, "conn-1", "ext-999")
+	if err != nil {
+		t.Fatalf("GetByConnectionAndExternalID not found: %v", err)
+	}
+	if got != nil {
+		t.Errorf("expected nil for wrong external ID, got %+v", got)
+	}
+
+	// Different connection
+	got, err = svc.GetByConnectionAndExternalID(ctx, "conn-other", "ext-123")
+	if err != nil {
+		t.Fatalf("GetByConnectionAndExternalID different conn: %v", err)
+	}
+	if got != nil {
+		t.Errorf("expected nil for different connection, got %+v", got)
+	}
+}
+
+func TestClearConnectionID(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	// Create a connection to reference
+	_, err := db.ExecContext(ctx, `
+		INSERT INTO connections (id, name, type, url, encrypted_api_key, enabled, status, created_at, updated_at)
+		VALUES ('conn-2', 'Jellyfin', 'jellyfin', 'http://jf:8096', 'enc-key', 1, 'ok', datetime('now'), datetime('now'))
+	`)
+	if err != nil {
+		t.Fatalf("creating connection: %v", err)
+	}
+
+	lib1 := &Library{
+		Name:         "JF Music 1",
+		Type:         TypeRegular,
+		Source:       SourceJellyfin,
+		ConnectionID: "conn-2",
+		ExternalID:   "jf-1",
+	}
+	lib2 := &Library{
+		Name:         "JF Music 2",
+		Type:         TypeRegular,
+		Source:       SourceJellyfin,
+		ConnectionID: "conn-2",
+		ExternalID:   "jf-2",
+	}
+	lib3 := &Library{
+		Name:   "Manual Lib",
+		Type:   TypeRegular,
+		Source: SourceManual,
+	}
+	for _, lib := range []*Library{lib1, lib2, lib3} {
+		if err := svc.Create(ctx, lib); err != nil {
+			t.Fatalf("Create %s: %v", lib.Name, err)
+		}
+	}
+
+	if err := svc.ClearConnectionID(ctx, "conn-2"); err != nil {
+		t.Fatalf("ClearConnectionID: %v", err)
+	}
+
+	// Both JF libraries should have cleared connection_id
+	for _, lib := range []*Library{lib1, lib2} {
+		got, err := svc.GetByID(ctx, lib.ID)
+		if err != nil {
+			t.Fatalf("GetByID %s: %v", lib.Name, err)
+		}
+		if got.ConnectionID != "" {
+			t.Errorf("%s: ConnectionID = %q, want empty", lib.Name, got.ConnectionID)
+		}
+	}
+
+	// Manual lib should be unaffected
+	got, err := svc.GetByID(ctx, lib3.ID)
+	if err != nil {
+		t.Fatalf("GetByID manual: %v", err)
+	}
+	if got.ConnectionID != "" {
+		t.Errorf("manual lib: ConnectionID = %q, want empty (was already empty)", got.ConnectionID)
+	}
+}
+
+func TestUpdate_InvalidSource(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	lib := &Library{Name: "Valid", Path: "/music/valid", Type: TypeRegular}
+	if err := svc.Create(ctx, lib); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	lib.Source = "invalid"
+	err := svc.Update(ctx, lib)
+	if err == nil {
+		t.Fatal("expected error for invalid source on update")
+	}
+}
+
+func TestUpdate_DefaultsEmptySource(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	lib := &Library{Name: "Source Default", Path: "/music/sd", Type: TypeRegular, Source: SourceEmby}
+	if err := svc.Create(ctx, lib); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	lib.Source = ""
+	if err := svc.Update(ctx, lib); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if lib.Source != SourceManual {
+		t.Errorf("Source = %q, want %q", lib.Source, SourceManual)
+	}
+}

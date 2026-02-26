@@ -174,6 +174,15 @@ func (r *Router) handleUpdateConnection(w http.ResponseWriter, req *http.Request
 
 func (r *Router) handleDeleteConnection(w http.ResponseWriter, req *http.Request) {
 	id := req.PathValue("id")
+
+	// Clear library FK references before deleting the connection.
+	// Imported libraries keep their source/external_id for provenance.
+	if err := r.libraryService.ClearConnectionID(req.Context(), id); err != nil {
+		r.logger.Error("clearing library connection references", "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		return
+	}
+
 	if err := r.connectionService.Delete(req.Context(), id); err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
 		return

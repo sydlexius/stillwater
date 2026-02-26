@@ -148,6 +148,33 @@ func (r *Router) handleArtistsPage(w http.ResponseWriter, req *http.Request) {
 			r.logger.Warn("listing libraries for artists page", "error", err)
 		}
 		data.Libraries = libs
+
+		// Build source info map for imported libraries (non-manual).
+		sources := make(map[string]templates.LibrarySourceInfo)
+		connNames := map[string]string{} // cache connection ID -> name
+		for _, lib := range libs {
+			if lib.Source == "" || lib.Source == "manual" || !lib.IsDegraded() {
+				continue
+			}
+			info := templates.LibrarySourceInfo{Source: lib.Source}
+			if lib.ConnectionID != "" {
+				if name, ok := connNames[lib.ConnectionID]; ok {
+					info.ConnectionName = name
+				} else {
+					if conn, connErr := r.connectionService.GetByID(req.Context(), lib.ConnectionID); connErr == nil {
+						info.ConnectionName = conn.Name
+						connNames[lib.ConnectionID] = conn.Name
+					}
+				}
+			}
+			if info.ConnectionName == "" {
+				info.ConnectionName = lib.SourceDisplayName()
+			}
+			sources[lib.ID] = info
+		}
+		if len(sources) > 0 {
+			data.LibrarySources = sources
+		}
 	}
 
 	if isHTMXRequest(req) {
@@ -195,10 +222,12 @@ func (r *Router) handleArtistDetailPage(w http.ResponseWriter, req *http.Request
 
 	var libraryName string
 	var isDegraded bool
+	var librarySource string
 	if r.libraryService != nil && a.LibraryID != "" {
 		if lib, err := r.libraryService.GetByID(req.Context(), a.LibraryID); err == nil {
 			libraryName = lib.Name
 			isDegraded = lib.IsDegraded()
+			librarySource = lib.Source
 		}
 	}
 
@@ -210,6 +239,7 @@ func (r *Router) handleArtistDetailPage(w http.ResponseWriter, req *http.Request
 		FieldProviders: fieldProviders,
 		LibraryName:    libraryName,
 		IsDegraded:     isDegraded,
+		LibrarySource:  librarySource,
 	}
 	renderTempl(w, req, templates.ArtistDetailPage(r.assets(), data))
 }

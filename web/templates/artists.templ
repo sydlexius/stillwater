@@ -8,17 +8,47 @@ import (
 	"github.com/sydlexius/stillwater/web/components"
 )
 
+// LibrarySourceInfo holds display metadata for an imported library's source.
+type LibrarySourceInfo struct {
+	Source         string // "emby", "jellyfin", "lidarr"
+	ConnectionName string // human-readable connection name
+}
+
 // ArtistListData holds the data for the artist list page.
 type ArtistListData struct {
-	Artists    []artist.Artist
-	Libraries  []library.Library
-	Pagination components.PaginationData
-	Search     string
-	Sort       string
-	Order      string
-	Filter     string
-	LibraryID  string
-	View       string // "table" or "grid"
+	Artists        []artist.Artist
+	Libraries      []library.Library
+	LibrarySources map[string]LibrarySourceInfo // library ID -> source info (only for non-manual)
+	Pagination     components.PaginationData
+	Search         string
+	Sort           string
+	Order          string
+	Filter         string
+	LibraryID      string
+	View           string // "table" or "grid"
+}
+
+// artistSourceInfo returns the LibrarySourceInfo for an artist, or a zero value if manual/unknown.
+// Only returns source info for pathless artists -- an artist with a filesystem path is
+// filesystem-backed regardless of which library it belongs to.
+func artistSourceInfo(a artist.Artist, sources map[string]LibrarySourceInfo) LibrarySourceInfo {
+	if sources == nil || a.LibraryID == "" || a.Path != "" {
+		return LibrarySourceInfo{}
+	}
+	return sources[a.LibraryID]
+}
+
+// libraryDropdownLabel returns the display label for a library in the dropdown.
+// For imported libraries it appends the connection name in parentheses.
+func libraryDropdownLabel(lib library.Library, sources map[string]LibrarySourceInfo) string {
+	if sources == nil {
+		return lib.Name
+	}
+	info, ok := sources[lib.ID]
+	if !ok || info.Source == "" {
+		return lib.Name
+	}
+	return lib.Name + " (" + info.ConnectionName + ")"
 }
 
 templ ArtistsPage(assets AssetPaths, data ArtistListData) {
@@ -76,7 +106,7 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 						>
 							<option value="" selected?={ data.LibraryID == "" }>All Libraries</option>
 							for _, lib := range data.Libraries {
-								<option value={ lib.ID } selected?={ data.LibraryID == lib.ID }>{ lib.Name }</option>
+								<option value={ lib.ID } selected?={ data.LibraryID == lib.ID }>{ libraryDropdownLabel(lib, data.LibrarySources) }</option>
 							}
 						</select>
 					}
@@ -248,7 +278,7 @@ templ ArtistTable(data ArtistListData) {
 						</tr>
 					}
 					for _, a := range data.Artists {
-						@ArtistRow(a)
+						@ArtistRow(a, data.LibrarySources)
 					}
 				</tbody>
 			</table>
@@ -257,21 +287,31 @@ templ ArtistTable(data ArtistListData) {
 	</div>
 }
 
-templ ArtistRow(a artist.Artist) {
+templ ArtistRow(a artist.Artist, sources map[string]LibrarySourceInfo) {
 	<tr class={ "hover:bg-gray-50 dark:hover:bg-gray-800", templ.KV("opacity-50", a.IsExcluded) }>
 		<td class="px-4 py-3 text-sm">
-			<a
-				href={ templ.SafeURL("/artists/" + a.ID) }
-				class="font-medium text-blue-600 dark:text-blue-400 hover:underline"
-			>
-				{ a.Name }
-			</a>
-			if a.SortName != "" && a.SortName != a.Name {
-				<span class="ml-2 text-xs text-gray-400">({ a.SortName })</span>
-			}
-			if a.IsExcluded {
-				<span class="ml-2 inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs font-medium text-gray-600 dark:text-gray-400">Excluded</span>
-			}
+			<div class="flex items-center gap-1.5">
+				if artistSourceInfo(a, sources).Source != "" {
+					<img
+						src={ logoSrc(artistSourceInfo(a, sources).Source) }
+						alt={ sourceDisplayName(artistSourceInfo(a, sources).Source) }
+						title={ artistSourceInfo(a, sources).ConnectionName }
+						class="h-4 w-4 shrink-0"
+					/>
+				}
+				<a
+					href={ templ.SafeURL("/artists/" + a.ID) }
+					class="font-medium text-blue-600 dark:text-blue-400 hover:underline"
+				>
+					{ a.Name }
+				</a>
+				if a.SortName != "" && a.SortName != a.Name {
+					<span class="ml-1 text-xs text-gray-400">({ a.SortName })</span>
+				}
+				if a.IsExcluded {
+					<span class="ml-1 inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs font-medium text-gray-600 dark:text-gray-400">Excluded</span>
+				}
+			</div>
 		</td>
 		<td class="px-4 py-3 text-center">
 			@components.StatusBadge(a.NFOExists, "NFO")
@@ -302,7 +342,7 @@ templ ArtistGrid(data ArtistListData) {
 		} else {
 			<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
 				for _, a := range data.Artists {
-					@ArtistCard(a)
+					@ArtistCard(a, data.LibrarySources)
 				}
 			</div>
 		}
@@ -310,7 +350,7 @@ templ ArtistGrid(data ArtistListData) {
 	</div>
 }
 
-templ ArtistCard(a artist.Artist) {
+templ ArtistCard(a artist.Artist, sources map[string]LibrarySourceInfo) {
 	<a
 		href={ templ.SafeURL("/artists/" + a.ID) }
 		class={ "group block rounded-lg overflow-hidden bg-white dark:bg-gray-800 shadow hover:shadow-md transition-shadow", templ.KV("opacity-50", a.IsExcluded) }
@@ -328,6 +368,18 @@ templ ArtistCard(a artist.Artist) {
 					<svg class="h-12 w-12 text-gray-300 dark:text-gray-600" fill="none" viewBox="0 0 24 24" stroke-width="1" stroke="currentColor">
 						<path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"></path>
 					</svg>
+				</div>
+			}
+			if artistSourceInfo(a, sources).Source != "" {
+				<div
+					class="absolute bottom-1 right-1 rounded-full bg-black/60 p-1"
+					title={ artistSourceInfo(a, sources).ConnectionName }
+				>
+					<img
+						src={ logoSrc(artistSourceInfo(a, sources).Source) }
+						alt={ sourceDisplayName(artistSourceInfo(a, sources).Source) }
+						class="h-4 w-4"
+					/>
 				</div>
 			}
 		</div>

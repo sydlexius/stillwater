@@ -912,15 +912,34 @@ templ settingsLibraryRow(lib library.Library) {
 				if lib.IsDegraded() {
 					<span class="inline-flex items-center rounded-full bg-amber-100 dark:bg-amber-900/30 px-2 py-0.5 text-xs text-amber-700 dark:text-amber-400">No path (API only)</span>
 				}
+				if lib.Source != "" && lib.Source != "manual" {
+					<span class="inline-flex items-center gap-1 rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300">
+						<img src={ logoSrc(lib.Source) } class="h-3.5 w-3.5" alt=""/>
+						{ sourceDisplayName(lib.Source) }
+					</span>
+				}
 			</div>
 		</div>
-		<button
-			type="button"
-			class="text-xs text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300"
-			onclick={ settingsDeleteLibrary(lib.ID) }
-		>
-			Remove
-		</button>
+		<div class="flex items-center gap-2">
+			if lib.IsDegraded() && lib.ConnectionID != "" {
+				<button
+					type="button"
+					class="text-xs px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+					hx-post={ "/api/v1/connections/" + lib.ConnectionID + "/libraries/" + lib.ID + "/populate" }
+					hx-swap="none"
+					hx-on::after-request="window.location.reload()"
+				>
+					Populate Artists
+				</button>
+			}
+			<button
+				type="button"
+				class="text-xs text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300"
+				onclick={ settingsDeleteLibrary(lib.ID) }
+			>
+				Remove
+			</button>
+		</div>
 	</div>
 }
 
@@ -940,6 +959,8 @@ templ settingsLibraryScript() {
 
 		function refreshSettingsLibraryList() {
 			var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1");
+			var sourceLogos = {emby: "/static/img/logos/emby-128.png", jellyfin: "/static/img/logos/jellyfin.svg", lidarr: "/static/img/logos/lidarr.svg"};
+			var sourceNames = {emby: "Emby", jellyfin: "Jellyfin", lidarr: "Lidarr"};
 			fetch("/api/v1/libraries", {
 				headers: {"X-CSRF-Token": csrfToken}
 			}).then(function(res) { return res.json(); })
@@ -960,6 +981,17 @@ templ settingsLibraryScript() {
 					var safeType = div.innerHTML;
 					var pathLine = lib.path ? '<div class="text-xs text-gray-500 dark:text-gray-400">' + safePath + '</div>' : '';
 					var degradedBadge = !lib.path ? '<span class="inline-flex items-center rounded-full bg-amber-100 dark:bg-amber-900/30 px-2 py-0.5 text-xs text-amber-700 dark:text-amber-400">No path (API only)</span>' : '';
+					var sourceBadge = '';
+					if (lib.source && lib.source !== 'manual' && sourceNames[lib.source]) {
+						sourceBadge = '<span class="inline-flex items-center gap-1 rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300">'
+							+ '<img src="' + sourceLogos[lib.source] + '" class="h-3.5 w-3.5" alt=""/>'
+							+ sourceNames[lib.source]
+							+ '</span>';
+					}
+					var populateBtn = '';
+					if (!lib.path && lib.connection_id) {
+						populateBtn = '<button type="button" class="text-xs px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors" onclick="populateLibrary(&apos;' + lib.connection_id + '&apos;, &apos;' + lib.id + '&apos;)">Populate Artists</button>';
+					}
 					html += '<div class="flex items-center justify-between rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3" id="settings-lib-' + lib.id + '">'
 						+ '<div>'
 						+ '<div class="font-medium text-sm text-gray-900 dark:text-gray-100">' + safeName + '</div>'
@@ -967,14 +999,29 @@ templ settingsLibraryScript() {
 						+ '<div class="flex items-center gap-1.5 mt-1">'
 						+ '<span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300">' + safeType + '</span>'
 						+ degradedBadge
+						+ sourceBadge
 						+ '</div>'
 						+ '</div>'
+						+ '<div class="flex items-center gap-2">'
+						+ populateBtn
 						+ '<button type="button" class="text-xs text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300" onclick="settingsDeleteLibrary_click(&apos;' + lib.id + '&apos;)">'
 						+ 'Remove'
 						+ '</button>'
+						+ '</div>'
 						+ '</div>';
 				});
 				list.innerHTML = html;
+			});
+		}
+
+		function populateLibrary(connID, libID) {
+			var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1");
+			fetch("/api/v1/connections/" + connID + "/libraries/" + libID + "/populate", {
+				method: "POST",
+				headers: {"X-CSRF-Token": csrfToken}
+			}).then(function(res) {
+				if (res.ok) { window.location.reload(); }
+				else { res.json().then(function(data) { alert(data.error || "Populate failed"); }); }
 			});
 		}
 
@@ -1396,6 +1443,17 @@ templ serviceConnectionCard(connType string, displayName string, exampleURL stri
 							>
 								Test
 							</button>
+							if c.Status == "ok" {
+								<button
+									type="button"
+									class="text-xs px-2 py-1 rounded border border-blue-300 dark:border-blue-700 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+									hx-get={ "/api/v1/connections/" + c.ID + "/libraries" }
+									hx-target={ "#discover-" + c.ID }
+									hx-swap="innerHTML"
+								>
+									Discover Libraries
+								</button>
+							}
 							<button
 								type="button"
 								class="text-xs px-2 py-1 rounded border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
@@ -1408,6 +1466,7 @@ templ serviceConnectionCard(connType string, displayName string, exampleURL stri
 							</button>
 						</div>
 					</div>
+					<div id={ "discover-" + c.ID } class="mt-2"></div>
 				}
 			</div>
 		} else {

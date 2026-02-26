@@ -159,6 +159,10 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("PUT "+bp+"/api/v1/connections/{id}", wrapAuth(r.handleUpdateConnection, authMw))
 	mux.HandleFunc("DELETE "+bp+"/api/v1/connections/{id}", wrapAuth(r.handleDeleteConnection, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/connections/{id}/test", wrapAuth(r.handleTestConnection, authMw))
+	// Connection library discovery/import routes
+	mux.HandleFunc("GET "+bp+"/api/v1/connections/{id}/libraries", wrapAuth(r.handleDiscoverLibraries, authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/connections/{id}/libraries/import", wrapAuth(r.handleImportLibraries, authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/connections/{id}/libraries/{libId}/populate", wrapAuth(r.handlePopulateLibrary, authMw))
 	// Webhook routes
 	mux.HandleFunc("GET "+bp+"/api/v1/webhooks", wrapAuth(r.handleListWebhooks, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/webhooks", wrapAuth(r.handleCreateWebhook, authMw))

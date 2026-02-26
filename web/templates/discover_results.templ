@@ -1,0 +1,91 @@
+package templates
+
+import "strconv"
+
+// DiscoveredLib holds info about a library found on a connected service.
+type DiscoveredLib struct {
+	ExternalID string
+	Name       string
+	Imported   bool
+}
+
+func discoverLibCount(libs []DiscoveredLib) string {
+	return strconv.Itoa(len(libs))
+}
+
+func discoverHasImportable(libs []DiscoveredLib) bool {
+	for _, lib := range libs {
+		if !lib.Imported {
+			return true
+		}
+	}
+	return false
+}
+
+func discoverLibPlural(libs []DiscoveredLib) string {
+	if len(libs) == 1 {
+		return "library"
+	}
+	return "libraries"
+}
+
+// DiscoverResults renders the discovered library checklist returned by
+// GET /api/v1/connections/{id}/libraries when called via HTMX.
+templ DiscoverResults(connID string, libs []DiscoveredLib) {
+	if len(libs) == 0 {
+		<p class="text-xs text-gray-500 dark:text-gray-400 italic py-2">No music libraries found on this server.</p>
+	} else {
+		<div class="rounded border border-gray-200 dark:border-gray-700 p-3 space-y-2">
+			<p class="text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">
+				Found { discoverLibCount(libs) } music { discoverLibPlural(libs) }:
+			</p>
+			<form id={ "import-form-" + connID }>
+				for _, lib := range libs {
+					<label class="flex items-center gap-2 text-sm">
+						if lib.Imported {
+							<input type="checkbox" disabled checked class="rounded border-gray-300 dark:border-gray-600"/>
+							<span class="text-gray-400 dark:text-gray-500">{ lib.Name } (already imported)</span>
+						} else {
+							<input
+								type="checkbox"
+								name="lib"
+								value={ lib.ExternalID }
+								data-name={ lib.Name }
+								class="rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
+							/>
+							<span class="text-gray-700 dark:text-gray-300">{ lib.Name }</span>
+						}
+					</label>
+				}
+				if discoverHasImportable(libs) {
+					<button
+						type="button"
+						class="mt-2 text-xs px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+						onclick={ importSelectedLibraries(connID) }
+					>
+						Import Selected
+					</button>
+				}
+			</form>
+		</div>
+	}
+}
+
+script importSelectedLibraries(connID string) {
+	var form = document.getElementById("import-form-" + connID);
+	var checked = form.querySelectorAll('input[name="lib"]:checked');
+	if (checked.length === 0) { alert("Select at least one library to import."); return; }
+	var libs = [];
+	checked.forEach(function(cb) {
+		libs.push({external_id: cb.value, name: cb.getAttribute("data-name")});
+	});
+	var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1");
+	fetch("/api/v1/connections/" + connID + "/libraries/import", {
+		method: "POST",
+		headers: {"Content-Type": "application/json", "X-CSRF-Token": csrfToken},
+		body: JSON.stringify({libraries: libs})
+	}).then(function(res) {
+		if (res.ok) { window.location.reload(); }
+		else { res.json().then(function(data) { alert(data.error || "Import failed"); }); }
+	});
+}
