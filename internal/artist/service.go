@@ -133,6 +133,36 @@ func (s *Service) GetByProviderID(ctx context.Context, provider, id string) (*Ar
 	return a, nil
 }
 
+// GetByNameAndLibrary retrieves an artist by name within a specific library.
+// Returns nil, nil when no match is found.
+func (s *Service) GetByNameAndLibrary(ctx context.Context, name, libraryID string) (*Artist, error) {
+	row := s.db.QueryRowContext(ctx,
+		`SELECT `+artistColumns+` FROM artists WHERE name = ? AND library_id = ?`, name, libraryID)
+	a, err := scanArtist(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("getting artist by name+library: %w", err)
+	}
+	return a, nil
+}
+
+// GetByMBIDAndLibrary retrieves an artist by MusicBrainz ID within a specific library.
+// Returns nil, nil when no match is found.
+func (s *Service) GetByMBIDAndLibrary(ctx context.Context, mbid, libraryID string) (*Artist, error) {
+	row := s.db.QueryRowContext(ctx,
+		`SELECT `+artistColumns+` FROM artists WHERE musicbrainz_id = ? AND library_id = ?`, mbid, libraryID)
+	a, err := scanArtist(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("getting artist by mbid+library: %w", err)
+	}
+	return a, nil
+}
+
 // GetByPath retrieves an artist by filesystem path.
 func (s *Service) GetByPath(ctx context.Context, path string) (*Artist, error) {
 	row := s.db.QueryRowContext(ctx,

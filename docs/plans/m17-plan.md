@@ -55,9 +55,9 @@ Add multi-library support, canonical image naming (deduplication), expanded Emby
 - [ ] PR merged
 
 ### Issue #190 -- Import Music Libraries from Connections
-- [ ] Phase 1: Schema + Discovery API
-- [ ] Phase 2: UI (Discover Libraries, source badges)
-- [ ] Phase 3: Artist Population
+- [x] Phase 1: Schema + Discovery API
+- [x] Phase 2: UI (Discover Libraries, source badges)
+- [x] Phase 3: Artist Population
 - [ ] PR opened (#?)
 - [ ] CI passing
 - [ ] PR merged
@@ -243,3 +243,4 @@ Libraries with `path = ""` operate in degraded (API-only) mode:
 - 2026-02-25: #159 gap analysis: degraded mode API guards (409 for pathless artists), degraded mode UX badges, artist detail library context, scanner logs for skipped degraded libraries. Classical derivation dropped per review -- library type is authoritative.
 - 2026-02-25: PR #188 closed (superseded). Phase 3/4 consolidated into PR #189.
 - 2026-02-25: Created #190 (library import from connections) to complete the degraded mode story -- degraded libraries have no creation mechanism without connection import.
+- 2026-02-25: #190 implementation complete -- migration 002_library_source.sql, discovery/import/populate API endpoints, UI (Discover button on connections, source badges on libraries, Populate button, platform-aware degraded badge on artist detail). All tests pass.
