@@ -1125,17 +1125,29 @@ templ settingsConnectionScript() {
 					msg += ' and <strong>' + artistCount + '</strong> ' + artistNoun;
 				}
 				msg += '.</p>';
+				var allLabel = artistCount > 0
+						? ' Delete connection, ' + libNoun + ', and ' + artistNoun
+						: ' Delete connection and ' + libNoun;
+				var libsLabel = artistCount > 0
+						? ' Delete connection and ' + libNoun + ' (keep ' + artistNoun + ')'
+						: ' Delete connection and ' + libNoun;
+				var connLabel = artistCount > 0
+						? ' Delete connection only (keep ' + libNoun + ' and ' + artistNoun + ')'
+						: ' Delete connection only (keep ' + libNoun + ')';
+
 				msg += '<label class="flex items-center gap-2 mb-1 cursor-pointer">'
 					+ '<input type="radio" name="conn-delete-choice" value="all" checked class="text-blue-600"/>'
-					+ ' Delete connection, ' + libNoun + ', and ' + artistNoun
+					+ allLabel
 					+ '</label>';
-				msg += '<label class="flex items-center gap-2 mb-1 cursor-pointer">'
-					+ '<input type="radio" name="conn-delete-choice" value="libs" class="text-blue-600"/>'
-					+ ' Delete connection and ' + libNoun + ' (keep ' + artistNoun + ')'
-					+ '</label>';
+				if (artistCount > 0) {
+					msg += '<label class="flex items-center gap-2 mb-1 cursor-pointer">'
+						+ '<input type="radio" name="conn-delete-choice" value="libs" class="text-blue-600"/>'
+						+ libsLabel
+						+ '</label>';
+				}
 				msg += '<label class="flex items-center gap-2 cursor-pointer">'
 					+ '<input type="radio" name="conn-delete-choice" value="conn" class="text-blue-600"/>'
-					+ ' Delete connection only (keep ' + libNoun + ' and ' + artistNoun + ')'
+					+ connLabel
 					+ '</label>';
 
 				showConfirmDialog(msg, null, function() {

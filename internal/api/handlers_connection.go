@@ -69,8 +69,18 @@ func (r *Router) handleGetConnection(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	libs, _ := r.libraryService.ListByConnectionID(req.Context(), id)
-	artistCount, _ := r.libraryService.CountArtistsByConnectionID(req.Context(), id)
+	libs, err := r.libraryService.ListByConnectionID(req.Context(), id)
+	if err != nil {
+		r.logger.Error("listing libraries for connection", "connection_id", id, "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		return
+	}
+	artistCount, err := r.libraryService.CountArtistsByConnectionID(req.Context(), id)
+	if err != nil {
+		r.logger.Error("counting artists for connection", "connection_id", id, "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		return
+	}
 
 	resp := toConnectionResponse(*c)
 	writeJSON(w, http.StatusOK, map[string]any{
