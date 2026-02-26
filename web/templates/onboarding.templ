@@ -861,6 +861,7 @@ templ onboardingConnectionCard(connType string, displayName string, exampleURL s
 					<button type="button" class="text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" onclick={ toggleObConnectionForm(connType) }>Cancel</button>
 				</div>
 			</form>
+			<div id={ "ob-conn-result-" + connType } class="mt-2"></div>
 		</div>
 		if findConnectionByType(conns, connType) != nil {
 			<div class="mt-2 pl-6">
