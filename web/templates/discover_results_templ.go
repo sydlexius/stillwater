@@ -39,7 +39,7 @@ func discoverLibPlural(libs []DiscoveredLib) string {
 
 // DiscoverResults renders the discovered library checklist returned by
 // GET /api/v1/connections/{id}/libraries when called via HTMX.
-func DiscoverResults(connID string, libs []DiscoveredLib) templ.Component {
+func DiscoverResults(connID string, libs []DiscoveredLib, isOOBE bool) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -183,25 +183,45 @@ func DiscoverResults(connID string, libs []DiscoveredLib) templ.Component {
 				}
 			}
 			if discoverHasImportable(libs) {
-				templ_7745c5c3_Err = templ.RenderScriptItems(ctx, templ_7745c5c3_Buffer, importSelectedLibraries(connID))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "<button type=\"button\" class=\"mt-2 text-xs px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors\" onclick=\"")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				var templ_7745c5c3_Var9 templ.ComponentScript = importSelectedLibraries(connID)
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var9.Call)
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "\">Import Selected</button>")
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
+				if isOOBE {
+					templ_7745c5c3_Err = templ.RenderScriptItems(ctx, templ_7745c5c3_Buffer, importSelectedLibrariesOOBE(connID))
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "<button type=\"button\" class=\"mt-2 text-xs px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors\" onclick=\"")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var9 templ.ComponentScript = importSelectedLibrariesOOBE(connID)
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var9.Call)
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "\">Import Selected</button>")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+				} else {
+					templ_7745c5c3_Err = templ.RenderScriptItems(ctx, templ_7745c5c3_Buffer, importSelectedLibraries(connID))
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "<button type=\"button\" class=\"mt-2 text-xs px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors\" onclick=\"")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					var templ_7745c5c3_Var10 templ.ComponentScript = importSelectedLibraries(connID)
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var10.Call)
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "\">Import Selected</button>")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "</form></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "</form></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -232,6 +252,38 @@ func importSelectedLibraries(connID string) templ.ComponentScript {
 }`,
 		Call:       templ.SafeScript(`__templ_importSelectedLibraries_e782`, connID),
 		CallInline: templ.SafeScriptInline(`__templ_importSelectedLibraries_e782`, connID),
+	}
+}
+
+func importSelectedLibrariesOOBE(connID string) templ.ComponentScript {
+	return templ.ComponentScript{
+		Name: `__templ_importSelectedLibrariesOOBE_f124`,
+		Function: `function __templ_importSelectedLibrariesOOBE_f124(connID){var form = document.getElementById("import-form-" + connID);
+	var checked = form.querySelectorAll('input[name="lib"]:checked');
+	if (checked.length === 0) { alert("Select at least one library to import."); return; }
+	var libs = [];
+	checked.forEach(function(cb) {
+		libs.push({external_id: cb.value, name: cb.getAttribute("data-name")});
+	});
+	var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1");
+	fetch("/api/v1/connections/" + connID + "/libraries/import", {
+		method: "POST",
+		headers: {"Content-Type": "application/json", "X-CSRF-Token": csrfToken},
+		body: JSON.stringify({libraries: libs})
+	}).then(function(res) {
+		if (res.ok) {
+			return res.json().then(function(data) {
+				var count = Array.isArray(data) ? data.length : 0;
+				var word = count === 1 ? "library" : "libraries";
+				form.innerHTML = '<p class="text-xs text-green-600 dark:text-green-400 py-1">' + count + ' ' + word + ' imported.</p>';
+			});
+		} else {
+			res.json().then(function(data) { alert(data.error || "Import failed"); });
+		}
+	});
+}`,
+		Call:       templ.SafeScript(`__templ_importSelectedLibrariesOOBE_f124`, connID),
+		CallInline: templ.SafeScriptInline(`__templ_importSelectedLibrariesOOBE_f124`, connID),
 	}
 }
 

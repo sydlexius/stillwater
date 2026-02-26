@@ -31,7 +31,7 @@ func discoverLibPlural(libs []DiscoveredLib) string {
 
 // DiscoverResults renders the discovered library checklist returned by
 // GET /api/v1/connections/{id}/libraries when called via HTMX.
-templ DiscoverResults(connID string, libs []DiscoveredLib) {
+templ DiscoverResults(connID string, libs []DiscoveredLib, isOOBE bool) {
 	if len(libs) == 0 {
 		<p class="text-xs text-gray-500 dark:text-gray-400 italic py-2">No music libraries found on this server.</p>
 	} else {
@@ -58,13 +58,23 @@ templ DiscoverResults(connID string, libs []DiscoveredLib) {
 					</label>
 				}
 				if discoverHasImportable(libs) {
-					<button
-						type="button"
-						class="mt-2 text-xs px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
-						onclick={ importSelectedLibraries(connID) }
-					>
-						Import Selected
-					</button>
+					if isOOBE {
+						<button
+							type="button"
+							class="mt-2 text-xs px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+							onclick={ importSelectedLibrariesOOBE(connID) }
+						>
+							Import Selected
+						</button>
+					} else {
+						<button
+							type="button"
+							class="mt-2 text-xs px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+							onclick={ importSelectedLibraries(connID) }
+						>
+							Import Selected
+						</button>
+					}
 				}
 			</form>
 		</div>
@@ -87,5 +97,31 @@ script importSelectedLibraries(connID string) {
 	}).then(function(res) {
 		if (res.ok) { window.location.reload(); }
 		else { res.json().then(function(data) { alert(data.error || "Import failed"); }); }
+	});
+}
+
+script importSelectedLibrariesOOBE(connID string) {
+	var form = document.getElementById("import-form-" + connID);
+	var checked = form.querySelectorAll('input[name="lib"]:checked');
+	if (checked.length === 0) { alert("Select at least one library to import."); return; }
+	var libs = [];
+	checked.forEach(function(cb) {
+		libs.push({external_id: cb.value, name: cb.getAttribute("data-name")});
+	});
+	var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1");
+	fetch("/api/v1/connections/" + connID + "/libraries/import", {
+		method: "POST",
+		headers: {"Content-Type": "application/json", "X-CSRF-Token": csrfToken},
+		body: JSON.stringify({libraries: libs})
+	}).then(function(res) {
+		if (res.ok) {
+			return res.json().then(function(data) {
+				var count = Array.isArray(data) ? data.length : 0;
+				var word = count === 1 ? "library" : "libraries";
+				form.innerHTML = '<p class="text-xs text-green-600 dark:text-green-400 py-1">' + count + ' ' + word + ' imported.</p>';
+			});
+		} else {
+			res.json().then(function(data) { alert(data.error || "Import failed"); });
+		}
 	});
 }
