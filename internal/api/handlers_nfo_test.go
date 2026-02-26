@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/nfo"
 )
 
@@ -241,6 +242,54 @@ func TestHandleNFOSnapshotRestore_CrossArtist(t *testing.T) {
 
 	if w.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want %d (cross-artist restore should be rejected)", w.Code, http.StatusNotFound)
+	}
+}
+
+func TestHandleNFODiff_PathlessArtist(t *testing.T) {
+	r, artistSvc := testRouter(t)
+
+	a := &artist.Artist{
+		Name:     "Degraded Diff Artist",
+		SortName: "Degraded Diff Artist",
+		Type:     "group",
+		Path:     "",
+	}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/artists/"+a.ID+"/nfo/diff", nil)
+	req.SetPathValue("id", a.ID)
+	w := httptest.NewRecorder()
+
+	r.handleNFODiff(w, req)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusConflict)
+	}
+}
+
+func TestHandleNFOConflictCheck_PathlessArtist(t *testing.T) {
+	r, artistSvc := testRouter(t)
+
+	a := &artist.Artist{
+		Name:     "Degraded Conflict Artist",
+		SortName: "Degraded Conflict Artist",
+		Type:     "group",
+		Path:     "",
+	}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/artists/"+a.ID+"/nfo/conflict", nil)
+	req.SetPathValue("id", a.ID)
+	w := httptest.NewRecorder()
+
+	r.handleNFOConflictCheck(w, req)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusConflict)
 	}
 }
 

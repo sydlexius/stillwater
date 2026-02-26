@@ -142,6 +142,14 @@ func (r *Router) handleArtistsPage(w http.ResponseWriter, req *http.Request) {
 		View:      view,
 	}
 
+	if r.libraryService != nil {
+		libs, err := r.libraryService.List(req.Context())
+		if err != nil {
+			r.logger.Warn("listing libraries for artists page", "error", err)
+		}
+		data.Libraries = libs
+	}
+
 	if isHTMXRequest(req) {
 		if view == "grid" {
 			renderTempl(w, req, templates.ArtistGrid(data))
@@ -149,14 +157,6 @@ func (r *Router) handleArtistsPage(w http.ResponseWriter, req *http.Request) {
 			renderTempl(w, req, templates.ArtistTable(data))
 		}
 		return
-	}
-
-	if r.libraryService != nil {
-		libs, err := r.libraryService.List(req.Context())
-		if err != nil {
-			r.logger.Warn("listing libraries for artists page", "error", err)
-		}
-		data.Libraries = libs
 	}
 
 	renderTempl(w, req, templates.ArtistsPage(r.assets(), data))
@@ -194,9 +194,11 @@ func (r *Router) handleArtistDetailPage(w http.ResponseWriter, req *http.Request
 	fieldProviders := buildFieldProvidersMap(priorities)
 
 	var libraryName string
+	var isDegraded bool
 	if r.libraryService != nil && a.LibraryID != "" {
 		if lib, err := r.libraryService.GetByID(req.Context(), a.LibraryID); err == nil {
 			libraryName = lib.Name
+			isDegraded = lib.IsDegraded()
 		}
 	}
 
@@ -207,6 +209,7 @@ func (r *Router) handleArtistDetailPage(w http.ResponseWriter, req *http.Request
 		HasConnections: len(conns) > 0,
 		FieldProviders: fieldProviders,
 		LibraryName:    libraryName,
+		IsDegraded:     isDegraded,
 	}
 	renderTempl(w, req, templates.ArtistDetailPage(r.assets(), data))
 }

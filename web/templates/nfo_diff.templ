@@ -7,9 +7,10 @@ import (
 
 // NFODiffPageData holds the data for the NFO diff page.
 type NFODiffPageData struct {
-	Artist    artist.Artist
-	Diff      nfo.DiffResult
-	Snapshots []nfo.Snapshot
+	Artist     artist.Artist
+	Diff       nfo.DiffResult
+	Snapshots  []nfo.Snapshot
+	IsDegraded bool
 }
 
 templ NFODiffPage(assets AssetPaths, data NFODiffPageData) {
@@ -30,53 +31,66 @@ templ NFODiffPage(assets AssetPaths, data NFODiffPageData) {
 				</div>
 				<h1 class="text-2xl font-bold">NFO Diff Preview</h1>
 			</div>
-			<div class="grid grid-cols-1 gap-6 md:grid-cols-3">
-				<div class="md:col-span-2">
-					<div
-						id="nfo-diff-content"
-						hx-get={ "/api/v1/artists/" + data.Artist.ID + "/nfo/diff" }
-						hx-trigger="load"
-						hx-swap="innerHTML"
-					>
-						@NFODiffFragment(data.Diff)
+			if data.IsDegraded {
+				<div class="rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 px-4 py-3">
+					<p class="text-sm text-amber-700 dark:text-amber-400">
+						NFO operations are unavailable for API-only libraries. This library has no filesystem path configured.
+					</p>
+				</div>
+				<div class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
+					<p class="text-sm text-gray-500 dark:text-gray-400">
+						NFO diff is unavailable for API-only libraries.
+					</p>
+				</div>
+			} else {
+				<div class="grid grid-cols-1 gap-6 md:grid-cols-3">
+					<div class="md:col-span-2">
+						<div
+							id="nfo-diff-content"
+							hx-get={ "/api/v1/artists/" + data.Artist.ID + "/nfo/diff" }
+							hx-trigger="load"
+							hx-swap="innerHTML"
+						>
+							@NFODiffFragment(data.Diff)
+						</div>
+					</div>
+					<div class="space-y-6">
+						<section class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
+							<h2 class="text-lg font-semibold mb-3">Snapshots</h2>
+							if len(data.Snapshots) == 0 {
+								<p class="text-sm text-gray-500 dark:text-gray-400">No snapshots saved yet.</p>
+							}
+							<div class="space-y-2">
+								for _, snap := range data.Snapshots {
+									<div class="flex flex-col gap-2 rounded border border-gray-200 dark:border-gray-700 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+										<span class="text-xs text-gray-500 dark:text-gray-400">
+											{ snap.CreatedAt.Format("2006-01-02 15:04") }
+										</span>
+										<div class="flex gap-1">
+											<button
+												hx-get={ "/api/v1/artists/" + data.Artist.ID + "/nfo/diff?compare_to=" + snap.ID }
+												hx-target="#nfo-diff-content"
+												hx-swap="innerHTML"
+												class="text-sm px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+											>
+												Compare
+											</button>
+											<button
+												hx-post={ "/api/v1/artists/" + data.Artist.ID + "/nfo/snapshots/" + snap.ID + "/restore" }
+												hx-swap="none"
+												hx-confirm="Restore this snapshot? The current NFO will be saved as a new snapshot first."
+												class="text-sm px-3 py-1.5 rounded bg-yellow-600 text-white hover:bg-yellow-700 transition-colors"
+											>
+												Restore
+											</button>
+										</div>
+									</div>
+								}
+							</div>
+						</section>
 					</div>
 				</div>
-				<div class="space-y-6">
-					<section class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
-						<h2 class="text-lg font-semibold mb-3">Snapshots</h2>
-						if len(data.Snapshots) == 0 {
-							<p class="text-sm text-gray-500 dark:text-gray-400">No snapshots saved yet.</p>
-						}
-						<div class="space-y-2">
-							for _, snap := range data.Snapshots {
-								<div class="flex flex-col gap-2 rounded border border-gray-200 dark:border-gray-700 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
-									<span class="text-xs text-gray-500 dark:text-gray-400">
-										{ snap.CreatedAt.Format("2006-01-02 15:04") }
-									</span>
-									<div class="flex gap-1">
-										<button
-											hx-get={ "/api/v1/artists/" + data.Artist.ID + "/nfo/diff?compare_to=" + snap.ID }
-											hx-target="#nfo-diff-content"
-											hx-swap="innerHTML"
-											class="text-sm px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-										>
-											Compare
-										</button>
-										<button
-											hx-post={ "/api/v1/artists/" + data.Artist.ID + "/nfo/snapshots/" + snap.ID + "/restore" }
-											hx-swap="none"
-											hx-confirm="Restore this snapshot? The current NFO will be saved as a new snapshot first."
-											class="text-sm px-3 py-1.5 rounded bg-yellow-600 text-white hover:bg-yellow-700 transition-colors"
-										>
-											Restore
-										</button>
-									</div>
-								</div>
-							}
-						</div>
-					</section>
-				</div>
-			</div>
+			}
 		</div>
 	}
 }

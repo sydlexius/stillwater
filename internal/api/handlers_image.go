@@ -681,7 +681,7 @@ func (r *Router) handleDeleteImage(w http.ResponseWriter, req *http.Request) {
 	r.clearArtistImageFlag(req.Context(), a, imageType)
 
 	if req.Header.Get("HX-Request") == "true" {
-		renderTempl(w, req, templates.ImagePreviewCard(a.ID, imageType, false, imageTypeLabel(imageType)))
+		renderTempl(w, req, templates.ImagePreviewCard(a.ID, imageType, false, imageTypeLabel(imageType), false))
 		return
 	}
 
