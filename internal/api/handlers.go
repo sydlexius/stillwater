@@ -221,8 +221,8 @@ func (r *Router) handleOnboardingPage(w http.ResponseWriter, req *http.Request) 
 		r.logger.Error("listing provider keys for onboarding", "error", err)
 	}
 
-	// Load current step from settings (default to 1)
-	currentStep := 1
+	// Load current step from settings (default to 0 = intro).
+	currentStep := 0
 	var stepStr string
 	err = r.db.QueryRowContext(req.Context(), //nolint:gosec // G701: query is a string literal
 		`SELECT value FROM settings WHERE key = 'onboarding.step'`).Scan(&stepStr)
@@ -230,6 +230,8 @@ func (r *Router) handleOnboardingPage(w http.ResponseWriter, req *http.Request) 
 		r.logger.Error("loading onboarding step", "error", err)
 	} else if err == nil {
 		switch stepStr {
+		case "1":
+			currentStep = 1
 		case "2":
 			currentStep = 2
 		case "3":
