@@ -5,19 +5,21 @@ Add multi-library support, canonical image naming (deduplication), expanded Emby
 
 ## Acceptance Criteria
 - [x] Artist list page supports table and grid/card views with toggle persistence
-- [ ] Image saving writes exactly one canonical filename per type; extraneous files detected by rule
-- [ ] Emby/Jellyfin push includes all metadata fields plus image upload capability
-- [ ] Multiple music library paths supported with per-library type (regular/classical)
-- [ ] Degraded mode for libraries with no valid path
+- [x] Image saving writes exactly one canonical filename per type; extraneous files detected by rule
+- [x] Emby/Jellyfin push includes all metadata fields plus image upload capability
+- [x] Multiple music library paths supported with per-library type (regular/classical)
+- [x] Degraded mode for libraries with no valid path
+- [ ] Libraries can be imported from Emby/Jellyfin connections
+- [ ] Imported libraries show source platform indicator
 
 ## Dependency Map
 ```
 #179 (Artist grid view)         -- DONE (merged via PR #183)
-#161 (Image deduplication)      -- independent, migration 002
-#160 (Push expansion + upload)  -- independent, no migration
-#159 (Multi-library support)    -- migration 003, largest scope
+#161 (Image deduplication)      -- DONE (merged via PR #185, migration 002)
+#160 (Push expansion + upload)  -- DONE (merged via PR #185)
+#159 (Multi-library support)    -- Phase 1-2 DONE (#186, #187), Phase 3/4 in PR #189
+#190 (Library import)           -- depends on #159 merge; extends degraded mode
 ```
-No issue blocks another. #161 gets migration 002, #159 gets migration 003.
 
 ## Checklist
 
@@ -31,31 +33,42 @@ No issue blocks another. #161 gets migration 002, #159 gets migration 003.
 ### Issue #161 -- Image Deduplication: Canonical Filenames
 - [x] Implementation
 - [x] Tests
-- [x] PR opened (#184, combined with #160)
-- [ ] CI passing
-- [ ] PR merged
+- [x] PR opened (#185, combined with #160)
+- [x] CI passing
+- [x] PR merged
 
 ### Issue #160 -- Emby/Jellyfin Push Expansion + Image Upload
 - [x] Implementation
 - [x] Tests
-- [x] PR opened (#184, combined with #161)
+- [x] PR opened (#185, combined with #161)
+- [x] CI passing
+- [x] PR merged
+
+### Issue #159 -- Multi-Library Support
+- [x] Phase 1: DB Schema + Libraries API (PR #186)
+- [x] Phase 2: Onboarding + Settings UI (PR #186, #187)
+- [x] Phase 3: Scanner Multi-Library (PR #186; classical derivation dropped -- library type is authoritative)
+- [x] Phase 4: Degraded Mode UX + API guards
+- [x] Tests
+- [x] PR opened (#189)
 - [ ] CI passing
 - [ ] PR merged
 
-### Issue #159 -- Multi-Library Support
-- [ ] Phase 1: DB Schema + Libraries API
-- [ ] Phase 2: Onboarding + Settings UI
-- [ ] Phase 3: Scanner Multi-Library + Classical Mode
-- [ ] Phase 4: Degraded Mode UX
-- [ ] Tests
+### Issue #190 -- Import Music Libraries from Connections
+- [ ] Phase 1: Schema + Discovery API
+- [ ] Phase 2: UI (Discover Libraries, source badges)
+- [ ] Phase 3: Artist Population
 - [ ] PR opened (#?)
 - [ ] CI passing
 - [ ] PR merged
 
 ## UAT / Merge Order
-1. ~~PR for #179 (base: main) -- UI-only, safe first~~ DONE
-2. ~~PR for #161 + #160 (base: main) -- combined in PR #184~~ PENDING REVIEW
-3. PR for #159 (base: main) -- migration 003, largest scope
+1. ~~PR #183 for #179 (base: main) -- UI-only, safe first~~ MERGED
+2. ~~PR #185 for #161 + #160 (base: main) -- combined dedup + push~~ MERGED
+3. ~~PR #186 for #159 Phase 1 (base: main) -- migration 003~~ MERGED
+4. ~~PR #187 for #159 Phase 2 (base: main) -- library selector~~ MERGED
+5. PR #189 for #159 Phase 3/4 (base: main) -- degraded mode guards + UX
+6. PR for #190 (base: main) -- library import from connections
 
 ---
 
@@ -224,7 +237,10 @@ Libraries with `path = ""` operate in degraded (API-only) mode:
 - 2026-02-25: Plan file created, starting implementation with #179
 - 2026-02-25: #179 merged via PR #183
 - 2026-02-25: Detailed implementation plan added for #161, #160, #159
-- 2026-02-25: #161 + #160 implemented, combined in PR #184
-- Partial #159 work on disk (not committed): `internal/library/model.go`, `003_multi_library.sql`
-- Migration 002 committed with PR #184
+- 2026-02-25: #161 + #160 implemented, combined in PR #185 (was #184, renumbered)
+- Migration 002 committed with PR #185
 - Issue #158 (migration consolidation) is CLOSED; baseline is `001_initial.sql`
+- 2026-02-25: #159 Phase 1 merged via PR #186, Phase 2 via PR #187
+- 2026-02-25: #159 gap analysis: degraded mode API guards (409 for pathless artists), degraded mode UX badges, artist detail library context, scanner logs for skipped degraded libraries. Classical derivation dropped per review -- library type is authoritative.
+- 2026-02-25: PR #188 closed (superseded). Phase 3/4 consolidated into PR #189.
+- 2026-02-25: Created #190 (library import from connections) to complete the degraded mode story -- degraded libraries have no creation mechanism without connection import.
