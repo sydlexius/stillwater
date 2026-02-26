@@ -4,17 +4,20 @@ import (
 	"fmt"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/web/components"
 )
 
 // ArtistListData holds the data for the artist list page.
 type ArtistListData struct {
 	Artists    []artist.Artist
+	Libraries  []library.Library
 	Pagination components.PaginationData
 	Search     string
 	Sort       string
 	Order      string
 	Filter     string
+	LibraryID  string
 	View       string // "table" or "grid"
 }
 
@@ -56,18 +59,34 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 						hx-trigger="keyup changed delay:300ms"
 						hx-target="#artist-content"
 						hx-swap="outerHTML"
-						hx-include="[name='filter'],[name='view']"
+						hx-include="[name='filter'],[name='library_id'],[name='view']"
 						class="block w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
 					/>
 				</div>
 				<div class="flex items-center gap-3">
+					if len(data.Libraries) > 1 {
+						<select
+							name="library_id"
+							hx-get="/artists"
+							hx-trigger="change"
+							hx-target="#artist-content"
+							hx-swap="outerHTML"
+							hx-include="[name='search'],[name='filter'],[name='view']"
+							class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+						>
+							<option value="" selected?={ data.LibraryID == "" }>All Libraries</option>
+							for _, lib := range data.Libraries {
+								<option value={ lib.ID } selected?={ data.LibraryID == lib.ID }>{ lib.Name }</option>
+							}
+						</select>
+					}
 					<select
 						name="filter"
 						hx-get="/artists"
 						hx-trigger="change"
 						hx-target="#artist-content"
 						hx-swap="outerHTML"
-						hx-include="[name='search'],[name='view']"
+						hx-include="[name='search'],[name='library_id'],[name='view']"
 						class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
 					>
 						<option value="" selected?={ data.Filter == "" }>All Artists</option>
@@ -85,7 +104,7 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 							hx-get="/artists"
 							hx-target="#artist-content"
 							hx-swap="outerHTML"
-							hx-include="[name='search'],[name='filter']"
+							hx-include="[name='search'],[name='filter'],[name='library_id']"
 							hx-vals='{"view":"table","page":"1"}'
 							onclick="setView('table')"
 							class={ "p-2 transition-colors", templ.KV("bg-blue-600 text-white", data.View == "table"), templ.KV("bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700", data.View != "table") }
@@ -100,7 +119,7 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 							hx-get="/artists"
 							hx-target="#artist-content"
 							hx-swap="outerHTML"
-							hx-include="[name='search'],[name='filter']"
+							hx-include="[name='search'],[name='filter'],[name='library_id']"
 							hx-vals='{"view":"grid","page":"1"}'
 							onclick="setView('grid')"
 							class={ "p-2 transition-colors", templ.KV("bg-blue-600 text-white", data.View == "grid"), templ.KV("bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700", data.View != "grid") }

@@ -132,12 +132,14 @@ func (r *Router) handleArtistsPage(w http.ResponseWriter, req *http.Request) {
 			Search:      params.Search,
 			Filter:      params.Filter,
 			View:        view,
+			LibraryID:   params.LibraryID,
 		},
-		Search: params.Search,
-		Sort:   params.Sort,
-		Order:  params.Order,
-		Filter: params.Filter,
-		View:   view,
+		Search:    params.Search,
+		Sort:      params.Sort,
+		Order:     params.Order,
+		Filter:    params.Filter,
+		LibraryID: params.LibraryID,
+		View:      view,
 	}
 
 	if isHTMXRequest(req) {
@@ -148,6 +150,15 @@ func (r *Router) handleArtistsPage(w http.ResponseWriter, req *http.Request) {
 		}
 		return
 	}
+
+	if r.libraryService != nil {
+		libs, err := r.libraryService.List(req.Context())
+		if err != nil {
+			r.logger.Warn("listing libraries for artists page", "error", err)
+		}
+		data.Libraries = libs
+	}
+
 	renderTempl(w, req, templates.ArtistsPage(r.assets(), data))
 }
 
