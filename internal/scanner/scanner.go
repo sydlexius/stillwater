@@ -152,9 +152,11 @@ func (s *Service) runScan(ctx context.Context, result *ScanResult) {
 			s.logger.Error("listing libraries for scan", "error", err)
 		}
 		for _, lib := range libs {
-			if lib.Path != "" {
-				targets = append(targets, scanTarget{path: lib.Path, libraryID: lib.ID})
+			if lib.Path == "" {
+				s.logger.Info("skipping degraded library (no path configured)", "library_id", lib.ID, "name", lib.Name)
+				continue
 			}
+			targets = append(targets, scanTarget{path: lib.Path, libraryID: lib.ID})
 		}
 	}
 	// Fallback: if no libraries found, use the legacy single path.
@@ -165,9 +167,9 @@ func (s *Service) runScan(ctx context.Context, result *ScanResult) {
 	if len(targets) == 0 {
 		s.mu.Lock()
 		result.Status = "failed"
-		result.Error = "no library paths configured"
+		result.Error = "no scannable libraries (all libraries are API-only or no paths configured)"
 		s.mu.Unlock()
-		s.logger.Error("scan failed: no library paths configured")
+		s.logger.Error("scan failed: no scannable libraries (all libraries are API-only or no paths configured)")
 		return
 	}
 

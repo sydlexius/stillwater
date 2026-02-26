@@ -904,8 +904,15 @@ templ settingsLibraryRow(lib library.Library) {
 	<div class="flex items-center justify-between rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3" id={ "settings-lib-" + lib.ID }>
 		<div>
 			<div class="font-medium text-sm text-gray-900 dark:text-gray-100">{ lib.Name }</div>
-			<div class="text-xs text-gray-500 dark:text-gray-400">{ lib.Path }</div>
-			<span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300 mt-1">{ lib.Type }</span>
+			if lib.Path != "" {
+				<div class="text-xs text-gray-500 dark:text-gray-400">{ lib.Path }</div>
+			}
+			<div class="flex items-center gap-1.5 mt-1">
+				<span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300">{ lib.Type }</span>
+				if lib.IsDegraded() {
+					<span class="inline-flex items-center rounded-full bg-amber-100 dark:bg-amber-900/30 px-2 py-0.5 text-xs text-amber-700 dark:text-amber-400">No path (API only)</span>
+				}
+			</div>
 		</div>
 		<button
 			type="button"
@@ -951,11 +958,16 @@ templ settingsLibraryScript() {
 					var safePath = div.innerHTML;
 					div.textContent = lib.type;
 					var safeType = div.innerHTML;
+					var pathLine = lib.path ? '<div class="text-xs text-gray-500 dark:text-gray-400">' + safePath + '</div>' : '';
+					var degradedBadge = !lib.path ? '<span class="inline-flex items-center rounded-full bg-amber-100 dark:bg-amber-900/30 px-2 py-0.5 text-xs text-amber-700 dark:text-amber-400">No path (API only)</span>' : '';
 					html += '<div class="flex items-center justify-between rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3" id="settings-lib-' + lib.id + '">'
 						+ '<div>'
 						+ '<div class="font-medium text-sm text-gray-900 dark:text-gray-100">' + safeName + '</div>'
-						+ '<div class="text-xs text-gray-500 dark:text-gray-400">' + safePath + '</div>'
-						+ '<span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300 mt-1">' + safeType + '</span>'
+						+ pathLine
+						+ '<div class="flex items-center gap-1.5 mt-1">'
+						+ '<span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300">' + safeType + '</span>'
+						+ degradedBadge
+						+ '</div>'
 						+ '</div>'
 						+ '<button type="button" class="text-xs text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300" onclick="settingsDeleteLibrary_click(&apos;' + lib.id + '&apos;)">'
 						+ 'Remove'
@@ -967,17 +979,46 @@ templ settingsLibraryScript() {
 		}
 
 		function settingsDeleteLibrary_click(id) {
-			if (!confirm("Remove this library?")) return;
 			var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1");
+			function doDelete() {
+				fetch("/api/v1/libraries/" + id, {
+					method: "DELETE",
+					headers: {"X-CSRF-Token": csrfToken}
+				}).then(function(res) {
+					if (res.ok) {
+						refreshSettingsLibraryList();
+					} else {
+						res.json().then(function(data) { alert(data.error || "Failed to delete library"); });
+					}
+				}).catch(function() {
+					alert("Failed to delete library");
+				});
+			}
+
+			if (localStorage.getItem('ui.confirm.library-delete') === 'skip') {
+				doDelete();
+				return;
+			}
+
 			fetch("/api/v1/libraries/" + id, {
-				method: "DELETE",
 				headers: {"X-CSRF-Token": csrfToken}
 			}).then(function(res) {
-				if (res.ok) {
-					refreshSettingsLibraryList();
-				} else {
-					res.json().then(function(data) { alert(data.error || "Failed to delete library"); });
+				if (!res.ok) {
+					showConfirmDialog("Remove this library?", 'library-delete', doDelete);
+					return;
 				}
+				return res.json();
+			})
+			.then(function(data) {
+				if (!data) return;
+				var count = data.artist_count || 0;
+				var msg = count > 0
+					? "Remove this library? " + count + " artist" + (count !== 1 ? "s" : "") + " will be unassigned."
+					: "Remove this library?";
+				showConfirmDialog(msg, 'library-delete', doDelete);
+			})
+			.catch(function() {
+				showConfirmDialog("Remove this library?", 'library-delete', doDelete);
 			});
 		}
 	</script>

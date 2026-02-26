@@ -32,6 +32,9 @@ func (r *Router) handleNFODiff(w http.ResponseWriter, req *http.Request) {
 		writeError(w, req, http.StatusNotFound, "artist not found")
 		return
 	}
+	if !r.requireArtistPath(w, req, a) {
+		return
+	}
 
 	// Parse the current on-disk NFO
 	nfoPath := filepath.Join(a.Path, "artist.nfo")
@@ -112,6 +115,9 @@ func (r *Router) handleNFOSnapshotRestore(w http.ResponseWriter, req *http.Reque
 		writeError(w, req, http.StatusNotFound, "artist not found")
 		return
 	}
+	if !r.requireArtistPath(w, req, a) {
+		return
+	}
 
 	snap, err := r.nfoSnapshotService.GetByID(req.Context(), snapshotID)
 	if err != nil {
@@ -169,9 +175,10 @@ func (r *Router) handleNFODiffPage(w http.ResponseWriter, req *http.Request) {
 	}
 
 	data := templates.NFODiffPageData{
-		Artist:    *a,
-		Diff:      nfo.DiffResult{},
-		Snapshots: snapshots,
+		Artist:     *a,
+		Diff:       nfo.DiffResult{},
+		Snapshots:  snapshots,
+		IsDegraded: a.Path == "",
 	}
 	renderTempl(w, req, templates.NFODiffPage(r.assets(), data))
 }
@@ -188,6 +195,9 @@ func (r *Router) handleNFOConflictCheck(w http.ResponseWriter, req *http.Request
 	a, err := r.artistService.GetByID(req.Context(), artistID)
 	if err != nil {
 		writeError(w, req, http.StatusNotFound, "artist not found")
+		return
+	}
+	if !r.requireArtistPath(w, req, a) {
 		return
 	}
 
@@ -248,6 +258,29 @@ type ClobberCheckResponse struct {
 // handleClobberCheck checks all enabled connections for NFO/image writing configuration.
 // GET /api/v1/connections/clobber-check
 func (r *Router) handleClobberCheck(w http.ResponseWriter, req *http.Request) {
+	// If no library has a filesystem path, Stillwater cannot write NFO files,
+	// so there is no clobber risk regardless of server configuration.
+	if r.libraryService != nil {
+		libs, err := r.libraryService.List(req.Context())
+		if err == nil {
+			hasPath := false
+			for _, lib := range libs {
+				if lib.Path != "" {
+					hasPath = true
+					break
+				}
+			}
+			if !hasPath {
+				if isHTMXRequest(req) {
+					w.WriteHeader(http.StatusOK)
+					return
+				}
+				writeJSON(w, http.StatusOK, ClobberCheckResponse{Risks: []ClobberRisk{}})
+				return
+			}
+		}
+	}
+
 	conns, err := r.connectionService.List(req.Context())
 	if err != nil {
 		r.logger.Error("listing connections for clobber check", "error", err)

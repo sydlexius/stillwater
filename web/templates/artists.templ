@@ -197,9 +197,24 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 	}
 }
 
+templ degradedLibraryBanner(data ArtistListData) {
+	if data.LibraryID != "" {
+		for _, lib := range data.Libraries {
+			if lib.ID == data.LibraryID && lib.IsDegraded() {
+				<div class="rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 px-4 py-3 mb-4">
+					<p class="text-sm text-amber-700 dark:text-amber-400">
+						This library has no filesystem path. Image and NFO operations are unavailable for its artists.
+					</p>
+				</div>
+			}
+		}
+	}
+}
+
 // ArtistTable is the HTMX-swappable table fragment.
 templ ArtistTable(data ArtistListData) {
 	<div id="artist-content">
+		@degradedLibraryBanner(data)
 		<div class="overflow-x-auto">
 			<table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
 				<thead class="bg-gray-50 dark:bg-gray-800">
@@ -279,6 +294,7 @@ templ ArtistRow(a artist.Artist) {
 // ArtistGrid is the HTMX-swappable grid fragment.
 templ ArtistGrid(data ArtistListData) {
 	<div id="artist-content">
+		@degradedLibraryBanner(data)
 		if len(data.Artists) == 0 {
 			<div class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
 				No artists found. Run a library scan to discover artists.

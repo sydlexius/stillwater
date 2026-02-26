@@ -17,3 +17,10 @@ type Library struct {
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
+
+// IsDegraded reports whether the library has no filesystem path configured.
+// Degraded libraries support API-only operations; filesystem operations
+// (image save, NFO restore) are unavailable.
+func (lib Library) IsDegraded() bool {
+	return lib.Path == ""
+}

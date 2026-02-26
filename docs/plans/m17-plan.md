@@ -176,18 +176,17 @@ Keep `ImageNaming` struct as `[]string` fields. The migration stores single stri
 
 **Settings**: Add "Libraries" section to `web/templates/settings.templ` -- list/add/edit/remove
 
-#### Phase 3: Scanner Multi-Library + Classical Mode
+#### Phase 3: Scanner Multi-Library
 
 **Scanner refactor** (`internal/scanner/scanner.go`):
 - Replace `libraryPath string` field with `libraryService *library.Service`
-- `runScan()` iterates over all libraries; skips those with empty path
+- `runScan()` iterates over all libraries; skips those with empty path (logs info message)
 - `processDirectory()` receives library ID, sets `a.LibraryID`
-- Sets `a.IsClassical = (lib.Type == "classical")` during scan
 
-**Classical mode** (`internal/rule/classical.go`):
-- Keep `is_classical` on artist model, but derive from library type during scan
-- Global `rule.classical_mode` setting stays for skip/composer/performer behavior
-- Remove need to manually set is_classical per artist
+**Classical mode decision**: `IsClassical` is NOT derived from library type during scan.
+The library type (`regular`/`classical`) is the authoritative source; denormalizing it onto
+every artist row creates a data consistency problem when library types change. The rule
+engine should look up the library type directly when needed (future refactor).
 
 #### Phase 4: Degraded Mode UX
 

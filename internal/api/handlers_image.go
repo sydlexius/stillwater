@@ -26,6 +26,18 @@ const (
 	fetchTimeout  = 30 * time.Second
 )
 
+// requireArtistPath checks that the artist has a filesystem path. Returns true
+// if the path is present (caller may proceed). Returns false and writes a 409
+// response if the artist belongs to a degraded (pathless) library.
+func (r *Router) requireArtistPath(w http.ResponseWriter, req *http.Request, a *artist.Artist) bool {
+	if a.Path == "" {
+		writeError(w, req, http.StatusConflict,
+			"filesystem operations are not available for this artist (library has no path configured)")
+		return false
+	}
+	return true
+}
+
 // validImageTypes is the set of accepted image type values.
 var validImageTypes = map[string]bool{
 	"thumb": true, "fanart": true, "logo": true, "banner": true,
@@ -50,6 +62,9 @@ func (r *Router) handleImageUpload(w http.ResponseWriter, req *http.Request) {
 	a, err := r.artistService.GetByID(req.Context(), artistID)
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "artist not found"})
+		return
+	}
+	if !r.requireArtistPath(w, req, a) {
 		return
 	}
 
@@ -115,6 +130,9 @@ func (r *Router) handleImageFetch(w http.ResponseWriter, req *http.Request) {
 	a, err := r.artistService.GetByID(req.Context(), artistID)
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "artist not found"})
+		return
+	}
+	if !r.requireArtistPath(w, req, a) {
 		return
 	}
 
@@ -293,6 +311,9 @@ func (r *Router) handleImageCrop(w http.ResponseWriter, req *http.Request) {
 	a, err := r.artistService.GetByID(req.Context(), artistID)
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "artist not found"})
+		return
+	}
+	if !r.requireArtistPath(w, req, a) {
 		return
 	}
 
@@ -649,6 +670,9 @@ func (r *Router) handleDeleteImage(w http.ResponseWriter, req *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "artist not found"})
 		return
 	}
+	if !r.requireArtistPath(w, req, a) {
+		return
+	}
 
 	patterns := r.getActiveNamingConfig(req.Context(), imageType)
 	deleted := deleteImageFiles(a.Path, patterns, r.logger)
@@ -656,7 +680,7 @@ func (r *Router) handleDeleteImage(w http.ResponseWriter, req *http.Request) {
 	r.clearArtistImageFlag(req.Context(), a, imageType)
 
 	if req.Header.Get("HX-Request") == "true" {
-		renderTempl(w, req, templates.ImagePreviewCard(a.ID, imageType, false, imageTypeLabel(imageType)))
+		renderTempl(w, req, templates.ImagePreviewCard(a.ID, imageType, false, imageTypeLabel(imageType), false))
 		return
 	}
 
@@ -757,6 +781,9 @@ func (r *Router) handleLogoTrim(w http.ResponseWriter, req *http.Request) {
 	a, err := r.artistService.GetByID(req.Context(), artistID)
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "artist not found"})
+		return
+	}
+	if !r.requireArtistPath(w, req, a) {
 		return
 	}
 

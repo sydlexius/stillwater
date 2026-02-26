@@ -3,7 +3,6 @@ package library
 import (
 	"context"
 	"database/sql"
-	"strings"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/database"
@@ -203,12 +202,25 @@ func TestDelete_WithArtists(t *testing.T) {
 		t.Fatalf("inserting artist: %v", err)
 	}
 
-	err = svc.Delete(ctx, lib.ID)
-	if err == nil {
-		t.Fatal("expected error when deleting library with artists")
+	// Delete should succeed and dereference the artist.
+	if err := svc.Delete(ctx, lib.ID); err != nil {
+		t.Fatalf("Delete returned error: %v", err)
 	}
-	if !strings.Contains(err.Error(), "artists still reference it") {
-		t.Errorf("unexpected error: %v", err)
+
+	// Library should be gone.
+	if _, err := svc.GetByID(ctx, lib.ID); err == nil {
+		t.Error("library should not exist after delete")
+	}
+
+	// Artist should still exist but with a cleared library_id.
+	var libID *string
+	err = db.QueryRowContext(ctx,
+		`SELECT library_id FROM artists WHERE id = 'art-1'`).Scan(&libID)
+	if err != nil {
+		t.Fatalf("querying artist: %v", err)
+	}
+	if libID != nil {
+		t.Errorf("artist library_id = %q, want NULL", *libID)
 	}
 }
 
@@ -273,6 +285,18 @@ func TestCreate_Validation(t *testing.T) {
 	err = svc.Create(ctx, &Library{Name: "Test", Type: "invalid"})
 	if err == nil {
 		t.Error("expected error for invalid type")
+	}
+}
+
+func TestIsDegraded(t *testing.T) {
+	lib := Library{Name: "API Only", Path: "", Type: TypeRegular}
+	if !lib.IsDegraded() {
+		t.Error("expected IsDegraded() = true for empty path")
+	}
+
+	lib.Path = "/music/lib"
+	if lib.IsDegraded() {
+		t.Error("expected IsDegraded() = false for non-empty path")
 	}
 }
 
