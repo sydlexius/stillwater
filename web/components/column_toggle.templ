@@ -1,0 +1,151 @@
+package components
+
+// ColumnDef describes one toggleable column.
+type ColumnDef struct {
+	Key      string // matches data-col attribute value
+	Label    string // human-readable label
+	Required bool   // if true, checkbox is disabled and always checked
+}
+
+// ColumnToggle renders a "Columns" dropdown with checkboxes that toggle
+// column visibility on a table. State is persisted to localStorage under
+// the key "columns.<storageKey>".
+//
+// The target table must have data-col attributes on every <th> and <td>.
+// An htmx:afterSettle listener re-applies saved visibility after HTMX swaps.
+templ ColumnToggle(storageKey string, tableID string, columns []ColumnDef) {
+	<div class="relative" data-col-toggle={ storageKey } data-col-table={ tableID }>
+		<button
+			type="button"
+			onclick="this.parentElement.querySelector('[data-col-menu]').classList.toggle('hidden')"
+			class="inline-flex items-center gap-1.5 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
+		>
+			<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+				<path stroke-linecap="round" stroke-linejoin="round" d="M9 4.5v15m6-15v15m-10.875 0h15.75c.621 0 1.125-.504 1.125-1.125V5.625c0-.621-.504-1.125-1.125-1.125H4.125C3.504 4.5 3 5.004 3 5.625v12.75c0 .621.504 1.125 1.125 1.125z"></path>
+			</svg>
+			Columns
+		</button>
+		<div
+			data-col-menu
+			class="hidden absolute right-0 z-20 mt-1 w-48 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg py-1"
+		>
+			for _, col := range columns {
+				<label class="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer">
+					if col.Required {
+						<input
+							type="checkbox"
+							checked
+							disabled
+							data-col-key={ col.Key }
+							class="rounded border-gray-300 dark:border-gray-600 text-blue-600 opacity-50"
+						/>
+					} else {
+						<input
+							type="checkbox"
+							checked
+							data-col-key={ col.Key }
+							onchange="handleColumnToggle(this)"
+							class="rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
+						/>
+					}
+					{ col.Label }
+				</label>
+			}
+		</div>
+	</div>
+	@columnToggleScript()
+}
+
+// columnToggleScript renders the shared JS for column visibility toggling.
+templ columnToggleScript() {
+	<script>
+		(function() {
+			// Guard against double-init when multiple toggles exist on the page
+			if (window.__colToggleInit) return;
+			window.__colToggleInit = true;
+
+			// Close dropdown when clicking outside
+			document.addEventListener('click', function(e) {
+				document.querySelectorAll('[data-col-toggle]').forEach(function(wrapper) {
+					if (!wrapper.contains(e.target)) {
+						var menu = wrapper.querySelector('[data-col-menu]');
+						if (menu) menu.classList.add('hidden');
+					}
+				});
+			});
+
+			window.handleColumnToggle = function(checkbox) {
+				var wrapper = checkbox.closest('[data-col-toggle]');
+				if (!wrapper) return;
+				var storageKey = wrapper.getAttribute('data-col-toggle');
+				var tableID = wrapper.getAttribute('data-col-table');
+				var key = checkbox.getAttribute('data-col-key');
+				var table = document.getElementById(tableID);
+				if (!table) return;
+
+				try {
+					var cells = table.querySelectorAll('[data-col="' + key + '"]');
+					cells.forEach(function(cell) {
+						cell.style.display = checkbox.checked ? '' : 'none';
+					});
+				} catch(e) { /* skip invalid selector from corrupted key */ }
+
+				saveColumnState(storageKey, wrapper);
+			};
+
+			function saveColumnState(storageKey, wrapper) {
+				var hidden = [];
+				wrapper.querySelectorAll('input[data-col-key]').forEach(function(cb) {
+					if (!cb.checked && !cb.disabled) {
+						hidden.push(cb.getAttribute('data-col-key'));
+					}
+				});
+				localStorage.setItem('columns.' + storageKey, JSON.stringify(hidden));
+			}
+
+			function applyColumnVisibility(storageKey, tableID, wrapper) {
+				var raw = localStorage.getItem('columns.' + storageKey);
+				if (!raw) return;
+
+				var hidden;
+				try { hidden = JSON.parse(raw); } catch(e) { return; }
+				if (!Array.isArray(hidden)) return;
+
+				var table = document.getElementById(tableID);
+				if (!table) return;
+
+				hidden.forEach(function(key) {
+					try {
+						table.querySelectorAll('[data-col="' + key + '"]').forEach(function(cell) {
+							cell.style.display = 'none';
+						});
+					} catch(e) { /* skip invalid selector from corrupted key */ }
+				});
+
+				// Sync checkboxes in the dropdown
+				if (wrapper) {
+					wrapper.querySelectorAll('input[data-col-key]').forEach(function(cb) {
+						var k = cb.getAttribute('data-col-key');
+						cb.checked = hidden.indexOf(k) === -1;
+					});
+				}
+			}
+
+			window.initAllColumnToggles = function() {
+				document.querySelectorAll('[data-col-toggle]').forEach(function(wrapper) {
+					var sk = wrapper.getAttribute('data-col-toggle');
+					var tid = wrapper.getAttribute('data-col-table');
+					applyColumnVisibility(sk, tid, wrapper);
+				});
+			};
+
+			// Apply on initial load
+			initAllColumnToggles();
+
+			// Re-apply after HTMX swaps
+			document.body.addEventListener('htmx:afterSettle', function() {
+				initAllColumnToggles();
+			});
+		})();
+	</script>
+}
