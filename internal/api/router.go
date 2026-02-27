@@ -198,7 +198,7 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("POST "+bp+"/api/v1/settings/maintenance/vacuum", wrapAuth(r.handleMaintenanceVacuum, authMw))
 	mux.HandleFunc("PUT "+bp+"/api/v1/settings/maintenance/schedule", wrapAuth(r.handleMaintenanceSchedule, authMw))
 	// Settings export/import routes
-	mux.HandleFunc("GET "+bp+"/api/v1/settings/export", wrapAuth(r.handleSettingsExport, authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/settings/export", wrapAuth(r.handleSettingsExport, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/settings/import", wrapAuth(r.handleSettingsImport, authMw))
 
 	// Provider routes

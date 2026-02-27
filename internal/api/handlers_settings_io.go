@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/settingsio"
@@ -18,7 +19,26 @@ func (r *Router) handleSettingsExport(w http.ResponseWriter, req *http.Request) 
 		return
 	}
 
-	passphrase := req.URL.Query().Get("passphrase")
+	// Read passphrase from POST body (form-encoded or JSON)
+	var passphrase string
+	ct := req.Header.Get("Content-Type")
+	if strings.HasPrefix(ct, "application/json") {
+		var body struct {
+			Passphrase string `json:"passphrase"`
+		}
+		if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+			return
+		}
+		passphrase = body.Passphrase
+	} else {
+		if err := req.ParseForm(); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid form data"})
+			return
+		}
+		passphrase = req.FormValue("passphrase")
+	}
+
 	if passphrase == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "passphrase is required"})
 		return
@@ -47,7 +67,7 @@ func (r *Router) handleSettingsImport(w http.ResponseWriter, req *http.Request) 
 	var passphrase string
 
 	ct := req.Header.Get("Content-Type")
-	if ct == "application/json" || ct == "" {
+	if strings.HasPrefix(ct, "application/json") {
 		// Direct JSON body with passphrase field
 		body, err := io.ReadAll(io.LimitReader(req.Body, maxImportSize+1))
 		if err != nil {

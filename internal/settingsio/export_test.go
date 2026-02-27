@@ -70,7 +70,7 @@ func setupTestDB(t *testing.T) *sql.DB {
 			updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 		)`,
 	} {
-		if _, err := db.Exec(stmt); err != nil {
+		if _, err := db.ExecContext(context.Background(), stmt); err != nil {
 			t.Fatalf("setup: %v", err)
 		}
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -136,8 +137,11 @@ func (s *Service) GetByNameAndURL(ctx context.Context, name, url string) (*Webho
 		FROM webhooks WHERE name = ? AND url = ? LIMIT 1
 	`, name, url)
 	w, err := scanWebhook(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
 	if err != nil {
-		return nil, nil //nolint:nilerr // not found is expected
+		return nil, fmt.Errorf("looking up webhook by name+url: %w", err)
 	}
 	return w, nil
 }

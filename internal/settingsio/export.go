@@ -251,7 +251,10 @@ func (s *Service) Import(ctx context.Context, env *Envelope, passphrase string) 
 	// Import connections: match by type + url, update or insert
 	for _, ce := range payload.Connections {
 		existing, err := s.connectionSvc.GetByTypeAndURL(ctx, ce.Type, ce.URL)
-		if err == nil && existing != nil {
+		if err != nil {
+			return nil, fmt.Errorf("looking up connection %q: %w", ce.Name, err)
+		}
+		if existing != nil {
 			// Update existing
 			existing.Name = ce.Name
 			existing.APIKey = ce.APIKey
@@ -284,13 +287,17 @@ func (s *Service) Import(ctx context.Context, env *Envelope, passphrase string) 
 	// Import platform profiles: match by name, update or insert
 	for _, p := range payload.PlatformProfiles {
 		existing, err := s.platformSvc.GetByName(ctx, p.Name)
-		if err == nil && existing != nil {
+		if err != nil {
+			return nil, fmt.Errorf("looking up platform profile %q: %w", p.Name, err)
+		}
+		if existing != nil {
 			p.ID = existing.ID
 			if err := s.platformSvc.Update(ctx, &p); err != nil {
 				return nil, fmt.Errorf("updating platform profile %q: %w", p.Name, err)
 			}
 		} else {
-			p.ID = "" // Let Create generate a new ID
+			p.ID = ""          // Let Create generate a new ID
+			p.IsActive = false // Avoid creating multiple active profiles on import
 			if err := s.platformSvc.Create(ctx, &p); err != nil {
 				return nil, fmt.Errorf("creating platform profile %q: %w", p.Name, err)
 			}
@@ -301,7 +308,10 @@ func (s *Service) Import(ctx context.Context, env *Envelope, passphrase string) 
 	// Import webhooks: match by name + url, upsert
 	for _, w := range payload.Webhooks {
 		existing, err := s.webhookSvc.GetByNameAndURL(ctx, w.Name, w.URL)
-		if err == nil && existing != nil {
+		if err != nil {
+			return nil, fmt.Errorf("looking up webhook %q: %w", w.Name, err)
+		}
+		if existing != nil {
 			w.ID = existing.ID
 			if err := s.webhookSvc.Update(ctx, &w); err != nil {
 				return nil, fmt.Errorf("updating webhook %q: %w", w.Name, err)

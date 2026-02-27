@@ -272,6 +272,9 @@ func run() error {
 	{
 		maintEnabled := getDBBoolSetting(db, "db_maintenance.enabled", true)
 		maintHours := getDBIntSetting(db, "db_maintenance.interval_hours", 24)
+		if maintHours <= 0 {
+			maintHours = 24
+		}
 		if maintEnabled {
 			go maintenanceService.StartScheduler(ctx, time.Duration(maintHours)*time.Hour)
 		}
