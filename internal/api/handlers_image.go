@@ -1139,7 +1139,7 @@ func (r *Router) handleServeFanartByIndex(w http.ResponseWriter, req *http.Reque
 	primary := r.getActiveFanartPrimary(req.Context())
 	paths := img.DiscoverFanart(a.Path, primary)
 	if index >= len(paths) {
-		http.NotFound(w, req)
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "fanart index out of range"})
 		return
 	}
 
@@ -1276,6 +1276,17 @@ func (r *Router) handleFanartBatchFetch(w http.ResponseWriter, req *http.Request
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("too many urls (max %d)", maxBatchURLs)})
 		return
 	}
+
+	// Deduplicate URLs to avoid saving the same image twice.
+	seen := make(map[string]bool, len(body.URLs))
+	var unique []string
+	for _, u := range body.URLs {
+		if !seen[u] {
+			seen[u] = true
+			unique = append(unique, u)
+		}
+	}
+	body.URLs = unique
 
 	var allSaved []string
 	var errors []string
