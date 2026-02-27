@@ -700,7 +700,7 @@ func TestExistingImageFileNames_OnlyWritesExistingFiles(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	got := existingImageFileNames(dir, "thumb", nil)
+	got := existingImageFileNames(context.Background(), dir, "thumb", nil)
 	if len(got) != 1 || got[0] != "folder.jpg" {
 		t.Errorf("existingImageFileNames = %v; want [folder.jpg]", got)
 	}
@@ -709,7 +709,7 @@ func TestExistingImageFileNames_OnlyWritesExistingFiles(t *testing.T) {
 func TestExistingImageFileNames_FallsBackToPrimary(t *testing.T) {
 	dir := t.TempDir() // empty -- no existing files
 
-	got := existingImageFileNames(dir, "thumb", nil)
+	got := existingImageFileNames(context.Background(), dir, "thumb", nil)
 	if len(got) != 1 {
 		t.Fatalf("want 1 (primary fallback), got %d: %v", len(got), got)
 	}
