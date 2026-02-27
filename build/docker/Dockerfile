@@ -27,7 +27,7 @@ RUN tailwindcss -i web/static/css/input.css -o web/static/css/styles.css --minif
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /bin/stillwater ./cmd/stillwater
 
 # Runtime stage
-FROM alpine:3.21
+FROM alpine:3.23
 
 RUN apk add --no-cache ca-certificates tzdata su-exec
 
