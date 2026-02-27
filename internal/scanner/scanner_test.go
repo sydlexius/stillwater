@@ -607,6 +607,86 @@ func TestDetectFiles_LowRes(t *testing.T) {
 	}
 }
 
+func TestScan_NoLibraries_NoFallback(t *testing.T) {
+	legacyDir := t.TempDir()
+	createArtistDir(t, legacyDir, "Ghost Artist")
+
+	svc, artistSvc := setupScanner(t, legacyDir)
+	// Set a library lister that returns an empty list (all libraries deleted).
+	svc.SetLibraryLister(&stubLibraryLister{libs: []library.Library{}})
+
+	ctx := context.Background()
+	if _, err := svc.Run(ctx); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	final := waitForScan(t, svc, 5*time.Second)
+
+	if final.Status != "failed" {
+		t.Errorf("status = %q, want failed", final.Status)
+	}
+	if final.Error == "" {
+		t.Error("expected error message on scan result")
+	}
+	if final.NewArtists != 0 {
+		t.Errorf("NewArtists = %d, want 0 (should not fall back to legacy path)", final.NewArtists)
+	}
+
+	a, _ := artistSvc.GetByPath(ctx, filepath.Join(legacyDir, "Ghost Artist"))
+	if a != nil {
+		t.Error("artist should not exist -- scanner should not have fallen back to legacy path")
+	}
+}
+
+func TestScan_DeletedLibrary_NoRepopulate(t *testing.T) {
+	libDir := t.TempDir()
+	createArtistDir(t, libDir, "Real Artist", "folder.jpg")
+
+	svc, artistSvc := setupScanner(t, libDir)
+	lister := &stubLibraryLister{
+		libs: []library.Library{
+			{ID: "lib-1", Name: "Music", Path: libDir, Type: library.TypeRegular},
+		},
+	}
+	svc.SetLibraryLister(lister)
+
+	ctx := context.Background()
+
+	// First scan: artist is discovered.
+	if _, err := svc.Run(ctx); err != nil {
+		t.Fatalf("Run 1: %v", err)
+	}
+	waitForScan(t, svc, 5*time.Second)
+
+	a, _ := artistSvc.GetByPath(ctx, filepath.Join(libDir, "Real Artist"))
+	if a == nil {
+		t.Fatal("artist should exist after first scan")
+	}
+
+	// Simulate library deletion: lister returns empty, delete artist from DB.
+	lister.libs = nil
+	if err := artistSvc.Delete(ctx, a.ID); err != nil {
+		t.Fatalf("deleting artist: %v", err)
+	}
+
+	// Second scan: should NOT re-populate the deleted artist.
+	if _, err := svc.Run(ctx); err != nil {
+		t.Fatalf("Run 2: %v", err)
+	}
+	final := waitForScan(t, svc, 5*time.Second)
+
+	if final.Status != "failed" {
+		t.Errorf("status = %q, want failed (no libraries to scan)", final.Status)
+	}
+	if final.NewArtists != 0 {
+		t.Errorf("NewArtists = %d, want 0", final.NewArtists)
+	}
+
+	a, _ = artistSvc.GetByPath(ctx, filepath.Join(libDir, "Real Artist"))
+	if a != nil {
+		t.Error("artist should not be re-created after library deletion")
+	}
+}
+
 // makeScannerPNG creates a minimal PNG image with the given dimensions.
 func makeScannerPNG(t *testing.T, w, h int) []byte {
 	t.Helper()
