@@ -77,6 +77,23 @@ func (s *Service) GetActive(ctx context.Context) (*Profile, error) {
 	return p, nil
 }
 
+// GetByName returns a profile matching the given name, or nil if not found.
+func (s *Service) GetByName(ctx context.Context, name string) (*Profile, error) {
+	row := s.db.QueryRowContext(ctx, `
+		SELECT id, name, is_builtin, is_active, nfo_enabled, nfo_format,
+			image_naming, created_at, updated_at
+		FROM platform_profiles WHERE name = ? LIMIT 1
+	`, name)
+	p, err := scanProfile(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("getting profile by name: %w", err)
+	}
+	return p, nil
+}
+
 // SetActive makes the given profile the active one (deactivates all others).
 func (s *Service) SetActive(ctx context.Context, id string) error {
 	tx, err := s.db.BeginTx(ctx, nil)

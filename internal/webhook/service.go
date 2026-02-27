@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -127,6 +128,22 @@ func (s *Service) Update(ctx context.Context, w *Webhook) error {
 		return fmt.Errorf("webhook not found")
 	}
 	return nil
+}
+
+// GetByNameAndURL returns a webhook matching the given name and URL, or nil if not found.
+func (s *Service) GetByNameAndURL(ctx context.Context, name, url string) (*Webhook, error) {
+	row := s.db.QueryRowContext(ctx, `
+		SELECT id, name, url, type, events, enabled, created_at, updated_at
+		FROM webhooks WHERE name = ? AND url = ? LIMIT 1
+	`, name, url)
+	w, err := scanWebhook(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("looking up webhook by name+url: %w", err)
+	}
+	return w, nil
 }
 
 // Delete removes a webhook by ID.

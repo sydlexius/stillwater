@@ -12,12 +12,15 @@ import (
 	"github.com/sydlexius/stillwater/internal/backup"
 	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/library"
+	"github.com/sydlexius/stillwater/internal/logging"
+	"github.com/sydlexius/stillwater/internal/maintenance"
 	"github.com/sydlexius/stillwater/internal/nfo"
 	"github.com/sydlexius/stillwater/internal/platform"
 	"github.com/sydlexius/stillwater/internal/provider"
 	"github.com/sydlexius/stillwater/internal/rule"
 	"github.com/sydlexius/stillwater/internal/scanner"
 	"github.com/sydlexius/stillwater/internal/scraper"
+	"github.com/sydlexius/stillwater/internal/settingsio"
 	"github.com/sydlexius/stillwater/internal/webhook"
 )
 
@@ -43,6 +46,9 @@ type RouterDeps struct {
 	WebhookService     *webhook.Service
 	WebhookDispatcher  *webhook.Dispatcher
 	BackupService      *backup.Service
+	LogManager         *logging.Manager
+	MaintenanceService *maintenance.Service
+	SettingsIOService  *settingsio.Service
 	DB                 *sql.DB
 	Logger             *slog.Logger
 	BasePath           string
@@ -71,6 +77,9 @@ type Router struct {
 	webhookService     *webhook.Service
 	webhookDispatcher  *webhook.Dispatcher
 	backupService      *backup.Service
+	logManager         *logging.Manager
+	maintenanceService *maintenance.Service
+	settingsIOService  *settingsio.Service
 	logger             *slog.Logger
 	basePath           string
 	staticAssets       *StaticAssets
@@ -100,6 +109,9 @@ func NewRouter(deps RouterDeps) *Router {
 		webhookService:     deps.WebhookService,
 		webhookDispatcher:  deps.WebhookDispatcher,
 		backupService:      deps.BackupService,
+		logManager:         deps.LogManager,
+		maintenanceService: deps.MaintenanceService,
+		settingsIOService:  deps.SettingsIOService,
 		db:                 deps.DB,
 		logger:             deps.Logger,
 		basePath:           deps.BasePath,
@@ -177,6 +189,17 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("POST "+bp+"/api/v1/settings/backup", wrapAuth(r.handleBackupCreate, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/settings/backup/history", wrapAuth(r.handleBackupHistory, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/settings/backup/{filename}", wrapAuth(r.handleBackupDownload, authMw))
+	// Logging routes
+	mux.HandleFunc("GET "+bp+"/api/v1/settings/logging", wrapAuth(r.handleGetLogging, authMw))
+	mux.HandleFunc("PUT "+bp+"/api/v1/settings/logging", wrapAuth(r.handleUpdateLogging, authMw))
+	// Maintenance routes
+	mux.HandleFunc("GET "+bp+"/api/v1/settings/maintenance/status", wrapAuth(r.handleMaintenanceStatus, authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/settings/maintenance/optimize", wrapAuth(r.handleMaintenanceOptimize, authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/settings/maintenance/vacuum", wrapAuth(r.handleMaintenanceVacuum, authMw))
+	mux.HandleFunc("PUT "+bp+"/api/v1/settings/maintenance/schedule", wrapAuth(r.handleMaintenanceSchedule, authMw))
+	// Settings export/import routes
+	mux.HandleFunc("POST "+bp+"/api/v1/settings/export", wrapAuth(r.handleSettingsExport, authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/settings/import", wrapAuth(r.handleSettingsImport, authMw))
 
 	// Provider routes
 	mux.HandleFunc("GET "+bp+"/api/v1/providers", wrapAuth(r.handleListProviders, authMw))
