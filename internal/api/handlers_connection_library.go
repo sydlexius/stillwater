@@ -1,10 +1,12 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/connection"
@@ -14,6 +16,17 @@ import (
 	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/web/templates"
 )
+
+// LibraryOpResult tracks the state of an async library operation.
+type LibraryOpResult struct {
+	LibraryID   string     `json:"library_id"`
+	LibraryName string     `json:"library_name"`
+	Operation   string     `json:"operation"`
+	Status      string     `json:"status"`
+	Message     string     `json:"message,omitempty"`
+	StartedAt   time.Time  `json:"started_at"`
+	CompletedAt *time.Time `json:"completed_at,omitempty"`
+}
 
 // discoveredLibrary represents a library found on a connected service.
 type discoveredLibrary struct {
@@ -249,46 +262,173 @@ func (r *Router) handlePopulateLibrary(w http.ResponseWriter, req *http.Request)
 		return
 	}
 
+	// Check for already-running operation on this library.
+	r.libraryOpsMu.Lock()
+	if existing, ok := r.libraryOps[libID]; ok && existing.Status == "running" {
+		r.libraryOpsMu.Unlock()
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "operation already running for this library"})
+		return
+	}
+	op := &LibraryOpResult{
+		LibraryID:   libID,
+		LibraryName: lib.Name,
+		Operation:   "populate",
+		Status:      "running",
+		StartedAt:   time.Now().UTC(),
+	}
+	r.libraryOps[libID] = op
+	r.libraryOpsMu.Unlock()
+
+	go r.runPopulate(context.WithoutCancel(req.Context()), conn, lib, op)
+
+	writeJSON(w, http.StatusAccepted, op)
+}
+
+// runPopulate executes the populate operation in a background goroutine.
+func (r *Router) runPopulate(ctx context.Context, conn *connection.Connection, lib *library.Library, op *LibraryOpResult) {
 	result := populateResult{}
+	var popErr error
 
 	switch conn.Type {
 	case connection.TypeEmby:
 		client := emby.New(conn.URL, conn.APIKey, r.logger)
-		if popErr := r.populateFromEmby(req, client, lib, &result); popErr != nil {
-			r.logger.Error("populating from emby", "error", popErr)
-			writeJSON(w, http.StatusBadGateway, map[string]string{"error": popErr.Error()})
-			return
-		}
+		popErr = r.populateFromEmbyCtx(ctx, client, lib, &result)
 
 	case connection.TypeJellyfin:
 		client := jellyfin.New(conn.URL, conn.APIKey, r.logger)
-		if popErr := r.populateFromJellyfin(req, client, lib, &result); popErr != nil {
-			r.logger.Error("populating from jellyfin", "error", popErr)
-			writeJSON(w, http.StatusBadGateway, map[string]string{"error": popErr.Error()})
-			return
-		}
+		popErr = r.populateFromJellyfinCtx(ctx, client, lib, &result)
 
 	case connection.TypeLidarr:
 		client := lidarr.New(conn.URL, conn.APIKey, r.logger)
-		if popErr := r.populateFromLidarr(req, client, lib, &result); popErr != nil {
-			r.logger.Error("populating from lidarr", "error", popErr)
-			writeJSON(w, http.StatusBadGateway, map[string]string{"error": popErr.Error()})
-			return
-		}
+		popErr = r.populateFromLidarrCtx(ctx, client, lib, &result)
+	}
 
-	default:
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unsupported connection type"})
+	r.libraryOpsMu.Lock()
+	now := time.Now().UTC()
+	op.CompletedAt = &now
+	if popErr != nil {
+		op.Status = "failed"
+		op.Message = popErr.Error()
+		r.logger.Error("populate failed", "library", lib.Name, "error", popErr)
+	} else {
+		op.Status = "completed"
+		op.Message = fmt.Sprintf("Populated %d artists from %s", result.Created, lib.Name)
+	}
+	r.libraryOpsMu.Unlock()
+}
+
+// handleScanLibrary triggers an async API scan that checks metadata/image state.
+// POST /api/v1/connections/{id}/libraries/{libId}/scan
+func (r *Router) handleScanLibrary(w http.ResponseWriter, req *http.Request) {
+	connID := req.PathValue("id")
+	libID := req.PathValue("libId")
+
+	conn, err := r.connectionService.GetByID(req.Context(), connID)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "connection not found"})
+		return
+	}
+	if !conn.Enabled {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "connection is disabled"})
+		return
+	}
+	if conn.Status != "ok" {
+		writeJSON(w, http.StatusConflict, map[string]string{
+			"error": "connection must be tested successfully before scanning",
+		})
 		return
 	}
 
-	writeJSON(w, http.StatusOK, result)
+	lib, err := r.libraryService.GetByID(req.Context(), libID)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "library not found"})
+		return
+	}
+	if lib.ConnectionID != conn.ID {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "library does not belong to this connection"})
+		return
+	}
+
+	r.libraryOpsMu.Lock()
+	if existing, ok := r.libraryOps[libID]; ok && existing.Status == "running" {
+		r.libraryOpsMu.Unlock()
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "operation already running for this library"})
+		return
+	}
+	op := &LibraryOpResult{
+		LibraryID:   libID,
+		LibraryName: lib.Name,
+		Operation:   "scan",
+		Status:      "running",
+		StartedAt:   time.Now().UTC(),
+	}
+	r.libraryOps[libID] = op
+	r.libraryOpsMu.Unlock()
+
+	go r.runLibraryScan(context.WithoutCancel(req.Context()), conn, lib, op)
+
+	writeJSON(w, http.StatusAccepted, op)
 }
 
-func (r *Router) populateFromEmby(req *http.Request, client *emby.Client, lib *library.Library, result *populateResult) error {
+// runLibraryScan queries the platform API and updates *_exists flags for artists.
+func (r *Router) runLibraryScan(ctx context.Context, conn *connection.Connection, lib *library.Library, op *LibraryOpResult) {
+	var updated int
+	var scanErr error
+
+	switch conn.Type {
+	case connection.TypeEmby:
+		client := emby.New(conn.URL, conn.APIKey, r.logger)
+		updated, scanErr = r.scanFromEmby(ctx, client, lib)
+
+	case connection.TypeJellyfin:
+		client := jellyfin.New(conn.URL, conn.APIKey, r.logger)
+		updated, scanErr = r.scanFromJellyfin(ctx, client, lib)
+
+	case connection.TypeLidarr:
+		client := lidarr.New(conn.URL, conn.APIKey, r.logger)
+		updated, scanErr = r.scanFromLidarr(ctx, client, lib)
+	}
+
+	r.libraryOpsMu.Lock()
+	now := time.Now().UTC()
+	op.CompletedAt = &now
+	if scanErr != nil {
+		op.Status = "failed"
+		op.Message = scanErr.Error()
+		r.logger.Error("library scan failed", "library", lib.Name, "error", scanErr)
+	} else {
+		op.Status = "completed"
+		op.Message = fmt.Sprintf("Scan complete: %d artists updated in %s", updated, lib.Name)
+	}
+	r.libraryOpsMu.Unlock()
+}
+
+// handleLibraryOpStatus returns the current operation status for a library.
+// GET /api/v1/libraries/{libId}/operation/status
+func (r *Router) handleLibraryOpStatus(w http.ResponseWriter, req *http.Request) {
+	libID := req.PathValue("libId")
+
+	r.libraryOpsMu.Lock()
+	op, ok := r.libraryOps[libID]
+	r.libraryOpsMu.Unlock()
+
+	if !ok {
+		writeJSON(w, http.StatusOK, map[string]string{"status": "idle"})
+		return
+	}
+
+	r.libraryOpsMu.Lock()
+	snapshot := *op
+	r.libraryOpsMu.Unlock()
+
+	writeJSON(w, http.StatusOK, snapshot)
+}
+
+func (r *Router) populateFromEmbyCtx(ctx context.Context, client *emby.Client, lib *library.Library, result *populateResult) error {
 	startIndex := 0
 	pageSize := 100
 	for {
-		resp, err := client.GetArtists(req.Context(), lib.ExternalID, startIndex, pageSize)
+		resp, err := client.GetArtists(ctx, lib.ExternalID, startIndex, pageSize)
 		if err != nil {
 			return fmt.Errorf("fetching artists from emby: %w", err)
 		}
@@ -298,7 +438,7 @@ func (r *Router) populateFromEmby(req *http.Request, client *emby.Client, lib *l
 			mbid := item.ProviderIDs.MusicBrainzArtist
 
 			if mbid != "" {
-				existing, lookupErr := r.artistService.GetByMBIDAndLibrary(req.Context(), mbid, lib.ID)
+				existing, lookupErr := r.artistService.GetByMBIDAndLibrary(ctx, mbid, lib.ID)
 				if lookupErr != nil {
 					r.logger.Warn("dedup lookup by mbid", "mbid", mbid, "error", lookupErr)
 					result.Skipped++
@@ -309,7 +449,7 @@ func (r *Router) populateFromEmby(req *http.Request, client *emby.Client, lib *l
 					continue
 				}
 			} else {
-				existing, lookupErr := r.artistService.GetByNameAndLibrary(req.Context(), item.Name, lib.ID)
+				existing, lookupErr := r.artistService.GetByNameAndLibrary(ctx, item.Name, lib.ID)
 				if lookupErr != nil {
 					r.logger.Warn("dedup lookup by name", "name", item.Name, "error", lookupErr)
 					result.Skipped++
@@ -327,7 +467,7 @@ func (r *Router) populateFromEmby(req *http.Request, client *emby.Client, lib *l
 				MusicBrainzID: mbid,
 				LibraryID:     lib.ID,
 			}
-			if err := r.artistService.Create(req.Context(), a); err != nil {
+			if err := r.artistService.Create(ctx, a); err != nil {
 				r.logger.Warn("creating artist from emby", "name", item.Name, "error", err)
 				result.Skipped++
 				continue
@@ -343,11 +483,11 @@ func (r *Router) populateFromEmby(req *http.Request, client *emby.Client, lib *l
 	return nil
 }
 
-func (r *Router) populateFromJellyfin(req *http.Request, client *jellyfin.Client, lib *library.Library, result *populateResult) error {
+func (r *Router) populateFromJellyfinCtx(ctx context.Context, client *jellyfin.Client, lib *library.Library, result *populateResult) error {
 	startIndex := 0
 	pageSize := 100
 	for {
-		resp, err := client.GetArtists(req.Context(), lib.ExternalID, startIndex, pageSize)
+		resp, err := client.GetArtists(ctx, lib.ExternalID, startIndex, pageSize)
 		if err != nil {
 			return fmt.Errorf("fetching artists from jellyfin: %w", err)
 		}
@@ -357,7 +497,7 @@ func (r *Router) populateFromJellyfin(req *http.Request, client *jellyfin.Client
 			mbid := item.ProviderIDs.MusicBrainzArtist
 
 			if mbid != "" {
-				existing, lookupErr := r.artistService.GetByMBIDAndLibrary(req.Context(), mbid, lib.ID)
+				existing, lookupErr := r.artistService.GetByMBIDAndLibrary(ctx, mbid, lib.ID)
 				if lookupErr != nil {
 					r.logger.Warn("dedup lookup by mbid", "mbid", mbid, "error", lookupErr)
 					result.Skipped++
@@ -368,7 +508,7 @@ func (r *Router) populateFromJellyfin(req *http.Request, client *jellyfin.Client
 					continue
 				}
 			} else {
-				existing, lookupErr := r.artistService.GetByNameAndLibrary(req.Context(), item.Name, lib.ID)
+				existing, lookupErr := r.artistService.GetByNameAndLibrary(ctx, item.Name, lib.ID)
 				if lookupErr != nil {
 					r.logger.Warn("dedup lookup by name", "name", item.Name, "error", lookupErr)
 					result.Skipped++
@@ -386,7 +526,7 @@ func (r *Router) populateFromJellyfin(req *http.Request, client *jellyfin.Client
 				MusicBrainzID: mbid,
 				LibraryID:     lib.ID,
 			}
-			if err := r.artistService.Create(req.Context(), a); err != nil {
+			if err := r.artistService.Create(ctx, a); err != nil {
 				r.logger.Warn("creating artist from jellyfin", "name", item.Name, "error", err)
 				result.Skipped++
 				continue
@@ -402,8 +542,8 @@ func (r *Router) populateFromJellyfin(req *http.Request, client *jellyfin.Client
 	return nil
 }
 
-func (r *Router) populateFromLidarr(req *http.Request, client *lidarr.Client, lib *library.Library, result *populateResult) error {
-	artists, err := client.GetArtists(req.Context())
+func (r *Router) populateFromLidarrCtx(ctx context.Context, client *lidarr.Client, lib *library.Library, result *populateResult) error {
+	artists, err := client.GetArtists(ctx)
 	if err != nil {
 		return fmt.Errorf("fetching artists from lidarr: %w", err)
 	}
@@ -413,7 +553,7 @@ func (r *Router) populateFromLidarr(req *http.Request, client *lidarr.Client, li
 		mbid := la.ForeignArtistID
 
 		if mbid != "" {
-			existing, lookupErr := r.artistService.GetByMBIDAndLibrary(req.Context(), mbid, lib.ID)
+			existing, lookupErr := r.artistService.GetByMBIDAndLibrary(ctx, mbid, lib.ID)
 			if lookupErr != nil {
 				r.logger.Warn("dedup lookup by mbid", "mbid", mbid, "error", lookupErr)
 				result.Skipped++
@@ -424,7 +564,7 @@ func (r *Router) populateFromLidarr(req *http.Request, client *lidarr.Client, li
 				continue
 			}
 		} else {
-			existing, lookupErr := r.artistService.GetByNameAndLibrary(req.Context(), la.ArtistName, lib.ID)
+			existing, lookupErr := r.artistService.GetByNameAndLibrary(ctx, la.ArtistName, lib.ID)
 			if lookupErr != nil {
 				r.logger.Warn("dedup lookup by name", "name", la.ArtistName, "error", lookupErr)
 				result.Skipped++
@@ -442,7 +582,7 @@ func (r *Router) populateFromLidarr(req *http.Request, client *lidarr.Client, li
 			MusicBrainzID: mbid,
 			LibraryID:     lib.ID,
 		}
-		if err := r.artistService.Create(req.Context(), a); err != nil {
+		if err := r.artistService.Create(ctx, a); err != nil {
 			r.logger.Warn("creating artist from lidarr", "name", la.ArtistName, "error", err)
 			result.Skipped++
 			continue
@@ -450,4 +590,137 @@ func (r *Router) populateFromLidarr(req *http.Request, client *lidarr.Client, li
 		result.Created++
 	}
 	return nil
+}
+
+// scanFromEmby pages through Emby artists and updates image existence flags.
+func (r *Router) scanFromEmby(ctx context.Context, client *emby.Client, lib *library.Library) (int, error) {
+	updated := 0
+	startIndex := 0
+	pageSize := 100
+	for {
+		resp, err := client.GetArtists(ctx, lib.ExternalID, startIndex, pageSize)
+		if err != nil {
+			return updated, fmt.Errorf("fetching artists from emby: %w", err)
+		}
+
+		for _, item := range resp.Items {
+			a, lookupErr := r.artistService.GetByNameAndLibrary(ctx, item.Name, lib.ID)
+			if lookupErr != nil || a == nil {
+				continue
+			}
+
+			thumbExists := item.ImageTags["Primary"] != ""
+			fanartExists := item.ImageTags["Backdrop"] != ""
+			logoExists := item.ImageTags["Logo"] != ""
+			bannerExists := item.ImageTags["Banner"] != ""
+
+			if a.ThumbExists != thumbExists || a.FanartExists != fanartExists ||
+				a.LogoExists != logoExists || a.BannerExists != bannerExists {
+				a.ThumbExists = thumbExists
+				a.FanartExists = fanartExists
+				a.LogoExists = logoExists
+				a.BannerExists = bannerExists
+				if err := r.artistService.Update(ctx, a); err != nil {
+					r.logger.Warn("updating artist image flags from emby", "name", a.Name, "error", err)
+					continue
+				}
+				updated++
+			}
+		}
+
+		startIndex += pageSize
+		if startIndex >= resp.TotalRecordCount {
+			break
+		}
+	}
+	return updated, nil
+}
+
+// scanFromJellyfin pages through Jellyfin artists and updates image existence flags.
+func (r *Router) scanFromJellyfin(ctx context.Context, client *jellyfin.Client, lib *library.Library) (int, error) {
+	updated := 0
+	startIndex := 0
+	pageSize := 100
+	for {
+		resp, err := client.GetArtists(ctx, lib.ExternalID, startIndex, pageSize)
+		if err != nil {
+			return updated, fmt.Errorf("fetching artists from jellyfin: %w", err)
+		}
+
+		for _, item := range resp.Items {
+			a, lookupErr := r.artistService.GetByNameAndLibrary(ctx, item.Name, lib.ID)
+			if lookupErr != nil || a == nil {
+				continue
+			}
+
+			thumbExists := item.ImageTags["Primary"] != ""
+			fanartExists := item.ImageTags["Backdrop"] != ""
+			logoExists := item.ImageTags["Logo"] != ""
+			bannerExists := item.ImageTags["Banner"] != ""
+
+			if a.ThumbExists != thumbExists || a.FanartExists != fanartExists ||
+				a.LogoExists != logoExists || a.BannerExists != bannerExists {
+				a.ThumbExists = thumbExists
+				a.FanartExists = fanartExists
+				a.LogoExists = logoExists
+				a.BannerExists = bannerExists
+				if err := r.artistService.Update(ctx, a); err != nil {
+					r.logger.Warn("updating artist image flags from jellyfin", "name", a.Name, "error", err)
+					continue
+				}
+				updated++
+			}
+		}
+
+		startIndex += pageSize
+		if startIndex >= resp.TotalRecordCount {
+			break
+		}
+	}
+	return updated, nil
+}
+
+// scanFromLidarr gets all Lidarr artists and updates image existence flags.
+func (r *Router) scanFromLidarr(ctx context.Context, client *lidarr.Client, lib *library.Library) (int, error) {
+	artists, err := client.GetArtists(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("fetching artists from lidarr: %w", err)
+	}
+
+	updated := 0
+	for _, la := range artists {
+		name := la.ArtistName
+		a, lookupErr := r.artistService.GetByNameAndLibrary(ctx, name, lib.ID)
+		if lookupErr != nil || a == nil {
+			continue
+		}
+
+		var thumbExists, fanartExists, bannerExists, logoExists bool
+		for _, img := range la.Images {
+			switch strings.ToLower(img.CoverType) {
+			case "poster":
+				thumbExists = true
+			case "fanart":
+				fanartExists = true
+			case "banner":
+				bannerExists = true
+			case "logo":
+				logoExists = true
+			}
+		}
+
+		if a.ThumbExists != thumbExists || a.FanartExists != fanartExists ||
+			a.LogoExists != logoExists || a.BannerExists != bannerExists {
+			a.ThumbExists = thumbExists
+			a.FanartExists = fanartExists
+			a.LogoExists = logoExists
+			a.BannerExists = bannerExists
+			if err := r.artistService.Update(ctx, a); err != nil {
+				r.logger.Warn("updating artist image flags from lidarr", "name", a.Name, "error", err)
+				continue
+			}
+			updated++
+		}
+	}
+	return updated, nil
 }
