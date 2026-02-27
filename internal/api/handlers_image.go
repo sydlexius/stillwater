@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -174,6 +176,10 @@ func (r *Router) handleImageFetch(w http.ResponseWriter, req *http.Request) {
 	}
 	if !strings.HasPrefix(imageURL, "http://") && !strings.HasPrefix(imageURL, "https://") {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "url must start with http:// or https://"})
+		return
+	}
+	if isPrivateURL(req.Context(), imageURL) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "url points to a private or reserved address"})
 		return
 	}
 
@@ -477,6 +483,29 @@ func (r *Router) getActiveNamingConfig(ctx context.Context, imageType string) []
 		return img.FileNamesForType(img.DefaultFileNames, imageType)
 	}
 	return names
+}
+
+// isPrivateURL returns true if the URL's hostname resolves to a loopback,
+// private, link-local, or unspecified IP address.
+func isPrivateURL(ctx context.Context, rawURL string) bool {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return true
+	}
+	host := parsed.Hostname()
+	resolver := net.DefaultResolver
+	addrs, err := resolver.LookupIPAddr(ctx, host)
+	if err != nil {
+		return true
+	}
+	for _, addr := range addrs {
+		ip := addr.IP
+		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() ||
+			ip.IsLinkLocalMulticast() || ip.IsUnspecified() {
+			return true
+		}
+	}
+	return false
 }
 
 // fetchImageFromURL downloads an image from the given URL with timeout and size limits.
@@ -1222,6 +1251,10 @@ func (r *Router) handleFanartBatchFetch(w http.ResponseWriter, req *http.Request
 	for _, u := range body.URLs {
 		if !strings.HasPrefix(u, "http://") && !strings.HasPrefix(u, "https://") {
 			errors = append(errors, fmt.Sprintf("invalid url: %s", u))
+			continue
+		}
+		if isPrivateURL(req.Context(), u) {
+			errors = append(errors, fmt.Sprintf("private/reserved address: %s", u))
 			continue
 		}
 		data, fetchErr := r.fetchImageFromURL(u)
