@@ -93,3 +93,55 @@ func DiscoverFanart(dir string, primaryName string) []string {
 	}
 	return paths
 }
+
+// MaxFanartIndex scans an artist directory and returns the highest numeric
+// index found among fanart files matching primaryName. Returns -1 if no
+// fanart files exist. The primary file (exact base match) counts as index 0.
+// This avoids overwriting existing files when gaps exist in the numbering
+// sequence (e.g., fanart1.jpg deleted but fanart2.jpg still present).
+func MaxFanartIndex(dir string, primaryName string) int {
+	if primaryName == "" {
+		return -1
+	}
+
+	base := strings.TrimSuffix(primaryName, filepath.Ext(primaryName))
+	baseLower := strings.ToLower(base)
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return -1
+	}
+
+	maxIdx := -1
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		ext := strings.ToLower(filepath.Ext(name))
+		if ext != ".jpg" && ext != ".jpeg" && ext != ".png" {
+			continue
+		}
+
+		nameBase := strings.TrimSuffix(name, filepath.Ext(name))
+		nameBaseLower := strings.ToLower(nameBase)
+
+		if nameBaseLower == baseLower {
+			if maxIdx < 0 {
+				maxIdx = 0
+			}
+			continue
+		}
+
+		if strings.HasPrefix(nameBaseLower, baseLower) {
+			suffix := nameBaseLower[len(baseLower):]
+			if n, parseErr := strconv.Atoi(suffix); parseErr == nil && n > 0 {
+				if n > maxIdx {
+					maxIdx = n
+				}
+			}
+		}
+	}
+
+	return maxIdx
+}

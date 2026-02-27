@@ -106,6 +106,37 @@ func TestDiscoverFanart_MixedCase(t *testing.T) {
 	}
 }
 
+func TestMaxFanartIndex(t *testing.T) {
+	tests := []struct {
+		name    string
+		files   []string
+		primary string
+		want    int
+	}{
+		{"empty dir", nil, "backdrop.jpg", -1},
+		{"primary only", []string{"backdrop.jpg"}, "backdrop.jpg", 0},
+		{"primary plus numbered", []string{"backdrop.jpg", "backdrop2.jpg", "backdrop3.jpg"}, "backdrop.jpg", 3},
+		{"gap in numbering", []string{"backdrop.jpg", "backdrop5.jpg"}, "backdrop.jpg", 5},
+		{"only high numbered", []string{"fanart3.jpg"}, "fanart.jpg", 3},
+		{"unrelated files only", []string{"logo.png", "folder.jpg"}, "backdrop.jpg", -1},
+		{"mixed case", []string{"Backdrop.jpg", "BACKDROP2.png"}, "backdrop.jpg", 2},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			for _, name := range tt.files {
+				if err := os.WriteFile(filepath.Join(dir, name), []byte("fake"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			got := MaxFanartIndex(dir, tt.primary)
+			if got != tt.want {
+				t.Errorf("MaxFanartIndex() = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestDiscoverFanart_AlternateExtension(t *testing.T) {
 	dir := t.TempDir()
 
