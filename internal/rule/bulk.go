@@ -48,6 +48,10 @@ type BulkJob struct {
 	CreatedAt      time.Time  `json:"created_at"`
 	StartedAt      *time.Time `json:"started_at,omitempty"`
 	CompletedAt    *time.Time `json:"completed_at,omitempty"`
+
+	// ArtistIDs limits the job to specific artists. Transient (not persisted).
+	// When empty, the executor targets all non-excluded artists.
+	ArtistIDs []string `json:"-"`
 }
 
 // BulkJobItem tracks the result for a single artist within a bulk job.
@@ -63,5 +67,6 @@ type BulkJobItem struct {
 
 // BulkRequest is the API request body for starting a bulk operation.
 type BulkRequest struct {
-	Mode string `json:"mode"`
+	Mode      string   `json:"mode"`
+	ArtistIDs []string `json:"artist_ids,omitempty"`
 }

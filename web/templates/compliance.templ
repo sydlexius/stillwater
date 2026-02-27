@@ -1,9 +1,12 @@
 package templates
 
 import (
+	"encoding/json"
 	"fmt"
+	"strconv"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/rule"
 	"github.com/sydlexius/stillwater/web/components"
 )
@@ -17,15 +20,84 @@ type ComplianceRow struct {
 
 // ComplianceData holds the data for the compliance report page.
 type ComplianceData struct {
-	Rows       []ComplianceRow
-	Pagination components.PaginationData
-	Search     string
-	Status     string
-	Filter     string
+	Rows           []ComplianceRow
+	Pagination     components.PaginationData
+	Search         string
+	Status         string
+	Filter         string
+	Libraries      []library.Library
+	LibraryID      string
+	Sort           string
+	Order          string
+	HealthScoreMin int
+	HealthScoreMax int
+}
+
+// LibrarySummaryData holds per-library health stats for the summary section.
+type LibrarySummaryData struct {
+	LibraryID        string
+	LibraryName      string
+	TotalArtists     int
+	CompliantArtists int
+	Score            float64
+	MissingNFO       int
+	MissingThumb     int
+	MissingFanart    int
+	MissingMBID      int
+}
+
+// ComplianceSummaryData is the lazy-loaded summary section data.
+type ComplianceSummaryData struct {
+	Libraries []LibrarySummaryData
+	Overall   LibrarySummaryData
+}
+
+// sortIcon returns the sort direction indicator for a column header.
+func sortIcon(currentSort, col, currentOrder string) string {
+	if currentSort != col {
+		return ""
+	}
+	if currentOrder == "desc" {
+		return " ↓"
+	}
+	return " ↑"
+}
+
+// toggleOrder returns the next sort order for a column.
+func toggleOrder(currentSort, col, currentOrder string) string {
+	if currentSort == col && currentOrder == "asc" {
+		return "desc"
+	}
+	return "asc"
+}
+
+// complianceExportURL builds the CSV export URL with current filter params.
+func complianceExportURL(data ComplianceData) string {
+	u := "/api/v1/reports/compliance/export?"
+	if data.Search != "" {
+		u += "search=" + data.Search + "&"
+	}
+	if data.Status != "" && data.Status != "all" {
+		u += "status=" + data.Status + "&"
+	}
+	if data.Filter != "" {
+		u += "filter=" + data.Filter + "&"
+	}
+	if data.LibraryID != "" {
+		u += "library_id=" + data.LibraryID + "&"
+	}
+	if data.HealthScoreMin > 0 {
+		u += "health_min=" + strconv.Itoa(data.HealthScoreMin) + "&"
+	}
+	if data.HealthScoreMax > 0 {
+		u += "health_max=" + strconv.Itoa(data.HealthScoreMax) + "&"
+	}
+	return u
 }
 
 templ CompliancePage(assets AssetPaths, data ComplianceData) {
 	@Layout("Compliance Report", assets) {
+		<script src={ assets.ChartJS }></script>
 		<div class="space-y-6">
 			<div class="sw-card rounded-lg px-6 py-4">
 				<h1 class="text-2xl font-bold">Compliance Report</h1>
@@ -33,6 +105,21 @@ templ CompliancePage(assets AssetPaths, data ComplianceData) {
 					Per-artist rule compliance with actionable details.
 				</p>
 			</div>
+			<!-- Library summary section (lazy-loaded) -->
+			<div
+				id="compliance-summary"
+				hx-get="/api/v1/reports/health/by-library"
+				hx-trigger="load"
+				hx-swap="innerHTML"
+			>
+				<div class="flex items-center justify-center py-6">
+					<svg class="animate-spin h-6 w-6 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+						<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+						<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+					</svg>
+				</div>
+			</div>
+			<!-- Filters -->
 			<div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
 				<div class="relative flex-1 max-w-sm">
 					<input
@@ -44,18 +131,34 @@ templ CompliancePage(assets AssetPaths, data ComplianceData) {
 						hx-trigger="keyup changed delay:300ms"
 						hx-target="#compliance-table"
 						hx-swap="outerHTML"
-						hx-include="[name='status'], [name='filter']"
+						hx-include="[name='status'],[name='filter'],[name='library_id'],[name='sort'],[name='order'],[name='health_min'],[name='health_max']"
 						class="block w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
 					/>
 				</div>
-				<div class="flex items-center gap-3">
+				<div class="flex flex-wrap items-center gap-3">
+					if len(data.Libraries) > 1 {
+						<select
+							name="library_id"
+							hx-get="/reports/compliance"
+							hx-trigger="change"
+							hx-target="#compliance-table"
+							hx-swap="outerHTML"
+							hx-include="[name='search'],[name='status'],[name='filter'],[name='sort'],[name='order'],[name='health_min'],[name='health_max']"
+							class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+						>
+							<option value="" selected?={ data.LibraryID == "" }>All Libraries</option>
+							for _, lib := range data.Libraries {
+								<option value={ lib.ID } selected?={ data.LibraryID == lib.ID }>{ lib.Name }</option>
+							}
+						</select>
+					}
 					<select
 						name="status"
 						hx-get="/reports/compliance"
 						hx-trigger="change"
 						hx-target="#compliance-table"
 						hx-swap="outerHTML"
-						hx-include="[name='search'], [name='filter']"
+						hx-include="[name='search'],[name='filter'],[name='library_id'],[name='sort'],[name='order'],[name='health_min'],[name='health_max']"
 						class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
 					>
 						<option value="all" selected?={ data.Status == "" || data.Status == "all" }>All Artists</option>
@@ -68,7 +171,7 @@ templ CompliancePage(assets AssetPaths, data ComplianceData) {
 						hx-trigger="change"
 						hx-target="#compliance-table"
 						hx-swap="outerHTML"
-						hx-include="[name='search'], [name='status']"
+						hx-include="[name='search'],[name='status'],[name='library_id'],[name='sort'],[name='order'],[name='health_min'],[name='health_max']"
 						class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
 					>
 						<option value="" selected?={ data.Filter == "" }>No Filter</option>
@@ -77,6 +180,38 @@ templ CompliancePage(assets AssetPaths, data ComplianceData) {
 						<option value="missing_fanart" selected?={ data.Filter == "missing_fanart" }>Missing Fanart</option>
 						<option value="missing_mbid" selected?={ data.Filter == "missing_mbid" }>Missing MBID</option>
 					</select>
+					<!-- Health score range -->
+					<div class="flex items-center gap-1">
+						<input
+							type="number"
+							name="health_min"
+							min="0"
+							max="100"
+							placeholder="Min %"
+							value={ intOrEmpty(data.HealthScoreMin) }
+							hx-get="/reports/compliance"
+							hx-trigger="change"
+							hx-target="#compliance-table"
+							hx-swap="outerHTML"
+							hx-include="[name='search'],[name='status'],[name='filter'],[name='library_id'],[name='sort'],[name='order'],[name='health_max']"
+							class="w-20 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+						/>
+						<span class="text-gray-400 text-sm">-</span>
+						<input
+							type="number"
+							name="health_max"
+							min="0"
+							max="100"
+							placeholder="Max %"
+							value={ intOrEmpty(data.HealthScoreMax) }
+							hx-get="/reports/compliance"
+							hx-trigger="change"
+							hx-target="#compliance-table"
+							hx-swap="outerHTML"
+							hx-include="[name='search'],[name='status'],[name='filter'],[name='library_id'],[name='sort'],[name='order'],[name='health_min']"
+							class="w-20 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+						/>
+					</div>
 					@components.ColumnToggle("compliance", "compliance-tbl", []components.ColumnDef{
 						{Key: "artist", Label: "Artist", Required: true},
 						{Key: "score", Label: "Score"},
@@ -87,11 +222,93 @@ templ CompliancePage(assets AssetPaths, data ComplianceData) {
 						{Key: "mbid", Label: "MBID"},
 						{Key: "actions", Label: "Actions"},
 					})
+					<a
+						href={ templ.SafeURL(complianceExportURL(data)) }
+						class="inline-flex items-center gap-1.5 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+					>
+						<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+							<path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"></path>
+						</svg>
+						Export CSV
+					</a>
 				</div>
 			</div>
+			<!-- Hidden sort inputs -->
+			<input type="hidden" name="sort" id="compliance-sort" value={ data.Sort }/>
+			<input type="hidden" name="order" id="compliance-order" value={ data.Order }/>
 			@ComplianceTable(data)
 		</div>
+		<!-- Bulk action bar (hidden until selections exist) -->
+		<div
+			id="bulk-action-bar"
+			class="fixed bottom-0 left-0 right-0 z-30 hidden bg-gray-900 dark:bg-gray-800 border-t border-gray-700 px-6 py-3"
+		>
+			<div class="max-w-7xl mx-auto flex items-center justify-between">
+				<span id="bulk-count" class="text-sm text-white">0 selected</span>
+				<div class="flex items-center gap-3">
+					<button
+						type="button"
+						onclick="bulkAction('fetch-metadata')"
+						class="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500"
+					>
+						Fetch Metadata
+					</button>
+					<button
+						type="button"
+						onclick="bulkAction('fetch-images')"
+						class="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500"
+					>
+						Fetch Images
+					</button>
+					<button
+						type="button"
+						onclick="clearBulkSelection()"
+						class="inline-flex items-center rounded-md bg-gray-700 px-3 py-2 text-sm text-gray-300 hover:bg-gray-600"
+					>
+						Cancel
+					</button>
+				</div>
+			</div>
+		</div>
+		@complianceScript()
 	}
+}
+
+// coverageChartJSON serializes library coverage data as JSON for Chart.js.
+func coverageChartJSON(libs []LibrarySummaryData) string {
+	type chartData struct {
+		Labels   []string `json:"labels"`
+		Metadata []int    `json:"metadata"`
+		Thumb    []int    `json:"thumb"`
+		Fanart   []int    `json:"fanart"`
+		MBID     []int    `json:"mbid"`
+		Total    []int    `json:"total"`
+	}
+	d := chartData{
+		Labels:   make([]string, len(libs)),
+		Metadata: make([]int, len(libs)),
+		Thumb:    make([]int, len(libs)),
+		Fanart:   make([]int, len(libs)),
+		MBID:     make([]int, len(libs)),
+		Total:    make([]int, len(libs)),
+	}
+	for i, lib := range libs {
+		d.Labels[i] = lib.LibraryName
+		d.Metadata[i] = lib.TotalArtists - lib.MissingNFO
+		d.Thumb[i] = lib.TotalArtists - lib.MissingThumb
+		d.Fanart[i] = lib.TotalArtists - lib.MissingFanart
+		d.MBID[i] = lib.TotalArtists - lib.MissingMBID
+		d.Total[i] = lib.TotalArtists
+	}
+	b, _ := json.Marshal(d)
+	return string(b)
+}
+
+func intOrEmpty(v int) string {
+	if v <= 0 {
+		return ""
+	}
+	return strconv.Itoa(v)
 }
 
 // ComplianceTable is the HTMX-swappable table fragment.
@@ -101,11 +318,29 @@ templ ComplianceTable(data ComplianceData) {
 			<table id="compliance-tbl" class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
 				<thead class="bg-gray-50 dark:bg-gray-800">
 					<tr>
-						<th scope="col" data-col="artist" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
-							Artist
+						<th scope="col" class="px-4 py-3 text-center w-10">
+							<input
+								type="checkbox"
+								id="select-all"
+								onchange="toggleSelectAll(this)"
+								class="rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
+							/>
 						</th>
-						<th scope="col" data-col="score" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
-							Score
+						<th
+							scope="col"
+							data-col="artist"
+							class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400 cursor-pointer hover:text-gray-700 dark:hover:text-gray-200"
+							onclick="sortBy('name')"
+						>
+							Artist{ sortIcon(data.Sort, "name", data.Order) }
+						</th>
+						<th
+							scope="col"
+							data-col="score"
+							class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400 cursor-pointer hover:text-gray-700 dark:hover:text-gray-200"
+							onclick="sortBy('health_score')"
+						>
+							Score{ sortIcon(data.Sort, "health_score", data.Order) }
 						</th>
 						<th scope="col" data-col="metadata" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
 							Metadata
@@ -130,7 +365,7 @@ templ ComplianceTable(data ComplianceData) {
 				<tbody class="divide-y divide-gray-200 dark:divide-gray-700 bg-white dark:bg-gray-900">
 					if len(data.Rows) == 0 {
 						<tr>
-							<td colspan="8" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+							<td colspan="9" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
 								No artists found. Run a library scan to discover artists.
 							</td>
 						</tr>
@@ -147,6 +382,14 @@ templ ComplianceTable(data ComplianceData) {
 
 templ complianceRow(row ComplianceRow) {
 	<tr class="hover:bg-gray-50 dark:hover:bg-gray-800">
+		<td class="px-4 py-3 text-center">
+			<input
+				type="checkbox"
+				class="bulk-select rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
+				value={ row.Artist.ID }
+				onchange="updateBulkBar()"
+			/>
+		</td>
 		<td data-col="artist" class="px-4 py-3 text-sm">
 			<a
 				href={ templ.SafeURL("/artists/" + row.Artist.ID) }
@@ -188,4 +431,171 @@ templ complianceRow(row ComplianceRow) {
 			</div>
 		</td>
 	</tr>
+}
+
+// ComplianceSummaryFragment renders the library summary cards and chart.
+templ ComplianceSummaryFragment(data ComplianceSummaryData) {
+	<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+		<!-- Overall card -->
+		<div class="sw-card rounded-lg bg-white dark:bg-gray-800 p-5 shadow">
+			<p class="text-sm font-medium text-gray-500 dark:text-gray-400">Overall</p>
+			<p class={ "mt-2 text-3xl font-bold", templ.KV("text-green-600 dark:text-green-400", data.Overall.Score >= 80), templ.KV("text-yellow-600 dark:text-yellow-400", data.Overall.Score >= 50 && data.Overall.Score < 80), templ.KV("text-red-600 dark:text-red-400", data.Overall.Score < 50) }>
+				{ fmt.Sprintf("%.1f%%", data.Overall.Score) }
+			</p>
+			<p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
+				{ fmt.Sprint(data.Overall.CompliantArtists) } of { fmt.Sprint(data.Overall.TotalArtists) } compliant
+			</p>
+		</div>
+		<!-- Per-library cards -->
+		for _, lib := range data.Libraries {
+			<div class="sw-card rounded-lg bg-white dark:bg-gray-800 p-5 shadow">
+				<p class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate" title={ lib.LibraryName }>{ lib.LibraryName }</p>
+				<p class={ "mt-2 text-3xl font-bold", templ.KV("text-green-600 dark:text-green-400", lib.Score >= 80), templ.KV("text-yellow-600 dark:text-yellow-400", lib.Score >= 50 && lib.Score < 80), templ.KV("text-red-600 dark:text-red-400", lib.Score < 50) }>
+					{ fmt.Sprintf("%.1f%%", lib.Score) }
+				</p>
+				<p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
+					{ fmt.Sprint(lib.CompliantArtists) } of { fmt.Sprint(lib.TotalArtists) } compliant
+				</p>
+			</div>
+		}
+	</div>
+	if len(data.Libraries) > 0 {
+		<div class="sw-card rounded-lg bg-white dark:bg-gray-800 p-5 shadow mt-4">
+			<canvas id="coverage-chart" height="200"></canvas>
+		</div>
+		@coverageChartData(data)
+	}
+}
+
+templ coverageChartData(data ComplianceSummaryData) {
+	<div id="coverage-chart-data" class="hidden" data-chart={ coverageChartJSON(data.Libraries) }></div>
+	<script>
+		(function() {
+			var el = document.getElementById('coverage-chart-data');
+			if (!el || typeof Chart === 'undefined') return;
+			var d;
+			try { d = JSON.parse(el.getAttribute('data-chart')); } catch(e) { return; }
+			var ctx = document.getElementById('coverage-chart');
+			if (!ctx) return;
+
+			var isDark = document.documentElement.classList.contains('dark');
+			var gridColor = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)';
+			var textColor = isDark ? '#9ca3af' : '#6b7280';
+
+			new Chart(ctx, {
+				type: 'bar',
+				data: {
+					labels: d.labels,
+					datasets: [
+						{ label: 'Metadata', data: d.metadata, backgroundColor: '#3b82f6' },
+						{ label: 'Thumb', data: d.thumb, backgroundColor: '#10b981' },
+						{ label: 'Fanart', data: d.fanart, backgroundColor: '#f59e0b' },
+						{ label: 'MBID', data: d.mbid, backgroundColor: '#8b5cf6' }
+					]
+				},
+				options: {
+					responsive: true,
+					maintainAspectRatio: false,
+					plugins: {
+						legend: { labels: { color: textColor } },
+						tooltip: {
+							callbacks: {
+								label: function(ctx) {
+									var total = d.total[ctx.dataIndex];
+									return ctx.dataset.label + ': ' + ctx.raw + '/' + total;
+								}
+							}
+						}
+					},
+					scales: {
+						x: { ticks: { color: textColor }, grid: { color: gridColor } },
+						y: { ticks: { color: textColor }, grid: { color: gridColor }, beginAtZero: true }
+					}
+				}
+			});
+		})();
+	</script>
+}
+
+templ complianceScript() {
+	<script>
+		function sortBy(col) {
+			var sortInput = document.getElementById('compliance-sort');
+			var orderInput = document.getElementById('compliance-order');
+			if (!sortInput || !orderInput) return;
+
+			var currentSort = sortInput.value;
+			var currentOrder = orderInput.value;
+
+			if (currentSort === col && currentOrder === 'asc') {
+				orderInput.value = 'desc';
+			} else {
+				orderInput.value = 'asc';
+			}
+			sortInput.value = col;
+
+			// Trigger a search/filter reload with new sort
+			var searchInput = document.querySelector('[name="search"]');
+			if (searchInput) {
+				htmx.trigger(searchInput, 'keyup');
+			}
+		}
+
+		function toggleSelectAll(checkbox) {
+			document.querySelectorAll('.bulk-select').forEach(function(cb) {
+				cb.checked = checkbox.checked;
+			});
+			updateBulkBar();
+		}
+
+		function updateBulkBar() {
+			var selected = document.querySelectorAll('.bulk-select:checked');
+			var bar = document.getElementById('bulk-action-bar');
+			var count = document.getElementById('bulk-count');
+			if (!bar) return;
+
+			if (selected.length > 0) {
+				bar.classList.remove('hidden');
+				count.textContent = selected.length + ' selected';
+			} else {
+				bar.classList.add('hidden');
+			}
+		}
+
+		function clearBulkSelection() {
+			document.querySelectorAll('.bulk-select').forEach(function(cb) {
+				cb.checked = false;
+			});
+			var selectAll = document.getElementById('select-all');
+			if (selectAll) selectAll.checked = false;
+			updateBulkBar();
+		}
+
+		function bulkAction(action) {
+			var ids = [];
+			document.querySelectorAll('.bulk-select:checked').forEach(function(cb) {
+				ids.push(cb.value);
+			});
+			if (ids.length === 0) return;
+
+			var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, '$1');
+			fetch('/api/v1/bulk/' + action, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
+				body: JSON.stringify({ mode: 'prompt_no_match', artist_ids: ids })
+			}).then(function(resp) {
+				if (resp.ok) {
+					clearBulkSelection();
+					// Brief visual feedback
+					var bar = document.getElementById('bulk-action-bar');
+					if (bar) bar.classList.add('hidden');
+				}
+			}).catch(function() {});
+		}
+
+		// Re-init bulk bar state after HTMX swaps
+		document.body.addEventListener('htmx:afterSettle', function() {
+			updateBulkBar();
+		});
+	</script>
 }

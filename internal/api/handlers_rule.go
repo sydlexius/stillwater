@@ -197,12 +197,13 @@ func (r *Router) startBulkJob(w http.ResponseWriter, req *http.Request, jobType 
 		mode = rule.BulkModePromptNoMatch
 	}
 
-	job, err := r.bulkService.CreateJob(req.Context(), jobType, mode, 0)
+	job, err := r.bulkService.CreateJob(req.Context(), jobType, mode, len(body.ArtistIDs))
 	if err != nil {
 		r.logger.Error("creating bulk job", "type", jobType, "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to create job"})
 		return
 	}
+	job.ArtistIDs = body.ArtistIDs
 
 	if err := r.bulkExecutor.Start(req.Context(), job); err != nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
