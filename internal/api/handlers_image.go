@@ -962,7 +962,7 @@ func (r *Router) isKodiNumbering(ctx context.Context) bool {
 	if err != nil || profile == nil {
 		return false
 	}
-	return strings.EqualFold(profile.Name, "Kodi")
+	return strings.EqualFold(profile.ID, "kodi")
 }
 
 // processAndAppendFanart processes image data and saves it as the next
