@@ -279,9 +279,9 @@ func (r *Router) handlePopulateLibrary(w http.ResponseWriter, req *http.Request)
 	r.libraryOps[libID] = op
 	r.libraryOpsMu.Unlock()
 
-	go r.runPopulate(context.WithoutCancel(req.Context()), conn, lib, op)
-
 	writeJSON(w, http.StatusAccepted, op)
+
+	go r.runPopulate(context.WithoutCancel(req.Context()), conn, lib, op)
 }
 
 // runPopulate executes the populate operation in a background goroutine.
@@ -301,6 +301,9 @@ func (r *Router) runPopulate(ctx context.Context, conn *connection.Connection, l
 	case connection.TypeLidarr:
 		client := lidarr.New(conn.URL, conn.APIKey, r.logger)
 		popErr = r.populateFromLidarrCtx(ctx, client, lib, &result)
+
+	default:
+		popErr = fmt.Errorf("unsupported connection type: %s", conn.Type)
 	}
 
 	r.libraryOpsMu.Lock()
@@ -365,9 +368,9 @@ func (r *Router) handleScanLibrary(w http.ResponseWriter, req *http.Request) {
 	r.libraryOps[libID] = op
 	r.libraryOpsMu.Unlock()
 
-	go r.runLibraryScan(context.WithoutCancel(req.Context()), conn, lib, op)
-
 	writeJSON(w, http.StatusAccepted, op)
+
+	go r.runLibraryScan(context.WithoutCancel(req.Context()), conn, lib, op)
 }
 
 // runLibraryScan queries the platform API and updates *_exists flags for artists.
@@ -387,6 +390,9 @@ func (r *Router) runLibraryScan(ctx context.Context, conn *connection.Connection
 	case connection.TypeLidarr:
 		client := lidarr.New(conn.URL, conn.APIKey, r.logger)
 		updated, scanErr = r.scanFromLidarr(ctx, client, lib)
+
+	default:
+		scanErr = fmt.Errorf("unsupported connection type: %s", conn.Type)
 	}
 
 	r.libraryOpsMu.Lock()
@@ -610,7 +616,11 @@ func (r *Router) scanFromEmby(ctx context.Context, client *emby.Client, lib *lib
 			if a == nil && lookupErr == nil {
 				a, lookupErr = r.artistService.GetByNameAndLibrary(ctx, item.Name, lib.ID)
 			}
-			if lookupErr != nil || a == nil {
+			if lookupErr != nil {
+				r.logger.Warn("scan artist lookup from emby", "name", item.Name, "mbid", mbid, "error", lookupErr)
+				continue
+			}
+			if a == nil {
 				continue
 			}
 
@@ -665,7 +675,11 @@ func (r *Router) scanFromJellyfin(ctx context.Context, client *jellyfin.Client, 
 			if a == nil && lookupErr == nil {
 				a, lookupErr = r.artistService.GetByNameAndLibrary(ctx, item.Name, lib.ID)
 			}
-			if lookupErr != nil || a == nil {
+			if lookupErr != nil {
+				r.logger.Warn("scan artist lookup from jellyfin", "name", item.Name, "mbid", mbid, "error", lookupErr)
+				continue
+			}
+			if a == nil {
 				continue
 			}
 
@@ -717,7 +731,11 @@ func (r *Router) scanFromLidarr(ctx context.Context, client *lidarr.Client, lib 
 		if a == nil && lookupErr == nil {
 			a, lookupErr = r.artistService.GetByNameAndLibrary(ctx, la.ArtistName, lib.ID)
 		}
-		if lookupErr != nil || a == nil {
+		if lookupErr != nil {
+			r.logger.Warn("scan artist lookup from lidarr", "name", la.ArtistName, "mbid", mbid, "error", lookupErr)
+			continue
+		}
+		if a == nil {
 			continue
 		}
 

@@ -12,7 +12,9 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/auth"
+	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/database"
+	"github.com/sydlexius/stillwater/internal/encryption"
 	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/nfo"
 	"github.com/sydlexius/stillwater/internal/rule"
@@ -32,9 +34,15 @@ func testRouterForLibraryOps(t *testing.T) *Router {
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 
+	enc, _, err := encryption.NewEncryptor("")
+	if err != nil {
+		t.Fatalf("creating encryptor: %v", err)
+	}
+
 	libSvc := library.NewService(db)
 	artistSvc := artist.NewService(db)
 	authSvc := auth.NewService(db)
+	connSvc := connection.NewService(db, enc)
 	ruleSvc := rule.NewService(db)
 	if err := ruleSvc.SeedDefaults(context.Background()); err != nil {
 		t.Fatalf("seeding rules: %v", err)
@@ -44,6 +52,7 @@ func testRouterForLibraryOps(t *testing.T) *Router {
 	return NewRouter(RouterDeps{
 		AuthService:        authSvc,
 		ArtistService:      artistSvc,
+		ConnectionService:  connSvc,
 		LibraryService:     libSvc,
 		RuleService:        ruleSvc,
 		NFOSnapshotService: nfoSnapSvc,
@@ -151,24 +160,57 @@ func TestHandleLibraryOpStatus_Completed(t *testing.T) {
 
 func TestPopulateLibrary_ConflictWhenRunning(t *testing.T) {
 	r := testRouterForLibraryOps(t)
+	ctx := context.Background()
 
-	// Pre-set a running operation to trigger 409.
+	// Create a connection and library in the DB.
+	conn := &connection.Connection{
+		Name:    "Test Emby",
+		Type:    connection.TypeEmby,
+		URL:     "http://emby.local:8096",
+		APIKey:  "test-key",
+		Enabled: true,
+		Status:  "ok",
+	}
+	if err := r.connectionService.Create(ctx, conn); err != nil {
+		t.Fatalf("creating connection: %v", err)
+	}
+	lib := &library.Library{
+		Name:         "Test Library",
+		Type:         library.TypeRegular,
+		Source:       connection.TypeEmby,
+		ConnectionID: conn.ID,
+		ExternalID:   "emby-lib-1",
+	}
+	if err := r.libraryService.Create(ctx, lib); err != nil {
+		t.Fatalf("creating library: %v", err)
+	}
+
+	// Pre-set a running operation for this library.
 	r.libraryOpsMu.Lock()
-	r.libraryOps["lib-busy"] = &LibraryOpResult{
-		LibraryID: "lib-busy",
+	r.libraryOps[lib.ID] = &LibraryOpResult{
+		LibraryID: lib.ID,
 		Status:    "running",
 		StartedAt: time.Now().UTC(),
 	}
 	r.libraryOpsMu.Unlock()
 
-	// handlePopulateLibrary requires connection and library validation first,
-	// so we test the conflict detection at the op-tracking level directly.
-	// Verify the map state reflects what the handler would check.
-	r.libraryOpsMu.Lock()
-	op, ok := r.libraryOps["lib-busy"]
-	r.libraryOpsMu.Unlock()
+	// Hit the actual handler; expect 409 Conflict.
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/connections/"+conn.ID+"/libraries/"+lib.ID+"/populate", nil)
+	req.SetPathValue("id", conn.ID)
+	req.SetPathValue("libId", lib.ID)
+	w := httptest.NewRecorder()
 
-	if !ok || op.Status != "running" {
-		t.Fatal("expected running operation in libraryOps map")
+	r.handlePopulateLibrary(w, req)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusConflict, w.Body.String())
+	}
+
+	var resp map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if resp["error"] != "operation already running for this library" {
+		t.Errorf("error = %q, want conflict message", resp["error"])
 	}
 }

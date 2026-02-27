@@ -1421,7 +1421,21 @@ templ settingsLibraryScript() {
 
 		function pollLibraryOp(libID, operation, btn, spinner, label) {
 			var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1");
+			var attempts = 0;
+			var maxAttempts = 150;
+			function resetUI() {
+				if (btn) btn.disabled = false;
+				if (spinner) spinner.classList.add('hidden');
+				if (label) label.textContent = operation === 'populate' ? 'Populate Artists' : 'Scan Library';
+			}
 			var poll = setInterval(function() {
+				attempts++;
+				if (attempts > maxAttempts) {
+					clearInterval(poll);
+					resetUI();
+					showToast("Operation timed out");
+					return;
+				}
 				fetch("/api/v1/libraries/" + libID + "/operation/status", {
 					headers: {"X-CSRF-Token": csrfToken}
 				})
@@ -1429,24 +1443,22 @@ templ settingsLibraryScript() {
 				.then(function(data) {
 					if (data.status === 'completed') {
 						clearInterval(poll);
-						if (btn) btn.disabled = false;
-						if (spinner) spinner.classList.add('hidden');
-						if (label) label.textContent = operation === 'populate' ? 'Populate Artists' : 'Scan Library';
+						resetUI();
 						showSuccessToast(data.message || 'Operation completed');
 						if (operation === 'populate') refreshSettingsLibraryList();
 					} else if (data.status === 'failed') {
 						clearInterval(poll);
-						if (btn) btn.disabled = false;
-						if (spinner) spinner.classList.add('hidden');
-						if (label) label.textContent = operation === 'populate' ? 'Populate Artists' : 'Scan Library';
+						resetUI();
 						showToast(data.message || 'Operation failed');
+					} else if (data.status === 'idle') {
+						clearInterval(poll);
+						resetUI();
+						showToast("Operation state lost (server may have restarted)");
 					}
 				})
 				.catch(function() {
 					clearInterval(poll);
-					if (btn) btn.disabled = false;
-					if (spinner) spinner.classList.add('hidden');
-					if (label) label.textContent = operation === 'populate' ? 'Populate Artists' : 'Scan Library';
+					resetUI();
 					showToast("Network error while checking operation status");
 				});
 			}, 2000);
