@@ -127,7 +127,7 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 						<option value="excluded" selected?={ data.Filter == "excluded" }>Excluded</option>
 						<option value="not_excluded" selected?={ data.Filter == "not_excluded" }>Not Excluded</option>
 					</select>
-					if data.View == "table" {
+					<div id="col-toggle-wrapper" class={ templ.KV("hidden", data.View != "table") }>
 					@components.ColumnToggle("artists", "artists-table", []components.ColumnDef{
 						{Key: "name", Label: "Name", Required: true},
 						{Key: "metadata", Label: "Metadata"},
@@ -136,7 +136,7 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 						{Key: "logo", Label: "Logo"},
 						{Key: "mbid", Label: "MBID"},
 					})
-				}
+				</div>
 				<div class="flex rounded-md border border-gray-300 dark:border-gray-600 overflow-hidden">
 						<button
 							type="button"
@@ -181,6 +181,15 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 			function setView(view) {
 				var input = document.getElementById('artist-view-input');
 				if (input) input.value = view;
+				// Show/hide column toggle based on view
+				var colToggle = document.getElementById('col-toggle-wrapper');
+				if (colToggle) {
+					if (view === 'table') {
+						colToggle.classList.remove('hidden');
+					} else {
+						colToggle.classList.add('hidden');
+					}
+				}
 				// Fire-and-forget save preference
 				var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*\=\s*([^;]*).*$)|^.*$/, "$1");
 				fetch('/api/v1/settings', {

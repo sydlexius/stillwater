@@ -83,10 +83,12 @@ templ columnToggleScript() {
 				var table = document.getElementById(tableID);
 				if (!table) return;
 
-				var cells = table.querySelectorAll('[data-col="' + key + '"]');
-				cells.forEach(function(cell) {
-					cell.style.display = checkbox.checked ? '' : 'none';
-				});
+				try {
+					var cells = table.querySelectorAll('[data-col="' + key + '"]');
+					cells.forEach(function(cell) {
+						cell.style.display = checkbox.checked ? '' : 'none';
+					});
+				} catch(e) { /* skip invalid selector from corrupted key */ }
 
 				saveColumnState(storageKey, wrapper);
 			};
@@ -113,9 +115,11 @@ templ columnToggleScript() {
 				if (!table) return;
 
 				hidden.forEach(function(key) {
-					table.querySelectorAll('[data-col="' + key + '"]').forEach(function(cell) {
-						cell.style.display = 'none';
-					});
+					try {
+						table.querySelectorAll('[data-col="' + key + '"]').forEach(function(cell) {
+							cell.style.display = 'none';
+						});
+					} catch(e) { /* skip invalid selector from corrupted key */ }
 				});
 
 				// Sync checkboxes in the dropdown
