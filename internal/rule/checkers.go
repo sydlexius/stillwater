@@ -365,44 +365,66 @@ var imageExtensions = map[string]bool{
 	".jpg": true, ".jpeg": true, ".png": true,
 }
 
+// expectedImageFiles builds the set of expected (canonical) filenames for an
+// artist directory given the active platform profile and the artist's directory
+// path. Used by both the extraneous images checker and fixer to avoid logic
+// duplication.
+func expectedImageFiles(profile *platform.Profile, artistPath string) map[string]bool {
+	expected := make(map[string]bool)
+	expected["artist.nfo"] = true
+
+	imageTypes := []string{"thumb", "fanart", "logo", "banner"}
+	for _, imageType := range imageTypes {
+		var names []string
+		if profile != nil {
+			names = profile.ImageNaming.NamesForType(imageType)
+		}
+		if len(names) == 0 {
+			names = image.FileNamesForType(image.DefaultFileNames, imageType)
+		}
+		for _, name := range names {
+			expected[strings.ToLower(name)] = true
+			// Also allow alternate extension variants.
+			base := strings.TrimSuffix(name, filepath.Ext(name))
+			for ext := range imageExtensions {
+				expected[strings.ToLower(base+ext)] = true
+			}
+		}
+	}
+
+	// Whitelist numbered fanart variants discovered on disk. This prevents
+	// files like backdrop2.jpg, fanart1.jpg from being flagged as extraneous.
+	if artistPath != "" {
+		var fanartPrimary string
+		if profile != nil {
+			fanartPrimary = profile.ImageNaming.PrimaryName("fanart")
+		}
+		if fanartPrimary == "" {
+			fanartPrimary = image.PrimaryFileName(image.DefaultFileNames, "fanart")
+		}
+		for _, p := range image.DiscoverFanart(artistPath, fanartPrimary) {
+			expected[strings.ToLower(filepath.Base(p))] = true
+		}
+	}
+
+	return expected
+}
+
 // makeExtraneousImagesChecker returns a Checker closure that detects non-canonical
 // image files in an artist directory. The canonical set is derived from the active
-// platform profile: for each image type, the primary name plus its alternate
-// extension variant (e.g. folder.jpg and folder.png) are considered expected.
+// platform profile: for each image type, all configured names plus their alternate
+// extension variants are considered expected.
 func (e *Engine) makeExtraneousImagesChecker() Checker {
 	return func(a *artist.Artist, cfg RuleConfig) *Violation {
 		if a.Path == "" {
 			return nil
 		}
 
-		// Build the set of expected filenames from the active platform profile.
-		expected := make(map[string]bool)
-		expected["artist.nfo"] = true
-
 		var profile *platform.Profile
 		if e.platformService != nil {
 			profile, _ = e.platformService.GetActive(context.Background())
 		}
-		imageTypes := []string{"thumb", "fanart", "logo", "banner"}
-
-		for _, imageType := range imageTypes {
-			var primary string
-			if profile != nil {
-				primary = profile.ImageNaming.PrimaryName(imageType)
-			}
-			if primary == "" {
-				primary = image.PrimaryFileName(image.DefaultFileNames, imageType)
-			}
-			if primary == "" {
-				continue
-			}
-			expected[strings.ToLower(primary)] = true
-			// Also allow the alternate extension variant.
-			base := strings.TrimSuffix(primary, filepath.Ext(primary))
-			for ext := range imageExtensions {
-				expected[strings.ToLower(base+ext)] = true
-			}
-		}
+		expected := expectedImageFiles(profile, a.Path)
 
 		entries, readErr := os.ReadDir(a.Path)
 		if readErr != nil {

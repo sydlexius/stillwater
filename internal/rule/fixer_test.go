@@ -510,7 +510,7 @@ func TestImageFixer_Fix_ResolutionGate(t *testing.T) {
 		},
 	}
 
-	f := NewImageFixer(mock, testLogger())
+	f := NewImageFixer(mock, nil, testLogger())
 	a := &artist.Artist{
 		Name:          "Gate Test",
 		MusicBrainzID: "mbid-gate",
@@ -542,7 +542,7 @@ func TestImageFixer_FetchImages_Cached(t *testing.T) {
 		},
 	}
 
-	f := NewImageFixer(mock, testLogger())
+	f := NewImageFixer(mock, nil, testLogger())
 	a := &artist.Artist{
 		Name:          "Cache Test",
 		MusicBrainzID: "mbid-cache",
@@ -607,7 +607,7 @@ func TestImageFixer_Fix_PostDownloadDimensionGate(t *testing.T) {
 		t.Fatalf("writing existing thumb: %v", err)
 	}
 
-	f := NewImageFixer(mock, testLogger())
+	f := NewImageFixer(mock, nil, testLogger())
 	a := &artist.Artist{
 		Name:          "Adie",
 		MusicBrainzID: "mbid-adie",
@@ -662,7 +662,7 @@ func TestImageFixer_Fix_ThumbSquare_ResolutionGate(t *testing.T) {
 		t.Fatalf("writing existing thumb: %v", err)
 	}
 
-	f := NewImageFixer(mock, testLogger())
+	f := NewImageFixer(mock, nil, testLogger())
 	a := &artist.Artist{
 		Name:          "Adie",
 		MusicBrainzID: "mbid-adie-sq",
@@ -700,7 +700,7 @@ func TestExistingImageFileNames_OnlyWritesExistingFiles(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	got := existingImageFileNames(dir, "thumb")
+	got := existingImageFileNames(dir, "thumb", nil)
 	if len(got) != 1 || got[0] != "folder.jpg" {
 		t.Errorf("existingImageFileNames = %v; want [folder.jpg]", got)
 	}
@@ -709,7 +709,7 @@ func TestExistingImageFileNames_OnlyWritesExistingFiles(t *testing.T) {
 func TestExistingImageFileNames_FallsBackToPrimary(t *testing.T) {
 	dir := t.TempDir() // empty -- no existing files
 
-	got := existingImageFileNames(dir, "thumb")
+	got := existingImageFileNames(dir, "thumb", nil)
 	if len(got) != 1 {
 		t.Fatalf("want 1 (primary fallback), got %d: %v", len(got), got)
 	}

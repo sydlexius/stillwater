@@ -32,6 +32,7 @@ type Artist struct {
 	NFOExists           bool              `json:"nfo_exists"`
 	ThumbExists         bool              `json:"thumb_exists"`
 	FanartExists        bool              `json:"fanart_exists"`
+	FanartCount         int               `json:"fanart_count"`
 	LogoExists          bool              `json:"logo_exists"`
 	BannerExists        bool              `json:"banner_exists"`
 	ThumbLowRes         bool              `json:"thumb_low_res"`

@@ -2,6 +2,8 @@ package platform
 
 import (
 	"encoding/json"
+	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -58,6 +60,66 @@ func (n ImageNaming) PrimaryName(imageType string) string {
 		}
 	}
 	return ""
+}
+
+// NamesForType returns the full filename slice for the given image type.
+func (n ImageNaming) NamesForType(imageType string) []string {
+	switch imageType {
+	case "thumb":
+		return n.Thumb
+	case "fanart":
+		return n.Fanart
+	case "logo":
+		return n.Logo
+	case "banner":
+		return n.Banner
+	}
+	return nil
+}
+
+// ValidateImageNaming checks all filenames in an ImageNaming struct and returns
+// a list of human-readable error strings. Returns nil if all names are valid.
+func ValidateImageNaming(n ImageNaming) []string {
+	var errs []string
+
+	validate := func(imageType string, names []string) {
+		seen := make(map[string]bool, len(names))
+		for _, name := range names {
+			if name == "" {
+				errs = append(errs, imageType+": empty filename")
+				continue
+			}
+			if strings.ContainsAny(name, "/\\") {
+				errs = append(errs, imageType+": filename contains path separator: "+name)
+				continue
+			}
+			ext := strings.ToLower(filepath.Ext(name))
+			if ext != ".jpg" && ext != ".png" {
+				errs = append(errs, imageType+": extension must be .jpg or .png: "+name)
+				continue
+			}
+			if imageType == "logo" && ext != ".png" {
+				errs = append(errs, "logo: must use .png extension: "+name)
+				continue
+			}
+			lower := strings.ToLower(name)
+			if seen[lower] {
+				errs = append(errs, imageType+": duplicate filename: "+name)
+				continue
+			}
+			seen[lower] = true
+		}
+	}
+
+	validate("thumb", n.Thumb)
+	validate("fanart", n.Fanart)
+	validate("logo", n.Logo)
+	validate("banner", n.Banner)
+
+	if len(errs) == 0 {
+		return nil
+	}
+	return errs
 }
 
 // MarshalImageNaming serializes ImageNaming to a JSON string.

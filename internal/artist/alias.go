@@ -261,7 +261,7 @@ func scanArtistWithExtra(row interface{ Scan(...any) error }, n int) (*artistWit
 	var metadataSources string
 	var audiodbFetchedAt, discogsFetchedAt, wikidataFetchedAt, lastfmFetchedAt sql.NullString
 	var lastScannedAt sql.NullString
-	var nfo, thumb, fanart, logo, banner int
+	var nfo, thumb, fanart, fanartCount, logo, banner int
 	var thumbLowRes, fanartLowRes, logoLowRes, bannerLowRes int
 	var isExcluded, isClassical int
 	var createdAt, updatedAt string
@@ -271,7 +271,7 @@ func scanArtistWithExtra(row interface{ Scan(...any) error }, n int) (*artistWit
 		&a.MusicBrainzID, &a.AudioDBID, &a.DiscogsID, &a.WikidataID, &a.DeezerID,
 		&genres, &styles, &moods,
 		&a.YearsActive, &a.Born, &a.Formed, &a.Died, &a.Disbanded, &a.Biography,
-		&a.Path, &libraryID, &nfo, &thumb, &fanart, &logo, &banner,
+		&a.Path, &libraryID, &nfo, &thumb, &fanart, &fanartCount, &logo, &banner,
 		&thumbLowRes, &fanartLowRes, &logoLowRes, &bannerLowRes,
 		&a.HealthScore, &isExcluded, &a.ExclusionReason, &isClassical,
 		&metadataSources,
@@ -293,6 +293,7 @@ func scanArtistWithExtra(row interface{ Scan(...any) error }, n int) (*artistWit
 	a.NFOExists = nfo == 1
 	a.ThumbExists = thumb == 1
 	a.FanartExists = fanart == 1
+	a.FanartCount = fanartCount
 	a.LogoExists = logo == 1
 	a.BannerExists = banner == 1
 	a.ThumbLowRes = thumbLowRes == 1

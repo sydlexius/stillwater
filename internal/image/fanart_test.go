@@ -1,0 +1,109 @@
+package image
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func TestFanartFilename(t *testing.T) {
+	tests := []struct {
+		name          string
+		primaryName   string
+		index         int
+		kodiNumbering bool
+		want          string
+	}{
+		{"emby primary", "backdrop.jpg", 0, false, "backdrop.jpg"},
+		{"emby second", "backdrop.jpg", 1, false, "backdrop2.jpg"},
+		{"emby third", "backdrop.jpg", 2, false, "backdrop3.jpg"},
+		{"kodi primary", "fanart.jpg", 0, true, "fanart.jpg"},
+		{"kodi second", "fanart.jpg", 1, true, "fanart1.jpg"},
+		{"kodi third", "fanart.jpg", 2, true, "fanart2.jpg"},
+		{"plex primary", "fanart.jpg", 0, false, "fanart.jpg"},
+		{"plex second", "fanart.jpg", 1, false, "fanart2.jpg"},
+		{"png primary", "backdrop.png", 0, false, "backdrop.png"},
+		{"png second", "backdrop.png", 1, false, "backdrop2.png"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := FanartFilename(tt.primaryName, tt.index, tt.kodiNumbering)
+			if got != tt.want {
+				t.Errorf("FanartFilename(%q, %d, %v) = %q, want %q",
+					tt.primaryName, tt.index, tt.kodiNumbering, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDiscoverFanart(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create test files
+	for _, name := range []string{"backdrop.jpg", "backdrop2.jpg", "backdrop3.jpg", "unrelated.jpg", "logo.png"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("fake"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	paths := DiscoverFanart(dir, "backdrop.jpg")
+	if len(paths) != 3 {
+		t.Fatalf("expected 3 fanart files, got %d: %v", len(paths), paths)
+	}
+
+	wantBases := []string{"backdrop.jpg", "backdrop2.jpg", "backdrop3.jpg"}
+	for i, want := range wantBases {
+		got := filepath.Base(paths[i])
+		if got != want {
+			t.Errorf("paths[%d] = %q, want %q", i, got, want)
+		}
+	}
+}
+
+func TestDiscoverFanart_KodiNaming(t *testing.T) {
+	dir := t.TempDir()
+
+	for _, name := range []string{"fanart.jpg", "fanart1.jpg", "fanart2.jpg"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("fake"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	paths := DiscoverFanart(dir, "fanart.jpg")
+	if len(paths) != 3 {
+		t.Fatalf("expected 3 fanart files, got %d: %v", len(paths), paths)
+	}
+
+	wantBases := []string{"fanart.jpg", "fanart1.jpg", "fanart2.jpg"}
+	for i, want := range wantBases {
+		got := filepath.Base(paths[i])
+		if got != want {
+			t.Errorf("paths[%d] = %q, want %q", i, got, want)
+		}
+	}
+}
+
+func TestDiscoverFanart_EmptyDir(t *testing.T) {
+	dir := t.TempDir()
+	paths := DiscoverFanart(dir, "backdrop.jpg")
+	if len(paths) != 0 {
+		t.Errorf("expected 0 fanart files, got %d", len(paths))
+	}
+}
+
+func TestDiscoverFanart_AlternateExtension(t *testing.T) {
+	dir := t.TempDir()
+
+	// Primary is backdrop.jpg but actual file is backdrop.png
+	if err := os.WriteFile(filepath.Join(dir, "backdrop.png"), []byte("fake"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	paths := DiscoverFanart(dir, "backdrop.jpg")
+	if len(paths) != 1 {
+		t.Fatalf("expected 1 fanart file (alternate ext), got %d: %v", len(paths), paths)
+	}
+	if filepath.Base(paths[0]) != "backdrop.png" {
+		t.Errorf("expected backdrop.png, got %q", filepath.Base(paths[0]))
+	}
+}

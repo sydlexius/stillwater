@@ -230,6 +230,21 @@ templ imageSearchContextualized(data ImageSearchData) {
 			// -- Upload status --
 			<div id="upload-status" class="mt-2"></div>
 		</section>
+		// -- Fanart gallery (when viewing fanart type with multiple images) --
+		if data.SelectedType == "fanart" && data.Artist.FanartCount > 1 {
+			<section class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow" data-artist-id={ data.Artist.ID }>
+				<div class="flex items-center justify-between mb-4">
+					<h2 class="text-lg font-semibold">Fanart Gallery</h2>
+				</div>
+				<div
+					hx-get={ fmt.Sprintf("/api/v1/artists/%s/images/fanart/list", data.Artist.ID) }
+					hx-trigger="load"
+					hx-swap="innerHTML"
+				>
+					<span class="text-sm text-gray-400">Loading gallery...</span>
+				</div>
+			</section>
+		}
 		// -- Search results (shared area, auto-fires only when auto-fetch is enabled) --
 		if data.AutoFetchImages && data.Artist.MusicBrainzID != "" {
 			<div
@@ -559,6 +574,122 @@ templ ImageSearchResults(artistID string, images []provider.ImageResult) {
 			for _, img := range images {
 				@components.ImageCard(artistID, img)
 			}
+		</div>
+	}
+}
+
+// FanartSearchResults renders the grid of fanart search results with checkboxes
+// for multi-select and a floating "Save All" bar for bulk download.
+templ FanartSearchResults(artistID string, images []provider.ImageResult) {
+	if len(images) == 0 {
+		<p class="text-sm text-gray-500 dark:text-gray-400 py-4">No fanart images found from providers.</p>
+	} else {
+		<div id="fanart-search-results" data-artist-id={ artistID }>
+			<div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+				for i, img := range images {
+					<div
+						class="relative rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden group hover:border-blue-400 dark:hover:border-blue-500 transition-colors"
+						data-img-url={ img.URL }
+						data-img-type="fanart"
+						data-img-source={ img.Source }
+						data-img-width={ strconv.Itoa(img.Width) }
+						data-img-height={ strconv.Itoa(img.Height) }
+					>
+						<label class="cursor-pointer">
+							<input
+								type="checkbox"
+								class="fanart-select-cb absolute top-2 left-2 z-10 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+								value={ strconv.Itoa(i) }
+								data-url={ img.URL }
+							/>
+							<div class="aspect-square flex items-center justify-center overflow-hidden bg-gray-100 dark:bg-gray-900">
+								<img
+									src={ img.URL }
+									alt={ string(img.Type) + " from " + img.Source }
+									class="max-w-full max-h-full object-contain"
+									loading="lazy"
+									onerror="this.style.display='none';"
+								/>
+							</div>
+						</label>
+						<div class="p-2 space-y-1">
+							<div class="flex items-center gap-1 flex-wrap">
+								<span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs font-medium text-gray-600 dark:text-gray-300">
+									{ provider.ProviderName(img.Source).DisplayName() }
+								</span>
+							</div>
+							<div class="text-xs text-gray-500 dark:text-gray-400">
+								if img.Width > 0 && img.Height > 0 {
+									<span>{ strconv.Itoa(img.Width) }x{ strconv.Itoa(img.Height) }</span>
+								}
+								if img.Likes > 0 {
+									<span class="ml-1">{ strconv.Itoa(img.Likes) } likes</span>
+								}
+							</div>
+							<button
+								type="button"
+								class="w-full mt-1 text-sm px-2 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+								hx-post={ fmt.Sprintf("/api/v1/artists/%s/images/fetch", artistID) }
+								hx-vals={ fmt.Sprintf(`{"url":"%s","type":"fanart"}`, img.URL) }
+								hx-swap="none"
+								hx-confirm="Save this fanart?"
+								data-confirm-key="image-save"
+							>
+								Save
+							</button>
+						</div>
+					</div>
+				}
+			</div>
+			<div id="fanart-bulk-bar" class="hidden sticky bottom-4 mt-4 rounded-lg bg-gray-900/90 backdrop-blur text-white px-4 py-3 flex items-center justify-between shadow-lg">
+				<span id="fanart-bulk-count">0 selected</span>
+				<button type="button" id="fanart-bulk-save" class="px-4 py-2 text-sm rounded bg-blue-600 hover:bg-blue-700 transition-colors font-medium">
+					Save All
+				</button>
+			</div>
+			<script>
+				(function() {
+					var container = document.getElementById('fanart-search-results');
+					if (!container) return;
+					var artistId = container.dataset.artistId;
+					var bar = document.getElementById('fanart-bulk-bar');
+					var countEl = document.getElementById('fanart-bulk-count');
+
+					container.addEventListener('change', function() {
+						var checked = container.querySelectorAll('.fanart-select-cb:checked');
+						if (checked.length > 0) {
+							bar.classList.remove('hidden');
+							countEl.textContent = checked.length + ' selected';
+						} else {
+							bar.classList.add('hidden');
+						}
+					});
+
+					document.getElementById('fanart-bulk-save').addEventListener('click', function() {
+						var checked = container.querySelectorAll('.fanart-select-cb:checked');
+						if (checked.length === 0) return;
+						var urls = [];
+						for (var i = 0; i < checked.length; i++) {
+							urls.push(checked[i].dataset.url);
+						}
+						bar.classList.add('hidden');
+						countEl.textContent = 'Saving...';
+						bar.classList.remove('hidden');
+						fetch('/api/v1/artists/' + artistId + '/images/fanart/fetch-batch', {
+							method: 'POST',
+							headers: {
+								'Content-Type': 'application/json',
+								'X-CSRF-Token': document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1")
+							},
+							body: JSON.stringify({urls: urls}),
+							credentials: 'same-origin'
+						}).then(function(r) {
+							if (r.ok) window.location.reload();
+							else r.text().then(function(t) { alert(t); });
+						});
+					});
+				})();
+			</script>
 		</div>
 	}
 }

@@ -410,10 +410,10 @@ func TestCheckExtraneousImages(t *testing.T) {
 	dir := t.TempDir()
 	createTestJPEG(t, filepath.Join(dir, "folder.jpg"), 500, 500)   // canonical thumb
 	createTestJPEG(t, filepath.Join(dir, "fanart.jpg"), 1920, 1080) // canonical fanart
-	createTestJPEG(t, filepath.Join(dir, "artist.jpg"), 500, 500)   // extraneous
-	createTestJPEG(t, filepath.Join(dir, "poster.jpg"), 500, 500)   // extraneous
+	createTestJPEG(t, filepath.Join(dir, "random.jpg"), 500, 500)   // extraneous
+	createTestJPEG(t, filepath.Join(dir, "cover.png"), 500, 500)    // extraneous
 
-	// Engine with nil platformService uses DefaultFileNames.
+	// Engine with nil platformService uses DefaultFileNames (full arrays).
 	e := &Engine{platformService: nil}
 	checker := e.makeExtraneousImagesChecker()
 
