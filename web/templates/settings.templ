@@ -473,6 +473,89 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 						</div>
 					</div>
 				</div>
+				<!-- Logging Configuration -->
+				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
+					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+						<h2 class="text-lg font-semibold">Logging</h2>
+						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+							Configure log level, format, and optional file output. Changes take effect immediately.
+						</p>
+					</div>
+					<div class="px-6 py-4">
+						<form
+							id="logging-config-form"
+							hx-put="/api/v1/settings/logging"
+							hx-target="#logging-status"
+							hx-swap="innerHTML"
+							class="space-y-4"
+						>
+							<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+								<div>
+									<label for="log-level" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Level</label>
+									<select
+										id="log-level"
+										name="level"
+										class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+										hx-get="/api/v1/settings/logging"
+										hx-trigger="load"
+										hx-swap="none"
+										hx-on::after-request="if(event.detail.successful){try{var d=JSON.parse(event.detail.xhr.responseText);document.getElementById('log-level').value=d.level||'info';document.getElementById('log-format').value=d.format||'json';document.getElementById('log-file-path').value=d.file_path||'';document.getElementById('log-file-max-size').value=d.file_max_size_mb||100;document.getElementById('log-file-max-files').value=d.file_max_files||3;document.getElementById('log-file-max-age').value=d.file_max_age_days||30;toggleFileSettings();}catch(e){}}"
+									>
+										<option value="debug">Debug</option>
+										<option value="info" selected>Info</option>
+										<option value="warn">Warn</option>
+										<option value="error">Error</option>
+									</select>
+								</div>
+								<div>
+									<label for="log-format" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Format</label>
+									<select
+										id="log-format"
+										name="format"
+										class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+									>
+										<option value="json">JSON</option>
+										<option value="text">Text</option>
+									</select>
+								</div>
+							</div>
+							<div>
+								<label for="log-file-path" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">File output (optional)</label>
+								<input
+									id="log-file-path"
+									name="file_path"
+									type="text"
+									placeholder="/data/logs/stillwater.log"
+									class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+									oninput="toggleFileSettings()"
+								/>
+								<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Leave empty to log only to stdout. Logs are always written to stdout.</p>
+							</div>
+							<p id="file-rotation-hint" class="text-xs text-gray-500 dark:text-gray-400 italic">Enter a file path above to configure log rotation settings.</p>
+							<div id="file-rotation-settings" class="hidden grid grid-cols-1 gap-4 sm:grid-cols-3">
+								<div>
+									<label for="log-file-max-size" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Max size (MB)</label>
+									<input id="log-file-max-size" name="file_max_size_mb" type="number" value="100" min="1" class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+								</div>
+								<div>
+									<label for="log-file-max-files" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Max files</label>
+									<input id="log-file-max-files" name="file_max_files" type="number" value="3" min="1" class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+								</div>
+								<div>
+									<label for="log-file-max-age" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Max age (days)</label>
+									<input id="log-file-max-age" name="file_max_age_days" type="number" value="30" min="1" class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+								</div>
+							</div>
+							<div class="flex items-center gap-3">
+								<button type="submit" class="text-sm px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors">
+									Apply
+								</button>
+								<span id="logging-status"></span>
+							</div>
+						</form>
+					</div>
+				</div>
+				@loggingScript()
 			</div>
 			<!-- Providers tab -->
 			<div
@@ -753,6 +836,67 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 						<span id="confirm-reset-status" class="ml-2 text-sm text-green-600 dark:text-green-400 hidden">Preferences reset.</span>
 					</div>
 				</div>
+				<!-- Database Maintenance -->
+				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
+					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+						<h2 class="text-lg font-semibold">Database Maintenance</h2>
+						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+							Optimize database performance and reclaim disk space.
+						</p>
+					</div>
+					<div class="px-6 py-4 space-y-4">
+						<div id="maintenance-status" hx-get="/api/v1/settings/maintenance/status" hx-trigger="load" hx-swap="innerHTML">
+							<p class="text-sm text-gray-500 dark:text-gray-400 italic">Loading status...</p>
+						</div>
+						<div class="flex items-center gap-3 pt-2 border-t border-gray-200 dark:border-gray-700">
+							<button
+								type="button"
+								class="text-sm px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+								hx-post="/api/v1/settings/maintenance/optimize"
+								hx-target="#maintenance-status"
+								hx-swap="innerHTML"
+								hx-indicator="#optimize-spinner"
+							>
+								Optimize Now
+							</button>
+							<span id="optimize-spinner" class="htmx-indicator text-sm text-gray-500 dark:text-gray-400">
+								Optimizing...
+							</span>
+							<button
+								type="button"
+								class="text-sm px-3 py-2 rounded bg-amber-600 text-white hover:bg-amber-700 transition-colors"
+								hx-post="/api/v1/settings/maintenance/vacuum"
+								hx-target="#maintenance-status"
+								hx-swap="innerHTML"
+								hx-indicator="#vacuum-spinner"
+								hx-confirm="VACUUM rebuilds the entire database file. This may take a while for large databases and temporarily doubles disk usage. Continue?"
+							>
+								Vacuum
+							</button>
+							<span id="vacuum-spinner" class="htmx-indicator text-sm text-gray-500 dark:text-gray-400">
+								Running vacuum...
+							</span>
+						</div>
+						<div class="pt-2 border-t border-gray-200 dark:border-gray-700">
+							<div class="flex items-center gap-4">
+								<label class="text-sm font-medium text-gray-700 dark:text-gray-300">Auto-optimize schedule</label>
+								<select
+									id="maint-interval"
+									class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+								>
+									<option value="6">Every 6 hours</option>
+									<option value="12">Every 12 hours</option>
+									<option value="24" selected>Daily (24h)</option>
+									<option value="168">Weekly</option>
+								</select>
+								<span id="maint-schedule-status"></span>
+							</div>
+							<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+								Runs PRAGMA optimize and WAL checkpoint on the selected interval. Requires restart to apply schedule changes.
+							</p>
+						</div>
+					</div>
+				</div>
 				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 						<h2 class="text-lg font-semibold">Database Backup</h2>
@@ -779,6 +923,92 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 						<div id="backup-list" hx-get="/api/v1/settings/backup/history" hx-trigger="load" hx-swap="innerHTML">
 							<p class="text-sm text-gray-500 dark:text-gray-400 italic">Loading backup history...</p>
 						</div>
+					</div>
+				</div>
+				<!-- Settings Export / Import -->
+				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
+					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+						<h2 class="text-lg font-semibold">Settings Export / Import</h2>
+						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+							Export all settings (provider keys, connections, profiles, webhooks) as an encrypted file.
+							A passphrase you choose protects the file, so it can be imported on any Stillwater instance.
+						</p>
+					</div>
+					<div class="px-6 py-4 space-y-4">
+						<form
+							onsubmit="event.preventDefault(); var pp=this.querySelector('[name=export_passphrase]').value; if(!pp){return;} window.location.href='/api/v1/settings/export?passphrase='+encodeURIComponent(pp);"
+							class="space-y-3"
+						>
+							<div>
+								<label for="export-passphrase" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Export passphrase</label>
+								<input
+									id="export-passphrase"
+									name="export_passphrase"
+									type="password"
+									required
+									minlength="8"
+									placeholder="Choose a passphrase (min 8 characters)"
+									class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+								/>
+							</div>
+							<div class="flex items-center gap-3">
+								<button
+									type="submit"
+									class="text-sm px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+								>
+									Export Settings
+								</button>
+							</div>
+						</form>
+						<div class="pt-2 border-t border-gray-200 dark:border-gray-700">
+							<form
+								hx-post="/api/v1/settings/import"
+								hx-target="#import-result"
+								hx-swap="innerHTML"
+								hx-encoding="multipart/form-data"
+								hx-indicator="#import-spinner"
+								class="space-y-3"
+							>
+								<div>
+									<label for="import-file" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Import settings file</label>
+									<input
+										id="import-file"
+										name="file"
+										type="file"
+										accept=".json"
+										required
+										class="block w-full text-sm text-gray-900 dark:text-gray-100 file:mr-4 file:py-2 file:px-3 file:rounded file:border-0 file:text-sm file:bg-gray-100 dark:file:bg-gray-700 file:text-gray-700 dark:file:text-gray-300 hover:file:bg-gray-200 dark:hover:file:bg-gray-600"
+									/>
+								</div>
+								<div>
+									<label for="import-passphrase" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Import passphrase</label>
+									<input
+										id="import-passphrase"
+										name="passphrase"
+										type="password"
+										required
+										placeholder="Enter the passphrase used during export"
+										class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+									/>
+								</div>
+								<div class="flex items-center gap-3">
+									<button
+										type="submit"
+										class="text-sm px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 transition-colors"
+									>
+										Import
+									</button>
+									<span id="import-spinner" class="htmx-indicator text-sm text-gray-500 dark:text-gray-400">
+										Importing...
+									</span>
+								</div>
+							</form>
+							<div id="import-result" class="mt-2"></div>
+						</div>
+						<p class="text-xs text-gray-500 dark:text-gray-400">
+							The export file is encrypted with your passphrase using PBKDF2 + AES-256-GCM.
+							You will need the same passphrase to import the file on any instance.
+						</p>
 					</div>
 				</div>
 			</div>
@@ -829,6 +1059,25 @@ templ settingsTabBar(activeTab string) {
 			}
 		</nav>
 	</div>
+}
+
+templ loggingScript() {
+	<script>
+		function toggleFileSettings() {
+			var path = document.getElementById('log-file-path');
+			var settings = document.getElementById('file-rotation-settings');
+			var hint = document.getElementById('file-rotation-hint');
+			if (path && settings) {
+				if (path.value.trim() !== '') {
+					settings.classList.remove('hidden');
+					if (hint) hint.classList.add('hidden');
+				} else {
+					settings.classList.add('hidden');
+					if (hint) hint.classList.remove('hidden');
+				}
+			}
+		}
+	</script>
 }
 
 templ autoFetchToggleScript() {

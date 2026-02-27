@@ -23,6 +23,8 @@ import (
 	"github.com/sydlexius/stillwater/internal/encryption"
 	"github.com/sydlexius/stillwater/internal/event"
 	"github.com/sydlexius/stillwater/internal/library"
+	"github.com/sydlexius/stillwater/internal/logging"
+	"github.com/sydlexius/stillwater/internal/maintenance"
 	"github.com/sydlexius/stillwater/internal/nfo"
 	"github.com/sydlexius/stillwater/internal/platform"
 	"github.com/sydlexius/stillwater/internal/provider"
@@ -37,6 +39,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/rule"
 	"github.com/sydlexius/stillwater/internal/scanner"
 	"github.com/sydlexius/stillwater/internal/scraper"
+	"github.com/sydlexius/stillwater/internal/settingsio"
 	"github.com/sydlexius/stillwater/internal/version"
 	"github.com/sydlexius/stillwater/internal/webhook"
 )
@@ -72,26 +75,13 @@ func run() error {
 		return fmt.Errorf("loading config: %w", err)
 	}
 
-	// Set up structured logging
-	var logLevel slog.Level
-	switch cfg.Logging.Level {
-	case "debug":
-		logLevel = slog.LevelDebug
-	case "warn":
-		logLevel = slog.LevelWarn
-	case "error":
-		logLevel = slog.LevelError
-	default:
-		logLevel = slog.LevelInfo
+	// Set up structured logging via the logging Manager
+	logCfg := logging.Config{
+		Level:  cfg.Logging.Level,
+		Format: cfg.Logging.Format,
 	}
-
-	var handler slog.Handler
-	if cfg.Logging.Format == "text" {
-		handler = slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: logLevel})
-	} else {
-		handler = slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: logLevel})
-	}
-	logger := slog.New(handler)
+	logManager, logger := logging.NewManager(logCfg)
+	defer logManager.Close() //nolint:errcheck
 	slog.SetDefault(logger)
 
 	// Open database
@@ -111,6 +101,9 @@ func run() error {
 	}
 
 	logger.Info("database ready", slog.String("path", cfg.Database.Path))
+
+	// Reload logging settings from DB (overrides config file values if present)
+	loadDBLoggingConfig(db, logManager, logger)
 
 	// Initialize library service and backfill default library
 	libraryService := library.NewService(db)
@@ -202,6 +195,12 @@ func run() error {
 	}
 	backupService := backup.NewService(db, backupDir, cfg.Backup.RetentionCount, logger)
 
+	// Initialize maintenance service
+	maintenanceService := maintenance.NewService(db, cfg.Database.Path, logger)
+
+	// Initialize settings export/import service
+	settingsIOService := settingsio.NewService(db, providerSettings, connectionService, platformService, webhookService)
+
 	// Subscribe dispatcher to all event types
 	for _, eventType := range []event.Type{
 		event.ArtistNew, event.MetadataFixed, event.ReviewNeeded,
@@ -241,6 +240,9 @@ func run() error {
 		WebhookService:     webhookService,
 		WebhookDispatcher:  webhookDispatcher,
 		BackupService:      backupService,
+		LogManager:         logManager,
+		MaintenanceService: maintenanceService,
+		SettingsIOService:  settingsIOService,
 		DB:                 db,
 		Logger:             logger,
 		BasePath:           cfg.Server.BasePath,
@@ -264,6 +266,15 @@ func run() error {
 	// Start backup scheduler
 	if cfg.Backup.Enabled {
 		go backupService.StartScheduler(ctx, time.Duration(cfg.Backup.IntervalHours)*time.Hour)
+	}
+
+	// Start maintenance scheduler (reads interval from DB settings, defaults to daily)
+	{
+		maintEnabled := getDBBoolSetting(db, "db_maintenance.enabled", true)
+		maintHours := getDBIntSetting(db, "db_maintenance.interval_hours", 24)
+		if maintEnabled {
+			go maintenanceService.StartScheduler(ctx, time.Duration(maintHours)*time.Hour)
+		}
 	}
 
 	// Start session cleanup goroutine
@@ -463,5 +474,71 @@ func assignOrphanedArtists(ctx context.Context, db *sql.DB, libraryID string, lo
 		return 0
 	}
 	n, _ := result.RowsAffected()
+	return n
+}
+
+// loadDBLoggingConfig reads logging settings from the DB and reconfigures the
+// log manager if any are present. Called once after migrations.
+func loadDBLoggingConfig(db *sql.DB, mgr *logging.Manager, logger *slog.Logger) {
+	ctx := context.Background()
+	level := getDBStringSetting(db, ctx, "logging.level", "")
+	format := getDBStringSetting(db, ctx, "logging.format", "")
+	if level == "" && format == "" {
+		return // no DB overrides
+	}
+
+	cfg := mgr.Config()
+	if level != "" && logging.ValidLevel(level) {
+		cfg.Level = level
+	}
+	if format != "" && logging.ValidFormat(format) {
+		cfg.Format = format
+	}
+	cfg.FilePath = getDBStringSetting(db, ctx, "logging.file_path", cfg.FilePath)
+	if v := getDBIntSetting(db, "logging.file_max_size_mb", 0); v > 0 {
+		cfg.FileMaxSizeMB = v
+	}
+	if v := getDBIntSetting(db, "logging.file_max_files", 0); v > 0 {
+		cfg.FileMaxFiles = v
+	}
+	if v := getDBIntSetting(db, "logging.file_max_age_days", 0); v > 0 {
+		cfg.FileMaxAgeDays = v
+	}
+
+	mgr.Reconfigure(cfg)
+	logger.Info("applied DB logging overrides", "config", cfg.String())
+}
+
+// getDBStringSetting reads a string setting directly from the database.
+func getDBStringSetting(db *sql.DB, ctx context.Context, key, fallback string) string {
+	var v string
+	err := db.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = ?`, key).Scan(&v)
+	if err != nil || v == "" {
+		return fallback
+	}
+	return v
+}
+
+// getDBBoolSetting reads a boolean setting directly from the database.
+func getDBBoolSetting(db *sql.DB, key string, fallback bool) bool {
+	var v string
+	err := db.QueryRowContext(context.Background(), `SELECT value FROM settings WHERE key = ?`, key).Scan(&v)
+	if err != nil {
+		return fallback
+	}
+	return v == "true" || v == "1"
+}
+
+// getDBIntSetting reads an integer setting directly from the database.
+func getDBIntSetting(db *sql.DB, key string, fallback int) int {
+	var v string
+	err := db.QueryRowContext(context.Background(), `SELECT value FROM settings WHERE key = ?`, key).Scan(&v)
+	if err != nil || v == "" {
+		return fallback
+	}
+	var n int
+	if _, err := fmt.Sscanf(v, "%d", &n); err != nil {
+		return fallback
+	}
 	return n
 }
