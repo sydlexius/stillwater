@@ -127,7 +127,17 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 						<option value="excluded" selected?={ data.Filter == "excluded" }>Excluded</option>
 						<option value="not_excluded" selected?={ data.Filter == "not_excluded" }>Not Excluded</option>
 					</select>
-					<div class="flex rounded-md border border-gray-300 dark:border-gray-600 overflow-hidden">
+					if data.View == "table" {
+					@components.ColumnToggle("artists", "artists-table", []components.ColumnDef{
+						{Key: "name", Label: "Name", Required: true},
+						{Key: "metadata", Label: "Metadata"},
+						{Key: "thumb", Label: "Thumb"},
+						{Key: "fanart", Label: "Fanart"},
+						{Key: "logo", Label: "Logo"},
+						{Key: "mbid", Label: "MBID"},
+					})
+				}
+				<div class="flex rounded-md border border-gray-300 dark:border-gray-600 overflow-hidden">
 						<button
 							type="button"
 							title="Table view"
@@ -246,25 +256,25 @@ templ ArtistTable(data ArtistListData) {
 	<div id="artist-content">
 		@degradedLibraryBanner(data)
 		<div class="overflow-x-auto">
-			<table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+			<table id="artists-table" class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
 				<thead class="bg-gray-50 dark:bg-gray-800">
 					<tr>
-						<th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
+						<th scope="col" data-col="name" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
 							Name
 						</th>
-						<th scope="col" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
+						<th scope="col" data-col="metadata" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
 							Metadata
 						</th>
-						<th scope="col" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
+						<th scope="col" data-col="thumb" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
 							Thumb
 						</th>
-						<th scope="col" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
+						<th scope="col" data-col="fanart" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
 							Fanart
 						</th>
-						<th scope="col" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
+						<th scope="col" data-col="logo" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
 							Logo
 						</th>
-						<th scope="col" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
+						<th scope="col" data-col="mbid" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
 							MBID
 						</th>
 					</tr>
@@ -289,7 +299,7 @@ templ ArtistTable(data ArtistListData) {
 
 templ ArtistRow(a artist.Artist, sources map[string]LibrarySourceInfo) {
 	<tr class={ "hover:bg-gray-50 dark:hover:bg-gray-800", templ.KV("opacity-50", a.IsExcluded) }>
-		<td class="px-4 py-3 text-sm">
+		<td data-col="name" class="px-4 py-3 text-sm">
 			<div class="flex items-center gap-1.5">
 				if artistSourceInfo(a, sources).Source != "" {
 					<img
@@ -313,19 +323,19 @@ templ ArtistRow(a artist.Artist, sources map[string]LibrarySourceInfo) {
 				}
 			</div>
 		</td>
-		<td class="px-4 py-3 text-center">
-			@components.StatusBadge(a.NFOExists, "NFO")
+		<td data-col="metadata" class="px-4 py-3 text-center">
+			@components.StatusBadge(a.NFOExists, "Metadata")
 		</td>
-		<td class="px-4 py-3 text-center">
+		<td data-col="thumb" class="px-4 py-3 text-center">
 			@components.ImageStatusBadge(a.ThumbExists, a.ThumbLowRes, "Thumb")
 		</td>
-		<td class="px-4 py-3 text-center">
+		<td data-col="fanart" class="px-4 py-3 text-center">
 			@components.ImageStatusBadge(a.FanartExists, a.FanartLowRes, "Fanart")
 		</td>
-		<td class="px-4 py-3 text-center">
+		<td data-col="logo" class="px-4 py-3 text-center">
 			@components.ImageStatusBadge(a.LogoExists, a.LogoLowRes, "Logo")
 		</td>
-		<td class="px-4 py-3 text-center">
+		<td data-col="mbid" class="px-4 py-3 text-center">
 			@components.StatusBadge(a.MusicBrainzID != "", "MBID")
 		</td>
 	</tr>

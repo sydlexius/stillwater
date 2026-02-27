@@ -48,34 +48,46 @@ templ CompliancePage(assets AssetPaths, data ComplianceData) {
 						class="block w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
 					/>
 				</div>
-				<select
-					name="status"
-					hx-get="/reports/compliance"
-					hx-trigger="change"
-					hx-target="#compliance-table"
-					hx-swap="outerHTML"
-					hx-include="[name='search'], [name='filter']"
-					class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-				>
-					<option value="all" selected?={ data.Status == "" || data.Status == "all" }>All Artists</option>
-					<option value="compliant" selected?={ data.Status == "compliant" }>Compliant</option>
-					<option value="non_compliant" selected?={ data.Status == "non_compliant" }>Non-Compliant</option>
-				</select>
-				<select
-					name="filter"
-					hx-get="/reports/compliance"
-					hx-trigger="change"
-					hx-target="#compliance-table"
-					hx-swap="outerHTML"
-					hx-include="[name='search'], [name='status']"
-					class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-				>
-					<option value="" selected?={ data.Filter == "" }>No Filter</option>
-					<option value="missing_nfo" selected?={ data.Filter == "missing_nfo" }>Missing Metadata</option>
-					<option value="missing_thumb" selected?={ data.Filter == "missing_thumb" }>Missing Thumbnail</option>
-					<option value="missing_fanart" selected?={ data.Filter == "missing_fanart" }>Missing Fanart</option>
-					<option value="missing_mbid" selected?={ data.Filter == "missing_mbid" }>Missing MBID</option>
-				</select>
+				<div class="flex items-center gap-3">
+					<select
+						name="status"
+						hx-get="/reports/compliance"
+						hx-trigger="change"
+						hx-target="#compliance-table"
+						hx-swap="outerHTML"
+						hx-include="[name='search'], [name='filter']"
+						class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+					>
+						<option value="all" selected?={ data.Status == "" || data.Status == "all" }>All Artists</option>
+						<option value="compliant" selected?={ data.Status == "compliant" }>Compliant</option>
+						<option value="non_compliant" selected?={ data.Status == "non_compliant" }>Non-Compliant</option>
+					</select>
+					<select
+						name="filter"
+						hx-get="/reports/compliance"
+						hx-trigger="change"
+						hx-target="#compliance-table"
+						hx-swap="outerHTML"
+						hx-include="[name='search'], [name='status']"
+						class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+					>
+						<option value="" selected?={ data.Filter == "" }>No Filter</option>
+						<option value="missing_nfo" selected?={ data.Filter == "missing_nfo" }>Missing Metadata</option>
+						<option value="missing_thumb" selected?={ data.Filter == "missing_thumb" }>Missing Thumbnail</option>
+						<option value="missing_fanart" selected?={ data.Filter == "missing_fanart" }>Missing Fanart</option>
+						<option value="missing_mbid" selected?={ data.Filter == "missing_mbid" }>Missing MBID</option>
+					</select>
+					@components.ColumnToggle("compliance", "compliance-tbl", []components.ColumnDef{
+						{Key: "artist", Label: "Artist", Required: true},
+						{Key: "score", Label: "Score"},
+						{Key: "metadata", Label: "Metadata"},
+						{Key: "thumb", Label: "Thumb"},
+						{Key: "fanart", Label: "Fanart"},
+						{Key: "logo", Label: "Logo"},
+						{Key: "mbid", Label: "MBID"},
+						{Key: "actions", Label: "Actions"},
+					})
+				</div>
 			</div>
 			@ComplianceTable(data)
 		</div>
@@ -86,31 +98,31 @@ templ CompliancePage(assets AssetPaths, data ComplianceData) {
 templ ComplianceTable(data ComplianceData) {
 	<div id="compliance-table">
 		<div class="overflow-x-auto">
-			<table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+			<table id="compliance-tbl" class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
 				<thead class="bg-gray-50 dark:bg-gray-800">
 					<tr>
-						<th scope="col" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
+						<th scope="col" data-col="artist" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
 							Artist
 						</th>
-						<th scope="col" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
+						<th scope="col" data-col="score" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
 							Score
 						</th>
-						<th scope="col" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
+						<th scope="col" data-col="metadata" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
 							Metadata
 						</th>
-						<th scope="col" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
+						<th scope="col" data-col="thumb" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
 							Thumb
 						</th>
-						<th scope="col" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
+						<th scope="col" data-col="fanart" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
 							Fanart
 						</th>
-						<th scope="col" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
+						<th scope="col" data-col="logo" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
 							Logo
 						</th>
-						<th scope="col" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
+						<th scope="col" data-col="mbid" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
 							MBID
 						</th>
-						<th scope="col" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
+						<th scope="col" data-col="actions" class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
 							Actions
 						</th>
 					</tr>
@@ -135,7 +147,7 @@ templ ComplianceTable(data ComplianceData) {
 
 templ complianceRow(row ComplianceRow) {
 	<tr class="hover:bg-gray-50 dark:hover:bg-gray-800">
-		<td class="px-4 py-3 text-sm">
+		<td data-col="artist" class="px-4 py-3 text-sm">
 			<a
 				href={ templ.SafeURL("/artists/" + row.Artist.ID) }
 				class="font-medium text-blue-600 dark:text-blue-400 hover:underline"
@@ -143,27 +155,27 @@ templ complianceRow(row ComplianceRow) {
 				{ row.Artist.Name }
 			</a>
 		</td>
-		<td class="px-4 py-3 text-sm text-center">
+		<td data-col="score" class="px-4 py-3 text-sm text-center">
 			<span class={ "font-semibold", components.HealthScoreClass(row.HealthScore) }>
 				{ fmt.Sprintf("%.0f%%", row.HealthScore) }
 			</span>
 		</td>
-		<td class="px-4 py-3 text-center">
+		<td data-col="metadata" class="px-4 py-3 text-center">
 			@components.StatusBadge(row.Artist.NFOExists, "Metadata")
 		</td>
-		<td class="px-4 py-3 text-center">
+		<td data-col="thumb" class="px-4 py-3 text-center">
 			@components.StatusBadge(row.Artist.ThumbExists, "Thumb")
 		</td>
-		<td class="px-4 py-3 text-center">
+		<td data-col="fanart" class="px-4 py-3 text-center">
 			@components.StatusBadge(row.Artist.FanartExists, "Fanart")
 		</td>
-		<td class="px-4 py-3 text-center">
+		<td data-col="logo" class="px-4 py-3 text-center">
 			@components.StatusBadge(row.Artist.LogoExists, "Logo")
 		</td>
-		<td class="px-4 py-3 text-center">
+		<td data-col="mbid" class="px-4 py-3 text-center">
 			@components.StatusBadge(row.Artist.MusicBrainzID != "", "MBID")
 		</td>
-		<td class="px-4 py-3 text-sm text-right">
+		<td data-col="actions" class="px-4 py-3 text-sm text-right">
 			<div class="flex items-center justify-end gap-1">
 				if row.Artist.NFOExists {
 					<a
