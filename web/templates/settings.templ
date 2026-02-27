@@ -1439,8 +1439,17 @@ templ settingsLibraryScript() {
 				fetch("/api/v1/libraries/" + libID + "/operation/status", {
 					headers: {"X-CSRF-Token": csrfToken}
 				})
-				.then(function(r) { return r.json(); })
+				.then(function(r) {
+					if (!r.ok) {
+						clearInterval(poll);
+						resetUI();
+						showToast("Status check failed (HTTP " + r.status + ")");
+						return null;
+					}
+					return r.json();
+				})
 				.then(function(data) {
+					if (!data) return;
 					if (data.status === 'completed') {
 						clearInterval(poll);
 						resetUI();
