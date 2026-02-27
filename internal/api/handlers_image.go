@@ -962,7 +962,7 @@ func (r *Router) isKodiNumbering(ctx context.Context) bool {
 	if err != nil || profile == nil {
 		return false
 	}
-	return strings.EqualFold(profile.Name, "Kodi")
+	return strings.EqualFold(profile.ID, "kodi")
 }
 
 // processAndAppendFanart processes image data and saves it as the next
@@ -975,8 +975,8 @@ func (r *Router) processAndAppendFanart(ctx context.Context, dir string, data []
 
 	primary := r.getActiveFanartPrimary(ctx)
 	kodi := r.isKodiNumbering(ctx)
-	existing := img.DiscoverFanart(dir, primary)
-	nextIndex := len(existing)
+	maxIdx := img.MaxFanartIndex(dir, primary)
+	nextIndex := maxIdx + 1
 	nextName := img.FanartFilename(primary, nextIndex, kodi)
 
 	saved, err := img.Save(dir, "fanart", resized, []string{nextName}, r.logger)
