@@ -159,8 +159,9 @@ func (s *Service) runScan(ctx context.Context, result *ScanResult) {
 			targets = append(targets, scanTarget{path: lib.Path, libraryID: lib.ID})
 		}
 	}
-	// Fallback: if no libraries found, use the legacy single path.
-	if len(targets) == 0 && s.libraryPath != "" {
+	// Fallback: if no library lister is configured, use the legacy single path.
+	// When a lister IS set but returns empty, the user has no libraries -- do not fall back.
+	if len(targets) == 0 && s.libraryLister == nil && s.libraryPath != "" {
 		targets = append(targets, scanTarget{path: s.libraryPath, libraryID: s.defaultLibraryID})
 	}
 
