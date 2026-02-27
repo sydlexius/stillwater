@@ -8,18 +8,21 @@ import (
 
 // PaginationData holds the state for pagination controls.
 type PaginationData struct {
-	CurrentPage int
-	TotalPages  int
-	PageSize    int
-	TotalItems  int
-	BaseURL     string
-	Sort        string
-	Order       string
-	Search      string
-	Filter      string
-	View        string // "table" or "grid"
-	LibraryID   string // selected library filter
-	TargetID    string // HTMX target element ID (defaults to "artist-content")
+	CurrentPage    int
+	TotalPages     int
+	PageSize       int
+	TotalItems     int
+	BaseURL        string
+	Sort           string
+	Order          string
+	Search         string
+	Filter         string
+	View           string // "table" or "grid"
+	LibraryID      string // selected library filter
+	TargetID       string // HTMX target element ID (defaults to "artist-content")
+	Status         string // compliance status filter (compliant/non_compliant)
+	HealthScoreMin int    // health score range lower bound (0 = unset)
+	HealthScoreMax int    // health score range upper bound (0 = unset)
 }
 
 func (p PaginationData) target() string {
@@ -50,6 +53,15 @@ func (p PaginationData) pageURL(page int) string {
 	}
 	if p.LibraryID != "" {
 		v.Set("library_id", p.LibraryID)
+	}
+	if p.Status != "" {
+		v.Set("status", p.Status)
+	}
+	if p.HealthScoreMin > 0 {
+		v.Set("health_min", strconv.Itoa(p.HealthScoreMin))
+	}
+	if p.HealthScoreMax > 0 {
+		v.Set("health_max", strconv.Itoa(p.HealthScoreMax))
 	}
 	return p.BaseURL + "?" + v.Encode()
 }

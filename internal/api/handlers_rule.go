@@ -197,12 +197,15 @@ func (r *Router) startBulkJob(w http.ResponseWriter, req *http.Request, jobType 
 		mode = rule.BulkModePromptNoMatch
 	}
 
+	// Pass 0 as initial total_items; the executor sets the accurate count
+	// after resolving and filtering the actual artist list.
 	job, err := r.bulkService.CreateJob(req.Context(), jobType, mode, 0)
 	if err != nil {
 		r.logger.Error("creating bulk job", "type", jobType, "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to create job"})
 		return
 	}
+	job.ArtistIDs = body.ArtistIDs
 
 	if err := r.bulkExecutor.Start(req.Context(), job); err != nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})

@@ -1,11 +1,16 @@
 package api
 
 import (
+	"context"
+	"encoding/csv"
+	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/rule"
 	"github.com/sydlexius/stillwater/web/components"
 	"github.com/sydlexius/stillwater/web/templates"
@@ -29,6 +34,19 @@ type violationSummary struct {
 	RuleName string `json:"rule_name"`
 	Count    int    `json:"count"`
 	Severity string `json:"severity"`
+}
+
+// librarySummary is the per-library health breakdown in the by-library endpoint.
+type librarySummary struct {
+	LibraryID        string  `json:"library_id"`
+	LibraryName      string  `json:"library_name"`
+	TotalArtists     int     `json:"total_artists"`
+	CompliantArtists int     `json:"compliant_artists"`
+	Score            float64 `json:"score"`
+	MissingNFO       int     `json:"missing_nfo"`
+	MissingThumb     int     `json:"missing_thumb"`
+	MissingFanart    int     `json:"missing_fanart"`
+	MissingMBID      int     `json:"missing_mbid"`
 }
 
 // handleReportHealth returns the current library health summary.
@@ -133,29 +151,165 @@ func (r *Router) handleReportHealthHistory(w http.ResponseWriter, req *http.Requ
 	writeJSON(w, http.StatusOK, map[string]any{"history": history})
 }
 
+// handleReportHealthByLibrary returns per-library health breakdown.
+// GET /api/v1/reports/health/by-library
+func (r *Router) handleReportHealthByLibrary(w http.ResponseWriter, req *http.Request) {
+	ctx := req.Context()
+
+	libs, err := r.libraryService.List(ctx)
+	if err != nil {
+		r.logger.Error("listing libraries for health by-library", "error", err)
+		writeError(w, req, http.StatusInternalServerError, "failed to list libraries")
+		return
+	}
+
+	// Build per-library summaries
+	var summaries []librarySummary
+	var allArtists []artist.Artist
+	var allResults []rule.EvaluationResult
+
+	for _, lib := range libs {
+		artists, err := r.listAllArtists(ctx, lib.ID)
+		if err != nil {
+			r.logger.Error("listing artists for library health", "library", lib.Name, "error", err)
+			continue
+		}
+		if len(artists) == 0 {
+			continue
+		}
+
+		results, err := r.ruleEngine.EvaluateAll(ctx, artists)
+		if err != nil {
+			r.logger.Error("evaluating artists for library health", "library", lib.Name, "error", err)
+			continue
+		}
+
+		allArtists = append(allArtists, artists...)
+		allResults = append(allResults, results...)
+
+		summaries = append(summaries, buildLibrarySummary(lib, artists, results))
+	}
+
+	// Build overall summary from all artists
+	overall := buildOverallLibrarySummary(allArtists, allResults)
+
+	if isHTMXRequest(req) {
+		renderTempl(w, req, templates.ComplianceSummaryFragment(templates.ComplianceSummaryData{
+			Libraries: toTemplateSummaries(summaries),
+			Overall:   toTemplateSummary(overall),
+		}))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"libraries": summaries,
+		"overall":   overall,
+	})
+}
+
+// listAllArtists fetches all non-excluded artists for a library via pagination.
+func (r *Router) listAllArtists(ctx context.Context, libraryID string) ([]artist.Artist, error) {
+	const pageSize = 200
+	params := artist.ListParams{
+		Page:      1,
+		PageSize:  pageSize,
+		Sort:      "name",
+		Order:     "asc",
+		Filter:    "not_excluded",
+		LibraryID: libraryID,
+	}
+	params.Validate()
+
+	var all []artist.Artist
+	for {
+		page, _, err := r.artistService.List(ctx, params)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, page...)
+		if len(page) < pageSize {
+			break
+		}
+		params.Page++
+	}
+	return all, nil
+}
+
+func buildLibrarySummary(lib library.Library, artists []artist.Artist, results []rule.EvaluationResult) librarySummary {
+	ls := librarySummary{
+		LibraryID:    lib.ID,
+		LibraryName:  lib.Name,
+		TotalArtists: len(artists),
+	}
+
+	totalPassed, totalRules := 0, 0
+	for i, a := range artists {
+		if results[i].HealthScore >= 100.0 {
+			ls.CompliantArtists++
+		}
+		if !a.NFOExists {
+			ls.MissingNFO++
+		}
+		if !a.ThumbExists {
+			ls.MissingThumb++
+		}
+		if !a.FanartExists {
+			ls.MissingFanart++
+		}
+		if a.MusicBrainzID == "" {
+			ls.MissingMBID++
+		}
+		totalPassed += results[i].RulesPassed
+		totalRules += results[i].RulesTotal
+	}
+
+	if totalRules > 0 {
+		ls.Score = float64(int(float64(totalPassed)/float64(totalRules)*1000)) / 10
+	} else if ls.TotalArtists > 0 {
+		ls.Score = 100.0
+	}
+
+	return ls
+}
+
+func buildOverallLibrarySummary(artists []artist.Artist, results []rule.EvaluationResult) librarySummary {
+	ls := librarySummary{TotalArtists: len(artists)}
+
+	totalPassed, totalRules := 0, 0
+	for i, a := range artists {
+		if results[i].HealthScore >= 100.0 {
+			ls.CompliantArtists++
+		}
+		if !a.NFOExists {
+			ls.MissingNFO++
+		}
+		if !a.ThumbExists {
+			ls.MissingThumb++
+		}
+		if !a.FanartExists {
+			ls.MissingFanart++
+		}
+		if a.MusicBrainzID == "" {
+			ls.MissingMBID++
+		}
+		totalPassed += results[i].RulesPassed
+		totalRules += results[i].RulesTotal
+	}
+
+	if totalRules > 0 {
+		ls.Score = float64(int(float64(totalPassed)/float64(totalRules)*1000)) / 10
+	} else if ls.TotalArtists > 0 {
+		ls.Score = 100.0
+	}
+
+	return ls
+}
+
 // handleReportCompliance returns a paginated compliance report.
 // GET /api/v1/reports/compliance
 func (r *Router) handleReportCompliance(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
-
-	params := artist.ListParams{
-		Page:     intQuery(req, "page", 1),
-		PageSize: intQuery(req, "page_size", 50),
-		Sort:     "name",
-		Order:    "asc",
-		Search:   req.URL.Query().Get("search"),
-		Filter:   req.URL.Query().Get("filter"),
-	}
-
-	// Handle status filter (compliant/non_compliant)
-	status := req.URL.Query().Get("status")
-	if status == "compliant" && params.Filter == "" {
-		params.Filter = "compliant"
-	} else if status == "non_compliant" && params.Filter == "" {
-		params.Filter = "non_compliant"
-	}
-
-	params.Validate()
+	params := complianceListParams(req)
 
 	artists, total, err := r.artistService.List(ctx, params)
 	if err != nil {
@@ -187,6 +341,144 @@ func (r *Router) handleReportCompliance(w http.ResponseWriter, req *http.Request
 		"page":      params.Page,
 		"page_size": params.PageSize,
 	})
+}
+
+// handleReportComplianceExport streams a CSV export of the compliance report.
+// GET /api/v1/reports/compliance/export
+func (r *Router) handleReportComplianceExport(w http.ResponseWriter, req *http.Request) {
+	ctx := req.Context()
+
+	params := complianceListParams(req)
+	params.Page = 1
+	params.PageSize = 200
+
+	var allArtists []artist.Artist
+	for {
+		page, _, err := r.artistService.List(ctx, params)
+		if err != nil {
+			r.logger.Error("listing artists for compliance export", "error", err)
+			writeError(w, req, http.StatusInternalServerError, "failed to list artists")
+			return
+		}
+		allArtists = append(allArtists, page...)
+		if len(page) < params.PageSize || len(allArtists) >= 10000 {
+			break
+		}
+		params.Page++
+	}
+
+	results, err := r.ruleEngine.EvaluateAll(ctx, allArtists)
+	if err != nil {
+		r.logger.Error("evaluating artists for compliance export", "error", err)
+		writeError(w, req, http.StatusInternalServerError, "failed to evaluate artists")
+		return
+	}
+
+	// Look up library names for the export
+	libs, err := r.libraryService.List(ctx)
+	if err != nil {
+		r.logger.Warn("listing libraries for compliance export", "error", err)
+	}
+	libNames := make(map[string]string, len(libs))
+	for _, l := range libs {
+		libNames[l.ID] = l.Name
+	}
+
+	w.Header().Set("Content-Type", "text/csv")
+	w.Header().Set("Content-Disposition", `attachment; filename="compliance-report.csv"`)
+	w.WriteHeader(http.StatusOK)
+
+	cw := csv.NewWriter(w)
+	if err := cw.Write([]string{"Artist Name", "Health Score", "Metadata", "Thumb", "Fanart", "Logo", "MBID", "Library", "Violations"}); err != nil {
+		r.logger.Error("writing CSV header", "error", err)
+		return
+	}
+
+	for i, a := range allArtists {
+		if ctx.Err() != nil {
+			break
+		}
+		var violations []string
+		for _, v := range results[i].Violations {
+			violations = append(violations, v.RuleName)
+		}
+		libName := libNames[a.LibraryID]
+
+		if err := cw.Write([]string{
+			sanitizeCSV(a.Name),
+			fmt.Sprintf("%.0f", results[i].HealthScore),
+			boolCSV(a.NFOExists),
+			boolCSV(a.ThumbExists),
+			boolCSV(a.FanartExists),
+			boolCSV(a.LogoExists),
+			boolCSV(a.MusicBrainzID != ""),
+			sanitizeCSV(libName),
+			sanitizeCSV(strings.Join(violations, "; ")),
+		}); err != nil {
+			r.logger.Error("writing CSV row", "artist", a.Name, "error", err)
+			return
+		}
+	}
+	cw.Flush()
+	if err := cw.Error(); err != nil {
+		r.logger.Error("flushing CSV writer", "error", err)
+	}
+}
+
+func boolCSV(b bool) string {
+	if b {
+		return "Yes"
+	}
+	return "No"
+}
+
+// sanitizeCSV guards against CSV formula injection by prefixing values that
+// start with formula-trigger characters (=, +, -, @) with a single quote so
+// spreadsheet applications treat them as plain text.
+func sanitizeCSV(s string) string {
+	if len(s) == 0 {
+		return s
+	}
+	switch s[0] {
+	case '=', '+', '-', '@':
+		return "'" + s
+	}
+	return s
+}
+
+// complianceListParams extracts ListParams from a compliance report request.
+func complianceListParams(req *http.Request) artist.ListParams {
+	sort := req.URL.Query().Get("sort")
+	order := req.URL.Query().Get("order")
+	if sort == "" {
+		sort = "name"
+	}
+	if order == "" {
+		order = "asc"
+	}
+
+	params := artist.ListParams{
+		Page:           intQuery(req, "page", 1),
+		PageSize:       intQuery(req, "page_size", 50),
+		Sort:           sort,
+		Order:          order,
+		Search:         req.URL.Query().Get("search"),
+		Filter:         req.URL.Query().Get("filter"),
+		LibraryID:      req.URL.Query().Get("library_id"),
+		HealthScoreMin: intQuery(req, "health_min", 0),
+		HealthScoreMax: intQuery(req, "health_max", 0),
+	}
+
+	// Handle status filter (compliant/non_compliant)
+	status := req.URL.Query().Get("status")
+	if status == "compliant" && params.Filter == "" {
+		params.Filter = "compliant"
+	} else if status == "non_compliant" && params.Filter == "" {
+		params.Filter = "non_compliant"
+	}
+
+	params.Validate()
+	return params
 }
 
 func buildHealthSummary(artists []artist.Artist, results []rule.EvaluationResult) healthSummary {
@@ -279,24 +571,8 @@ func (r *Router) handleCompliancePage(w http.ResponseWriter, req *http.Request) 
 	}
 
 	ctx := req.Context()
-
-	params := artist.ListParams{
-		Page:     intQuery(req, "page", 1),
-		PageSize: intQuery(req, "page_size", 50),
-		Sort:     "name",
-		Order:    "asc",
-		Search:   req.URL.Query().Get("search"),
-		Filter:   req.URL.Query().Get("filter"),
-	}
-
+	params := complianceListParams(req)
 	status := req.URL.Query().Get("status")
-	if status == "compliant" && params.Filter == "" {
-		params.Filter = "compliant"
-	} else if status == "non_compliant" && params.Filter == "" {
-		params.Filter = "non_compliant"
-	}
-
-	params.Validate()
 
 	artists, total, err := r.artistService.List(ctx, params)
 	if err != nil {
@@ -326,23 +602,38 @@ func (r *Router) handleCompliancePage(w http.ResponseWriter, req *http.Request) 
 		totalPages++
 	}
 
+	libs, err := r.libraryService.List(ctx)
+	if err != nil {
+		r.logger.Warn("listing libraries for compliance page", "error", err)
+	}
+
 	data := templates.ComplianceData{
 		Rows: rows,
 		Pagination: components.PaginationData{
-			CurrentPage: params.Page,
-			TotalPages:  totalPages,
-			PageSize:    params.PageSize,
-			TotalItems:  total,
-			BaseURL:     "/reports/compliance",
-			Sort:        "name",
-			Order:       "asc",
-			Search:      params.Search,
-			Filter:      params.Filter,
-			TargetID:    "compliance-table",
+			CurrentPage:    params.Page,
+			TotalPages:     totalPages,
+			PageSize:       params.PageSize,
+			TotalItems:     total,
+			BaseURL:        "/reports/compliance",
+			Sort:           params.Sort,
+			Order:          params.Order,
+			Search:         params.Search,
+			Filter:         params.Filter,
+			LibraryID:      params.LibraryID,
+			TargetID:       "compliance-table",
+			Status:         status,
+			HealthScoreMin: params.HealthScoreMin,
+			HealthScoreMax: params.HealthScoreMax,
 		},
-		Search: params.Search,
-		Status: status,
-		Filter: req.URL.Query().Get("filter"),
+		Search:         params.Search,
+		Status:         status,
+		Filter:         req.URL.Query().Get("filter"),
+		Libraries:      libs,
+		LibraryID:      params.LibraryID,
+		Sort:           params.Sort,
+		Order:          params.Order,
+		HealthScoreMin: params.HealthScoreMin,
+		HealthScoreMax: params.HealthScoreMax,
 	}
 
 	if isHTMXRequest(req) {
@@ -363,4 +654,26 @@ func toTemplateViolations(vs []violationSummary) []templates.ViolationSummaryDat
 		}
 	}
 	return out
+}
+
+func toTemplateSummaries(summaries []librarySummary) []templates.LibrarySummaryData {
+	out := make([]templates.LibrarySummaryData, len(summaries))
+	for i, s := range summaries {
+		out[i] = toTemplateSummary(s)
+	}
+	return out
+}
+
+func toTemplateSummary(s librarySummary) templates.LibrarySummaryData {
+	return templates.LibrarySummaryData{
+		LibraryID:        s.LibraryID,
+		LibraryName:      s.LibraryName,
+		TotalArtists:     s.TotalArtists,
+		CompliantArtists: s.CompliantArtists,
+		Score:            s.Score,
+		MissingNFO:       s.MissingNFO,
+		MissingThumb:     s.MissingThumb,
+		MissingFanart:    s.MissingFanart,
+		MissingMBID:      s.MissingMBID,
+	}
 }
