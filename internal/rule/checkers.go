@@ -392,8 +392,11 @@ func expectedImageFiles(profile *platform.Profile, artistPath string) map[string
 		}
 	}
 
-	// Whitelist numbered fanart variants discovered on disk. This prevents
-	// files like backdrop2.jpg, fanart1.jpg from being flagged as extraneous.
+	// Whitelist numbered fanart variants discovered on disk plus their
+	// canonical names and alternate extensions. This prevents files like
+	// backdrop2.jpg, fanart1.jpg from being flagged as extraneous while
+	// also covering format mismatches (e.g., a PNG saved where JPG is
+	// the canonical name).
 	if artistPath != "" {
 		var fanartPrimary string
 		if profile != nil {
@@ -402,8 +405,19 @@ func expectedImageFiles(profile *platform.Profile, artistPath string) map[string
 		if fanartPrimary == "" {
 			fanartPrimary = image.PrimaryFileName(image.DefaultFileNames, "fanart")
 		}
-		for _, p := range image.DiscoverFanart(artistPath, fanartPrimary) {
+		kodiNumbering := profile != nil && strings.EqualFold(profile.ID, "kodi")
+		discovered := image.DiscoverFanart(artistPath, fanartPrimary)
+		for i, p := range discovered {
+			// Whitelist the actual file on disk.
 			expected[strings.ToLower(filepath.Base(p))] = true
+			// Whitelist the canonical name for this index position.
+			canonical := image.FanartFilename(fanartPrimary, i, kodiNumbering)
+			expected[strings.ToLower(canonical)] = true
+			// Whitelist alternate extensions of the canonical name.
+			base := strings.TrimSuffix(canonical, filepath.Ext(canonical))
+			for ext := range imageExtensions {
+				expected[strings.ToLower(base+ext)] = true
+			}
 		}
 	}
 
