@@ -185,16 +185,18 @@ func (f *MetadataFixer) fixBio(ctx context.Context, a *artist.Artist) (*FixResul
 
 // ImageFixer fetches missing or low-quality images from providers.
 type ImageFixer struct {
-	orchestrator imageProvider
-	logger       *slog.Logger
-	imageCache   sync.Map // keyed by MBID; value: *imageCacheEntry
+	orchestrator    imageProvider
+	platformService *platform.Service
+	logger          *slog.Logger
+	imageCache      sync.Map // keyed by MBID; value: *imageCacheEntry
 }
 
 // NewImageFixer creates an ImageFixer.
-func NewImageFixer(orchestrator imageProvider, logger *slog.Logger) *ImageFixer {
+func NewImageFixer(orchestrator imageProvider, platformService *platform.Service, logger *slog.Logger) *ImageFixer {
 	return &ImageFixer{
-		orchestrator: orchestrator,
-		logger:       logger,
+		orchestrator:    orchestrator,
+		platformService: platformService,
+		logger:          logger,
 	}
 }
 
@@ -273,7 +275,7 @@ func (f *ImageFixer) Fix(ctx context.Context, a *artist.Artist, v *Violation) (*
 	// because rules like thumb_square can also fire on a high-res image and
 	// must not replace it with a lower-res candidate.
 	minW, minH := v.Config.MinWidth, v.Config.MinHeight
-	existW, existH := readExistingImageDimensions(a.Path, imageType)
+	existW, existH := readExistingImageDimensions(a.Path, imageType, f.platformService)
 	candidates = filterCandidatesByResolution(candidates, minW, minH, existW, existH, f.logger)
 
 	if len(candidates) == 0 {
@@ -355,7 +357,7 @@ func (f *ImageFixer) Fix(ctx context.Context, a *artist.Artist, v *Violation) (*
 			continue
 		}
 
-		naming := existingImageFileNames(a.Path, imageType)
+		naming := existingImageFileNames(a.Path, imageType, f.platformService)
 		saved, err := img.Save(a.Path, imageType, resized, naming, f.logger)
 		if err != nil {
 			f.logger.Debug("image save failed", "url", c.URL, "error", err)
@@ -409,8 +411,9 @@ func setImageFlag(a *artist.Artist, imageType string) {
 }
 
 // ApplyImageCandidate downloads a candidate URL and saves it as an image in the
-// artist directory. Used by the apply-candidate API handler.
-func ApplyImageCandidate(ctx context.Context, a *artist.Artist, imageType, rawURL string, logger *slog.Logger) error {
+// artist directory. The naming slice controls which filenames are written; pass
+// nil to fall back to DefaultFileNames. Used by the apply-candidate API handler.
+func ApplyImageCandidate(ctx context.Context, a *artist.Artist, imageType, rawURL string, naming []string, logger *slog.Logger) error {
 	data, err := fetchImageURL(ctx, rawURL)
 	if err != nil {
 		return fmt.Errorf("downloading image: %w", err)
@@ -421,7 +424,9 @@ func ApplyImageCandidate(ctx context.Context, a *artist.Artist, imageType, rawUR
 		return fmt.Errorf("resizing image: %w", err)
 	}
 
-	naming := img.FileNamesForType(img.DefaultFileNames, imageType)
+	if len(naming) == 0 {
+		naming = img.FileNamesForType(img.DefaultFileNames, imageType)
+	}
 	if _, err := img.Save(a.Path, imageType, resized, naming, logger); err != nil {
 		return fmt.Errorf("saving image: %w", err)
 	}
@@ -456,8 +461,18 @@ func writeArtistNFO(a *artist.Artist, ss *nfo.SnapshotService) {
 // This prevents img.Save from writing to every canonical filename (e.g.
 // folder.jpg, artist.jpg, poster.jpg) when only one of them exists, which would
 // otherwise clobber high-res files that are not causing the violation.
-func existingImageFileNames(dir, imageType string) []string {
-	all := img.FileNamesForType(img.DefaultFileNames, imageType)
+// When platformService is non-nil, uses the active profile's names instead of
+// the hardcoded defaults.
+func existingImageFileNames(dir, imageType string, platformService *platform.Service) []string {
+	var all []string
+	if platformService != nil {
+		if profile, err := platformService.GetActive(context.Background()); err == nil && profile != nil {
+			all = profile.ImageNaming.NamesForType(imageType)
+		}
+	}
+	if len(all) == 0 {
+		all = img.FileNamesForType(img.DefaultFileNames, imageType)
+	}
 	var found []string
 	for _, name := range all {
 		if _, err := os.Stat(filepath.Join(dir, name)); err == nil {
@@ -501,11 +516,22 @@ func filterCandidatesByResolution(
 
 // readExistingImageDimensions returns the pixel dimensions of the highest
 // resolution recognizable image found in dir for the given image type.
-func readExistingImageDimensions(dir, imageType string) (int, int) {
+// When platformService is non-nil, uses the active profile's names.
+func readExistingImageDimensions(dir, imageType string, platformService *platform.Service) (int, int) {
+	var names []string
+	if platformService != nil {
+		if profile, err := platformService.GetActive(context.Background()); err == nil && profile != nil {
+			names = profile.ImageNaming.NamesForType(imageType)
+		}
+	}
+	if len(names) == 0 {
+		names = img.FileNamesForType(img.DefaultFileNames, imageType)
+	}
+
 	maxW, maxH := 0, 0
 	maxPixels := 0
 
-	for _, name := range img.FileNamesForType(img.DefaultFileNames, imageType) {
+	for _, name := range names {
 		if w, h, ok := readFileDimensions(filepath.Join(dir, name)); ok {
 			if pixels := w * h; pixels > maxPixels {
 				maxPixels = pixels
@@ -559,32 +585,11 @@ func (f *ExtraneousImagesFixer) Fix(ctx context.Context, a *artist.Artist, _ *Vi
 		}, nil
 	}
 
-	// Build expected set (same logic as checker).
-	expected := make(map[string]bool)
-	expected["artist.nfo"] = true
-
 	var profile *platform.Profile
 	if f.platformService != nil {
 		profile, _ = f.platformService.GetActive(ctx)
 	}
-	imageTypes := []string{"thumb", "fanart", "logo", "banner"}
-	for _, imageType := range imageTypes {
-		var primary string
-		if profile != nil {
-			primary = profile.ImageNaming.PrimaryName(imageType)
-		}
-		if primary == "" {
-			primary = img.PrimaryFileName(img.DefaultFileNames, imageType)
-		}
-		if primary == "" {
-			continue
-		}
-		expected[strings.ToLower(primary)] = true
-		base := strings.TrimSuffix(primary, filepath.Ext(primary))
-		for ext := range imageExtensions {
-			expected[strings.ToLower(base+ext)] = true
-		}
-	}
+	expected := expectedImageFiles(profile, a.Path)
 
 	entries, readErr := os.ReadDir(a.Path)
 	if readErr != nil {

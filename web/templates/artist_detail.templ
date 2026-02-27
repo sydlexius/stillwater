@@ -25,7 +25,68 @@ type ArtistDetailData struct {
 templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 	@Layout(data.Artist.Name, assets) {
 		<div class="space-y-6">
-			if data.Artist.FanartExists {
+			if data.Artist.FanartCount > 1 {
+				<div id="fanart-slideshow" class="fixed inset-0 -z-[5] overflow-hidden pointer-events-none" aria-hidden="true" data-fanart-count={ strconv.Itoa(data.Artist.FanartCount) } data-artist-id={ data.Artist.ID }>
+					<img
+						id="fanart-a"
+						src={ fmt.Sprintf("/api/v1/artists/%s/images/fanart/0/file", data.Artist.ID) }
+						alt=""
+						class="absolute inset-0 h-full w-full object-cover object-center transition-opacity duration-[2000ms]"
+					/>
+					<img
+						id="fanart-b"
+						src=""
+						alt=""
+						class="absolute inset-0 h-full w-full object-cover object-center transition-opacity duration-[2000ms] opacity-0"
+					/>
+					<div class="absolute inset-0 bg-gradient-to-b from-black/55 via-black/35 to-black/55 dark:from-black/70 dark:via-black/50 dark:to-black/70"></div>
+				</div>
+				<script>
+					(function() {
+						var ss = document.getElementById('fanart-slideshow');
+						if (!ss) return;
+						var count = parseInt(ss.dataset.fanartCount, 10);
+						var artistId = ss.dataset.artistId;
+						if (count < 2) return;
+						var imgA = document.getElementById('fanart-a');
+						var imgB = document.getElementById('fanart-b');
+						var current = 0;
+						var showingA = true;
+						var intervalMs = 8000;
+						var timer = null;
+
+						function cycle() {
+							current = (current + 1) % count;
+							var url = '/api/v1/artists/' + artistId + '/images/fanart/' + current + '/file';
+							if (showingA) {
+								imgB.onload = function() {
+									imgA.style.opacity = '0';
+									imgB.style.opacity = '1';
+									showingA = false;
+								};
+								imgB.onerror = function() { /* skip failed image on next cycle */ };
+								imgB.src = url;
+							} else {
+								imgA.onload = function() {
+									imgB.style.opacity = '0';
+									imgA.style.opacity = '1';
+									showingA = true;
+								};
+								imgA.onerror = function() { /* skip failed image on next cycle */ };
+								imgA.src = url;
+							}
+						}
+
+						function start() { if (!timer) timer = setInterval(cycle, intervalMs); }
+						function stop() { if (timer) { clearInterval(timer); timer = null; } }
+
+						document.addEventListener('visibilitychange', function() {
+							if (document.hidden) stop(); else start();
+						});
+						start();
+					})();
+				</script>
+			} else if data.Artist.FanartExists {
 				<div class="fixed inset-0 -z-[5] overflow-hidden pointer-events-none" aria-hidden="true">
 					<img
 						src={ fmt.Sprintf("/api/v1/artists/%s/images/fanart/file", data.Artist.ID) }
@@ -172,10 +233,10 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 					<section class="sw-card rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
 						<h2 class="text-lg font-semibold mb-3">Images</h2>
 						<div class="grid grid-cols-2 gap-3">
-							@ImagePreviewCard(data.Artist.ID, "thumb", data.Artist.ThumbExists, "Thumbnail", data.IsDegraded)
-							@ImagePreviewCard(data.Artist.ID, "fanart", data.Artist.FanartExists, "Fanart", data.IsDegraded)
-							@ImagePreviewCard(data.Artist.ID, "logo", data.Artist.LogoExists, "Logo", data.IsDegraded)
-							@ImagePreviewCard(data.Artist.ID, "banner", data.Artist.BannerExists, "Banner", data.IsDegraded)
+							@ImagePreviewCard(data.Artist.ID, "thumb", data.Artist.ThumbExists, "Thumbnail", data.IsDegraded, 0)
+							@ImagePreviewCard(data.Artist.ID, "fanart", data.Artist.FanartExists, "Fanart", data.IsDegraded, data.Artist.FanartCount)
+							@ImagePreviewCard(data.Artist.ID, "logo", data.Artist.LogoExists, "Logo", data.IsDegraded, 0)
+							@ImagePreviewCard(data.Artist.ID, "banner", data.Artist.BannerExists, "Banner", data.IsDegraded, 0)
 						</div>
 						<div class="mt-3">
 							@components.StatusBadge(data.Artist.NFOExists, "Metadata")
@@ -259,7 +320,7 @@ templ providerID(name, value string, fetchedAt *time.Time) {
 
 // ImagePreviewCard renders an image preview card for the artist detail page.
 // Exported so the delete handler can return it as an HTMX fragment.
-templ ImagePreviewCard(artistID, imageType string, exists bool, label string, degraded bool) {
+templ ImagePreviewCard(artistID, imageType string, exists bool, label string, degraded bool, fanartCount int) {
 	<div
 		id={ "image-preview-" + imageType + "-" + artistID }
 		class="rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden"
@@ -280,6 +341,11 @@ templ ImagePreviewCard(artistID, imageType string, exists bool, label string, de
 						loading="lazy"
 					/>
 				</div>
+				if fanartCount > 1 {
+					<span class="absolute top-2 right-2 bg-black/60 text-white text-xs px-2 py-0.5 rounded-full pointer-events-none">
+						{ strconv.Itoa(fanartCount) } images
+					</span>
+				}
 				if !degraded {
 					<div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
 						<a
@@ -360,6 +426,103 @@ templ ImageInfoBadge(width, height int, size int64) {
 		}
 		{ formatFileSizeTempl(size) }
 	</span>
+}
+
+// FanartGalleryItem holds metadata for a single fanart image in the gallery.
+type FanartGalleryItem struct {
+	Index    int    `json:"index"`
+	Filename string `json:"filename"`
+	Width    int    `json:"width"`
+	Height   int    `json:"height"`
+	Size     int64  `json:"size"`
+}
+
+// FanartGallery renders the fanart gallery management panel as an HTMX partial.
+templ FanartGallery(artistID string, items []FanartGalleryItem) {
+	<div id="fanart-gallery" class="space-y-4" data-artist-id={ artistID }>
+		<div class="flex items-center justify-between">
+			<h3 class="text-sm font-semibold">{ strconv.Itoa(len(items)) } fanart images</h3>
+			<button
+				type="button"
+				id="fanart-delete-selected"
+				class="hidden text-xs px-3 py-1.5 rounded bg-red-600 text-white hover:bg-red-700 transition-colors"
+			>
+				Delete selected
+			</button>
+		</div>
+		if len(items) > 0 {
+			<div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+				for _, item := range items {
+					<div class="relative rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden group">
+						<label class="cursor-pointer">
+							<input
+								type="checkbox"
+								class="fanart-cb absolute top-2 left-2 z-10 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+								value={ strconv.Itoa(item.Index) }
+							/>
+							<div class="aspect-video bg-gray-100 dark:bg-gray-900 flex items-center justify-center overflow-hidden">
+								<img
+									src={ fmt.Sprintf("/api/v1/artists/%s/images/fanart/%d/file", artistID, item.Index) }
+									alt={ item.Filename }
+									class="max-w-full max-h-full object-cover"
+									loading="lazy"
+								/>
+							</div>
+						</label>
+						<div class="p-1.5 text-center">
+							<span class="text-xs text-gray-500 dark:text-gray-400">
+								{ item.Filename }
+								if item.Width > 0 && item.Height > 0 {
+									{ " " + strconv.Itoa(item.Width) + "x" + strconv.Itoa(item.Height) }
+								}
+								{ " " + formatFileSizeTempl(item.Size) }
+							</span>
+						</div>
+					</div>
+				}
+			</div>
+		} else {
+			<p class="text-sm text-gray-400 italic">No fanart images.</p>
+		}
+		<script>
+			(function() {
+				var gallery = document.getElementById('fanart-gallery');
+				if (!gallery) return;
+				var deleteBtn = document.getElementById('fanart-delete-selected');
+				gallery.addEventListener('change', function() {
+					var checked = gallery.querySelectorAll('.fanart-cb:checked');
+					if (checked.length > 0) {
+						deleteBtn.classList.remove('hidden');
+						deleteBtn.textContent = 'Delete ' + checked.length + ' selected';
+					} else {
+						deleteBtn.classList.add('hidden');
+					}
+				});
+				deleteBtn.addEventListener('click', function() {
+					var checked = gallery.querySelectorAll('.fanart-cb:checked');
+					if (checked.length === 0) return;
+					if (!confirm('Delete ' + checked.length + ' fanart image(s)?')) return;
+					var indices = [];
+					for (var i = 0; i < checked.length; i++) {
+						indices.push(parseInt(checked[i].value, 10));
+					}
+					var id = gallery.dataset.artistId;
+					fetch('/api/v1/artists/' + id + '/images/fanart/batch', {
+						method: 'DELETE',
+						headers: {
+							'Content-Type': 'application/json',
+							'X-CSRF-Token': document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1")
+						},
+						body: JSON.stringify({indices: indices}),
+						credentials: 'same-origin'
+					}).then(function(r) {
+						if (r.ok) window.location.reload();
+						else alert('Failed to delete selected images. Please try again.');
+					});
+				});
+			})();
+		</script>
+	</div>
 }
 
 // formatFileSizeTempl formats a byte count as a human-readable string for templates.

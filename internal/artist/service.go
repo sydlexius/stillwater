@@ -16,7 +16,7 @@ const artistColumns = `id, name, sort_name, type, gender, disambiguation,
 	musicbrainz_id, audiodb_id, discogs_id, wikidata_id, deezer_id,
 	genres, styles, moods,
 	years_active, born, formed, died, disbanded, biography,
-	path, library_id, nfo_exists, thumb_exists, fanart_exists, logo_exists, banner_exists,
+	path, library_id, nfo_exists, thumb_exists, fanart_exists, fanart_count, logo_exists, banner_exists,
 	thumb_low_res, fanart_low_res, logo_low_res, banner_low_res,
 	health_score, is_excluded, exclusion_reason, is_classical, metadata_sources,
 	audiodb_id_fetched_at, discogs_id_fetched_at, wikidata_id_fetched_at, lastfm_id_fetched_at,
@@ -47,19 +47,19 @@ func (s *Service) Create(ctx context.Context, a *Artist) error {
 			musicbrainz_id, audiodb_id, discogs_id, wikidata_id, deezer_id,
 			genres, styles, moods,
 			years_active, born, formed, died, disbanded, biography,
-			path, library_id, nfo_exists, thumb_exists, fanart_exists, logo_exists, banner_exists,
+			path, library_id, nfo_exists, thumb_exists, fanart_exists, fanart_count, logo_exists, banner_exists,
 			thumb_low_res, fanart_low_res, logo_low_res, banner_low_res,
 			health_score, is_excluded, exclusion_reason, is_classical, metadata_sources,
 			audiodb_id_fetched_at, discogs_id_fetched_at, wikidata_id_fetched_at, lastfm_id_fetched_at,
 			last_scanned_at, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		a.ID, a.Name, a.SortName, a.Type, a.Gender, a.Disambiguation,
 		a.MusicBrainzID, a.AudioDBID, a.DiscogsID, a.WikidataID, a.DeezerID,
 		MarshalStringSlice(a.Genres), MarshalStringSlice(a.Styles), MarshalStringSlice(a.Moods),
 		a.YearsActive, a.Born, a.Formed, a.Died, a.Disbanded, a.Biography,
 		a.Path, nullableString(a.LibraryID), boolToInt(a.NFOExists), boolToInt(a.ThumbExists),
-		boolToInt(a.FanartExists), boolToInt(a.LogoExists), boolToInt(a.BannerExists),
+		boolToInt(a.FanartExists), a.FanartCount, boolToInt(a.LogoExists), boolToInt(a.BannerExists),
 		boolToInt(a.ThumbLowRes), boolToInt(a.FanartLowRes),
 		boolToInt(a.LogoLowRes), boolToInt(a.BannerLowRes),
 		a.HealthScore, boolToInt(a.IsExcluded), a.ExclusionReason, boolToInt(a.IsClassical),
@@ -236,7 +236,7 @@ func (s *Service) Update(ctx context.Context, a *Artist) error {
 			genres = ?, styles = ?, moods = ?,
 			years_active = ?, born = ?, formed = ?, died = ?, disbanded = ?, biography = ?,
 			path = ?, library_id = ?,
-			nfo_exists = ?, thumb_exists = ?, fanart_exists = ?, logo_exists = ?, banner_exists = ?,
+			nfo_exists = ?, thumb_exists = ?, fanart_exists = ?, fanart_count = ?, logo_exists = ?, banner_exists = ?,
 			thumb_low_res = ?, fanart_low_res = ?, logo_low_res = ?, banner_low_res = ?,
 			health_score = ?, is_excluded = ?, exclusion_reason = ?, is_classical = ?,
 			metadata_sources = ?,
@@ -250,7 +250,7 @@ func (s *Service) Update(ctx context.Context, a *Artist) error {
 		a.YearsActive, a.Born, a.Formed, a.Died, a.Disbanded, a.Biography,
 		a.Path, nullableString(a.LibraryID),
 		boolToInt(a.NFOExists), boolToInt(a.ThumbExists),
-		boolToInt(a.FanartExists), boolToInt(a.LogoExists), boolToInt(a.BannerExists),
+		boolToInt(a.FanartExists), a.FanartCount, boolToInt(a.LogoExists), boolToInt(a.BannerExists),
 		boolToInt(a.ThumbLowRes), boolToInt(a.FanartLowRes),
 		boolToInt(a.LogoLowRes), boolToInt(a.BannerLowRes),
 		a.HealthScore, boolToInt(a.IsExcluded), a.ExclusionReason, boolToInt(a.IsClassical),
@@ -583,7 +583,7 @@ func scanArtist(row interface{ Scan(...any) error }) (*Artist, error) {
 	var metadataSources string
 	var audiodbFetchedAt, discogsFetchedAt, wikidataFetchedAt, lastfmFetchedAt sql.NullString
 	var lastScannedAt sql.NullString
-	var nfo, thumb, fanart, logo, banner int
+	var nfo, thumb, fanart, fanartCount, logo, banner int
 	var thumbLowRes, fanartLowRes, logoLowRes, bannerLowRes int
 	var isExcluded, isClassical int
 	var createdAt, updatedAt string
@@ -593,7 +593,7 @@ func scanArtist(row interface{ Scan(...any) error }) (*Artist, error) {
 		&a.MusicBrainzID, &a.AudioDBID, &a.DiscogsID, &a.WikidataID, &a.DeezerID,
 		&genres, &styles, &moods,
 		&a.YearsActive, &a.Born, &a.Formed, &a.Died, &a.Disbanded, &a.Biography,
-		&a.Path, &libraryID, &nfo, &thumb, &fanart, &logo, &banner,
+		&a.Path, &libraryID, &nfo, &thumb, &fanart, &fanartCount, &logo, &banner,
 		&thumbLowRes, &fanartLowRes, &logoLowRes, &bannerLowRes,
 		&a.HealthScore, &isExcluded, &a.ExclusionReason, &isClassical,
 		&metadataSources,
@@ -614,6 +614,7 @@ func scanArtist(row interface{ Scan(...any) error }) (*Artist, error) {
 	a.NFOExists = nfo == 1
 	a.ThumbExists = thumb == 1
 	a.FanartExists = fanart == 1
+	a.FanartCount = fanartCount
 	a.LogoExists = logo == 1
 	a.BannerExists = banner == 1
 	a.ThumbLowRes = thumbLowRes == 1

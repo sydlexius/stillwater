@@ -303,3 +303,87 @@ func TestImageNaming_ToMap(t *testing.T) {
 		t.Errorf("thumb[0] = %q, want folder.jpg", m["thumb"][0])
 	}
 }
+
+func TestNamesForType(t *testing.T) {
+	n := ImageNaming{
+		Thumb:  []string{"folder.jpg", "artist.jpg"},
+		Fanart: []string{"fanart.jpg"},
+		Logo:   []string{"logo.png"},
+		Banner: []string{"banner.jpg"},
+	}
+
+	thumb := n.NamesForType("thumb")
+	if len(thumb) != 2 || thumb[0] != "folder.jpg" || thumb[1] != "artist.jpg" {
+		t.Errorf("NamesForType(thumb) = %v, want [folder.jpg artist.jpg]", thumb)
+	}
+
+	fanart := n.NamesForType("fanart")
+	if len(fanart) != 1 || fanart[0] != "fanart.jpg" {
+		t.Errorf("NamesForType(fanart) = %v, want [fanart.jpg]", fanart)
+	}
+
+	// Empty type returns nil
+	if got := n.NamesForType("unknown"); got != nil {
+		t.Errorf("NamesForType(unknown) = %v, want nil", got)
+	}
+
+	// Empty logo
+	empty := ImageNaming{}
+	if got := empty.NamesForType("logo"); got != nil {
+		t.Errorf("NamesForType(logo) on empty = %v, want nil", got)
+	}
+}
+
+func TestValidateImageNaming(t *testing.T) {
+	// Valid naming
+	valid := ImageNaming{
+		Thumb:  []string{"folder.jpg", "artist.jpg"},
+		Fanart: []string{"fanart.jpg"},
+		Logo:   []string{"logo.png"},
+		Banner: []string{"banner.jpg"},
+	}
+	if errs := ValidateImageNaming(valid); errs != nil {
+		t.Errorf("expected no errors for valid naming, got %v", errs)
+	}
+
+	// Empty filename
+	errs := ValidateImageNaming(ImageNaming{Thumb: []string{""}})
+	if len(errs) == 0 {
+		t.Error("expected error for empty filename")
+	}
+
+	// Path separator
+	errs = ValidateImageNaming(ImageNaming{Thumb: []string{"sub/folder.jpg"}})
+	if len(errs) == 0 {
+		t.Error("expected error for path separator")
+	}
+
+	// Backslash path separator
+	errs = ValidateImageNaming(ImageNaming{Thumb: []string{"sub\\folder.jpg"}})
+	if len(errs) == 0 {
+		t.Error("expected error for backslash path separator")
+	}
+
+	// Invalid extension
+	errs = ValidateImageNaming(ImageNaming{Thumb: []string{"folder.gif"}})
+	if len(errs) == 0 {
+		t.Error("expected error for invalid extension")
+	}
+
+	// Logo must be PNG
+	errs = ValidateImageNaming(ImageNaming{Logo: []string{"logo.jpg"}})
+	if len(errs) == 0 {
+		t.Error("expected error for logo with .jpg extension")
+	}
+
+	// Case-insensitive duplicates
+	errs = ValidateImageNaming(ImageNaming{Thumb: []string{"folder.jpg", "Folder.jpg"}})
+	if len(errs) == 0 {
+		t.Error("expected error for duplicate filenames")
+	}
+
+	// All types empty is valid (no filenames to validate)
+	if errs := ValidateImageNaming(ImageNaming{}); errs != nil {
+		t.Errorf("expected no errors for empty naming, got %v", errs)
+	}
+}

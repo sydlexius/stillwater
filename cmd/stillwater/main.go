@@ -170,7 +170,7 @@ func run() error {
 	fixers := []rule.Fixer{
 		&rule.NFOFixer{SnapshotService: nfoSnapshotService},
 		rule.NewMetadataFixer(orchestrator, nfoSnapshotService),
-		rule.NewImageFixer(orchestrator, logger),
+		rule.NewImageFixer(orchestrator, platformService, logger),
 		rule.NewExtraneousImagesFixer(platformService, logger),
 	}
 	pipeline := rule.NewPipeline(ruleEngine, artistService, ruleService, fixers, logger)

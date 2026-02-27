@@ -246,6 +246,7 @@ func (s *Service) processDirectory(ctx context.Context, dirPath, name, libraryID
 			NFOExists:    detected.NFOExists,
 			ThumbExists:  detected.ThumbExists,
 			FanartExists: detected.FanartExists,
+			FanartCount:  detected.FanartCount,
 			LogoExists:   detected.LogoExists,
 			BannerExists: detected.BannerExists,
 			ThumbLowRes:  detected.ThumbLowRes,
@@ -281,6 +282,7 @@ func (s *Service) processDirectory(ctx context.Context, dirPath, name, libraryID
 		changed := existing.NFOExists != detected.NFOExists ||
 			existing.ThumbExists != detected.ThumbExists ||
 			existing.FanartExists != detected.FanartExists ||
+			existing.FanartCount != detected.FanartCount ||
 			existing.LogoExists != detected.LogoExists ||
 			existing.BannerExists != detected.BannerExists ||
 			existing.ThumbLowRes != detected.ThumbLowRes ||
@@ -293,6 +295,7 @@ func (s *Service) processDirectory(ctx context.Context, dirPath, name, libraryID
 			existing.NFOExists = detected.NFOExists
 			existing.ThumbExists = detected.ThumbExists
 			existing.FanartExists = detected.FanartExists
+			existing.FanartCount = detected.FanartCount
 			existing.LogoExists = detected.LogoExists
 			existing.BannerExists = detected.BannerExists
 			existing.ThumbLowRes = detected.ThumbLowRes
@@ -521,6 +524,7 @@ type detectedFiles struct {
 	NFOExists    bool
 	ThumbExists  bool
 	FanartExists bool
+	FanartCount  int
 	LogoExists   bool
 	BannerExists bool
 	ThumbLowRes  bool
@@ -559,6 +563,13 @@ func detectFiles(dirPath string) detectedFiles {
 		if files[strings.ToLower(p)] {
 			d.FanartExists = true
 			d.FanartLowRes = probeLowRes(filepath.Join(dirPath, p), "fanart")
+			// Count all fanart files (primary + numbered variants).
+			fanartPaths := img.DiscoverFanart(dirPath, p)
+			if len(fanartPaths) > 0 {
+				d.FanartCount = len(fanartPaths)
+			} else {
+				d.FanartCount = 1
+			}
 			break
 		}
 	}

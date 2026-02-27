@@ -49,6 +49,11 @@ func (r *Router) handleCreatePlatform(w http.ResponseWriter, req *http.Request) 
 		body.NFOFormat = "kodi"
 	}
 
+	if errs := platform.ValidateImageNaming(body.ImageNaming); errs != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid image naming", "details": errs})
+		return
+	}
+
 	p := &platform.Profile{
 		Name:        body.Name,
 		NFOEnabled:  body.NFOEnabled,
@@ -79,6 +84,11 @@ func (r *Router) handleUpdatePlatform(w http.ResponseWriter, req *http.Request) 
 	}
 	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+
+	if errs := platform.ValidateImageNaming(body.ImageNaming); errs != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid image naming", "details": errs})
 		return
 	}
 

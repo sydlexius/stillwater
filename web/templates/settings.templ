@@ -18,6 +18,16 @@ func joinNames(names []string) string {
 	return strings.Join(names, ", ")
 }
 
+// profileEditable returns true if the profile's image naming should be editable.
+// The seeded "custom" profile and all user-created profiles are editable;
+// other builtin profiles (emby, jellyfin, kodi, plex) are read-only.
+func profileEditable(p *platform.Profile) bool {
+	if p == nil {
+		return false
+	}
+	return !p.IsBuiltin || p.ID == "custom"
+}
+
 // SettingsData holds the data for the settings page.
 type SettingsData struct {
 	ActiveTab          string
@@ -367,6 +377,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 		@ruleToggleScript()
 		@maintenanceScript()
 		@settingsExportScript()
+		@profileNamingEditorScript()
 		<script src={ assets.SortableJS }></script>
 		<div class="space-y-6">
 			<div class="sw-card rounded-lg px-6 py-4">
@@ -403,6 +414,11 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 					<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 						<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 							<h2 class="text-lg font-semibold">Active Profile Details</h2>
+							if profileEditable(data.ActiveProfile) {
+								<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+									Edit filenames for each image type. Changes are saved to the profile.
+								</p>
+							}
 						</div>
 						<div class="px-6 py-4 space-y-4">
 							<div class="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
@@ -416,23 +432,24 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 										}
 									</p>
 								</div>
-								<div>
-									<span class="font-medium text-gray-500 dark:text-gray-400">Thumbnail</span>
-									<p class="mt-1">{ joinNames(data.ActiveProfile.ImageNaming.Thumb) }</p>
-								</div>
-								<div>
-									<span class="font-medium text-gray-500 dark:text-gray-400">Fanart</span>
-									<p class="mt-1">{ joinNames(data.ActiveProfile.ImageNaming.Fanart) }</p>
-								</div>
-								<div>
-									<span class="font-medium text-gray-500 dark:text-gray-400">Logo</span>
-									<p class="mt-1">{ joinNames(data.ActiveProfile.ImageNaming.Logo) }</p>
-								</div>
-								<div>
-									<span class="font-medium text-gray-500 dark:text-gray-400">Banner</span>
-									<p class="mt-1">{ joinNames(data.ActiveProfile.ImageNaming.Banner) }</p>
-								</div>
+								@profileNamingRow("Thumbnail", "thumb", data.ActiveProfile.ImageNaming.Thumb, !profileEditable(data.ActiveProfile))
+								@profileNamingRow("Fanart", "fanart", data.ActiveProfile.ImageNaming.Fanart, !profileEditable(data.ActiveProfile))
+								@profileNamingRow("Logo", "logo", data.ActiveProfile.ImageNaming.Logo, !profileEditable(data.ActiveProfile))
+								@profileNamingRow("Banner", "banner", data.ActiveProfile.ImageNaming.Banner, !profileEditable(data.ActiveProfile))
 							</div>
+							if profileEditable(data.ActiveProfile) {
+								<div class="pt-2">
+									<button
+										type="button"
+										onclick="saveProfileNaming(this)"
+										data-profile-id={ data.ActiveProfile.ID }
+										class="inline-flex items-center rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+									>
+										Save Filenames
+									</button>
+									<span id="naming-save-status" class="ml-3 text-sm text-gray-500 dark:text-gray-400"></span>
+								</div>
+							}
 						</div>
 					</div>
 				}
@@ -1221,6 +1238,108 @@ templ autoFetchToggleScript() {
 				if (typeof showToast === 'function') {
 					showToast('Network error while updating setting.');
 				}
+			});
+		}
+	</script>
+}
+
+templ profileNamingEditorScript() {
+	<script>
+		function addNamingChip(btn, imageType) {
+			var name = prompt('Enter filename (e.g. folder.jpg):');
+			if (!name) return;
+			name = name.trim();
+			if (!name) return;
+
+			// Client-side validation
+			if (name.indexOf('/') !== -1 || name.indexOf('\\') !== -1) {
+				alert('Filename must not contain path separators.');
+				return;
+			}
+			var dotIdx = name.lastIndexOf('.');
+			if (dotIdx === -1) {
+				alert('Filename must have an extension (.jpg, .jpeg or .png).');
+				return;
+			}
+			var ext = name.substring(dotIdx).toLowerCase();
+			if (ext !== '.jpg' && ext !== '.jpeg' && ext !== '.png') {
+				alert('Extension must be .jpg, .jpeg or .png.');
+				return;
+			}
+			if (imageType === 'logo' && ext !== '.png') {
+				alert('Logo filenames must use .png extension.');
+				return;
+			}
+
+			// Check for duplicates
+			var container = btn.closest('[data-naming-type]');
+			var chips = container.querySelectorAll('[data-naming-chip]');
+			for (var i = 0; i < chips.length; i++) {
+				if (chips[i].dataset.namingChip.toLowerCase() === name.toLowerCase()) {
+					alert('Duplicate filename.');
+					return;
+				}
+			}
+
+			var chip = document.createElement('span');
+			chip.className = 'inline-flex items-center gap-1 rounded-full bg-gray-100 dark:bg-gray-700 px-2.5 py-0.5 text-xs font-medium text-gray-700 dark:text-gray-300';
+			chip.dataset.namingChip = name;
+			chip.textContent = name;
+			var removeBtn = document.createElement('button');
+			removeBtn.type = 'button';
+			removeBtn.className = 'ml-0.5 text-gray-400 hover:text-red-500 focus:outline-none';
+			removeBtn.setAttribute('aria-label', 'Remove ' + name);
+			removeBtn.innerHTML = '&times;';
+			removeBtn.onclick = function() { chip.remove(); };
+			chip.appendChild(removeBtn);
+			container.insertBefore(chip, btn);
+		}
+
+		function saveProfileNaming(btn) {
+			var profileId = btn.dataset.profileId;
+			var payload = {};
+			var types = ['thumb', 'fanart', 'logo', 'banner'];
+			for (var i = 0; i < types.length; i++) {
+				var container = document.querySelector('[data-naming-type="' + types[i] + '"]');
+				var names = [];
+				if (container) {
+					var chips = container.querySelectorAll('[data-naming-chip]');
+					for (var j = 0; j < chips.length; j++) {
+						names.push(chips[j].dataset.namingChip);
+					}
+				}
+				payload[types[i]] = names;
+			}
+
+			var csrfToken = document.cookie.replace(
+				/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1"
+			);
+			var status = document.getElementById('naming-save-status');
+			status.textContent = 'Saving...';
+
+			fetch('/api/v1/platforms/' + profileId, {
+				method: 'PUT',
+				headers: {
+					'Content-Type': 'application/json',
+					'X-CSRF-Token': csrfToken
+				},
+				body: JSON.stringify({ image_naming: payload }),
+				credentials: 'same-origin'
+			}).then(function(r) {
+				if (r.ok) {
+					status.textContent = 'Saved.';
+					setTimeout(function() { status.textContent = ''; }, 2000);
+				} else {
+					r.json().then(function(data) {
+						var msg = data.error || 'Save failed.';
+						if (data.details) msg += ' ' + data.details.join('; ');
+						status.textContent = msg;
+					}).catch(function() {
+						status.textContent = 'Save failed.';
+					});
+				}
+			}).catch(function() {
+				status.textContent = 'Network error.';
 			});
 		}
 	</script>
@@ -2339,6 +2458,41 @@ templ webhookCard(wh webhook.Webhook) {
 				Delete
 			</button>
 		</div>
+	</div>
+}
+
+// profileNamingRow renders a single image type row in the active profile details.
+// For builtin profiles it shows read-only text; for custom profiles it shows
+// editable chips with add/remove controls.
+templ profileNamingRow(label, imageType string, names []string, readOnly bool) {
+	<div>
+		<span class="font-medium text-gray-500 dark:text-gray-400">{ label }</span>
+		if readOnly {
+			<p class="mt-1">{ joinNames(names) }</p>
+		} else {
+			<div class="mt-1 flex flex-wrap items-center gap-1.5" data-naming-type={ imageType }>
+				for _, name := range names {
+					<span class="inline-flex items-center gap-1 rounded-full bg-gray-100 dark:bg-gray-700 px-2.5 py-0.5 text-xs font-medium text-gray-700 dark:text-gray-300" data-naming-chip={ name }>
+						{ name }
+						<button
+							type="button"
+							class="ml-0.5 text-gray-400 hover:text-red-500 focus:outline-none"
+							aria-label={ "Remove " + name }
+							onclick="this.closest('[data-naming-chip]').remove()"
+						>
+							&times;
+						</button>
+					</span>
+				}
+				<button
+					type="button"
+					class="inline-flex items-center rounded-full border border-dashed border-gray-300 dark:border-gray-600 px-2 py-0.5 text-xs text-gray-500 hover:border-gray-400 hover:text-gray-700 dark:hover:text-gray-300 focus:outline-none"
+					onclick={ templ.ComponentScript{Call: "addNamingChip(this, '" + imageType + "')"} }
+				>
+					+ Add
+				</button>
+			</div>
+		}
 	</div>
 }
 

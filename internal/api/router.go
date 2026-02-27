@@ -284,6 +284,12 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/images/websearch", wrapAuth(r.handleWebImageSearch, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/images/crop", wrapAuth(r.handleImageCrop, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/images/logo/trim", wrapAuth(r.handleLogoTrim, authMw))
+	// Multi-fanart routes
+	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/images/fanart/list", wrapAuth(r.handleFanartList, authMw))
+	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/images/fanart/{index}/file", wrapAuth(r.handleServeFanartByIndex, authMw))
+	mux.HandleFunc("DELETE "+bp+"/api/v1/artists/{id}/images/fanart/batch", wrapAuth(r.handleFanartBatchDelete, authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/images/fanart/fetch-batch", wrapAuth(r.handleFanartBatchFetch, authMw))
+	// Generic image routes
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/images/{type}/file", wrapAuth(r.handleServeImage, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/images/{type}/info", wrapAuth(r.handleImageInfo, authMw))
 	mux.HandleFunc("DELETE "+bp+"/api/v1/artists/{id}/images/{type}", wrapAuth(r.handleDeleteImage, authMw))
