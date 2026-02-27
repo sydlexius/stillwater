@@ -275,7 +275,7 @@ func (f *ImageFixer) Fix(ctx context.Context, a *artist.Artist, v *Violation) (*
 	// because rules like thumb_square can also fire on a high-res image and
 	// must not replace it with a lower-res candidate.
 	minW, minH := v.Config.MinWidth, v.Config.MinHeight
-	existW, existH := readExistingImageDimensions(a.Path, imageType, f.platformService)
+	existW, existH := readExistingImageDimensions(ctx, a.Path, imageType, f.platformService)
 	candidates = filterCandidatesByResolution(candidates, minW, minH, existW, existH, f.logger)
 
 	if len(candidates) == 0 {
@@ -357,7 +357,7 @@ func (f *ImageFixer) Fix(ctx context.Context, a *artist.Artist, v *Violation) (*
 			continue
 		}
 
-		naming := existingImageFileNames(a.Path, imageType, f.platformService)
+		naming := existingImageFileNames(ctx, a.Path, imageType, f.platformService)
 		saved, err := img.Save(a.Path, imageType, resized, naming, f.logger)
 		if err != nil {
 			f.logger.Debug("image save failed", "url", c.URL, "error", err)
@@ -463,10 +463,10 @@ func writeArtistNFO(a *artist.Artist, ss *nfo.SnapshotService) {
 // otherwise clobber high-res files that are not causing the violation.
 // When platformService is non-nil, uses the active profile's names instead of
 // the hardcoded defaults.
-func existingImageFileNames(dir, imageType string, platformService *platform.Service) []string {
+func existingImageFileNames(ctx context.Context, dir, imageType string, platformService *platform.Service) []string {
 	var all []string
 	if platformService != nil {
-		if profile, err := platformService.GetActive(context.Background()); err == nil && profile != nil {
+		if profile, err := platformService.GetActive(ctx); err == nil && profile != nil {
 			all = profile.ImageNaming.NamesForType(imageType)
 		}
 	}
@@ -517,10 +517,10 @@ func filterCandidatesByResolution(
 // readExistingImageDimensions returns the pixel dimensions of the highest
 // resolution recognizable image found in dir for the given image type.
 // When platformService is non-nil, uses the active profile's names.
-func readExistingImageDimensions(dir, imageType string, platformService *platform.Service) (int, int) {
+func readExistingImageDimensions(ctx context.Context, dir, imageType string, platformService *platform.Service) (int, int) {
 	var names []string
 	if platformService != nil {
-		if profile, err := platformService.GetActive(context.Background()); err == nil && profile != nil {
+		if profile, err := platformService.GetActive(ctx); err == nil && profile != nil {
 			names = profile.ImageNaming.NamesForType(imageType)
 		}
 	}
