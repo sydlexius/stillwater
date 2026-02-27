@@ -261,7 +261,9 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	// Report routes
 	mux.HandleFunc("GET "+bp+"/api/v1/reports/health", wrapAuth(r.handleReportHealth, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/reports/health/history", wrapAuth(r.handleReportHealthHistory, authMw))
+	mux.HandleFunc("GET "+bp+"/api/v1/reports/health/by-library", wrapAuth(r.handleReportHealthByLibrary, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/reports/compliance", wrapAuth(r.handleReportCompliance, authMw))
+	mux.HandleFunc("GET "+bp+"/api/v1/reports/compliance/export", wrapAuth(r.handleReportComplianceExport, authMw))
 
 	// NFO snapshot routes
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/nfo/diff", wrapAuth(r.handleNFODiff, authMw))

@@ -710,6 +710,15 @@ func buildWhereClause(params ListParams) (string, []any) {
 		conditions = append(conditions, "health_score < 100")
 	}
 
+	if params.HealthScoreMin > 0 {
+		conditions = append(conditions, "health_score >= ?")
+		args = append(args, params.HealthScoreMin)
+	}
+	if params.HealthScoreMax > 0 && params.HealthScoreMax <= 100 {
+		conditions = append(conditions, "health_score <= ?")
+		args = append(args, params.HealthScoreMax)
+	}
+
 	if len(conditions) == 0 {
 		return "", nil
 	}

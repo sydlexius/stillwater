@@ -92,33 +92,50 @@ func (e *BulkExecutor) run(ctx context.Context, job *BulkJob) {
 		return
 	}
 
-	// Collect all non-excluded artists via pagination
+	// Collect target artists: specific IDs if provided, otherwise all non-excluded
 	var artists []artist.Artist
-	const pageSize = 200
-	params := artist.ListParams{Page: 1, PageSize: pageSize, Sort: "name"}
-
-	for {
-		if err := ctx.Err(); err != nil {
-			e.finishJob(ctx, job, BulkStatusCanceled, fmt.Sprintf("bulk job canceled: %v", err))
-			return
-		}
-		page, _, err := e.artistService.List(ctx, params)
-		if err != nil {
-			e.finishJob(ctx, job, BulkStatusFailed, fmt.Sprintf("listing artists: %v", err))
-			return
-		}
-		if len(page) == 0 {
-			break
-		}
-		for _, a := range page {
+	if len(job.ArtistIDs) > 0 {
+		for _, id := range job.ArtistIDs {
+			if ctx.Err() != nil {
+				e.finishJob(ctx, job, BulkStatusCanceled, "")
+				return
+			}
+			a, err := e.artistService.GetByID(ctx, id)
+			if err != nil {
+				e.logger.Warn("skipping unknown artist in bulk job", "id", id, "error", err)
+				continue
+			}
 			if !a.IsExcluded {
-				artists = append(artists, a)
+				artists = append(artists, *a)
 			}
 		}
-		if len(page) < pageSize {
-			break
+	} else {
+		const pageSize = 200
+		params := artist.ListParams{Page: 1, PageSize: pageSize, Sort: "name"}
+
+		for {
+			if err := ctx.Err(); err != nil {
+				e.finishJob(ctx, job, BulkStatusCanceled, fmt.Sprintf("bulk job canceled: %v", err))
+				return
+			}
+			page, _, err := e.artistService.List(ctx, params)
+			if err != nil {
+				e.finishJob(ctx, job, BulkStatusFailed, fmt.Sprintf("listing artists: %v", err))
+				return
+			}
+			if len(page) == 0 {
+				break
+			}
+			for _, a := range page {
+				if !a.IsExcluded {
+					artists = append(artists, a)
+				}
+			}
+			if len(page) < pageSize {
+				break
+			}
+			params.Page++
 		}
-		params.Page++
 	}
 
 	job.TotalItems = len(artists)
