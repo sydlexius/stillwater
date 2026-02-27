@@ -94,19 +94,28 @@ func (r *Router) handleUpdatePlatform(w http.ResponseWriter, req *http.Request) 
 		}
 	}
 
+	// Treat empty strings as "not provided" so they don't trigger
+	// the builtin guard or overwrite with blank values.
+	if body.Name != nil && *body.Name == "" {
+		body.Name = nil
+	}
+	if body.NFOFormat != nil && *body.NFOFormat == "" {
+		body.NFOFormat = nil
+	}
+
 	// Prevent renaming built-in profiles.
 	if existing.IsBuiltin && body.Name != nil && *body.Name != existing.Name {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "cannot rename a built-in profile"})
 		return
 	}
 
-	if body.Name != nil && *body.Name != "" {
+	if body.Name != nil {
 		existing.Name = *body.Name
 	}
 	if body.NFOEnabled != nil {
 		existing.NFOEnabled = *body.NFOEnabled
 	}
-	if body.NFOFormat != nil && *body.NFOFormat != "" {
+	if body.NFOFormat != nil {
 		existing.NFOFormat = *body.NFOFormat
 	}
 	if body.ImageNaming != nil {
