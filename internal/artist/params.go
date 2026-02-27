@@ -42,4 +42,7 @@ func (p *ListParams) Validate() {
 	if p.HealthScoreMax > 100 {
 		p.HealthScoreMax = 100
 	}
+	if p.HealthScoreMin > 0 && p.HealthScoreMax > 0 && p.HealthScoreMin > p.HealthScoreMax {
+		p.HealthScoreMin, p.HealthScoreMax = p.HealthScoreMax, p.HealthScoreMin
+	}
 }
