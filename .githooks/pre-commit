@@ -1,0 +1,114 @@
+#!/usr/bin/env bash
+#
+# pre-commit hook: mirrors the CI lint job so issues are caught before push.
+#
+# Checks (in order, fast-fail):
+#   1. gofmt -- staged .go files are correctly formatted
+#   2. templ freshness -- generated _templ.go files match their .templ sources
+#   3. go build -- code compiles
+#   4. golangci-lint -- full linter suite from .golangci.yml
+#
+# Skip with: git commit --no-verify (use sparingly)
+
+set -euo pipefail
+
+# Colors (disabled if not a terminal)
+if [ -t 1 ]; then
+    RED='\033[0;31m'
+    GREEN='\033[0;32m'
+    YELLOW='\033[0;33m'
+    BOLD='\033[1m'
+    RESET='\033[0m'
+else
+    RED='' GREEN='' YELLOW='' BOLD='' RESET=''
+fi
+
+fail() {
+    echo -e "${RED}${BOLD}FAIL${RESET} $1" >&2
+    exit 1
+}
+
+pass() {
+    echo -e "${GREEN}PASS${RESET} $1"
+}
+
+warn() {
+    echo -e "${YELLOW}SKIP${RESET} $1"
+}
+
+# --------------------------------------------------------------------------
+# 1. gofmt -- check staged .go files (excluding generated _templ.go)
+# --------------------------------------------------------------------------
+STAGED_GO=$(git diff --cached --name-only --diff-filter=ACM -- '*.go' | grep -v '_templ\.go$' || true)
+if [ -n "$STAGED_GO" ]; then
+    UNFORMATTED=$(echo "$STAGED_GO" | xargs gofmt -l 2>/dev/null || true)
+    if [ -n "$UNFORMATTED" ]; then
+        echo -e "${RED}${BOLD}FAIL${RESET} gofmt: the following files need formatting:"
+        echo "$UNFORMATTED" | sed 's/^/  /'
+        echo ""
+        echo "Run: gofmt -w . && git add -p"
+        exit 1
+    fi
+    pass "gofmt"
+else
+    warn "gofmt (no staged .go files)"
+fi
+
+# --------------------------------------------------------------------------
+# 2. templ freshness -- if any .templ files are staged, regenerate and check
+#    that _templ.go files are up to date.
+# --------------------------------------------------------------------------
+STAGED_TEMPL=$(git diff --cached --name-only --diff-filter=ACM -- '*.templ' || true)
+if [ -n "$STAGED_TEMPL" ]; then
+    if ! command -v templ &>/dev/null; then
+        # Try the go run fallback
+        TEMPL_CMD="go run github.com/a-h/templ/cmd/templ@latest"
+    else
+        TEMPL_CMD="templ"
+    fi
+
+    # Save current state of generated files, regenerate, compare
+    TEMPL_GEN_FILES=$(git diff --cached --name-only -- '*_templ.go' || true)
+
+    $TEMPL_CMD generate >/dev/null 2>&1 || fail "templ generate failed"
+
+    # Check if any _templ.go files are now dirty (unstaged changes)
+    DIRTY_TEMPL=$(git diff --name-only -- '*_templ.go' || true)
+    if [ -n "$DIRTY_TEMPL" ]; then
+        echo -e "${RED}${BOLD}FAIL${RESET} templ: generated files are out of date:"
+        echo "$DIRTY_TEMPL" | sed 's/^/  /'
+        echo ""
+        echo "Run: templ generate && git add <generated files>"
+        exit 1
+    fi
+    pass "templ generate"
+else
+    warn "templ (no staged .templ files)"
+fi
+
+# --------------------------------------------------------------------------
+# 3. go build -- make sure everything compiles
+# --------------------------------------------------------------------------
+if ! go build ./... 2>/tmp/pre-commit-build.log; then
+    echo -e "${RED}${BOLD}FAIL${RESET} go build:"
+    cat /tmp/pre-commit-build.log | head -30
+    exit 1
+fi
+pass "go build"
+
+# --------------------------------------------------------------------------
+# 4. golangci-lint -- full linter suite (matches CI exactly)
+# --------------------------------------------------------------------------
+if ! command -v golangci-lint &>/dev/null; then
+    warn "golangci-lint (not installed, skipping)"
+else
+    LINT_OUTPUT=$(golangci-lint run ./... 2>&1) || {
+        echo -e "${RED}${BOLD}FAIL${RESET} golangci-lint:"
+        echo "$LINT_OUTPUT"
+        exit 1
+    }
+    pass "golangci-lint"
+fi
+
+echo ""
+echo -e "${GREEN}${BOLD}All pre-commit checks passed.${RESET}"

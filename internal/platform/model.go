@@ -94,8 +94,8 @@ func ValidateImageNaming(n ImageNaming) []string {
 				continue
 			}
 			ext := strings.ToLower(filepath.Ext(name))
-			if ext != ".jpg" && ext != ".png" {
-				errs = append(errs, imageType+": extension must be .jpg or .png: "+name)
+			if ext != ".jpg" && ext != ".jpeg" && ext != ".png" {
+				errs = append(errs, imageType+": extension must be .jpg, .jpeg or .png: "+name)
 				continue
 			}
 			if imageType == "logo" && ext != ".png" {

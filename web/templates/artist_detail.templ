@@ -53,9 +53,9 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 						var current = 0;
 						var showingA = true;
 						var intervalMs = 8000;
+						var timer = null;
 
 						function cycle() {
-							if (document.hidden) return;
 							current = (current + 1) % count;
 							var url = '/api/v1/artists/' + artistId + '/images/fanart/' + current + '/file';
 							if (showingA) {
@@ -75,7 +75,13 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 							}
 						}
 
-						setInterval(cycle, intervalMs);
+						function start() { if (!timer) timer = setInterval(cycle, intervalMs); }
+						function stop() { if (timer) { clearInterval(timer); timer = null; } }
+
+						document.addEventListener('visibilitychange', function() {
+							if (document.hidden) stop(); else start();
+						});
+						start();
 					})();
 				</script>
 			} else if data.Artist.FanartExists {

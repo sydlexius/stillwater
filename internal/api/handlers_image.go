@@ -105,7 +105,7 @@ func (r *Router) handleImageUpload(w http.ResponseWriter, req *http.Request) {
 
 	// Fanart: append as next numbered file when fanart already exists.
 	if imageType == "fanart" && a.FanartExists {
-		saved, _, saveErr := r.processAndAppendFanart(req.Context(), a.Path, data)
+		saved, saveErr := r.processAndAppendFanart(req.Context(), a.Path, data)
 		if saveErr != nil {
 			r.logger.Error("appending fanart upload", "artist_id", artistID, "error", saveErr)
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to save image"})
@@ -186,7 +186,7 @@ func (r *Router) handleImageFetch(w http.ResponseWriter, req *http.Request) {
 
 	// Fanart: append as next numbered file when fanart already exists.
 	if imageType == "fanart" && a.FanartExists {
-		saved, _, saveErr := r.processAndAppendFanart(req.Context(), a.Path, data)
+		saved, saveErr := r.processAndAppendFanart(req.Context(), a.Path, data)
 		if saveErr != nil {
 			r.logger.Error("appending fanart image", "artist_id", artistID, "error", saveErr)
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to save image"})
@@ -734,7 +734,7 @@ func (r *Router) handleDeleteImage(w http.ResponseWriter, req *http.Request) {
 		fanartPaths := img.DiscoverFanart(a.Path, primary)
 		var deleted []string
 		for _, p := range fanartPaths {
-			if err := os.Remove(p); err == nil {
+			if err := os.Remove(p); err == nil { //nolint:gosec // path from DiscoverFanart, not user input
 				deleted = append(deleted, filepath.Base(p))
 				r.logger.Info("deleted fanart", slog.String("path", p))
 			}
@@ -966,11 +966,11 @@ func (r *Router) isKodiNumbering(ctx context.Context) bool {
 }
 
 // processAndAppendFanart processes image data and saves it as the next
-// numbered fanart file. Returns the saved filenames and new total count.
-func (r *Router) processAndAppendFanart(ctx context.Context, dir string, data []byte) ([]string, int, error) {
+// numbered fanart file. Returns the saved filenames.
+func (r *Router) processAndAppendFanart(ctx context.Context, dir string, data []byte) ([]string, error) {
 	resized, _, err := img.Resize(bytes.NewReader(data), 3000, 3000)
 	if err != nil {
-		return nil, 0, fmt.Errorf("resizing: %w", err)
+		return nil, fmt.Errorf("resizing: %w", err)
 	}
 
 	primary := r.getActiveFanartPrimary(ctx)
@@ -981,10 +981,10 @@ func (r *Router) processAndAppendFanart(ctx context.Context, dir string, data []
 
 	saved, err := img.Save(dir, "fanart", resized, []string{nextName}, r.logger)
 	if err != nil {
-		return nil, 0, fmt.Errorf("saving: %w", err)
+		return nil, fmt.Errorf("saving: %w", err)
 	}
 
-	return saved, nextIndex + 1, nil
+	return saved, nil
 }
 
 // updateArtistFanartCount discovers fanart files and updates both the exists
@@ -1034,7 +1034,7 @@ func (r *Router) handleFanartList(w http.ResponseWriter, req *http.Request) {
 	items := make([]templates.FanartGalleryItem, 0, len(paths))
 	for i, p := range paths {
 		item := templates.FanartGalleryItem{Index: i, Filename: filepath.Base(p)}
-		if stat, statErr := os.Stat(p); statErr == nil {
+		if stat, statErr := os.Stat(p); statErr == nil { //nolint:gosec // path from DiscoverFanart, not user input
 			item.Size = stat.Size()
 		}
 		if f, openErr := os.Open(p); openErr == nil { //nolint:gosec // path from discovery
@@ -1133,7 +1133,7 @@ func (r *Router) handleFanartBatchDelete(w http.ResponseWriter, req *http.Reques
 	// Delete the selected files
 	var deleted []string
 	for idx := range deleteSet {
-		if err := os.Remove(paths[idx]); err == nil {
+		if err := os.Remove(paths[idx]); err == nil { //nolint:gosec // path from DiscoverFanart, not user input
 			deleted = append(deleted, filepath.Base(paths[idx]))
 			r.logger.Info("deleted fanart",
 				slog.String("artist_id", artistID),
@@ -1158,7 +1158,7 @@ func (r *Router) handleFanartBatchDelete(w http.ResponseWriter, req *http.Reques
 		newName = newBase + actualExt
 		newPath := filepath.Join(a.Path, newName)
 		if oldPath != newPath {
-			if renameErr := os.Rename(oldPath, newPath); renameErr != nil {
+			if renameErr := os.Rename(oldPath, newPath); renameErr != nil { //nolint:gosec // paths from DiscoverFanart and FanartFilename, not user input
 				r.logger.Warn("renaming fanart during re-number",
 					slog.String("from", oldPath),
 					slog.String("to", newPath),
@@ -1225,7 +1225,7 @@ func (r *Router) handleFanartBatchFetch(w http.ResponseWriter, req *http.Request
 			errors = append(errors, fmt.Sprintf("fetch failed: %s", u))
 			continue
 		}
-		saved, _, saveErr := r.processAndAppendFanart(req.Context(), a.Path, data)
+		saved, saveErr := r.processAndAppendFanart(req.Context(), a.Path, data)
 		if saveErr != nil {
 			r.logger.Error("saving fanart image", "url", u, "error", saveErr)
 			errors = append(errors, fmt.Sprintf("save failed: %s", u))

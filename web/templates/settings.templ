@@ -1257,8 +1257,8 @@ templ profileNamingEditorScript() {
 				return;
 			}
 			var ext = name.substring(name.lastIndexOf('.')).toLowerCase();
-			if (ext !== '.jpg' && ext !== '.png') {
-				alert('Extension must be .jpg or .png.');
+			if (ext !== '.jpg' && ext !== '.jpeg' && ext !== '.png') {
+				alert('Extension must be .jpg, .jpeg or .png.');
 				return;
 			}
 			if (imageType === 'logo' && ext !== '.png') {

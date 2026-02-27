@@ -76,7 +76,7 @@ func DiscoverFanart(dir string, primaryName string) []string {
 
 		// Numbered variant: {base}{N} where N is a positive integer
 		if strings.HasPrefix(nameBaseLower, baseLower) {
-			suffix := nameBase[len(base):]
+			suffix := nameBaseLower[len(baseLower):]
 			if n, parseErr := strconv.Atoi(suffix); parseErr == nil && n > 0 {
 				files = append(files, indexedFile{n, filepath.Join(dir, name)})
 			}

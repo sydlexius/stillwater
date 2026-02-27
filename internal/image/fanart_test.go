@@ -91,6 +91,21 @@ func TestDiscoverFanart_EmptyDir(t *testing.T) {
 	}
 }
 
+func TestDiscoverFanart_MixedCase(t *testing.T) {
+	dir := t.TempDir()
+
+	for _, name := range []string{"backdrop.jpg", "Backdrop2.jpg", "BACKDROP3.png"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("fake"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	paths := DiscoverFanart(dir, "backdrop.jpg")
+	if len(paths) != 3 {
+		t.Fatalf("expected 3 fanart files (mixed case), got %d: %v", len(paths), paths)
+	}
+}
+
 func TestDiscoverFanart_AlternateExtension(t *testing.T) {
 	dir := t.TempDir()
 

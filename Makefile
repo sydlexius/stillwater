@@ -1,4 +1,4 @@
-.PHONY: build run test lint fmt clean docker-build docker-run dev templ tailwind migrate favicon
+.PHONY: build run test lint fmt clean docker-build docker-run dev templ tailwind migrate favicon hooks
 
 # Binary name
 BINARY=stillwater
@@ -80,6 +80,12 @@ docker-run:
 ## docker-stop: Stop Docker container
 docker-stop:
 	docker compose down
+
+## hooks: Install git pre-commit hook (mirrors CI lint checks)
+hooks:
+	cp .githooks/pre-commit .git/hooks/pre-commit
+	chmod +x .git/hooks/pre-commit
+	@echo "Pre-commit hook installed."
 
 ## clean: Remove build artifacts
 clean:
