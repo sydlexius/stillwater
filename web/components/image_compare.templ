@@ -47,7 +47,7 @@ templ ComparePanel(artistID string, url string, source string, imageType string,
 			type="button"
 			class="w-full text-sm px-2 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
 			hx-post={ fmt.Sprintf("/api/v1/artists/%s/images/fetch", artistID) }
-			hx-vals={ fmt.Sprintf(`{"url":"%s","type":"%s"}`, escapeJSONValue(url), escapeJSONValue(imageType)) }
+			hx-vals={ hxValsJSON(map[string]string{"url": url, "type": imageType}) }
 			hx-swap="none"
 			hx-confirm="Save this image?"
 			data-confirm-key="image-save"

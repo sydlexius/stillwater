@@ -396,6 +396,11 @@ func expectedImageFiles(profile *platform.Profile, artistPath string) map[string
 	// canonical names and alternate extensions. Discover against ALL
 	// configured fanart names (not just the primary) so that numbered
 	// variants of non-primary names are also whitelisted.
+	//
+	// TODO: DiscoverFanart calls os.ReadDir per fanart name. For typical
+	// artist directories (10-20 files) this is negligible, but if
+	// performance becomes a concern, cache the directory listing and
+	// share it across iterations.
 	if artistPath != "" {
 		var fanartNames []string
 		if profile != nil {

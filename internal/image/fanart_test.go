@@ -129,11 +129,107 @@ func TestMaxFanartIndex(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			got := MaxFanartIndex(dir, tt.primary)
+			got, err := MaxFanartIndex(dir, tt.primary)
+			if err != nil {
+				t.Fatalf("MaxFanartIndex() error: %v", err)
+			}
 			if got != tt.want {
 				t.Errorf("MaxFanartIndex() = %d, want %d", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestMaxFanartIndex_ReadDirError(t *testing.T) {
+	_, err := MaxFanartIndex("/nonexistent/path/abc123", "backdrop.jpg")
+	if err == nil {
+		t.Error("expected error for nonexistent directory")
+	}
+}
+
+func TestMaxFanartIndex_EmptyPrimary(t *testing.T) {
+	got, err := MaxFanartIndex(t.TempDir(), "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != -1 {
+		t.Errorf("MaxFanartIndex with empty primary = %d, want -1", got)
+	}
+}
+
+func TestNextFanartIndex(t *testing.T) {
+	tests := []struct {
+		name      string
+		maxSuffix int
+		kodi      bool
+		want      int
+	}{
+		{"no files, kodi", -1, true, 0},
+		{"no files, emby", -1, false, 0},
+		{"primary only, kodi", 0, true, 1},
+		{"primary only, emby", 0, false, 1},
+		{"kodi with fanart2", 2, true, 3},
+		{"emby with backdrop2", 2, false, 2},
+		{"emby with backdrop3", 3, false, 3},
+		{"kodi with fanart5 (gap)", 5, true, 6},
+		{"emby with backdrop5 (gap)", 5, false, 5},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := NextFanartIndex(tt.maxSuffix, tt.kodi)
+			if got != tt.want {
+				t.Errorf("NextFanartIndex(%d, %v) = %d, want %d",
+					tt.maxSuffix, tt.kodi, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestNextFanartIndex_EmbySequence(t *testing.T) {
+	// Emby scenario: backdrop.jpg + backdrop2.jpg exist.
+	// MaxFanartIndex returns 2, NextFanartIndex should return 2,
+	// FanartFilename(primary, 2, false) should produce backdrop3.jpg.
+	dir := t.TempDir()
+	for _, name := range []string{"backdrop.jpg", "backdrop2.jpg"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("fake"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	maxSuffix, err := MaxFanartIndex(dir, "backdrop.jpg")
+	if err != nil {
+		t.Fatalf("MaxFanartIndex error: %v", err)
+	}
+	if maxSuffix != 2 {
+		t.Fatalf("MaxFanartIndex = %d, want 2", maxSuffix)
+	}
+	nextIdx := NextFanartIndex(maxSuffix, false)
+	nextName := FanartFilename("backdrop.jpg", nextIdx, false)
+	if nextName != "backdrop3.jpg" {
+		t.Errorf("next filename = %q, want backdrop3.jpg", nextName)
+	}
+}
+
+func TestNextFanartIndex_KodiSequence(t *testing.T) {
+	// Kodi scenario: fanart.jpg + fanart1.jpg + fanart2.jpg exist.
+	// MaxFanartIndex returns 2, NextFanartIndex should return 3,
+	// FanartFilename(primary, 3, true) should produce fanart3.jpg.
+	dir := t.TempDir()
+	for _, name := range []string{"fanart.jpg", "fanart1.jpg", "fanart2.jpg"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("fake"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	maxSuffix, err := MaxFanartIndex(dir, "fanart.jpg")
+	if err != nil {
+		t.Fatalf("MaxFanartIndex error: %v", err)
+	}
+	if maxSuffix != 2 {
+		t.Fatalf("MaxFanartIndex = %d, want 2", maxSuffix)
+	}
+	nextIdx := NextFanartIndex(maxSuffix, true)
+	nextName := FanartFilename("fanart.jpg", nextIdx, true)
+	if nextName != "fanart3.jpg" {
+		t.Errorf("next filename = %q, want fanart3.jpg", nextName)
 	}
 }
 

@@ -85,6 +85,7 @@ type Router struct {
 	basePath           string
 	staticAssets       *StaticAssets
 	db                 *sql.DB
+	ssrfClient         *http.Client
 	libraryOps         map[string]*LibraryOpResult
 	libraryOpsMu       sync.Mutex
 }
@@ -119,7 +120,11 @@ func NewRouter(deps RouterDeps) *Router {
 		logger:             deps.Logger,
 		basePath:           deps.BasePath,
 		staticAssets:       NewStaticAssets(deps.StaticDir, deps.Logger),
-		libraryOps:         make(map[string]*LibraryOpResult),
+		ssrfClient: &http.Client{
+			Timeout:   fetchTimeout,
+			Transport: ssrfSafeTransport(),
+		},
+		libraryOps: make(map[string]*LibraryOpResult),
 	}
 }
 

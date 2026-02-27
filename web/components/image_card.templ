@@ -104,7 +104,7 @@ templ ImageCard(artistID string, img provider.ImageResult) {
 				type="button"
 				class="w-full mt-1 text-sm px-2 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
 				hx-post={ fmt.Sprintf("/api/v1/artists/%s/images/fetch", artistID) }
-				hx-vals={ fmt.Sprintf(`{"url":"%s","type":"%s"}`, escapeJSONValue(img.URL), escapeJSONValue(string(img.Type))) }
+				hx-vals={ hxValsJSON(map[string]string{"url": img.URL, "type": string(img.Type)}) }
 				hx-swap="none"
 				hx-confirm="Save this image?"
 				data-confirm-key="image-save"

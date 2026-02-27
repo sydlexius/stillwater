@@ -446,6 +446,25 @@ func TestCheckExtraneousImages_NoExtraneous(t *testing.T) {
 	}
 }
 
+func TestCheckExtraneousImages_NumberedFanart(t *testing.T) {
+	// Numbered fanart files (fanart.jpg, fanart1.jpg, fanart2.jpg) should be
+	// whitelisted and not flagged as extraneous.
+	dir := t.TempDir()
+	createTestJPEG(t, filepath.Join(dir, "folder.jpg"), 500, 500)
+	createTestJPEG(t, filepath.Join(dir, "fanart.jpg"), 1920, 1080)
+	createTestJPEG(t, filepath.Join(dir, "fanart1.jpg"), 1920, 1080)
+	createTestJPEG(t, filepath.Join(dir, "fanart2.jpg"), 1920, 1080)
+
+	e := &Engine{platformService: nil}
+	checker := e.makeExtraneousImagesChecker()
+
+	a := artist.Artist{Name: "Test", Path: dir}
+	v := checker(&a, RuleConfig{})
+	if v != nil {
+		t.Errorf("expected nil (numbered fanart should be whitelisted), got: %s", v.Message)
+	}
+}
+
 func TestCheckExtraneousImages_EmptyPath(t *testing.T) {
 	e := &Engine{platformService: nil}
 	checker := e.makeExtraneousImagesChecker()

@@ -113,13 +113,13 @@ func DiscoverFanart(dir string, primaryName string) []string {
 }
 
 // MaxFanartIndex scans an artist directory and returns the highest numeric
-// index found among fanart files matching primaryName. Returns -1 if no
+// suffix found among fanart files matching primaryName. Returns -1 if no
 // fanart files exist. The primary file (exact base match) counts as index 0.
 // This avoids overwriting existing files when gaps exist in the numbering
 // sequence (e.g., fanart1.jpg deleted but fanart2.jpg still present).
-func MaxFanartIndex(dir string, primaryName string) int {
+func MaxFanartIndex(dir string, primaryName string) (int, error) {
 	if primaryName == "" {
-		return -1
+		return -1, nil
 	}
 
 	base := strings.TrimSuffix(primaryName, filepath.Ext(primaryName))
@@ -127,7 +127,7 @@ func MaxFanartIndex(dir string, primaryName string) int {
 
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return -1
+		return -1, fmt.Errorf("reading directory %s: %w", dir, err)
 	}
 
 	maxIdx := -1
@@ -161,5 +161,31 @@ func MaxFanartIndex(dir string, primaryName string) int {
 		}
 	}
 
-	return maxIdx
+	return maxIdx, nil
+}
+
+// NextFanartIndex returns the correct 0-based index to pass to FanartFilename
+// for the next fanart file, given the highest suffix currently on disk and
+// whether Kodi numbering is active.
+//
+// For Kodi: suffix maps 1:1 to index, so next index = maxSuffix + 1.
+// For non-Kodi (Emby/Jellyfin/Plex): suffix N corresponds to index N-1
+// (e.g., backdrop2.jpg = index 1), so next index = maxSuffix (not maxSuffix+1).
+// When no files exist (maxSuffix < 0), the next index is 0 so that callers
+// can save the primary image first using FanartFilename(primaryName, 0, ...).
+func NextFanartIndex(maxSuffix int, kodi bool) int {
+	if maxSuffix < 0 {
+		// No fanart files exist at all -- the caller should save the primary
+		// (index 0) first. Return 0 so FanartFilename returns the primary name.
+		return 0
+	}
+	if maxSuffix == 0 {
+		// Only the primary exists. Next is index 1 for both conventions.
+		return 1
+	}
+	if kodi {
+		return maxSuffix + 1
+	}
+	// Non-Kodi: suffix N = index N-1, so next index = maxSuffix.
+	return maxSuffix
 }
