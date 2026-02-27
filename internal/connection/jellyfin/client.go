@@ -81,7 +81,7 @@ func (c *Client) CheckNFOWriterEnabled(ctx context.Context) (bool, string, error
 
 // GetArtists returns artists from a specific library with pagination.
 func (c *Client) GetArtists(ctx context.Context, libraryID string, startIndex, limit int) (*ItemsResponse, error) {
-	path := fmt.Sprintf("/Artists?ParentId=%s&StartIndex=%d&Limit=%d&Recursive=true", libraryID, startIndex, limit)
+	path := fmt.Sprintf("/Artists?ParentId=%s&StartIndex=%d&Limit=%d&Recursive=true&Fields=ImageTags", libraryID, startIndex, limit)
 	var resp ItemsResponse
 	if err := c.get(ctx, path, &resp); err != nil {
 		return nil, fmt.Errorf("getting artists: %w", err)

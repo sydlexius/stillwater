@@ -1276,12 +1276,23 @@ templ settingsLibraryRow(lib library.Library) {
 			if lib.IsDegraded() && lib.ConnectionID != "" {
 				<button
 					type="button"
-					class="text-xs px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
-					hx-post={ "/api/v1/connections/" + lib.ConnectionID + "/libraries/" + lib.ID + "/populate" }
-					hx-swap="none"
-					hx-on::after-request="window.location.reload()"
+					id={ "populate-btn-" + lib.ID }
+					class="text-xs px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors inline-flex items-center gap-1"
+					onclick={ settingsAsyncLibOp(lib.ConnectionID, lib.ID, "populate") }
 				>
-					Populate Artists
+					<svg id={ "populate-spinner-" + lib.ID } class="hidden animate-spin h-3 w-3" viewBox="0 0 24 24" fill="none"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+					<span id={ "populate-label-" + lib.ID }>Populate Artists</span>
+				</button>
+			}
+			if lib.ConnectionID != "" {
+				<button
+					type="button"
+					id={ "scan-btn-" + lib.ID }
+					class="text-xs px-2 py-1 rounded bg-gray-600 text-white hover:bg-gray-700 transition-colors inline-flex items-center gap-1"
+					onclick={ settingsAsyncLibOp(lib.ConnectionID, lib.ID, "scan") }
+				>
+					<svg id={ "scan-spinner-" + lib.ID } class="hidden animate-spin h-3 w-3" viewBox="0 0 24 24" fill="none"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+					<span id={ "scan-label-" + lib.ID }>Scan Library</span>
 				</button>
 			}
 			<button
@@ -1297,6 +1308,10 @@ templ settingsLibraryRow(lib library.Library) {
 
 script settingsDeleteLibrary(id string) {
 	settingsDeleteLibrary_click(id);
+}
+
+script settingsAsyncLibOp(connID string, libID string, operation string) {
+	runLibraryOp(connID, libID, operation);
 }
 
 templ settingsLibraryScript() {
@@ -1340,9 +1355,18 @@ templ settingsLibraryScript() {
 							+ sourceNames[lib.source]
 							+ '</span>';
 					}
+					var spinnerSvg = '<svg class="hidden animate-spin h-3 w-3" viewBox="0 0 24 24" fill="none"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>';
 					var populateBtn = '';
 					if (!lib.path && lib.connection_id) {
-						populateBtn = '<button type="button" class="text-xs px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors" onclick="populateLibrary(&apos;' + lib.connection_id + '&apos;, &apos;' + lib.id + '&apos;)">Populate Artists</button>';
+						populateBtn = '<button type="button" id="populate-btn-' + lib.id + '" class="text-xs px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors inline-flex items-center gap-1" onclick="runLibraryOp(&apos;' + lib.connection_id + '&apos;, &apos;' + lib.id + '&apos;, &apos;populate&apos;)">'
+							+ spinnerSvg.replace('class="hidden', 'id="populate-spinner-' + lib.id + '" class="hidden')
+							+ '<span id="populate-label-' + lib.id + '">Populate Artists</span></button>';
+					}
+					var scanBtn = '';
+					if (lib.connection_id) {
+						scanBtn = '<button type="button" id="scan-btn-' + lib.id + '" class="text-xs px-2 py-1 rounded bg-gray-600 text-white hover:bg-gray-700 transition-colors inline-flex items-center gap-1" onclick="runLibraryOp(&apos;' + lib.connection_id + '&apos;, &apos;' + lib.id + '&apos;, &apos;scan&apos;)">'
+							+ spinnerSvg.replace('class="hidden', 'id="scan-spinner-' + lib.id + '" class="hidden')
+							+ '<span id="scan-label-' + lib.id + '">Scan Library</span></button>';
 					}
 					html += '<div class="flex items-center justify-between rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3" id="settings-lib-' + lib.id + '">'
 						+ '<div>'
@@ -1356,6 +1380,7 @@ templ settingsLibraryScript() {
 						+ '</div>'
 						+ '<div class="flex items-center gap-2">'
 						+ populateBtn
+						+ scanBtn
 						+ '<button type="button" class="text-xs text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300" onclick="settingsDeleteLibrary_click(&apos;' + lib.id + '&apos;)">'
 						+ 'Remove'
 						+ '</button>'
@@ -1366,15 +1391,109 @@ templ settingsLibraryScript() {
 			});
 		}
 
-		function populateLibrary(connID, libID) {
+		function runLibraryOp(connID, libID, operation) {
 			var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1");
-			fetch("/api/v1/connections/" + connID + "/libraries/" + libID + "/populate", {
+			var btn = document.getElementById(operation + '-btn-' + libID);
+			var spinner = document.getElementById(operation + '-spinner-' + libID);
+			var label = document.getElementById(operation + '-label-' + libID);
+			var endpoint = "/api/v1/connections/" + connID + "/libraries/" + libID + "/" + operation;
+
+			fetch(endpoint, {
 				method: "POST",
 				headers: {"X-CSRF-Token": csrfToken}
 			}).then(function(res) {
-				if (res.ok) { window.location.reload(); }
-				else { res.json().then(function(data) { alert(data.error || "Populate failed"); }); }
+				if (res.status === 409) {
+					showToast("Operation already running for this library");
+					return;
+				}
+				if (res.status === 202) {
+					if (btn) btn.disabled = true;
+					if (spinner) spinner.classList.remove('hidden');
+					if (label) label.textContent = operation === 'populate' ? 'Populating...' : 'Scanning...';
+					pollLibraryOp(libID, operation, btn, spinner, label);
+					return;
+				}
+				if (!res.ok) {
+					res.text().then(function(body) {
+						var message = "Operation failed (HTTP " + res.status + ")";
+						if (body) {
+							try {
+								var data = JSON.parse(body);
+								if (data && data.error) {
+									message = data.error;
+								}
+							} catch (e) {
+								// Body is not JSON; keep default message.
+							}
+						}
+						showToast(message);
+					}).catch(function() {
+						showToast("Operation failed (HTTP " + res.status + ")");
+					});
+					return;
+				}
+				res.json().then(function(data) {
+					showToast((data && data.error) || "Operation failed");
+				}).catch(function() {
+					showToast("Operation failed");
+				});
+			}).catch(function() {
+				showToast("Network error");
 			});
+		}
+
+		function pollLibraryOp(libID, operation, btn, spinner, label) {
+			var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1");
+			var attempts = 0;
+			var maxAttempts = 150;
+			function resetUI() {
+				if (btn) btn.disabled = false;
+				if (spinner) spinner.classList.add('hidden');
+				if (label) label.textContent = operation === 'populate' ? 'Populate Artists' : 'Scan Library';
+			}
+			var poll = setInterval(function() {
+				attempts++;
+				if (attempts > maxAttempts) {
+					clearInterval(poll);
+					resetUI();
+					showToast("Operation timed out");
+					return;
+				}
+				fetch("/api/v1/libraries/" + libID + "/operation/status", {
+					headers: {"X-CSRF-Token": csrfToken}
+				})
+				.then(function(r) {
+					if (!r.ok) {
+						clearInterval(poll);
+						resetUI();
+						showToast("Status check failed (HTTP " + r.status + ")");
+						return null;
+					}
+					return r.json();
+				})
+				.then(function(data) {
+					if (!data) return;
+					if (data.status === 'completed') {
+						clearInterval(poll);
+						resetUI();
+						showSuccessToast(data.message || 'Operation completed');
+						if (operation === 'populate') refreshSettingsLibraryList();
+					} else if (data.status === 'failed') {
+						clearInterval(poll);
+						resetUI();
+						showToast(data.message || 'Operation failed');
+					} else if (data.status === 'idle') {
+						clearInterval(poll);
+						resetUI();
+						showToast("Operation state lost (server may have restarted)");
+					}
+				})
+				.catch(function() {
+					clearInterval(poll);
+					resetUI();
+					showToast("Network error while checking operation status");
+				});
+			}, 2000);
 		}
 
 		function settingsDeleteLibrary_click(id) {
