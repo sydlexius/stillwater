@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/sydlexius/stillwater/internal/auth"
 	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/platform"
@@ -46,6 +47,7 @@ type SettingsData struct {
 	BadgeSeverityWarning bool
 	BadgeSeverityInfo    bool
 	RuleScheduleHours    int
+	APITokens            []auth.APIToken
 }
 
 // settingsTab defines a tab in the settings page navigation.
@@ -89,6 +91,23 @@ func categoryLabel(category string) string {
 		return "Metadata"
 	default:
 		return category
+	}
+}
+
+// scopePillClasses returns CSS classes for API token scope pills.
+func scopePillClasses(scope string) string {
+	scope = strings.TrimSpace(scope)
+	switch scope {
+	case "read":
+		return "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300"
+	case "write":
+		return "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300"
+	case "webhook":
+		return "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300"
+	case "admin":
+		return "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300"
+	default:
+		return "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300"
 	}
 }
 
@@ -381,6 +400,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 		@connectionFeatureToggleScript()
 		@ruleToggleScript()
 		@badgeSettingScript()
+		@apiTokenScript()
 		@maintenanceScript()
 		@settingsExportScript()
 		@profileNamingEditorScript()
@@ -851,6 +871,95 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 									/>
 									<span class="text-sm text-gray-600 dark:text-gray-400">Info</span>
 								</label>
+							</div>
+						</div>
+					</div>
+				</div>
+				<!-- API Tokens -->
+				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
+					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+						<h2 class="text-lg font-semibold">API Tokens</h2>
+						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+							Generate tokens for external applications to access the Stillwater API.
+						</p>
+					</div>
+					<div class="px-6 py-4 space-y-3">
+						if len(data.APITokens) == 0 {
+							<p class="text-sm text-gray-500 dark:text-gray-400 italic">No API tokens created.</p>
+						}
+						for _, tok := range data.APITokens {
+							<div class={ "flex items-center justify-between py-2", templ.KV("opacity-50", tok.RevokedAt != nil) }>
+								<div>
+									<span class="text-sm font-medium text-gray-900 dark:text-gray-100">{ tok.Name }</span>
+									if tok.RevokedAt != nil {
+										<span class="ml-2 text-xs font-medium text-red-600 dark:text-red-400">Revoked</span>
+									}
+									<div class="flex gap-1 mt-1">
+										for _, scope := range strings.Split(tok.Scopes, ",") {
+											<span class={ "inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium", scopePillClasses(scope) }>{ scope }</span>
+										}
+									</div>
+									<p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+										Created { tok.CreatedAt }
+										if tok.LastUsedAt != nil {
+											{ " | Last used " + *tok.LastUsedAt }
+										}
+									</p>
+								</div>
+								if tok.RevokedAt == nil {
+									<button
+										type="button"
+										class="text-sm px-3 py-1 rounded border border-red-300 dark:border-red-600 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+										hx-delete={ "/api/v1/auth/tokens/" + tok.ID }
+										hx-confirm="Revoke this API token? Applications using it will lose access."
+										hx-on::after-request="if(event.detail.successful) window.location.reload()"
+									>
+										Revoke
+									</button>
+								}
+							</div>
+						}
+					</div>
+					<div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700">
+						<button
+							type="button"
+							class="text-sm px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+							onclick="document.getElementById('add-token-form').classList.toggle('hidden')"
+						>
+							Generate Token
+						</button>
+						<div id="add-token-form" class="hidden mt-4">
+							<form id="create-token-form" class="space-y-3" onsubmit="createAPIToken(event)">
+								<input name="name" placeholder="Token name (e.g. Lidarr)" required class="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+								<div class="flex flex-wrap gap-3">
+									<label class="inline-flex items-center gap-1.5">
+										<input type="checkbox" name="scope_read" checked class="rounded border-gray-300 dark:border-gray-600"/>
+										<span class="text-sm">Read</span>
+									</label>
+									<label class="inline-flex items-center gap-1.5">
+										<input type="checkbox" name="scope_write" class="rounded border-gray-300 dark:border-gray-600"/>
+										<span class="text-sm">Write</span>
+									</label>
+									<label class="inline-flex items-center gap-1.5">
+										<input type="checkbox" name="scope_webhook" class="rounded border-gray-300 dark:border-gray-600"/>
+										<span class="text-sm">Webhook</span>
+									</label>
+									<label class="inline-flex items-center gap-1.5">
+										<input type="checkbox" name="scope_admin" class="rounded border-gray-300 dark:border-gray-600"/>
+										<span class="text-sm">Admin</span>
+									</label>
+								</div>
+								<div class="flex gap-2">
+									<button type="submit" class="text-sm px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 transition-colors">Create</button>
+									<button type="button" class="text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" onclick="this.closest('#add-token-form').classList.add('hidden')">Cancel</button>
+								</div>
+							</form>
+							<div id="token-created-result" class="hidden mt-4 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded">
+								<p class="text-sm font-medium text-green-800 dark:text-green-200 mb-1">Token created. Copy it now -- it will not be shown again.</p>
+								<div class="flex items-center gap-2">
+									<code id="token-plaintext" class="flex-1 text-xs bg-white dark:bg-gray-800 px-2 py-1 rounded border border-gray-200 dark:border-gray-600 break-all"></code>
+									<button type="button" class="text-sm px-2 py-1 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" onclick="navigator.clipboard.writeText(document.getElementById('token-plaintext').textContent)">Copy</button>
+								</div>
 							</div>
 						</div>
 					</div>
@@ -2954,6 +3063,49 @@ templ ruleToggleScript() {
 			var form = select.closest('form');
 			var ar = form.elements['aspect_ratio'];
 			if (ar) ar.value = val;
+		}
+	</script>
+}
+
+templ apiTokenScript() {
+	<script>
+		function createAPIToken(event) {
+			event.preventDefault();
+			var form = event.target;
+			var name = form.elements['name'].value;
+			var scopes = [];
+			if (form.elements['scope_read'].checked) scopes.push('read');
+			if (form.elements['scope_write'].checked) scopes.push('write');
+			if (form.elements['scope_webhook'].checked) scopes.push('webhook');
+			if (form.elements['scope_admin'].checked) scopes.push('admin');
+			if (scopes.length === 0) {
+				alert('Select at least one scope');
+				return;
+			}
+			var csrfToken = document.cookie.replace(
+				/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1"
+			);
+			fetch('/api/v1/auth/tokens', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					'X-CSRF-Token': csrfToken
+				},
+				body: JSON.stringify({ name: name, scopes: scopes.join(',') })
+			})
+			.then(function(resp) {
+				if (!resp.ok) throw new Error('Failed to create token');
+				return resp.json();
+			})
+			.then(function(data) {
+				document.getElementById('token-plaintext').textContent = data.token;
+				document.getElementById('token-created-result').classList.remove('hidden');
+				form.reset();
+				form.elements['scope_read'].checked = true;
+			})
+			.catch(function(err) {
+				alert(err.message);
+			});
 		}
 	</script>
 }
