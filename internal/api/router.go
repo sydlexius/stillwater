@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"log/slog"
 	"net/http"
+	"sync"
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -84,6 +85,8 @@ type Router struct {
 	basePath           string
 	staticAssets       *StaticAssets
 	db                 *sql.DB
+	libraryOps         map[string]*LibraryOpResult
+	libraryOpsMu       sync.Mutex
 }
 
 // NewRouter creates a new Router with all routes configured.
@@ -116,6 +119,7 @@ func NewRouter(deps RouterDeps) *Router {
 		logger:             deps.Logger,
 		basePath:           deps.BasePath,
 		staticAssets:       NewStaticAssets(deps.StaticDir, deps.Logger),
+		libraryOps:         make(map[string]*LibraryOpResult),
 	}
 }
 
@@ -176,6 +180,8 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("GET "+bp+"/api/v1/connections/{id}/libraries", wrapAuth(r.handleDiscoverLibraries, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/connections/{id}/libraries/import", wrapAuth(r.handleImportLibraries, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/connections/{id}/libraries/{libId}/populate", wrapAuth(r.handlePopulateLibrary, authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/connections/{id}/libraries/{libId}/scan", wrapAuth(r.handleScanLibrary, authMw))
+	mux.HandleFunc("GET "+bp+"/api/v1/libraries/{libId}/operation/status", wrapAuth(r.handleLibraryOpStatus, authMw))
 	// Webhook routes
 	mux.HandleFunc("GET "+bp+"/api/v1/webhooks", wrapAuth(r.handleListWebhooks, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/webhooks", wrapAuth(r.handleCreateWebhook, authMw))

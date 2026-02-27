@@ -6,14 +6,21 @@ type SystemStatus struct {
 	AppName string `json:"appName"`
 }
 
+// ArtistImage represents an image associated with a Lidarr artist.
+type ArtistImage struct {
+	CoverType string `json:"coverType"`
+	URL       string `json:"url"`
+}
+
 // Artist represents an artist from GET /api/v1/artist.
 type Artist struct {
-	ID                int    `json:"id"`
-	ArtistName        string `json:"artistName"`
-	ForeignArtistID   string `json:"foreignArtistId"`
-	Path              string `json:"path"`
-	Monitored         bool   `json:"monitored"`
-	MetadataProfileID int    `json:"metadataProfileId"`
+	ID                int           `json:"id"`
+	ArtistName        string        `json:"artistName"`
+	ForeignArtistID   string        `json:"foreignArtistId"`
+	Path              string        `json:"path"`
+	Monitored         bool          `json:"monitored"`
+	MetadataProfileID int           `json:"metadataProfileId"`
+	Images            []ArtistImage `json:"images"`
 }
 
 // MetadataProfile represents a metadata profile from GET /api/v1/metadataprofile.
