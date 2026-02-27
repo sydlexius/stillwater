@@ -630,7 +630,7 @@ templ FanartSearchResults(artistID string, images []provider.ImageResult) {
 								type="button"
 								class="w-full mt-1 text-sm px-2 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
 								hx-post={ fmt.Sprintf("/api/v1/artists/%s/images/fetch", artistID) }
-								hx-vals={ fmt.Sprintf(`{"url":"%s","type":"fanart"}`, img.URL) }
+								hx-vals={ fmt.Sprintf(`{"url":"%s","type":"fanart"}`, escapeJSONValue(img.URL)) }
 								hx-swap="none"
 								hx-confirm="Save this fanart?"
 								data-confirm-key="image-save"
