@@ -77,29 +77,41 @@ func (r *Router) handleUpdatePlatform(w http.ResponseWriter, req *http.Request) 
 	}
 
 	var body struct {
-		Name        string               `json:"name"`
-		NFOEnabled  bool                 `json:"nfo_enabled"`
-		NFOFormat   string               `json:"nfo_format"`
-		ImageNaming platform.ImageNaming `json:"image_naming"`
+		Name        *string               `json:"name"`
+		NFOEnabled  *bool                 `json:"nfo_enabled"`
+		NFOFormat   *string               `json:"nfo_format"`
+		ImageNaming *platform.ImageNaming `json:"image_naming"`
 	}
 	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
 	}
 
-	if errs := platform.ValidateImageNaming(body.ImageNaming); errs != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid image naming", "details": errs})
+	if body.ImageNaming != nil {
+		if errs := platform.ValidateImageNaming(*body.ImageNaming); errs != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid image naming", "details": errs})
+			return
+		}
+	}
+
+	// Prevent renaming built-in profiles.
+	if existing.IsBuiltin && body.Name != nil && *body.Name != existing.Name {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "cannot rename a built-in profile"})
 		return
 	}
 
-	if body.Name != "" {
-		existing.Name = body.Name
+	if body.Name != nil && *body.Name != "" {
+		existing.Name = *body.Name
 	}
-	existing.NFOEnabled = body.NFOEnabled
-	if body.NFOFormat != "" {
-		existing.NFOFormat = body.NFOFormat
+	if body.NFOEnabled != nil {
+		existing.NFOEnabled = *body.NFOEnabled
 	}
-	existing.ImageNaming = body.ImageNaming
+	if body.NFOFormat != nil && *body.NFOFormat != "" {
+		existing.NFOFormat = *body.NFOFormat
+	}
+	if body.ImageNaming != nil {
+		existing.ImageNaming = *body.ImageNaming
+	}
 
 	if err := r.platformService.Update(req.Context(), existing); err != nil {
 		r.logger.Error("updating platform", "error", err)
