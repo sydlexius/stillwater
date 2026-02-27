@@ -83,12 +83,30 @@ func DiscoverFanart(dir string, primaryName string) []string {
 		}
 	}
 
+	// Sort by index, then prefer the extension matching primaryName so that
+	// when both backdrop.jpg and backdrop.png exist at index 0, only one is
+	// returned. The preferred extension sorts first within each index group.
+	primaryExt := strings.ToLower(filepath.Ext(primaryName))
 	sort.Slice(files, func(i, j int) bool {
-		return files[i].index < files[j].index
+		if files[i].index != files[j].index {
+			return files[i].index < files[j].index
+		}
+		ei := strings.ToLower(filepath.Ext(files[i].path))
+		ej := strings.ToLower(filepath.Ext(files[j].path))
+		if (ei == primaryExt) != (ej == primaryExt) {
+			return ei == primaryExt
+		}
+		return files[i].path < files[j].path
 	})
 
+	// Deduplicate: keep only the first entry per index.
 	paths := make([]string, 0, len(files))
+	lastIdx := -1
 	for _, f := range files {
+		if f.index == lastIdx {
+			continue
+		}
+		lastIdx = f.index
 		paths = append(paths, f.path)
 	}
 	return paths

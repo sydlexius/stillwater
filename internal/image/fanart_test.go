@@ -106,6 +106,44 @@ func TestDiscoverFanart_MixedCase(t *testing.T) {
 	}
 }
 
+func TestDiscoverFanart_DuplicateExtension(t *testing.T) {
+	dir := t.TempDir()
+
+	// Both backdrop.jpg and backdrop.png exist; should only return one (prefer .jpg match)
+	for _, name := range []string{"backdrop.jpg", "backdrop.png"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("fake"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	paths := DiscoverFanart(dir, "backdrop.jpg")
+	if len(paths) != 1 {
+		t.Fatalf("expected 1 fanart file (dedup), got %d: %v", len(paths), paths)
+	}
+	if filepath.Base(paths[0]) != "backdrop.jpg" {
+		t.Errorf("expected backdrop.jpg (preferred ext), got %q", filepath.Base(paths[0]))
+	}
+}
+
+func TestDiscoverFanart_DuplicateNumbered(t *testing.T) {
+	dir := t.TempDir()
+
+	// backdrop2.jpg and backdrop2.png both exist at numeric index 2
+	for _, name := range []string{"backdrop.jpg", "backdrop2.jpg", "backdrop2.png"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("fake"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	paths := DiscoverFanart(dir, "backdrop.jpg")
+	if len(paths) != 2 {
+		t.Fatalf("expected 2 fanart files (primary + one numbered), got %d: %v", len(paths), paths)
+	}
+	if filepath.Base(paths[1]) != "backdrop2.jpg" {
+		t.Errorf("expected backdrop2.jpg (preferred ext), got %q", filepath.Base(paths[1]))
+	}
+}
+
 func TestDiscoverFanart_AlternateExtension(t *testing.T) {
 	dir := t.TempDir()
 
