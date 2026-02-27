@@ -1,6 +1,7 @@
 package logging
 
 import (
+	"context"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -28,27 +29,27 @@ func TestManager_LevelSwap(t *testing.T) {
 	defer mgr.Close() //nolint:errcheck
 
 	// Info should be enabled initially
-	if !logger.Enabled(nil, slog.LevelInfo) {
+	if !logger.Enabled(context.Background(), slog.LevelInfo) {
 		t.Error("expected info to be enabled")
 	}
 
 	// Debug should not be enabled
-	if logger.Enabled(nil, slog.LevelDebug) {
+	if logger.Enabled(context.Background(), slog.LevelDebug) {
 		t.Error("expected debug to be disabled")
 	}
 
 	// Reconfigure to debug
 	mgr.Reconfigure(Config{Level: "debug", Format: "json"})
-	if !logger.Enabled(nil, slog.LevelDebug) {
+	if !logger.Enabled(context.Background(), slog.LevelDebug) {
 		t.Error("expected debug to be enabled after reconfigure")
 	}
 
 	// Reconfigure to error
 	mgr.Reconfigure(Config{Level: "error", Format: "json"})
-	if logger.Enabled(nil, slog.LevelInfo) {
+	if logger.Enabled(context.Background(), slog.LevelInfo) {
 		t.Error("expected info to be disabled when level is error")
 	}
-	if !logger.Enabled(nil, slog.LevelError) {
+	if !logger.Enabled(context.Background(), slog.LevelError) {
 		t.Error("expected error to be enabled")
 	}
 }

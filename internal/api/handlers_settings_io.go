@@ -84,7 +84,7 @@ func (r *Router) handleSettingsImport(w http.ResponseWriter, req *http.Request) 
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing file field"})
 			return
 		}
-		defer file.Close()
+		defer file.Close() //nolint:errcheck
 
 		data, err := io.ReadAll(io.LimitReader(file, maxImportSize+1))
 		if err != nil {
@@ -121,7 +121,7 @@ func (r *Router) handleSettingsImport(w http.ResponseWriter, req *http.Request) 
 				`</div>`,
 			result.Settings, result.Connections, result.Profiles, result.Webhooks, result.ProviderKeys, result.Priorities,
 		)
-		w.Write([]byte(html)) //nolint:errcheck
+		w.Write([]byte(html)) //nolint:errcheck,gosec // G705: all format args are %d (integers)
 		return
 	}
 

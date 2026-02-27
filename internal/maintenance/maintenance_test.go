@@ -22,6 +22,7 @@ func setupTestDB(t *testing.T) (*sql.DB, string) {
 	t.Cleanup(func() { db.Close() })
 
 	// Enable WAL mode and create settings table
+	ctx := context.Background()
 	for _, stmt := range []string{
 		"PRAGMA journal_mode=WAL",
 		`CREATE TABLE IF NOT EXISTS settings (
@@ -30,7 +31,7 @@ func setupTestDB(t *testing.T) (*sql.DB, string) {
 			updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 		)`,
 	} {
-		if _, err := db.Exec(stmt); err != nil {
+		if _, err := db.ExecContext(ctx, stmt); err != nil {
 			t.Fatalf("setup: %v", err)
 		}
 	}
@@ -71,8 +72,9 @@ func TestOptimize(t *testing.T) {
 	svc := NewService(db, dbPath, slog.Default())
 
 	// Insert some data to make optimize meaningful
+	ctx := context.Background()
 	for i := 0; i < 100; i++ {
-		db.Exec("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+		db.ExecContext(ctx, "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", //nolint:errcheck
 			"test."+string(rune('A'+i%26)), "value")
 	}
 
@@ -92,11 +94,12 @@ func TestVacuum(t *testing.T) {
 	svc := NewService(db, dbPath, slog.Default())
 
 	// Insert and delete data to create freeable space
+	ctx := context.Background()
 	for i := 0; i < 100; i++ {
-		db.Exec("INSERT INTO settings (key, value) VALUES (?, ?)",
+		db.ExecContext(ctx, "INSERT INTO settings (key, value) VALUES (?, ?)", //nolint:errcheck
 			"vacuum_test_"+string(rune('A'+i%26))+string(rune('0'+i/26)), "x")
 	}
-	db.Exec("DELETE FROM settings WHERE key LIKE 'vacuum_test_%'")
+	db.ExecContext(ctx, "DELETE FROM settings WHERE key LIKE 'vacuum_test_%'") //nolint:errcheck
 
 	sizeBefore, _ := os.Stat(dbPath)
 
@@ -122,13 +125,14 @@ func TestGetBoolSetting(t *testing.T) {
 	}
 
 	// Set to true
-	db.Exec("INSERT INTO settings (key, value) VALUES ('test.bool', 'true')")
-	if !svc.getBoolSetting(context.Background(), "test.bool", false) {
+	ctx := context.Background()
+	db.ExecContext(ctx, "INSERT INTO settings (key, value) VALUES ('test.bool', 'true')") //nolint:errcheck
+	if !svc.getBoolSetting(ctx, "test.bool", false) {
 		t.Error("expected true")
 	}
 
 	// Set to false
-	db.Exec("UPDATE settings SET value = 'false' WHERE key = 'test.bool'")
+	db.ExecContext(ctx, "UPDATE settings SET value = 'false' WHERE key = 'test.bool'") //nolint:errcheck
 	if svc.getBoolSetting(context.Background(), "test.bool", true) {
 		t.Error("expected false")
 	}
@@ -144,7 +148,8 @@ func TestGetIntSetting(t *testing.T) {
 	}
 
 	// Set to 12
-	db.Exec("INSERT INTO settings (key, value) VALUES ('test.int', '12')")
+	ctx := context.Background()
+	db.ExecContext(ctx, "INSERT INTO settings (key, value) VALUES ('test.int', '12')") //nolint:errcheck
 	if v := svc.getIntSetting(context.Background(), "test.int", 0); v != 12 {
 		t.Errorf("expected 12, got %d", v)
 	}
