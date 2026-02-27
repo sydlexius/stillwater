@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -174,6 +176,10 @@ func (r *Router) handleImageFetch(w http.ResponseWriter, req *http.Request) {
 	}
 	if !strings.HasPrefix(imageURL, "http://") && !strings.HasPrefix(imageURL, "https://") {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "url must start with http:// or https://"})
+		return
+	}
+	if isPrivateURL(req.Context(), imageURL) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "url points to a private or reserved address"})
 		return
 	}
 
@@ -479,9 +485,63 @@ func (r *Router) getActiveNamingConfig(ctx context.Context, imageType string) []
 	return names
 }
 
+// isPrivateURL returns true if the URL's hostname resolves to a loopback,
+// private, link-local, or unspecified IP address.
+func isPrivateURL(ctx context.Context, rawURL string) bool {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return true
+	}
+	host := parsed.Hostname()
+	resolver := net.DefaultResolver
+	addrs, err := resolver.LookupIPAddr(ctx, host)
+	if err != nil {
+		return true
+	}
+	for _, addr := range addrs {
+		ip := addr.IP
+		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() ||
+			ip.IsLinkLocalMulticast() || ip.IsUnspecified() {
+			return true
+		}
+	}
+	return false
+}
+
+// ssrfSafeTransport returns an http.Transport whose DialContext validates
+// resolved IPs at connection time, preventing TOCTOU / DNS-rebinding attacks
+// where the hostname resolves to a safe address during the isPrivateURL
+// pre-check but to a private address when the actual connection is made.
+func ssrfSafeTransport() *http.Transport {
+	dialer := &net.Dialer{Timeout: 10 * time.Second}
+	return &http.Transport{
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			host, port, err := net.SplitHostPort(addr)
+			if err != nil {
+				return nil, err
+			}
+			ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+			if err != nil {
+				return nil, err
+			}
+			for _, ip := range ips {
+				if ip.IP.IsLoopback() || ip.IP.IsPrivate() || ip.IP.IsLinkLocalUnicast() ||
+					ip.IP.IsLinkLocalMulticast() || ip.IP.IsUnspecified() {
+					return nil, fmt.Errorf("resolved address %s is private or reserved", ip.IP)
+				}
+			}
+			// Connect to the first safe IP directly to avoid re-resolution.
+			return dialer.DialContext(ctx, network, net.JoinHostPort(ips[0].IP.String(), port))
+		},
+	}
+}
+
 // fetchImageFromURL downloads an image from the given URL with timeout and size limits.
 func (r *Router) fetchImageFromURL(rawURL string) ([]byte, error) {
-	client := &http.Client{Timeout: fetchTimeout}
+	client := &http.Client{
+		Timeout:   fetchTimeout,
+		Transport: ssrfSafeTransport(),
+	}
 
 	resp, err := client.Get(rawURL) //nolint:gosec,noctx // G107: URL is validated by caller; background fetch is acceptable
 	if err != nil {
@@ -1079,7 +1139,7 @@ func (r *Router) handleServeFanartByIndex(w http.ResponseWriter, req *http.Reque
 	primary := r.getActiveFanartPrimary(req.Context())
 	paths := img.DiscoverFanart(a.Path, primary)
 	if index >= len(paths) {
-		http.NotFound(w, req)
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "fanart index out of range"})
 		return
 	}
 
@@ -1217,11 +1277,26 @@ func (r *Router) handleFanartBatchFetch(w http.ResponseWriter, req *http.Request
 		return
 	}
 
+	// Deduplicate URLs to avoid saving the same image twice.
+	seen := make(map[string]bool, len(body.URLs))
+	var unique []string
+	for _, u := range body.URLs {
+		if !seen[u] {
+			seen[u] = true
+			unique = append(unique, u)
+		}
+	}
+	body.URLs = unique
+
 	var allSaved []string
 	var errors []string
 	for _, u := range body.URLs {
 		if !strings.HasPrefix(u, "http://") && !strings.HasPrefix(u, "https://") {
 			errors = append(errors, fmt.Sprintf("invalid url: %s", u))
+			continue
+		}
+		if isPrivateURL(req.Context(), u) {
+			errors = append(errors, fmt.Sprintf("private/reserved address: %s", u))
 			continue
 		}
 		data, fetchErr := r.fetchImageFromURL(u)

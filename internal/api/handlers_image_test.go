@@ -136,6 +136,31 @@ func TestRequireArtistPath_Degraded(t *testing.T) {
 	}
 }
 
+func TestIsPrivateURL(t *testing.T) {
+	tests := []struct {
+		name string
+		url  string
+		want bool
+	}{
+		{"loopback ipv4", "http://127.0.0.1/image.jpg", true},
+		{"loopback ipv6", "http://[::1]/image.jpg", true},
+		{"private 10.x", "http://10.0.0.1/image.jpg", true},
+		{"private 172.16.x", "http://172.16.0.1/image.jpg", true},
+		{"private 192.168.x", "http://192.168.1.1/image.jpg", true},
+		{"link-local", "http://169.254.1.1/image.jpg", true},
+		{"unspecified ipv4", "http://0.0.0.0/image.jpg", true},
+		{"invalid url", "://bad", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isPrivateURL(context.Background(), tt.url)
+			if got != tt.want {
+				t.Errorf("isPrivateURL(%q) = %v, want %v", tt.url, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestSetArtistImageFlag_UnreadableFile(t *testing.T) {
 	r, artistSvc := testRouterWithPlatform(t)
 	dir := t.TempDir()
