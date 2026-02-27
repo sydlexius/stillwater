@@ -1447,6 +1447,7 @@ templ settingsLibraryScript() {
 					if (btn) btn.disabled = false;
 					if (spinner) spinner.classList.add('hidden');
 					if (label) label.textContent = operation === 'populate' ? 'Populate Artists' : 'Scan Library';
+					showToast("Network error while checking operation status");
 				});
 			}, 2000);
 		}

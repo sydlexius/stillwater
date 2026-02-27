@@ -410,14 +410,11 @@ func (r *Router) handleLibraryOpStatus(w http.ResponseWriter, req *http.Request)
 
 	r.libraryOpsMu.Lock()
 	op, ok := r.libraryOps[libID]
-	r.libraryOpsMu.Unlock()
-
 	if !ok {
+		r.libraryOpsMu.Unlock()
 		writeJSON(w, http.StatusOK, map[string]string{"status": "idle"})
 		return
 	}
-
-	r.libraryOpsMu.Lock()
 	snapshot := *op
 	r.libraryOpsMu.Unlock()
 
@@ -604,15 +601,26 @@ func (r *Router) scanFromEmby(ctx context.Context, client *emby.Client, lib *lib
 		}
 
 		for _, item := range resp.Items {
-			a, lookupErr := r.artistService.GetByNameAndLibrary(ctx, item.Name, lib.ID)
+			mbid := item.ProviderIDs.MusicBrainzArtist
+			var a *artist.Artist
+			var lookupErr error
+			if mbid != "" {
+				a, lookupErr = r.artistService.GetByMBIDAndLibrary(ctx, mbid, lib.ID)
+			}
+			if a == nil && lookupErr == nil {
+				a, lookupErr = r.artistService.GetByNameAndLibrary(ctx, item.Name, lib.ID)
+			}
 			if lookupErr != nil || a == nil {
 				continue
 			}
 
-			thumbExists := item.ImageTags["Primary"] != ""
-			fanartExists := item.ImageTags["Backdrop"] != ""
-			logoExists := item.ImageTags["Logo"] != ""
-			bannerExists := item.ImageTags["Banner"] != ""
+			var thumbExists, fanartExists, logoExists, bannerExists bool
+			if item.ImageTags != nil {
+				thumbExists = item.ImageTags["Primary"] != ""
+				fanartExists = item.ImageTags["Backdrop"] != ""
+				logoExists = item.ImageTags["Logo"] != ""
+				bannerExists = item.ImageTags["Banner"] != ""
+			}
 
 			if a.ThumbExists != thumbExists || a.FanartExists != fanartExists ||
 				a.LogoExists != logoExists || a.BannerExists != bannerExists {
@@ -648,15 +656,26 @@ func (r *Router) scanFromJellyfin(ctx context.Context, client *jellyfin.Client, 
 		}
 
 		for _, item := range resp.Items {
-			a, lookupErr := r.artistService.GetByNameAndLibrary(ctx, item.Name, lib.ID)
+			mbid := item.ProviderIDs.MusicBrainzArtist
+			var a *artist.Artist
+			var lookupErr error
+			if mbid != "" {
+				a, lookupErr = r.artistService.GetByMBIDAndLibrary(ctx, mbid, lib.ID)
+			}
+			if a == nil && lookupErr == nil {
+				a, lookupErr = r.artistService.GetByNameAndLibrary(ctx, item.Name, lib.ID)
+			}
 			if lookupErr != nil || a == nil {
 				continue
 			}
 
-			thumbExists := item.ImageTags["Primary"] != ""
-			fanartExists := item.ImageTags["Backdrop"] != ""
-			logoExists := item.ImageTags["Logo"] != ""
-			bannerExists := item.ImageTags["Banner"] != ""
+			var thumbExists, fanartExists, logoExists, bannerExists bool
+			if item.ImageTags != nil {
+				thumbExists = item.ImageTags["Primary"] != ""
+				fanartExists = item.ImageTags["Backdrop"] != ""
+				logoExists = item.ImageTags["Logo"] != ""
+				bannerExists = item.ImageTags["Banner"] != ""
+			}
 
 			if a.ThumbExists != thumbExists || a.FanartExists != fanartExists ||
 				a.LogoExists != logoExists || a.BannerExists != bannerExists {
@@ -689,8 +708,15 @@ func (r *Router) scanFromLidarr(ctx context.Context, client *lidarr.Client, lib 
 
 	updated := 0
 	for _, la := range artists {
-		name := la.ArtistName
-		a, lookupErr := r.artistService.GetByNameAndLibrary(ctx, name, lib.ID)
+		mbid := la.ForeignArtistID
+		var a *artist.Artist
+		var lookupErr error
+		if mbid != "" {
+			a, lookupErr = r.artistService.GetByMBIDAndLibrary(ctx, mbid, lib.ID)
+		}
+		if a == nil && lookupErr == nil {
+			a, lookupErr = r.artistService.GetByNameAndLibrary(ctx, la.ArtistName, lib.ID)
+		}
 		if lookupErr != nil || a == nil {
 			continue
 		}

@@ -18,7 +18,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/rule"
 )
 
-func testRouterWithConnectionLib(t *testing.T) (*Router, *library.Service, *artist.Service) {
+func testRouterForLibraryOps(t *testing.T) *Router {
 	t.Helper()
 
 	db, err := database.Open(":memory:")
@@ -41,7 +41,7 @@ func testRouterWithConnectionLib(t *testing.T) (*Router, *library.Service, *arti
 	}
 	nfoSnapSvc := nfo.NewSnapshotService(db)
 
-	r := NewRouter(RouterDeps{
+	return NewRouter(RouterDeps{
 		AuthService:        authSvc,
 		ArtistService:      artistSvc,
 		LibraryService:     libSvc,
@@ -51,12 +51,10 @@ func testRouterWithConnectionLib(t *testing.T) (*Router, *library.Service, *arti
 		Logger:             logger,
 		StaticDir:          "../../web/static",
 	})
-
-	return r, libSvc, artistSvc
 }
 
 func TestHandleLibraryOpStatus_Idle(t *testing.T) {
-	r, _, _ := testRouterWithConnectionLib(t)
+	r := testRouterForLibraryOps(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/libraries/nonexistent/operation/status", nil)
 	req.SetPathValue("libId", "nonexistent")
@@ -78,7 +76,7 @@ func TestHandleLibraryOpStatus_Idle(t *testing.T) {
 }
 
 func TestHandleLibraryOpStatus_Running(t *testing.T) {
-	r, _, _ := testRouterWithConnectionLib(t)
+	r := testRouterForLibraryOps(t)
 
 	// Simulate a running operation.
 	r.libraryOpsMu.Lock()
@@ -114,7 +112,7 @@ func TestHandleLibraryOpStatus_Running(t *testing.T) {
 }
 
 func TestHandleLibraryOpStatus_Completed(t *testing.T) {
-	r, _, _ := testRouterWithConnectionLib(t)
+	r := testRouterForLibraryOps(t)
 
 	now := time.Now().UTC()
 	r.libraryOpsMu.Lock()
@@ -152,7 +150,7 @@ func TestHandleLibraryOpStatus_Completed(t *testing.T) {
 }
 
 func TestPopulateLibrary_ConflictWhenRunning(t *testing.T) {
-	r, _, _ := testRouterWithConnectionLib(t)
+	r := testRouterForLibraryOps(t)
 
 	// Pre-set a running operation to trigger 409.
 	r.libraryOpsMu.Lock()
