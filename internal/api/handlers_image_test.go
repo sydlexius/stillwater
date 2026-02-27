@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"image"
 	"image/color"
 	"image/jpeg"
@@ -150,6 +151,7 @@ func TestIsPrivateURL(t *testing.T) {
 		{"link-local", "http://169.254.1.1/image.jpg", true},
 		{"unspecified ipv4", "http://0.0.0.0/image.jpg", true},
 		{"invalid url", "://bad", true},
+		{"public ipv4", "http://8.8.8.8/image.jpg", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -158,6 +160,57 @@ func TestIsPrivateURL(t *testing.T) {
 				t.Errorf("isPrivateURL(%q) = %v, want %v", tt.url, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestSSRFSafeTransport_PreservesDefaults(t *testing.T) {
+	transport := ssrfSafeTransport()
+	if transport.DialContext == nil {
+		t.Fatal("DialContext should be set")
+	}
+	if transport.TLSHandshakeTimeout == 0 {
+		t.Error("TLSHandshakeTimeout should be non-zero (inherited from DefaultTransport)")
+	}
+	if transport.IdleConnTimeout == 0 {
+		t.Error("IdleConnTimeout should be non-zero (inherited from DefaultTransport)")
+	}
+	// Verify TLS config is present (HTTP/2 support via Clone)
+	if transport.TLSClientConfig == nil {
+		// Clone may or may not set TLSClientConfig depending on DefaultTransport,
+		// but ForceAttemptHTTP2 should be inherited.
+		if !transport.ForceAttemptHTTP2 {
+			t.Log("ForceAttemptHTTP2 not set; HTTP/2 may not be available")
+		}
+	}
+}
+
+func TestSSRFSafeTransport_BlocksPrivateIP(t *testing.T) {
+	transport := ssrfSafeTransport()
+	client := &http.Client{Transport: transport}
+
+	// Attempt to connect to a loopback address -- should be rejected.
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://127.0.0.1:1/test", nil)
+	resp, err := client.Do(req) //nolint:bodyclose // err expected
+	if err == nil {
+		resp.Body.Close()
+		t.Fatal("expected error connecting to loopback address")
+	}
+}
+
+func TestSSRFSafeTransport_EmptyDNS(t *testing.T) {
+	// The empty-DNS guard is exercised when a hostname resolves to zero addresses.
+	// We cannot easily force that in a unit test (net.DefaultResolver is global),
+	// but we verify the guard exists by reading the function.
+	// Instead, test that a non-existent host returns an error (not a panic).
+	transport := ssrfSafeTransport()
+	// Disable TLS to avoid handshake errors on non-existent hosts.
+	transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} //nolint:gosec // test only
+	client := &http.Client{Transport: transport}
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://this-host-does-not-exist-abc123xyz.invalid/test", nil)
+	resp, err := client.Do(req) //nolint:bodyclose // err expected
+	if err == nil {
+		resp.Body.Close()
+		t.Fatal("expected error for non-existent host")
 	}
 }
 

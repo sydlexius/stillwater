@@ -508,40 +508,47 @@ func isPrivateURL(ctx context.Context, rawURL string) bool {
 	return false
 }
 
-// ssrfSafeTransport returns an http.Transport whose DialContext validates
-// resolved IPs at connection time, preventing TOCTOU / DNS-rebinding attacks
-// where the hostname resolves to a safe address during the isPrivateURL
-// pre-check but to a private address when the actual connection is made.
+// ssrfSafeTransport returns an http.Transport that validates resolved IPs at
+// connection time, preventing TOCTOU / DNS-rebinding attacks where the hostname
+// resolves to a safe address during the isPrivateURL pre-check but to a
+// private address when the actual connection is made.
+//
+// It clones http.DefaultTransport to preserve TLS timeouts, idle connection
+// settings, proxy support, and HTTP/2 -- only the DialContext is overridden.
 func ssrfSafeTransport() *http.Transport {
-	dialer := &net.Dialer{Timeout: 10 * time.Second}
-	return &http.Transport{
-		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			host, port, err := net.SplitHostPort(addr)
-			if err != nil {
-				return nil, err
-			}
-			ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
-			if err != nil {
-				return nil, err
-			}
-			for _, ip := range ips {
-				if ip.IP.IsLoopback() || ip.IP.IsPrivate() || ip.IP.IsLinkLocalUnicast() ||
-					ip.IP.IsLinkLocalMulticast() || ip.IP.IsUnspecified() {
-					return nil, fmt.Errorf("resolved address %s is private or reserved", ip.IP)
-				}
-			}
-			// Connect to the first safe IP directly to avoid re-resolution.
-			return dialer.DialContext(ctx, network, net.JoinHostPort(ips[0].IP.String(), port))
-		},
+	base, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		base = &http.Transport{}
 	}
+	t := base.Clone()
+	dialer := &net.Dialer{Timeout: 10 * time.Second}
+	t.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		host, port, err := net.SplitHostPort(addr)
+		if err != nil {
+			return nil, err
+		}
+		ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+		if err != nil {
+			return nil, err
+		}
+		if len(ips) == 0 {
+			return nil, fmt.Errorf("DNS lookup for %s returned no addresses", host)
+		}
+		for _, ip := range ips {
+			if ip.IP.IsLoopback() || ip.IP.IsPrivate() || ip.IP.IsLinkLocalUnicast() ||
+				ip.IP.IsLinkLocalMulticast() || ip.IP.IsUnspecified() {
+				return nil, fmt.Errorf("resolved address %s is private or reserved", ip.IP)
+			}
+		}
+		// Connect to the first safe IP directly to avoid re-resolution.
+		return dialer.DialContext(ctx, network, net.JoinHostPort(ips[0].IP.String(), port))
+	}
+	return t
 }
 
 // fetchImageFromURL downloads an image from the given URL with timeout and size limits.
 func (r *Router) fetchImageFromURL(rawURL string) ([]byte, error) {
-	client := &http.Client{
-		Timeout:   fetchTimeout,
-		Transport: ssrfSafeTransport(),
-	}
+	client := r.ssrfClient
 
 	resp, err := client.Get(rawURL) //nolint:gosec,noctx // G107: URL is validated by caller; background fetch is acceptable
 	if err != nil {
@@ -1035,8 +1042,11 @@ func (r *Router) processAndAppendFanart(ctx context.Context, dir string, data []
 
 	primary := r.getActiveFanartPrimary(ctx)
 	kodi := r.isKodiNumbering(ctx)
-	maxIdx := img.MaxFanartIndex(dir, primary)
-	nextIndex := maxIdx + 1
+	maxIdx, err := img.MaxFanartIndex(dir, primary)
+	if err != nil {
+		return nil, fmt.Errorf("scanning fanart: %w", err)
+	}
+	nextIndex := img.NextFanartIndex(maxIdx, kodi)
 	nextName := img.FanartFilename(primary, nextIndex, kodi)
 
 	saved, err := img.Save(dir, "fanart", resized, []string{nextName}, r.logger)
@@ -1271,13 +1281,9 @@ func (r *Router) handleFanartBatchFetch(w http.ResponseWriter, req *http.Request
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "no urls specified"})
 		return
 	}
-	const maxBatchURLs = 20
-	if len(body.URLs) > maxBatchURLs {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("too many urls (max %d)", maxBatchURLs)})
-		return
-	}
 
-	// Deduplicate URLs to avoid saving the same image twice.
+	// Deduplicate URLs before checking the limit so that duplicate-heavy
+	// payloads are not rejected unnecessarily.
 	seen := make(map[string]bool, len(body.URLs))
 	var unique []string
 	for _, u := range body.URLs {
@@ -1287,6 +1293,12 @@ func (r *Router) handleFanartBatchFetch(w http.ResponseWriter, req *http.Request
 		}
 	}
 	body.URLs = unique
+
+	const maxBatchURLs = 20
+	if len(body.URLs) > maxBatchURLs {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("too many urls (max %d)", maxBatchURLs)})
+		return
+	}
 
 	var allSaved []string
 	var errors []string
