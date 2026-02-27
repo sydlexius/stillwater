@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 )
@@ -66,6 +67,21 @@ func (r *Router) getBoolSetting(ctx context.Context, key string, fallback bool) 
 		return fallback
 	}
 	return v == "true" || v == "1"
+}
+
+// getIntSetting reads an integer setting from the key-value table.
+// Returns the fallback value if the key does not exist or cannot be parsed.
+func (r *Router) getIntSetting(ctx context.Context, key string, fallback int) int {
+	var v string
+	err := r.db.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = ?`, key).Scan(&v)
+	if err != nil || v == "" {
+		return fallback
+	}
+	var n int
+	if _, err := fmt.Sscanf(v, "%d", &n); err != nil {
+		return fallback
+	}
+	return n
 }
 
 // getStringSetting reads a string setting from the key-value table.

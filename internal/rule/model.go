@@ -8,7 +8,7 @@ import (
 // Automation modes for rules
 const (
 	AutomationModeAuto     = "auto"
-	AutomationModeNotify   = "notify"
+	AutomationModeManual   = "manual"
 	AutomationModeDisabled = "disabled"
 )
 
@@ -19,7 +19,7 @@ type Rule struct {
 	Description    string     `json:"description"`
 	Category       string     `json:"category"` // "nfo", "image", "metadata"
 	Enabled        bool       `json:"enabled"`
-	AutomationMode string     `json:"automation_mode"` // "auto", "notify", "disabled"
+	AutomationMode string     `json:"automation_mode"` // "auto", "manual", "disabled"
 	Config         RuleConfig `json:"config"`
 	CreatedAt      time.Time  `json:"created_at"`
 	UpdatedAt      time.Time  `json:"updated_at"`

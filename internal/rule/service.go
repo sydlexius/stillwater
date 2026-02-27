@@ -141,7 +141,7 @@ var defaultRules = []Rule{
 		Description:    "Flags image files that do not match filenames configured in the active platform profile. Extra files can cause duplicate or incorrect artwork on media servers. Auto-fix deletes them; notify mode alerts you first.",
 		Category:       "image",
 		Enabled:        true,
-		AutomationMode: "notify",
+		AutomationMode: "manual",
 		Config:         RuleConfig{Severity: "warning"},
 	},
 }

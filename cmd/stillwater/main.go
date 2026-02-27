@@ -296,6 +296,15 @@ func run() error {
 		}
 	}()
 
+	// Start rule evaluation scheduler (opt-in via settings)
+	{
+		ruleScheduleHours := getDBIntSetting(db, "rule_schedule.interval_hours", 0)
+		if ruleScheduleHours > 0 {
+			ruleScheduler := rule.NewScheduler(pipeline, logger)
+			go ruleScheduler.Start(ctx, time.Duration(ruleScheduleHours)*time.Hour)
+		}
+	}
+
 	go func() {
 		logger.Info("server starting", slog.String("addr", addr), slog.String("base_path", cfg.Server.BasePath))
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {

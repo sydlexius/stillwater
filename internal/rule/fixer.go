@@ -106,8 +106,8 @@ func (p *Pipeline) RunRule(ctx context.Context, ruleID string) (*RunResult, erro
 					continue
 				}
 
-				// Notify mode: persist without attempting fix
-				if targetRule.AutomationMode == AutomationModeNotify {
+				// Manual mode: persist without attempting fix
+				if targetRule.AutomationMode == AutomationModeManual {
 					rv := &RuleViolation{
 						RuleID:     v.RuleID,
 						ArtistID:   a.ID,
