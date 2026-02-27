@@ -508,9 +508,40 @@ func isPrivateURL(ctx context.Context, rawURL string) bool {
 	return false
 }
 
+// ssrfSafeTransport returns an http.Transport whose DialContext validates
+// resolved IPs at connection time, preventing TOCTOU / DNS-rebinding attacks
+// where the hostname resolves to a safe address during the isPrivateURL
+// pre-check but to a private address when the actual connection is made.
+func ssrfSafeTransport() *http.Transport {
+	dialer := &net.Dialer{Timeout: 10 * time.Second}
+	return &http.Transport{
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			host, port, err := net.SplitHostPort(addr)
+			if err != nil {
+				return nil, err
+			}
+			ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+			if err != nil {
+				return nil, err
+			}
+			for _, ip := range ips {
+				if ip.IP.IsLoopback() || ip.IP.IsPrivate() || ip.IP.IsLinkLocalUnicast() ||
+					ip.IP.IsLinkLocalMulticast() || ip.IP.IsUnspecified() {
+					return nil, fmt.Errorf("resolved address %s is private or reserved", ip.IP)
+				}
+			}
+			// Connect to the first safe IP directly to avoid re-resolution.
+			return dialer.DialContext(ctx, network, net.JoinHostPort(ips[0].IP.String(), port))
+		},
+	}
+}
+
 // fetchImageFromURL downloads an image from the given URL with timeout and size limits.
 func (r *Router) fetchImageFromURL(rawURL string) ([]byte, error) {
-	client := &http.Client{Timeout: fetchTimeout}
+	client := &http.Client{
+		Timeout:   fetchTimeout,
+		Transport: ssrfSafeTransport(),
+	}
 
 	resp, err := client.Get(rawURL) //nolint:gosec,noctx // G107: URL is validated by caller; background fetch is acceptable
 	if err != nil {
