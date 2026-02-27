@@ -434,6 +434,31 @@ func (s *Service) ResolveViolation(ctx context.Context, id string) error {
 	return nil
 }
 
+// CountActiveViolationsBySeverity returns the count of active (open + pending_choice)
+// violations grouped by severity level.
+func (s *Service) CountActiveViolationsBySeverity(ctx context.Context) (map[string]int, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT severity, COUNT(*) FROM rule_violations
+		WHERE status IN (?, ?)
+		GROUP BY severity
+	`, ViolationStatusOpen, ViolationStatusPendingChoice)
+	if err != nil {
+		return nil, fmt.Errorf("counting active violations by severity: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck
+
+	counts := map[string]int{"error": 0, "warning": 0, "info": 0}
+	for rows.Next() {
+		var severity string
+		var count int
+		if err := rows.Scan(&severity, &count); err != nil {
+			return nil, fmt.Errorf("scanning violation count: %w", err)
+		}
+		counts[severity] = count
+	}
+	return counts, rows.Err()
+}
+
 // ClearResolvedViolations deletes resolved violations older than the given age.
 func (s *Service) ClearResolvedViolations(ctx context.Context, daysOld int) error {
 	cutoff := time.Now().UTC().AddDate(0, 0, -daysOld)

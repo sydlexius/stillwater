@@ -285,8 +285,9 @@ templ navbar() {
 						<a href="/reports/compliance" class="rounded-md px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
 							Reports
 						</a>
-						<a href="/notifications" class="rounded-md px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
+						<a href="/notifications" class="relative rounded-md px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
 							Notifications
+							<span hx-get="/api/v1/notifications/badge" hx-trigger="load, every 30s" hx-swap="innerHTML"></span>
 						</a>
 						<a href="/settings" class="rounded-md px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
 							Settings
@@ -337,8 +338,9 @@ templ navbar() {
 				<a href="/reports/compliance" class="block rounded-md px-3 py-3 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
 					Reports
 				</a>
-				<a href="/notifications" class="block rounded-md px-3 py-3 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
+				<a href="/notifications" class="relative block rounded-md px-3 py-3 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
 					Notifications
+					<span hx-get="/api/v1/notifications/badge" hx-trigger="load, every 30s" hx-swap="innerHTML"></span>
 				</a>
 				<a href="/settings" class="block rounded-md px-3 py-3 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
 					Settings

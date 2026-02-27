@@ -216,17 +216,21 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 	}
 
 	data := templates.SettingsData{
-		ActiveTab:          tab,
-		Libraries:          libs,
-		Profiles:           profiles,
-		ActiveProfile:      active,
-		ProviderKeys:       providerKeys,
-		Priorities:         priorities,
-		Connections:        conns,
-		Webhooks:           webhooks,
-		WebSearchProviders: webSearchProviders,
-		AutoFetchImages:    r.getBoolSetting(req.Context(), "auto_fetch_images", false),
-		Rules:              rules,
+		ActiveTab:            tab,
+		Libraries:            libs,
+		Profiles:             profiles,
+		ActiveProfile:        active,
+		ProviderKeys:         providerKeys,
+		Priorities:           priorities,
+		Connections:          conns,
+		Webhooks:             webhooks,
+		WebSearchProviders:   webSearchProviders,
+		AutoFetchImages:      r.getBoolSetting(req.Context(), "auto_fetch_images", false),
+		Rules:                rules,
+		BadgeEnabled:         r.getBoolSetting(req.Context(), "notif_badge_enabled", true),
+		BadgeSeverityError:   r.getBoolSetting(req.Context(), "notif_badge_severity_error", true),
+		BadgeSeverityWarning: r.getBoolSetting(req.Context(), "notif_badge_severity_warning", true),
+		BadgeSeverityInfo:    r.getBoolSetting(req.Context(), "notif_badge_severity_info", false),
 	}
 	renderTempl(w, req, templates.SettingsPage(r.assets(), data))
 }

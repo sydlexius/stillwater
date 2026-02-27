@@ -212,6 +212,71 @@ func (r *Router) handleApplyViolationCandidate(w http.ResponseWriter, req *http.
 	w.WriteHeader(http.StatusOK)
 }
 
+// handleNotificationCounts returns active violation counts by severity.
+// GET /api/v1/notifications/counts
+func (r *Router) handleNotificationCounts(w http.ResponseWriter, req *http.Request) {
+	counts, err := r.ruleService.CountActiveViolationsBySeverity(req.Context())
+	if err != nil {
+		writeError(w, req, http.StatusInternalServerError, "failed to count violations")
+		return
+	}
+
+	total := 0
+	for _, n := range counts {
+		total += n
+	}
+
+	writeJSON(w, http.StatusOK, map[string]int{
+		"error":   counts["error"],
+		"warning": counts["warning"],
+		"info":    counts["info"],
+		"total":   total,
+	})
+}
+
+// handleNotificationBadge returns an HTML fragment for the navbar badge.
+// GET /api/v1/notifications/badge
+func (r *Router) handleNotificationBadge(w http.ResponseWriter, req *http.Request) {
+	ctx := req.Context()
+
+	if !r.getBoolSetting(ctx, "notif_badge_enabled", true) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	counts, err := r.ruleService.CountActiveViolationsBySeverity(ctx)
+	if err != nil {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	total := 0
+	if r.getBoolSetting(ctx, "notif_badge_severity_error", true) {
+		total += counts["error"]
+	}
+	if r.getBoolSetting(ctx, "notif_badge_severity_warning", true) {
+		total += counts["warning"]
+	}
+	if r.getBoolSetting(ctx, "notif_badge_severity_info", false) {
+		total += counts["info"]
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	if total == 0 {
+		return
+	}
+
+	display := fmt.Sprintf("%d", total)
+	if total > 99 {
+		display = "99+"
+	}
+	//nolint:errcheck,gosec // G705: display is derived from an integer, no XSS risk
+	fmt.Fprintf(w, `<span class="absolute -top-1 -right-2 inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1 text-xs font-bold text-white bg-red-500 rounded-full">%s</span>`, display)
+}
+
 // handleNotificationsTable renders the notifications table for HTMX swaps.
 // GET /notifications/table
 func (r *Router) handleNotificationsTable(w http.ResponseWriter, req *http.Request) {
