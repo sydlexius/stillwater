@@ -3,6 +3,7 @@ package templates
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strconv"
 
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -63,36 +64,38 @@ func sortIcon(currentSort, col, currentOrder string) string {
 	return " ↑"
 }
 
-// toggleOrder returns the next sort order for a column.
-func toggleOrder(currentSort, col, currentOrder string) string {
-	if currentSort == col && currentOrder == "asc" {
-		return "desc"
-	}
-	return "asc"
-}
-
 // complianceExportURL builds the CSV export URL with current filter params.
 func complianceExportURL(data ComplianceData) string {
-	u := "/api/v1/reports/compliance/export?"
+	v := url.Values{}
 	if data.Search != "" {
-		u += "search=" + data.Search + "&"
+		v.Set("search", data.Search)
 	}
 	if data.Status != "" && data.Status != "all" {
-		u += "status=" + data.Status + "&"
+		v.Set("status", data.Status)
 	}
 	if data.Filter != "" {
-		u += "filter=" + data.Filter + "&"
+		v.Set("filter", data.Filter)
 	}
 	if data.LibraryID != "" {
-		u += "library_id=" + data.LibraryID + "&"
+		v.Set("library_id", data.LibraryID)
 	}
 	if data.HealthScoreMin > 0 {
-		u += "health_min=" + strconv.Itoa(data.HealthScoreMin) + "&"
+		v.Set("health_min", strconv.Itoa(data.HealthScoreMin))
 	}
 	if data.HealthScoreMax > 0 {
-		u += "health_max=" + strconv.Itoa(data.HealthScoreMax) + "&"
+		v.Set("health_max", strconv.Itoa(data.HealthScoreMax))
 	}
-	return u
+	if data.Sort != "" {
+		v.Set("sort", data.Sort)
+	}
+	if data.Order != "" {
+		v.Set("order", data.Order)
+	}
+	q := v.Encode()
+	if q != "" {
+		return "/api/v1/reports/compliance/export?" + q
+	}
+	return "/api/v1/reports/compliance/export"
 }
 
 templ CompliancePage(assets AssetPaths, data ComplianceData) {
@@ -300,7 +303,10 @@ func coverageChartJSON(libs []LibrarySummaryData) string {
 		d.MBID[i] = lib.TotalArtists - lib.MissingMBID
 		d.Total[i] = lib.TotalArtists
 	}
-	b, _ := json.Marshal(d)
+	b, err := json.Marshal(d)
+	if err != nil {
+		return "{}"
+	}
 	return string(b)
 }
 
@@ -330,7 +336,10 @@ templ ComplianceTable(data ComplianceData) {
 							scope="col"
 							data-col="artist"
 							class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400 cursor-pointer hover:text-gray-700 dark:hover:text-gray-200"
+							tabindex="0"
+							role="button"
 							onclick="sortBy('name')"
+						onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();sortBy('name')}"
 						>
 							Artist{ sortIcon(data.Sort, "name", data.Order) }
 						</th>
@@ -338,7 +347,10 @@ templ ComplianceTable(data ComplianceData) {
 							scope="col"
 							data-col="score"
 							class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400 cursor-pointer hover:text-gray-700 dark:hover:text-gray-200"
+							tabindex="0"
+							role="button"
 							onclick="sortBy('health_score')"
+							onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();sortBy('health_score')}"
 						>
 							Score{ sortIcon(data.Sort, "health_score", data.Order) }
 						</th>

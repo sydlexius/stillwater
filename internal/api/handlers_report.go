@@ -375,7 +375,10 @@ func (r *Router) handleReportComplianceExport(w http.ResponseWriter, req *http.R
 	}
 
 	// Look up library names for the export
-	libs, _ := r.libraryService.List(ctx)
+	libs, err := r.libraryService.List(ctx)
+	if err != nil {
+		r.logger.Warn("listing libraries for compliance export", "error", err)
+	}
 	libNames := make(map[string]string, len(libs))
 	for _, l := range libs {
 		libNames[l.ID] = l.Name
@@ -386,28 +389,40 @@ func (r *Router) handleReportComplianceExport(w http.ResponseWriter, req *http.R
 	w.WriteHeader(http.StatusOK)
 
 	cw := csv.NewWriter(w)
-	_ = cw.Write([]string{"Artist Name", "Health Score", "Metadata", "Thumb", "Fanart", "Logo", "MBID", "Library", "Violations"})
+	if err := cw.Write([]string{"Artist Name", "Health Score", "Metadata", "Thumb", "Fanart", "Logo", "MBID", "Library", "Violations"}); err != nil {
+		r.logger.Error("writing CSV header", "error", err)
+		return
+	}
 
 	for i, a := range allArtists {
+		if ctx.Err() != nil {
+			break
+		}
 		var violations []string
 		for _, v := range results[i].Violations {
 			violations = append(violations, v.RuleName)
 		}
 		libName := libNames[a.LibraryID]
 
-		_ = cw.Write([]string{
-			a.Name,
+		if err := cw.Write([]string{
+			sanitizeCSV(a.Name),
 			fmt.Sprintf("%.0f", results[i].HealthScore),
 			boolCSV(a.NFOExists),
 			boolCSV(a.ThumbExists),
 			boolCSV(a.FanartExists),
 			boolCSV(a.LogoExists),
 			boolCSV(a.MusicBrainzID != ""),
-			libName,
-			strings.Join(violations, "; "),
-		})
+			sanitizeCSV(libName),
+			sanitizeCSV(strings.Join(violations, "; ")),
+		}); err != nil {
+			r.logger.Error("writing CSV row", "artist", a.Name, "error", err)
+			return
+		}
 	}
 	cw.Flush()
+	if err := cw.Error(); err != nil {
+		r.logger.Error("flushing CSV writer", "error", err)
+	}
 }
 
 func boolCSV(b bool) string {
@@ -415,6 +430,20 @@ func boolCSV(b bool) string {
 		return "Yes"
 	}
 	return "No"
+}
+
+// sanitizeCSV guards against CSV formula injection by prefixing values that
+// start with formula-trigger characters (=, +, -, @) with a single quote so
+// spreadsheet applications treat them as plain text.
+func sanitizeCSV(s string) string {
+	if len(s) == 0 {
+		return s
+	}
+	switch s[0] {
+	case '=', '+', '-', '@':
+		return "'" + s
+	}
+	return s
 }
 
 // complianceListParams extracts ListParams from a compliance report request.
@@ -573,7 +602,10 @@ func (r *Router) handleCompliancePage(w http.ResponseWriter, req *http.Request) 
 		totalPages++
 	}
 
-	libs, _ := r.libraryService.List(ctx)
+	libs, err := r.libraryService.List(ctx)
+	if err != nil {
+		r.logger.Warn("listing libraries for compliance page", "error", err)
+	}
 
 	data := templates.ComplianceData{
 		Rows: rows,
