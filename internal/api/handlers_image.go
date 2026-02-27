@@ -1211,6 +1211,11 @@ func (r *Router) handleFanartBatchFetch(w http.ResponseWriter, req *http.Request
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "no urls specified"})
 		return
 	}
+	const maxBatchURLs = 20
+	if len(body.URLs) > maxBatchURLs {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("too many urls (max %d)", maxBatchURLs)})
+		return
+	}
 
 	var allSaved []string
 	var errors []string

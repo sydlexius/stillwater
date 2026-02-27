@@ -59,19 +59,21 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 							current = (current + 1) % count;
 							var url = '/api/v1/artists/' + artistId + '/images/fanart/' + current + '/file';
 							if (showingA) {
-								imgB.src = url;
 								imgB.onload = function() {
 									imgA.style.opacity = '0';
 									imgB.style.opacity = '1';
 									showingA = false;
 								};
+								imgB.onerror = function() { /* skip failed image on next cycle */ };
+								imgB.src = url;
 							} else {
-								imgA.src = url;
 								imgA.onload = function() {
 									imgB.style.opacity = '0';
 									imgA.style.opacity = '1';
 									showingA = true;
 								};
+								imgA.onerror = function() { /* skip failed image on next cycle */ };
+								imgA.src = url;
 							}
 						}
 
@@ -515,7 +517,7 @@ templ FanartGallery(artistID string, items []FanartGalleryItem) {
 						credentials: 'same-origin'
 					}).then(function(r) {
 						if (r.ok) window.location.reload();
-						else r.text().then(function(t) { alert(t); });
+						else alert('Failed to delete selected images. Please try again.');
 					});
 				});
 			})();

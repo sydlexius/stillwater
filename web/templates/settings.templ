@@ -1256,7 +1256,12 @@ templ profileNamingEditorScript() {
 				alert('Filename must not contain path separators.');
 				return;
 			}
-			var ext = name.substring(name.lastIndexOf('.')).toLowerCase();
+			var dotIdx = name.lastIndexOf('.');
+			if (dotIdx === -1) {
+				alert('Filename must have an extension (.jpg, .jpeg or .png).');
+				return;
+			}
+			var ext = name.substring(dotIdx).toLowerCase();
 			if (ext !== '.jpg' && ext !== '.jpeg' && ext !== '.png') {
 				alert('Extension must be .jpg, .jpeg or .png.');
 				return;

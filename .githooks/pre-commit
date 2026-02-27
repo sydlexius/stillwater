@@ -61,8 +61,8 @@ fi
 STAGED_TEMPL=$(git diff --cached --name-only --diff-filter=ACM -- '*.templ' || true)
 if [ -n "$STAGED_TEMPL" ]; then
     if ! command -v templ &>/dev/null; then
-        # Try the go run fallback
-        TEMPL_CMD="go run github.com/a-h/templ/cmd/templ@latest"
+        # Fallback: pin to the version in go.mod to avoid supply-chain risk
+        TEMPL_CMD="go run github.com/a-h/templ/cmd/templ@v0.3.977"
     else
         TEMPL_CMD="templ"
     fi
@@ -70,7 +70,11 @@ if [ -n "$STAGED_TEMPL" ]; then
     # Save current state of generated files, regenerate, compare
     TEMPL_GEN_FILES=$(git diff --cached --name-only -- '*_templ.go' || true)
 
-    $TEMPL_CMD generate >/dev/null 2>&1 || fail "templ generate failed"
+    if ! $TEMPL_CMD generate 2>/tmp/pre-commit-templ.log; then
+        echo -e "${RED}${BOLD}FAIL${RESET} templ generate:"
+        cat /tmp/pre-commit-templ.log | head -20
+        exit 1
+    fi
 
     # Check if any _templ.go files are now dirty (unstaged changes)
     DIRTY_TEMPL=$(git diff --name-only -- '*_templ.go' || true)
