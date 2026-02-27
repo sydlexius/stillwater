@@ -393,30 +393,31 @@ func expectedImageFiles(profile *platform.Profile, artistPath string) map[string
 	}
 
 	// Whitelist numbered fanart variants discovered on disk plus their
-	// canonical names and alternate extensions. This prevents files like
-	// backdrop2.jpg, fanart1.jpg from being flagged as extraneous while
-	// also covering format mismatches (e.g., a PNG saved where JPG is
-	// the canonical name).
+	// canonical names and alternate extensions. Discover against ALL
+	// configured fanart names (not just the primary) so that numbered
+	// variants of non-primary names are also whitelisted.
 	if artistPath != "" {
-		var fanartPrimary string
+		var fanartNames []string
 		if profile != nil {
-			fanartPrimary = profile.ImageNaming.PrimaryName("fanart")
+			fanartNames = profile.ImageNaming.NamesForType("fanart")
 		}
-		if fanartPrimary == "" {
-			fanartPrimary = image.PrimaryFileName(image.DefaultFileNames, "fanart")
+		if len(fanartNames) == 0 {
+			fanartNames = image.FileNamesForType(image.DefaultFileNames, "fanart")
 		}
 		kodiNumbering := profile != nil && strings.EqualFold(profile.ID, "kodi")
-		discovered := image.DiscoverFanart(artistPath, fanartPrimary)
-		for i, p := range discovered {
-			// Whitelist the actual file on disk.
-			expected[strings.ToLower(filepath.Base(p))] = true
-			// Whitelist the canonical name for this index position.
-			canonical := image.FanartFilename(fanartPrimary, i, kodiNumbering)
-			expected[strings.ToLower(canonical)] = true
-			// Whitelist alternate extensions of the canonical name.
-			base := strings.TrimSuffix(canonical, filepath.Ext(canonical))
-			for ext := range imageExtensions {
-				expected[strings.ToLower(base+ext)] = true
+		for _, fanartName := range fanartNames {
+			discovered := image.DiscoverFanart(artistPath, fanartName)
+			for i, p := range discovered {
+				// Whitelist the actual file on disk.
+				expected[strings.ToLower(filepath.Base(p))] = true
+				// Whitelist the canonical name for this index position.
+				canonical := image.FanartFilename(fanartName, i, kodiNumbering)
+				expected[strings.ToLower(canonical)] = true
+				// Whitelist alternate extensions of the canonical name.
+				base := strings.TrimSuffix(canonical, filepath.Ext(canonical))
+				for ext := range imageExtensions {
+					expected[strings.ToLower(base+ext)] = true
+				}
 			}
 		}
 	}
