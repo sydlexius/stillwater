@@ -7,6 +7,7 @@
 #   2. templ freshness -- generated _templ.go files match their .templ sources
 #   3. go build -- code compiles
 #   4. golangci-lint -- full linter suite from .golangci.yml
+#   5. govulncheck -- known vulnerabilities in dependencies
 #
 # Skip with: git commit --no-verify (use sparingly)
 
@@ -112,6 +113,20 @@ else
         exit 1
     }
     pass "golangci-lint"
+fi
+
+# --------------------------------------------------------------------------
+# 5. govulncheck -- check for known vulnerabilities in dependencies
+# --------------------------------------------------------------------------
+if ! command -v govulncheck &>/dev/null; then
+    warn "govulncheck (not installed, skipping)"
+else
+    VULN_OUTPUT=$(govulncheck ./... 2>&1) || {
+        echo -e "${RED}${BOLD}FAIL${RESET} govulncheck:"
+        echo "$VULN_OUTPUT"
+        exit 1
+    }
+    pass "govulncheck"
 fi
 
 echo ""
