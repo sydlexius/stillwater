@@ -359,7 +359,7 @@ templ FieldProviderModalContent(a *artist.Artist, field string, results []provid
 										hx-patch={ "/api/v1/artists/" + a.ID + "/fields/" + field }
 										hx-target={ "#field-" + field + "-" + a.ID }
 										hx-swap="outerHTML"
-										hx-vals={ `{"value":"` + escapeJSONValue(strings.Join(r.Values, ", ")) + `"}` }
+										hx-vals={ hxValsJSON(map[string]string{"value": strings.Join(r.Values, ", ")}) }
 										hx-headers='{"Content-Type":"application/json"}'
 										hx-on::after-request="hideFieldProviderModal()"
 									>
@@ -371,7 +371,7 @@ templ FieldProviderModalContent(a *artist.Artist, field string, results []provid
 										hx-patch={ "/api/v1/artists/" + a.ID + "/fields/" + field }
 										hx-target={ "#field-" + field + "-" + a.ID }
 										hx-swap="outerHTML"
-										hx-vals={ `{"value":"` + mergeSliceValues(artist.SliceFieldFromArtist(a, field), r.Values) + `"}` }
+										hx-vals={ hxValsJSON(map[string]string{"value": mergeSliceValues(artist.SliceFieldFromArtist(a, field), r.Values)}) }
 										hx-headers='{"Content-Type":"application/json"}'
 										hx-on::after-request="hideFieldProviderModal()"
 									>
@@ -393,7 +393,7 @@ templ FieldProviderModalContent(a *artist.Artist, field string, results []provid
 										hx-patch={ "/api/v1/artists/" + a.ID + "/fields/" + field }
 										hx-target={ "#field-" + field + "-" + a.ID }
 										hx-swap="outerHTML"
-										hx-vals={ `{"value":"` + escapeJSONValue(r.Value) + `"}` }
+										hx-vals={ hxValsJSON(map[string]string{"value": r.Value}) }
 										hx-headers='{"Content-Type":"application/json"}'
 										hx-on::after-request="hideFieldProviderModal()"
 									>

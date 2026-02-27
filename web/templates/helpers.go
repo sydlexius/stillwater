@@ -98,20 +98,20 @@ func truncateText(s string, maxLen int) string {
 	return s[:maxLen] + "..."
 }
 
-// escapeJSONValue escapes special characters in a string for safe embedding
-// in a JSON value within an HTML attribute.
-func escapeJSONValue(s string) string {
-	b, err := json.Marshal(s)
+// hxValsJSON builds a JSON object string from key-value pairs for use in
+// hx-vals attributes. Using json.Marshal for the entire object avoids
+// unsafe quoting from manual string interpolation.
+func hxValsJSON(pairs map[string]string) string {
+	b, err := json.Marshal(pairs)
 	if err != nil {
-		return s
+		return "{}"
 	}
-	// json.Marshal wraps the string in quotes; strip them for embedding in hx-vals.
-	return string(b[1 : len(b)-1])
+	return string(b)
 }
 
 // mergeSliceValues combines current and provider slices, deduplicating
-// case-insensitively while preserving original casing. Returns a
-// comma-separated string escaped for safe hx-vals JSON embedding.
+// case-insensitively while preserving original casing. Returns a raw
+// comma-separated string suitable for passing to hxValsJSON.
 func mergeSliceValues(current, provider []string) string {
 	seen := make(map[string]bool, len(current)+len(provider))
 	var merged []string
@@ -131,7 +131,7 @@ func mergeSliceValues(current, provider []string) string {
 			merged = append(merged, trimmed)
 		}
 	}
-	return escapeJSONValue(strings.Join(merged, ", "))
+	return strings.Join(merged, ", ")
 }
 
 // membersJSON serializes a slice of MemberInfo to a JSON string for
@@ -154,15 +154,14 @@ func boolAttr(b bool) string {
 
 // disambiguationHxVals builds the hx-vals JSON string for a disambiguation result card.
 func disambiguationHxVals(r provider.ArtistSearchResult) string {
-	var parts []string
+	m := map[string]string{"source": r.Source}
 	if r.MusicBrainzID != "" {
-		parts = append(parts, `"mbid":"`+escapeJSONValue(r.MusicBrainzID)+`"`)
+		m["mbid"] = r.MusicBrainzID
 	}
 	if r.Source == "discogs" && r.ProviderID != "" {
-		parts = append(parts, `"discogs_id":"`+escapeJSONValue(r.ProviderID)+`"`)
+		m["discogs_id"] = r.ProviderID
 	}
-	parts = append(parts, `"source":"`+escapeJSONValue(r.Source)+`"`)
-	return "{" + strings.Join(parts, ",") + "}"
+	return hxValsJSON(m)
 }
 
 // tierBadgeClasses returns Tailwind CSS classes for an access tier badge chip.
