@@ -171,8 +171,8 @@ func MaxFanartIndex(dir string, primaryName string) (int, error) {
 // For Kodi: suffix maps 1:1 to index, so next index = maxSuffix + 1.
 // For non-Kodi (Emby/Jellyfin/Plex): suffix N corresponds to index N-1
 // (e.g., backdrop2.jpg = index 1), so next index = maxSuffix (not maxSuffix+1).
-// When no files exist (maxSuffix < 0), both conventions start at index 0+1 = 1
-// to avoid overwriting the primary.
+// When no files exist (maxSuffix < 0), the next index is 0 so that callers
+// can save the primary image first using FanartFilename(primaryName, 0, ...).
 func NextFanartIndex(maxSuffix int, kodi bool) int {
 	if maxSuffix < 0 {
 		// No fanart files exist at all -- the caller should save the primary
