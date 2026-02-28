@@ -22,6 +22,10 @@ func NewScheduler(pipeline *Pipeline, logger *slog.Logger) *Scheduler {
 
 // Start blocks until the context is canceled, running all rules on each tick.
 func (s *Scheduler) Start(ctx context.Context, interval time.Duration) {
+	if interval <= 0 {
+		s.logger.Error("rule scheduler not started: non-positive interval", "interval", interval.String())
+		return
+	}
 	s.logger.Info("rule scheduler started", "interval", interval.String())
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
