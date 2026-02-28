@@ -89,6 +89,9 @@ All six issues are independent. No inter-issue dependencies.
 #### Copilot review fixes (round 2)
 - [x] Use lock-guarded Retention() getter in StartScheduler
 
+#### Copilot review fixes (round 3)
+- [x] Guard against negative retention in SetRetention (clamp to 0)
+
 ### PR 3 -- Async Run Rules (#291)
 - [x] Implementation
 - [x] PR opened (#295)
@@ -105,6 +108,9 @@ All six issues are independent. No inter-issue dependencies.
 - [x] Poll timeout safeguard (150 attempts / ~5 min)
 - [x] Toast message in fetch .catch() handler
 
+#### Copilot review fixes (round 3)
+- [x] Stop polling on non-OK HTTP response (clearInterval + resetRuleButton)
+
 ### PR 4 -- Help Overlay (#237)
 - [x] Implementation
 - [x] PR opened (#296)
@@ -115,6 +121,9 @@ All six issues are independent. No inter-issue dependencies.
 - [x] Fix /artists vs /artists/ path matching in isPageMatch()
 - [x] Add aria-label to close button
 - [x] Add aria-label to search input
+
+#### Copilot review fixes (round 3)
+- [x] Use aria-labelledby pointing at heading ID for modal consistency
 
 ## UAT / Merge Order
 
@@ -132,3 +141,4 @@ All six issues are independent. No inter-issue dependencies.
 - #291: Follow scanner polling pattern with in-memory state tracking on Router
 - 2026-02-27: All 4 PRs pushed with Copilot review feedback addressed; PR #296 opened for help overlay
 - 2026-02-27: Round 2 Copilot review fixes pushed to all 4 PRs (9 actionable items addressed, 2 skipped as out-of-scope)
+- 2026-02-27: Round 3 Copilot review fixes pushed to PRs #294, #295, #296 (3 actionable items; PR #293 had no new actionable items)
