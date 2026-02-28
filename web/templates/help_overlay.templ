@@ -18,6 +18,7 @@ templ HelpOverlay() {
 					<button
 						type="button"
 						class="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+						aria-label="Close help"
 						onclick="toggleHelpOverlay()"
 					>
 						<svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
@@ -29,6 +30,7 @@ templ HelpOverlay() {
 					<input
 						id="help-search-input"
 						type="text"
+						aria-label="Search help topics"
 						placeholder="Search help topics..."
 						class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
 						oninput="searchHelp(this.value)"

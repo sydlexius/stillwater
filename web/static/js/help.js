@@ -102,7 +102,7 @@
             var p = pages[i];
             if (p.charAt(p.length - 1) === '/') {
                 // Prefix match for paths ending with /
-                if (path.indexOf(p) === 0) return true;
+                if (path.indexOf(p) === 0 || (path + '/').indexOf(p) === 0) return true;
             } else {
                 if (path === p) return true;
             }
