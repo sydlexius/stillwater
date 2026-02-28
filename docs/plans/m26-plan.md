@@ -92,6 +92,11 @@ All six issues are independent. No inter-issue dependencies.
 #### Copilot review fixes (round 3)
 - [x] Guard against negative retention in SetRetention (clamp to 0)
 
+#### Copilot review fixes (round 4)
+- [x] Clamp negative values to 0 in SetMaxAgeDays() for consistency
+- [x] Update backup helper text to mention both count and age pruning
+- [x] Rename saveBackupRetention() to saveBackupSettings()
+
 ### PR 3 -- Async Run Rules (#291)
 - [x] Implementation
 - [x] PR opened (#295)
@@ -111,6 +116,9 @@ All six issues are independent. No inter-issue dependencies.
 #### Copilot review fixes (round 3)
 - [x] Stop polling on non-OK HTTP response (clearInterval + resetRuleButton)
 
+#### Copilot review fixes (round 4)
+- [x] Release mutex before logging in error path (match panic recovery pattern)
+
 ### PR 4 -- Help Overlay (#237)
 - [x] Implementation
 - [x] PR opened (#296)
@@ -124,6 +132,9 @@ All six issues are independent. No inter-issue dependencies.
 
 #### Copilot review fixes (round 3)
 - [x] Use aria-labelledby pointing at heading ID for modal consistency
+
+#### Copilot review fixes (round 4)
+- [x] Use encodeURIComponent for fragment ID in help overlay href
 
 ## UAT / Merge Order
 
@@ -142,3 +153,4 @@ All six issues are independent. No inter-issue dependencies.
 - 2026-02-27: All 4 PRs pushed with Copilot review feedback addressed; PR #296 opened for help overlay
 - 2026-02-27: Round 2 Copilot review fixes pushed to all 4 PRs (9 actionable items addressed, 2 skipped as out-of-scope)
 - 2026-02-27: Round 3 Copilot review fixes pushed to PRs #294, #295, #296 (3 actionable items; PR #293 had no new actionable items)
+- 2026-02-27: Round 4 Copilot review fixes pushed to PRs #294, #295, #296 (5 actionable items across 3 PRs)
