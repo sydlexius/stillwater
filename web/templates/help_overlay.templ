@@ -1,0 +1,103 @@
+package templates
+
+// HelpOverlay renders a searchable help overlay modal with guide section data
+// embedded as JSON. Opened via the ? key or the navbar help button.
+templ HelpOverlay() {
+	<div
+		id="help-overlay"
+		class="fixed inset-0 z-50 hidden"
+		role="dialog"
+		aria-modal="true"
+		aria-labelledby="help-overlay-title"
+	>
+		<div class="fixed inset-0 bg-black/40 transition-opacity" id="help-backdrop"></div>
+		<div class="fixed inset-0 flex items-center justify-center p-4">
+			<div class="relative w-full max-w-2xl max-h-[80vh] rounded-lg bg-white dark:bg-gray-800 shadow-xl flex flex-col">
+				<div class="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+					<h3 id="help-overlay-title" class="text-lg font-semibold text-gray-900 dark:text-gray-100">Help</h3>
+					<button
+						type="button"
+						class="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+						aria-label="Close help"
+						onclick="toggleHelpOverlay()"
+					>
+						<svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+							<path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"></path>
+						</svg>
+					</button>
+				</div>
+				<div class="px-6 py-3 border-b border-gray-200 dark:border-gray-700">
+					<input
+						id="help-search-input"
+						type="text"
+						aria-label="Search help topics"
+						placeholder="Search help topics..."
+						class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+						oninput="searchHelp(this.value)"
+					/>
+				</div>
+				<div id="help-results" class="px-6 py-4 overflow-y-auto space-y-2"></div>
+			</div>
+		</div>
+	</div>
+	<script id="help-data" type="application/json">
+		[
+			{
+				"id": "library-structure",
+				"title": "Library Structure",
+				"summary": "How to organize your music library with one album artist per top-level directory.",
+				"keywords": ["library", "directory", "folder", "artist", "music", "organize", "scan"],
+				"pages": ["/", "/artists", "/settings", "/guide"]
+			},
+			{
+				"id": "scanner-exclusions",
+				"title": "Scanner Exclusions",
+				"summary": "Default skip list for compilation and soundtrack directories during scanning.",
+				"keywords": ["scanner", "exclusion", "skip", "compilation", "soundtrack", "various artists"],
+				"pages": ["/artists", "/settings", "/guide"]
+			},
+			{
+				"id": "platform-profiles",
+				"title": "Platform Profiles",
+				"summary": "Configure naming conventions for Kodi, Emby, Jellyfin, and Plex image and NFO files.",
+				"keywords": ["platform", "profile", "kodi", "emby", "jellyfin", "plex", "naming"],
+				"pages": ["/settings", "/guide"]
+			},
+			{
+				"id": "providers",
+				"title": "Metadata Providers",
+				"summary": "Set up and prioritize metadata sources like MusicBrainz, Fanart.tv, and Last.fm.",
+				"keywords": ["provider", "metadata", "musicbrainz", "fanart", "lastfm", "api", "key"],
+				"pages": ["/settings", "/artists/", "/guide"]
+			},
+			{
+				"id": "images",
+				"title": "Image Management",
+				"summary": "Fetch, crop, and manage artist images (thumbnails, fanart, logos, banners).",
+				"keywords": ["image", "thumbnail", "fanart", "logo", "banner", "crop", "fetch"],
+				"pages": ["/artists/", "/guide"]
+			},
+			{
+				"id": "connections",
+				"title": "Server Connections",
+				"summary": "Connect to Emby, Jellyfin, or Lidarr servers for library refresh and webhook integration.",
+				"keywords": ["connection", "server", "emby", "jellyfin", "lidarr", "webhook", "api"],
+				"pages": ["/settings", "/guide"]
+			},
+			{
+				"id": "rules",
+				"title": "Rule Engine",
+				"summary": "Configure health rules to detect and auto-fix missing metadata, images, and NFO issues.",
+				"keywords": ["rule", "health", "score", "violation", "fix", "automation"],
+				"pages": ["/", "/artists/", "/settings", "/guide"]
+			},
+			{
+				"id": "nfo-files",
+				"title": "NFO Files",
+				"summary": "How Stillwater reads and writes NFO metadata files for media server compatibility.",
+				"keywords": ["nfo", "metadata", "file", "write", "read", "xml"],
+				"pages": ["/artists/", "/guide"]
+			}
+		]
+	</script>
+}

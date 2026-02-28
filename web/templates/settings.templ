@@ -48,6 +48,8 @@ type SettingsData struct {
 	BadgeSeverityInfo    bool
 	RuleScheduleHours    int
 	APITokens            []auth.APIToken
+	BackupRetention      int
+	BackupMaxAgeDays     int
 }
 
 // settingsTab defines a tab in the settings page navigation.
@@ -492,7 +494,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 							<div>
 								<div class="font-medium text-sm">Auto-fetch images</div>
 								<div class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-									Automatically search providers for images when opening the image management page.
+									When opening an artist's image management page, automatically search providers for available images. This applies to manual browsing only and does not affect rule-based image fetching.
 								</div>
 							</div>
 							<button
@@ -1163,7 +1165,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 						<h2 class="text-lg font-semibold">Database Backup</h2>
 						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-							Create and download database backups. Automatic backups run daily with 7-day retention.
+							Create, download, and manage database backups.
 						</p>
 					</div>
 					<div class="px-6 py-4 space-y-4">
@@ -1181,6 +1183,48 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 							<span id="backup-spinner" class="htmx-indicator text-sm text-gray-500 dark:text-gray-400">
 								Creating backup...
 							</span>
+						</div>
+						<div class="pt-2 border-t border-gray-200 dark:border-gray-700">
+							<h3 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Retention</h3>
+							<div class="flex flex-wrap items-center gap-4">
+								<div class="flex items-center gap-2">
+									<label for="backup-retention" class="text-sm text-gray-600 dark:text-gray-400">Keep</label>
+									<input
+										type="number"
+										id="backup-retention"
+										min="1"
+										max="100"
+										value={ fmt.Sprint(data.BackupRetention) }
+										class="w-20 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1.5 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+									/>
+									<span class="text-sm text-gray-600 dark:text-gray-400">backups</span>
+								</div>
+								<div class="flex items-center gap-2">
+									<label for="backup-max-age" class="text-sm text-gray-600 dark:text-gray-400">Max age</label>
+									<select
+										id="backup-max-age"
+										class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+									>
+										<option value="0" selected?={ data.BackupMaxAgeDays == 0 }>Never</option>
+										<option value="7" selected?={ data.BackupMaxAgeDays == 7 }>7 days</option>
+										<option value="14" selected?={ data.BackupMaxAgeDays == 14 }>14 days</option>
+										<option value="30" selected?={ data.BackupMaxAgeDays == 30 }>30 days</option>
+										<option value="60" selected?={ data.BackupMaxAgeDays == 60 }>60 days</option>
+										<option value="90" selected?={ data.BackupMaxAgeDays == 90 }>90 days</option>
+									</select>
+								</div>
+								<button
+									type="button"
+									class="text-sm px-3 py-1.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+									onclick="saveBackupSettings()"
+								>
+									Save
+								</button>
+								<span id="backup-retention-status" class="text-xs text-green-600 dark:text-green-400 hidden">Saved</span>
+							</div>
+							<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+								Oldest backups are pruned after each automatic backup when they exceed the configured retention count or maximum age.
+							</p>
 						</div>
 						<div id="backup-list" hx-get="/api/v1/settings/backup/history" hx-trigger="load" hx-swap="innerHTML">
 							<p class="text-sm text-gray-500 dark:text-gray-400 italic">Loading backup history...</p>
@@ -1389,6 +1433,48 @@ templ maintenanceScript() {
 				}).catch(function() {});
 			}
 		});
+
+		function saveBackupSettings() {
+			var csrfToken = document.cookie.replace(
+				/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1"
+			);
+			var retention = parseInt(document.getElementById('backup-retention').value, 10);
+			var maxAge = parseInt(document.getElementById('backup-max-age').value, 10);
+			var status = document.getElementById('backup-retention-status');
+
+			if (!Number.isFinite(retention) || retention < 1) {
+				showToast('Retention count must be a positive number');
+				return;
+			}
+			if (!Number.isFinite(maxAge) || maxAge < 0) {
+				showToast('Max age must be zero or a positive number');
+				return;
+			}
+
+			var settings = {};
+			settings['backup_retention_count'] = retention.toString();
+			settings['backup_max_age_days'] = maxAge.toString();
+
+			fetch('/api/v1/settings', {
+				method: 'PUT',
+				headers: {
+					'Content-Type': 'application/json',
+					'X-CSRF-Token': csrfToken
+				},
+				body: JSON.stringify(settings)
+			}).then(function(r) {
+				if (r.ok) {
+					if (status) {
+						status.classList.remove('hidden');
+						setTimeout(function() { status.classList.add('hidden'); }, 3000);
+					}
+				} else {
+					showToast('Failed to save backup settings');
+				}
+			}).catch(function() {
+				showToast('Failed to save backup settings');
+			});
+		}
 	</script>
 }
 

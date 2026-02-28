@@ -121,6 +121,30 @@ components:
         created_at:
           type: string
           format: date-time
+    RuleRunStatus:
+      type: object
+      properties:
+        running:
+          type: boolean
+        status:
+          type: string
+          enum: [idle, running, completed, failed]
+        artists_processed:
+          type: integer
+        violations_found:
+          type: integer
+        fixes_attempted:
+          type: integer
+        fixes_succeeded:
+          type: integer
+        started_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+        error:
+          type: string
 
 paths:
   /health:
@@ -1290,15 +1314,41 @@ paths:
   /rules/run-all:
     post:
       tags: [Rules]
-      summary: Run all enabled rules
+      summary: Run all enabled rules (async)
+      description: >
+        Starts an asynchronous run of all enabled rules against all artists.
+        Returns 202 immediately; poll GET /rules/run-all/status for completion status.
       operationId: runAllRules
       responses:
-        "200":
-          description: Execution result
+        "202":
+          description: Run started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuleRunStatus"
+        "409":
+          description: A run is already in progress
           content:
             application/json:
               schema:
                 type: object
+                properties:
+                  error:
+                    type: string
+
+  /rules/run-all/status:
+    get:
+      tags: [Rules]
+      summary: Get async rule-run status
+      description: Returns the current status of the most recent run-all-rules operation.
+      operationId: getRunAllRulesStatus
+      responses:
+        "200":
+          description: Current run status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuleRunStatus"
 
   /rules/classical-mode:
     get:
@@ -1764,6 +1814,35 @@ paths:
               schema:
                 type: string
                 format: binary
+    delete:
+      tags: [Backup]
+      summary: Delete a backup file
+      operationId: deleteBackup
+      parameters:
+        - name: filename
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Backup deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+        "400":
+          description: Invalid filename
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Backup not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /scanner/run:
     post:

@@ -11,18 +11,17 @@ templ IndexPage(assets AssetPaths) {
 					</p>
 				</div>
 				<button
-					hx-post="/api/v1/rules/run-all"
-					hx-swap="none"
-					hx-indicator="#run-all-spinner"
-					class="inline-flex items-center justify-center gap-2 rounded-md bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
+					id="run-rules-btn"
+					onclick="startRuleRun()"
+					class="inline-flex items-center justify-center gap-2 rounded-md bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
 				>
-					<span id="run-all-spinner" class="htmx-indicator">
+					<span id="run-rules-spinner" class="hidden">
 						<svg class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
 							<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
 							<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
 						</svg>
 					</span>
-					Run Rules
+					<span id="run-rules-label">Run Rules</span>
 				</button>
 			</div>
 			<div
@@ -45,6 +44,99 @@ templ IndexPage(assets AssetPaths) {
 		</div>
 		<script src={ assets.ChartJS }></script>
 		<script>
+			function startRuleRun() {
+				var btn = document.getElementById('run-rules-btn');
+				var spinner = document.getElementById('run-rules-spinner');
+				var label = document.getElementById('run-rules-label');
+				var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*\=\s*([^;]*).*$)|^.*$/, "$1");
+
+				btn.disabled = true;
+				spinner.classList.remove('hidden');
+				label.textContent = 'Running...';
+
+				fetch('/api/v1/rules/run-all', {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json',
+						'X-CSRF-Token': csrfToken
+					}
+				}).then(function(r) {
+					if (r.status === 202) {
+						showSuccessToast('Rule evaluation started...');
+						pollRuleStatus();
+					} else if (r.status === 409) {
+						showToast('Rules already running');
+						pollRuleStatus();
+					} else {
+						return r.json().then(function(data) {
+							showToast(data.error || 'Failed to start rules');
+							resetRuleButton();
+						});
+					}
+				}).catch(function() {
+					showToast('Failed to start rule evaluation');
+					resetRuleButton();
+				});
+			}
+
+			function pollRuleStatus() {
+				var attempts = 0;
+				var maxAttempts = 150;
+				var poll = setInterval(function() {
+					if (++attempts > maxAttempts) {
+						clearInterval(poll);
+						showToast('Rule status polling timed out');
+						resetRuleButton();
+						return;
+					}
+					fetch('/api/v1/rules/run-all/status')
+						.then(function(r) {
+							if (!r.ok) {
+								clearInterval(poll);
+								showToast('Status check failed (HTTP ' + r.status + ')');
+								resetRuleButton();
+								return null;
+							}
+							return r.json();
+						})
+						.then(function(data) {
+							if (!data) return;
+							if (data.status === 'completed') {
+								clearInterval(poll);
+								var msg = 'Rules complete: ' + data.violations_found + ' violations';
+								if (data.fixes_succeeded > 0) {
+									msg += ', ' + data.fixes_succeeded + ' fixed';
+								}
+								showSuccessToast(msg);
+								resetRuleButton();
+								htmx.ajax('GET', '/api/v1/reports/health', {target: '#health-summary', swap: 'innerHTML'});
+							} else if (data.status === 'failed') {
+								clearInterval(poll);
+								showToast('Rule evaluation failed: ' + (data.error || 'unknown error'));
+								resetRuleButton();
+							} else if (data.status === 'idle') {
+								clearInterval(poll);
+								showToast('Rule run state was lost');
+								resetRuleButton();
+							}
+						})
+						.catch(function() {
+							clearInterval(poll);
+							showToast('Network error while checking rule status');
+							resetRuleButton();
+						});
+				}, 2000);
+			}
+
+			function resetRuleButton() {
+				var btn = document.getElementById('run-rules-btn');
+				var spinner = document.getElementById('run-rules-spinner');
+				var label = document.getElementById('run-rules-label');
+				if (btn) btn.disabled = false;
+				if (spinner) spinner.classList.add('hidden');
+				if (label) label.textContent = 'Run Rules';
+			}
+
 			(function() {
 				var isDark = document.documentElement.classList.contains('dark');
 				var textColor = isDark ? '#9ca3af' : '#6b7280';

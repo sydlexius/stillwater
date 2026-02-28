@@ -46,63 +46,46 @@ All six issues are independent. No inter-issue dependencies.
 
 #### Issue #234 -- Bug: Scan Library spinner not working
 - [x] Implementation
-- [x] PR opened (#293)
+- [ ] PR opened (#?)
 - [ ] CI passing
 - [ ] PR merged
 
 #### Issue #235 -- UX: Clarify auto-fetch images setting description
 - [x] Implementation
-- [x] PR opened (#293)
+- [ ] PR opened (#?)
 - [ ] CI passing
 - [ ] PR merged
 
 #### Issue #236 -- UX: Refresh Metadata should hot-reload artist detail page
 - [x] Implementation
-- [x] PR opened (#293)
+- [ ] PR opened (#?)
 - [ ] CI passing
 - [ ] PR merged
-
-#### Copilot review fixes
-- [x] Fix duplicate OOB IDs in RefreshOOBFragments (selector-based syntax)
-- [x] Fix unchecked render errors in renderRefreshWithOOB
 
 ### PR 2 -- Backup Management (#238)
-- [x] Implementation
-- [x] Tests added
-- [x] PR opened (#294)
+- [ ] Implementation
+- [ ] Tests added
+- [ ] PR opened (#?)
 - [ ] CI passing
 - [ ] PR merged
-
-#### Copilot review fixes
-- [x] NaN validation in saveBackupRetention() JS
-- [x] Load DB-persisted backup settings on startup
-- [x] Data race fix (sync.RWMutex on retention/maxAgeDays)
-- [x] Return 404 for missing backup file in DELETE handler
-- [x] Validate backup settings before persisting in handleUpdateSettings
-- [x] Add DELETE handler tests
 
 ### PR 3 -- Async Run Rules (#291)
-- [x] Implementation
-- [x] PR opened (#295)
+- [ ] Implementation
+- [ ] PR opened (#?)
 - [ ] CI passing
 - [ ] PR merged
 
-#### Copilot review fixes
-- [x] Data race fix in handleRunAllRulesStatus (value copy under lock)
-- [x] context.Background() to context.WithoutCancel
-- [x] pollRuleStatus() idle/error handling
-
 ### PR 4 -- Help Overlay (#237)
-- [x] Implementation
-- [x] PR opened (#296)
+- [ ] Implementation
+- [ ] PR opened (#?)
 - [ ] CI passing
 - [ ] PR merged
 
 ## UAT / Merge Order
 
-1. PR #293 (smallest, most confidence)
-2. PR #294 and PR #295 (any order)
-3. PR #296 last (largest)
+1. PR 1 (smallest, most confidence)
+2. PR 2 and PR 3 (any order)
+3. PR 4 last (largest)
 
 ## Notes
 
@@ -112,4 +95,3 @@ All six issues are independent. No inter-issue dependencies.
 - #237: Largest scope; client-side search over structured guide sections
 - #238: `IsValidBackupFilename()` already exists for delete endpoint validation
 - #291: Follow scanner polling pattern with in-memory state tracking on Router
-- 2026-02-27: All 4 PRs pushed with Copilot review feedback addressed; PR #296 opened for help overlay

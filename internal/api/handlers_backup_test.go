@@ -293,6 +293,105 @@ func TestHandleBackupDownload_FileNotFound(t *testing.T) {
 	}
 }
 
+func TestHandleBackupDelete_JSON(t *testing.T) {
+	r, backupSvc := testRouterWithBackup(t)
+
+	info, err := backupSvc.Backup(context.Background())
+	if err != nil {
+		t.Fatalf("creating test backup: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/settings/backup/"+info.Filename, nil)
+	req.SetPathValue("filename", info.Filename)
+	w := httptest.NewRecorder()
+
+	r.handleBackupDelete(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if resp["status"] != "deleted" {
+		t.Errorf("status = %q, want %q", resp["status"], "deleted")
+	}
+}
+
+func TestHandleBackupDelete_HTMX(t *testing.T) {
+	r, backupSvc := testRouterWithBackup(t)
+
+	info, err := backupSvc.Backup(context.Background())
+	if err != nil {
+		t.Fatalf("creating test backup: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/settings/backup/"+info.Filename, nil)
+	req.SetPathValue("filename", info.Filename)
+	req.Header.Set("HX-Request", "true")
+	w := httptest.NewRecorder()
+
+	r.handleBackupDelete(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	ct := w.Header().Get("Content-Type")
+	if ct != "text/html" {
+		t.Errorf("Content-Type = %q, want text/html", ct)
+	}
+
+	body := w.Body.String()
+	if !strings.Contains(body, "No backups yet") {
+		t.Errorf("expected empty backup list after delete, got: %s", body)
+	}
+}
+
+func TestHandleBackupDelete_InvalidFilename(t *testing.T) {
+	r, _ := testRouterWithBackup(t)
+
+	cases := []struct {
+		name     string
+		filename string
+	}{
+		{"path traversal", "../etc/passwd"},
+		{"wrong pattern", "not-a-backup.txt"},
+		{"empty filename", ""},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodDelete, "/api/v1/settings/backup/"+tc.filename, nil)
+			req.SetPathValue("filename", tc.filename)
+			w := httptest.NewRecorder()
+
+			r.handleBackupDelete(w, req)
+
+			if w.Code != http.StatusBadRequest {
+				t.Errorf("status = %d, want %d; body: %s", w.Code, http.StatusBadRequest, w.Body.String())
+			}
+		})
+	}
+}
+
+func TestHandleBackupDelete_NotFound(t *testing.T) {
+	r, _ := testRouterWithBackup(t)
+
+	filename := "stillwater-20260101-120000.db"
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/settings/backup/"+filename, nil)
+	req.SetPathValue("filename", filename)
+	w := httptest.NewRecorder()
+
+	r.handleBackupDelete(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d; body: %s", w.Code, http.StatusNotFound, w.Body.String())
+	}
+}
+
 func TestFormatBytes(t *testing.T) {
 	cases := []struct {
 		input int64
