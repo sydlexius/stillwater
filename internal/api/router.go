@@ -95,6 +95,8 @@ type Router struct {
 	ssrfClient         *http.Client
 	libraryOps         map[string]*LibraryOpResult
 	libraryOpsMu       sync.Mutex
+	ruleRun            *ruleRunStatus
+	ruleRunMu          sync.Mutex
 }
 
 // NewRouter creates a new Router with all routes configured.
@@ -255,6 +257,7 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("PUT "+bp+"/api/v1/rules/{id}", wrapAuth(r.handleUpdateRule, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/rules/{id}/run", wrapAuth(r.handleRunRule, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/rules/run-all", wrapAuth(r.handleRunAllRules, authMw))
+	mux.HandleFunc("GET "+bp+"/api/v1/rules/run-all/status", wrapAuth(r.handleRunAllRulesStatus, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/rules/classical-mode", wrapAuth(r.handleGetClassicalMode, authMw))
 	mux.HandleFunc("PUT "+bp+"/api/v1/rules/classical-mode", wrapAuth(r.handleSetClassicalMode, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/health", wrapAuth(r.handleEvaluateArtist, authMw))

@@ -1,11 +1,26 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/rule"
 )
+
+// ruleRunStatus tracks the state of an async run-all-rules operation.
+type ruleRunStatus struct {
+	Running          bool      `json:"running"`
+	Status           string    `json:"status"` // idle, running, completed, failed
+	ArtistsProcessed int       `json:"artists_processed"`
+	ViolationsFound  int       `json:"violations_found"`
+	FixesAttempted   int       `json:"fixes_attempted"`
+	FixesSucceeded   int       `json:"fixes_succeeded"`
+	StartedAt        time.Time `json:"started_at,omitempty"`
+	CompletedAt      time.Time `json:"completed_at,omitempty"`
+	Error            string    `json:"error,omitempty"`
+}
 
 // handleListRules returns all rules as JSON.
 // GET /api/v1/rules
@@ -123,17 +138,62 @@ func (r *Router) handleRunRule(w http.ResponseWriter, req *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
-// handleRunAllRules runs all enabled rules against all artists and attempts fixes.
+// handleRunAllRules starts an async run of all enabled rules against all artists.
+// Returns 202 Accepted immediately with status polling via GET /api/v1/rules/run-all/status.
+// Returns 409 Conflict if a run is already in progress.
 // POST /api/v1/rules/run-all
 func (r *Router) handleRunAllRules(w http.ResponseWriter, req *http.Request) {
-	result, err := r.pipeline.RunAll(req.Context())
-	if err != nil {
-		r.logger.Error("running all rules", "error", err)
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to run rules"})
+	r.ruleRunMu.Lock()
+	if r.ruleRun != nil && r.ruleRun.Running {
+		r.ruleRunMu.Unlock()
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "rules already running"})
 		return
 	}
+	r.ruleRun = &ruleRunStatus{
+		Running:   true,
+		Status:    "running",
+		StartedAt: time.Now().UTC(),
+	}
+	r.ruleRunMu.Unlock()
 
-	writeJSON(w, http.StatusOK, result)
+	go func() {
+		result, err := r.pipeline.RunAll(context.Background())
+
+		r.ruleRunMu.Lock()
+		defer r.ruleRunMu.Unlock()
+
+		r.ruleRun.Running = false
+		r.ruleRun.CompletedAt = time.Now().UTC()
+
+		if err != nil {
+			r.logger.Error("running all rules", "error", err)
+			r.ruleRun.Status = "failed"
+			r.ruleRun.Error = err.Error()
+			return
+		}
+
+		r.ruleRun.Status = "completed"
+		r.ruleRun.ArtistsProcessed = result.ArtistsProcessed
+		r.ruleRun.ViolationsFound = result.ViolationsFound
+		r.ruleRun.FixesAttempted = result.FixesAttempted
+		r.ruleRun.FixesSucceeded = result.FixesSucceeded
+	}()
+
+	writeJSON(w, http.StatusAccepted, map[string]string{"status": "started"})
+}
+
+// handleRunAllRulesStatus returns the current status of the async run-all-rules operation.
+// GET /api/v1/rules/run-all/status
+func (r *Router) handleRunAllRulesStatus(w http.ResponseWriter, req *http.Request) {
+	r.ruleRunMu.Lock()
+	status := r.ruleRun
+	r.ruleRunMu.Unlock()
+
+	if status == nil {
+		writeJSON(w, http.StatusOK, &ruleRunStatus{Status: "idle"})
+		return
+	}
+	writeJSON(w, http.StatusOK, status)
 }
 
 // handleGetClassicalMode returns the current classical music evaluation mode.
