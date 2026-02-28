@@ -35,8 +35,12 @@ func (r *Router) handleLidarrWebhook(w http.ResponseWriter, req *http.Request) {
 	// Respond immediately
 	writeJSON(w, http.StatusOK, map[string]string{"status": "accepted"})
 
-	// Process asynchronously
-	go r.processLidarrEvent(context.Background(), payload)
+	// Process asynchronously with a bounded context.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	go func() {
+		defer cancel()
+		r.processLidarrEvent(ctx, payload)
+	}()
 }
 
 func (r *Router) processLidarrEvent(ctx context.Context, payload webhook.LidarrPayload) {
@@ -88,11 +92,11 @@ func (r *Router) handleLidarrArtistAdd(ctx context.Context, payload webhook.Lida
 	}
 
 	if existing != nil {
-		// Artist known: re-evaluate rules only
+		// Artist known: re-evaluate rules for this artist only
 		r.logger.Info("lidarr ArtistAdded: artist already tracked, evaluating rules",
 			"artist", existing.Name, "mbid", mbid)
-		if _, err := r.pipeline.RunAll(ctx); err != nil {
-			r.logger.Error("rule evaluation after lidarr ArtistAdded failed", "error", err)
+		if _, err := r.pipeline.RunForArtist(ctx, existing); err != nil {
+			r.logger.Error("rule evaluation after lidarr ArtistAdded failed", "artist", existing.Name, "error", err)
 		}
 		return
 	}
@@ -142,10 +146,10 @@ func (r *Router) handleLidarrDownload(ctx context.Context, payload webhook.Lidar
 		return
 	}
 
-	r.logger.Info("lidarr download event: re-evaluating rules",
+	r.logger.Info("lidarr download event: re-evaluating rules for artist",
 		"artist", existing.Name, "mbid", mbid)
-	if _, err := r.pipeline.RunAll(ctx); err != nil {
-		r.logger.Error("rule evaluation after lidarr download failed", "error", err)
+	if _, err := r.pipeline.RunForArtist(ctx, existing); err != nil {
+		r.logger.Error("rule evaluation after lidarr download failed", "artist", existing.Name, "mbid", mbid, "error", err)
 	}
 }
 

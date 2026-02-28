@@ -186,6 +186,64 @@ func (p *Pipeline) RunRule(ctx context.Context, ruleID string) (*RunResult, erro
 	return result, nil
 }
 
+// RunForArtist evaluates rules and attempts fixes for a single artist.
+func (p *Pipeline) RunForArtist(ctx context.Context, a *artist.Artist) (*RunResult, error) {
+	result := &RunResult{}
+
+	if a.IsExcluded {
+		return result, nil
+	}
+
+	result.ArtistsProcessed = 1
+
+	eval, err := p.engine.Evaluate(ctx, a)
+	if err != nil {
+		return nil, fmt.Errorf("evaluating artist %s: %w", a.Name, err)
+	}
+
+	for j := range eval.Violations {
+		v := &eval.Violations[j]
+		result.ViolationsFound++
+
+		if !v.Fixable {
+			continue
+		}
+
+		fr := p.attemptFix(ctx, a, v)
+		result.Results = append(result.Results, *fr)
+		result.FixesAttempted++
+
+		status := ViolationStatusOpen
+		if fr.Fixed {
+			result.FixesSucceeded++
+			status = ViolationStatusResolved
+		} else if len(fr.Candidates) > 0 {
+			status = ViolationStatusPendingChoice
+		}
+
+		rv := &RuleViolation{
+			RuleID:     v.RuleID,
+			ArtistID:   a.ID,
+			ArtistName: a.Name,
+			Severity:   v.Severity,
+			Message:    v.Message,
+			Fixable:    true,
+			Status:     status,
+			Candidates: fr.Candidates,
+		}
+		if status == ViolationStatusResolved {
+			now := time.Now().UTC()
+			rv.ResolvedAt = &now
+		}
+		if err := p.ruleService.UpsertViolation(ctx, rv); err != nil {
+			p.logger.Warn("persisting fix result violation", "rule_id", v.RuleID, "artist", a.Name, "error", err)
+		}
+	}
+
+	p.updateHealthScore(ctx, a)
+	return result, nil
+}
+
 // RunAll evaluates all enabled rules against all non-excluded artists and attempts fixes.
 func (p *Pipeline) RunAll(ctx context.Context) (*RunResult, error) {
 	result := &RunResult{}

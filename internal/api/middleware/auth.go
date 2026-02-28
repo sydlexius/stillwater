@@ -126,7 +126,9 @@ func RequireScope(scope string) func(http.HandlerFunc) http.HandlerFunc {
 	return func(next http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			if !HasScope(r.Context(), scope) {
-				http.Error(w, `{"error":"forbidden: missing scope `+scope+`"}`, http.StatusForbidden)
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusForbidden)
+				_, _ = w.Write([]byte(`{"error":"forbidden: missing scope ` + scope + `"}`))
 				return
 			}
 			next.ServeHTTP(w, r)
