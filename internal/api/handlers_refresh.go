@@ -45,7 +45,7 @@ func (r *Router) handleArtistRefresh(w http.ResponseWriter, req *http.Request) {
 	}
 
 	if isHTMXRequest(req) {
-		renderTempl(w, req, templates.RefreshResultSummary(a.ID, sources))
+		r.renderRefreshWithOOB(w, req, a.ID, sources)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -133,7 +133,7 @@ func (r *Router) handleRefreshLink(w http.ResponseWriter, req *http.Request) {
 	}
 
 	if isHTMXRequest(req) {
-		renderTempl(w, req, templates.RefreshResultSummary(a.ID, sources))
+		r.renderRefreshWithOOB(w, req, a.ID, sources)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -269,6 +269,43 @@ func convertProviderMembers(artistID string, members []provider.MemberInfo) []ar
 		}
 	}
 	return result
+}
+
+// renderRefreshWithOOB renders the refresh result summary followed by OOB
+// fragments that update the artist detail sections in-place.
+func (r *Router) renderRefreshWithOOB(w http.ResponseWriter, req *http.Request, artistID string, sources []provider.FieldSource) {
+	// Re-fetch the updated artist to get current field values
+	a, err := r.artistService.GetByID(req.Context(), artistID)
+	if err != nil {
+		renderTempl(w, req, templates.RefreshResultSummary(artistID, sources))
+		return
+	}
+
+	members, err := r.artistService.ListMembersByArtistID(req.Context(), artistID)
+	if err != nil {
+		r.logger.Warn("listing members for OOB refresh", "artist_id", artistID, "error", err)
+	}
+
+	priorities, _ := r.providerSettings.GetPriorities(req.Context())
+	fieldProviders := buildFieldProvidersMap(priorities)
+
+	var isDegraded bool
+	if r.libraryService != nil && a.LibraryID != "" {
+		if lib, err := r.libraryService.GetByID(req.Context(), a.LibraryID); err == nil {
+			isDegraded = lib.IsDegraded()
+		}
+	}
+
+	oobData := templates.RefreshOOBData{
+		Artist:         *a,
+		Members:        members,
+		FieldProviders: fieldProviders,
+		IsDegraded:     isDegraded,
+	}
+
+	// Write primary response then OOB fragments sequentially
+	templates.RefreshResultSummary(a.ID, sources).Render(req.Context(), w) //nolint:errcheck
+	templates.RefreshOOBFragments(oobData).Render(req.Context(), w)        //nolint:errcheck
 }
 
 // extractFormOrJSONField reads a named value from either a JSON body or form data.
