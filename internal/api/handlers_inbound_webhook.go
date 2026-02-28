@@ -40,6 +40,14 @@ func (r *Router) handleLidarrWebhook(w http.ResponseWriter, req *http.Request) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	go func() {
 		defer cancel()
+		defer func() {
+			if v := recover(); v != nil {
+				r.logger.Error("panic in lidarr webhook handler",
+					"event_type", payload.EventType,
+					"panic", v,
+				)
+			}
+		}()
 		r.processLidarrEvent(ctx, payload)
 	}()
 }
