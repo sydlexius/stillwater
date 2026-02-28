@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/library"
+	"github.com/sydlexius/stillwater/internal/watcher"
 )
 
 // handleListLibraries returns all libraries as JSON.
@@ -155,7 +157,7 @@ func (r *Router) handleUpdateLibrary(w http.ResponseWriter, req *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 		return
 	}
-	r.populateFSNotifySupported([]library.Library{*existing})
+	r.populateFSNotifySupportedPtr(existing)
 	writeJSON(w, http.StatusOK, existing)
 }
 
@@ -181,6 +183,7 @@ func (r *Router) handleDeleteLibrary(w http.ResponseWriter, req *http.Request) {
 
 // populateFSNotifySupported sets the FSNotifySupported field on each library
 // from the probe cache. This is a runtime-only field not stored in the DB.
+// For paths not yet probed, an on-demand probe is run and cached.
 func (r *Router) populateFSNotifySupported(libs []library.Library) {
 	if r.probeCache == nil {
 		return
@@ -189,8 +192,26 @@ func (r *Router) populateFSNotifySupported(libs []library.Library) {
 		if libs[i].IsDegraded() {
 			continue
 		}
-		if supported, ok := r.probeCache.Get(libs[i].Path); ok {
-			libs[i].FSNotifySupported = supported
-		}
+		r.resolveProbe(&libs[i])
 	}
+}
+
+// populateFSNotifySupportedPtr is the single-library pointer variant used
+// by update handlers so the caller's struct is mutated directly.
+func (r *Router) populateFSNotifySupportedPtr(lib *library.Library) {
+	if r.probeCache == nil || lib.IsDegraded() {
+		return
+	}
+	r.resolveProbe(lib)
+}
+
+// resolveProbe sets FSNotifySupported from the probe cache, running an
+// on-demand probe when no cached result exists for the path.
+func (r *Router) resolveProbe(lib *library.Library) {
+	supported, ok := r.probeCache.Get(lib.Path)
+	if !ok {
+		supported = watcher.ProbeFSNotify(lib.Path, 2*time.Second)
+		r.probeCache.Set(lib.Path, supported)
+	}
+	lib.FSNotifySupported = supported
 }

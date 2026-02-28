@@ -29,9 +29,10 @@ type Service struct {
 	refreshPeriod time.Duration
 	probeCache    *ProbeCache
 
-	mu       sync.Mutex
-	watcher  *fsnotify.Watcher
-	watching map[string]bool
+	mu        sync.Mutex
+	watcher   *fsnotify.Watcher
+	watching  map[string]bool
+	knownDirs map[string]map[string]struct{} // root -> set of known subdirectory names
 
 	// Polling state.
 	pollSnapshots map[string]map[string]struct{} // path -> set of dir entry names
@@ -50,6 +51,7 @@ func NewService(scanFn func(ctx context.Context) error, libraries LibraryLister,
 		refreshPeriod: 5 * time.Minute,
 		probeCache:    probeCache,
 		watching:      make(map[string]bool),
+		knownDirs:     make(map[string]map[string]struct{}),
 		pollSnapshots: make(map[string]map[string]struct{}),
 		lastPollTime:  make(map[string]time.Time),
 		pollIntervals: make(map[string]int),
@@ -62,20 +64,20 @@ func (s *Service) SetDebounce(d time.Duration) {
 }
 
 // Start blocks until ctx is canceled. It creates an fsnotify watcher,
-// watches library root directories, and dispatches events.
+// watches library root directories, and dispatches events. If fsnotify
+// is unavailable, the service still runs with poll-only support.
 func (s *Service) Start(ctx context.Context) {
 	w, err := fsnotify.NewWatcher()
 	if err != nil {
-		s.logger.Error("failed to create fsnotify watcher", "error", err)
-		return
+		s.logger.Warn("fsnotify unavailable, running poll-only", "error", err)
+	} else {
+		defer w.Close() //nolint:errcheck
+		s.mu.Lock()
+		s.watcher = w
+		s.mu.Unlock()
+		s.refreshWatchPaths(ctx)
 	}
-	defer w.Close() //nolint:errcheck
 
-	s.mu.Lock()
-	s.watcher = w
-	s.mu.Unlock()
-
-	s.refreshWatchPaths(ctx)
 	s.initPollSnapshots(ctx)
 	s.logger.Info("filesystem watcher starting")
 
@@ -95,19 +97,27 @@ func (s *Service) Start(ctx context.Context) {
 	}
 	scanPending := false
 
+	// When fsnotify is unavailable, use nil channels (never receive).
+	var eventCh <-chan fsnotify.Event
+	var errCh <-chan error
+	if w != nil {
+		eventCh = w.Events
+		errCh = w.Errors
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
 			s.logger.Info("filesystem watcher stopping")
 			return
 
-		case ev, ok := <-w.Events:
+		case ev, ok := <-eventCh:
 			if !ok {
 				return
 			}
 			s.handleFSEvent(ev, debounceTimer, &scanPending)
 
-		case err, ok := <-w.Errors:
+		case err, ok := <-errCh:
 			if !ok {
 				return
 			}
@@ -137,7 +147,9 @@ func (s *Service) Start(ctx context.Context) {
 			}
 
 		case <-refreshTicker.C:
-			s.refreshWatchPaths(ctx)
+			if w != nil {
+				s.refreshWatchPaths(ctx)
+			}
 			s.refreshPollPaths(ctx)
 		}
 	}
@@ -167,6 +179,14 @@ func (s *Service) handleFSEvent(ev fsnotify.Event, debounceTimer *time.Timer, sc
 			return
 		}
 
+		// Track the new directory so Remove events can be verified.
+		s.mu.Lock()
+		if s.knownDirs[parent] == nil {
+			s.knownDirs[parent] = make(map[string]struct{})
+		}
+		s.knownDirs[parent][dirName] = struct{}{}
+		s.mu.Unlock()
+
 		s.logger.Info("directory created in library",
 			"path", ev.Name,
 			"name", dirName,
@@ -194,7 +214,18 @@ func (s *Service) handleFSEvent(ev fsnotify.Event, debounceTimer *time.Timer, sc
 		return
 	}
 
-	// Remove or Rename: publish event, do not trigger scan or delete DB records.
+	// Remove or Rename: only emit if the entry was a known directory.
+	s.mu.Lock()
+	_, wasDir := s.knownDirs[parent][dirName]
+	if wasDir {
+		delete(s.knownDirs[parent], dirName)
+	}
+	s.mu.Unlock()
+
+	if !wasDir {
+		return
+	}
+
 	s.logger.Warn("directory removed from library",
 		"path", ev.Name,
 		"name", dirName,
@@ -255,6 +286,7 @@ func (s *Service) refreshWatchPaths(ctx context.Context) {
 				s.logger.Warn("failed to remove watch", "path", path, "error", err)
 			}
 			delete(s.watching, path)
+			delete(s.knownDirs, path)
 			s.logger.Info("stopped watching library path", "path", path)
 		}
 	}
@@ -269,6 +301,8 @@ func (s *Service) refreshWatchPaths(ctx context.Context) {
 			continue
 		}
 		s.watching[path] = true
+		// Snapshot existing subdirectories so Remove events can be verified.
+		s.knownDirs[path] = readDirSnapshot(path)
 		s.logger.Info("watching library path", "path", path)
 	}
 }
