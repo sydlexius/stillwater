@@ -11,12 +11,14 @@ type Type string
 
 // Known event types.
 const (
-	ArtistNew     Type = "artist.new"
-	MetadataFixed Type = "metadata.fixed"
-	ReviewNeeded  Type = "review.needed"
-	RuleViolation Type = "rule.violation"
-	BulkCompleted Type = "bulk.completed"
-	ScanCompleted Type = "scan.completed"
+	ArtistNew       Type = "artist.new"
+	MetadataFixed   Type = "metadata.fixed"
+	ReviewNeeded    Type = "review.needed"
+	RuleViolation   Type = "rule.violation"
+	BulkCompleted   Type = "bulk.completed"
+	ScanCompleted   Type = "scan.completed"
+	LidarrArtistAdd Type = "lidarr.artist.add"
+	LidarrDownload  Type = "lidarr.download"
 )
 
 // Event represents something that happened in the system.

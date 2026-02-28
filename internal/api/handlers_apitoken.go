@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -107,7 +108,7 @@ func (r *Router) handleRevokeAPIToken(w http.ResponseWriter, req *http.Request) 
 	}
 
 	if err := r.authService.RevokeAPIToken(req.Context(), tokenID, userID); err != nil {
-		if err.Error() == "token not found or already revoked" {
+		if errors.Is(err, auth.ErrTokenNotFound) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
 		} else {
 			r.logger.Error("revoking api token", "token_id", tokenID, "error", err)

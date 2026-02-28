@@ -16,6 +16,9 @@ import (
 
 const sessionDuration = 24 * time.Hour
 
+// ErrTokenNotFound is returned when an API token does not exist or is already revoked.
+var ErrTokenNotFound = errors.New("token not found or already revoked")
+
 // APITokenPrefix identifies Stillwater API tokens.
 const APITokenPrefix = "sw_"
 
@@ -259,7 +262,7 @@ func (s *Service) RevokeAPIToken(ctx context.Context, id, userID string) error {
 	}
 	n, _ := result.RowsAffected()
 	if n == 0 {
-		return errors.New("token not found or already revoked")
+		return ErrTokenNotFound
 	}
 	return nil
 }

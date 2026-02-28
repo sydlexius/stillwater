@@ -13,6 +13,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/auth"
 	"github.com/sydlexius/stillwater/internal/backup"
 	"github.com/sydlexius/stillwater/internal/connection"
+	"github.com/sydlexius/stillwater/internal/event"
 	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/logging"
 	"github.com/sydlexius/stillwater/internal/maintenance"
@@ -51,6 +52,7 @@ type RouterDeps struct {
 	LogManager         *logging.Manager
 	MaintenanceService *maintenance.Service
 	SettingsIOService  *settingsio.Service
+	EventBus           *event.Bus
 	DB                 *sql.DB
 	Logger             *slog.Logger
 	BasePath           string
@@ -82,6 +84,7 @@ type Router struct {
 	logManager         *logging.Manager
 	maintenanceService *maintenance.Service
 	settingsIOService  *settingsio.Service
+	eventBus           *event.Bus
 	logger             *slog.Logger
 	basePath           string
 	staticAssets       *StaticAssets
@@ -117,6 +120,7 @@ func NewRouter(deps RouterDeps) *Router {
 		logManager:         deps.LogManager,
 		maintenanceService: deps.MaintenanceService,
 		settingsIOService:  deps.SettingsIOService,
+		eventBus:           deps.EventBus,
 		db:                 deps.DB,
 		logger:             deps.Logger,
 		basePath:           deps.BasePath,
@@ -192,6 +196,9 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("POST "+bp+"/api/v1/connections/{id}/libraries/{libId}/populate", wrapAuth(r.handlePopulateLibrary, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/connections/{id}/libraries/{libId}/scan", wrapAuth(r.handleScanLibrary, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/libraries/{libId}/operation/status", wrapAuth(r.handleLibraryOpStatus, authMw))
+	// Inbound webhook routes (API token with webhook scope)
+	mux.HandleFunc("POST "+bp+"/api/v1/webhooks/inbound/lidarr",
+		wrapAuth(middleware.RequireScope("webhook")(r.handleLidarrWebhook), authMw))
 	// Webhook routes
 	mux.HandleFunc("GET "+bp+"/api/v1/webhooks", wrapAuth(r.handleListWebhooks, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/webhooks", wrapAuth(r.handleCreateWebhook, authMw))

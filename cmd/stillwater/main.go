@@ -205,6 +205,7 @@ func run() error {
 	for _, eventType := range []event.Type{
 		event.ArtistNew, event.MetadataFixed, event.ReviewNeeded,
 		event.RuleViolation, event.BulkCompleted, event.ScanCompleted,
+		event.LidarrArtistAdd, event.LidarrDownload,
 	} {
 		eventBus.Subscribe(eventType, webhookDispatcher.HandleEvent)
 	}
@@ -243,6 +244,7 @@ func run() error {
 		LogManager:         logManager,
 		MaintenanceService: maintenanceService,
 		SettingsIOService:  settingsIOService,
+		EventBus:           eventBus,
 		DB:                 db,
 		Logger:             logger,
 		BasePath:           cfg.Server.BasePath,
