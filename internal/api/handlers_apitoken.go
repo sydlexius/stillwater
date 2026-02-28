@@ -31,17 +31,28 @@ func (r *Router) handleCreateAPIToken(w http.ResponseWriter, req *http.Request) 
 		return
 	}
 
-	// Validate scopes
+	// Validate and normalize scopes
 	if body.Scopes == "" {
 		body.Scopes = "read"
 	}
+	var normalizedScopes []string
 	for _, s := range strings.Split(body.Scopes, ",") {
-		scope := auth.TokenScope(strings.TrimSpace(s))
+		trimmed := strings.TrimSpace(s)
+		if trimmed == "" {
+			continue
+		}
+		scope := auth.TokenScope(trimmed)
 		if !auth.ValidScopes[scope] {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid scope: " + string(scope)})
 			return
 		}
+		normalizedScopes = append(normalizedScopes, trimmed)
 	}
+	if len(normalizedScopes) == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "no valid scopes provided"})
+		return
+	}
+	body.Scopes = strings.Join(normalizedScopes, ",")
 
 	plaintext, id, err := r.authService.CreateAPIToken(req.Context(), userID, body.Name, body.Scopes)
 	if err != nil {
@@ -96,7 +107,12 @@ func (r *Router) handleRevokeAPIToken(w http.ResponseWriter, req *http.Request) 
 	}
 
 	if err := r.authService.RevokeAPIToken(req.Context(), tokenID, userID); err != nil {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+		if err.Error() == "token not found or already revoked" {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+		} else {
+			r.logger.Error("revoking api token", "token_id", tokenID, "error", err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to revoke token"})
+		}
 		return
 	}
 

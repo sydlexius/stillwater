@@ -357,16 +357,25 @@ func csrfWithExemptions(csrf *middleware.CSRF, next http.Handler, exemptPaths []
 	})
 }
 
-// isAPITokenRequest returns true if the request carries a sw_ API token.
+// isAPITokenRequest returns true if the request carries a sw_ API token
+// and is not also using cookie-based authentication. This ensures CSRF
+// is only bypassed for true token-based API requests, not for browser
+// requests that happen to include a spoofed apikey parameter.
 func isAPITokenRequest(r *http.Request) bool {
 	header := r.Header.Get("Authorization")
-	if strings.HasPrefix(header, "Bearer sw_") {
-		return true
+	hasToken := strings.HasPrefix(header, "Bearer "+auth.APITokenPrefix)
+	if !hasToken {
+		hasToken = strings.HasPrefix(r.URL.Query().Get("apikey"), auth.APITokenPrefix)
 	}
-	if strings.HasPrefix(r.URL.Query().Get("apikey"), "sw_") {
-		return true
+	if !hasToken {
+		return false
 	}
-	return false
+	// If a session cookie is present, treat as a browser request and
+	// do not bypass CSRF based on a potentially unvalidated token param.
+	if _, err := r.Cookie("session"); err == nil {
+		return false
+	}
+	return true
 }
 
 // wrapAuth wraps a handler function with auth middleware.

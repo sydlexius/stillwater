@@ -218,12 +218,10 @@ func (s *Service) ValidateAPIToken(ctx context.Context, token string) (userID st
 		return "", "", errors.New("api token revoked")
 	}
 
-	// Update last_used_at asynchronously
-	go func() {
-		now := time.Now().UTC().Format(time.RFC3339)
-		_, _ = s.db.ExecContext(context.Background(), //nolint:gosec // G701: static query
-			`UPDATE api_tokens SET last_used_at = ? WHERE token_hash = ?`, now, tokenHash)
-	}()
+	// Best-effort update of last_used_at using the caller's context.
+	now := time.Now().UTC().Format(time.RFC3339)
+	_, _ = s.db.ExecContext(ctx, //nolint:gosec // G701: static query
+		`UPDATE api_tokens SET last_used_at = ? WHERE token_hash = ?`, now, tokenHash)
 
 	return userID, scopes, nil
 }

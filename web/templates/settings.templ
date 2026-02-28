@@ -896,7 +896,9 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 									}
 									<div class="flex gap-1 mt-1">
 										for _, scope := range strings.Split(tok.Scopes, ",") {
-											<span class={ "inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium", scopePillClasses(scope) }>{ scope }</span>
+											if strings.TrimSpace(scope) != "" {
+												<span class={ "inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium", scopePillClasses(scope) }>{ strings.TrimSpace(scope) }</span>
+											}
 										}
 									</div>
 									<p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
