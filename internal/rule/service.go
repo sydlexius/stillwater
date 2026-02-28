@@ -454,7 +454,12 @@ func (s *Service) CountActiveViolationsBySeverity(ctx context.Context) (map[stri
 		if err := rows.Scan(&severity, &count); err != nil {
 			return nil, fmt.Errorf("scanning violation count: %w", err)
 		}
-		counts[severity] = count
+		switch severity {
+		case "error", "warning", "info":
+			counts[severity] = count
+		default:
+			// Ignore unknown severities to keep the return shape stable.
+		}
 	}
 	return counts, rows.Err()
 }

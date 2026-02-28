@@ -221,10 +221,7 @@ func (r *Router) handleNotificationCounts(w http.ResponseWriter, req *http.Reque
 		return
 	}
 
-	total := 0
-	for _, n := range counts {
-		total += n
-	}
+	total := counts["error"] + counts["warning"] + counts["info"]
 
 	writeJSON(w, http.StatusOK, map[string]int{
 		"error":   counts["error"],
