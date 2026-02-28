@@ -144,6 +144,9 @@ func (s *Service) SetRetention(count int) {
 
 // SetMaxAgeDays updates the max age in days for pruning.
 func (s *Service) SetMaxAgeDays(days int) {
+	if days < 0 {
+		days = 0
+	}
 	s.mu.Lock()
 	s.maxAgeDays = days
 	s.mu.Unlock()

@@ -1216,14 +1216,14 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 								<button
 									type="button"
 									class="text-sm px-3 py-1.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
-									onclick="saveBackupRetention()"
+									onclick="saveBackupSettings()"
 								>
 									Save
 								</button>
 								<span id="backup-retention-status" class="text-xs text-green-600 dark:text-green-400 hidden">Saved</span>
 							</div>
 							<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-								Oldest backups beyond the retention count are pruned after each automatic backup.
+								Oldest backups are pruned after each automatic backup when they exceed the configured retention count or maximum age.
 							</p>
 						</div>
 						<div id="backup-list" hx-get="/api/v1/settings/backup/history" hx-trigger="load" hx-swap="innerHTML">
@@ -1434,7 +1434,7 @@ templ maintenanceScript() {
 			}
 		});
 
-		function saveBackupRetention() {
+		function saveBackupSettings() {
 			var csrfToken = document.cookie.replace(
 				/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1"
 			);
