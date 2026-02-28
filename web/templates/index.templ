@@ -92,7 +92,9 @@ templ IndexPage(assets AssetPaths) {
 					fetch('/api/v1/rules/run-all/status')
 						.then(function(r) {
 							if (!r.ok) {
+								clearInterval(poll);
 								showToast('Status check failed (HTTP ' + r.status + ')');
+								resetRuleButton();
 								return null;
 							}
 							return r.json();
