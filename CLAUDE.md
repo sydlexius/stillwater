@@ -235,7 +235,11 @@ When any change (milestone work, bug fix, or standalone request) touches user-fa
 
 **What to update:**
 - In-app guide (`web/templates/guide.templ` and `/guide` route) -- once it exists
-- GitHub wiki pages (User Guide, Developer Guide) -- once they exist
+- GitHub wiki pages -- the wiki is a separate repo (`/tmp/stillwater.wiki/`), push directly to `master`:
+  - [Architecture](https://github.com/sydlexius/stillwater/wiki/Architecture) -- if the change adds, removes, or modifies a subsystem, provider, event type, middleware, or core interface
+  - [Contributing](https://github.com/sydlexius/stillwater/wiki/Contributing) -- if the change alters linting rules, pre-commit hooks, test patterns, commit conventions, or the PR process
+  - [Developer Guide](https://github.com/sydlexius/stillwater/wiki/Developer-Guide) -- if the change adds a new top-level package, changes the tech stack, or modifies a design principle
+  - User-facing wiki pages (User Guide, Configuration, Installation, etc.) -- if the change alters UI, settings, or setup steps
 - OOBE step content if onboarding references the changed behavior
 - CLAUDE.md if the change affects architecture, commands, or conventions
 
@@ -243,6 +247,13 @@ When any change (milestone work, bug fix, or standalone request) touches user-fa
 - Documentation changes ship in the same PR as the code change, not as a follow-up
 - In the PR description, note which doc pages were updated and why
 - If a doc page does not exist yet but the change would warrant one, note that in the PR description so it can be tracked
+- Wiki updates are pushed separately (wiki is a different git repo) but should be done as part of the same PR workflow -- push wiki changes before or after the code PR merges, not as a forgotten follow-up
+
+**Wiki update checklist (evaluate for every PR):**
+- [ ] Does this PR add, remove, or change a provider, event type, or core interface? Update [Architecture](https://github.com/sydlexius/stillwater/wiki/Architecture)
+- [ ] Does this PR change linting, hooks, test patterns, or contribution workflow? Update [Contributing](https://github.com/sydlexius/stillwater/wiki/Contributing)
+- [ ] Does this PR add a package, change the tech stack, or alter a design principle? Update [Developer Guide](https://github.com/sydlexius/stillwater/wiki/Developer-Guide)
+- [ ] Does this PR change user-facing behavior, settings, or setup? Update the relevant user-facing wiki page
 
 **During milestone planning:**
 - The plan file should list which wiki/guide pages are affected by each sub-issue
