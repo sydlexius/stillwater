@@ -210,6 +210,7 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 		if err != nil {
 			r.logger.Error("listing libraries for settings page", "error", err)
 		}
+		r.populateFSNotifySupported(libs)
 	}
 
 	tab := req.URL.Query().Get("tab")

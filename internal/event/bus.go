@@ -19,6 +19,8 @@ const (
 	ScanCompleted   Type = "scan.completed"
 	LidarrArtistAdd Type = "lidarr.artist.add"
 	LidarrDownload  Type = "lidarr.download"
+	FSDirCreated    Type = "fs.dir.created"
+	FSDirRemoved    Type = "fs.dir.removed"
 )
 
 // Event represents something that happened in the system.

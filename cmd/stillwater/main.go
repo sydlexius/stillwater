@@ -41,6 +41,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/scraper"
 	"github.com/sydlexius/stillwater/internal/settingsio"
 	"github.com/sydlexius/stillwater/internal/version"
+	"github.com/sydlexius/stillwater/internal/watcher"
 	"github.com/sydlexius/stillwater/internal/webhook"
 )
 
@@ -206,6 +207,7 @@ func run() error {
 		event.ArtistNew, event.MetadataFixed, event.ReviewNeeded,
 		event.RuleViolation, event.BulkCompleted, event.ScanCompleted,
 		event.LidarrArtistAdd, event.LidarrDownload,
+		event.FSDirCreated, event.FSDirRemoved,
 	} {
 		eventBus.Subscribe(eventType, webhookDispatcher.HandleEvent)
 	}
@@ -218,6 +220,17 @@ func run() error {
 		slog.String("version", version.Version),
 		slog.String("commit", version.Commit),
 	)
+
+	// Probe filesystem notification support for each library path.
+	probeCache := watcher.NewProbeCache()
+	{
+		probLibs, probErr := libraryService.List(context.Background())
+		if probErr != nil {
+			logger.Error("listing libraries for probe", "error", probErr)
+		} else {
+			probeCache.ProbeAll(context.Background(), probLibs, logger)
+		}
+	}
 
 	// Set up HTTP router
 	router := api.NewRouter(api.RouterDeps{
@@ -244,6 +257,7 @@ func run() error {
 		LogManager:         logManager,
 		MaintenanceService: maintenanceService,
 		SettingsIOService:  settingsIOService,
+		ProbeCache:         probeCache,
 		EventBus:           eventBus,
 		DB:                 db,
 		Logger:             logger,
@@ -311,6 +325,16 @@ func run() error {
 			logger.Warn("invalid rule scheduler interval; scheduler not started",
 				"hours", ruleScheduleHours)
 		}
+	}
+
+	// Start filesystem watcher for libraries with fs_watch enabled
+	{
+		scanFn := func(ctx context.Context) error {
+			_, err := scannerService.Run(ctx)
+			return err
+		}
+		watcherService := watcher.NewService(scanFn, libraryService, eventBus, logger, probeCache)
+		go watcherService.Start(ctx)
 	}
 
 	go func() {

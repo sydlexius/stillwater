@@ -10,7 +10,7 @@ import (
 	"github.com/google/uuid"
 )
 
-const libraryColumns = `id, name, path, type, source, connection_id, external_id, created_at, updated_at`
+const libraryColumns = `id, name, path, type, source, connection_id, external_id, fs_watch, fs_poll_interval, created_at, updated_at`
 
 // Service provides library data operations.
 type Service struct {
@@ -40,16 +40,20 @@ func (s *Service) Create(ctx context.Context, lib *Library) error {
 	if lib.ID == "" {
 		lib.ID = uuid.New().String()
 	}
+	if lib.FSPollInterval <= 0 || !IsValidPollInterval(lib.FSPollInterval) {
+		lib.FSPollInterval = 60
+	}
 	now := time.Now().UTC()
 	lib.CreatedAt = now
 	lib.UpdatedAt = now
 
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO libraries (id, name, path, type, source, connection_id, external_id, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO libraries (id, name, path, type, source, connection_id, external_id, fs_watch, fs_poll_interval, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		lib.ID, lib.Name, lib.Path, lib.Type,
 		lib.Source, nullableString(lib.ConnectionID), lib.ExternalID,
+		lib.FSWatch, lib.FSPollInterval,
 		now.Format(time.RFC3339), now.Format(time.RFC3339),
 	)
 	if err != nil {
@@ -138,14 +142,18 @@ func (s *Service) Update(ctx context.Context, lib *Library) error {
 		return fmt.Errorf("library source must be one of %q, %q, %q, %q", SourceManual, SourceEmby, SourceJellyfin, SourceLidarr)
 	}
 
+	if lib.FSPollInterval <= 0 || !IsValidPollInterval(lib.FSPollInterval) {
+		lib.FSPollInterval = 60
+	}
 	lib.UpdatedAt = time.Now().UTC()
 
 	result, err := s.db.ExecContext(ctx, `
-		UPDATE libraries SET name = ?, path = ?, type = ?, source = ?, connection_id = ?, external_id = ?, updated_at = ?
+		UPDATE libraries SET name = ?, path = ?, type = ?, source = ?, connection_id = ?, external_id = ?, fs_watch = ?, fs_poll_interval = ?, updated_at = ?
 		WHERE id = ?
 	`,
 		lib.Name, lib.Path, lib.Type,
 		lib.Source, nullableString(lib.ConnectionID), lib.ExternalID,
+		lib.FSWatch, lib.FSPollInterval,
 		lib.UpdatedAt.Format(time.RFC3339),
 		lib.ID,
 	)
@@ -283,6 +291,7 @@ func scanLibrary(row interface{ Scan(...any) error }) (*Library, error) {
 	err := row.Scan(
 		&lib.ID, &lib.Name, &lib.Path, &lib.Type,
 		&lib.Source, &connectionID, &lib.ExternalID,
+		&lib.FSWatch, &lib.FSPollInterval,
 		&createdAt, &updatedAt,
 	)
 	if err != nil {

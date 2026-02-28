@@ -24,6 +24,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/scanner"
 	"github.com/sydlexius/stillwater/internal/scraper"
 	"github.com/sydlexius/stillwater/internal/settingsio"
+	"github.com/sydlexius/stillwater/internal/watcher"
 	"github.com/sydlexius/stillwater/internal/webhook"
 )
 
@@ -52,6 +53,7 @@ type RouterDeps struct {
 	LogManager         *logging.Manager
 	MaintenanceService *maintenance.Service
 	SettingsIOService  *settingsio.Service
+	ProbeCache         *watcher.ProbeCache
 	EventBus           *event.Bus
 	DB                 *sql.DB
 	Logger             *slog.Logger
@@ -84,6 +86,7 @@ type Router struct {
 	logManager         *logging.Manager
 	maintenanceService *maintenance.Service
 	settingsIOService  *settingsio.Service
+	probeCache         *watcher.ProbeCache
 	eventBus           *event.Bus
 	logger             *slog.Logger
 	basePath           string
@@ -120,6 +123,7 @@ func NewRouter(deps RouterDeps) *Router {
 		logManager:         deps.LogManager,
 		maintenanceService: deps.MaintenanceService,
 		settingsIOService:  deps.SettingsIOService,
+		probeCache:         deps.ProbeCache,
 		eventBus:           deps.EventBus,
 		db:                 deps.DB,
 		logger:             deps.Logger,
