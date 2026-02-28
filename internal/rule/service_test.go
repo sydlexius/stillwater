@@ -333,6 +333,57 @@ func TestListViolations_ActiveStatus(t *testing.T) {
 	}
 }
 
+func TestCountActiveViolationsBySeverity(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	// Insert violations with different severities and statuses.
+	violations := []*RuleViolation{
+		{RuleID: RuleNFOExists, ArtistID: "a1", ArtistName: "A1", Severity: "error", Message: "m1", Fixable: true, Status: ViolationStatusOpen},
+		{RuleID: RuleThumbExists, ArtistID: "a1", ArtistName: "A1", Severity: "error", Message: "m2", Fixable: true, Status: ViolationStatusPendingChoice,
+			Candidates: []ImageCandidate{{URL: "http://example.com/img.jpg", Width: 500, Height: 500, Source: "test", ImageType: "thumb"}}},
+		{RuleID: RuleFanartExists, ArtistID: "a2", ArtistName: "A2", Severity: "warning", Message: "m3", Fixable: true, Status: ViolationStatusOpen},
+		{RuleID: RuleNFOHasMBID, ArtistID: "a3", ArtistName: "A3", Severity: "info", Message: "m4", Fixable: true, Status: ViolationStatusOpen},
+		// Resolved and dismissed should NOT be counted.
+		{RuleID: RuleThumbSquare, ArtistID: "a4", ArtistName: "A4", Severity: "error", Message: "m5", Fixable: true, Status: ViolationStatusResolved},
+		{RuleID: RuleExtraneousImages, ArtistID: "a5", ArtistName: "A5", Severity: "warning", Message: "m6", Fixable: true, Status: ViolationStatusDismissed},
+	}
+	for _, v := range violations {
+		if err := svc.UpsertViolation(ctx, v); err != nil {
+			t.Fatalf("UpsertViolation: %v", err)
+		}
+	}
+
+	counts, err := svc.CountActiveViolationsBySeverity(ctx)
+	if err != nil {
+		t.Fatalf("CountActiveViolationsBySeverity: %v", err)
+	}
+
+	if counts["error"] != 2 {
+		t.Errorf("error count = %d, want 2", counts["error"])
+	}
+	if counts["warning"] != 1 {
+		t.Errorf("warning count = %d, want 1", counts["warning"])
+	}
+	if counts["info"] != 1 {
+		t.Errorf("info count = %d, want 1", counts["info"])
+	}
+
+	// With no active violations (empty DB), all counts should be zero.
+	db2 := setupTestDB(t)
+	svc2 := NewService(db2)
+	counts2, err := svc2.CountActiveViolationsBySeverity(ctx)
+	if err != nil {
+		t.Fatalf("CountActiveViolationsBySeverity (empty): %v", err)
+	}
+	for _, sev := range []string{"error", "warning", "info"} {
+		if counts2[sev] != 0 {
+			t.Errorf("%s count = %d, want 0 (empty DB)", sev, counts2[sev])
+		}
+	}
+}
+
 func TestUpsertViolation_WithCandidates(t *testing.T) {
 	db := setupTestDB(t)
 	svc := NewService(db)

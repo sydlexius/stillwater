@@ -236,6 +236,8 @@ func (r *Router) handleNotificationCounts(w http.ResponseWriter, req *http.Reque
 func (r *Router) handleNotificationBadge(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
 
+	w.Header().Set("Cache-Control", "no-store")
+
 	if !r.getBoolSetting(ctx, "notif_badge_enabled", true) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
@@ -263,6 +265,8 @@ func (r *Router) handleNotificationBadge(w http.ResponseWriter, req *http.Reques
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	if total == 0 {
+		//nolint:errcheck // Clear the mobile badge via OOB swap
+		fmt.Fprint(w, `<span id="notif-badge-mobile" hx-swap-oob="innerHTML"></span>`)
 		return
 	}
 
@@ -270,8 +274,12 @@ func (r *Router) handleNotificationBadge(w http.ResponseWriter, req *http.Reques
 	if total > 99 {
 		display = "99+"
 	}
-	//nolint:errcheck,gosec // G705: display is derived from an integer, no XSS risk
-	fmt.Fprintf(w, `<span class="absolute -top-1 -right-2 inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1 text-xs font-bold text-white bg-red-500 rounded-full">%s</span>`, display)
+	badge := fmt.Sprintf(`<span class="absolute -top-1 -right-2 inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1 text-xs font-bold text-white bg-red-500 rounded-full">%s</span>`, display)
+	//nolint:errcheck,gosec // display is derived from an integer, no XSS risk
+	fmt.Fprint(w, badge)
+	// Update the mobile badge via OOB swap so only one poll is needed.
+	//nolint:errcheck,gosec // G705: badge is derived from an integer, no XSS risk
+	fmt.Fprintf(w, `<span id="notif-badge-mobile" hx-swap-oob="innerHTML">%s</span>`, badge)
 }
 
 // handleNotificationsTable renders the notifications table for HTMX swaps.
