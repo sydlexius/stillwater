@@ -3,9 +3,18 @@ package templates
 import (
 	"strconv"
 
+	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/provider"
 	"github.com/sydlexius/stillwater/web/components"
 )
+
+// RefreshOOBData holds data for OOB-swapped sections after a metadata refresh.
+type RefreshOOBData struct {
+	Artist         artist.Artist
+	Members        []artist.BandMember
+	FieldProviders map[string][]string
+	IsDegraded     bool
+}
 
 // RefreshDisambiguationForm renders the MusicBrainz search form when an artist
 // has no MBID. Pre-filled with the artist name for immediate search.
@@ -122,13 +131,6 @@ templ RefreshResultSummary(artistID string, sources []provider.FieldSource) {
 				}
 			</div>
 		}
-		<button
-			type="button"
-			class="mt-3 text-sm text-blue-600 hover:underline"
-			onclick="window.location.reload()"
-		>
-			Reload page to see changes
-		</button>
 	</div>
 }
 
@@ -138,4 +140,64 @@ templ RefreshError(message string) {
 		<h3 class="font-semibold text-sm mb-1 text-red-800 dark:text-red-200">Refresh Failed</h3>
 		<p class="text-sm text-red-600 dark:text-red-400">{ message }</p>
 	</div>
+}
+
+// RefreshOOBFragments renders OOB-swapped sections to update the artist detail
+// page in-place after a metadata refresh, without requiring a full page reload.
+templ RefreshOOBFragments(data RefreshOOBData) {
+	// Biography
+	<div hx-swap-oob={ "outerHTML:#field-biography-" + data.Artist.ID }>
+		@FieldDisplay(&data.Artist, "biography", data.FieldProviders["biography"])
+	</div>
+	// Tags
+	<section id={ "artist-tags-" + data.Artist.ID } hx-swap-oob="outerHTML" class="sw-card rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
+		<h2 class="text-lg font-semibold mb-3">Tags</h2>
+		@FieldDisplay(&data.Artist, "genres", data.FieldProviders["genres"])
+		@FieldDisplay(&data.Artist, "styles", data.FieldProviders["styles"])
+		@FieldDisplay(&data.Artist, "moods", data.FieldProviders["moods"])
+	</section>
+	// Members
+	<div hx-swap-oob={ "outerHTML:#members-section-" + data.Artist.ID }>
+		@MembersSection(data.Artist.ID, data.Members, data.FieldProviders["members"])
+	</div>
+	// Details
+	<section id={ "artist-details-" + data.Artist.ID } hx-swap-oob="outerHTML" class="sw-card rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
+		<h2 class="text-lg font-semibold mb-3">Details</h2>
+		<dl class="space-y-2 text-sm">
+			@FieldDisplay(&data.Artist, "type", data.FieldProviders["type"])
+			@FieldDisplay(&data.Artist, "gender", data.FieldProviders["gender"])
+			@FieldDisplay(&data.Artist, "formed", data.FieldProviders["formed"])
+			@FieldDisplay(&data.Artist, "born", data.FieldProviders["born"])
+			@FieldDisplay(&data.Artist, "disbanded", data.FieldProviders["disbanded"])
+			@FieldDisplay(&data.Artist, "died", data.FieldProviders["died"])
+			@FieldDisplay(&data.Artist, "years_active", data.FieldProviders["years_active"])
+		</dl>
+	</section>
+	// Images
+	<section id={ "artist-images-" + data.Artist.ID } hx-swap-oob="outerHTML" class="sw-card rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
+		<h2 class="text-lg font-semibold mb-3">Images</h2>
+		<div class="grid grid-cols-2 gap-3">
+			@ImagePreviewCard(data.Artist.ID, "thumb", data.Artist.ThumbExists, "Thumbnail", data.IsDegraded, 0)
+			@ImagePreviewCard(data.Artist.ID, "fanart", data.Artist.FanartExists, "Fanart", data.IsDegraded, data.Artist.FanartCount)
+			@ImagePreviewCard(data.Artist.ID, "logo", data.Artist.LogoExists, "Logo", data.IsDegraded, 0)
+			@ImagePreviewCard(data.Artist.ID, "banner", data.Artist.BannerExists, "Banner", data.IsDegraded, 0)
+		</div>
+		<div class="mt-3">
+			@components.StatusBadge(data.Artist.NFOExists, "Metadata")
+			if data.IsDegraded {
+				<p class="text-xs text-amber-600 dark:text-amber-400 mt-1">No filesystem access</p>
+			}
+		</div>
+	</section>
+	// Provider IDs
+	<section id={ "artist-providers-" + data.Artist.ID } hx-swap-oob="outerHTML" class="sw-card rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
+		<h2 class="text-lg font-semibold mb-3">Provider IDs</h2>
+		<dl class="space-y-2 text-sm">
+			@providerID("MusicBrainz", data.Artist.MusicBrainzID, nil)
+			@providerID("AudioDB", data.Artist.AudioDBID, data.Artist.AudioDBIDFetchedAt)
+			@providerID("Discogs", data.Artist.DiscogsID, data.Artist.DiscogsIDFetchedAt)
+			@providerID("Wikidata", data.Artist.WikidataID, data.Artist.WikidataIDFetchedAt)
+			@providerID("Deezer", data.Artist.DeezerID, nil)
+		</dl>
+	</section>
 }
