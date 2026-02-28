@@ -133,6 +133,9 @@ func (s *Service) Delete(filename string) error {
 
 // SetRetention updates the retention count for pruning.
 func (s *Service) SetRetention(count int) {
+	if count < 0 {
+		count = 0
+	}
 	s.mu.Lock()
 	s.retention = count
 	s.mu.Unlock()
