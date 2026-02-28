@@ -156,8 +156,9 @@ func (r *Router) handleRunAllRules(w http.ResponseWriter, req *http.Request) {
 	}
 	r.ruleRunMu.Unlock()
 
+	ctx := context.WithoutCancel(req.Context())
 	go func() {
-		result, err := r.pipeline.RunAll(context.Background())
+		result, err := r.pipeline.RunAll(ctx)
 
 		r.ruleRunMu.Lock()
 		defer r.ruleRunMu.Unlock()
@@ -186,14 +187,14 @@ func (r *Router) handleRunAllRules(w http.ResponseWriter, req *http.Request) {
 // GET /api/v1/rules/run-all/status
 func (r *Router) handleRunAllRulesStatus(w http.ResponseWriter, req *http.Request) {
 	r.ruleRunMu.Lock()
-	status := r.ruleRun
-	r.ruleRunMu.Unlock()
-
-	if status == nil {
+	if r.ruleRun == nil {
+		r.ruleRunMu.Unlock()
 		writeJSON(w, http.StatusOK, &ruleRunStatus{Status: "idle"})
 		return
 	}
-	writeJSON(w, http.StatusOK, status)
+	status := *r.ruleRun // value copy
+	r.ruleRunMu.Unlock()
+	writeJSON(w, http.StatusOK, &status)
 }
 
 // handleGetClassicalMode returns the current classical music evaluation mode.

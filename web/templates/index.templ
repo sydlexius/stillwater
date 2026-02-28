@@ -82,8 +82,15 @@ templ IndexPage(assets AssetPaths) {
 			function pollRuleStatus() {
 				var poll = setInterval(function() {
 					fetch('/api/v1/rules/run-all/status')
-						.then(function(r) { return r.json(); })
+						.then(function(r) {
+							if (!r.ok) {
+								showToast('Status check failed (HTTP ' + r.status + ')');
+								return null;
+							}
+							return r.json();
+						})
 						.then(function(data) {
+							if (!data) return;
 							if (data.status === 'completed') {
 								clearInterval(poll);
 								var msg = 'Rules complete: ' + data.violations_found + ' violations';
@@ -96,6 +103,10 @@ templ IndexPage(assets AssetPaths) {
 							} else if (data.status === 'failed') {
 								clearInterval(poll);
 								showToast('Rule evaluation failed: ' + (data.error || 'unknown error'));
+								resetRuleButton();
+							} else if (data.status === 'idle') {
+								clearInterval(poll);
+								showToast('Rule run state was lost');
 								resetRuleButton();
 							}
 						})
