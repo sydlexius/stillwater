@@ -193,7 +193,10 @@ func (r *Router) handleRunAllRules(w http.ResponseWriter, req *http.Request) {
 		r.ruleRunMu.Unlock()
 	}()
 
-	writeJSON(w, http.StatusAccepted, map[string]string{"status": "started"})
+	r.ruleRunMu.Lock()
+	status := *r.ruleRun
+	r.ruleRunMu.Unlock()
+	writeJSON(w, http.StatusAccepted, &status)
 }
 
 // handleRunAllRulesStatus returns the current status of the async run-all-rules operation.
