@@ -195,6 +195,12 @@ func run() error {
 		backupDir = filepath.Join(filepath.Dir(cfg.Database.Path), "backups")
 	}
 	backupService := backup.NewService(db, backupDir, cfg.Backup.RetentionCount, logger)
+	if dbRetention := getDBIntSetting(db, "backup_retention_count", 0); dbRetention > 0 {
+		backupService.SetRetention(dbRetention)
+	}
+	if dbMaxAge := getDBIntSetting(db, "backup_max_age_days", -1); dbMaxAge >= 0 {
+		backupService.SetMaxAgeDays(dbMaxAge)
+	}
 
 	// Initialize maintenance service
 	maintenanceService := maintenance.NewService(db, cfg.Database.Path, logger)

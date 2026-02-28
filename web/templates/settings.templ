@@ -1442,6 +1442,15 @@ templ maintenanceScript() {
 			var maxAge = parseInt(document.getElementById('backup-max-age').value, 10);
 			var status = document.getElementById('backup-retention-status');
 
+			if (!Number.isFinite(retention) || retention < 1) {
+				showToast('Retention count must be a positive number');
+				return;
+			}
+			if (!Number.isFinite(maxAge) || maxAge < 0) {
+				showToast('Max age must be zero or a positive number');
+				return;
+			}
+
 			var settings = {};
 			settings['backup_retention_count'] = retention.toString();
 			settings['backup_max_age_days'] = maxAge.toString();

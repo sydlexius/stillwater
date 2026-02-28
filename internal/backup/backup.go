@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -29,6 +30,7 @@ type Service struct {
 	backupDir  string
 	retention  int
 	maxAgeDays int
+	mu         sync.RWMutex
 	logger     *slog.Logger
 }
 
@@ -131,36 +133,50 @@ func (s *Service) Delete(filename string) error {
 
 // SetRetention updates the retention count for pruning.
 func (s *Service) SetRetention(count int) {
+	s.mu.Lock()
 	s.retention = count
+	s.mu.Unlock()
 	s.logger.Info("backup retention updated", slog.Int("count", count))
 }
 
 // SetMaxAgeDays updates the max age in days for pruning.
 func (s *Service) SetMaxAgeDays(days int) {
+	s.mu.Lock()
 	s.maxAgeDays = days
+	s.mu.Unlock()
 	s.logger.Info("backup max age updated", slog.Int("days", days))
 }
 
 // Retention returns the current retention count.
 func (s *Service) Retention() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	return s.retention
 }
 
 // MaxAgeDays returns the current max age in days.
 func (s *Service) MaxAgeDays() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	return s.maxAgeDays
 }
 
 // Prune deletes backups exceeding the retention count and older than max age.
 func (s *Service) Prune() error {
+	// Snapshot settings under lock
+	s.mu.RLock()
+	retention := s.retention
+	maxAge := s.maxAgeDays
+	s.mu.RUnlock()
+
 	backups, err := s.ListBackups()
 	if err != nil {
 		return err
 	}
 
 	// Count-based pruning
-	if len(backups) > s.retention {
-		for _, b := range backups[s.retention:] {
+	if len(backups) > retention {
+		for _, b := range backups[retention:] {
 			path := filepath.Join(s.backupDir, b.Filename)
 			if err := os.Remove(path); err != nil {
 				s.logger.Warn("failed to remove old backup",
@@ -173,8 +189,8 @@ func (s *Service) Prune() error {
 	}
 
 	// Age-based pruning
-	if s.maxAgeDays > 0 {
-		cutoff := time.Now().UTC().AddDate(0, 0, -s.maxAgeDays)
+	if maxAge > 0 {
+		cutoff := time.Now().UTC().AddDate(0, 0, -maxAge)
 		// Re-read after count-based pruning may have removed some
 		backups, err = s.ListBackups()
 		if err != nil {
@@ -191,7 +207,7 @@ func (s *Service) Prune() error {
 				}
 				s.logger.Info("pruned aged backup",
 					slog.String("filename", b.Filename),
-					slog.Int("max_age_days", s.maxAgeDays))
+					slog.Int("max_age_days", maxAge))
 			}
 		}
 	}

@@ -2,8 +2,10 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"path/filepath"
 
 	"github.com/sydlexius/stillwater/internal/backup"
@@ -61,6 +63,10 @@ func (r *Router) handleBackupDelete(w http.ResponseWriter, req *http.Request) {
 	}
 
 	if err := r.backupService.Delete(filename); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			writeError(w, req, http.StatusNotFound, "backup not found")
+			return
+		}
 		r.logger.Error("deleting backup", "filename", filename, "error", err)
 		writeError(w, req, http.StatusInternalServerError, "failed to delete backup")
 		return
