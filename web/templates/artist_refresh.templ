@@ -146,7 +146,7 @@ templ RefreshError(message string) {
 // page in-place after a metadata refresh, without requiring a full page reload.
 templ RefreshOOBFragments(data RefreshOOBData) {
 	// Biography
-	<div id={ "field-biography-" + data.Artist.ID } hx-swap-oob="outerHTML">
+	<div hx-swap-oob={ "outerHTML:#field-biography-" + data.Artist.ID }>
 		@FieldDisplay(&data.Artist, "biography", data.FieldProviders["biography"])
 	</div>
 	// Tags

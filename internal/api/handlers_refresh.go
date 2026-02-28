@@ -304,8 +304,14 @@ func (r *Router) renderRefreshWithOOB(w http.ResponseWriter, req *http.Request, 
 	}
 
 	// Write primary response then OOB fragments sequentially
-	templates.RefreshResultSummary(a.ID, sources).Render(req.Context(), w) //nolint:errcheck
-	templates.RefreshOOBFragments(oobData).Render(req.Context(), w)        //nolint:errcheck
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := templates.RefreshResultSummary(a.ID, sources).Render(req.Context(), w); err != nil {
+		r.logger.Error("rendering refresh summary", "artist_id", artistID, "error", err)
+		return
+	}
+	if err := templates.RefreshOOBFragments(oobData).Render(req.Context(), w); err != nil {
+		r.logger.Error("rendering OOB fragments", "artist_id", artistID, "error", err)
+	}
 }
 
 // extractFormOrJSONField reads a named value from either a JSON body or form data.
