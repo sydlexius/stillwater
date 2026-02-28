@@ -62,9 +62,14 @@ All six issues are independent. No inter-issue dependencies.
 - [ ] CI passing
 - [ ] PR merged
 
-#### Copilot review fixes
+#### Copilot review fixes (round 1)
 - [x] Fix duplicate OOB IDs in RefreshOOBFragments (selector-based syntax)
 - [x] Fix unchecked render errors in renderRefreshWithOOB
+
+#### Copilot review fixes (round 2)
+- [x] Skip OOB fragments when ListMembersByArtistID fails
+- [x] Add handler test for HTMX refresh OOB swap targets
+- [ ] OOB wrapper nesting on repeated refreshes (tracked as follow-up)
 
 ### PR 2 -- Backup Management (#238)
 - [x] Implementation
@@ -73,7 +78,7 @@ All six issues are independent. No inter-issue dependencies.
 - [ ] CI passing
 - [ ] PR merged
 
-#### Copilot review fixes
+#### Copilot review fixes (round 1)
 - [x] NaN validation in saveBackupRetention() JS
 - [x] Load DB-persisted backup settings on startup
 - [x] Data race fix (sync.RWMutex on retention/maxAgeDays)
@@ -81,22 +86,35 @@ All six issues are independent. No inter-issue dependencies.
 - [x] Validate backup settings before persisting in handleUpdateSettings
 - [x] Add DELETE handler tests
 
+#### Copilot review fixes (round 2)
+- [x] Use lock-guarded Retention() getter in StartScheduler
+
 ### PR 3 -- Async Run Rules (#291)
 - [x] Implementation
 - [x] PR opened (#295)
 - [ ] CI passing
 - [ ] PR merged
 
-#### Copilot review fixes
+#### Copilot review fixes (round 1)
 - [x] Data race fix in handleRunAllRulesStatus (value copy under lock)
 - [x] context.Background() to context.WithoutCancel
 - [x] pollRuleStatus() idle/error handling
+
+#### Copilot review fixes (round 2)
+- [x] Panic recovery in background goroutine
+- [x] Poll timeout safeguard (150 attempts / ~5 min)
+- [x] Toast message in fetch .catch() handler
 
 ### PR 4 -- Help Overlay (#237)
 - [x] Implementation
 - [x] PR opened (#296)
 - [ ] CI passing
 - [ ] PR merged
+
+#### Copilot review fixes (round 2)
+- [x] Fix /artists vs /artists/ path matching in isPageMatch()
+- [x] Add aria-label to close button
+- [x] Add aria-label to search input
 
 ## UAT / Merge Order
 
@@ -113,3 +131,4 @@ All six issues are independent. No inter-issue dependencies.
 - #238: `IsValidBackupFilename()` already exists for delete endpoint validation
 - #291: Follow scanner polling pattern with in-memory state tracking on Router
 - 2026-02-27: All 4 PRs pushed with Copilot review feedback addressed; PR #296 opened for help overlay
+- 2026-02-27: Round 2 Copilot review fixes pushed to all 4 PRs (9 actionable items addressed, 2 skipped as out-of-scope)
