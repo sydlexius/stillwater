@@ -299,9 +299,15 @@ func run() error {
 	// Start rule evaluation scheduler (opt-in via settings)
 	{
 		ruleScheduleHours := getDBIntSetting(db, "rule_schedule.interval_hours", 0)
-		if ruleScheduleHours > 0 {
-			ruleScheduler := rule.NewScheduler(pipeline, logger)
+		switch ruleScheduleHours {
+		case 0:
+			// scheduler disabled
+		case 6, 12, 24, 48:
+			ruleScheduler := rule.NewScheduler(pipeline, ruleService, logger)
 			go ruleScheduler.Start(ctx, time.Duration(ruleScheduleHours)*time.Hour)
+		default:
+			logger.Warn("invalid rule scheduler interval; scheduler not started",
+				"hours", ruleScheduleHours)
 		}
 	}
 

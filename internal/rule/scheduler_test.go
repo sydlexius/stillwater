@@ -13,7 +13,7 @@ import (
 func TestScheduler_NonPositiveInterval(t *testing.T) {
 	logger := slog.Default()
 	pipeline := &Pipeline{logger: logger.With(slog.String("component", "fix-pipeline"))}
-	sched := NewScheduler(pipeline, logger)
+	sched := NewScheduler(pipeline, nil, logger)
 
 	// Start with zero interval should return immediately without panicking.
 	done := make(chan struct{})
@@ -37,7 +37,7 @@ func TestScheduler_ContextCancellation(t *testing.T) {
 	logger := slog.Default()
 	engine := NewEngine(ruleSvc, nil, nil, logger)
 	pipeline := NewPipeline(engine, artistSvc, ruleSvc, nil, logger)
-	sched := NewScheduler(pipeline, logger)
+	sched := NewScheduler(pipeline, ruleSvc, logger)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -72,7 +72,7 @@ func TestScheduler_TickTriggersRun(t *testing.T) {
 	logger := slog.Default()
 	engine := NewEngine(ruleSvc, nil, nil, logger)
 	pipeline := NewPipeline(engine, artistSvc, ruleSvc, nil, logger)
-	sched := NewScheduler(pipeline, logger)
+	sched := NewScheduler(pipeline, ruleSvc, logger)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

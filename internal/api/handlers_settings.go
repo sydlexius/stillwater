@@ -3,8 +3,8 @@ package api
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 )
 
@@ -77,8 +77,8 @@ func (r *Router) getIntSetting(ctx context.Context, key string, fallback int) in
 	if err != nil || v == "" {
 		return fallback
 	}
-	var n int
-	if _, err := fmt.Sscanf(v, "%d", &n); err != nil {
+	n, err2 := strconv.Atoi(v)
+	if err2 != nil {
 		return fallback
 	}
 	return n
