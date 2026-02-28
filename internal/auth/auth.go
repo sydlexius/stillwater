@@ -16,6 +16,39 @@ import (
 
 const sessionDuration = 24 * time.Hour
 
+// APITokenPrefix identifies Stillwater API tokens.
+const APITokenPrefix = "sw_"
+
+// TokenScope defines a permission scope for API tokens.
+type TokenScope string
+
+// Known token scopes.
+const (
+	ScopeRead    TokenScope = "read"
+	ScopeWrite   TokenScope = "write"
+	ScopeWebhook TokenScope = "webhook"
+	ScopeAdmin   TokenScope = "admin"
+)
+
+// ValidScopes contains all valid token scope values.
+var ValidScopes = map[TokenScope]bool{
+	ScopeRead:    true,
+	ScopeWrite:   true,
+	ScopeWebhook: true,
+	ScopeAdmin:   true,
+}
+
+// APIToken represents an API token (without the secret hash).
+type APIToken struct {
+	ID         string  `json:"id"`
+	Name       string  `json:"name"`
+	Scopes     string  `json:"scopes"`
+	UserID     string  `json:"user_id"`
+	CreatedAt  string  `json:"created_at"`
+	LastUsedAt *string `json:"last_used_at,omitempty"`
+	RevokedAt  *string `json:"revoked_at,omitempty"`
+}
+
 // Service provides authentication operations.
 type Service struct {
 	db *sql.DB
@@ -136,6 +169,99 @@ func (s *Service) HasUsers(ctx context.Context) (bool, error) {
 		return false, err
 	}
 	return count > 0, nil
+}
+
+// CreateAPIToken generates a new API token with the given scopes.
+// Returns the plaintext token (shown once) and the token ID.
+func (s *Service) CreateAPIToken(ctx context.Context, userID, name string, scopes string) (plaintext, id string, err error) {
+	raw, err := generateToken()
+	if err != nil {
+		return "", "", fmt.Errorf("generating api token: %w", err)
+	}
+	plaintext = APITokenPrefix + raw
+
+	hash := sha256.Sum256([]byte(plaintext))
+	tokenHash := hex.EncodeToString(hash[:])
+
+	id = uuid.New().String()
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	_, err = s.db.ExecContext(ctx, `
+		INSERT INTO api_tokens (id, name, token_hash, scopes, user_id, created_at)
+		VALUES (?, ?, ?, ?, ?, ?)
+	`, id, name, tokenHash, scopes, userID, now)
+	if err != nil {
+		return "", "", fmt.Errorf("inserting api token: %w", err)
+	}
+
+	return plaintext, id, nil
+}
+
+// ValidateAPIToken checks if an API token is valid and returns the user ID and scopes.
+// Updates last_used_at asynchronously.
+func (s *Service) ValidateAPIToken(ctx context.Context, token string) (userID string, scopes string, err error) {
+	hash := sha256.Sum256([]byte(token))
+	tokenHash := hex.EncodeToString(hash[:])
+
+	var revokedAt sql.NullString
+	err = s.db.QueryRowContext(ctx, `
+		SELECT user_id, scopes, revoked_at FROM api_tokens WHERE token_hash = ?
+	`, tokenHash).Scan(&userID, &scopes, &revokedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", "", errors.New("invalid api token")
+	}
+	if err != nil {
+		return "", "", fmt.Errorf("querying api token: %w", err)
+	}
+
+	if revokedAt.Valid {
+		return "", "", errors.New("api token revoked")
+	}
+
+	// Best-effort update of last_used_at using the caller's context.
+	now := time.Now().UTC().Format(time.RFC3339)
+	_, _ = s.db.ExecContext(ctx, //nolint:gosec // G701: static query
+		`UPDATE api_tokens SET last_used_at = ? WHERE token_hash = ?`, now, tokenHash)
+
+	return userID, scopes, nil
+}
+
+// ListAPITokens returns all tokens for a user (never exposes the hash).
+func (s *Service) ListAPITokens(ctx context.Context, userID string) ([]APIToken, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, name, scopes, user_id, created_at, last_used_at, revoked_at
+		FROM api_tokens WHERE user_id = ? ORDER BY created_at DESC
+	`, userID)
+	if err != nil {
+		return nil, fmt.Errorf("listing api tokens: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck
+
+	var tokens []APIToken
+	for rows.Next() {
+		var t APIToken
+		if err := rows.Scan(&t.ID, &t.Name, &t.Scopes, &t.UserID, &t.CreatedAt, &t.LastUsedAt, &t.RevokedAt); err != nil {
+			return nil, fmt.Errorf("scanning api token: %w", err)
+		}
+		tokens = append(tokens, t)
+	}
+	return tokens, rows.Err()
+}
+
+// RevokeAPIToken marks a token as revoked.
+func (s *Service) RevokeAPIToken(ctx context.Context, id, userID string) error {
+	now := time.Now().UTC().Format(time.RFC3339)
+	result, err := s.db.ExecContext(ctx, `
+		UPDATE api_tokens SET revoked_at = ? WHERE id = ? AND user_id = ? AND revoked_at IS NULL
+	`, now, id, userID)
+	if err != nil {
+		return fmt.Errorf("revoking api token: %w", err)
+	}
+	n, _ := result.RowsAffected()
+	if n == 0 {
+		return errors.New("token not found or already revoked")
+	}
+	return nil
 }
 
 // prehashPassword hashes the password with SHA-256 before bcrypt to support

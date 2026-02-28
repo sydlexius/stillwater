@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"log/slog"
 	"net/http"
+	"strings"
 	"sync"
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
@@ -151,6 +152,10 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	// Protected routes (auth required)
 	mux.HandleFunc("POST "+bp+"/api/v1/auth/logout", wrapAuth(r.handleLogout, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/auth/me", wrapAuth(r.handleMe, authMw))
+	// API token routes
+	mux.HandleFunc("POST "+bp+"/api/v1/auth/tokens", wrapAuth(r.handleCreateAPIToken, authMw))
+	mux.HandleFunc("GET "+bp+"/api/v1/auth/tokens", wrapAuth(r.handleListAPITokens, authMw))
+	mux.HandleFunc("DELETE "+bp+"/api/v1/auth/tokens/{id}", wrapAuth(r.handleRevokeAPIToken, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/artists", wrapAuth(r.handleListArtists, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}", wrapAuth(r.handleGetArtist, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/duplicates", wrapAuth(r.handleDuplicates, authMw))
@@ -332,10 +337,16 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	return handler
 }
 
-// csrfWithExemptions wraps CSRF middleware but skips validation for exempt paths.
+// csrfWithExemptions wraps CSRF middleware but skips validation for exempt paths
+// and for requests authenticated with API tokens (sw_ prefix).
 func csrfWithExemptions(csrf *middleware.CSRF, next http.Handler, exemptPaths []string) http.Handler {
 	csrfHandler := csrf.Middleware(next)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Skip CSRF for API token requests
+		if isAPITokenRequest(r) {
+			next.ServeHTTP(w, r)
+			return
+		}
 		for _, path := range exemptPaths {
 			if r.URL.Path == path {
 				next.ServeHTTP(w, r)
@@ -344,6 +355,27 @@ func csrfWithExemptions(csrf *middleware.CSRF, next http.Handler, exemptPaths []
 		}
 		csrfHandler.ServeHTTP(w, r)
 	})
+}
+
+// isAPITokenRequest returns true if the request carries a sw_ API token
+// and is not also using cookie-based authentication. This ensures CSRF
+// is only bypassed for true token-based API requests, not for browser
+// requests that happen to include a spoofed apikey parameter.
+func isAPITokenRequest(r *http.Request) bool {
+	header := r.Header.Get("Authorization")
+	hasToken := strings.HasPrefix(header, "Bearer "+auth.APITokenPrefix)
+	if !hasToken {
+		hasToken = strings.HasPrefix(r.URL.Query().Get("apikey"), auth.APITokenPrefix)
+	}
+	if !hasToken {
+		return false
+	}
+	// If a session cookie is present, treat as a browser request and
+	// do not bypass CSRF based on a potentially unvalidated token param.
+	if _, err := r.Cookie("session"); err == nil {
+		return false
+	}
+	return true
 }
 
 // wrapAuth wraps a handler function with auth middleware.

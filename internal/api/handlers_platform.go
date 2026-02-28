@@ -199,6 +199,11 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 		r.logger.Warn("fetching rules for settings page", "error", err)
 	}
 
+	apiTokens, err := r.authService.ListAPITokens(req.Context(), userID)
+	if err != nil {
+		r.logger.Warn("listing api tokens for settings page", "error", err)
+	}
+
 	var libs []library.Library
 	if r.libraryService != nil {
 		libs, err = r.libraryService.List(req.Context())
@@ -231,6 +236,7 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 		BadgeSeverityError:   r.getBoolSetting(req.Context(), "notif_badge_severity_error", true),
 		BadgeSeverityWarning: r.getBoolSetting(req.Context(), "notif_badge_severity_warning", true),
 		BadgeSeverityInfo:    r.getBoolSetting(req.Context(), "notif_badge_severity_info", false),
+		APITokens:            apiTokens,
 	}
 	renderTempl(w, req, templates.SettingsPage(r.assets(), data))
 }
