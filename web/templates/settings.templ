@@ -30,17 +30,22 @@ func profileEditable(p *platform.Profile) bool {
 
 // SettingsData holds the data for the settings page.
 type SettingsData struct {
-	ActiveTab          string
-	Libraries          []library.Library
-	Profiles           []platform.Profile
-	ActiveProfile      *platform.Profile
-	ProviderKeys       []provider.ProviderKeyStatus
-	Priorities         []provider.FieldPriority
-	Connections        []connection.Connection
-	Webhooks           []webhook.Webhook
-	WebSearchProviders []provider.WebSearchProviderStatus
-	AutoFetchImages    bool
-	Rules              []rule.Rule
+	ActiveTab            string
+	Libraries            []library.Library
+	Profiles             []platform.Profile
+	ActiveProfile        *platform.Profile
+	ProviderKeys         []provider.ProviderKeyStatus
+	Priorities           []provider.FieldPriority
+	Connections          []connection.Connection
+	Webhooks             []webhook.Webhook
+	WebSearchProviders   []provider.WebSearchProviderStatus
+	AutoFetchImages      bool
+	Rules                []rule.Rule
+	BadgeEnabled         bool
+	BadgeSeverityError   bool
+	BadgeSeverityWarning bool
+	BadgeSeverityInfo    bool
+	RuleScheduleHours    int
 }
 
 // settingsTab defines a tab in the settings page navigation.
@@ -375,6 +380,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 		@settingsConnectionScript()
 		@connectionFeatureToggleScript()
 		@ruleToggleScript()
+		@badgeSettingScript()
 		@maintenanceScript()
 		@settingsExportScript()
 		@profileNamingEditorScript()
@@ -791,6 +797,61 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 									<button type="button" class="text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" onclick="this.closest('#add-webhook-form').classList.add('hidden')">Cancel</button>
 								</div>
 							</form>
+						</div>
+					</div>
+				</div>
+				<!-- Notification Badge Settings -->
+				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
+					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+						<h2 class="text-lg font-semibold">Notification Badges</h2>
+						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+							Show a counter badge on the Notifications link indicating active violations.
+						</p>
+					</div>
+					<div class="px-6 py-4 space-y-4">
+						<div class="flex items-center gap-3">
+							<label class="relative inline-flex items-center cursor-pointer">
+								<input
+									type="checkbox"
+									class="sr-only peer"
+									checked?={ data.BadgeEnabled }
+									onclick="updateSetting('notif_badge_enabled', this.checked)"
+								/>
+								<div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-500 dark:peer-focus:ring-blue-600 rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:after:border-gray-500 peer-checked:bg-blue-600"></div>
+							</label>
+							<span class="text-sm font-medium text-gray-700 dark:text-gray-300">Enable badge</span>
+						</div>
+						<div class="space-y-2">
+							<p class="text-sm font-medium text-gray-700 dark:text-gray-300">Count violations by severity</p>
+							<div class="flex flex-col gap-2">
+								<label class="inline-flex items-center gap-2">
+									<input
+										type="checkbox"
+										class="rounded border-gray-300 dark:border-gray-600 text-red-600 focus:ring-red-500"
+										checked?={ data.BadgeSeverityError }
+										onclick="updateSetting('notif_badge_severity_error', this.checked)"
+									/>
+									<span class="text-sm text-gray-600 dark:text-gray-400">Errors</span>
+								</label>
+								<label class="inline-flex items-center gap-2">
+									<input
+										type="checkbox"
+										class="rounded border-gray-300 dark:border-gray-600 text-amber-600 focus:ring-amber-500"
+										checked?={ data.BadgeSeverityWarning }
+										onclick="updateSetting('notif_badge_severity_warning', this.checked)"
+									/>
+									<span class="text-sm text-gray-600 dark:text-gray-400">Warnings</span>
+								</label>
+								<label class="inline-flex items-center gap-2">
+									<input
+										type="checkbox"
+										class="rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
+										checked?={ data.BadgeSeverityInfo }
+										onclick="updateSetting('notif_badge_severity_info', this.checked)"
+									/>
+									<span class="text-sm text-gray-600 dark:text-gray-400">Info</span>
+								</label>
+							</div>
 						</div>
 					</div>
 				</div>
@@ -2791,6 +2852,26 @@ script toggleRuleConfig(ruleID string) {
 	if (el) {
 		el.classList.toggle("hidden");
 	}
+}
+
+templ badgeSettingScript() {
+	<script>
+		function updateSetting(key, checked) {
+			var csrfToken = document.cookie.replace(
+				/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1"
+			);
+			var body = {};
+			body[key] = checked ? "true" : "false";
+			fetch('/api/v1/settings', {
+				method: 'PUT',
+				headers: {
+					'Content-Type': 'application/json',
+					'X-CSRF-Token': csrfToken
+				},
+				body: JSON.stringify(body)
+			});
+		}
+	</script>
 }
 
 templ ruleToggleScript() {
