@@ -106,8 +106,8 @@ func (p *Pipeline) RunRule(ctx context.Context, ruleID string) (*RunResult, erro
 					continue
 				}
 
-				// Notify mode: persist without attempting fix
-				if targetRule.AutomationMode == AutomationModeNotify {
+				// Manual mode: persist without attempting fix
+				if targetRule.AutomationMode == AutomationModeManual {
 					rv := &RuleViolation{
 						RuleID:     v.RuleID,
 						ArtistID:   a.ID,
@@ -118,7 +118,7 @@ func (p *Pipeline) RunRule(ctx context.Context, ruleID string) (*RunResult, erro
 						Status:     ViolationStatusOpen,
 					}
 					if err := p.ruleService.UpsertViolation(ctx, rv); err != nil {
-						p.logger.Warn("persisting notification violation", "rule_id", ruleID, "artist", a.Name, "error", err)
+						p.logger.Warn("persisting manual-mode violation", "rule_id", ruleID, "artist", a.Name, "error", err)
 					}
 					continue
 				}

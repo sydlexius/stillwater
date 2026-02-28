@@ -237,6 +237,7 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 		BadgeSeverityWarning: r.getBoolSetting(req.Context(), "notif_badge_severity_warning", true),
 		BadgeSeverityInfo:    r.getBoolSetting(req.Context(), "notif_badge_severity_info", false),
 		APITokens:            apiTokens,
+		RuleScheduleHours:    r.getIntSetting(req.Context(), "rule_schedule.interval_hours", 0),
 	}
 	renderTempl(w, req, templates.SettingsPage(r.assets(), data))
 }

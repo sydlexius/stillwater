@@ -401,6 +401,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 		@ruleToggleScript()
 		@badgeSettingScript()
 		@apiTokenScript()
+		@ruleScheduleScript()
 		@maintenanceScript()
 		@settingsExportScript()
 		@profileNamingEditorScript()
@@ -995,6 +996,33 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 						<p class="text-sm text-gray-500 dark:text-gray-400">No rules found.</p>
 					</div>
 				}
+				<!-- Rule Evaluation Schedule -->
+				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
+					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+						<h2 class="text-lg font-semibold">Scheduled Evaluation</h2>
+						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+							Run all enabled rules on a recurring schedule. Requires a container restart after changing.
+						</p>
+					</div>
+					<div class="px-6 py-4">
+						<div class="flex items-center gap-4">
+							<label class="text-sm font-medium text-gray-700 dark:text-gray-300">Evaluation interval</label>
+							<select
+								onchange="updateRuleSchedule(this.value)"
+								class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+							>
+								<option value="0" selected?={ data.RuleScheduleHours == 0 }>Disabled</option>
+								<option value="6" selected?={ data.RuleScheduleHours == 6 }>Every 6 hours</option>
+								<option value="12" selected?={ data.RuleScheduleHours == 12 }>Every 12 hours</option>
+								<option value="24" selected?={ data.RuleScheduleHours == 24 }>Daily (24h)</option>
+								<option value="48" selected?={ data.RuleScheduleHours == 48 }>Every 2 days</option>
+							</select>
+						</div>
+						<p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+							Evaluates all enabled rules against every artist on the selected interval. Changes take effect after container restart.
+						</p>
+					</div>
+				</div>
 			</div>
 			<!-- Maintenance tab -->
 			<div
@@ -2739,7 +2767,7 @@ templ ruleRow(rl rule.Rule) {
 					disabled?={ !rl.Enabled }
 				>
 					<option value="auto" selected?={ rl.AutomationMode == "auto" || rl.AutomationMode == "" }>Auto-fix</option>
-					<option value="notify" selected?={ rl.AutomationMode == "notify" }>Notify only</option>
+					<option value="manual" selected?={ rl.AutomationMode == "manual" }>Manual (notify only)</option>
 					<option value="disabled" selected?={ rl.AutomationMode == "disabled" }>Disabled</option>
 				</select>
 				<button
@@ -2980,6 +3008,24 @@ templ badgeSettingScript() {
 					'X-CSRF-Token': csrfToken
 				},
 				body: JSON.stringify(body)
+			});
+		}
+	</script>
+}
+
+templ ruleScheduleScript() {
+	<script>
+		function updateRuleSchedule(value) {
+			var csrfToken = document.cookie.replace(
+				/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1"
+			);
+			fetch('/api/v1/settings', {
+				method: 'PUT',
+				headers: {
+					'Content-Type': 'application/json',
+					'X-CSRF-Token': csrfToken
+				},
+				body: JSON.stringify({"rule_schedule.interval_hours": value})
 			});
 		}
 	</script>

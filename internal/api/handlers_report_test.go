@@ -238,6 +238,35 @@ func TestHandleReportCompliance(t *testing.T) {
 	}
 }
 
+func TestSanitizeCSV(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"empty", "", ""},
+		{"plain text", "hello", "hello"},
+		{"equals prefix", "=1+1", "'=1+1"},
+		{"plus prefix", "+1", "'+1"},
+		{"minus prefix", "-1", "'-1"},
+		{"at prefix", "@SUM(A1)", "'@SUM(A1)"},
+		{"tab then equals", "\t=1+1", "'\t=1+1"},
+		{"space then plus", " +cmd", "' +cmd"},
+		{"spaces then at", "   @evil", "'   @evil"},
+		{"tab space equals", "\t =calc", "'\t =calc"},
+		{"whitespace only", "   ", "   "},
+		{"safe after whitespace", " hello", " hello"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := sanitizeCSV(tc.input)
+			if got != tc.want {
+				t.Errorf("sanitizeCSV(%q) = %q, want %q", tc.input, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestBuildHealthSummary(t *testing.T) {
 	artists := []artist.Artist{
 		{Name: "A", NFOExists: true, ThumbExists: true, FanartExists: true, MusicBrainzID: "id1"},
