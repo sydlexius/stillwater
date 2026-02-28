@@ -215,6 +215,7 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	// Backup routes
 	mux.HandleFunc("POST "+bp+"/api/v1/settings/backup", wrapAuth(r.handleBackupCreate, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/settings/backup/history", wrapAuth(r.handleBackupHistory, authMw))
+	mux.HandleFunc("DELETE "+bp+"/api/v1/settings/backup/{filename}", wrapAuth(r.handleBackupDelete, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/settings/backup/{filename}", wrapAuth(r.handleBackupDownload, authMw))
 	// Logging routes
 	mux.HandleFunc("GET "+bp+"/api/v1/settings/logging", wrapAuth(r.handleGetLogging, authMw))

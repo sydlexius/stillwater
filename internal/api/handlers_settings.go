@@ -55,6 +55,18 @@ func (r *Router) handleUpdateSettings(w http.ResponseWriter, req *http.Request) 
 		}
 	}
 
+	// Apply backup settings to the service immediately
+	if v, ok := body["backup_retention_count"]; ok {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			r.backupService.SetRetention(n)
+		}
+	}
+	if v, ok := body["backup_max_age_days"]; ok {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			r.backupService.SetMaxAgeDays(n)
+		}
+	}
+
 	writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
 }
 

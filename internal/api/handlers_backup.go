@@ -53,6 +53,33 @@ func (r *Router) handleBackupHistory(w http.ResponseWriter, req *http.Request) {
 	json.NewEncoder(w).Encode(backups) //nolint:errcheck
 }
 
+func (r *Router) handleBackupDelete(w http.ResponseWriter, req *http.Request) {
+	filename := req.PathValue("filename")
+	if !backup.IsValidBackupFilename(filename) {
+		writeError(w, req, http.StatusBadRequest, "invalid filename")
+		return
+	}
+
+	if err := r.backupService.Delete(filename); err != nil {
+		r.logger.Error("deleting backup", "filename", filename, "error", err)
+		writeError(w, req, http.StatusInternalServerError, "failed to delete backup")
+		return
+	}
+
+	if req.Header.Get("HX-Request") == "true" {
+		backups, listErr := r.backupService.ListBackups()
+		if listErr != nil {
+			r.logger.Error("listing backups after delete", "error", listErr)
+			writeError(w, req, http.StatusInternalServerError, "listing backups failed")
+			return
+		}
+		r.renderBackupList(w, backups)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+}
+
 func (r *Router) handleBackupDownload(w http.ResponseWriter, req *http.Request) {
 	filename := req.PathValue("filename")
 	if !backup.IsValidBackupFilename(filename) {
@@ -75,12 +102,21 @@ func (r *Router) renderBackupList(w http.ResponseWriter, backups []backup.Backup
 	html := `<table class="w-full text-sm"><thead><tr class="text-left text-xs text-gray-500 dark:text-gray-400"><th class="py-2">Filename</th><th class="py-2">Size</th><th class="py-2">Date</th><th class="py-2"></th></tr></thead><tbody>`
 	for _, b := range backups {
 		html += fmt.Sprintf(
-			`<tr class="border-t border-gray-200 dark:border-gray-700"><td class="py-2">%s</td><td class="py-2">%s</td><td class="py-2">%s</td><td class="py-2"><a href="%s/api/v1/settings/backup/%s" class="text-blue-600 dark:text-blue-400 hover:underline">Download</a></td></tr>`,
-			b.Filename, formatBytes(b.Size), b.CreatedAt.Format("2006-01-02 15:04:05"), r.basePath, b.Filename,
+			`<tr class="border-t border-gray-200 dark:border-gray-700">`+
+				`<td class="py-2">%s</td>`+
+				`<td class="py-2">%s</td>`+
+				`<td class="py-2">%s</td>`+
+				`<td class="py-2 text-right">`+
+				`<a href="%s/api/v1/settings/backup/%s" class="text-blue-600 dark:text-blue-400 hover:underline mr-3">Download</a>`+
+				`<button type="button" class="text-red-600 dark:text-red-400 hover:underline" hx-delete="%s/api/v1/settings/backup/%s" hx-target="#backup-list" hx-swap="innerHTML" hx-confirm="Delete backup %s?">Delete</button>`+
+				`</td></tr>`,
+			b.Filename, formatBytes(b.Size), b.CreatedAt.Format("2006-01-02 15:04:05"),
+			r.basePath, b.Filename,
+			r.basePath, b.Filename, b.Filename,
 		)
 	}
 	html += `</tbody></table>`
-	w.Write([]byte(html)) //nolint:errcheck,gosec // G705: all values are from validated backup filenames, formatBytes, and time.Format
+	w.Write([]byte(html)) //nolint:errcheck,gosec // all values are from validated backup filenames, formatBytes, and time.Format
 }
 
 func formatBytes(b int64) string {

@@ -25,10 +25,11 @@ type BackupInfo struct {
 
 // Service manages database backups.
 type Service struct {
-	db        *sql.DB
-	backupDir string
-	retention int
-	logger    *slog.Logger
+	db         *sql.DB
+	backupDir  string
+	retention  int
+	maxAgeDays int
+	logger     *slog.Logger
 }
 
 // NewService creates a backup service.
@@ -115,26 +116,84 @@ func (s *Service) ListBackups() ([]BackupInfo, error) {
 	return backups, nil
 }
 
-// Prune deletes the oldest backups exceeding the retention count.
+// Delete removes a single backup file by filename.
+func (s *Service) Delete(filename string) error {
+	if !IsValidBackupFilename(filename) {
+		return fmt.Errorf("invalid backup filename")
+	}
+	path := filepath.Join(s.backupDir, filename)
+	if err := os.Remove(path); err != nil { //nolint:gosec // G703: filename validated by IsValidBackupFilename above
+		return fmt.Errorf("removing backup: %w", err)
+	}
+	s.logger.Info("backup deleted", slog.String("filename", filename))
+	return nil
+}
+
+// SetRetention updates the retention count for pruning.
+func (s *Service) SetRetention(count int) {
+	s.retention = count
+	s.logger.Info("backup retention updated", slog.Int("count", count))
+}
+
+// SetMaxAgeDays updates the max age in days for pruning.
+func (s *Service) SetMaxAgeDays(days int) {
+	s.maxAgeDays = days
+	s.logger.Info("backup max age updated", slog.Int("days", days))
+}
+
+// Retention returns the current retention count.
+func (s *Service) Retention() int {
+	return s.retention
+}
+
+// MaxAgeDays returns the current max age in days.
+func (s *Service) MaxAgeDays() int {
+	return s.maxAgeDays
+}
+
+// Prune deletes backups exceeding the retention count and older than max age.
 func (s *Service) Prune() error {
 	backups, err := s.ListBackups()
 	if err != nil {
 		return err
 	}
 
-	if len(backups) <= s.retention {
-		return nil
+	// Count-based pruning
+	if len(backups) > s.retention {
+		for _, b := range backups[s.retention:] {
+			path := filepath.Join(s.backupDir, b.Filename)
+			if err := os.Remove(path); err != nil {
+				s.logger.Warn("failed to remove old backup",
+					slog.String("filename", b.Filename),
+					slog.Any("error", err))
+				continue
+			}
+			s.logger.Info("pruned old backup", slog.String("filename", b.Filename))
+		}
 	}
 
-	for _, b := range backups[s.retention:] {
-		path := filepath.Join(s.backupDir, b.Filename)
-		if err := os.Remove(path); err != nil {
-			s.logger.Warn("failed to remove old backup",
-				slog.String("filename", b.Filename),
-				slog.Any("error", err))
-			continue
+	// Age-based pruning
+	if s.maxAgeDays > 0 {
+		cutoff := time.Now().UTC().AddDate(0, 0, -s.maxAgeDays)
+		// Re-read after count-based pruning may have removed some
+		backups, err = s.ListBackups()
+		if err != nil {
+			return err
 		}
-		s.logger.Info("pruned old backup", slog.String("filename", b.Filename))
+		for _, b := range backups {
+			if b.CreatedAt.Before(cutoff) {
+				path := filepath.Join(s.backupDir, b.Filename)
+				if err := os.Remove(path); err != nil {
+					s.logger.Warn("failed to remove aged backup",
+						slog.String("filename", b.Filename),
+						slog.Any("error", err))
+					continue
+				}
+				s.logger.Info("pruned aged backup",
+					slog.String("filename", b.Filename),
+					slog.Int("max_age_days", s.maxAgeDays))
+			}
+		}
 	}
 
 	return nil
