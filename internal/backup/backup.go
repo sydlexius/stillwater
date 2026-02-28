@@ -230,7 +230,8 @@ func (s *Service) BackupDir() string {
 func (s *Service) StartScheduler(ctx context.Context, interval time.Duration) {
 	s.logger.Info("backup scheduler started",
 		slog.String("interval", interval.String()),
-		slog.Int("retention", s.Retention()))
+		slog.Int("retention", s.Retention()),
+		slog.Int("max_age_days", s.MaxAgeDays()))
 
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
