@@ -460,9 +460,9 @@ func (r *Router) processAndSaveImage(ctx context.Context, dir string, imageType 
 		}
 	}
 
-	naming := r.getActiveNamingConfig(ctx, imageType)
+	naming, useSymlinks := r.getActiveNamingAndSymlinks(ctx, imageType)
 
-	saved, err := img.Save(dir, imageType, resized, naming, r.logger)
+	saved, err := img.Save(dir, imageType, resized, naming, useSymlinks, r.logger)
 	if err != nil {
 		return nil, fmt.Errorf("saving: %w", err)
 	}
@@ -474,15 +474,22 @@ func (r *Router) processAndSaveImage(ctx context.Context, dir string, imageType 
 // active platform profile. Returns the full array so that image saves write
 // copies for every configured filename.
 func (r *Router) getActiveNamingConfig(ctx context.Context, imageType string) []string {
+	names, _ := r.getActiveNamingAndSymlinks(ctx, imageType)
+	return names
+}
+
+// getActiveNamingAndSymlinks returns the filenames for the given image type and
+// the UseSymlinks flag from the active platform profile.
+func (r *Router) getActiveNamingAndSymlinks(ctx context.Context, imageType string) ([]string, bool) {
 	profile, err := r.platformService.GetActive(ctx)
 	if err != nil || profile == nil {
-		return img.FileNamesForType(img.DefaultFileNames, imageType)
+		return img.FileNamesForType(img.DefaultFileNames, imageType), false
 	}
 	names := profile.ImageNaming.NamesForType(imageType)
 	if len(names) == 0 {
-		return img.FileNamesForType(img.DefaultFileNames, imageType)
+		return img.FileNamesForType(img.DefaultFileNames, imageType), profile.UseSymlinks
 	}
-	return names
+	return names, profile.UseSymlinks
 }
 
 // isPrivateURL returns true if the URL's hostname resolves to a loopback,
@@ -974,7 +981,8 @@ func (r *Router) handleLogoTrim(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	if _, err := img.Save(a.Path, "logo", trimmed, patterns, r.logger); err != nil {
+	_, useSymlinks := r.getActiveNamingAndSymlinks(req.Context(), "logo")
+	if _, err := img.Save(a.Path, "logo", trimmed, patterns, useSymlinks, r.logger); err != nil {
 		r.logger.Error("saving trimmed logo", "artist_id", artistID, "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to save trimmed logo"})
 		return
@@ -1049,7 +1057,7 @@ func (r *Router) processAndAppendFanart(ctx context.Context, dir string, data []
 	nextIndex := img.NextFanartIndex(maxIdx, kodi)
 	nextName := img.FanartFilename(primary, nextIndex, kodi)
 
-	saved, err := img.Save(dir, "fanart", resized, []string{nextName}, r.logger)
+	saved, err := img.Save(dir, "fanart", resized, []string{nextName}, false, r.logger)
 	if err != nil {
 		return nil, fmt.Errorf("saving: %w", err)
 	}

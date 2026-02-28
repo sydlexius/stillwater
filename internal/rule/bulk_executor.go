@@ -13,6 +13,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/event"
 	img "github.com/sydlexius/stillwater/internal/image"
 	"github.com/sydlexius/stillwater/internal/nfo"
+	"github.com/sydlexius/stillwater/internal/platform"
 	"github.com/sydlexius/stillwater/internal/provider"
 )
 
@@ -23,6 +24,7 @@ type BulkExecutor struct {
 	orchestrator    *provider.Orchestrator
 	pipeline        *Pipeline
 	snapshotService *nfo.SnapshotService
+	platformService *platform.Service
 	logger          *slog.Logger
 	eventBus        *event.Bus
 
@@ -37,13 +39,14 @@ func (e *BulkExecutor) SetEventBus(bus *event.Bus) {
 }
 
 // NewBulkExecutor creates a BulkExecutor.
-func NewBulkExecutor(bulkService *BulkService, artistService *artist.Service, orchestrator *provider.Orchestrator, pipeline *Pipeline, snapshotService *nfo.SnapshotService, logger *slog.Logger) *BulkExecutor {
+func NewBulkExecutor(bulkService *BulkService, artistService *artist.Service, orchestrator *provider.Orchestrator, pipeline *Pipeline, snapshotService *nfo.SnapshotService, platformService *platform.Service, logger *slog.Logger) *BulkExecutor {
 	return &BulkExecutor{
 		bulkService:     bulkService,
 		artistService:   artistService,
 		orchestrator:    orchestrator,
 		pipeline:        pipeline,
 		snapshotService: snapshotService,
+		platformService: platformService,
 		logger:          logger.With(slog.String("component", "bulk-executor")),
 	}
 }
@@ -360,7 +363,8 @@ func (e *BulkExecutor) saveBestImage(ctx context.Context, a *artist.Artist, imag
 		}
 
 		naming := img.FileNamesForType(img.DefaultFileNames, imageType)
-		if _, err := img.Save(a.Path, imageType, resized, naming, e.logger); err != nil {
+		useSymlinks := activeUseSymlinks(ctx, e.platformService)
+		if _, err := img.Save(a.Path, imageType, resized, naming, useSymlinks, e.logger); err != nil {
 			continue
 		}
 

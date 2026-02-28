@@ -16,8 +16,16 @@ type Profile struct {
 	NFOEnabled  bool        `json:"nfo_enabled"`
 	NFOFormat   string      `json:"nfo_format"`
 	ImageNaming ImageNaming `json:"image_naming"`
+	UseSymlinks bool        `json:"use_symlinks"`
 	CreatedAt   time.Time   `json:"created_at"`
 	UpdatedAt   time.Time   `json:"updated_at"`
+}
+
+// Editable returns true if the profile's settings (image naming, symlinks)
+// may be modified. The seeded "custom" profile and all user-created profiles
+// are editable; other builtin profiles (emby, jellyfin, kodi, plex) are read-only.
+func (p *Profile) Editable() bool {
+	return !p.IsBuiltin || p.ID == "custom"
 }
 
 // ImageNaming maps image types to their filename patterns.

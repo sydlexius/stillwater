@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
+	"github.com/sydlexius/stillwater/internal/filesystem"
 	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/platform"
 	"github.com/sydlexius/stillwater/web/templates"
@@ -36,6 +37,7 @@ func (r *Router) handleCreatePlatform(w http.ResponseWriter, req *http.Request) 
 		NFOEnabled  bool                 `json:"nfo_enabled"`
 		NFOFormat   string               `json:"nfo_format"`
 		ImageNaming platform.ImageNaming `json:"image_naming"`
+		UseSymlinks bool                 `json:"use_symlinks"`
 	}
 	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
@@ -59,6 +61,7 @@ func (r *Router) handleCreatePlatform(w http.ResponseWriter, req *http.Request) 
 		NFOEnabled:  body.NFOEnabled,
 		NFOFormat:   body.NFOFormat,
 		ImageNaming: body.ImageNaming,
+		UseSymlinks: body.UseSymlinks,
 	}
 	if err := r.platformService.Create(req.Context(), p); err != nil {
 		r.logger.Error("creating platform", "error", err)
@@ -81,6 +84,7 @@ func (r *Router) handleUpdatePlatform(w http.ResponseWriter, req *http.Request) 
 		NFOEnabled  *bool                 `json:"nfo_enabled"`
 		NFOFormat   *string               `json:"nfo_format"`
 		ImageNaming *platform.ImageNaming `json:"image_naming"`
+		UseSymlinks *bool                 `json:"use_symlinks"`
 	}
 	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
@@ -109,6 +113,12 @@ func (r *Router) handleUpdatePlatform(w http.ResponseWriter, req *http.Request) 
 		return
 	}
 
+	// Prevent symlink changes on non-editable profiles.
+	if body.UseSymlinks != nil && !existing.Editable() {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "cannot change symlink setting on a built-in profile"})
+		return
+	}
+
 	if body.Name != nil {
 		existing.Name = *body.Name
 	}
@@ -120,6 +130,9 @@ func (r *Router) handleUpdatePlatform(w http.ResponseWriter, req *http.Request) 
 	}
 	if body.ImageNaming != nil {
 		existing.ImageNaming = *body.ImageNaming
+	}
+	if body.UseSymlinks != nil {
+		existing.UseSymlinks = *body.UseSymlinks
 	}
 
 	if err := r.platformService.Update(req.Context(), existing); err != nil {
@@ -213,6 +226,15 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 		r.populateFSNotifySupported(libs)
 	}
 
+	// Probe symlink support against the first library path with a filesystem.
+	symlinkSupported := false
+	for _, lib := range libs {
+		if lib.Path != "" {
+			symlinkSupported = filesystem.ProbeSymlinkSupport(lib.Path)
+			break
+		}
+	}
+
 	tab := req.URL.Query().Get("tab")
 	switch tab {
 	case "general", "providers", "connections", "libraries", "automation", "rules", "maintenance":
@@ -232,6 +254,7 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 		Webhooks:             webhooks,
 		WebSearchProviders:   webSearchProviders,
 		AutoFetchImages:      r.getBoolSetting(req.Context(), "auto_fetch_images", false),
+		SymlinkSupported:     symlinkSupported,
 		Rules:                rules,
 		BadgeEnabled:         r.getBoolSetting(req.Context(), "notif_badge_enabled", true),
 		BadgeSeverityError:   r.getBoolSetting(req.Context(), "notif_badge_severity_error", true),

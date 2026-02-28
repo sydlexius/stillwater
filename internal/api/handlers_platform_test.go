@@ -170,3 +170,47 @@ func TestUpdatePlatform_NotFound(t *testing.T) {
 		t.Fatalf("status = %d, want %d", w.Code, http.StatusNotFound)
 	}
 }
+
+func TestUpdatePlatform_UseSymlinks(t *testing.T) {
+	r, svc, id := testRouterWithPlatformForUpdate(t)
+
+	body := `{"use_symlinks": true}`
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/platforms/"+id, bytes.NewBufferString(body))
+	req.SetPathValue("id", id)
+	w := httptest.NewRecorder()
+	r.handleUpdatePlatform(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	got, err := svc.GetByID(context.Background(), id)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if !got.UseSymlinks {
+		t.Error("UseSymlinks should be true after update")
+	}
+}
+
+func TestUpdatePlatform_UseSymlinks_BuiltinRejected(t *testing.T) {
+	r, _, _ := testRouterWithPlatformForUpdate(t)
+
+	// Attempt to set use_symlinks on the built-in Kodi profile (not editable).
+	body := `{"use_symlinks": true}`
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/platforms/kodi", bytes.NewBufferString(body))
+	req.SetPathValue("id", "kodi")
+	w := httptest.NewRecorder()
+	r.handleUpdatePlatform(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusBadRequest, w.Body.String())
+	}
+	var resp map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if resp["error"] == "" {
+		t.Error("expected error message in response")
+	}
+}

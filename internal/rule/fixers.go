@@ -358,7 +358,8 @@ func (f *ImageFixer) Fix(ctx context.Context, a *artist.Artist, v *Violation) (*
 		}
 
 		naming := existingImageFileNames(ctx, a.Path, imageType, f.platformService)
-		saved, err := img.Save(a.Path, imageType, resized, naming, f.logger)
+		useSymlinks := activeUseSymlinks(ctx, f.platformService)
+		saved, err := img.Save(a.Path, imageType, resized, naming, useSymlinks, f.logger)
 		if err != nil {
 			f.logger.Debug("image save failed", "url", c.URL, "error", err)
 			continue
@@ -413,7 +414,7 @@ func setImageFlag(a *artist.Artist, imageType string) {
 // ApplyImageCandidate downloads a candidate URL and saves it as an image in the
 // artist directory. The naming slice controls which filenames are written; pass
 // nil to fall back to DefaultFileNames. Used by the apply-candidate API handler.
-func ApplyImageCandidate(ctx context.Context, a *artist.Artist, imageType, rawURL string, naming []string, logger *slog.Logger) error {
+func ApplyImageCandidate(ctx context.Context, a *artist.Artist, imageType, rawURL string, naming []string, useSymlinks bool, logger *slog.Logger) error {
 	data, err := fetchImageURL(ctx, rawURL)
 	if err != nil {
 		return fmt.Errorf("downloading image: %w", err)
@@ -427,7 +428,7 @@ func ApplyImageCandidate(ctx context.Context, a *artist.Artist, imageType, rawUR
 	if len(naming) == 0 {
 		naming = img.FileNamesForType(img.DefaultFileNames, imageType)
 	}
-	if _, err := img.Save(a.Path, imageType, resized, naming, logger); err != nil {
+	if _, err := img.Save(a.Path, imageType, resized, naming, useSymlinks, logger); err != nil {
 		return fmt.Errorf("saving image: %w", err)
 	}
 
@@ -662,4 +663,17 @@ func fetchImageURL(ctx context.Context, rawURL string) ([]byte, error) {
 	}
 
 	return data, nil
+}
+
+// activeUseSymlinks returns the UseSymlinks flag from the active platform profile.
+// Returns false if the service is nil or the profile cannot be fetched.
+func activeUseSymlinks(ctx context.Context, svc *platform.Service) bool {
+	if svc == nil {
+		return false
+	}
+	p, err := svc.GetActive(ctx)
+	if err != nil || p == nil {
+		return false
+	}
+	return p.UseSymlinks
 }
