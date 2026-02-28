@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/event"
@@ -105,7 +106,11 @@ func (r *Router) handleLidarrArtistAdd(ctx context.Context, payload webhook.Lida
 	r.logger.Info("lidarr ArtistAdded: new artist, triggering scan",
 		"artist", payload.Artist.Name, "mbid", mbid)
 	if _, err := r.scannerService.Run(ctx); err != nil {
-		r.logger.Error("scan after lidarr ArtistAdded failed", "error", err)
+		if strings.Contains(err.Error(), "already in progress") {
+			r.logger.Info("scan after lidarr ArtistAdded skipped: scan already in progress")
+		} else {
+			r.logger.Error("scan after lidarr ArtistAdded failed", "error", err)
+		}
 	}
 }
 
