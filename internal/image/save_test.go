@@ -236,6 +236,54 @@ func TestSave_Symlinks_FanartException(t *testing.T) {
 	}
 }
 
+func TestSave_Symlinks_ExtensionCoercionDuplicate(t *testing.T) {
+	if !filesystem.ProbeSymlinkSupport(t.TempDir()) {
+		t.Skip("symlinks not supported on this platform/configuration")
+	}
+
+	dir := t.TempDir()
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+
+	// Both "folder.jpg" and "folder.png" resolve to "folder.jpg" when saving
+	// JPEG data. Without the guard, the second entry would delete the primary
+	// and create a self-referential symlink.
+	jpegData := makeJPEG(t, 100, 100)
+	saved, err := Save(dir, "thumb", jpegData, []string{"folder.jpg", "folder.png"}, true, logger)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Only one file should be reported (the duplicate is skipped).
+	if len(saved) != 1 {
+		t.Fatalf("saved %d files, want 1; got %v", len(saved), saved)
+	}
+	if saved[0] != "folder.jpg" {
+		t.Errorf("saved[0] = %q, want %q", saved[0], "folder.jpg")
+	}
+
+	// The file should be a regular file, not a symlink.
+	fi, err := os.Lstat(filepath.Join(dir, "folder.jpg"))
+	if err != nil {
+		t.Fatalf("Lstat: %v", err)
+	}
+	if fi.Mode()&os.ModeSymlink != 0 {
+		t.Error("folder.jpg should be a regular file, not a symlink")
+	}
+
+	// Verify the file is readable and valid.
+	data, err := os.ReadFile(filepath.Join(dir, "folder.jpg"))
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	format, _, err := DetectFormat(bytesReader(data))
+	if err != nil {
+		t.Fatalf("DetectFormat: %v", err)
+	}
+	if format != FormatJPEG {
+		t.Errorf("format = %q, want %q", format, FormatJPEG)
+	}
+}
+
 func TestSave_Symlinks_SingleFile(t *testing.T) {
 	dir := t.TempDir()
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))

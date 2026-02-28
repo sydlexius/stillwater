@@ -72,6 +72,15 @@ func Save(dir string, imageType string, data []byte, fileNames []string, useSyml
 				primaryPath = targetPath
 			}
 		} else {
+			// Skip if extension coercion caused this name to resolve to the
+			// same path as the primary (e.g., ["folder.jpg", "folder.png"]
+			// with JPEG data both become "folder.jpg").
+			if targetPath == primaryPath {
+				logger.Debug("skipping duplicate after extension coercion",
+					slog.String("name", name),
+					slog.String("resolved", targetName))
+				continue
+			}
 			// Subsequent files: create symlink to primary
 			if err := filesystem.CreateRelativeSymlink(primaryPath, targetPath); err != nil {
 				logger.Warn("symlink creation failed, falling back to copy",

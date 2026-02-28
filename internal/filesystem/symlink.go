@@ -10,18 +10,21 @@ import (
 // creating a temporary file and symlink, verifying readlink, and cleaning up.
 // Returns false on any failure (permission denied, unsupported filesystem, etc.).
 func ProbeSymlinkSupport(dir string) bool {
-	tmpFile := filepath.Join(dir, ".symlink_probe_target")
-	tmpLink := filepath.Join(dir, ".symlink_probe_link")
+	// Use a unique temp file to avoid colliding with user files.
+	f, err := os.CreateTemp(dir, ".symlink_probe_*")
+	if err != nil {
+		return false
+	}
+	tmpFile := f.Name()
+	_ = f.Close()
 
-	// Clean up on exit regardless of outcome.
+	tmpLink := filepath.Join(dir, filepath.Base(tmpFile)+"_link") // #nosec G703 -- derived from our own temp file
+
+	// Clean up only the files we created.
 	defer func() {
 		_ = os.Remove(tmpLink)
 		_ = os.Remove(tmpFile)
 	}()
-
-	if err := os.WriteFile(tmpFile, []byte("probe"), 0o600); err != nil {
-		return false
-	}
 
 	// Use relative target so the symlink is portable within the directory.
 	if err := os.Symlink(filepath.Base(tmpFile), tmpLink); err != nil {
