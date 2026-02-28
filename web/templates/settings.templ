@@ -1634,6 +1634,34 @@ templ settingsLibraryRow(lib library.Library) {
 			</div>
 		</div>
 		<div class="flex items-center gap-2">
+			if !lib.IsDegraded() {
+				<select
+					class="text-xs rounded border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 focus:ring-blue-500 px-1.5 py-1"
+					title="Filesystem monitoring mode"
+					onchange={ settingsUpdateFSMode(lib.ID) }
+				>
+					<option value="0" selected?={ lib.FSWatch == 0 }>Off</option>
+					if lib.FSNotifySupported {
+						<option value="1" selected?={ lib.FSWatch == library.FSModeWatch }>Watch</option>
+					}
+					<option value="2" selected?={ lib.FSWatch == library.FSModePoll }>Poll</option>
+					if lib.FSNotifySupported {
+						<option value="3" selected?={ lib.FSWatch == library.FSModeBoth }>Watch + Poll</option>
+					}
+				</select>
+				if lib.FSPollEnabled() {
+					<select
+						class="text-xs rounded border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 focus:ring-blue-500 px-1.5 py-1"
+						title="Poll interval"
+						onchange={ settingsUpdatePollInterval(lib.ID) }
+					>
+						<option value="60" selected?={ lib.FSPollInterval == 60 }>1m</option>
+						<option value="300" selected?={ lib.FSPollInterval == 300 }>5m</option>
+						<option value="900" selected?={ lib.FSPollInterval == 900 }>15m</option>
+						<option value="1800" selected?={ lib.FSPollInterval == 1800 }>30m</option>
+					</select>
+				}
+			}
 			if lib.IsDegraded() && lib.ConnectionID != "" {
 				<button
 					type="button"
@@ -1665,6 +1693,14 @@ templ settingsLibraryRow(lib library.Library) {
 			</button>
 		</div>
 	</div>
+}
+
+script settingsUpdateFSMode(id string) {
+	updateLibraryFSMode(id, parseInt(event.target.value, 10));
+}
+
+script settingsUpdatePollInterval(id string) {
+	updateLibraryPollInterval(id, parseInt(event.target.value, 10));
 }
 
 script settingsDeleteLibrary(id string) {
@@ -1717,6 +1753,31 @@ templ settingsLibraryScript() {
 							+ '</span>';
 					}
 					var spinnerSvg = '<svg class="hidden animate-spin h-3 w-3" viewBox="0 0 24 24" fill="none"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>';
+					var modeSelect = '';
+					if (lib.path) {
+						var fsMode = lib.fs_watch || 0;
+						var supportsNotify = lib.fs_notify_supported;
+						var selClass = 'text-xs rounded border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 focus:ring-blue-500 px-1.5 py-1';
+						modeSelect = '<select class="' + selClass + '" title="Filesystem monitoring mode" onchange="updateLibraryFSMode(&apos;' + lib.id + '&apos;, parseInt(this.value, 10))">'
+							+ '<option value="0"' + (fsMode === 0 ? ' selected' : '') + '>Off</option>';
+						if (supportsNotify) {
+							modeSelect += '<option value="1"' + (fsMode === 1 ? ' selected' : '') + '>Watch</option>';
+						}
+						modeSelect += '<option value="2"' + (fsMode === 2 ? ' selected' : '') + '>Poll</option>';
+						if (supportsNotify) {
+							modeSelect += '<option value="3"' + (fsMode === 3 ? ' selected' : '') + '>Watch + Poll</option>';
+						}
+						modeSelect += '</select>';
+						if (fsMode === 2 || fsMode === 3) {
+							var pi = lib.fs_poll_interval || 60;
+							modeSelect += ' <select class="' + selClass + '" title="Poll interval" onchange="updateLibraryPollInterval(&apos;' + lib.id + '&apos;, parseInt(this.value, 10))">'
+								+ '<option value="60"' + (pi === 60 ? ' selected' : '') + '>1m</option>'
+								+ '<option value="300"' + (pi === 300 ? ' selected' : '') + '>5m</option>'
+								+ '<option value="900"' + (pi === 900 ? ' selected' : '') + '>15m</option>'
+								+ '<option value="1800"' + (pi === 1800 ? ' selected' : '') + '>30m</option>'
+								+ '</select>';
+						}
+					}
 					var populateBtn = '';
 					if (!lib.path && lib.connection_id) {
 						populateBtn = '<button type="button" id="populate-btn-' + lib.id + '" class="text-xs px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors inline-flex items-center gap-1" onclick="runLibraryOp(&apos;' + lib.connection_id + '&apos;, &apos;' + lib.id + '&apos;, &apos;populate&apos;)">'
@@ -1740,6 +1801,7 @@ templ settingsLibraryScript() {
 						+ '</div>'
 						+ '</div>'
 						+ '<div class="flex items-center gap-2">'
+						+ modeSelect
 						+ populateBtn
 						+ scanBtn
 						+ '<button type="button" class="text-xs text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300" onclick="settingsDeleteLibrary_click(&apos;' + lib.id + '&apos;)">'
@@ -1855,6 +1917,42 @@ templ settingsLibraryScript() {
 					showToast("Network error while checking operation status");
 				});
 			}, 2000);
+		}
+
+		function updateLibraryFSMode(id, mode) {
+			var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1");
+			fetch("/api/v1/libraries/" + id, {
+				method: "PUT",
+				headers: {"Content-Type": "application/json", "X-CSRF-Token": csrfToken},
+				body: JSON.stringify({fs_watch: mode})
+			}).then(function(res) {
+				if (res.ok) {
+					var labels = {0: "Off", 1: "Watch", 2: "Poll", 3: "Watch + Poll"};
+					showSuccessToast("Monitoring set to " + (labels[mode] || "Off"));
+					refreshSettingsLibraryList();
+				} else {
+					showToast("Failed to update library");
+				}
+			}).catch(function() {
+				showToast("Network error");
+			});
+		}
+
+		function updateLibraryPollInterval(id, interval) {
+			var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1");
+			fetch("/api/v1/libraries/" + id, {
+				method: "PUT",
+				headers: {"Content-Type": "application/json", "X-CSRF-Token": csrfToken},
+				body: JSON.stringify({fs_poll_interval: interval})
+			}).then(function(res) {
+				if (res.ok) {
+					showSuccessToast("Poll interval updated");
+				} else {
+					showToast("Failed to update poll interval");
+				}
+			}).catch(function() {
+				showToast("Network error");
+			});
 		}
 
 		function settingsDeleteLibrary_click(id) {

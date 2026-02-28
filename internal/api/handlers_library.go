@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/library"
+	"github.com/sydlexius/stillwater/internal/watcher"
 )
 
 // handleListLibraries returns all libraries as JSON.
@@ -17,6 +19,7 @@ func (r *Router) handleListLibraries(w http.ResponseWriter, req *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 		return
 	}
+	r.populateFSNotifySupported(libs)
 	writeJSON(w, http.StatusOK, libs)
 }
 
@@ -103,9 +106,11 @@ func (r *Router) handleUpdateLibrary(w http.ResponseWriter, req *http.Request) {
 	}
 
 	var body struct {
-		Name string `json:"name"`
-		Path string `json:"path"`
-		Type string `json:"type"`
+		Name           string `json:"name"`
+		Path           string `json:"path"`
+		Type           string `json:"type"`
+		FSWatch        *int   `json:"fs_watch"`
+		FSPollInterval *int   `json:"fs_poll_interval"`
 	}
 	if strings.HasPrefix(req.Header.Get("Content-Type"), "application/json") {
 		if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
@@ -131,12 +136,28 @@ func (r *Router) handleUpdateLibrary(w http.ResponseWriter, req *http.Request) {
 		}
 		existing.Type = body.Type
 	}
+	if body.FSWatch != nil {
+		v := *body.FSWatch
+		if v < 0 || v > 3 {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "fs_watch must be 0-3"})
+			return
+		}
+		existing.FSWatch = v
+	}
+	if body.FSPollInterval != nil {
+		if !library.IsValidPollInterval(*body.FSPollInterval) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "fs_poll_interval must be 60, 300, 900, or 1800"})
+			return
+		}
+		existing.FSPollInterval = *body.FSPollInterval
+	}
 
 	if err := r.libraryService.Update(req.Context(), existing); err != nil {
 		r.logger.Error("updating library", "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 		return
 	}
+	r.populateFSNotifySupportedPtr(existing)
 	writeJSON(w, http.StatusOK, existing)
 }
 
@@ -158,4 +179,39 @@ func (r *Router) handleDeleteLibrary(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+}
+
+// populateFSNotifySupported sets the FSNotifySupported field on each library
+// from the probe cache. This is a runtime-only field not stored in the DB.
+// For paths not yet probed, an on-demand probe is run and cached.
+func (r *Router) populateFSNotifySupported(libs []library.Library) {
+	if r.probeCache == nil {
+		return
+	}
+	for i := range libs {
+		if libs[i].IsDegraded() {
+			continue
+		}
+		r.resolveProbe(&libs[i])
+	}
+}
+
+// populateFSNotifySupportedPtr is the single-library pointer variant used
+// by update handlers so the caller's struct is mutated directly.
+func (r *Router) populateFSNotifySupportedPtr(lib *library.Library) {
+	if r.probeCache == nil || lib.IsDegraded() {
+		return
+	}
+	r.resolveProbe(lib)
+}
+
+// resolveProbe sets FSNotifySupported from the probe cache, running an
+// on-demand probe when no cached result exists for the path.
+func (r *Router) resolveProbe(lib *library.Library) {
+	supported, ok := r.probeCache.Get(lib.Path)
+	if !ok {
+		supported = watcher.ProbeFSNotify(lib.Path, 2*time.Second)
+		r.probeCache.Set(lib.Path, supported)
+	}
+	lib.FSNotifySupported = supported
 }
