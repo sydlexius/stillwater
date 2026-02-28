@@ -178,7 +178,7 @@ func run() error {
 
 	// Initialize bulk operations
 	bulkService := rule.NewBulkService(db)
-	bulkExecutor := rule.NewBulkExecutor(bulkService, artistService, orchestrator, pipeline, nfoSnapshotService, logger)
+	bulkExecutor := rule.NewBulkExecutor(bulkService, artistService, orchestrator, pipeline, nfoSnapshotService, platformService, logger)
 
 	// Initialize event bus
 	eventBus := event.NewBus(logger, 256)

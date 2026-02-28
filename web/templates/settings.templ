@@ -50,6 +50,7 @@ type SettingsData struct {
 	APITokens            []auth.APIToken
 	BackupRetention      int
 	BackupMaxAgeDays     int
+	SymlinkSupported     bool
 }
 
 // settingsTab defines a tab in the settings page navigation.
@@ -397,6 +398,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 		@resetConfirmPrefsScript()
 		@settingsTabScript()
 		@autoFetchToggleScript()
+		@symlinkToggleScript()
 		@settingsLibraryScript()
 		@settingsConnectionScript()
 		@connectionFeatureToggleScript()
@@ -467,6 +469,45 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 								@profileNamingRow("Banner", "banner", data.ActiveProfile.ImageNaming.Banner, !profileEditable(data.ActiveProfile))
 							</div>
 							if profileEditable(data.ActiveProfile) {
+								<div class="mt-4 flex items-center justify-between">
+									<div>
+										<div class="font-medium text-sm">Use symlinks for duplicate copies</div>
+										<div class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+											if data.SymlinkSupported {
+												When multiple filenames are configured for an image type, create symlinks instead of byte-for-byte copies. Fanart images are always real files.
+											} else {
+												Symlinks are not supported on this filesystem. The library path does not support symbolic links.
+											}
+										</div>
+									</div>
+									<button
+										type="button"
+										id="symlink-toggle"
+										class={
+											"relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800",
+											templ.KV("cursor-pointer", data.SymlinkSupported),
+											templ.KV("cursor-not-allowed opacity-50", !data.SymlinkSupported),
+											templ.KV("bg-blue-600", data.ActiveProfile.UseSymlinks),
+											templ.KV("bg-gray-200 dark:bg-gray-600", !data.ActiveProfile.UseSymlinks),
+										}
+										role="switch"
+										aria-checked={ boolAttr(data.ActiveProfile.UseSymlinks) }
+										aria-label="Use symlinks for duplicate copies"
+										if data.SymlinkSupported {
+											onclick="toggleSymlinks(this)"
+										}
+										disabled?={ !data.SymlinkSupported }
+										data-profile-id={ data.ActiveProfile.ID }
+									>
+										<span
+											class={
+												"pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out",
+												templ.KV("translate-x-5", data.ActiveProfile.UseSymlinks),
+												templ.KV("translate-x-0", !data.ActiveProfile.UseSymlinks),
+											}
+										></span>
+									</button>
+								</div>
 								<div class="pt-2">
 									<button
 										type="button"
@@ -1560,6 +1601,52 @@ templ autoFetchToggleScript() {
 				} else {
 					if (typeof showToast === 'function') {
 						showToast('Failed to update auto-fetch setting.');
+					}
+				}
+			}).catch(function() {
+				if (typeof showToast === 'function') {
+					showToast('Network error while updating setting.');
+				}
+			});
+		}
+	</script>
+}
+
+templ symlinkToggleScript() {
+	<script>
+		function toggleSymlinks(btn) {
+			var isOn = btn.getAttribute('aria-checked') === 'true';
+			var newVal = !isOn;
+			var profileId = btn.getAttribute('data-profile-id');
+			var csrfToken = document.cookie.replace(
+				/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1"
+			);
+			fetch('/api/v1/platforms/' + profileId, {
+				method: 'PUT',
+				headers: {
+					'Content-Type': 'application/json',
+					'X-CSRF-Token': csrfToken
+				},
+				body: JSON.stringify({'use_symlinks': newVal}),
+				credentials: 'same-origin'
+			}).then(function(r) {
+				if (r.ok) {
+					btn.setAttribute('aria-checked', String(newVal));
+					var knob = btn.querySelector('span');
+					if (newVal) {
+						btn.classList.remove('bg-gray-200', 'dark:bg-gray-600');
+						btn.classList.add('bg-blue-600');
+						knob.classList.remove('translate-x-0');
+						knob.classList.add('translate-x-5');
+					} else {
+						btn.classList.remove('bg-blue-600');
+						btn.classList.add('bg-gray-200', 'dark:bg-gray-600');
+						knob.classList.remove('translate-x-5');
+						knob.classList.add('translate-x-0');
+					}
+				} else {
+					if (typeof showToast === 'function') {
+						showToast('Failed to update symlink setting.');
 					}
 				}
 			}).catch(function() {

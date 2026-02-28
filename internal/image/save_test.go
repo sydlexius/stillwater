@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/sydlexius/stillwater/internal/filesystem"
 )
 
 func bytesReader(data []byte) io.Reader {
@@ -18,7 +20,7 @@ func TestSave_SingleFile(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 
 	jpegData := makeJPEG(t, 100, 100)
-	saved, err := Save(dir, "thumb", jpegData, []string{"folder.jpg"}, logger)
+	saved, err := Save(dir, "thumb", jpegData, []string{"folder.jpg"}, false, logger)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -38,7 +40,7 @@ func TestSave_MultipleFiles(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 
 	jpegData := makeJPEG(t, 100, 100)
-	saved, err := Save(dir, "thumb", jpegData, []string{"folder.jpg", "artist.jpg"}, logger)
+	saved, err := Save(dir, "thumb", jpegData, []string{"folder.jpg", "artist.jpg"}, false, logger)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -60,7 +62,7 @@ func TestSave_LogoForcePNG(t *testing.T) {
 
 	// Send a JPEG to be saved as a logo -- should convert to PNG
 	jpegData := makeJPEG(t, 100, 100)
-	saved, err := Save(dir, "logo", jpegData, []string{"logo.png"}, logger)
+	saved, err := Save(dir, "logo", jpegData, []string{"logo.png"}, false, logger)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -94,7 +96,7 @@ func TestSave_CleansUpConflicts(t *testing.T) {
 
 	// Save a PNG thumb -- should delete the old JPG
 	pngData := makePNG(t, 100, 100)
-	_, err := Save(dir, "thumb", pngData, []string{"folder.jpg"}, logger)
+	_, err := Save(dir, "thumb", pngData, []string{"folder.jpg"}, false, logger)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -123,7 +125,7 @@ func TestSave_NoFileNames_Error(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 
 	jpegData := makeJPEG(t, 10, 10)
-	_, err := Save(dir, "thumb", jpegData, nil, logger)
+	_, err := Save(dir, "thumb", jpegData, nil, false, logger)
 	if err == nil {
 		t.Error("expected error for empty filenames")
 	}
@@ -134,7 +136,7 @@ func TestSave_PNGThumb_KeepsPNG(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 
 	pngData := makePNG(t, 100, 100)
-	saved, err := Save(dir, "thumb", pngData, []string{"folder.jpg"}, logger)
+	saved, err := Save(dir, "thumb", pngData, []string{"folder.jpg"}, false, logger)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -142,5 +144,117 @@ func TestSave_PNGThumb_KeepsPNG(t *testing.T) {
 	// PNG data sent but config says "folder.jpg" -- the extension should change to .png
 	if len(saved) != 1 || saved[0] != "folder.png" {
 		t.Errorf("saved = %v, want [folder.png]", saved)
+	}
+}
+
+func TestSave_Symlinks(t *testing.T) {
+	if !filesystem.ProbeSymlinkSupport(t.TempDir()) {
+		t.Skip("symlinks not supported on this platform/configuration")
+	}
+
+	dir := t.TempDir()
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+
+	jpegData := makeJPEG(t, 100, 100)
+	saved, err := Save(dir, "thumb", jpegData, []string{"folder.jpg", "artist.jpg"}, true, logger)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(saved) != 2 {
+		t.Fatalf("saved %d files, want 2", len(saved))
+	}
+
+	// First file should be a regular file
+	primaryPath := filepath.Join(dir, saved[0])
+	fi, err := os.Lstat(primaryPath)
+	if err != nil {
+		t.Fatalf("Lstat primary: %v", err)
+	}
+	if fi.Mode()&os.ModeSymlink != 0 {
+		t.Error("primary file should not be a symlink")
+	}
+
+	// Second file should be a symlink
+	secondPath := filepath.Join(dir, saved[1])
+	fi, err = os.Lstat(secondPath)
+	if err != nil {
+		t.Fatalf("Lstat second: %v", err)
+	}
+	if fi.Mode()&os.ModeSymlink == 0 {
+		t.Error("second file should be a symlink")
+	}
+
+	// Symlink target should be relative (just the filename)
+	target, err := os.Readlink(secondPath)
+	if err != nil {
+		t.Fatalf("Readlink: %v", err)
+	}
+	if target != saved[0] {
+		t.Errorf("symlink target = %q, want %q", target, saved[0])
+	}
+
+	// Content should be readable through the symlink
+	primaryData, err := os.ReadFile(primaryPath)
+	if err != nil {
+		t.Fatalf("reading primary: %v", err)
+	}
+	symlinkData, err := os.ReadFile(secondPath)
+	if err != nil {
+		t.Fatalf("reading symlink: %v", err)
+	}
+	if !bytes.Equal(primaryData, symlinkData) {
+		t.Error("content mismatch between primary and symlink")
+	}
+}
+
+func TestSave_Symlinks_FanartException(t *testing.T) {
+	if !filesystem.ProbeSymlinkSupport(t.TempDir()) {
+		t.Skip("symlinks not supported on this platform/configuration")
+	}
+
+	dir := t.TempDir()
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+
+	jpegData := makeJPEG(t, 100, 100)
+	saved, err := Save(dir, "fanart", jpegData, []string{"fanart.jpg", "backdrop.jpg"}, true, logger)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(saved) != 2 {
+		t.Fatalf("saved %d files, want 2", len(saved))
+	}
+
+	// Both files should be regular files (fanart exception)
+	for _, name := range saved {
+		fi, err := os.Lstat(filepath.Join(dir, name))
+		if err != nil {
+			t.Fatalf("Lstat %s: %v", name, err)
+		}
+		if fi.Mode()&os.ModeSymlink != 0 {
+			t.Errorf("%s should be a regular file (fanart exception), but is a symlink", name)
+		}
+	}
+}
+
+func TestSave_Symlinks_SingleFile(t *testing.T) {
+	dir := t.TempDir()
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+
+	jpegData := makeJPEG(t, 100, 100)
+	saved, err := Save(dir, "thumb", jpegData, []string{"folder.jpg"}, true, logger)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(saved) != 1 || saved[0] != "folder.jpg" {
+		t.Errorf("saved = %v, want [folder.jpg]", saved)
+	}
+
+	// Single file should be a regular file, no symlinks
+	fi, err := os.Lstat(filepath.Join(dir, saved[0]))
+	if err != nil {
+		t.Fatalf("Lstat: %v", err)
+	}
+	if fi.Mode()&os.ModeSymlink != 0 {
+		t.Error("single file should not be a symlink")
 	}
 }

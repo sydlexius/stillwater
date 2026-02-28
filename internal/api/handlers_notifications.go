@@ -182,8 +182,8 @@ func (r *Router) handleApplyViolationCandidate(w http.ResponseWriter, req *http.
 	}
 
 	// Download and save the chosen image
-	naming := r.getActiveNamingConfig(req.Context(), body.ImageType)
-	if err := rule.ApplyImageCandidate(req.Context(), a, body.ImageType, body.URL, naming, r.logger); err != nil {
+	naming, useSymlinks := r.getActiveNamingAndSymlinks(req.Context(), body.ImageType)
+	if err := rule.ApplyImageCandidate(req.Context(), a, body.ImageType, body.URL, naming, useSymlinks, r.logger); err != nil {
 		writeError(w, req, http.StatusInternalServerError, fmt.Sprintf("applying candidate: %v", err))
 		return
 	}

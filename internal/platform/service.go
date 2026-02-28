@@ -24,7 +24,7 @@ func NewService(db *sql.DB) *Service {
 func (s *Service) List(ctx context.Context) ([]Profile, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, name, is_builtin, is_active, nfo_enabled, nfo_format,
-			image_naming, created_at, updated_at
+			image_naming, use_symlinks, created_at, updated_at
 		FROM platform_profiles ORDER BY name
 	`)
 	if err != nil {
@@ -47,7 +47,7 @@ func (s *Service) List(ctx context.Context) ([]Profile, error) {
 func (s *Service) GetByID(ctx context.Context, id string) (*Profile, error) {
 	row := s.db.QueryRowContext(ctx, `
 		SELECT id, name, is_builtin, is_active, nfo_enabled, nfo_format,
-			image_naming, created_at, updated_at
+			image_naming, use_symlinks, created_at, updated_at
 		FROM platform_profiles WHERE id = ?
 	`, id)
 	p, err := scanProfile(row)
@@ -64,7 +64,7 @@ func (s *Service) GetByID(ctx context.Context, id string) (*Profile, error) {
 func (s *Service) GetActive(ctx context.Context) (*Profile, error) {
 	row := s.db.QueryRowContext(ctx, `
 		SELECT id, name, is_builtin, is_active, nfo_enabled, nfo_format,
-			image_naming, created_at, updated_at
+			image_naming, use_symlinks, created_at, updated_at
 		FROM platform_profiles WHERE is_active = 1 LIMIT 1
 	`)
 	p, err := scanProfile(row)
@@ -81,7 +81,7 @@ func (s *Service) GetActive(ctx context.Context) (*Profile, error) {
 func (s *Service) GetByName(ctx context.Context, name string) (*Profile, error) {
 	row := s.db.QueryRowContext(ctx, `
 		SELECT id, name, is_builtin, is_active, nfo_enabled, nfo_format,
-			image_naming, created_at, updated_at
+			image_naming, use_symlinks, created_at, updated_at
 		FROM platform_profiles WHERE name = ? LIMIT 1
 	`, name)
 	p, err := scanProfile(row)
@@ -128,11 +128,11 @@ func (s *Service) Create(ctx context.Context, p *Profile) error {
 	p.UpdatedAt = now
 
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO platform_profiles (id, name, is_builtin, is_active, nfo_enabled, nfo_format, image_naming, created_at, updated_at)
-		VALUES (?, ?, 0, ?, ?, ?, ?, ?, ?)
+		INSERT INTO platform_profiles (id, name, is_builtin, is_active, nfo_enabled, nfo_format, image_naming, use_symlinks, created_at, updated_at)
+		VALUES (?, ?, 0, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		p.ID, p.Name, boolToInt(p.IsActive), boolToInt(p.NFOEnabled), p.NFOFormat,
-		MarshalImageNaming(p.ImageNaming),
+		MarshalImageNaming(p.ImageNaming), boolToInt(p.UseSymlinks),
 		now.Format(time.RFC3339), now.Format(time.RFC3339),
 	)
 	if err != nil {
@@ -147,11 +147,11 @@ func (s *Service) Update(ctx context.Context, p *Profile) error {
 
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE platform_profiles SET
-			name = ?, nfo_enabled = ?, nfo_format = ?, image_naming = ?, updated_at = ?
+			name = ?, nfo_enabled = ?, nfo_format = ?, image_naming = ?, use_symlinks = ?, updated_at = ?
 		WHERE id = ?
 	`,
 		p.Name, boolToInt(p.NFOEnabled), p.NFOFormat,
-		MarshalImageNaming(p.ImageNaming),
+		MarshalImageNaming(p.ImageNaming), boolToInt(p.UseSymlinks),
 		p.UpdatedAt.Format(time.RFC3339),
 		p.ID,
 	)
@@ -177,13 +177,13 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 
 func scanProfile(row interface{ Scan(...any) error }) (*Profile, error) {
 	var p Profile
-	var isBuiltin, isActive, nfoEnabled int
+	var isBuiltin, isActive, nfoEnabled, useSymlinks int
 	var imageNaming string
 	var createdAt, updatedAt string
 
 	err := row.Scan(
 		&p.ID, &p.Name, &isBuiltin, &isActive, &nfoEnabled, &p.NFOFormat,
-		&imageNaming, &createdAt, &updatedAt,
+		&imageNaming, &useSymlinks, &createdAt, &updatedAt,
 	)
 	if err != nil {
 		return nil, err
@@ -192,6 +192,7 @@ func scanProfile(row interface{ Scan(...any) error }) (*Profile, error) {
 	p.IsBuiltin = isBuiltin == 1
 	p.IsActive = isActive == 1
 	p.NFOEnabled = nfoEnabled == 1
+	p.UseSymlinks = useSymlinks == 1
 	p.ImageNaming = UnmarshalImageNaming(imageNaming)
 	p.CreatedAt = parseTime(createdAt)
 	p.UpdatedAt = parseTime(updatedAt)
