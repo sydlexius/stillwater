@@ -174,15 +174,14 @@ func (r *Router) handleRunAllRules(w http.ResponseWriter, req *http.Request) {
 		result, err := r.pipeline.RunAll(ctx)
 
 		r.ruleRunMu.Lock()
-		defer r.ruleRunMu.Unlock()
-
 		r.ruleRun.Running = false
 		r.ruleRun.CompletedAt = time.Now().UTC()
 
 		if err != nil {
-			r.logger.Error("running all rules", "error", err)
 			r.ruleRun.Status = "failed"
 			r.ruleRun.Error = err.Error()
+			r.ruleRunMu.Unlock()
+			r.logger.Error("running all rules", "error", err)
 			return
 		}
 
@@ -191,6 +190,7 @@ func (r *Router) handleRunAllRules(w http.ResponseWriter, req *http.Request) {
 		r.ruleRun.ViolationsFound = result.ViolationsFound
 		r.ruleRun.FixesAttempted = result.FixesAttempted
 		r.ruleRun.FixesSucceeded = result.FixesSucceeded
+		r.ruleRunMu.Unlock()
 	}()
 
 	writeJSON(w, http.StatusAccepted, map[string]string{"status": "started"})
