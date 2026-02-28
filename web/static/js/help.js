@@ -88,7 +88,7 @@
         var html = '';
         for (var i = 0; i < results.length; i++) {
             var s = results[i];
-            html += '<a href="/guide#' + escapeHtml(s.id) + '" class="block rounded-lg border border-gray-200 dark:border-gray-700 p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">'
+            html += '<a href="/guide#' + encodeURIComponent(s.id) + '" class="block rounded-lg border border-gray-200 dark:border-gray-700 p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">'
                 + '<h4 class="text-sm font-semibold text-gray-900 dark:text-gray-100">' + escapeHtml(s.title) + '</h4>'
                 + '<p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">' + escapeHtml(s.summary) + '</p>'
                 + '</a>';
