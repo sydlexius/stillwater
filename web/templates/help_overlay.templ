@@ -8,13 +8,13 @@ templ HelpOverlay() {
 		class="fixed inset-0 z-50 hidden"
 		role="dialog"
 		aria-modal="true"
-		aria-label="Help"
+		aria-labelledby="help-overlay-title"
 	>
 		<div class="fixed inset-0 bg-black/40 transition-opacity" id="help-backdrop"></div>
 		<div class="fixed inset-0 flex items-center justify-center p-4">
 			<div class="relative w-full max-w-2xl max-h-[80vh] rounded-lg bg-white dark:bg-gray-800 shadow-xl flex flex-col">
 				<div class="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-					<h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100">Help</h3>
+					<h3 id="help-overlay-title" class="text-lg font-semibold text-gray-900 dark:text-gray-100">Help</h3>
 					<button
 						type="button"
 						class="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
