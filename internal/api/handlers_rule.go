@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -158,6 +159,18 @@ func (r *Router) handleRunAllRules(w http.ResponseWriter, req *http.Request) {
 
 	ctx := context.WithoutCancel(req.Context())
 	go func() {
+		defer func() {
+			if rv := recover(); rv != nil {
+				r.ruleRunMu.Lock()
+				r.ruleRun.Running = false
+				r.ruleRun.Status = "failed"
+				r.ruleRun.Error = fmt.Sprintf("panic: %v", rv)
+				r.ruleRun.CompletedAt = time.Now().UTC()
+				r.ruleRunMu.Unlock()
+				r.logger.Error("panic in rule run", "recover", rv)
+			}
+		}()
+
 		result, err := r.pipeline.RunAll(ctx)
 
 		r.ruleRunMu.Lock()

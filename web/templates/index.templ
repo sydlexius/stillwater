@@ -80,7 +80,15 @@ templ IndexPage(assets AssetPaths) {
 			}
 
 			function pollRuleStatus() {
+				var attempts = 0;
+				var maxAttempts = 150;
 				var poll = setInterval(function() {
+					if (++attempts > maxAttempts) {
+						clearInterval(poll);
+						showToast('Rule status polling timed out');
+						resetRuleButton();
+						return;
+					}
 					fetch('/api/v1/rules/run-all/status')
 						.then(function(r) {
 							if (!r.ok) {
@@ -112,6 +120,7 @@ templ IndexPage(assets AssetPaths) {
 						})
 						.catch(function() {
 							clearInterval(poll);
+							showToast('Network error while checking rule status');
 							resetRuleButton();
 						});
 				}, 2000);
