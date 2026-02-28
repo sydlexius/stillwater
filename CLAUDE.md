@@ -235,7 +235,7 @@ When any change (milestone work, bug fix, or standalone request) touches user-fa
 
 **What to update:**
 - In-app guide (`web/templates/guide.templ` and `/guide` route) -- once it exists
-- GitHub wiki pages -- the wiki is a separate repo (`/tmp/stillwater.wiki/`), push directly to `master`:
+- GitHub wiki pages -- the wiki is a separate repo (clone it alongside the main repo, for example `../stillwater.wiki/`), push directly to `master`:
   - [Architecture](https://github.com/sydlexius/stillwater/wiki/Architecture) -- if the change adds, removes, or modifies a subsystem, provider, event type, middleware, or core interface
   - [Contributing](https://github.com/sydlexius/stillwater/wiki/Contributing) -- if the change alters linting rules, pre-commit hooks, test patterns, commit conventions, or the PR process
   - [Developer Guide](https://github.com/sydlexius/stillwater/wiki/Developer-Guide) -- if the change adds a new top-level package, changes the tech stack, or modifies a design principle
