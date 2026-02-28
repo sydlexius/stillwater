@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -105,9 +106,9 @@ func (r *Router) renderBackupList(w http.ResponseWriter, backups []backup.Backup
 		w.Write([]byte(`<p class="text-sm text-gray-500 dark:text-gray-400 italic">No backups yet.</p>`)) //nolint:errcheck
 		return
 	}
-	html := `<table class="w-full text-sm"><thead><tr class="text-left text-xs text-gray-500 dark:text-gray-400"><th class="py-2">Filename</th><th class="py-2">Size</th><th class="py-2">Date</th><th class="py-2"></th></tr></thead><tbody>`
+	out := `<table class="w-full text-sm"><thead><tr class="text-left text-xs text-gray-500 dark:text-gray-400"><th class="py-2">Filename</th><th class="py-2">Size</th><th class="py-2">Date</th><th class="py-2"></th></tr></thead><tbody>`
 	for _, b := range backups {
-		html += fmt.Sprintf(
+		out += fmt.Sprintf(
 			`<tr class="border-t border-gray-200 dark:border-gray-700">`+
 				`<td class="py-2">%s</td>`+
 				`<td class="py-2">%s</td>`+
@@ -117,12 +118,12 @@ func (r *Router) renderBackupList(w http.ResponseWriter, backups []backup.Backup
 				`<button type="button" class="text-red-600 dark:text-red-400 hover:underline" hx-delete="%s/api/v1/settings/backup/%s" hx-target="#backup-list" hx-swap="innerHTML" hx-confirm="Delete backup %s?">Delete</button>`+
 				`</td></tr>`,
 			b.Filename, formatBytes(b.Size), b.CreatedAt.Format("2006-01-02 15:04:05"),
-			r.basePath, b.Filename,
-			r.basePath, b.Filename, b.Filename,
+			html.EscapeString(r.basePath), b.Filename,
+			html.EscapeString(r.basePath), b.Filename, b.Filename,
 		)
 	}
-	html += `</tbody></table>`
-	w.Write([]byte(html)) //nolint:errcheck,gosec // all values are from validated backup filenames, formatBytes, and time.Format
+	out += `</tbody></table>`
+	w.Write([]byte(out)) //nolint:errcheck,gosec // all values are from validated backup filenames, formatBytes, and time.Format
 }
 
 func formatBytes(b int64) string {
