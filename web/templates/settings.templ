@@ -3094,7 +3094,13 @@ templ apiTokenScript() {
 				body: JSON.stringify({ name: name, scopes: scopes.join(',') })
 			})
 			.then(function(resp) {
-				if (!resp.ok) throw new Error('Failed to create token');
+				if (!resp.ok) {
+					return resp.json().then(function(body) {
+						throw new Error(body.error || 'Failed to create token');
+					}, function() {
+						throw new Error('Failed to create token');
+					});
+				}
 				return resp.json();
 			})
 			.then(function(data) {

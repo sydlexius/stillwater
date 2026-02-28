@@ -254,14 +254,14 @@ func (s *Service) ListAPITokens(ctx context.Context, userID string) ([]APIToken,
 func (s *Service) RevokeAPIToken(ctx context.Context, id, userID string) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 	result, err := s.db.ExecContext(ctx, `
-		UPDATE api_tokens SET revoked_at = ? WHERE id = ? AND user_id = ?
+		UPDATE api_tokens SET revoked_at = ? WHERE id = ? AND user_id = ? AND revoked_at IS NULL
 	`, now, id, userID)
 	if err != nil {
 		return fmt.Errorf("revoking api token: %w", err)
 	}
 	n, _ := result.RowsAffected()
 	if n == 0 {
-		return errors.New("token not found")
+		return errors.New("token not found or already revoked")
 	}
 	return nil
 }
