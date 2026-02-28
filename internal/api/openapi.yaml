@@ -1317,7 +1317,7 @@ paths:
       summary: Run all enabled rules (async)
       description: >
         Starts an asynchronous run of all enabled rules against all artists.
-        Returns 202 immediately; poll GET /rules/run-all/status for progress.
+        Returns 202 immediately; poll GET /rules/run-all/status for completion status.
       operationId: runAllRules
       responses:
         "202":
