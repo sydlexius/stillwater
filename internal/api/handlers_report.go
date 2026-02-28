@@ -439,7 +439,11 @@ func sanitizeCSV(s string) string {
 	if len(s) == 0 {
 		return s
 	}
-	switch s[0] {
+	trimmed := strings.TrimLeft(s, " \t")
+	if len(trimmed) == 0 {
+		return s
+	}
+	switch trimmed[0] {
 	case '=', '+', '-', '@':
 		return "'" + s
 	}
