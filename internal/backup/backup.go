@@ -224,7 +224,7 @@ func (s *Service) BackupDir() string {
 func (s *Service) StartScheduler(ctx context.Context, interval time.Duration) {
 	s.logger.Info("backup scheduler started",
 		slog.String("interval", interval.String()),
-		slog.Int("retention", s.retention))
+		slog.Int("retention", s.Retention()))
 
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
