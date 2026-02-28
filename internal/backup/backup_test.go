@@ -141,6 +141,84 @@ func TestListBackupsEmptyDir(t *testing.T) {
 	}
 }
 
+func TestDelete(t *testing.T) {
+	db := setupTestDB(t)
+	backupDir := filepath.Join(t.TempDir(), "backups")
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	svc := NewService(db, backupDir, 7, logger)
+
+	info, err := svc.Backup(context.Background())
+	if err != nil {
+		t.Fatalf("Backup: %v", err)
+	}
+
+	// Delete should succeed
+	if err := svc.Delete(info.Filename); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+
+	// Verify file is gone
+	backups, err := svc.ListBackups()
+	if err != nil {
+		t.Fatalf("ListBackups: %v", err)
+	}
+	if len(backups) != 0 {
+		t.Errorf("expected 0 backups after delete, got %d", len(backups))
+	}
+
+	// Delete with invalid filename should fail
+	if err := svc.Delete("../evil.db"); err == nil {
+		t.Error("expected error for invalid filename")
+	}
+
+	// Delete nonexistent file should fail
+	if err := svc.Delete("stillwater-20260101-000000.db"); err == nil {
+		t.Error("expected error for nonexistent file")
+	}
+}
+
+func TestPruneWithMaxAge(t *testing.T) {
+	db := setupTestDB(t)
+	backupDir := filepath.Join(t.TempDir(), "backups")
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	svc := NewService(db, backupDir, 100, logger) // High retention to not trigger count-based pruning
+
+	// Create backup files with old timestamps
+	if err := os.MkdirAll(backupDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a "recent" backup (today)
+	recentName := "stillwater-" + time.Now().UTC().Format("20060102-150405") + ".db"
+	if err := os.WriteFile(filepath.Join(backupDir, recentName), []byte("recent"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create an "old" backup (60 days ago)
+	oldTime := time.Now().UTC().AddDate(0, 0, -60)
+	oldName := "stillwater-" + oldTime.Format("20060102-150405") + ".db"
+	if err := os.WriteFile(filepath.Join(backupDir, oldName), []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Set max age to 30 days and prune
+	svc.SetMaxAgeDays(30)
+	if err := svc.Prune(); err != nil {
+		t.Fatalf("Prune: %v", err)
+	}
+
+	backups, err := svc.ListBackups()
+	if err != nil {
+		t.Fatalf("ListBackups: %v", err)
+	}
+	if len(backups) != 1 {
+		t.Fatalf("expected 1 backup after age-based prune, got %d", len(backups))
+	}
+	if backups[0].Filename != recentName {
+		t.Errorf("expected recent backup to survive, got %s", backups[0].Filename)
+	}
+}
+
 func TestIsValidBackupFilename(t *testing.T) {
 	tests := []struct {
 		name  string

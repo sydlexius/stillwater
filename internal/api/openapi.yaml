@@ -1764,6 +1764,35 @@ paths:
               schema:
                 type: string
                 format: binary
+    delete:
+      tags: [Backup]
+      summary: Delete a backup file
+      operationId: deleteBackup
+      parameters:
+        - name: filename
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Backup deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+        "400":
+          description: Invalid filename
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Backup not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /scanner/run:
     post:

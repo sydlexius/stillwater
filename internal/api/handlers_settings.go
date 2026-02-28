@@ -42,6 +42,22 @@ func (r *Router) handleUpdateSettings(w http.ResponseWriter, req *http.Request) 
 		return
 	}
 
+	// Validate backup settings before persisting
+	if v, ok := body["backup_retention_count"]; ok {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "backup_retention_count must be a positive integer"})
+			return
+		}
+	}
+	if v, ok := body["backup_max_age_days"]; ok {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 0 {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "backup_max_age_days must be zero or a positive integer"})
+			return
+		}
+	}
+
 	now := time.Now().UTC().Format(time.RFC3339)
 	for k, v := range body {
 		_, err := r.db.ExecContext(req.Context(), //nolint:gosec // G701: static query with parameterized values
@@ -52,6 +68,18 @@ func (r *Router) handleUpdateSettings(w http.ResponseWriter, req *http.Request) 
 			r.logger.Error("upserting setting", "key", k, "error", err)
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 			return
+		}
+	}
+
+	// Apply backup settings to the service immediately
+	if v, ok := body["backup_retention_count"]; ok {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			r.backupService.SetRetention(n)
+		}
+	}
+	if v, ok := body["backup_max_age_days"]; ok {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			r.backupService.SetMaxAgeDays(n)
 		}
 	}
 
