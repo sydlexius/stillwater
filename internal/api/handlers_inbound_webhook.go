@@ -57,7 +57,7 @@ func (r *Router) processLidarrEvent(ctx context.Context, payload webhook.LidarrP
 		r.handleLidarrDownload(ctx, payload)
 
 	default:
-		r.logger.Info("unhandled lidarr event type", "event_type", payload.EventType)
+		r.logger.Debug("unhandled lidarr event type", "event_type", payload.EventType)
 	}
 }
 
