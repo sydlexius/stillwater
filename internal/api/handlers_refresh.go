@@ -284,6 +284,8 @@ func (r *Router) renderRefreshWithOOB(w http.ResponseWriter, req *http.Request, 
 	members, err := r.artistService.ListMembersByArtistID(req.Context(), artistID)
 	if err != nil {
 		r.logger.Warn("listing members for OOB refresh", "artist_id", artistID, "error", err)
+		renderTempl(w, req, templates.RefreshResultSummary(artistID, sources))
+		return
 	}
 
 	priorities, _ := r.providerSettings.GetPriorities(req.Context())
