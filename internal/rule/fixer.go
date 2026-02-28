@@ -224,7 +224,7 @@ func (p *Pipeline) RunForArtist(ctx context.Context, a *artist.Artist) (*RunResu
 			continue
 		}
 
-		if r.AutomationMode == AutomationModeNotify {
+		if r.AutomationMode == AutomationModeManual {
 			rv := &RuleViolation{
 				RuleID:     v.RuleID,
 				ArtistID:   a.ID,
