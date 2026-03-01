@@ -110,6 +110,7 @@ templ IndexPage(assets AssetPaths) {
 								showSuccessToast(msg);
 								resetRuleButton();
 								htmx.ajax('GET', '/api/v1/reports/health', {target: '#health-summary', swap: 'innerHTML'});
+								htmx.ajax('GET', '/api/v1/notifications/badge', {target: '#notif-badge-desktop', swap: 'innerHTML'});
 							} else if (data.status === 'failed') {
 								clearInterval(poll);
 								showToast('Rule evaluation failed: ' + (data.error || 'unknown error'));

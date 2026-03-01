@@ -172,6 +172,27 @@ func (r *Router) handleRunAllRules(w http.ResponseWriter, req *http.Request) {
 
 		result, err := r.pipeline.RunAll(ctx)
 
+		// Compute violation count outside the mutex to avoid blocking status polls.
+		violationsFound := result.ViolationsFound
+		if err == nil {
+			counts, dbErr := r.ruleService.CountActiveViolationsBySeverity(ctx)
+			if dbErr != nil {
+				r.logger.Warn("querying active violations for toast count", "error", dbErr)
+			} else {
+				total := 0
+				if r.getBoolSetting(ctx, "notif_badge_severity_error", true) {
+					total += counts["error"]
+				}
+				if r.getBoolSetting(ctx, "notif_badge_severity_warning", true) {
+					total += counts["warning"]
+				}
+				if r.getBoolSetting(ctx, "notif_badge_severity_info", false) {
+					total += counts["info"]
+				}
+				violationsFound = total
+			}
+		}
+
 		r.ruleRunMu.Lock()
 		r.ruleRun.Running = false
 		r.ruleRun.CompletedAt = time.Now().UTC()
@@ -186,9 +207,9 @@ func (r *Router) handleRunAllRules(w http.ResponseWriter, req *http.Request) {
 
 		r.ruleRun.Status = "completed"
 		r.ruleRun.ArtistsProcessed = result.ArtistsProcessed
-		r.ruleRun.ViolationsFound = result.ViolationsFound
 		r.ruleRun.FixesAttempted = result.FixesAttempted
 		r.ruleRun.FixesSucceeded = result.FixesSucceeded
+		r.ruleRun.ViolationsFound = violationsFound
 		r.ruleRunMu.Unlock()
 	}()
 
