@@ -837,3 +837,172 @@ func TestExtraneousImagesFixer_Fix_EmptyPath(t *testing.T) {
 		t.Errorf("Message = %q, want 'artist has no path'", result.Message)
 	}
 }
+
+func TestPipeline_ManualMode_DiscoversCandidates(t *testing.T) {
+	db := setupTestDB(t)
+	artistSvc := artist.NewService(db)
+	ruleSvc := NewService(db)
+	ctx := context.Background()
+
+	if err := ruleSvc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("seeding rules: %v", err)
+	}
+
+	// Set nfo_exists rule to manual mode.
+	r, err := ruleSvc.GetByID(ctx, RuleNFOExists)
+	if err != nil {
+		t.Fatalf("getting rule: %v", err)
+	}
+	r.AutomationMode = AutomationModeManual
+	if err := ruleSvc.Update(ctx, r); err != nil {
+		t.Fatalf("updating rule: %v", err)
+	}
+
+	a := &artist.Artist{
+		Name:     "Manual Mode Test",
+		SortName: "Manual Mode Test",
+		Path:     t.TempDir(),
+	}
+	if err := artistSvc.Create(ctx, a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	candidates := []ImageCandidate{
+		{URL: "http://example.com/c1.jpg", Width: 500, Height: 500, Source: "test", ImageType: "thumb"},
+	}
+	fixer := &mockFixer{
+		canFix: true,
+		result: &FixResult{
+			RuleID:     RuleNFOExists,
+			Fixed:      false,
+			Message:    "candidates found",
+			Candidates: candidates,
+		},
+	}
+
+	engine := NewEngine(ruleSvc, db, nil, testLogger())
+	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{fixer}, testLogger())
+
+	result, err := pipeline.RunRule(ctx, RuleNFOExists)
+	if err != nil {
+		t.Fatalf("RunRule: %v", err)
+	}
+
+	if result.FixesSucceeded != 0 {
+		t.Errorf("FixesSucceeded = %d, want 0 (manual mode should never auto-resolve)", result.FixesSucceeded)
+	}
+	if result.FixesAttempted != 1 {
+		t.Errorf("FixesAttempted = %d, want 1 (should still attempt to discover candidates)", result.FixesAttempted)
+	}
+	if fixer.calls != 1 {
+		t.Errorf("fixer.calls = %d, want 1", fixer.calls)
+	}
+
+	violations, err := ruleSvc.ListViolations(ctx, ViolationStatusPendingChoice)
+	if err != nil {
+		t.Fatalf("ListViolations: %v", err)
+	}
+	found := false
+	for _, v := range violations {
+		if v.ArtistID == a.ID && v.RuleID == RuleNFOExists {
+			found = true
+			if v.Status != ViolationStatusPendingChoice {
+				t.Errorf("status = %q, want %q", v.Status, ViolationStatusPendingChoice)
+			}
+			if len(v.Candidates) != 1 {
+				t.Errorf("Candidates len = %d, want 1", len(v.Candidates))
+			}
+		}
+	}
+	if !found {
+		t.Error("expected pending_choice violation for manual-mode rule, none found")
+	}
+
+	// Verify no resolved violations exist for this rule.
+	resolved, err := ruleSvc.ListViolations(ctx, ViolationStatusResolved)
+	if err != nil {
+		t.Fatalf("ListViolations(resolved): %v", err)
+	}
+	for _, v := range resolved {
+		if v.ArtistID == a.ID && v.RuleID == RuleNFOExists {
+			t.Error("manual-mode rule should never produce resolved violations")
+		}
+	}
+}
+
+func TestPipeline_RunAll_RespectsManualMode(t *testing.T) {
+	db := setupTestDB(t)
+	artistSvc := artist.NewService(db)
+	ruleSvc := NewService(db)
+	ctx := context.Background()
+
+	if err := ruleSvc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("seeding rules: %v", err)
+	}
+
+	// Set nfo_exists to manual mode.
+	r, err := ruleSvc.GetByID(ctx, RuleNFOExists)
+	if err != nil {
+		t.Fatalf("getting rule: %v", err)
+	}
+	r.AutomationMode = AutomationModeManual
+	if err := ruleSvc.Update(ctx, r); err != nil {
+		t.Fatalf("updating rule: %v", err)
+	}
+
+	a := &artist.Artist{
+		Name:     "RunAll Manual Test",
+		SortName: "RunAll Manual Test",
+		Path:     t.TempDir(),
+	}
+	if err := artistSvc.Create(ctx, a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	// Fixer that would auto-resolve if mode were "auto", but returns candidates.
+	fixer := &mockFixer{
+		canFix: true,
+		result: &FixResult{
+			RuleID:     RuleNFOExists,
+			Fixed:      true,
+			Message:    "mock fixed",
+			Candidates: nil,
+		},
+	}
+
+	engine := NewEngine(ruleSvc, db, nil, testLogger())
+	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{fixer}, testLogger())
+
+	_, err = pipeline.RunAll(ctx)
+	if err != nil {
+		t.Fatalf("RunAll: %v", err)
+	}
+
+	// The fixer reports Fixed=true, but RunAll must not count the manual-mode
+	// rule (nfo_exists) as succeeded. Other auto-mode rules may still succeed.
+	resolved, err := ruleSvc.ListViolations(ctx, ViolationStatusResolved)
+	if err != nil {
+		t.Fatalf("ListViolations(resolved): %v", err)
+	}
+	for _, v := range resolved {
+		if v.ArtistID == a.ID && v.RuleID == RuleNFOExists {
+			t.Error("RunAll should not auto-resolve manual-mode violations")
+		}
+	}
+
+	// The manual-mode nfo_exists violation should be open (fixer returns no
+	// candidates, so status is open rather than pending_choice).
+	openViolations, err := ruleSvc.ListViolations(ctx, ViolationStatusOpen)
+	if err != nil {
+		t.Fatalf("ListViolations(open): %v", err)
+	}
+	found := false
+	for _, v := range openViolations {
+		if v.ArtistID == a.ID && v.RuleID == RuleNFOExists {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected open violation for manual-mode nfo_exists rule")
+	}
+}
