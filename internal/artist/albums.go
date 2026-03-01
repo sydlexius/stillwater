@@ -63,7 +63,9 @@ var multiSpace = regexp.MustCompile(`\s+`)
 // lowercase, strip trailing parenthetical suffixes, remove punctuation, collapse whitespace.
 func normalizeAlbumName(name string) string {
 	s := strings.ToLower(name)
-	s = parenSuffix.ReplaceAllString(s, "")
+	for parenSuffix.MatchString(s) {
+		s = parenSuffix.ReplaceAllString(s, "")
+	}
 	s = punctuation.ReplaceAllString(s, "")
 	s = multiSpace.ReplaceAllString(s, " ")
 	s = strings.TrimFunc(s, unicode.IsSpace)

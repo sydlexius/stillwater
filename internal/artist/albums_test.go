@@ -52,6 +52,7 @@ func TestNormalizeAlbumName(t *testing.T) {
 		{"Hail to the Thief", "hail to the thief"},
 		{"...Like Clockwork", "like clockwork"},
 		{"The King Is Dead!", "the king is dead"},
+		{"In Rainbows (Disc 2) (Deluxe Edition)", "in rainbows"},
 		{"  extra  spaces  ", "extra spaces"},
 		{"", ""},
 	}
