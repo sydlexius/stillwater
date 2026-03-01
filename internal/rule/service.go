@@ -27,6 +27,7 @@ const (
 	RuleBannerExists     = "banner_exists"
 	RuleBannerMinRes     = "banner_min_res"
 	RuleExtraneousImages = "extraneous_images"
+	RuleArtistIDMismatch = "artist_id_mismatch"
 )
 
 // defaultRules defines the built-in rules seeded on first startup.
@@ -143,6 +144,15 @@ var defaultRules = []Rule{
 		Enabled:        true,
 		AutomationMode: "manual",
 		Config:         RuleConfig{Severity: "warning"},
+	},
+	{
+		ID:             RuleArtistIDMismatch,
+		Name:           "Artist/ID mismatch",
+		Description:    "Detects when an artist's filesystem folder name differs from their stored metadata name. Uses fuzzy matching to allow minor variations while flagging significant divergences.",
+		Category:       "metadata",
+		Enabled:        false,
+		AutomationMode: "manual",
+		Config:         RuleConfig{Tolerance: 0.8, Severity: "warning"},
 	},
 }
 

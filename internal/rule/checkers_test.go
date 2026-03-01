@@ -492,3 +492,156 @@ func TestEffectiveSeverity(t *testing.T) {
 		t.Errorf("expected warning, got %q", s)
 	}
 }
+
+func TestNormalizeArtistName(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"The Beatles", "beatles"},
+		{"the beatles", "beatles"},
+		{"AC/DC", "acdc"},
+		{"Guns N' Roses", "guns n roses"},
+		{"Beyonce (Deluxe)", "beyonce"},
+		{"  Tool  ", "tool"},
+		{"Motley Crue", "motley crue"},
+		{"", ""},
+		{"The The", "the"},
+		{"A Perfect Circle (Live)", "a perfect circle"},
+		{"Beatles, The", "beatles"},
+		{"Beatles, The (Live)", "beatles"},
+		{"Smashing Pumpkins, The", "smashing pumpkins"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got := normalizeArtistName(tt.input)
+			if got != tt.want {
+				t.Errorf("normalizeArtistName(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestLevenshteinDistance(t *testing.T) {
+	tests := []struct {
+		a, b string
+		want int
+	}{
+		{"", "", 0},
+		{"abc", "", 3},
+		{"", "abc", 3},
+		{"kitten", "sitting", 3},
+		{"saturday", "sunday", 3},
+		{"abc", "abc", 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.a+"_"+tt.b, func(t *testing.T) {
+			got := levenshteinDistance(tt.a, tt.b)
+			if got != tt.want {
+				t.Errorf("levenshteinDistance(%q, %q) = %d, want %d", tt.a, tt.b, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestNameSimilarity(t *testing.T) {
+	tests := []struct {
+		a, b    string
+		wantMin float64
+		wantMax float64
+	}{
+		{"abc", "abc", 1.0, 1.0},
+		{"", "", 1.0, 1.0},
+		{"abc", "xyz", 0.0, 0.01},
+		{"kitten", "sitting", 0.5, 0.6},
+	}
+	for _, tt := range tests {
+		t.Run(tt.a+"_"+tt.b, func(t *testing.T) {
+			got := nameSimilarity(tt.a, tt.b)
+			if got < tt.wantMin || got > tt.wantMax {
+				t.Errorf("nameSimilarity(%q, %q) = %.4f, want [%.2f, %.2f]", tt.a, tt.b, got, tt.wantMin, tt.wantMax)
+			}
+		})
+	}
+}
+
+func TestCheckArtistIDMismatch(t *testing.T) {
+	tests := []struct {
+		name    string
+		artist  artist.Artist
+		cfg     RuleConfig
+		wantNil bool
+	}{
+		{
+			name:    "empty path skips check",
+			artist:  artist.Artist{Name: "Nirvana", Path: ""},
+			cfg:     RuleConfig{Tolerance: 0.8},
+			wantNil: true,
+		},
+		{
+			name:    "exact match",
+			artist:  artist.Artist{Name: "Nirvana", Path: filepath.Join(t.TempDir(), "Nirvana")},
+			cfg:     RuleConfig{Tolerance: 0.8},
+			wantNil: true,
+		},
+		{
+			name:    "case difference only",
+			artist:  artist.Artist{Name: "Nirvana", Path: filepath.Join(t.TempDir(), "nirvana")},
+			cfg:     RuleConfig{Tolerance: 0.8},
+			wantNil: true,
+		},
+		{
+			name:    "The prefix difference",
+			artist:  artist.Artist{Name: "The Beatles", Path: filepath.Join(t.TempDir(), "Beatles")},
+			cfg:     RuleConfig{Tolerance: 0.8},
+			wantNil: true,
+		},
+		{
+			name:    "completely different names",
+			artist:  artist.Artist{Name: "Nirvana", Path: filepath.Join(t.TempDir(), "Metallica")},
+			cfg:     RuleConfig{Tolerance: 0.8},
+			wantNil: false,
+		},
+		{
+			name:    "similar names above threshold",
+			artist:  artist.Artist{Name: "Radiohead", Path: filepath.Join(t.TempDir(), "Radio Head")},
+			cfg:     RuleConfig{Tolerance: 0.8},
+			wantNil: true,
+		},
+		{
+			name:    "default tolerance when zero",
+			artist:  artist.Artist{Name: "Nirvana", Path: filepath.Join(t.TempDir(), "Metallica")},
+			cfg:     RuleConfig{},
+			wantNil: false,
+		},
+		{
+			name:    "sort name folder matches via SortName field",
+			artist:  artist.Artist{Name: "The Beatles", SortName: "Beatles, The", Path: filepath.Join(t.TempDir(), "Beatles, The")},
+			cfg:     RuleConfig{Tolerance: 0.8},
+			wantNil: true,
+		},
+		{
+			name:    "inverted sort name folder matches via normalizer",
+			artist:  artist.Artist{Name: "The Beatles", Path: filepath.Join(t.TempDir(), "Beatles, The")},
+			cfg:     RuleConfig{Tolerance: 0.8},
+			wantNil: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			v := checkArtistIDMismatch(&tt.artist, tt.cfg)
+			if (v == nil) != tt.wantNil {
+				t.Errorf("checkArtistIDMismatch = %v, wantNil = %v", v, tt.wantNil)
+			}
+			if v != nil {
+				if v.Fixable {
+					t.Error("expected Fixable to be false for artist ID mismatch")
+				}
+				if v.RuleID != RuleArtistIDMismatch {
+					t.Errorf("RuleID = %q, want %q", v.RuleID, RuleArtistIDMismatch)
+				}
+			}
+		})
+	}
+}
