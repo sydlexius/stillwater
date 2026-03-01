@@ -147,7 +147,7 @@ var defaultRules = []Rule{
 	},
 	{
 		ID:             RuleArtistIDMismatch,
-		Name:           "Artist/ID mismatched",
+		Name:           "Artist/ID mismatch",
 		Description:    "Detects when an artist's filesystem folder name differs from their stored metadata name. Uses fuzzy matching to allow minor variations while flagging significant divergences.",
 		Category:       "metadata",
 		Enabled:        false,
