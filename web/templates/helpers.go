@@ -260,6 +260,11 @@ func albumMatchClasses(percent int) string {
 	}
 }
 
+// hasMatchedAlbums reports whether the comparison has any matched albums.
+func hasMatchedAlbums(comp *artist.AlbumComparison) bool {
+	return comp != nil && len(comp.Matches) > 0
+}
+
 // joinMatchedNames returns a comma-separated string of matched album names
 // from the comparison, limited to the first 5 entries.
 func joinMatchedNames(comp *artist.AlbumComparison) string {

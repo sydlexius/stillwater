@@ -111,33 +111,56 @@ func (a *Adapter) GetImages(_ context.Context, _ string) ([]provider.ImageResult
 }
 
 // GetReleaseGroups fetches release groups (albums, EPs, singles) for an artist by MBID.
+// Results are paginated in batches of 100 and capped at 500 total to avoid
+// runaway loops on prolific artists (classical composers, etc.).
 func (a *Adapter) GetReleaseGroups(ctx context.Context, mbid string) ([]provider.ReleaseGroupInfo, error) {
-	params := url.Values{
-		"artist": {mbid},
-		"type":   {"album|ep|single"},
-		"limit":  {"100"},
-		"fmt":    {"json"},
-	}
-	reqURL := a.baseURL + "/release-group?" + params.Encode()
+	const (
+		pageSize = 100
+		maxTotal = 500
+	)
 
-	body, err := a.doRequest(ctx, reqURL)
-	if err != nil {
-		return nil, err
+	var results []provider.ReleaseGroupInfo
+	offset := 0
+
+	for {
+		params := url.Values{
+			"artist": {mbid},
+			"type":   {"album|ep|single"},
+			"limit":  {fmt.Sprintf("%d", pageSize)},
+			"offset": {fmt.Sprintf("%d", offset)},
+			"fmt":    {"json"},
+		}
+		reqURL := a.baseURL + "/release-group?" + params.Encode()
+
+		body, err := a.doRequest(ctx, reqURL)
+		if err != nil {
+			return nil, err
+		}
+
+		var resp MBReleaseGroupSearchResponse
+		if err := json.Unmarshal(body, &resp); err != nil {
+			return nil, fmt.Errorf("parsing release-group response: %w", err)
+		}
+
+		for _, rg := range resp.ReleaseGroups {
+			results = append(results, provider.ReleaseGroupInfo{
+				Title:            rg.Title,
+				PrimaryType:      rg.PrimaryType,
+				FirstReleaseDate: rg.FirstReleaseDate,
+			})
+		}
+
+		// Stop when we received fewer results than the page size (last page),
+		// or we have collected all available release groups, or we hit the cap.
+		if len(resp.ReleaseGroups) < pageSize ||
+			len(results) >= resp.ReleaseGroupCount ||
+			len(results) >= maxTotal {
+			break
+		}
+
+		offset += pageSize
 	}
 
-	var resp MBReleaseGroupSearchResponse
-	if err := json.Unmarshal(body, &resp); err != nil {
-		return nil, fmt.Errorf("parsing release-group response: %w", err)
-	}
-
-	results := make([]provider.ReleaseGroupInfo, 0, len(resp.ReleaseGroups))
-	for _, rg := range resp.ReleaseGroups {
-		results = append(results, provider.ReleaseGroupInfo{
-			Title:            rg.Title,
-			PrimaryType:      rg.PrimaryType,
-			FirstReleaseDate: rg.FirstReleaseDate,
-		})
-	}
 	return results, nil
 }
 

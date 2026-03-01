@@ -98,7 +98,7 @@ templ DisambiguationResults(artistID string, candidates []DisambiguationCandidat
 									<span class={ "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium", albumMatchClasses(c.AlbumComparison.MatchPercent) }>
 										{ fmt.Sprintf("%d/%d albums", c.AlbumComparison.MatchCount, c.AlbumComparison.LocalCount) }
 									</span>
-									if joinMatchedNames(c.AlbumComparison) != "" {
+									if hasMatchedAlbums(c.AlbumComparison) {
 										<span class="text-[10px] text-gray-400 truncate">{ joinMatchedNames(c.AlbumComparison) }</span>
 									}
 								</div>

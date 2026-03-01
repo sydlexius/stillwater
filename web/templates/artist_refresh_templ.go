@@ -292,7 +292,7 @@ func DisambiguationResults(artistID string, candidates []DisambiguationCandidate
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					if joinMatchedNames(c.AlbumComparison) != "" {
+					if hasMatchedAlbums(c.AlbumComparison) {
 						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "<span class=\"text-[10px] text-gray-400 truncate\">")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err

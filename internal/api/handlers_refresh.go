@@ -46,7 +46,7 @@ func (r *Router) handleArtistRefresh(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	r.evaluateArtistHealth(req.Context(), a.ID)
+	r.evaluateArtistHealth(req.Context(), a)
 
 	if isHTMXRequest(req) {
 		r.renderRefreshWithOOB(w, req, a.ID, sources)
@@ -144,7 +144,7 @@ func (r *Router) handleRefreshLink(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	r.evaluateArtistHealth(req.Context(), a.ID)
+	r.evaluateArtistHealth(req.Context(), a)
 
 	if isHTMXRequest(req) {
 		r.renderRefreshWithOOB(w, req, a.ID, sources)
@@ -430,26 +430,21 @@ func (r *Router) enrichWithAlbumComparison(ctx context.Context, results []provid
 
 // evaluateArtistHealth runs the rule engine against an artist and updates
 // the stored health score. Errors are logged but not propagated (non-blocking).
-func (r *Router) evaluateArtistHealth(ctx context.Context, artistID string) {
+// Callers should pass the artist object they already have to avoid an extra DB read.
+func (r *Router) evaluateArtistHealth(ctx context.Context, a *artist.Artist) {
 	if r.ruleEngine == nil {
-		return
-	}
-
-	a, err := r.artistService.GetByID(ctx, artistID)
-	if err != nil {
-		r.logger.Warn("fetching artist for health eval", slog.String("artist_id", artistID), slog.String("error", err.Error()))
 		return
 	}
 
 	result, err := r.ruleEngine.Evaluate(ctx, a)
 	if err != nil {
-		r.logger.Warn("evaluating artist health", slog.String("artist_id", artistID), slog.String("error", err.Error()))
+		r.logger.Warn("evaluating artist health", slog.String("artist_id", a.ID), slog.String("error", err.Error()))
 		return
 	}
 
 	a.HealthScore = result.HealthScore
 	if err := r.artistService.Update(ctx, a); err != nil {
-		r.logger.Warn("saving artist health score", slog.String("artist_id", artistID), slog.String("error", err.Error()))
+		r.logger.Warn("saving artist health score", slog.String("artist_id", a.ID), slog.String("error", err.Error()))
 	}
 }
 
