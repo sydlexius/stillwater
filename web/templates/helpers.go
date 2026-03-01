@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/provider"
 )
 
@@ -244,6 +245,45 @@ func rateLimitText(rl *provider.RateLimitInfo) string {
 		parts = append(parts, fmt.Sprintf("%d/month", rl.RequestsPerMonth))
 	}
 	return strings.Join(parts, " / ")
+}
+
+// albumMatchClasses returns Tailwind CSS classes for the album match badge
+// based on the match percentage: green (70%+), amber (30-69%), red (<30%).
+func albumMatchClasses(percent int) string {
+	switch {
+	case percent >= 70:
+		return "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300"
+	case percent >= 30:
+		return "bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300"
+	default:
+		return "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300"
+	}
+}
+
+// hasMatchedAlbums reports whether the comparison has any matched albums.
+func hasMatchedAlbums(comp *artist.AlbumComparison) bool {
+	return comp != nil && len(comp.Matches) > 0
+}
+
+// joinMatchedNames returns a comma-separated string of matched album names
+// from the comparison, limited to the first 5 entries.
+func joinMatchedNames(comp *artist.AlbumComparison) string {
+	if comp == nil || len(comp.Matches) == 0 {
+		return ""
+	}
+	limit := 5
+	if len(comp.Matches) < limit {
+		limit = len(comp.Matches)
+	}
+	names := make([]string, limit)
+	for i := 0; i < limit; i++ {
+		names[i] = comp.Matches[i].RemoteName
+	}
+	result := strings.Join(names, ", ")
+	if len(comp.Matches) > 5 {
+		result += fmt.Sprintf(" (+%d more)", len(comp.Matches)-5)
+	}
+	return result
 }
 
 // sourceDisplayName returns a human-readable name for a library source key.

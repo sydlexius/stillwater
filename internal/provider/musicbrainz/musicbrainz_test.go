@@ -47,6 +47,14 @@ func newTestServer(t *testing.T) *httptest.Server {
 			}
 			w.Write(loadFixture(t, "artist_radiohead.json"))
 
+		case r.URL.Path == "/release-group" && r.URL.Query().Get("artist") != "":
+			artistID := r.URL.Query().Get("artist")
+			if artistID == "not-found-id" {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			w.Write(loadFixture(t, "release_groups_radiohead.json"))
+
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -268,6 +276,45 @@ func TestUserAgent(t *testing.T) {
 
 	if !strings.HasPrefix(gotUA, "Stillwater/") {
 		t.Errorf("expected User-Agent starting with Stillwater/, got %s", gotUA)
+	}
+}
+
+func TestGetReleaseGroups(t *testing.T) {
+	srv := newTestServer(t)
+	defer srv.Close()
+	a := newTestAdapter(t, srv.URL)
+
+	groups, err := a.GetReleaseGroups(context.Background(), "a74b1b7f-71a5-4011-9441-d0b5e4122711")
+	if err != nil {
+		t.Fatalf("GetReleaseGroups: %v", err)
+	}
+	if len(groups) != 5 {
+		t.Fatalf("expected 5 release groups, got %d", len(groups))
+	}
+
+	first := groups[0]
+	if first.Title != "Pablo Honey" {
+		t.Errorf("expected first title Pablo Honey, got %s", first.Title)
+	}
+	if first.PrimaryType != "Album" {
+		t.Errorf("expected primary type Album, got %s", first.PrimaryType)
+	}
+	if first.FirstReleaseDate != "1993-02-22" {
+		t.Errorf("expected first release date 1993-02-22, got %s", first.FirstReleaseDate)
+	}
+}
+
+func TestGetReleaseGroupsNotFound(t *testing.T) {
+	srv := newTestServer(t)
+	defer srv.Close()
+	a := newTestAdapter(t, srv.URL)
+
+	_, err := a.GetReleaseGroups(context.Background(), "not-found-id")
+	if err == nil {
+		t.Fatal("expected error for not-found ID")
+	}
+	if !isErrNotFound(err) {
+		t.Errorf("expected ErrNotFound, got %T: %v", err, err)
 	}
 }
 

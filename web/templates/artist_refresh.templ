@@ -1,12 +1,19 @@
 package templates
 
 import (
+	"fmt"
 	"strconv"
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/provider"
 	"github.com/sydlexius/stillwater/web/components"
 )
+
+// DisambiguationCandidate wraps a search result with optional album comparison data.
+type DisambiguationCandidate struct {
+	Result          provider.ArtistSearchResult
+	AlbumComparison *artist.AlbumComparison
+}
 
 // RefreshOOBData holds data for OOB-swapped sections after a metadata refresh.
 type RefreshOOBData struct {
@@ -54,48 +61,58 @@ templ RefreshDisambiguationForm(artistID, artistName string) {
 }
 
 // DisambiguationResults renders the list of search result cards for MBID linking.
-templ DisambiguationResults(artistID string, results []provider.ArtistSearchResult) {
-	if len(results) == 0 {
+templ DisambiguationResults(artistID string, candidates []DisambiguationCandidate) {
+	if len(candidates) == 0 {
 		<p class="text-sm text-gray-500 italic py-2">No results found. Try a different search term.</p>
 	} else {
 		<div class="space-y-2">
-			for _, r := range results {
+			for _, c := range candidates {
 				<button
 					type="button"
 					class="w-full text-left rounded border border-gray-200 dark:border-gray-700 p-3 hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:border-blue-300 dark:hover:border-blue-700 transition-colors"
 					hx-post={ "/api/v1/artists/" + artistID + "/refresh/link" }
-					hx-vals={ disambiguationHxVals(r) }
+					hx-vals={ disambiguationHxVals(c.Result) }
 					hx-target="#refresh-panel"
 					hx-swap="innerHTML"
 					hx-indicator="#link-spinner"
 				>
 					<div class="flex items-center justify-between">
 						<div class="flex-1 min-w-0">
-							<div class="font-medium text-sm">{ r.Name }</div>
+							<div class="font-medium text-sm">{ c.Result.Name }</div>
 							<div class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-								if r.Type != "" {
-									<span>{ r.Type }</span>
+								if c.Result.Type != "" {
+									<span>{ c.Result.Type }</span>
 								}
-								if r.Country != "" {
-									<span> from { r.Country }</span>
+								if c.Result.Country != "" {
+									<span> from { c.Result.Country }</span>
 								}
-								if r.Disambiguation != "" {
-									<span class="italic"> ({ r.Disambiguation })</span>
+								if c.Result.Disambiguation != "" {
+									<span class="italic"> ({ c.Result.Disambiguation })</span>
 								}
 							</div>
-							if r.MusicBrainzID != "" {
-								<div class="text-[10px] text-gray-400 font-mono mt-0.5 truncate">{ r.MusicBrainzID }</div>
+							if c.Result.MusicBrainzID != "" {
+								<div class="text-[10px] text-gray-400 font-mono mt-0.5 truncate">{ c.Result.MusicBrainzID }</div>
+							}
+							if c.AlbumComparison != nil && c.AlbumComparison.LocalCount > 0 {
+								<div class="mt-1.5 flex items-center gap-2">
+									<span class={ "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium", albumMatchClasses(c.AlbumComparison.MatchPercent) }>
+										{ fmt.Sprintf("%d/%d albums", c.AlbumComparison.MatchCount, c.AlbumComparison.LocalCount) }
+									</span>
+									if hasMatchedAlbums(c.AlbumComparison) {
+										<span class="text-[10px] text-gray-400 truncate">{ joinMatchedNames(c.AlbumComparison) }</span>
+									}
+								</div>
 							}
 						</div>
 						<div class="flex items-center gap-2 ml-3 shrink-0">
-							if r.Score > 0 {
-								<span class="text-xs text-gray-500">{ strconv.Itoa(r.Score) }</span>
+							if c.Result.Score > 0 {
+								<span class="text-xs text-gray-500">{ strconv.Itoa(c.Result.Score) }</span>
 							}
-							if r.Source != "" {
-								if logoSrcSet(r.Source) != "" {
-									<img src={ logoSrc(r.Source) } srcset={ logoSrcSet(r.Source) } alt={ r.Source } class="h-4 w-4" title={ providerDisplayName(r.Source) }/>
+							if c.Result.Source != "" {
+								if logoSrcSet(c.Result.Source) != "" {
+									<img src={ logoSrc(c.Result.Source) } srcset={ logoSrcSet(c.Result.Source) } alt={ c.Result.Source } class="h-4 w-4" title={ providerDisplayName(c.Result.Source) }/>
 								} else {
-									<img src={ logoSrc(r.Source) } alt={ r.Source } class="h-4 w-4" title={ providerDisplayName(r.Source) }/>
+									<img src={ logoSrc(c.Result.Source) } alt={ c.Result.Source } class="h-4 w-4" title={ providerDisplayName(c.Result.Source) }/>
 								}
 							}
 						</div>

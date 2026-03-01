@@ -1,7 +1,9 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -44,6 +46,8 @@ func (r *Router) handleArtistRefresh(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	r.evaluateArtistHealth(req.Context(), a)
+
 	if isHTMXRequest(req) {
 		r.renderRefreshWithOOB(w, req, a.ID, sources)
 		return
@@ -77,11 +81,19 @@ func (r *Router) handleRefreshSearch(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	// Fetch artist to get filesystem path for album comparison.
+	var localAlbums []string
+	if a, err := r.artistService.GetByID(req.Context(), artistID); err == nil && a.Path != "" {
+		localAlbums = artist.ListLocalAlbums(a.Path)
+	}
+
+	candidates := r.enrichWithAlbumComparison(req.Context(), results, localAlbums)
+
 	if isHTMXRequest(req) {
-		renderTempl(w, req, templates.DisambiguationResults(artistID, results))
+		renderTempl(w, req, templates.DisambiguationResults(artistID, candidates))
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"results": results})
+	writeJSON(w, http.StatusOK, map[string]any{"results": candidates})
 }
 
 // handleRefreshLink stores the selected provider ID from disambiguation,
@@ -131,6 +143,8 @@ func (r *Router) handleRefreshLink(w http.ResponseWriter, req *http.Request) {
 		writeError(w, req, http.StatusInternalServerError, "metadata refresh failed")
 		return
 	}
+
+	r.evaluateArtistHealth(req.Context(), a)
 
 	if isHTMXRequest(req) {
 		r.renderRefreshWithOOB(w, req, a.ID, sources)
@@ -313,6 +327,132 @@ func (r *Router) renderRefreshWithOOB(w http.ResponseWriter, req *http.Request, 
 	}
 	if err := templates.RefreshOOBFragments(oobData).Render(req.Context(), w); err != nil {
 		r.logger.Error("rendering OOB fragments", "artist_id", artistID, "error", err)
+	}
+}
+
+// handleReidentify clears all provider IDs for an artist and returns the
+// disambiguation form so the user can re-link the correct entry.
+// POST /api/v1/artists/{id}/reidentify
+func (r *Router) handleReidentify(w http.ResponseWriter, req *http.Request) {
+	artistID := req.PathValue("id")
+
+	a, err := r.artistService.GetByID(req.Context(), artistID)
+	if err != nil {
+		writeError(w, req, http.StatusNotFound, "artist not found")
+		return
+	}
+
+	// Log previous MBID for audit trail before clearing.
+	r.logger.Info("re-identifying artist",
+		slog.String("artist_id", a.ID),
+		slog.String("artist_name", a.Name),
+		slog.String("previous_mbid", a.MusicBrainzID),
+	)
+
+	// Clear all provider IDs and their fetch timestamps so the UI shows
+	// "Not set" instead of the misleading "Not found" for providers that
+	// have not been re-queried yet.
+	a.MusicBrainzID = ""
+	a.AudioDBID = ""
+	a.DiscogsID = ""
+	a.WikidataID = ""
+	a.DeezerID = ""
+	a.AudioDBIDFetchedAt = nil
+	a.DiscogsIDFetchedAt = nil
+	a.WikidataIDFetchedAt = nil
+	a.LastFMFetchedAt = nil
+
+	if err := r.artistService.Update(req.Context(), a); err != nil {
+		writeError(w, req, http.StatusInternalServerError, "failed to clear provider IDs")
+		return
+	}
+
+	if isHTMXRequest(req) {
+		renderTempl(w, req, templates.RefreshDisambiguationForm(a.ID, a.Name))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":  "disambiguation_required",
+		"artist":  a.Name,
+		"message": "Provider IDs cleared. Search to find and link the correct artist.",
+	})
+}
+
+// enrichWithAlbumComparison wraps search results in DisambiguationCandidate,
+// enriching the top 3 MusicBrainz results with album comparison data when
+// local albums are available.
+func (r *Router) enrichWithAlbumComparison(ctx context.Context, results []provider.ArtistSearchResult, localAlbums []string) []templates.DisambiguationCandidate {
+	candidates := make([]templates.DisambiguationCandidate, len(results))
+	for i, res := range results {
+		candidates[i].Result = res
+	}
+
+	if len(localAlbums) == 0 || r.providerRegistry == nil {
+		return candidates
+	}
+
+	// Type-assert MusicBrainz provider to ReleaseGroupFetcher.
+	mbProvider := r.providerRegistry.Get(provider.NameMusicBrainz)
+	if mbProvider == nil {
+		return candidates
+	}
+	fetcher, ok := mbProvider.(provider.ReleaseGroupFetcher)
+	if !ok {
+		return candidates
+	}
+
+	// Enrich top 3 MB results that have an MBID. Track attempts (not just
+	// successes) to cap the total number of API calls made during search.
+	attempted := 0
+	for i := range candidates {
+		if attempted >= 3 {
+			break
+		}
+		res := candidates[i].Result
+		if res.MusicBrainzID == "" {
+			continue
+		}
+
+		attempted++
+
+		groups, err := fetcher.GetReleaseGroups(ctx, res.MusicBrainzID)
+		if err != nil {
+			r.logger.Warn("fetching release groups for disambiguation",
+				slog.String("mbid", res.MusicBrainzID),
+				slog.String("error", err.Error()),
+			)
+			continue
+		}
+
+		remoteTitles := make([]string, len(groups))
+		for j, rg := range groups {
+			remoteTitles[j] = rg.Title
+		}
+
+		comp := artist.CompareAlbums(localAlbums, remoteTitles)
+		candidates[i].AlbumComparison = &comp
+	}
+
+	return candidates
+}
+
+// evaluateArtistHealth runs the rule engine against an artist and updates
+// the stored health score. Errors are logged but not propagated (non-blocking).
+// Callers should pass the artist object they already have to avoid an extra DB read.
+func (r *Router) evaluateArtistHealth(ctx context.Context, a *artist.Artist) {
+	if r.ruleEngine == nil {
+		return
+	}
+
+	result, err := r.ruleEngine.Evaluate(ctx, a)
+	if err != nil {
+		r.logger.Warn("evaluating artist health", slog.String("artist_id", a.ID), slog.String("error", err.Error()))
+		return
+	}
+
+	a.HealthScore = result.HealthScore
+	if err := r.artistService.Update(ctx, a); err != nil {
+		r.logger.Warn("saving artist health score", slog.String("artist_id", a.ID), slog.String("error", err.Error()))
 	}
 }
 

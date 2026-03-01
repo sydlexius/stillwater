@@ -1,0 +1,41 @@
+{
+  "release-group-count": 5,
+  "release-group-offset": 0,
+  "release-groups": [
+    {
+      "id": "b1392450-e666-3926-a536-22c65f834433",
+      "title": "Pablo Honey",
+      "primary-type": "Album",
+      "secondary-types": [],
+      "first-release-date": "1993-02-22"
+    },
+    {
+      "id": "e21a1550-4780-3a9d-bd5a-1a5c7d0bf7e0",
+      "title": "The Bends",
+      "primary-type": "Album",
+      "secondary-types": [],
+      "first-release-date": "1995-03-13"
+    },
+    {
+      "id": "70664047-2545-3e03-bd50-87bd2fde9960",
+      "title": "OK Computer",
+      "primary-type": "Album",
+      "secondary-types": [],
+      "first-release-date": "1997-05-28"
+    },
+    {
+      "id": "dbbce604-2e7d-34a7-9af5-7d7beb2e4c3a",
+      "title": "Kid A",
+      "primary-type": "Album",
+      "secondary-types": [],
+      "first-release-date": "2000-10-02"
+    },
+    {
+      "id": "25b9565a-3601-3b64-8680-337c1f6a0408",
+      "title": "Amnesiac",
+      "primary-type": "Album",
+      "secondary-types": [],
+      "first-release-date": "2001-06-04"
+    }
+  ]
+}
