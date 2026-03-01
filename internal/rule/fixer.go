@@ -106,16 +106,42 @@ func (p *Pipeline) RunRule(ctx context.Context, ruleID string) (*RunResult, erro
 					continue
 				}
 
-				// Manual mode: persist without attempting fix
+				// Manual mode: discover candidates but never auto-apply
 				if targetRule.AutomationMode == AutomationModeManual {
+					if !v.Fixable {
+						rv := &RuleViolation{
+							RuleID:     v.RuleID,
+							ArtistID:   a.ID,
+							ArtistName: a.Name,
+							Severity:   v.Severity,
+							Message:    v.Message,
+							Fixable:    false,
+							Status:     ViolationStatusOpen,
+						}
+						if err := p.ruleService.UpsertViolation(ctx, rv); err != nil {
+							p.logger.Warn("persisting manual-mode violation", "rule_id", ruleID, "artist", a.Name, "error", err)
+						}
+						continue
+					}
+
+					fr := p.attemptFix(ctx, a, v)
+					result.Results = append(result.Results, *fr)
+					result.FixesAttempted++
+
+					status := ViolationStatusOpen
+					if len(fr.Candidates) > 0 {
+						status = ViolationStatusPendingChoice
+					}
+
 					rv := &RuleViolation{
 						RuleID:     v.RuleID,
 						ArtistID:   a.ID,
 						ArtistName: a.Name,
 						Severity:   v.Severity,
 						Message:    v.Message,
-						Fixable:    v.Fixable,
-						Status:     ViolationStatusOpen,
+						Fixable:    true,
+						Status:     status,
+						Candidates: fr.Candidates,
 					}
 					if err := p.ruleService.UpsertViolation(ctx, rv); err != nil {
 						p.logger.Warn("persisting manual-mode violation", "rule_id", ruleID, "artist", a.Name, "error", err)
@@ -225,17 +251,43 @@ func (p *Pipeline) RunForArtist(ctx context.Context, a *artist.Artist) (*RunResu
 		}
 
 		if r.AutomationMode == AutomationModeManual {
+			if !v.Fixable {
+				rv := &RuleViolation{
+					RuleID:     v.RuleID,
+					ArtistID:   a.ID,
+					ArtistName: a.Name,
+					Severity:   v.Severity,
+					Message:    v.Message,
+					Fixable:    false,
+					Status:     ViolationStatusOpen,
+				}
+				if err := p.ruleService.UpsertViolation(ctx, rv); err != nil {
+					p.logger.Warn("persisting manual-mode violation", "rule_id", v.RuleID, "artist", a.Name, "error", err)
+				}
+				continue
+			}
+
+			fr := p.attemptFix(ctx, a, v)
+			result.Results = append(result.Results, *fr)
+			result.FixesAttempted++
+
+			status := ViolationStatusOpen
+			if len(fr.Candidates) > 0 {
+				status = ViolationStatusPendingChoice
+			}
+
 			rv := &RuleViolation{
 				RuleID:     v.RuleID,
 				ArtistID:   a.ID,
 				ArtistName: a.Name,
 				Severity:   v.Severity,
 				Message:    v.Message,
-				Fixable:    v.Fixable,
-				Status:     ViolationStatusOpen,
+				Fixable:    true,
+				Status:     status,
+				Candidates: fr.Candidates,
 			}
 			if err := p.ruleService.UpsertViolation(ctx, rv); err != nil {
-				p.logger.Warn("persisting notify-mode violation", "rule_id", v.RuleID, "artist", a.Name, "error", err)
+				p.logger.Warn("persisting manual-mode violation", "rule_id", v.RuleID, "artist", a.Name, "error", err)
 			}
 			continue
 		}
@@ -299,6 +351,9 @@ func (p *Pipeline) RunAll(ctx context.Context) (*RunResult, error) {
 	const pageSize = 200
 	params := artist.ListParams{Page: 1, PageSize: pageSize, Sort: "name"}
 
+	// Cache rule lookups to avoid repeated DB queries across artists.
+	ruleCache := map[string]*Rule{}
+
 	for ctx.Err() == nil {
 		page, _, err := p.artistService.List(ctx, params)
 		if err != nil {
@@ -330,8 +385,66 @@ func (p *Pipeline) RunAll(ctx context.Context) (*RunResult, error) {
 				v := &eval.Violations[j]
 				result.ViolationsFound++
 
+				// Look up rule to determine automation mode.
+				r, ok := ruleCache[v.RuleID]
+				if !ok {
+					r, err = p.ruleService.GetByID(ctx, v.RuleID)
+					if err != nil {
+						p.logger.Warn("fetching rule for violation", "rule_id", v.RuleID, "artist", a.Name, "error", err)
+						continue
+					}
+					ruleCache[v.RuleID] = r
+				}
+
+				if r.AutomationMode == AutomationModeDisabled {
+					continue
+				}
+
+				// Manual mode: discover candidates but never auto-apply
+				if r.AutomationMode == AutomationModeManual {
+					if !v.Fixable {
+						rv := &RuleViolation{
+							RuleID:     v.RuleID,
+							ArtistID:   a.ID,
+							ArtistName: a.Name,
+							Severity:   v.Severity,
+							Message:    v.Message,
+							Fixable:    false,
+							Status:     ViolationStatusOpen,
+						}
+						if err := p.ruleService.UpsertViolation(ctx, rv); err != nil {
+							p.logger.Warn("persisting manual-mode violation", "rule_id", v.RuleID, "artist", a.Name, "error", err)
+						}
+						continue
+					}
+
+					fr := p.attemptFix(ctx, a, v)
+					result.Results = append(result.Results, *fr)
+					result.FixesAttempted++
+
+					status := ViolationStatusOpen
+					if len(fr.Candidates) > 0 {
+						status = ViolationStatusPendingChoice
+					}
+
+					rv := &RuleViolation{
+						RuleID:     v.RuleID,
+						ArtistID:   a.ID,
+						ArtistName: a.Name,
+						Severity:   v.Severity,
+						Message:    v.Message,
+						Fixable:    true,
+						Status:     status,
+						Candidates: fr.Candidates,
+					}
+					if err := p.ruleService.UpsertViolation(ctx, rv); err != nil {
+						p.logger.Warn("persisting manual-mode violation", "rule_id", v.RuleID, "artist", a.Name, "error", err)
+					}
+					continue
+				}
+
+				// Auto mode (default): persist unfixable as open, attempt fix for fixable
 				if !v.Fixable {
-					// Persist unfixable violations so they appear in notifications.
 					rv := &RuleViolation{
 						RuleID:     v.RuleID,
 						ArtistID:   a.ID,
