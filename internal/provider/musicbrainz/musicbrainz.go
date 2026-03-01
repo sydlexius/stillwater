@@ -110,6 +110,37 @@ func (a *Adapter) GetImages(_ context.Context, _ string) ([]provider.ImageResult
 	return nil, nil
 }
 
+// GetReleaseGroups fetches release groups (albums, EPs, singles) for an artist by MBID.
+func (a *Adapter) GetReleaseGroups(ctx context.Context, mbid string) ([]provider.ReleaseGroupInfo, error) {
+	params := url.Values{
+		"artist": {mbid},
+		"type":   {"album|ep|single"},
+		"limit":  {"100"},
+		"fmt":    {"json"},
+	}
+	reqURL := a.baseURL + "/release-group?" + params.Encode()
+
+	body, err := a.doRequest(ctx, reqURL)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp MBReleaseGroupSearchResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, fmt.Errorf("parsing release-group response: %w", err)
+	}
+
+	results := make([]provider.ReleaseGroupInfo, 0, len(resp.ReleaseGroups))
+	for _, rg := range resp.ReleaseGroups {
+		results = append(results, provider.ReleaseGroupInfo{
+			Title:            rg.Title,
+			PrimaryType:      rg.PrimaryType,
+			FirstReleaseDate: rg.FirstReleaseDate,
+		})
+	}
+	return results, nil
+}
+
 // TestConnection verifies connectivity to the MusicBrainz API.
 func (a *Adapter) TestConnection(ctx context.Context) error {
 	params := url.Values{

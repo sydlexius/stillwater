@@ -181,17 +181,34 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 							</p>
 						}
 					</div>
-					<button
-						type="button"
-						class="inline-flex items-center gap-2 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors mr-4"
-						hx-post={ "/api/v1/artists/" + data.Artist.ID + "/refresh" }
-						hx-target="#refresh-panel"
-						hx-swap="innerHTML"
-						hx-indicator="#refresh-spinner"
-					>
-						@components.IconArrowPath("h-4 w-4")
-						Refresh Metadata
-					</button>
+					<div class="flex items-center gap-1 mr-4">
+						<button
+							type="button"
+							class="inline-flex items-center gap-2 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
+							hx-post={ "/api/v1/artists/" + data.Artist.ID + "/refresh" }
+							hx-target="#refresh-panel"
+							hx-swap="innerHTML"
+							hx-indicator="#refresh-spinner"
+						>
+							@components.IconArrowPath("h-4 w-4")
+							Refresh Metadata
+						</button>
+						if data.Artist.MusicBrainzID != "" {
+							@components.ContextMenu("reidentify-"+data.Artist.ID, false) {
+								<button
+									type="button"
+									role="menuitem"
+									class="context-menu-item"
+									hx-post={ "/api/v1/artists/" + data.Artist.ID + "/reidentify" }
+									hx-target="#refresh-panel"
+									hx-swap="innerHTML"
+									hx-confirm="This will clear all provider IDs and let you re-link this artist. Continue?"
+								>
+									Re-identify Artist
+								</button>
+							}
+						}
+					</div>
 				</div>
 				<div id="refresh-panel" class="mt-3"></div>
 				<span

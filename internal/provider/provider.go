@@ -244,6 +244,19 @@ type WebImageProvider interface {
 	SearchImages(ctx context.Context, artistName string, imageType ImageType) ([]ImageResult, error)
 }
 
+// ReleaseGroupInfo represents a release group (album/EP/single) from a provider.
+type ReleaseGroupInfo struct {
+	Title            string `json:"title"`
+	PrimaryType      string `json:"primary_type,omitempty"`
+	FirstReleaseDate string `json:"first_release_date,omitempty"`
+}
+
+// ReleaseGroupFetcher is an optional interface providers can implement
+// to fetch an artist's release groups (albums, EPs, singles) by provider ID.
+type ReleaseGroupFetcher interface {
+	GetReleaseGroups(ctx context.Context, artistID string) ([]ReleaseGroupInfo, error)
+}
+
 // ErrProviderUnavailable indicates a transient failure (rate-limited, timeout, server error).
 type ErrProviderUnavailable struct {
 	Provider   ProviderName

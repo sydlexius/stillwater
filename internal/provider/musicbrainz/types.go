@@ -75,3 +75,19 @@ type MBRelationURL struct {
 	ID       string `json:"id"`
 	Resource string `json:"resource"`
 }
+
+// MBReleaseGroupSearchResponse is the top-level response from the release-group browse endpoint.
+type MBReleaseGroupSearchResponse struct {
+	ReleaseGroupCount  int              `json:"release-group-count"`
+	ReleaseGroupOffset int              `json:"release-group-offset"`
+	ReleaseGroups      []MBReleaseGroup `json:"release-groups"`
+}
+
+// MBReleaseGroup represents a MusicBrainz release group entity.
+type MBReleaseGroup struct {
+	ID               string   `json:"id"`
+	Title            string   `json:"title"`
+	PrimaryType      string   `json:"primary-type"`
+	SecondaryTypes   []string `json:"secondary-types"`
+	FirstReleaseDate string   `json:"first-release-date"`
+}
