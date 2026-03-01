@@ -708,8 +708,19 @@ func (f *LogoTrimFixer) Fix(ctx context.Context, a *artist.Artist, _ *Violation)
 
 	naming := []string{filepath.Base(logoPath)}
 	useSymlinks := activeUseSymlinks(ctx, f.platformService)
-	if _, err := img.Save(a.Path, "logo", trimmed, naming, useSymlinks, f.logger); err != nil {
+	savedNames, err := img.Save(a.Path, "logo", trimmed, naming, useSymlinks, f.logger)
+	if err != nil {
 		return nil, fmt.Errorf("saving trimmed logo: %w", err)
+	}
+
+	// Remove original if only extension case changed (e.g., Logo.PNG -> Logo.png)
+	// to avoid duplicates on case-sensitive filesystems.
+	if len(savedNames) > 0 {
+		oldBase := filepath.Base(logoPath)
+		newBase := savedNames[0]
+		if strings.EqualFold(oldBase, newBase) && oldBase != newBase {
+			_ = os.Remove(logoPath)
+		}
 	}
 
 	msg := "trimmed logo padding"

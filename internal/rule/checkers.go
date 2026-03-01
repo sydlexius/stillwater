@@ -487,12 +487,10 @@ func checkLogoTrimmable(a *artist.Artist, cfg RuleConfig) *Violation {
 	}
 
 	threshold := cfg.ThresholdPercent
-	if threshold == 0 {
+	if threshold <= 0 {
 		threshold = 5
 	}
-	if threshold < 0 {
-		threshold = 0
-	} else if threshold > 100 {
+	if threshold > 100 {
 		threshold = 100
 	}
 	threshFrac := threshold / 100.0
