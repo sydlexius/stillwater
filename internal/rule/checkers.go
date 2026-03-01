@@ -478,7 +478,7 @@ func checkArtistIDMismatch(a *artist.Artist, cfg RuleConfig) *Violation {
 		RuleName: "Artist/ID mismatched",
 		Category: "metadata",
 		Severity: effectiveSeverity(cfg),
-		Message:  fmt.Sprintf("artist %q folder name %q differs from stored name %q (%.0f%% similar)", a.Name, folderName, a.Name, sim*100),
+		Message:  fmt.Sprintf("folder name %q does not match artist name %q (%.0f%% similar)", folderName, a.Name, sim*100),
 		Fixable:  false,
 	}
 }
