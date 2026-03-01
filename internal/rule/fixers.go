@@ -688,14 +688,14 @@ func (f *LogoTrimFixer) Fix(ctx context.Context, a *artist.Artist, _ *Violation)
 	}
 
 	// Read original dimensions before trimming.
-	origW, origH, _ := img.GetDimensions(bytes.NewReader(data))
+	origW, origH, origErr := img.GetDimensions(bytes.NewReader(data))
 
 	trimmed, _, err := img.TrimAlpha(bytes.NewReader(data), 128)
 	if err != nil {
 		return nil, fmt.Errorf("trimming logo: %w", err)
 	}
 
-	newW, newH, _ := img.GetDimensions(bytes.NewReader(trimmed))
+	newW, newH, newErr := img.GetDimensions(bytes.NewReader(trimmed))
 
 	naming := existingImageFileNames(ctx, a.Path, "logo", f.platformService)
 	useSymlinks := activeUseSymlinks(ctx, f.platformService)
@@ -703,10 +703,15 @@ func (f *LogoTrimFixer) Fix(ctx context.Context, a *artist.Artist, _ *Violation)
 		return nil, fmt.Errorf("saving trimmed logo: %w", err)
 	}
 
+	msg := "trimmed logo padding"
+	if origErr == nil && newErr == nil {
+		msg = fmt.Sprintf("trimmed logo from %dx%d to %dx%d", origW, origH, newW, newH)
+	}
+
 	return &FixResult{
 		RuleID:  RuleLogoTrimmable,
 		Fixed:   true,
-		Message: fmt.Sprintf("trimmed logo from %dx%d to %dx%d", origW, origH, newW, newH),
+		Message: msg,
 	}, nil
 }
 

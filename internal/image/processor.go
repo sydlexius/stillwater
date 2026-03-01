@@ -231,15 +231,21 @@ func TrimAlphaBounds(src io.Reader, threshold uint8) (content, original image.Re
 		return image.Rectangle{}, image.Rectangle{}, fmt.Errorf("detecting format: %w", detectErr)
 	}
 
+	if format != FormatPNG {
+		cfg, _, cfgErr := image.DecodeConfig(replay)
+		if cfgErr != nil {
+			return image.Rectangle{}, image.Rectangle{}, fmt.Errorf("decoding image config: %w", cfgErr)
+		}
+		bounds := image.Rect(0, 0, cfg.Width, cfg.Height)
+		return bounds, bounds, nil
+	}
+
 	decoded, _, decodeErr := image.Decode(replay)
 	if decodeErr != nil {
 		return image.Rectangle{}, image.Rectangle{}, fmt.Errorf("decoding image: %w", decodeErr)
 	}
 
 	bounds := decoded.Bounds()
-	if format != FormatPNG {
-		return bounds, bounds, nil
-	}
 
 	minX, minY := bounds.Max.X, bounds.Max.Y
 	maxX, maxY := bounds.Min.X-1, bounds.Min.Y-1
