@@ -26,7 +26,7 @@ var thumbPatterns = []string{
 }
 
 var fanartPatterns = []string{"fanart.jpg", "fanart.png", "backdrop.jpg", "backdrop.png"}
-var logoPatterns = []string{"logo.png", "logo-white.png", "clearlogo.png"}
+var logoPatterns = []string{"logo.png", "logo-white.png"}
 var bannerPatterns = []string{"banner.jpg", "banner.png"}
 
 func checkNFOExists(a *artist.Artist, _ RuleConfig) *Violation {
