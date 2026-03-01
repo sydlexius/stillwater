@@ -186,9 +186,29 @@ func (r *Router) handleRunAllRules(w http.ResponseWriter, req *http.Request) {
 
 		r.ruleRun.Status = "completed"
 		r.ruleRun.ArtistsProcessed = result.ArtistsProcessed
-		r.ruleRun.ViolationsFound = result.ViolationsFound
 		r.ruleRun.FixesAttempted = result.FixesAttempted
 		r.ruleRun.FixesSucceeded = result.FixesSucceeded
+
+		// Query the database for the persisted active violation count,
+		// applying the same severity filtering as the notification badge.
+		// This ensures the toast count matches the badge count.
+		counts, dbErr := r.ruleService.CountActiveViolationsBySeverity(ctx)
+		if dbErr != nil {
+			r.logger.Warn("querying active violations for toast count", "error", dbErr)
+			r.ruleRun.ViolationsFound = result.ViolationsFound
+		} else {
+			total := 0
+			if r.getBoolSetting(ctx, "notif_badge_severity_error", true) {
+				total += counts["error"]
+			}
+			if r.getBoolSetting(ctx, "notif_badge_severity_warning", true) {
+				total += counts["warning"]
+			}
+			if r.getBoolSetting(ctx, "notif_badge_severity_info", false) {
+				total += counts["info"]
+			}
+			r.ruleRun.ViolationsFound = total
+		}
 		r.ruleRunMu.Unlock()
 	}()
 
