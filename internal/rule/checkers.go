@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
+	"unicode"
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/image"
@@ -350,6 +352,134 @@ func checkBannerMinRes(a *artist.Artist, cfg RuleConfig) *Violation {
 		Severity: effectiveSeverity(cfg),
 		Message:  fmt.Sprintf("artist %q banner is %dx%d, minimum required is %dx%d", a.Name, w, h, minW, minH),
 		Fixable:  true,
+	}
+}
+
+// Regex patterns for artist name normalisation. Prefixed with "artist" to
+// avoid collisions with any patterns in other checker files.
+var (
+	artistParenSuffix = regexp.MustCompile(`\s*\(.*\)\s*$`)
+	artistPunctuation = regexp.MustCompile(`[^\p{L}\p{N}\s]`)
+	artistMultiSpace  = regexp.MustCompile(`\s+`)
+)
+
+// normalizeArtistName lowercases, strips a leading "The " or trailing ", The"
+// (sort-name format), removes trailing parenthetical suffixes, strips
+// punctuation, and collapses whitespace.
+func normalizeArtistName(name string) string {
+	s := strings.ToLower(strings.TrimSpace(name))
+	s = strings.TrimPrefix(s, "the ")
+	s = strings.TrimSuffix(s, ", the")
+	s = artistParenSuffix.ReplaceAllString(s, "")
+	s = artistPunctuation.ReplaceAllString(s, "")
+	s = artistMultiSpace.ReplaceAllString(s, " ")
+	return strings.TrimSpace(s)
+}
+
+// levenshteinDistance computes the edit distance between two strings using
+// runes so that Unicode characters are handled correctly.
+func levenshteinDistance(a, b string) int {
+	ra := []rune(a)
+	rb := []rune(b)
+	la, lb := len(ra), len(rb)
+
+	if la == 0 {
+		return lb
+	}
+	if lb == 0 {
+		return la
+	}
+
+	// Single-row DP.
+	prev := make([]int, lb+1)
+	for j := range prev {
+		prev[j] = j
+	}
+
+	for i := 1; i <= la; i++ {
+		cur := make([]int, lb+1)
+		cur[0] = i
+		for j := 1; j <= lb; j++ {
+			cost := 1
+			if unicode.ToLower(ra[i-1]) == unicode.ToLower(rb[j-1]) {
+				cost = 0
+			}
+			ins := cur[j-1] + 1
+			del := prev[j] + 1
+			sub := prev[j-1] + cost
+			m := ins
+			if del < m {
+				m = del
+			}
+			if sub < m {
+				m = sub
+			}
+			cur[j] = m
+		}
+		prev = cur
+	}
+
+	return prev[lb]
+}
+
+// nameSimilarity returns a value between 0.0 and 1.0 indicating how similar
+// two strings are, based on normalised Levenshtein distance.
+func nameSimilarity(a, b string) float64 {
+	if a == "" && b == "" {
+		return 1.0
+	}
+	maxLen := len([]rune(a))
+	if l := len([]rune(b)); l > maxLen {
+		maxLen = l
+	}
+	if maxLen == 0 {
+		return 1.0
+	}
+	dist := levenshteinDistance(a, b)
+	return 1.0 - float64(dist)/float64(maxLen)
+}
+
+func checkArtistIDMismatch(a *artist.Artist, cfg RuleConfig) *Violation {
+	if a.Path == "" {
+		return nil
+	}
+
+	folderName := filepath.Base(a.Path)
+	normFolder := normalizeArtistName(folderName)
+	normStored := normalizeArtistName(a.Name)
+
+	// Also consider the sort name (e.g. "Beatles, The") so that
+	// sort-name-style folder names do not trigger false positives.
+	normSort := normalizeArtistName(a.SortName)
+
+	// Exact normalised match against either name or sort name passes.
+	if normFolder == normStored || (normSort != "" && normFolder == normSort) {
+		return nil
+	}
+
+	tolerance := cfg.Tolerance
+	if tolerance == 0 {
+		tolerance = 0.8
+	}
+
+	// Use the higher similarity of the two comparisons.
+	sim := nameSimilarity(normFolder, normStored)
+	if normSort != "" {
+		if sortSim := nameSimilarity(normFolder, normSort); sortSim > sim {
+			sim = sortSim
+		}
+	}
+	if sim >= tolerance {
+		return nil
+	}
+
+	return &Violation{
+		RuleID:   RuleArtistIDMismatch,
+		RuleName: "Artist/ID mismatched",
+		Category: "metadata",
+		Severity: effectiveSeverity(cfg),
+		Message:  fmt.Sprintf("artist %q folder name %q differs from stored name %q (%.0f%% similar)", a.Name, folderName, a.Name, sim*100),
+		Fixable:  false,
 	}
 }
 

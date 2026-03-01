@@ -331,6 +331,19 @@ func (p *Pipeline) RunAll(ctx context.Context) (*RunResult, error) {
 				result.ViolationsFound++
 
 				if !v.Fixable {
+					// Persist unfixable violations so they appear in notifications.
+					rv := &RuleViolation{
+						RuleID:     v.RuleID,
+						ArtistID:   a.ID,
+						ArtistName: a.Name,
+						Severity:   v.Severity,
+						Message:    v.Message,
+						Fixable:    false,
+						Status:     ViolationStatusOpen,
+					}
+					if err := p.ruleService.UpsertViolation(ctx, rv); err != nil {
+						p.logger.Warn("persisting unfixable violation", "rule_id", v.RuleID, "artist", a.Name, "error", err)
+					}
 					continue
 				}
 
