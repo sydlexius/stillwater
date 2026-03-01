@@ -698,6 +698,10 @@ func buildWhereClause(params ListParams) (string, []any) {
 		conditions = append(conditions, "thumb_exists = 0")
 	case "missing_fanart":
 		conditions = append(conditions, "fanart_exists = 0")
+	case "missing_logo":
+		conditions = append(conditions, "logo_exists = 0")
+	case "missing_banner":
+		conditions = append(conditions, "banner_exists = 0")
 	case "missing_mbid":
 		conditions = append(conditions, "(musicbrainz_id IS NULL OR musicbrainz_id = '')")
 	case "excluded":
