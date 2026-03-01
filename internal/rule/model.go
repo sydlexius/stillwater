@@ -36,6 +36,7 @@ type RuleConfig struct {
 	Severity            string  `json:"severity,omitempty"`              // "error", "warning", "info"
 	SelectBestCandidate bool    `json:"select_best_candidate,omitempty"` // auto-pick highest-res when multiple candidates
 	ThresholdPercent    float64 `json:"threshold_percent,omitempty"`     // minimum transparent border % per side to trigger
+	DiscoveryOnly       bool    `json:"-"`                               // transient: set by pipeline in manual mode, never persisted
 }
 
 // Violation represents a single rule failure for an artist.

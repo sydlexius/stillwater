@@ -1201,3 +1201,218 @@ func TestPipeline_ManualMode_SkipsSideEffectFixer(t *testing.T) {
 		t.Error("expected open violation for manual-mode logo_trimmable rule")
 	}
 }
+
+// TestImageFixer_Fix_DiscoveryOnly_SingleCandidate verifies that when
+// DiscoveryOnly is set, a single candidate is returned as a list without
+// being downloaded or saved to disk.
+func TestImageFixer_Fix_DiscoveryOnly_SingleCandidate(t *testing.T) {
+	mock := &mockImageProvider{
+		result: &provider.FetchResult{
+			Images: []provider.ImageResult{
+				{URL: "http://example.com/thumb.jpg", Type: "thumb", Width: 1000, Height: 1000, Source: "fanarttv"},
+			},
+		},
+	}
+
+	f := NewImageFixer(mock, nil, testLogger())
+	a := &artist.Artist{
+		Name:          "Discovery Single",
+		MusicBrainzID: "mbid-disc-single",
+		Path:          t.TempDir(),
+	}
+	v := &Violation{
+		RuleID: RuleThumbExists,
+		Config: RuleConfig{DiscoveryOnly: true},
+	}
+
+	fr, err := f.Fix(context.Background(), a, v)
+	if err != nil {
+		t.Fatalf("Fix: %v", err)
+	}
+	if fr.Fixed {
+		t.Error("Fixed = true; DiscoveryOnly should never mark as fixed")
+	}
+	if len(fr.Candidates) != 1 {
+		t.Fatalf("Candidates len = %d, want 1", len(fr.Candidates))
+	}
+	if fr.Candidates[0].URL != "http://example.com/thumb.jpg" {
+		t.Errorf("Candidate URL = %q, want http://example.com/thumb.jpg", fr.Candidates[0].URL)
+	}
+	if fr.Candidates[0].ImageType != "thumb" {
+		t.Errorf("Candidate ImageType = %q, want thumb", fr.Candidates[0].ImageType)
+	}
+	if !strings.Contains(fr.Message, "candidate(s) for user selection") {
+		t.Errorf("Message = %q; want 'candidate(s) for user selection'", fr.Message)
+	}
+}
+
+// TestImageFixer_Fix_DiscoveryOnly_SelectBestCandidate verifies that
+// DiscoveryOnly returns ALL candidates even when SelectBestCandidate is set,
+// rather than downloading the best one.
+func TestImageFixer_Fix_DiscoveryOnly_SelectBestCandidate(t *testing.T) {
+	mock := &mockImageProvider{
+		result: &provider.FetchResult{
+			Images: []provider.ImageResult{
+				{URL: "http://example.com/f1.jpg", Type: "fanart", Width: 1920, Height: 1080, Source: "fanarttv", Likes: 10},
+				{URL: "http://example.com/f2.jpg", Type: "fanart", Width: 3840, Height: 2160, Source: "fanarttv", Likes: 5},
+			},
+		},
+	}
+
+	f := NewImageFixer(mock, nil, testLogger())
+	a := &artist.Artist{
+		Name:          "Discovery Best",
+		MusicBrainzID: "mbid-disc-best",
+		Path:          t.TempDir(),
+	}
+	v := &Violation{
+		RuleID: RuleFanartExists,
+		Config: RuleConfig{DiscoveryOnly: true, SelectBestCandidate: true},
+	}
+
+	fr, err := f.Fix(context.Background(), a, v)
+	if err != nil {
+		t.Fatalf("Fix: %v", err)
+	}
+	if fr.Fixed {
+		t.Error("Fixed = true; DiscoveryOnly should never mark as fixed")
+	}
+	if len(fr.Candidates) != 2 {
+		t.Fatalf("Candidates len = %d, want 2 (all candidates returned despite SelectBestCandidate)", len(fr.Candidates))
+	}
+}
+
+// TestPipeline_ManualMode_SetsDiscoveryOnly verifies that the pipeline sets
+// DiscoveryOnly on the violation config before calling attemptFix in manual
+// mode, ensuring ImageFixer returns candidates without side effects.
+func TestPipeline_ManualMode_SetsDiscoveryOnly(t *testing.T) {
+	db := setupTestDB(t)
+	artistSvc := artist.NewService(db)
+	ruleSvc := NewService(db)
+	ctx := context.Background()
+
+	if err := ruleSvc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("seeding rules: %v", err)
+	}
+
+	// Set thumb_exists to manual mode.
+	r, err := ruleSvc.GetByID(ctx, RuleThumbExists)
+	if err != nil {
+		t.Fatalf("getting rule: %v", err)
+	}
+	r.AutomationMode = AutomationModeManual
+	if err := ruleSvc.Update(ctx, r); err != nil {
+		t.Fatalf("updating rule: %v", err)
+	}
+
+	a := &artist.Artist{
+		Name:          "DiscoveryOnly Pipeline",
+		SortName:      "DiscoveryOnly Pipeline",
+		MusicBrainzID: "mbid-disc-pipe",
+		Path:          t.TempDir(),
+	}
+	if err := artistSvc.Create(ctx, a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	// discoveryCaptureFixer records whether DiscoveryOnly was set when Fix was called.
+	captureFixer := &discoveryCaptureFixer{}
+
+	engine := NewEngine(ruleSvc, db, nil, testLogger())
+	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{captureFixer}, testLogger())
+
+	_, err = pipeline.RunRule(ctx, RuleThumbExists)
+	if err != nil {
+		t.Fatalf("RunRule: %v", err)
+	}
+
+	if captureFixer.calls == 0 {
+		t.Fatal("fixer was never called")
+	}
+	if !captureFixer.sawDiscoveryOnly {
+		t.Error("pipeline did not set DiscoveryOnly before calling Fix in manual mode")
+	}
+}
+
+// discoveryCaptureFixer records whether DiscoveryOnly was set on the violation.
+type discoveryCaptureFixer struct {
+	calls            int
+	sawDiscoveryOnly bool
+}
+
+func (f *discoveryCaptureFixer) CanFix(v *Violation) bool {
+	return v.RuleID == RuleThumbExists
+}
+
+func (f *discoveryCaptureFixer) SupportsCandidateDiscovery() bool { return true }
+
+func (f *discoveryCaptureFixer) Fix(_ context.Context, _ *artist.Artist, v *Violation) (*FixResult, error) {
+	f.calls++
+	f.sawDiscoveryOnly = v.Config.DiscoveryOnly
+	return &FixResult{
+		RuleID:  v.RuleID,
+		Fixed:   false,
+		Message: "discovery capture",
+		Candidates: []ImageCandidate{
+			{URL: "http://example.com/c.jpg", Width: 500, Height: 500, Source: "test", ImageType: "thumb"},
+		},
+	}, nil
+}
+
+// TestPipeline_ManualMode_FixableGuard_NoFixer verifies that when no fixer is
+// registered for a rule in manual mode, the persisted violation has Fixable=false.
+func TestPipeline_ManualMode_FixableGuard_NoFixer(t *testing.T) {
+	db := setupTestDB(t)
+	artistSvc := artist.NewService(db)
+	ruleSvc := NewService(db)
+	ctx := context.Background()
+
+	if err := ruleSvc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("seeding rules: %v", err)
+	}
+
+	// Set nfo_exists to manual mode.
+	r, err := ruleSvc.GetByID(ctx, RuleNFOExists)
+	if err != nil {
+		t.Fatalf("getting rule: %v", err)
+	}
+	r.AutomationMode = AutomationModeManual
+	if err := ruleSvc.Update(ctx, r); err != nil {
+		t.Fatalf("updating rule: %v", err)
+	}
+
+	a := &artist.Artist{
+		Name:     "No Fixer Manual",
+		SortName: "No Fixer Manual",
+		Path:     t.TempDir(),
+	}
+	if err := artistSvc.Create(ctx, a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	// No fixers registered at all.
+	engine := NewEngine(ruleSvc, db, nil, testLogger())
+	pipeline := NewPipeline(engine, artistSvc, ruleSvc, nil, testLogger())
+
+	_, err = pipeline.RunRule(ctx, RuleNFOExists)
+	if err != nil {
+		t.Fatalf("RunRule: %v", err)
+	}
+
+	openViolations, err := ruleSvc.ListViolations(ctx, ViolationStatusOpen)
+	if err != nil {
+		t.Fatalf("ListViolations: %v", err)
+	}
+	found := false
+	for _, v := range openViolations {
+		if v.ArtistID == a.ID && v.RuleID == RuleNFOExists {
+			found = true
+			if v.Fixable {
+				t.Error("Fixable = true; want false when no fixer is registered")
+			}
+		}
+	}
+	if !found {
+		t.Error("expected open violation for manual-mode nfo_exists, none found")
+	}
+}

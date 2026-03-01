@@ -128,7 +128,7 @@ func (p *Pipeline) RunRule(ctx context.Context, ruleID string) (*RunResult, erro
 							ArtistName: a.Name,
 							Severity:   v.Severity,
 							Message:    v.Message,
-							Fixable:    v.Fixable,
+							Fixable:    v.Fixable && fixer != nil,
 							Status:     ViolationStatusOpen,
 						}
 						if err := p.ruleService.UpsertViolation(ctx, rv); err != nil {
@@ -137,6 +137,7 @@ func (p *Pipeline) RunRule(ctx context.Context, ruleID string) (*RunResult, erro
 						continue
 					}
 
+					v.Config.DiscoveryOnly = true
 					fr := p.attemptFix(ctx, a, v)
 					result.Results = append(result.Results, *fr)
 					result.FixesAttempted++
@@ -272,7 +273,7 @@ func (p *Pipeline) RunForArtist(ctx context.Context, a *artist.Artist) (*RunResu
 					ArtistName: a.Name,
 					Severity:   v.Severity,
 					Message:    v.Message,
-					Fixable:    v.Fixable,
+					Fixable:    v.Fixable && fixer != nil,
 					Status:     ViolationStatusOpen,
 				}
 				if err := p.ruleService.UpsertViolation(ctx, rv); err != nil {
@@ -281,6 +282,7 @@ func (p *Pipeline) RunForArtist(ctx context.Context, a *artist.Artist) (*RunResu
 				continue
 			}
 
+			v.Config.DiscoveryOnly = true
 			fr := p.attemptFix(ctx, a, v)
 			result.Results = append(result.Results, *fr)
 			result.FixesAttempted++
@@ -426,7 +428,7 @@ func (p *Pipeline) RunAll(ctx context.Context) (*RunResult, error) {
 							ArtistName: a.Name,
 							Severity:   v.Severity,
 							Message:    v.Message,
-							Fixable:    v.Fixable,
+							Fixable:    v.Fixable && fixer != nil,
 							Status:     ViolationStatusOpen,
 						}
 						if err := p.ruleService.UpsertViolation(ctx, rv); err != nil {
@@ -435,6 +437,7 @@ func (p *Pipeline) RunAll(ctx context.Context) (*RunResult, error) {
 						continue
 					}
 
+					v.Config.DiscoveryOnly = true
 					fr := p.attemptFix(ctx, a, v)
 					result.Results = append(result.Results, *fr)
 					result.FixesAttempted++

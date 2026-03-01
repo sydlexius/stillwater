@@ -227,7 +227,8 @@ func (f *ImageFixer) CanFix(v *Violation) bool {
 }
 
 // SupportsCandidateDiscovery implements CandidateDiscoverer. ImageFixer can
-// return candidate lists without writing to disk when multiple options exist.
+// return candidate lists without writing to disk when Config.DiscoveryOnly is
+// set (manual mode) or when multiple candidates exist without SelectBestCandidate.
 func (f *ImageFixer) SupportsCandidateDiscovery() bool { return true }
 
 // Fix fetches the best available image from providers and saves it.
@@ -302,6 +303,27 @@ func (f *ImageFixer) Fix(ctx context.Context, a *artist.Artist, v *Violation) (*
 			RuleID:  v.RuleID,
 			Fixed:   false,
 			Message: fmt.Sprintf("no %s candidates meet %s", imageType, constraintDesc),
+		}, nil
+	}
+
+	// Discovery-only mode (manual automation): return all candidates as a list
+	// without downloading or saving anything.
+	if v.Config.DiscoveryOnly {
+		imageCandidates := make([]ImageCandidate, 0, len(candidates))
+		for _, c := range candidates {
+			imageCandidates = append(imageCandidates, ImageCandidate{
+				URL:       c.URL,
+				Width:     c.Width,
+				Height:    c.Height,
+				Source:    c.Source,
+				ImageType: imageType,
+			})
+		}
+		return &FixResult{
+			RuleID:     v.RuleID,
+			Fixed:      false,
+			Message:    fmt.Sprintf("found %d %s candidate(s) for user selection", len(candidates), imageType),
+			Candidates: imageCandidates,
 		}, nil
 	}
 
