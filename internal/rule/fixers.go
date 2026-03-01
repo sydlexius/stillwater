@@ -226,6 +226,10 @@ func (f *ImageFixer) CanFix(v *Violation) bool {
 	}
 }
 
+// SupportsCandidateDiscovery implements CandidateDiscoverer. ImageFixer can
+// return candidate lists without writing to disk when multiple options exist.
+func (f *ImageFixer) SupportsCandidateDiscovery() bool { return true }
+
 // Fix fetches the best available image from providers and saves it.
 func (f *ImageFixer) Fix(ctx context.Context, a *artist.Artist, v *Violation) (*FixResult, error) {
 	if a.MusicBrainzID == "" {
@@ -726,7 +730,10 @@ func (f *LogoTrimFixer) Fix(ctx context.Context, a *artist.Artist, _ *Violation)
 			oldInfo, errOld := os.Stat(logoPath)
 			newInfo, errNew := os.Stat(newPath)
 			if errOld == nil && errNew == nil && !os.SameFile(oldInfo, newInfo) {
-				_ = os.Remove(logoPath)
+				if rmErr := os.Remove(logoPath); rmErr != nil {
+					f.logger.Warn("failed to remove case-mismatched logo duplicate",
+						slog.String("path", logoPath), slog.String("error", rmErr.Error()))
+				}
 			}
 		}
 	}

@@ -961,18 +961,9 @@ func TestPipeline_ManualMode_DiscoversCandidates(t *testing.T) {
 		t.Fatalf("creating artist: %v", err)
 	}
 
-	candidates := []ImageCandidate{
-		{URL: "http://example.com/c1.jpg", Width: 500, Height: 500, Source: "test", ImageType: "thumb"},
-	}
-	fixer := &mockFixer{
-		canFix: true,
-		result: &FixResult{
-			RuleID:     RuleNFOExists,
-			Fixed:      false,
-			Message:    "candidates found",
-			Candidates: candidates,
-		},
-	}
+	// Use a candidate-aware fixer (implements CandidateDiscoverer) so the
+	// pipeline invokes it for candidate discovery in manual mode.
+	fixer := &mockCandidateFixer{canFix: true}
 
 	engine := NewEngine(ruleSvc, db, nil, testLogger())
 	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{fixer}, testLogger())
@@ -1099,5 +1090,114 @@ func TestPipeline_RunAll_RespectsManualMode(t *testing.T) {
 	}
 	if !found {
 		t.Error("expected open violation for manual-mode nfo_exists rule")
+	}
+}
+
+// mockSideEffectFixer is a fixer that does NOT implement CandidateDiscoverer,
+// simulating side-effect fixers like LogoTrimFixer or NFOFixer.
+type mockSideEffectFixer struct {
+	canFix bool
+	calls  int
+}
+
+func (m *mockSideEffectFixer) CanFix(_ *Violation) bool { return m.canFix }
+
+func (m *mockSideEffectFixer) Fix(_ context.Context, _ *artist.Artist, v *Violation) (*FixResult, error) {
+	m.calls++
+	return &FixResult{RuleID: v.RuleID, Fixed: true, Message: "side-effect applied"}, nil
+}
+
+// mockCandidateFixer implements CandidateDiscoverer and returns candidates.
+type mockCandidateFixer struct {
+	canFix bool
+	calls  int
+}
+
+func (m *mockCandidateFixer) CanFix(_ *Violation) bool         { return m.canFix }
+func (m *mockCandidateFixer) SupportsCandidateDiscovery() bool { return true }
+
+func (m *mockCandidateFixer) Fix(_ context.Context, _ *artist.Artist, v *Violation) (*FixResult, error) {
+	m.calls++
+	return &FixResult{
+		RuleID:  v.RuleID,
+		Fixed:   false,
+		Message: "candidates found",
+		Candidates: []ImageCandidate{
+			{URL: "http://example.com/c1.jpg", Width: 500, Height: 500, Source: "test", ImageType: "thumb"},
+		},
+	}, nil
+}
+
+func TestPipeline_ManualMode_SkipsSideEffectFixer(t *testing.T) {
+	db := setupTestDB(t)
+	artistSvc := artist.NewService(db)
+	ruleSvc := NewService(db)
+	ctx := context.Background()
+
+	if err := ruleSvc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("seeding rules: %v", err)
+	}
+
+	// Enable logo_trimmable and set it to manual mode.
+	r, err := ruleSvc.GetByID(ctx, RuleLogoTrimmable)
+	if err != nil {
+		t.Fatalf("getting rule: %v", err)
+	}
+	r.Enabled = true
+	r.AutomationMode = AutomationModeManual
+	if err := ruleSvc.Update(ctx, r); err != nil {
+		t.Fatalf("updating rule: %v", err)
+	}
+
+	dir := t.TempDir()
+	// Create a padded logo so the checker flags it.
+	createTestPNGWithPadding(t, filepath.Join(dir, "logo.png"), 200, 100, 20, 20, 15, 15)
+
+	a := &artist.Artist{
+		Name:       "Side Effect Test",
+		SortName:   "Side Effect Test",
+		Path:       dir,
+		LogoExists: true,
+	}
+	if err := artistSvc.Create(ctx, a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	// Register a side-effect fixer (no CandidateDiscoverer) that handles
+	// logo_trimmable. It must NOT be called in manual mode.
+	seFixer := &mockSideEffectFixer{canFix: true}
+
+	engine := NewEngine(ruleSvc, db, nil, testLogger())
+	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{seFixer}, testLogger())
+
+	result, err := pipeline.RunRule(ctx, RuleLogoTrimmable)
+	if err != nil {
+		t.Fatalf("RunRule: %v", err)
+	}
+
+	if seFixer.calls != 0 {
+		t.Errorf("side-effect fixer was called %d times in manual mode; want 0", seFixer.calls)
+	}
+
+	if result.FixesAttempted != 0 {
+		t.Errorf("FixesAttempted = %d; want 0 (side-effect fixer should be skipped)", result.FixesAttempted)
+	}
+
+	// The violation should be persisted as open (not pending_choice).
+	openViolations, err := ruleSvc.ListViolations(ctx, ViolationStatusOpen)
+	if err != nil {
+		t.Fatalf("ListViolations(open): %v", err)
+	}
+	found := false
+	for _, v := range openViolations {
+		if v.ArtistID == a.ID && v.RuleID == RuleLogoTrimmable {
+			found = true
+			if !v.Fixable {
+				t.Error("violation Fixable should be true (fixer exists, just skipped for safety)")
+			}
+		}
+	}
+	if !found {
+		t.Error("expected open violation for manual-mode logo_trimmable rule")
 	}
 }

@@ -707,13 +707,16 @@ func TestCheckLogoTrimmable_MinimalPadding(t *testing.T) {
 
 func TestCheckLogoTrimmable_JPEGLogo(t *testing.T) {
 	dir := t.TempDir()
-	// JPEG logo has no alpha channel -- should pass
-	createTestJPEG(t, filepath.Join(dir, "logo.jpg"), 500, 200)
+	// Write JPEG content to a file named logo.png so it matches logoPatterns
+	// and passes the .png extension check. TrimAlphaBounds detects the actual
+	// format and returns content == original for non-PNG data, so the checker
+	// should return nil (no trimmable padding).
+	createTestJPEG(t, filepath.Join(dir, "logo.png"), 500, 200)
 
 	a := artist.Artist{Name: "Test", LogoExists: true, Path: dir}
 	v := checkLogoTrimmable(&a, RuleConfig{ThresholdPercent: 5})
 	if v != nil {
-		t.Errorf("expected nil for JPEG logo, got %v", v)
+		t.Errorf("expected nil for JPEG-content logo, got %v", v)
 	}
 }
 

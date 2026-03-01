@@ -17,6 +17,15 @@ type Fixer interface {
 	Fix(ctx context.Context, a *artist.Artist, v *Violation) (*FixResult, error)
 }
 
+// CandidateDiscoverer is an optional interface that fixers may implement to
+// indicate they support candidate discovery without side effects. In manual
+// automation mode the pipeline only invokes Fix on fixers that implement this
+// interface. Fixers that write to disk unconditionally (LogoTrimFixer,
+// NFOFixer, ExtraneousImagesFixer) must NOT implement it.
+type CandidateDiscoverer interface {
+	SupportsCandidateDiscovery() bool
+}
+
 // FixResult describes the outcome of a fix attempt.
 type FixResult struct {
 	RuleID     string           `json:"rule_id"`
@@ -106,16 +115,20 @@ func (p *Pipeline) RunRule(ctx context.Context, ruleID string) (*RunResult, erro
 					continue
 				}
 
-				// Manual mode: discover candidates but never auto-apply
+				// Manual mode: discover candidates but never auto-apply.
+				// Only invoke fixers that support candidate discovery
+				// without side effects. Side-effect fixers (LogoTrimFixer,
+				// NFOFixer, ExtraneousImagesFixer) are skipped.
 				if targetRule.AutomationMode == AutomationModeManual {
-					if !v.Fixable {
+					fixer := p.findFixer(v)
+					if !v.Fixable || fixer == nil || !supportsCandidateDiscovery(fixer) {
 						rv := &RuleViolation{
 							RuleID:     v.RuleID,
 							ArtistID:   a.ID,
 							ArtistName: a.Name,
 							Severity:   v.Severity,
 							Message:    v.Message,
-							Fixable:    false,
+							Fixable:    v.Fixable,
 							Status:     ViolationStatusOpen,
 						}
 						if err := p.ruleService.UpsertViolation(ctx, rv); err != nil {
@@ -251,14 +264,15 @@ func (p *Pipeline) RunForArtist(ctx context.Context, a *artist.Artist) (*RunResu
 		}
 
 		if r.AutomationMode == AutomationModeManual {
-			if !v.Fixable {
+			fixer := p.findFixer(v)
+			if !v.Fixable || fixer == nil || !supportsCandidateDiscovery(fixer) {
 				rv := &RuleViolation{
 					RuleID:     v.RuleID,
 					ArtistID:   a.ID,
 					ArtistName: a.Name,
 					Severity:   v.Severity,
 					Message:    v.Message,
-					Fixable:    false,
+					Fixable:    v.Fixable,
 					Status:     ViolationStatusOpen,
 				}
 				if err := p.ruleService.UpsertViolation(ctx, rv); err != nil {
@@ -400,16 +414,19 @@ func (p *Pipeline) RunAll(ctx context.Context) (*RunResult, error) {
 					continue
 				}
 
-				// Manual mode: discover candidates but never auto-apply
+				// Manual mode: discover candidates but never auto-apply.
+				// Only invoke fixers that support candidate discovery
+				// without side effects.
 				if r.AutomationMode == AutomationModeManual {
-					if !v.Fixable {
+					fixer := p.findFixer(v)
+					if !v.Fixable || fixer == nil || !supportsCandidateDiscovery(fixer) {
 						rv := &RuleViolation{
 							RuleID:     v.RuleID,
 							ArtistID:   a.ID,
 							ArtistName: a.Name,
 							Severity:   v.Severity,
 							Message:    v.Message,
-							Fixable:    false,
+							Fixable:    v.Fixable,
 							Status:     ViolationStatusOpen,
 						}
 						if err := p.ruleService.UpsertViolation(ctx, rv); err != nil {
@@ -502,6 +519,24 @@ func (p *Pipeline) RunAll(ctx context.Context) (*RunResult, error) {
 	}
 
 	return result, nil
+}
+
+// findFixer returns the first registered fixer that can handle the violation, or nil.
+func (p *Pipeline) findFixer(v *Violation) Fixer {
+	for _, f := range p.fixers {
+		if f.CanFix(v) {
+			return f
+		}
+	}
+	return nil
+}
+
+// supportsCandidateDiscovery reports whether a fixer supports being called in
+// manual mode without side effects. Returns true only if the fixer implements
+// CandidateDiscoverer and returns true from SupportsCandidateDiscovery.
+func supportsCandidateDiscovery(f Fixer) bool {
+	cd, ok := f.(CandidateDiscoverer)
+	return ok && cd.SupportsCandidateDiscovery()
 }
 
 // attemptFix tries each registered fixer for the violation.
