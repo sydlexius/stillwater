@@ -349,12 +349,18 @@ func (r *Router) handleReidentify(w http.ResponseWriter, req *http.Request) {
 		slog.String("previous_mbid", a.MusicBrainzID),
 	)
 
-	// Clear all provider IDs.
+	// Clear all provider IDs and their fetch timestamps so the UI shows
+	// "Not set" instead of the misleading "Not found" for providers that
+	// have not been re-queried yet.
 	a.MusicBrainzID = ""
 	a.AudioDBID = ""
 	a.DiscogsID = ""
 	a.WikidataID = ""
 	a.DeezerID = ""
+	a.AudioDBIDFetchedAt = nil
+	a.DiscogsIDFetchedAt = nil
+	a.WikidataIDFetchedAt = nil
+	a.LastFMFetchedAt = nil
 
 	if err := r.artistService.Update(req.Context(), a); err != nil {
 		writeError(w, req, http.StatusInternalServerError, "failed to clear provider IDs")
@@ -395,16 +401,19 @@ func (r *Router) enrichWithAlbumComparison(ctx context.Context, results []provid
 		return candidates
 	}
 
-	// Enrich top 3 MB results that have an MBID.
-	enriched := 0
+	// Enrich top 3 MB results that have an MBID. Track attempts (not just
+	// successes) to cap the total number of API calls made during search.
+	attempted := 0
 	for i := range candidates {
-		if enriched >= 3 {
+		if attempted >= 3 {
 			break
 		}
 		res := candidates[i].Result
 		if res.MusicBrainzID == "" {
 			continue
 		}
+
+		attempted++
 
 		groups, err := fetcher.GetReleaseGroups(ctx, res.MusicBrainzID)
 		if err != nil {
@@ -422,7 +431,6 @@ func (r *Router) enrichWithAlbumComparison(ctx context.Context, results []provid
 
 		comp := artist.CompareAlbums(localAlbums, remoteTitles)
 		candidates[i].AlbumComparison = &comp
-		enriched++
 	}
 
 	return candidates
