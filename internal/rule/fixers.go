@@ -707,7 +707,7 @@ func (f *LogoTrimFixer) Fix(ctx context.Context, a *artist.Artist, _ *Violation)
 
 	newW, newH, newErr := img.GetDimensions(bytes.NewReader(trimmed))
 
-	naming := existingImageFileNames(ctx, a.Path, "logo", f.platformService)
+	naming := []string{filepath.Base(logoPath)}
 	useSymlinks := activeUseSymlinks(ctx, f.platformService)
 	if _, err := img.Save(a.Path, "logo", trimmed, naming, useSymlinks, f.logger); err != nil {
 		return nil, fmt.Errorf("saving trimmed logo: %w", err)
