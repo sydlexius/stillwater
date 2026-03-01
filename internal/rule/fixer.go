@@ -400,25 +400,24 @@ func (p *Pipeline) RunAll(ctx context.Context) (*RunResult, error) {
 					continue
 				}
 
-				if !v.Fixable {
-					// Persist unfixable violations so they appear in notifications.
-					rv := &RuleViolation{
-						RuleID:     v.RuleID,
-						ArtistID:   a.ID,
-						ArtistName: a.Name,
-						Severity:   v.Severity,
-						Message:    v.Message,
-						Fixable:    false,
-						Status:     ViolationStatusOpen,
-					}
-					if err := p.ruleService.UpsertViolation(ctx, rv); err != nil {
-						p.logger.Warn("persisting unfixable violation", "rule_id", v.RuleID, "artist", a.Name, "error", err)
-					}
-					continue
-				}
-
 				// Manual mode: discover candidates but never auto-apply
 				if r.AutomationMode == AutomationModeManual {
+					if !v.Fixable {
+						rv := &RuleViolation{
+							RuleID:     v.RuleID,
+							ArtistID:   a.ID,
+							ArtistName: a.Name,
+							Severity:   v.Severity,
+							Message:    v.Message,
+							Fixable:    false,
+							Status:     ViolationStatusOpen,
+						}
+						if err := p.ruleService.UpsertViolation(ctx, rv); err != nil {
+							p.logger.Warn("persisting manual-mode violation", "rule_id", v.RuleID, "artist", a.Name, "error", err)
+						}
+						continue
+					}
+
 					fr := p.attemptFix(ctx, a, v)
 					result.Results = append(result.Results, *fr)
 					result.FixesAttempted++
@@ -444,7 +443,23 @@ func (p *Pipeline) RunAll(ctx context.Context) (*RunResult, error) {
 					continue
 				}
 
-				// Auto mode (default): attempt fix
+				// Auto mode (default): persist unfixable as open, attempt fix for fixable
+				if !v.Fixable {
+					rv := &RuleViolation{
+						RuleID:     v.RuleID,
+						ArtistID:   a.ID,
+						ArtistName: a.Name,
+						Severity:   v.Severity,
+						Message:    v.Message,
+						Fixable:    false,
+						Status:     ViolationStatusOpen,
+					}
+					if err := p.ruleService.UpsertViolation(ctx, rv); err != nil {
+						p.logger.Warn("persisting unfixable violation", "rule_id", v.RuleID, "artist", a.Name, "error", err)
+					}
+					continue
+				}
+
 				fr := p.attemptFix(ctx, a, v)
 				result.Results = append(result.Results, *fr)
 				result.FixesAttempted++
