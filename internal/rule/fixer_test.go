@@ -838,6 +838,100 @@ func TestExtraneousImagesFixer_Fix_EmptyPath(t *testing.T) {
 	}
 }
 
+func TestLogoTrimFixer_CanFix(t *testing.T) {
+	f := NewLogoTrimFixer(nil, testLogger())
+	if !f.CanFix(&Violation{RuleID: RuleLogoTrimmable}) {
+		t.Error("should handle logo_trimmable")
+	}
+	if f.CanFix(&Violation{RuleID: RuleNFOExists}) {
+		t.Error("should not handle nfo_exists")
+	}
+}
+
+func TestLogoTrimFixer_Fix_TrimsPadding(t *testing.T) {
+	dir := t.TempDir()
+	// Create a padded PNG: 200x100 with 20px horizontal and 15px vertical padding.
+	createTestPNGWithPadding(t, filepath.Join(dir, "logo.png"), 200, 100, 20, 20, 15, 15)
+
+	origData, err := os.ReadFile(filepath.Join(dir, "logo.png"))
+	if err != nil {
+		t.Fatalf("reading original logo: %v", err)
+	}
+
+	a := &artist.Artist{Name: "Trim Test", Path: dir, LogoExists: true}
+	f := NewLogoTrimFixer(nil, testLogger())
+
+	fr, err := f.Fix(context.Background(), a, &Violation{RuleID: RuleLogoTrimmable})
+	if err != nil {
+		t.Fatalf("Fix: %v", err)
+	}
+	if !fr.Fixed {
+		t.Errorf("Fixed = false, want true; message: %s", fr.Message)
+	}
+	if fr.RuleID != RuleLogoTrimmable {
+		t.Errorf("RuleID = %q, want %q", fr.RuleID, RuleLogoTrimmable)
+	}
+
+	// Verify the file on disk changed (trimmed should be smaller).
+	trimmedData, err := os.ReadFile(filepath.Join(dir, "logo.png"))
+	if err != nil {
+		t.Fatalf("reading trimmed logo: %v", err)
+	}
+	if bytes.Equal(origData, trimmedData) {
+		t.Error("logo file was not modified after trimming")
+	}
+}
+
+func TestLogoTrimFixer_Fix_EmptyPath(t *testing.T) {
+	a := &artist.Artist{Name: "No Path"}
+	f := NewLogoTrimFixer(nil, testLogger())
+
+	fr, err := f.Fix(context.Background(), a, &Violation{RuleID: RuleLogoTrimmable})
+	if err != nil {
+		t.Fatalf("Fix: %v", err)
+	}
+	if fr.Fixed {
+		t.Error("Fixed = true, want false for empty path")
+	}
+	if fr.Message != "artist has no path" {
+		t.Errorf("Message = %q, want 'artist has no path'", fr.Message)
+	}
+}
+
+func TestLogoTrimFixer_Fix_NoLogoOnDisk(t *testing.T) {
+	dir := t.TempDir()
+	a := &artist.Artist{Name: "No Logo", Path: dir, LogoExists: true}
+	f := NewLogoTrimFixer(nil, testLogger())
+
+	fr, err := f.Fix(context.Background(), a, &Violation{RuleID: RuleLogoTrimmable})
+	if err != nil {
+		t.Fatalf("Fix: %v", err)
+	}
+	if fr.Fixed {
+		t.Error("Fixed = true, want false when no logo on disk")
+	}
+	if fr.Message != "no logo file found on disk" {
+		t.Errorf("Message = %q, want 'no logo file found on disk'", fr.Message)
+	}
+}
+
+func TestLogoTrimFixer_Fix_CaseInsensitiveLookup(t *testing.T) {
+	dir := t.TempDir()
+	// Create file as Logo.PNG (mixed case) with padding.
+	createTestPNGWithPadding(t, filepath.Join(dir, "Logo.PNG"), 200, 100, 20, 20, 15, 15)
+
+	a := &artist.Artist{Name: "Case Test", Path: dir, LogoExists: true}
+	f := NewLogoTrimFixer(nil, testLogger())
+
+	fr, err := f.Fix(context.Background(), a, &Violation{RuleID: RuleLogoTrimmable})
+	if err != nil {
+		t.Fatalf("Fix: %v", err)
+	}
+	if !fr.Fixed {
+		t.Errorf("Fixed = false, want true; fixer should find Logo.PNG via case-insensitive lookup; message: %s", fr.Message)
+	}
+}
+
 func TestPipeline_ManualMode_DiscoversCandidates(t *testing.T) {
 	db := setupTestDB(t)
 	artistSvc := artist.NewService(db)

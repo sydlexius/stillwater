@@ -736,3 +736,33 @@ func TestCheckLogoTrimmable_NoPadding(t *testing.T) {
 		t.Errorf("expected nil for logo with no padding, got %v", v)
 	}
 }
+
+func TestCheckLogoTrimmable_LogoWhite(t *testing.T) {
+	dir := t.TempDir()
+	// logo-white.png with excess padding (>5% on each side).
+	createTestPNGWithPadding(t, filepath.Join(dir, "logo-white.png"), 200, 100, 20, 20, 15, 15)
+
+	a := artist.Artist{Name: "Test", LogoExists: true, Path: dir}
+	v := checkLogoTrimmable(&a, RuleConfig{ThresholdPercent: 5})
+	if v == nil {
+		t.Fatal("expected violation for logo-white.png with >5% padding")
+	}
+	if v.RuleID != RuleLogoTrimmable {
+		t.Errorf("RuleID = %q, want %q", v.RuleID, RuleLogoTrimmable)
+	}
+}
+
+func TestCheckLogoTrimmable_CaseInsensitive(t *testing.T) {
+	dir := t.TempDir()
+	// Logo.PNG (mixed case) with excess padding.
+	createTestPNGWithPadding(t, filepath.Join(dir, "Logo.PNG"), 200, 100, 20, 20, 15, 15)
+
+	a := artist.Artist{Name: "Test", LogoExists: true, Path: dir}
+	v := checkLogoTrimmable(&a, RuleConfig{ThresholdPercent: 5})
+	if v == nil {
+		t.Fatal("expected violation for Logo.PNG (case-insensitive match) with >5% padding")
+	}
+	if v.RuleID != RuleLogoTrimmable {
+		t.Errorf("RuleID = %q, want %q", v.RuleID, RuleLogoTrimmable)
+	}
+}
