@@ -714,12 +714,20 @@ func (f *LogoTrimFixer) Fix(ctx context.Context, a *artist.Artist, _ *Violation)
 	}
 
 	// Remove original if only extension case changed (e.g., Logo.PNG -> Logo.png)
-	// to avoid duplicates on case-sensitive filesystems.
+	// to avoid duplicates on case-sensitive filesystems, but only when the old
+	// and new paths are distinct files. On case-insensitive filesystems they may
+	// refer to the same file, in which case we must not remove the new logo.
 	if len(savedNames) > 0 {
 		oldBase := filepath.Base(logoPath)
 		newBase := savedNames[0]
 		if strings.EqualFold(oldBase, newBase) && oldBase != newBase {
-			_ = os.Remove(logoPath)
+			newPath := filepath.Join(a.Path, newBase)
+
+			oldInfo, errOld := os.Stat(logoPath)
+			newInfo, errNew := os.Stat(newPath)
+			if errOld == nil && errNew == nil && !os.SameFile(oldInfo, newInfo) {
+				_ = os.Remove(logoPath)
+			}
 		}
 	}
 
