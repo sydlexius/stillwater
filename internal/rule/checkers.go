@@ -198,16 +198,16 @@ func getImageDimensions(dirPath string, patterns []string) (int, int, error) {
 		return 0, 0, fmt.Errorf("reading directory: %w", err)
 	}
 
-	files := make(map[string]bool, len(entries))
+	lowerToActual := make(map[string]string, len(entries))
 	for _, e := range entries {
 		if !e.IsDir() {
-			files[strings.ToLower(e.Name())] = true
+			lowerToActual[strings.ToLower(e.Name())] = e.Name()
 		}
 	}
 
 	for _, pattern := range patterns {
-		if files[strings.ToLower(pattern)] {
-			p := filepath.Join(dirPath, pattern)
+		if actual, ok := lowerToActual[strings.ToLower(pattern)]; ok {
+			p := filepath.Join(dirPath, actual)
 			f, err := os.Open(p) //nolint:gosec // G304: path from trusted library root
 			if err != nil {
 				continue

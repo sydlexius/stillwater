@@ -676,10 +676,9 @@ func (f *LogoTrimFixer) Fix(ctx context.Context, a *artist.Artist, _ *Violation)
 		}
 	}
 
-	names := existingImageFileNames(ctx, a.Path, "logo", f.platformService)
 	var logoPath string
-	for _, name := range names {
-		if actual, ok := lowerToActual[strings.ToLower(name)]; ok {
+	for _, pattern := range logoPatterns {
+		if actual, ok := lowerToActual[strings.ToLower(pattern)]; ok {
 			logoPath = filepath.Join(a.Path, actual)
 			break
 		}
