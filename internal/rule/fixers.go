@@ -226,6 +226,11 @@ func (f *ImageFixer) CanFix(v *Violation) bool {
 	}
 }
 
+// SupportsCandidateDiscovery implements CandidateDiscoverer. ImageFixer can
+// return candidate lists without writing to disk when Config.DiscoveryOnly is
+// set (manual mode) or when multiple candidates exist without SelectBestCandidate.
+func (f *ImageFixer) SupportsCandidateDiscovery() bool { return true }
+
 // Fix fetches the best available image from providers and saves it.
 func (f *ImageFixer) Fix(ctx context.Context, a *artist.Artist, v *Violation) (*FixResult, error) {
 	if a.MusicBrainzID == "" {
@@ -298,6 +303,27 @@ func (f *ImageFixer) Fix(ctx context.Context, a *artist.Artist, v *Violation) (*
 			RuleID:  v.RuleID,
 			Fixed:   false,
 			Message: fmt.Sprintf("no %s candidates meet %s", imageType, constraintDesc),
+		}, nil
+	}
+
+	// Discovery-only mode (manual automation): return all candidates as a list
+	// without downloading or saving anything.
+	if v.Config.DiscoveryOnly {
+		imageCandidates := make([]ImageCandidate, 0, len(candidates))
+		for _, c := range candidates {
+			imageCandidates = append(imageCandidates, ImageCandidate{
+				URL:       c.URL,
+				Width:     c.Width,
+				Height:    c.Height,
+				Source:    c.Source,
+				ImageType: imageType,
+			})
+		}
+		return &FixResult{
+			RuleID:     v.RuleID,
+			Fixed:      false,
+			Message:    fmt.Sprintf("found %d %s candidate(s) for user selection", len(candidates), imageType),
+			Candidates: imageCandidates,
 		}, nil
 	}
 
@@ -632,6 +658,117 @@ func (f *ExtraneousImagesFixer) Fix(ctx context.Context, a *artist.Artist, _ *Vi
 		RuleID:  RuleExtraneousImages,
 		Fixed:   true,
 		Message: fmt.Sprintf("deleted %d extraneous file(s): %s", len(deleted), strings.Join(deleted, ", ")),
+	}, nil
+}
+
+// LogoTrimFixer trims transparent padding from logo PNG files.
+type LogoTrimFixer struct {
+	platformService *platform.Service
+	logger          *slog.Logger
+}
+
+// NewLogoTrimFixer creates a LogoTrimFixer.
+func NewLogoTrimFixer(platformService *platform.Service, logger *slog.Logger) *LogoTrimFixer {
+	return &LogoTrimFixer{
+		platformService: platformService,
+		logger:          logger,
+	}
+}
+
+// CanFix returns true for the logo_trimmable rule.
+func (f *LogoTrimFixer) CanFix(v *Violation) bool {
+	return v.RuleID == RuleLogoTrimmable
+}
+
+// Fix trims transparent padding from the logo and saves the result.
+func (f *LogoTrimFixer) Fix(ctx context.Context, a *artist.Artist, _ *Violation) (*FixResult, error) {
+	if a.Path == "" {
+		return &FixResult{
+			RuleID:  RuleLogoTrimmable,
+			Fixed:   false,
+			Message: "artist has no path",
+		}, nil
+	}
+
+	// Find the existing logo file on disk using case-insensitive matching.
+	entries, readErr := os.ReadDir(a.Path)
+	if readErr != nil {
+		return nil, fmt.Errorf("reading artist directory: %w", readErr)
+	}
+	lowerToActual := make(map[string]string, len(entries))
+	for _, e := range entries {
+		if !e.IsDir() {
+			lowerToActual[strings.ToLower(e.Name())] = e.Name()
+		}
+	}
+
+	var logoPath string
+	for _, pattern := range logoPatterns {
+		if actual, ok := lowerToActual[strings.ToLower(pattern)]; ok {
+			logoPath = filepath.Join(a.Path, actual)
+			break
+		}
+	}
+	if logoPath == "" {
+		return &FixResult{
+			RuleID:  RuleLogoTrimmable,
+			Fixed:   false,
+			Message: "no logo file found on disk",
+		}, nil
+	}
+
+	data, err := os.ReadFile(logoPath) //nolint:gosec // G304: path from trusted artist directory
+	if err != nil {
+		return nil, fmt.Errorf("reading logo: %w", err)
+	}
+
+	// Read original dimensions before trimming.
+	origW, origH, origErr := img.GetDimensions(bytes.NewReader(data))
+
+	trimmed, _, err := img.TrimAlpha(bytes.NewReader(data), 128)
+	if err != nil {
+		return nil, fmt.Errorf("trimming logo: %w", err)
+	}
+
+	newW, newH, newErr := img.GetDimensions(bytes.NewReader(trimmed))
+
+	naming := []string{filepath.Base(logoPath)}
+	useSymlinks := activeUseSymlinks(ctx, f.platformService)
+	savedNames, err := img.Save(a.Path, "logo", trimmed, naming, useSymlinks, f.logger)
+	if err != nil {
+		return nil, fmt.Errorf("saving trimmed logo: %w", err)
+	}
+
+	// Remove original if only extension case changed (e.g., Logo.PNG -> Logo.png)
+	// to avoid duplicates on case-sensitive filesystems, but only when the old
+	// and new paths are distinct files. On case-insensitive filesystems they may
+	// refer to the same file, in which case we must not remove the new logo.
+	if len(savedNames) > 0 {
+		oldBase := filepath.Base(logoPath)
+		newBase := savedNames[0]
+		if strings.EqualFold(oldBase, newBase) && oldBase != newBase {
+			newPath := filepath.Join(a.Path, newBase)
+
+			oldInfo, errOld := os.Stat(logoPath)
+			newInfo, errNew := os.Stat(newPath)
+			if errOld == nil && errNew == nil && !os.SameFile(oldInfo, newInfo) {
+				if rmErr := os.Remove(logoPath); rmErr != nil {
+					f.logger.Warn("failed to remove case-mismatched logo duplicate",
+						slog.String("path", logoPath), slog.String("error", rmErr.Error()))
+				}
+			}
+		}
+	}
+
+	msg := "trimmed logo padding"
+	if origErr == nil && newErr == nil {
+		msg = fmt.Sprintf("trimmed logo from %dx%d to %dx%d", origW, origH, newW, newH)
+	}
+
+	return &FixResult{
+		RuleID:  RuleLogoTrimmable,
+		Fixed:   true,
+		Message: msg,
 	}, nil
 }
 
