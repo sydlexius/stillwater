@@ -330,6 +330,74 @@ func TestFitDimensions(t *testing.T) {
 	}
 }
 
+// makePNGWithPadding creates a PNG where the content occupies the center region
+// and the surrounding border is fully transparent.
+func makePNGWithPadding(t *testing.T, totalW, totalH, padLeft, padRight, padTop, padBottom int) []byte {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, totalW, totalH))
+	// Fill content area with opaque pixels
+	for y := padTop; y < totalH-padBottom; y++ {
+		for x := padLeft; x < totalW-padRight; x++ {
+			img.Set(x, y, color.RGBA{R: 200, G: 100, B: 50, A: 255})
+		}
+	}
+	// Padding stays at zero value (fully transparent)
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		t.Fatalf("encoding test png: %v", err)
+	}
+	return buf.Bytes()
+}
+
+func TestTrimAlphaBounds_PNG_WithPadding(t *testing.T) {
+	// 200x100 image with 20px padding on left/right (10%) and 10px on top/bottom (10%)
+	data := makePNGWithPadding(t, 200, 100, 20, 20, 10, 10)
+
+	content, original, err := TrimAlphaBounds(bytes.NewReader(data), 128)
+	if err != nil {
+		t.Fatalf("TrimAlphaBounds: %v", err)
+	}
+
+	if original.Dx() != 200 || original.Dy() != 100 {
+		t.Errorf("original = %v, want 200x100", original)
+	}
+	if content.Min.X != 20 || content.Min.Y != 10 {
+		t.Errorf("content.Min = (%d,%d), want (20,10)", content.Min.X, content.Min.Y)
+	}
+	if content.Max.X != 180 || content.Max.Y != 90 {
+		t.Errorf("content.Max = (%d,%d), want (180,90)", content.Max.X, content.Max.Y)
+	}
+}
+
+func TestTrimAlphaBounds_PNG_NoPadding(t *testing.T) {
+	// Fully opaque PNG -- content should equal original
+	data := makePNG(t, 100, 100)
+
+	content, original, err := TrimAlphaBounds(bytes.NewReader(data), 128)
+	if err != nil {
+		t.Fatalf("TrimAlphaBounds: %v", err)
+	}
+	if content != original {
+		t.Errorf("expected content == original for fully opaque PNG; content=%v, original=%v", content, original)
+	}
+}
+
+func TestTrimAlphaBounds_JPEG(t *testing.T) {
+	// JPEG has no alpha channel -- content should equal original
+	data := makeJPEG(t, 100, 50)
+
+	content, original, err := TrimAlphaBounds(bytes.NewReader(data), 128)
+	if err != nil {
+		t.Fatalf("TrimAlphaBounds: %v", err)
+	}
+	if content != original {
+		t.Errorf("expected content == original for JPEG; content=%v, original=%v", content, original)
+	}
+	if original.Dx() != 100 || original.Dy() != 50 {
+		t.Errorf("original = %v, want 100x50", original)
+	}
+}
+
 func TestIsLowResolution(t *testing.T) {
 	tests := []struct {
 		name      string

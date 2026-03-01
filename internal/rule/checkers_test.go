@@ -4,6 +4,7 @@ import (
 	"image"
 	"image/color"
 	"image/jpeg"
+	"image/png"
 	"os"
 	"path/filepath"
 	"testing"
@@ -643,5 +644,95 @@ func TestCheckArtistIDMismatch(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// createTestPNGWithPadding creates a PNG file with opaque content in the center
+// and transparent padding around the edges.
+func createTestPNGWithPadding(t *testing.T, path string, totalW, totalH, padLeft, padRight, padTop, padBottom int) {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, totalW, totalH))
+	for y := padTop; y < totalH-padBottom; y++ {
+		for x := padLeft; x < totalW-padRight; x++ {
+			img.Set(x, y, color.RGBA{R: 200, G: 100, B: 50, A: 255})
+		}
+	}
+
+	f, err := os.Create(path) //nolint:gosec
+	if err != nil {
+		t.Fatalf("creating test png: %v", err)
+	}
+	defer f.Close() //nolint:errcheck
+
+	if err := png.Encode(f, img); err != nil {
+		t.Fatalf("encoding png: %v", err)
+	}
+}
+
+// createTestPNG creates a fully opaque PNG file (no transparent padding).
+func createTestPNG(t *testing.T, path string, w, h int) {
+	t.Helper()
+	createTestPNGWithPadding(t, path, w, h, 0, 0, 0, 0)
+}
+
+func TestCheckLogoTrimmable_ExcessPadding(t *testing.T) {
+	dir := t.TempDir()
+	// 200x100 logo with 20px padding on each horizontal side (10%) and 15px vertical (15%)
+	createTestPNGWithPadding(t, filepath.Join(dir, "logo.png"), 200, 100, 20, 20, 15, 15)
+
+	a := artist.Artist{Name: "Test", LogoExists: true, Path: dir}
+	v := checkLogoTrimmable(&a, RuleConfig{ThresholdPercent: 5})
+	if v == nil {
+		t.Fatal("expected violation for logo with >5% padding")
+	}
+	if v.RuleID != RuleLogoTrimmable {
+		t.Errorf("RuleID = %q, want %q", v.RuleID, RuleLogoTrimmable)
+	}
+	if !v.Fixable {
+		t.Error("expected Fixable to be true")
+	}
+}
+
+func TestCheckLogoTrimmable_MinimalPadding(t *testing.T) {
+	dir := t.TempDir()
+	// 200x100 logo with only 2px padding per side (<5% of 200 and 100)
+	createTestPNGWithPadding(t, filepath.Join(dir, "logo.png"), 200, 100, 2, 2, 2, 2)
+
+	a := artist.Artist{Name: "Test", LogoExists: true, Path: dir}
+	v := checkLogoTrimmable(&a, RuleConfig{ThresholdPercent: 5})
+	if v != nil {
+		t.Errorf("expected nil for logo with <5%% padding, got %v", v)
+	}
+}
+
+func TestCheckLogoTrimmable_JPEGLogo(t *testing.T) {
+	dir := t.TempDir()
+	// JPEG logo has no alpha channel -- should pass
+	createTestJPEG(t, filepath.Join(dir, "logo.jpg"), 500, 200)
+
+	a := artist.Artist{Name: "Test", LogoExists: true, Path: dir}
+	v := checkLogoTrimmable(&a, RuleConfig{ThresholdPercent: 5})
+	if v != nil {
+		t.Errorf("expected nil for JPEG logo, got %v", v)
+	}
+}
+
+func TestCheckLogoTrimmable_NoLogo(t *testing.T) {
+	a := artist.Artist{Name: "Test", LogoExists: false, Path: t.TempDir()}
+	v := checkLogoTrimmable(&a, RuleConfig{ThresholdPercent: 5})
+	if v != nil {
+		t.Errorf("expected nil when logo does not exist, got %v", v)
+	}
+}
+
+func TestCheckLogoTrimmable_NoPadding(t *testing.T) {
+	dir := t.TempDir()
+	// Fully opaque PNG with zero padding
+	createTestPNG(t, filepath.Join(dir, "logo.png"), 500, 200)
+
+	a := artist.Artist{Name: "Test", LogoExists: true, Path: dir}
+	v := checkLogoTrimmable(&a, RuleConfig{ThresholdPercent: 5})
+	if v != nil {
+		t.Errorf("expected nil for logo with no padding, got %v", v)
 	}
 }

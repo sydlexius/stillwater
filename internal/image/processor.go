@@ -221,6 +221,60 @@ func ValidateAspectRatio(width, height int, expected, tolerance float64) bool {
 	return math.Abs(actual-expected)/expected <= tolerance
 }
 
+// TrimAlphaBounds returns the tight content bounding box of a PNG image,
+// excluding pixels with alpha <= threshold. Returns the content rect and
+// original bounds. Non-PNG images return the full image bounds unchanged.
+// If no visible pixels are found, content equals original.
+func TrimAlphaBounds(src io.Reader, threshold uint8) (content, original image.Rectangle, err error) {
+	format, replay, detectErr := DetectFormat(src)
+	if detectErr != nil {
+		return image.Rectangle{}, image.Rectangle{}, fmt.Errorf("detecting format: %w", detectErr)
+	}
+
+	decoded, _, decodeErr := image.Decode(replay)
+	if decodeErr != nil {
+		return image.Rectangle{}, image.Rectangle{}, fmt.Errorf("decoding image: %w", decodeErr)
+	}
+
+	bounds := decoded.Bounds()
+	if format != FormatPNG {
+		return bounds, bounds, nil
+	}
+
+	minX, minY := bounds.Max.X, bounds.Max.Y
+	maxX, maxY := bounds.Min.X-1, bounds.Min.Y-1
+
+	thresh := uint32(threshold) << 8
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			_, _, _, a := decoded.At(x, y).RGBA()
+			if a > thresh {
+				if x < minX {
+					minX = x
+				}
+				if x > maxX {
+					maxX = x
+				}
+				if y < minY {
+					minY = y
+				}
+				if y > maxY {
+					maxY = y
+				}
+			}
+		}
+	}
+
+	// No visible pixels found -- content equals original.
+	if maxX < minX || maxY < minY {
+		return bounds, bounds, nil
+	}
+
+	// maxX/maxY are inclusive, so add 1 for the rectangle's exclusive bound.
+	content = image.Rect(minX, minY, maxX+1, maxY+1)
+	return content, bounds, nil
+}
+
 // TrimAlpha crops the transparent border from a PNG image by finding the
 // tightest bounding box that contains all pixels with alpha > threshold (0-255).
 // Non-PNG images are returned as-is. If no visible pixels are found, the
@@ -241,13 +295,14 @@ func TrimAlpha(src io.Reader, threshold uint8) ([]byte, string, error) {
 	}
 
 	bounds := decoded.Bounds()
+
+	// Reuse TrimAlphaBounds logic inline to avoid re-decoding the image.
 	minX, minY := bounds.Max.X, bounds.Max.Y
 	maxX, maxY := bounds.Min.X-1, bounds.Min.Y-1
 
 	thresh := uint32(threshold) << 8
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
-			// RGBA() returns 16-bit pre-multiplied values (0-65535).
 			_, _, _, a := decoded.At(x, y).RGBA()
 			if a > thresh {
 				if x < minX {

@@ -439,6 +439,70 @@ func nameSimilarity(a, b string) float64 {
 	return 1.0 - float64(dist)/float64(maxLen)
 }
 
+func checkLogoTrimmable(a *artist.Artist, cfg RuleConfig) *Violation {
+	if !a.LogoExists || a.Path == "" {
+		return nil
+	}
+
+	// Find the logo file on disk; only PNG files have an alpha channel.
+	var logoPath string
+	for _, pattern := range logoPatterns {
+		p := filepath.Join(a.Path, pattern)
+		if _, err := os.Stat(p); err == nil {
+			if strings.ToLower(filepath.Ext(p)) == ".png" {
+				logoPath = p
+			}
+			break
+		}
+	}
+	if logoPath == "" {
+		return nil
+	}
+
+	f, err := os.Open(logoPath) //nolint:gosec // G304: path from trusted library root
+	if err != nil {
+		return nil
+	}
+	defer f.Close() //nolint:errcheck
+
+	content, original, err := image.TrimAlphaBounds(f, 128)
+	if err != nil || original.Dx() == 0 || original.Dy() == 0 {
+		return nil
+	}
+
+	// If content equals original, there is no padding to trim.
+	if content == original {
+		return nil
+	}
+
+	threshold := cfg.ThresholdPercent
+	if threshold == 0 {
+		threshold = 5
+	}
+	threshFrac := threshold / 100.0
+
+	leftFrac := float64(content.Min.X-original.Min.X) / float64(original.Dx())
+	rightFrac := float64(original.Max.X-content.Max.X) / float64(original.Dx())
+	topFrac := float64(content.Min.Y-original.Min.Y) / float64(original.Dy())
+	bottomFrac := float64(original.Max.Y-content.Max.Y) / float64(original.Dy())
+
+	if leftFrac <= threshFrac && rightFrac <= threshFrac && topFrac <= threshFrac && bottomFrac <= threshFrac {
+		return nil
+	}
+
+	return &Violation{
+		RuleID:   RuleLogoTrimmable,
+		RuleName: "Logo transparent padding",
+		Category: "image",
+		Severity: effectiveSeverity(cfg),
+		Message: fmt.Sprintf(
+			"artist %q logo has excess transparent padding (left %.0f%%, right %.0f%%, top %.0f%%, bottom %.0f%%)",
+			a.Name, leftFrac*100, rightFrac*100, topFrac*100, bottomFrac*100,
+		),
+		Fixable: true,
+	}
+}
+
 func checkArtistIDMismatch(a *artist.Artist, cfg RuleConfig) *Violation {
 	if a.Path == "" {
 		return nil

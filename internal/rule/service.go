@@ -28,6 +28,7 @@ const (
 	RuleBannerMinRes     = "banner_min_res"
 	RuleExtraneousImages = "extraneous_images"
 	RuleArtistIDMismatch = "artist_id_mismatch"
+	RuleLogoTrimmable    = "logo_trimmable"
 )
 
 // defaultRules defines the built-in rules seeded on first startup.
@@ -153,6 +154,15 @@ var defaultRules = []Rule{
 		Enabled:        false,
 		AutomationMode: "manual",
 		Config:         RuleConfig{Tolerance: 0.8, Severity: "warning"},
+	},
+	{
+		ID:             RuleLogoTrimmable,
+		Name:           "Logo transparent padding",
+		Description:    "Logos with large transparent borders waste space and display inconsistently across media servers. This rule detects logos where more than 5% of any edge is transparent padding, and can automatically trim the padding to produce a tighter, cleaner logo.",
+		Category:       "image",
+		Enabled:        false,
+		AutomationMode: "manual",
+		Config:         RuleConfig{ThresholdPercent: 5, Severity: "info"},
 	},
 }
 

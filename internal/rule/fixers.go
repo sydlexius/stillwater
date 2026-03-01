@@ -635,6 +635,81 @@ func (f *ExtraneousImagesFixer) Fix(ctx context.Context, a *artist.Artist, _ *Vi
 	}, nil
 }
 
+// LogoTrimFixer trims transparent padding from logo PNG files.
+type LogoTrimFixer struct {
+	platformService *platform.Service
+	logger          *slog.Logger
+}
+
+// NewLogoTrimFixer creates a LogoTrimFixer.
+func NewLogoTrimFixer(platformService *platform.Service, logger *slog.Logger) *LogoTrimFixer {
+	return &LogoTrimFixer{
+		platformService: platformService,
+		logger:          logger,
+	}
+}
+
+// CanFix returns true for the logo_trimmable rule.
+func (f *LogoTrimFixer) CanFix(v *Violation) bool {
+	return v.RuleID == RuleLogoTrimmable
+}
+
+// Fix trims transparent padding from the logo and saves the result.
+func (f *LogoTrimFixer) Fix(ctx context.Context, a *artist.Artist, _ *Violation) (*FixResult, error) {
+	if a.Path == "" {
+		return &FixResult{
+			RuleID:  RuleLogoTrimmable,
+			Fixed:   false,
+			Message: "artist has no path",
+		}, nil
+	}
+
+	// Find the existing logo file on disk.
+	names := existingImageFileNames(ctx, a.Path, "logo", f.platformService)
+	var logoPath string
+	for _, name := range names {
+		p := filepath.Join(a.Path, name)
+		if _, err := os.Stat(p); err == nil {
+			logoPath = p
+			break
+		}
+	}
+	if logoPath == "" {
+		return &FixResult{
+			RuleID:  RuleLogoTrimmable,
+			Fixed:   false,
+			Message: "no logo file found on disk",
+		}, nil
+	}
+
+	data, err := os.ReadFile(logoPath) //nolint:gosec // G304: path from trusted artist directory
+	if err != nil {
+		return nil, fmt.Errorf("reading logo: %w", err)
+	}
+
+	// Read original dimensions before trimming.
+	origW, origH, _ := img.GetDimensions(bytes.NewReader(data))
+
+	trimmed, _, err := img.TrimAlpha(bytes.NewReader(data), 128)
+	if err != nil {
+		return nil, fmt.Errorf("trimming logo: %w", err)
+	}
+
+	newW, newH, _ := img.GetDimensions(bytes.NewReader(trimmed))
+
+	naming := existingImageFileNames(ctx, a.Path, "logo", f.platformService)
+	useSymlinks := activeUseSymlinks(ctx, f.platformService)
+	if _, err := img.Save(a.Path, "logo", trimmed, naming, useSymlinks, f.logger); err != nil {
+		return nil, fmt.Errorf("saving trimmed logo: %w", err)
+	}
+
+	return &FixResult{
+		RuleID:  RuleLogoTrimmable,
+		Fixed:   true,
+		Message: fmt.Sprintf("trimmed logo from %dx%d to %dx%d", origW, origH, newW, newH),
+	}, nil
+}
+
 // fetchImageURL downloads image data from a URL with timeout and size limits.
 func fetchImageURL(ctx context.Context, rawURL string) ([]byte, error) {
 	client := &http.Client{Timeout: fetchTimeout}
