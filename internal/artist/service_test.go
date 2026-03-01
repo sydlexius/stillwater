@@ -245,9 +245,11 @@ func TestList_SearchAndFilter(t *testing.T) {
 	a1 := testArtist("The Beatles", "/music/The Beatles")
 	a1.NFOExists = true
 	a1.MusicBrainzID = "b10bbbfc-cf9e-42e0-be17-e2c3e1d2600d"
+	a1.LogoExists = true
+	a1.BannerExists = true
 
 	a2 := testArtist("The Rolling Stones", "/music/The Rolling Stones")
-	// a2 has no NFO and no MBID
+	// a2 has no NFO, no MBID, no logo, no banner
 
 	if err := svc.Create(ctx, a1); err != nil {
 		t.Fatalf("Create: %v", err)
@@ -284,6 +286,24 @@ func TestList_SearchAndFilter(t *testing.T) {
 	}
 	if total != 1 || artists[0].Name != "The Rolling Stones" {
 		t.Errorf("missing_mbid filter: total=%d, artists=%v", total, artists)
+	}
+
+	// Filter missing logo
+	artists, total, err = svc.List(ctx, ListParams{Filter: "missing_logo"})
+	if err != nil {
+		t.Fatalf("List filter missing_logo: %v", err)
+	}
+	if total != 1 || artists[0].Name != "The Rolling Stones" {
+		t.Errorf("missing_logo filter: total=%d, artists=%v", total, artists)
+	}
+
+	// Filter missing banner
+	artists, total, err = svc.List(ctx, ListParams{Filter: "missing_banner"})
+	if err != nil {
+		t.Fatalf("List filter missing_banner: %v", err)
+	}
+	if total != 1 || artists[0].Name != "The Rolling Stones" {
+		t.Errorf("missing_banner filter: total=%d, artists=%v", total, artists)
 	}
 }
 
