@@ -444,13 +444,24 @@ func checkLogoTrimmable(a *artist.Artist, cfg RuleConfig) *Violation {
 		return nil
 	}
 
-	// Find the logo file on disk; only PNG files have an alpha channel.
+	// Find the logo file on disk using case-insensitive matching; only PNG
+	// files have an alpha channel.
+	entries, readErr := os.ReadDir(a.Path)
+	if readErr != nil {
+		return nil
+	}
+	lowerToActual := make(map[string]string, len(entries))
+	for _, e := range entries {
+		if !e.IsDir() {
+			lowerToActual[strings.ToLower(e.Name())] = e.Name()
+		}
+	}
+
 	var logoPath string
 	for _, pattern := range logoPatterns {
-		p := filepath.Join(a.Path, pattern)
-		if _, err := os.Stat(p); err == nil {
-			if strings.ToLower(filepath.Ext(p)) == ".png" {
-				logoPath = p
+		if actual, ok := lowerToActual[strings.ToLower(pattern)]; ok {
+			if strings.ToLower(filepath.Ext(actual)) == ".png" {
+				logoPath = filepath.Join(a.Path, actual)
 				break
 			}
 		}
@@ -496,7 +507,7 @@ func checkLogoTrimmable(a *artist.Artist, cfg RuleConfig) *Violation {
 		Category: "image",
 		Severity: effectiveSeverity(cfg),
 		Message: fmt.Sprintf(
-			"artist %q logo has excess transparent padding (left %.0f%%, right %.0f%%, top %.0f%%, bottom %.0f%%)",
+			"artist %q logo has excess transparent padding (left %.1f%%, right %.1f%%, top %.1f%%, bottom %.1f%%)",
 			a.Name, leftFrac*100, rightFrac*100, topFrac*100, bottomFrac*100,
 		),
 		Fixable: true,

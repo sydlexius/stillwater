@@ -664,13 +664,23 @@ func (f *LogoTrimFixer) Fix(ctx context.Context, a *artist.Artist, _ *Violation)
 		}, nil
 	}
 
-	// Find the existing logo file on disk.
+	// Find the existing logo file on disk using case-insensitive matching.
+	entries, readErr := os.ReadDir(a.Path)
+	if readErr != nil {
+		return nil, fmt.Errorf("reading artist directory: %w", readErr)
+	}
+	lowerToActual := make(map[string]string, len(entries))
+	for _, e := range entries {
+		if !e.IsDir() {
+			lowerToActual[strings.ToLower(e.Name())] = e.Name()
+		}
+	}
+
 	names := existingImageFileNames(ctx, a.Path, "logo", f.platformService)
 	var logoPath string
 	for _, name := range names {
-		p := filepath.Join(a.Path, name)
-		if _, err := os.Stat(p); err == nil {
-			logoPath = p
+		if actual, ok := lowerToActual[strings.ToLower(name)]; ok {
+			logoPath = filepath.Join(a.Path, actual)
 			break
 		}
 	}
