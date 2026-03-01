@@ -959,7 +959,8 @@ func TestPipeline_RunAll_RespectsManualMode(t *testing.T) {
 		t.Fatalf("creating artist: %v", err)
 	}
 
-	// Fixer that would auto-resolve if mode were "auto", but returns candidates.
+	// Fixer that would auto-resolve if mode were "auto", but RunAll must not
+	// auto-apply it under manual mode (and it returns no candidates).
 	fixer := &mockFixer{
 		canFix: true,
 		result: &FixResult{

@@ -351,6 +351,9 @@ func (p *Pipeline) RunAll(ctx context.Context) (*RunResult, error) {
 	const pageSize = 200
 	params := artist.ListParams{Page: 1, PageSize: pageSize, Sort: "name"}
 
+	// Cache rule lookups to avoid repeated DB queries across artists.
+	ruleCache := map[string]*Rule{}
+
 	for ctx.Err() == nil {
 		page, _, err := p.artistService.List(ctx, params)
 		if err != nil {
@@ -377,9 +380,6 @@ func (p *Pipeline) RunAll(ctx context.Context) (*RunResult, error) {
 				p.logger.Warn("evaluating artist", "artist", a.Name, "error", err)
 				continue
 			}
-
-			// Cache rule lookups to avoid repeated DB queries.
-			ruleCache := map[string]*Rule{}
 
 			for j := range eval.Violations {
 				v := &eval.Violations[j]
