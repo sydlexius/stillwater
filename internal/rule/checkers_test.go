@@ -509,6 +509,7 @@ func TestNormalizeArtistName(t *testing.T) {
 		{"The The", "the"},
 		{"A Perfect Circle (Live)", "a perfect circle"},
 		{"Beatles, The", "beatles"},
+		{"Beatles, The (Live)", "beatles"},
 		{"Smashing Pumpkins, The", "smashing pumpkins"},
 	}
 	for _, tt := range tests {
@@ -566,11 +567,10 @@ func TestNameSimilarity(t *testing.T) {
 
 func TestCheckArtistIDMismatch(t *testing.T) {
 	tests := []struct {
-		name      string
-		artist    artist.Artist
-		cfg       RuleConfig
-		wantNil   bool
-		wantFixed bool
+		name    string
+		artist  artist.Artist
+		cfg     RuleConfig
+		wantNil bool
 	}{
 		{
 			name:    "empty path skips check",

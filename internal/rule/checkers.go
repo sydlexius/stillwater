@@ -363,14 +363,14 @@ var (
 	artistMultiSpace  = regexp.MustCompile(`\s+`)
 )
 
-// normalizeArtistName lowercases, strips a leading "The " or trailing ", The"
-// (sort-name format), removes trailing parenthetical suffixes, strips
+// normalizeArtistName lowercases, removes trailing parenthetical suffixes,
+// strips a leading "The " or trailing ", The" (sort-name format), strips
 // punctuation, and collapses whitespace.
 func normalizeArtistName(name string) string {
 	s := strings.ToLower(strings.TrimSpace(name))
+	s = artistParenSuffix.ReplaceAllString(s, "")
 	s = strings.TrimPrefix(s, "the ")
 	s = strings.TrimSuffix(s, ", the")
-	s = artistParenSuffix.ReplaceAllString(s, "")
 	s = artistPunctuation.ReplaceAllString(s, "")
 	s = artistMultiSpace.ReplaceAllString(s, " ")
 	return strings.TrimSpace(s)
