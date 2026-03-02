@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -336,9 +338,15 @@ func buildFieldProvidersMap(priorities []provider.FieldPriority) map[string][]st
 
 // writeBackNFO writes the artist's current metadata to its artist.nfo file
 // (best effort). Skips silently when the artist has no filesystem path or no
-// existing NFO file -- creating new NFOs from scratch is the rule engine's job.
+// existing NFO file on disk -- creating new NFOs from scratch is the rule
+// engine's job. The on-disk check (os.Stat) guards against stale NFOExists
+// flags when the file has been deleted or moved since the last scan.
 func (r *Router) writeBackNFO(ctx context.Context, a *artist.Artist) {
-	if a.Path == "" || !a.NFOExists {
+	if a.Path == "" {
+		return
+	}
+	nfoPath := filepath.Join(a.Path, "artist.nfo")
+	if _, err := os.Stat(nfoPath); err != nil {
 		return
 	}
 	if err := nfo.WriteBackArtistNFO(ctx, a, r.nfoSnapshotService); err != nil {
