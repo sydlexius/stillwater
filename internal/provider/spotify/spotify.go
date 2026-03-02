@@ -262,7 +262,10 @@ func (a *Adapter) refreshToken(ctx context.Context, creds *spotifyCredentials) (
 		return "", time.Time{}, &provider.ErrAuthRequired{Provider: provider.NameSpotify}
 	}
 	if resp.StatusCode != http.StatusOK {
-		return "", time.Time{}, fmt.Errorf("token request failed: HTTP %d", resp.StatusCode)
+		return "", time.Time{}, &provider.ErrProviderUnavailable{
+			Provider: provider.NameSpotify,
+			Cause:    fmt.Errorf("token request failed: HTTP %d", resp.StatusCode),
+		}
 	}
 
 	var tokenResp tokenResponse
@@ -305,6 +308,14 @@ func (a *Adapter) doRequest(ctx context.Context, reqURL string) ([]byte, error) 
 		if err != nil {
 			return nil, err
 		}
+
+		if err := a.limiter.Wait(ctx, provider.NameSpotify); err != nil {
+			return nil, &provider.ErrProviderUnavailable{
+				Provider: provider.NameSpotify,
+				Cause:    fmt.Errorf("rate limiter: %w", err),
+			}
+		}
+
 		body, statusCode, err = a.executeRequest(ctx, reqURL, token)
 		if err != nil {
 			return nil, err

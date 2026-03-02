@@ -86,6 +86,11 @@ func (r *Router) handleSetProviderKey(w http.ResponseWriter, req *http.Request) 
 		}
 	}
 
+	if name == provider.NameSpotify && apiKey == "" {
+		writeError(w, req, http.StatusBadRequest, "both client_id and client_secret are required for Spotify")
+		return
+	}
+
 	if apiKey == "" {
 		writeError(w, req, http.StatusBadRequest, "api_key is required")
 		return
