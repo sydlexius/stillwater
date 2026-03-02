@@ -78,6 +78,11 @@ func ProviderCapabilities() map[ProviderName]ProviderCapability {
 			HelpURL:   "https://genius.com/api-clients",
 			RateLimit: &RateLimitInfo{RequestsPerSecond: 5},
 		},
+		NameSpotify: {
+			Tier:      TierPaid,
+			HelpURL:   "https://developer.spotify.com/dashboard",
+			RateLimit: &RateLimitInfo{RequestsPerSecond: 5},
+		},
 	}
 }
 
@@ -95,6 +100,7 @@ const (
 	NameDuckDuckGo  ProviderName = "duckduckgo"
 	NameDeezer      ProviderName = "deezer"
 	NameGenius      ProviderName = "genius"
+	NameSpotify     ProviderName = "spotify"
 )
 
 // AllProviderNames returns all known provider names in display order.
@@ -108,6 +114,7 @@ func AllProviderNames() []ProviderName {
 		NameWikidata,
 		NameDeezer,
 		NameGenius,
+		NameSpotify,
 	}
 }
 
@@ -132,6 +139,8 @@ func (n ProviderName) DisplayName() string {
 		return "Deezer"
 	case NameGenius:
 		return "Genius"
+	case NameSpotify:
+		return "Spotify"
 	default:
 		return string(n)
 	}
@@ -177,6 +186,7 @@ type ArtistMetadata struct {
 	DiscogsID      string            `json:"discogs_id,omitempty"`
 	WikidataID     string            `json:"wikidata_id,omitempty"`
 	DeezerID       string            `json:"deezer_id,omitempty"`
+	SpotifyID      string            `json:"spotify_id,omitempty"`
 	Name           string            `json:"name"`
 	SortName       string            `json:"sort_name,omitempty"`
 	Type           string            `json:"type,omitempty"`

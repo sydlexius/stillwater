@@ -15,6 +15,7 @@ type ArtistNFO struct {
 	DiscogsArtistID     string       `xml:"discogsartistid,omitempty"`
 	WikidataID          string       `xml:"wikidataid,omitempty"`
 	DeezerArtistID      string       `xml:"deezerartistid,omitempty"`
+	SpotifyArtistID     string       `xml:"spotifyartistid,omitempty"`
 	Genres              []string     `xml:"genre,omitempty"`
 	Styles              []string     `xml:"style,omitempty"`
 	Moods               []string     `xml:"mood,omitempty"`

@@ -163,7 +163,7 @@ func TestGetByProviderID(t *testing.T) {
 	}
 
 	// Test unknown provider
-	_, err = svc.GetByProviderID(ctx, "spotify", "123")
+	_, err = svc.GetByProviderID(ctx, "soundcloud", "123")
 	if err == nil {
 		t.Error("expected error for unknown provider")
 	}

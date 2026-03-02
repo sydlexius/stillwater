@@ -268,7 +268,7 @@ func scanArtistWithExtra(row interface{ Scan(...any) error }, n int) (*artistWit
 
 	args := []any{
 		&a.ID, &a.Name, &a.SortName, &a.Type, &a.Gender, &a.Disambiguation,
-		&a.MusicBrainzID, &a.AudioDBID, &a.DiscogsID, &a.WikidataID, &a.DeezerID,
+		&a.MusicBrainzID, &a.AudioDBID, &a.DiscogsID, &a.WikidataID, &a.DeezerID, &a.SpotifyID,
 		&genres, &styles, &moods,
 		&a.YearsActive, &a.Born, &a.Formed, &a.Died, &a.Disbanded, &a.Biography,
 		&a.Path, &libraryID, &nfo, &thumb, &fanart, &fanartCount, &logo, &banner,
