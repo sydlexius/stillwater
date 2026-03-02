@@ -35,6 +35,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/provider/fanarttv"
 	"github.com/sydlexius/stillwater/internal/provider/lastfm"
 	"github.com/sydlexius/stillwater/internal/provider/musicbrainz"
+	"github.com/sydlexius/stillwater/internal/provider/spotify"
 	"github.com/sydlexius/stillwater/internal/provider/wikidata"
 	"github.com/sydlexius/stillwater/internal/rule"
 	"github.com/sydlexius/stillwater/internal/scanner"
@@ -150,6 +151,7 @@ func run() error {
 	providerRegistry.Register(lastfm.New(rateLimiters, providerSettings, logger))
 	providerRegistry.Register(wikidata.New(rateLimiters, logger))
 	providerRegistry.Register(deezer.New(rateLimiters, logger))
+	providerRegistry.Register(spotify.New(rateLimiters, providerSettings, logger))
 
 	webSearchRegistry := provider.NewWebSearchRegistry()
 	webSearchRegistry.Register(duckduckgo.New(rateLimiters, logger))

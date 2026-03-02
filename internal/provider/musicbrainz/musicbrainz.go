@@ -361,6 +361,9 @@ func mapURLType(relType, resourceURL string) string {
 		if strings.Contains(resourceURL, "deezer.com") {
 			return "deezer"
 		}
+		if strings.Contains(resourceURL, "open.spotify.com") {
+			return "spotify"
+		}
 		return "streaming"
 	default:
 		return relType

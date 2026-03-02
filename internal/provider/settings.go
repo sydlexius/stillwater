@@ -292,12 +292,12 @@ func (fp FieldPriority) EnabledProviders() []ProviderName {
 func DefaultPriorities() []FieldPriority {
 	return []FieldPriority{
 		{Field: "biography", Providers: []ProviderName{NameMusicBrainz, NameLastFM, NameAudioDB, NameDiscogs, NameWikidata}},
-		{Field: "genres", Providers: []ProviderName{NameMusicBrainz, NameLastFM, NameAudioDB, NameDiscogs}},
+		{Field: "genres", Providers: []ProviderName{NameMusicBrainz, NameLastFM, NameAudioDB, NameDiscogs, NameSpotify}},
 		{Field: "styles", Providers: []ProviderName{NameAudioDB, NameDiscogs}},
 		{Field: "moods", Providers: []ProviderName{NameAudioDB}},
 		{Field: "members", Providers: []ProviderName{NameMusicBrainz, NameWikidata}},
 		{Field: "formed", Providers: []ProviderName{NameMusicBrainz, NameWikidata, NameAudioDB}},
-		{Field: "thumb", Providers: []ProviderName{NameFanartTV, NameAudioDB, NameDeezer}},
+		{Field: "thumb", Providers: []ProviderName{NameFanartTV, NameAudioDB, NameDeezer, NameSpotify}},
 		{Field: "fanart", Providers: []ProviderName{NameFanartTV, NameAudioDB}},
 		{Field: "logo", Providers: []ProviderName{NameFanartTV, NameAudioDB}},
 		{Field: "banner", Providers: []ProviderName{NameFanartTV, NameAudioDB}},

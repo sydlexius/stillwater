@@ -43,10 +43,24 @@ func (r *Router) handleSetProviderKey(w http.ResponseWriter, req *http.Request) 
 		}
 		apiKey = req.FormValue("api_key")
 		skipTest = req.FormValue("skip_test") == "true"
+		// Spotify uses two fields (client_id + client_secret) combined as JSON
+		if name == provider.NameSpotify && apiKey == "" {
+			clientID := req.FormValue("client_id")
+			clientSecret := req.FormValue("client_secret")
+			if clientID != "" && clientSecret != "" {
+				combined, _ := json.Marshal(map[string]string{
+					"client_id":     clientID,
+					"client_secret": clientSecret,
+				})
+				apiKey = string(combined)
+			}
+		}
 	} else {
 		var body struct {
-			APIKey   string `json:"api_key"`   //nolint:gosec // G117: not a hardcoded credential, this is user input
-			SkipTest bool   `json:"skip_test"` //nolint:gosec // G101: not a credential
+			APIKey       string `json:"api_key"`       //nolint:gosec // G117: not a hardcoded credential, this is user input
+			SkipTest     bool   `json:"skip_test"`     //nolint:gosec // G101: not a credential
+			ClientID     string `json:"client_id"`     //nolint:gosec // G101: not a credential
+			ClientSecret string `json:"client_secret"` //nolint:gosec // G101: not a credential
 		}
 		if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
 			writeError(w, req, http.StatusBadRequest, "invalid request body")
@@ -54,6 +68,14 @@ func (r *Router) handleSetProviderKey(w http.ResponseWriter, req *http.Request) 
 		}
 		apiKey = body.APIKey
 		skipTest = body.SkipTest
+		// Spotify: combine client_id + client_secret into JSON
+		if name == provider.NameSpotify && apiKey == "" && body.ClientID != "" && body.ClientSecret != "" {
+			combined, _ := json.Marshal(map[string]string{
+				"client_id":     body.ClientID,
+				"client_secret": body.ClientSecret,
+			})
+			apiKey = string(combined)
+		}
 	}
 
 	if apiKey == "" {

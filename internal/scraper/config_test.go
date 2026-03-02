@@ -85,8 +85,8 @@ func TestScraperConfig_PrimaryFor(t *testing.T) {
 func TestProviderCapabilities(t *testing.T) {
 	caps := ProviderCapabilities()
 
-	if len(caps) != 6 {
-		t.Errorf("ProviderCapabilities count = %d, want 6", len(caps))
+	if len(caps) != 7 {
+		t.Errorf("ProviderCapabilities count = %d, want 7", len(caps))
 	}
 
 	// Verify MusicBrainz has no image fields

@@ -2479,26 +2479,57 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 	if pk.RequiresKey || pk.OptionalKey {
 		<div id={ "key-input-" + string(pk.Name) } class="hidden mt-2 sm:ml-8">
 			<form
-				class="flex flex-col gap-2 sm:flex-row sm:items-center"
+				class="flex flex-col gap-2"
 				hx-put={ "/api/v1/providers/" + string(pk.Name) + "/key" }
 				hx-target={ "#provider-card-" + string(pk.Name) }
 				hx-swap="innerHTML"
 				hx-on::after-request="if(event.detail.successful) this.closest('[id^=key-input-]').classList.add('hidden')"
 			>
-				<input
-					type="text"
-					name="api_key"
-					if pk.OptionalKey {
-						placeholder="Enter premium API key..."
-					} else {
-						placeholder="Enter API key..."
-					}
-					autocomplete="off"
-					data-1p-ignore
-					data-lpignore="true"
-					class="flex-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-					required
-				/>
+				if pk.Name == provider.NameSpotify {
+					<div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+						<input
+							type="text"
+							name="client_id"
+							placeholder="Client ID"
+							autocomplete="off"
+							data-1p-ignore
+							data-lpignore="true"
+							class="flex-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+							required
+						/>
+						<input
+							type="password"
+							name="client_secret"
+							placeholder="Client Secret"
+							autocomplete="off"
+							data-1p-ignore
+							data-lpignore="true"
+							class="flex-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+							required
+						/>
+					</div>
+					<p class="text-xs text-gray-500 dark:text-gray-400">
+						Requires a Spotify Premium subscription and a registered
+						<a href="https://developer.spotify.com" target="_blank" rel="noopener noreferrer" class="text-blue-600 dark:text-blue-400 hover:underline">Spotify Developer</a> app.
+					</p>
+				} else {
+					<div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+						<input
+							type="text"
+							name="api_key"
+							if pk.OptionalKey {
+								placeholder="Enter premium API key..."
+							} else {
+								placeholder="Enter API key..."
+							}
+							autocomplete="off"
+							data-1p-ignore
+							data-lpignore="true"
+							class="flex-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+							required
+						/>
+					</div>
+				}
 				<div class="flex gap-2">
 					<button
 						type="submit"

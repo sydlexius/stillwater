@@ -318,6 +318,9 @@ func applyField(result *FetchResult, field string, pr *providerResult, source Pr
 	if meta.DeezerID != "" && result.Metadata.DeezerID == "" {
 		result.Metadata.DeezerID = meta.DeezerID
 	}
+	if meta.SpotifyID != "" && result.Metadata.SpotifyID == "" {
+		result.Metadata.SpotifyID = meta.SpotifyID
+	}
 	if meta.Name != "" && result.Metadata.Name == "" {
 		result.Metadata.Name = meta.Name
 	}
@@ -570,6 +573,23 @@ func extractProviderIDsFromURLs(meta *ArtistMetadata) {
 				}
 				if end > 0 {
 					meta.DeezerID = segment[:end]
+				}
+			}
+		}
+	}
+
+	if meta.SpotifyID == "" {
+		if u, ok := meta.URLs["spotify"]; ok && u != "" {
+			// Spotify artist URLs: https://open.spotify.com/artist/{id}
+			const prefix = "/artist/"
+			if idx := strings.LastIndex(u, prefix); idx >= 0 {
+				candidate := u[idx+len(prefix):]
+				// Strip any query params
+				if qIdx := strings.IndexAny(candidate, "?#"); qIdx >= 0 {
+					candidate = candidate[:qIdx]
+				}
+				if len(candidate) == 22 {
+					meta.SpotifyID = candidate
 				}
 			}
 		}

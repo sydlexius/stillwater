@@ -240,6 +240,13 @@ func ProviderCapabilities() []ProviderCapability {
 			MetadataFields: []FieldName{FieldBiography, FieldGenres},
 		},
 		{
+			Provider:       provider.NameSpotify,
+			DisplayName:    provider.NameSpotify.DisplayName(),
+			RequiresAuth:   true,
+			MetadataFields: []FieldName{FieldGenres},
+			ImageFields:    []FieldName{FieldThumb},
+		},
+		{
 			Provider:     provider.NameWikidata,
 			DisplayName:  provider.NameWikidata.DisplayName(),
 			RequiresAuth: false,

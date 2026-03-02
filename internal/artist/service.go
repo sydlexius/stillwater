@@ -13,7 +13,7 @@ import (
 
 // artistColumns is the ordered list of columns for SELECT queries.
 const artistColumns = `id, name, sort_name, type, gender, disambiguation,
-	musicbrainz_id, audiodb_id, discogs_id, wikidata_id, deezer_id,
+	musicbrainz_id, audiodb_id, discogs_id, wikidata_id, deezer_id, spotify_id,
 	genres, styles, moods,
 	years_active, born, formed, died, disbanded, biography,
 	path, library_id, nfo_exists, thumb_exists, fanart_exists, fanart_count, logo_exists, banner_exists,
@@ -44,7 +44,7 @@ func (s *Service) Create(ctx context.Context, a *Artist) error {
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO artists (
 			id, name, sort_name, type, gender, disambiguation,
-			musicbrainz_id, audiodb_id, discogs_id, wikidata_id, deezer_id,
+			musicbrainz_id, audiodb_id, discogs_id, wikidata_id, deezer_id, spotify_id,
 			genres, styles, moods,
 			years_active, born, formed, died, disbanded, biography,
 			path, library_id, nfo_exists, thumb_exists, fanart_exists, fanart_count, logo_exists, banner_exists,
@@ -52,10 +52,10 @@ func (s *Service) Create(ctx context.Context, a *Artist) error {
 			health_score, is_excluded, exclusion_reason, is_classical, metadata_sources,
 			audiodb_id_fetched_at, discogs_id_fetched_at, wikidata_id_fetched_at, lastfm_id_fetched_at,
 			last_scanned_at, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		a.ID, a.Name, a.SortName, a.Type, a.Gender, a.Disambiguation,
-		a.MusicBrainzID, a.AudioDBID, a.DiscogsID, a.WikidataID, a.DeezerID,
+		a.MusicBrainzID, a.AudioDBID, a.DiscogsID, a.WikidataID, a.DeezerID, a.SpotifyID,
 		MarshalStringSlice(a.Genres), MarshalStringSlice(a.Styles), MarshalStringSlice(a.Moods),
 		a.YearsActive, a.Born, a.Formed, a.Died, a.Disbanded, a.Biography,
 		a.Path, nullableString(a.LibraryID), boolToInt(a.NFOExists), boolToInt(a.ThumbExists),
@@ -117,6 +117,8 @@ func (s *Service) GetByProviderID(ctx context.Context, provider, id string) (*Ar
 		col = "wikidata_id"
 	case "deezer":
 		col = "deezer_id"
+	case "spotify":
+		col = "spotify_id"
 	default:
 		return nil, fmt.Errorf("unknown provider: %s", provider)
 	}
@@ -232,7 +234,7 @@ func (s *Service) Update(ctx context.Context, a *Artist) error {
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE artists SET
 			name = ?, sort_name = ?, type = ?, gender = ?, disambiguation = ?,
-			musicbrainz_id = ?, audiodb_id = ?, discogs_id = ?, wikidata_id = ?, deezer_id = ?,
+			musicbrainz_id = ?, audiodb_id = ?, discogs_id = ?, wikidata_id = ?, deezer_id = ?, spotify_id = ?,
 			genres = ?, styles = ?, moods = ?,
 			years_active = ?, born = ?, formed = ?, died = ?, disbanded = ?, biography = ?,
 			path = ?, library_id = ?,
@@ -245,7 +247,7 @@ func (s *Service) Update(ctx context.Context, a *Artist) error {
 		WHERE id = ?
 	`,
 		a.Name, a.SortName, a.Type, a.Gender, a.Disambiguation,
-		a.MusicBrainzID, a.AudioDBID, a.DiscogsID, a.WikidataID, a.DeezerID,
+		a.MusicBrainzID, a.AudioDBID, a.DiscogsID, a.WikidataID, a.DeezerID, a.SpotifyID,
 		MarshalStringSlice(a.Genres), MarshalStringSlice(a.Styles), MarshalStringSlice(a.Moods),
 		a.YearsActive, a.Born, a.Formed, a.Died, a.Disbanded, a.Biography,
 		a.Path, nullableString(a.LibraryID),
@@ -590,7 +592,7 @@ func scanArtist(row interface{ Scan(...any) error }) (*Artist, error) {
 
 	err := row.Scan(
 		&a.ID, &a.Name, &a.SortName, &a.Type, &a.Gender, &a.Disambiguation,
-		&a.MusicBrainzID, &a.AudioDBID, &a.DiscogsID, &a.WikidataID, &a.DeezerID,
+		&a.MusicBrainzID, &a.AudioDBID, &a.DiscogsID, &a.WikidataID, &a.DeezerID, &a.SpotifyID,
 		&genres, &styles, &moods,
 		&a.YearsActive, &a.Born, &a.Formed, &a.Died, &a.Disbanded, &a.Biography,
 		&a.Path, &libraryID, &nfo, &thumb, &fanart, &fanartCount, &logo, &banner,
