@@ -221,11 +221,12 @@ better integration coverage. Mock generation is not recommended at this time.
 ## Sub-issues to Create
 
 1. **API handler test coverage** -- target 50%+ from 12.5%
-2. **Auth/encryption test coverage** -- target 80%+ from 0%
-3. **Config test coverage** -- target 70%+ from 0%
-4. **Scraper test coverage** -- target 60%+ from 33.9%
-5. **Filesystem test coverage** -- target 70%+ from 53.1%
-6. **Evaluate and implement testutil helpers** -- based on patterns from above
+2. **Auth test coverage** -- target 80%+ from 0%
+3. **Encryption test coverage** -- target 90%+ from 0%
+4. **Config test coverage** -- target 70%+ from 0%
+5. **Scraper test coverage** -- target 60%+ from 33.9%
+6. **Filesystem test coverage** -- target 70%+ from 53.1%
+7. **Evaluate and implement testutil helpers** -- based on patterns from above
 
 ## Acceptance Criteria
 
