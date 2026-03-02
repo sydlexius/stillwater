@@ -18,6 +18,7 @@ type Artist struct {
 	DiscogsID           string            `json:"discogs_id"`
 	WikidataID          string            `json:"wikidata_id"`
 	DeezerID            string            `json:"deezer_id"`
+	SpotifyID           string            `json:"spotify_id"`
 	Genres              []string          `json:"genres"`
 	Styles              []string          `json:"styles"`
 	Moods               []string          `json:"moods"`

@@ -252,6 +252,7 @@ func TestExtractProviderIDsFromURLs(t *testing.T) {
 		wantDiscogsID  string
 		wantWikidataID string
 		wantDeezerID   string
+		wantSpotifyID  string
 	}{
 		{
 			name:          "plain numeric discogs URL",
@@ -279,15 +280,40 @@ func TestExtractProviderIDsFromURLs(t *testing.T) {
 			wantDeezerID: "3106",
 		},
 		{
-			name: "all three providers",
+			name:          "spotify artist URL",
+			urls:          map[string]string{"spotify": "https://open.spotify.com/artist/4Z8W4fKeB5YxbusRsdQVPb"},
+			wantSpotifyID: "4Z8W4fKeB5YxbusRsdQVPb",
+		},
+		{
+			name:          "spotify URL with trailing slash",
+			urls:          map[string]string{"spotify": "https://open.spotify.com/artist/4Z8W4fKeB5YxbusRsdQVPb/"},
+			wantSpotifyID: "4Z8W4fKeB5YxbusRsdQVPb",
+		},
+		{
+			name:          "spotify URL with query params",
+			urls:          map[string]string{"spotify": "https://open.spotify.com/artist/4Z8W4fKeB5YxbusRsdQVPb?si=abc"},
+			wantSpotifyID: "4Z8W4fKeB5YxbusRsdQVPb",
+		},
+		{
+			name: "spotify URL with invalid ID (non-base62)",
+			urls: map[string]string{"spotify": "https://open.spotify.com/artist/not-a-valid-spotify!!"},
+		},
+		{
+			name: "spotify URL with invalid ID (wrong length)",
+			urls: map[string]string{"spotify": "https://open.spotify.com/artist/tooshort"},
+		},
+		{
+			name: "all four providers",
 			urls: map[string]string{
 				"discogs":  "https://www.discogs.com/artist/24941-a-ha",
 				"wikidata": "https://www.wikidata.org/wiki/Q44190",
 				"deezer":   "https://www.deezer.com/artist/3106",
+				"spotify":  "https://open.spotify.com/artist/4Z8W4fKeB5YxbusRsdQVPb",
 			},
 			wantDiscogsID:  "24941",
 			wantWikidataID: "Q44190",
 			wantDeezerID:   "3106",
+			wantSpotifyID:  "4Z8W4fKeB5YxbusRsdQVPb",
 		},
 	}
 
@@ -304,6 +330,9 @@ func TestExtractProviderIDsFromURLs(t *testing.T) {
 			if meta.DeezerID != tt.wantDeezerID {
 				t.Errorf("DeezerID: got %q, want %q", meta.DeezerID, tt.wantDeezerID)
 			}
+			if meta.SpotifyID != tt.wantSpotifyID {
+				t.Errorf("SpotifyID: got %q, want %q", meta.SpotifyID, tt.wantSpotifyID)
+			}
 		})
 	}
 
@@ -312,10 +341,12 @@ func TestExtractProviderIDsFromURLs(t *testing.T) {
 			DiscogsID:  "existing",
 			WikidataID: "Q999",
 			DeezerID:   "111",
+			SpotifyID:  "0OdUWJ0sBjDrqHygGUXeCF",
 			URLs: map[string]string{
 				"discogs":  "https://www.discogs.com/artist/24941",
 				"wikidata": "https://www.wikidata.org/wiki/Q44190",
 				"deezer":   "https://www.deezer.com/artist/3106",
+				"spotify":  "https://open.spotify.com/artist/4Z8W4fKeB5YxbusRsdQVPb",
 			},
 		}
 		extractProviderIDsFromURLs(meta)
@@ -327,6 +358,9 @@ func TestExtractProviderIDsFromURLs(t *testing.T) {
 		}
 		if meta.DeezerID != "111" {
 			t.Errorf("DeezerID was overwritten: got %q", meta.DeezerID)
+		}
+		if meta.SpotifyID != "0OdUWJ0sBjDrqHygGUXeCF" {
+			t.Errorf("SpotifyID was overwritten: got %q", meta.SpotifyID)
 		}
 	})
 }
