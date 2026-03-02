@@ -32,13 +32,12 @@ func TestSetLimit(t *testing.T) {
 
 func TestDefaultLimit(t *testing.T) {
 	tests := []struct {
-		name  ProviderName
-		want  rate.Limit
-		found bool
+		name ProviderName
+		want rate.Limit
 	}{
-		{NameMusicBrainz, 1, true},
-		{NameFanartTV, 3, true},
-		{ProviderName("unknown"), 0, false},
+		{NameMusicBrainz, 1},
+		{NameFanartTV, 3},
+		{ProviderName("unknown"), 0},
 	}
 
 	for _, tt := range tests {
