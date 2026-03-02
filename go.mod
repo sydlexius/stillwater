@@ -3,7 +3,7 @@ module github.com/sydlexius/stillwater
 go 1.26.0
 
 require (
-	github.com/a-h/templ v0.3.977
+	github.com/a-h/templ v0.3.1001
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/google/uuid v1.6.0
 	github.com/pressly/goose/v3 v3.27.0
