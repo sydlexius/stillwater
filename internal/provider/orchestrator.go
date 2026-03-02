@@ -220,15 +220,18 @@ func (o *Orchestrator) getProviderResult(ctx context.Context, name ProviderName,
 	if id != "" {
 		meta, err := p.GetArtist(ctx, id)
 		// If we used an MBID and the provider returned not-found, retry with
-		// the artist name. Name-based providers (e.g. Genius) cannot interpret
-		// MBIDs, so the name fallback lets them participate in the fallback chain.
+		// the artist name -- but only for providers that support name lookups
+		// (e.g. Genius, Last.fm). Other providers only accept provider-specific
+		// IDs, so retrying with a name would waste an HTTP call.
 		if err != nil && mbid != "" && artistName != "" {
 			var notFound *ErrNotFound
 			if errors.As(err, &notFound) {
-				o.logger.Debug("retrying with artist name after MBID not-found",
-					slog.String("provider", string(name)),
-					slog.String("name", artistName))
-				meta, err = p.GetArtist(ctx, artistName)
+				if nlp, ok := p.(NameLookupProvider); ok && nlp.SupportsNameLookup() {
+					o.logger.Debug("retrying with artist name after MBID not-found",
+						slog.String("provider", string(name)),
+						slog.String("name", artistName))
+					meta, err = p.GetArtist(ctx, artistName)
+				}
 			}
 		}
 		if err != nil {

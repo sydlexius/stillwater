@@ -48,6 +48,10 @@ func (a *Adapter) Name() provider.ProviderName { return provider.NameGenius }
 // RequiresAuth returns whether this provider needs an API key.
 func (a *Adapter) RequiresAuth() bool { return true }
 
+// SupportsNameLookup returns true because Genius GetArtist can accept an
+// artist name (non-numeric, non-UUID) and will search by name automatically.
+func (a *Adapter) SupportsNameLookup() bool { return true }
+
 // SearchArtist searches Genius for artists matching the given name.
 // Genius search returns song hits; we extract and deduplicate primary_artist entries.
 func (a *Adapter) SearchArtist(ctx context.Context, name string) ([]provider.ArtistSearchResult, error) {

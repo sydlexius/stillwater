@@ -256,6 +256,16 @@ type TestableProvider interface {
 	TestConnection(ctx context.Context) error
 }
 
+// NameLookupProvider is an optional interface for providers whose GetArtist
+// method can accept an artist name in addition to a provider-specific ID.
+// Providers that implement this are eligible for the MBID-to-name retry:
+// when an MBID-based GetArtist call returns ErrNotFound, the caller retries
+// with the artist name only for providers that support name lookups.
+type NameLookupProvider interface {
+	Provider
+	SupportsNameLookup() bool
+}
+
 // MirrorableProvider is an optional interface for providers that support
 // pointing at a self-hosted mirror (e.g. MusicBrainz).
 type MirrorableProvider interface {

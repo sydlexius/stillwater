@@ -50,6 +50,11 @@ func loadFixture(t *testing.T, name string) []byte {
 func newTestServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Validate the Authorization header to catch regressions that drop it.
+		if auth := r.Header.Get("Authorization"); auth != "Bearer test-token" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		path := r.URL.Path
 		switch {

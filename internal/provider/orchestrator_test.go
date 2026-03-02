@@ -45,6 +45,14 @@ func (m *mockProvider) GetImages(ctx context.Context, id string) ([]ImageResult,
 	return nil, nil
 }
 
+// mockNameLookupProvider wraps mockProvider and implements NameLookupProvider
+// so the MBID-to-name retry logic can detect it via type assertion.
+type mockNameLookupProvider struct {
+	mockProvider
+}
+
+func (m *mockNameLookupProvider) SupportsNameLookup() bool { return true }
+
 func setupOrchestratorTest(t *testing.T) (*Registry, *SettingsService) {
 	t.Helper()
 	db, err := sql.Open("sqlite", ":memory:")
@@ -250,19 +258,22 @@ func TestOrchestratorMBIDFallbackToName(t *testing.T) {
 	}
 
 	// Genius returns ErrNotFound for MBID, then succeeds with name.
+	// Uses mockNameLookupProvider so the NameLookupProvider type assertion succeeds.
 	geniusCalls := 0
-	registry.Register(&mockProvider{
-		name: NameGenius,
-		getArtFn: func(_ context.Context, id string) (*ArtistMetadata, error) {
-			geniusCalls++
-			if id == "mbid-uuid-1234" {
-				return nil, &ErrNotFound{Provider: NameGenius, ID: id}
-			}
-			// Called with artist name on retry
-			return &ArtistMetadata{
-				Name:      "Radiohead",
-				Biography: "From Genius",
-			}, nil
+	registry.Register(&mockNameLookupProvider{
+		mockProvider: mockProvider{
+			name: NameGenius,
+			getArtFn: func(_ context.Context, id string) (*ArtistMetadata, error) {
+				geniusCalls++
+				if id == "mbid-uuid-1234" {
+					return nil, &ErrNotFound{Provider: NameGenius, ID: id}
+				}
+				// Called with artist name on retry
+				return &ArtistMetadata{
+					Name:      "Radiohead",
+					Biography: "From Genius",
+				}, nil
+			},
 		},
 	})
 	registry.Register(&mockProvider{
@@ -291,6 +302,42 @@ func TestOrchestratorMBIDFallbackToName(t *testing.T) {
 	// Genius should have been called twice: once with MBID (not-found), once with name.
 	if geniusCalls != 2 {
 		t.Errorf("expected 2 Genius GetArtist calls (MBID + name retry), got %d", geniusCalls)
+	}
+}
+
+// TestOrchestratorMBIDNoRetryWithoutNameLookup verifies that the MBID-to-name
+// retry does NOT fire for providers that do not implement NameLookupProvider.
+func TestOrchestratorMBIDNoRetryWithoutNameLookup(t *testing.T) {
+	registry, settings := setupOrchestratorTest(t)
+
+	// Discogs requires auth; store a dummy key so it passes availability check.
+	if err := settings.SetAPIKey(context.Background(), NameDiscogs, "test-token"); err != nil {
+		t.Fatalf("SetAPIKey: %v", err)
+	}
+
+	// Use a plain mockProvider (no NameLookupProvider) that returns ErrNotFound.
+	discogsCalls := 0
+	registry.Register(&mockProvider{
+		name:    NameDiscogs,
+		authReq: true,
+		getArtFn: func(_ context.Context, id string) (*ArtistMetadata, error) {
+			discogsCalls++
+			return nil, &ErrNotFound{Provider: NameDiscogs, ID: id}
+		},
+	})
+
+	if err := settings.SetPriority(context.Background(), "biography", []ProviderName{NameDiscogs}); err != nil {
+		t.Fatalf("SetPriority: %v", err)
+	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	orch := NewOrchestrator(registry, settings, logger)
+
+	_, _ = orch.FetchMetadata(context.Background(), "mbid-uuid-1234", "Radiohead")
+
+	// Discogs should only be called once (MBID attempt). No name retry.
+	if discogsCalls != 1 {
+		t.Errorf("expected 1 Discogs GetArtist call (no name retry), got %d", discogsCalls)
 	}
 }
 

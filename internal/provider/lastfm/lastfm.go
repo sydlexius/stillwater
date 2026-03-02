@@ -47,6 +47,10 @@ func (a *Adapter) Name() provider.ProviderName { return provider.NameLastFM }
 // RequiresAuth returns whether this provider needs an API key.
 func (a *Adapter) RequiresAuth() bool { return true }
 
+// SupportsNameLookup returns true because Last.fm GetArtist can accept an
+// artist name and will use it as the "artist" parameter instead of "mbid".
+func (a *Adapter) SupportsNameLookup() bool { return true }
+
 // SearchArtist searches Last.fm for artists matching the given name.
 func (a *Adapter) SearchArtist(ctx context.Context, name string) ([]provider.ArtistSearchResult, error) {
 	apiKey, err := a.getAPIKey(ctx)
