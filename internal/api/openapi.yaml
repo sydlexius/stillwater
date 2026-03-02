@@ -793,6 +793,16 @@ paths:
                   type: string
                   enum: [thumb, fanart, logo, banner]
               required: [url, type]
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                url:
+                  type: string
+                type:
+                  type: string
+                  enum: [thumb, fanart, logo, banner]
+              required: [url, type]
       responses:
         "200":
           description: Image fetched and saved
@@ -828,7 +838,7 @@ paths:
             enum: [thumb, fanart, logo, banner]
       responses:
         "200":
-          description: Image search results
+          description: Image search results (returns HTML fragment when HX-Request header is set)
           content:
             application/json:
               schema:
@@ -842,6 +852,9 @@ paths:
                     type: array
                     items:
                       type: string
+            text/html:
+              schema:
+                type: string
 
   /artists/{id}/images/crop:
     post:
@@ -911,11 +924,14 @@ paths:
             type: string
       responses:
         "200":
-          description: NFO diff result
+          description: NFO diff result (returns HTML fragment when HX-Request header is set)
           content:
             application/json:
               schema:
                 type: object
+            text/html:
+              schema:
+                type: string
 
   /artists/{id}/nfo/conflict:
     get:
@@ -1194,6 +1210,24 @@ paths:
                   type: string
                 enabled:
                   type: boolean
+                skip_test:
+                  type: boolean
+              required: [name, type, url]
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                type:
+                  type: string
+                  enum: [emby, jellyfin, lidarr]
+                url:
+                  type: string
+                api_key:
+                  type: string
+                skip_test:
+                  type: boolean
               required: [name, type, url]
       responses:
         "201":
@@ -1342,14 +1376,28 @@ paths:
               properties:
                 api_key:
                   type: string
+                skip_test:
+                  type: boolean
+              required: [api_key]
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                api_key:
+                  type: string
+                skip_test:
+                  type: boolean
               required: [api_key]
       responses:
         "200":
-          description: Key saved
+          description: Key saved (returns HTML provider card when HX-Request header is set)
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Status"
+            text/html:
+              schema:
+                type: string
     delete:
       tags: [Providers]
       summary: Delete provider API key
@@ -1381,7 +1429,7 @@ paths:
             type: string
       responses:
         "200":
-          description: Test result
+          description: Test result (returns HTML provider card when HX-Request header is set)
           content:
             application/json:
               schema:
@@ -1392,6 +1440,9 @@ paths:
                     enum: [ok, error]
                   error:
                     type: string
+            text/html:
+              schema:
+                type: string
 
   /providers/priorities:
     get:
@@ -1435,11 +1486,14 @@ paths:
               required: [priorities]
       responses:
         "200":
-          description: Priorities saved
+          description: Priorities saved (returns HTML fragment when HX-Request header is set)
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Status"
+            text/html:
+              schema:
+                type: string
 
   /providers/search:
     post:
@@ -1762,11 +1816,14 @@ paths:
       operationId: getHealthReport
       responses:
         "200":
-          description: Health summary
+          description: Health summary (returns HTML dashboard fragment when HX-Request header is set)
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthSummary"
+            text/html:
+              schema:
+                type: string
 
   /reports/health/history:
     get:
@@ -1882,6 +1939,17 @@ paths:
                     type: string
                 enabled:
                   type: boolean
+              required: [name, url]
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                url:
+                  type: string
+                type:
+                  type: string
               required: [name, url]
       responses:
         "201":
@@ -2023,11 +2091,14 @@ paths:
       operationId: createBackup
       responses:
         "200":
-          description: Backup info
+          description: Backup info (returns HTML backup list when HX-Request header is set)
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/BackupInfo"
+            text/html:
+              schema:
+                type: string
 
   /settings/backup/history:
     get:
@@ -2036,13 +2107,16 @@ paths:
       operationId: listBackups
       responses:
         "200":
-          description: List of backups
+          description: List of backups (returns HTML backup table when HX-Request header is set)
           content:
             application/json:
               schema:
                 type: array
                 items:
                   $ref: "#/components/schemas/BackupInfo"
+            text/html:
+              schema:
+                type: string
 
   /settings/backup/{filename}:
     get:
@@ -2075,11 +2149,14 @@ paths:
             type: string
       responses:
         "200":
-          description: Backup deleted
+          description: Backup deleted (returns HTML backup list when HX-Request header is set)
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Status"
+            text/html:
+              schema:
+                type: string
         "400":
           description: Invalid filename
           content:
@@ -2358,7 +2435,7 @@ paths:
       operationId: clobberCheck
       responses:
         "200":
-          description: Clobber risk assessment
+          description: Clobber risk assessment (returns HTML warnings when HX-Request header is set)
           content:
             application/json:
               schema:
@@ -2383,6 +2460,9 @@ paths:
                           type: string
                         error:
                           type: string
+            text/html:
+              schema:
+                type: string
 
   /connections/{id}/features:
     patch:
@@ -2435,7 +2515,7 @@ paths:
             type: string
       responses:
         "200":
-          description: Available libraries
+          description: Available libraries (returns HTML checklist when HX-Request header is set)
           content:
             application/json:
               schema:
@@ -2449,6 +2529,9 @@ paths:
                       type: string
                     imported:
                       type: boolean
+            text/html:
+              schema:
+                type: string
         "404":
           description: Connection not found
           content:
@@ -2587,11 +2670,14 @@ paths:
             type: string
       responses:
         "200":
-          description: Provider toggled
+          description: Provider toggled (returns HTML fragment when HX-Request header is set)
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Status"
+            text/html:
+              schema:
+                type: string
         "404":
           description: Field not found
           content:
@@ -2645,13 +2731,23 @@ paths:
                 enabled:
                   type: boolean
               required: [enabled]
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+              required: [enabled]
       responses:
         "200":
-          description: Provider state updated
+          description: Provider state updated (returns HTML fragment when HX-Request header is set)
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Status"
+            text/html:
+              schema:
+                type: string
         "400":
           description: Unknown provider
           content:
@@ -3008,7 +3104,7 @@ paths:
       operationId: getHealthByLibrary
       responses:
         "200":
-          description: Per-library health scores
+          description: Per-library health scores (returns HTML fragment when HX-Request header is set)
           content:
             application/json:
               schema:
@@ -3039,6 +3135,9 @@ paths:
                           type: integer
                   overall:
                     type: object
+            text/html:
+              schema:
+                type: string
 
   /reports/compliance/export:
     get:
@@ -3097,10 +3196,9 @@ paths:
       summary: Receive Lidarr webhook event
       description: >
         Accepts inbound webhook events from Lidarr. Responds immediately with 200
-        and processes the event asynchronously. Requires an API token with webhook scope.
+        and processes the event asynchronously. Uses standard authentication
+        (session cookie, bearer token, or API key query parameter).
       operationId: handleLidarrWebhook
-      security:
-        - bearerAuth: []
       requestBody:
         required: true
         content:
@@ -3175,13 +3273,34 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/LoggingConfig"
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                level:
+                  type: string
+                  enum: [debug, info, warn, error]
+                format:
+                  type: string
+                  enum: [text, json]
+                file_path:
+                  type: string
+                file_max_size_mb:
+                  type: integer
+                file_max_files:
+                  type: integer
+                file_max_age_days:
+                  type: integer
       responses:
         "200":
-          description: Updated logging config
+          description: Updated logging config (returns HTML fragment when HX-Request header is set)
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/LoggingConfig"
+            text/html:
+              schema:
+                type: string
         "400":
           description: Invalid level or format
           content:
@@ -3196,11 +3315,14 @@ paths:
       operationId: getMaintenanceStatus
       responses:
         "200":
-          description: Maintenance status
+          description: Maintenance status (returns HTML fragment when HX-Request header is set)
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/MaintenanceStatus"
+            text/html:
+              schema:
+                type: string
 
   /settings/maintenance/optimize:
     post:
@@ -3209,11 +3331,14 @@ paths:
       operationId: maintenanceOptimize
       responses:
         "200":
-          description: Optimization completed
+          description: Optimization completed (returns HTML status fragment when HX-Request header is set)
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Status"
+            text/html:
+              schema:
+                type: string
 
   /settings/maintenance/vacuum:
     post:
@@ -3222,11 +3347,14 @@ paths:
       operationId: maintenanceVacuum
       responses:
         "200":
-          description: Vacuum completed
+          description: Vacuum completed (returns HTML status fragment when HX-Request header is set)
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Status"
+            text/html:
+              schema:
+                type: string
 
   /settings/maintenance/schedule:
     put:
@@ -3247,11 +3375,14 @@ paths:
               required: [enabled]
       responses:
         "200":
-          description: Schedule updated
+          description: Schedule updated (returns HTML fragment when HX-Request header is set)
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Status"
+            text/html:
+              schema:
+                type: string
 
   /settings/export:
     post:
@@ -3330,7 +3461,7 @@ paths:
               required: [passphrase, file]
       responses:
         "200":
-          description: Import results with counts per category
+          description: Import results with counts per category (returns HTML summary when HX-Request header is set)
           content:
             application/json:
               schema:
@@ -3348,6 +3479,9 @@ paths:
                     type: integer
                   priorities:
                     type: integer
+            text/html:
+              schema:
+                type: string
         "400":
           description: Invalid request or decryption error
           content:
@@ -3381,7 +3515,7 @@ paths:
             type: string
       responses:
         "200":
-          description: Field value
+          description: Field value (returns HTML fragment when HX-Request header is set)
           content:
             application/json:
               schema:
@@ -3391,6 +3525,9 @@ paths:
                     type: string
                   value:
                     type: string
+            text/html:
+              schema:
+                type: string
         "400":
           description: Non-editable field
           content:
@@ -3416,7 +3553,7 @@ paths:
             type: string
       responses:
         "200":
-          description: Field value for editing
+          description: Field value for editing (returns HTML edit form when HX-Request header is set)
           content:
             application/json:
               schema:
@@ -3426,6 +3563,9 @@ paths:
                     type: string
                   value:
                     type: string
+            text/html:
+              schema:
+                type: string
 
   /artists/{id}/fields/{field}:
     patch:
@@ -3453,9 +3593,16 @@ paths:
                 value:
                   type: string
               required: [value]
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                value:
+                  type: string
+              required: [value]
       responses:
         "200":
-          description: Field updated
+          description: Field updated (returns HTML display fragment when HX-Request header is set)
           content:
             application/json:
               schema:
@@ -3467,6 +3614,9 @@ paths:
                     type: string
                   value:
                     type: string
+            text/html:
+              schema:
+                type: string
         "400":
           description: Non-editable field
           content:
@@ -3490,7 +3640,7 @@ paths:
             type: string
       responses:
         "200":
-          description: Field cleared
+          description: Field cleared (returns HTML display fragment when HX-Request header is set)
           content:
             application/json:
               schema:
@@ -3500,6 +3650,9 @@ paths:
                     type: string
                   field:
                     type: string
+            text/html:
+              schema:
+                type: string
 
   /artists/{id}/fields/{field}/providers:
     get:
@@ -3519,7 +3672,7 @@ paths:
             type: string
       responses:
         "200":
-          description: Provider comparison results
+          description: Provider comparison results (returns HTML fragment when HX-Request header is set)
           content:
             application/json:
               schema:
@@ -3544,6 +3697,9 @@ paths:
                           type: boolean
                         error:
                           type: string
+            text/html:
+              schema:
+                type: string
         "404":
           description: Artist not found
           content:
@@ -3564,11 +3720,14 @@ paths:
             type: string
       responses:
         "200":
-          description: Members cleared
+          description: Members cleared (returns HTML fragment when HX-Request header is set)
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Status"
+            text/html:
+              schema:
+                type: string
 
   /artists/{id}/members/from-provider:
     post:
@@ -3608,11 +3767,14 @@ paths:
                     type: boolean
       responses:
         "200":
-          description: Members saved
+          description: Members saved (returns HTML fragment when HX-Request header is set)
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Status"
+            text/html:
+              schema:
+                type: string
         "400":
           description: Invalid body
           content:
@@ -3638,7 +3800,7 @@ paths:
             type: string
       responses:
         "200":
-          description: Refresh result or disambiguation prompt
+          description: Refresh result or disambiguation prompt (returns HTML fragment when HX-Request header is set)
           content:
             application/json:
               schema:
@@ -3655,6 +3817,9 @@ paths:
                           type: string
                         provider:
                           type: string
+            text/html:
+              schema:
+                type: string
         "404":
           description: Artist not found
           content:
@@ -3683,9 +3848,16 @@ paths:
                 query:
                   type: string
               required: [query]
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                query:
+                  type: string
+              required: [query]
       responses:
         "200":
-          description: Disambiguation candidates
+          description: Disambiguation candidates (returns HTML fragment when HX-Request header is set)
           content:
             application/json:
               schema:
@@ -3695,6 +3867,9 @@ paths:
                     type: array
                     items:
                       type: object
+            text/html:
+              schema:
+                type: string
         "400":
           description: Missing query
           content:
@@ -3726,9 +3901,19 @@ paths:
                   type: string
                 source:
                   type: string
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                mbid:
+                  type: string
+                discogs_id:
+                  type: string
+                source:
+                  type: string
       responses:
         "200":
-          description: Linked and refreshed
+          description: Linked and refreshed (returns HTML fragment when HX-Request header is set)
           content:
             application/json:
               schema:
@@ -3745,6 +3930,9 @@ paths:
                           type: string
                         provider:
                           type: string
+            text/html:
+              schema:
+                type: string
         "404":
           description: Artist not found
           content:
@@ -3765,7 +3953,7 @@ paths:
             type: string
       responses:
         "200":
-          description: Provider IDs cleared, disambiguation required
+          description: Provider IDs cleared, disambiguation required (returns HTML disambiguation form when HX-Request header is set)
           content:
             application/json:
               schema:
@@ -3777,6 +3965,9 @@ paths:
                     type: string
                   message:
                     type: string
+            text/html:
+              schema:
+                type: string
         "404":
           description: Artist not found
           content:
@@ -3805,7 +3996,7 @@ paths:
             enum: [thumb, fanart, logo, banner]
       responses:
         "200":
-          description: Web search image results
+          description: Web search image results (returns HTML fragment when HX-Request header is set)
           content:
             application/json:
               schema:
@@ -3815,6 +4006,9 @@ paths:
                     type: array
                     items:
                       type: object
+            text/html:
+              schema:
+                type: string
 
   /artists/{id}/images/logo/trim:
     post:
@@ -3860,7 +4054,7 @@ paths:
             type: string
       responses:
         "200":
-          description: Fanart gallery items
+          description: Fanart gallery items (returns HTML gallery when HX-Request header is set)
           content:
             application/json:
               schema:
@@ -3879,6 +4073,9 @@ paths:
                     size:
                       type: integer
                       format: int64
+            text/html:
+              schema:
+                type: string
 
   /artists/{id}/images/fanart/{index}/file:
     get:
@@ -4060,7 +4257,7 @@ paths:
             enum: [thumb, fanart, logo, banner]
       responses:
         "200":
-          description: Image metadata
+          description: Image metadata (returns HTML badge when HX-Request header is set)
           content:
             application/json:
               schema:
@@ -4080,6 +4277,9 @@ paths:
                   modified:
                     type: string
                     format: date-time
+            text/html:
+              schema:
+                type: string
         "404":
           description: Artist or image not found
           content:
@@ -4106,7 +4306,7 @@ paths:
             enum: [thumb, fanart, logo, banner]
       responses:
         "200":
-          description: Image deleted
+          description: Image deleted (returns HTML preview card when HX-Request header is set)
           content:
             application/json:
               schema:
@@ -4118,6 +4318,9 @@ paths:
                     type: array
                     items:
                       type: string
+            text/html:
+              schema:
+                type: string
         "409":
           description: No filesystem path
           content:
