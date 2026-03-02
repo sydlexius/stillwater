@@ -236,6 +236,64 @@ func TestOrchestratorCustomPriority(t *testing.T) {
 	}
 }
 
+func TestOrchestratorMBIDFallbackToName(t *testing.T) {
+	registry, settings := setupOrchestratorTest(t)
+
+	// Genius requires an API key; store a dummy so it passes availability check.
+	if err := settings.SetAPIKey(context.Background(), NameGenius, "test-key"); err != nil {
+		t.Fatalf("SetAPIKey: %v", err)
+	}
+
+	// Override biography priority: Genius first, then MusicBrainz.
+	if err := settings.SetPriority(context.Background(), "biography", []ProviderName{NameGenius, NameMusicBrainz}); err != nil {
+		t.Fatalf("SetPriority: %v", err)
+	}
+
+	// Genius returns ErrNotFound for MBID, then succeeds with name.
+	geniusCalls := 0
+	registry.Register(&mockProvider{
+		name: NameGenius,
+		getArtFn: func(_ context.Context, id string) (*ArtistMetadata, error) {
+			geniusCalls++
+			if id == "mbid-uuid-1234" {
+				return nil, &ErrNotFound{Provider: NameGenius, ID: id}
+			}
+			// Called with artist name on retry
+			return &ArtistMetadata{
+				Name:      "Radiohead",
+				Biography: "From Genius",
+			}, nil
+		},
+	})
+	registry.Register(&mockProvider{
+		name: NameMusicBrainz,
+		getArtFn: func(_ context.Context, _ string) (*ArtistMetadata, error) {
+			return &ArtistMetadata{
+				Name:          "Radiohead",
+				MusicBrainzID: "mbid-uuid-1234",
+			}, nil
+		},
+	})
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	orch := NewOrchestrator(registry, settings, logger)
+
+	result, err := orch.FetchMetadata(context.Background(), "mbid-uuid-1234", "Radiohead")
+	if err != nil {
+		t.Fatalf("FetchMetadata: %v", err)
+	}
+
+	// Biography should come from Genius after MBID->name retry.
+	if result.Metadata.Biography != "From Genius" {
+		t.Errorf("expected biography from Genius, got: %s", result.Metadata.Biography)
+	}
+
+	// Genius should have been called twice: once with MBID (not-found), once with name.
+	if geniusCalls != 2 {
+		t.Errorf("expected 2 Genius GetArtist calls (MBID + name retry), got %d", geniusCalls)
+	}
+}
+
 func findSource(sources []FieldSource, field string) *FieldSource {
 	for _, s := range sources {
 		if s.Field == field {

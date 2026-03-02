@@ -228,6 +228,42 @@ func TestIsNumeric(t *testing.T) {
 	}
 }
 
+func TestGetArtistUUIDReturnsNotFound(t *testing.T) {
+	limiter, settings := setupTest(t)
+	srv := newTestServer(t)
+	defer srv.Close()
+	a := NewWithBaseURL(limiter, settings, testLogger(), srv.URL)
+
+	// A MusicBrainz UUID should be rejected immediately without making an API call.
+	_, err := a.GetArtist(context.Background(), "a74b1b7f-71a5-4011-9441-d0b5e4122711")
+	if err == nil {
+		t.Fatal("expected error for UUID input")
+	}
+	if _, ok := err.(*provider.ErrNotFound); !ok {
+		t.Errorf("expected ErrNotFound, got %T: %v", err, err)
+	}
+}
+
+func TestIsUUID(t *testing.T) {
+	tests := []struct {
+		input string
+		want  bool
+	}{
+		{"a74b1b7f-71a5-4011-9441-d0b5e4122711", true},
+		{"A74B1B7F-71A5-4011-9441-D0B5E4122711", true},
+		{"604", false},
+		{"Radiohead", false},
+		{"", false},
+		{"a74b1b7f71a540119441d0b5e4122711", false},    // no dashes
+		{"a74b1b7f-71a5-4011-9441-d0b5e412271", false}, // too short
+	}
+	for _, tt := range tests {
+		if got := isUUID(tt.input); got != tt.want {
+			t.Errorf("isUUID(%q) = %v, want %v", tt.input, got, tt.want)
+		}
+	}
+}
+
 func TestAuthRequired(t *testing.T) {
 	db, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
