@@ -91,3 +91,61 @@ func TestCleanupConflictingFormats_UnknownExtension(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestCleanupConflictingFormats_CaseMismatchSameFormat(t *testing.T) {
+	dir := t.TempDir()
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+
+	// Create a differently-cased file of the same format
+	if err := os.WriteFile(filepath.Join(dir, "Folder.JPG"), []byte("old jpeg"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Cleaning up for "folder.jpg" should rename "Folder.JPG" to "folder.jpg"
+	// (preserving content in case the subsequent write fails)
+	if err := CleanupConflictingFormats(dir, "folder.jpg", logger); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// The canonical name should now exist with the original content
+	data, err := os.ReadFile(filepath.Join(dir, "folder.jpg"))
+	if err != nil {
+		t.Fatalf("folder.jpg should exist after rename: %v", err)
+	}
+	if string(data) != "old jpeg" {
+		t.Errorf("content = %q, want %q", string(data), "old jpeg")
+	}
+
+	// Verify only one file in the directory (no duplicate)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		names := make([]string, len(entries))
+		for i, e := range entries {
+			names[i] = e.Name()
+		}
+		t.Errorf("expected 1 file, got %d: %v", len(entries), names)
+	}
+}
+
+func TestCleanupConflictingFormats_CaseMismatchConflictFormat(t *testing.T) {
+	dir := t.TempDir()
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+
+	// Create a differently-cased file of a conflicting format
+	oldPath := filepath.Join(dir, "Folder.PNG")
+	if err := os.WriteFile(oldPath, []byte("old png"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Cleaning up for "folder.jpg" should remove "Folder.PNG"
+	if err := CleanupConflictingFormats(dir, "folder.jpg", logger); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if _, err := os.Stat(oldPath); !os.IsNotExist(err) {
+		t.Error("Folder.PNG should have been deleted")
+	}
+}
