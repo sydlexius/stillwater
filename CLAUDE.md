@@ -181,15 +181,16 @@ Branch naming follows existing convention:
 
 ```bash
 # From the main repo directory:
-git worktree add ../stillwater-315 main -b feat/315-musicbrainz-mirror
+git worktree add -b feat/315-musicbrainz-mirror ../stillwater-315 main
 
 # For a milestone sub-issue branching from the umbrella:
-git worktree add ../stillwater-m17-320 feat/m17-umbrella -b feat/320-short-desc
+git worktree add -b feat/320-short-desc ../stillwater-m17-320 feat/m17-umbrella
 ```
 
 ### Tracking
 
-Active worktrees are tracked in `memory/worktrees.md` (auto-memory, not committed).
+Active worktrees are tracked in `memory/worktrees.md` inside the Claude Code
+auto-memory directory (`~/.claude/projects/<project>/memory/`), not in the repo.
 Every session that creates or destroys a worktree must update that file.
 
 ### Docker UAT in Worktrees
@@ -321,7 +322,7 @@ When any change (milestone work, bug fix, or standalone request) touches user-fa
 Once every sub-issue PR is merged to `main`:
 1. Post findings comments to all research/analysis issues and close them.
 2. Post a summary comment to the umbrella issue and close it.
-3. Remove all worktrees: `git worktree remove ../stillwater-m<N>-*` for each.
+3. Remove all worktrees: run `git worktree list` and `git worktree remove <path>` for each matching worktree (do not use glob patterns -- they are not reliably expanded by all shells).
 4. Delete all merged feature branches (remote and local): `gh api repos/.../git/refs/heads/<branch> -X DELETE` then `git branch -d`.
 5. Run `git fetch --prune` to remove stale tracking refs.
 6. Delete the plan file: `git rm docs/plans/m<N>-plan.md` and commit directly to `main`.
