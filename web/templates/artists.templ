@@ -378,7 +378,7 @@ templ ArtistCard(a artist.Artist, sources map[string]LibrarySourceInfo) {
 		<div class="aspect-square bg-gray-100 dark:bg-gray-700 relative overflow-hidden">
 			if a.ThumbExists {
 				if a.ThumbPlaceholder != "" {
-					<div class="lqip-placeholder" style={ "background-image:url('" + a.ThumbPlaceholder + "')" } aria-hidden="true"></div>
+					<div class="lqip-placeholder" style={ templ.SafeCSS("background-image:url('" + a.ThumbPlaceholder + "')") } aria-hidden="true"></div>
 				}
 				<img
 					src={ "/api/v1/artists/" + a.ID + "/images/thumb/file" }
@@ -387,7 +387,7 @@ templ ArtistCard(a artist.Artist, sources map[string]LibrarySourceInfo) {
 					class="absolute inset-0 h-full w-full object-cover group-hover:scale-105 transition-transform duration-200"
 				/>
 			} else if a.ThumbPlaceholder != "" {
-				<div class="lqip-placeholder" style={ "background-image:url('" + a.ThumbPlaceholder + "')" } aria-hidden="true"></div>
+				<div class="lqip-placeholder" style={ templ.SafeCSS("background-image:url('" + a.ThumbPlaceholder + "')") } aria-hidden="true"></div>
 			} else {
 				<div class="h-full w-full flex items-center justify-center">
 					<svg class="h-12 w-12 text-gray-300 dark:text-gray-600" fill="none" viewBox="0 0 24 24" stroke-width="1" stroke="currentColor">
