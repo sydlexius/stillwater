@@ -27,7 +27,8 @@ components:
       type: apiKey
       in: query
       name: apikey
-      description: API token (sw_ prefix) via query parameter
+      description: "Deprecated: prefer bearerAuth (Authorization header). Query-string tokens risk leakage via logs and referrers."
+      deprecated: true
   schemas:
     Error:
       type: object
