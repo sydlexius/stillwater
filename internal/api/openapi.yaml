@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Stillwater API
-  version: 0.10.0
+  version: 0.25.0
   description: Artist metadata and image management for Emby, Jellyfin, and Kodi.
   license:
     name: GPL-3.0
@@ -145,6 +145,165 @@ components:
           format: date-time
         error:
           type: string
+    Library:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        path:
+          type: string
+        type:
+          type: string
+          enum: [regular, classical]
+        source:
+          type: string
+          enum: [manual, emby, jellyfin, lidarr]
+        connection_id:
+          type: string
+        external_id:
+          type: string
+        fs_watch:
+          type: integer
+        fs_poll_interval:
+          type: integer
+        fs_notify_supported:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    LibraryOpResult:
+      type: object
+      properties:
+        library_id:
+          type: string
+        library_name:
+          type: string
+        operation:
+          type: string
+          enum: [populate, scan]
+        status:
+          type: string
+          enum: [running, completed, failed]
+        message:
+          type: string
+        started_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+    APIToken:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        scopes:
+          type: string
+        user_id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        last_used_at:
+          type: string
+          format: date-time
+        revoked_at:
+          type: string
+          format: date-time
+    Violation:
+      type: object
+      properties:
+        id:
+          type: string
+        rule_id:
+          type: string
+        artist_id:
+          type: string
+        artist_name:
+          type: string
+        severity:
+          type: string
+          enum: [error, warning, info]
+        message:
+          type: string
+        fixable:
+          type: boolean
+        status:
+          type: string
+          enum: [open, dismissed, resolved, pending_choice]
+        candidates:
+          type: array
+          items:
+            type: object
+            properties:
+              url:
+                type: string
+              width:
+                type: integer
+              height:
+                type: integer
+              source:
+                type: string
+              image_type:
+                type: string
+        dismissed_at:
+          type: string
+          format: date-time
+        resolved_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    LoggingConfig:
+      type: object
+      properties:
+        level:
+          type: string
+          enum: [debug, info, warn, error]
+        format:
+          type: string
+          enum: [text, json]
+        file_path:
+          type: string
+        file_max_size_mb:
+          type: integer
+        file_max_files:
+          type: integer
+        file_max_age_days:
+          type: integer
+    MaintenanceStatus:
+      type: object
+      properties:
+        db_file_size:
+          type: integer
+          format: int64
+        wal_file_size:
+          type: integer
+          format: int64
+        page_count:
+          type: integer
+          format: int64
+        page_size:
+          type: integer
+          format: int64
+        last_optimize_at:
+          type: string
+          format: date-time
+        schedule_enabled:
+          type: boolean
+        schedule_interval_hours:
+          type: integer
 
 paths:
   /health:
@@ -267,6 +426,83 @@ paths:
                     type: string
         "401":
           description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /auth/tokens:
+    post:
+      tags: [Auth]
+      summary: Create API token
+      operationId: createAPIToken
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                scopes:
+                  type: string
+                  description: Comma-separated scopes (default "read")
+              required: [name]
+      responses:
+        "201":
+          description: Token created (plaintext token returned only once)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  token:
+                    type: string
+                  name:
+                    type: string
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    get:
+      tags: [Auth]
+      summary: List API tokens
+      operationId: listAPITokens
+      responses:
+        "200":
+          description: List of API tokens (no plaintext values)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/APIToken"
+
+  /auth/tokens/{id}:
+    delete:
+      tags: [Auth]
+      summary: Revoke API token
+      operationId: revokeAPIToken
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Token revoked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+        "404":
+          description: Token not found
           content:
             application/json:
               schema:
@@ -1875,3 +2111,2013 @@ paths:
             application/json:
               schema:
                 type: object
+
+  # --- API Documentation ---
+
+  /docs:
+    get:
+      tags: [Docs]
+      summary: Interactive API reference
+      security: []
+      operationId: getAPIDocs
+      responses:
+        "200":
+          description: Scalar API reference HTML page
+          content:
+            text/html:
+              schema:
+                type: string
+
+  /docs/openapi.yaml:
+    get:
+      tags: [Docs]
+      summary: OpenAPI specification
+      security: []
+      operationId: getOpenAPISpec
+      responses:
+        "200":
+          description: OpenAPI spec in YAML format
+          content:
+            application/yaml:
+              schema:
+                type: string
+
+  # --- Libraries ---
+
+  /libraries:
+    get:
+      tags: [Libraries]
+      summary: List libraries
+      operationId: listLibraries
+      responses:
+        "200":
+          description: All libraries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Library"
+    post:
+      tags: [Libraries]
+      summary: Create library
+      operationId: createLibrary
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                path:
+                  type: string
+                type:
+                  type: string
+                  enum: [regular, classical]
+                  default: regular
+              required: [name]
+      responses:
+        "201":
+          description: Library created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Library"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Duplicate library
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /libraries/{id}:
+    get:
+      tags: [Libraries]
+      summary: Get library
+      operationId: getLibrary
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Library with artist count
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  library:
+                    $ref: "#/components/schemas/Library"
+                  artist_count:
+                    type: integer
+        "404":
+          description: Library not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    put:
+      tags: [Libraries]
+      summary: Update library
+      operationId: updateLibrary
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                path:
+                  type: string
+                type:
+                  type: string
+                  enum: [regular, classical]
+                fs_watch:
+                  type: integer
+                fs_poll_interval:
+                  type: integer
+                  description: Seconds between polls (60, 300, 900, or 1800)
+      responses:
+        "200":
+          description: Library updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Library"
+        "404":
+          description: Library not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      tags: [Libraries]
+      summary: Delete library
+      operationId: deleteLibrary
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: deleteArtists
+          in: query
+          description: When "true", cascade-delete artists instead of dereferencing them
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Library deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+
+  /libraries/{libId}/operation/status:
+    get:
+      tags: [Libraries]
+      summary: Get library operation status
+      operationId: getLibraryOpStatus
+      parameters:
+        - name: libId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Current operation status (or idle)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LibraryOpResult"
+
+  # --- Connection extras ---
+
+  /connections/clobber-check:
+    get:
+      tags: [Connections]
+      summary: Check for NFO/image write conflicts
+      operationId: clobberCheck
+      responses:
+        "200":
+          description: Clobber risk assessment
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  has_risk:
+                    type: boolean
+                  risks:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        connection_id:
+                          type: string
+                        connection_name:
+                          type: string
+                        connection_type:
+                          type: string
+                        nfo_writer:
+                          type: boolean
+                        library_name:
+                          type: string
+                        error:
+                          type: string
+
+  /connections/{id}/features:
+    patch:
+      tags: [Connections]
+      summary: Update connection feature flags
+      operationId: updateConnectionFeatures
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                feature_library_import:
+                  type: boolean
+                feature_nfo_write:
+                  type: boolean
+                feature_image_write:
+                  type: boolean
+      responses:
+        "200":
+          description: Features updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+        "404":
+          description: Connection not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /connections/{id}/libraries:
+    get:
+      tags: [Connections]
+      summary: Discover libraries on connection
+      operationId: discoverLibraries
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Available libraries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    external_id:
+                      type: string
+                    name:
+                      type: string
+                    imported:
+                      type: boolean
+        "404":
+          description: Connection not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Connection not tested
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /connections/{id}/libraries/import:
+    post:
+      tags: [Connections]
+      summary: Import libraries from connection
+      operationId: importLibraries
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                libraries:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      external_id:
+                        type: string
+                      name:
+                        type: string
+                    required: [external_id, name]
+              required: [libraries]
+      responses:
+        "201":
+          description: Libraries imported
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Library"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /connections/{id}/libraries/{libId}/populate:
+    post:
+      tags: [Connections]
+      summary: Populate artists from connection into library
+      operationId: populateLibrary
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: libId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "202":
+          description: Populate operation started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LibraryOpResult"
+        "409":
+          description: Operation already running or connection not tested
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /connections/{id}/libraries/{libId}/scan:
+    post:
+      tags: [Connections]
+      summary: Scan library via connection API
+      operationId: scanLibrary
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: libId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "202":
+          description: Scan operation started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LibraryOpResult"
+        "409":
+          description: Operation already running or connection not tested
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  # --- Provider extras ---
+
+  /providers/priorities/{field}/{provider}/toggle:
+    put:
+      tags: [Providers]
+      summary: Toggle provider for a metadata field
+      operationId: toggleFieldProvider
+      parameters:
+        - name: field
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: provider
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Provider toggled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+        "404":
+          description: Field not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /providers/websearch:
+    get:
+      tags: [Providers]
+      summary: List web search image providers
+      operationId: getWebSearchProviders
+      responses:
+        "200":
+          description: Web search providers with enabled state
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  providers:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                        display_name:
+                          type: string
+                        enabled:
+                          type: boolean
+
+  /providers/websearch/{name}/toggle:
+    put:
+      tags: [Providers]
+      summary: Enable or disable a web search provider
+      operationId: setWebSearchEnabled
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+              required: [enabled]
+      responses:
+        "200":
+          description: Provider state updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+        "400":
+          description: Unknown provider
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  # --- Scraper ---
+
+  /scraper/config:
+    get:
+      tags: [Scraper]
+      summary: Get global scraper configuration
+      operationId: getScraperConfig
+      responses:
+        "200":
+          description: Scraper config with field mappings and fallback chains
+          content:
+            application/json:
+              schema:
+                type: object
+    put:
+      tags: [Scraper]
+      summary: Update global scraper configuration
+      operationId: updateScraperConfig
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: Config saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /scraper/config/connections/{id}:
+    get:
+      tags: [Scraper]
+      summary: Get connection scraper config overrides
+      operationId: getConnectionScraperConfig
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Merged config with override indicators
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  config:
+                    type: object
+                  raw:
+                    type: object
+                  overrides:
+                    type: object
+        "404":
+          description: Connection not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    put:
+      tags: [Scraper]
+      summary: Update connection scraper config overrides
+      operationId: updateConnectionScraperConfig
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: Config saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+        "404":
+          description: Connection not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      tags: [Scraper]
+      summary: Reset connection scraper config to global defaults
+      operationId: resetConnectionScraperConfig
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Config reset
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+        "404":
+          description: Connection not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /scraper/providers:
+    get:
+      tags: [Scraper]
+      summary: List scraper providers with capabilities
+      operationId: listScraperProviders
+      responses:
+        "200":
+          description: Provider capabilities
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  providers:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        provider:
+                          type: string
+                        display_name:
+                          type: string
+                        requires_auth:
+                          type: boolean
+                        has_key:
+                          type: boolean
+                        metadata_fields:
+                          type: array
+                          items:
+                            type: string
+                        image_fields:
+                          type: array
+                          items:
+                            type: string
+
+  # --- Notifications ---
+
+  /notifications/counts:
+    get:
+      tags: [Notifications]
+      summary: Get violation counts by severity
+      operationId: getNotificationCounts
+      responses:
+        "200":
+          description: Counts by severity
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: integer
+                  warning:
+                    type: integer
+                  info:
+                    type: integer
+                  total:
+                    type: integer
+
+  /notifications/badge:
+    get:
+      tags: [Notifications]
+      summary: Get notification badge HTML fragment
+      description: Returns an HTML fragment for HTMX polling. Not a JSON endpoint.
+      operationId: getNotificationBadge
+      responses:
+        "200":
+          description: Badge HTML fragment
+          content:
+            text/html:
+              schema:
+                type: string
+
+  /notifications:
+    get:
+      tags: [Notifications]
+      summary: List rule violations
+      operationId: listNotifications
+      parameters:
+        - name: status
+          in: query
+          description: Filter by violation status
+          schema:
+            type: string
+            enum: [open, dismissed, resolved, pending_choice]
+            default: open
+      responses:
+        "200":
+          description: Violations matching filter
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  violations:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Violation"
+                  count:
+                    type: integer
+
+  /notifications/{id}/dismiss:
+    post:
+      tags: [Notifications]
+      summary: Dismiss a violation
+      operationId: dismissViolation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Violation dismissed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+
+  /notifications/{id}/resolve:
+    post:
+      tags: [Notifications]
+      summary: Resolve a violation
+      operationId: resolveViolation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Violation resolved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+
+  /notifications/{id}/apply-candidate:
+    post:
+      tags: [Notifications]
+      summary: Apply an image candidate from a pending-choice violation
+      operationId: applyViolationCandidate
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                url:
+                  type: string
+                image_type:
+                  type: string
+                  enum: [thumb, fanart, logo, banner]
+              required: [url, image_type]
+      responses:
+        "200":
+          description: Candidate applied and violation resolved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+        "400":
+          description: Invalid request or URL mismatch
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /notifications/bulk-dismiss:
+    post:
+      tags: [Notifications]
+      summary: Bulk dismiss violations
+      operationId: bulkDismissViolations
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ids:
+                  type: array
+                  items:
+                    type: string
+                  description: Violation IDs to dismiss (omit to dismiss all)
+      responses:
+        "200":
+          description: Count of dismissed violations
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  dismissed:
+                    type: integer
+
+  /notifications/resolved:
+    delete:
+      tags: [Notifications]
+      summary: Clear old resolved violations
+      description: Permanently deletes resolved violations older than 7 days.
+      operationId: clearResolvedViolations
+      responses:
+        "200":
+          description: Resolved violations cleared
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+
+  # --- Report extras ---
+
+  /reports/health/by-library:
+    get:
+      tags: [Reports]
+      summary: Get per-library health breakdown
+      operationId: getHealthByLibrary
+      responses:
+        "200":
+          description: Per-library health scores
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  libraries:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        library_id:
+                          type: string
+                        library_name:
+                          type: string
+                        total_artists:
+                          type: integer
+                        compliant_artists:
+                          type: integer
+                        score:
+                          type: number
+                        missing_nfo:
+                          type: integer
+                        missing_thumb:
+                          type: integer
+                        missing_fanart:
+                          type: integer
+                        missing_mbid:
+                          type: integer
+                  overall:
+                    type: object
+
+  /reports/compliance/export:
+    get:
+      tags: [Reports]
+      summary: Export compliance report as CSV
+      operationId: exportComplianceReport
+      parameters:
+        - name: sort
+          in: query
+          schema:
+            type: string
+            default: name
+        - name: order
+          in: query
+          schema:
+            type: string
+            enum: [asc, desc]
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: filter
+          in: query
+          schema:
+            type: string
+        - name: library_id
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [compliant, non_compliant]
+        - name: health_min
+          in: query
+          schema:
+            type: integer
+        - name: health_max
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: CSV file download
+          content:
+            text/csv:
+              schema:
+                type: string
+
+  # --- Inbound webhooks ---
+
+  /webhooks/inbound/lidarr:
+    post:
+      tags: [Webhooks]
+      summary: Receive Lidarr webhook event
+      description: >
+        Accepts inbound webhook events from Lidarr. Responds immediately with 200
+        and processes the event asynchronously. Requires an API token with webhook scope.
+      operationId: handleLidarrWebhook
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                eventType:
+                  type: string
+                  description: Lidarr event type (Test, ArtistAdded, Grab, Download, AlbumImport)
+                artist:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                    name:
+                      type: string
+                    path:
+                      type: string
+                    mbId:
+                      type: string
+                    foreignArtistId:
+                      type: string
+              required: [eventType]
+      responses:
+        "200":
+          description: Event accepted for async processing
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+
+  # --- Settings extras ---
+
+  /settings/logging:
+    get:
+      tags: [Settings]
+      summary: Get logging configuration
+      operationId: getLogging
+      responses:
+        "200":
+          description: Current logging config
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoggingConfig"
+    put:
+      tags: [Settings]
+      summary: Update logging configuration
+      operationId: updateLogging
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoggingConfig"
+      responses:
+        "200":
+          description: Updated logging config
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoggingConfig"
+        "400":
+          description: Invalid level or format
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /settings/maintenance/status:
+    get:
+      tags: [Settings]
+      summary: Get database maintenance status
+      operationId: getMaintenanceStatus
+      responses:
+        "200":
+          description: Maintenance status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MaintenanceStatus"
+
+  /settings/maintenance/optimize:
+    post:
+      tags: [Settings]
+      summary: Trigger database optimization
+      operationId: maintenanceOptimize
+      responses:
+        "200":
+          description: Optimization completed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+
+  /settings/maintenance/vacuum:
+    post:
+      tags: [Settings]
+      summary: Trigger database vacuum
+      operationId: maintenanceVacuum
+      responses:
+        "200":
+          description: Vacuum completed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+
+  /settings/maintenance/schedule:
+    put:
+      tags: [Settings]
+      summary: Configure maintenance schedule
+      operationId: updateMaintenanceSchedule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+                interval_hours:
+                  type: integer
+              required: [enabled]
+      responses:
+        "200":
+          description: Schedule updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+
+  /settings/export:
+    post:
+      tags: [Settings]
+      summary: Export settings as encrypted file
+      operationId: exportSettings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                passphrase:
+                  type: string
+              required: [passphrase]
+      responses:
+        "200":
+          description: Encrypted settings JSON file download
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  version:
+                    type: string
+                  app_version:
+                    type: string
+                  created_at:
+                    type: string
+                    format: date-time
+                  salt:
+                    type: string
+                  data:
+                    type: string
+        "400":
+          description: Missing passphrase
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /settings/import:
+    post:
+      tags: [Settings]
+      summary: Import settings from encrypted file
+      operationId: importSettings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                passphrase:
+                  type: string
+                envelope:
+                  type: object
+              required: [passphrase, envelope]
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                passphrase:
+                  type: string
+                file:
+                  type: string
+                  format: binary
+              required: [passphrase, file]
+      responses:
+        "200":
+          description: Import results with counts per category
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  settings:
+                    type: integer
+                  connections:
+                    type: integer
+                  platform_profiles:
+                    type: integer
+                  webhooks:
+                    type: integer
+                  provider_keys:
+                    type: integer
+                  priorities:
+                    type: integer
+        "400":
+          description: Invalid request or decryption error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          description: File exceeds 10MB limit
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  # --- Artist field editing ---
+
+  /artists/{id}/fields/{field}/display:
+    get:
+      tags: [Artists]
+      summary: Get field display view
+      operationId: getFieldDisplay
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: field
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Field value
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  field:
+                    type: string
+                  value:
+                    type: string
+        "400":
+          description: Non-editable field
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /artists/{id}/fields/{field}/edit:
+    get:
+      tags: [Artists]
+      summary: Get field edit view
+      operationId: getFieldEdit
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: field
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Field value for editing
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  field:
+                    type: string
+                  value:
+                    type: string
+
+  /artists/{id}/fields/{field}:
+    patch:
+      tags: [Artists]
+      summary: Update a single metadata field
+      operationId: updateField
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: field
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                value:
+                  type: string
+              required: [value]
+      responses:
+        "200":
+          description: Field updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  field:
+                    type: string
+                  value:
+                    type: string
+        "400":
+          description: Non-editable field
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      tags: [Artists]
+      summary: Clear a single metadata field
+      operationId: clearField
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: field
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Field cleared
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  field:
+                    type: string
+
+  /artists/{id}/fields/{field}/providers:
+    get:
+      tags: [Artists]
+      summary: Compare field value across providers
+      operationId: getFieldProviders
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: field
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Provider comparison results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  field:
+                    type: string
+                  results:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        provider:
+                          type: string
+                        value:
+                          type: string
+                        values:
+                          type: array
+                          items:
+                            type: string
+                        has_data:
+                          type: boolean
+                        error:
+                          type: string
+        "404":
+          description: Artist not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /artists/{id}/members:
+    delete:
+      tags: [Artists]
+      summary: Clear all band members
+      operationId: clearMembers
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Members cleared
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+
+  /artists/{id}/members/from-provider:
+    post:
+      tags: [Artists]
+      summary: Save band members from provider data
+      operationId: saveMembersFromProvider
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: object
+                properties:
+                  name:
+                    type: string
+                  mbid:
+                    type: string
+                  instruments:
+                    type: array
+                    items:
+                      type: string
+                  vocal_type:
+                    type: string
+                  date_joined:
+                    type: string
+                  date_left:
+                    type: string
+                  is_active:
+                    type: boolean
+      responses:
+        "200":
+          description: Members saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+        "400":
+          description: Invalid body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  # --- Artist refresh and disambiguation ---
+
+  /artists/{id}/refresh:
+    post:
+      tags: [Artists]
+      summary: Refresh artist metadata from providers
+      description: >
+        Triggers a full metadata refresh. If the artist has no MusicBrainz ID,
+        returns a disambiguation prompt instead.
+      operationId: refreshArtist
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Refresh result or disambiguation prompt
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  sources:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        field:
+                          type: string
+                        provider:
+                          type: string
+        "404":
+          description: Artist not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /artists/{id}/refresh/search:
+    post:
+      tags: [Artists]
+      summary: Search providers for disambiguation
+      operationId: refreshSearch
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                query:
+                  type: string
+              required: [query]
+      responses:
+        "200":
+          description: Disambiguation candidates
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      type: object
+        "400":
+          description: Missing query
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /artists/{id}/refresh/link:
+    post:
+      tags: [Artists]
+      summary: Link artist to provider ID and refresh
+      operationId: refreshLink
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                mbid:
+                  type: string
+                discogs_id:
+                  type: string
+                source:
+                  type: string
+      responses:
+        "200":
+          description: Linked and refreshed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  sources:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        field:
+                          type: string
+                        provider:
+                          type: string
+        "404":
+          description: Artist not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /artists/{id}/reidentify:
+    post:
+      tags: [Artists]
+      summary: Clear provider IDs and prompt re-identification
+      operationId: reidentifyArtist
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Provider IDs cleared, disambiguation required
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  artist:
+                    type: string
+                  message:
+                    type: string
+        "404":
+          description: Artist not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  # --- Additional image routes ---
+
+  /artists/{id}/images/websearch:
+    get:
+      tags: [Images]
+      summary: Search web for artist images
+      operationId: webImageSearch
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: type
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [thumb, fanart, logo, banner]
+      responses:
+        "200":
+          description: Web search image results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  images:
+                    type: array
+                    items:
+                      type: object
+
+  /artists/{id}/images/logo/trim:
+    post:
+      tags: [Images]
+      summary: Trim transparent padding from logo
+      operationId: trimLogo
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Logo trimmed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+        "404":
+          description: Artist or logo not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: No filesystem path
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /artists/{id}/images/fanart/list:
+    get:
+      tags: [Images]
+      summary: List all fanart images with metadata
+      operationId: listFanart
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Fanart gallery items
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    index:
+                      type: integer
+                    filename:
+                      type: string
+                    width:
+                      type: integer
+                    height:
+                      type: integer
+                    size:
+                      type: integer
+                      format: int64
+
+  /artists/{id}/images/fanart/{index}/file:
+    get:
+      tags: [Images]
+      summary: Serve fanart image by index
+      operationId: serveFanartByIndex
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: index
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Image file
+          content:
+            image/*:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Artist not found or index out of range
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /artists/{id}/images/fanart/batch:
+    delete:
+      tags: [Images]
+      summary: Delete selected fanart by indices
+      operationId: batchDeleteFanart
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                indices:
+                  type: array
+                  items:
+                    type: integer
+              required: [indices]
+      responses:
+        "200":
+          description: Fanart deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  deleted:
+                    type: array
+                    items:
+                      type: string
+                  count:
+                    type: integer
+        "409":
+          description: No filesystem path
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /artists/{id}/images/fanart/fetch-batch:
+    post:
+      tags: [Images]
+      summary: Fetch multiple fanart images from URLs
+      operationId: batchFetchFanart
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                urls:
+                  type: array
+                  items:
+                    type: string
+                    format: uri
+                  maxItems: 20
+              required: [urls]
+      responses:
+        "200":
+          description: Fetch results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  saved:
+                    type: array
+                    items:
+                      type: string
+                  errors:
+                    type: array
+                    items:
+                      type: string
+                  count:
+                    type: integer
+        "409":
+          description: No filesystem path
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /artists/{id}/images/{type}/file:
+    get:
+      tags: [Images]
+      summary: Serve artist image file
+      operationId: serveImage
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: type
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [thumb, fanart, logo, banner]
+      responses:
+        "200":
+          description: Image file
+          content:
+            image/*:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Artist or image not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /artists/{id}/images/{type}/info:
+    get:
+      tags: [Images]
+      summary: Get image metadata (dimensions, size)
+      operationId: getImageInfo
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: type
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [thumb, fanart, logo, banner]
+      responses:
+        "200":
+          description: Image metadata
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    type: string
+                  filename:
+                    type: string
+                  width:
+                    type: integer
+                  height:
+                    type: integer
+                  size:
+                    type: integer
+                    format: int64
+                  modified:
+                    type: string
+                    format: date-time
+        "404":
+          description: Artist or image not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /artists/{id}/images/{type}:
+    delete:
+      tags: [Images]
+      summary: Delete artist image
+      operationId: deleteImage
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: type
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [thumb, fanart, logo, banner]
+      responses:
+        "200":
+          description: Image deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  deleted:
+                    type: array
+                    items:
+                      type: string
+        "409":
+          description: No filesystem path
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  # --- Push extras ---
+
+  /artists/{id}/push/images:
+    post:
+      tags: [Push]
+      summary: Push images to platform
+      operationId: pushImages
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                connection_id:
+                  type: string
+                platform_artist_id:
+                  type: string
+                image_types:
+                  type: array
+                  items:
+                    type: string
+                    enum: [thumb, fanart, logo, banner]
+                  description: Types to push (defaults to all four)
+              required: [connection_id, platform_artist_id]
+      responses:
+        "200":
+          description: Push results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  uploaded:
+                    type: array
+                    items:
+                      type: string
+                  errors:
+                    type: array
+                    items:
+                      type: string
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Artist or connection not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
