@@ -95,4 +95,4 @@ PRs 1-5 are independent and can land in any order.
 - #315: research/question -- no code changes expected, just findings
 - #311: scope: medium -- touches scanner, image processing, templates, and a migration
 - #305 and #304: new provider packages -- follow existing provider patterns in `internal/provider/`
-- #304 requires Spotify Premium subscription for API access (noted in issue)
+- #304 requires a Spotify Developer application with client ID and secret for Web API access (noted in issue)
