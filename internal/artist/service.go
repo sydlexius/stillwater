@@ -103,7 +103,7 @@ func (s *Service) GetByMBID(ctx context.Context, mbid string) (*Artist, error) {
 }
 
 // GetByProviderID retrieves an artist by a provider-specific ID.
-// Supported providers: "musicbrainz", "audiodb", "discogs", "wikidata".
+// Supported providers: "musicbrainz", "audiodb", "discogs", "wikidata", "deezer", "spotify".
 func (s *Service) GetByProviderID(ctx context.Context, provider, id string) (*Artist, error) {
 	var col string
 	switch provider {

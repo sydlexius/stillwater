@@ -380,13 +380,17 @@ func TestTokenCaching(t *testing.T) {
 	})
 
 	// First call should fetch a token
-	a.SearchArtist(context.Background(), "test1")
+	if _, err := a.SearchArtist(context.Background(), "test1"); err != nil {
+		t.Fatalf("SearchArtist(test1): %v", err)
+	}
 	if tokenRequests != 1 {
 		t.Fatalf("expected 1 token request, got %d", tokenRequests)
 	}
 
 	// Second call should reuse the cached token
-	a.SearchArtist(context.Background(), "test2")
+	if _, err := a.SearchArtist(context.Background(), "test2"); err != nil {
+		t.Fatalf("SearchArtist(test2): %v", err)
+	}
 	if tokenRequests != 1 {
 		t.Errorf("expected 1 token request (cached), got %d", tokenRequests)
 	}
@@ -414,7 +418,9 @@ func TestTokenRefreshOnExpiry(t *testing.T) {
 	})
 
 	// First call fetches a token
-	a.SearchArtist(context.Background(), "test1")
+	if _, err := a.SearchArtist(context.Background(), "test1"); err != nil {
+		t.Fatalf("SearchArtist(test1): %v", err)
+	}
 	if tokenRequests != 1 {
 		t.Fatalf("expected 1 token request, got %d", tokenRequests)
 	}
@@ -425,7 +431,9 @@ func TestTokenRefreshOnExpiry(t *testing.T) {
 	a.mu.Unlock()
 
 	// Second call should refresh the token
-	a.SearchArtist(context.Background(), "test2")
+	if _, err := a.SearchArtist(context.Background(), "test2"); err != nil {
+		t.Fatalf("SearchArtist(test2): %v", err)
+	}
 	if tokenRequests != 2 {
 		t.Errorf("expected 2 token requests after expiry, got %d", tokenRequests)
 	}
