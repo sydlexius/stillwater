@@ -615,7 +615,17 @@ func (r *Router) handleSetMirror(w http.ResponseWriter, req *http.Request) {
 	r.logger.Info("mirror configured", "provider", name,
 		"base_url", baseURL, "rate_limit", rateLimit)
 
-	// Auto-test the connection.
+	// For HTMX requests, re-render the provider card. Mirrors can be tested
+	// separately via POST /api/v1/providers/{name}/test.
+	if isHTMXRequest(req) {
+		isOOBE := strings.Contains(req.Header.Get("HX-Current-URL"), "/setup/wizard")
+		w.Header().Set("HX-Retarget", "#provider-card-"+string(name))
+		w.Header().Set("HX-Reswap", "innerHTML")
+		r.renderProviderCard(w, req, name, isOOBE)
+		return
+	}
+
+	// For JSON API consumers, auto-test the connection.
 	testResult := "ok"
 	testError := ""
 	if testable, ok := p.(provider.TestableProvider); ok {
@@ -625,14 +635,6 @@ func (r *Router) handleSetMirror(w http.ResponseWriter, req *http.Request) {
 			testResult = "error"
 			testError = err.Error()
 		}
-	}
-
-	if isHTMXRequest(req) {
-		isOOBE := strings.Contains(req.Header.Get("HX-Current-URL"), "/setup/wizard")
-		w.Header().Set("HX-Retarget", "#provider-card-"+string(name))
-		w.Header().Set("HX-Reswap", "innerHTML")
-		r.renderProviderCard(w, req, name, isOOBE)
-		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{

@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -50,9 +51,17 @@ func testRouterWithMirror(t *testing.T) *Router {
 }
 
 func TestHandleSetMirror(t *testing.T) {
+	// Start a local mirror server so the auto-test in the JSON path succeeds.
+	mirrorSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"artists":[]}`))
+	}))
+	defer mirrorSrv.Close()
+
 	r := testRouterWithMirror(t)
 
-	body := `{"base_url":"http://mirror.local:5000/ws/2","rate_limit":10}`
+	mirrorURL := mirrorSrv.URL + "/ws/2"
+	body := fmt.Sprintf(`{"base_url":%q,"rate_limit":10}`, mirrorURL)
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/providers/musicbrainz/mirror", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -79,8 +88,8 @@ func TestHandleSetMirror(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetBaseURL: %v", err)
 	}
-	if url != "http://mirror.local:5000/ws/2" {
-		t.Errorf("expected persisted base URL, got %q", url)
+	if url != mirrorURL {
+		t.Errorf("expected persisted base URL %q, got %q", mirrorURL, url)
 	}
 
 	limit, err := r.providerSettings.GetRateLimit(ctx, provider.NameMusicBrainz)
@@ -94,7 +103,7 @@ func TestHandleSetMirror(t *testing.T) {
 	// Verify the adapter was updated.
 	p := r.providerRegistry.Get(provider.NameMusicBrainz)
 	mirrorable := p.(provider.MirrorableProvider)
-	if mirrorable.BaseURL() != "http://mirror.local:5000/ws/2" {
+	if mirrorable.BaseURL() != mirrorURL {
 		t.Errorf("expected adapter base URL updated, got %q", mirrorable.BaseURL())
 	}
 }
@@ -130,10 +139,16 @@ func TestHandleSetMirrorValidation(t *testing.T) {
 }
 
 func TestHandleSetMirrorDefaultRateLimit(t *testing.T) {
+	mirrorSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"artists":[]}`))
+	}))
+	defer mirrorSrv.Close()
+
 	r := testRouterWithMirror(t)
 
 	// Omit rate_limit; should default to 10.
-	body := `{"base_url":"http://mirror.local:5000/ws/2"}`
+	body := fmt.Sprintf(`{"base_url":%q}`, mirrorSrv.URL+"/ws/2")
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/providers/musicbrainz/mirror", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -156,10 +171,16 @@ func TestHandleSetMirrorDefaultRateLimit(t *testing.T) {
 }
 
 func TestHandleSetMirrorRateLimitCap(t *testing.T) {
+	mirrorSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"artists":[]}`))
+	}))
+	defer mirrorSrv.Close()
+
 	r := testRouterWithMirror(t)
 
 	// Rate limit above 100 should be capped.
-	body := `{"base_url":"http://mirror.local:5000/ws/2","rate_limit":999}`
+	body := fmt.Sprintf(`{"base_url":%q,"rate_limit":999}`, mirrorSrv.URL+"/ws/2")
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/providers/musicbrainz/mirror", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
