@@ -17,8 +17,11 @@ sqlclosecheck, unconvert, unparam, wastedassign, misspell, revive.
 No additional linters recommended at this time. The current set covers the most
 impactful categories (correctness, security, resource leaks, style).
 
+**Data source (linting):** `golangci-lint run ./...` on commit `<commit-sha>` (`<YYYY-MM-DD>`), using `<golangci-lint vX.Y.Z>`. CI currently pins `version: latest`; rerun this command at the recorded commit to reproduce these numbers.
+
 ## Test Coverage Summary
 
+**Data source (coverage):** `go test ./... -coverpkg=./... -coverprofile=cover.out` followed by `go tool cover -coverpkg=./... -func=cover.out` on commit `<commit-sha>` (`<YYYY-MM-DD>`).
 ### Excellent (80%+)
 - `internal/event` (93.5%), `internal/logging` (88.8%), `internal/nfo` (87.7%)
 - `internal/platform` (83.4%), `internal/connection` (82.7%)
