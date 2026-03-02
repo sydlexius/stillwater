@@ -142,9 +142,14 @@ for HTTP handler tests. No assertion library, no mock generation.
 ```go
 package testutil
 
-func Equal(t *testing.T, got, want any) {
+import (
+    "reflect"
+    "testing"
+)
+
+func Equal[T any](t *testing.T, got, want T) {
     t.Helper()
-    if got != want {
+    if !reflect.DeepEqual(got, want) {
         t.Errorf("got %v, want %v", got, want)
     }
 }
