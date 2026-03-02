@@ -54,6 +54,8 @@ func providerDisplayName(key string) string {
 		return "DuckDuckGo"
 	case "deezer":
 		return "Deezer"
+	case "genius":
+		return "Genius"
 	default:
 		return key
 	}

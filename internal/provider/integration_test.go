@@ -14,6 +14,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/provider"
 	"github.com/sydlexius/stillwater/internal/provider/audiodb"
 	"github.com/sydlexius/stillwater/internal/provider/discogs"
+	"github.com/sydlexius/stillwater/internal/provider/genius"
 	"github.com/sydlexius/stillwater/internal/provider/lastfm"
 	"github.com/sydlexius/stillwater/internal/provider/musicbrainz"
 	"github.com/sydlexius/stillwater/internal/provider/wikidata"
@@ -66,6 +67,7 @@ func setupIntegrationSettings(t *testing.T) *provider.SettingsService {
 	storeKey(provider.NameAudioDB, "AUDIODB_API_KEY")
 	storeKey(provider.NameDiscogs, "DISCOGS_TOKEN")
 	storeKey(provider.NameLastFM, "LASTFM_API_KEY")
+	storeKey(provider.NameGenius, "GENIUS_ACCESS_TOKEN")
 
 	return svc
 }
@@ -273,5 +275,40 @@ func TestIntegration_Orchestrator_AHa(t *testing.T) {
 	// DeezerID must be backfilled from the MusicBrainz "streaming music" URL relation.
 	if result.Metadata.DeezerID == "" {
 		t.Error("expected DeezerID backfilled from MusicBrainz URL relations")
+	}
+}
+
+func TestIntegration_Genius_AHa(t *testing.T) {
+	settings := setupIntegrationSettings(t)
+	has, err := settings.HasAPIKey(context.Background(), provider.NameGenius)
+	if err != nil {
+		t.Fatalf("checking key: %v", err)
+	}
+	if !has {
+		t.Skip("GENIUS_ACCESS_TOKEN not set")
+	}
+
+	limiter := newLimiter()
+	g := genius.New(limiter, settings, silentLogger())
+
+	ctx := testCtx(t)
+	results, err := g.SearchArtist(ctx, aHaName)
+	if err != nil {
+		t.Fatalf("SearchArtist: %v", err)
+	}
+	if len(results) == 0 {
+		t.Fatal("expected at least one search result")
+	}
+
+	// Use the first result's provider ID to fetch full metadata.
+	meta, err := g.GetArtist(ctx, results[0].ProviderID)
+	if err != nil {
+		t.Fatalf("GetArtist: %v", err)
+	}
+	if meta.Name == "" {
+		t.Error("expected non-empty artist name")
+	}
+	if meta.Biography == "" {
+		t.Error("expected non-empty biography")
 	}
 }

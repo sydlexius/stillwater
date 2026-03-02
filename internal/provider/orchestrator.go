@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -218,6 +219,18 @@ func (o *Orchestrator) getProviderResult(ctx context.Context, name ProviderName,
 
 	if id != "" {
 		meta, err := p.GetArtist(ctx, id)
+		// If we used an MBID and the provider returned not-found, retry with
+		// the artist name. Name-based providers (e.g. Genius) cannot interpret
+		// MBIDs, so the name fallback lets them participate in the fallback chain.
+		if err != nil && mbid != "" && artistName != "" {
+			var notFound *ErrNotFound
+			if errors.As(err, &notFound) {
+				o.logger.Debug("retrying with artist name after MBID not-found",
+					slog.String("provider", string(name)),
+					slog.String("name", artistName))
+				meta, err = p.GetArtist(ctx, artistName)
+			}
+		}
 		if err != nil {
 			o.logger.Debug("provider GetArtist failed",
 				slog.String("provider", string(name)),

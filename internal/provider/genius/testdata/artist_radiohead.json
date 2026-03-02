@@ -1,0 +1,13 @@
+{
+  "response": {
+    "artist": {
+      "id": 604,
+      "name": "Radiohead",
+      "url": "https://genius.com/artists/Radiohead",
+      "description": {
+        "plain": "Radiohead are an English rock band formed in Abingdon, Oxfordshire, in 1985. The band consists of Thom Yorke (vocals, guitar, piano, keyboards), brothers Jonny Greenwood (lead guitar, keyboards, other instruments) and Colin Greenwood (bass), Ed O'Brien (guitar, backing vocals) and Philip Selway (drums, percussion). They are widely regarded as one of the most influential bands of the 1990s and 2000s."
+      },
+      "alternate_names": ["RadioHead", "On a Friday"]
+    }
+  }
+}

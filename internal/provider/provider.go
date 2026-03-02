@@ -73,6 +73,11 @@ func ProviderCapabilities() map[ProviderName]ProviderCapability {
 			Tier:      TierFree,
 			RateLimit: &RateLimitInfo{RequestsPerSecond: 5},
 		},
+		NameGenius: {
+			Tier:      TierFreeKey,
+			HelpURL:   "https://genius.com/api-clients",
+			RateLimit: &RateLimitInfo{RequestsPerSecond: 5},
+		},
 		NameSpotify: {
 			Tier:      TierPaid,
 			HelpURL:   "https://developer.spotify.com/dashboard",
@@ -94,6 +99,7 @@ const (
 	NameWikidata    ProviderName = "wikidata"
 	NameDuckDuckGo  ProviderName = "duckduckgo"
 	NameDeezer      ProviderName = "deezer"
+	NameGenius      ProviderName = "genius"
 	NameSpotify     ProviderName = "spotify"
 )
 
@@ -107,6 +113,7 @@ func AllProviderNames() []ProviderName {
 		NameLastFM,
 		NameWikidata,
 		NameDeezer,
+		NameGenius,
 		NameSpotify,
 	}
 }
@@ -130,6 +137,8 @@ func (n ProviderName) DisplayName() string {
 		return "DuckDuckGo"
 	case NameDeezer:
 		return "Deezer"
+	case NameGenius:
+		return "Genius"
 	case NameSpotify:
 		return "Spotify"
 	default:
