@@ -460,3 +460,70 @@ func TestIsSpotifyID(t *testing.T) {
 		}
 	}
 }
+
+func TestDoRequestRetryOn401(t *testing.T) {
+	apiCalls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/token":
+			w.Write([]byte(`{"access_token":"fresh-token","token_type":"Bearer","expires_in":3600}`))
+		case "/search":
+			apiCalls++
+			if apiCalls == 1 {
+				// First call: return 401 to trigger retry
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			// Retry: return success
+			w.Write([]byte(`{"artists":{"items":[],"total":0}}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+
+	a := newTestAdapter(t, srv.URL, srv.URL+"/token", map[provider.ProviderName]string{
+		provider.NameSpotify: validCredentialsJSON(),
+	})
+
+	results, err := a.SearchArtist(context.Background(), "test")
+	if err != nil {
+		t.Fatalf("expected successful retry, got error: %v", err)
+	}
+	if len(results) != 0 {
+		t.Errorf("expected 0 results, got %d", len(results))
+	}
+	if apiCalls != 2 {
+		t.Errorf("expected 2 API calls (initial + retry), got %d", apiCalls)
+	}
+}
+
+func TestDoRequestPersistent401ReturnsAuthError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/token":
+			w.Write([]byte(`{"access_token":"bad-token","token_type":"Bearer","expires_in":3600}`))
+		case "/search":
+			// Always return 401
+			w.WriteHeader(http.StatusUnauthorized)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+
+	a := newTestAdapter(t, srv.URL, srv.URL+"/token", map[provider.ProviderName]string{
+		provider.NameSpotify: validCredentialsJSON(),
+	})
+
+	_, err := a.SearchArtist(context.Background(), "test")
+	if err == nil {
+		t.Fatal("expected error for persistent 401")
+	}
+	var authErr *provider.ErrAuthRequired
+	if !errors.As(err, &authErr) {
+		t.Errorf("expected *provider.ErrAuthRequired, got %T: %v", err, err)
+	}
+}

@@ -167,7 +167,7 @@ func (a *Adapter) TestConnection(ctx context.Context) error {
 	}
 
 	// Force a fresh token to test the credentials
-	if _, err := a.refreshToken(ctx, creds); err != nil {
+	if _, _, err := a.refreshToken(ctx, creds); err != nil {
 		return fmt.Errorf("authentication failed: %w", err)
 	}
 
@@ -217,22 +217,27 @@ func (a *Adapter) getToken(ctx context.Context) (string, error) {
 		return "", err
 	}
 
-	token, err := a.refreshToken(ctx, creds)
+	token, expiry, err := a.refreshToken(ctx, creds)
 	if err != nil {
 		return "", err
 	}
+
+	a.cachedToken = token
+	a.tokenExpiry = expiry
 
 	return token, nil
 }
 
 // refreshToken exchanges client credentials for a new access token.
-func (a *Adapter) refreshToken(ctx context.Context, creds *spotifyCredentials) (string, error) {
+// It is a pure function that does not mutate Adapter state; the caller
+// is responsible for storing the returned token and expiry under a.mu.
+func (a *Adapter) refreshToken(ctx context.Context, creds *spotifyCredentials) (string, time.Time, error) {
 	data := url.Values{
 		"grant_type": {"client_credentials"},
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, a.tokenURL, strings.NewReader(data.Encode()))
 	if err != nil {
-		return "", fmt.Errorf("creating token request: %w", err)
+		return "", time.Time{}, fmt.Errorf("creating token request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString(
@@ -241,7 +246,7 @@ func (a *Adapter) refreshToken(ctx context.Context, creds *spotifyCredentials) (
 
 	resp, err := a.client.Do(req) //nolint:gosec // URL is from adapter config
 	if err != nil {
-		return "", &provider.ErrProviderUnavailable{
+		return "", time.Time{}, &provider.ErrProviderUnavailable{
 			Provider: provider.NameSpotify,
 			Cause:    fmt.Errorf("token request: %w", err),
 		}
@@ -250,25 +255,23 @@ func (a *Adapter) refreshToken(ctx context.Context, creds *spotifyCredentials) (
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
 	if err != nil {
-		return "", fmt.Errorf("reading token response: %w", err)
+		return "", time.Time{}, fmt.Errorf("reading token response: %w", err)
 	}
 
 	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		return "", &provider.ErrAuthRequired{Provider: provider.NameSpotify}
+		return "", time.Time{}, &provider.ErrAuthRequired{Provider: provider.NameSpotify}
 	}
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("token request failed: HTTP %d", resp.StatusCode)
+		return "", time.Time{}, fmt.Errorf("token request failed: HTTP %d", resp.StatusCode)
 	}
 
 	var tokenResp tokenResponse
 	if err := json.Unmarshal(body, &tokenResp); err != nil {
-		return "", fmt.Errorf("parsing token response: %w", err)
+		return "", time.Time{}, fmt.Errorf("parsing token response: %w", err)
 	}
 
-	a.cachedToken = tokenResp.AccessToken
-	a.tokenExpiry = time.Now().Add(time.Duration(tokenResp.ExpiresIn) * time.Second)
-
-	return tokenResp.AccessToken, nil
+	expiry := time.Now().Add(time.Duration(tokenResp.ExpiresIn) * time.Second)
+	return tokenResp.AccessToken, expiry, nil
 }
 
 // doRequest executes an authenticated GET request with rate limiting.
