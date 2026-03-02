@@ -85,10 +85,13 @@ This is a server-side side effect, not a UI prompt.
 The existing NFO writer already maps name, sort_name, disambiguation, and
 musicbrainz_id to XML elements. No changes needed for those.
 
-Discogs, Wikidata, and Deezer IDs are stored as unknown XML elements and
-preserved during round-trips. If we want first-class NFO support for these,
-we would need to add them to the `Artist` NFO struct -- but this is optional
-since they are not part of the Kodi NFO spec.
+Discogs (`discogsartistid`) and Wikidata (`wikidataid`) IDs are already first-class
+NFO fields and are parsed/written as known XML elements today.
+Deezer (`deezerartistid`) is not currently written by `nfo.Write()`, so a DB→NFO
+write-back would drop it unless it is preserved as an extra/unknown element.
+If we want first-class NFO support for Deezer, we would need to add it to the
+`Artist` NFO struct and writer, which is optional since it is not part of the
+Kodi NFO spec.
 
 ## Key Files
 
