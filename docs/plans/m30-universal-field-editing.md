@@ -50,7 +50,7 @@ New `validateFieldUpdate(field, value string) error` function:
 - `name`: must not be empty after trimming
 - `musicbrainz_id`: if non-empty, must be a valid UUID
 - `audiodb_id`, `discogs_id`, `deezer_id`: if non-empty, must be numeric
-- `wikidata_id`: if non-empty, must match `Q\d+` pattern
+- `wikidata_id`: if non-empty, value is trimmed and must match the anchored, case-sensitive pattern `^Q[0-9]+$` (uppercase `Q` followed immediately by one or more digits, no leading/trailing whitespace)
 - Other fields: no additional validation (existing behavior)
 
 Call `validateFieldUpdate` in `handleFieldUpdate` before `UpdateField`.
