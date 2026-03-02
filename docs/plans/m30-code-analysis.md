@@ -1,5 +1,6 @@
-# Issue #323 -- Code Analysis, Test Coverage, and Quality Improvements
+# Milestone 30 -- Code Analysis, Test Coverage, and Quality Improvements
 
+Related issue: #323
 ## Overview
 
 Document the current state of linting, test coverage, and testing infrastructure.
