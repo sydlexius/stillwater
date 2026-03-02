@@ -68,7 +68,7 @@ rule execution.
 ### Issue #287 -- Image deduplication rule using perceptual hashing
 - [ ] Hashing module in `internal/image/` (SHA-256 exact + pHash/dHash perceptual)
 - [ ] New rule in `internal/rule/` with configurable similarity threshold
-- [ ] Three automation modes: auto (keep higher quality), manual (flag for review), disabled
+- [ ] Two automation modes: auto (keep higher quality), manual (flag for review)
 - [ ] Scope options: per-artist, per-library, or global
 - [ ] Violation display with thumbnails, similarity score, and file paths
 - [ ] Tests
@@ -80,7 +80,7 @@ rule execution.
 ### Issue #313 -- Artist directory rename rule (directory_name_mismatch)
 - [ ] Detection: compare directory name against MusicBrainz canonical name
 - [ ] Configurable article dictionary for sort-name handling
-- [ ] Three automation modes: disabled, manual (confirm rename), auto (rename + notify)
+- [ ] Two automation modes: manual (confirm rename), auto (rename + notify)
 - [ ] Safety: verify no file locks, atomic rename with copy+delete fallback
 - [ ] Update all internal database references to old path
 - [ ] Tests
@@ -100,7 +100,21 @@ rule execution.
 - [ ] CI passing
 - [ ] PR merged
 
+### Issue #353 -- Remove redundant Disabled option from rule automation mode dropdown
+- [ ] Remove `AutomationModeDisabled` constant from `internal/rule/model.go`
+- [ ] Remove "Disabled" option from settings template dropdown
+- [ ] Remove "disabled" from valid automation_mode values in handler
+- [ ] Migration to convert existing `automation_mode = 'disabled'` rows
+- [ ] Update tests referencing AutomationModeDisabled
+- [ ] Add test: PATCH with `automation_mode: "disabled"` returns 400
+- [ ] PR opened (#?)
+- [ ] CI passing
+- [ ] PR merged
+
 ## UAT / Merge Order
+
+Session 0 (quick fix):
+0. PR for #353 (base: main) -- remove redundant disabled option (small, independent)
 
 Session 1 (foundations):
 1. PR for #288 (base: main) -- UX audit findings (research only)
@@ -122,4 +136,5 @@ Session 3 (new rules):
 - #310: scope: medium -- HTMX-driven table enhancements
 - #313: scope: large -- filesystem mutations require careful safety handling
 - #314: scope: small -- reuses existing rule engine infrastructure
+- #353: `[mode: direct] [model: sonnet]` -- scope: small, remove redundant UI control
 - Closed issues in this milestone: #312 (logo trimming), #307 (manual mode candidates), #303 (folder name mismatch detection)
