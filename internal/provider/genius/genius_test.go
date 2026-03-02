@@ -26,7 +26,10 @@ func setupTest(t *testing.T) (*provider.RateLimiterMap, *provider.SettingsServic
 	if err != nil {
 		t.Fatalf("creating settings table: %v", err)
 	}
-	enc, _, _ := encryption.NewEncryptor("")
+	enc, _, err := encryption.NewEncryptor("")
+	if err != nil {
+		t.Fatalf("creating encryptor: %v", err)
+	}
 	limiter := provider.NewRateLimiterMap()
 	settings := provider.NewSettingsService(db, enc)
 	if err := settings.SetAPIKey(context.Background(), provider.NameGenius, "test-token"); err != nil {
@@ -274,7 +277,10 @@ func TestAuthRequired(t *testing.T) {
 	if err != nil {
 		t.Fatalf("creating settings table: %v", err)
 	}
-	enc, _, _ := encryption.NewEncryptor("")
+	enc, _, err := encryption.NewEncryptor("")
+	if err != nil {
+		t.Fatalf("creating encryptor: %v", err)
+	}
 	limiter := provider.NewRateLimiterMap()
 	settings := provider.NewSettingsService(db, enc)
 	// Do not set an API key -- should trigger ErrAuthRequired.
