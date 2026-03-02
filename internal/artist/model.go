@@ -40,6 +40,10 @@ type Artist struct {
 	FanartLowRes        bool              `json:"fanart_low_res"`
 	LogoLowRes          bool              `json:"logo_low_res"`
 	BannerLowRes        bool              `json:"banner_low_res"`
+	ThumbPlaceholder    string            `json:"thumb_placeholder,omitempty"`
+	FanartPlaceholder   string            `json:"fanart_placeholder,omitempty"`
+	LogoPlaceholder     string            `json:"logo_placeholder,omitempty"`
+	BannerPlaceholder   string            `json:"banner_placeholder,omitempty"`
 	HealthScore         float64           `json:"health_score"`
 	IsExcluded          bool              `json:"is_excluded"`
 	ExclusionReason     string            `json:"exclusion_reason,omitempty"`

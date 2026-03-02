@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -539,7 +540,10 @@ func TestDetectFiles(t *testing.T) {
 		os.WriteFile(filepath.Join(dir, name), []byte("test"), 0o644) //nolint:errcheck
 	}
 
-	d := detectFiles(dir)
+	d, err := detectFiles(dir, nil)
+	if err != nil {
+		t.Fatalf("detectFiles: %v", err)
+	}
 
 	if !d.NFOExists {
 		t.Error("NFOExists should be true")
@@ -579,7 +583,10 @@ func TestDetectFiles_LowRes(t *testing.T) {
 	// banner.png 1000x185 - above 758x140, not low-res
 	writeTestPNG("banner.png", 1000, 185)
 
-	d := detectFiles(dir)
+	d, err := detectFiles(dir, nil)
+	if err != nil {
+		t.Fatalf("detectFiles: %v", err)
+	}
 
 	if !d.ThumbExists {
 		t.Fatal("ThumbExists should be true")
@@ -604,6 +611,14 @@ func TestDetectFiles_LowRes(t *testing.T) {
 	}
 	if d.BannerLowRes {
 		t.Error("BannerLowRes should be false for 1000x185 banner")
+	}
+}
+
+func TestDetectFiles_ReadDirError(t *testing.T) {
+	// Pass a path that does not exist so os.ReadDir fails.
+	_, err := detectFiles(filepath.Join(t.TempDir(), "nonexistent"), nil)
+	if err == nil {
+		t.Fatal("expected error for nonexistent directory")
 	}
 }
 
@@ -687,6 +702,90 @@ func TestScan_DeletedLibrary_NoRepopulate(t *testing.T) {
 	}
 }
 
+func TestScan_PlaceholderGenerated(t *testing.T) {
+	libDir := t.TempDir()
+	artistDir := filepath.Join(libDir, "Placeholders")
+	if err := os.MkdirAll(artistDir, 0o755); err != nil {
+		t.Fatalf("creating dir: %v", err)
+	}
+
+	// Write real PNG images so placeholder generation can decode them.
+	thumbData := makeScannerPNG(t, 100, 100)
+	fanartData := makeScannerPNG(t, 200, 100)
+	if err := os.WriteFile(filepath.Join(artistDir, "folder.jpg"), thumbData, 0o644); err != nil {
+		t.Fatalf("writing folder.jpg: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(artistDir, "fanart.jpg"), fanartData, 0o644); err != nil {
+		t.Fatalf("writing fanart.jpg: %v", err)
+	}
+
+	svc, artistSvc := setupScanner(t, libDir)
+	ctx := context.Background()
+
+	if _, err := svc.Run(ctx); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	waitForScan(t, svc, 5*time.Second)
+
+	a, err := artistSvc.GetByPath(ctx, artistDir)
+	if err != nil {
+		t.Fatalf("GetByPath: %v", err)
+	}
+	if a == nil {
+		t.Fatal("artist not found")
+	}
+
+	if !strings.HasPrefix(a.ThumbPlaceholder, "data:image/") {
+		t.Errorf("ThumbPlaceholder should start with data:image/, got %q", truncate30(a.ThumbPlaceholder))
+	}
+	if !strings.HasPrefix(a.FanartPlaceholder, "data:image/") {
+		t.Errorf("FanartPlaceholder should start with data:image/, got %q", truncate30(a.FanartPlaceholder))
+	}
+	if a.LogoPlaceholder != "" {
+		t.Errorf("LogoPlaceholder should be empty (no logo file), got %q", truncate30(a.LogoPlaceholder))
+	}
+}
+
+func TestDetectFiles_Placeholders(t *testing.T) {
+	dir := t.TempDir()
+
+	// Write real images so placeholder generation can decode them.
+	thumbData := makeScannerPNG(t, 300, 300)
+	logoData := makeScannerPNG(t, 800, 310)
+	if err := os.WriteFile(filepath.Join(dir, "folder.jpg"), thumbData, 0o644); err != nil {
+		t.Fatalf("writing folder.jpg: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "logo.png"), logoData, 0o644); err != nil {
+		t.Fatalf("writing logo.png: %v", err)
+	}
+
+	d, err := detectFiles(dir, nil)
+	if err != nil {
+		t.Fatalf("detectFiles: %v", err)
+	}
+
+	if !strings.HasPrefix(d.ThumbPlaceholder, "data:image/jpeg;base64,") {
+		t.Errorf("ThumbPlaceholder should be a JPEG data URI, got prefix %q", truncate30(d.ThumbPlaceholder))
+	}
+	if !strings.HasPrefix(d.LogoPlaceholder, "data:image/png;base64,") {
+		t.Errorf("LogoPlaceholder should be a PNG data URI, got prefix %q", truncate30(d.LogoPlaceholder))
+	}
+	if d.FanartPlaceholder != "" {
+		t.Errorf("FanartPlaceholder should be empty (no fanart file), got %q", truncate30(d.FanartPlaceholder))
+	}
+	if d.BannerPlaceholder != "" {
+		t.Errorf("BannerPlaceholder should be empty (no banner file), got %q", truncate30(d.BannerPlaceholder))
+	}
+}
+
+// truncate30 returns the first 30 bytes of s (with "..." suffix), or s if shorter.
+func truncate30(s string) string {
+	if len(s) <= 30 {
+		return s
+	}
+	return s[:30] + "..."
+}
+
 // makeScannerPNG creates a minimal PNG image with the given dimensions.
 func makeScannerPNG(t *testing.T, w, h int) []byte {
 	t.Helper()
@@ -696,4 +795,91 @@ func makeScannerPNG(t *testing.T, w, h int) []byte {
 		t.Fatalf("encoding PNG: %v", err)
 	}
 	return buf.Bytes()
+}
+
+func TestDetectFiles_SkipsExistingPlaceholder(t *testing.T) {
+	dir := t.TempDir()
+
+	// Write a real PNG so probeImageFile can decode dimensions.
+	thumbData := makeScannerPNG(t, 600, 600)
+	if err := os.WriteFile(filepath.Join(dir, "folder.jpg"), thumbData, 0o644); err != nil {
+		t.Fatalf("writing folder.jpg: %v", err)
+	}
+
+	existingPH := "data:image/jpeg;base64,EXISTING"
+
+	// Pass an existing artist with a placeholder already set.
+	existing := &artist.Artist{
+		ThumbPlaceholder: existingPH,
+	}
+
+	d, err := detectFiles(dir, existing)
+	if err != nil {
+		t.Fatalf("detectFiles: %v", err)
+	}
+
+	if !d.ThumbExists {
+		t.Fatal("ThumbExists should be true")
+	}
+	// The existing placeholder should be reused without regeneration.
+	if d.ThumbPlaceholder != existingPH {
+		t.Errorf("ThumbPlaceholder = %q, want %q (should reuse existing)", truncate30(d.ThumbPlaceholder), existingPH)
+	}
+}
+
+func TestProcessDirectory_TransientFailurePreservesPlaceholder(t *testing.T) {
+	libDir := t.TempDir()
+	artistDir := filepath.Join(libDir, "Transient")
+	if err := os.MkdirAll(artistDir, 0o755); err != nil {
+		t.Fatalf("creating dir: %v", err)
+	}
+
+	// Write a real PNG for the initial scan.
+	thumbData := makeScannerPNG(t, 600, 600)
+	if err := os.WriteFile(filepath.Join(artistDir, "folder.jpg"), thumbData, 0o644); err != nil {
+		t.Fatalf("writing folder.jpg: %v", err)
+	}
+
+	svc, artistSvc := setupScanner(t, libDir)
+	ctx := context.Background()
+
+	// First scan: artist is created with a valid placeholder.
+	if _, err := svc.Run(ctx); err != nil {
+		t.Fatalf("Run 1: %v", err)
+	}
+	waitForScan(t, svc, 5*time.Second)
+
+	a, _ := artistSvc.GetByPath(ctx, artistDir)
+	if a == nil {
+		t.Fatal("artist not found after first scan")
+	}
+	if !strings.HasPrefix(a.ThumbPlaceholder, "data:image/") {
+		t.Fatalf("expected valid placeholder after first scan, got %q", truncate30(a.ThumbPlaceholder))
+	}
+	savedPH := a.ThumbPlaceholder
+
+	// Replace the image with an invalid file to simulate a transient I/O failure
+	// during placeholder generation (file exists but decode fails).
+	if err := os.WriteFile(filepath.Join(artistDir, "folder.jpg"), []byte("corrupted"), 0o644); err != nil {
+		t.Fatalf("writing corrupted folder.jpg: %v", err)
+	}
+
+	// Second scan: placeholder generation will fail on the corrupted file.
+	if _, err := svc.Run(ctx); err != nil {
+		t.Fatalf("Run 2: %v", err)
+	}
+	waitForScan(t, svc, 5*time.Second)
+
+	a, _ = artistSvc.GetByPath(ctx, artistDir)
+	if a == nil {
+		t.Fatal("artist not found after second scan")
+	}
+	if !a.ThumbExists {
+		t.Error("ThumbExists should still be true (file exists on disk)")
+	}
+	// The existing placeholder should be preserved despite the transient failure.
+	if a.ThumbPlaceholder != savedPH {
+		t.Errorf("ThumbPlaceholder changed after transient failure: got %q, want %q",
+			truncate30(a.ThumbPlaceholder), truncate30(savedPH))
+	}
 }

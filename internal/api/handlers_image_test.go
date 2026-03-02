@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -65,6 +66,9 @@ func TestSetArtistImageFlag_LowRes(t *testing.T) {
 	if !a.ThumbLowRes {
 		t.Error("ThumbLowRes should be true for 300x300 thumb")
 	}
+	if !strings.HasPrefix(a.ThumbPlaceholder, "data:image/jpeg;base64,") {
+		t.Errorf("ThumbPlaceholder should be a JPEG data URI, got prefix %q", a.ThumbPlaceholder[:min(len(a.ThumbPlaceholder), 30)])
+	}
 }
 
 func TestSetArtistImageFlag_GoodRes(t *testing.T) {
@@ -86,6 +90,9 @@ func TestSetArtistImageFlag_GoodRes(t *testing.T) {
 	if a.ThumbLowRes {
 		t.Error("ThumbLowRes should be false for 1000x1000 thumb")
 	}
+	if !strings.HasPrefix(a.ThumbPlaceholder, "data:image/jpeg;base64,") {
+		t.Errorf("ThumbPlaceholder should be a JPEG data URI, got prefix %q", a.ThumbPlaceholder[:min(len(a.ThumbPlaceholder), 30)])
+	}
 }
 
 func TestSetArtistImageFlag_Delete(t *testing.T) {
@@ -106,6 +113,9 @@ func TestSetArtistImageFlag_Delete(t *testing.T) {
 	}
 	if a.ThumbLowRes {
 		t.Error("ThumbLowRes should be false after deletion")
+	}
+	if a.ThumbPlaceholder != "" {
+		t.Errorf("ThumbPlaceholder should be empty after deletion, got %q", a.ThumbPlaceholder[:min(len(a.ThumbPlaceholder), 30)])
 	}
 }
 
@@ -235,5 +245,38 @@ func TestSetArtistImageFlag_UnreadableFile(t *testing.T) {
 	}
 	if a.ThumbLowRes {
 		t.Error("ThumbLowRes should be false when dimensions cannot be read")
+	}
+	if a.ThumbPlaceholder != "" {
+		t.Errorf("ThumbPlaceholder should be empty for unreadable image, got %q", a.ThumbPlaceholder[:min(len(a.ThumbPlaceholder), 30)])
+	}
+}
+
+func TestSetArtistImageFlag_TransientPreservesPlaceholder(t *testing.T) {
+	r, artistSvc := testRouterWithPlatform(t)
+	dir := t.TempDir()
+
+	existingPH := "data:image/jpeg;base64,EXISTING"
+	a := &artist.Artist{
+		Name: "Test", SortName: "Test", Path: dir,
+		ThumbExists: true, ThumbPlaceholder: existingPH,
+	}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	// Write a corrupted file: image exists on disk but decode will fail.
+	if err := os.WriteFile(filepath.Join(dir, "folder.jpg"), []byte("corrupted"), 0o644); err != nil {
+		t.Fatalf("writing bad file: %v", err)
+	}
+
+	r.setArtistImageFlag(context.Background(), a, "thumb", true)
+
+	if !a.ThumbExists {
+		t.Error("ThumbExists should be true")
+	}
+	// Existing placeholder should be preserved when generation fails transiently.
+	if a.ThumbPlaceholder != existingPH {
+		t.Errorf("ThumbPlaceholder = %q, want %q (should be preserved on transient failure)",
+			a.ThumbPlaceholder[:min(len(a.ThumbPlaceholder), 30)], existingPH)
 	}
 }

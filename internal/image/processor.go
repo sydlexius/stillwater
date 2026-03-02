@@ -3,6 +3,7 @@ package image
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"fmt"
 	"image"
 	"image/jpeg"
@@ -395,6 +396,69 @@ func Crop(src io.Reader, x, y, w, h int) ([]byte, string, error) {
 	}
 
 	return data, outFormat, nil
+}
+
+// Size limits for placeholder generation to prevent OOM on huge images.
+const (
+	maxPlaceholderBytes  int64 = 25 << 20    // 25 MB (matches upload limit)
+	maxPlaceholderPixels int64 = 100_000_000 // 100 megapixels
+)
+
+// GeneratePlaceholder creates a tiny 16x16 base64-encoded data URI from the
+// source image. Logos are encoded as PNG (to preserve alpha); all other types
+// use JPEG at quality 20. Returns an empty string and an error on decode failure.
+// Images exceeding 25 MB or 100 megapixels are rejected to prevent OOM.
+func GeneratePlaceholder(src io.Reader, imageType string) (string, error) {
+	_, replay, err := DetectFormat(src)
+	if err != nil {
+		return "", fmt.Errorf("detecting format: %w", err)
+	}
+
+	data, err := io.ReadAll(io.LimitReader(replay, maxPlaceholderBytes+1))
+	if err != nil {
+		return "", fmt.Errorf("reading image data: %w", err)
+	}
+	if int64(len(data)) > maxPlaceholderBytes {
+		return "", fmt.Errorf("image too large for placeholder (%d bytes, max %d)", len(data), maxPlaceholderBytes)
+	}
+
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		return "", fmt.Errorf("decoding image config: %w", err)
+	}
+	w := int64(cfg.Width)
+	h := int64(cfg.Height)
+	if w <= 0 || h <= 0 {
+		return "", fmt.Errorf("invalid image dimensions (%dx%d)", cfg.Width, cfg.Height)
+	}
+	if h > maxPlaceholderPixels || w > maxPlaceholderPixels/h {
+		return "", fmt.Errorf("image too many pixels for placeholder (%dx%d, max %d)", cfg.Width, cfg.Height, maxPlaceholderPixels)
+	}
+
+	decoded, _, err := image.Decode(bytes.NewReader(data))
+	if err != nil {
+		return "", fmt.Errorf("decoding image: %w", err)
+	}
+
+	dst := image.NewRGBA(image.Rect(0, 0, 16, 16))
+	draw.CatmullRom.Scale(dst, dst.Bounds(), decoded, decoded.Bounds(), draw.Over, nil)
+
+	var buf bytes.Buffer
+	var mimeType string
+	if imageType == "logo" {
+		if err := png.Encode(&buf, dst); err != nil {
+			return "", fmt.Errorf("encoding placeholder png: %w", err)
+		}
+		mimeType = "image/png"
+	} else {
+		if err := jpeg.Encode(&buf, dst, &jpeg.Options{Quality: 20}); err != nil {
+			return "", fmt.Errorf("encoding placeholder jpeg: %w", err)
+		}
+		mimeType = "image/jpeg"
+	}
+
+	encoded := base64.StdEncoding.EncodeToString(buf.Bytes())
+	return "data:" + mimeType + ";base64," + encoded, nil
 }
 
 // fitDimensions calculates the scaled dimensions that fit within maxW x maxH

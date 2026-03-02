@@ -3,6 +3,8 @@ package image
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
+	"hash/crc32"
 	"image"
 	"image/color"
 	"image/jpeg"
@@ -10,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -395,6 +398,126 @@ func TestTrimAlphaBounds_JPEG(t *testing.T) {
 	}
 	if original.Dx() != 100 || original.Dy() != 50 {
 		t.Errorf("original = %v, want 100x50", original)
+	}
+}
+
+func TestGeneratePlaceholder_JPEG(t *testing.T) {
+	data := makeJPEG(t, 500, 500)
+	result, err := GeneratePlaceholder(bytes.NewReader(data), "thumb")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	prefix := "data:image/jpeg;base64,"
+	if !strings.HasPrefix(result, prefix) {
+		t.Fatalf("result should start with %q, got prefix %q", prefix, result[:min(len(result), len(prefix)+5)])
+	}
+	// Decode and verify dimensions
+	b64 := result[len(prefix):]
+	decoded, err := base64.StdEncoding.DecodeString(b64)
+	if err != nil {
+		t.Fatalf("base64 decode: %v", err)
+	}
+	w, h, err := GetDimensions(bytes.NewReader(decoded))
+	if err != nil {
+		t.Fatalf("decoding placeholder dimensions: %v", err)
+	}
+	if w != 16 || h != 16 {
+		t.Errorf("placeholder dimensions = %dx%d, want 16x16", w, h)
+	}
+}
+
+func TestGeneratePlaceholder_PNG(t *testing.T) {
+	data := makePNG(t, 500, 500)
+	result, err := GeneratePlaceholder(bytes.NewReader(data), "fanart")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Non-logo PNG should become JPEG placeholder
+	if !strings.HasPrefix(result, "data:image/jpeg;base64,") {
+		t.Errorf("non-logo PNG placeholder should use JPEG encoding, got prefix %q", result[:min(len(result), 30)])
+	}
+}
+
+func TestGeneratePlaceholder_Logo(t *testing.T) {
+	data := makePNG(t, 500, 500)
+	result, err := GeneratePlaceholder(bytes.NewReader(data), "logo")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Logo should stay PNG
+	if !strings.HasPrefix(result, "data:image/png;base64,") {
+		t.Errorf("logo placeholder should use PNG encoding, got prefix %q", result[:min(len(result), 30)])
+	}
+}
+
+func TestGeneratePlaceholder_InvalidInput(t *testing.T) {
+	result, err := GeneratePlaceholder(bytes.NewReader([]byte("not an image")), "thumb")
+	if err == nil {
+		t.Error("expected error for invalid input")
+	}
+	if result != "" {
+		t.Errorf("expected empty result, got %q", result)
+	}
+}
+
+func TestGeneratePlaceholder_TooLargeBytes(t *testing.T) {
+	// Create data that exceeds maxPlaceholderBytes (25 MB).
+	// We don't need a valid image -- the size check happens before decode.
+	// Prepend a valid JPEG header so DetectFormat succeeds.
+	header := makeJPEG(t, 1, 1)
+	padding := make([]byte, 26<<20) // 26 MB
+	data := append(header, padding...)
+
+	result, err := GeneratePlaceholder(bytes.NewReader(data), "thumb")
+	if err == nil {
+		t.Error("expected error for oversized input")
+	}
+	if result != "" {
+		t.Errorf("expected empty result, got %q", result[:min(len(result), 30)])
+	}
+	if err != nil && !strings.Contains(err.Error(), "too large") {
+		t.Errorf("error should mention 'too large', got: %v", err)
+	}
+}
+
+func TestGeneratePlaceholder_ZeroDimensions(t *testing.T) {
+	// Construct a minimal valid PNG with 0x0 dimensions in the IHDR chunk.
+	// PNG signature (8 bytes) + IHDR chunk (25 bytes) + IEND chunk (12 bytes).
+	// IHDR: length(4) + "IHDR"(4) + width(4) + height(4) + bitdepth(1) +
+	//       colortype(1) + compression(1) + filter(1) + interlace(1) + CRC(4)
+	var buf bytes.Buffer
+
+	// PNG signature
+	buf.Write([]byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A})
+
+	// IHDR chunk: length = 13
+	buf.Write([]byte{0x00, 0x00, 0x00, 0x0D}) // length
+	ihdr := []byte{
+		0x49, 0x48, 0x44, 0x52, // "IHDR"
+		0x00, 0x00, 0x00, 0x00, // width = 0
+		0x00, 0x00, 0x00, 0x00, // height = 0
+		0x08,             // bit depth
+		0x02,             // color type (RGB)
+		0x00, 0x00, 0x00, // compression, filter, interlace
+	}
+	buf.Write(ihdr)
+	// CRC32 over "IHDR" + data
+	crc := crc32.ChecksumIEEE(ihdr)
+	buf.Write([]byte{byte(crc >> 24), byte(crc >> 16), byte(crc >> 8), byte(crc)})
+
+	// IEND chunk
+	buf.Write([]byte{0x00, 0x00, 0x00, 0x00})
+	iend := []byte{0x49, 0x45, 0x4E, 0x44}
+	buf.Write(iend)
+	crc = crc32.ChecksumIEEE(iend)
+	buf.Write([]byte{byte(crc >> 24), byte(crc >> 16), byte(crc >> 8), byte(crc)})
+
+	result, err := GeneratePlaceholder(bytes.NewReader(buf.Bytes()), "thumb")
+	if err == nil {
+		t.Error("expected error for zero-dimension image")
+	}
+	if result != "" {
+		t.Errorf("expected empty result, got %q", result)
 	}
 }
 
