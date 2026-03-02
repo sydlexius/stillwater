@@ -487,9 +487,22 @@ func existingImageFileNames(ctx context.Context, dir, imageType string, platform
 	if len(all) == 0 {
 		all = img.FileNamesForType(img.DefaultFileNames, imageType)
 	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if len(all) > 0 {
+			return all[:1]
+		}
+		return nil
+	}
+	lowerNames := make(map[string]struct{}, len(entries))
+	for _, e := range entries {
+		if !e.IsDir() {
+			lowerNames[strings.ToLower(e.Name())] = struct{}{}
+		}
+	}
 	var found []string
 	for _, name := range all {
-		if _, err := os.Stat(filepath.Join(dir, name)); err == nil {
+		if _, ok := lowerNames[strings.ToLower(name)]; ok {
 			found = append(found, name)
 		}
 	}

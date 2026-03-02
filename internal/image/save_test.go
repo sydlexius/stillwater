@@ -284,6 +284,58 @@ func TestSave_Symlinks_ExtensionCoercionDuplicate(t *testing.T) {
 	}
 }
 
+func TestSave_OverwritesCaseMismatchedFile(t *testing.T) {
+	dir := t.TempDir()
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+
+	// Create a differently-cased file on disk (simulates case-sensitive filesystem)
+	if err := os.WriteFile(filepath.Join(dir, "Folder.JPG"), []byte("old data"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Save with the canonical (lowercase) name
+	jpegData := makeJPEG(t, 100, 100)
+	saved, err := Save(dir, "thumb", jpegData, []string{"folder.jpg"}, false, logger)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(saved) != 1 || saved[0] != "folder.jpg" {
+		t.Errorf("saved = %v, want [folder.jpg]", saved)
+	}
+
+	// The canonical file should exist with valid content
+	newData, err := os.ReadFile(filepath.Join(dir, "folder.jpg"))
+	if err != nil {
+		t.Fatalf("folder.jpg should exist: %v", err)
+	}
+	format, _, err := DetectFormat(bytesReader(newData))
+	if err != nil {
+		t.Fatalf("DetectFormat: %v", err)
+	}
+	if format != FormatJPEG {
+		t.Errorf("format = %q, want %q", format, FormatJPEG)
+	}
+
+	// Verify exactly one file in the directory, named "folder.jpg".
+	// We use ReadDir instead of os.Stat because Stat follows the underlying
+	// filesystem's lookup rules, which are typically case-insensitive on
+	// Windows and default macOS volumes and would treat "folder.jpg" and
+	// "Folder.JPG" as the same file.
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		names := make([]string, len(entries))
+		for i, e := range entries {
+			names[i] = e.Name()
+		}
+		t.Errorf("expected 1 file, got %d: %v", len(entries), names)
+	} else if entries[0].Name() != "folder.jpg" {
+		t.Errorf("expected file named folder.jpg, got %s", entries[0].Name())
+	}
+}
+
 func TestSave_Symlinks_SingleFile(t *testing.T) {
 	dir := t.TempDir()
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))

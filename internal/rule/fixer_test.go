@@ -706,6 +706,24 @@ func TestExistingImageFileNames_OnlyWritesExistingFiles(t *testing.T) {
 	}
 }
 
+func TestExistingImageFileNames_CaseInsensitive(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create file with non-canonical casing
+	if err := os.WriteFile(filepath.Join(dir, "Folder.JPG"), []byte("x"), 0o644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	got := existingImageFileNames(context.Background(), dir, "thumb", nil)
+	if len(got) != 1 {
+		t.Fatalf("want 1 match, got %d: %v", len(got), got)
+	}
+	// Should return the canonical name so img.Save uses a consistent extension
+	if got[0] != "folder.jpg" {
+		t.Errorf("existingImageFileNames = %q; want folder.jpg (canonical name)", got[0])
+	}
+}
+
 func TestExistingImageFileNames_FallsBackToPrimary(t *testing.T) {
 	dir := t.TempDir() // empty -- no existing files
 
