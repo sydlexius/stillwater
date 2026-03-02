@@ -78,7 +78,7 @@ they can be implemented in parallel as long as history hooks are added to the ex
 
 ## Notes
 
-- 2026-03-01: Plan file created. All three PRs currently contain design/analysis docs only.
+- 2026-03-01: Plan file created. Issues and PR numbers reserved; implementation PRs are not yet opened and will start as design/analysis docs only.
 - #321 is `scope: large` with `[mode: plan] [model: opus]`; #322 is `scope: medium` with `[mode: plan] [model: sonnet]`; #323 is `scope: medium` with `[mode: direct] [model: sonnet]`.
 - Existing `nfo_snapshots` table tracks full NFO XML; new `metadata_changes` table tracks individual field-level changes -- these are complementary, not replacements.
 - Image archive directory: `{dataDir}/image_archive/{artistID}/` with timestamped filenames.
