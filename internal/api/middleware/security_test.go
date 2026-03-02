@@ -82,7 +82,7 @@ func TestSecurityHeaders_CSPPresent(t *testing.T) {
 		"default-src 'self'",
 		"script-src",
 		"style-src",
-		"connect-src 'self'",
+		"connect-src 'self' https://cdn.jsdelivr.net",
 		"object-src 'none'",
 		"frame-ancestors 'none'",
 	}
