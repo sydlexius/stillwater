@@ -28,7 +28,7 @@ components:
       in: query
       name: apikey
       description: "Deprecated: prefer bearerAuth (Authorization header). Query-string tokens risk leakage via logs and referrers."
-      deprecated: true
+      x-deprecated: true
   schemas:
     Error:
       type: object
@@ -460,6 +460,7 @@ paths:
                 scopes:
                   type: string
                   description: Comma-separated scopes (default "read")
+                  default: read
               required: [name]
       responses:
         "201":
