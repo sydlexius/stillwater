@@ -148,7 +148,7 @@ func severityBadgeClasses(severity string) string {
 func ruleHasConfig(id string) bool {
 	switch id {
 	case "thumb_min_res", "thumb_square", "fanart_min_res", "fanart_aspect",
-		"logo_min_res", "banner_min_res", "bio_exists":
+		"logo_min_res", "banner_min_res", "bio_exists", "logo_trimmable":
 		return true
 	}
 	return false
@@ -3219,6 +3219,20 @@ templ ruleConfigForm(rl rule.Rule) {
 				/>
 			</label>
 		}
+		if rl.ID == "logo_trimmable" {
+			<label class="block">
+				<span class="text-xs text-gray-600 dark:text-gray-400">Threshold % (per side)</span>
+				<input
+					type="number"
+					name="threshold_percent"
+					step="0.5"
+					min="1"
+					max="50"
+					value={ floatOrDefault(rl.Config.ThresholdPercent, 5) }
+					class="mt-0.5 w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+				/>
+			</label>
+		}
 		<label class="block">
 			<span class="text-xs text-gray-600 dark:text-gray-400">Severity</span>
 			<select
@@ -3396,7 +3410,7 @@ templ ruleToggleScript() {
 			var form = event.target;
 			var ruleID = form.dataset.ruleId;
 			var cfg = {};
-			['min_width', 'min_height', 'aspect_ratio', 'tolerance', 'min_length'].forEach(function(f) {
+			['min_width', 'min_height', 'aspect_ratio', 'tolerance', 'min_length', 'threshold_percent'].forEach(function(f) {
 				var el = form.elements[f];
 				if (el && el.value !== '') cfg[f] = parseFloat(el.value);
 			});

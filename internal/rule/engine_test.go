@@ -280,8 +280,8 @@ func TestEngine_WithRealDB(t *testing.T) {
 		t.Fatal("expected non-nil engine")
 	}
 
-	// Verify all checkers are registered (8 core + 5 image quality + 1 extraneous + 1 mismatch = 15)
-	if len(engine.checkers) != 15 {
-		t.Errorf("expected 15 checkers, got %d", len(engine.checkers))
+	// Verify all checkers are registered (8 core + 5 image quality + 1 extraneous + 1 mismatch + 1 logo trim = 16)
+	if len(engine.checkers) != 16 {
+		t.Errorf("expected 16 checkers, got %d", len(engine.checkers))
 	}
 }

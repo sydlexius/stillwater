@@ -26,7 +26,7 @@ var thumbPatterns = []string{
 }
 
 var fanartPatterns = []string{"fanart.jpg", "fanart.png", "backdrop.jpg", "backdrop.png"}
-var logoPatterns = []string{"logo.png", "logo.jpg", "clearlogo.png"}
+var logoPatterns = []string{"logo.png", "logo-white.png"}
 var bannerPatterns = []string{"banner.jpg", "banner.png"}
 
 func checkNFOExists(a *artist.Artist, _ RuleConfig) *Violation {
@@ -198,16 +198,16 @@ func getImageDimensions(dirPath string, patterns []string) (int, int, error) {
 		return 0, 0, fmt.Errorf("reading directory: %w", err)
 	}
 
-	files := make(map[string]bool, len(entries))
+	lowerToActual := make(map[string]string, len(entries))
 	for _, e := range entries {
 		if !e.IsDir() {
-			files[strings.ToLower(e.Name())] = true
+			lowerToActual[strings.ToLower(e.Name())] = e.Name()
 		}
 	}
 
 	for _, pattern := range patterns {
-		if files[strings.ToLower(pattern)] {
-			p := filepath.Join(dirPath, pattern)
+		if actual, ok := lowerToActual[strings.ToLower(pattern)]; ok {
+			p := filepath.Join(dirPath, actual)
 			f, err := os.Open(p) //nolint:gosec // G304: path from trusted library root
 			if err != nil {
 				continue
@@ -437,6 +437,84 @@ func nameSimilarity(a, b string) float64 {
 	}
 	dist := levenshteinDistance(a, b)
 	return 1.0 - float64(dist)/float64(maxLen)
+}
+
+func checkLogoTrimmable(a *artist.Artist, cfg RuleConfig) *Violation {
+	if !a.LogoExists || a.Path == "" {
+		return nil
+	}
+
+	// Find the logo file on disk using case-insensitive matching; only PNG
+	// files have an alpha channel.
+	entries, readErr := os.ReadDir(a.Path)
+	if readErr != nil {
+		return nil
+	}
+	lowerToActual := make(map[string]string, len(entries))
+	for _, e := range entries {
+		if !e.IsDir() {
+			lowerToActual[strings.ToLower(e.Name())] = e.Name()
+		}
+	}
+
+	var logoPath string
+	for _, pattern := range logoPatterns {
+		if actual, ok := lowerToActual[strings.ToLower(pattern)]; ok {
+			if strings.ToLower(filepath.Ext(actual)) == ".png" {
+				logoPath = filepath.Join(a.Path, actual)
+				break
+			}
+		}
+	}
+	if logoPath == "" {
+		return nil
+	}
+
+	f, err := os.Open(logoPath) //nolint:gosec // G304: path from trusted library root
+	if err != nil {
+		return nil
+	}
+	defer f.Close() //nolint:errcheck
+
+	content, original, err := image.TrimAlphaBounds(f, 128)
+	if err != nil || original.Dx() == 0 || original.Dy() == 0 {
+		return nil
+	}
+
+	// If content equals original, there is no padding to trim.
+	if content == original {
+		return nil
+	}
+
+	threshold := cfg.ThresholdPercent
+	if threshold <= 0 {
+		threshold = 5
+	}
+	if threshold > 100 {
+		threshold = 100
+	}
+	threshFrac := threshold / 100.0
+
+	leftFrac := float64(content.Min.X-original.Min.X) / float64(original.Dx())
+	rightFrac := float64(original.Max.X-content.Max.X) / float64(original.Dx())
+	topFrac := float64(content.Min.Y-original.Min.Y) / float64(original.Dy())
+	bottomFrac := float64(original.Max.Y-content.Max.Y) / float64(original.Dy())
+
+	if leftFrac <= threshFrac && rightFrac <= threshFrac && topFrac <= threshFrac && bottomFrac <= threshFrac {
+		return nil
+	}
+
+	return &Violation{
+		RuleID:   RuleLogoTrimmable,
+		RuleName: "Logo transparent padding",
+		Category: "image",
+		Severity: effectiveSeverity(cfg),
+		Message: fmt.Sprintf(
+			"artist %q logo has excess transparent padding (left %.1f%%, right %.1f%%, top %.1f%%, bottom %.1f%%)",
+			a.Name, leftFrac*100, rightFrac*100, topFrac*100, bottomFrac*100,
+		),
+		Fixable: true,
+	}
 }
 
 func checkArtistIDMismatch(a *artist.Artist, cfg RuleConfig) *Violation {
