@@ -17,6 +17,10 @@ components:
       type: apiKey
       in: cookie
       name: session
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: API token (sw_ prefix) via Authorization header or apikey query parameter
   schemas:
     Error:
       type: object
@@ -2281,9 +2285,10 @@ paths:
             type: string
         - name: deleteArtists
           in: query
-          description: When "true", cascade-delete artists instead of dereferencing them
+          description: When true, cascade-delete artists instead of dereferencing them
           schema:
-            type: string
+            type: boolean
+            default: false
       responses:
         "200":
           description: Library deleted
@@ -3094,6 +3099,24 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Status"
+        "400":
+          description: Invalid webhook payload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Authentication required or invalid token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Missing required webhook scope
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   # --- Settings extras ---
 
