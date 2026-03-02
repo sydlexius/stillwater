@@ -3,6 +3,7 @@ package image
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"fmt"
 	"image"
 	"image/jpeg"
@@ -395,6 +396,41 @@ func Crop(src io.Reader, x, y, w, h int) ([]byte, string, error) {
 	}
 
 	return data, outFormat, nil
+}
+
+// GeneratePlaceholder creates a tiny 16x16 base64-encoded data URI from the
+// source image. Logos are encoded as PNG (to preserve alpha); all other types
+// use JPEG at quality 20. Returns an empty string and an error on decode failure.
+func GeneratePlaceholder(src io.Reader, imageType string) (string, error) {
+	_, replay, err := DetectFormat(src)
+	if err != nil {
+		return "", fmt.Errorf("detecting format: %w", err)
+	}
+
+	decoded, _, err := image.Decode(replay)
+	if err != nil {
+		return "", fmt.Errorf("decoding image: %w", err)
+	}
+
+	dst := image.NewRGBA(image.Rect(0, 0, 16, 16))
+	draw.CatmullRom.Scale(dst, dst.Bounds(), decoded, decoded.Bounds(), draw.Over, nil)
+
+	var buf bytes.Buffer
+	var mimeType string
+	if imageType == "logo" {
+		if err := png.Encode(&buf, dst); err != nil {
+			return "", fmt.Errorf("encoding placeholder png: %w", err)
+		}
+		mimeType = "image/png"
+	} else {
+		if err := jpeg.Encode(&buf, dst, &jpeg.Options{Quality: 20}); err != nil {
+			return "", fmt.Errorf("encoding placeholder jpeg: %w", err)
+		}
+		mimeType = "image/jpeg"
+	}
+
+	encoded := base64.StdEncoding.EncodeToString(buf.Bytes())
+	return "data:" + mimeType + ";base64," + encoded, nil
 }
 
 // fitDimensions calculates the scaled dimensions that fit within maxW x maxH

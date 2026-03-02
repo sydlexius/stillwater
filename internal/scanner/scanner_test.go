@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -685,6 +686,87 @@ func TestScan_DeletedLibrary_NoRepopulate(t *testing.T) {
 	if a != nil {
 		t.Error("artist should not be re-created after library deletion")
 	}
+}
+
+func TestScan_PlaceholderGenerated(t *testing.T) {
+	libDir := t.TempDir()
+	artistDir := filepath.Join(libDir, "Placeholders")
+	if err := os.MkdirAll(artistDir, 0o755); err != nil {
+		t.Fatalf("creating dir: %v", err)
+	}
+
+	// Write real PNG images so placeholder generation can decode them.
+	thumbData := makeScannerPNG(t, 100, 100)
+	fanartData := makeScannerPNG(t, 200, 100)
+	if err := os.WriteFile(filepath.Join(artistDir, "folder.jpg"), thumbData, 0o644); err != nil {
+		t.Fatalf("writing folder.jpg: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(artistDir, "fanart.jpg"), fanartData, 0o644); err != nil {
+		t.Fatalf("writing fanart.jpg: %v", err)
+	}
+
+	svc, artistSvc := setupScanner(t, libDir)
+	ctx := context.Background()
+
+	if _, err := svc.Run(ctx); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	waitForScan(t, svc, 5*time.Second)
+
+	a, err := artistSvc.GetByPath(ctx, artistDir)
+	if err != nil {
+		t.Fatalf("GetByPath: %v", err)
+	}
+	if a == nil {
+		t.Fatal("artist not found")
+	}
+
+	if !strings.HasPrefix(a.ThumbPlaceholder, "data:image/") {
+		t.Errorf("ThumbPlaceholder should start with data:image/, got %q", truncate30(a.ThumbPlaceholder))
+	}
+	if !strings.HasPrefix(a.FanartPlaceholder, "data:image/") {
+		t.Errorf("FanartPlaceholder should start with data:image/, got %q", truncate30(a.FanartPlaceholder))
+	}
+	if a.LogoPlaceholder != "" {
+		t.Errorf("LogoPlaceholder should be empty (no logo file), got %q", truncate30(a.LogoPlaceholder))
+	}
+}
+
+func TestDetectFiles_Placeholders(t *testing.T) {
+	dir := t.TempDir()
+
+	// Write real images so placeholder generation can decode them.
+	thumbData := makeScannerPNG(t, 300, 300)
+	logoData := makeScannerPNG(t, 800, 310)
+	if err := os.WriteFile(filepath.Join(dir, "folder.jpg"), thumbData, 0o644); err != nil {
+		t.Fatalf("writing folder.jpg: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "logo.png"), logoData, 0o644); err != nil {
+		t.Fatalf("writing logo.png: %v", err)
+	}
+
+	d := detectFiles(dir)
+
+	if !strings.HasPrefix(d.ThumbPlaceholder, "data:image/jpeg;base64,") {
+		t.Errorf("ThumbPlaceholder should be a JPEG data URI, got prefix %q", truncate30(d.ThumbPlaceholder))
+	}
+	if !strings.HasPrefix(d.LogoPlaceholder, "data:image/png;base64,") {
+		t.Errorf("LogoPlaceholder should be a PNG data URI, got prefix %q", truncate30(d.LogoPlaceholder))
+	}
+	if d.FanartPlaceholder != "" {
+		t.Errorf("FanartPlaceholder should be empty (no fanart file), got %q", truncate30(d.FanartPlaceholder))
+	}
+	if d.BannerPlaceholder != "" {
+		t.Errorf("BannerPlaceholder should be empty (no banner file), got %q", truncate30(d.BannerPlaceholder))
+	}
+}
+
+// truncate30 returns the first 30 bytes of s (with "..." suffix), or s if shorter.
+func truncate30(s string) string {
+	if len(s) <= 30 {
+		return s
+	}
+	return s[:30] + "..."
 }
 
 // makeScannerPNG creates a minimal PNG image with the given dimensions.

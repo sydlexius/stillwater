@@ -3,6 +3,7 @@ package image
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"image"
 	"image/color"
 	"image/jpeg"
@@ -10,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -395,6 +397,65 @@ func TestTrimAlphaBounds_JPEG(t *testing.T) {
 	}
 	if original.Dx() != 100 || original.Dy() != 50 {
 		t.Errorf("original = %v, want 100x50", original)
+	}
+}
+
+func TestGeneratePlaceholder_JPEG(t *testing.T) {
+	data := makeJPEG(t, 500, 500)
+	result, err := GeneratePlaceholder(bytes.NewReader(data), "thumb")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	prefix := "data:image/jpeg;base64,"
+	if !strings.HasPrefix(result, prefix) {
+		t.Fatalf("result should start with %q, got prefix %q", prefix, result[:min(len(result), len(prefix)+5)])
+	}
+	// Decode and verify dimensions
+	b64 := result[len(prefix):]
+	decoded, err := base64.StdEncoding.DecodeString(b64)
+	if err != nil {
+		t.Fatalf("base64 decode: %v", err)
+	}
+	w, h, err := GetDimensions(bytes.NewReader(decoded))
+	if err != nil {
+		t.Fatalf("decoding placeholder dimensions: %v", err)
+	}
+	if w != 16 || h != 16 {
+		t.Errorf("placeholder dimensions = %dx%d, want 16x16", w, h)
+	}
+}
+
+func TestGeneratePlaceholder_PNG(t *testing.T) {
+	data := makePNG(t, 500, 500)
+	result, err := GeneratePlaceholder(bytes.NewReader(data), "fanart")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Non-logo PNG should become JPEG placeholder
+	if !strings.HasPrefix(result, "data:image/jpeg;base64,") {
+		t.Errorf("non-logo PNG placeholder should use JPEG encoding, got prefix %q", result[:min(len(result), 30)])
+	}
+}
+
+func TestGeneratePlaceholder_Logo(t *testing.T) {
+	data := makePNG(t, 500, 500)
+	result, err := GeneratePlaceholder(bytes.NewReader(data), "logo")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Logo should stay PNG
+	if !strings.HasPrefix(result, "data:image/png;base64,") {
+		t.Errorf("logo placeholder should use PNG encoding, got prefix %q", result[:min(len(result), 30)])
+	}
+}
+
+func TestGeneratePlaceholder_InvalidInput(t *testing.T) {
+	result, err := GeneratePlaceholder(bytes.NewReader([]byte("not an image")), "thumb")
+	if err == nil {
+		t.Error("expected error for invalid input")
+	}
+	if result != "" {
+		t.Errorf("expected empty result, got %q", result)
 	}
 }
 

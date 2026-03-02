@@ -642,18 +642,19 @@ func (r *Router) probeImageDimensions(ctx context.Context, images []provider.Ima
 	return images
 }
 
-// setArtistImageFlag sets the image existence (and low-resolution) flags and persists them.
-// When exists is true the image file is probed for dimensions so the low-res flag is accurate.
-// When exists is false the low-res flag is cleared.
+// setArtistImageFlag sets the image existence, low-resolution, and placeholder flags and persists them.
+// When exists is true the image file is probed for dimensions and a LQIP placeholder is generated.
+// When exists is false all flags and the placeholder are cleared.
 func (r *Router) setArtistImageFlag(ctx context.Context, a *artist.Artist, imageType string, exists bool) {
 	var lowRes bool
+	var placeholder string
 	if exists {
 		patterns := r.getActiveNamingConfig(ctx, imageType)
 		if filePath, found := findExistingImage(a.Path, patterns); found {
-			if f, err := os.Open(filePath); err == nil { //nolint:gosec // path from trusted naming patterns
-				w, h, _ := img.GetDimensions(f)
-				_ = f.Close()
+			if data, readErr := os.ReadFile(filePath); readErr == nil { //nolint:gosec // path from trusted naming patterns
+				w, h, _ := img.GetDimensions(bytes.NewReader(data))
 				lowRes = img.IsLowResolution(w, h, imageType)
+				placeholder, _ = img.GeneratePlaceholder(bytes.NewReader(data), imageType)
 			}
 		}
 	}
@@ -662,15 +663,19 @@ func (r *Router) setArtistImageFlag(ctx context.Context, a *artist.Artist, image
 	case "thumb":
 		a.ThumbExists = exists
 		a.ThumbLowRes = lowRes
+		a.ThumbPlaceholder = placeholder
 	case "fanart":
 		a.FanartExists = exists
 		a.FanartLowRes = lowRes
+		a.FanartPlaceholder = placeholder
 	case "logo":
 		a.LogoExists = exists
 		a.LogoLowRes = lowRes
+		a.LogoPlaceholder = placeholder
 	case "banner":
 		a.BannerExists = exists
 		a.BannerLowRes = lowRes
+		a.BannerPlaceholder = placeholder
 	}
 
 	if err := r.artistService.Update(ctx, a); err != nil {

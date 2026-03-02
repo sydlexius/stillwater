@@ -273,6 +273,7 @@ func scanArtistWithExtra(row interface{ Scan(...any) error }, n int) (*artistWit
 		&a.YearsActive, &a.Born, &a.Formed, &a.Died, &a.Disbanded, &a.Biography,
 		&a.Path, &libraryID, &nfo, &thumb, &fanart, &fanartCount, &logo, &banner,
 		&thumbLowRes, &fanartLowRes, &logoLowRes, &bannerLowRes,
+		&a.ThumbPlaceholder, &a.FanartPlaceholder, &a.LogoPlaceholder, &a.BannerPlaceholder,
 		&a.HealthScore, &isExcluded, &a.ExclusionReason, &isClassical,
 		&metadataSources,
 		&audiodbFetchedAt, &discogsFetchedAt, &wikidataFetchedAt, &lastfmFetchedAt,

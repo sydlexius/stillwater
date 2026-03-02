@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -65,6 +66,9 @@ func TestSetArtistImageFlag_LowRes(t *testing.T) {
 	if !a.ThumbLowRes {
 		t.Error("ThumbLowRes should be true for 300x300 thumb")
 	}
+	if !strings.HasPrefix(a.ThumbPlaceholder, "data:image/jpeg;base64,") {
+		t.Errorf("ThumbPlaceholder should be a JPEG data URI, got prefix %q", a.ThumbPlaceholder[:min(len(a.ThumbPlaceholder), 30)])
+	}
 }
 
 func TestSetArtistImageFlag_GoodRes(t *testing.T) {
@@ -86,6 +90,9 @@ func TestSetArtistImageFlag_GoodRes(t *testing.T) {
 	if a.ThumbLowRes {
 		t.Error("ThumbLowRes should be false for 1000x1000 thumb")
 	}
+	if !strings.HasPrefix(a.ThumbPlaceholder, "data:image/jpeg;base64,") {
+		t.Errorf("ThumbPlaceholder should be a JPEG data URI, got prefix %q", a.ThumbPlaceholder[:min(len(a.ThumbPlaceholder), 30)])
+	}
 }
 
 func TestSetArtistImageFlag_Delete(t *testing.T) {
@@ -106,6 +113,9 @@ func TestSetArtistImageFlag_Delete(t *testing.T) {
 	}
 	if a.ThumbLowRes {
 		t.Error("ThumbLowRes should be false after deletion")
+	}
+	if a.ThumbPlaceholder != "" {
+		t.Errorf("ThumbPlaceholder should be empty after deletion, got %q", a.ThumbPlaceholder[:min(len(a.ThumbPlaceholder), 30)])
 	}
 }
 
@@ -235,5 +245,8 @@ func TestSetArtistImageFlag_UnreadableFile(t *testing.T) {
 	}
 	if a.ThumbLowRes {
 		t.Error("ThumbLowRes should be false when dimensions cannot be read")
+	}
+	if a.ThumbPlaceholder != "" {
+		t.Errorf("ThumbPlaceholder should be empty for unreadable image, got %q", a.ThumbPlaceholder[:min(len(a.ThumbPlaceholder), 30)])
 	}
 }

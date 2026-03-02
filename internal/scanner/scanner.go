@@ -239,20 +239,24 @@ func (s *Service) processDirectory(ctx context.Context, dirPath, name, libraryID
 	if existing == nil {
 		// New artist
 		a := &artist.Artist{
-			Name:         name,
-			SortName:     name,
-			Path:         dirPath,
-			LibraryID:    libraryID,
-			NFOExists:    detected.NFOExists,
-			ThumbExists:  detected.ThumbExists,
-			FanartExists: detected.FanartExists,
-			FanartCount:  detected.FanartCount,
-			LogoExists:   detected.LogoExists,
-			BannerExists: detected.BannerExists,
-			ThumbLowRes:  detected.ThumbLowRes,
-			FanartLowRes: detected.FanartLowRes,
-			LogoLowRes:   detected.LogoLowRes,
-			BannerLowRes: detected.BannerLowRes,
+			Name:              name,
+			SortName:          name,
+			Path:              dirPath,
+			LibraryID:         libraryID,
+			NFOExists:         detected.NFOExists,
+			ThumbExists:       detected.ThumbExists,
+			FanartExists:      detected.FanartExists,
+			FanartCount:       detected.FanartCount,
+			LogoExists:        detected.LogoExists,
+			BannerExists:      detected.BannerExists,
+			ThumbLowRes:       detected.ThumbLowRes,
+			FanartLowRes:      detected.FanartLowRes,
+			LogoLowRes:        detected.LogoLowRes,
+			BannerLowRes:      detected.BannerLowRes,
+			ThumbPlaceholder:  detected.ThumbPlaceholder,
+			FanartPlaceholder: detected.FanartPlaceholder,
+			LogoPlaceholder:   detected.LogoPlaceholder,
+			BannerPlaceholder: detected.BannerPlaceholder,
 		}
 		if excluded {
 			a.IsExcluded = true
@@ -278,7 +282,7 @@ func (s *Service) processDirectory(ctx context.Context, dirPath, name, libraryID
 		s.mu.Unlock()
 		s.logger.Debug("new artist discovered", "name", name, "path", dirPath)
 	} else {
-		// Update file existence and low-resolution flags
+		// Update file existence, low-resolution, and placeholder flags
 		changed := existing.NFOExists != detected.NFOExists ||
 			existing.ThumbExists != detected.ThumbExists ||
 			existing.FanartExists != detected.FanartExists ||
@@ -289,6 +293,10 @@ func (s *Service) processDirectory(ctx context.Context, dirPath, name, libraryID
 			existing.FanartLowRes != detected.FanartLowRes ||
 			existing.LogoLowRes != detected.LogoLowRes ||
 			existing.BannerLowRes != detected.BannerLowRes ||
+			existing.ThumbPlaceholder != detected.ThumbPlaceholder ||
+			existing.FanartPlaceholder != detected.FanartPlaceholder ||
+			existing.LogoPlaceholder != detected.LogoPlaceholder ||
+			existing.BannerPlaceholder != detected.BannerPlaceholder ||
 			existing.IsExcluded != excluded
 
 		if changed || detected.NFOExists {
@@ -302,6 +310,10 @@ func (s *Service) processDirectory(ctx context.Context, dirPath, name, libraryID
 			existing.FanartLowRes = detected.FanartLowRes
 			existing.LogoLowRes = detected.LogoLowRes
 			existing.BannerLowRes = detected.BannerLowRes
+			existing.ThumbPlaceholder = detected.ThumbPlaceholder
+			existing.FanartPlaceholder = detected.FanartPlaceholder
+			existing.LogoPlaceholder = detected.LogoPlaceholder
+			existing.BannerPlaceholder = detected.BannerPlaceholder
 
 			// Update exclusion status
 			if excluded {
@@ -519,18 +531,22 @@ func (s *Service) detectRemoved(ctx context.Context, discoveredPaths map[string]
 	}
 }
 
-// detectedFiles holds file existence and low-resolution flags for an artist directory.
+// detectedFiles holds file existence, low-resolution, and placeholder flags for an artist directory.
 type detectedFiles struct {
-	NFOExists    bool
-	ThumbExists  bool
-	FanartExists bool
-	FanartCount  int
-	LogoExists   bool
-	BannerExists bool
-	ThumbLowRes  bool
-	FanartLowRes bool
-	LogoLowRes   bool
-	BannerLowRes bool
+	NFOExists         bool
+	ThumbExists       bool
+	FanartExists      bool
+	FanartCount       int
+	LogoExists        bool
+	BannerExists      bool
+	ThumbLowRes       bool
+	FanartLowRes      bool
+	LogoLowRes        bool
+	BannerLowRes      bool
+	ThumbPlaceholder  string
+	FanartPlaceholder string
+	LogoPlaceholder   string
+	BannerPlaceholder string
 }
 
 // detectFiles checks for the presence of known image and NFO files in an artist
@@ -554,15 +570,19 @@ func detectFiles(dirPath string) detectedFiles {
 
 	for _, p := range thumbPatterns {
 		if files[strings.ToLower(p)] {
+			fp := filepath.Join(dirPath, p)
 			d.ThumbExists = true
-			d.ThumbLowRes = probeLowRes(filepath.Join(dirPath, p), "thumb")
+			d.ThumbLowRes = probeLowRes(fp, "thumb")
+			d.ThumbPlaceholder = generatePlaceholderFromFile(fp, "thumb")
 			break
 		}
 	}
 	for _, p := range fanartPatterns {
 		if files[strings.ToLower(p)] {
+			fp := filepath.Join(dirPath, p)
 			d.FanartExists = true
-			d.FanartLowRes = probeLowRes(filepath.Join(dirPath, p), "fanart")
+			d.FanartLowRes = probeLowRes(fp, "fanart")
+			d.FanartPlaceholder = generatePlaceholderFromFile(fp, "fanart")
 			// Count all fanart files (primary + numbered variants).
 			fanartPaths := img.DiscoverFanart(dirPath, p)
 			if len(fanartPaths) > 0 {
@@ -575,15 +595,19 @@ func detectFiles(dirPath string) detectedFiles {
 	}
 	for _, p := range logoPatterns {
 		if files[strings.ToLower(p)] {
+			fp := filepath.Join(dirPath, p)
 			d.LogoExists = true
-			d.LogoLowRes = probeLowRes(filepath.Join(dirPath, p), "logo")
+			d.LogoLowRes = probeLowRes(fp, "logo")
+			d.LogoPlaceholder = generatePlaceholderFromFile(fp, "logo")
 			break
 		}
 	}
 	for _, p := range bannerPatterns {
 		if files[strings.ToLower(p)] {
+			fp := filepath.Join(dirPath, p)
 			d.BannerExists = true
-			d.BannerLowRes = probeLowRes(filepath.Join(dirPath, p), "banner")
+			d.BannerLowRes = probeLowRes(fp, "banner")
+			d.BannerPlaceholder = generatePlaceholderFromFile(fp, "banner")
 			break
 		}
 	}
@@ -605,4 +629,19 @@ func probeLowRes(filePath, imageType string) bool {
 		return false
 	}
 	return img.IsLowResolution(w, h, imageType)
+}
+
+// generatePlaceholderFromFile opens a file and generates a base64 LQIP data URI.
+// Returns an empty string on any error (non-fatal).
+func generatePlaceholderFromFile(filePath, imageType string) string {
+	f, err := os.Open(filePath) //nolint:gosec // path built from trusted naming patterns
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = f.Close() }()
+	placeholder, err := img.GeneratePlaceholder(f, imageType)
+	if err != nil {
+		return ""
+	}
+	return placeholder
 }
