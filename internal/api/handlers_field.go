@@ -1,11 +1,16 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/nfo"
 	"github.com/sydlexius/stillwater/internal/provider"
 	"github.com/sydlexius/stillwater/web/templates"
 )
@@ -92,6 +97,8 @@ func (r *Router) handleFieldUpdate(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	r.writeBackNFO(req.Context(), a)
+
 	if isHTMXRequest(req) {
 		providers := r.fieldProviderNames(req, field)
 		renderTempl(w, req, templates.FieldDisplay(a, field, providers))
@@ -126,6 +133,8 @@ func (r *Router) handleFieldClear(w http.ResponseWriter, req *http.Request) {
 		writeError(w, req, http.StatusInternalServerError, "failed to reload artist")
 		return
 	}
+
+	r.writeBackNFO(req.Context(), a)
 
 	if isHTMXRequest(req) {
 		providers := r.fieldProviderNames(req, field)
@@ -325,4 +334,33 @@ func buildFieldProvidersMap(priorities []provider.FieldPriority) map[string][]st
 		m[pri.Field] = names
 	}
 	return m
+}
+
+// writeBackNFO writes the artist's current metadata to its artist.nfo file
+// (best effort). Skips silently when the artist has no filesystem path or no
+// existing NFO file on disk -- creating new NFOs from scratch is the rule
+// engine's job. The on-disk check (os.Stat) guards against stale NFOExists
+// flags when the file has been deleted or moved since the last scan.
+func (r *Router) writeBackNFO(ctx context.Context, a *artist.Artist) {
+	if a.Path == "" {
+		return
+	}
+	nfoPath := filepath.Join(a.Path, "artist.nfo")
+	if _, err := os.Stat(nfoPath); err != nil {
+		if os.IsNotExist(err) {
+			return
+		}
+		r.logger.Warn("NFO write-back stat error",
+			slog.String("artist_id", a.ID),
+			slog.String("nfo_path", nfoPath),
+			slog.String("error", err.Error()),
+		)
+	}
+	if err := nfo.WriteBackArtistNFO(ctx, a, r.nfoSnapshotService, r.logger); err != nil {
+		r.logger.Error("NFO write-back failed",
+			slog.String("artist_id", a.ID),
+			slog.String("artist_name", a.Name),
+			slog.String("error", err.Error()),
+		)
+	}
 }

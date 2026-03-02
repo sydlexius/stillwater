@@ -86,11 +86,12 @@ func (f *NFOFixer) Fix(_ context.Context, a *artist.Artist, _ *Violation) (*FixR
 type MetadataFixer struct {
 	orchestrator    *provider.Orchestrator
 	snapshotService *nfo.SnapshotService
+	logger          *slog.Logger
 }
 
 // NewMetadataFixer creates a MetadataFixer.
-func NewMetadataFixer(orchestrator *provider.Orchestrator, snapshotService *nfo.SnapshotService) *MetadataFixer {
-	return &MetadataFixer{orchestrator: orchestrator, snapshotService: snapshotService}
+func NewMetadataFixer(orchestrator *provider.Orchestrator, snapshotService *nfo.SnapshotService, logger *slog.Logger) *MetadataFixer {
+	return &MetadataFixer{orchestrator: orchestrator, snapshotService: snapshotService, logger: logger}
 }
 
 // CanFix returns true for nfo_has_mbid and bio_exists rules.
@@ -146,7 +147,7 @@ func (f *MetadataFixer) fixMBID(ctx context.Context, a *artist.Artist) (*FixResu
 	a.MusicBrainzID = best.MusicBrainzID
 
 	if a.NFOExists {
-		writeArtistNFO(a, f.snapshotService)
+		writeArtistNFO(ctx, a, f.snapshotService, f.logger)
 	}
 
 	return &FixResult{
@@ -173,7 +174,7 @@ func (f *MetadataFixer) fixBio(ctx context.Context, a *artist.Artist) (*FixResul
 	a.Biography = result.Metadata.Biography
 
 	if a.NFOExists {
-		writeArtistNFO(a, f.snapshotService)
+		writeArtistNFO(ctx, a, f.snapshotService, f.logger)
 	}
 
 	return &FixResult{
@@ -464,22 +465,8 @@ func ApplyImageCandidate(ctx context.Context, a *artist.Artist, imageType, rawUR
 
 // writeArtistNFO writes the artist's current metadata to an artist.nfo file (best effort).
 // If a SnapshotService is provided, saves a snapshot of the existing NFO before overwriting.
-func writeArtistNFO(a *artist.Artist, ss *nfo.SnapshotService) {
-	target := filepath.Join(a.Path, "artist.nfo")
-
-	// Save a snapshot of the existing NFO before overwriting
-	if ss != nil {
-		if existing, err := os.ReadFile(target); err == nil && len(existing) > 0 { //nolint:gosec // G304: path from trusted artist.Path
-			_, _ = ss.Save(context.Background(), a.ID, string(existing))
-		}
-	}
-
-	nfoData := nfo.FromArtist(a)
-	var buf bytes.Buffer
-	if err := nfo.Write(&buf, nfoData); err != nil {
-		return
-	}
-	_ = filesystem.WriteFileAtomic(target, buf.Bytes(), 0o644)
+func writeArtistNFO(ctx context.Context, a *artist.Artist, ss *nfo.SnapshotService, logger *slog.Logger) {
+	_ = nfo.WriteBackArtistNFO(ctx, a, ss, logger)
 }
 
 // existingImageFileNames returns the subset of canonical filenames for imageType

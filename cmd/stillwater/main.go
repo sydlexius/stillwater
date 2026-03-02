@@ -170,7 +170,7 @@ func run() error {
 	// Initialize fix pipeline (depends on orchestrator and snapshot service)
 	fixers := []rule.Fixer{
 		&rule.NFOFixer{SnapshotService: nfoSnapshotService},
-		rule.NewMetadataFixer(orchestrator, nfoSnapshotService),
+		rule.NewMetadataFixer(orchestrator, nfoSnapshotService, logger),
 		rule.NewImageFixer(orchestrator, platformService, logger),
 		rule.NewExtraneousImagesFixer(platformService, logger),
 		rule.NewLogoTrimFixer(platformService, logger),
