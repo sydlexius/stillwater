@@ -30,13 +30,14 @@ where only push direction works but pull does not.
 ## Checklist
 
 ### Issue #230 -- Emby/Jellyfin metadata not imported during library populate
-- [ ] Expand `ArtistItem` struct in `emby/types.go` (Overview, Genres, PremiereDate, EndDate)
-- [ ] Update `GetArtists()` query fields in `emby/client.go`
-- [ ] Update `populateFromEmbyCtx()` in `handlers_connection_library.go`
-- [ ] Mirror changes in `jellyfin/types.go` and `jellyfin/client.go`
-- [ ] Update `populateFromJellyfinCtx()` in `handlers_connection_library.go`
-- [ ] Investigate additional fields (Tags, SortName) from real server data
-- [ ] Tests
+- [x] Expand `ArtistItem` struct in `emby/types.go` (Overview, Genres, Tags, SortName, PremiereDate, EndDate)
+- [x] Update `GetArtists()` query fields in `emby/client.go`
+- [x] Update `populateFromEmbyCtx()` in `handlers_connection_library.go`
+- [x] Mirror changes in `jellyfin/types.go` and `jellyfin/client.go`
+- [x] Update `populateFromJellyfinCtx()` in `handlers_connection_library.go`
+- [x] Investigate additional fields (Tags, SortName) from real server data
+- [x] Switch from `/Artists` to `/Artists/AlbumArtists` endpoint (matches folder structure)
+- [x] Tests
 - [ ] PR opened (#?)
 - [ ] CI passing
 - [ ] PR merged
@@ -93,3 +94,20 @@ Session 2 (platform state + delete):
 - Jellyfin API uses the same endpoint pattern
 - Import policy: never overwrite existing local images (user changes take priority)
 - `delete()` HTTP helper needed because only `get()` and `post()` exist in current clients
+
+### #230 investigation findings (2026-03-02)
+
+- Switched from `/Artists` to `/Artists/AlbumArtists` endpoint. AlbumArtists matches
+  folder structure and excludes featured/track-only artists.
+- The AlbumArtists list endpoint returns Overview when present but does not return
+  Tags, PremiereDate, or EndDate even when requested via the Fields parameter.
+  Full metadata is only available via per-item queries (`/Users/{userId}/Items/{itemId}`).
+- Genres from the list endpoint are aggregated from audio file tags (child items),
+  not from the artist item's own metadata. This is still useful data.
+- Emby's NFO reader may not map `<biography>` to Overview for artist items, or
+  requires a manual metadata refresh to pick up NFO data for existing artists.
+- NFO date fields (born, formed, died, disbanded) often contain free-text strings
+  like "2006 in Cardiff, CA" which Emby cannot parse as dates (expects yyyy-MM-dd).
+- Follow-up idea: add a tooltip or info indicator on the Platform Profile page
+  showing which metadata fields can be written to each platform (Emby, Jellyfin, Kodi).
+- #355 opened for date format normalization (free-text dates silently dropped by Emby).

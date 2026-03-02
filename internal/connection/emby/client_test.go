@@ -72,12 +72,16 @@ func TestGetMusicLibraries(t *testing.T) {
 
 func TestGetArtists(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/Artists" {
+		if r.URL.Path != "/Artists/AlbumArtists" {
 			t.Errorf("unexpected path: %s", r.URL.Path)
 		}
 		parentID := r.URL.Query().Get("ParentId")
 		if parentID != "lib-001" {
 			t.Errorf("ParentId = %q, want lib-001", parentID)
+		}
+		fields := r.URL.Query().Get("Fields")
+		if fields != "ImageTags,Overview,Genres,Tags,SortName,PremiereDate,EndDate" {
+			t.Errorf("Fields = %q, want expanded field list", fields)
 		}
 		http.ServeFile(w, r, "testdata/artists.json")
 	}))
@@ -95,11 +99,31 @@ func TestGetArtists(t *testing.T) {
 	if len(resp.Items) != 2 {
 		t.Fatalf("got %d items, want 2", len(resp.Items))
 	}
-	if resp.Items[0].Name != "Radiohead" {
-		t.Errorf("first artist = %q, want Radiohead", resp.Items[0].Name)
+
+	rh := resp.Items[0]
+	if rh.Name != "Radiohead" {
+		t.Errorf("first artist = %q, want Radiohead", rh.Name)
 	}
-	if resp.Items[0].ProviderIDs.MusicBrainzArtist != "a74b1b7f-71a5-4011-9441-d0b5e4122711" {
-		t.Errorf("unexpected MBID: %s", resp.Items[0].ProviderIDs.MusicBrainzArtist)
+	if rh.SortName != "Radiohead" {
+		t.Errorf("SortName = %q, want Radiohead", rh.SortName)
+	}
+	if rh.ProviderIDs.MusicBrainzArtist != "a74b1b7f-71a5-4011-9441-d0b5e4122711" {
+		t.Errorf("unexpected MBID: %s", rh.ProviderIDs.MusicBrainzArtist)
+	}
+	if rh.Overview != "English rock band formed in 1985." {
+		t.Errorf("Overview = %q, want biography text", rh.Overview)
+	}
+	if len(rh.Genres) != 2 || rh.Genres[0] != "Rock" {
+		t.Errorf("Genres = %v, want [Rock Alternative]", rh.Genres)
+	}
+	if len(rh.Tags) != 2 || rh.Tags[0] != "Experimental" {
+		t.Errorf("Tags = %v, want [Experimental Art Rock]", rh.Tags)
+	}
+	if rh.PremiereDate != "1985-01-01T00:00:00.0000000Z" {
+		t.Errorf("PremiereDate = %q, want 1985 date", rh.PremiereDate)
+	}
+	if rh.ImageTags["Primary"] != "abc123" {
+		t.Errorf("ImageTags[Primary] = %q, want abc123", rh.ImageTags["Primary"])
 	}
 }
 

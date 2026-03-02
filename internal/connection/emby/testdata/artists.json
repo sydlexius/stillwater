@@ -2,19 +2,35 @@
   "Items": [
     {
       "Name": "Radiohead",
+      "SortName": "Radiohead",
       "Id": "emby-001",
       "Path": "/music/Radiohead",
+      "Overview": "English rock band formed in 1985.",
+      "Genres": ["Rock", "Alternative"],
+      "Tags": ["Experimental", "Art Rock"],
+      "PremiereDate": "1985-01-01T00:00:00.0000000Z",
+      "EndDate": "",
       "ProviderIds": {
         "MusicBrainzArtist": "a74b1b7f-71a5-4011-9441-d0b5e4122711"
+      },
+      "ImageTags": {
+        "Primary": "abc123"
       }
     },
     {
       "Name": "Bjork",
+      "SortName": "Bjork",
       "Id": "emby-002",
       "Path": "/music/Bjork",
+      "Overview": "Icelandic singer and songwriter.",
+      "Genres": ["Electronic", "Art Pop"],
+      "Tags": ["Avant-Garde"],
+      "PremiereDate": "1965-11-21T00:00:00.0000000Z",
+      "EndDate": "",
       "ProviderIds": {
         "MusicBrainzArtist": "87c5dedd-371d-4571-9e1c-45f6e0ed3fce"
-      }
+      },
+      "ImageTags": {}
     }
   ],
   "TotalRecordCount": 2

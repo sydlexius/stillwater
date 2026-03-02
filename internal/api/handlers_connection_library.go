@@ -487,11 +487,20 @@ func (r *Router) populateFromEmbyCtx(ctx context.Context, client *emby.Client, l
 				}
 			}
 
+			sortName := item.Name
+			if item.SortName != "" {
+				sortName = item.SortName
+			}
 			a := &artist.Artist{
 				Name:          item.Name,
-				SortName:      item.Name,
+				SortName:      sortName,
 				MusicBrainzID: mbid,
 				LibraryID:     lib.ID,
+				Biography:     item.Overview,
+				Genres:        item.Genres,
+				Styles:        item.Tags,
+				Formed:        item.PremiereDate,
+				Disbanded:     item.EndDate,
 			}
 			if err := r.artistService.Create(ctx, a); err != nil {
 				r.logger.Warn("creating artist from emby", "name", item.Name, "error", err)
@@ -546,11 +555,20 @@ func (r *Router) populateFromJellyfinCtx(ctx context.Context, client *jellyfin.C
 				}
 			}
 
+			sortName := item.Name
+			if item.SortName != "" {
+				sortName = item.SortName
+			}
 			a := &artist.Artist{
 				Name:          item.Name,
-				SortName:      item.Name,
+				SortName:      sortName,
 				MusicBrainzID: mbid,
 				LibraryID:     lib.ID,
+				Biography:     item.Overview,
+				Genres:        item.Genres,
+				Styles:        item.Tags,
+				Formed:        item.PremiereDate,
+				Disbanded:     item.EndDate,
 			}
 			if err := r.artistService.Create(ctx, a); err != nil {
 				r.logger.Warn("creating artist from jellyfin", "name", item.Name, "error", err)
