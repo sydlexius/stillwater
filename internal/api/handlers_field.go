@@ -347,9 +347,16 @@ func (r *Router) writeBackNFO(ctx context.Context, a *artist.Artist) {
 	}
 	nfoPath := filepath.Join(a.Path, "artist.nfo")
 	if _, err := os.Stat(nfoPath); err != nil {
-		return
+		if os.IsNotExist(err) {
+			return
+		}
+		r.logger.Warn("NFO write-back stat error",
+			slog.String("artist_id", a.ID),
+			slog.String("nfo_path", nfoPath),
+			slog.String("error", err.Error()),
+		)
 	}
-	if err := nfo.WriteBackArtistNFO(ctx, a, r.nfoSnapshotService); err != nil {
+	if err := nfo.WriteBackArtistNFO(ctx, a, r.nfoSnapshotService, r.logger); err != nil {
 		r.logger.Error("NFO write-back failed",
 			slog.String("artist_id", a.ID),
 			slog.String("artist_name", a.Name),

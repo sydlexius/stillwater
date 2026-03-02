@@ -265,7 +265,7 @@ func (e *BulkExecutor) fetchMetadata(ctx context.Context, a *artist.Artist, mode
 	}
 
 	if a.NFOExists {
-		writeArtistNFO(a, e.snapshotService)
+		writeArtistNFO(ctx, a, e.snapshotService, e.logger)
 	}
 
 	return BulkItemFixed, "metadata updated"

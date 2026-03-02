@@ -195,3 +195,26 @@ func TestWriteBackNFO_CreatesSnapshot(t *testing.T) {
 		t.Errorf("snapshot content = %q, want %q", snapshots[0].Content, oldContent)
 	}
 }
+
+// TestWriteBackNFO_StatNotExist verifies that writeBackNFO skips silently when
+// the artist has a path and NFOExists is true in the DB, but the file was
+// deleted from disk (os.IsNotExist). No NFO file should be created.
+func TestWriteBackNFO_StatNotExist(t *testing.T) {
+	r, artistSvc := testRouter(t)
+
+	dir := t.TempDir()
+	a := addTestArtist(t, artistSvc, "Stat Test")
+	a.Path = dir
+	a.NFOExists = true
+	if err := artistSvc.Update(context.Background(), a); err != nil {
+		t.Fatalf("updating artist: %v", err)
+	}
+
+	// Do NOT seed an artist.nfo on disk -- file is missing
+	r.writeBackNFO(context.Background(), a)
+
+	// Verify no NFO was created (the NotExist branch should return early)
+	if _, err := os.Stat(filepath.Join(dir, "artist.nfo")); err == nil {
+		t.Error("artist.nfo was created but should have been skipped (file did not exist on disk)")
+	}
+}

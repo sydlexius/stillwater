@@ -24,7 +24,7 @@ func TestWriteBackArtistNFO_Success(t *testing.T) {
 		Path:          dir,
 	}
 
-	if err := WriteBackArtistNFO(context.Background(), a, nil); err != nil {
+	if err := WriteBackArtistNFO(context.Background(), a, nil, nil); err != nil {
 		t.Fatalf("WriteBackArtistNFO: %v", err)
 	}
 
@@ -71,7 +71,7 @@ func TestWriteBackArtistNFO_SnapshotsExisting(t *testing.T) {
 		Path:     dir,
 	}
 
-	if err := WriteBackArtistNFO(ctx, a, ss); err != nil {
+	if err := WriteBackArtistNFO(ctx, a, ss, nil); err != nil {
 		t.Fatalf("WriteBackArtistNFO: %v", err)
 	}
 
@@ -111,7 +111,7 @@ func TestWriteBackArtistNFO_NilSnapshotService(t *testing.T) {
 	}
 
 	// Must not panic with nil SnapshotService
-	if err := WriteBackArtistNFO(context.Background(), a, nil); err != nil {
+	if err := WriteBackArtistNFO(context.Background(), a, nil, nil); err != nil {
 		t.Fatalf("WriteBackArtistNFO with nil ss: %v", err)
 	}
 
@@ -136,7 +136,7 @@ func TestWriteBackArtistNFO_NoExistingFile(t *testing.T) {
 		Path:     dir,
 	}
 
-	if err := WriteBackArtistNFO(ctx, a, ss); err != nil {
+	if err := WriteBackArtistNFO(ctx, a, ss, nil); err != nil {
 		t.Fatalf("WriteBackArtistNFO: %v", err)
 	}
 
@@ -160,5 +160,26 @@ func TestWriteBackArtistNFO_NoExistingFile(t *testing.T) {
 	}
 	if parsed.Name != "Fresh Artist" {
 		t.Errorf("Name = %q, want %q", parsed.Name, "Fresh Artist")
+	}
+}
+
+func TestWriteBackArtistNFO_NilArtist(t *testing.T) {
+	err := WriteBackArtistNFO(context.Background(), nil, nil, nil)
+	if err == nil {
+		t.Fatal("expected error for nil artist, got nil")
+	}
+	if got := err.Error(); got != "write artist nfo: artist is nil" {
+		t.Errorf("error = %q, want %q", got, "write artist nfo: artist is nil")
+	}
+}
+
+func TestWriteBackArtistNFO_EmptyPath(t *testing.T) {
+	a := &artist.Artist{ID: "art-empty", Name: "Empty Path"}
+	err := WriteBackArtistNFO(context.Background(), a, nil, nil)
+	if err == nil {
+		t.Fatal("expected error for empty path, got nil")
+	}
+	if got := err.Error(); got != "write artist nfo: artist path is empty" {
+		t.Errorf("error = %q, want %q", got, "write artist nfo: artist path is empty")
 	}
 }

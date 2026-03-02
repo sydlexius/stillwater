@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -18,15 +19,28 @@ import (
 // filesystem.WriteFileAtomic.
 //
 // The returned error is non-nil only when the NFO file itself could not be
-// written. Snapshot errors are swallowed so that a locked or busy snapshot DB
-// does not block metadata persistence.
-func WriteBackArtistNFO(ctx context.Context, a *artist.Artist, ss *SnapshotService) error {
+// written. Snapshot errors are logged at Warn level when a logger is provided
+// but never prevent the write. When logger is nil, snapshot errors are
+// swallowed silently.
+func WriteBackArtistNFO(ctx context.Context, a *artist.Artist, ss *SnapshotService, logger *slog.Logger) error {
+	if a == nil {
+		return fmt.Errorf("write artist nfo: artist is nil")
+	}
+	if a.Path == "" {
+		return fmt.Errorf("write artist nfo: artist path is empty")
+	}
+
 	target := filepath.Join(a.Path, "artist.nfo")
 
 	// Save a snapshot of the existing NFO before overwriting (best effort)
 	if ss != nil {
 		if existing, err := os.ReadFile(target); err == nil && len(existing) > 0 { //nolint:gosec // G304: path from trusted artist.Path
-			_, _ = ss.Save(ctx, a.ID, string(existing))
+			if _, snapErr := ss.Save(ctx, a.ID, string(existing)); snapErr != nil && logger != nil {
+				logger.Warn("NFO snapshot save failed (proceeding with write)",
+					slog.String("artist_id", a.ID),
+					slog.String("error", snapErr.Error()),
+				)
+			}
 		}
 	}
 
