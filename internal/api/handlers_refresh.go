@@ -176,6 +176,8 @@ func (r *Router) executeRefresh(req *http.Request, a *artist.Artist) ([]provider
 		return nil, err
 	}
 
+	r.writeBackNFO(req.Context(), a)
+
 	// Update per-provider fetch timestamps so the UI can show "Not found" vs "Not set".
 	for _, prov := range result.AttemptedProviders {
 		if err := r.artistService.UpdateProviderFetchedAt(req.Context(), a.ID, string(prov)); err != nil {

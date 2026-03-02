@@ -465,21 +465,7 @@ func ApplyImageCandidate(ctx context.Context, a *artist.Artist, imageType, rawUR
 // writeArtistNFO writes the artist's current metadata to an artist.nfo file (best effort).
 // If a SnapshotService is provided, saves a snapshot of the existing NFO before overwriting.
 func writeArtistNFO(a *artist.Artist, ss *nfo.SnapshotService) {
-	target := filepath.Join(a.Path, "artist.nfo")
-
-	// Save a snapshot of the existing NFO before overwriting
-	if ss != nil {
-		if existing, err := os.ReadFile(target); err == nil && len(existing) > 0 { //nolint:gosec // G304: path from trusted artist.Path
-			_, _ = ss.Save(context.Background(), a.ID, string(existing))
-		}
-	}
-
-	nfoData := nfo.FromArtist(a)
-	var buf bytes.Buffer
-	if err := nfo.Write(&buf, nfoData); err != nil {
-		return
-	}
-	_ = filesystem.WriteFileAtomic(target, buf.Bytes(), 0o644)
+	_ = nfo.WriteBackArtistNFO(context.Background(), a, ss)
 }
 
 // existingImageFileNames returns the subset of canonical filenames for imageType
