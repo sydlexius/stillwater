@@ -53,7 +53,7 @@ Before any image replacement or deletion, archive the existing file:
 
 - Archive directory: `<dataDir>/image_archive/<artistID>/`
 - Naming: `<imageType>_<timestamp>.<ext>` (e.g., `thumb_20260301T120000.jpg`)
-- Use `internal/filesystem.CopyFile` for the archive copy
+- Add a new exported helper `filesystem.CopyFile` in `internal/filesystem` (wrapping the existing unexported `copyFile` in `atomic.go`) and use it for the archive copy
 - Record the change in `metadata_changes` with field = image type (thumb, fanart, etc.)
 - Old value = original path, new value = new path (or empty for deletion)
 
