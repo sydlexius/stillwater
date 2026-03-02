@@ -4,11 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/provider"
 	"github.com/sydlexius/stillwater/web/templates"
+
+	"golang.org/x/time/rate"
 )
 
 // handleListProviders returns the status of all providers and their API key configuration.
@@ -521,6 +525,175 @@ func (r *Router) handleSetWebSearchEnabled(w http.ResponseWriter, req *http.Requ
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// handleSetMirror configures a mirror base URL and optional rate limit for a provider.
+// PUT /api/v1/providers/{name}/mirror
+func (r *Router) handleSetMirror(w http.ResponseWriter, req *http.Request) {
+	name := provider.ProviderName(req.PathValue("name"))
+	if !isValidProviderName(name) {
+		writeError(w, req, http.StatusBadRequest, "unknown provider")
+		return
+	}
+
+	p := r.providerRegistry.Get(name)
+	if p == nil {
+		writeError(w, req, http.StatusBadRequest, "unknown provider")
+		return
+	}
+	mirrorable, ok := p.(provider.MirrorableProvider)
+	if !ok {
+		writeError(w, req, http.StatusBadRequest, "provider does not support mirror configuration")
+		return
+	}
+
+	var baseURL string
+	var rateLimit float64
+	contentType := req.Header.Get("Content-Type")
+	if strings.HasPrefix(contentType, "application/x-www-form-urlencoded") {
+		if err := req.ParseForm(); err != nil {
+			writeError(w, req, http.StatusBadRequest, "invalid form data")
+			return
+		}
+		baseURL = req.FormValue("base_url")
+		if rl := req.FormValue("rate_limit"); rl != "" {
+			parsed, err := strconv.ParseFloat(rl, 64)
+			if err != nil {
+				writeError(w, req, http.StatusBadRequest, "rate_limit must be a number")
+				return
+			}
+			rateLimit = parsed
+		}
+	} else {
+		var body struct {
+			BaseURL   string  `json:"base_url"`
+			RateLimit float64 `json:"rate_limit"`
+		}
+		if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+			writeError(w, req, http.StatusBadRequest, "invalid request body")
+			return
+		}
+		baseURL = body.BaseURL
+		rateLimit = body.RateLimit
+	}
+
+	if baseURL == "" {
+		writeError(w, req, http.StatusBadRequest, "base_url is required")
+		return
+	}
+
+	// Validate URL.
+	parsed, err := url.Parse(baseURL)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+		writeError(w, req, http.StatusBadRequest, "base_url must be a valid http or https URL")
+		return
+	}
+	baseURL = strings.TrimRight(baseURL, "/")
+
+	// Validate rate limit: must be positive and capped at 100.
+	if rateLimit <= 0 {
+		rateLimit = 10 // default for mirrors
+	}
+	if rateLimit > 100 {
+		rateLimit = 100
+	}
+
+	// Persist settings.
+	if err := r.providerSettings.SetBaseURL(req.Context(), name, baseURL); err != nil {
+		r.logger.Error("saving mirror base URL", "provider", name, "error", err)
+		writeError(w, req, http.StatusInternalServerError, "failed to save mirror URL")
+		return
+	}
+	if err := r.providerSettings.SetRateLimit(req.Context(), name, rateLimit); err != nil {
+		r.logger.Error("saving mirror rate limit", "provider", name, "error", err)
+		writeError(w, req, http.StatusInternalServerError, "failed to save rate limit")
+		return
+	}
+
+	// Apply changes to the live adapter and rate limiter.
+	mirrorable.SetBaseURL(baseURL)
+	r.rateLimiters.SetLimit(name, rate.Limit(rateLimit))
+	r.logger.Info("mirror configured", "provider", name,
+		"base_url", baseURL, "rate_limit", rateLimit)
+
+	// For HTMX requests, re-render the provider card. Mirrors can be tested
+	// separately via POST /api/v1/providers/{name}/test.
+	if isHTMXRequest(req) {
+		isOOBE := strings.Contains(req.Header.Get("HX-Current-URL"), "/setup/wizard")
+		w.Header().Set("HX-Retarget", "#provider-card-"+string(name))
+		w.Header().Set("HX-Reswap", "innerHTML")
+		r.renderProviderCard(w, req, name, isOOBE)
+		return
+	}
+
+	// For JSON API consumers, auto-test the connection.
+	testResult := "ok"
+	testError := ""
+	if testable, ok := p.(provider.TestableProvider); ok {
+		testCtx, cancel := context.WithTimeout(req.Context(), 15*time.Second)
+		defer cancel()
+		if err := testable.TestConnection(testCtx); err != nil {
+			testResult = "error"
+			testError = err.Error()
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{
+		"status":     "saved",
+		"test":       testResult,
+		"test_error": testError,
+	})
+}
+
+// handleDeleteMirror removes the mirror configuration for a provider, reverting to defaults.
+// DELETE /api/v1/providers/{name}/mirror
+func (r *Router) handleDeleteMirror(w http.ResponseWriter, req *http.Request) {
+	name := provider.ProviderName(req.PathValue("name"))
+	if !isValidProviderName(name) {
+		writeError(w, req, http.StatusBadRequest, "unknown provider")
+		return
+	}
+
+	p := r.providerRegistry.Get(name)
+	if p == nil {
+		writeError(w, req, http.StatusBadRequest, "unknown provider")
+		return
+	}
+	mirrorable, ok := p.(provider.MirrorableProvider)
+	if !ok {
+		writeError(w, req, http.StatusBadRequest, "provider does not support mirror configuration")
+		return
+	}
+
+	// Clear persisted settings.
+	if err := r.providerSettings.DeleteBaseURL(req.Context(), name); err != nil {
+		r.logger.Error("deleting mirror base URL", "provider", name, "error", err)
+		writeError(w, req, http.StatusInternalServerError, "failed to clear mirror URL")
+		return
+	}
+	if err := r.providerSettings.DeleteRateLimit(req.Context(), name); err != nil {
+		r.logger.Error("deleting mirror rate limit", "provider", name, "error", err)
+		writeError(w, req, http.StatusInternalServerError, "failed to clear rate limit")
+		return
+	}
+
+	// Revert adapter and rate limiter to defaults.
+	mirrorable.SetBaseURL(mirrorable.DefaultBaseURL())
+	defaultRL := provider.DefaultLimit(name)
+	if defaultRL > 0 {
+		r.rateLimiters.SetLimit(name, defaultRL)
+	}
+	r.logger.Info("mirror cleared", "provider", name)
+
+	if isHTMXRequest(req) {
+		isOOBE := strings.Contains(req.Header.Get("HX-Current-URL"), "/setup/wizard")
+		w.Header().Set("HX-Retarget", "#provider-card-"+string(name))
+		w.Header().Set("HX-Reswap", "innerHTML")
+		r.renderProviderCard(w, req, name, isOOBE)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "cleared"})
 }
 
 // isValidProviderName checks if a provider name is one of the known providers.

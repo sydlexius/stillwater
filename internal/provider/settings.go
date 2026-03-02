@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strconv"
 
 	"github.com/sydlexius/stillwater/internal/encryption"
 )
@@ -189,15 +190,17 @@ func (s *SettingsService) HasAPIKey(ctx context.Context, name ProviderName) (boo
 
 // ProviderKeyStatus describes the API key configuration state for a provider.
 type ProviderKeyStatus struct {
-	Name        ProviderName   `json:"name"`
-	DisplayName string         `json:"display_name"`
-	RequiresKey bool           `json:"requires_key"`
-	OptionalKey bool           `json:"optional_key"`
-	HasKey      bool           `json:"has_key"`
-	Status      string         `json:"status"` // "ok", "invalid", "untested", "not_required", "unconfigured"
-	AccessTier  AccessTier     `json:"access_tier"`
-	HelpURL     string         `json:"help_url,omitempty"`
-	RateLimit   *RateLimitInfo `json:"rate_limit,omitempty"`
+	Name            ProviderName   `json:"name"`
+	DisplayName     string         `json:"display_name"`
+	RequiresKey     bool           `json:"requires_key"`
+	OptionalKey     bool           `json:"optional_key"`
+	HasKey          bool           `json:"has_key"`
+	Status          string         `json:"status"` // "ok", "invalid", "untested", "not_required", "unconfigured"
+	AccessTier      AccessTier     `json:"access_tier"`
+	HelpURL         string         `json:"help_url,omitempty"`
+	RateLimit       *RateLimitInfo `json:"rate_limit,omitempty"`
+	SupportsBaseURL bool           `json:"supports_base_url,omitempty"`
+	Mirror          *MirrorConfig  `json:"mirror,omitempty"`
 }
 
 // ListProviderKeyStatuses returns the key configuration status for all known providers.
@@ -232,17 +235,26 @@ func (s *SettingsService) ListProviderKeyStatuses(ctx context.Context) ([]Provid
 			}
 		}
 		cap := caps[name]
-		statuses = append(statuses, ProviderKeyStatus{
-			Name:        name,
-			DisplayName: name.DisplayName(),
-			RequiresKey: requiresKey,
-			OptionalKey: optionalKey,
-			HasKey:      hasKey,
-			Status:      status,
-			AccessTier:  cap.Tier,
-			HelpURL:     cap.HelpURL,
-			RateLimit:   cap.RateLimit,
-		})
+		pks := ProviderKeyStatus{
+			Name:            name,
+			DisplayName:     name.DisplayName(),
+			RequiresKey:     requiresKey,
+			OptionalKey:     optionalKey,
+			HasKey:          hasKey,
+			Status:          status,
+			AccessTier:      cap.Tier,
+			HelpURL:         cap.HelpURL,
+			RateLimit:       cap.RateLimit,
+			SupportsBaseURL: cap.SupportsBaseURL,
+		}
+		if cap.SupportsBaseURL {
+			mirror, err := s.GetMirrorConfig(ctx, name)
+			if err != nil {
+				return nil, err
+			}
+			pks.Mirror = mirror
+		}
+		statuses = append(statuses, pks)
 	}
 	return statuses, nil
 }
@@ -488,4 +500,117 @@ func (s *SettingsService) AnyWebSearchEnabled(ctx context.Context) (bool, error)
 		}
 	}
 	return false, nil
+}
+
+// baseURLSettingKey returns the settings table key for a provider's mirror base URL.
+func baseURLSettingKey(name ProviderName) string {
+	return fmt.Sprintf("provider.%s.base_url", name)
+}
+
+// rateLimitSettingKey returns the settings table key for a provider's custom rate limit.
+func rateLimitSettingKey(name ProviderName) string {
+	return fmt.Sprintf("provider.%s.rate_limit", name)
+}
+
+// GetBaseURL returns the configured mirror base URL for a provider.
+// Returns empty string if no custom URL is configured.
+func (s *SettingsService) GetBaseURL(ctx context.Context, name ProviderName) (string, error) {
+	key := baseURLSettingKey(name)
+	var value string
+	err := s.db.QueryRowContext(ctx, "SELECT value FROM settings WHERE key = ?", key).Scan(&value)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("reading base URL for %s: %w", name, err)
+	}
+	return value, nil
+}
+
+// SetBaseURL stores a mirror base URL for a provider.
+func (s *SettingsService) SetBaseURL(ctx context.Context, name ProviderName, baseURL string) error {
+	key := baseURLSettingKey(name)
+	_, err := s.db.ExecContext(ctx,
+		"INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = datetime('now')",
+		key, baseURL, baseURL,
+	)
+	if err != nil {
+		return fmt.Errorf("storing base URL for %s: %w", name, err)
+	}
+	return nil
+}
+
+// DeleteBaseURL removes the mirror base URL for a provider, reverting to the default.
+func (s *SettingsService) DeleteBaseURL(ctx context.Context, name ProviderName) error {
+	key := baseURLSettingKey(name)
+	_, err := s.db.ExecContext(ctx, "DELETE FROM settings WHERE key = ?", key)
+	if err != nil {
+		return fmt.Errorf("deleting base URL for %s: %w", name, err)
+	}
+	return nil
+}
+
+// GetRateLimit returns the configured custom rate limit (requests per second) for a provider.
+// Returns 0 if no custom rate limit is configured.
+func (s *SettingsService) GetRateLimit(ctx context.Context, name ProviderName) (float64, error) {
+	key := rateLimitSettingKey(name)
+	var value string
+	err := s.db.QueryRowContext(ctx, "SELECT value FROM settings WHERE key = ?", key).Scan(&value)
+	if err == sql.ErrNoRows {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, fmt.Errorf("reading rate limit for %s: %w", name, err)
+	}
+	limit, err := strconv.ParseFloat(value, 64)
+	if err != nil {
+		return 0, fmt.Errorf("parsing rate limit for %s: %w", name, err)
+	}
+	return limit, nil
+}
+
+// SetRateLimit stores a custom rate limit (requests per second) for a provider.
+func (s *SettingsService) SetRateLimit(ctx context.Context, name ProviderName, limit float64) error {
+	key := rateLimitSettingKey(name)
+	value := strconv.FormatFloat(limit, 'f', -1, 64)
+	_, err := s.db.ExecContext(ctx,
+		"INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = datetime('now')",
+		key, value, value,
+	)
+	if err != nil {
+		return fmt.Errorf("storing rate limit for %s: %w", name, err)
+	}
+	return nil
+}
+
+// DeleteRateLimit removes the custom rate limit for a provider, reverting to the default.
+func (s *SettingsService) DeleteRateLimit(ctx context.Context, name ProviderName) error {
+	key := rateLimitSettingKey(name)
+	_, err := s.db.ExecContext(ctx, "DELETE FROM settings WHERE key = ?", key)
+	if err != nil {
+		return fmt.Errorf("deleting rate limit for %s: %w", name, err)
+	}
+	return nil
+}
+
+// MirrorConfig describes the mirror configuration for a provider.
+type MirrorConfig struct {
+	BaseURL   string  `json:"base_url"`
+	RateLimit float64 `json:"rate_limit"`
+}
+
+// GetMirrorConfig returns the mirror configuration for a provider.
+func (s *SettingsService) GetMirrorConfig(ctx context.Context, name ProviderName) (*MirrorConfig, error) {
+	baseURL, err := s.GetBaseURL(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	rateLimit, err := s.GetRateLimit(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	if baseURL == "" {
+		return nil, nil
+	}
+	return &MirrorConfig{BaseURL: baseURL, RateLimit: rateLimit}, nil
 }

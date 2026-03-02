@@ -27,17 +27,19 @@ type RateLimitInfo struct {
 
 // ProviderCapability describes a provider's access model and documented rate limits.
 type ProviderCapability struct {
-	Tier      AccessTier     `json:"tier"`
-	HelpURL   string         `json:"help_url,omitempty"`
-	RateLimit *RateLimitInfo `json:"rate_limit,omitempty"`
+	Tier            AccessTier     `json:"tier"`
+	HelpURL         string         `json:"help_url,omitempty"`
+	RateLimit       *RateLimitInfo `json:"rate_limit,omitempty"`
+	SupportsBaseURL bool           `json:"supports_base_url,omitempty"`
 }
 
 // ProviderCapabilities returns the known capability metadata for each provider.
 func ProviderCapabilities() map[ProviderName]ProviderCapability {
 	return map[ProviderName]ProviderCapability{
 		NameMusicBrainz: {
-			Tier:      TierFree,
-			RateLimit: &RateLimitInfo{RequestsPerSecond: 1},
+			Tier:            TierFree,
+			RateLimit:       &RateLimitInfo{RequestsPerSecond: 1},
+			SupportsBaseURL: true,
 		},
 		NameFanartTV: {
 			Tier:      TierFreeKey,
@@ -233,6 +235,15 @@ type Provider interface {
 type TestableProvider interface {
 	Provider
 	TestConnection(ctx context.Context) error
+}
+
+// MirrorableProvider is an optional interface for providers that support
+// pointing at a self-hosted mirror (e.g. MusicBrainz).
+type MirrorableProvider interface {
+	Provider
+	SetBaseURL(url string)
+	BaseURL() string
+	DefaultBaseURL() string
 }
 
 // WebImageProvider is the interface for web-based image search adapters.
