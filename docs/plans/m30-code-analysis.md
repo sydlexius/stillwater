@@ -187,7 +187,10 @@ would reduce boilerplate in API handler tests:
 func PatchJSON(t *testing.T, handler http.HandlerFunc, path string,
     pathValues map[string]string, body any) *httptest.ResponseRecorder {
     t.Helper()
-    b, _ := json.Marshal(body)
+    b, err := json.Marshal(body)
+    if err != nil {
+        t.Fatalf("failed to marshal body to JSON: %v", err)
+    }
     req := httptest.NewRequest(http.MethodPatch, path, bytes.NewReader(b))
     req.Header.Set("Content-Type", "application/json")
     for k, v := range pathValues {
