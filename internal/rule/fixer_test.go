@@ -872,13 +872,24 @@ func TestLogoTrimFixer_Fix_TrimsPadding(t *testing.T) {
 		t.Errorf("RuleID = %q, want %q", fr.RuleID, RuleLogoTrimmable)
 	}
 
-	// Verify the file on disk changed (trimmed should be smaller).
+	// Verify the trimmed image has smaller dimensions than the original.
+	// Original is 200x100 with 20px horizontal + 15px vertical padding,
+	// so trimmed should be ~160x70.
 	trimmedData, err := os.ReadFile(filepath.Join(dir, "logo.png"))
 	if err != nil {
 		t.Fatalf("reading trimmed logo: %v", err)
 	}
-	if bytes.Equal(origData, trimmedData) {
-		t.Error("logo file was not modified after trimming")
+	origCfg, _, err := image.DecodeConfig(bytes.NewReader(origData))
+	if err != nil {
+		t.Fatalf("decoding original config: %v", err)
+	}
+	trimCfg, _, err := image.DecodeConfig(bytes.NewReader(trimmedData))
+	if err != nil {
+		t.Fatalf("decoding trimmed config: %v", err)
+	}
+	if trimCfg.Width >= origCfg.Width || trimCfg.Height >= origCfg.Height {
+		t.Errorf("trimmed dimensions %dx%d should be smaller than original %dx%d",
+			trimCfg.Width, trimCfg.Height, origCfg.Width, origCfg.Height)
 	}
 }
 
