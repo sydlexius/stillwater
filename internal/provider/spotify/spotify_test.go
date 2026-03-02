@@ -3,6 +3,7 @@ package spotify
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -302,8 +303,14 @@ func TestTestConnectionBadCredentials(t *testing.T) {
 		provider.NameSpotify: validCredentialsJSON(),
 	})
 
-	if err := a.TestConnection(context.Background()); err == nil {
+	err := a.TestConnection(context.Background())
+	if err == nil {
 		t.Fatal("expected error for bad credentials")
+	}
+	// refreshToken now maps 401 to ErrAuthRequired
+	var authErr *provider.ErrAuthRequired
+	if !errors.As(err, &authErr) {
+		t.Errorf("expected *provider.ErrAuthRequired in chain, got %T: %v", err, err)
 	}
 }
 

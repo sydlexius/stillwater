@@ -48,10 +48,14 @@ func (r *Router) handleSetProviderKey(w http.ResponseWriter, req *http.Request) 
 			clientID := req.FormValue("client_id")
 			clientSecret := req.FormValue("client_secret")
 			if clientID != "" && clientSecret != "" {
-				combined, _ := json.Marshal(map[string]string{
+				combined, err := json.Marshal(map[string]string{
 					"client_id":     clientID,
 					"client_secret": clientSecret,
 				})
+				if err != nil {
+					writeError(w, req, http.StatusInternalServerError, "failed to encode credentials")
+					return
+				}
 				apiKey = string(combined)
 			}
 		}
@@ -70,10 +74,14 @@ func (r *Router) handleSetProviderKey(w http.ResponseWriter, req *http.Request) 
 		skipTest = body.SkipTest
 		// Spotify: combine client_id + client_secret into JSON
 		if name == provider.NameSpotify && apiKey == "" && body.ClientID != "" && body.ClientSecret != "" {
-			combined, _ := json.Marshal(map[string]string{
+			combined, err := json.Marshal(map[string]string{
 				"client_id":     body.ClientID,
 				"client_secret": body.ClientSecret,
 			})
+			if err != nil {
+				writeError(w, req, http.StatusInternalServerError, "failed to encode credentials")
+				return
+			}
 			apiKey = string(combined)
 		}
 	}

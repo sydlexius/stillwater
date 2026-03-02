@@ -253,8 +253,11 @@ func (a *Adapter) refreshToken(ctx context.Context, creds *spotifyCredentials) (
 		return "", fmt.Errorf("reading token response: %w", err)
 	}
 
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return "", &provider.ErrAuthRequired{Provider: provider.NameSpotify}
+	}
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("token request failed: HTTP %d: %s", resp.StatusCode, string(body))
+		return "", fmt.Errorf("token request failed: HTTP %d", resp.StatusCode)
 	}
 
 	var tokenResp tokenResponse
@@ -308,6 +311,8 @@ func (a *Adapter) doRequest(ctx context.Context, reqURL string) ([]byte, error) 
 	switch statusCode {
 	case http.StatusOK:
 		return body, nil
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return nil, &provider.ErrAuthRequired{Provider: provider.NameSpotify}
 	case http.StatusNotFound:
 		return nil, &provider.ErrNotFound{Provider: provider.NameSpotify, ID: reqURL}
 	case http.StatusTooManyRequests:

@@ -37,6 +37,12 @@ func TestParse_BasicNFO(t *testing.T) {
 	if nfo.AudioDBArtistID != "111239" {
 		t.Errorf("AudioDBArtistID = %q", nfo.AudioDBArtistID)
 	}
+	if nfo.DeezerArtistID != "67549" {
+		t.Errorf("DeezerArtistID = %q, want %q", nfo.DeezerArtistID, "67549")
+	}
+	if nfo.SpotifyArtistID != "6olE6TJLqED3rqDCT0FyPh" {
+		t.Errorf("SpotifyArtistID = %q, want %q", nfo.SpotifyArtistID, "6olE6TJLqED3rqDCT0FyPh")
+	}
 	if len(nfo.Genres) != 3 {
 		t.Errorf("Genres count = %d, want 3", len(nfo.Genres))
 	} else if nfo.Genres[0] != "Rock" || nfo.Genres[1] != "Grunge" {
@@ -195,6 +201,8 @@ func TestWrite_BasicNFO(t *testing.T) {
 		AudioDBArtistID:     "111239",
 		DiscogsArtistID:     "125246",
 		WikidataID:          "Q11649",
+		DeezerArtistID:      "67549",
+		SpotifyArtistID:     "6olE6TJLqED3rqDCT0FyPh",
 		Genres:              []string{"Rock", "Grunge"},
 		Styles:              []string{"Grunge"},
 		Moods:               []string{"Aggressive"},
@@ -239,6 +247,12 @@ func TestWrite_BasicNFO(t *testing.T) {
 	}
 	if !strings.Contains(output, "<wikidataid>Q11649</wikidataid>") {
 		t.Error("output missing wikidataid")
+	}
+	if !strings.Contains(output, "<deezerartistid>67549</deezerartistid>") {
+		t.Error("output missing deezerartistid")
+	}
+	if !strings.Contains(output, "<spotifyartistid>6olE6TJLqED3rqDCT0FyPh</spotifyartistid>") {
+		t.Error("output missing spotifyartistid")
 	}
 	if !strings.Contains(output, "<genre>Rock</genre>") {
 		t.Error("output missing genre Rock")

@@ -13,6 +13,7 @@ var knownElements = map[string]bool{
 	"name": true, "sortname": true, "type": true, "gender": true,
 	"disambiguation": true, "musicbrainzartistid": true, "audiodbartistid": true,
 	"discogsartistid": true, "wikidataid": true,
+	"deezerartistid": true, "spotifyartistid": true,
 	"genre": true, "style": true, "mood": true, "yearsactive": true,
 	"born": true, "formed": true, "died": true, "disbanded": true,
 	"biography": true, "thumb": true, "fanart": true,
@@ -143,6 +144,10 @@ func parseKnownElement(decoder *xml.Decoder, nfo *ArtistNFO, name string, start 
 		return decodeCharData(decoder, &nfo.DiscogsArtistID)
 	case "wikidataid":
 		return decodeCharData(decoder, &nfo.WikidataID)
+	case "deezerartistid":
+		return decodeCharData(decoder, &nfo.DeezerArtistID)
+	case "spotifyartistid":
+		return decodeCharData(decoder, &nfo.SpotifyArtistID)
 	case "genre":
 		var s string
 		if err := decodeCharData(decoder, &s); err != nil {
@@ -311,6 +316,8 @@ func Write(w io.Writer, nfo *ArtistNFO) error {
 	writeElement(w, "audiodbartistid", nfo.AudioDBArtistID)
 	writeElement(w, "discogsartistid", nfo.DiscogsArtistID)
 	writeElement(w, "wikidataid", nfo.WikidataID)
+	writeElement(w, "deezerartistid", nfo.DeezerArtistID)
+	writeElement(w, "spotifyartistid", nfo.SpotifyArtistID)
 
 	for _, g := range nfo.Genres {
 		writeElement(w, "genre", g)

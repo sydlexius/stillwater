@@ -584,14 +584,30 @@ func extractProviderIDsFromURLs(meta *ArtistMetadata) {
 			const prefix = "/artist/"
 			if idx := strings.LastIndex(u, prefix); idx >= 0 {
 				candidate := u[idx+len(prefix):]
+				candidate = strings.TrimRight(candidate, "/")
 				// Strip any query params
 				if qIdx := strings.IndexAny(candidate, "?#"); qIdx >= 0 {
 					candidate = candidate[:qIdx]
 				}
-				if len(candidate) == 22 {
+				if isSpotifyID(candidate) {
 					meta.SpotifyID = candidate
 				}
 			}
 		}
 	}
+}
+
+// isSpotifyID reports whether s is a valid 22-character base62 Spotify ID.
+// This is a package-private copy to avoid importing the spotify package
+// (which would create a circular dependency).
+func isSpotifyID(s string) bool {
+	if len(s) != 22 {
+		return false
+	}
+	for _, c := range s {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') {
+			return false
+		}
+	}
+	return true
 }
