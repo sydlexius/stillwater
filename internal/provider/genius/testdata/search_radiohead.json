@@ -1,0 +1,58 @@
+{
+  "response": {
+    "hits": [
+      {
+        "type": "song",
+        "result": {
+          "id": 378195,
+          "title": "Creep",
+          "url": "https://genius.com/Radiohead-creep-lyrics",
+          "primary_artist": {
+            "id": 604,
+            "name": "Radiohead",
+            "url": "https://genius.com/artists/Radiohead"
+          }
+        }
+      },
+      {
+        "type": "song",
+        "result": {
+          "id": 55446,
+          "title": "Karma Police",
+          "url": "https://genius.com/Radiohead-karma-police-lyrics",
+          "primary_artist": {
+            "id": 604,
+            "name": "Radiohead",
+            "url": "https://genius.com/artists/Radiohead"
+          }
+        }
+      },
+      {
+        "type": "song",
+        "result": {
+          "id": 90210,
+          "title": "No Surprises",
+          "url": "https://genius.com/Radiohead-no-surprises-lyrics",
+          "primary_artist": {
+            "id": 604,
+            "name": "Radiohead",
+            "url": "https://genius.com/artists/Radiohead"
+          }
+        }
+      },
+      {
+        "type": "song",
+        "result": {
+          "id": 999001,
+          "title": "Radiohead Tribute",
+          "url": "https://genius.com/Some-cover-band-radiohead-tribute-lyrics",
+          "primary_artist": {
+            "id": 88888,
+            "name": "Some Cover Band",
+            "url": "https://genius.com/artists/Some-cover-band"
+          }
+        }
+      }
+    ]
+  }
+}

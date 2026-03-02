@@ -187,6 +187,7 @@ func DefaultConfig() *ScraperConfig {
 					provider.NameDiscogs,
 					provider.NameAudioDB,
 					provider.NameWikidata,
+					provider.NameGenius,
 				},
 			},
 			{
@@ -246,6 +247,12 @@ func ProviderCapabilities() []ProviderCapability {
 			MetadataFields: []FieldName{
 				FieldMembers, FieldFormed, FieldBorn, FieldDied, FieldDisbanded,
 			},
+		},
+		{
+			Provider:       provider.NameGenius,
+			DisplayName:    provider.NameGenius.DisplayName(),
+			RequiresAuth:   true,
+			MetadataFields: []FieldName{FieldBiography},
 		},
 	}
 }

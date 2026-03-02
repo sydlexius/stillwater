@@ -17,6 +17,7 @@ var defaultRateLimits = map[ProviderName]rate.Limit{
 	NameWikidata:    5,
 	NameDuckDuckGo:  1,
 	NameDeezer:      5,
+	NameGenius:      5,
 }
 
 // RateLimiterMap holds one rate.Limiter per provider, created once at startup.
