@@ -11,6 +11,8 @@ servers:
     description: Local development
 security:
   - cookieAuth: []
+  - bearerAuth: []
+  - apiKeyAuth: []
 components:
   securitySchemes:
     cookieAuth:
@@ -20,7 +22,12 @@ components:
     bearerAuth:
       type: http
       scheme: bearer
-      description: API token (sw_ prefix) via Authorization header or apikey query parameter
+      description: API token (sw_ prefix) via Authorization header
+    apiKeyAuth:
+      type: apiKey
+      in: query
+      name: apikey
+      description: API token (sw_ prefix) via query parameter
   schemas:
     Error:
       type: object
@@ -2182,6 +2189,19 @@ paths:
                   enum: [regular, classical]
                   default: regular
               required: [name]
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                path:
+                  type: string
+                type:
+                  type: string
+                  enum: [regular, classical]
+                  default: regular
+              required: [name]
       responses:
         "201":
           description: Library created
@@ -2260,6 +2280,17 @@ paths:
                 fs_poll_interval:
                   type: integer
                   description: Seconds between polls (60, 300, 900, or 1800)
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                path:
+                  type: string
+                type:
+                  type: string
+                  enum: [regular, classical]
       responses:
         "200":
           description: Library updated
@@ -3229,6 +3260,13 @@ paths:
         required: true
         content:
           application/json:
+            schema:
+              type: object
+              properties:
+                passphrase:
+                  type: string
+              required: [passphrase]
+          application/x-www-form-urlencoded:
             schema:
               type: object
               properties:
