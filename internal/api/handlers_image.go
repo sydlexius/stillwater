@@ -651,10 +651,13 @@ func (r *Router) setArtistImageFlag(ctx context.Context, a *artist.Artist, image
 	if exists {
 		patterns := r.getActiveNamingConfig(ctx, imageType)
 		if filePath, found := findExistingImage(a.Path, patterns); found {
-			if data, readErr := os.ReadFile(filePath); readErr == nil { //nolint:gosec // path from trusted naming patterns
-				w, h, _ := img.GetDimensions(bytes.NewReader(data))
+			if f, openErr := os.Open(filePath); openErr == nil { //nolint:gosec // path from trusted naming patterns
+				defer f.Close() //nolint:errcheck
+				w, h, _ := img.GetDimensions(f)
 				lowRes = img.IsLowResolution(w, h, imageType)
-				placeholder, _ = img.GeneratePlaceholder(bytes.NewReader(data), imageType)
+				if _, seekErr := f.Seek(0, io.SeekStart); seekErr == nil {
+					placeholder, _ = img.GeneratePlaceholder(f, imageType)
+				}
 			}
 		}
 	}

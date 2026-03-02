@@ -459,6 +459,26 @@ func TestGeneratePlaceholder_InvalidInput(t *testing.T) {
 	}
 }
 
+func TestGeneratePlaceholder_TooLargeBytes(t *testing.T) {
+	// Create data that exceeds maxPlaceholderBytes (25 MB).
+	// We don't need a valid image -- the size check happens before decode.
+	// Prepend a valid JPEG header so DetectFormat succeeds.
+	header := makeJPEG(t, 1, 1)
+	padding := make([]byte, 26<<20) // 26 MB
+	data := append(header, padding...)
+
+	result, err := GeneratePlaceholder(bytes.NewReader(data), "thumb")
+	if err == nil {
+		t.Error("expected error for oversized input")
+	}
+	if result != "" {
+		t.Errorf("expected empty result, got %q", result[:min(len(result), 30)])
+	}
+	if err != nil && !strings.Contains(err.Error(), "too large") {
+		t.Errorf("error should mention 'too large', got: %v", err)
+	}
+}
+
 func TestIsLowResolution(t *testing.T) {
 	tests := []struct {
 		name      string

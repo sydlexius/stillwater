@@ -398,16 +398,39 @@ func Crop(src io.Reader, x, y, w, h int) ([]byte, string, error) {
 	return data, outFormat, nil
 }
 
+// Size limits for placeholder generation to prevent OOM on huge images.
+const (
+	maxPlaceholderBytes  int64 = 25 << 20    // 25 MB (matches upload limit)
+	maxPlaceholderPixels int64 = 100_000_000 // 100 megapixels
+)
+
 // GeneratePlaceholder creates a tiny 16x16 base64-encoded data URI from the
 // source image. Logos are encoded as PNG (to preserve alpha); all other types
 // use JPEG at quality 20. Returns an empty string and an error on decode failure.
+// Images exceeding 25 MB or 100 megapixels are rejected to prevent OOM.
 func GeneratePlaceholder(src io.Reader, imageType string) (string, error) {
 	_, replay, err := DetectFormat(src)
 	if err != nil {
 		return "", fmt.Errorf("detecting format: %w", err)
 	}
 
-	decoded, _, err := image.Decode(replay)
+	data, err := io.ReadAll(io.LimitReader(replay, maxPlaceholderBytes+1))
+	if err != nil {
+		return "", fmt.Errorf("reading image data: %w", err)
+	}
+	if int64(len(data)) > maxPlaceholderBytes {
+		return "", fmt.Errorf("image too large for placeholder (%d bytes, max %d)", len(data), maxPlaceholderBytes)
+	}
+
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		return "", fmt.Errorf("decoding image config: %w", err)
+	}
+	if int64(cfg.Width)*int64(cfg.Height) > maxPlaceholderPixels {
+		return "", fmt.Errorf("image too many pixels for placeholder (%dx%d, max %d)", cfg.Width, cfg.Height, maxPlaceholderPixels)
+	}
+
+	decoded, _, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
 		return "", fmt.Errorf("decoding image: %w", err)
 	}
