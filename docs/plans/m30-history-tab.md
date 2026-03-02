@@ -107,7 +107,7 @@ All existing mutation code paths need change recording:
 - `internal/api/handlers_field.go` -- record changes
 - `internal/api/handlers_artist.go` -- add history data to detail page
 - `internal/api/handlers_image.go` -- archive before replace/delete
-- `internal/api/routes.go` -- history API routes
+- `internal/api/router.go` -- history API routes
 - `web/templates/artist_detail.templ` -- add History tab
 
 ## Testing Strategy
