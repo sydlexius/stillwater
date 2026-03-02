@@ -426,7 +426,12 @@ func GeneratePlaceholder(src io.Reader, imageType string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("decoding image config: %w", err)
 	}
-	if int64(cfg.Width)*int64(cfg.Height) > maxPlaceholderPixels {
+	w := int64(cfg.Width)
+	h := int64(cfg.Height)
+	if w <= 0 || h <= 0 {
+		return "", fmt.Errorf("invalid image dimensions (%dx%d)", cfg.Width, cfg.Height)
+	}
+	if h > maxPlaceholderPixels || w > maxPlaceholderPixels/h {
 		return "", fmt.Errorf("image too many pixels for placeholder (%dx%d, max %d)", cfg.Width, cfg.Height, maxPlaceholderPixels)
 	}
 

@@ -237,7 +237,11 @@ func (s *Service) processDirectory(ctx context.Context, dirPath, name, libraryID
 		return fmt.Errorf("looking up artist by path: %w", err)
 	}
 
-	detected := detectFiles(dirPath, existing)
+	detected, detectErr := detectFiles(dirPath, existing)
+	if detectErr != nil {
+		s.logger.Warn("reading artist directory", "path", dirPath, "error", detectErr)
+		return nil // skip this directory entirely -- preserve existing DB state
+	}
 
 	if existing == nil {
 		// New artist
@@ -576,10 +580,10 @@ type detectedFiles struct {
 // directory and probes each found image for low-resolution status.
 // When existing is non-nil, its placeholders are reused to skip expensive
 // regeneration for images that already have one.
-func detectFiles(dirPath string, existing *artist.Artist) detectedFiles {
+func detectFiles(dirPath string, existing *artist.Artist) (detectedFiles, error) {
 	entries, err := os.ReadDir(dirPath)
 	if err != nil {
-		return detectedFiles{}
+		return detectedFiles{}, fmt.Errorf("reading directory: %w", err)
 	}
 
 	// Build a set of lowercase filenames for efficient lookup.
@@ -642,7 +646,7 @@ func detectFiles(dirPath string, existing *artist.Artist) detectedFiles {
 		}
 	}
 
-	return d
+	return d, nil
 }
 
 // probeImageFile opens a file once, probes dimensions for low-resolution

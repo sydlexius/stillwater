@@ -540,7 +540,10 @@ func TestDetectFiles(t *testing.T) {
 		os.WriteFile(filepath.Join(dir, name), []byte("test"), 0o644) //nolint:errcheck
 	}
 
-	d := detectFiles(dir, nil)
+	d, err := detectFiles(dir, nil)
+	if err != nil {
+		t.Fatalf("detectFiles: %v", err)
+	}
 
 	if !d.NFOExists {
 		t.Error("NFOExists should be true")
@@ -580,7 +583,10 @@ func TestDetectFiles_LowRes(t *testing.T) {
 	// banner.png 1000x185 - above 758x140, not low-res
 	writeTestPNG("banner.png", 1000, 185)
 
-	d := detectFiles(dir, nil)
+	d, err := detectFiles(dir, nil)
+	if err != nil {
+		t.Fatalf("detectFiles: %v", err)
+	}
 
 	if !d.ThumbExists {
 		t.Fatal("ThumbExists should be true")
@@ -605,6 +611,14 @@ func TestDetectFiles_LowRes(t *testing.T) {
 	}
 	if d.BannerLowRes {
 		t.Error("BannerLowRes should be false for 1000x185 banner")
+	}
+}
+
+func TestDetectFiles_ReadDirError(t *testing.T) {
+	// Pass a path that does not exist so os.ReadDir fails.
+	_, err := detectFiles(filepath.Join(t.TempDir(), "nonexistent"), nil)
+	if err == nil {
+		t.Fatal("expected error for nonexistent directory")
 	}
 }
 
@@ -745,7 +759,10 @@ func TestDetectFiles_Placeholders(t *testing.T) {
 		t.Fatalf("writing logo.png: %v", err)
 	}
 
-	d := detectFiles(dir, nil)
+	d, err := detectFiles(dir, nil)
+	if err != nil {
+		t.Fatalf("detectFiles: %v", err)
+	}
 
 	if !strings.HasPrefix(d.ThumbPlaceholder, "data:image/jpeg;base64,") {
 		t.Errorf("ThumbPlaceholder should be a JPEG data URI, got prefix %q", truncate30(d.ThumbPlaceholder))
@@ -796,7 +813,10 @@ func TestDetectFiles_SkipsExistingPlaceholder(t *testing.T) {
 		ThumbPlaceholder: existingPH,
 	}
 
-	d := detectFiles(dir, existing)
+	d, err := detectFiles(dir, existing)
+	if err != nil {
+		t.Fatalf("detectFiles: %v", err)
+	}
 
 	if !d.ThumbExists {
 		t.Fatal("ThumbExists should be true")
