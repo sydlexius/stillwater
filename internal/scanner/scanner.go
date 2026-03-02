@@ -586,11 +586,12 @@ func detectFiles(dirPath string, existing *artist.Artist) (detectedFiles, error)
 		return detectedFiles{}, fmt.Errorf("reading directory: %w", err)
 	}
 
-	// Build a set of lowercase filenames for efficient lookup.
-	files := make(map[string]bool, len(entries))
+	// Map lowercase filenames to actual on-disk names so that file opens
+	// use the real casing (required on case-sensitive filesystems).
+	files := make(map[string]string, len(entries))
 	for _, e := range entries {
 		if !e.IsDir() {
-			files[strings.ToLower(e.Name())] = true
+			files[strings.ToLower(e.Name())] = e.Name()
 		}
 	}
 
@@ -604,23 +605,25 @@ func detectFiles(dirPath string, existing *artist.Artist) (detectedFiles, error)
 	}
 
 	var d detectedFiles
-	d.NFOExists = files["artist.nfo"]
+	if _, ok := files["artist.nfo"]; ok {
+		d.NFOExists = true
+	}
 
 	for _, p := range thumbPatterns {
-		if files[strings.ToLower(p)] {
-			fp := filepath.Join(dirPath, p)
+		if actual, ok := files[strings.ToLower(p)]; ok {
+			fp := filepath.Join(dirPath, actual)
 			d.ThumbExists = true
 			d.ThumbLowRes, d.ThumbPlaceholder = probeImageFile(fp, "thumb", existThumbPH)
 			break
 		}
 	}
 	for _, p := range fanartPatterns {
-		if files[strings.ToLower(p)] {
-			fp := filepath.Join(dirPath, p)
+		if actual, ok := files[strings.ToLower(p)]; ok {
+			fp := filepath.Join(dirPath, actual)
 			d.FanartExists = true
 			d.FanartLowRes, d.FanartPlaceholder = probeImageFile(fp, "fanart", existFanartPH)
 			// Count all fanart files (primary + numbered variants).
-			fanartPaths := img.DiscoverFanart(dirPath, p)
+			fanartPaths := img.DiscoverFanart(dirPath, actual)
 			if len(fanartPaths) > 0 {
 				d.FanartCount = len(fanartPaths)
 			} else {
@@ -630,16 +633,16 @@ func detectFiles(dirPath string, existing *artist.Artist) (detectedFiles, error)
 		}
 	}
 	for _, p := range logoPatterns {
-		if files[strings.ToLower(p)] {
-			fp := filepath.Join(dirPath, p)
+		if actual, ok := files[strings.ToLower(p)]; ok {
+			fp := filepath.Join(dirPath, actual)
 			d.LogoExists = true
 			d.LogoLowRes, d.LogoPlaceholder = probeImageFile(fp, "logo", existLogoPH)
 			break
 		}
 	}
 	for _, p := range bannerPatterns {
-		if files[strings.ToLower(p)] {
-			fp := filepath.Join(dirPath, p)
+		if actual, ok := files[strings.ToLower(p)]; ok {
+			fp := filepath.Join(dirPath, actual)
 			d.BannerExists = true
 			d.BannerLowRes, d.BannerPlaceholder = probeImageFile(fp, "banner", existBannerPH)
 			break
