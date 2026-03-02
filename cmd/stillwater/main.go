@@ -43,6 +43,8 @@ import (
 	"github.com/sydlexius/stillwater/internal/version"
 	"github.com/sydlexius/stillwater/internal/watcher"
 	"github.com/sydlexius/stillwater/internal/webhook"
+
+	"golang.org/x/time/rate"
 )
 
 func main() {
@@ -143,7 +145,16 @@ func run() error {
 	providerSettings := provider.NewSettingsService(db, encryptor)
 	providerRegistry := provider.NewRegistry()
 
-	providerRegistry.Register(musicbrainz.New(rateLimiters, logger))
+	mb := musicbrainz.New(rateLimiters, logger)
+	if baseURL, _ := providerSettings.GetBaseURL(context.Background(), provider.NameMusicBrainz); baseURL != "" {
+		mb.SetBaseURL(baseURL)
+		logger.Info("loaded MusicBrainz mirror URL", slog.String("base_url", baseURL))
+		if limit, _ := providerSettings.GetRateLimit(context.Background(), provider.NameMusicBrainz); limit > 0 {
+			rateLimiters.SetLimit(provider.NameMusicBrainz, rate.Limit(limit))
+			logger.Info("loaded MusicBrainz custom rate limit", slog.Float64("req_per_sec", limit))
+		}
+	}
+	providerRegistry.Register(mb)
 	providerRegistry.Register(fanarttv.New(rateLimiters, providerSettings, logger))
 	providerRegistry.Register(audiodb.New(rateLimiters, providerSettings, logger))
 	providerRegistry.Register(discogs.New(rateLimiters, providerSettings, logger))
@@ -248,6 +259,7 @@ func run() error {
 		ProviderSettings:   providerSettings,
 		ProviderRegistry:   providerRegistry,
 		WebSearchRegistry:  webSearchRegistry,
+		RateLimiters:       rateLimiters,
 		Orchestrator:       orchestrator,
 		RuleService:        ruleService,
 		RuleEngine:         ruleEngine,

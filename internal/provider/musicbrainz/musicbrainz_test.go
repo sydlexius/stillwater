@@ -318,6 +318,51 @@ func TestGetReleaseGroupsNotFound(t *testing.T) {
 	}
 }
 
+func TestSetBaseURL(t *testing.T) {
+	a := newTestAdapter(t, "http://localhost")
+
+	// Initially the default.
+	if a.BaseURL() != "http://localhost" {
+		t.Errorf("expected http://localhost, got %s", a.BaseURL())
+	}
+
+	// Set a custom URL.
+	a.SetBaseURL("http://mirror:5000/ws/2")
+	if a.BaseURL() != "http://mirror:5000/ws/2" {
+		t.Errorf("expected http://mirror:5000/ws/2, got %s", a.BaseURL())
+	}
+
+	// Trailing slash is stripped.
+	a.SetBaseURL("http://mirror:5000/ws/2/")
+	if a.BaseURL() != "http://mirror:5000/ws/2" {
+		t.Errorf("expected trailing slash stripped, got %s", a.BaseURL())
+	}
+}
+
+func TestDefaultBaseURL(t *testing.T) {
+	a := newTestAdapter(t, "http://localhost")
+	if a.DefaultBaseURL() != "https://musicbrainz.org/ws/2" {
+		t.Errorf("unexpected default base URL: %s", a.DefaultBaseURL())
+	}
+}
+
+func TestMirrorableSearchArtist(t *testing.T) {
+	// Start a test server, create adapter pointing elsewhere, then redirect via SetBaseURL.
+	srv := newTestServer(t)
+	defer srv.Close()
+
+	a := newTestAdapter(t, "http://will-not-work:9999")
+	a.SetBaseURL(srv.URL)
+
+	results, err := a.SearchArtist(context.Background(), "Radiohead")
+	if err != nil {
+		t.Fatalf("SearchArtist after SetBaseURL: %v", err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(results))
+	}
+}
+
 func TestNormalizeHyphens(t *testing.T) {
 	cases := []struct {
 		input string
