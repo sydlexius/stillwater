@@ -11,7 +11,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode"
 
 	"github.com/sydlexius/stillwater/internal/provider"
 )
@@ -127,7 +126,7 @@ func (a *Adapter) getArtistByID(ctx context.Context, id string) (*provider.Artis
 		}
 	}
 
-	reqURL := a.baseURL + "/artists/" + id + "?text_format=plain"
+	reqURL := a.baseURL + "/artists/" + url.PathEscape(id) + "?text_format=plain"
 
 	body, err := a.doRequest(ctx, reqURL)
 	if err != nil {
@@ -232,7 +231,7 @@ func isNumeric(s string) bool {
 		return false
 	}
 	for _, r := range s {
-		if !unicode.IsDigit(r) {
+		if r < '0' || r > '9' {
 			return false
 		}
 	}
