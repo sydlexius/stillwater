@@ -248,7 +248,10 @@ func (s *SettingsService) ListProviderKeyStatuses(ctx context.Context) ([]Provid
 			SupportsBaseURL: cap.SupportsBaseURL,
 		}
 		if cap.SupportsBaseURL {
-			mirror, _ := s.GetMirrorConfig(ctx, name)
+			mirror, err := s.GetMirrorConfig(ctx, name)
+			if err != nil {
+				return nil, err
+			}
 			pks.Mirror = mirror
 		}
 		statuses = append(statuses, pks)

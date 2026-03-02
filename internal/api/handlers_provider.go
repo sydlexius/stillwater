@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -546,52 +547,73 @@ func (r *Router) handleSetMirror(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	var body struct {
-		BaseURL   string  `json:"base_url"`
-		RateLimit float64 `json:"rate_limit"`
-	}
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-		writeError(w, req, http.StatusBadRequest, "invalid request body")
-		return
+	var baseURL string
+	var rateLimit float64
+	contentType := req.Header.Get("Content-Type")
+	if strings.HasPrefix(contentType, "application/x-www-form-urlencoded") {
+		if err := req.ParseForm(); err != nil {
+			writeError(w, req, http.StatusBadRequest, "invalid form data")
+			return
+		}
+		baseURL = req.FormValue("base_url")
+		if rl := req.FormValue("rate_limit"); rl != "" {
+			parsed, err := strconv.ParseFloat(rl, 64)
+			if err != nil {
+				writeError(w, req, http.StatusBadRequest, "rate_limit must be a number")
+				return
+			}
+			rateLimit = parsed
+		}
+	} else {
+		var body struct {
+			BaseURL   string  `json:"base_url"`
+			RateLimit float64 `json:"rate_limit"`
+		}
+		if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+			writeError(w, req, http.StatusBadRequest, "invalid request body")
+			return
+		}
+		baseURL = body.BaseURL
+		rateLimit = body.RateLimit
 	}
 
-	if body.BaseURL == "" {
+	if baseURL == "" {
 		writeError(w, req, http.StatusBadRequest, "base_url is required")
 		return
 	}
 
 	// Validate URL.
-	parsed, err := url.Parse(body.BaseURL)
+	parsed, err := url.Parse(baseURL)
 	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
 		writeError(w, req, http.StatusBadRequest, "base_url must be a valid http or https URL")
 		return
 	}
 
 	// Validate rate limit: must be positive and capped at 100.
-	if body.RateLimit <= 0 {
-		body.RateLimit = 10 // default for mirrors
+	if rateLimit <= 0 {
+		rateLimit = 10 // default for mirrors
 	}
-	if body.RateLimit > 100 {
-		body.RateLimit = 100
+	if rateLimit > 100 {
+		rateLimit = 100
 	}
 
 	// Persist settings.
-	if err := r.providerSettings.SetBaseURL(req.Context(), name, body.BaseURL); err != nil {
+	if err := r.providerSettings.SetBaseURL(req.Context(), name, baseURL); err != nil {
 		r.logger.Error("saving mirror base URL", "provider", name, "error", err)
 		writeError(w, req, http.StatusInternalServerError, "failed to save mirror URL")
 		return
 	}
-	if err := r.providerSettings.SetRateLimit(req.Context(), name, body.RateLimit); err != nil {
+	if err := r.providerSettings.SetRateLimit(req.Context(), name, rateLimit); err != nil {
 		r.logger.Error("saving mirror rate limit", "provider", name, "error", err)
 		writeError(w, req, http.StatusInternalServerError, "failed to save rate limit")
 		return
 	}
 
 	// Apply changes to the live adapter and rate limiter.
-	mirrorable.SetBaseURL(body.BaseURL)
-	r.rateLimiters.SetLimit(name, rate.Limit(body.RateLimit))
+	mirrorable.SetBaseURL(baseURL)
+	r.rateLimiters.SetLimit(name, rate.Limit(rateLimit))
 	r.logger.Info("mirror configured", "provider", name,
-		"base_url", body.BaseURL, "rate_limit", body.RateLimit)
+		"base_url", baseURL, "rate_limit", rateLimit)
 
 	// Auto-test the connection.
 	testResult := "ok"

@@ -2552,7 +2552,6 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 					hx-put={ "/api/v1/providers/" + string(pk.Name) + "/mirror" }
 					hx-target={ "#provider-card-" + string(pk.Name) }
 					hx-swap="innerHTML"
-					hx-ext="json-enc"
 				>
 					<div class="flex flex-col gap-1.5 sm:flex-row sm:items-end">
 						<div class="flex-1">

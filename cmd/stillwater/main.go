@@ -146,13 +146,20 @@ func run() error {
 	providerRegistry := provider.NewRegistry()
 
 	mb := musicbrainz.New(rateLimiters, logger)
-	if baseURL, _ := providerSettings.GetBaseURL(context.Background(), provider.NameMusicBrainz); baseURL != "" {
+	baseURL, err := providerSettings.GetBaseURL(context.Background(), provider.NameMusicBrainz)
+	if err != nil {
+		logger.Warn("failed to load MusicBrainz mirror URL from database", "error", err)
+	} else if baseURL != "" {
 		mb.SetBaseURL(baseURL)
 		logger.Info("loaded MusicBrainz mirror URL", slog.String("base_url", baseURL))
-		if limit, _ := providerSettings.GetRateLimit(context.Background(), provider.NameMusicBrainz); limit > 0 {
-			rateLimiters.SetLimit(provider.NameMusicBrainz, rate.Limit(limit))
-			logger.Info("loaded MusicBrainz custom rate limit", slog.Float64("req_per_sec", limit))
-		}
+	}
+
+	limit, err := providerSettings.GetRateLimit(context.Background(), provider.NameMusicBrainz)
+	if err != nil {
+		logger.Warn("failed to load MusicBrainz rate limit from database", "error", err)
+	} else if limit > 0 {
+		rateLimiters.SetLimit(provider.NameMusicBrainz, rate.Limit(limit))
+		logger.Info("loaded MusicBrainz custom rate limit", slog.Float64("req_per_sec", limit))
 	}
 	providerRegistry.Register(mb)
 	providerRegistry.Register(fanarttv.New(rateLimiters, providerSettings, logger))
