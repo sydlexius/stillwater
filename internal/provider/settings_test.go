@@ -724,6 +724,171 @@ func TestListProviderKeyStatusesWithPersistedStatus(t *testing.T) {
 	}
 }
 
+func TestBaseURLRoundTrip(t *testing.T) {
+	db := setupTestDB(t)
+	enc := setupTestEncryptor(t)
+	svc := NewSettingsService(db, enc)
+	ctx := context.Background()
+
+	// Initially empty.
+	url, err := svc.GetBaseURL(ctx, NameMusicBrainz)
+	if err != nil {
+		t.Fatalf("GetBaseURL: %v", err)
+	}
+	if url != "" {
+		t.Errorf("expected empty base URL, got %q", url)
+	}
+
+	// Set a custom URL.
+	if err := svc.SetBaseURL(ctx, NameMusicBrainz, "http://192.168.1.50:5000/ws/2"); err != nil {
+		t.Fatalf("SetBaseURL: %v", err)
+	}
+
+	url, err = svc.GetBaseURL(ctx, NameMusicBrainz)
+	if err != nil {
+		t.Fatalf("GetBaseURL after set: %v", err)
+	}
+	if url != "http://192.168.1.50:5000/ws/2" {
+		t.Errorf("expected custom URL, got %q", url)
+	}
+
+	// Delete the URL.
+	if err := svc.DeleteBaseURL(ctx, NameMusicBrainz); err != nil {
+		t.Fatalf("DeleteBaseURL: %v", err)
+	}
+
+	url, err = svc.GetBaseURL(ctx, NameMusicBrainz)
+	if err != nil {
+		t.Fatalf("GetBaseURL after delete: %v", err)
+	}
+	if url != "" {
+		t.Errorf("expected empty URL after delete, got %q", url)
+	}
+}
+
+func TestRateLimitRoundTrip(t *testing.T) {
+	db := setupTestDB(t)
+	enc := setupTestEncryptor(t)
+	svc := NewSettingsService(db, enc)
+	ctx := context.Background()
+
+	// Initially zero.
+	limit, err := svc.GetRateLimit(ctx, NameMusicBrainz)
+	if err != nil {
+		t.Fatalf("GetRateLimit: %v", err)
+	}
+	if limit != 0 {
+		t.Errorf("expected 0 rate limit, got %v", limit)
+	}
+
+	// Set a custom limit.
+	if err := svc.SetRateLimit(ctx, NameMusicBrainz, 10); err != nil {
+		t.Fatalf("SetRateLimit: %v", err)
+	}
+
+	limit, err = svc.GetRateLimit(ctx, NameMusicBrainz)
+	if err != nil {
+		t.Fatalf("GetRateLimit after set: %v", err)
+	}
+	if limit != 10 {
+		t.Errorf("expected 10, got %v", limit)
+	}
+
+	// Delete the limit.
+	if err := svc.DeleteRateLimit(ctx, NameMusicBrainz); err != nil {
+		t.Fatalf("DeleteRateLimit: %v", err)
+	}
+
+	limit, err = svc.GetRateLimit(ctx, NameMusicBrainz)
+	if err != nil {
+		t.Fatalf("GetRateLimit after delete: %v", err)
+	}
+	if limit != 0 {
+		t.Errorf("expected 0 after delete, got %v", limit)
+	}
+}
+
+func TestGetMirrorConfig(t *testing.T) {
+	db := setupTestDB(t)
+	enc := setupTestEncryptor(t)
+	svc := NewSettingsService(db, enc)
+	ctx := context.Background()
+
+	// No config initially.
+	mc, err := svc.GetMirrorConfig(ctx, NameMusicBrainz)
+	if err != nil {
+		t.Fatalf("GetMirrorConfig: %v", err)
+	}
+	if mc != nil {
+		t.Errorf("expected nil mirror config, got %+v", mc)
+	}
+
+	// Set base URL and rate limit.
+	if err := svc.SetBaseURL(ctx, NameMusicBrainz, "http://mirror:5000/ws/2"); err != nil {
+		t.Fatalf("SetBaseURL: %v", err)
+	}
+	if err := svc.SetRateLimit(ctx, NameMusicBrainz, 20); err != nil {
+		t.Fatalf("SetRateLimit: %v", err)
+	}
+
+	mc, err = svc.GetMirrorConfig(ctx, NameMusicBrainz)
+	if err != nil {
+		t.Fatalf("GetMirrorConfig after set: %v", err)
+	}
+	if mc == nil {
+		t.Fatal("expected non-nil mirror config")
+	}
+	if mc.BaseURL != "http://mirror:5000/ws/2" {
+		t.Errorf("expected base URL, got %q", mc.BaseURL)
+	}
+	if mc.RateLimit != 20 {
+		t.Errorf("expected rate limit 20, got %v", mc.RateLimit)
+	}
+}
+
+func TestMirrorInProviderKeyStatuses(t *testing.T) {
+	db := setupTestDB(t)
+	enc := setupTestEncryptor(t)
+	svc := NewSettingsService(db, enc)
+	ctx := context.Background()
+
+	// Set mirror config for MusicBrainz.
+	if err := svc.SetBaseURL(ctx, NameMusicBrainz, "http://mirror:5000/ws/2"); err != nil {
+		t.Fatalf("SetBaseURL: %v", err)
+	}
+	if err := svc.SetRateLimit(ctx, NameMusicBrainz, 15); err != nil {
+		t.Fatalf("SetRateLimit: %v", err)
+	}
+
+	statuses, err := svc.ListProviderKeyStatuses(ctx)
+	if err != nil {
+		t.Fatalf("ListProviderKeyStatuses: %v", err)
+	}
+
+	mb := findStatus(t, statuses, NameMusicBrainz)
+	if !mb.SupportsBaseURL {
+		t.Error("expected MusicBrainz SupportsBaseURL=true")
+	}
+	if mb.Mirror == nil {
+		t.Fatal("expected non-nil Mirror on MusicBrainz")
+	}
+	if mb.Mirror.BaseURL != "http://mirror:5000/ws/2" {
+		t.Errorf("expected mirror base URL, got %q", mb.Mirror.BaseURL)
+	}
+	if mb.Mirror.RateLimit != 15 {
+		t.Errorf("expected mirror rate limit 15, got %v", mb.Mirror.RateLimit)
+	}
+
+	// Other providers should not have mirror config.
+	fanart := findStatus(t, statuses, NameFanartTV)
+	if fanart.SupportsBaseURL {
+		t.Error("expected Fanart.tv SupportsBaseURL=false")
+	}
+	if fanart.Mirror != nil {
+		t.Error("expected nil Mirror on Fanart.tv")
+	}
+}
+
 func TestAnyWebSearchEnabled(t *testing.T) {
 	db := setupTestDB(t)
 	enc := setupTestEncryptor(t)
