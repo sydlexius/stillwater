@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/provider"
@@ -22,6 +23,7 @@ type Adapter struct {
 	client  *http.Client
 	limiter *provider.RateLimiterMap
 	logger  *slog.Logger
+	mu      sync.RWMutex
 	baseURL string
 }
 
@@ -55,7 +57,10 @@ func (a *Adapter) SearchArtist(ctx context.Context, name string) ([]provider.Art
 		"fmt":   {"json"},
 		"limit": {"25"},
 	}
-	reqURL := a.baseURL + "/artist?" + params.Encode()
+	a.mu.RLock()
+	base := a.baseURL
+	a.mu.RUnlock()
+	reqURL := base + "/artist?" + params.Encode()
 
 	body, err := a.doRequest(ctx, reqURL)
 	if err != nil {
@@ -90,7 +95,10 @@ func (a *Adapter) GetArtist(ctx context.Context, mbid string) (*provider.ArtistM
 		"inc": {"aliases+genres+tags+ratings+url-rels+artist-rels"},
 		"fmt": {"json"},
 	}
-	reqURL := a.baseURL + "/artist/" + url.PathEscape(mbid) + "?" + params.Encode()
+	a.mu.RLock()
+	base := a.baseURL
+	a.mu.RUnlock()
+	reqURL := base + "/artist/" + url.PathEscape(mbid) + "?" + params.Encode()
 
 	body, err := a.doRequest(ctx, reqURL)
 	if err != nil {
@@ -130,7 +138,10 @@ func (a *Adapter) GetReleaseGroups(ctx context.Context, mbid string) ([]provider
 			"offset": {fmt.Sprintf("%d", offset)},
 			"fmt":    {"json"},
 		}
-		reqURL := a.baseURL + "/release-group?" + params.Encode()
+		a.mu.RLock()
+		base := a.baseURL
+		a.mu.RUnlock()
+		reqURL := base + "/release-group?" + params.Encode()
 
 		body, err := a.doRequest(ctx, reqURL)
 		if err != nil {
@@ -171,9 +182,31 @@ func (a *Adapter) TestConnection(ctx context.Context) error {
 		"fmt":   {"json"},
 		"limit": {"1"},
 	}
-	reqURL := a.baseURL + "/artist?" + params.Encode()
+	a.mu.RLock()
+	base := a.baseURL
+	a.mu.RUnlock()
+	reqURL := base + "/artist?" + params.Encode()
 	_, err := a.doRequest(ctx, reqURL)
 	return err
+}
+
+// SetBaseURL updates the adapter's base URL for mirror support.
+func (a *Adapter) SetBaseURL(rawURL string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.baseURL = strings.TrimRight(rawURL, "/")
+}
+
+// BaseURL returns the current base URL.
+func (a *Adapter) BaseURL() string {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.baseURL
+}
+
+// DefaultBaseURL returns the default MusicBrainz API base URL.
+func (a *Adapter) DefaultBaseURL() string {
+	return defaultBaseURL
 }
 
 // doRequest executes an HTTP GET with rate limiting and standard headers.

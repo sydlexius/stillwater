@@ -37,6 +37,7 @@ type RouterDeps struct {
 	ProviderSettings   *provider.SettingsService
 	ProviderRegistry   *provider.Registry
 	WebSearchRegistry  *provider.WebSearchRegistry
+	RateLimiters       *provider.RateLimiterMap
 	Orchestrator       *provider.Orchestrator
 	RuleService        *rule.Service
 	RuleEngine         *rule.Engine
@@ -70,6 +71,7 @@ type Router struct {
 	providerSettings   *provider.SettingsService
 	providerRegistry   *provider.Registry
 	webSearchRegistry  *provider.WebSearchRegistry
+	rateLimiters       *provider.RateLimiterMap
 	orchestrator       *provider.Orchestrator
 	ruleService        *rule.Service
 	ruleEngine         *rule.Engine
@@ -109,6 +111,7 @@ func NewRouter(deps RouterDeps) *Router {
 		providerSettings:   deps.ProviderSettings,
 		providerRegistry:   deps.ProviderRegistry,
 		webSearchRegistry:  deps.WebSearchRegistry,
+		rateLimiters:       deps.RateLimiters,
 		orchestrator:       deps.Orchestrator,
 		ruleService:        deps.RuleService,
 		ruleEngine:         deps.RuleEngine,
@@ -239,6 +242,8 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("GET "+bp+"/api/v1/providers/priorities", wrapAuth(r.handleGetPriorities, authMw))
 	mux.HandleFunc("PUT "+bp+"/api/v1/providers/priorities", wrapAuth(r.handleSetPriorities, authMw))
 	mux.HandleFunc("PUT "+bp+"/api/v1/providers/priorities/{field}/{provider}/toggle", wrapAuth(r.handleToggleFieldProvider, authMw))
+	mux.HandleFunc("PUT "+bp+"/api/v1/providers/{name}/mirror", wrapAuth(r.handleSetMirror, authMw))
+	mux.HandleFunc("DELETE "+bp+"/api/v1/providers/{name}/mirror", wrapAuth(r.handleDeleteMirror, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/providers/search", wrapAuth(r.handleProviderSearch, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/providers/fetch", wrapAuth(r.handleProviderFetch, authMw))
 	// Web search provider routes

@@ -48,3 +48,15 @@ func (m *RateLimiterMap) Wait(ctx context.Context, name ProviderName) error {
 	}
 	return limiter.Wait(ctx)
 }
+
+// SetLimit replaces the rate limiter for a provider with a new one at the given rate.
+func (m *RateLimiterMap) SetLimit(name ProviderName, limit rate.Limit) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.limiters[name] = rate.NewLimiter(limit, 1)
+}
+
+// DefaultLimit returns the default rate limit for a provider, or 0 if unknown.
+func DefaultLimit(name ProviderName) rate.Limit {
+	return defaultRateLimits[name]
+}
