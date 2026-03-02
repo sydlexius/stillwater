@@ -666,19 +666,27 @@ func (r *Router) setArtistImageFlag(ctx context.Context, a *artist.Artist, image
 	case "thumb":
 		a.ThumbExists = exists
 		a.ThumbLowRes = lowRes
-		a.ThumbPlaceholder = placeholder
+		if placeholder != "" || !exists {
+			a.ThumbPlaceholder = placeholder
+		}
 	case "fanart":
 		a.FanartExists = exists
 		a.FanartLowRes = lowRes
-		a.FanartPlaceholder = placeholder
+		if placeholder != "" || !exists {
+			a.FanartPlaceholder = placeholder
+		}
 	case "logo":
 		a.LogoExists = exists
 		a.LogoLowRes = lowRes
-		a.LogoPlaceholder = placeholder
+		if placeholder != "" || !exists {
+			a.LogoPlaceholder = placeholder
+		}
 	case "banner":
 		a.BannerExists = exists
 		a.BannerLowRes = lowRes
-		a.BannerPlaceholder = placeholder
+		if placeholder != "" || !exists {
+			a.BannerPlaceholder = placeholder
+		}
 	}
 
 	if err := r.artistService.Update(ctx, a); err != nil {

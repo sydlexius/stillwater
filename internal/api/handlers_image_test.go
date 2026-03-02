@@ -250,3 +250,33 @@ func TestSetArtistImageFlag_UnreadableFile(t *testing.T) {
 		t.Errorf("ThumbPlaceholder should be empty for unreadable image, got %q", a.ThumbPlaceholder[:min(len(a.ThumbPlaceholder), 30)])
 	}
 }
+
+func TestSetArtistImageFlag_TransientPreservesPlaceholder(t *testing.T) {
+	r, artistSvc := testRouterWithPlatform(t)
+	dir := t.TempDir()
+
+	existingPH := "data:image/jpeg;base64,EXISTING"
+	a := &artist.Artist{
+		Name: "Test", SortName: "Test", Path: dir,
+		ThumbExists: true, ThumbPlaceholder: existingPH,
+	}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	// Write a corrupted file: image exists on disk but decode will fail.
+	if err := os.WriteFile(filepath.Join(dir, "folder.jpg"), []byte("corrupted"), 0o644); err != nil {
+		t.Fatalf("writing bad file: %v", err)
+	}
+
+	r.setArtistImageFlag(context.Background(), a, "thumb", true)
+
+	if !a.ThumbExists {
+		t.Error("ThumbExists should be true")
+	}
+	// Existing placeholder should be preserved when generation fails transiently.
+	if a.ThumbPlaceholder != existingPH {
+		t.Errorf("ThumbPlaceholder = %q, want %q (should be preserved on transient failure)",
+			a.ThumbPlaceholder[:min(len(a.ThumbPlaceholder), 30)], existingPH)
+	}
+}
