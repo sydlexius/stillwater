@@ -588,6 +588,7 @@ func (r *Router) handleSetMirror(w http.ResponseWriter, req *http.Request) {
 		writeError(w, req, http.StatusBadRequest, "base_url must be a valid http or https URL")
 		return
 	}
+	baseURL = strings.TrimRight(baseURL, "/")
 
 	// Validate rate limit: must be positive and capped at 100.
 	if rateLimit <= 0 {

@@ -1458,7 +1458,17 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Status"
+                type: object
+                properties:
+                  status:
+                    type: string
+                  test:
+                    type: string
+                    enum: [ok, error]
+                    description: Connection test result
+                  test_error:
+                    type: string
+                    description: Error message if test failed
             text/html:
               schema:
                 type: string

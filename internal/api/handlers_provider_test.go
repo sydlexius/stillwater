@@ -81,6 +81,12 @@ func TestHandleSetMirror(t *testing.T) {
 	if resp["status"] != "saved" {
 		t.Errorf("expected status 'saved', got %q", resp["status"])
 	}
+	if resp["test"] != "ok" {
+		t.Errorf("expected test 'ok', got %q", resp["test"])
+	}
+	if resp["test_error"] != "" {
+		t.Errorf("expected empty test_error, got %q", resp["test_error"])
+	}
 
 	// Verify settings were persisted.
 	ctx := context.Background()
@@ -135,6 +141,47 @@ func TestHandleSetMirrorValidation(t *testing.T) {
 				t.Errorf("status = %d, want %d; body: %s", w.Code, tt.want, w.Body.String())
 			}
 		})
+	}
+}
+
+func TestHandleSetMirrorTrailingSlash(t *testing.T) {
+	mirrorSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"artists":[]}`))
+	}))
+	defer mirrorSrv.Close()
+
+	r := testRouterWithMirror(t)
+
+	// Submit URL with trailing slash; should be normalized.
+	mirrorURL := mirrorSrv.URL + "/ws/2/"
+	body := fmt.Sprintf(`{"base_url":%q}`, mirrorURL)
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/providers/musicbrainz/mirror", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("PUT /api/v1/providers/{name}/mirror", r.handleSetMirror)
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	// Verify persisted URL has trailing slash stripped.
+	got, err := r.providerSettings.GetBaseURL(context.Background(), provider.NameMusicBrainz)
+	if err != nil {
+		t.Fatalf("GetBaseURL: %v", err)
+	}
+	want := strings.TrimRight(mirrorURL, "/")
+	if got != want {
+		t.Errorf("expected persisted URL %q, got %q", want, got)
+	}
+
+	// Verify adapter also has the normalized URL.
+	p := r.providerRegistry.Get(provider.NameMusicBrainz)
+	if p.(provider.MirrorableProvider).BaseURL() != want {
+		t.Errorf("expected adapter URL %q, got %q", want, p.(provider.MirrorableProvider).BaseURL())
 	}
 }
 
