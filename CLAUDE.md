@@ -158,6 +158,56 @@ A local helper script `setupdocker.ps1` automates the full stop/build/start cycl
 
 Run from PowerShell, not Git Bash -- MSYS2 path conversion in Git Bash breaks Docker volume mounts on Windows. The script stops and removes any running `stillwater*` containers, rebuilds the image, runs `docker compose -f docker-compose.local.yml up -d`, and tails the startup logs.
 
+## Parallel Work (Worktrees)
+
+When multiple issues or agents need to work concurrently, use git worktrees to isolate
+each unit of work. Never have two agents sharing the same working directory.
+
+### Naming Convention
+
+```
+D:\Dev\Repos\stillwater\              # main repo, main branch (coordination only)
+D:\Dev\Repos\stillwater-{issue}\      # single-issue worktree
+D:\Dev\Repos\stillwater-m{N}\         # milestone umbrella worktree (plan file, coordination)
+D:\Dev\Repos\stillwater-m{N}-{issue}\ # milestone sub-issue worktree
+```
+
+Branch naming follows existing convention:
+- Features: `feat/{issue}-short-desc`
+- Fixes: `fix/{issue}-short-desc`
+- Milestone umbrella: `feat/m{N}-umbrella`
+
+### Creating a Worktree
+
+```bash
+# From the main repo directory:
+git worktree add -b feat/315-musicbrainz-mirror ../stillwater-315 main
+
+# For a milestone sub-issue branching from the umbrella:
+git worktree add -b feat/320-short-desc ../stillwater-m17-320 feat/m17-umbrella
+```
+
+### Tracking
+
+Active worktrees are tracked in `memory/worktrees.md` inside the Claude Code
+auto-memory directory (`~/.claude/projects/<project>/memory/`), not in the repo.
+Every session that creates or destroys a worktree must update that file.
+
+### Docker UAT in Worktrees
+
+`setupdocker.ps1` lives in the main repo root and is not duplicated into worktrees.
+To run UAT from a worktree, either:
+- Copy the script into the worktree, or
+- Run it from the main repo after checking out the worktree's branch there temporarily
+
+### Cleanup
+
+After a PR is merged:
+1. Remove the worktree: `git worktree remove ../stillwater-{issue}`
+2. Delete the local branch: `git branch -d feat/{issue}-short-desc`
+3. Delete the remote branch: `gh api repos/{owner}/{repo}/git/refs/heads/feat/{issue}-short-desc -X DELETE`
+4. Update `memory/worktrees.md`
+
 ## Milestone Work Protocol
 
 When asked to work on a milestone (e.g. "implement Milestone 14"), follow this process:
@@ -169,6 +219,7 @@ Before writing any code:
 - Identify the dependency order among sub-issues.
 - Note any `[mode:]` and `[model:]` hints in issue bodies.
 - Check the current state of `main` and any in-progress branches.
+- Check `memory/worktrees.md` for any active worktrees that might overlap.
 
 ### 2. Plan File
 
@@ -208,6 +259,11 @@ Example structure:
 ### Issue #Y -- <title>
 ...
 
+## Worktrees
+| Directory              | Branch              | Issue | Status  |
+|------------------------|---------------------|-------|---------|
+| stillwater-m{N}-{issue}| feat/{issue}-desc   | #X    | pending |
+
 ## UAT / Merge Order
 1. PR #? (base: main)
 2. PR #? (stacked on #?)
@@ -218,7 +274,9 @@ Example structure:
 
 ### 3. During Work
 
-- Update the plan file checklist as work progresses (tick items, add notes).
+- Create a worktree for each sub-issue before starting code (see "Parallel Work" above).
+- Update the plan file checklist and worktree table as work progresses.
+- Update `memory/worktrees.md` whenever a worktree is created or removed.
 - Run `gofmt -d` and `go test ./...` before every commit. Do not push code that fails either.
 - Use `docker-compose.local.yml` for UAT builds whenever the PR/check cycle warrants a container test.
 - After addressing PR review feedback, update the relevant checklist items.
@@ -264,9 +322,11 @@ When any change (milestone work, bug fix, or standalone request) touches user-fa
 Once every sub-issue PR is merged to `main`:
 1. Post findings comments to all research/analysis issues and close them.
 2. Post a summary comment to the umbrella issue and close it.
-3. Delete all merged feature branches (remote and local): `gh api repos/.../git/refs/heads/<branch> -X DELETE` then `git branch -d`.
-4. Run `git fetch --prune` to remove stale tracking refs.
-5. Delete the plan file: `git rm docs/plans/m<N>-plan.md` and commit directly to `main`.
+3. Remove all worktrees: run `git worktree list` and `git worktree remove <path>` for each matching worktree (do not use glob patterns -- they are not reliably expanded by all shells).
+4. Delete all merged feature branches (remote and local): `gh api repos/.../git/refs/heads/<branch> -X DELETE` then `git branch -d`.
+5. Run `git fetch --prune` to remove stale tracking refs.
+6. Delete the plan file: `git rm docs/plans/m<N>-plan.md` and commit directly to `main`.
+7. Update `memory/worktrees.md` to move entries to "Completed" or remove them.
 
 ## License
 
