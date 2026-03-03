@@ -32,9 +32,11 @@ func TestValidateBaseURL(t *testing.T) {
 		{name: "empty host", input: "http://", wantErr: true},
 		{name: "userinfo present", input: "http://user:pass@emby:8096", wantErr: true},
 		{name: "query string", input: "http://emby:8096?foo=bar", wantErr: true},
+		{name: "bare query marker", input: "http://emby:8096?", wantErr: true},
 		{name: "fragment", input: "http://emby:8096#frag", wantErr: true},
 		{name: "missing scheme", input: "://missing-scheme", wantErr: true},
 		{name: "not a URL", input: "not-a-url", wantErr: true},
+		{name: "user only", input: "http://user@emby:8096", wantErr: true},
 	}
 
 	for _, tt := range tests {
@@ -52,6 +54,31 @@ func TestValidateBaseURL(t *testing.T) {
 			}
 			if got != tt.want {
 				t.Errorf("ValidateBaseURL(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSanitizeBaseURL(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{name: "valid http", input: "http://localhost:8096", want: "http://localhost:8096"},
+		{name: "trailing slash", input: "http://emby:8096/", want: "http://emby:8096"},
+		{name: "scheme lowercased", input: "HTTP://EMBY:8096", want: "http://EMBY:8096"},
+		{name: "with path", input: "https://emby.local/emby/", want: "https://emby.local/emby"},
+		{name: "invalid scheme still reconstructed", input: "ftp://files.example.com/data", want: "ftp://files.example.com/data"},
+		{name: "unparseable falls back", input: "://bad", want: "://bad"},
+		{name: "empty string", input: "", want: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := SanitizeBaseURL(tt.input)
+			if got != tt.want {
+				t.Errorf("SanitizeBaseURL(%q) = %q, want %q", tt.input, got, tt.want)
 			}
 		})
 	}

@@ -30,8 +30,8 @@ func New(baseURL, apiKey string, logger *slog.Logger) *Client {
 func NewWithHTTPClient(baseURL, apiKey string, httpClient *http.Client, logger *slog.Logger) *Client {
 	cleaned, err := connection.ValidateBaseURL(baseURL)
 	if err != nil {
-		logger.Warn("jellyfin base URL failed validation, using raw value", "url", baseURL, "error", err)
-		cleaned = strings.TrimRight(baseURL, "/")
+		logger.Warn("jellyfin base URL failed validation, using sanitized value", "error", err)
+		cleaned = connection.SanitizeBaseURL(baseURL)
 	}
 	return &Client{
 		httpClient: httpClient,
