@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/sydlexius/stillwater/internal/connection"
 )
 
 // Client communicates with an Emby server.
@@ -26,9 +28,14 @@ func New(baseURL, apiKey string, logger *slog.Logger) *Client {
 
 // NewWithHTTPClient creates an Emby client with a custom HTTP client (for testing).
 func NewWithHTTPClient(baseURL, apiKey string, httpClient *http.Client, logger *slog.Logger) *Client {
+	cleaned, err := connection.ValidateBaseURL(baseURL)
+	if err != nil {
+		logger.Warn("emby base URL failed validation, using raw value", "url", baseURL, "error", err)
+		cleaned = strings.TrimRight(baseURL, "/")
+	}
 	return &Client{
 		httpClient: httpClient,
-		baseURL:    strings.TrimRight(baseURL, "/"),
+		baseURL:    cleaned,
 		apiKey:     apiKey,
 		logger:     logger.With(slog.String("integration", "emby")),
 	}
@@ -125,7 +132,7 @@ func (c *Client) getRaw(ctx context.Context, path string) ([]byte, string, error
 	}
 	c.setAuth(req)
 
-	resp, err := c.httpClient.Do(req) //nolint:gosec // URL constructed from trusted base + API path
+	resp, err := c.httpClient.Do(req) //nolint:gosec // base URL validated by connection.ValidateBaseURL (http/https only, no userinfo)
 	if err != nil {
 		return nil, "", fmt.Errorf("executing request: %w", err)
 	}
@@ -154,7 +161,7 @@ func (c *Client) get(ctx context.Context, path string, result any) error {
 	}
 	c.setAuth(req)
 
-	resp, err := c.httpClient.Do(req) //nolint:gosec // URL constructed from trusted base + API path
+	resp, err := c.httpClient.Do(req) //nolint:gosec // base URL validated by connection.ValidateBaseURL (http/https only, no userinfo)
 	if err != nil {
 		return fmt.Errorf("executing request: %w", err)
 	}
@@ -180,7 +187,7 @@ func (c *Client) post(ctx context.Context, path string, body io.Reader) error {
 	}
 	c.setAuth(req)
 
-	resp, err := c.httpClient.Do(req) //nolint:gosec // URL constructed from trusted base + API path
+	resp, err := c.httpClient.Do(req) //nolint:gosec // base URL validated by connection.ValidateBaseURL (http/https only, no userinfo)
 	if err != nil {
 		return fmt.Errorf("executing request: %w", err)
 	}

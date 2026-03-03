@@ -177,6 +177,10 @@ func (s *Service) DeduplicateByTypeURL(ctx context.Context) (int64, error) {
 
 // Update modifies an existing connection. If APIKey is non-empty, it re-encrypts.
 func (s *Service) Update(ctx context.Context, c *Connection) error {
+	if err := c.Validate(); err != nil {
+		return fmt.Errorf("validating connection: %w", err)
+	}
+
 	c.UpdatedAt = time.Now().UTC()
 
 	encKey, err := s.encryptor.Encrypt(c.APIKey)

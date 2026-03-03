@@ -3,6 +3,7 @@ package connection
 import (
 	"fmt"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -31,6 +32,46 @@ type Connection struct {
 	FeatureImageWrite    bool       `json:"feature_image_write"`
 }
 
+// ValidateBaseURL checks that a base URL is safe for use as an HTTP client target.
+// It enforces http/https scheme, rejects embedded credentials (userinfo), and
+// rejects query strings and fragments. Returns the cleaned URL (scheme lowercased,
+// trailing slash stripped) or an error.
+func ValidateBaseURL(raw string) (string, error) {
+	if raw == "" {
+		return "", fmt.Errorf("url is required")
+	}
+
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", fmt.Errorf("url is not valid: %w", err)
+	}
+
+	scheme := strings.ToLower(u.Scheme)
+	if scheme != "http" && scheme != "https" {
+		return "", fmt.Errorf("url scheme must be http or https, got %q", u.Scheme)
+	}
+
+	if u.User != nil {
+		return "", fmt.Errorf("url must not contain embedded credentials")
+	}
+
+	if u.Host == "" {
+		return "", fmt.Errorf("url must contain a host")
+	}
+
+	if u.RawQuery != "" {
+		return "", fmt.Errorf("base url must not contain a query string")
+	}
+
+	if u.Fragment != "" {
+		return "", fmt.Errorf("base url must not contain a fragment")
+	}
+
+	u.Scheme = scheme
+	cleaned := strings.TrimRight(u.String(), "/")
+	return cleaned, nil
+}
+
 // Validate checks required fields and constraints.
 func (c *Connection) Validate() error {
 	if c.Name == "" {
@@ -39,12 +80,11 @@ func (c *Connection) Validate() error {
 	if !isValidType(c.Type) {
 		return fmt.Errorf("type must be one of: emby, jellyfin, lidarr")
 	}
-	if c.URL == "" {
-		return fmt.Errorf("url is required")
+	cleaned, err := ValidateBaseURL(c.URL)
+	if err != nil {
+		return err
 	}
-	if _, err := url.ParseRequestURI(c.URL); err != nil {
-		return fmt.Errorf("url is not valid: %w", err)
-	}
+	c.URL = cleaned
 	if c.APIKey == "" {
 		return fmt.Errorf("api_key is required")
 	}
