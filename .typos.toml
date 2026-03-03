@@ -1,0 +1,13 @@
+# typos-cli configuration
+# https://github.com/crate-ci/typos
+
+[files]
+extend-exclude = [
+    "*.min.js",
+    "*.min.css",
+    "go.sum",
+]
+
+[default.extend-identifiers]
+# Go variable names that are not typos
+fpr = "fpr"  # FieldProviderResult in internal/provider/orchestrator.go

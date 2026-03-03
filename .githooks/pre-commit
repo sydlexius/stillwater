@@ -3,11 +3,12 @@
 # pre-commit hook: mirrors the CI lint job so issues are caught before push.
 #
 # Checks (in order, fast-fail):
-#   1. gofmt -- staged .go files are correctly formatted
-#   2. templ freshness -- generated _templ.go files match their .templ sources
-#   3. go build -- code compiles
-#   4. golangci-lint -- full linter suite from .golangci.yml
-#   5. govulncheck -- known vulnerabilities in dependencies
+#   1. typos -- spell check staged files (uses .typos.toml config)
+#   2. gofmt -- staged .go files are correctly formatted
+#   3. templ freshness -- generated _templ.go files match their .templ sources
+#   4. go build -- code compiles
+#   5. golangci-lint -- full linter suite from .golangci.yml
+#   6. govulncheck -- known vulnerabilities in dependencies
 #
 # Skip with: git commit --no-verify (use sparingly)
 
@@ -38,11 +39,30 @@ warn() {
 }
 
 # --------------------------------------------------------------------------
-# 1. gofmt -- check staged .go files (excluding generated _templ.go)
+# 1. typos -- spell check staged files
 # --------------------------------------------------------------------------
+if git diff --cached --name-only --diff-filter=ACM -- | grep -q .; then
+    if ! command -v typos &>/dev/null; then
+        warn "typos (not installed, skipping)"
+    else
+        if ! TYPOS_OUTPUT=$(git diff --cached --name-only -z --diff-filter=ACM -- | xargs -0 typos -- 2>&1); then
+            echo -e "${RED}${BOLD}FAIL${RESET} typos:"
+            echo "$TYPOS_OUTPUT"
+            exit 1
+        fi
+        pass "typos"
+    fi
+else
+    warn "typos (no staged files)"
+fi
+
+# --------------------------------------------------------------------------
+# 2. gofmt -- check staged .go files (excluding generated _templ.go)
+# --------------------------------------------------------------------------
+# Go files cannot contain whitespace in their names, so newline-delimited is safe here.
 STAGED_GO=$(git diff --cached --name-only --diff-filter=ACM -- '*.go' | grep -v '_templ\.go$' || true)
 if [ -n "$STAGED_GO" ]; then
-    UNFORMATTED=$(echo "$STAGED_GO" | xargs gofmt -l 2>/dev/null || true)
+    UNFORMATTED=$(echo "$STAGED_GO" | xargs gofmt -l -- 2>/dev/null || true)
     if [ -n "$UNFORMATTED" ]; then
         echo -e "${RED}${BOLD}FAIL${RESET} gofmt: the following files need formatting:"
         echo "$UNFORMATTED" | sed 's/^/  /'
@@ -56,7 +76,7 @@ else
 fi
 
 # --------------------------------------------------------------------------
-# 2. templ freshness -- if any .templ files are staged, regenerate and check
+# 3. templ freshness -- if any .templ files are staged, regenerate and check
 #    that _templ.go files are up to date.
 # --------------------------------------------------------------------------
 STAGED_TEMPL=$(git diff --cached --name-only --diff-filter=ACM -- '*.templ' || true)
@@ -92,7 +112,7 @@ else
 fi
 
 # --------------------------------------------------------------------------
-# 3. go build -- make sure everything compiles
+# 4. go build -- make sure everything compiles
 # --------------------------------------------------------------------------
 if ! go build ./... 2>/tmp/pre-commit-build.log; then
     echo -e "${RED}${BOLD}FAIL${RESET} go build:"
@@ -102,30 +122,30 @@ fi
 pass "go build"
 
 # --------------------------------------------------------------------------
-# 4. golangci-lint -- full linter suite (matches CI exactly)
+# 5. golangci-lint -- full linter suite (matches CI exactly)
 # --------------------------------------------------------------------------
 if ! command -v golangci-lint &>/dev/null; then
     warn "golangci-lint (not installed, skipping)"
 else
-    LINT_OUTPUT=$(golangci-lint run ./... 2>&1) || {
+    if ! LINT_OUTPUT=$(golangci-lint run ./... 2>&1); then
         echo -e "${RED}${BOLD}FAIL${RESET} golangci-lint:"
         echo "$LINT_OUTPUT"
         exit 1
-    }
+    fi
     pass "golangci-lint"
 fi
 
 # --------------------------------------------------------------------------
-# 5. govulncheck -- check for known vulnerabilities in dependencies
+# 6. govulncheck -- check for known vulnerabilities in dependencies
 # --------------------------------------------------------------------------
 if ! command -v govulncheck &>/dev/null; then
     warn "govulncheck (not installed, skipping)"
 else
-    VULN_OUTPUT=$(govulncheck ./... 2>&1) || {
+    if ! VULN_OUTPUT=$(govulncheck ./... 2>&1); then
         echo -e "${RED}${BOLD}FAIL${RESET} govulncheck:"
         echo "$VULN_OUTPUT"
         exit 1
-    }
+    fi
     pass "govulncheck"
 fi
 
