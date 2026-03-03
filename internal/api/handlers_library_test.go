@@ -3,10 +3,13 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -79,7 +82,8 @@ func TestHandleListLibraries_Empty(t *testing.T) {
 func TestHandleCreateLibrary_JSON(t *testing.T) {
 	r, _, _ := testRouterWithLibrary(t)
 
-	body := `{"name":"Music","path":"/music","type":"regular"}`
+	dir := t.TempDir()
+	body := fmt.Sprintf(`{"name":"Music","path":%q,"type":"regular"}`, dir)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/libraries", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -100,8 +104,8 @@ func TestHandleCreateLibrary_JSON(t *testing.T) {
 	if lib.Name != "Music" {
 		t.Errorf("name = %q, want %q", lib.Name, "Music")
 	}
-	if lib.Path != "/music" {
-		t.Errorf("path = %q, want %q", lib.Path, "/music")
+	if lib.Path != dir {
+		t.Errorf("path = %q, want %q", lib.Path, dir)
 	}
 	if lib.Type != "regular" {
 		t.Errorf("type = %q, want %q", lib.Type, "regular")
@@ -111,7 +115,12 @@ func TestHandleCreateLibrary_JSON(t *testing.T) {
 func TestHandleCreateLibrary_FormEncoded(t *testing.T) {
 	r, _, _ := testRouterWithLibrary(t)
 
-	body := "name=Classical&path=/music/classical&type=classical"
+	dir := t.TempDir()
+	vals := url.Values{}
+	vals.Set("name", "Classical")
+	vals.Set("path", dir)
+	vals.Set("type", "classical")
+	body := vals.Encode()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/libraries", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	w := httptest.NewRecorder()
@@ -164,16 +173,86 @@ func TestHandleCreateLibrary_InvalidType(t *testing.T) {
 	}
 }
 
+func TestHandleCreateLibrary_EmptyPath(t *testing.T) {
+	r, _, _ := testRouterWithLibrary(t)
+
+	body := `{"name":"API Only","path":"","type":"regular"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/libraries", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.handleCreateLibrary(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusCreated, w.Body.String())
+	}
+
+	var lib library.Library
+	if err := json.NewDecoder(w.Body).Decode(&lib); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if lib.Path != "" {
+		t.Errorf("path = %q, want empty", lib.Path)
+	}
+}
+
+func TestHandleCreateLibrary_RelativePath(t *testing.T) {
+	r, _, _ := testRouterWithLibrary(t)
+
+	body := `{"name":"Bad","path":"music/lib","type":"regular"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/libraries", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.handleCreateLibrary(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusBadRequest, w.Body.String())
+	}
+}
+
+func TestHandleCreateLibrary_TraversalPath(t *testing.T) {
+	r, _, _ := testRouterWithLibrary(t)
+
+	body := `{"name":"Bad","path":"../etc/passwd","type":"regular"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/libraries", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.handleCreateLibrary(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusBadRequest, w.Body.String())
+	}
+}
+
+func TestHandleCreateLibrary_NonexistentPath(t *testing.T) {
+	r, _, _ := testRouterWithLibrary(t)
+
+	dir := filepath.Join(t.TempDir(), "no-such-dir")
+	body := fmt.Sprintf(`{"name":"Bad","path":%q,"type":"regular"}`, dir)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/libraries", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.handleCreateLibrary(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusBadRequest, w.Body.String())
+	}
+}
+
 func TestHandleGetLibrary_WithArtistCount(t *testing.T) {
 	r, libSvc, artistSvc := testRouterWithLibrary(t)
 
-	lib := &library.Library{Name: "Music", Path: "/music", Type: "regular"}
+	dir := t.TempDir()
+	lib := &library.Library{Name: "Music", Path: dir, Type: "regular"}
 	if err := libSvc.Create(context.Background(), lib); err != nil {
 		t.Fatalf("creating library: %v", err)
 	}
 
 	// Create an artist in the library
-	a := &artist.Artist{Name: "Test Artist", Path: "/music/test-artist", LibraryID: lib.ID}
+	a := &artist.Artist{Name: "Test Artist", Path: filepath.Join(dir, "test-artist"), LibraryID: lib.ID}
 	if err := artistSvc.Create(context.Background(), a); err != nil {
 		t.Fatalf("creating artist: %v", err)
 	}
@@ -215,12 +294,22 @@ func TestHandleGetLibrary_NotFound(t *testing.T) {
 func TestHandleUpdateLibrary(t *testing.T) {
 	r, libSvc, _ := testRouterWithLibrary(t)
 
-	lib := &library.Library{Name: "Music", Path: "/music", Type: "regular"}
+	base := t.TempDir()
+	origDir := filepath.Join(base, "orig")
+	updatedDir := filepath.Join(base, "updated")
+	if err := os.Mkdir(origDir, 0o755); err != nil {
+		t.Fatalf("creating orig dir: %v", err)
+	}
+	if err := os.Mkdir(updatedDir, 0o755); err != nil {
+		t.Fatalf("creating updated dir: %v", err)
+	}
+
+	lib := &library.Library{Name: "Music", Path: origDir, Type: "regular"}
 	if err := libSvc.Create(context.Background(), lib); err != nil {
 		t.Fatalf("creating library: %v", err)
 	}
 
-	body := `{"name":"Updated Music","path":"/music/updated","type":"classical"}`
+	body := fmt.Sprintf(`{"name":"Updated Music","path":%q,"type":"classical"}`, updatedDir)
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/libraries/"+lib.ID, strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.SetPathValue("id", lib.ID)
@@ -244,6 +333,28 @@ func TestHandleUpdateLibrary(t *testing.T) {
 	}
 }
 
+func TestHandleUpdateLibrary_InvalidPath(t *testing.T) {
+	r, libSvc, _ := testRouterWithLibrary(t)
+
+	dir := t.TempDir()
+	lib := &library.Library{Name: "Music", Path: dir, Type: "regular"}
+	if err := libSvc.Create(context.Background(), lib); err != nil {
+		t.Fatalf("creating library: %v", err)
+	}
+
+	body := `{"path":"../traversal"}`
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/libraries/"+lib.ID, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", lib.ID)
+	w := httptest.NewRecorder()
+
+	r.handleUpdateLibrary(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusBadRequest, w.Body.String())
+	}
+}
+
 func TestHandleUpdateLibrary_NotFound(t *testing.T) {
 	r, _, _ := testRouterWithLibrary(t)
 
@@ -263,7 +374,8 @@ func TestHandleUpdateLibrary_NotFound(t *testing.T) {
 func TestHandleDeleteLibrary_Empty(t *testing.T) {
 	r, libSvc, _ := testRouterWithLibrary(t)
 
-	lib := &library.Library{Name: "Music", Path: "/music", Type: "regular"}
+	dir := t.TempDir()
+	lib := &library.Library{Name: "Music", Path: dir, Type: "regular"}
 	if err := libSvc.Create(context.Background(), lib); err != nil {
 		t.Fatalf("creating library: %v", err)
 	}
@@ -290,12 +402,13 @@ func TestHandleDeleteLibrary_Empty(t *testing.T) {
 func TestHandleDeleteLibrary_WithArtists(t *testing.T) {
 	r, libSvc, artistSvc := testRouterWithLibrary(t)
 
-	lib := &library.Library{Name: "Music", Path: "/music", Type: "regular"}
+	dir := t.TempDir()
+	lib := &library.Library{Name: "Music", Path: dir, Type: "regular"}
 	if err := libSvc.Create(context.Background(), lib); err != nil {
 		t.Fatalf("creating library: %v", err)
 	}
 
-	a := &artist.Artist{Name: "Test Artist", Path: "/music/test-artist", LibraryID: lib.ID}
+	a := &artist.Artist{Name: "Test Artist", Path: filepath.Join(dir, "test-artist"), LibraryID: lib.ID}
 	if err := artistSvc.Create(context.Background(), a); err != nil {
 		t.Fatalf("creating artist: %v", err)
 	}
@@ -323,7 +436,8 @@ func TestHandleDeleteLibrary_WithArtists(t *testing.T) {
 func TestHandleListLibraries_AfterCreate(t *testing.T) {
 	r, libSvc, _ := testRouterWithLibrary(t)
 
-	lib := &library.Library{Name: "Music", Path: "/music", Type: "regular"}
+	dir := t.TempDir()
+	lib := &library.Library{Name: "Music", Path: dir, Type: "regular"}
 	if err := libSvc.Create(context.Background(), lib); err != nil {
 		t.Fatalf("creating library: %v", err)
 	}

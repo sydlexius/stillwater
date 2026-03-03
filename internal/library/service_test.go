@@ -3,6 +3,9 @@ package library
 import (
 	"context"
 	"database/sql"
+	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/database"
@@ -26,9 +29,10 @@ func TestCreateAndGetByID(t *testing.T) {
 	svc := NewService(db)
 	ctx := context.Background()
 
+	dir := t.TempDir()
 	lib := &Library{
 		Name: "Main Library",
-		Path: "/music/main",
+		Path: dir,
 		Type: TypeRegular,
 	}
 	if err := svc.Create(ctx, lib); err != nil {
@@ -48,8 +52,8 @@ func TestCreateAndGetByID(t *testing.T) {
 	if got.Name != "Main Library" {
 		t.Errorf("Name = %q, want %q", got.Name, "Main Library")
 	}
-	if got.Path != "/music/main" {
-		t.Errorf("Path = %q, want %q", got.Path, "/music/main")
+	if got.Path != dir {
+		t.Errorf("Path = %q, want %q", got.Path, dir)
 	}
 	if got.Type != TypeRegular {
 		t.Errorf("Type = %q, want %q", got.Type, TypeRegular)
@@ -71,12 +75,13 @@ func TestGetByPath(t *testing.T) {
 	svc := NewService(db)
 	ctx := context.Background()
 
-	lib := &Library{Name: "Path Test", Path: "/music/test", Type: TypeRegular}
+	dir := t.TempDir()
+	lib := &Library{Name: "Path Test", Path: dir, Type: TypeRegular}
 	if err := svc.Create(ctx, lib); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
-	got, err := svc.GetByPath(ctx, "/music/test")
+	got, err := svc.GetByPath(ctx, dir)
 	if err != nil {
 		t.Fatalf("GetByPath: %v", err)
 	}
@@ -85,7 +90,7 @@ func TestGetByPath(t *testing.T) {
 	}
 
 	// Not found returns nil, nil
-	got, err = svc.GetByPath(ctx, "/music/nonexistent")
+	got, err = svc.GetByPath(ctx, filepath.Join(dir, "nonexistent"))
 	if err != nil {
 		t.Fatalf("GetByPath not found: %v", err)
 	}
@@ -99,9 +104,14 @@ func TestList(t *testing.T) {
 	svc := NewService(db)
 	ctx := context.Background()
 
-	// Create libraries in non-alphabetical order
+	base := t.TempDir()
+	// Create subdirectories for each library
 	for _, name := range []string{"Charlie", "Alpha", "Bravo"} {
-		lib := &Library{Name: name, Path: "/music/" + name, Type: TypeRegular}
+		dir := filepath.Join(base, name)
+		if err := os.Mkdir(dir, 0o755); err != nil {
+			t.Fatalf("creating subdir %s: %v", name, err)
+		}
+		lib := &Library{Name: name, Path: dir, Type: TypeRegular}
 		if err := svc.Create(ctx, lib); err != nil {
 			t.Fatalf("Create %s: %v", name, err)
 		}
@@ -128,13 +138,23 @@ func TestUpdate(t *testing.T) {
 	svc := NewService(db)
 	ctx := context.Background()
 
-	lib := &Library{Name: "Original", Path: "/music/orig", Type: TypeRegular}
+	base := t.TempDir()
+	origDir := filepath.Join(base, "orig")
+	updatedDir := filepath.Join(base, "updated")
+	if err := os.Mkdir(origDir, 0o755); err != nil {
+		t.Fatalf("creating orig dir: %v", err)
+	}
+	if err := os.Mkdir(updatedDir, 0o755); err != nil {
+		t.Fatalf("creating updated dir: %v", err)
+	}
+
+	lib := &Library{Name: "Original", Path: origDir, Type: TypeRegular}
 	if err := svc.Create(ctx, lib); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
 	lib.Name = "Updated"
-	lib.Path = "/music/updated"
+	lib.Path = updatedDir
 	lib.Type = TypeClassical
 	if err := svc.Update(ctx, lib); err != nil {
 		t.Fatalf("Update: %v", err)
@@ -168,7 +188,8 @@ func TestDelete(t *testing.T) {
 	svc := NewService(db)
 	ctx := context.Background()
 
-	lib := &Library{Name: "To Delete", Path: "/music/delete", Type: TypeRegular}
+	dir := t.TempDir()
+	lib := &Library{Name: "To Delete", Path: dir, Type: TypeRegular}
 	if err := svc.Create(ctx, lib); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -188,7 +209,8 @@ func TestDelete_WithArtists(t *testing.T) {
 	svc := NewService(db)
 	ctx := context.Background()
 
-	lib := &Library{Name: "Has Artists", Path: "/music/has-artists", Type: TypeRegular}
+	dir := t.TempDir()
+	lib := &Library{Name: "Has Artists", Path: dir, Type: TypeRegular}
 	if err := svc.Create(ctx, lib); err != nil {
 		t.Fatalf("Create library: %v", err)
 	}
@@ -239,7 +261,8 @@ func TestCountArtists(t *testing.T) {
 	svc := NewService(db)
 	ctx := context.Background()
 
-	lib := &Library{Name: "Count Test", Path: "/music/count", Type: TypeRegular}
+	dir := t.TempDir()
+	lib := &Library{Name: "Count Test", Path: dir, Type: TypeRegular}
 	if err := svc.Create(ctx, lib); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -305,12 +328,22 @@ func TestCreate_DuplicateName(t *testing.T) {
 	svc := NewService(db)
 	ctx := context.Background()
 
-	lib1 := &Library{Name: "Unique", Path: "/music/a", Type: TypeRegular}
+	base := t.TempDir()
+	dirA := filepath.Join(base, "a")
+	dirB := filepath.Join(base, "b")
+	if err := os.Mkdir(dirA, 0o755); err != nil {
+		t.Fatalf("creating dir a: %v", err)
+	}
+	if err := os.Mkdir(dirB, 0o755); err != nil {
+		t.Fatalf("creating dir b: %v", err)
+	}
+
+	lib1 := &Library{Name: "Unique", Path: dirA, Type: TypeRegular}
 	if err := svc.Create(ctx, lib1); err != nil {
 		t.Fatalf("Create first: %v", err)
 	}
 
-	lib2 := &Library{Name: "Unique", Path: "/music/b", Type: TypeRegular}
+	lib2 := &Library{Name: "Unique", Path: dirB, Type: TypeRegular}
 	err := svc.Create(ctx, lib2)
 	if err == nil {
 		t.Fatal("expected error for duplicate name")
@@ -322,7 +355,9 @@ func TestCreate_InvalidSource(t *testing.T) {
 	svc := NewService(db)
 	ctx := context.Background()
 
-	lib := &Library{Name: "Bad Source", Path: "/music/bad", Type: TypeRegular, Source: "spotify"}
+	// Source validation occurs before path validation, so path value does
+	// not matter for this test. Use an empty path (degraded library).
+	lib := &Library{Name: "Bad Source", Type: TypeRegular, Source: "spotify"}
 	err := svc.Create(ctx, lib)
 	if err == nil {
 		t.Fatal("expected error for invalid source")
@@ -334,7 +369,8 @@ func TestCreate_DefaultSource(t *testing.T) {
 	svc := NewService(db)
 	ctx := context.Background()
 
-	lib := &Library{Name: "Default Source", Path: "/music/default", Type: TypeRegular}
+	dir := t.TempDir()
+	lib := &Library{Name: "Default Source", Path: dir, Type: TypeRegular}
 	if err := svc.Create(ctx, lib); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -468,12 +504,128 @@ func TestClearConnectionID(t *testing.T) {
 	}
 }
 
+func TestCreate_PathValidation(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+
+	tests := []struct {
+		name    string
+		path    string
+		wantErr bool
+	}{
+		{
+			name: "empty path allowed (degraded)",
+			path: "",
+		},
+		{
+			name:    "relative path rejected",
+			path:    "music/lib",
+			wantErr: true,
+		},
+		{
+			name:    "traversal rejected",
+			path:    tmpDir + "/../etc",
+			wantErr: true,
+		},
+		{
+			name:    "nonexistent path rejected",
+			path:    tmpDir + "/no-such-dir",
+			wantErr: true,
+		},
+	}
+
+	for i, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lib := &Library{
+				Name: fmt.Sprintf("PathTest-%d", i),
+				Path: tt.path,
+				Type: TypeRegular,
+			}
+			err := svc.Create(ctx, lib)
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("Create with path %q: expected error, got nil", tt.path)
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("Create with path %q: unexpected error: %v", tt.path, err)
+			}
+		})
+	}
+}
+
+func TestUpdate_PathValidation(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+
+	// Create a valid library to update.
+	lib := &Library{Name: "UpdatePathTest", Path: tmpDir, Type: TypeRegular}
+	if err := svc.Create(ctx, lib); err != nil {
+		t.Fatalf("Create seed library: %v", err)
+	}
+
+	tests := []struct {
+		name    string
+		path    string
+		wantErr bool
+	}{
+		{
+			name: "empty path allowed (degraded)",
+			path: "",
+		},
+		{
+			name:    "relative path rejected",
+			path:    "music/lib",
+			wantErr: true,
+		},
+		{
+			name:    "traversal rejected",
+			path:    tmpDir + "/../etc",
+			wantErr: true,
+		},
+		{
+			name:    "nonexistent path rejected",
+			path:    tmpDir + "/no-such-dir",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Reset to a known-good state before each sub-test.
+			lib.Path = tmpDir
+			lib.Name = "UpdatePathTest"
+			if err := svc.Update(ctx, lib); err != nil {
+				t.Fatalf("resetting library: %v", err)
+			}
+
+			lib.Path = tt.path
+			err := svc.Update(ctx, lib)
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("Update with path %q: expected error, got nil", tt.path)
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("Update with path %q: unexpected error: %v", tt.path, err)
+			}
+		})
+	}
+}
+
 func TestUpdate_InvalidSource(t *testing.T) {
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
 
-	lib := &Library{Name: "Valid", Path: "/music/valid", Type: TypeRegular}
+	dir := t.TempDir()
+	lib := &Library{Name: "Valid", Path: dir, Type: TypeRegular}
 	if err := svc.Create(ctx, lib); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -490,7 +642,8 @@ func TestUpdate_DefaultsEmptySource(t *testing.T) {
 	svc := NewService(db)
 	ctx := context.Background()
 
-	lib := &Library{Name: "Source Default", Path: "/music/sd", Type: TypeRegular, Source: SourceEmby}
+	dir := t.TempDir()
+	lib := &Library{Name: "Source Default", Path: dir, Type: TypeRegular, Source: SourceEmby}
 	if err := svc.Create(ctx, lib); err != nil {
 		t.Fatalf("Create: %v", err)
 	}

@@ -1141,7 +1141,7 @@ func TestPopulateFromEmby_PlatformPathRejectedWhenOutsideLibraryRoot(t *testing.
 
 	lib := &library.Library{
 		Name:       "Rooted Emby Outside",
-		Path:       "/music",
+		Path:       t.TempDir(),
 		Type:       library.TypeRegular,
 		Source:     connection.TypeEmby,
 		ExternalID: "emby-lib-outside",
