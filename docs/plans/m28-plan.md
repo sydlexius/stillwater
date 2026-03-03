@@ -49,9 +49,6 @@ rule execution.
 - [ ] Collapsible group headers with count badges
 - [ ] Default grouping: artist then rule category
 - [ ] Tests
-- [ ] PR opened (#?)
-- [ ] CI passing
-- [ ] PR merged
 
 ### Issue #286 -- Bliss-like actionable fix options on Notifications page
 - [ ] Collapsible inline fix panels below each violation row
@@ -61,9 +58,6 @@ rule execution.
 - [ ] Fix recommendation badges with highest-confidence option
 - [ ] Global "Fix All" button for bulk application
 - [ ] Tests
-- [ ] PR opened (#?)
-- [ ] CI passing
-- [ ] PR merged
 
 ### Issue #287 -- Image deduplication rule using perceptual hashing
 - [ ] Hashing module in `internal/image/` (SHA-256 exact + pHash/dHash perceptual)
@@ -72,9 +66,6 @@ rule execution.
 - [ ] Scope options: per-artist, per-library, or global
 - [ ] Violation display with thumbnails, similarity score, and file paths
 - [ ] Tests
-- [ ] PR opened (#?)
-- [ ] CI passing
-- [ ] PR merged
 - [ ] Docs updated (Architecture wiki: new rule type)
 
 ### Issue #313 -- Artist directory rename rule (directory_name_mismatch)
@@ -84,9 +75,6 @@ rule execution.
 - [ ] Safety: verify no file locks, atomic rename with copy+delete fallback
 - [ ] Update all internal database references to old path
 - [ ] Tests
-- [ ] PR opened (#?)
-- [ ] CI passing
-- [ ] PR merged
 - [ ] Docs updated (Architecture wiki: new rule type)
 
 ### Issue #314 -- Per-artist Run Rules button on artist detail page
@@ -96,9 +84,6 @@ rule execution.
 - [ ] Spinner/progress indicator while running
 - [ ] Result count and link to filtered Notifications view
 - [ ] Tests
-- [ ] PR opened (#?)
-- [ ] CI passing
-- [ ] PR merged
 
 ### Issue #353 -- Remove redundant Disabled option from rule automation mode dropdown
 - [ ] Remove `AutomationModeDisabled` constant from `internal/rule/model.go`
@@ -107,9 +92,6 @@ rule execution.
 - [ ] Migration to convert existing `automation_mode = 'disabled'` rows
 - [ ] Update tests referencing AutomationModeDisabled
 - [ ] Add test: PATCH with `automation_mode: "disabled"` returns 400
-- [ ] PR opened (#?)
-- [ ] CI passing
-- [ ] PR merged
 
 ## UAT / Merge Order
 

@@ -8,9 +8,9 @@ where only push direction works but pull does not.
 
 ## Acceptance Criteria
 
-- [ ] Library populate imports biography, genres, and dates from Emby/Jellyfin
+- [x] Library populate imports biography, genres, and dates from Emby/Jellyfin
 - [ ] Library populate downloads Primary/Backdrop/Logo/Banner images from platforms
-- [ ] Image download skips if local image already exists
+- [x] Image download skips if local image already exists
 - [ ] Artist detail page shows platform state with side-by-side comparison
 - [ ] Users can delete individual images from Emby/Jellyfin via the UI
 - [ ] Both Emby and Jellyfin clients support all new methods
@@ -21,9 +21,11 @@ where only push direction works but pull does not.
 #230 (metadata import) --\
                           +--> #232 (view platform state) --> #233 (delete images)
 #231 (image import)   --/
+  \--> #357 (multiple backdrops)
 ```
 
 #230 and #231 are independent of each other.
+#231 blocks #357 (backdrops use the image download infrastructure from #231).
 #232 depends on #230 and #231 (uses expanded fields and image methods).
 #233 depends on #232 (delete button lives in the platform state view).
 
@@ -38,21 +40,27 @@ where only push direction works but pull does not.
 - [x] Investigate additional fields (Tags, SortName) from real server data
 - [x] Switch from `/Artists` to `/Artists/AlbumArtists` endpoint (matches folder structure)
 - [x] Tests
-- [ ] PR opened (#?)
-- [ ] CI passing
-- [ ] PR merged
+- [x] Done (merged)
 
 ### Issue #231 -- Emby/Jellyfin images not downloaded during import
-- [ ] Add `GetArtistImage(ctx, artistID, imageType) ([]byte, string, error)` to Emby client
-- [ ] Add same method to Jellyfin client
-- [ ] Download images during populate for each artist
-- [ ] Save using active naming config via `image.Save()`
-- [ ] Skip download if local image already exists
-- [ ] Update artist image flags in database after download
+- [x] Add `GetArtistImage(ctx, artistID, imageType) ([]byte, string, error)` to Emby client
+- [x] Add same method to Jellyfin client
+- [x] Download images during populate for each artist
+- [x] Save using active naming config via `image.Save()`
+- [x] Skip download if local image already exists
+- [x] Update artist image flags in database after download
+- [x] Add image cache directory fallback for artists without filesystem paths
+- [x] Backfill MusicBrainzID from platform ProviderIds onto existing artists
+- [x] Tests
+- [ ] Done (in review)
+
+### Issue #357 -- Support multiple backdrop images from Emby/Jellyfin
+- [ ] Add `BackdropImageTags []string` to `ArtistItem` in both `emby/types.go` and `jellyfin/types.go`
+- [ ] Update `downloadPlatformImages` to handle `BackdropImageTags` separately from `ImageTags`
+- [ ] Construct indexed URLs (`/Images/Backdrop/0`, `/Images/Backdrop/1`, etc.)
+- [ ] Save with correct naming (fanart.jpg, fanart1.jpg, fanart2.jpg, ...)
+- [ ] Update `FanartCount` on artist records
 - [ ] Tests
-- [ ] PR opened (#?)
-- [ ] CI passing
-- [ ] PR merged
 
 ### Issue #232 -- View platform state on artist detail page
 - [ ] Add `GetArtistDetail(ctx, artistID) (*ArtistDetail, error)` to Emby client
@@ -62,9 +70,6 @@ where only push direction works but pull does not.
 - [ ] Visual indicators for mismatched fields
 - [ ] Push/pull action buttons per field
 - [ ] Tests
-- [ ] PR opened (#?)
-- [ ] CI passing
-- [ ] PR merged
 
 ### Issue #233 -- Delete images from Emby/Jellyfin
 - [ ] Add `delete()` HTTP helper to Emby client (alongside `get()` and `post()`)
@@ -74,19 +79,19 @@ where only push direction works but pull does not.
 - [ ] Add `DELETE /api/v1/artists/{id}/push/images/{type}` endpoint
 - [ ] Add delete button to platform state view from #232
 - [ ] Tests
-- [ ] PR opened (#?)
-- [ ] CI passing
-- [ ] PR merged
 
 ## UAT / Merge Order
 
 Session 1 (import):
-1. PR for #230 (base: main) -- metadata import
-2. PR for #231 (base: main) -- image import
+1. #230 -- metadata import -- MERGED
+2. #231 -- image import (Primary, Logo, Banner; no backdrops)
 
-Session 2 (platform state + delete):
-3. PR for #232 (base: main, after #230 and #231 merge)
-4. PR for #233 (base: main or stacked on #232)
+Session 2 (backdrops):
+3. #357 -- multiple backdrop images (after #231 merges)
+
+Session 3 (platform state + delete):
+4. #232 -- view platform state (after #230 and #231 merge)
+5. #233 -- delete platform images (after #232)
 
 ## Notes
 
@@ -94,6 +99,7 @@ Session 2 (platform state + delete):
 - Jellyfin API uses the same endpoint pattern
 - Import policy: never overwrite existing local images (user changes take priority)
 - `delete()` HTTP helper needed because only `get()` and `post()` exist in current clients
+- Backdrops are in `BackdropImageTags` (array), not `ImageTags` (map) -- discovered during #231 UAT
 
 ### #230 investigation findings (2026-03-02)
 
@@ -111,3 +117,13 @@ Session 2 (platform state + delete):
 - Follow-up idea: add a tooltip or info indicator on the Platform Profile page
   showing which metadata fields can be written to each platform (Emby, Jellyfin, Kodi).
 - #355 opened for date format normalization (free-text dates silently dropped by Emby).
+
+### #231 implementation findings (2026-03-02)
+
+- Emby does not return a `Path` field for artists via the AlbumArtists endpoint.
+  All Emby-sourced artists have empty `Path`. Image cache dir is the fallback.
+- `ProviderIds` must be explicitly requested in `Fields=` query parameter.
+- MBID backfill added: when an existing artist lacks an MBID but the platform provides
+  one, the local record is updated during populate.
+- Image cache directory (`/data/cache/images/{artistID}/`) created automatically when
+  `artist.Path` is empty. Uses `imageDir(a)` helper throughout handlers.

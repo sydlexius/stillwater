@@ -29,9 +29,6 @@ All four issues are independent and can be worked in parallel.
 - [ ] Link to `/api/v1/docs` (opens in new tab)
 - [ ] Dark mode compatible styling
 - [ ] Update user guide if API/integration section exists
-- [ ] PR opened (#?)
-- [ ] CI passing
-- [ ] PR merged
 
 ### Issue #344 -- Audit and update user guide for current features
 - [ ] Audit provider documentation (all 10 providers listed)
@@ -44,9 +41,6 @@ All four issues are independent and can be worked in parallel.
 - [ ] Audit settings documentation
 - [ ] Verify OOBE steps match current implementation
 - [ ] Update `web/templates/guide.templ`
-- [ ] PR opened (#?)
-- [ ] CI passing
-- [ ] PR merged
 
 ### Issue #345 -- Audit and update developer documentation and wiki
 - [ ] Audit Architecture wiki page
@@ -55,9 +49,6 @@ All four issues are independent and can be worked in parallel.
 - [ ] Audit `docs/dev-setup.md`
 - [ ] Audit `CLAUDE.md` for accuracy
 - [ ] Push wiki updates
-- [ ] PR opened (#?) for repo file changes
-- [ ] CI passing
-- [ ] PR merged
 
 ### Issue #346 -- Post-OOBE guided tour with tooltip walkthrough
 - [ ] Evaluate and vendor Driver.js (~5KB gzip, MIT, zero deps)
@@ -67,9 +58,6 @@ All four issues are independent and can be worked in parallel.
 - [ ] Dark mode styling
 - [ ] Cache-bust vendored assets via StaticAssets
 - [ ] Manual testing: OOBE -> tour -> dismissal -> no re-trigger
-- [ ] PR opened (#?)
-- [ ] CI passing
-- [ ] PR merged
 - [ ] Docs updated
 
 ## Worktrees
