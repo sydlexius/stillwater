@@ -3,6 +3,7 @@ package library
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -500,6 +501,121 @@ func TestClearConnectionID(t *testing.T) {
 	}
 	if got.ConnectionID != "" {
 		t.Errorf("manual lib: ConnectionID = %q, want empty (was already empty)", got.ConnectionID)
+	}
+}
+
+func TestCreate_PathValidation(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+
+	tests := []struct {
+		name    string
+		path    string
+		wantErr bool
+	}{
+		{
+			name: "empty path allowed (degraded)",
+			path: "",
+		},
+		{
+			name:    "relative path rejected",
+			path:    "music/lib",
+			wantErr: true,
+		},
+		{
+			name:    "traversal rejected",
+			path:    tmpDir + "/../etc",
+			wantErr: true,
+		},
+		{
+			name:    "nonexistent path rejected",
+			path:    tmpDir + "/no-such-dir",
+			wantErr: true,
+		},
+	}
+
+	for i, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lib := &Library{
+				Name: fmt.Sprintf("PathTest-%d", i),
+				Path: tt.path,
+				Type: TypeRegular,
+			}
+			err := svc.Create(ctx, lib)
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("Create with path %q: expected error, got nil", tt.path)
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("Create with path %q: unexpected error: %v", tt.path, err)
+			}
+		})
+	}
+}
+
+func TestUpdate_PathValidation(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+
+	// Create a valid library to update.
+	lib := &Library{Name: "UpdatePathTest", Path: tmpDir, Type: TypeRegular}
+	if err := svc.Create(ctx, lib); err != nil {
+		t.Fatalf("Create seed library: %v", err)
+	}
+
+	tests := []struct {
+		name    string
+		path    string
+		wantErr bool
+	}{
+		{
+			name: "empty path allowed (degraded)",
+			path: "",
+		},
+		{
+			name:    "relative path rejected",
+			path:    "music/lib",
+			wantErr: true,
+		},
+		{
+			name:    "traversal rejected",
+			path:    tmpDir + "/../etc",
+			wantErr: true,
+		},
+		{
+			name:    "nonexistent path rejected",
+			path:    tmpDir + "/no-such-dir",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Reset to a known-good state before each sub-test.
+			lib.Path = tmpDir
+			lib.Name = "UpdatePathTest"
+			if err := svc.Update(ctx, lib); err != nil {
+				t.Fatalf("resetting library: %v", err)
+			}
+
+			lib.Path = tt.path
+			err := svc.Update(ctx, lib)
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("Update with path %q: expected error, got nil", tt.path)
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("Update with path %q: unexpected error: %v", tt.path, err)
+			}
+		})
 	}
 }
 

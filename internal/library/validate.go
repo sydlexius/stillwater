@@ -33,7 +33,12 @@ func ValidatePath(raw string) (string, error) {
 }
 
 // CheckPathExists verifies that path exists and is a directory.
+// Empty paths are rejected; callers that allow degraded (path-less)
+// libraries must guard with "if path != """ before calling.
 func CheckPathExists(path string) error {
+	if path == "" {
+		return fmt.Errorf("library path must not be empty")
+	}
 	// filepath.Clean("/" + path) is a CodeQL-recognized path sanitizer
 	// for go/path-injection. On Unix this is a no-op for absolute paths.
 	cleaned := filepath.Clean("/" + path)

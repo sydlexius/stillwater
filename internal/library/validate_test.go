@@ -110,6 +110,11 @@ func TestCheckPathExists(t *testing.T) {
 		wantErr bool
 	}{
 		{
+			name:    "empty path rejected",
+			input:   "",
+			wantErr: true,
+		},
+		{
 			name:  "valid directory accepted",
 			input: tmpDir,
 		},
