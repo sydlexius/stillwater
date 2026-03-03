@@ -1,7 +1,0 @@
-extensions:
-  - addsTo:
-      pack: codeql/go-all
-      extensible: neutralModel
-    data:
-      - ["github.com/sydlexius/stillwater/internal/connection", "",
-         "BuildRequestURL", "", "summary", "manual"]
