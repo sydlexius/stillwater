@@ -966,6 +966,12 @@ func TestValidatedArtistPath(t *testing.T) {
 	}
 	t.Cleanup(func() { os.RemoveAll(siblingDir) })
 
+	// Create a regular file (not a directory) under the library root.
+	filePath := filepath.Join(libDir, "not-a-dir.txt")
+	if err := os.WriteFile(filePath, []byte("data"), 0o644); err != nil {
+		t.Fatalf("creating test file: %v", err)
+	}
+
 	tests := []struct {
 		name        string
 		itemPath    string
@@ -979,6 +985,7 @@ func TestValidatedArtistPath(t *testing.T) {
 		{"path outside library root rejected", filepath.Join(otherDir, "Radiohead"), libDir, true},
 		{"exact match accepted", libDir, libDir, false},
 		{"prefix confusion rejected", filepath.Join(siblingDir, "Artist"), libDir, true},
+		{"file path rejected (not a directory)", filePath, libDir, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -723,6 +723,12 @@ func validatedArtistPath(itemPath, libraryPath string) string {
 		if err != nil {
 			return ""
 		}
+	} else {
+		// Path exists: verify it is a directory (not a file).
+		info, statErr := os.Stat(itemReal) //nolint:gosec // itemReal resolved via filepath.EvalSymlinks from platform path
+		if statErr != nil || !info.IsDir() {
+			return ""
+		}
 	}
 
 	rel, err := filepath.Rel(libRoot, itemReal)
@@ -759,9 +765,14 @@ func (r *Router) downloadPlatformImages(ctx context.Context, dl imageDownloader,
 			return
 		}
 	} else {
-		// Filesystem path: must already exist from scan.
-		if _, err := os.Stat(dir); err != nil { //nolint:gosec // G703: dir from imageDir() uses validated artist path
+		// Filesystem path: must already exist from scan and be a directory.
+		info, err := os.Stat(dir) //nolint:gosec // G703: dir from imageDir() uses validated artist path
+		if err != nil {
 			r.logger.Debug("artist directory not accessible, skipping images", "artist", a.Name, "dir", dir, "error", err)
+			return
+		}
+		if !info.IsDir() {
+			r.logger.Debug("artist path is not a directory, skipping images", "artist", a.Name, "dir", dir)
 			return
 		}
 	}
