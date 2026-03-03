@@ -117,7 +117,7 @@ early since it touches the migration foundation. #360 (image caching) benefits f
 - [ ] Add Cache settings section with connection source cache and provider image cache
 - [ ] Unify image write path: local save + platform push via single abstraction
 - [ ] Image upload/replace pushes to connected platform automatically
-- [ ] Cache path defaults to `/data/cache/images`, configurable via settings
+- [ ] Cache path defaults to `/cache` (Docker volume mount), configurable via settings
 - [ ] Connection source cache mandatory when no filesystem path
 - [ ] Provider image cache toggle-able with configurable size
 - [ ] Tests
