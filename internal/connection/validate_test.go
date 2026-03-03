@@ -90,6 +90,18 @@ func TestBuildRequestURL(t *testing.T) {
 			path:    "/System/Info",
 			want:    "/System/Info",
 		},
+		{
+			name:    "path without leading slash",
+			baseURL: "http://localhost:8096",
+			path:    "System/Info",
+			want:    "http://localhost:8096/System/Info",
+		},
+		{
+			name:    "path with bare trailing question mark",
+			baseURL: "http://localhost:8096",
+			path:    "/Items?",
+			want:    "http://localhost:8096/Items?",
+		},
 	}
 
 	for _, tt := range tests {
