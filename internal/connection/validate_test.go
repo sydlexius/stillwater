@@ -59,6 +59,49 @@ func TestValidateBaseURL(t *testing.T) {
 	}
 }
 
+func TestBuildRequestURL(t *testing.T) {
+	tests := []struct {
+		name    string
+		baseURL string
+		path    string
+		want    string
+	}{
+		{
+			name:    "simple path",
+			baseURL: "http://localhost:8096",
+			path:    "/System/Info",
+			want:    "http://localhost:8096/System/Info",
+		},
+		{
+			name:    "path with query string",
+			baseURL: "http://localhost:8096",
+			path:    "/Artists?ParentId=abc&Limit=50",
+			want:    "http://localhost:8096/Artists?ParentId=abc&Limit=50",
+		},
+		{
+			name:    "base URL with subpath",
+			baseURL: "http://host:8096/emby",
+			path:    "/System/Info",
+			want:    "http://host:8096/emby/System/Info",
+		},
+		{
+			name:    "empty base URL returns path only",
+			baseURL: "",
+			path:    "/System/Info",
+			want:    "/System/Info",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := BuildRequestURL(tt.baseURL, tt.path)
+			if got != tt.want {
+				t.Errorf("BuildRequestURL(%q, %q) = %q, want %q", tt.baseURL, tt.path, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestConnectionValidate_URL(t *testing.T) {
 	tests := []struct {
 		name    string

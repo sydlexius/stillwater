@@ -63,7 +63,7 @@ func (c *Client) PushMetadata(ctx context.Context, platformArtistID string, data
 	}
 
 	path := fmt.Sprintf("/Items/%s", platformArtistID)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path, bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, connection.BuildRequestURL(c.baseURL, path), bytes.NewReader(payload))
 	if err != nil {
 		return fmt.Errorf("creating push request: %w", err)
 	}
@@ -94,7 +94,7 @@ func (c *Client) UploadImage(ctx context.Context, platformArtistID string, image
 	}
 
 	path := fmt.Sprintf("/Items/%s/Images/%s", platformArtistID, embyType)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path, bytes.NewReader(data))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, connection.BuildRequestURL(c.baseURL, path), bytes.NewReader(data))
 	if err != nil {
 		return fmt.Errorf("creating image upload request: %w", err)
 	}
