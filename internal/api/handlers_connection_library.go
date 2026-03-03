@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -48,6 +49,12 @@ type populateResult struct {
 	Total   int `json:"total"`
 	Created int `json:"created"`
 	Skipped int `json:"skipped"`
+	Images  int `json:"images"`
+}
+
+// imageDownloader can retrieve raw image bytes from a media platform.
+type imageDownloader interface {
+	GetArtistImage(ctx context.Context, artistID, imageType string) ([]byte, string, error)
 }
 
 // handleDiscoverLibraries lists music libraries available on a connection.
@@ -315,7 +322,7 @@ func (r *Router) runPopulate(ctx context.Context, conn *connection.Connection, l
 		r.logger.Error("populate failed", "library", lib.Name, "error", popErr)
 	} else {
 		op.Status = "completed"
-		op.Message = fmt.Sprintf("Populated %d artists from %s", result.Created, lib.Name)
+		op.Message = fmt.Sprintf("Populated %d artists (%d images) from %s", result.Created, result.Images, lib.Name)
 	}
 	r.libraryOpsMu.Unlock()
 
@@ -463,28 +470,38 @@ func (r *Router) populateFromEmbyCtx(ctx context.Context, client *emby.Client, l
 			result.Total++
 			mbid := item.ProviderIDs.MusicBrainzArtist
 
+			var existing *artist.Artist
 			if mbid != "" {
-				existing, lookupErr := r.artistService.GetByMBIDAndLibrary(ctx, mbid, lib.ID)
+				var lookupErr error
+				existing, lookupErr = r.artistService.GetByMBIDAndLibrary(ctx, mbid, lib.ID)
 				if lookupErr != nil {
 					r.logger.Warn("dedup lookup by mbid", "mbid", mbid, "error", lookupErr)
 					result.Skipped++
 					continue
 				}
-				if existing != nil {
-					result.Skipped++
-					continue
-				}
-			} else {
-				existing, lookupErr := r.artistService.GetByNameAndLibrary(ctx, item.Name, lib.ID)
+			}
+			if existing == nil {
+				var lookupErr error
+				existing, lookupErr = r.artistService.GetByNameAndLibrary(ctx, item.Name, lib.ID)
 				if lookupErr != nil {
 					r.logger.Warn("dedup lookup by name", "name", item.Name, "error", lookupErr)
 					result.Skipped++
 					continue
 				}
-				if existing != nil {
-					result.Skipped++
-					continue
+			}
+
+			if existing != nil {
+				// Backfill MusicBrainzID if the platform provides one and the local record lacks it.
+				if mbid != "" && existing.MusicBrainzID == "" {
+					existing.MusicBrainzID = mbid
+					if err := r.artistService.Update(ctx, existing); err != nil {
+						r.logger.Warn("backfilling mbid from emby", "name", existing.Name, "error", err)
+					}
 				}
+				// Download any missing images.
+				r.downloadPlatformImages(ctx, client, item.ID, item.ImageTags, existing, result)
+				result.Skipped++
+				continue
 			}
 
 			sortName := item.Name
@@ -501,6 +518,7 @@ func (r *Router) populateFromEmbyCtx(ctx context.Context, client *emby.Client, l
 				Styles:        item.Tags,
 				Formed:        item.PremiereDate,
 				Disbanded:     item.EndDate,
+				Path:          item.Path,
 			}
 			if err := r.artistService.Create(ctx, a); err != nil {
 				r.logger.Warn("creating artist from emby", "name", item.Name, "error", err)
@@ -508,6 +526,8 @@ func (r *Router) populateFromEmbyCtx(ctx context.Context, client *emby.Client, l
 				continue
 			}
 			result.Created++
+
+			r.downloadPlatformImages(ctx, client, item.ID, item.ImageTags, a, result)
 		}
 
 		startIndex += pageSize
@@ -531,28 +551,38 @@ func (r *Router) populateFromJellyfinCtx(ctx context.Context, client *jellyfin.C
 			result.Total++
 			mbid := item.ProviderIDs.MusicBrainzArtist
 
+			var existing *artist.Artist
 			if mbid != "" {
-				existing, lookupErr := r.artistService.GetByMBIDAndLibrary(ctx, mbid, lib.ID)
+				var lookupErr error
+				existing, lookupErr = r.artistService.GetByMBIDAndLibrary(ctx, mbid, lib.ID)
 				if lookupErr != nil {
 					r.logger.Warn("dedup lookup by mbid", "mbid", mbid, "error", lookupErr)
 					result.Skipped++
 					continue
 				}
-				if existing != nil {
-					result.Skipped++
-					continue
-				}
-			} else {
-				existing, lookupErr := r.artistService.GetByNameAndLibrary(ctx, item.Name, lib.ID)
+			}
+			if existing == nil {
+				var lookupErr error
+				existing, lookupErr = r.artistService.GetByNameAndLibrary(ctx, item.Name, lib.ID)
 				if lookupErr != nil {
 					r.logger.Warn("dedup lookup by name", "name", item.Name, "error", lookupErr)
 					result.Skipped++
 					continue
 				}
-				if existing != nil {
-					result.Skipped++
-					continue
+			}
+
+			if existing != nil {
+				// Backfill MusicBrainzID if the platform provides one and the local record lacks it.
+				if mbid != "" && existing.MusicBrainzID == "" {
+					existing.MusicBrainzID = mbid
+					if err := r.artistService.Update(ctx, existing); err != nil {
+						r.logger.Warn("backfilling mbid from jellyfin", "name", existing.Name, "error", err)
+					}
 				}
+				// Download any missing images.
+				r.downloadPlatformImages(ctx, client, item.ID, item.ImageTags, existing, result)
+				result.Skipped++
+				continue
 			}
 
 			sortName := item.Name
@@ -569,6 +599,7 @@ func (r *Router) populateFromJellyfinCtx(ctx context.Context, client *jellyfin.C
 				Styles:        item.Tags,
 				Formed:        item.PremiereDate,
 				Disbanded:     item.EndDate,
+				Path:          item.Path,
 			}
 			if err := r.artistService.Create(ctx, a); err != nil {
 				r.logger.Warn("creating artist from jellyfin", "name", item.Name, "error", err)
@@ -576,6 +607,8 @@ func (r *Router) populateFromJellyfinCtx(ctx context.Context, client *jellyfin.C
 				continue
 			}
 			result.Created++
+
+			r.downloadPlatformImages(ctx, client, item.ID, item.ImageTags, a, result)
 		}
 
 		startIndex += pageSize
@@ -634,6 +667,61 @@ func (r *Router) populateFromLidarrCtx(ctx context.Context, client *lidarr.Clien
 		result.Created++
 	}
 	return nil
+}
+
+// platformToStillwaterType maps Emby/Jellyfin image tag keys to Stillwater image types.
+var platformToStillwaterType = map[string]string{
+	"Primary":  "thumb",
+	"Backdrop": "fanart",
+	"Logo":     "logo",
+	"Banner":   "banner",
+}
+
+// downloadPlatformImages downloads available images from a media platform for a single artist.
+// Errors are non-fatal: logged as warnings and skipped.
+func (r *Router) downloadPlatformImages(ctx context.Context, dl imageDownloader, platformArtistID string, imageTags map[string]string, a *artist.Artist, result *populateResult) {
+	dir := r.imageDir(a)
+	if dir == "" {
+		r.logger.Debug("skipping image download: no path or cache dir", "artist", a.Name)
+		return
+	}
+
+	// Ensure the target directory exists (needed for cache dir; artist paths
+	// from filesystem scans already exist).
+	if err := os.MkdirAll(dir, 0o750); err != nil { //nolint:gosec // G703: dir from imageDir() uses trusted config path + artist ID
+		r.logger.Warn("creating image directory", "artist", a.Name, "dir", dir, "error", err)
+		return
+	}
+
+	for platformKey, tagValue := range imageTags {
+		if tagValue == "" {
+			continue
+		}
+		stillwaterType, ok := platformToStillwaterType[platformKey]
+		if !ok {
+			continue
+		}
+
+		patterns := r.getActiveNamingConfig(ctx, stillwaterType)
+		if _, found := findExistingImage(dir, patterns); found {
+			r.logger.Debug("skipping existing image", "artist", a.Name, "type", stillwaterType)
+			continue
+		}
+
+		data, _, err := dl.GetArtistImage(ctx, platformArtistID, stillwaterType)
+		if err != nil {
+			r.logger.Warn("downloading image from platform", "artist", a.Name, "type", stillwaterType, "error", err)
+			continue
+		}
+
+		if _, err := r.processAndSaveImage(ctx, dir, stillwaterType, data); err != nil {
+			r.logger.Warn("saving downloaded image", "artist", a.Name, "type", stillwaterType, "error", err)
+			continue
+		}
+
+		r.updateArtistImageFlag(ctx, a, stillwaterType)
+		result.Images++
+	}
 }
 
 // scanFromEmby pages through Emby artists and updates image existence flags.

@@ -20,14 +20,23 @@ func Logging(logger *slog.Logger) func(http.Handler) http.Handler {
 
 			next.ServeHTTP(sw, r)
 
-			logger.Info("http request",
+			attrs := []slog.Attr{
 				slog.String("method", r.Method),
 				slog.String("path", r.URL.Path),
 				slog.String("query", scrubQuery(r.URL.RawQuery)),
 				slog.Int("status", sw.status),
 				slog.Duration("duration", time.Since(start)),
 				slog.String("remote", r.RemoteAddr),
-			)
+			}
+
+			level := slog.LevelInfo
+			switch {
+			case sw.status >= 500:
+				level = slog.LevelError
+			case sw.status >= 400:
+				level = slog.LevelWarn
+			}
+			logger.LogAttrs(r.Context(), level, "http request", attrs...)
 		})
 	}
 }

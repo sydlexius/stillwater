@@ -38,18 +38,18 @@ where only push direction works but pull does not.
 - [x] Investigate additional fields (Tags, SortName) from real server data
 - [x] Switch from `/Artists` to `/Artists/AlbumArtists` endpoint (matches folder structure)
 - [x] Tests
-- [ ] PR opened (#?)
-- [ ] CI passing
-- [ ] PR merged
+- [x] PR opened (#356)
+- [x] CI passing
+- [x] PR merged
 
 ### Issue #231 -- Emby/Jellyfin images not downloaded during import
-- [ ] Add `GetArtistImage(ctx, artistID, imageType) ([]byte, string, error)` to Emby client
-- [ ] Add same method to Jellyfin client
-- [ ] Download images during populate for each artist
-- [ ] Save using active naming config via `image.Save()`
-- [ ] Skip download if local image already exists
-- [ ] Update artist image flags in database after download
-- [ ] Tests
+- [x] Add `GetArtistImage(ctx, artistID, imageType) ([]byte, string, error)` to Emby client
+- [x] Add same method to Jellyfin client
+- [x] Download images during populate for each artist
+- [x] Save using active naming config via `image.Save()`
+- [x] Skip download if local image already exists
+- [x] Update artist image flags in database after download
+- [x] Tests
 - [ ] PR opened (#?)
 - [ ] CI passing
 - [ ] PR merged

@@ -1,8 +1,12 @@
 package jellyfin
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"image"
+	"image/color"
+	"image/jpeg"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -93,7 +97,7 @@ func TestGetArtists(t *testing.T) {
 			t.Errorf("unexpected path: %s", r.URL.Path)
 		}
 		fields := r.URL.Query().Get("Fields")
-		if fields != "ImageTags,Overview,Genres,Tags,SortName,PremiereDate,EndDate" {
+		if fields != "Path,ProviderIds,ImageTags,Overview,Genres,Tags,SortName,PremiereDate,EndDate" {
 			t.Errorf("Fields = %q, want expanded field list", fields)
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -293,5 +297,67 @@ func TestPushMetadata_ServerError(t *testing.T) {
 	err := c.PushMetadata(context.Background(), "jf-001", connection.ArtistPushData{Name: "Test"})
 	if err == nil {
 		t.Fatal("expected error for server error")
+	}
+}
+
+// createTestJPEG generates a minimal 1x1 JPEG image for testing.
+func createTestJPEG(t *testing.T) []byte {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, 1, 1))
+	img.Set(0, 0, color.RGBA{R: 255, G: 0, B: 0, A: 255})
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, img, nil); err != nil {
+		t.Fatalf("encoding test jpeg: %v", err)
+	}
+	return buf.Bytes()
+}
+
+func TestGetArtistImage_Success(t *testing.T) {
+	jpegData := createTestJPEG(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/Items/jf-001/Images/Primary" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		auth := r.Header.Get("Authorization")
+		if !strings.HasPrefix(auth, `MediaBrowser Token="`) {
+			t.Errorf("unexpected auth header: %s", auth)
+		}
+		w.Header().Set("Content-Type", "image/jpeg")
+		_, _ = w.Write(jpegData)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "test-key", srv.Client(), testLogger())
+	data, contentType, err := c.GetArtistImage(context.Background(), "jf-001", "thumb")
+	if err != nil {
+		t.Fatalf("GetArtistImage failed: %v", err)
+	}
+	if contentType != "image/jpeg" {
+		t.Errorf("content-type = %q, want image/jpeg", contentType)
+	}
+	if !bytes.Equal(data, jpegData) {
+		t.Errorf("image data mismatch: got %d bytes, want %d", len(data), len(jpegData))
+	}
+}
+
+func TestGetArtistImage_NotFound(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte("not found"))
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "test-key", srv.Client(), testLogger())
+	_, _, err := c.GetArtistImage(context.Background(), "jf-001", "thumb")
+	if err == nil {
+		t.Fatal("expected error for 404 response")
+	}
+}
+
+func TestGetArtistImage_UnsupportedType(t *testing.T) {
+	c := New("http://localhost", "key", testLogger())
+	_, _, err := c.GetArtistImage(context.Background(), "jf-001", "clearart")
+	if err == nil {
+		t.Fatal("expected error for unsupported image type")
 	}
 }

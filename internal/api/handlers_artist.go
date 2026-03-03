@@ -226,7 +226,7 @@ func (r *Router) handleArtistDetailPage(w http.ResponseWriter, req *http.Request
 	if r.libraryService != nil && a.LibraryID != "" {
 		if lib, err := r.libraryService.GetByID(req.Context(), a.LibraryID); err == nil {
 			libraryName = lib.Name
-			isDegraded = lib.IsDegraded()
+			isDegraded = lib.IsDegraded() && r.imageCacheDir == ""
 			librarySource = lib.Source
 		}
 	}

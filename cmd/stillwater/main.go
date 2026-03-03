@@ -293,6 +293,7 @@ func run() error {
 		Logger:             logger,
 		BasePath:           cfg.Server.BasePath,
 		StaticDir:          "web/static",
+		ImageCacheDir:      filepath.Join(filepath.Dir(cfg.Database.Path), "cache", "images"),
 	})
 
 	// Graceful shutdown
