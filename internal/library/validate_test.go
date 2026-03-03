@@ -133,6 +133,11 @@ func TestCheckPathExists(t *testing.T) {
 			input:   tmpFile,
 			wantErr: true,
 		},
+		{
+			name:    "UNC path nonexistent server rejected",
+			input:   `\\server\share\music`,
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {

@@ -42,18 +42,28 @@ func CheckPathExists(path string) error {
 	if !filepath.IsAbs(path) {
 		return fmt.Errorf("library path must be absolute: %q", path)
 	}
-	// filepath.Clean("/" + path) is a CodeQL-recognized path sanitizer
-	// for go/path-injection. On Unix this is a no-op for absolute paths.
-	cleaned := filepath.Clean("/" + path)
-	// On Windows, prepending "/" to a drive-letter path (e.g. "C:\dir")
-	// produces "\C:\dir" after Clean. For true drive-letter volumes,
-	// trim the leading separator to restore the valid form. UNC paths
-	// (e.g. "\\server\share") must be left intact.
-	if vol := filepath.VolumeName(path); len(vol) == 2 && vol[1] == ':' {
-		if len(cleaned) > 0 {
+
+	// Sanitize the path for CodeQL go/path-injection compliance.
+	// UNC and extended-length volumes (\\server\share, \\?\C:\dir) must
+	// not be prefixed with an extra separator, or Clean may corrupt them
+	// into non-UNC rooted paths. For these, sanitize with Clean alone.
+	vol := filepath.VolumeName(path)
+	var cleaned string
+	if strings.HasPrefix(vol, `\\`) {
+		cleaned = filepath.Clean(path)
+	} else {
+		// filepath.Clean("/" + path) is a CodeQL-recognized path
+		// sanitizer for go/path-injection. On Unix this is a no-op
+		// for absolute paths.
+		cleaned = filepath.Clean("/" + path)
+		// On Windows, prepending "/" to a drive-letter path (e.g.
+		// "C:\dir") produces "\C:\dir" after Clean. Trim the leading
+		// separator to restore the valid form.
+		if len(vol) == 2 && vol[1] == ':' && len(cleaned) > 0 {
 			cleaned = cleaned[1:]
 		}
 	}
+
 	info, err := os.Stat(cleaned)
 	if err != nil {
 		if os.IsNotExist(err) {
