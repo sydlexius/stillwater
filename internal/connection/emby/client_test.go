@@ -405,3 +405,41 @@ func TestGetRaw_ErrorBodyLimited(t *testing.T) {
 		t.Errorf("error message length = %d, want bounded (body should be limited to 1024 bytes)", len(errMsg))
 	}
 }
+
+func TestGet_ErrorBodyLimited(t *testing.T) {
+	largeBody := strings.Repeat("a", 4096)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(largeBody))
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "key", srv.Client(), testLogger())
+	err := c.TestConnection(context.Background()) // uses get()
+	if err == nil {
+		t.Fatal("expected error for 500 response")
+	}
+	errMsg := err.Error()
+	if len(errMsg) > 1100 {
+		t.Errorf("error message length = %d, want bounded (body should be limited to 1024 bytes)", len(errMsg))
+	}
+}
+
+func TestPost_ErrorBodyLimited(t *testing.T) {
+	largeBody := strings.Repeat("b", 4096)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(largeBody))
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "key", srv.Client(), testLogger())
+	err := c.TriggerLibraryScan(context.Background()) // uses post()
+	if err == nil {
+		t.Fatal("expected error for 500 response")
+	}
+	errMsg := err.Error()
+	if len(errMsg) > 1100 {
+		t.Errorf("error message length = %d, want bounded (body should be limited to 1024 bytes)", len(errMsg))
+	}
+}

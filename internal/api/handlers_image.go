@@ -746,8 +746,14 @@ func (r *Router) handleServeImage(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	dir := r.imageDir(a)
+	if dir == "" {
+		http.NotFound(w, req)
+		return
+	}
+
 	patterns := r.getActiveNamingConfig(req.Context(), imageType)
-	filePath, found := findExistingImage(r.imageDir(a), patterns)
+	filePath, found := findExistingImage(dir, patterns)
 	if !found {
 		http.NotFound(w, req)
 		return
@@ -782,8 +788,14 @@ func (r *Router) handleImageInfo(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	dir := r.imageDir(a)
+	if dir == "" {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "image not found"})
+		return
+	}
+
 	patterns := r.getActiveNamingConfig(req.Context(), imageType)
-	filePath, found := findExistingImage(r.imageDir(a), patterns)
+	filePath, found := findExistingImage(dir, patterns)
 	if !found {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "image not found"})
 		return

@@ -1235,3 +1235,162 @@ func TestPopulateFromEmby_BackfillsMBID(t *testing.T) {
 		t.Errorf("MusicBrainzID = %q, want backfilled MBID", a.MusicBrainzID)
 	}
 }
+
+func TestPopulateFromEmby_SkipsOnMBIDConflict(t *testing.T) {
+	// Platform provides MBID-A for "Radiohead", but DB already has "Radiohead"
+	// with MBID-B. These are different artists with the same name.
+	embySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"Items":[{
+				"Name":"Radiohead",
+				"SortName":"Radiohead",
+				"Id":"emby-001",
+				"Path":"",
+				"Overview":"",
+				"Genres":[],
+				"Tags":[],
+				"PremiereDate":"",
+				"EndDate":"",
+				"ProviderIds":{"MusicBrainzArtist":"platform-mbid-aaa"},
+				"ImageTags":{}
+			}],
+			"TotalRecordCount":1
+		}`))
+	}))
+	defer embySrv.Close()
+
+	router := testRouterForLibraryOps(t)
+	ctx := context.Background()
+
+	lib := &library.Library{
+		Name:       "Test Music Conflict",
+		Type:       library.TypeRegular,
+		Source:     connection.TypeEmby,
+		ExternalID: "emby-lib-conflict",
+	}
+	if err := router.libraryService.Create(ctx, lib); err != nil {
+		t.Fatalf("creating library: %v", err)
+	}
+
+	// Pre-create artist with a DIFFERENT MBID but same name.
+	existing := &artist.Artist{
+		Name:          "Radiohead",
+		SortName:      "Radiohead",
+		MusicBrainzID: "existing-mbid-bbb",
+		LibraryID:     lib.ID,
+	}
+	if err := router.artistService.Create(ctx, existing); err != nil {
+		t.Fatalf("creating existing artist: %v", err)
+	}
+
+	client := emby.NewWithHTTPClient(embySrv.URL, "key", embySrv.Client(),
+		slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
+	var result populateResult
+	if err := router.populateFromEmbyCtx(ctx, client, lib, &result); err != nil {
+		t.Fatalf("populateFromEmbyCtx: %v", err)
+	}
+
+	// Should skip (not create a new one, not match the wrong artist).
+	if result.Skipped != 1 {
+		t.Errorf("skipped = %d, want 1", result.Skipped)
+	}
+	if result.Created != 0 {
+		t.Errorf("created = %d, want 0", result.Created)
+	}
+
+	// Verify the existing artist's MBID was NOT overwritten.
+	a, err := router.artistService.GetByID(ctx, existing.ID)
+	if err != nil || a == nil {
+		t.Fatalf("looking up artist: %v", err)
+	}
+	if a.MusicBrainzID != "existing-mbid-bbb" {
+		t.Errorf("MusicBrainzID = %q, want unchanged existing-mbid-bbb", a.MusicBrainzID)
+	}
+}
+
+func TestPopulateFromJellyfin_SkipsOnMBIDConflict(t *testing.T) {
+	jfSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"Items":[{
+				"Name":"Bjork",
+				"SortName":"Bjork",
+				"Id":"jf-001",
+				"Path":"",
+				"Overview":"",
+				"Genres":[],
+				"Tags":[],
+				"PremiereDate":"",
+				"EndDate":"",
+				"ProviderIds":{"MusicBrainzArtist":"platform-mbid-ccc"},
+				"ImageTags":{}
+			}],
+			"TotalRecordCount":1
+		}`))
+	}))
+	defer jfSrv.Close()
+
+	router := testRouterForLibraryOps(t)
+	ctx := context.Background()
+
+	lib := &library.Library{
+		Name:       "Test Music JF Conflict",
+		Type:       library.TypeRegular,
+		Source:     connection.TypeJellyfin,
+		ExternalID: "jf-lib-conflict",
+	}
+	if err := router.libraryService.Create(ctx, lib); err != nil {
+		t.Fatalf("creating library: %v", err)
+	}
+
+	existing := &artist.Artist{
+		Name:          "Bjork",
+		SortName:      "Bjork",
+		MusicBrainzID: "existing-mbid-ddd",
+		LibraryID:     lib.ID,
+	}
+	if err := router.artistService.Create(ctx, existing); err != nil {
+		t.Fatalf("creating existing artist: %v", err)
+	}
+
+	client := jellyfin.NewWithHTTPClient(jfSrv.URL, "key", jfSrv.Client(),
+		slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
+	var result populateResult
+	if err := router.populateFromJellyfinCtx(ctx, client, lib, &result); err != nil {
+		t.Fatalf("populateFromJellyfinCtx: %v", err)
+	}
+
+	if result.Skipped != 1 {
+		t.Errorf("skipped = %d, want 1", result.Skipped)
+	}
+	if result.Created != 0 {
+		t.Errorf("created = %d, want 0", result.Created)
+	}
+
+	a, err := router.artistService.GetByID(ctx, existing.ID)
+	if err != nil || a == nil {
+		t.Fatalf("looking up artist: %v", err)
+	}
+	if a.MusicBrainzID != "existing-mbid-ddd" {
+		t.Errorf("MusicBrainzID = %q, want unchanged existing-mbid-ddd", a.MusicBrainzID)
+	}
+}
+
+func TestValidatedArtistPath_SymlinkEscape(t *testing.T) {
+	// Create a library root and an external directory, then symlink from
+	// inside the library to the external directory. The validation should
+	// reject the symlinked path.
+	libDir := t.TempDir()
+	externalDir := t.TempDir()
+
+	symlinkPath := filepath.Join(libDir, "symlinked-artist")
+	if err := os.Symlink(externalDir, symlinkPath); err != nil {
+		t.Skip("symlinks not supported on this platform")
+	}
+
+	got := validatedArtistPath(symlinkPath, libDir)
+	if got != "" {
+		t.Errorf("validatedArtistPath(%q, %q) = %q, want empty (symlink escapes library root)", symlinkPath, libDir, got)
+	}
+}

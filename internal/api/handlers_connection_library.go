@@ -482,12 +482,23 @@ func (r *Router) populateFromEmbyCtx(ctx context.Context, client *emby.Client, l
 				}
 			}
 			if existing == nil {
-				var lookupErr error
-				existing, lookupErr = r.artistService.GetByNameAndLibrary(ctx, item.Name, lib.ID)
+				nameMatch, lookupErr := r.artistService.GetByNameAndLibrary(ctx, item.Name, lib.ID)
 				if lookupErr != nil {
 					r.logger.Warn("dedup lookup by name", "name", item.Name, "error", lookupErr)
 					result.Skipped++
 					continue
+				}
+				if nameMatch != nil {
+					if mbid != "" && nameMatch.MusicBrainzID != "" && nameMatch.MusicBrainzID != mbid {
+						// Name matches but MBIDs conflict -- different artists
+						// with the same name. Skip to avoid wrong association.
+						r.logger.Warn("mbid conflict during name dedup, skipping",
+							"name", item.Name, "platform_mbid", mbid,
+							"existing_mbid", nameMatch.MusicBrainzID)
+						result.Skipped++
+						continue
+					}
+					existing = nameMatch
 				}
 			}
 
@@ -563,12 +574,23 @@ func (r *Router) populateFromJellyfinCtx(ctx context.Context, client *jellyfin.C
 				}
 			}
 			if existing == nil {
-				var lookupErr error
-				existing, lookupErr = r.artistService.GetByNameAndLibrary(ctx, item.Name, lib.ID)
+				nameMatch, lookupErr := r.artistService.GetByNameAndLibrary(ctx, item.Name, lib.ID)
 				if lookupErr != nil {
 					r.logger.Warn("dedup lookup by name", "name", item.Name, "error", lookupErr)
 					result.Skipped++
 					continue
+				}
+				if nameMatch != nil {
+					if mbid != "" && nameMatch.MusicBrainzID != "" && nameMatch.MusicBrainzID != mbid {
+						// Name matches but MBIDs conflict -- different artists
+						// with the same name. Skip to avoid wrong association.
+						r.logger.Warn("mbid conflict during name dedup, skipping",
+							"name", item.Name, "platform_mbid", mbid,
+							"existing_mbid", nameMatch.MusicBrainzID)
+						result.Skipped++
+						continue
+					}
+					existing = nameMatch
 				}
 			}
 
@@ -673,27 +695,44 @@ func (r *Router) populateFromLidarrCtx(ctx context.Context, client *lidarr.Clien
 // validatedArtistPath returns the cleaned absolute item path only when it
 // falls under libraryPath. Returns empty string if libraryPath is empty
 // (degraded library), itemPath is empty, or itemPath escapes the library root.
-// Uses filepath.Rel to avoid prefix confusion (e.g. /music vs /music2).
+// When possible, resolves symlinks to prevent escaping the library root via
+// symlinked directories. Falls back to Abs/Rel when paths do not exist on disk.
 func validatedArtistPath(itemPath, libraryPath string) string {
 	if libraryPath == "" || itemPath == "" {
 		return ""
 	}
-	libRoot, err := filepath.Abs(libraryPath)
+
+	// Resolve symlinks for the library root when possible.
+	libRoot, err := filepath.EvalSymlinks(libraryPath)
 	if err != nil {
-		return ""
+		// Path may not exist on disk (e.g. in tests or misconfig); fall back.
+		libRoot, err = filepath.Abs(libraryPath)
+		if err != nil {
+			return ""
+		}
 	}
-	itemAbs, err := filepath.Abs(itemPath)
+
+	// Resolve symlinks for the item path when possible.
+	itemReal, err := filepath.EvalSymlinks(itemPath)
 	if err != nil {
-		return ""
+		if !os.IsNotExist(err) {
+			return ""
+		}
+		// Path does not exist on disk; fall back to Abs.
+		itemReal, err = filepath.Abs(itemPath)
+		if err != nil {
+			return ""
+		}
 	}
-	rel, err := filepath.Rel(libRoot, itemAbs)
+
+	rel, err := filepath.Rel(libRoot, itemReal)
 	if err != nil {
 		return ""
 	}
 	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return ""
 	}
-	return itemAbs
+	return itemReal
 }
 
 // platformToStillwaterType maps Emby/Jellyfin image tag keys to Stillwater image types.
