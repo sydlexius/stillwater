@@ -119,7 +119,7 @@ early since it touches the migration foundation. #360 (image caching) benefits f
 - [ ] Image upload/replace pushes to connected platform automatically
 - [ ] Cache path defaults to `/cache` (Docker volume mount), configurable via settings
 - [ ] Connection source cache mandatory when no filesystem path
-- [ ] Provider image cache toggle-able with configurable size
+- [ ] Provider image cache toggleable with configurable size
 - [ ] Tests
 - [ ] PR merged
 
