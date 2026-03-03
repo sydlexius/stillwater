@@ -41,12 +41,11 @@ warn() {
 # --------------------------------------------------------------------------
 # 1. typos -- spell check staged files
 # --------------------------------------------------------------------------
-mapfile -d '' -t STAGED_FILES < <(git diff --cached --name-only -z --diff-filter=ACM --)
-if ((${#STAGED_FILES[@]})); then
+if git diff --cached --name-only --diff-filter=ACM -- | grep -q .; then
     if ! command -v typos &>/dev/null; then
         warn "typos (not installed, skipping)"
     else
-        if ! TYPOS_OUTPUT=$(typos -- "${STAGED_FILES[@]}" 2>&1); then
+        if ! TYPOS_OUTPUT=$(git diff --cached --name-only -z --diff-filter=ACM -- | xargs -0 typos -- 2>&1); then
             echo -e "${RED}${BOLD}FAIL${RESET} typos:"
             echo "$TYPOS_OUTPUT"
             exit 1
@@ -60,9 +59,10 @@ fi
 # --------------------------------------------------------------------------
 # 2. gofmt -- check staged .go files (excluding generated _templ.go)
 # --------------------------------------------------------------------------
+# Go files cannot contain whitespace in their names, so newline-delimited is safe here.
 STAGED_GO=$(git diff --cached --name-only --diff-filter=ACM -- '*.go' | grep -v '_templ\.go$' || true)
 if [ -n "$STAGED_GO" ]; then
-    UNFORMATTED=$(echo "$STAGED_GO" | xargs gofmt -l 2>/dev/null || true)
+    UNFORMATTED=$(echo "$STAGED_GO" | xargs gofmt -l -- 2>/dev/null || true)
     if [ -n "$UNFORMATTED" ]; then
         echo -e "${RED}${BOLD}FAIL${RESET} gofmt: the following files need formatting:"
         echo "$UNFORMATTED" | sed 's/^/  /'
