@@ -19,18 +19,22 @@ Jellyfin source code on GitHub (authoritative, since Jellyfin is open source).
 | GET | `/Artists/AlbumArtists` | List album artists only |
 | GET | `/Artists/{Name}` | Get artist by name |
 
-**Key query parameters** (shared by both list endpoints):
+**Key query parameters** (shared by both list endpoints; Jellyfin treats query
+parameter names case-insensitively, so Stillwater uses the same PascalCase
+convention as the Emby client):
 
-- `parentId` -- scope to a specific library
-- `startIndex`, `limit` -- pagination
-- `searchTerm` -- text search
-- `fields` -- additional fields to include (comma-separated):
-  `Overview`, `Genres`, `SortName`, `ProviderIds`, `Path`, `DateCreated`,
-  `PrimaryImageAspectRatio`, `Studios`, `Taglines`, `People`
-- `sortBy` -- e.g. `SortName`, `DateCreated`, `PremiereDate`, `Random`
-- `sortOrder` -- `Ascending` or `Descending`
-- `enableImages`, `enableTotalRecordCount`
-- `genres`, `genreIds`, `tags`, `years` -- category filters
+- `ParentId` -- scope to a specific library
+- `StartIndex`, `Limit` -- pagination
+- `Recursive` -- include all descendants of ParentId
+- `SearchTerm` -- text search
+- `Fields` -- additional fields to include (comma-separated);
+  Stillwater currently requests `ImageTags` during artist discovery. Other
+  available values: `Overview`, `Genres`, `SortName`, `ProviderIds`, `Path`,
+  `DateCreated`, `PrimaryImageAspectRatio`, `Studios`, `Taglines`, `People`
+- `SortBy` -- e.g. `SortName`, `DateCreated`, `PremiereDate`, `Random`
+- `SortOrder` -- `Ascending` or `Descending`
+- `EnableImages`, `EnableTotalRecordCount`
+- `Genres`, `GenreIds`, `Tags`, `Years` -- category filters
 
 ### Item Detail and Update
 
