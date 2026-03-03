@@ -443,3 +443,86 @@ func TestPost_ErrorBodyLimited(t *testing.T) {
 		t.Errorf("error message length = %d, want bounded (body should be limited to 1024 bytes)", len(errMsg))
 	}
 }
+
+func TestPushMetadata_DateNormalization(t *testing.T) {
+	tests := []struct {
+		name         string
+		data         connection.ArtistPushData
+		wantPremiere string
+		wantEnd      string
+	}{
+		{
+			name:         "year-only born",
+			data:         connection.ArtistPushData{Name: "Test", Born: "1985"},
+			wantPremiere: "1985-01-01",
+		},
+		{
+			name:         "year-month formed",
+			data:         connection.ArtistPushData{Name: "Test", Formed: "1991-05"},
+			wantPremiere: "1991-05-01",
+		},
+		{
+			name:         "full date born",
+			data:         connection.ArtistPushData{Name: "Test", Born: "1946-10-14"},
+			wantPremiere: "1946-10-14",
+		},
+		{
+			name:         "ISO 8601 passthrough",
+			data:         connection.ArtistPushData{Name: "Test", Formed: "1985-01-01T00:00:00.0000000Z"},
+			wantPremiere: "1985-01-01T00:00:00.0000000Z",
+		},
+		{
+			name:         "unparseable date omitted",
+			data:         connection.ArtistPushData{Name: "Test", Born: "not a date"},
+			wantPremiere: "",
+		},
+		{
+			name:         "born takes precedence over formed",
+			data:         connection.ArtistPushData{Name: "Test", Born: "1946", Formed: "1985"},
+			wantPremiere: "1946-01-01",
+		},
+		{
+			name:    "died year-only",
+			data:    connection.ArtistPushData{Name: "Test", Died: "2016"},
+			wantEnd: "2016-01-01",
+		},
+		{
+			name:    "disbanded year-only",
+			data:    connection.ArtistPushData{Name: "Test", Disbanded: "2003"},
+			wantEnd: "2003-01-01",
+		},
+		{
+			name:    "died takes precedence over disbanded",
+			data:    connection.ArtistPushData{Name: "Test", Died: "2016", Disbanded: "2003"},
+			wantEnd: "2016-01-01",
+		},
+		{
+			name:         "named month with location",
+			data:         connection.ArtistPushData{Name: "Test", Born: "October 14, 1946 in Abingdon, England"},
+			wantPremiere: "1946-10-14",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var gotBody itemUpdateBody
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+					t.Fatalf("decoding body: %v", err)
+				}
+				w.WriteHeader(http.StatusNoContent)
+			}))
+			defer srv.Close()
+
+			c := NewWithHTTPClient(srv.URL, "key", srv.Client(), testLogger())
+			if err := c.PushMetadata(context.Background(), "emby-001", tt.data); err != nil {
+				t.Fatalf("PushMetadata failed: %v", err)
+			}
+			if gotBody.PremiereDate != tt.wantPremiere {
+				t.Errorf("PremiereDate = %q, want %q", gotBody.PremiereDate, tt.wantPremiere)
+			}
+			if gotBody.EndDate != tt.wantEnd {
+				t.Errorf("EndDate = %q, want %q", gotBody.EndDate, tt.wantEnd)
+			}
+		})
+	}
+}
