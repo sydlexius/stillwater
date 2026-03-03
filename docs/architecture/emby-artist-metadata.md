@@ -48,8 +48,8 @@ Sources: [dev.emby.media](https://dev.emby.media/), Emby community forums,
 | GET | `/Items/{Id}/Images` | List all images for an item |
 | GET | `/Items/{Id}/Images/{Type}` | Download image by type |
 | GET | `/Items/{Id}/Images/{Type}/{Index}` | Download image by type and index |
-| POST | `/Items/{Id}/Images/{Type}` | Upload image (base64-encoded body) |
-| POST | `/Items/{Id}/Images/{Type}/{Index}` | Upload image at specific index |
+| POST | `/Items/{Id}/Images/{Type}` | Upload image (binary body; set Content-Type, e.g. image/jpeg) |
+| POST | `/Items/{Id}/Images/{Type}/{Index}` | Upload image at specific index (same binary body + Content-Type) |
 | DELETE | `/Items/{Id}/Images/{Type}` | Delete image |
 | DELETE | `/Items/{Id}/Images/{Type}/{Index}` | Delete image at index |
 
