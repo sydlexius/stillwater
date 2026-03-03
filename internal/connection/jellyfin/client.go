@@ -81,7 +81,7 @@ func (c *Client) CheckNFOWriterEnabled(ctx context.Context) (bool, string, error
 
 // GetArtists returns album artists from a specific library with pagination.
 func (c *Client) GetArtists(ctx context.Context, libraryID string, startIndex, limit int) (*ItemsResponse, error) {
-	path := fmt.Sprintf("/Artists/AlbumArtists?ParentId=%s&StartIndex=%d&Limit=%d&Recursive=true&Fields=ImageTags,Overview,Genres,Tags,SortName,PremiereDate,EndDate", libraryID, startIndex, limit)
+	path := fmt.Sprintf("/Artists/AlbumArtists?ParentId=%s&StartIndex=%d&Limit=%d&Recursive=true&Fields=Path,ProviderIds,ImageTags,Overview,Genres,Tags,SortName,PremiereDate,EndDate", libraryID, startIndex, limit)
 	var resp ItemsResponse
 	if err := c.get(ctx, path, &resp); err != nil {
 		return nil, fmt.Errorf("getting artists: %w", err)
@@ -106,6 +106,47 @@ func (c *Client) TriggerArtistRefresh(ctx context.Context, artistID string) erro
 	return nil
 }
 
+// GetArtistImage downloads the raw image bytes for the given artist and image type.
+// imageType uses Stillwater naming (thumb, fanart, logo, banner).
+func (c *Client) GetArtistImage(ctx context.Context, artistID, imageType string) ([]byte, string, error) {
+	platformType := mapImageType(imageType)
+	if platformType == "" {
+		return nil, "", fmt.Errorf("unsupported image type: %s", imageType)
+	}
+	path := fmt.Sprintf("/Items/%s/Images/%s", artistID, platformType)
+	return c.getRaw(ctx, path)
+}
+
+// getRaw performs a GET request and returns the raw response bytes and Content-Type header.
+func (c *Client) getRaw(ctx context.Context, path string) ([]byte, string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
+	if err != nil {
+		return nil, "", fmt.Errorf("creating request: %w", err)
+	}
+	c.setAuth(req)
+
+	resp, err := c.httpClient.Do(req) //nolint:gosec // URL constructed from trusted base + API path
+	if err != nil {
+		return nil, "", fmt.Errorf("executing request: %w", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		return nil, "", fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(body))
+	}
+
+	const maxImageSize = 25 << 20 // 25 MB
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxImageSize+1))
+	if err != nil {
+		return nil, "", fmt.Errorf("reading response body: %w", err)
+	}
+	if len(data) > maxImageSize {
+		return nil, "", fmt.Errorf("image exceeds 25 MB limit")
+	}
+	return data, resp.Header.Get("Content-Type"), nil
+}
+
 func (c *Client) get(ctx context.Context, path string, result any) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
 	if err != nil {
@@ -120,7 +161,7 @@ func (c *Client) get(ctx context.Context, path string, result any) error {
 	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
 		return fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(body))
 	}
 
@@ -146,7 +187,7 @@ func (c *Client) post(ctx context.Context, path string, body io.Reader) error {
 	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode >= 300 {
-		respBody, _ := io.ReadAll(resp.Body)
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
 		return fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(respBody))
 	}
 	return nil

@@ -147,6 +147,53 @@ func TestRequireArtistPath_Degraded(t *testing.T) {
 	}
 }
 
+func TestRequireImageDir_WithCacheDir(t *testing.T) {
+	r, _ := testRouterWithPlatform(t)
+	cacheDir := t.TempDir()
+	r.imageCacheDir = cacheDir
+
+	// Pathless artist with cache configured should pass.
+	a := &artist.Artist{ID: "abc123", Name: "Cached Artist", SortName: "Cached Artist", Path: ""}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/artists/abc123/images", nil)
+	w := httptest.NewRecorder()
+	ok := r.requireImageDir(w, req, a)
+	if !ok {
+		t.Fatal("expected requireImageDir to return true when cache is configured")
+	}
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	// Verify cache directory was created.
+	expected := filepath.Join(cacheDir, a.ID)
+	info, err := os.Stat(expected)
+	if err != nil {
+		t.Fatalf("expected cache dir %s to exist: %v", expected, err)
+	}
+	if !info.IsDir() {
+		t.Fatalf("expected %s to be a directory", expected)
+	}
+}
+
+func TestRequireImageDir_RejectsNoCacheNoPath(t *testing.T) {
+	r, _ := testRouterWithPlatform(t)
+	// No cache dir, no artist path.
+	r.imageCacheDir = ""
+
+	a := &artist.Artist{ID: "abc123", Name: "No Path Artist", SortName: "No Path Artist", Path: ""}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/artists/abc123/images", nil)
+	w := httptest.NewRecorder()
+	ok := r.requireImageDir(w, req, a)
+	if ok {
+		t.Fatal("expected requireImageDir to return false when no cache and no path")
+	}
+	if w.Code != http.StatusConflict {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusConflict)
+	}
+}
+
 func TestIsPrivateURL(t *testing.T) {
 	tests := []struct {
 		name string

@@ -29,14 +29,47 @@ const (
 	fetchTimeout  = 30 * time.Second
 )
 
-// requireArtistPath checks that the artist has a filesystem path. Returns true
-// if the path is present (caller may proceed). Returns false and writes a 409
-// response if the artist belongs to a degraded (pathless) library.
+// imageDir returns the directory where images for this artist should be stored
+// and served from. If the artist has a filesystem path (from a local library scan),
+// that path is used. Otherwise, a managed cache directory under the data volume
+// is returned so that platform-sourced images can be saved and served without
+// requiring direct filesystem access to the music library.
+func (r *Router) imageDir(a *artist.Artist) string {
+	if a.Path != "" {
+		return a.Path
+	}
+	if r.imageCacheDir != "" && a.ID != "" {
+		return filepath.Join(r.imageCacheDir, a.ID)
+	}
+	return ""
+}
+
+// requireArtistPath checks that the artist has a filesystem path.
+// Use for NFO and other filesystem operations that need a.Path.
 func (r *Router) requireArtistPath(w http.ResponseWriter, req *http.Request, a *artist.Artist) bool {
 	if a.Path == "" {
 		writeError(w, req, http.StatusConflict,
 			"filesystem operations are not available for this artist (library has no path configured)")
 		return false
+	}
+	return true
+}
+
+// requireImageDir checks that the artist has an image directory (either a
+// filesystem path or a cache dir). Use for image operations.
+func (r *Router) requireImageDir(w http.ResponseWriter, req *http.Request, a *artist.Artist) bool {
+	dir := r.imageDir(a)
+	if dir == "" {
+		writeError(w, req, http.StatusConflict,
+			"no image directory available for this artist (no filesystem path or cache configured)")
+		return false
+	}
+	// Ensure directory exists (cache dirs may not exist yet).
+	if a.Path == "" {
+		if err := os.MkdirAll(dir, 0o750); err != nil { //nolint:gosec // dir from imageDir(), trusted config + artist ID
+			writeError(w, req, http.StatusInternalServerError, "failed to create image directory")
+			return false
+		}
 	}
 	return true
 }
@@ -67,7 +100,7 @@ func (r *Router) handleImageUpload(w http.ResponseWriter, req *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "artist not found"})
 		return
 	}
-	if !r.requireArtistPath(w, req, a) {
+	if !r.requireImageDir(w, req, a) {
 		return
 	}
 
@@ -107,7 +140,7 @@ func (r *Router) handleImageUpload(w http.ResponseWriter, req *http.Request) {
 
 	// Fanart: append as next numbered file when fanart already exists.
 	if imageType == "fanart" && a.FanartExists {
-		saved, saveErr := r.processAndAppendFanart(req.Context(), a.Path, data)
+		saved, saveErr := r.processAndAppendFanart(req.Context(), r.imageDir(a), data)
 		if saveErr != nil {
 			r.logger.Error("appending fanart upload", "artist_id", artistID, "error", saveErr)
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to save image"})
@@ -123,7 +156,7 @@ func (r *Router) handleImageUpload(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	saved, err := r.processAndSaveImage(req.Context(), a.Path, imageType, data)
+	saved, err := r.processAndSaveImage(req.Context(), r.imageDir(a), imageType, data)
 	if err != nil {
 		r.logger.Error("saving uploaded image", "artist_id", artistID, "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to save image"})
@@ -160,7 +193,7 @@ func (r *Router) handleImageFetch(w http.ResponseWriter, req *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "artist not found"})
 		return
 	}
-	if !r.requireArtistPath(w, req, a) {
+	if !r.requireImageDir(w, req, a) {
 		return
 	}
 
@@ -192,7 +225,7 @@ func (r *Router) handleImageFetch(w http.ResponseWriter, req *http.Request) {
 
 	// Fanart: append as next numbered file when fanart already exists.
 	if imageType == "fanart" && a.FanartExists {
-		saved, saveErr := r.processAndAppendFanart(req.Context(), a.Path, data)
+		saved, saveErr := r.processAndAppendFanart(req.Context(), r.imageDir(a), data)
 		if saveErr != nil {
 			r.logger.Error("appending fanart image", "artist_id", artistID, "error", saveErr)
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to save image"})
@@ -213,7 +246,7 @@ func (r *Router) handleImageFetch(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	saved, err := r.processAndSaveImage(req.Context(), a.Path, imageType, data)
+	saved, err := r.processAndSaveImage(req.Context(), r.imageDir(a), imageType, data)
 	if err != nil {
 		r.logger.Error("saving fetched image", "artist_id", artistID, "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to save image"})
@@ -380,7 +413,7 @@ func (r *Router) handleImageCrop(w http.ResponseWriter, req *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "artist not found"})
 		return
 	}
-	if !r.requireArtistPath(w, req, a) {
+	if !r.requireImageDir(w, req, a) {
 		return
 	}
 
@@ -428,7 +461,7 @@ func (r *Router) handleImageCrop(w http.ResponseWriter, req *http.Request) {
 		imgData = cropped
 	}
 
-	saved, err := r.processAndSaveImage(req.Context(), a.Path, body.Type, imgData)
+	saved, err := r.processAndSaveImage(req.Context(), r.imageDir(a), body.Type, imgData)
 	if err != nil {
 		r.logger.Error("saving cropped image", "artist_id", artistID, "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to save image"})
@@ -650,7 +683,7 @@ func (r *Router) setArtistImageFlag(ctx context.Context, a *artist.Artist, image
 	var placeholder string
 	if exists {
 		patterns := r.getActiveNamingConfig(ctx, imageType)
-		if filePath, found := findExistingImage(a.Path, patterns); found {
+		if filePath, found := findExistingImage(r.imageDir(a), patterns); found {
 			if f, openErr := os.Open(filePath); openErr == nil { //nolint:gosec // path from trusted naming patterns
 				defer f.Close() //nolint:errcheck
 				w, h, _ := img.GetDimensions(f)
@@ -723,8 +756,14 @@ func (r *Router) handleServeImage(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	dir := r.imageDir(a)
+	if dir == "" {
+		http.NotFound(w, req)
+		return
+	}
+
 	patterns := r.getActiveNamingConfig(req.Context(), imageType)
-	filePath, found := findExistingImage(a.Path, patterns)
+	filePath, found := findExistingImage(dir, patterns)
 	if !found {
 		http.NotFound(w, req)
 		return
@@ -759,8 +798,14 @@ func (r *Router) handleImageInfo(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	dir := r.imageDir(a)
+	if dir == "" {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "image not found"})
+		return
+	}
+
 	patterns := r.getActiveNamingConfig(req.Context(), imageType)
-	filePath, found := findExistingImage(a.Path, patterns)
+	filePath, found := findExistingImage(dir, patterns)
 	if !found {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "image not found"})
 		return
@@ -814,14 +859,14 @@ func (r *Router) handleDeleteImage(w http.ResponseWriter, req *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "artist not found"})
 		return
 	}
-	if !r.requireArtistPath(w, req, a) {
+	if !r.requireImageDir(w, req, a) {
 		return
 	}
 
 	// For fanart, delete ALL numbered variants as well.
 	if imageType == "fanart" {
 		primary := r.getActiveFanartPrimary(req.Context())
-		fanartPaths := img.DiscoverFanart(a.Path, primary)
+		fanartPaths := img.DiscoverFanart(r.imageDir(a), primary)
 		var deleted []string
 		for _, p := range fanartPaths {
 			if err := os.Remove(p); err == nil { //nolint:gosec // path from DiscoverFanart, not user input
@@ -831,7 +876,7 @@ func (r *Router) handleDeleteImage(w http.ResponseWriter, req *http.Request) {
 		}
 		// Also clean up the standard naming config patterns (alternate names)
 		patterns := r.getActiveNamingConfig(req.Context(), imageType)
-		deleted = append(deleted, deleteImageFiles(a.Path, patterns, r.logger)...)
+		deleted = append(deleted, deleteImageFiles(r.imageDir(a), patterns, r.logger)...)
 		r.updateArtistFanartCount(req.Context(), a)
 		if req.Header.Get("HX-Request") == "true" {
 			renderTempl(w, req, templates.ImagePreviewCard(a.ID, imageType, false, imageTypeLabel(imageType), false, 0))
@@ -845,7 +890,7 @@ func (r *Router) handleDeleteImage(w http.ResponseWriter, req *http.Request) {
 	}
 
 	patterns := r.getActiveNamingConfig(req.Context(), imageType)
-	deleted := deleteImageFiles(a.Path, patterns, r.logger)
+	deleted := deleteImageFiles(r.imageDir(a), patterns, r.logger)
 
 	r.clearArtistImageFlag(req.Context(), a, imageType)
 
@@ -967,12 +1012,12 @@ func (r *Router) handleLogoTrim(w http.ResponseWriter, req *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "artist not found"})
 		return
 	}
-	if !r.requireArtistPath(w, req, a) {
+	if !r.requireImageDir(w, req, a) {
 		return
 	}
 
 	patterns := r.getActiveNamingConfig(req.Context(), "logo")
-	filePath, found := findExistingImage(a.Path, patterns)
+	filePath, found := findExistingImage(r.imageDir(a), patterns)
 	if !found {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "logo not found"})
 		return
@@ -998,7 +1043,7 @@ func (r *Router) handleLogoTrim(w http.ResponseWriter, req *http.Request) {
 	}
 
 	_, useSymlinks := r.getActiveNamingAndSymlinks(req.Context(), "logo")
-	if _, err := img.Save(a.Path, "logo", trimmed, patterns, useSymlinks, r.logger); err != nil {
+	if _, err := img.Save(r.imageDir(a), "logo", trimmed, patterns, useSymlinks, r.logger); err != nil {
 		r.logger.Error("saving trimmed logo", "artist_id", artistID, "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to save trimmed logo"})
 		return
@@ -1085,7 +1130,7 @@ func (r *Router) processAndAppendFanart(ctx context.Context, dir string, data []
 // flag and count on the artist record.
 func (r *Router) updateArtistFanartCount(ctx context.Context, a *artist.Artist) {
 	primary := r.getActiveFanartPrimary(ctx)
-	existing := img.DiscoverFanart(a.Path, primary)
+	existing := img.DiscoverFanart(r.imageDir(a), primary)
 	count := len(existing)
 	a.FanartExists = count > 0
 	a.FanartCount = count
@@ -1123,7 +1168,7 @@ func (r *Router) handleFanartList(w http.ResponseWriter, req *http.Request) {
 	}
 
 	primary := r.getActiveFanartPrimary(req.Context())
-	paths := img.DiscoverFanart(a.Path, primary)
+	paths := img.DiscoverFanart(r.imageDir(a), primary)
 
 	items := make([]templates.FanartGalleryItem, 0, len(paths))
 	for i, p := range paths {
@@ -1171,7 +1216,7 @@ func (r *Router) handleServeFanartByIndex(w http.ResponseWriter, req *http.Reque
 	}
 
 	primary := r.getActiveFanartPrimary(req.Context())
-	paths := img.DiscoverFanart(a.Path, primary)
+	paths := img.DiscoverFanart(r.imageDir(a), primary)
 	if index >= len(paths) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "fanart index out of range"})
 		return
@@ -1196,7 +1241,7 @@ func (r *Router) handleFanartBatchDelete(w http.ResponseWriter, req *http.Reques
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "artist not found"})
 		return
 	}
-	if !r.requireArtistPath(w, req, a) {
+	if !r.requireImageDir(w, req, a) {
 		return
 	}
 
@@ -1214,7 +1259,7 @@ func (r *Router) handleFanartBatchDelete(w http.ResponseWriter, req *http.Reques
 
 	primary := r.getActiveFanartPrimary(req.Context())
 	kodi := r.isKodiNumbering(req.Context())
-	paths := img.DiscoverFanart(a.Path, primary)
+	paths := img.DiscoverFanart(r.imageDir(a), primary)
 
 	// Build set of indices to delete
 	deleteSet := make(map[int]bool, len(body.Indices))
@@ -1250,7 +1295,7 @@ func (r *Router) handleFanartBatchDelete(w http.ResponseWriter, req *http.Reques
 		actualExt := filepath.Ext(oldPath)
 		newBase := strings.TrimSuffix(newName, filepath.Ext(newName))
 		newName = newBase + actualExt
-		newPath := filepath.Join(a.Path, newName)
+		newPath := filepath.Join(r.imageDir(a), newName)
 		if oldPath != newPath {
 			if renameErr := os.Rename(oldPath, newPath); renameErr != nil { //nolint:gosec // paths from DiscoverFanart and FanartFilename, not user input
 				r.logger.Warn("renaming fanart during re-number",
@@ -1290,7 +1335,7 @@ func (r *Router) handleFanartBatchFetch(w http.ResponseWriter, req *http.Request
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "artist not found"})
 		return
 	}
-	if !r.requireArtistPath(w, req, a) {
+	if !r.requireImageDir(w, req, a) {
 		return
 	}
 
@@ -1341,7 +1386,7 @@ func (r *Router) handleFanartBatchFetch(w http.ResponseWriter, req *http.Request
 			errors = append(errors, fmt.Sprintf("fetch failed: %s", u))
 			continue
 		}
-		saved, saveErr := r.processAndAppendFanart(req.Context(), a.Path, data)
+		saved, saveErr := r.processAndAppendFanart(req.Context(), r.imageDir(a), data)
 		if saveErr != nil {
 			r.logger.Error("saving fanart image", "url", u, "error", saveErr)
 			errors = append(errors, fmt.Sprintf("save failed: %s", u))

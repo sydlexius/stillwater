@@ -60,6 +60,7 @@ type RouterDeps struct {
 	Logger             *slog.Logger
 	BasePath           string
 	StaticDir          string
+	ImageCacheDir      string
 }
 
 // Router sets up all HTTP routes for the application.
@@ -92,6 +93,7 @@ type Router struct {
 	eventBus           *event.Bus
 	logger             *slog.Logger
 	basePath           string
+	imageCacheDir      string
 	staticAssets       *StaticAssets
 	db                 *sql.DB
 	ssrfClient         *http.Client
@@ -133,6 +135,7 @@ func NewRouter(deps RouterDeps) *Router {
 		db:                 deps.DB,
 		logger:             deps.Logger,
 		basePath:           deps.BasePath,
+		imageCacheDir:      deps.ImageCacheDir,
 		staticAssets:       NewStaticAssets(deps.StaticDir, deps.Logger),
 		ssrfClient: &http.Client{
 			Timeout:   fetchTimeout,
