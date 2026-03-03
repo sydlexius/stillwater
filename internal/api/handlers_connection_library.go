@@ -692,11 +692,11 @@ func (r *Router) populateFromLidarrCtx(ctx context.Context, client *lidarr.Clien
 	return nil
 }
 
-// validatedArtistPath returns the cleaned absolute item path only when it
-// falls under libraryPath. Returns empty string if libraryPath is empty
-// (degraded library), itemPath is empty, or itemPath escapes the library root.
-// When possible, resolves symlinks to prevent escaping the library root via
-// symlinked directories. Falls back to Abs/Rel when paths do not exist on disk.
+// validatedArtistPath returns the resolved item path only when it exists on
+// disk as a directory and falls under libraryPath. Returns empty string if
+// libraryPath is empty (degraded library), itemPath is empty, itemPath does
+// not exist, or itemPath escapes the library root. Resolves symlinks to
+// prevent escaping the library root via symlinked directories.
 func validatedArtistPath(itemPath, libraryPath string) string {
 	if libraryPath == "" || itemPath == "" {
 		return ""
@@ -715,14 +715,10 @@ func validatedArtistPath(itemPath, libraryPath string) string {
 	// Resolve symlinks for the item path when possible.
 	itemReal, err := filepath.EvalSymlinks(itemPath)
 	if err != nil {
-		if !os.IsNotExist(err) {
-			return ""
-		}
-		// Path does not exist on disk; fall back to Abs.
-		itemReal, err = filepath.Abs(itemPath)
-		if err != nil {
-			return ""
-		}
+		// Path does not exist on disk or cannot be resolved; treat as
+		// invalid so only verified, existing directories are persisted as
+		// artist paths. Pathless artists can still use the image cache.
+		return ""
 	} else {
 		// Path exists: verify it is a directory (not a file).
 		info, statErr := os.Stat(itemReal) //nolint:gosec // itemReal resolved via filepath.EvalSymlinks from platform path
