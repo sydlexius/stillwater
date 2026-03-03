@@ -132,14 +132,17 @@ func (c *Client) getRaw(ctx context.Context, path string) ([]byte, string, error
 	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
 		return nil, "", fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(body))
 	}
 
 	const maxImageSize = 25 << 20 // 25 MB
-	data, err := io.ReadAll(io.LimitReader(resp.Body, maxImageSize))
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxImageSize+1))
 	if err != nil {
 		return nil, "", fmt.Errorf("reading response body: %w", err)
+	}
+	if len(data) > maxImageSize {
+		return nil, "", fmt.Errorf("image exceeds 25 MB limit")
 	}
 	return data, resp.Header.Get("Content-Type"), nil
 }

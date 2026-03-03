@@ -33,14 +33,14 @@ code reuse issues.
 #350 (SQL squash) -----------> independent, merge early (foundation)
 #351 (runtime safety) -------> independent audit + fixes
 #352 (refactoring audit) ----> independent audit + refactoring
-#360 (image caching) --------> depends on #352 (shared write path abstraction)
 ```
 
-Most issues are independent. #322 (universal editing) informs #321 (history) since
-history needs to track edits on newly-editable fields. #350 (SQL squash) should merge
-early since it touches the migration foundation. #360 (image caching) benefits from
-#352 (refactoring) landing first since both touch image write paths and handler structure.
-#351 and #352 are audit-style work that can proceed in any order.
+All seven issues are independent -- no blocking relationships. #322 (universal editing)
+informs #321 (history) since history needs to track edits on newly-editable fields, but
+they can be implemented in parallel as long as history hooks are added to the existing
+`UpdateField`/`ClearField` paths which both issues share. #350 (SQL squash) should merge
+early since it touches the migration foundation. #351 and #352 are audit-style work that
+can proceed in any order.
 
 ## Checklist
 
@@ -125,20 +125,6 @@ early since it touches the migration foundation. #360 (image caching) benefits f
 - [ ] CI passing
 - [ ] PR merged
 
-### Issue #360 -- Image caching strategy for platform-sourced artists
-- [ ] Remove "degraded" concept (`IsDegraded()`, all UI references, conditional logic)
-- [ ] Add System settings tab (move Behavior and Logging from General)
-- [ ] Add Cache settings section with connection source cache and provider image cache
-- [ ] Unify image write path: local save + platform push via single abstraction
-- [ ] Image upload/replace pushes to connected platform automatically
-- [ ] Cache path defaults to `/data/cache/images`, configurable via settings
-- [ ] Connection source cache mandatory when no filesystem path
-- [ ] Provider image cache toggle-able with configurable size
-- [ ] Tests
-- [ ] PR opened (#?)
-- [ ] CI passing
-- [ ] PR merged
-
 ## UAT / Merge Order
 
 1. PR for #350 (SQL squash) -- foundation change, merge first
@@ -148,7 +134,6 @@ early since it touches the migration foundation. #360 (image caching) benefits f
 5. PR for #349 (artist sort) -- UI feature
 6. PR #325 for #322 (universal field editing) -- extends existing field system
 7. PR #324 for #321 (history tab) -- builds on final field set from #322
-8. PR for #360 (image caching) -- after #352 refactoring lands
 
 ## Notes
 

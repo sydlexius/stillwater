@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -518,7 +519,7 @@ func (r *Router) populateFromEmbyCtx(ctx context.Context, client *emby.Client, l
 				Styles:        item.Tags,
 				Formed:        item.PremiereDate,
 				Disbanded:     item.EndDate,
-				Path:          item.Path,
+				Path:          validatedArtistPath(item.Path, lib.Path),
 			}
 			if err := r.artistService.Create(ctx, a); err != nil {
 				r.logger.Warn("creating artist from emby", "name", item.Name, "error", err)
@@ -599,7 +600,7 @@ func (r *Router) populateFromJellyfinCtx(ctx context.Context, client *jellyfin.C
 				Styles:        item.Tags,
 				Formed:        item.PremiereDate,
 				Disbanded:     item.EndDate,
-				Path:          item.Path,
+				Path:          validatedArtistPath(item.Path, lib.Path),
 			}
 			if err := r.artistService.Create(ctx, a); err != nil {
 				r.logger.Warn("creating artist from jellyfin", "name", item.Name, "error", err)
@@ -669,6 +670,19 @@ func (r *Router) populateFromLidarrCtx(ctx context.Context, client *lidarr.Clien
 	return nil
 }
 
+// validatedArtistPath returns itemPath only when it falls under libraryPath.
+// Returns empty string if libraryPath is empty (degraded library), itemPath is
+// empty, or itemPath is not under the library root.
+func validatedArtistPath(itemPath, libraryPath string) string {
+	if libraryPath == "" || itemPath == "" {
+		return ""
+	}
+	if !strings.HasPrefix(filepath.Clean(itemPath), filepath.Clean(libraryPath)) {
+		return ""
+	}
+	return itemPath
+}
+
 // platformToStillwaterType maps Emby/Jellyfin image tag keys to Stillwater image types.
 var platformToStillwaterType = map[string]string{
 	"Primary":  "thumb",
@@ -686,11 +700,18 @@ func (r *Router) downloadPlatformImages(ctx context.Context, dl imageDownloader,
 		return
 	}
 
-	// Ensure the target directory exists (needed for cache dir; artist paths
-	// from filesystem scans already exist).
-	if err := os.MkdirAll(dir, 0o750); err != nil { //nolint:gosec // G703: dir from imageDir() uses trusted config path + artist ID
-		r.logger.Warn("creating image directory", "artist", a.Name, "dir", dir, "error", err)
-		return
+	if a.Path == "" {
+		// Cache directory: create if needed.
+		if err := os.MkdirAll(dir, 0o750); err != nil { //nolint:gosec // dir from imageDir() uses trusted config path + artist ID
+			r.logger.Warn("creating cache directory", "artist", a.Name, "dir", dir, "error", err)
+			return
+		}
+	} else {
+		// Filesystem path: must already exist from scan.
+		if _, err := os.Stat(dir); err != nil { //nolint:gosec // G703: dir from imageDir() uses validated artist path
+			r.logger.Debug("artist directory not accessible, skipping images", "artist", a.Name, "dir", dir, "error", err)
+			return
+		}
 	}
 
 	for platformKey, tagValue := range imageTags {

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/connection"
@@ -360,5 +361,49 @@ func TestGetArtistImage_UnsupportedType(t *testing.T) {
 	_, _, err := c.GetArtistImage(context.Background(), "emby-001", "clearart")
 	if err == nil {
 		t.Fatal("expected error for unsupported image type")
+	}
+}
+
+func TestGetRaw_OversizedImage(t *testing.T) {
+	// Return exactly 25 MB + 1 byte to trigger the size check.
+	const maxImageSize = 25 << 20
+	oversized := make([]byte, maxImageSize+1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/jpeg")
+		_, _ = w.Write(oversized)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "key", srv.Client(), testLogger())
+	_, _, err := c.GetArtistImage(context.Background(), "emby-001", "thumb")
+	if err == nil {
+		t.Fatal("expected error for oversized image")
+	}
+	if !strings.Contains(err.Error(), "exceeds 25 MB") {
+		t.Errorf("error = %q, want message about exceeding 25 MB limit", err)
+	}
+}
+
+func TestGetRaw_ErrorBodyLimited(t *testing.T) {
+	// Return a 500 with a body larger than 1 KB to verify it gets truncated.
+	largeBody := strings.Repeat("x", 4096)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(largeBody))
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "key", srv.Client(), testLogger())
+	_, _, err := c.GetArtistImage(context.Background(), "emby-001", "thumb")
+	if err == nil {
+		t.Fatal("expected error for 500 response")
+	}
+	// The error message includes "unexpected status 500: <body>".
+	// Verify the body portion is bounded to 1024 bytes (not the full 4096).
+	errMsg := err.Error()
+	// "unexpected" contains one "x", so subtract 1 from the total count.
+	bodyXCount := strings.Count(errMsg, "x") - strings.Count("unexpected", "x")
+	if bodyXCount > 1024 {
+		t.Errorf("error body contains %d bytes of payload, want at most 1024", bodyXCount)
 	}
 }

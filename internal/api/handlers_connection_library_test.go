@@ -502,6 +502,7 @@ func createTestJPEGForHandler(t *testing.T) []byte {
 func TestPopulateFromEmby_DownloadsImages(t *testing.T) {
 	jpegData := createTestJPEGForHandler(t)
 	artistDir := t.TempDir()
+	libPath := filepath.Dir(artistDir)
 
 	var imageRequested bool
 	embySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -540,6 +541,7 @@ func TestPopulateFromEmby_DownloadsImages(t *testing.T) {
 
 	lib := &library.Library{
 		Name:       "Test Music",
+		Path:       libPath,
 		Type:       library.TypeRegular,
 		Source:     connection.TypeEmby,
 		ExternalID: "emby-lib-1",
@@ -593,6 +595,7 @@ func TestPopulateFromEmby_DownloadsImages(t *testing.T) {
 
 func TestPopulateFromEmby_SkipsExistingImage(t *testing.T) {
 	artistDir := t.TempDir()
+	libPath := filepath.Dir(artistDir)
 
 	// Pre-create the thumb image so the download is skipped.
 	if err := os.WriteFile(filepath.Join(artistDir, "folder.jpg"), []byte("existing"), 0644); err != nil {
@@ -635,6 +638,7 @@ func TestPopulateFromEmby_SkipsExistingImage(t *testing.T) {
 
 	lib := &library.Library{
 		Name:       "Test Music Skip",
+		Path:       libPath,
 		Type:       library.TypeRegular,
 		Source:     connection.TypeEmby,
 		ExternalID: "emby-lib-2",
@@ -749,6 +753,7 @@ func TestPopulateFromEmby_UsesImageCacheWhenNoPath(t *testing.T) {
 func TestPopulateFromJellyfin_DownloadsImages(t *testing.T) {
 	jpegData := createTestJPEGForHandler(t)
 	artistDir := t.TempDir()
+	libPath := filepath.Dir(artistDir)
 
 	var imageRequested bool
 	jfSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -787,6 +792,7 @@ func TestPopulateFromJellyfin_DownloadsImages(t *testing.T) {
 
 	lib := &library.Library{
 		Name:       "Test Music JF",
+		Path:       libPath,
 		Type:       library.TypeRegular,
 		Source:     connection.TypeJellyfin,
 		ExternalID: "jf-lib-1",
@@ -942,6 +948,200 @@ func TestPopulateFromEmby_DownloadsImagesForExistingArtist(t *testing.T) {
 	}
 	if !a.ThumbExists {
 		t.Error("expected ThumbExists to be true")
+	}
+}
+
+func TestValidatedArtistPath(t *testing.T) {
+	tests := []struct {
+		name        string
+		itemPath    string
+		libraryPath string
+		want        string
+	}{
+		{"empty library path returns empty", "/music/Artist", "", ""},
+		{"empty item path returns empty", "", "/music", ""},
+		{"both empty returns empty", "", "", ""},
+		{"path under library root returns path", "/music/Radiohead", "/music", "/music/Radiohead"},
+		{"path outside library root returns empty", "/other/Radiohead", "/music", ""},
+		{"exact match returns path", "/music", "/music", "/music"},
+		{"traversal attack returns empty", "/music/../etc/passwd", "/music", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := validatedArtistPath(tt.itemPath, tt.libraryPath)
+			if got != tt.want {
+				t.Errorf("validatedArtistPath(%q, %q) = %q, want %q", tt.itemPath, tt.libraryPath, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPopulateFromEmby_PlatformPathNotStoredWhenDegraded(t *testing.T) {
+	embySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"Items":[{
+				"Name":"Radiohead",
+				"SortName":"Radiohead",
+				"Id":"emby-001",
+				"Path":"/emby/internal/Radiohead",
+				"Overview":"",
+				"Genres":[],
+				"Tags":[],
+				"PremiereDate":"",
+				"EndDate":"",
+				"ProviderIds":{},
+				"ImageTags":{}
+			}],
+			"TotalRecordCount":1
+		}`))
+	}))
+	defer embySrv.Close()
+
+	router := testRouterForLibraryOps(t)
+	ctx := context.Background()
+
+	// Degraded library: no Path set.
+	lib := &library.Library{
+		Name:       "Degraded Emby",
+		Type:       library.TypeRegular,
+		Source:     connection.TypeEmby,
+		ExternalID: "emby-lib-degraded",
+	}
+	if err := router.libraryService.Create(ctx, lib); err != nil {
+		t.Fatalf("creating library: %v", err)
+	}
+
+	client := emby.NewWithHTTPClient(embySrv.URL, "key", embySrv.Client(),
+		slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
+	var result populateResult
+	if err := router.populateFromEmbyCtx(ctx, client, lib, &result); err != nil {
+		t.Fatalf("populateFromEmbyCtx: %v", err)
+	}
+	if result.Created != 1 {
+		t.Fatalf("created = %d, want 1", result.Created)
+	}
+
+	a, err := router.artistService.GetByNameAndLibrary(ctx, "Radiohead", lib.ID)
+	if err != nil || a == nil {
+		t.Fatalf("looking up artist: %v", err)
+	}
+	if a.Path != "" {
+		t.Errorf("artist path = %q, want empty (degraded library should not store platform path)", a.Path)
+	}
+}
+
+func TestPopulateFromEmby_PlatformPathStoredWhenUnderLibraryRoot(t *testing.T) {
+	artistDir := t.TempDir()
+
+	embySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{
+			"Items":[{
+				"Name":"Radiohead",
+				"SortName":"Radiohead",
+				"Id":"emby-001",
+				"Path":%q,
+				"Overview":"",
+				"Genres":[],
+				"Tags":[],
+				"PremiereDate":"",
+				"EndDate":"",
+				"ProviderIds":{},
+				"ImageTags":{}
+			}],
+			"TotalRecordCount":1
+		}`, artistDir)
+	}))
+	defer embySrv.Close()
+
+	router := testRouterForLibraryOps(t)
+	ctx := context.Background()
+
+	// Non-degraded library with Path set to parent of artistDir.
+	libPath := filepath.Dir(artistDir)
+	lib := &library.Library{
+		Name:       "Rooted Emby",
+		Path:       libPath,
+		Type:       library.TypeRegular,
+		Source:     connection.TypeEmby,
+		ExternalID: "emby-lib-rooted",
+	}
+	if err := router.libraryService.Create(ctx, lib); err != nil {
+		t.Fatalf("creating library: %v", err)
+	}
+
+	client := emby.NewWithHTTPClient(embySrv.URL, "key", embySrv.Client(),
+		slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
+	var result populateResult
+	if err := router.populateFromEmbyCtx(ctx, client, lib, &result); err != nil {
+		t.Fatalf("populateFromEmbyCtx: %v", err)
+	}
+	if result.Created != 1 {
+		t.Fatalf("created = %d, want 1", result.Created)
+	}
+
+	a, err := router.artistService.GetByNameAndLibrary(ctx, "Radiohead", lib.ID)
+	if err != nil || a == nil {
+		t.Fatalf("looking up artist: %v", err)
+	}
+	if a.Path != artistDir {
+		t.Errorf("artist path = %q, want %q", a.Path, artistDir)
+	}
+}
+
+func TestPopulateFromEmby_PlatformPathRejectedWhenOutsideLibraryRoot(t *testing.T) {
+	embySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"Items":[{
+				"Name":"Radiohead",
+				"SortName":"Radiohead",
+				"Id":"emby-001",
+				"Path":"/completely/different/path/Radiohead",
+				"Overview":"",
+				"Genres":[],
+				"Tags":[],
+				"PremiereDate":"",
+				"EndDate":"",
+				"ProviderIds":{},
+				"ImageTags":{}
+			}],
+			"TotalRecordCount":1
+		}`))
+	}))
+	defer embySrv.Close()
+
+	router := testRouterForLibraryOps(t)
+	ctx := context.Background()
+
+	lib := &library.Library{
+		Name:       "Rooted Emby Outside",
+		Path:       "/music",
+		Type:       library.TypeRegular,
+		Source:     connection.TypeEmby,
+		ExternalID: "emby-lib-outside",
+	}
+	if err := router.libraryService.Create(ctx, lib); err != nil {
+		t.Fatalf("creating library: %v", err)
+	}
+
+	client := emby.NewWithHTTPClient(embySrv.URL, "key", embySrv.Client(),
+		slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
+	var result populateResult
+	if err := router.populateFromEmbyCtx(ctx, client, lib, &result); err != nil {
+		t.Fatalf("populateFromEmbyCtx: %v", err)
+	}
+	if result.Created != 1 {
+		t.Fatalf("created = %d, want 1", result.Created)
+	}
+
+	a, err := router.artistService.GetByNameAndLibrary(ctx, "Radiohead", lib.ID)
+	if err != nil || a == nil {
+		t.Fatalf("looking up artist: %v", err)
+	}
+	if a.Path != "" {
+		t.Errorf("artist path = %q, want empty (path outside library root should be rejected)", a.Path)
 	}
 }
 

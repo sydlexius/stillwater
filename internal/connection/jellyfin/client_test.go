@@ -361,3 +361,42 @@ func TestGetArtistImage_UnsupportedType(t *testing.T) {
 		t.Fatal("expected error for unsupported image type")
 	}
 }
+
+func TestGetRaw_OversizedImage(t *testing.T) {
+	const maxImageSize = 25 << 20
+	oversized := make([]byte, maxImageSize+1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/jpeg")
+		_, _ = w.Write(oversized)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "key", srv.Client(), testLogger())
+	_, _, err := c.GetArtistImage(context.Background(), "jf-001", "thumb")
+	if err == nil {
+		t.Fatal("expected error for oversized image")
+	}
+	if !strings.Contains(err.Error(), "exceeds 25 MB") {
+		t.Errorf("error = %q, want message about exceeding 25 MB limit", err)
+	}
+}
+
+func TestGetRaw_ErrorBodyLimited(t *testing.T) {
+	largeBody := strings.Repeat("x", 4096)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(largeBody))
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "key", srv.Client(), testLogger())
+	_, _, err := c.GetArtistImage(context.Background(), "jf-001", "thumb")
+	if err == nil {
+		t.Fatal("expected error for 500 response")
+	}
+	errMsg := err.Error()
+	bodyXCount := strings.Count(errMsg, "x") - strings.Count("unexpected", "x")
+	if bodyXCount > 1024 {
+		t.Errorf("error body contains %d bytes of payload, want at most 1024", bodyXCount)
+	}
+}

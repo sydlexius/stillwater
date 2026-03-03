@@ -21,11 +21,9 @@ where only push direction works but pull does not.
 #230 (metadata import) --\
                           +--> #232 (view platform state) --> #233 (delete images)
 #231 (image import)   --/
-  \--> #357 (multiple backdrops)
 ```
 
 #230 and #231 are independent of each other.
-#231 blocks #357 (backdrops use the image download infrastructure from #231).
 #232 depends on #230 and #231 (uses expanded fields and image methods).
 #233 depends on #232 (delete button lives in the platform state view).
 
@@ -40,28 +38,17 @@ where only push direction works but pull does not.
 - [x] Investigate additional fields (Tags, SortName) from real server data
 - [x] Switch from `/Artists` to `/Artists/AlbumArtists` endpoint (matches folder structure)
 - [x] Tests
-- [x] PR opened (#356)
-- [x] CI passing
-- [x] PR merged
-
-### Issue #231 -- Emby/Jellyfin images not downloaded during import
-- [x] Add `GetArtistImage(ctx, artistID, imageType) ([]byte, string, error)` to Emby client
-- [x] Add same method to Jellyfin client
-- [x] Download images during populate for each artist
-- [x] Save using active naming config via `image.Save()`
-- [x] Skip download if local image already exists
-- [x] Update artist image flags in database after download
-- [x] Tests
-- [x] PR opened (#361)
+- [ ] PR opened (#?)
 - [ ] CI passing
 - [ ] PR merged
 
-### Issue #357 -- Support multiple backdrop images from Emby/Jellyfin
-- [ ] Add `BackdropImageTags []string` to `ArtistItem` in both `emby/types.go` and `jellyfin/types.go`
-- [ ] Update `downloadPlatformImages` to handle `BackdropImageTags` separately from `ImageTags`
-- [ ] Construct indexed URLs (`/Images/Backdrop/0`, `/Images/Backdrop/1`, etc.)
-- [ ] Save with correct naming (fanart.jpg, fanart1.jpg, fanart2.jpg, ...)
-- [ ] Update `FanartCount` on artist records
+### Issue #231 -- Emby/Jellyfin images not downloaded during import
+- [ ] Add `GetArtistImage(ctx, artistID, imageType) ([]byte, string, error)` to Emby client
+- [ ] Add same method to Jellyfin client
+- [ ] Download images during populate for each artist
+- [ ] Save using active naming config via `image.Save()`
+- [ ] Skip download if local image already exists
+- [ ] Update artist image flags in database after download
 - [ ] Tests
 - [ ] PR opened (#?)
 - [ ] CI passing
@@ -94,15 +81,12 @@ where only push direction works but pull does not.
 ## UAT / Merge Order
 
 Session 1 (import):
-1. PR for #230 (base: main) -- metadata import -- MERGED (#356)
-2. PR for #231 (base: main) -- image import -- PR #361
+1. PR for #230 (base: main) -- metadata import
+2. PR for #231 (base: main) -- image import
 
-Session 2 (backdrops):
-3. PR for #357 (base: main, after #231 merges) -- multiple backdrop images
-
-Session 3 (platform state + delete):
-4. PR for #232 (base: main, after #230 and #231 merge)
-5. PR for #233 (base: main or stacked on #232)
+Session 2 (platform state + delete):
+3. PR for #232 (base: main, after #230 and #231 merge)
+4. PR for #233 (base: main or stacked on #232)
 
 ## Notes
 
