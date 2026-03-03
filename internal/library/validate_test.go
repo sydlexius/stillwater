@@ -36,6 +36,16 @@ func TestValidatePath(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name:    "absolute parent traversal rejected",
+			input:   tmpDir + string(filepath.Separator) + "..",
+			wantErr: true,
+		},
+		{
+			name:    "absolute embedded traversal rejected",
+			input:   tmpDir + string(filepath.Separator) + ".." + string(filepath.Separator) + "etc",
+			wantErr: true,
+		},
+		{
 			name:  "absolute path accepted",
 			input: tmpDir,
 			want:  tmpDir,

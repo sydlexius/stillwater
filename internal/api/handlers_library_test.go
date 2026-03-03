@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -115,7 +116,11 @@ func TestHandleCreateLibrary_FormEncoded(t *testing.T) {
 	r, _, _ := testRouterWithLibrary(t)
 
 	dir := t.TempDir()
-	body := fmt.Sprintf("name=Classical&path=%s&type=classical", dir)
+	vals := url.Values{}
+	vals.Set("name", "Classical")
+	vals.Set("path", dir)
+	vals.Set("type", "classical")
+	body := vals.Encode()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/libraries", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	w := httptest.NewRecorder()
