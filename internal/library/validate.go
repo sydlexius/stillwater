@@ -39,6 +39,9 @@ func CheckPathExists(path string) error {
 	if path == "" {
 		return fmt.Errorf("library path must not be empty")
 	}
+	if !filepath.IsAbs(path) {
+		return fmt.Errorf("library path must be absolute: %q", path)
+	}
 	// filepath.Clean("/" + path) is a CodeQL-recognized path sanitizer
 	// for go/path-injection. On Unix this is a no-op for absolute paths.
 	cleaned := filepath.Clean("/" + path)

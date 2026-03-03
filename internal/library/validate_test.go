@@ -115,6 +115,11 @@ func TestCheckPathExists(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name:    "relative path rejected",
+			input:   "music/lib",
+			wantErr: true,
+		},
+		{
 			name:  "valid directory accepted",
 			input: tmpDir,
 		},
