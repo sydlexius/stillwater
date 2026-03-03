@@ -670,17 +670,30 @@ func (r *Router) populateFromLidarrCtx(ctx context.Context, client *lidarr.Clien
 	return nil
 }
 
-// validatedArtistPath returns itemPath only when it falls under libraryPath.
-// Returns empty string if libraryPath is empty (degraded library), itemPath is
-// empty, or itemPath is not under the library root.
+// validatedArtistPath returns the cleaned absolute item path only when it
+// falls under libraryPath. Returns empty string if libraryPath is empty
+// (degraded library), itemPath is empty, or itemPath escapes the library root.
+// Uses filepath.Rel to avoid prefix confusion (e.g. /music vs /music2).
 func validatedArtistPath(itemPath, libraryPath string) string {
 	if libraryPath == "" || itemPath == "" {
 		return ""
 	}
-	if !strings.HasPrefix(filepath.Clean(itemPath), filepath.Clean(libraryPath)) {
+	libRoot, err := filepath.Abs(libraryPath)
+	if err != nil {
 		return ""
 	}
-	return itemPath
+	itemAbs, err := filepath.Abs(itemPath)
+	if err != nil {
+		return ""
+	}
+	rel, err := filepath.Rel(libRoot, itemAbs)
+	if err != nil {
+		return ""
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return ""
+	}
+	return itemAbs
 }
 
 // platformToStillwaterType maps Emby/Jellyfin image tag keys to Stillwater image types.

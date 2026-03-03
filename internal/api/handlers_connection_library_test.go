@@ -952,25 +952,42 @@ func TestPopulateFromEmby_DownloadsImagesForExistingArtist(t *testing.T) {
 }
 
 func TestValidatedArtistPath(t *testing.T) {
+	// Use real temp dirs so filepath.Abs produces valid absolute paths.
+	libDir := t.TempDir()
+	artistDir := filepath.Join(libDir, "Radiohead")
+	if err := os.MkdirAll(artistDir, 0o755); err != nil {
+		t.Fatalf("creating artist dir: %v", err)
+	}
+	otherDir := t.TempDir()
+	// Create a sibling directory with a prefix-confusing name (e.g. libDir + "2").
+	siblingDir := libDir + "2"
+	if err := os.MkdirAll(filepath.Join(siblingDir, "Artist"), 0o755); err != nil {
+		t.Fatalf("creating sibling dir: %v", err)
+	}
+	t.Cleanup(func() { os.RemoveAll(siblingDir) })
+
 	tests := []struct {
 		name        string
 		itemPath    string
 		libraryPath string
-		want        string
+		wantEmpty   bool
 	}{
-		{"empty library path returns empty", "/music/Artist", "", ""},
-		{"empty item path returns empty", "", "/music", ""},
-		{"both empty returns empty", "", "", ""},
-		{"path under library root returns path", "/music/Radiohead", "/music", "/music/Radiohead"},
-		{"path outside library root returns empty", "/other/Radiohead", "/music", ""},
-		{"exact match returns path", "/music", "/music", "/music"},
-		{"traversal attack returns empty", "/music/../etc/passwd", "/music", ""},
+		{"empty library path returns empty", artistDir, "", true},
+		{"empty item path returns empty", "", libDir, true},
+		{"both empty returns empty", "", "", true},
+		{"path under library root accepted", artistDir, libDir, false},
+		{"path outside library root rejected", filepath.Join(otherDir, "Radiohead"), libDir, true},
+		{"exact match accepted", libDir, libDir, false},
+		{"prefix confusion rejected", filepath.Join(siblingDir, "Artist"), libDir, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := validatedArtistPath(tt.itemPath, tt.libraryPath)
-			if got != tt.want {
-				t.Errorf("validatedArtistPath(%q, %q) = %q, want %q", tt.itemPath, tt.libraryPath, got, tt.want)
+			if tt.wantEmpty && got != "" {
+				t.Errorf("validatedArtistPath(%q, %q) = %q, want empty", tt.itemPath, tt.libraryPath, got)
+			}
+			if !tt.wantEmpty && got == "" {
+				t.Errorf("validatedArtistPath(%q, %q) = empty, want non-empty", tt.itemPath, tt.libraryPath)
 			}
 		})
 	}

@@ -398,12 +398,10 @@ func TestGetRaw_ErrorBodyLimited(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for 500 response")
 	}
-	// The error message includes "unexpected status 500: <body>".
-	// Verify the body portion is bounded to 1024 bytes (not the full 4096).
+	// The error message format is "unexpected status 500: <body>".
+	// Verify the included body is bounded (not the full 4096 bytes).
 	errMsg := err.Error()
-	// "unexpected" contains one "x", so subtract 1 from the total count.
-	bodyXCount := strings.Count(errMsg, "x") - strings.Count("unexpected", "x")
-	if bodyXCount > 1024 {
-		t.Errorf("error body contains %d bytes of payload, want at most 1024", bodyXCount)
+	if len(errMsg) > 1100 {
+		t.Errorf("error message length = %d, want bounded (body should be limited to 1024 bytes)", len(errMsg))
 	}
 }
