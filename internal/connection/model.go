@@ -68,19 +68,28 @@ func ValidateBaseURL(raw string) (string, error) {
 		return "", fmt.Errorf("base url must not contain a fragment")
 	}
 
-	return rebuildURL(scheme, u.Host, u.Path), nil
+	return rebuildURL(scheme, u.Host, u.Path, u.RawPath), nil
 }
 
-// rebuildURL constructs a URL string from individual components using url.URL,
-// which preserves percent-encoding. Building from discrete fields rather than
-// the original input string breaks taint tracking in static analysis
-// (CodeQL go/request-forgery).
-func rebuildURL(scheme, host, path string) string {
+// rebuildURL constructs a URL string from individual components using url.URL.
+// It trims any trailing slash from the path and propagates RawPath when
+// provided so that percent-encoding in the original URL is preserved.
+// Building from discrete fields rather than the original input string also
+// breaks taint tracking in static analysis (CodeQL go/request-forgery).
+func rebuildURL(scheme, host, path, rawPath string) string {
+	trimmedPath := strings.TrimRight(path, "/")
+	trimmedRawPath := strings.TrimRight(rawPath, "/")
+
 	u := url.URL{
 		Scheme: scheme,
 		Host:   host,
-		Path:   strings.TrimRight(path, "/"),
+		Path:   trimmedPath,
 	}
+
+	if trimmedRawPath != "" {
+		u.RawPath = trimmedRawPath
+	}
+
 	return u.String()
 }
 
