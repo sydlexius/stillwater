@@ -1,0 +1,88 @@
+package library
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func TestValidatePath(t *testing.T) {
+	// Create a temp directory and a file inside it for tests.
+	tmpDir := t.TempDir()
+	tmpFile := filepath.Join(tmpDir, "not-a-dir.txt")
+	if err := os.WriteFile(tmpFile, []byte("x"), 0o644); err != nil {
+		t.Fatalf("creating temp file: %v", err)
+	}
+
+	tests := []struct {
+		name    string
+		input   string
+		want    string
+		wantErr bool
+	}{
+		{
+			name:  "empty path allowed",
+			input: "",
+			want:  "",
+		},
+		{
+			name:    "relative path rejected",
+			input:   "music/lib",
+			wantErr: true,
+		},
+		{
+			name:    "dot-relative path rejected",
+			input:   "./music/lib",
+			wantErr: true,
+		},
+		{
+			name:    "parent traversal rejected",
+			input:   "../etc/passwd",
+			wantErr: true,
+		},
+		{
+			name:    "nonexistent path rejected",
+			input:   filepath.Join(tmpDir, "no-such-dir"),
+			wantErr: true,
+		},
+		{
+			name:    "file not directory rejected",
+			input:   tmpFile,
+			wantErr: true,
+		},
+		{
+			name:  "valid directory accepted",
+			input: tmpDir,
+			want:  tmpDir,
+		},
+		{
+			name:  "trailing slash cleaned",
+			input: tmpDir + string(filepath.Separator),
+			want:  tmpDir,
+		},
+		{
+			name:  "redundant separators cleaned",
+			input: tmpDir + string(filepath.Separator) + string(filepath.Separator) + ".",
+			want:  tmpDir,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ValidatePath(tt.input)
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("ValidatePath(%q) = %q, want error", tt.input, got)
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("ValidatePath(%q) error = %v, want nil", tt.input, err)
+				return
+			}
+			if got != tt.want {
+				t.Errorf("ValidatePath(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
