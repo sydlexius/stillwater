@@ -226,9 +226,14 @@ Before writing any code:
 Create `docs/plans/m<N>-plan.md` (e.g. `docs/plans/m14-plan.md`) before starting. The plan file must include:
 - Milestone goal and acceptance criteria (summarised from the umbrella issue)
 - Sub-issue dependency map (which issues block which)
-- A checklist for every sub-issue and every PR: use `- [ ]` for pending, `- [x]` for done
+- A checklist for every sub-issue: use `- [ ]` for pending, `- [x]` for done
 - A notes/observations section for decisions, blockers, and findings discovered during work
-- The UAT and merge order (which PRs land first, which are stacked)
+- The UAT and merge order (which issues are implemented/merged first, which are stacked)
+
+**Do NOT include PR numbers in plan files.** Referencing PR numbers forces a
+commit-then-update cycle every time a PR is created, which wastes time and
+resources. Track issues by number only; PR linkage lives in GitHub, not in the
+plan file.
 
 Commit the plan file to `main` before opening any feature branches so it survives context resets.
 
@@ -252,8 +257,6 @@ Example structure:
 ### Issue #X -- <title>
 - [ ] Implementation
 - [ ] Tests
-- [ ] PR opened (#?)
-- [ ] CI passing
 - [ ] PR merged
 
 ### Issue #Y -- <title>
@@ -265,8 +268,8 @@ Example structure:
 | stillwater-m{N}-{issue}| feat/{issue}-desc   | #X    | pending |
 
 ## UAT / Merge Order
-1. PR #? (base: main)
-2. PR #? (stacked on #?)
+1. #X (base: main)
+2. #Y (stacked on #X)
 
 ## Notes
 - <date>: <observation or decision>
