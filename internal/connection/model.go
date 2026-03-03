@@ -127,6 +127,20 @@ func BuildRequestURL(baseURL, path string) string {
 		ForceQuery: rel.ForceQuery,
 	}
 
+	if base.RawPath != "" || rel.RawPath != "" {
+		bRaw := base.RawPath
+		if bRaw == "" {
+			bRaw = base.Path
+		}
+		rRaw := rel.RawPath
+		if rRaw == "" {
+			rRaw = rel.Path
+		}
+		if raw := bRaw + rRaw; raw != result.Path {
+			result.RawPath = raw
+		}
+	}
+
 	return result.String()
 }
 

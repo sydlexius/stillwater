@@ -102,6 +102,12 @@ func TestBuildRequestURL(t *testing.T) {
 			path:    "/Items?",
 			want:    "http://localhost:8096/Items?",
 		},
+		{
+			name:    "percent-encoded base path",
+			baseURL: "http://host:8096/emby%2Fsub",
+			path:    "/System/Info",
+			want:    "http://host:8096/emby%2Fsub/System/Info",
+		},
 	}
 
 	for _, tt := range tests {

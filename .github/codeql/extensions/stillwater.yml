@@ -4,4 +4,4 @@ extensions:
       extensible: neutralModel
     data:
       - ["github.com/sydlexius/stillwater/internal/connection", "",
-         "ValidateBaseURL", "", "value", "manual"]
+         "BuildRequestURL", "", "summary", "manual"]
