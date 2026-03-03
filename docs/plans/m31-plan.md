@@ -33,9 +33,6 @@ Enhance the metadata provider pipeline with web scraping capabilities, new image
 - [ ] Add targeted image fetching (filter by needed image types)
 - [ ] Add debug logging for skipped provider calls
 - [ ] Tests (call count verification)
-- [ ] PR opened (#?)
-- [ ] CI passing
-- [ ] PR merged
 
 ### Issue #339 -- Convert Last.fm provider from API to web scraper
 - [ ] Add `goquery` dependency for HTML parsing
@@ -48,9 +45,6 @@ Enhance the metadata provider pipeline with web scraping capabilities, new image
 - [ ] Update OOBE UI (remove Last.fm API key step)
 - [ ] Update `providerRequiresKey()` in settings
 - [ ] Tests with mocked HTML responses (metadata + image search)
-- [ ] PR opened (#?)
-- [ ] CI passing
-- [ ] PR merged
 
 ### Issue #340 -- Add Wikidata as image source via Wikimedia Commons
 - [ ] Extend SPARQL query to fetch P18 (image) and P154 (logo)
@@ -58,9 +52,6 @@ Enhance the metadata provider pipeline with web scraping capabilities, new image
 - [ ] Update `GetImages()` to return thumb/logo from Commons
 - [ ] Add Wikidata to image field priorities (thumb, logo)
 - [ ] Tests with mocked SPARQL and Commons API responses
-- [ ] PR opened (#?)
-- [ ] CI passing
-- [ ] PR merged
 
 ### Issue #341 -- Add Wikipedia as metadata provider via MediaWiki API
 - [ ] Create `internal/provider/wikipedia/` package
@@ -70,9 +61,6 @@ Enhance the metadata provider pipeline with web scraping capabilities, new image
 - [ ] Register provider and add to field priorities
 - [ ] Update rate limiting, Settings UI, OOBE
 - [ ] Tests (infobox parser, API mocks, integration)
-- [ ] PR opened (#?)
-- [ ] CI passing
-- [ ] PR merged
 
 ## Worktrees
 

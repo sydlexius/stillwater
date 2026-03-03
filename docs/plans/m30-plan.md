@@ -18,9 +18,10 @@ code reuse issues.
 - [ ] Code analysis findings are documented with coverage numbers
 - [ ] Test coverage improved for critical packages (especially `internal/api` at 12.5%)
 - [ ] Artists page has sort dropdown and order toggle in toolbar (grid and table views)
-- [ ] SQL migrations consolidated into single baseline file; fresh installs work cleanly
+- [x] SQL migrations consolidated into single baseline file; fresh installs work cleanly
 - [ ] High-severity runtime safety issues (races, leaks, deadlocks) fixed
-- [ ] High-impact code duplication reduced (connection clients, handler params, body decoding)
+- [x] High-impact code duplication reduced (connection clients, handler params, body decoding)
+- [ ] Image caching system with settings UI; "degraded" concept removed
 
 ## Dependency Map
 
@@ -38,9 +39,8 @@ code reuse issues.
 
 Most issues are independent. #322 (universal editing) informs #321 (history) since
 history needs to track edits on newly-editable fields. #350 (SQL squash) should merge
-early since it touches the migration foundation. #360 (image caching) depends on
-#352 (refactoring) since it uses the shared write path abstraction and both touch
-image write paths and handler structure.
+early since it touches the migration foundation. #360 (image caching) benefits from
+#352 (refactoring) landing first since both touch image write paths and handler structure.
 #351 and #352 are audit-style work that can proceed in any order.
 
 ## Checklist
@@ -56,7 +56,6 @@ image write paths and handler structure.
 - [ ] Rollback action per change entry
 - [ ] Band member and provider ID change tracking
 - [ ] Tests
-- [ ] PR merged
 
 ### Issue #322 -- Make all metadata fields editable/fetchable and always visible
 - [ ] Extend `fieldColumnMap` with name, sort_name, disambiguation, musicbrainz_id, audiodb_id, discogs_id, wikidata_id, deezer_id
@@ -66,7 +65,6 @@ image write paths and handler structure.
 - [ ] Update artist detail template to always show all fields (not hidden when empty)
 - [ ] Provider fetch support for disambiguation (MusicBrainz), provider IDs (respective providers)
 - [ ] Tests
-- [ ] PR merged
 
 ### Issue #323 -- Run code analysis, document findings, and improve test coverage
 - [ ] Document current coverage numbers per package
@@ -75,22 +73,20 @@ image write paths and handler structure.
 - [ ] Add tests for auth, config, database, encryption packages
 - [ ] Improve filesystem and middleware coverage
 - [ ] Tests pass with race detector
-- [ ] PR merged
 
 ### Issue #349 -- Add sort controls to Artists page grid and table views
 - [ ] Sort dropdown in toolbar (name, sort_name, health_score, updated_at, created_at)
 - [ ] Asc/desc toggle button
 - [ ] Clickable column headers in table view
 - [ ] Handler test for sort/order param passthrough
-- [ ] PR merged
 
 ### Issue #350 -- Consolidate SQL migrations into single baseline file
-- [ ] Merge ALTER TABLE / CREATE TABLE from 002-012 into 001_initial.sql
-- [ ] Delete migration files 002-012
-- [ ] Verify goose handles existing databases gracefully
-- [ ] Fresh-start UAT (delete DB, restart, verify clean single-migration startup)
-- [ ] All existing tests pass with consolidated migration
-- [ ] PR merged
+- [x] Merge ALTER TABLE / CREATE TABLE from 002-012 into 001_initial.sql
+- [x] Delete migration files 002-012
+- [x] Verify goose handles existing databases gracefully
+- [x] Fresh-start UAT (delete DB, restart, verify clean single-migration startup)
+- [x] All existing tests pass with consolidated migration
+- [x] Done (merged)
 
 ### Issue #351 -- Audit codebase for memory leaks, race conditions, deadlocks, and dead code
 - [ ] Fix watcher map race condition (lock released between reads)
@@ -102,15 +98,14 @@ image write paths and handler structure.
 - [ ] Fix router state accessed with inconsistent locking
 - [ ] Document medium-severity findings as follow-up issues
 - [ ] go test -race ./... passes
-- [ ] PR merged
 
 ### Issue #352 -- Audit and improve code reuse and maintainability
-- [ ] Extract shared BaseClient for connection clients (emby, jellyfin, lidarr)
-- [ ] Extract RequirePathParam helper for handler parameter extraction
-- [ ] Extract DecodeBody helper for JSON/form body decoding
-- [ ] Document medium-impact findings (Phase 2) for follow-up
-- [ ] Tests
-- [ ] PR merged
+- [x] Extract shared BaseClient for connection clients (emby, jellyfin, lidarr)
+- [x] Extract RequirePathParam helper for handler parameter extraction
+- [x] Extract DecodeBody helper for JSON/form body decoding
+- [x] Document medium-impact findings (Phase 2) for follow-up
+- [x] Tests
+- [x] Done (merged, phase 1)
 
 ### Issue #360 -- Image caching strategy for platform-sourced artists
 - [ ] Remove "degraded" concept (`IsDegraded()`, all UI references, conditional logic)
@@ -118,18 +113,17 @@ image write paths and handler structure.
 - [ ] Add Cache settings section with connection source cache and provider image cache
 - [ ] Unify image write path: local save + platform push via single abstraction
 - [ ] Image upload/replace pushes to connected platform automatically
-- [ ] Cache path defaults to `/cache` (Docker volume mount), configurable via settings
+- [ ] Cache path defaults to `/data/cache/images`, configurable via settings
 - [ ] Connection source cache mandatory when no filesystem path
 - [ ] Provider image cache toggleable with configurable size
 - [ ] Tests
-- [ ] PR merged
 
 ## UAT / Merge Order
 
-1. #350 (SQL squash) -- foundation change, merge first
+1. #350 (SQL squash) -- foundation change, merge first -- MERGED
 2. #323 (code analysis) -- no runtime changes
 3. #351 (runtime safety) -- fixes across multiple packages
-4. #352 (refactoring) -- structural improvements
+4. #352 (refactoring) -- structural improvements -- MERGED (phase 1)
 5. #349 (artist sort) -- UI feature
 6. #322 (universal field editing) -- extends existing field system
 7. #321 (history tab) -- builds on final field set from #322
@@ -137,8 +131,9 @@ image write paths and handler structure.
 
 ## Notes
 
-- 2026-03-01: Plan file created. Issues and PR numbers reserved; implementation PRs are not yet opened and will start as design/analysis docs only.
+- 2026-03-01: Plan file created.
 - 2026-03-02: Added #349 (artist sort), #350 (SQL squash), #351 (runtime safety), #352 (refactoring audit) to milestone scope.
+- 2026-03-02: Added #360 (image caching) to milestone scope. Depends on #352 for shared write path abstraction.
 - #321 is `scope: large` with `[mode: plan] [model: opus]`; #322 is `scope: medium` with `[mode: plan] [model: sonnet]`; #323 is `scope: medium` with `[mode: direct] [model: sonnet]`.
 - #349 is `scope: small` with `[mode: direct] [model: sonnet]`; #350 is `scope: medium` with `[mode: plan] [model: sonnet]`; #351 is `scope: medium` with `[mode: direct] [model: opus]`; #352 is `scope: medium` with `[mode: plan] [model: sonnet]`.
 - Existing `nfo_snapshots` table tracks full NFO XML; new `metadata_changes` table tracks individual field-level changes -- these are complementary, not replacements.
