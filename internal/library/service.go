@@ -41,6 +41,9 @@ func (s *Service) Create(ctx context.Context, lib *Library) error {
 		if err != nil {
 			return fmt.Errorf("validating library path: %w", err)
 		}
+		if err := CheckPathExists(cleaned); err != nil {
+			return fmt.Errorf("validating library path: %w", err)
+		}
 		lib.Path = cleaned
 	}
 
@@ -151,6 +154,9 @@ func (s *Service) Update(ctx context.Context, lib *Library) error {
 	if lib.Path != "" {
 		cleaned, err := ValidatePath(lib.Path)
 		if err != nil {
+			return fmt.Errorf("validating library path: %w", err)
+		}
+		if err := CheckPathExists(cleaned); err != nil {
 			return fmt.Errorf("validating library path: %w", err)
 		}
 		lib.Path = cleaned

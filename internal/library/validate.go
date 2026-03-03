@@ -8,8 +8,9 @@ import (
 
 // ValidatePath sanitizes and validates a library filesystem path.
 // Empty paths are allowed (degraded/API-only libraries).
-// Non-empty paths must be absolute and point to an existing directory.
-// The returned path is cleaned via filepath.Clean.
+// Non-empty paths must be absolute; the returned path is cleaned via
+// filepath.Clean. Call CheckPathExists on the result to verify the
+// target is an existing directory.
 func ValidatePath(raw string) (string, error) {
 	if raw == "" {
 		return "", nil
@@ -19,15 +20,17 @@ func ValidatePath(raw string) (string, error) {
 		return "", fmt.Errorf("library path must be absolute: %q", raw)
 	}
 
-	cleaned := filepath.Clean(raw)
+	return filepath.Clean(raw), nil
+}
 
-	info, err := os.Stat(cleaned)
+// CheckPathExists verifies that path exists and is a directory.
+func CheckPathExists(path string) error {
+	info, err := os.Stat(path)
 	if err != nil {
-		return "", fmt.Errorf("library path does not exist: %q", cleaned)
+		return fmt.Errorf("library path does not exist: %q", path)
 	}
 	if !info.IsDir() {
-		return "", fmt.Errorf("library path is not a directory: %q", cleaned)
+		return fmt.Errorf("library path is not a directory: %q", path)
 	}
-
-	return cleaned, nil
+	return nil
 }

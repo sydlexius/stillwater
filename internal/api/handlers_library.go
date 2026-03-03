@@ -81,6 +81,12 @@ func (r *Router) handleCreateLibrary(w http.ResponseWriter, req *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
+	if cleanPath != "" {
+		if err := library.CheckPathExists(cleanPath); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+	}
 	body.Path = cleanPath
 
 	lib := &library.Library{
@@ -137,6 +143,10 @@ func (r *Router) handleUpdateLibrary(w http.ResponseWriter, req *http.Request) {
 		cleanPath, pathErr := library.ValidatePath(body.Path)
 		if pathErr != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": pathErr.Error()})
+			return
+		}
+		if err := library.CheckPathExists(cleanPath); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		}
 		existing.Path = cleanPath

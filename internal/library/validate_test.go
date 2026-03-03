@@ -7,12 +7,7 @@ import (
 )
 
 func TestValidatePath(t *testing.T) {
-	// Create a temp directory and a file inside it for tests.
 	tmpDir := t.TempDir()
-	tmpFile := filepath.Join(tmpDir, "not-a-dir.txt")
-	if err := os.WriteFile(tmpFile, []byte("x"), 0o644); err != nil {
-		t.Fatalf("creating temp file: %v", err)
-	}
 
 	tests := []struct {
 		name    string
@@ -41,17 +36,7 @@ func TestValidatePath(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:    "nonexistent path rejected",
-			input:   filepath.Join(tmpDir, "no-such-dir"),
-			wantErr: true,
-		},
-		{
-			name:    "file not directory rejected",
-			input:   tmpFile,
-			wantErr: true,
-		},
-		{
-			name:  "valid directory accepted",
+			name:  "absolute path accepted",
 			input: tmpDir,
 			want:  tmpDir,
 		},
@@ -82,6 +67,50 @@ func TestValidatePath(t *testing.T) {
 			}
 			if got != tt.want {
 				t.Errorf("ValidatePath(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCheckPathExists(t *testing.T) {
+	tmpDir := t.TempDir()
+	tmpFile := filepath.Join(tmpDir, "not-a-dir.txt")
+	if err := os.WriteFile(tmpFile, []byte("x"), 0o644); err != nil {
+		t.Fatalf("creating temp file: %v", err)
+	}
+
+	tests := []struct {
+		name    string
+		input   string
+		wantErr bool
+	}{
+		{
+			name:  "valid directory accepted",
+			input: tmpDir,
+		},
+		{
+			name:    "nonexistent path rejected",
+			input:   filepath.Join(tmpDir, "no-such-dir"),
+			wantErr: true,
+		},
+		{
+			name:    "file not directory rejected",
+			input:   tmpFile,
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := CheckPathExists(tt.input)
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("CheckPathExists(%q) = nil, want error", tt.input)
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("CheckPathExists(%q) = %v, want nil", tt.input, err)
 			}
 		})
 	}
