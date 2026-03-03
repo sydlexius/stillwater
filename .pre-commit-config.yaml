@@ -9,15 +9,15 @@ repos:
         args: ["--maxkb=500"]
       - id: check-merge-conflict
 
-  - repo: https://github.com/gitleaks/gitleaks
-    rev: v8.22.1
-    hooks:
-      - id: gitleaks
-
   - repo: https://github.com/crate-ci/typos
     rev: v1.44.0
     hooks:
       - id: typos
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.22.1
+    hooks:
+      - id: gitleaks
 
   - repo: https://github.com/golangci/golangci-lint
     rev: v2.10.1

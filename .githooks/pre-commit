@@ -41,16 +41,16 @@ warn() {
 # --------------------------------------------------------------------------
 # 1. typos -- spell check staged files
 # --------------------------------------------------------------------------
-STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACM || true)
+STAGED_FILES=$(git diff --cached --name-only -z --diff-filter=ACM || true)
 if [ -n "$STAGED_FILES" ]; then
     if ! command -v typos &>/dev/null; then
         warn "typos (not installed, skipping)"
     else
-        TYPOS_OUTPUT=$(echo "$STAGED_FILES" | xargs typos 2>&1) || {
+        if ! TYPOS_OUTPUT=$(echo -n "$STAGED_FILES" | xargs -0 typos -- 2>&1); then
             echo -e "${RED}${BOLD}FAIL${RESET} typos:"
             echo "$TYPOS_OUTPUT"
             exit 1
-        }
+        fi
         pass "typos"
     fi
 else
@@ -127,11 +127,11 @@ pass "go build"
 if ! command -v golangci-lint &>/dev/null; then
     warn "golangci-lint (not installed, skipping)"
 else
-    LINT_OUTPUT=$(golangci-lint run ./... 2>&1) || {
+    if ! LINT_OUTPUT=$(golangci-lint run ./... 2>&1); then
         echo -e "${RED}${BOLD}FAIL${RESET} golangci-lint:"
         echo "$LINT_OUTPUT"
         exit 1
-    }
+    fi
     pass "golangci-lint"
 fi
 
@@ -141,11 +141,11 @@ fi
 if ! command -v govulncheck &>/dev/null; then
     warn "govulncheck (not installed, skipping)"
 else
-    VULN_OUTPUT=$(govulncheck ./... 2>&1) || {
+    if ! VULN_OUTPUT=$(govulncheck ./... 2>&1); then
         echo -e "${RED}${BOLD}FAIL${RESET} govulncheck:"
         echo "$VULN_OUTPUT"
         exit 1
-    }
+    fi
     pass "govulncheck"
 fi
 

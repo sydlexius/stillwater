@@ -3,7 +3,6 @@
 
 [files]
 extend-exclude = [
-    "web/static/js/",   # vendored minified JS (htmx, chart, cropper, scalar, sortable)
     "*.min.js",
     "*.min.css",
     "go.sum",
