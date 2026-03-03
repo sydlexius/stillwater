@@ -21,9 +21,11 @@ where only push direction works but pull does not.
 #230 (metadata import) --\
                           +--> #232 (view platform state) --> #233 (delete images)
 #231 (image import)   --/
+  \--> #357 (multiple backdrops)
 ```
 
 #230 and #231 are independent of each other.
+#231 blocks #357 (backdrops use the image download infrastructure from #231).
 #232 depends on #230 and #231 (uses expanded fields and image methods).
 #233 depends on #232 (delete button lives in the platform state view).
 
@@ -38,20 +40,25 @@ where only push direction works but pull does not.
 - [x] Investigate additional fields (Tags, SortName) from real server data
 - [x] Switch from `/Artists` to `/Artists/AlbumArtists` endpoint (matches folder structure)
 - [x] Tests
-- [ ] PR opened (#?)
-- [ ] CI passing
-- [ ] PR merged
+- [x] PR merged
 
 ### Issue #231 -- Emby/Jellyfin images not downloaded during import
-- [ ] Add `GetArtistImage(ctx, artistID, imageType) ([]byte, string, error)` to Emby client
-- [ ] Add same method to Jellyfin client
-- [ ] Download images during populate for each artist
-- [ ] Save using active naming config via `image.Save()`
-- [ ] Skip download if local image already exists
-- [ ] Update artist image flags in database after download
+- [x] Add `GetArtistImage(ctx, artistID, imageType) ([]byte, string, error)` to Emby client
+- [x] Add same method to Jellyfin client
+- [x] Download images during populate for each artist
+- [x] Save using active naming config via `image.Save()`
+- [x] Skip download if local image already exists
+- [x] Update artist image flags in database after download
+- [x] Tests
+- [ ] PR merged
+
+### Issue #357 -- Support multiple backdrop images from Emby/Jellyfin
+- [ ] Add `BackdropImageTags []string` to `ArtistItem` in both `emby/types.go` and `jellyfin/types.go`
+- [ ] Update `downloadPlatformImages` to handle `BackdropImageTags` separately from `ImageTags`
+- [ ] Construct indexed URLs (`/Images/Backdrop/0`, `/Images/Backdrop/1`, etc.)
+- [ ] Save with correct naming (fanart.jpg, fanart1.jpg, fanart2.jpg, ...)
+- [ ] Update `FanartCount` on artist records
 - [ ] Tests
-- [ ] PR opened (#?)
-- [ ] CI passing
 - [ ] PR merged
 
 ### Issue #232 -- View platform state on artist detail page
@@ -62,8 +69,6 @@ where only push direction works but pull does not.
 - [ ] Visual indicators for mismatched fields
 - [ ] Push/pull action buttons per field
 - [ ] Tests
-- [ ] PR opened (#?)
-- [ ] CI passing
 - [ ] PR merged
 
 ### Issue #233 -- Delete images from Emby/Jellyfin
@@ -74,19 +79,20 @@ where only push direction works but pull does not.
 - [ ] Add `DELETE /api/v1/artists/{id}/push/images/{type}` endpoint
 - [ ] Add delete button to platform state view from #232
 - [ ] Tests
-- [ ] PR opened (#?)
-- [ ] CI passing
 - [ ] PR merged
 
 ## UAT / Merge Order
 
 Session 1 (import):
-1. PR for #230 (base: main) -- metadata import
-2. PR for #231 (base: main) -- image import
+1. #230 (base: main) -- metadata import -- merged
+2. #231 (base: main) -- image import
 
-Session 2 (platform state + delete):
-3. PR for #232 (base: main, after #230 and #231 merge)
-4. PR for #233 (base: main or stacked on #232)
+Session 2 (backdrops):
+3. #357 (base: main, after #231 merges) -- multiple backdrop images
+
+Session 3 (platform state + delete):
+4. #232 (base: main, after #230 and #231 merge)
+5. #233 (base: main or stacked on #232)
 
 ## Notes
 
