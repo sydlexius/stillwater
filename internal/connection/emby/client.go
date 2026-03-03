@@ -126,7 +126,7 @@ func (c *Client) GetArtistImage(ctx context.Context, artistID, imageType string)
 
 // getRaw performs a GET request and returns the raw response bytes and Content-Type header.
 func (c *Client) getRaw(ctx context.Context, path string) ([]byte, string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, connection.BuildRequestURL(c.baseURL, path), nil)
 	if err != nil {
 		return nil, "", fmt.Errorf("creating request: %w", err)
 	}
@@ -155,7 +155,7 @@ func (c *Client) getRaw(ctx context.Context, path string) ([]byte, string, error
 }
 
 func (c *Client) get(ctx context.Context, path string, result any) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, connection.BuildRequestURL(c.baseURL, path), nil)
 	if err != nil {
 		return fmt.Errorf("creating request: %w", err)
 	}
@@ -181,7 +181,7 @@ func (c *Client) get(ctx context.Context, path string, result any) error {
 }
 
 func (c *Client) post(ctx context.Context, path string, body io.Reader) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path, body)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, connection.BuildRequestURL(c.baseURL, path), body)
 	if err != nil {
 		return fmt.Errorf("creating request: %w", err)
 	}

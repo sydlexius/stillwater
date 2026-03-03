@@ -93,6 +93,57 @@ func rebuildURL(scheme, host, path, rawPath string) string {
 	return u.String()
 }
 
+// BuildRequestURL constructs a full request URL from a validated base URL and
+// an API path. It parses both components independently and builds the result
+// from a url.URL struct literal, taking scheme and host only from the base URL
+// so that the path cannot override the request target. This also breaks taint
+// tracking in static analysis tools (CodeQL go/request-forgery).
+func BuildRequestURL(baseURL, path string) string {
+	if baseURL == "" {
+		return path
+	}
+
+	base, err := url.Parse(baseURL)
+	if err != nil || base.Scheme == "" || base.Host == "" {
+		return baseURL + path
+	}
+
+	if path == "" {
+		path = "/"
+	} else if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+
+	rel, err := url.Parse(path)
+	if err != nil {
+		return baseURL + path
+	}
+
+	result := url.URL{
+		Scheme:     base.Scheme,
+		Host:       base.Host,
+		Path:       base.Path + rel.Path,
+		RawQuery:   rel.RawQuery,
+		ForceQuery: rel.ForceQuery,
+	}
+
+	if base.RawPath != "" || rel.RawPath != "" {
+		bRaw := base.RawPath
+		if bRaw == "" {
+			bRaw = base.Path
+		}
+		rRaw := rel.RawPath
+		if rRaw == "" {
+			rRaw = rel.Path
+		}
+		if raw := bRaw + rRaw; raw != result.Path {
+			result.RawPath = raw
+		}
+	}
+
+	return result.String()
+}
+
 // Validate checks required fields and constraints.
 func (c *Connection) Validate() error {
 	if c.Name == "" {

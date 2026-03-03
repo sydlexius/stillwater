@@ -109,7 +109,7 @@ func (c *Client) TriggerArtistRefresh(ctx context.Context, artistID int) (*Comma
 }
 
 func (c *Client) get(ctx context.Context, path string, result any) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, connection.BuildRequestURL(c.baseURL, path), nil)
 	if err != nil {
 		return fmt.Errorf("creating request: %w", err)
 	}
@@ -135,7 +135,7 @@ func (c *Client) get(ctx context.Context, path string, result any) error {
 }
 
 func (c *Client) postJSON(ctx context.Context, path string, body io.Reader, result any) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path, body)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, connection.BuildRequestURL(c.baseURL, path), body)
 	if err != nil {
 		return fmt.Errorf("creating request: %w", err)
 	}
