@@ -44,10 +44,20 @@ func (r *Router) imageDir(a *artist.Artist) string {
 	return ""
 }
 
-// requireArtistPath checks that the artist has an image directory (either a
-// filesystem path or a cache dir). Returns true if a directory is available
-// (caller may proceed). Returns false and writes a 409 response otherwise.
+// requireArtistPath checks that the artist has a filesystem path.
+// Use for NFO and other filesystem operations that need a.Path.
 func (r *Router) requireArtistPath(w http.ResponseWriter, req *http.Request, a *artist.Artist) bool {
+	if a.Path == "" {
+		writeError(w, req, http.StatusConflict,
+			"filesystem operations are not available for this artist (library has no path configured)")
+		return false
+	}
+	return true
+}
+
+// requireImageDir checks that the artist has an image directory (either a
+// filesystem path or a cache dir). Use for image operations.
+func (r *Router) requireImageDir(w http.ResponseWriter, req *http.Request, a *artist.Artist) bool {
 	dir := r.imageDir(a)
 	if dir == "" {
 		writeError(w, req, http.StatusConflict,
@@ -90,7 +100,7 @@ func (r *Router) handleImageUpload(w http.ResponseWriter, req *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "artist not found"})
 		return
 	}
-	if !r.requireArtistPath(w, req, a) {
+	if !r.requireImageDir(w, req, a) {
 		return
 	}
 
@@ -183,7 +193,7 @@ func (r *Router) handleImageFetch(w http.ResponseWriter, req *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "artist not found"})
 		return
 	}
-	if !r.requireArtistPath(w, req, a) {
+	if !r.requireImageDir(w, req, a) {
 		return
 	}
 
@@ -403,7 +413,7 @@ func (r *Router) handleImageCrop(w http.ResponseWriter, req *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "artist not found"})
 		return
 	}
-	if !r.requireArtistPath(w, req, a) {
+	if !r.requireImageDir(w, req, a) {
 		return
 	}
 
@@ -849,7 +859,7 @@ func (r *Router) handleDeleteImage(w http.ResponseWriter, req *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "artist not found"})
 		return
 	}
-	if !r.requireArtistPath(w, req, a) {
+	if !r.requireImageDir(w, req, a) {
 		return
 	}
 
@@ -1002,7 +1012,7 @@ func (r *Router) handleLogoTrim(w http.ResponseWriter, req *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "artist not found"})
 		return
 	}
-	if !r.requireArtistPath(w, req, a) {
+	if !r.requireImageDir(w, req, a) {
 		return
 	}
 
@@ -1231,7 +1241,7 @@ func (r *Router) handleFanartBatchDelete(w http.ResponseWriter, req *http.Reques
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "artist not found"})
 		return
 	}
-	if !r.requireArtistPath(w, req, a) {
+	if !r.requireImageDir(w, req, a) {
 		return
 	}
 
@@ -1325,7 +1335,7 @@ func (r *Router) handleFanartBatchFetch(w http.ResponseWriter, req *http.Request
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "artist not found"})
 		return
 	}
-	if !r.requireArtistPath(w, req, a) {
+	if !r.requireImageDir(w, req, a) {
 		return
 	}
 

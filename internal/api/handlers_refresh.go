@@ -310,7 +310,7 @@ func (r *Router) renderRefreshWithOOB(w http.ResponseWriter, req *http.Request, 
 	var isDegraded bool
 	if r.libraryService != nil && a.LibraryID != "" {
 		if lib, err := r.libraryService.GetByID(req.Context(), a.LibraryID); err == nil {
-			isDegraded = lib.IsDegraded() && r.imageCacheDir == ""
+			isDegraded = lib.IsDegraded()
 		}
 	}
 
