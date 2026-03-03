@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/sydlexius/stillwater/internal/connection"
 )
 
 // Client communicates with a Jellyfin server.
@@ -26,9 +28,14 @@ func New(baseURL, apiKey string, logger *slog.Logger) *Client {
 
 // NewWithHTTPClient creates a Jellyfin client with a custom HTTP client (for testing).
 func NewWithHTTPClient(baseURL, apiKey string, httpClient *http.Client, logger *slog.Logger) *Client {
+	cleaned, err := connection.ValidateBaseURL(baseURL)
+	if err != nil {
+		logger.Warn("jellyfin base URL failed validation, requests will fail", "error", err)
+		cleaned = ""
+	}
 	return &Client{
 		httpClient: httpClient,
-		baseURL:    strings.TrimRight(baseURL, "/"),
+		baseURL:    cleaned,
 		apiKey:     apiKey,
 		logger:     logger.With(slog.String("integration", "jellyfin")),
 	}
