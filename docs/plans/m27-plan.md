@@ -84,7 +84,7 @@ where only push direction works but pull does not.
 ## UAT / Merge Order
 
 Session 1 (import):
-1. #230 (base: main) -- metadata import -- MERGED
+1. #230 (base: main) -- metadata import -- merged
 2. #231 (base: main) -- image import
 
 Session 2 (backdrops):

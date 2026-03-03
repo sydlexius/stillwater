@@ -38,8 +38,9 @@ code reuse issues.
 
 Most issues are independent. #322 (universal editing) informs #321 (history) since
 history needs to track edits on newly-editable fields. #350 (SQL squash) should merge
-early since it touches the migration foundation. #360 (image caching) benefits from
-#352 (refactoring) landing first since both touch image write paths and handler structure.
+early since it touches the migration foundation. #360 (image caching) depends on
+#352 (refactoring) since it uses the shared write path abstraction and both touch
+image write paths and handler structure.
 #351 and #352 are audit-style work that can proceed in any order.
 
 ## Checklist
