@@ -21,8 +21,12 @@ func ValidatePath(raw string) (string, error) {
 		return "", fmt.Errorf("library path must be absolute: %q", raw)
 	}
 
-	if strings.Contains(raw, "..") {
-		return "", fmt.Errorf("library path must not contain '..': %q", raw)
+	for _, seg := range strings.FieldsFunc(raw, func(r rune) bool {
+		return r == '/' || r == '\\'
+	}) {
+		if seg == ".." {
+			return "", fmt.Errorf("library path must not contain '..' segments: %q", raw)
+		}
 	}
 
 	return filepath.Clean(raw), nil
@@ -34,10 +38,13 @@ func CheckPathExists(path string) error {
 	// for go/path-injection. On Unix this is a no-op for absolute paths.
 	cleaned := filepath.Clean("/" + path)
 	// On Windows, prepending "/" to a drive-letter path (e.g. "C:\dir")
-	// produces "\C:\dir" after Clean. Trim the leading separator to
-	// restore the valid drive-letter form.
-	if filepath.VolumeName(path) != "" {
-		cleaned = cleaned[1:]
+	// produces "\C:\dir" after Clean. For true drive-letter volumes,
+	// trim the leading separator to restore the valid form. UNC paths
+	// (e.g. "\\server\share") must be left intact.
+	if vol := filepath.VolumeName(path); len(vol) == 2 && vol[1] == ':' {
+		if len(cleaned) > 0 {
+			cleaned = cleaned[1:]
+		}
 	}
 	info, err := os.Stat(cleaned)
 	if err != nil {

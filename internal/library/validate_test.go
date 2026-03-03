@@ -60,6 +60,21 @@ func TestValidatePath(t *testing.T) {
 			input: tmpDir + string(filepath.Separator) + string(filepath.Separator) + ".",
 			want:  tmpDir,
 		},
+		{
+			name:  "dotdot in directory name accepted",
+			input: tmpDir + "/..snapshots",
+			want:  filepath.Join(tmpDir, "..snapshots"),
+		},
+		{
+			name:  "dotdot suffix in directory name accepted",
+			input: tmpDir + "/releases..old",
+			want:  filepath.Join(tmpDir, "releases..old"),
+		},
+		{
+			name:    "actual traversal segment rejected",
+			input:   tmpDir + "/../etc",
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {
