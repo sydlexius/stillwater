@@ -800,6 +800,9 @@ func (r *Router) downloadPlatformImages(ctx context.Context, dl imageDownloader,
 		}
 
 		r.updateArtistImageFlag(ctx, a, stillwaterType)
+		if stillwaterType == "fanart" {
+			r.updateArtistFanartCount(ctx, a)
+		}
 		result.Images++
 	}
 }
