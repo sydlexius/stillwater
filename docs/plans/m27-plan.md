@@ -50,7 +50,7 @@ where only push direction works but pull does not.
 - [x] Skip download if local image already exists
 - [x] Update artist image flags in database after download
 - [x] Tests
-- [ ] PR opened (#?)
+- [x] PR opened (#361)
 - [ ] CI passing
 - [ ] PR merged
 
