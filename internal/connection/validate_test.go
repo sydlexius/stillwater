@@ -59,31 +59,6 @@ func TestValidateBaseURL(t *testing.T) {
 	}
 }
 
-func TestSanitizeBaseURL(t *testing.T) {
-	tests := []struct {
-		name  string
-		input string
-		want  string
-	}{
-		{name: "valid http", input: "http://localhost:8096", want: "http://localhost:8096"},
-		{name: "trailing slash", input: "http://emby:8096/", want: "http://emby:8096"},
-		{name: "scheme lowercased", input: "HTTP://EMBY:8096", want: "http://EMBY:8096"},
-		{name: "with path", input: "https://emby.local/emby/", want: "https://emby.local/emby"},
-		{name: "invalid scheme still reconstructed", input: "ftp://files.example.com/data", want: "ftp://files.example.com/data"},
-		{name: "unparseable falls back", input: "://bad", want: "://bad"},
-		{name: "empty string", input: "", want: ""},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := SanitizeBaseURL(tt.input)
-			if got != tt.want {
-				t.Errorf("SanitizeBaseURL(%q) = %q, want %q", tt.input, got, tt.want)
-			}
-		})
-	}
-}
-
 func TestConnectionValidate_URL(t *testing.T) {
 	tests := []struct {
 		name    string

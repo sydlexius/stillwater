@@ -71,32 +71,17 @@ func ValidateBaseURL(raw string) (string, error) {
 	return rebuildURL(scheme, u.Host, u.Path), nil
 }
 
-// SanitizeBaseURL parses a URL and reconstructs it from its parsed components.
-// This breaks the data-flow link between the original string and the returned
-// value, which static analysis tools (CodeQL) require to confirm the URL has
-// been inspected. If parsing fails the raw value is returned trimmed.
-func SanitizeBaseURL(raw string) string {
-	u, err := url.Parse(raw)
-	if err != nil || u.Host == "" {
-		return strings.TrimRight(raw, "/")
-	}
-	scheme := strings.ToLower(u.Scheme)
-	if scheme != "http" && scheme != "https" {
-		scheme = u.Scheme
-	}
-	return rebuildURL(scheme, u.Host, u.Path)
-}
-
-// rebuildURL constructs a URL string from individual components. Building from
-// discrete fields rather than the original input string breaks taint tracking
-// in static analysis (CodeQL go/request-forgery).
+// rebuildURL constructs a URL string from individual components using url.URL,
+// which preserves percent-encoding. Building from discrete fields rather than
+// the original input string breaks taint tracking in static analysis
+// (CodeQL go/request-forgery).
 func rebuildURL(scheme, host, path string) string {
-	var b strings.Builder
-	b.WriteString(scheme)
-	b.WriteString("://")
-	b.WriteString(host)
-	b.WriteString(strings.TrimRight(path, "/"))
-	return b.String()
+	u := url.URL{
+		Scheme: scheme,
+		Host:   host,
+		Path:   strings.TrimRight(path, "/"),
+	}
+	return u.String()
 }
 
 // Validate checks required fields and constraints.

@@ -68,7 +68,7 @@ func (c *Client) PushMetadata(ctx context.Context, platformArtistID string, data
 	c.setAuth(req)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.httpClient.Do(req) //nolint:gosec // base URL validated by connection.ValidateBaseURL (http/https only, no userinfo)
+	resp, err := c.httpClient.Do(req) //nolint:gosec // URL constructed from trusted base + artist ID
 	if err != nil {
 		return fmt.Errorf("executing push request: %w", err)
 	}
@@ -99,7 +99,7 @@ func (c *Client) UploadImage(ctx context.Context, platformArtistID string, image
 	c.setAuth(req)
 	req.Header.Set("Content-Type", contentType)
 
-	resp, err := c.httpClient.Do(req) //nolint:gosec // base URL validated by connection.ValidateBaseURL (http/https only, no userinfo)
+	resp, err := c.httpClient.Do(req) //nolint:gosec // URL constructed from trusted base + artist ID
 	if err != nil {
 		return fmt.Errorf("executing image upload: %w", err)
 	}

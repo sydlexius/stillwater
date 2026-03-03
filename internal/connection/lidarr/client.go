@@ -31,8 +31,8 @@ func New(baseURL, apiKey string, logger *slog.Logger) *Client {
 func NewWithHTTPClient(baseURL, apiKey string, httpClient *http.Client, logger *slog.Logger) *Client {
 	cleaned, err := connection.ValidateBaseURL(baseURL)
 	if err != nil {
-		logger.Warn("lidarr base URL failed validation, using sanitized value", "error", err)
-		cleaned = connection.SanitizeBaseURL(baseURL)
+		logger.Warn("lidarr base URL failed validation, requests will fail", "error", err)
+		cleaned = ""
 	}
 	return &Client{
 		httpClient: httpClient,
@@ -115,7 +115,7 @@ func (c *Client) get(ctx context.Context, path string, result any) error {
 	}
 	c.setAuth(req)
 
-	resp, err := c.httpClient.Do(req) //nolint:gosec // base URL validated by connection.ValidateBaseURL (http/https only, no userinfo)
+	resp, err := c.httpClient.Do(req) //nolint:gosec // URL constructed from trusted base + API path
 	if err != nil {
 		return fmt.Errorf("executing request: %w", err)
 	}
@@ -142,7 +142,7 @@ func (c *Client) postJSON(ctx context.Context, path string, body io.Reader, resu
 	c.setAuth(req)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.httpClient.Do(req) //nolint:gosec // base URL validated by connection.ValidateBaseURL (http/https only, no userinfo)
+	resp, err := c.httpClient.Do(req) //nolint:gosec // URL constructed from trusted base + API path
 	if err != nil {
 		return fmt.Errorf("executing request: %w", err)
 	}

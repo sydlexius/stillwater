@@ -175,7 +175,7 @@ func (s *Service) DeduplicateByTypeURL(ctx context.Context) (int64, error) {
 	return result.RowsAffected()
 }
 
-// Update modifies an existing connection. If APIKey is non-empty, it re-encrypts.
+// Update modifies an existing connection. The API key is re-encrypted before storage.
 func (s *Service) Update(ctx context.Context, c *Connection) error {
 	if err := c.Validate(); err != nil {
 		return fmt.Errorf("validating connection: %w", err)
