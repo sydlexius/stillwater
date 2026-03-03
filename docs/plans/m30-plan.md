@@ -26,7 +26,7 @@ code reuse issues.
 
 ```
 #321 (history tab)  ----\
-                         +--> all independent, merge in order below
+                         +--> mostly independent, merge in order below
 #322 (universal edit) --/
 #323 (code analysis) -------> no runtime changes, merge first
 #349 (artist sort) ----------> independent UI feature
