@@ -89,9 +89,28 @@ func TestGetMusicLibraries(t *testing.T) {
 
 func TestGetArtists(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/Artists/AlbumArtists" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		fields := r.URL.Query().Get("Fields")
+		if fields != "ImageTags,Overview,Genres,Tags,SortName,PremiereDate,EndDate" {
+			t.Errorf("Fields = %q, want expanded field list", fields)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
-			"Items":[{"Name":"Radiohead","Id":"jf-001","Path":"/music/Radiohead","ProviderIds":{"MusicBrainzArtist":"mbid-001"}}],
+			"Items":[{
+				"Name":"Radiohead",
+				"SortName":"Radiohead",
+				"Id":"jf-001",
+				"Path":"/music/Radiohead",
+				"Overview":"English rock band formed in 1985.",
+				"Genres":["Rock","Alternative"],
+				"Tags":["Experimental"],
+				"PremiereDate":"1985-01-01T00:00:00.0000000Z",
+				"EndDate":"",
+				"ProviderIds":{"MusicBrainzArtist":"mbid-001"},
+				"ImageTags":{"Primary":"tag1"}
+			}],
 			"TotalRecordCount":1
 		}`))
 	}))
@@ -104,6 +123,29 @@ func TestGetArtists(t *testing.T) {
 	}
 	if resp.TotalRecordCount != 1 {
 		t.Errorf("TotalRecordCount = %d, want 1", resp.TotalRecordCount)
+	}
+	if len(resp.Items) != 1 {
+		t.Fatalf("got %d items, want 1", len(resp.Items))
+	}
+
+	rh := resp.Items[0]
+	if rh.Name != "Radiohead" {
+		t.Errorf("Name = %q, want Radiohead", rh.Name)
+	}
+	if rh.SortName != "Radiohead" {
+		t.Errorf("SortName = %q, want Radiohead", rh.SortName)
+	}
+	if rh.Overview != "English rock band formed in 1985." {
+		t.Errorf("Overview = %q, want biography text", rh.Overview)
+	}
+	if len(rh.Genres) != 2 || rh.Genres[0] != "Rock" {
+		t.Errorf("Genres = %v, want [Rock Alternative]", rh.Genres)
+	}
+	if len(rh.Tags) != 1 || rh.Tags[0] != "Experimental" {
+		t.Errorf("Tags = %v, want [Experimental]", rh.Tags)
+	}
+	if rh.PremiereDate != "1985-01-01T00:00:00.0000000Z" {
+		t.Errorf("PremiereDate = %q, want 1985 date", rh.PremiereDate)
 	}
 }
 

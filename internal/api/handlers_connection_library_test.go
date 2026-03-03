@@ -13,6 +13,8 @@ import (
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/auth"
 	"github.com/sydlexius/stillwater/internal/connection"
+	"github.com/sydlexius/stillwater/internal/connection/emby"
+	"github.com/sydlexius/stillwater/internal/connection/jellyfin"
 	"github.com/sydlexius/stillwater/internal/database"
 	"github.com/sydlexius/stillwater/internal/encryption"
 	"github.com/sydlexius/stillwater/internal/library"
@@ -263,6 +265,154 @@ func TestScheduleOpCleanup_SkipsNewerOp(t *testing.T) {
 	r.libraryOpsMu.Unlock()
 	if !exists {
 		t.Error("expected newer operation to be preserved, but it was deleted")
+	}
+}
+
+func TestPopulateFromEmby_ImportsMetadataFields(t *testing.T) {
+	// Stand up a fake Emby server returning one artist with full metadata.
+	embySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"Items":[{
+				"Name":"Radiohead",
+				"SortName":"Radiohead, The",
+				"Id":"emby-001",
+				"Path":"/music/Radiohead",
+				"Overview":"English rock band formed in Abingdon.",
+				"Genres":["Rock","Alternative"],
+				"Tags":["Experimental","Art Rock"],
+				"PremiereDate":"1985-01-01T00:00:00.0000000Z",
+				"EndDate":"",
+				"ProviderIds":{"MusicBrainzArtist":"a74b1b7f-71a5-4011-9441-d0b5e4122711"},
+				"ImageTags":{"Primary":"abc"}
+			}],
+			"TotalRecordCount":1
+		}`))
+	}))
+	defer embySrv.Close()
+
+	r := testRouterForLibraryOps(t)
+	ctx := context.Background()
+
+	// Create a library to populate into.
+	lib := &library.Library{
+		Name:       "Test Music",
+		Type:       library.TypeRegular,
+		Source:     connection.TypeEmby,
+		ExternalID: "emby-lib-1",
+	}
+	if err := r.libraryService.Create(ctx, lib); err != nil {
+		t.Fatalf("creating library: %v", err)
+	}
+
+	// Run populate using the fake Emby server.
+	client := emby.NewWithHTTPClient(embySrv.URL, "key", embySrv.Client(),
+		slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
+	var result populateResult
+	if err := r.populateFromEmbyCtx(ctx, client, lib, &result); err != nil {
+		t.Fatalf("populateFromEmbyCtx: %v", err)
+	}
+
+	if result.Created != 1 {
+		t.Fatalf("created = %d, want 1", result.Created)
+	}
+
+	// Retrieve the artist and verify metadata was mapped.
+	a, err := r.artistService.GetByNameAndLibrary(ctx, "Radiohead", lib.ID)
+	if err != nil {
+		t.Fatalf("looking up artist: %v", err)
+	}
+	if a == nil {
+		t.Fatal("artist not found after populate")
+	}
+	if a.SortName != "Radiohead, The" {
+		t.Errorf("SortName = %q, want %q", a.SortName, "Radiohead, The")
+	}
+	if a.Biography != "English rock band formed in Abingdon." {
+		t.Errorf("Biography = %q, want expected text", a.Biography)
+	}
+	if len(a.Genres) != 2 || a.Genres[0] != "Rock" {
+		t.Errorf("Genres = %v, want [Rock Alternative]", a.Genres)
+	}
+	if len(a.Styles) != 2 || a.Styles[0] != "Experimental" {
+		t.Errorf("Styles = %v, want [Experimental Art Rock]", a.Styles)
+	}
+	if a.Formed != "1985-01-01T00:00:00.0000000Z" {
+		t.Errorf("Formed = %q, want 1985 date", a.Formed)
+	}
+	if a.Disbanded != "" {
+		t.Errorf("Disbanded = %q, want empty", a.Disbanded)
+	}
+	if a.MusicBrainzID != "a74b1b7f-71a5-4011-9441-d0b5e4122711" {
+		t.Errorf("MusicBrainzID = %q, want expected MBID", a.MusicBrainzID)
+	}
+}
+
+func TestPopulateFromJellyfin_ImportsMetadataFields(t *testing.T) {
+	// Stand up a fake Jellyfin server returning one artist with full metadata.
+	jfSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"Items":[{
+				"Name":"Bjork",
+				"SortName":"Bjork",
+				"Id":"jf-001",
+				"Path":"/music/Bjork",
+				"Overview":"Icelandic singer and songwriter.",
+				"Genres":["Electronic","Art Pop"],
+				"Tags":["Avant-Garde"],
+				"PremiereDate":"1965-11-21T00:00:00.0000000Z",
+				"EndDate":"",
+				"ProviderIds":{"MusicBrainzArtist":"87c5dedd-371d-4571-9e1c-45f6e0ed3fce"},
+				"ImageTags":{}
+			}],
+			"TotalRecordCount":1
+		}`))
+	}))
+	defer jfSrv.Close()
+
+	r := testRouterForLibraryOps(t)
+	ctx := context.Background()
+
+	lib := &library.Library{
+		Name:       "Test Music JF",
+		Type:       library.TypeRegular,
+		Source:     connection.TypeJellyfin,
+		ExternalID: "jf-lib-1",
+	}
+	if err := r.libraryService.Create(ctx, lib); err != nil {
+		t.Fatalf("creating library: %v", err)
+	}
+
+	client := jellyfin.NewWithHTTPClient(jfSrv.URL, "key", jfSrv.Client(),
+		slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
+	var result populateResult
+	if err := r.populateFromJellyfinCtx(ctx, client, lib, &result); err != nil {
+		t.Fatalf("populateFromJellyfinCtx: %v", err)
+	}
+
+	if result.Created != 1 {
+		t.Fatalf("created = %d, want 1", result.Created)
+	}
+
+	a, err := r.artistService.GetByNameAndLibrary(ctx, "Bjork", lib.ID)
+	if err != nil {
+		t.Fatalf("looking up artist: %v", err)
+	}
+	if a == nil {
+		t.Fatal("artist not found after populate")
+	}
+	if a.Biography != "Icelandic singer and songwriter." {
+		t.Errorf("Biography = %q, want expected text", a.Biography)
+	}
+	if len(a.Genres) != 2 || a.Genres[0] != "Electronic" {
+		t.Errorf("Genres = %v, want [Electronic Art Pop]", a.Genres)
+	}
+	if len(a.Styles) != 1 || a.Styles[0] != "Avant-Garde" {
+		t.Errorf("Styles = %v, want [Avant-Garde]", a.Styles)
+	}
+	if a.Formed != "1965-11-21T00:00:00.0000000Z" {
+		t.Errorf("Formed = %q, want 1965 date", a.Formed)
 	}
 }
 

@@ -21,13 +21,19 @@ type VirtualFolder struct {
 	LibraryOptions LibraryOptions `json:"LibraryOptions"`
 }
 
-// ArtistItem represents an artist from the Items endpoint.
+// ArtistItem represents an artist from the AlbumArtists endpoint.
 type ArtistItem struct {
-	Name        string            `json:"Name"`
-	ID          string            `json:"Id"`
-	Path        string            `json:"Path"`
-	ProviderIDs ProviderIDs       `json:"ProviderIds"`
-	ImageTags   map[string]string `json:"ImageTags"`
+	Name         string            `json:"Name"`
+	SortName     string            `json:"SortName"`
+	ID           string            `json:"Id"`
+	Path         string            `json:"Path"`
+	Overview     string            `json:"Overview"`
+	Genres       []string          `json:"Genres"`
+	Tags         []string          `json:"Tags"`
+	PremiereDate string            `json:"PremiereDate"`
+	EndDate      string            `json:"EndDate"`
+	ProviderIDs  ProviderIDs       `json:"ProviderIds"`
+	ImageTags    map[string]string `json:"ImageTags"`
 }
 
 // ProviderIDs contains external provider identifiers.
