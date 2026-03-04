@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/sydlexius/stillwater/internal/dbutil"
 )
 
 // ErrPlatformIDNotFound is returned when a platform ID mapping does not exist.
@@ -75,8 +77,8 @@ func (s *Service) GetPlatformIDs(ctx context.Context, artistID string) ([]Platfo
 		if err := rows.Scan(&p.ArtistID, &p.ConnectionID, &p.PlatformArtistID, &createdAt, &updatedAt); err != nil {
 			return nil, fmt.Errorf("scanning platform id: %w", err)
 		}
-		p.CreatedAt = parseTime(createdAt)
-		p.UpdatedAt = parseTime(updatedAt)
+		p.CreatedAt = dbutil.ParseTime(createdAt)
+		p.UpdatedAt = dbutil.ParseTime(updatedAt)
 		ids = append(ids, p)
 	}
 	return ids, rows.Err()

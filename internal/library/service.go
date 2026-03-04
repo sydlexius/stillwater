@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/sydlexius/stillwater/internal/dbutil"
 )
 
 const libraryColumns = `id, name, path, type, source, connection_id, external_id, fs_watch, fs_poll_interval, created_at, updated_at`
@@ -62,7 +63,7 @@ func (s *Service) Create(ctx context.Context, lib *Library) error {
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		lib.ID, lib.Name, lib.Path, lib.Type,
-		lib.Source, nullableString(lib.ConnectionID), lib.ExternalID,
+		lib.Source, dbutil.NullableString(lib.ConnectionID), lib.ExternalID,
 		lib.FSWatch, lib.FSPollInterval,
 		now.Format(time.RFC3339), now.Format(time.RFC3339),
 	)
@@ -172,7 +173,7 @@ func (s *Service) Update(ctx context.Context, lib *Library) error {
 		WHERE id = ?
 	`,
 		lib.Name, lib.Path, lib.Type,
-		lib.Source, nullableString(lib.ConnectionID), lib.ExternalID,
+		lib.Source, dbutil.NullableString(lib.ConnectionID), lib.ExternalID,
 		lib.FSWatch, lib.FSPollInterval,
 		lib.UpdatedAt.Format(time.RFC3339),
 		lib.ID,
@@ -321,17 +322,10 @@ func scanLibrary(row interface{ Scan(...any) error }) (*Library, error) {
 	if connectionID.Valid {
 		lib.ConnectionID = connectionID.String
 	}
-	lib.CreatedAt = parseTime(createdAt)
-	lib.UpdatedAt = parseTime(updatedAt)
+	lib.CreatedAt = dbutil.ParseTime(createdAt)
+	lib.UpdatedAt = dbutil.ParseTime(updatedAt)
 
 	return &lib, nil
-}
-
-func nullableString(s string) any {
-	if s == "" {
-		return nil
-	}
-	return s
 }
 
 // isValidSource reports whether s is one of the allowed library source values.
@@ -342,15 +336,4 @@ func isValidSource(s string) bool {
 	default:
 		return false
 	}
-}
-
-// parseTime parses a time string, handling both RFC3339 and SQLite datetime formats.
-func parseTime(s string) time.Time {
-	if t, err := time.Parse(time.RFC3339, s); err == nil {
-		return t
-	}
-	if t, err := time.Parse("2006-01-02 15:04:05", s); err == nil {
-		return t
-	}
-	return time.Time{}
 }

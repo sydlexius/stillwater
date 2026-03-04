@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/sydlexius/stillwater/internal/dbutil"
 )
 
 // Service manages webhook CRUD operations.
@@ -177,8 +178,8 @@ func scanWebhookFromScanner(s scanner) (*Webhook, error) {
 	if err := json.Unmarshal([]byte(eventsJSON), &w.Events); err != nil {
 		w.Events = []string{}
 	}
-	w.CreatedAt = parseTime(createdAt)
-	w.UpdatedAt = parseTime(updatedAt)
+	w.CreatedAt = dbutil.ParseTime(createdAt)
+	w.UpdatedAt = dbutil.ParseTime(updatedAt)
 
 	return &w, nil
 }
@@ -189,13 +190,4 @@ func scanWebhook(row *sql.Row) (*Webhook, error) {
 
 func scanWebhookRow(rows *sql.Rows) (*Webhook, error) {
 	return scanWebhookFromScanner(rows)
-}
-
-func parseTime(s string) time.Time {
-	for _, layout := range []string{time.RFC3339, "2006-01-02 15:04:05", "2006-01-02T15:04:05"} {
-		if t, err := time.Parse(layout, s); err == nil {
-			return t
-		}
-	}
-	return time.Time{}
 }

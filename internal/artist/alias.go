@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/sydlexius/stillwater/internal/dbutil"
 )
 
 // prefixedArtistColumns returns artistColumns with each column prefixed by the given table alias.
@@ -96,7 +97,7 @@ func (s *Service) ListAliases(ctx context.Context, artistID string) ([]Alias, er
 		if err := rows.Scan(&a.ID, &a.ArtistID, &a.Alias, &a.Source, &createdAt); err != nil {
 			return nil, fmt.Errorf("scanning alias: %w", err)
 		}
-		a.CreatedAt = parseTime(createdAt)
+		a.CreatedAt = dbutil.ParseTime(createdAt)
 		aliases = append(aliases, a)
 	}
 	return aliases, rows.Err()
@@ -305,27 +306,27 @@ func scanArtistWithExtra(row interface{ Scan(...any) error }, n int) (*artistWit
 	a.IsClassical = isClassical == 1
 	a.MetadataSources = UnmarshalStringMap(metadataSources)
 	if audiodbFetchedAt.Valid {
-		t := parseTime(audiodbFetchedAt.String)
+		t := dbutil.ParseTime(audiodbFetchedAt.String)
 		a.AudioDBIDFetchedAt = &t
 	}
 	if discogsFetchedAt.Valid {
-		t := parseTime(discogsFetchedAt.String)
+		t := dbutil.ParseTime(discogsFetchedAt.String)
 		a.DiscogsIDFetchedAt = &t
 	}
 	if wikidataFetchedAt.Valid {
-		t := parseTime(wikidataFetchedAt.String)
+		t := dbutil.ParseTime(wikidataFetchedAt.String)
 		a.WikidataIDFetchedAt = &t
 	}
 	if lastfmFetchedAt.Valid {
-		t := parseTime(lastfmFetchedAt.String)
+		t := dbutil.ParseTime(lastfmFetchedAt.String)
 		a.LastFMFetchedAt = &t
 	}
 	if lastScannedAt.Valid {
-		t := parseTime(lastScannedAt.String)
+		t := dbutil.ParseTime(lastScannedAt.String)
 		a.LastScannedAt = &t
 	}
-	a.CreatedAt = parseTime(createdAt)
-	a.UpdatedAt = parseTime(updatedAt)
+	a.CreatedAt = dbutil.ParseTime(createdAt)
+	a.UpdatedAt = dbutil.ParseTime(updatedAt)
 
 	return &artistWithExtra{artist: a, extra: extra}, nil
 }

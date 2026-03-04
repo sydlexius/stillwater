@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/sydlexius/stillwater/internal/dbutil"
 )
 
 // Service provides CRUD operations for scraper configuration.
@@ -132,8 +133,8 @@ func (s *Service) loadConfig(ctx context.Context, scope string) (*ScraperConfig,
 	}
 	cfg.ID = id
 	cfg.Scope = scope
-	cfg.CreatedAt = parseTime(createdAt)
-	cfg.UpdatedAt = parseTime(updatedAt)
+	cfg.CreatedAt = dbutil.ParseTime(createdAt)
+	cfg.UpdatedAt = dbutil.ParseTime(updatedAt)
 	return cfg, nil
 }
 
@@ -154,8 +155,8 @@ func (s *Service) loadConfigWithOverrides(ctx context.Context, scope string) (*S
 	}
 	cfg.ID = id
 	cfg.Scope = scope
-	cfg.CreatedAt = parseTime(createdAt)
-	cfg.UpdatedAt = parseTime(updatedAt)
+	cfg.CreatedAt = dbutil.ParseTime(createdAt)
+	cfg.UpdatedAt = dbutil.ParseTime(updatedAt)
 
 	var overrides Overrides
 	if overridesJSON != "" && overridesJSON != "{}" {
@@ -244,14 +245,4 @@ func mergeConfigs(global, conn *ScraperConfig, overrides *Overrides) *ScraperCon
 	}
 
 	return merged
-}
-
-func parseTime(s string) time.Time {
-	if t, err := time.Parse(time.RFC3339, s); err == nil {
-		return t
-	}
-	if t, err := time.Parse("2006-01-02 15:04:05", s); err == nil {
-		return t
-	}
-	return time.Time{}
 }

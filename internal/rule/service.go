@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/sydlexius/stillwater/internal/dbutil"
 )
 
 // Built-in rule IDs.
@@ -193,7 +194,7 @@ func (s *Service) SeedDefaults(ctx context.Context) error {
 				name        = excluded.name,
 				description = excluded.description,
 				updated_at  = excluded.updated_at
-		`, r.ID, r.Name, r.Description, r.Category, boolToInt(r.Enabled),
+		`, r.ID, r.Name, r.Description, r.Category, dbutil.BoolToInt(r.Enabled),
 			autoMode, MarshalConfig(r.Config), now, now)
 		if err != nil {
 			return fmt.Errorf("seeding rule %s: %w", r.ID, err)
@@ -245,7 +246,7 @@ func (s *Service) Update(ctx context.Context, r *Rule) error {
 	r.UpdatedAt = time.Now().UTC()
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE rules SET enabled = ?, automation_mode = ?, config = ?, updated_at = ? WHERE id = ?
-	`, boolToInt(r.Enabled), r.AutomationMode, MarshalConfig(r.Config),
+	`, dbutil.BoolToInt(r.Enabled), r.AutomationMode, MarshalConfig(r.Config),
 		r.UpdatedAt.Format(time.RFC3339), r.ID)
 	if err != nil {
 		return fmt.Errorf("updating rule: %w", err)
@@ -340,8 +341,8 @@ func (s *Service) UpsertViolation(ctx context.Context, v *RuleViolation) error {
 			resolved_at = excluded.resolved_at,
 			updated_at = excluded.updated_at
 	`, v.ID, v.RuleID, v.ArtistID, v.ArtistName, v.Severity, v.Message,
-		boolToInt(v.Fixable), v.Status, marshalCandidates(v.Candidates),
-		nilableTime(v.DismissedAt), nilableTime(v.ResolvedAt),
+		dbutil.BoolToInt(v.Fixable), v.Status, marshalCandidates(v.Candidates),
+		dbutil.NilableTime(v.DismissedAt), dbutil.NilableTime(v.ResolvedAt),
 		v.CreatedAt.Format(time.RFC3339), v.UpdatedAt.Format(time.RFC3339))
 	if err != nil {
 		return fmt.Errorf("upserting violation: %w", err)
@@ -503,7 +504,7 @@ func scanHealthSnapshot(row interface{ Scan(...any) error }) (*HealthSnapshot, e
 	if err != nil {
 		return nil, err
 	}
-	snap.RecordedAt = parseTime(recordedAt)
+	snap.RecordedAt = dbutil.ParseTime(recordedAt)
 	return &snap, nil
 }
 
@@ -522,14 +523,14 @@ func scanViolation(row interface{ Scan(...any) error }) (*RuleViolation, error) 
 
 	v.Fixable = fixable == 1
 	v.Candidates = unmarshalCandidates(candidates)
-	v.CreatedAt = parseTime(createdAt.String)
-	v.UpdatedAt = parseTime(updatedAt.String)
+	v.CreatedAt = dbutil.ParseTime(createdAt.String)
+	v.UpdatedAt = dbutil.ParseTime(updatedAt.String)
 	if dismissedAt.Valid {
-		t := parseTime(dismissedAt.String)
+		t := dbutil.ParseTime(dismissedAt.String)
 		v.DismissedAt = &t
 	}
 	if resolvedAt.Valid {
-		t := parseTime(resolvedAt.String)
+		t := dbutil.ParseTime(resolvedAt.String)
 		v.ResolvedAt = &t
 	}
 
@@ -551,35 +552,10 @@ func scanRule(row interface{ Scan(...any) error }) (*Rule, error) {
 
 	r.Enabled = enabled == 1
 	r.Config = UnmarshalConfig(config)
-	r.CreatedAt = parseTime(createdAt)
-	r.UpdatedAt = parseTime(updatedAt)
+	r.CreatedAt = dbutil.ParseTime(createdAt)
+	r.UpdatedAt = dbutil.ParseTime(updatedAt)
 
 	return &r, nil
-}
-
-func boolToInt(b bool) int {
-	if b {
-		return 1
-	}
-	return 0
-}
-
-func nilableTime(t *time.Time) *string {
-	if t == nil {
-		return nil
-	}
-	s := t.Format(time.RFC3339)
-	return &s
-}
-
-func parseTime(s string) time.Time {
-	if t, err := time.Parse(time.RFC3339, s); err == nil {
-		return t
-	}
-	if t, err := time.Parse("2006-01-02 15:04:05", s); err == nil {
-		return t
-	}
-	return time.Time{}
 }
 
 func joinStrings(ss []string, sep string) string {

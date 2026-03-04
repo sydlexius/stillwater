@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/sydlexius/stillwater/internal/dbutil"
 )
 
 // Service provides platform profile data operations.
@@ -131,8 +132,8 @@ func (s *Service) Create(ctx context.Context, p *Profile) error {
 		INSERT INTO platform_profiles (id, name, is_builtin, is_active, nfo_enabled, nfo_format, image_naming, use_symlinks, created_at, updated_at)
 		VALUES (?, ?, 0, ?, ?, ?, ?, ?, ?, ?)
 	`,
-		p.ID, p.Name, boolToInt(p.IsActive), boolToInt(p.NFOEnabled), p.NFOFormat,
-		MarshalImageNaming(p.ImageNaming), boolToInt(p.UseSymlinks),
+		p.ID, p.Name, dbutil.BoolToInt(p.IsActive), dbutil.BoolToInt(p.NFOEnabled), p.NFOFormat,
+		MarshalImageNaming(p.ImageNaming), dbutil.BoolToInt(p.UseSymlinks),
 		now.Format(time.RFC3339), now.Format(time.RFC3339),
 	)
 	if err != nil {
@@ -150,8 +151,8 @@ func (s *Service) Update(ctx context.Context, p *Profile) error {
 			name = ?, nfo_enabled = ?, nfo_format = ?, image_naming = ?, use_symlinks = ?, updated_at = ?
 		WHERE id = ?
 	`,
-		p.Name, boolToInt(p.NFOEnabled), p.NFOFormat,
-		MarshalImageNaming(p.ImageNaming), boolToInt(p.UseSymlinks),
+		p.Name, dbutil.BoolToInt(p.NFOEnabled), p.NFOFormat,
+		MarshalImageNaming(p.ImageNaming), dbutil.BoolToInt(p.UseSymlinks),
 		p.UpdatedAt.Format(time.RFC3339),
 		p.ID,
 	)
@@ -194,25 +195,8 @@ func scanProfile(row interface{ Scan(...any) error }) (*Profile, error) {
 	p.NFOEnabled = nfoEnabled == 1
 	p.UseSymlinks = useSymlinks == 1
 	p.ImageNaming = UnmarshalImageNaming(imageNaming)
-	p.CreatedAt = parseTime(createdAt)
-	p.UpdatedAt = parseTime(updatedAt)
+	p.CreatedAt = dbutil.ParseTime(createdAt)
+	p.UpdatedAt = dbutil.ParseTime(updatedAt)
 
 	return &p, nil
-}
-
-func boolToInt(b bool) int {
-	if b {
-		return 1
-	}
-	return 0
-}
-
-func parseTime(s string) time.Time {
-	if t, err := time.Parse(time.RFC3339, s); err == nil {
-		return t
-	}
-	if t, err := time.Parse("2006-01-02 15:04:05", s); err == nil {
-		return t
-	}
-	return time.Time{}
 }
