@@ -62,6 +62,11 @@ func (r *Router) handleGetPlatformState(w http.ResponseWriter, req *http.Request
 		return
 	}
 
+	// Normalize ISO 8601 timestamps to date-only so the template comparison
+	// and display use the same form as Stillwater's stored date fields.
+	state.PremiereDate = dateOnly(state.PremiereDate)
+	state.EndDate = dateOnly(state.EndDate)
+
 	renderTempl(w, req, templates.PlatformStateCard(a, conn, state))
 }
 
