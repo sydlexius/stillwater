@@ -100,7 +100,9 @@ Key decisions from the risk review that affect implementation across milestones:
 - Single writer connection (SQLite limitation)
 - Repository pattern for data access via interfaces in `internal/artist/repository.go`
 - Artist data is normalized across dedicated tables:
-  - `artists` -- core artist/composer records with provider IDs and metadata
+  - `artists` -- core artist/composer records (name, type, gender, biography, health score)
+  - `artist_provider_ids` -- provider identity mappings (MusicBrainz, AudioDB, Discogs, etc.)
+  - `artist_images` -- per-slot image metadata (exists, low_res, placeholder, dimensions, phash)
   - `artist_aliases` -- alternative names for search and deduplication
   - `artist_platform_ids` -- Emby/Jellyfin/Lidarr platform-specific ID mappings
   - `band_members` -- members of bands/groups with instruments and tenure
