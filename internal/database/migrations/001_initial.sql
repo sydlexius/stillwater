@@ -29,6 +29,9 @@ CREATE TABLE IF NOT EXISTS connections (
     enabled INTEGER NOT NULL DEFAULT 1,
     status TEXT NOT NULL DEFAULT 'unknown',
     status_message TEXT NOT NULL DEFAULT '',
+    feature_library_import INTEGER NOT NULL DEFAULT 1,
+    feature_nfo_write INTEGER NOT NULL DEFAULT 1,
+    feature_image_write INTEGER NOT NULL DEFAULT 1,
     last_checked_at TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -45,9 +48,18 @@ CREATE TABLE IF NOT EXISTS libraries (
     name TEXT NOT NULL UNIQUE,
     path TEXT NOT NULL DEFAULT '',
     type TEXT NOT NULL DEFAULT 'regular' CHECK(type IN ('regular', 'classical')),
+    source TEXT NOT NULL DEFAULT 'manual',
+    connection_id TEXT REFERENCES connections(id) DEFAULT NULL,
+    external_id TEXT NOT NULL DEFAULT '',
+    fs_watch INTEGER NOT NULL DEFAULT 0,
+    fs_poll_interval INTEGER NOT NULL DEFAULT 60,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE UNIQUE INDEX idx_libraries_connection_external
+    ON libraries(connection_id, external_id)
+    WHERE connection_id IS NOT NULL AND external_id <> '';
 
 CREATE TABLE IF NOT EXISTS artists (
     id TEXT PRIMARY KEY,
@@ -61,6 +73,7 @@ CREATE TABLE IF NOT EXISTS artists (
     discogs_id TEXT,
     wikidata_id TEXT,
     deezer_id TEXT NOT NULL DEFAULT '',
+    spotify_id TEXT NOT NULL DEFAULT '',
     genres TEXT NOT NULL DEFAULT '[]',
     styles TEXT NOT NULL DEFAULT '[]',
     moods TEXT NOT NULL DEFAULT '[]',
@@ -77,10 +90,15 @@ CREATE TABLE IF NOT EXISTS artists (
     fanart_exists INTEGER NOT NULL DEFAULT 0,
     logo_exists INTEGER NOT NULL DEFAULT 0,
     banner_exists INTEGER NOT NULL DEFAULT 0,
+    fanart_count INTEGER NOT NULL DEFAULT 0,
     thumb_low_res INTEGER NOT NULL DEFAULT 0,
     fanart_low_res INTEGER NOT NULL DEFAULT 0,
     logo_low_res INTEGER NOT NULL DEFAULT 0,
     banner_low_res INTEGER NOT NULL DEFAULT 0,
+    thumb_placeholder TEXT NOT NULL DEFAULT '',
+    fanart_placeholder TEXT NOT NULL DEFAULT '',
+    logo_placeholder TEXT NOT NULL DEFAULT '',
+    banner_placeholder TEXT NOT NULL DEFAULT '',
     health_score REAL NOT NULL DEFAULT 0.0,
     is_excluded INTEGER NOT NULL DEFAULT 0,
     exclusion_reason TEXT NOT NULL DEFAULT '',
@@ -203,17 +221,18 @@ CREATE TABLE IF NOT EXISTS platform_profiles (
     nfo_enabled INTEGER NOT NULL DEFAULT 1,
     nfo_format TEXT NOT NULL DEFAULT 'kodi',
     image_naming TEXT NOT NULL DEFAULT '{}',
+    use_symlinks INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
--- Seed built-in platform profiles (canonical single-filename format).
+-- Seed built-in platform profiles (array-format image naming).
 INSERT OR IGNORE INTO platform_profiles (id, name, is_builtin, is_active, nfo_enabled, nfo_format, image_naming) VALUES
-    ('emby',     'Emby',     1, 0, 1, 'kodi', '{"thumb":"folder.jpg","fanart":"backdrop.jpg","logo":"logo.png","banner":"banner.jpg"}'),
-    ('jellyfin', 'Jellyfin', 1, 0, 1, 'kodi', '{"thumb":"folder.jpg","fanart":"backdrop.jpg","logo":"logo.png","banner":"banner.jpg"}'),
-    ('kodi',     'Kodi',     1, 1, 1, 'kodi', '{"thumb":"folder.jpg","fanart":"fanart.jpg","logo":"logo.png","banner":"banner.jpg"}'),
-    ('plex',     'Plex',     1, 0, 0, 'kodi', '{"thumb":"artist.jpg","fanart":"fanart.jpg","logo":"logo.png","banner":"banner.jpg"}'),
-    ('custom',   'Custom',   1, 0, 1, 'kodi', '{"thumb":"folder.jpg","fanart":"fanart.jpg","logo":"logo.png","banner":"banner.jpg"}');
+    ('emby',     'Emby',     1, 0, 1, 'kodi', '{"thumb":["folder.jpg"],"fanart":["backdrop.jpg"],"logo":["logo.png"],"banner":["banner.jpg"]}'),
+    ('jellyfin', 'Jellyfin', 1, 0, 1, 'kodi', '{"thumb":["folder.jpg"],"fanart":["backdrop.jpg"],"logo":["logo.png"],"banner":["banner.jpg"]}'),
+    ('kodi',     'Kodi',     1, 1, 1, 'kodi', '{"thumb":["folder.jpg"],"fanart":["fanart.jpg"],"logo":["logo.png"],"banner":["banner.jpg"]}'),
+    ('plex',     'Plex',     1, 0, 0, 'kodi', '{"thumb":["artist.jpg"],"fanart":["fanart.jpg"],"logo":["logo.png"],"banner":["banner.jpg"]}'),
+    ('custom',   'Custom',   1, 0, 1, 'kodi', '{"thumb":["folder.jpg"],"fanart":["fanart.jpg"],"logo":["logo.png"],"banner":["banner.jpg"]}');
 
 CREATE TABLE IF NOT EXISTS bulk_jobs (
     id TEXT PRIMARY KEY,
@@ -254,6 +273,20 @@ CREATE TABLE IF NOT EXISTS scraper_config (
 
 CREATE INDEX idx_scraper_config_scope ON scraper_config(scope);
 
+CREATE TABLE IF NOT EXISTS api_tokens (
+    id           TEXT PRIMARY KEY,
+    name         TEXT NOT NULL,
+    token_hash   TEXT NOT NULL UNIQUE,
+    scopes       TEXT NOT NULL DEFAULT 'read,write',
+    user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    last_used_at TEXT,
+    revoked_at   TEXT
+);
+
+CREATE INDEX idx_api_tokens_hash ON api_tokens(token_hash);
+CREATE INDEX idx_api_tokens_user ON api_tokens(user_id);
+
 -- Seed default provider priority settings.
 INSERT OR IGNORE INTO settings (key, value) VALUES
     ('provider.priority.biography', '["musicbrainz","lastfm","audiodb","discogs","wikidata"]'),
@@ -269,7 +302,7 @@ INSERT OR IGNORE INTO settings (key, value) VALUES
 
 -- Seed extraneous images rule.
 INSERT OR IGNORE INTO rules (id, name, description, category, enabled, config, automation_mode, created_at, updated_at)
-VALUES ('extraneous_images', 'Extraneous image files', 'Detects non-canonical image files that may cause display issues on media servers', 'image', 1, '{"severity":"warning"}', 'notify', datetime('now'), datetime('now'));
+VALUES ('extraneous_images', 'Extraneous image files', 'Detects non-canonical image files that may cause display issues on media servers', 'image', 1, '{"severity":"warning"}', 'manual', datetime('now'), datetime('now'));
 
 -- +goose Down
 -- Greenfield schema: no rollback needed.
