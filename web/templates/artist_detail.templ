@@ -4,22 +4,25 @@ import (
 	"fmt"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/web/components"
 )
 
 // ArtistDetailData holds the data for the artist detail page.
 type ArtistDetailData struct {
-	Artist         artist.Artist
-	Members        []artist.BandMember
-	Aliases        []artist.Alias
-	HasConnections bool
-	FieldProviders map[string][]string
-	LibraryName    string
-	IsDegraded     bool
-	LibrarySource  string
+	Artist              artist.Artist
+	Members             []artist.BandMember
+	Aliases             []artist.Alias
+	HasConnections      bool
+	FieldProviders      map[string][]string
+	LibraryName         string
+	IsDegraded          bool
+	LibrarySource       string
+	PlatformConnections []connection.Connection
 }
 
 templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
@@ -319,6 +322,22 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 				</div>
 			</div>
 		</div>
+		if len(data.PlatformConnections) > 0 {
+			<section class="sw-card rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
+				<h2 class="text-lg font-semibold mb-4">Platform State</h2>
+				<div class="space-y-4">
+					for _, conn := range data.PlatformConnections {
+						<div
+							hx-get={ "/api/v1/artists/" + data.Artist.ID + "/platform-state?connection_id=" + conn.ID }
+							hx-trigger="load"
+							hx-swap="outerHTML"
+						>
+							<p class="text-sm text-gray-400">Loading { conn.Name }...</p>
+						</div>
+					}
+				</div>
+			</section>
+		}
 	}
 }
 
@@ -654,4 +673,215 @@ templ MembersSection(artistID string, members []artist.BandMember, providers []s
 			<p class="text-sm text-gray-400 italic">No members.</p>
 		}
 	</section>
+}
+
+// PlatformStateCard renders the platform state comparison card for one connection.
+// Returned as an HTMX outerHTML swap to replace the loading placeholder.
+templ PlatformStateCard(a *artist.Artist, conn *connection.Connection, state *connection.ArtistPlatformState) {
+	<div class="rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+		<div class="flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-700/50">
+			<div class="flex items-center gap-2">
+				<span class="font-medium text-sm">{ conn.Name }</span>
+				<span class={
+					"inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
+					templ.KV("bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300", conn.Type == connection.TypeEmby),
+					templ.KV("bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300", conn.Type == connection.TypeJellyfin),
+				}>{ conn.Type }</span>
+				if state.IsLocked {
+					<span class="inline-flex items-center rounded-full bg-amber-100 dark:bg-amber-900/30 px-2 py-0.5 text-xs text-amber-700 dark:text-amber-400">Locked</span>
+				}
+			</div>
+			<div class="flex items-center gap-2">
+				<button
+					type="button"
+					class="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 transition-colors"
+					hx-post={ "/api/v1/artists/" + a.ID + "/push" }
+					hx-vals={ `{"connection_id":"` + conn.ID + `"}` }
+					hx-swap="none"
+					hx-on::after-request="if(event.detail.successful) window.location.reload()"
+				>
+					Push All
+				</button>
+				<button
+					type="button"
+					class="inline-flex items-center gap-1.5 rounded-md border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+					hx-post={ "/api/v1/artists/" + a.ID + "/pull?connection_id=" + conn.ID }
+					hx-swap="none"
+					hx-on::after-request="if(event.detail.successful) window.location.reload()"
+				>
+					Pull from Platform
+				</button>
+			</div>
+		</div>
+		<div class="overflow-x-auto">
+			<table class="w-full text-sm">
+				<thead>
+					<tr class="border-b border-gray-200 dark:border-gray-700">
+						<th class="text-left px-4 py-2 font-medium text-gray-500 dark:text-gray-400 w-32">Field</th>
+						<th class="text-left px-4 py-2 font-medium text-gray-500 dark:text-gray-400">Stillwater</th>
+						<th class="text-left px-4 py-2 font-medium text-gray-500 dark:text-gray-400">Platform</th>
+						<th class="text-center px-4 py-2 font-medium text-gray-500 dark:text-gray-400 w-20">Status</th>
+					</tr>
+				</thead>
+				<tbody class="divide-y divide-gray-100 dark:divide-gray-700/50">
+					@platformStateRow("Biography",
+						truncate(a.Biography, 80),
+						truncate(state.Biography, 80),
+						fieldMatch(a.Biography, state.Biography),
+						a.Biography == "" && state.Biography == "")
+					@platformStateRow("Genres",
+						strings.Join(a.Genres, ", "),
+						strings.Join(state.Genres, ", "),
+						sliceMatch(a.Genres, state.Genres),
+						len(a.Genres) == 0 && len(state.Genres) == 0)
+					@platformStateRow("Formed/PremiereDate",
+						firstNonEmpty(a.Formed, a.Born),
+						state.PremiereDate,
+						fieldMatch(firstNonEmpty(a.Formed, a.Born), state.PremiereDate),
+						firstNonEmpty(a.Formed, a.Born) == "" && state.PremiereDate == "")
+					@platformStateRow("Disbanded/EndDate",
+						firstNonEmpty(a.Disbanded, a.Died),
+						state.EndDate,
+						fieldMatch(firstNonEmpty(a.Disbanded, a.Died), state.EndDate),
+						firstNonEmpty(a.Disbanded, a.Died) == "" && state.EndDate == "")
+					@platformStateRow("MusicBrainz ID",
+						a.MusicBrainzID,
+						state.MusicBrainzID,
+						fieldMatch(a.MusicBrainzID, state.MusicBrainzID),
+						a.MusicBrainzID == "" && state.MusicBrainzID == "")
+					<tr>
+						<td class="px-4 py-2 text-gray-500 dark:text-gray-400 font-medium align-top">Images</td>
+						<td class="px-4 py-2">
+							@platformImageBadge("Thumb", a.ThumbExists)
+							@platformImageBadge("Fanart", a.FanartExists)
+							@platformImageBadge("Logo", a.LogoExists)
+							@platformImageBadge("Banner", a.BannerExists)
+						</td>
+						<td class="px-4 py-2">
+							@platformImageBadge("Thumb", state.HasThumb)
+							@platformImageBadge("Fanart", state.HasFanart)
+							@platformImageBadge("Logo", state.HasLogo)
+							@platformImageBadge("Banner", state.HasBanner)
+						</td>
+						<td class="px-4 py-2 text-center">
+							<span class="text-gray-300 dark:text-gray-600">--</span>
+						</td>
+					</tr>
+				</tbody>
+			</table>
+		</div>
+	</div>
+}
+
+// PlatformStateError renders an error card when platform state fetch fails.
+templ PlatformStateError(conn *connection.Connection, errMsg string) {
+	<div class="rounded-lg border border-red-200 dark:border-red-800 p-4">
+		<div class="flex items-center gap-2 text-red-600 dark:text-red-400">
+			<span class="font-medium text-sm">{ conn.Name }</span>
+			<span class="text-xs">Failed to load platform state: { errMsg }</span>
+		</div>
+	</div>
+}
+
+templ platformStateRow(field, swValue, platValue string, match, bothEmpty bool) {
+	<tr>
+		<td class="px-4 py-2 text-gray-500 dark:text-gray-400 font-medium align-top">{ field }</td>
+		<td class="px-4 py-2 text-gray-900 dark:text-gray-100 align-top">
+			if swValue != "" {
+				{ swValue }
+			} else {
+				<span class="text-gray-400 italic">empty</span>
+			}
+		</td>
+		<td class="px-4 py-2 text-gray-900 dark:text-gray-100 align-top">
+			if platValue != "" {
+				{ platValue }
+			} else {
+				<span class="text-gray-400 italic">empty</span>
+			}
+		</td>
+		<td class="px-4 py-2 text-center align-top">
+			if bothEmpty {
+				<span class="text-gray-300 dark:text-gray-600">--</span>
+			} else if match {
+				<span class="text-green-500" title="Match">
+					<svg class="h-4 w-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+					</svg>
+				</span>
+			} else {
+				<span class="text-amber-500" title="Mismatch">
+					<svg class="h-4 w-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M12 3a9 9 0 100 18A9 9 0 0012 3z"></path>
+					</svg>
+				</span>
+			}
+		</td>
+	</tr>
+}
+
+templ platformImageBadge(label string, present bool) {
+	<span class={
+		"inline-flex items-center rounded px-1.5 py-0.5 text-xs mr-1",
+		templ.KV("bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400", present),
+		templ.KV("bg-gray-100 text-gray-400 dark:bg-gray-700 dark:text-gray-500", !present),
+	}>{ label }</span>
+}
+
+// truncate shortens a string to at most n runes, appending "..." if truncated.
+func truncate(s string, n int) string {
+	runes := []rune(s)
+	if len(runes) <= n {
+		return s
+	}
+	return string(runes[:n]) + "..."
+}
+
+// firstNonEmpty returns the first non-empty string from the arguments.
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// fieldMatch reports whether two string values are equal after trimming
+// whitespace and normalizing case.
+func fieldMatch(a, b string) bool {
+	return strings.EqualFold(strings.TrimSpace(a), strings.TrimSpace(b))
+}
+
+// sliceMatch reports whether two string slices have the same elements
+// (case-insensitive, order-independent).
+func sliceMatch(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	ac := make([]string, len(a))
+	bc := make([]string, len(b))
+	for i, v := range a {
+		ac[i] = strings.ToLower(strings.TrimSpace(v))
+	}
+	for i, v := range b {
+		bc[i] = strings.ToLower(strings.TrimSpace(v))
+	}
+	sortStrings(ac)
+	sortStrings(bc)
+	for i := range ac {
+		if ac[i] != bc[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// sortStrings sorts a slice of strings in place.
+func sortStrings(s []string) {
+	for i := 1; i < len(s); i++ {
+		for j := i; j > 0 && s[j] < s[j-1]; j-- {
+			s[j], s[j-1] = s[j-1], s[j]
+		}
+	}
 }

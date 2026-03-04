@@ -124,6 +124,31 @@ func (c *Client) GetArtistImage(ctx context.Context, artistID, imageType string)
 	return c.getRaw(ctx, path)
 }
 
+// GetArtistDetail fetches the current state of an artist from Emby by platform artist ID.
+func (c *Client) GetArtistDetail(ctx context.Context, platformArtistID string) (*connection.ArtistPlatformState, error) {
+	path := fmt.Sprintf("/Items/%s?Fields=Overview,Genres,Tags,SortName,ProviderIds,ImageTags,BackdropImageTags,PremiereDate,EndDate,LockedFields", platformArtistID)
+	var item ArtistDetailItem
+	if err := c.get(ctx, path, &item); err != nil {
+		return nil, fmt.Errorf("getting artist detail: %w", err)
+	}
+	return &connection.ArtistPlatformState{
+		Name:          item.Name,
+		SortName:      item.SortName,
+		Biography:     item.Overview,
+		Genres:        item.Genres,
+		Tags:          item.Tags,
+		PremiereDate:  item.PremiereDate,
+		EndDate:       item.EndDate,
+		MusicBrainzID: item.ProviderIDs.MusicBrainzArtist,
+		HasThumb:      item.ImageTags["Primary"] != "",
+		HasFanart:     len(item.BackdropImageTags) > 0,
+		HasLogo:       item.ImageTags["Logo"] != "",
+		HasBanner:     item.ImageTags["Banner"] != "",
+		IsLocked:      item.LockData,
+		LockedFields:  item.LockedFields,
+	}, nil
+}
+
 // getRaw performs a GET request and returns the raw response bytes and Content-Type header.
 func (c *Client) getRaw(ctx context.Context, path string) ([]byte, string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, connection.BuildRequestURL(c.baseURL, path), nil)

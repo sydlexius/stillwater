@@ -444,6 +444,70 @@ func TestPost_ErrorBodyLimited(t *testing.T) {
 	}
 }
 
+func TestGetArtistDetail_Success(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/Items/emby-001" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		if r.Header.Get("X-Emby-Token") != "test-key" {
+			t.Errorf("missing or wrong auth header: %s", r.Header.Get("X-Emby-Token"))
+		}
+		fields := r.URL.Query().Get("Fields")
+		if fields == "" {
+			t.Errorf("Fields query param missing")
+		}
+		http.ServeFile(w, r, "testdata/artist_detail.json")
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "test-key", srv.Client(), testLogger())
+	state, err := c.GetArtistDetail(context.Background(), "emby-001")
+	if err != nil {
+		t.Fatalf("GetArtistDetail failed: %v", err)
+	}
+	if state.Name != "Radiohead" {
+		t.Errorf("Name = %q, want Radiohead", state.Name)
+	}
+	if state.Biography == "" {
+		t.Error("Biography should not be empty")
+	}
+	if state.MusicBrainzID != "a74b1b7f-71a5-4011-9441-d0b5e4122711" {
+		t.Errorf("MusicBrainzID = %q, want a74b1b7f-71a5-4011-9441-d0b5e4122711", state.MusicBrainzID)
+	}
+	if !state.HasThumb {
+		t.Error("HasThumb should be true")
+	}
+	if !state.HasFanart {
+		t.Error("HasFanart should be true")
+	}
+	if !state.HasLogo {
+		t.Error("HasLogo should be true")
+	}
+	if !state.HasBanner {
+		t.Error("HasBanner should be true")
+	}
+	if state.IsLocked {
+		t.Error("IsLocked should be false")
+	}
+	if len(state.Genres) != 2 {
+		t.Errorf("got %d genres, want 2", len(state.Genres))
+	}
+}
+
+func TestGetArtistDetail_NotFound(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte("not found"))
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "test-key", srv.Client(), testLogger())
+	_, err := c.GetArtistDetail(context.Background(), "emby-999")
+	if err == nil {
+		t.Fatal("expected error for 404 response")
+	}
+}
+
 func TestPushMetadata_DateNormalization(t *testing.T) {
 	tests := []struct {
 		name         string
