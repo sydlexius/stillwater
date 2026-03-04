@@ -45,16 +45,21 @@ func (c *Client) PushMetadata(ctx context.Context, platformArtistID string, data
 		}
 	}
 	// Use Born for persons, Formed for groups as premiere date.
-	if data.Born != "" {
-		body.PremiereDate = data.Born
-	} else if data.Formed != "" {
-		body.PremiereDate = data.Formed
+	// Normalize to yyyy-MM-dd so Emby does not silently discard partial dates.
+	if raw := data.Born; raw != "" {
+		body.PremiereDate = connection.NormalizeDateForPlatform(raw)
+		c.logDateNormalization("premiere_date", raw, body.PremiereDate, platformArtistID)
+	} else if raw := data.Formed; raw != "" {
+		body.PremiereDate = connection.NormalizeDateForPlatform(raw)
+		c.logDateNormalization("premiere_date", raw, body.PremiereDate, platformArtistID)
 	}
 	// Use Died for persons, Disbanded for groups as end date.
-	if data.Died != "" {
-		body.EndDate = data.Died
-	} else if data.Disbanded != "" {
-		body.EndDate = data.Disbanded
+	if raw := data.Died; raw != "" {
+		body.EndDate = connection.NormalizeDateForPlatform(raw)
+		c.logDateNormalization("end_date", raw, body.EndDate, platformArtistID)
+	} else if raw := data.Disbanded; raw != "" {
+		body.EndDate = connection.NormalizeDateForPlatform(raw)
+		c.logDateNormalization("end_date", raw, body.EndDate, platformArtistID)
 	}
 
 	payload, err := json.Marshal(body)
@@ -115,6 +120,17 @@ func (c *Client) UploadImage(ctx context.Context, platformArtistID string, image
 
 	c.logger.Debug("image uploaded to emby", "artist_id", platformArtistID, "type", embyType)
 	return nil
+}
+
+// logDateNormalization logs the result of normalizing a date field for push.
+func (c *Client) logDateNormalization(field, raw, normalized, artistID string) {
+	if normalized == "" {
+		c.logger.Warn("unparseable date dropped from push",
+			"field", field, "raw", raw, "artist_id", artistID)
+	} else if normalized != raw {
+		c.logger.Debug("date normalized for push",
+			"field", field, "raw", raw, "normalized", normalized, "artist_id", artistID)
+	}
 }
 
 // mapImageType converts a Stillwater image type to an Emby image type.
