@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 
@@ -30,6 +31,10 @@ func (r *Router) handleGetPlatformState(w http.ResponseWriter, req *http.Request
 	conn, err := r.connectionService.GetByID(req.Context(), connectionID)
 	if err != nil {
 		writeError(w, req, http.StatusNotFound, "connection not found")
+		return
+	}
+	if !conn.Enabled {
+		writeError(w, req, http.StatusBadRequest, "connection is disabled")
 		return
 	}
 
@@ -130,7 +135,7 @@ func (r *Router) handlePullMetadata(w http.ResponseWriter, req *http.Request) {
 	}
 
 	if state.PremiereDate != "" {
-		if err := r.artistService.UpdateField(req.Context(), artistID, "formed", state.PremiereDate); err != nil {
+		if err := r.artistService.UpdateField(req.Context(), artistID, "formed", dateOnly(state.PremiereDate)); err != nil {
 			r.logger.Warn("updating formed date from platform", "error", err)
 		} else {
 			updated = append(updated, "formed")
@@ -138,7 +143,7 @@ func (r *Router) handlePullMetadata(w http.ResponseWriter, req *http.Request) {
 	}
 
 	if state.EndDate != "" {
-		if err := r.artistService.UpdateField(req.Context(), artistID, "disbanded", state.EndDate); err != nil {
+		if err := r.artistService.UpdateField(req.Context(), artistID, "disbanded", dateOnly(state.EndDate)); err != nil {
 			r.logger.Warn("updating disbanded date from platform", "error", err)
 		} else {
 			updated = append(updated, "disbanded")
@@ -164,8 +169,14 @@ func (r *Router) newStateGetter(conn *connection.Connection) (connection.ArtistS
 }
 
 // errUnsupportedConnectionType is returned when a connection type does not support platform state.
-var errUnsupportedConnectionType = simpleError("connection type does not support platform state")
+var errUnsupportedConnectionType = errors.New("connection type does not support platform state")
 
-type simpleError string
-
-func (e simpleError) Error() string { return string(e) }
+// dateOnly strips the time component from an ISO 8601 datetime string
+// (e.g. "1985-01-01T00:00:00.0000000Z" -> "1985-01-01"). If the string
+// contains no 'T' separator it is returned unchanged.
+func dateOnly(s string) string {
+	if date, _, ok := strings.Cut(s, "T"); ok {
+		return date
+	}
+	return s
+}

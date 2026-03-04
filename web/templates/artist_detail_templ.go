@@ -1967,9 +1967,9 @@ func PlatformStateCard(a *artist.Artist, conn *connection.Connection, state *con
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var102 string
-		templ_7745c5c3_Var102, templ_7745c5c3_Err = templ.JoinStringErrs(`{"connection_id":"` + conn.ID + `"}`)
+		templ_7745c5c3_Var102, templ_7745c5c3_Err = templ.JoinStringErrs(hxValsJSON(map[string]string{"connection_id": conn.ID}))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 699, Col: 52}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_detail.templ`, Line: 699, Col: 70}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var102))
 		if templ_7745c5c3_Err != nil {

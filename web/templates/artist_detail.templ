@@ -696,7 +696,7 @@ templ PlatformStateCard(a *artist.Artist, conn *connection.Connection, state *co
 					type="button"
 					class="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 transition-colors"
 					hx-post={ "/api/v1/artists/" + a.ID + "/push" }
-					hx-vals={ `{"connection_id":"` + conn.ID + `"}` }
+					hx-vals={ hxValsJSON(map[string]string{"connection_id": conn.ID}) }
 					hx-swap="none"
 					hx-on::after-request="if(event.detail.successful) window.location.reload()"
 				>
