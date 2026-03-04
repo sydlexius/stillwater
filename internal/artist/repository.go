@@ -46,9 +46,21 @@ type AliasRepository interface {
 // PlatformIDRepository manages platform ID mappings between Stillwater
 // artists and their IDs on external connections (Emby, Jellyfin, Lidarr).
 type PlatformIDRepository interface {
+	// Set stores or updates the mapping from a Stillwater artist to a
+	// platform-specific artist ID for the given connection.
 	Set(ctx context.Context, artistID, connectionID, platformArtistID string) error
+
+	// Get looks up the platform-specific artist ID for the given Stillwater
+	// artist and connection. If no mapping exists, it returns an empty string
+	// and a nil error. A non-nil error indicates an actual lookup failure.
 	Get(ctx context.Context, artistID, connectionID string) (string, error)
+
+	// GetAll returns all platform ID mappings for the given Stillwater artist.
 	GetAll(ctx context.Context, artistID string) ([]PlatformID, error)
+
+	// Delete removes the mapping for the given Stillwater artist and connection.
 	Delete(ctx context.Context, artistID, connectionID string) error
+
+	// DeleteByArtistID removes all platform ID mappings for the given artist.
 	DeleteByArtistID(ctx context.Context, artistID string) error
 }

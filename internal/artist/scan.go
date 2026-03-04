@@ -221,10 +221,10 @@ func scanArtistWithExtra(row interface{ Scan(...any) error }, n int) (*artistWit
 }
 
 // validatedOrderClause returns a safe ORDER BY column expression from
-// ListParams. It assumes params.Validate() was called upstream (which
-// maps the validated sort/order fields to a safe ORDER BY clause using only
-// string literals, so static-analysis tools can verify no user input flows
-// into the SQL string.
+// ListParams. It assumes params.Validate() was called upstream to normalize
+// and allowlist the Sort and Order fields. The switch on params.Sort and the
+// fixed dir values below use only string literals, so static-analysis tools
+// can verify no user input flows into the SQL string.
 func validatedOrderClause(params ListParams) string {
 	var col string
 	switch params.Sort {

@@ -272,6 +272,7 @@ func (s *Service) SetPlatformID(ctx context.Context, artistID, connectionID, pla
 }
 
 // GetPlatformID retrieves the platform artist ID for an artist on a specific connection.
+// If no mapping exists, it returns an empty string and a nil error.
 func (s *Service) GetPlatformID(ctx context.Context, artistID, connectionID string) (string, error) {
 	return s.platformIDs.Get(ctx, artistID, connectionID)
 }
