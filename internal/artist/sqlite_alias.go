@@ -90,11 +90,14 @@ func (r *sqliteAliasRepo) SearchWithAliases(ctx context.Context, query string) (
 	for rows.Next() {
 		a, err := scanArtist(rows)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("scanning search-with-aliases result: %w", err)
 		}
 		artists = append(artists, *a)
 	}
-	return artists, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating search-with-aliases rows: %w", err)
+	}
+	return artists, nil
 }
 
 func (r *sqliteAliasRepo) FindMBIDDuplicates(ctx context.Context) ([]DuplicateGroup, error) {
