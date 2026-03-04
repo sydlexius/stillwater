@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -78,7 +79,12 @@ func (r *Router) handleDeletePlatformID(w http.ResponseWriter, req *http.Request
 	}
 
 	if err := r.artistService.DeletePlatformID(req.Context(), artistID, connectionID); err != nil {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+		if errors.Is(err, artist.ErrPlatformIDNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "platform id not found"})
+			return
+		}
+		r.logger.Error("deleting platform id", "artist_id", artistID, "connection_id", connectionID, "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})

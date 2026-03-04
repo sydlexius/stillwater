@@ -2,6 +2,7 @@ package artist
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/database"
@@ -184,7 +185,10 @@ func TestDeletePlatformID_NotFound(t *testing.T) {
 
 	err := svc.DeletePlatformID(ctx, "nonexistent", "conn-1")
 	if err == nil {
-		t.Error("expected error for nonexistent platform id")
+		t.Fatal("expected error for nonexistent platform id")
+	}
+	if !errors.Is(err, ErrPlatformIDNotFound) {
+		t.Errorf("expected ErrPlatformIDNotFound, got %v", err)
 	}
 }
 

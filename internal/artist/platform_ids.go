@@ -3,9 +3,13 @@ package artist
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 )
+
+// ErrPlatformIDNotFound is returned when a platform ID mapping does not exist.
+var ErrPlatformIDNotFound = errors.New("platform id not found")
 
 // PlatformID maps a Stillwater artist to their ID on a specific platform connection.
 type PlatformID struct {
@@ -88,7 +92,7 @@ func (s *Service) DeletePlatformID(ctx context.Context, artistID, connectionID s
 	}
 	n, _ := result.RowsAffected()
 	if n == 0 {
-		return fmt.Errorf("platform id not found")
+		return ErrPlatformIDNotFound
 	}
 	return nil
 }
