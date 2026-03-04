@@ -199,3 +199,76 @@ func (r *Router) handlePushImages(w http.ResponseWriter, req *http.Request) {
 		"errors":   errors,
 	})
 }
+
+// handleDeletePushImage deletes an image from an Emby/Jellyfin connection.
+// DELETE /api/v1/artists/{id}/push/images/{type}
+func (r *Router) handleDeletePushImage(w http.ResponseWriter, req *http.Request) {
+	imageType := req.PathValue("type")
+	if !validImageTypes[imageType] {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid image type, must be: thumb, fanart, logo, banner"})
+		return
+	}
+
+	artistID := req.PathValue("id")
+	if _, err := r.artistService.GetByID(req.Context(), artistID); err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "artist not found"})
+		return
+	}
+
+	var body struct {
+		ConnectionID     string `json:"connection_id"`
+		PlatformArtistID string `json:"platform_artist_id"`
+	}
+	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+	if body.ConnectionID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "connection_id is required"})
+		return
+	}
+
+	conn, err := r.connectionService.GetByID(req.Context(), body.ConnectionID)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "connection not found"})
+		return
+	}
+	if !conn.Enabled {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "connection is disabled"})
+		return
+	}
+
+	// Auto-lookup platform artist ID if not provided.
+	if body.PlatformArtistID == "" {
+		stored, lookupErr := r.artistService.GetPlatformID(req.Context(), artistID, body.ConnectionID)
+		if lookupErr != nil {
+			r.logger.Error("looking up platform id", "artist_id", artistID, "connection_id", body.ConnectionID, "error", lookupErr)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+			return
+		}
+		if stored == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "platform_artist_id is required (no stored mapping found)"})
+			return
+		}
+		body.PlatformArtistID = stored
+	}
+
+	var deleter connection.ImageDeleter
+	switch conn.Type {
+	case connection.TypeEmby:
+		deleter = emby.New(conn.URL, conn.APIKey, r.logger)
+	case connection.TypeJellyfin:
+		deleter = jellyfin.New(conn.URL, conn.APIKey, r.logger)
+	default:
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "connection type does not support image delete"})
+		return
+	}
+
+	if err := deleter.DeleteImage(req.Context(), body.PlatformArtistID, imageType); err != nil {
+		r.logger.Error("deleting image from platform", "artist_id", artistID, "type", imageType, "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "delete failed: " + err.Error()})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+}
