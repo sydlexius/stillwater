@@ -245,6 +245,9 @@ func (r *Router) handleArtistDetailPage(w http.ResponseWriter, req *http.Request
 			if !storedIDs[c.ID] {
 				continue
 			}
+			if !c.Enabled {
+				continue
+			}
 			if c.Type == connection.TypeEmby || c.Type == connection.TypeJellyfin {
 				platformConns = append(platformConns, c)
 			}
