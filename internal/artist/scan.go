@@ -220,19 +220,15 @@ func scanArtistWithExtra(row interface{ Scan(...any) error }, n int) (*artistWit
 	return &artistWithExtra{artist: a, extra: extra}, nil
 }
 
-// validatedOrderClause returns a safe ORDER BY column expression from validated
-// ListParams. The sort column is checked against a strict allowlist and the
-// direction is limited to ASC/DESC, making the result safe for interpolation
-// into SQL without parameterization.
+// validatedOrderClause returns a safe ORDER BY column expression from
+// ListParams. It assumes params.Validate() was called upstream (which
+// enforces the sort-column allowlist). This function only applies defaults
+// and formats the clause.
 func validatedOrderClause(params ListParams) string {
 	col := params.Sort
-	switch col {
-	case "name", "sort_name", "health_score", "updated_at", "created_at":
-		// valid
-	default:
+	if col == "" {
 		col = "name"
 	}
-
 	dir := "ASC"
 	if params.Order == "desc" {
 		dir = "DESC"
