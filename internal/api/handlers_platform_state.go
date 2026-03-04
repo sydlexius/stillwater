@@ -76,7 +76,7 @@ func (r *Router) handlePullMetadata(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	_, err := r.artistService.GetByID(req.Context(), artistID)
+	a, err := r.artistService.GetByID(req.Context(), artistID)
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "artist not found"})
 		return
@@ -134,19 +134,25 @@ func (r *Router) handlePullMetadata(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
+	// Mirror push logic: write to born/died for persons, formed/disbanded for groups.
+	premiereField, endField := "formed", "disbanded"
+	if a.Type == "person" {
+		premiereField, endField = "born", "died"
+	}
+
 	if state.PremiereDate != "" {
-		if err := r.artistService.UpdateField(req.Context(), artistID, "formed", dateOnly(state.PremiereDate)); err != nil {
-			r.logger.Warn("updating formed date from platform", "error", err)
+		if err := r.artistService.UpdateField(req.Context(), artistID, premiereField, dateOnly(state.PremiereDate)); err != nil {
+			r.logger.Warn("updating date from platform", "field", premiereField, "error", err)
 		} else {
-			updated = append(updated, "formed")
+			updated = append(updated, premiereField)
 		}
 	}
 
 	if state.EndDate != "" {
-		if err := r.artistService.UpdateField(req.Context(), artistID, "disbanded", dateOnly(state.EndDate)); err != nil {
-			r.logger.Warn("updating disbanded date from platform", "error", err)
+		if err := r.artistService.UpdateField(req.Context(), artistID, endField, dateOnly(state.EndDate)); err != nil {
+			r.logger.Warn("updating date from platform", "field", endField, "error", err)
 		} else {
-			updated = append(updated, "disbanded")
+			updated = append(updated, endField)
 		}
 	}
 
