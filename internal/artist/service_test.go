@@ -245,11 +245,13 @@ func TestList_SearchAndFilter(t *testing.T) {
 	a1 := testArtist("The Beatles", "/music/The Beatles")
 	a1.NFOExists = true
 	a1.MusicBrainzID = "b10bbbfc-cf9e-42e0-be17-e2c3e1d2600d"
+	a1.ThumbExists = true
+	a1.FanartExists = true
 	a1.LogoExists = true
 	a1.BannerExists = true
 
 	a2 := testArtist("The Rolling Stones", "/music/The Rolling Stones")
-	// a2 has no NFO, no MBID, no logo, no banner
+	// a2 has no NFO, no MBID, no thumb, no fanart, no logo, no banner
 
 	if err := svc.Create(ctx, a1); err != nil {
 		t.Fatalf("Create: %v", err)
@@ -304,6 +306,24 @@ func TestList_SearchAndFilter(t *testing.T) {
 	}
 	if total != 1 || artists[0].Name != "The Rolling Stones" {
 		t.Errorf("missing_banner filter: total=%d, artists=%v", total, artists)
+	}
+
+	// Filter missing thumb
+	artists, total, err = svc.List(ctx, ListParams{Filter: "missing_thumb"})
+	if err != nil {
+		t.Fatalf("List filter missing_thumb: %v", err)
+	}
+	if total != 1 || artists[0].Name != "The Rolling Stones" {
+		t.Errorf("missing_thumb filter: total=%d, artists=%v", total, artists)
+	}
+
+	// Filter missing fanart
+	artists, total, err = svc.List(ctx, ListParams{Filter: "missing_fanart"})
+	if err != nil {
+		t.Fatalf("List filter missing_fanart: %v", err)
+	}
+	if total != 1 || artists[0].Name != "The Rolling Stones" {
+		t.Errorf("missing_fanart filter: total=%d, artists=%v", total, artists)
 	}
 }
 
