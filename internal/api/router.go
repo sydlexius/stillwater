@@ -332,6 +332,11 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/images/{type}/info", wrapAuth(r.handleImageInfo, authMw))
 	mux.HandleFunc("DELETE "+bp+"/api/v1/artists/{id}/images/{type}", wrapAuth(r.handleDeleteImage, authMw))
 
+	// Platform ID routes
+	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/platform-ids", wrapAuth(r.handleGetPlatformIDs, authMw))
+	mux.HandleFunc("PUT "+bp+"/api/v1/artists/{id}/platform-ids/{connectionId}", wrapAuth(r.handleSetPlatformID, authMw))
+	mux.HandleFunc("DELETE "+bp+"/api/v1/artists/{id}/platform-ids/{connectionId}", wrapAuth(r.handleDeletePlatformID, authMw))
+
 	// Push routes
 	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/push", wrapAuth(r.handlePushMetadata, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/push/images", wrapAuth(r.handlePushImages, authMw))

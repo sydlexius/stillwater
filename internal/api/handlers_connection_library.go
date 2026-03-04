@@ -510,6 +510,10 @@ func (r *Router) populateFromEmbyCtx(ctx context.Context, client *emby.Client, l
 						r.logger.Warn("backfilling mbid from emby", "name", existing.Name, "error", err)
 					}
 				}
+				// Store the platform-to-Stillwater artist ID mapping.
+				if setErr := r.artistService.SetPlatformID(ctx, existing.ID, lib.ConnectionID, item.ID); setErr != nil {
+					r.logger.Warn("storing emby platform id", "name", existing.Name, "error", setErr)
+				}
 				// Download any missing images.
 				r.downloadPlatformImages(ctx, client, item.ID, item.ImageTags, existing, result)
 				result.Skipped++
@@ -538,6 +542,11 @@ func (r *Router) populateFromEmbyCtx(ctx context.Context, client *emby.Client, l
 				continue
 			}
 			result.Created++
+
+			// Store the platform-to-Stillwater artist ID mapping.
+			if setErr := r.artistService.SetPlatformID(ctx, a.ID, lib.ConnectionID, item.ID); setErr != nil {
+				r.logger.Warn("storing emby platform id", "name", a.Name, "error", setErr)
+			}
 
 			r.downloadPlatformImages(ctx, client, item.ID, item.ImageTags, a, result)
 		}
@@ -602,6 +611,10 @@ func (r *Router) populateFromJellyfinCtx(ctx context.Context, client *jellyfin.C
 						r.logger.Warn("backfilling mbid from jellyfin", "name", existing.Name, "error", err)
 					}
 				}
+				// Store the platform-to-Stillwater artist ID mapping.
+				if setErr := r.artistService.SetPlatformID(ctx, existing.ID, lib.ConnectionID, item.ID); setErr != nil {
+					r.logger.Warn("storing jellyfin platform id", "name", existing.Name, "error", setErr)
+				}
 				// Download any missing images.
 				r.downloadPlatformImages(ctx, client, item.ID, item.ImageTags, existing, result)
 				result.Skipped++
@@ -630,6 +643,11 @@ func (r *Router) populateFromJellyfinCtx(ctx context.Context, client *jellyfin.C
 				continue
 			}
 			result.Created++
+
+			// Store the platform-to-Stillwater artist ID mapping.
+			if setErr := r.artistService.SetPlatformID(ctx, a.ID, lib.ConnectionID, item.ID); setErr != nil {
+				r.logger.Warn("storing jellyfin platform id", "name", a.Name, "error", setErr)
+			}
 
 			r.downloadPlatformImages(ctx, client, item.ID, item.ImageTags, a, result)
 		}
@@ -660,6 +678,10 @@ func (r *Router) populateFromLidarrCtx(ctx context.Context, client *lidarr.Clien
 				continue
 			}
 			if existing != nil {
+				// Store the platform-to-Stillwater artist ID mapping.
+				if setErr := r.artistService.SetPlatformID(ctx, existing.ID, lib.ConnectionID, fmt.Sprintf("%d", la.ID)); setErr != nil {
+					r.logger.Warn("storing lidarr platform id", "name", existing.Name, "error", setErr)
+				}
 				result.Skipped++
 				continue
 			}
@@ -671,6 +693,10 @@ func (r *Router) populateFromLidarrCtx(ctx context.Context, client *lidarr.Clien
 				continue
 			}
 			if existing != nil {
+				// Store the platform-to-Stillwater artist ID mapping.
+				if setErr := r.artistService.SetPlatformID(ctx, existing.ID, lib.ConnectionID, fmt.Sprintf("%d", la.ID)); setErr != nil {
+					r.logger.Warn("storing lidarr platform id", "name", existing.Name, "error", setErr)
+				}
 				result.Skipped++
 				continue
 			}
@@ -688,6 +714,11 @@ func (r *Router) populateFromLidarrCtx(ctx context.Context, client *lidarr.Clien
 			continue
 		}
 		result.Created++
+
+		// Store the platform-to-Stillwater artist ID mapping.
+		if setErr := r.artistService.SetPlatformID(ctx, a.ID, lib.ConnectionID, fmt.Sprintf("%d", la.ID)); setErr != nil {
+			r.logger.Warn("storing lidarr platform id", "name", a.Name, "error", setErr)
+		}
 	}
 	return nil
 }
@@ -836,6 +867,11 @@ func (r *Router) scanFromEmby(ctx context.Context, client *emby.Client, lib *lib
 				continue
 			}
 
+			// Backfill the platform-to-Stillwater artist ID mapping.
+			if setErr := r.artistService.SetPlatformID(ctx, a.ID, lib.ConnectionID, item.ID); setErr != nil {
+				r.logger.Warn("storing emby platform id during scan", "name", a.Name, "error", setErr)
+			}
+
 			var thumbExists, fanartExists, logoExists, bannerExists bool
 			if item.ImageTags != nil {
 				thumbExists = item.ImageTags["Primary"] != ""
@@ -895,6 +931,11 @@ func (r *Router) scanFromJellyfin(ctx context.Context, client *jellyfin.Client, 
 				continue
 			}
 
+			// Backfill the platform-to-Stillwater artist ID mapping.
+			if setErr := r.artistService.SetPlatformID(ctx, a.ID, lib.ConnectionID, item.ID); setErr != nil {
+				r.logger.Warn("storing jellyfin platform id during scan", "name", a.Name, "error", setErr)
+			}
+
 			var thumbExists, fanartExists, logoExists, bannerExists bool
 			if item.ImageTags != nil {
 				thumbExists = item.ImageTags["Primary"] != ""
@@ -949,6 +990,11 @@ func (r *Router) scanFromLidarr(ctx context.Context, client *lidarr.Client, lib 
 		}
 		if a == nil {
 			continue
+		}
+
+		// Backfill the platform-to-Stillwater artist ID mapping.
+		if setErr := r.artistService.SetPlatformID(ctx, a.ID, lib.ConnectionID, fmt.Sprintf("%d", la.ID)); setErr != nil {
+			r.logger.Warn("storing lidarr platform id during scan", "name", a.Name, "error", setErr)
 		}
 
 		var thumbExists, fanartExists, bannerExists, logoExists bool

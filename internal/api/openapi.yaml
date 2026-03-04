@@ -1007,6 +1007,96 @@ paths:
               schema:
                 $ref: "#/components/schemas/Status"
 
+  /artists/{id}/platform-ids:
+    get:
+      tags: [Platform IDs]
+      summary: List platform artist ID mappings
+      operationId: getPlatformIDs
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of platform artist ID mappings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    artist_id:
+                      type: string
+                    connection_id:
+                      type: string
+                    platform_artist_id:
+                      type: string
+                    created_at:
+                      type: string
+                      format: date-time
+                    updated_at:
+                      type: string
+                      format: date-time
+
+  /artists/{id}/platform-ids/{connectionId}:
+    put:
+      tags: [Platform IDs]
+      summary: Set platform artist ID mapping
+      operationId: setPlatformID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: connectionId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                platform_artist_id:
+                  type: string
+              required: [platform_artist_id]
+      responses:
+        "200":
+          description: Platform ID set
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+    delete:
+      tags: [Platform IDs]
+      summary: Delete platform artist ID mapping
+      operationId: deletePlatformID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: connectionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Platform ID deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+
   /artists/{id}/push:
     post:
       tags: [Push]
@@ -1029,7 +1119,7 @@ paths:
                   type: string
                 platform_artist_id:
                   type: string
-              required: [connection_id, platform_artist_id]
+              required: [connection_id]
       responses:
         "200":
           description: Metadata pushed
@@ -4435,7 +4525,7 @@ paths:
                     type: string
                     enum: [thumb, fanart, logo, banner]
                   description: Types to push (defaults to all four)
-              required: [connection_id, platform_artist_id]
+              required: [connection_id]
       responses:
         "200":
           description: Push results
