@@ -16,7 +16,7 @@ type Service struct {
 	platformIDs PlatformIDRepository
 }
 
-// NewService creates an artist service.
+// NewService creates an artist service backed by SQLite.
 func NewService(db *sql.DB) *Service {
 	return &Service{
 		artists:     newSQLiteArtistRepo(db),
@@ -24,6 +24,24 @@ func NewService(db *sql.DB) *Service {
 		members:     newSQLiteMemberRepo(db),
 		aliases:     newSQLiteAliasRepo(db),
 		platformIDs: newSQLitePlatformIDRepo(db),
+	}
+}
+
+// NewServiceWithRepos creates an artist service using the provided repository
+// implementations, enabling dependency injection for tests and alternative backends.
+func NewServiceWithRepos(
+	artists Repository,
+	providers ProviderIDRepository,
+	members MemberRepository,
+	aliases AliasRepository,
+	platformIDs PlatformIDRepository,
+) *Service {
+	return &Service{
+		artists:     artists,
+		providers:   providers,
+		members:     members,
+		aliases:     aliases,
+		platformIDs: platformIDs,
 	}
 }
 
