@@ -1,0 +1,20 @@
+{
+  "Name": "Radiohead",
+  "SortName": "Radiohead",
+  "Overview": "English rock band formed in Abingdon, Oxfordshire in 1985.",
+  "Genres": ["Rock", "Alternative Rock"],
+  "Tags": ["Experimental", "Art Rock"],
+  "PremiereDate": "1985-01-01T00:00:00.0000000Z",
+  "EndDate": "",
+  "ProviderIds": {
+    "MusicBrainzArtist": "a74b1b7f-71a5-4011-9441-d0b5e4122711"
+  },
+  "ImageTags": {
+    "Primary": "abc123",
+    "Logo": "def456",
+    "Banner": "ghi789"
+  },
+  "BackdropImageTags": ["jkl012"],
+  "IsLocked": false,
+  "LockedFields": []
+}

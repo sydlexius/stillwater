@@ -66,7 +66,7 @@ func ErrorToast(level, message string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</span> <button onclick=\"this.parentElement.remove()\" class=\"ml-2 font-bold opacity-70 hover:opacity-100\">&times;</button></div><script>\r\n\t\tsetTimeout(function() {\r\n\t\t\tvar el = document.getElementById('error-toast');\r\n\t\t\tif (el) {\r\n\t\t\t\tel.style.opacity = '0';\r\n\t\t\t\tsetTimeout(function() { el.remove(); }, 300);\r\n\t\t\t}\r\n\t\t}, 5000);\r\n\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</span> <button onclick=\"this.parentElement.remove()\" class=\"ml-2 font-bold opacity-70 hover:opacity-100\">&times;</button></div><script>\n\t\tsetTimeout(function() {\n\t\t\tvar el = document.getElementById('error-toast');\n\t\t\tif (el) {\n\t\t\t\tel.style.opacity = '0';\n\t\t\t\tsetTimeout(function() { el.remove(); }, 300);\n\t\t\t}\n\t\t}, 5000);\n\t</script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

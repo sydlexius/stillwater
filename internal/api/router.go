@@ -341,6 +341,10 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/push", wrapAuth(r.handlePushMetadata, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/push/images", wrapAuth(r.handlePushImages, authMw))
 
+	// Platform state routes
+	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/platform-state", wrapAuth(r.handleGetPlatformState, authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/pull", wrapAuth(r.handlePullMetadata, authMw))
+
 	// Web routes (optional auth populates user context for login redirect)
 	mux.HandleFunc("GET "+bp+"/artists/{id}/images", wrapOptionalAuth(r.handleArtistImagesPage, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/artists/{id}", wrapOptionalAuth(r.handleArtistDetailPage, optAuthMw))

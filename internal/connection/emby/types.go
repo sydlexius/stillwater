@@ -46,3 +46,19 @@ type ItemsResponse struct {
 	Items            []ArtistItem `json:"Items"`
 	TotalRecordCount int          `json:"TotalRecordCount"`
 }
+
+// ArtistDetailItem represents the full detail response from GET /Items/{id}.
+type ArtistDetailItem struct {
+	Name              string            `json:"Name"`
+	SortName          string            `json:"SortName"`
+	Overview          string            `json:"Overview"`
+	Genres            []string          `json:"Genres"`
+	Tags              []string          `json:"Tags"`
+	PremiereDate      string            `json:"PremiereDate"`
+	EndDate           string            `json:"EndDate"`
+	ProviderIDs       ProviderIDs       `json:"ProviderIds"`
+	ImageTags         map[string]string `json:"ImageTags"`
+	BackdropImageTags []string          `json:"BackdropImageTags"`
+	LockData          bool              `json:"LockData"`
+	LockedFields      []string          `json:"LockedFields"`
+}
