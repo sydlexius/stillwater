@@ -780,6 +780,93 @@ func TestGetByMBIDAndLibrary(t *testing.T) {
 	}
 }
 
+func TestUpdateProviderFetchedAt(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	a := testArtist("FetchTest", "/music/FetchTest")
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	beforeUpdate, err := svc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetByID before: %v", err)
+	}
+	beforeTime := beforeUpdate.UpdatedAt
+
+	// Update fetched_at for audiodb
+	if err := svc.UpdateProviderFetchedAt(ctx, a.ID, "audiodb"); err != nil {
+		t.Fatalf("UpdateProviderFetchedAt(audiodb): %v", err)
+	}
+
+	got, err := svc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetByID after: %v", err)
+	}
+	if got.AudioDBIDFetchedAt == nil {
+		t.Fatal("expected AudioDBIDFetchedAt to be set")
+	}
+	if !got.UpdatedAt.After(beforeTime) && got.UpdatedAt != beforeTime {
+		t.Errorf("UpdatedAt not bumped: before=%v, after=%v", beforeTime, got.UpdatedAt)
+	}
+
+	// Invalid provider returns error
+	if err := svc.UpdateProviderFetchedAt(ctx, a.ID, "soundcloud"); err == nil {
+		t.Error("expected error for unknown provider")
+	}
+}
+
+func TestFetchedAt_EmptyProviderID_RoundTrip(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	now := time.Now().UTC().Truncate(time.Second)
+
+	// Create artist with empty AudioDBID but non-nil FetchedAt
+	// (the "fetched but not found" state)
+	a := testArtist("FetchedNotFound", "/music/FetchedNotFound")
+	a.AudioDBID = ""
+	a.AudioDBIDFetchedAt = &now
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	got, err := svc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if got.AudioDBID != "" {
+		t.Errorf("AudioDBID = %q, want empty", got.AudioDBID)
+	}
+	if got.AudioDBIDFetchedAt == nil {
+		t.Fatal("expected AudioDBIDFetchedAt to survive round-trip")
+	}
+	if got.AudioDBIDFetchedAt.Unix() != now.Unix() {
+		t.Errorf("AudioDBIDFetchedAt = %v, want %v", got.AudioDBIDFetchedAt, now)
+	}
+
+	// Also test LastFM (FetchedAt-only provider with no ID field)
+	a2 := testArtist("LastFMOnly", "/music/LastFMOnly")
+	a2.LastFMFetchedAt = &now
+	if err := svc.Create(ctx, a2); err != nil {
+		t.Fatalf("Create lastfm: %v", err)
+	}
+
+	got2, err := svc.GetByID(ctx, a2.ID)
+	if err != nil {
+		t.Fatalf("GetByID lastfm: %v", err)
+	}
+	if got2.LastFMFetchedAt == nil {
+		t.Fatal("expected LastFMFetchedAt to survive round-trip")
+	}
+	if got2.LastFMFetchedAt.Unix() != now.Unix() {
+		t.Errorf("LastFMFetchedAt = %v, want %v", got2.LastFMFetchedAt, now)
+	}
+}
+
 func TestList_LibraryIDFilter(t *testing.T) {
 	db := setupTestDB(t)
 	svc := NewService(db)

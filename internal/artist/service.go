@@ -72,7 +72,10 @@ func (s *Service) GetByID(ctx context.Context, id string) (*Artist, error) {
 	if err := s.hydrateProviderIDs(ctx, a); err != nil {
 		return nil, err
 	}
-	return a, s.hydrateImages(ctx, a)
+	if err := s.hydrateImages(ctx, a); err != nil {
+		return nil, err
+	}
+	return a, nil
 }
 
 // GetByMBID retrieves an artist by MusicBrainz ID, including provider IDs and image metadata.
@@ -84,7 +87,10 @@ func (s *Service) GetByMBID(ctx context.Context, mbid string) (*Artist, error) {
 	if err := s.hydrateProviderIDs(ctx, a); err != nil {
 		return nil, err
 	}
-	return a, s.hydrateImages(ctx, a)
+	if err := s.hydrateImages(ctx, a); err != nil {
+		return nil, err
+	}
+	return a, nil
 }
 
 // GetByProviderID retrieves an artist by a provider-specific ID, including all provider IDs
@@ -98,7 +104,10 @@ func (s *Service) GetByProviderID(ctx context.Context, provider, id string) (*Ar
 	if err := s.hydrateProviderIDs(ctx, a); err != nil {
 		return nil, err
 	}
-	return a, s.hydrateImages(ctx, a)
+	if err := s.hydrateImages(ctx, a); err != nil {
+		return nil, err
+	}
+	return a, nil
 }
 
 // GetByNameAndLibrary retrieves an artist by name within a specific library.
@@ -111,7 +120,10 @@ func (s *Service) GetByNameAndLibrary(ctx context.Context, name, libraryID strin
 	if err := s.hydrateProviderIDs(ctx, a); err != nil {
 		return nil, err
 	}
-	return a, s.hydrateImages(ctx, a)
+	if err := s.hydrateImages(ctx, a); err != nil {
+		return nil, err
+	}
+	return a, nil
 }
 
 // GetByMBIDAndLibrary retrieves an artist by MusicBrainz ID within a specific library.
@@ -124,7 +136,10 @@ func (s *Service) GetByMBIDAndLibrary(ctx context.Context, mbid, libraryID strin
 	if err := s.hydrateProviderIDs(ctx, a); err != nil {
 		return nil, err
 	}
-	return a, s.hydrateImages(ctx, a)
+	if err := s.hydrateImages(ctx, a); err != nil {
+		return nil, err
+	}
+	return a, nil
 }
 
 // GetByPath retrieves an artist by filesystem path, including provider IDs and image metadata.
@@ -136,7 +151,10 @@ func (s *Service) GetByPath(ctx context.Context, path string) (*Artist, error) {
 	if err := s.hydrateProviderIDs(ctx, a); err != nil {
 		return nil, err
 	}
-	return a, s.hydrateImages(ctx, a)
+	if err := s.hydrateImages(ctx, a); err != nil {
+		return nil, err
+	}
+	return a, nil
 }
 
 // List returns a paginated list of artists and the total count, with provider IDs

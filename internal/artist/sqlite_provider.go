@@ -158,8 +158,14 @@ func (r *sqliteProviderIDRepo) UpdateProviderFetchedAt(ctx context.Context, arti
 		return fmt.Errorf("unknown provider for fetched_at: %s", prov)
 	}
 
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
 	now := time.Now().UTC().Format(time.RFC3339)
-	_, err := r.db.ExecContext(ctx,
+	_, err = tx.ExecContext(ctx,
 		`INSERT INTO artist_provider_ids (artist_id, provider, provider_id, fetched_at)
 		VALUES (?, ?, '', ?)
 		ON CONFLICT(artist_id, provider) DO UPDATE SET fetched_at = ?`,
@@ -168,11 +174,11 @@ func (r *sqliteProviderIDRepo) UpdateProviderFetchedAt(ctx context.Context, arti
 		return fmt.Errorf("updating %s fetched_at for artist %s: %w", prov, artistID, err)
 	}
 
-	// Also bump artist updated_at
-	_, err = r.db.ExecContext(ctx,
+	_, err = tx.ExecContext(ctx,
 		`UPDATE artists SET updated_at = ? WHERE id = ?`, now, artistID)
 	if err != nil {
 		return fmt.Errorf("updating artist updated_at: %w", err)
 	}
-	return nil
+
+	return tx.Commit()
 }
