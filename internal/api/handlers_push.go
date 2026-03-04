@@ -30,8 +30,8 @@ func (r *Router) handlePushMetadata(w http.ResponseWriter, req *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
 	}
-	if body.ConnectionID == "" || body.PlatformArtistID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "connection_id and platform_artist_id are required"})
+	if body.ConnectionID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "connection_id is required"})
 		return
 	}
 
@@ -43,6 +43,21 @@ func (r *Router) handlePushMetadata(w http.ResponseWriter, req *http.Request) {
 	if !conn.Enabled {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "connection is disabled"})
 		return
+	}
+
+	// Auto-lookup platform artist ID if not provided.
+	if body.PlatformArtistID == "" {
+		stored, lookupErr := r.artistService.GetPlatformID(req.Context(), artistID, body.ConnectionID)
+		if lookupErr != nil {
+			r.logger.Error("looking up platform id", "artist_id", artistID, "connection_id", body.ConnectionID, "error", lookupErr)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+			return
+		}
+		if stored == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "platform_artist_id is required (no stored mapping found)"})
+			return
+		}
+		body.PlatformArtistID = stored
 	}
 
 	data := connection.ArtistPushData{
@@ -101,12 +116,9 @@ func (r *Router) handlePushImages(w http.ResponseWriter, req *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
 	}
-	if body.ConnectionID == "" || body.PlatformArtistID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "connection_id and platform_artist_id are required"})
+	if body.ConnectionID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "connection_id is required"})
 		return
-	}
-	if len(body.ImageTypes) == 0 {
-		body.ImageTypes = []string{"thumb", "fanart", "logo", "banner"}
 	}
 
 	conn, err := r.connectionService.GetByID(req.Context(), body.ConnectionID)
@@ -117,6 +129,25 @@ func (r *Router) handlePushImages(w http.ResponseWriter, req *http.Request) {
 	if !conn.Enabled {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "connection is disabled"})
 		return
+	}
+
+	// Auto-lookup platform artist ID if not provided.
+	if body.PlatformArtistID == "" {
+		stored, lookupErr := r.artistService.GetPlatformID(req.Context(), artistID, body.ConnectionID)
+		if lookupErr != nil {
+			r.logger.Error("looking up platform id", "artist_id", artistID, "connection_id", body.ConnectionID, "error", lookupErr)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+			return
+		}
+		if stored == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "platform_artist_id is required (no stored mapping found)"})
+			return
+		}
+		body.PlatformArtistID = stored
+	}
+
+	if len(body.ImageTypes) == 0 {
+		body.ImageTypes = []string{"thumb", "fanart", "logo", "banner"}
 	}
 
 	var uploader connection.ImageUploader
