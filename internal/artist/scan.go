@@ -8,15 +8,12 @@ import (
 )
 
 // artistColumns is the ordered list of columns for SELECT queries.
+// Provider IDs are stored in artist_provider_ids, image metadata in artist_images.
 const artistColumns = `id, name, sort_name, type, gender, disambiguation,
-	musicbrainz_id, audiodb_id, discogs_id, wikidata_id, deezer_id, spotify_id,
 	genres, styles, moods,
 	years_active, born, formed, died, disbanded, biography,
-	path, library_id, nfo_exists, thumb_exists, fanart_exists, fanart_count, logo_exists, banner_exists,
-	thumb_low_res, fanart_low_res, logo_low_res, banner_low_res,
-	thumb_placeholder, fanart_placeholder, logo_placeholder, banner_placeholder,
+	path, library_id, nfo_exists,
 	health_score, is_excluded, exclusion_reason, is_classical, metadata_sources,
-	audiodb_id_fetched_at, discogs_id_fetched_at, wikidata_id_fetched_at, lastfm_id_fetched_at,
 	last_scanned_at, created_at, updated_at`
 
 // prefixedArtistColumns returns artistColumns with each column prefixed by the given table alias.
@@ -29,81 +26,64 @@ func prefixedArtistColumns(table string) string {
 	return strings.Join(cols, ", ")
 }
 
+// scannedArtist holds intermediate scan targets for the artist columns.
+type scannedArtist struct {
+	a               Artist
+	genres          string
+	styles          string
+	moods           string
+	libraryID       sql.NullString
+	metadataSources string
+	lastScannedAt   sql.NullString
+	nfo             int
+	isExcluded      int
+	isClassical     int
+	createdAt       string
+	updatedAt       string
+}
+
+// scanPtrs returns the ordered slice of pointers matching artistColumns.
+func (s *scannedArtist) scanPtrs() []any {
+	return []any{
+		&s.a.ID, &s.a.Name, &s.a.SortName, &s.a.Type, &s.a.Gender, &s.a.Disambiguation,
+		&s.genres, &s.styles, &s.moods,
+		&s.a.YearsActive, &s.a.Born, &s.a.Formed, &s.a.Died, &s.a.Disbanded, &s.a.Biography,
+		&s.a.Path, &s.libraryID, &s.nfo,
+		&s.a.HealthScore, &s.isExcluded, &s.a.ExclusionReason, &s.isClassical,
+		&s.metadataSources,
+		&s.lastScannedAt,
+		&s.createdAt, &s.updatedAt,
+	}
+}
+
+// apply converts intermediate scan values into the Artist struct fields.
+func (s *scannedArtist) apply() {
+	if s.libraryID.Valid {
+		s.a.LibraryID = s.libraryID.String
+	}
+	s.a.Genres = UnmarshalStringSlice(s.genres)
+	s.a.Styles = UnmarshalStringSlice(s.styles)
+	s.a.Moods = UnmarshalStringSlice(s.moods)
+	s.a.NFOExists = s.nfo == 1
+	s.a.IsExcluded = s.isExcluded == 1
+	s.a.IsClassical = s.isClassical == 1
+	s.a.MetadataSources = UnmarshalStringMap(s.metadataSources)
+	if s.lastScannedAt.Valid {
+		t := dbutil.ParseTime(s.lastScannedAt.String)
+		s.a.LastScannedAt = &t
+	}
+	s.a.CreatedAt = dbutil.ParseTime(s.createdAt)
+	s.a.UpdatedAt = dbutil.ParseTime(s.updatedAt)
+}
+
 // scanArtist scans a database row into an Artist struct.
 func scanArtist(row interface{ Scan(...any) error }) (*Artist, error) {
-	var a Artist
-	var genres, styles, moods string
-	var libraryID sql.NullString
-	var metadataSources string
-	var audiodbFetchedAt, discogsFetchedAt, wikidataFetchedAt, lastfmFetchedAt sql.NullString
-	var lastScannedAt sql.NullString
-	var nfo, thumb, fanart, fanartCount, logo, banner int
-	var thumbLowRes, fanartLowRes, logoLowRes, bannerLowRes int
-	var isExcluded, isClassical int
-	var createdAt, updatedAt string
-
-	err := row.Scan(
-		&a.ID, &a.Name, &a.SortName, &a.Type, &a.Gender, &a.Disambiguation,
-		&a.MusicBrainzID, &a.AudioDBID, &a.DiscogsID, &a.WikidataID, &a.DeezerID, &a.SpotifyID,
-		&genres, &styles, &moods,
-		&a.YearsActive, &a.Born, &a.Formed, &a.Died, &a.Disbanded, &a.Biography,
-		&a.Path, &libraryID, &nfo, &thumb, &fanart, &fanartCount, &logo, &banner,
-		&thumbLowRes, &fanartLowRes, &logoLowRes, &bannerLowRes,
-		&a.ThumbPlaceholder, &a.FanartPlaceholder, &a.LogoPlaceholder, &a.BannerPlaceholder,
-		&a.HealthScore, &isExcluded, &a.ExclusionReason, &isClassical,
-		&metadataSources,
-		&audiodbFetchedAt, &discogsFetchedAt, &wikidataFetchedAt, &lastfmFetchedAt,
-		&lastScannedAt,
-		&createdAt, &updatedAt,
-	)
-	if err != nil {
+	var s scannedArtist
+	if err := row.Scan(s.scanPtrs()...); err != nil {
 		return nil, err
 	}
-
-	if libraryID.Valid {
-		a.LibraryID = libraryID.String
-	}
-	a.Genres = UnmarshalStringSlice(genres)
-	a.Styles = UnmarshalStringSlice(styles)
-	a.Moods = UnmarshalStringSlice(moods)
-	a.NFOExists = nfo == 1
-	a.ThumbExists = thumb == 1
-	a.FanartExists = fanart == 1
-	a.FanartCount = fanartCount
-	a.LogoExists = logo == 1
-	a.BannerExists = banner == 1
-	a.ThumbLowRes = thumbLowRes == 1
-	a.FanartLowRes = fanartLowRes == 1
-	a.LogoLowRes = logoLowRes == 1
-	a.BannerLowRes = bannerLowRes == 1
-	a.IsExcluded = isExcluded == 1
-	a.IsClassical = isClassical == 1
-	a.MetadataSources = UnmarshalStringMap(metadataSources)
-	a.CreatedAt = dbutil.ParseTime(createdAt)
-	a.UpdatedAt = dbutil.ParseTime(updatedAt)
-
-	if audiodbFetchedAt.Valid {
-		t := dbutil.ParseTime(audiodbFetchedAt.String)
-		a.AudioDBIDFetchedAt = &t
-	}
-	if discogsFetchedAt.Valid {
-		t := dbutil.ParseTime(discogsFetchedAt.String)
-		a.DiscogsIDFetchedAt = &t
-	}
-	if wikidataFetchedAt.Valid {
-		t := dbutil.ParseTime(wikidataFetchedAt.String)
-		a.WikidataIDFetchedAt = &t
-	}
-	if lastfmFetchedAt.Valid {
-		t := dbutil.ParseTime(lastfmFetchedAt.String)
-		a.LastFMFetchedAt = &t
-	}
-	if lastScannedAt.Valid {
-		t := dbutil.ParseTime(lastScannedAt.String)
-		a.LastScannedAt = &t
-	}
-
-	return &a, nil
+	s.apply()
+	return &s.a, nil
 }
 
 // scanMember scans a database row into a BandMember struct.
@@ -145,79 +125,16 @@ func scanArtistWithExtra(row interface{ Scan(...any) error }, n int) (*artistWit
 		extraPtrs[i] = &extra[i]
 	}
 
-	var a Artist
-	var genres, styles, moods string
-	var libraryID sql.NullString
-	var metadataSources string
-	var audiodbFetchedAt, discogsFetchedAt, wikidataFetchedAt, lastfmFetchedAt sql.NullString
-	var lastScannedAt sql.NullString
-	var nfo, thumb, fanart, fanartCount, logo, banner int
-	var thumbLowRes, fanartLowRes, logoLowRes, bannerLowRes int
-	var isExcluded, isClassical int
-	var createdAt, updatedAt string
-
-	args := []any{
-		&a.ID, &a.Name, &a.SortName, &a.Type, &a.Gender, &a.Disambiguation,
-		&a.MusicBrainzID, &a.AudioDBID, &a.DiscogsID, &a.WikidataID, &a.DeezerID, &a.SpotifyID,
-		&genres, &styles, &moods,
-		&a.YearsActive, &a.Born, &a.Formed, &a.Died, &a.Disbanded, &a.Biography,
-		&a.Path, &libraryID, &nfo, &thumb, &fanart, &fanartCount, &logo, &banner,
-		&thumbLowRes, &fanartLowRes, &logoLowRes, &bannerLowRes,
-		&a.ThumbPlaceholder, &a.FanartPlaceholder, &a.LogoPlaceholder, &a.BannerPlaceholder,
-		&a.HealthScore, &isExcluded, &a.ExclusionReason, &isClassical,
-		&metadataSources,
-		&audiodbFetchedAt, &discogsFetchedAt, &wikidataFetchedAt, &lastfmFetchedAt,
-		&lastScannedAt, &createdAt, &updatedAt,
-	}
+	var s scannedArtist
+	args := s.scanPtrs()
 	args = append(args, extraPtrs...)
 
 	if err := row.Scan(args...); err != nil {
 		return nil, err
 	}
+	s.apply()
 
-	if libraryID.Valid {
-		a.LibraryID = libraryID.String
-	}
-	a.Genres = UnmarshalStringSlice(genres)
-	a.Styles = UnmarshalStringSlice(styles)
-	a.Moods = UnmarshalStringSlice(moods)
-	a.NFOExists = nfo == 1
-	a.ThumbExists = thumb == 1
-	a.FanartExists = fanart == 1
-	a.FanartCount = fanartCount
-	a.LogoExists = logo == 1
-	a.BannerExists = banner == 1
-	a.ThumbLowRes = thumbLowRes == 1
-	a.FanartLowRes = fanartLowRes == 1
-	a.LogoLowRes = logoLowRes == 1
-	a.BannerLowRes = bannerLowRes == 1
-	a.IsExcluded = isExcluded == 1
-	a.IsClassical = isClassical == 1
-	a.MetadataSources = UnmarshalStringMap(metadataSources)
-	if audiodbFetchedAt.Valid {
-		t := dbutil.ParseTime(audiodbFetchedAt.String)
-		a.AudioDBIDFetchedAt = &t
-	}
-	if discogsFetchedAt.Valid {
-		t := dbutil.ParseTime(discogsFetchedAt.String)
-		a.DiscogsIDFetchedAt = &t
-	}
-	if wikidataFetchedAt.Valid {
-		t := dbutil.ParseTime(wikidataFetchedAt.String)
-		a.WikidataIDFetchedAt = &t
-	}
-	if lastfmFetchedAt.Valid {
-		t := dbutil.ParseTime(lastfmFetchedAt.String)
-		a.LastFMFetchedAt = &t
-	}
-	if lastScannedAt.Valid {
-		t := dbutil.ParseTime(lastScannedAt.String)
-		a.LastScannedAt = &t
-	}
-	a.CreatedAt = dbutil.ParseTime(createdAt)
-	a.UpdatedAt = dbutil.ParseTime(updatedAt)
-
-	return &artistWithExtra{artist: a, extra: extra}, nil
+	return &artistWithExtra{artist: s.a, extra: extra}, nil
 }
 
 // validatedOrderClause returns a safe ORDER BY column expression from
@@ -265,15 +182,15 @@ func buildWhereClause(params ListParams) (string, []any) {
 	case "missing_nfo":
 		conditions = append(conditions, "nfo_exists = 0")
 	case "missing_thumb":
-		conditions = append(conditions, "thumb_exists = 0")
+		conditions = append(conditions, "NOT EXISTS (SELECT 1 FROM artist_images WHERE artist_id = artists.id AND image_type = 'thumb' AND exists_flag = 1)")
 	case "missing_fanart":
-		conditions = append(conditions, "fanart_exists = 0")
+		conditions = append(conditions, "NOT EXISTS (SELECT 1 FROM artist_images WHERE artist_id = artists.id AND image_type = 'fanart' AND exists_flag = 1)")
 	case "missing_logo":
-		conditions = append(conditions, "logo_exists = 0")
+		conditions = append(conditions, "NOT EXISTS (SELECT 1 FROM artist_images WHERE artist_id = artists.id AND image_type = 'logo' AND exists_flag = 1)")
 	case "missing_banner":
-		conditions = append(conditions, "banner_exists = 0")
+		conditions = append(conditions, "NOT EXISTS (SELECT 1 FROM artist_images WHERE artist_id = artists.id AND image_type = 'banner' AND exists_flag = 1)")
 	case "missing_mbid":
-		conditions = append(conditions, "(musicbrainz_id IS NULL OR musicbrainz_id = '')")
+		conditions = append(conditions, "NOT EXISTS (SELECT 1 FROM artist_provider_ids WHERE artist_id = artists.id AND provider = 'musicbrainz')")
 	case "excluded":
 		conditions = append(conditions, "is_excluded = 1")
 	case "not_excluded":

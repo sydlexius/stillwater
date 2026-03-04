@@ -65,30 +65,19 @@ func (r *sqliteArtistRepo) Create(ctx context.Context, a *Artist) error {
 	_, err := r.db.ExecContext(ctx, `
 		INSERT INTO artists (
 			id, name, sort_name, type, gender, disambiguation,
-			musicbrainz_id, audiodb_id, discogs_id, wikidata_id, deezer_id, spotify_id,
 			genres, styles, moods,
 			years_active, born, formed, died, disbanded, biography,
-			path, library_id, nfo_exists, thumb_exists, fanart_exists, fanart_count, logo_exists, banner_exists,
-			thumb_low_res, fanart_low_res, logo_low_res, banner_low_res,
-			thumb_placeholder, fanart_placeholder, logo_placeholder, banner_placeholder,
+			path, library_id, nfo_exists,
 			health_score, is_excluded, exclusion_reason, is_classical, metadata_sources,
-			audiodb_id_fetched_at, discogs_id_fetched_at, wikidata_id_fetched_at, lastfm_id_fetched_at,
 			last_scanned_at, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		a.ID, a.Name, a.SortName, a.Type, a.Gender, a.Disambiguation,
-		a.MusicBrainzID, a.AudioDBID, a.DiscogsID, a.WikidataID, a.DeezerID, a.SpotifyID,
 		MarshalStringSlice(a.Genres), MarshalStringSlice(a.Styles), MarshalStringSlice(a.Moods),
 		a.YearsActive, a.Born, a.Formed, a.Died, a.Disbanded, a.Biography,
-		a.Path, dbutil.NullableString(a.LibraryID), dbutil.BoolToInt(a.NFOExists), dbutil.BoolToInt(a.ThumbExists),
-		dbutil.BoolToInt(a.FanartExists), a.FanartCount, dbutil.BoolToInt(a.LogoExists), dbutil.BoolToInt(a.BannerExists),
-		dbutil.BoolToInt(a.ThumbLowRes), dbutil.BoolToInt(a.FanartLowRes),
-		dbutil.BoolToInt(a.LogoLowRes), dbutil.BoolToInt(a.BannerLowRes),
-		a.ThumbPlaceholder, a.FanartPlaceholder, a.LogoPlaceholder, a.BannerPlaceholder,
+		a.Path, dbutil.NullableString(a.LibraryID), dbutil.BoolToInt(a.NFOExists),
 		a.HealthScore, dbutil.BoolToInt(a.IsExcluded), a.ExclusionReason, dbutil.BoolToInt(a.IsClassical),
 		MarshalStringMap(a.MetadataSources),
-		dbutil.FormatNullableTime(a.AudioDBIDFetchedAt), dbutil.FormatNullableTime(a.DiscogsIDFetchedAt),
-		dbutil.FormatNullableTime(a.WikidataIDFetchedAt), dbutil.FormatNullableTime(a.LastFMFetchedAt),
 		dbutil.FormatNullableTime(a.LastScannedAt),
 		now.Format(time.RFC3339), now.Format(time.RFC3339),
 	)
@@ -112,7 +101,8 @@ func (r *sqliteArtistRepo) GetByID(ctx context.Context, id string) (*Artist, err
 
 func (r *sqliteArtistRepo) GetByMBID(ctx context.Context, mbid string) (*Artist, error) {
 	row := r.db.QueryRowContext(ctx,
-		`SELECT `+artistColumns+` FROM artists WHERE musicbrainz_id = ?`, mbid)
+		`SELECT `+artistColumns+` FROM artists
+		WHERE id = (SELECT artist_id FROM artist_provider_ids WHERE provider = 'musicbrainz' AND provider_id = ? LIMIT 1)`, mbid)
 	a, err := scanArtist(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -125,7 +115,9 @@ func (r *sqliteArtistRepo) GetByMBID(ctx context.Context, mbid string) (*Artist,
 
 func (r *sqliteArtistRepo) GetByMBIDAndLibrary(ctx context.Context, mbid, libraryID string) (*Artist, error) {
 	row := r.db.QueryRowContext(ctx,
-		`SELECT `+artistColumns+` FROM artists WHERE musicbrainz_id = ? AND library_id = ?`, mbid, libraryID)
+		`SELECT `+artistColumns+` FROM artists
+		WHERE id IN (SELECT artist_id FROM artist_provider_ids WHERE provider = 'musicbrainz' AND provider_id = ?)
+		AND library_id = ?`, mbid, libraryID)
 	a, err := scanArtist(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -206,33 +198,20 @@ func (r *sqliteArtistRepo) Update(ctx context.Context, a *Artist) error {
 	_, err := r.db.ExecContext(ctx, `
 		UPDATE artists SET
 			name = ?, sort_name = ?, type = ?, gender = ?, disambiguation = ?,
-			musicbrainz_id = ?, audiodb_id = ?, discogs_id = ?, wikidata_id = ?, deezer_id = ?, spotify_id = ?,
 			genres = ?, styles = ?, moods = ?,
 			years_active = ?, born = ?, formed = ?, died = ?, disbanded = ?, biography = ?,
-			path = ?, library_id = ?,
-			nfo_exists = ?, thumb_exists = ?, fanart_exists = ?, fanart_count = ?, logo_exists = ?, banner_exists = ?,
-			thumb_low_res = ?, fanart_low_res = ?, logo_low_res = ?, banner_low_res = ?,
-			thumb_placeholder = ?, fanart_placeholder = ?, logo_placeholder = ?, banner_placeholder = ?,
+			path = ?, library_id = ?, nfo_exists = ?,
 			health_score = ?, is_excluded = ?, exclusion_reason = ?, is_classical = ?,
 			metadata_sources = ?,
-			audiodb_id_fetched_at = ?, discogs_id_fetched_at = ?, wikidata_id_fetched_at = ?, lastfm_id_fetched_at = ?,
 			last_scanned_at = ?, updated_at = ?
 		WHERE id = ?
 	`,
 		a.Name, a.SortName, a.Type, a.Gender, a.Disambiguation,
-		a.MusicBrainzID, a.AudioDBID, a.DiscogsID, a.WikidataID, a.DeezerID, a.SpotifyID,
 		MarshalStringSlice(a.Genres), MarshalStringSlice(a.Styles), MarshalStringSlice(a.Moods),
 		a.YearsActive, a.Born, a.Formed, a.Died, a.Disbanded, a.Biography,
-		a.Path, dbutil.NullableString(a.LibraryID),
-		dbutil.BoolToInt(a.NFOExists), dbutil.BoolToInt(a.ThumbExists),
-		dbutil.BoolToInt(a.FanartExists), a.FanartCount, dbutil.BoolToInt(a.LogoExists), dbutil.BoolToInt(a.BannerExists),
-		dbutil.BoolToInt(a.ThumbLowRes), dbutil.BoolToInt(a.FanartLowRes),
-		dbutil.BoolToInt(a.LogoLowRes), dbutil.BoolToInt(a.BannerLowRes),
-		a.ThumbPlaceholder, a.FanartPlaceholder, a.LogoPlaceholder, a.BannerPlaceholder,
+		a.Path, dbutil.NullableString(a.LibraryID), dbutil.BoolToInt(a.NFOExists),
 		a.HealthScore, dbutil.BoolToInt(a.IsExcluded), a.ExclusionReason, dbutil.BoolToInt(a.IsClassical),
 		MarshalStringMap(a.MetadataSources),
-		dbutil.FormatNullableTime(a.AudioDBIDFetchedAt), dbutil.FormatNullableTime(a.DiscogsIDFetchedAt),
-		dbutil.FormatNullableTime(a.WikidataIDFetchedAt), dbutil.FormatNullableTime(a.LastFMFetchedAt),
 		dbutil.FormatNullableTime(a.LastScannedAt),
 		a.UpdatedAt.Format(time.RFC3339),
 		a.ID,

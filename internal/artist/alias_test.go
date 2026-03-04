@@ -162,6 +162,13 @@ func TestFindDuplicates_SharedMBID(t *testing.T) {
 	if len(groups[0].Artists) != 2 {
 		t.Errorf("got %d artists in group, want 2", len(groups[0].Artists))
 	}
+
+	// Verify hydrateDuplicateGroups populated provider IDs from the normalized table.
+	for _, a := range groups[0].Artists {
+		if a.MusicBrainzID != "mbid-001" {
+			t.Errorf("artist %q: MusicBrainzID = %q, want %q", a.Name, a.MusicBrainzID, "mbid-001")
+		}
+	}
 }
 
 func TestFindDuplicates_SharedAlias(t *testing.T) {
