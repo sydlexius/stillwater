@@ -83,6 +83,7 @@ func (r *sqliteImageRepo) Upsert(ctx context.Context, img *ArtistImage) error {
 			width, height, phash, file_format, source)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(artist_id, image_type, slot_index) DO UPDATE SET
+			id = excluded.id,
 			exists_flag = excluded.exists_flag,
 			low_res = excluded.low_res,
 			placeholder = excluded.placeholder,

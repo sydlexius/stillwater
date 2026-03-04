@@ -50,19 +50,15 @@ func NewServiceWithRepos(
 }
 
 // Create inserts a new artist and persists its provider IDs and image metadata.
+// If normalized data persistence fails, the artist row is deleted as a
+// best-effort rollback (CASCADE handles child tables).
 func (s *Service) Create(ctx context.Context, a *Artist) error {
 	if err := s.artists.Create(ctx, a); err != nil {
 		return err
 	}
-	ids := extractProviderIDs(a)
-	if len(ids) > 0 {
-		if err := s.providers.UpsertAll(ctx, a.ID, ids); err != nil {
-			return err
-		}
-	}
-	imgs := extractImageMetadata(a)
-	if len(imgs) > 0 {
-		return s.images.UpsertAll(ctx, a.ID, imgs)
+	if err := s.persistNormalized(ctx, a); err != nil {
+		_ = s.artists.Delete(ctx, a.ID) // best-effort rollback
+		return err
 	}
 	return nil
 }
@@ -160,10 +156,20 @@ func (s *Service) List(ctx context.Context, params ListParams) ([]Artist, int, e
 }
 
 // Update modifies an existing artist and persists its provider IDs and image metadata.
+// Note: if provider or image persistence fails after the artist row is updated,
+// we cannot rollback the artist update (the old data is already overwritten).
+// In practice this is acceptable because the normalized tables use
+// delete-then-insert which is idempotent, and the next Update call will retry.
 func (s *Service) Update(ctx context.Context, a *Artist) error {
 	if err := s.artists.Update(ctx, a); err != nil {
 		return err
 	}
+	return s.persistNormalized(ctx, a)
+}
+
+// persistNormalized writes provider IDs and image metadata to the normalized
+// tables for the given artist.
+func (s *Service) persistNormalized(ctx context.Context, a *Artist) error {
 	if err := s.providers.UpsertAll(ctx, a.ID, extractProviderIDs(a)); err != nil {
 		return err
 	}
@@ -350,31 +356,56 @@ func (s *Service) FindDuplicates(ctx context.Context) ([]DuplicateGroup, error) 
 	if err != nil {
 		return nil, fmt.Errorf("finding MBID duplicates: %w", err)
 	}
-	for i := range mbidGroups {
-		if err := s.hydrateProviderIDsBatch(ctx, mbidGroups[i].Artists); err != nil {
-			return nil, err
-		}
-		if err := s.hydrateImagesBatch(ctx, mbidGroups[i].Artists); err != nil {
-			return nil, err
-		}
-	}
 	groups = append(groups, mbidGroups...)
 
 	aliasGroups, err := s.aliases.FindAliasDuplicates(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("finding alias duplicates: %w", err)
 	}
-	for i := range aliasGroups {
-		if err := s.hydrateProviderIDsBatch(ctx, aliasGroups[i].Artists); err != nil {
-			return nil, err
-		}
-		if err := s.hydrateImagesBatch(ctx, aliasGroups[i].Artists); err != nil {
-			return nil, err
-		}
-	}
 	groups = append(groups, aliasGroups...)
 
+	if err := s.hydrateDuplicateGroups(ctx, groups); err != nil {
+		return nil, err
+	}
 	return groups, nil
+}
+
+// hydrateDuplicateGroups loads provider IDs and image metadata for all artists
+// across all duplicate groups in two bulk queries (one for providers, one for images),
+// then distributes the results back to each group's artists.
+func (s *Service) hydrateDuplicateGroups(ctx context.Context, groups []DuplicateGroup) error {
+	// Collect all unique artist IDs across every group.
+	seen := make(map[string]struct{})
+	for _, g := range groups {
+		for _, a := range g.Artists {
+			seen[a.ID] = struct{}{}
+		}
+	}
+	if len(seen) == 0 {
+		return nil
+	}
+	allIDs := make([]string, 0, len(seen))
+	for id := range seen {
+		allIDs = append(allIDs, id)
+	}
+
+	provMap, err := s.providers.GetForArtists(ctx, allIDs)
+	if err != nil {
+		return fmt.Errorf("bulk hydrating provider IDs for duplicates: %w", err)
+	}
+	imgMap, err := s.images.GetForArtists(ctx, allIDs)
+	if err != nil {
+		return fmt.Errorf("bulk hydrating images for duplicates: %w", err)
+	}
+
+	for gi := range groups {
+		for ai := range groups[gi].Artists {
+			a := &groups[gi].Artists[ai]
+			applyProviderIDs(a, provMap[a.ID])
+			applyImageMetadata(a, imgMap[a.ID])
+		}
+	}
+	return nil
 }
 
 // SetPlatformID stores or updates the platform artist ID for an artist on a connection.
@@ -470,13 +501,13 @@ func extractProviderIDs(a *Artist) []ProviderID {
 	if a.MusicBrainzID != "" {
 		ids = append(ids, ProviderID{Provider: "musicbrainz", ProviderID: a.MusicBrainzID})
 	}
-	if a.AudioDBID != "" {
+	if a.AudioDBID != "" || a.AudioDBIDFetchedAt != nil {
 		ids = append(ids, ProviderID{Provider: "audiodb", ProviderID: a.AudioDBID, FetchedAt: a.AudioDBIDFetchedAt})
 	}
-	if a.DiscogsID != "" {
+	if a.DiscogsID != "" || a.DiscogsIDFetchedAt != nil {
 		ids = append(ids, ProviderID{Provider: "discogs", ProviderID: a.DiscogsID, FetchedAt: a.DiscogsIDFetchedAt})
 	}
-	if a.WikidataID != "" {
+	if a.WikidataID != "" || a.WikidataIDFetchedAt != nil {
 		ids = append(ids, ProviderID{Provider: "wikidata", ProviderID: a.WikidataID, FetchedAt: a.WikidataIDFetchedAt})
 	}
 	if a.DeezerID != "" {

@@ -128,8 +128,10 @@ func (r *sqliteProviderIDRepo) UpsertAll(ctx context.Context, artistID string, i
 		if p.Provider == "" {
 			continue
 		}
-		// For lastfm, we store empty provider_id (only fetched_at matters)
-		if p.Provider != "lastfm" && p.ProviderID == "" {
+		// Skip rows that have neither an ID nor a fetched_at timestamp.
+		// Providers like lastfm/audiodb/discogs/wikidata may store only
+		// fetched_at (empty provider_id) to record lookup attempts.
+		if p.ProviderID == "" && p.FetchedAt == nil {
 			continue
 		}
 		if _, err := stmt.ExecContext(ctx, artistID, p.Provider, p.ProviderID, dbutil.FormatNullableTime(p.FetchedAt)); err != nil {
