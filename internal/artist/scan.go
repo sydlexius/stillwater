@@ -8,13 +8,11 @@ import (
 )
 
 // artistColumns is the ordered list of columns for SELECT queries.
-// Provider IDs are stored in the artist_provider_ids table, not here.
+// Provider IDs are stored in artist_provider_ids, image metadata in artist_images.
 const artistColumns = `id, name, sort_name, type, gender, disambiguation,
 	genres, styles, moods,
 	years_active, born, formed, died, disbanded, biography,
-	path, library_id, nfo_exists, thumb_exists, fanart_exists, fanart_count, logo_exists, banner_exists,
-	thumb_low_res, fanart_low_res, logo_low_res, banner_low_res,
-	thumb_placeholder, fanart_placeholder, logo_placeholder, banner_placeholder,
+	path, library_id, nfo_exists,
 	health_score, is_excluded, exclusion_reason, is_classical, metadata_sources,
 	last_scanned_at, created_at, updated_at`
 
@@ -28,10 +26,7 @@ func prefixedArtistColumns(table string) string {
 	return strings.Join(cols, ", ")
 }
 
-// artistScanTargets returns the scan destination pointers for an Artist and
-// the intermediate variables that need post-scan conversion. Callers append
-// any extra scan targets before passing to row.Scan, then call applyScanned
-// to populate the Artist fields from the intermediates.
+// scannedArtist holds intermediate scan targets for the artist columns.
 type scannedArtist struct {
 	a               Artist
 	genres          string
@@ -41,15 +36,6 @@ type scannedArtist struct {
 	metadataSources string
 	lastScannedAt   sql.NullString
 	nfo             int
-	thumb           int
-	fanart          int
-	fanartCount     int
-	logo            int
-	banner          int
-	thumbLowRes     int
-	fanartLowRes    int
-	logoLowRes      int
-	bannerLowRes    int
 	isExcluded      int
 	isClassical     int
 	createdAt       string
@@ -62,9 +48,7 @@ func (s *scannedArtist) scanPtrs() []any {
 		&s.a.ID, &s.a.Name, &s.a.SortName, &s.a.Type, &s.a.Gender, &s.a.Disambiguation,
 		&s.genres, &s.styles, &s.moods,
 		&s.a.YearsActive, &s.a.Born, &s.a.Formed, &s.a.Died, &s.a.Disbanded, &s.a.Biography,
-		&s.a.Path, &s.libraryID, &s.nfo, &s.thumb, &s.fanart, &s.fanartCount, &s.logo, &s.banner,
-		&s.thumbLowRes, &s.fanartLowRes, &s.logoLowRes, &s.bannerLowRes,
-		&s.a.ThumbPlaceholder, &s.a.FanartPlaceholder, &s.a.LogoPlaceholder, &s.a.BannerPlaceholder,
+		&s.a.Path, &s.libraryID, &s.nfo,
 		&s.a.HealthScore, &s.isExcluded, &s.a.ExclusionReason, &s.isClassical,
 		&s.metadataSources,
 		&s.lastScannedAt,
@@ -81,15 +65,6 @@ func (s *scannedArtist) apply() {
 	s.a.Styles = UnmarshalStringSlice(s.styles)
 	s.a.Moods = UnmarshalStringSlice(s.moods)
 	s.a.NFOExists = s.nfo == 1
-	s.a.ThumbExists = s.thumb == 1
-	s.a.FanartExists = s.fanart == 1
-	s.a.FanartCount = s.fanartCount
-	s.a.LogoExists = s.logo == 1
-	s.a.BannerExists = s.banner == 1
-	s.a.ThumbLowRes = s.thumbLowRes == 1
-	s.a.FanartLowRes = s.fanartLowRes == 1
-	s.a.LogoLowRes = s.logoLowRes == 1
-	s.a.BannerLowRes = s.bannerLowRes == 1
 	s.a.IsExcluded = s.isExcluded == 1
 	s.a.IsClassical = s.isClassical == 1
 	s.a.MetadataSources = UnmarshalStringMap(s.metadataSources)
@@ -207,13 +182,13 @@ func buildWhereClause(params ListParams) (string, []any) {
 	case "missing_nfo":
 		conditions = append(conditions, "nfo_exists = 0")
 	case "missing_thumb":
-		conditions = append(conditions, "thumb_exists = 0")
+		conditions = append(conditions, "NOT EXISTS (SELECT 1 FROM artist_images WHERE artist_id = artists.id AND image_type = 'thumb' AND exists_flag = 1)")
 	case "missing_fanart":
-		conditions = append(conditions, "fanart_exists = 0")
+		conditions = append(conditions, "NOT EXISTS (SELECT 1 FROM artist_images WHERE artist_id = artists.id AND image_type = 'fanart' AND exists_flag = 1)")
 	case "missing_logo":
-		conditions = append(conditions, "logo_exists = 0")
+		conditions = append(conditions, "NOT EXISTS (SELECT 1 FROM artist_images WHERE artist_id = artists.id AND image_type = 'logo' AND exists_flag = 1)")
 	case "missing_banner":
-		conditions = append(conditions, "banner_exists = 0")
+		conditions = append(conditions, "NOT EXISTS (SELECT 1 FROM artist_images WHERE artist_id = artists.id AND image_type = 'banner' AND exists_flag = 1)")
 	case "missing_mbid":
 		conditions = append(conditions, "NOT EXISTS (SELECT 1 FROM artist_provider_ids WHERE artist_id = artists.id AND provider = 'musicbrainz')")
 	case "excluded":

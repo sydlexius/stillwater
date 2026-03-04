@@ -47,6 +47,15 @@ type AliasRepository interface {
 	FindAliasDuplicates(ctx context.Context) ([]DuplicateGroup, error)
 }
 
+// ImageRepository manages artist image metadata records.
+type ImageRepository interface {
+	GetForArtist(ctx context.Context, artistID string) ([]ArtistImage, error)
+	GetForArtists(ctx context.Context, artistIDs []string) (map[string][]ArtistImage, error)
+	Upsert(ctx context.Context, img *ArtistImage) error
+	UpsertAll(ctx context.Context, artistID string, images []ArtistImage) error
+	DeleteByArtistID(ctx context.Context, artistID string) error
+}
+
 // PlatformIDRepository manages platform ID mappings between Stillwater
 // artists and their IDs on external connections (Emby, Jellyfin, Lidarr).
 type PlatformIDRepository interface {

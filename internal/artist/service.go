@@ -13,6 +13,7 @@ type Service struct {
 	providers   ProviderIDRepository
 	members     MemberRepository
 	aliases     AliasRepository
+	images      ImageRepository
 	platformIDs PlatformIDRepository
 }
 
@@ -23,6 +24,7 @@ func NewService(db *sql.DB) *Service {
 		providers:   newSQLiteProviderIDRepo(db),
 		members:     newSQLiteMemberRepo(db),
 		aliases:     newSQLiteAliasRepo(db),
+		images:      newSQLiteImageRepo(db),
 		platformIDs: newSQLitePlatformIDRepo(db),
 	}
 }
@@ -34,6 +36,7 @@ func NewServiceWithRepos(
 	providers ProviderIDRepository,
 	members MemberRepository,
 	aliases AliasRepository,
+	images ImageRepository,
 	platformIDs PlatformIDRepository,
 ) *Service {
 	return &Service{
@@ -41,48 +44,65 @@ func NewServiceWithRepos(
 		providers:   providers,
 		members:     members,
 		aliases:     aliases,
+		images:      images,
 		platformIDs: platformIDs,
 	}
 }
 
-// Create inserts a new artist and persists its provider IDs.
+// Create inserts a new artist and persists its provider IDs and image metadata.
 func (s *Service) Create(ctx context.Context, a *Artist) error {
 	if err := s.artists.Create(ctx, a); err != nil {
 		return err
 	}
 	ids := extractProviderIDs(a)
 	if len(ids) > 0 {
-		return s.providers.UpsertAll(ctx, a.ID, ids)
+		if err := s.providers.UpsertAll(ctx, a.ID, ids); err != nil {
+			return err
+		}
+	}
+	imgs := extractImageMetadata(a)
+	if len(imgs) > 0 {
+		return s.images.UpsertAll(ctx, a.ID, imgs)
 	}
 	return nil
 }
 
-// GetByID retrieves an artist by primary key, including provider IDs.
+// GetByID retrieves an artist by primary key, including provider IDs and image metadata.
 func (s *Service) GetByID(ctx context.Context, id string) (*Artist, error) {
 	a, err := s.artists.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	return a, s.hydrateProviderIDs(ctx, a)
+	if err := s.hydrateProviderIDs(ctx, a); err != nil {
+		return nil, err
+	}
+	return a, s.hydrateImages(ctx, a)
 }
 
-// GetByMBID retrieves an artist by MusicBrainz ID, including provider IDs.
+// GetByMBID retrieves an artist by MusicBrainz ID, including provider IDs and image metadata.
 func (s *Service) GetByMBID(ctx context.Context, mbid string) (*Artist, error) {
 	a, err := s.artists.GetByMBID(ctx, mbid)
 	if err != nil || a == nil {
 		return a, err
 	}
-	return a, s.hydrateProviderIDs(ctx, a)
+	if err := s.hydrateProviderIDs(ctx, a); err != nil {
+		return nil, err
+	}
+	return a, s.hydrateImages(ctx, a)
 }
 
-// GetByProviderID retrieves an artist by a provider-specific ID, including all provider IDs.
+// GetByProviderID retrieves an artist by a provider-specific ID, including all provider IDs
+// and image metadata.
 // Supported providers: "musicbrainz", "audiodb", "discogs", "wikidata", "deezer", "spotify".
 func (s *Service) GetByProviderID(ctx context.Context, provider, id string) (*Artist, error) {
 	a, err := s.providers.GetByProviderID(ctx, provider, id)
 	if err != nil || a == nil {
 		return a, err
 	}
-	return a, s.hydrateProviderIDs(ctx, a)
+	if err := s.hydrateProviderIDs(ctx, a); err != nil {
+		return nil, err
+	}
+	return a, s.hydrateImages(ctx, a)
 }
 
 // GetByNameAndLibrary retrieves an artist by name within a specific library.
@@ -92,7 +112,10 @@ func (s *Service) GetByNameAndLibrary(ctx context.Context, name, libraryID strin
 	if err != nil || a == nil {
 		return a, err
 	}
-	return a, s.hydrateProviderIDs(ctx, a)
+	if err := s.hydrateProviderIDs(ctx, a); err != nil {
+		return nil, err
+	}
+	return a, s.hydrateImages(ctx, a)
 }
 
 // GetByMBIDAndLibrary retrieves an artist by MusicBrainz ID within a specific library.
@@ -102,19 +125,26 @@ func (s *Service) GetByMBIDAndLibrary(ctx context.Context, mbid, libraryID strin
 	if err != nil || a == nil {
 		return a, err
 	}
-	return a, s.hydrateProviderIDs(ctx, a)
+	if err := s.hydrateProviderIDs(ctx, a); err != nil {
+		return nil, err
+	}
+	return a, s.hydrateImages(ctx, a)
 }
 
-// GetByPath retrieves an artist by filesystem path, including provider IDs.
+// GetByPath retrieves an artist by filesystem path, including provider IDs and image metadata.
 func (s *Service) GetByPath(ctx context.Context, path string) (*Artist, error) {
 	a, err := s.artists.GetByPath(ctx, path)
 	if err != nil || a == nil {
 		return a, err
 	}
-	return a, s.hydrateProviderIDs(ctx, a)
+	if err := s.hydrateProviderIDs(ctx, a); err != nil {
+		return nil, err
+	}
+	return a, s.hydrateImages(ctx, a)
 }
 
-// List returns a paginated list of artists and the total count, with provider IDs hydrated.
+// List returns a paginated list of artists and the total count, with provider IDs
+// and image metadata hydrated.
 func (s *Service) List(ctx context.Context, params ListParams) ([]Artist, int, error) {
 	artists, total, err := s.artists.List(ctx, params)
 	if err != nil {
@@ -123,15 +153,21 @@ func (s *Service) List(ctx context.Context, params ListParams) ([]Artist, int, e
 	if err := s.hydrateProviderIDsBatch(ctx, artists); err != nil {
 		return nil, 0, err
 	}
+	if err := s.hydrateImagesBatch(ctx, artists); err != nil {
+		return nil, 0, err
+	}
 	return artists, total, nil
 }
 
-// Update modifies an existing artist and persists its provider IDs.
+// Update modifies an existing artist and persists its provider IDs and image metadata.
 func (s *Service) Update(ctx context.Context, a *Artist) error {
 	if err := s.artists.Update(ctx, a); err != nil {
 		return err
 	}
-	return s.providers.UpsertAll(ctx, a.ID, extractProviderIDs(a))
+	if err := s.providers.UpsertAll(ctx, a.ID, extractProviderIDs(a)); err != nil {
+		return err
+	}
+	return s.images.UpsertAll(ctx, a.ID, extractImageMetadata(a))
 }
 
 // IsEditableField reports whether the given field name can be updated via
@@ -215,13 +251,16 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 	return s.artists.Delete(ctx, id)
 }
 
-// Search finds artists by name substring match, with provider IDs hydrated.
+// Search finds artists by name substring match, with provider IDs and image metadata hydrated.
 func (s *Service) Search(ctx context.Context, query string) ([]Artist, error) {
 	artists, err := s.artists.Search(ctx, query)
 	if err != nil {
 		return nil, err
 	}
 	if err := s.hydrateProviderIDsBatch(ctx, artists); err != nil {
+		return nil, err
+	}
+	if err := s.hydrateImagesBatch(ctx, artists); err != nil {
 		return nil, err
 	}
 	return artists, nil
@@ -286,13 +325,17 @@ func (s *Service) ListAliases(ctx context.Context, artistID string) ([]Alias, er
 	return s.aliases.ListByArtistID(ctx, artistID)
 }
 
-// SearchWithAliases searches artists by name or alias text, with provider IDs hydrated.
+// SearchWithAliases searches artists by name or alias text, with provider IDs
+// and image metadata hydrated.
 func (s *Service) SearchWithAliases(ctx context.Context, query string) ([]Artist, error) {
 	artists, err := s.aliases.SearchWithAliases(ctx, query)
 	if err != nil {
 		return nil, err
 	}
 	if err := s.hydrateProviderIDsBatch(ctx, artists); err != nil {
+		return nil, err
+	}
+	if err := s.hydrateImagesBatch(ctx, artists); err != nil {
 		return nil, err
 	}
 	return artists, nil
@@ -311,6 +354,9 @@ func (s *Service) FindDuplicates(ctx context.Context) ([]DuplicateGroup, error) 
 		if err := s.hydrateProviderIDsBatch(ctx, mbidGroups[i].Artists); err != nil {
 			return nil, err
 		}
+		if err := s.hydrateImagesBatch(ctx, mbidGroups[i].Artists); err != nil {
+			return nil, err
+		}
 	}
 	groups = append(groups, mbidGroups...)
 
@@ -320,6 +366,9 @@ func (s *Service) FindDuplicates(ctx context.Context) ([]DuplicateGroup, error) 
 	}
 	for i := range aliasGroups {
 		if err := s.hydrateProviderIDsBatch(ctx, aliasGroups[i].Artists); err != nil {
+			return nil, err
+		}
+		if err := s.hydrateImagesBatch(ctx, aliasGroups[i].Artists); err != nil {
 			return nil, err
 		}
 	}
@@ -441,4 +490,115 @@ func extractProviderIDs(a *Artist) []ProviderID {
 	}
 
 	return ids
+}
+
+// hydrateImages loads image metadata from the normalized table and applies
+// it to the Artist struct fields.
+func (s *Service) hydrateImages(ctx context.Context, a *Artist) error {
+	imgs, err := s.images.GetForArtist(ctx, a.ID)
+	if err != nil {
+		return fmt.Errorf("hydrating images: %w", err)
+	}
+	applyImageMetadata(a, imgs)
+	return nil
+}
+
+// hydrateImagesBatch loads image metadata for multiple artists in a single query.
+func (s *Service) hydrateImagesBatch(ctx context.Context, artists []Artist) error {
+	if len(artists) == 0 {
+		return nil
+	}
+	ids := make([]string, len(artists))
+	for i := range artists {
+		ids[i] = artists[i].ID
+	}
+	imgMap, err := s.images.GetForArtists(ctx, ids)
+	if err != nil {
+		return fmt.Errorf("batch hydrating images: %w", err)
+	}
+	for i := range artists {
+		applyImageMetadata(&artists[i], imgMap[artists[i].ID])
+	}
+	return nil
+}
+
+// applyImageMetadata sets the Artist struct's image fields from the
+// normalized ArtistImage slice.
+func applyImageMetadata(a *Artist, imgs []ArtistImage) {
+	fanartCount := 0
+	for _, img := range imgs {
+		switch img.ImageType {
+		case "thumb":
+			a.ThumbExists = img.Exists
+			a.ThumbLowRes = img.LowRes
+			a.ThumbPlaceholder = img.Placeholder
+		case "fanart":
+			if img.SlotIndex == 0 {
+				a.FanartExists = img.Exists
+				a.FanartLowRes = img.LowRes
+				a.FanartPlaceholder = img.Placeholder
+			}
+			if img.Exists {
+				fanartCount++
+			}
+		case "logo":
+			a.LogoExists = img.Exists
+			a.LogoLowRes = img.LowRes
+			a.LogoPlaceholder = img.Placeholder
+		case "banner":
+			a.BannerExists = img.Exists
+			a.BannerLowRes = img.LowRes
+			a.BannerPlaceholder = img.Placeholder
+		}
+	}
+	a.FanartCount = fanartCount
+}
+
+// extractImageMetadata builds an ArtistImage slice from the Artist struct's
+// image fields, ready for persistence.
+func extractImageMetadata(a *Artist) []ArtistImage {
+	var imgs []ArtistImage
+
+	if a.ThumbExists || a.ThumbLowRes || a.ThumbPlaceholder != "" {
+		imgs = append(imgs, ArtistImage{
+			ArtistID:    a.ID,
+			ImageType:   "thumb",
+			SlotIndex:   0,
+			Exists:      a.ThumbExists,
+			LowRes:      a.ThumbLowRes,
+			Placeholder: a.ThumbPlaceholder,
+		})
+	}
+	if a.FanartExists || a.FanartLowRes || a.FanartPlaceholder != "" {
+		imgs = append(imgs, ArtistImage{
+			ArtistID:    a.ID,
+			ImageType:   "fanart",
+			SlotIndex:   0,
+			Exists:      a.FanartExists,
+			LowRes:      a.FanartLowRes,
+			Placeholder: a.FanartPlaceholder,
+		})
+	}
+	if a.LogoExists || a.LogoLowRes || a.LogoPlaceholder != "" {
+		imgs = append(imgs, ArtistImage{
+			ArtistID:    a.ID,
+			ImageType:   "logo",
+			SlotIndex:   0,
+			Exists:      a.LogoExists,
+			LowRes:      a.LogoLowRes,
+			Placeholder: a.LogoPlaceholder,
+		})
+	}
+	if a.BannerExists || a.BannerLowRes || a.BannerPlaceholder != "" {
+		imgs = append(imgs, ArtistImage{
+			ArtistID:    a.ID,
+			ImageType:   "banner",
+			SlotIndex:   0,
+			Exists:      a.BannerExists,
+			LowRes:      a.BannerLowRes,
+			Placeholder: a.BannerPlaceholder,
+		})
+	}
+
+	return imgs
 }
