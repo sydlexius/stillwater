@@ -20,9 +20,11 @@ Stillwater is a containerized, self-hosted web application for managing artist/c
 ```
 cmd/stillwater/       - Main entry point
 internal/api/         - HTTP handlers and middleware
+internal/artist/      - Artist domain model, service, and repository interfaces
 internal/auth/        - Authentication (session-based)
 internal/config/      - Configuration loading (env + YAML)
 internal/database/    - SQLite database and migrations
+internal/dbutil/      - Shared database helpers (type conversions, nullable handling)
 internal/encryption/  - AES-256-GCM encryption for secrets
 internal/nfo/         - NFO file parser and writer
 internal/provider/    - Metadata source adapters (MusicBrainz, Fanart.tv, etc.)
@@ -96,7 +98,14 @@ Key decisions from the risk review that affect implementation across milestones:
 - SQLite with WAL mode
 - Migrations managed by goose (SQL files in `internal/database/migrations/`)
 - Single writer connection (SQLite limitation)
-- Repository pattern for data access
+- Repository pattern for data access via interfaces in `internal/artist/repository.go`
+- Artist data is normalized across dedicated tables:
+  - `artists` -- core artist/composer records with provider IDs and metadata
+  - `artist_aliases` -- alternative names for search and deduplication
+  - `artist_platform_ids` -- Emby/Jellyfin/Lidarr platform-specific ID mappings
+  - `band_members` -- members of bands/groups with instruments and tenure
+  - `nfo_snapshots` -- historical NFO file versions for undo/restore
+- Shared database helpers (type conversions, nullable handling) in `internal/dbutil/`
 
 ## Versioning
 
