@@ -173,16 +173,9 @@ func (r *sqliteArtistRepo) List(ctx context.Context, params ListParams) ([]Artis
 		return nil, 0, fmt.Errorf("counting artists: %w", err)
 	}
 
-	orderCol := params.Sort
-	if params.Order == "desc" {
-		orderCol += " DESC"
-	} else {
-		orderCol += " ASC"
-	}
-
 	offset := (params.Page - 1) * params.PageSize
-	query := `SELECT ` + artistColumns + ` FROM artists` + where + //nolint:gosec // G202: orderCol is from validated params, not user input
-		` ORDER BY ` + orderCol +
+	query := `SELECT ` + artistColumns + ` FROM artists` + where + //nolint:gosec // validatedOrderClause uses allowlist; safe
+		` ORDER BY ` + validatedOrderClause(params) +
 		` LIMIT ? OFFSET ?`
 	args = append(args, params.PageSize, offset)
 

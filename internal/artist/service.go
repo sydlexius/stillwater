@@ -5,9 +5,6 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
-	"time"
-
-	"github.com/google/uuid"
 )
 
 // Service provides artist and band member data operations.
@@ -198,15 +195,13 @@ func (s *Service) AddAlias(ctx context.Context, artistID, alias, source string) 
 	// Check artist exists
 	_, err := s.artists.GetByID(ctx, artistID)
 	if err != nil {
-		return nil, fmt.Errorf("artist not found: %w", err)
+		return nil, err
 	}
 
 	a := &Alias{
-		ID:        uuid.New().String(),
-		ArtistID:  artistID,
-		Alias:     alias,
-		Source:    source,
-		CreatedAt: time.Now().UTC(),
+		ArtistID: artistID,
+		Alias:    alias,
+		Source:   source,
 	}
 
 	if err := s.aliases.Create(ctx, a); err != nil {

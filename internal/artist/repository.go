@@ -52,7 +52,3 @@ type PlatformIDRepository interface {
 	Delete(ctx context.Context, artistID, connectionID string) error
 	DeleteByArtistID(ctx context.Context, artistID string) error
 }
-
-// ImageRepository is a forward-looking interface for image metadata operations.
-// Methods will be added in #374 when image metadata is normalized into its own table.
-type ImageRepository interface{}

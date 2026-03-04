@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/sydlexius/stillwater/internal/dbutil"
 )
 
@@ -19,6 +20,13 @@ func newSQLiteAliasRepo(db *sql.DB) *sqliteAliasRepo {
 }
 
 func (r *sqliteAliasRepo) Create(ctx context.Context, a *Alias) error {
+	if a.ID == "" {
+		a.ID = uuid.New().String()
+	}
+	if a.CreatedAt.IsZero() {
+		a.CreatedAt = time.Now().UTC()
+	}
+
 	_, err := r.db.ExecContext(ctx, `
 		INSERT INTO artist_aliases (id, artist_id, alias, source, created_at)
 		VALUES (?, ?, ?, ?, ?)
