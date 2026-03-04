@@ -11,7 +11,9 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/auth"
+	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/database"
+	"github.com/sydlexius/stillwater/internal/encryption"
 	"github.com/sydlexius/stillwater/internal/nfo"
 	"github.com/sydlexius/stillwater/internal/provider"
 	"github.com/sydlexius/stillwater/internal/rule"
@@ -32,8 +34,14 @@ func testRouter(t *testing.T) (*Router, *artist.Service) {
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 
+	enc, _, err := encryption.NewEncryptor("")
+	if err != nil {
+		t.Fatalf("creating encryptor: %v", err)
+	}
+
 	authSvc := auth.NewService(db)
 	artistSvc := artist.NewService(db)
+	connSvc := connection.NewService(db, enc)
 	ruleSvc := rule.NewService(db)
 	if err := ruleSvc.SeedDefaults(context.Background()); err != nil {
 		t.Fatalf("seeding rules: %v", err)
@@ -45,6 +53,7 @@ func testRouter(t *testing.T) (*Router, *artist.Service) {
 	r := NewRouter(RouterDeps{
 		AuthService:        authSvc,
 		ArtistService:      artistSvc,
+		ConnectionService:  connSvc,
 		RuleService:        ruleSvc,
 		RuleEngine:         ruleEngine,
 		NFOSnapshotService: nfoSnapSvc,

@@ -1119,6 +1119,10 @@ paths:
                   type: string
                 platform_artist_id:
                   type: string
+                  description: >-
+                    Platform-specific artist ID. If omitted, the server
+                    looks up a stored mapping from the artist_platform_ids
+                    table. Returns 400 if no stored mapping exists.
               required: [connection_id]
       responses:
         "200":
@@ -4519,6 +4523,10 @@ paths:
                   type: string
                 platform_artist_id:
                   type: string
+                  description: >-
+                    Platform-specific artist ID. If omitted, the server
+                    looks up a stored mapping from the artist_platform_ids
+                    table. Returns 400 if no stored mapping exists.
                 image_types:
                   type: array
                   items:

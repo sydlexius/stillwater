@@ -35,6 +35,16 @@ func (r *Router) handlePushMetadata(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	conn, err := r.connectionService.GetByID(req.Context(), body.ConnectionID)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "connection not found"})
+		return
+	}
+	if !conn.Enabled {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "connection is disabled"})
+		return
+	}
+
 	// Auto-lookup platform artist ID if not provided.
 	if body.PlatformArtistID == "" {
 		stored, lookupErr := r.artistService.GetPlatformID(req.Context(), artistID, body.ConnectionID)
@@ -48,16 +58,6 @@ func (r *Router) handlePushMetadata(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		body.PlatformArtistID = stored
-	}
-
-	conn, err := r.connectionService.GetByID(req.Context(), body.ConnectionID)
-	if err != nil {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "connection not found"})
-		return
-	}
-	if !conn.Enabled {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "connection is disabled"})
-		return
 	}
 
 	data := connection.ArtistPushData{
@@ -121,6 +121,16 @@ func (r *Router) handlePushImages(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	conn, err := r.connectionService.GetByID(req.Context(), body.ConnectionID)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "connection not found"})
+		return
+	}
+	if !conn.Enabled {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "connection is disabled"})
+		return
+	}
+
 	// Auto-lookup platform artist ID if not provided.
 	if body.PlatformArtistID == "" {
 		stored, lookupErr := r.artistService.GetPlatformID(req.Context(), artistID, body.ConnectionID)
@@ -138,16 +148,6 @@ func (r *Router) handlePushImages(w http.ResponseWriter, req *http.Request) {
 
 	if len(body.ImageTypes) == 0 {
 		body.ImageTypes = []string{"thumb", "fanart", "logo", "banner"}
-	}
-
-	conn, err := r.connectionService.GetByID(req.Context(), body.ConnectionID)
-	if err != nil {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "connection not found"})
-		return
-	}
-	if !conn.Enabled {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "connection is disabled"})
-		return
 	}
 
 	var uploader connection.ImageUploader

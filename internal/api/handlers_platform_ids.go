@@ -50,6 +50,15 @@ func (r *Router) handleSetPlatformID(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	if _, err := r.artistService.GetByID(req.Context(), artistID); err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "artist not found"})
+		return
+	}
+	if _, err := r.connectionService.GetByID(req.Context(), connectionID); err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "connection not found"})
+		return
+	}
+
 	if err := r.artistService.SetPlatformID(req.Context(), artistID, connectionID, body.PlatformArtistID); err != nil {
 		r.logger.Error("setting platform id", "artist_id", artistID, "connection_id", connectionID, "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
