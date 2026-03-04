@@ -18,9 +18,13 @@ type Repository interface {
 	Search(ctx context.Context, query string) ([]Artist, error)
 }
 
-// ProviderIDRepository handles provider-specific ID lookups.
+// ProviderIDRepository handles provider-specific ID lookups and persistence.
 type ProviderIDRepository interface {
 	GetByProviderID(ctx context.Context, provider, id string) (*Artist, error)
+	GetForArtist(ctx context.Context, artistID string) ([]ProviderID, error)
+	GetForArtists(ctx context.Context, artistIDs []string) (map[string][]ProviderID, error)
+	UpsertAll(ctx context.Context, artistID string, ids []ProviderID) error
+	DeleteAll(ctx context.Context, artistID string) error
 	UpdateProviderFetchedAt(ctx context.Context, artistID, provider string) error
 }
 

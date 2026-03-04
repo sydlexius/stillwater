@@ -101,14 +101,16 @@ func (r *sqliteAliasRepo) SearchWithAliases(ctx context.Context, query string) (
 }
 
 func (r *sqliteAliasRepo) FindMBIDDuplicates(ctx context.Context) ([]DuplicateGroup, error) {
-	rows, err := r.db.QueryContext(ctx, `
-		SELECT `+artistColumns+` FROM artists `+ //nolint:gosec // G202: concatenation uses trusted static column list
-		`WHERE musicbrainz_id != '' AND is_excluded = 0
-		AND musicbrainz_id IN (
-			SELECT musicbrainz_id FROM artists
-			WHERE musicbrainz_id != '' AND is_excluded = 0
-			GROUP BY musicbrainz_id HAVING COUNT(*) > 1
-		) ORDER BY musicbrainz_id, name`)
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT `+prefixedArtistColumns("a")+`, p.provider_id `+ //nolint:gosec // G202: concatenation uses trusted static column list
+			`FROM artists a
+		JOIN artist_provider_ids p ON p.artist_id = a.id AND p.provider = 'musicbrainz'
+		WHERE a.is_excluded = 0
+		AND p.provider_id IN (
+			SELECT provider_id FROM artist_provider_ids
+			WHERE provider = 'musicbrainz'
+			GROUP BY provider_id HAVING COUNT(*) > 1
+		) ORDER BY p.provider_id, a.name`)
 	if err != nil {
 		return nil, err
 	}
@@ -117,14 +119,15 @@ func (r *sqliteAliasRepo) FindMBIDDuplicates(ctx context.Context) ([]DuplicateGr
 	mbidMap := make(map[string][]Artist)
 	var mbidOrder []string
 	for rows.Next() {
-		a, err := scanArtist(rows)
+		a, err := scanArtistWithExtra(rows, 1)
 		if err != nil {
 			return nil, err
 		}
-		if _, exists := mbidMap[a.MusicBrainzID]; !exists {
-			mbidOrder = append(mbidOrder, a.MusicBrainzID)
+		mbid := a.extra[0]
+		if _, exists := mbidMap[mbid]; !exists {
+			mbidOrder = append(mbidOrder, mbid)
 		}
-		mbidMap[a.MusicBrainzID] = append(mbidMap[a.MusicBrainzID], *a)
+		mbidMap[mbid] = append(mbidMap[mbid], a.artist)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

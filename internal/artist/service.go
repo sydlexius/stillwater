@@ -45,52 +45,93 @@ func NewServiceWithRepos(
 	}
 }
 
-// Create inserts a new artist.
+// Create inserts a new artist and persists its provider IDs.
 func (s *Service) Create(ctx context.Context, a *Artist) error {
-	return s.artists.Create(ctx, a)
+	if err := s.artists.Create(ctx, a); err != nil {
+		return err
+	}
+	ids := extractProviderIDs(a)
+	if len(ids) > 0 {
+		return s.providers.UpsertAll(ctx, a.ID, ids)
+	}
+	return nil
 }
 
-// GetByID retrieves an artist by primary key.
+// GetByID retrieves an artist by primary key, including provider IDs.
 func (s *Service) GetByID(ctx context.Context, id string) (*Artist, error) {
-	return s.artists.GetByID(ctx, id)
+	a, err := s.artists.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return a, s.hydrateProviderIDs(ctx, a)
 }
 
-// GetByMBID retrieves an artist by MusicBrainz ID.
+// GetByMBID retrieves an artist by MusicBrainz ID, including provider IDs.
 func (s *Service) GetByMBID(ctx context.Context, mbid string) (*Artist, error) {
-	return s.artists.GetByMBID(ctx, mbid)
+	a, err := s.artists.GetByMBID(ctx, mbid)
+	if err != nil || a == nil {
+		return a, err
+	}
+	return a, s.hydrateProviderIDs(ctx, a)
 }
 
-// GetByProviderID retrieves an artist by a provider-specific ID.
+// GetByProviderID retrieves an artist by a provider-specific ID, including all provider IDs.
 // Supported providers: "musicbrainz", "audiodb", "discogs", "wikidata", "deezer", "spotify".
 func (s *Service) GetByProviderID(ctx context.Context, provider, id string) (*Artist, error) {
-	return s.providers.GetByProviderID(ctx, provider, id)
+	a, err := s.providers.GetByProviderID(ctx, provider, id)
+	if err != nil || a == nil {
+		return a, err
+	}
+	return a, s.hydrateProviderIDs(ctx, a)
 }
 
 // GetByNameAndLibrary retrieves an artist by name within a specific library.
 // Returns nil, nil when no match is found.
 func (s *Service) GetByNameAndLibrary(ctx context.Context, name, libraryID string) (*Artist, error) {
-	return s.artists.GetByNameAndLibrary(ctx, name, libraryID)
+	a, err := s.artists.GetByNameAndLibrary(ctx, name, libraryID)
+	if err != nil || a == nil {
+		return a, err
+	}
+	return a, s.hydrateProviderIDs(ctx, a)
 }
 
 // GetByMBIDAndLibrary retrieves an artist by MusicBrainz ID within a specific library.
 // Returns nil, nil when no match is found.
 func (s *Service) GetByMBIDAndLibrary(ctx context.Context, mbid, libraryID string) (*Artist, error) {
-	return s.artists.GetByMBIDAndLibrary(ctx, mbid, libraryID)
+	a, err := s.artists.GetByMBIDAndLibrary(ctx, mbid, libraryID)
+	if err != nil || a == nil {
+		return a, err
+	}
+	return a, s.hydrateProviderIDs(ctx, a)
 }
 
-// GetByPath retrieves an artist by filesystem path.
+// GetByPath retrieves an artist by filesystem path, including provider IDs.
 func (s *Service) GetByPath(ctx context.Context, path string) (*Artist, error) {
-	return s.artists.GetByPath(ctx, path)
+	a, err := s.artists.GetByPath(ctx, path)
+	if err != nil || a == nil {
+		return a, err
+	}
+	return a, s.hydrateProviderIDs(ctx, a)
 }
 
-// List returns a paginated list of artists and the total count.
+// List returns a paginated list of artists and the total count, with provider IDs hydrated.
 func (s *Service) List(ctx context.Context, params ListParams) ([]Artist, int, error) {
-	return s.artists.List(ctx, params)
+	artists, total, err := s.artists.List(ctx, params)
+	if err != nil {
+		return nil, 0, err
+	}
+	if err := s.hydrateProviderIDsBatch(ctx, artists); err != nil {
+		return nil, 0, err
+	}
+	return artists, total, nil
 }
 
-// Update modifies an existing artist.
+// Update modifies an existing artist and persists its provider IDs.
 func (s *Service) Update(ctx context.Context, a *Artist) error {
-	return s.artists.Update(ctx, a)
+	if err := s.artists.Update(ctx, a); err != nil {
+		return err
+	}
+	return s.providers.UpsertAll(ctx, a.ID, extractProviderIDs(a))
 }
 
 // IsEditableField reports whether the given field name can be updated via
@@ -174,9 +215,16 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 	return s.artists.Delete(ctx, id)
 }
 
-// Search finds artists by name substring match.
+// Search finds artists by name substring match, with provider IDs hydrated.
 func (s *Service) Search(ctx context.Context, query string) ([]Artist, error) {
-	return s.artists.Search(ctx, query)
+	artists, err := s.artists.Search(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.hydrateProviderIDsBatch(ctx, artists); err != nil {
+		return nil, err
+	}
+	return artists, nil
 }
 
 // ListMembersByArtistID returns all band members for an artist, ordered by sort_order.
@@ -238,9 +286,16 @@ func (s *Service) ListAliases(ctx context.Context, artistID string) ([]Alias, er
 	return s.aliases.ListByArtistID(ctx, artistID)
 }
 
-// SearchWithAliases searches artists by name or alias text.
+// SearchWithAliases searches artists by name or alias text, with provider IDs hydrated.
 func (s *Service) SearchWithAliases(ctx context.Context, query string) ([]Artist, error) {
-	return s.aliases.SearchWithAliases(ctx, query)
+	artists, err := s.aliases.SearchWithAliases(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.hydrateProviderIDsBatch(ctx, artists); err != nil {
+		return nil, err
+	}
+	return artists, nil
 }
 
 // FindDuplicates returns groups of artists that appear to be duplicates.
@@ -252,11 +307,21 @@ func (s *Service) FindDuplicates(ctx context.Context) ([]DuplicateGroup, error) 
 	if err != nil {
 		return nil, fmt.Errorf("finding MBID duplicates: %w", err)
 	}
+	for i := range mbidGroups {
+		if err := s.hydrateProviderIDsBatch(ctx, mbidGroups[i].Artists); err != nil {
+			return nil, err
+		}
+	}
 	groups = append(groups, mbidGroups...)
 
 	aliasGroups, err := s.aliases.FindAliasDuplicates(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("finding alias duplicates: %w", err)
+	}
+	for i := range aliasGroups {
+		if err := s.hydrateProviderIDsBatch(ctx, aliasGroups[i].Artists); err != nil {
+			return nil, err
+		}
 	}
 	groups = append(groups, aliasGroups...)
 
@@ -290,4 +355,90 @@ func (s *Service) DeletePlatformID(ctx context.Context, artistID, connectionID s
 // DeletePlatformIDsByArtist removes all platform artist ID mappings for an artist.
 func (s *Service) DeletePlatformIDsByArtist(ctx context.Context, artistID string) error {
 	return s.platformIDs.DeleteByArtistID(ctx, artistID)
+}
+
+// hydrateProviderIDs loads provider IDs from the normalized table and applies
+// them to the Artist struct fields.
+func (s *Service) hydrateProviderIDs(ctx context.Context, a *Artist) error {
+	ids, err := s.providers.GetForArtist(ctx, a.ID)
+	if err != nil {
+		return fmt.Errorf("hydrating provider IDs: %w", err)
+	}
+	applyProviderIDs(a, ids)
+	return nil
+}
+
+// hydrateProviderIDsBatch loads provider IDs for multiple artists in a single query.
+func (s *Service) hydrateProviderIDsBatch(ctx context.Context, artists []Artist) error {
+	if len(artists) == 0 {
+		return nil
+	}
+	ids := make([]string, len(artists))
+	for i := range artists {
+		ids[i] = artists[i].ID
+	}
+	idMap, err := s.providers.GetForArtists(ctx, ids)
+	if err != nil {
+		return fmt.Errorf("batch hydrating provider IDs: %w", err)
+	}
+	for i := range artists {
+		applyProviderIDs(&artists[i], idMap[artists[i].ID])
+	}
+	return nil
+}
+
+// applyProviderIDs sets the Artist struct's provider ID fields from the
+// normalized ProviderID slice.
+func applyProviderIDs(a *Artist, ids []ProviderID) {
+	for _, p := range ids {
+		switch p.Provider {
+		case "musicbrainz":
+			a.MusicBrainzID = p.ProviderID
+		case "audiodb":
+			a.AudioDBID = p.ProviderID
+			a.AudioDBIDFetchedAt = p.FetchedAt
+		case "discogs":
+			a.DiscogsID = p.ProviderID
+			a.DiscogsIDFetchedAt = p.FetchedAt
+		case "wikidata":
+			a.WikidataID = p.ProviderID
+			a.WikidataIDFetchedAt = p.FetchedAt
+		case "deezer":
+			a.DeezerID = p.ProviderID
+		case "spotify":
+			a.SpotifyID = p.ProviderID
+		case "lastfm":
+			a.LastFMFetchedAt = p.FetchedAt
+		}
+	}
+}
+
+// extractProviderIDs builds a ProviderID slice from the Artist struct's
+// provider ID fields, ready for persistence.
+func extractProviderIDs(a *Artist) []ProviderID {
+	var ids []ProviderID
+
+	if a.MusicBrainzID != "" {
+		ids = append(ids, ProviderID{Provider: "musicbrainz", ProviderID: a.MusicBrainzID})
+	}
+	if a.AudioDBID != "" {
+		ids = append(ids, ProviderID{Provider: "audiodb", ProviderID: a.AudioDBID, FetchedAt: a.AudioDBIDFetchedAt})
+	}
+	if a.DiscogsID != "" {
+		ids = append(ids, ProviderID{Provider: "discogs", ProviderID: a.DiscogsID, FetchedAt: a.DiscogsIDFetchedAt})
+	}
+	if a.WikidataID != "" {
+		ids = append(ids, ProviderID{Provider: "wikidata", ProviderID: a.WikidataID, FetchedAt: a.WikidataIDFetchedAt})
+	}
+	if a.DeezerID != "" {
+		ids = append(ids, ProviderID{Provider: "deezer", ProviderID: a.DeezerID})
+	}
+	if a.SpotifyID != "" {
+		ids = append(ids, ProviderID{Provider: "spotify", ProviderID: a.SpotifyID})
+	}
+	if a.LastFMFetchedAt != nil {
+		ids = append(ids, ProviderID{Provider: "lastfm", ProviderID: "", FetchedAt: a.LastFMFetchedAt})
+	}
+
+	return ids
 }
