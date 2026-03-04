@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/sydlexius/stillwater/internal/dbutil"
 )
 
 // artistColumns is the ordered list of columns for SELECT queries.
@@ -60,16 +61,16 @@ func (s *Service) Create(ctx context.Context, a *Artist) error {
 		a.MusicBrainzID, a.AudioDBID, a.DiscogsID, a.WikidataID, a.DeezerID, a.SpotifyID,
 		MarshalStringSlice(a.Genres), MarshalStringSlice(a.Styles), MarshalStringSlice(a.Moods),
 		a.YearsActive, a.Born, a.Formed, a.Died, a.Disbanded, a.Biography,
-		a.Path, nullableString(a.LibraryID), boolToInt(a.NFOExists), boolToInt(a.ThumbExists),
-		boolToInt(a.FanartExists), a.FanartCount, boolToInt(a.LogoExists), boolToInt(a.BannerExists),
-		boolToInt(a.ThumbLowRes), boolToInt(a.FanartLowRes),
-		boolToInt(a.LogoLowRes), boolToInt(a.BannerLowRes),
+		a.Path, dbutil.NullableString(a.LibraryID), dbutil.BoolToInt(a.NFOExists), dbutil.BoolToInt(a.ThumbExists),
+		dbutil.BoolToInt(a.FanartExists), a.FanartCount, dbutil.BoolToInt(a.LogoExists), dbutil.BoolToInt(a.BannerExists),
+		dbutil.BoolToInt(a.ThumbLowRes), dbutil.BoolToInt(a.FanartLowRes),
+		dbutil.BoolToInt(a.LogoLowRes), dbutil.BoolToInt(a.BannerLowRes),
 		a.ThumbPlaceholder, a.FanartPlaceholder, a.LogoPlaceholder, a.BannerPlaceholder,
-		a.HealthScore, boolToInt(a.IsExcluded), a.ExclusionReason, boolToInt(a.IsClassical),
+		a.HealthScore, dbutil.BoolToInt(a.IsExcluded), a.ExclusionReason, dbutil.BoolToInt(a.IsClassical),
 		MarshalStringMap(a.MetadataSources),
-		formatNullableTime(a.AudioDBIDFetchedAt), formatNullableTime(a.DiscogsIDFetchedAt),
-		formatNullableTime(a.WikidataIDFetchedAt), formatNullableTime(a.LastFMFetchedAt),
-		formatNullableTime(a.LastScannedAt),
+		dbutil.FormatNullableTime(a.AudioDBIDFetchedAt), dbutil.FormatNullableTime(a.DiscogsIDFetchedAt),
+		dbutil.FormatNullableTime(a.WikidataIDFetchedAt), dbutil.FormatNullableTime(a.LastFMFetchedAt),
+		dbutil.FormatNullableTime(a.LastScannedAt),
 		now.Format(time.RFC3339), now.Format(time.RFC3339),
 	)
 	if err != nil {
@@ -254,17 +255,17 @@ func (s *Service) Update(ctx context.Context, a *Artist) error {
 		a.MusicBrainzID, a.AudioDBID, a.DiscogsID, a.WikidataID, a.DeezerID, a.SpotifyID,
 		MarshalStringSlice(a.Genres), MarshalStringSlice(a.Styles), MarshalStringSlice(a.Moods),
 		a.YearsActive, a.Born, a.Formed, a.Died, a.Disbanded, a.Biography,
-		a.Path, nullableString(a.LibraryID),
-		boolToInt(a.NFOExists), boolToInt(a.ThumbExists),
-		boolToInt(a.FanartExists), a.FanartCount, boolToInt(a.LogoExists), boolToInt(a.BannerExists),
-		boolToInt(a.ThumbLowRes), boolToInt(a.FanartLowRes),
-		boolToInt(a.LogoLowRes), boolToInt(a.BannerLowRes),
+		a.Path, dbutil.NullableString(a.LibraryID),
+		dbutil.BoolToInt(a.NFOExists), dbutil.BoolToInt(a.ThumbExists),
+		dbutil.BoolToInt(a.FanartExists), a.FanartCount, dbutil.BoolToInt(a.LogoExists), dbutil.BoolToInt(a.BannerExists),
+		dbutil.BoolToInt(a.ThumbLowRes), dbutil.BoolToInt(a.FanartLowRes),
+		dbutil.BoolToInt(a.LogoLowRes), dbutil.BoolToInt(a.BannerLowRes),
 		a.ThumbPlaceholder, a.FanartPlaceholder, a.LogoPlaceholder, a.BannerPlaceholder,
-		a.HealthScore, boolToInt(a.IsExcluded), a.ExclusionReason, boolToInt(a.IsClassical),
+		a.HealthScore, dbutil.BoolToInt(a.IsExcluded), a.ExclusionReason, dbutil.BoolToInt(a.IsClassical),
 		MarshalStringMap(a.MetadataSources),
-		formatNullableTime(a.AudioDBIDFetchedAt), formatNullableTime(a.DiscogsIDFetchedAt),
-		formatNullableTime(a.WikidataIDFetchedAt), formatNullableTime(a.LastFMFetchedAt),
-		formatNullableTime(a.LastScannedAt),
+		dbutil.FormatNullableTime(a.AudioDBIDFetchedAt), dbutil.FormatNullableTime(a.DiscogsIDFetchedAt),
+		dbutil.FormatNullableTime(a.WikidataIDFetchedAt), dbutil.FormatNullableTime(a.LastFMFetchedAt),
+		dbutil.FormatNullableTime(a.LastScannedAt),
 		a.UpdatedAt.Format(time.RFC3339),
 		a.ID,
 	)
@@ -512,7 +513,7 @@ func (s *Service) CreateMember(ctx context.Context, m *BandMember) error {
 	`,
 		m.ID, m.ArtistID, m.MemberName, m.MemberMBID,
 		MarshalStringSlice(m.Instruments), m.VocalType,
-		m.DateJoined, m.DateLeft, boolToInt(m.IsOriginalMember), m.SortOrder,
+		m.DateJoined, m.DateLeft, dbutil.BoolToInt(m.IsOriginalMember), m.SortOrder,
 		now.Format(time.RFC3339), now.Format(time.RFC3339),
 	)
 	if err != nil {
@@ -569,7 +570,7 @@ func (s *Service) UpsertMembers(ctx context.Context, artistID string, members []
 		`,
 			m.ID, m.ArtistID, m.MemberName, m.MemberMBID,
 			MarshalStringSlice(m.Instruments), m.VocalType,
-			m.DateJoined, m.DateLeft, boolToInt(m.IsOriginalMember), m.SortOrder,
+			m.DateJoined, m.DateLeft, dbutil.BoolToInt(m.IsOriginalMember), m.SortOrder,
 			now.Format(time.RFC3339), now.Format(time.RFC3339),
 		); err != nil {
 			return fmt.Errorf("inserting member %s: %w", m.MemberName, err)
@@ -632,27 +633,27 @@ func scanArtist(row interface{ Scan(...any) error }) (*Artist, error) {
 	a.IsExcluded = isExcluded == 1
 	a.IsClassical = isClassical == 1
 	a.MetadataSources = UnmarshalStringMap(metadataSources)
-	a.CreatedAt = parseTime(createdAt)
-	a.UpdatedAt = parseTime(updatedAt)
+	a.CreatedAt = dbutil.ParseTime(createdAt)
+	a.UpdatedAt = dbutil.ParseTime(updatedAt)
 
 	if audiodbFetchedAt.Valid {
-		t := parseTime(audiodbFetchedAt.String)
+		t := dbutil.ParseTime(audiodbFetchedAt.String)
 		a.AudioDBIDFetchedAt = &t
 	}
 	if discogsFetchedAt.Valid {
-		t := parseTime(discogsFetchedAt.String)
+		t := dbutil.ParseTime(discogsFetchedAt.String)
 		a.DiscogsIDFetchedAt = &t
 	}
 	if wikidataFetchedAt.Valid {
-		t := parseTime(wikidataFetchedAt.String)
+		t := dbutil.ParseTime(wikidataFetchedAt.String)
 		a.WikidataIDFetchedAt = &t
 	}
 	if lastfmFetchedAt.Valid {
-		t := parseTime(lastfmFetchedAt.String)
+		t := dbutil.ParseTime(lastfmFetchedAt.String)
 		a.LastFMFetchedAt = &t
 	}
 	if lastScannedAt.Valid {
-		t := parseTime(lastScannedAt.String)
+		t := dbutil.ParseTime(lastScannedAt.String)
 		a.LastScannedAt = &t
 	}
 
@@ -678,8 +679,8 @@ func scanMember(row interface{ Scan(...any) error }) (*BandMember, error) {
 
 	m.Instruments = UnmarshalStringSlice(instruments)
 	m.IsOriginalMember = isOriginal == 1
-	m.CreatedAt = parseTime(createdAt)
-	m.UpdatedAt = parseTime(updatedAt)
+	m.CreatedAt = dbutil.ParseTime(createdAt)
+	m.UpdatedAt = dbutil.ParseTime(updatedAt)
 
 	return &m, nil
 }
@@ -735,36 +736,4 @@ func buildWhereClause(params ListParams) (string, []any) {
 		return "", nil
 	}
 	return " WHERE " + strings.Join(conditions, " AND "), args
-}
-
-func nullableString(s string) any {
-	if s == "" {
-		return nil
-	}
-	return s
-}
-
-func boolToInt(b bool) int {
-	if b {
-		return 1
-	}
-	return 0
-}
-
-func formatNullableTime(t *time.Time) any {
-	if t == nil {
-		return nil
-	}
-	return t.Format(time.RFC3339)
-}
-
-// parseTime parses a time string, handling both RFC3339 and SQLite datetime formats.
-func parseTime(s string) time.Time {
-	if t, err := time.Parse(time.RFC3339, s); err == nil {
-		return t
-	}
-	if t, err := time.Parse("2006-01-02 15:04:05", s); err == nil {
-		return t
-	}
-	return time.Time{}
 }

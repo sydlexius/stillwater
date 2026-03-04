@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/sydlexius/stillwater/internal/dbutil"
 	"github.com/sydlexius/stillwater/internal/encryption"
 )
 
@@ -58,10 +59,10 @@ func (s *Service) Create(ctx context.Context, c *Connection) error {
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		c.ID, c.Name, c.Type, c.URL, encKey,
-		boolToInt(c.Enabled), c.Status, c.StatusMessage,
-		formatNullableTime(c.LastCheckedAt),
+		dbutil.BoolToInt(c.Enabled), c.Status, c.StatusMessage,
+		dbutil.FormatNullableTime(c.LastCheckedAt),
 		now.Format(time.RFC3339), now.Format(time.RFC3339),
-		boolToInt(c.FeatureLibraryImport), boolToInt(c.FeatureNFOWrite), boolToInt(c.FeatureImageWrite),
+		dbutil.BoolToInt(c.FeatureLibraryImport), dbutil.BoolToInt(c.FeatureNFOWrite), dbutil.BoolToInt(c.FeatureImageWrite),
 	)
 	if err != nil {
 		return fmt.Errorf("creating connection: %w", err)
@@ -195,10 +196,10 @@ func (s *Service) Update(ctx context.Context, c *Connection) error {
 			feature_library_import = ?, feature_nfo_write = ?, feature_image_write = ?
 		WHERE id = ?
 	`,
-		c.Name, c.Type, c.URL, encKey, boolToInt(c.Enabled),
+		c.Name, c.Type, c.URL, encKey, dbutil.BoolToInt(c.Enabled),
 		c.Status, c.StatusMessage,
 		c.UpdatedAt.Format(time.RFC3339),
-		boolToInt(c.FeatureLibraryImport), boolToInt(c.FeatureNFOWrite), boolToInt(c.FeatureImageWrite),
+		dbutil.BoolToInt(c.FeatureLibraryImport), dbutil.BoolToInt(c.FeatureNFOWrite), dbutil.BoolToInt(c.FeatureImageWrite),
 		c.ID,
 	)
 	if err != nil {
@@ -243,7 +244,7 @@ func (s *Service) UpdateFeatures(ctx context.Context, id string, libImport, nfoW
 	result, err := s.db.ExecContext(ctx, `
 		UPDATE connections SET feature_library_import = ?, feature_nfo_write = ?, feature_image_write = ?, updated_at = ?
 		WHERE id = ?
-	`, boolToInt(libImport), boolToInt(nfoWrite), boolToInt(imageWrite), now.Format(time.RFC3339), id)
+	`, dbutil.BoolToInt(libImport), dbutil.BoolToInt(nfoWrite), dbutil.BoolToInt(imageWrite), now.Format(time.RFC3339), id)
 	if err != nil {
 		return fmt.Errorf("updating connection features: %w", err)
 	}
@@ -287,37 +288,13 @@ func (s *Service) scanConnection(row interface{ Scan(...any) error }) (*Connecti
 	c.FeatureLibraryImport = featLibImport == 1
 	c.FeatureNFOWrite = featNFOWrite == 1
 	c.FeatureImageWrite = featImageWrite == 1
-	c.CreatedAt = parseTime(createdAt)
-	c.UpdatedAt = parseTime(updatedAt)
+	c.CreatedAt = dbutil.ParseTime(createdAt)
+	c.UpdatedAt = dbutil.ParseTime(updatedAt)
 
 	if lastCheckedAt.Valid {
-		t := parseTime(lastCheckedAt.String)
+		t := dbutil.ParseTime(lastCheckedAt.String)
 		c.LastCheckedAt = &t
 	}
 
 	return &c, nil
-}
-
-func boolToInt(b bool) int {
-	if b {
-		return 1
-	}
-	return 0
-}
-
-func formatNullableTime(t *time.Time) any {
-	if t == nil {
-		return nil
-	}
-	return t.Format(time.RFC3339)
-}
-
-func parseTime(s string) time.Time {
-	if t, err := time.Parse(time.RFC3339, s); err == nil {
-		return t
-	}
-	if t, err := time.Parse("2006-01-02 15:04:05", s); err == nil {
-		return t
-	}
-	return time.Time{}
 }

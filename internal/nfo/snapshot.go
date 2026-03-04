@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/sydlexius/stillwater/internal/dbutil"
 )
 
 // Snapshot represents a saved copy of an artist's NFO file content.
@@ -92,16 +93,6 @@ func scanSnapshot(row interface{ Scan(...any) error }) (*Snapshot, error) {
 	if err != nil {
 		return nil, err
 	}
-	snap.CreatedAt = parseTime(createdAt)
+	snap.CreatedAt = dbutil.ParseTime(createdAt)
 	return &snap, nil
-}
-
-func parseTime(s string) time.Time {
-	if t, err := time.Parse(time.RFC3339, s); err == nil {
-		return t
-	}
-	if t, err := time.Parse("2006-01-02 15:04:05", s); err == nil {
-		return t
-	}
-	return time.Time{}
 }

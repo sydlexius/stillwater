@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/sydlexius/stillwater/internal/dbutil"
 )
 
 // BulkService provides persistence for bulk jobs.
@@ -145,7 +146,7 @@ func (s *BulkService) ListItems(ctx context.Context, jobID string) ([]BulkJobIte
 		if message.Valid {
 			item.Message = message.String
 		}
-		item.CreatedAt = parseTime(createdAt)
+		item.CreatedAt = dbutil.ParseTime(createdAt)
 		items = append(items, item)
 	}
 	return items, rows.Err()
@@ -171,13 +172,13 @@ func scanBulkJob(row interface{ Scan(...any) error }) (*BulkJob, error) {
 	if errStr.Valid {
 		job.Error = errStr.String
 	}
-	job.CreatedAt = parseTime(createdAt)
+	job.CreatedAt = dbutil.ParseTime(createdAt)
 	if startedAt.Valid {
-		t := parseTime(startedAt.String)
+		t := dbutil.ParseTime(startedAt.String)
 		job.StartedAt = &t
 	}
 	if completedAt.Valid {
-		t := parseTime(completedAt.String)
+		t := dbutil.ParseTime(completedAt.String)
 		job.CompletedAt = &t
 	}
 
