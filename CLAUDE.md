@@ -115,6 +115,23 @@ This converts the current directory path from MSYS2 format (`/d/Dev/...`) to WSL
 
 **Note:** Cross-filesystem access between Windows (`/mnt/d/`) and WSL2 is slower than native Linux I/O. For large test suites, consider cloning the repo natively inside WSL2 (`~/Dev/stillwater`) and running tests there directly.
 
+### When to run the race detector
+
+Run `make test-race` (or `go test -race ./...` in WSL2) when changes touch:
+
+- Concurrency primitives or shared state: goroutines, mutexes, channels, `sync.WaitGroup`, shared maps, context cancellation
+- Background workers: watcher, scanner, webhook dispatcher, event bus, provider orchestrator
+- Code that runs in multiple goroutines or is called from both HTTP handlers and background jobs
+
+Skip it for single-threaded code paths:
+
+- Template changes (`.templ` files)
+- Purely local API handler request/response logic that only uses per-request data and does not access shared state or start goroutines
+- Config parsing, NFO read/write, database migrations
+- CSS, JS, documentation
+
+**Note:** `net/http` serves handlers concurrently. If a handler reads or writes shared state (package-level variables, caches, singletons, in-memory indexes, etc.), treat it as concurrent code and run the race detector.
+
 ## Security
 
 - API keys encrypted at rest with AES-256-GCM

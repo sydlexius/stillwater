@@ -32,9 +32,6 @@ release note quality with grouped, user-friendly summaries.
 - [ ] Auto-generate release notes from PR labels/commit messages
 - [ ] CHANGELOG.md generation or accumulation strategy
 - [ ] Tests (workflow syntax validation, dry-run)
-- [ ] PR opened (#?)
-- [ ] CI passing
-- [ ] PR merged
 
 ## UAT / Merge Order
 
