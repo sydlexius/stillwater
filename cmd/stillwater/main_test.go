@@ -2,161 +2,108 @@ package main
 
 import (
 	"context"
-	"fmt"
-	"os"
+	"database/sql"
+	"path/filepath"
 	"testing"
 
-	"github.com/google/uuid"
 	"github.com/sydlexius/stillwater/internal/auth"
 	"github.com/sydlexius/stillwater/internal/database"
 	"golang.org/x/crypto/bcrypt"
 )
 
-func TestResetPassword(t *testing.T) {
-	// Create a temporary database for testing
-	tmpFile := fmt.Sprintf("/tmp/stillwater-test-%s.db", uuid.New().String())
-	defer os.Remove(tmpFile)
-
-	db, err := database.Open(tmpFile)
+// openTestDB opens an in-process SQLite database in t.TempDir and runs migrations.
+func openTestDB(t *testing.T) *sql.DB {
+	t.Helper()
+	db, err := database.Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
-		t.Fatalf("opening database: %v", err)
+		t.Fatalf("opening test database: %v", err)
 	}
-	defer db.Close()
-
+	t.Cleanup(func() { db.Close() }) //nolint:errcheck
 	if err := database.Migrate(db); err != nil {
 		t.Fatalf("running migrations: %v", err)
 	}
-
-	ctx := context.Background()
-
-	// Create a test user
-	testUsername := "testuser"
-	oldPassword := "oldpass123"
-	oldHash, err := bcrypt.GenerateFromPassword(auth.PrehashPassword(oldPassword), bcrypt.DefaultCost)
-	if err != nil {
-		t.Fatalf("hashing password: %v", err)
-	}
-
-	userID := uuid.New().String()
-	_, err = db.ExecContext(ctx, `
-		INSERT INTO users (id, username, password_hash, role)
-		VALUES (?, ?, ?, 'admin')
-	`, userID, testUsername, string(oldHash))
-	if err != nil {
-		t.Fatalf("creating test user: %v", err)
-	}
-
-	// Test password reset with explicit password
-	newPassword := "newpass456"
-	hash, err := bcrypt.GenerateFromPassword(auth.PrehashPassword(newPassword), bcrypt.DefaultCost)
-	if err != nil {
-		t.Fatalf("hashing new password: %v", err)
-	}
-
-	_, err = db.ExecContext(ctx, "UPDATE users SET password_hash = ? WHERE username = ?", string(hash), testUsername)
-	if err != nil {
-		t.Fatalf("updating password: %v", err)
-	}
-
-	// Verify new password works
-	var storedHash string
-	err = db.QueryRowContext(ctx, "SELECT password_hash FROM users WHERE username = ?", testUsername).Scan(&storedHash)
-	if err != nil {
-		t.Fatalf("querying user: %v", err)
-	}
-
-	err = bcrypt.CompareHashAndPassword([]byte(storedHash), auth.PrehashPassword(newPassword))
-	if err != nil {
-		t.Fatalf("new password verification failed: %v", err)
-	}
-
-	// Verify old password no longer works
-	err = bcrypt.CompareHashAndPassword([]byte(storedHash), auth.PrehashPassword(oldPassword))
-	if err == nil {
-		t.Fatalf("old password should not work anymore")
-	}
+	return db
 }
 
-func TestResetPasswordFirstAdmin(t *testing.T) {
-	// Create a temporary database for testing
-	tmpFile := fmt.Sprintf("/tmp/stillwater-test-%s.db", uuid.New().String())
-	defer os.Remove(tmpFile)
-
-	db, err := database.Open(tmpFile)
-	if err != nil {
-		t.Fatalf("opening database: %v", err)
-	}
-	defer db.Close()
-
-	if err := database.Migrate(db); err != nil {
-		t.Fatalf("running migrations: %v", err)
-	}
-
-	ctx := context.Background()
-
-	// Create a test admin user
-	adminUsername := "admin"
-	password := "testpass123"
+// insertUser creates a user row in the test database.
+func insertUser(t *testing.T, ctx context.Context, db *sql.DB, username, password, role string) {
+	t.Helper()
 	hash, err := bcrypt.GenerateFromPassword(auth.PrehashPassword(password), bcrypt.DefaultCost)
 	if err != nil {
-		t.Fatalf("hashing password: %v", err)
+		t.Fatalf("hashing password for %s: %v", username, err)
 	}
-
-	userID := uuid.New().String()
 	_, err = db.ExecContext(ctx, `
 		INSERT INTO users (id, username, password_hash, role)
-		VALUES (?, ?, ?, 'admin')
-	`, userID, adminUsername, string(hash))
+		VALUES (?, ?, ?, ?)
+	`, "test-id-"+username, username, string(hash), role)
 	if err != nil {
-		t.Fatalf("creating test user: %v", err)
-	}
-
-	// Create a non-admin user
-	regularUser := "regular"
-	_, err = db.ExecContext(ctx, `
-		INSERT INTO users (id, username, password_hash, role)
-		VALUES (?, ?, ?, 'viewer')
-	`, uuid.New().String(), regularUser, string(hash))
-	if err != nil {
-		t.Fatalf("creating regular user: %v", err)
-	}
-
-	// Query for first admin user (should be the admin)
-	var foundUsername string
-	err = db.QueryRowContext(ctx, "SELECT username FROM users WHERE role = 'admin' LIMIT 1").Scan(&foundUsername)
-	if err != nil {
-		t.Fatalf("querying admin user: %v", err)
-	}
-
-	if foundUsername != adminUsername {
-		t.Fatalf("expected first admin to be %s, got %s", adminUsername, foundUsername)
+		t.Fatalf("inserting user %s: %v", username, err)
 	}
 }
 
-func TestUserNotFound(t *testing.T) {
-	tmpFile := fmt.Sprintf("/tmp/stillwater-test-%s.db", uuid.New().String())
-	defer os.Remove(tmpFile)
-
-	db, err := database.Open(tmpFile)
-	if err != nil {
-		t.Fatalf("opening database: %v", err)
+// assertPassword verifies that password matches the stored hash for username.
+func assertPassword(t *testing.T, ctx context.Context, db *sql.DB, username, password string) {
+	t.Helper()
+	var storedHash string
+	if err := db.QueryRowContext(ctx, "SELECT password_hash FROM users WHERE username = ?", username).Scan(&storedHash); err != nil {
+		t.Fatalf("querying hash for %s: %v", username, err)
 	}
-	defer db.Close()
-
-	if err := database.Migrate(db); err != nil {
-		t.Fatalf("running migrations: %v", err)
+	if err := bcrypt.CompareHashAndPassword([]byte(storedHash), auth.PrehashPassword(password)); err != nil {
+		t.Fatalf("password mismatch for %s: %v", username, err)
 	}
+}
 
+// assertPasswordWrong verifies that password does NOT match the stored hash.
+func assertPasswordWrong(t *testing.T, ctx context.Context, db *sql.DB, username, password string) {
+	t.Helper()
+	var storedHash string
+	if err := db.QueryRowContext(ctx, "SELECT password_hash FROM users WHERE username = ?", username).Scan(&storedHash); err != nil {
+		t.Fatalf("querying hash for %s: %v", username, err)
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(storedHash), auth.PrehashPassword(password)); err == nil {
+		t.Fatalf("expected password mismatch for %s but it matched", username)
+	}
+}
+
+func TestResetPasswordWithExplicitUser(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+	insertUser(t, ctx, db, "alice", "oldpass", "admin")
+
+	if err := resetPasswordDB(ctx, db, "alice", "newpass"); err != nil {
+		t.Fatalf("resetPasswordDB: %v", err)
+	}
+	assertPassword(t, ctx, db, "alice", "newpass")
+	assertPasswordWrong(t, ctx, db, "alice", "oldpass")
+}
+
+func TestResetPasswordDefaultsToFirstAdmin(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+	insertUser(t, ctx, db, "admin", "oldpass", "admin")
+
+	if err := resetPasswordDB(ctx, db, "", "newpass"); err != nil {
+		t.Fatalf("resetPasswordDB: %v", err)
+	}
+	assertPassword(t, ctx, db, "admin", "newpass")
+}
+
+func TestResetPasswordUserNotFound(t *testing.T) {
+	db := openTestDB(t)
 	ctx := context.Background()
 
-	// Try to query non-existent user
-	var exists int
-	err = db.QueryRowContext(ctx, "SELECT COUNT(*) FROM users WHERE username = ?", "nonexistent").Scan(&exists)
-	if err != nil {
-		t.Fatalf("querying user count: %v", err)
+	err := resetPasswordDB(ctx, db, "ghost", "pass")
+	if err == nil {
+		t.Fatal("expected error for missing user, got nil")
 	}
+}
 
-	if exists != 0 {
-		t.Fatalf("expected 0 users, got %d", exists)
+func TestResetPasswordNoAdminUsers(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+
+	err := resetPasswordDB(ctx, db, "", "pass")
+	if err == nil {
+		t.Fatal("expected error when no admin users exist, got nil")
 	}
 }

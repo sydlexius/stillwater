@@ -505,6 +505,8 @@ func resetCredentials() error {
 }
 
 // resetPassword updates the password for a user in the database.
+// It opens the database, runs migrations, prompts for a password if needed,
+// then delegates to resetPasswordDB.
 func resetPassword(username, password string) error {
 	configPath := os.Getenv("SW_CONFIG_PATH")
 	if configPath == "" {
@@ -526,23 +528,31 @@ func resetPassword(username, password string) error {
 		return fmt.Errorf("running migrations: %w", err)
 	}
 
-	ctx := context.Background()
-
-	// Determine username
-	if username == "" {
-		// Get first admin user
-		err := db.QueryRowContext(ctx, "SELECT username FROM users WHERE role = 'admin' LIMIT 1").Scan(&username)
+	if password == "" {
+		password, err = promptPassword()
 		if err != nil {
+			return fmt.Errorf("reading password: %w", err)
+		}
+	}
+
+	return resetPasswordDB(context.Background(), db, username, password)
+}
+
+// resetPasswordDB performs the password reset against an already-open database.
+// Accessible from tests in the same package.
+func resetPasswordDB(ctx context.Context, db *sql.DB, username, password string) error {
+	if username == "" {
+		if err := db.QueryRowContext(ctx,
+			"SELECT username FROM users WHERE role = 'admin' LIMIT 1").Scan(&username); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return fmt.Errorf("no admin users found in database")
 			}
 			return fmt.Errorf("querying admin user: %w", err)
 		}
 	} else {
-		// Verify username exists
 		var exists int
-		err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM users WHERE username = ?", username).Scan(&exists)
-		if err != nil {
+		if err := db.QueryRowContext(ctx,
+			"SELECT COUNT(*) FROM users WHERE username = ?", username).Scan(&exists); err != nil {
 			return fmt.Errorf("querying user: %w", err)
 		}
 		if exists == 0 {
@@ -550,33 +560,22 @@ func resetPassword(username, password string) error {
 		}
 	}
 
-	// Determine password
-	if password == "" {
-		var err error
-		password, err = promptPassword()
-		if err != nil {
-			return fmt.Errorf("reading password: %w", err)
-		}
-	}
-
-	// Hash password using same method as auth service
 	hash, err := bcrypt.GenerateFromPassword(auth.PrehashPassword(password), bcrypt.DefaultCost)
 	if err != nil {
 		return fmt.Errorf("hashing password: %w", err)
 	}
 
-	// Update password in database
-	result, err := db.ExecContext(ctx, "UPDATE users SET password_hash = ? WHERE username = ?", string(hash), username)
+	result, err := db.ExecContext(ctx,
+		"UPDATE users SET password_hash = ? WHERE username = ?", string(hash), username)
 	if err != nil {
 		return fmt.Errorf("updating password: %w", err)
 	}
 
-	// Verify the update actually modified a row (handle race condition where user was deleted)
-	rowsAffected, err := result.RowsAffected()
+	n, err := result.RowsAffected()
 	if err != nil {
 		return fmt.Errorf("checking rows affected: %w", err)
 	}
-	if rowsAffected == 0 {
+	if n == 0 {
 		return fmt.Errorf("user not found: %s", username)
 	}
 
@@ -636,7 +635,7 @@ func readPasswordNoEcho() (string, error) {
 	reader := bufio.NewReader(os.Stdin)
 	line, err := reader.ReadString('\n')
 	if err != nil && err != io.EOF {
-		return "", err
+		return "", fmt.Errorf("reading password from stdin: %w", err)
 	}
 	return strings.TrimSpace(line), nil
 }
