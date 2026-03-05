@@ -71,7 +71,10 @@ func (r *Router) handleListConnections(w http.ResponseWriter, req *http.Request)
 }
 
 func (r *Router) handleGetConnection(w http.ResponseWriter, req *http.Request) {
-	id := req.PathValue("id")
+	id, ok := RequirePathParam(w, req, "id")
+	if !ok {
+		return
+	}
 	c, err := r.connectionService.GetByID(req.Context(), id)
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "connection not found"})
@@ -259,7 +262,10 @@ func (r *Router) handleCreateConnectionSuccess(w http.ResponseWriter, req *http.
 }
 
 func (r *Router) handleUpdateConnection(w http.ResponseWriter, req *http.Request) {
-	id := req.PathValue("id")
+	id, ok := RequirePathParam(w, req, "id")
+	if !ok {
+		return
+	}
 	existing, err := r.connectionService.GetByID(req.Context(), id)
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "connection not found"})
@@ -276,8 +282,7 @@ func (r *Router) handleUpdateConnection(w http.ResponseWriter, req *http.Request
 		FeatureNFOWrite      *bool  `json:"feature_nfo_write"`
 		FeatureImageWrite    *bool  `json:"feature_image_write"`
 	}
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+	if !DecodeJSON(w, req, &body) {
 		return
 	}
 
@@ -315,7 +320,10 @@ func (r *Router) handleUpdateConnection(w http.ResponseWriter, req *http.Request
 }
 
 func (r *Router) handleDeleteConnection(w http.ResponseWriter, req *http.Request) {
-	id := req.PathValue("id")
+	id, ok := RequirePathParam(w, req, "id")
+	if !ok {
+		return
+	}
 	deleteLibraries := req.URL.Query().Get("deleteLibraries") == "true"
 	deleteArtists := req.URL.Query().Get("deleteArtists") == "true"
 
@@ -359,7 +367,10 @@ func (r *Router) handleDeleteConnection(w http.ResponseWriter, req *http.Request
 }
 
 func (r *Router) handleTestConnection(w http.ResponseWriter, req *http.Request) {
-	id := req.PathValue("id")
+	id, ok := RequirePathParam(w, req, "id")
+	if !ok {
+		return
+	}
 	conn, err := r.connectionService.GetByID(req.Context(), id)
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "connection not found"})
@@ -395,7 +406,10 @@ func (r *Router) handleTestConnection(w http.ResponseWriter, req *http.Request) 
 }
 
 func (r *Router) handleUpdateConnectionFeatures(w http.ResponseWriter, req *http.Request) {
-	id := req.PathValue("id")
+	id, ok := RequirePathParam(w, req, "id")
+	if !ok {
+		return
+	}
 	existing, err := r.connectionService.GetByID(req.Context(), id)
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "connection not found"})
@@ -407,8 +421,7 @@ func (r *Router) handleUpdateConnectionFeatures(w http.ResponseWriter, req *http
 		FeatureNFOWrite      *bool `json:"feature_nfo_write"`
 		FeatureImageWrite    *bool `json:"feature_image_write"`
 	}
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+	if !DecodeJSON(w, req, &body) {
 		return
 	}
 

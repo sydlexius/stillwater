@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 
@@ -11,9 +10,8 @@ import (
 // handleGetPlatformIDs returns all platform artist IDs for an artist.
 // GET /api/v1/artists/{id}/platform-ids
 func (r *Router) handleGetPlatformIDs(w http.ResponseWriter, req *http.Request) {
-	artistID := req.PathValue("id")
-	if artistID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing artist id"})
+	artistID, ok := RequirePathParam(w, req, "id")
+	if !ok {
 		return
 	}
 
@@ -32,18 +30,19 @@ func (r *Router) handleGetPlatformIDs(w http.ResponseWriter, req *http.Request) 
 // handleSetPlatformID stores or updates a platform artist ID mapping.
 // PUT /api/v1/artists/{id}/platform-ids/{connectionId}
 func (r *Router) handleSetPlatformID(w http.ResponseWriter, req *http.Request) {
-	artistID := req.PathValue("id")
-	connectionID := req.PathValue("connectionId")
-	if artistID == "" || connectionID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing artist id or connection id"})
+	artistID, ok := RequirePathParam(w, req, "id")
+	if !ok {
+		return
+	}
+	connectionID, ok := RequirePathParam(w, req, "connectionId")
+	if !ok {
 		return
 	}
 
 	var body struct {
 		PlatformArtistID string `json:"platform_artist_id"`
 	}
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+	if !DecodeJSON(w, req, &body) {
 		return
 	}
 	if body.PlatformArtistID == "" {
@@ -71,10 +70,12 @@ func (r *Router) handleSetPlatformID(w http.ResponseWriter, req *http.Request) {
 // handleDeletePlatformID removes a platform artist ID mapping.
 // DELETE /api/v1/artists/{id}/platform-ids/{connectionId}
 func (r *Router) handleDeletePlatformID(w http.ResponseWriter, req *http.Request) {
-	artistID := req.PathValue("id")
-	connectionID := req.PathValue("connectionId")
-	if artistID == "" || connectionID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing artist id or connection id"})
+	artistID, ok := RequirePathParam(w, req, "id")
+	if !ok {
+		return
+	}
+	connectionID, ok := RequirePathParam(w, req, "connectionId")
+	if !ok {
 		return
 	}
 

@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/json"
 	"net/http"
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
@@ -22,7 +21,10 @@ func (r *Router) handleListPlatforms(w http.ResponseWriter, req *http.Request) {
 }
 
 func (r *Router) handleGetPlatform(w http.ResponseWriter, req *http.Request) {
-	id := req.PathValue("id")
+	id, ok := RequirePathParam(w, req, "id")
+	if !ok {
+		return
+	}
 	profile, err := r.platformService.GetByID(req.Context(), id)
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "platform profile not found"})
@@ -39,8 +41,7 @@ func (r *Router) handleCreatePlatform(w http.ResponseWriter, req *http.Request) 
 		ImageNaming platform.ImageNaming `json:"image_naming"`
 		UseSymlinks bool                 `json:"use_symlinks"`
 	}
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+	if !DecodeJSON(w, req, &body) {
 		return
 	}
 	if body.Name == "" {
@@ -72,7 +73,10 @@ func (r *Router) handleCreatePlatform(w http.ResponseWriter, req *http.Request) 
 }
 
 func (r *Router) handleUpdatePlatform(w http.ResponseWriter, req *http.Request) {
-	id := req.PathValue("id")
+	id, ok := RequirePathParam(w, req, "id")
+	if !ok {
+		return
+	}
 	existing, err := r.platformService.GetByID(req.Context(), id)
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "platform profile not found"})
@@ -86,8 +90,7 @@ func (r *Router) handleUpdatePlatform(w http.ResponseWriter, req *http.Request) 
 		ImageNaming *platform.ImageNaming `json:"image_naming"`
 		UseSymlinks *bool                 `json:"use_symlinks"`
 	}
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+	if !DecodeJSON(w, req, &body) {
 		return
 	}
 
@@ -144,7 +147,10 @@ func (r *Router) handleUpdatePlatform(w http.ResponseWriter, req *http.Request) 
 }
 
 func (r *Router) handleDeletePlatform(w http.ResponseWriter, req *http.Request) {
-	id := req.PathValue("id")
+	id, ok := RequirePathParam(w, req, "id")
+	if !ok {
+		return
+	}
 	if err := r.platformService.Delete(req.Context(), id); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
@@ -153,7 +159,10 @@ func (r *Router) handleDeletePlatform(w http.ResponseWriter, req *http.Request) 
 }
 
 func (r *Router) handleSetActivePlatform(w http.ResponseWriter, req *http.Request) {
-	id := req.PathValue("id")
+	id, ok := RequirePathParam(w, req, "id")
+	if !ok {
+		return
+	}
 	if err := r.platformService.SetActive(req.Context(), id); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return

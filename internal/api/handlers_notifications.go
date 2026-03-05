@@ -36,9 +36,8 @@ func (r *Router) handleListNotifications(w http.ResponseWriter, req *http.Reques
 // handleDismissViolation dismisses a rule violation.
 // POST /api/v1/notifications/{id}/dismiss
 func (r *Router) handleDismissViolation(w http.ResponseWriter, req *http.Request) {
-	id := req.PathValue("id")
-	if id == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "violation id required"})
+	id, ok := RequirePathParam(w, req, "id")
+	if !ok {
 		return
 	}
 
@@ -56,9 +55,8 @@ func (r *Router) handleDismissViolation(w http.ResponseWriter, req *http.Request
 // handleResolveViolation marks a violation as resolved.
 // POST /api/v1/notifications/{id}/resolve
 func (r *Router) handleResolveViolation(w http.ResponseWriter, req *http.Request) {
-	id := req.PathValue("id")
-	if id == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "violation id required"})
+	id, ok := RequirePathParam(w, req, "id")
+	if !ok {
 		return
 	}
 
@@ -130,9 +128,8 @@ func (r *Router) handleNotificationsPage(w http.ResponseWriter, req *http.Reques
 // handleApplyViolationCandidate downloads and applies a chosen image candidate.
 // POST /api/v1/notifications/{id}/apply-candidate
 func (r *Router) handleApplyViolationCandidate(w http.ResponseWriter, req *http.Request) {
-	id := req.PathValue("id")
-	if id == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "violation id required"})
+	id, ok := RequirePathParam(w, req, "id")
+	if !ok {
 		return
 	}
 

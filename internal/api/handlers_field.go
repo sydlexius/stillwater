@@ -174,8 +174,7 @@ func (r *Router) handleSaveMembers(w http.ResponseWriter, req *http.Request) {
 	artistID := req.PathValue("id")
 
 	var members []provider.MemberInfo
-	if err := json.NewDecoder(req.Body).Decode(&members); err != nil {
-		writeError(w, req, http.StatusBadRequest, "invalid request body")
+	if !DecodeJSON(w, req, &members) {
 		return
 	}
 

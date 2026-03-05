@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -14,7 +13,10 @@ import (
 )
 
 func (r *Router) handlePushMetadata(w http.ResponseWriter, req *http.Request) {
-	artistID := req.PathValue("id")
+	artistID, ok := RequirePathParam(w, req, "id")
+	if !ok {
+		return
+	}
 
 	a, err := r.artistService.GetByID(req.Context(), artistID)
 	if err != nil {
@@ -26,8 +28,7 @@ func (r *Router) handlePushMetadata(w http.ResponseWriter, req *http.Request) {
 		ConnectionID     string `json:"connection_id"`
 		PlatformArtistID string `json:"platform_artist_id"`
 	}
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+	if !DecodeJSON(w, req, &body) {
 		return
 	}
 	if body.ConnectionID == "" {
@@ -99,7 +100,10 @@ func (r *Router) handlePushMetadata(w http.ResponseWriter, req *http.Request) {
 // handlePushImages uploads artist images to an Emby/Jellyfin connection.
 // POST /api/v1/artists/{id}/push/images
 func (r *Router) handlePushImages(w http.ResponseWriter, req *http.Request) {
-	artistID := req.PathValue("id")
+	artistID, ok := RequirePathParam(w, req, "id")
+	if !ok {
+		return
+	}
 
 	a, err := r.artistService.GetByID(req.Context(), artistID)
 	if err != nil {
@@ -112,8 +116,7 @@ func (r *Router) handlePushImages(w http.ResponseWriter, req *http.Request) {
 		PlatformArtistID string   `json:"platform_artist_id"`
 		ImageTypes       []string `json:"image_types"`
 	}
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+	if !DecodeJSON(w, req, &body) {
 		return
 	}
 	if body.ConnectionID == "" {
@@ -203,13 +206,19 @@ func (r *Router) handlePushImages(w http.ResponseWriter, req *http.Request) {
 // handleDeletePushImage deletes an image from an Emby/Jellyfin connection.
 // DELETE /api/v1/artists/{id}/push/images/{type}
 func (r *Router) handleDeletePushImage(w http.ResponseWriter, req *http.Request) {
-	imageType := req.PathValue("type")
+	imageType, ok := RequirePathParam(w, req, "type")
+	if !ok {
+		return
+	}
 	if !validImageTypes[imageType] {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid image type, must be: thumb, fanart, logo, banner"})
 		return
 	}
 
-	artistID := req.PathValue("id")
+	artistID, ok := RequirePathParam(w, req, "id")
+	if !ok {
+		return
+	}
 	if _, err := r.artistService.GetByID(req.Context(), artistID); err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "artist not found"})
 		return
@@ -219,8 +228,7 @@ func (r *Router) handleDeletePushImage(w http.ResponseWriter, req *http.Request)
 		ConnectionID     string `json:"connection_id"`
 		PlatformArtistID string `json:"platform_artist_id"`
 	}
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+	if !DecodeJSON(w, req, &body) {
 		return
 	}
 	if body.ConnectionID == "" {

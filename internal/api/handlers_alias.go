@@ -1,16 +1,14 @@
 package api
 
 import (
-	"encoding/json"
 	"net/http"
 
 	"github.com/sydlexius/stillwater/internal/artist"
 )
 
 func (r *Router) handleListAliases(w http.ResponseWriter, req *http.Request) {
-	artistID := req.PathValue("id")
-	if artistID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing artist id"})
+	artistID, ok := RequirePathParam(w, req, "id")
+	if !ok {
 		return
 	}
 
@@ -27,9 +25,8 @@ func (r *Router) handleListAliases(w http.ResponseWriter, req *http.Request) {
 }
 
 func (r *Router) handleAddAlias(w http.ResponseWriter, req *http.Request) {
-	artistID := req.PathValue("id")
-	if artistID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing artist id"})
+	artistID, ok := RequirePathParam(w, req, "id")
+	if !ok {
 		return
 	}
 
@@ -37,8 +34,7 @@ func (r *Router) handleAddAlias(w http.ResponseWriter, req *http.Request) {
 		Alias  string `json:"alias"`
 		Source string `json:"source"`
 	}
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+	if !DecodeJSON(w, req, &body) {
 		return
 	}
 
@@ -51,9 +47,8 @@ func (r *Router) handleAddAlias(w http.ResponseWriter, req *http.Request) {
 }
 
 func (r *Router) handleRemoveAlias(w http.ResponseWriter, req *http.Request) {
-	aliasID := req.PathValue("aliasId")
-	if aliasID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing alias id"})
+	aliasID, ok := RequirePathParam(w, req, "aliasId")
+	if !ok {
 		return
 	}
 
