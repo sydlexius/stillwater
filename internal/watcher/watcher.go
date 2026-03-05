@@ -298,8 +298,9 @@ func (s *Service) refreshWatchPaths(ctx context.Context) {
 	for _, path := range toRemove {
 		if err := s.watcher.Remove(path); err != nil {
 			s.logger.Warn("failed to remove watch", "path", path, "error", err)
+		} else {
+			s.logger.Info("stopped watching library path", "path", path)
 		}
-		s.logger.Info("stopped watching library path", "path", path)
 	}
 
 	// Add watches and snapshot directories (fsnotify + filesystem I/O outside the lock).
@@ -421,9 +422,8 @@ func (s *Service) pollDirectories() bool {
 
 	// Collect all state under a single lock to avoid read-check-act races.
 	type pollEntry struct {
-		path     string
-		oldSnap  map[string]struct{}
-		interval int
+		path    string
+		oldSnap map[string]struct{}
 	}
 
 	s.mu.Lock()
@@ -442,7 +442,7 @@ func (s *Service) pollDirectories() bool {
 		for k, v := range snap {
 			snapCopy[k] = v
 		}
-		entries = append(entries, pollEntry{path: path, oldSnap: snapCopy, interval: interval})
+		entries = append(entries, pollEntry{path: path, oldSnap: snapCopy})
 	}
 	s.mu.Unlock()
 

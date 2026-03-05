@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"runtime/debug"
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/event"
@@ -68,6 +69,7 @@ func (d *Dispatcher) HandleEvent(e event.Event) {
 						"webhook", w.Name,
 						"event", string(e.Type),
 						"panic", rv,
+						"stack", string(debug.Stack()),
 					)
 				}
 			}()
