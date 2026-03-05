@@ -266,7 +266,7 @@ func (r *Router) handleDeletePushImage(w http.ResponseWriter, req *http.Request)
 
 	if err := deleter.DeleteImage(req.Context(), body.PlatformArtistID, imageType); err != nil {
 		r.logger.Error("deleting image from platform", "artist_id", artistID, "type", imageType, "error", err)
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "delete failed: " + err.Error()})
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "delete failed"})
 		return
 	}
 
