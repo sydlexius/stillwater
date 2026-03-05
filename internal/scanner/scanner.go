@@ -53,6 +53,7 @@ type Service struct {
 	// created goroutines that survived application shutdown.
 	shutdownCtx    context.Context
 	shutdownCancel context.CancelFunc
+	scanWg         sync.WaitGroup
 }
 
 // SetEventBus sets the event bus for publishing scan events.
@@ -93,6 +94,7 @@ func NewService(artistService *artist.Service, ruleEngine *rule.Engine, ruleServ
 // complete. Call this during application shutdown.
 func (s *Service) Shutdown() {
 	s.shutdownCancel()
+	s.scanWg.Wait()
 }
 
 // Run starts a filesystem scan. Only one scan runs at a time.
@@ -115,6 +117,7 @@ func (s *Service) Run(ctx context.Context) (*ScanResult, error) {
 
 	// Use the shutdown context so the scan outlives the HTTP request but
 	// is still canceled on application shutdown.
+	s.scanWg.Add(1)
 	go s.runScan(s.shutdownCtx, result)
 
 	return &snapshot, nil
@@ -133,6 +136,7 @@ func (s *Service) Status() *ScanResult {
 }
 
 func (s *Service) runScan(ctx context.Context, result *ScanResult) {
+	defer s.scanWg.Done()
 	defer func() {
 		s.mu.Lock()
 		now := time.Now().UTC()
