@@ -566,9 +566,18 @@ func resetPassword(username, password string) error {
 	}
 
 	// Update password in database
-	_, err = db.ExecContext(ctx, "UPDATE users SET password_hash = ? WHERE username = ?", string(hash), username)
+	result, err := db.ExecContext(ctx, "UPDATE users SET password_hash = ? WHERE username = ?", string(hash), username)
 	if err != nil {
 		return fmt.Errorf("updating password: %w", err)
+	}
+
+	// Verify the update actually modified a row (handle race condition where user was deleted)
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("checking rows affected: %w", err)
+	}
+	if rowsAffected == 0 {
+		return fmt.Errorf("user not found: %s", username)
 	}
 
 	fmt.Printf("Password for user '%s' has been reset successfully.\n", username)
@@ -576,8 +585,11 @@ func resetPassword(username, password string) error {
 }
 
 // promptPassword reads a password from stdin with TTY echo suppression.
-// Falls back to plain input if stdin is not a TTY (e.g., piped input).
+// For TTY (interactive): prompts twice and confirms passwords match.
+// For non-TTY (pipes/scripts): reads single line without confirmation.
 func promptPassword() (string, error) {
+	fd := int(os.Stdin.Fd()) //nolint:gosec // G115: safe for file descriptors
+
 	fmt.Fprint(os.Stderr, "Enter new password: ")
 	password, err := readPasswordNoEcho()
 	if err != nil {
@@ -585,15 +597,18 @@ func promptPassword() (string, error) {
 	}
 	fmt.Fprintln(os.Stderr)
 
-	fmt.Fprint(os.Stderr, "Confirm password: ")
-	confirm, err := readPasswordNoEcho()
-	if err != nil {
-		return "", err
-	}
-	fmt.Fprintln(os.Stderr)
+	// Only prompt for confirmation on TTY (interactive mode)
+	if term.IsTerminal(fd) {
+		fmt.Fprint(os.Stderr, "Confirm password: ")
+		confirm, err := readPasswordNoEcho()
+		if err != nil {
+			return "", err
+		}
+		fmt.Fprintln(os.Stderr)
 
-	if password != confirm {
-		return "", fmt.Errorf("passwords do not match")
+		if password != confirm {
+			return "", fmt.Errorf("passwords do not match")
+		}
 	}
 
 	if password == "" {
