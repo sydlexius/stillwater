@@ -267,12 +267,17 @@ func (s *Service) RevokeAPIToken(ctx context.Context, id, userID string) error {
 	return nil
 }
 
-// prehashPassword hashes the password with SHA-256 before bcrypt to support
+// PrehashPassword hashes the password with SHA-256 before bcrypt to support
 // passwords longer than bcrypt's 72-byte limit. The hex-encoded SHA-256
 // digest is 64 bytes, safely within the limit.
-func prehashPassword(password string) []byte {
+func PrehashPassword(password string) []byte {
 	h := sha256.Sum256([]byte(password))
 	return []byte(hex.EncodeToString(h[:]))
+}
+
+// prehashPassword is the unexported wrapper for internal use.
+func prehashPassword(password string) []byte {
+	return PrehashPassword(password)
 }
 
 func generateToken() (string, error) {

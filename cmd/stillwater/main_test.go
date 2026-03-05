@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/sydlexius/stillwater/internal/auth"
 	"github.com/sydlexius/stillwater/internal/database"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -31,7 +32,7 @@ func TestResetPassword(t *testing.T) {
 	// Create a test user
 	testUsername := "testuser"
 	oldPassword := "oldpass123"
-	oldHash, err := bcrypt.GenerateFromPassword(prehashPassword(oldPassword), bcrypt.DefaultCost)
+	oldHash, err := bcrypt.GenerateFromPassword(auth.PrehashPassword(oldPassword), bcrypt.DefaultCost)
 	if err != nil {
 		t.Fatalf("hashing password: %v", err)
 	}
@@ -47,7 +48,7 @@ func TestResetPassword(t *testing.T) {
 
 	// Test password reset with explicit password
 	newPassword := "newpass456"
-	hash, err := bcrypt.GenerateFromPassword(prehashPassword(newPassword), bcrypt.DefaultCost)
+	hash, err := bcrypt.GenerateFromPassword(auth.PrehashPassword(newPassword), bcrypt.DefaultCost)
 	if err != nil {
 		t.Fatalf("hashing new password: %v", err)
 	}
@@ -64,13 +65,13 @@ func TestResetPassword(t *testing.T) {
 		t.Fatalf("querying user: %v", err)
 	}
 
-	err = bcrypt.CompareHashAndPassword([]byte(storedHash), prehashPassword(newPassword))
+	err = bcrypt.CompareHashAndPassword([]byte(storedHash), auth.PrehashPassword(newPassword))
 	if err != nil {
 		t.Fatalf("new password verification failed: %v", err)
 	}
 
 	// Verify old password no longer works
-	err = bcrypt.CompareHashAndPassword([]byte(storedHash), prehashPassword(oldPassword))
+	err = bcrypt.CompareHashAndPassword([]byte(storedHash), auth.PrehashPassword(oldPassword))
 	if err == nil {
 		t.Fatalf("old password should not work anymore")
 	}
@@ -96,7 +97,7 @@ func TestResetPasswordFirstAdmin(t *testing.T) {
 	// Create a test admin user
 	adminUsername := "admin"
 	password := "testpass123"
-	hash, err := bcrypt.GenerateFromPassword(prehashPassword(password), bcrypt.DefaultCost)
+	hash, err := bcrypt.GenerateFromPassword(auth.PrehashPassword(password), bcrypt.DefaultCost)
 	if err != nil {
 		t.Fatalf("hashing password: %v", err)
 	}

@@ -3,9 +3,8 @@ package main
 import (
 	"bufio"
 	"context"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -52,6 +51,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/webhook"
 
 	"golang.org/x/crypto/bcrypt"
+	"golang.org/x/term"
 	"golang.org/x/time/rate"
 )
 
@@ -71,10 +71,13 @@ func main() {
 	// Parse global flags
 	resetPwd := flag.Bool("reset-password", false, "Reset admin password and exit")
 	username := flag.String("username", "", "Username for password reset")
-	newPassword := flag.String("new-password", "", "New password (will prompt if not provided)")
+	newPassword := flag.String("new-password", "", "New password (insecure: visible in process list; prefer interactive prompt)")
 	flag.Parse()
 
 	if *resetPwd {
+		if *newPassword != "" {
+			fmt.Fprintln(os.Stderr, "warning: --new-password exposes the password in process arguments; consider using the interactive prompt instead")
+		}
 		if err := resetPassword(*username, *newPassword); err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
@@ -530,7 +533,7 @@ func resetPassword(username, password string) error {
 		// Get first admin user
 		err := db.QueryRowContext(ctx, "SELECT username FROM users WHERE role = 'admin' LIMIT 1").Scan(&username)
 		if err != nil {
-			if err == sql.ErrNoRows {
+			if errors.Is(err, sql.ErrNoRows) {
 				return fmt.Errorf("no admin users found in database")
 			}
 			return fmt.Errorf("querying admin user: %w", err)
@@ -557,7 +560,7 @@ func resetPassword(username, password string) error {
 	}
 
 	// Hash password using same method as auth service
-	hash, err := bcrypt.GenerateFromPassword(prehashPassword(password), bcrypt.DefaultCost)
+	hash, err := bcrypt.GenerateFromPassword(auth.PrehashPassword(password), bcrypt.DefaultCost)
 	if err != nil {
 		return fmt.Errorf("hashing password: %w", err)
 	}
@@ -572,27 +575,22 @@ func resetPassword(username, password string) error {
 	return nil
 }
 
-// prehashPassword mirrors the auth service implementation
-func prehashPassword(password string) []byte {
-	h := sha256.Sum256([]byte(password))
-	return []byte(hex.EncodeToString(h[:]))
-}
-
-// promptPassword reads a password from stdin without echoing it to the terminal
+// promptPassword reads a password from stdin with TTY echo suppression.
+// Falls back to plain input if stdin is not a TTY (e.g., piped input).
 func promptPassword() (string, error) {
-	fmt.Print("Enter new password: ")
-	password, err := readLineNoEcho()
+	fmt.Fprint(os.Stderr, "Enter new password: ")
+	password, err := readPasswordNoEcho()
 	if err != nil {
 		return "", err
 	}
-	fmt.Println()
+	fmt.Fprintln(os.Stderr)
 
-	fmt.Print("Confirm password: ")
-	confirm, err := readLineNoEcho()
+	fmt.Fprint(os.Stderr, "Confirm password: ")
+	confirm, err := readPasswordNoEcho()
 	if err != nil {
 		return "", err
 	}
-	fmt.Println()
+	fmt.Fprintln(os.Stderr)
 
 	if password != confirm {
 		return "", fmt.Errorf("passwords do not match")
@@ -605,8 +603,21 @@ func promptPassword() (string, error) {
 	return password, nil
 }
 
-// readLineNoEcho reads a line from stdin without echoing characters
-func readLineNoEcho() (string, error) {
+// readPasswordNoEcho reads a password from stdin with echo suppression on TTY.
+// If stdin is not a TTY, falls back to plain line reading (for scripts/pipes).
+func readPasswordNoEcho() (string, error) {
+	fd := int(os.Stdin.Fd()) //nolint:gosec // G115: uintptr to int is safe for file descriptors
+
+	// Try to suppress echo on TTY
+	if term.IsTerminal(fd) {
+		password, err := term.ReadPassword(fd)
+		if err != nil {
+			return "", fmt.Errorf("reading password: %w", err)
+		}
+		return string(password), nil
+	}
+
+	// Fall back to plain reading for non-TTY (pipes, scripts)
 	reader := bufio.NewReader(os.Stdin)
 	line, err := reader.ReadString('\n')
 	if err != nil && err != io.EOF {
