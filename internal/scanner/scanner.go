@@ -47,6 +47,13 @@ type Service struct {
 
 	mu          sync.Mutex
 	currentScan *ScanResult
+
+	// shutdownCtx is canceled when Shutdown is called, signaling background
+	// scan goroutines to stop. This replaces context.WithoutCancel which
+	// created goroutines that survived application shutdown.
+	shutdownCtx    context.Context
+	shutdownCancel context.CancelFunc
+	scanWg         sync.WaitGroup
 }
 
 // SetEventBus sets the event bus for publishing scan events.
@@ -70,14 +77,24 @@ func NewService(artistService *artist.Service, ruleEngine *rule.Engine, ruleServ
 	for _, e := range exclusions {
 		excMap[strings.ToLower(e)] = true
 	}
+	ctx, cancel := context.WithCancel(context.Background())
 	return &Service{
-		artistService: artistService,
-		ruleEngine:    ruleEngine,
-		ruleService:   ruleService,
-		logger:        logger,
-		libraryPath:   libraryPath,
-		exclusions:    excMap,
+		artistService:  artistService,
+		ruleEngine:     ruleEngine,
+		ruleService:    ruleService,
+		logger:         logger,
+		libraryPath:    libraryPath,
+		exclusions:     excMap,
+		shutdownCtx:    ctx,
+		shutdownCancel: cancel,
 	}
+}
+
+// Shutdown cancels any in-progress background scans and waits for them to
+// complete. Call this during application shutdown.
+func (s *Service) Shutdown() {
+	s.shutdownCancel()
+	s.scanWg.Wait()
 }
 
 // Run starts a filesystem scan. Only one scan runs at a time.
@@ -98,9 +115,10 @@ func (s *Service) Run(ctx context.Context) (*ScanResult, error) {
 	snapshot := *result
 	s.mu.Unlock()
 
-	// Use a detached context so the scan is not canceled when the HTTP
-	// request that triggered it completes.
-	go s.runScan(context.WithoutCancel(ctx), result)
+	// Use the shutdown context so the scan outlives the HTTP request but
+	// is still canceled on application shutdown.
+	s.scanWg.Add(1)
+	go s.runScan(s.shutdownCtx, result)
 
 	return &snapshot, nil
 }
@@ -118,6 +136,7 @@ func (s *Service) Status() *ScanResult {
 }
 
 func (s *Service) runScan(ctx context.Context, result *ScanResult) {
+	defer s.scanWg.Done()
 	defer func() {
 		s.mu.Lock()
 		now := time.Now().UTC()
