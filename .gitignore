@@ -33,8 +33,15 @@ web/static/css/styles.css
 
 # Local overrides
 docker-compose.local.yml
+docker-compose.wsl.yml
 setupdocker.ps1
+setupdocker.sh
 .env.integration
+
+# Node (Tailwind v4, MCP servers)
+node_modules/
+package.json
+package-lock.json
 
 # Temp
 *.tmp
