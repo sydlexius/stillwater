@@ -28,3 +28,8 @@ type MetadataPusher interface {
 type ImageUploader interface {
 	UploadImage(ctx context.Context, platformArtistID string, imageType string, data []byte, contentType string) error
 }
+
+// ImageDeleter deletes images from an external platform.
+type ImageDeleter interface {
+	DeleteImage(ctx context.Context, platformArtistID string, imageType string) error
+}

@@ -80,7 +80,8 @@ func (c *Client) PushMetadata(ctx context.Context, platformArtistID string, data
 	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode >= 300 {
-		respBody, _ := io.ReadAll(resp.Body)
+		const maxErrBody = 1 << 20 // 1 MB
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrBody))
 		return fmt.Errorf("push failed with status %d: %s", resp.StatusCode, string(respBody))
 	}
 
@@ -117,6 +118,37 @@ func (c *Client) UploadImage(ctx context.Context, platformArtistID string, image
 	}
 
 	c.logger.Debug("image uploaded to jellyfin", "artist_id", platformArtistID, "type", jfType)
+	return nil
+}
+
+// DeleteImage deletes an image from the Jellyfin server for the given artist.
+// DELETE /Items/{id}/Images/{type}
+func (c *Client) DeleteImage(ctx context.Context, platformArtistID string, imageType string) error {
+	jfType := mapImageType(imageType)
+	if jfType == "" {
+		return fmt.Errorf("unsupported image type: %s", imageType)
+	}
+
+	path := fmt.Sprintf("/Items/%s/Images/%s", platformArtistID, jfType)
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, connection.BuildRequestURL(c.baseURL, path), nil)
+	if err != nil {
+		return fmt.Errorf("creating image delete request: %w", err)
+	}
+	c.setAuth(req)
+
+	resp, err := c.httpClient.Do(req) //nolint:gosec // URL constructed from trusted base + artist ID
+	if err != nil {
+		return fmt.Errorf("executing image delete: %w", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+
+	if resp.StatusCode >= 300 {
+		const maxErrBody = 1 << 20 // 1 MB
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrBody))
+		return fmt.Errorf("image delete failed with status %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	c.logger.Debug("image deleted from jellyfin", "artist_id", platformArtistID, "type", jfType)
 	return nil
 }
 

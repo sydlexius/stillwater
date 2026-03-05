@@ -508,6 +508,47 @@ func TestGetArtistDetail_NotFound(t *testing.T) {
 	}
 }
 
+func TestDeleteImage_Success(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/Items/emby-001/Images/Primary" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		if r.Method != http.MethodDelete {
+			t.Errorf("method = %s, want DELETE", r.Method)
+		}
+		if r.Header.Get("X-Emby-Token") != "test-key" {
+			t.Errorf("missing or wrong auth header: %s", r.Header.Get("X-Emby-Token"))
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "test-key", srv.Client(), testLogger())
+	if err := c.DeleteImage(context.Background(), "emby-001", "thumb"); err != nil {
+		t.Fatalf("DeleteImage failed: %v", err)
+	}
+}
+
+func TestDeleteImage_ServerError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"error":"internal"}`))
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "test-key", srv.Client(), testLogger())
+	if err := c.DeleteImage(context.Background(), "emby-001", "thumb"); err == nil {
+		t.Fatal("expected error for server error response")
+	}
+}
+
+func TestDeleteImage_UnsupportedType(t *testing.T) {
+	c := New("http://localhost", "key", testLogger())
+	if err := c.DeleteImage(context.Background(), "emby-001", "clearart"); err == nil {
+		t.Fatal("expected error for unsupported image type")
+	}
+}
+
 func TestPushMetadata_DateNormalization(t *testing.T) {
 	tests := []struct {
 		name         string
