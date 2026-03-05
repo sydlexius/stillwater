@@ -82,9 +82,11 @@ func (c *Client) PushMetadata(ctx context.Context, platformArtistID string, data
 	if resp.StatusCode >= 300 {
 		const maxErrBody = 1 << 20 // 1 MB
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrBody))
+		_, _ = io.Copy(io.Discard, resp.Body)
 		return fmt.Errorf("push failed with status %d: %s", resp.StatusCode, string(respBody))
 	}
 
+	_, _ = io.Copy(io.Discard, resp.Body)
 	c.Logger.Debug("metadata pushed to jellyfin", "artist_id", platformArtistID)
 	return nil
 }
@@ -114,9 +116,11 @@ func (c *Client) UploadImage(ctx context.Context, platformArtistID string, image
 	if resp.StatusCode >= 300 {
 		const maxErrBody = 1 << 20 // 1 MB
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrBody))
+		_, _ = io.Copy(io.Discard, resp.Body)
 		return fmt.Errorf("image upload failed with status %d: %s", resp.StatusCode, string(respBody))
 	}
 
+	_, _ = io.Copy(io.Discard, resp.Body)
 	c.Logger.Debug("image uploaded to jellyfin", "artist_id", platformArtistID, "type", jfType)
 	return nil
 }
@@ -145,9 +149,11 @@ func (c *Client) DeleteImage(ctx context.Context, platformArtistID string, image
 	if resp.StatusCode >= 300 {
 		const maxErrBody = 1 << 20 // 1 MB
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrBody))
+		_, _ = io.Copy(io.Discard, resp.Body)
 		return fmt.Errorf("image delete failed with status %d: %s", resp.StatusCode, string(respBody))
 	}
 
+	_, _ = io.Copy(io.Discard, resp.Body)
 	c.Logger.Debug("image deleted from jellyfin", "artist_id", platformArtistID, "type", jfType)
 	return nil
 }

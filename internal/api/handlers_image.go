@@ -591,6 +591,7 @@ func (r *Router) fetchImageFromURL(rawURL string) ([]byte, error) {
 	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode != http.StatusOK {
+		_, _ = io.Copy(io.Discard, resp.Body)
 		return nil, fmt.Errorf("server returned %d", resp.StatusCode)
 	}
 
@@ -605,6 +606,7 @@ func (r *Router) fetchImageFromURL(rawURL string) ([]byte, error) {
 		return nil, fmt.Errorf("reading response: %w", err)
 	}
 	if len(data) > maxUploadSize {
+		_, _ = io.Copy(io.Discard, resp.Body)
 		return nil, fmt.Errorf("image exceeds 25MB limit")
 	}
 
