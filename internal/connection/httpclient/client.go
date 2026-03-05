@@ -31,16 +31,17 @@ type BaseClient struct {
 // NewBase creates a BaseClient with URL validation.
 // integration is used for structured log context (e.g. "emby", "jellyfin", "lidarr").
 func NewBase(baseURL, apiKey string, httpClient *http.Client, logger *slog.Logger, integration string) BaseClient {
+	l := logger.With(slog.String("integration", integration))
 	cleaned, err := connection.ValidateBaseURL(baseURL)
 	if err != nil {
-		logger.Warn(integration+" base URL failed validation, requests will fail", "error", err)
+		l.Warn("base URL failed validation, requests will fail", "error", err)
 		cleaned = ""
 	}
 	return BaseClient{
 		HTTPClient: httpClient,
 		BaseURL:    cleaned,
 		APIKey:     apiKey,
-		Logger:     logger.With(slog.String("integration", integration)),
+		Logger:     l,
 		AuthFunc:   func(*http.Request) {}, // no-op; overridden by each platform client
 	}
 }
