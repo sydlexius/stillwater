@@ -62,6 +62,15 @@ func (d *Dispatcher) HandleEvent(e event.Event) {
 		d.sem <- struct{}{}
 		go func(w Webhook) {
 			defer func() { <-d.sem }()
+			defer func() {
+				if rv := recover(); rv != nil {
+					d.logger.Error("panic delivering webhook",
+						"webhook", w.Name,
+						"event", string(e.Type),
+						"panic", rv,
+					)
+				}
+			}()
 			d.deliver(w, e)
 		}(w)
 	}

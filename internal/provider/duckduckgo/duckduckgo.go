@@ -137,6 +137,7 @@ func (a *Adapter) getVQDToken(ctx context.Context, query string) (string, error)
 	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode != http.StatusOK {
+		_, _ = io.Copy(io.Discard, resp.Body)
 		return "", &provider.ErrProviderUnavailable{
 			Provider: provider.NameDuckDuckGo,
 			Cause:    fmt.Errorf("VQD request returned status %d", resp.StatusCode),
@@ -186,6 +187,7 @@ func (a *Adapter) fetchImages(ctx context.Context, query, vqd string) ([]imageHi
 	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode != http.StatusOK {
+		_, _ = io.Copy(io.Discard, resp.Body)
 		return nil, &provider.ErrProviderUnavailable{
 			Provider: provider.NameDuckDuckGo,
 			Cause:    fmt.Errorf("image search returned status %d", resp.StatusCode),

@@ -42,6 +42,7 @@ func ProbeRemoteImage(ctx context.Context, rawURL string) (*RemoteImageInfo, err
 	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode != http.StatusOK {
+		io.Copy(io.Discard, resp.Body) //nolint:errcheck // drain body to allow connection reuse
 		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
 
