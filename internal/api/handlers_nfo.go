@@ -21,9 +21,8 @@ import (
 // handleNFODiff computes a field-level diff between the current NFO and a snapshot.
 // GET /api/v1/artists/{id}/nfo/diff
 func (r *Router) handleNFODiff(w http.ResponseWriter, req *http.Request) {
-	artistID := req.PathValue("id")
-	if artistID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing artist id"})
+	artistID, ok := RequirePathParam(w, req, "id")
+	if !ok {
 		return
 	}
 
@@ -79,9 +78,8 @@ func (r *Router) handleNFODiff(w http.ResponseWriter, req *http.Request) {
 // handleNFOSnapshotList returns all NFO snapshots for an artist.
 // GET /api/v1/artists/{id}/nfo/snapshots
 func (r *Router) handleNFOSnapshotList(w http.ResponseWriter, req *http.Request) {
-	artistID := req.PathValue("id")
-	if artistID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing artist id"})
+	artistID, ok := RequirePathParam(w, req, "id")
+	if !ok {
 		return
 	}
 
@@ -102,11 +100,12 @@ func (r *Router) handleNFOSnapshotList(w http.ResponseWriter, req *http.Request)
 // handleNFOSnapshotRestore restores an NFO from a snapshot.
 // POST /api/v1/artists/{id}/nfo/snapshots/{snapshotId}/restore
 func (r *Router) handleNFOSnapshotRestore(w http.ResponseWriter, req *http.Request) {
-	artistID := req.PathValue("id")
-	snapshotID := req.PathValue("snapshotId")
-
-	if artistID == "" || snapshotID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing required path parameters"})
+	artistID, ok := RequirePathParam(w, req, "id")
+	if !ok {
+		return
+	}
+	snapshotID, ok := RequirePathParam(w, req, "snapshotId")
+	if !ok {
 		return
 	}
 
@@ -186,9 +185,8 @@ func (r *Router) handleNFODiffPage(w http.ResponseWriter, req *http.Request) {
 // handleNFOConflictCheck checks whether an artist's NFO has been modified externally.
 // GET /api/v1/artists/{id}/nfo/conflict
 func (r *Router) handleNFOConflictCheck(w http.ResponseWriter, req *http.Request) {
-	artistID := req.PathValue("id")
-	if artistID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing artist id"})
+	artistID, ok := RequirePathParam(w, req, "id")
+	if !ok {
 		return
 	}
 

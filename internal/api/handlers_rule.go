@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"time"
 
@@ -37,9 +36,8 @@ func (r *Router) handleListRules(w http.ResponseWriter, req *http.Request) {
 // handleUpdateRule updates a rule's enabled state and config.
 // PUT /api/v1/rules/{id}
 func (r *Router) handleUpdateRule(w http.ResponseWriter, req *http.Request) {
-	ruleID := req.PathValue("id")
-	if ruleID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing rule id"})
+	ruleID, ok := RequirePathParam(w, req, "id")
+	if !ok {
 		return
 	}
 
@@ -54,8 +52,7 @@ func (r *Router) handleUpdateRule(w http.ResponseWriter, req *http.Request) {
 		AutomationMode *string          `json:"automation_mode"`
 		Config         *rule.RuleConfig `json:"config"`
 	}
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+	if !DecodeJSON(w, req, &body) {
 		return
 	}
 
@@ -86,9 +83,8 @@ func (r *Router) handleUpdateRule(w http.ResponseWriter, req *http.Request) {
 // handleEvaluateArtist runs all enabled rules against an artist and returns the results.
 // GET /api/v1/artists/{id}/health
 func (r *Router) handleEvaluateArtist(w http.ResponseWriter, req *http.Request) {
-	artistID := req.PathValue("id")
-	if artistID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing artist id"})
+	artistID, ok := RequirePathParam(w, req, "id")
+	if !ok {
 		return
 	}
 
@@ -117,9 +113,8 @@ func (r *Router) handleEvaluateArtist(w http.ResponseWriter, req *http.Request) 
 // handleRunRule runs a single rule against all artists and attempts to fix violations.
 // POST /api/v1/rules/{id}/run
 func (r *Router) handleRunRule(w http.ResponseWriter, req *http.Request) {
-	ruleID := req.PathValue("id")
-	if ruleID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing rule id"})
+	ruleID, ok := RequirePathParam(w, req, "id")
+	if !ok {
 		return
 	}
 
@@ -246,8 +241,7 @@ func (r *Router) handleSetClassicalMode(w http.ResponseWriter, req *http.Request
 	var body struct {
 		Mode string `json:"mode"`
 	}
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+	if !DecodeJSON(w, req, &body) {
 		return
 	}
 
@@ -284,8 +278,7 @@ func (r *Router) handleBulkFetchImages(w http.ResponseWriter, req *http.Request)
 
 func (r *Router) startBulkJob(w http.ResponseWriter, req *http.Request, jobType string) {
 	var body rule.BulkRequest
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+	if !DecodeJSON(w, req, &body) {
 		return
 	}
 
@@ -326,9 +319,8 @@ func (r *Router) handleBulkJobList(w http.ResponseWriter, req *http.Request) {
 // handleBulkJobStatus returns a single bulk job with its items.
 // GET /api/v1/bulk/jobs/{id}
 func (r *Router) handleBulkJobStatus(w http.ResponseWriter, req *http.Request) {
-	jobID := req.PathValue("id")
-	if jobID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing job id"})
+	jobID, ok := RequirePathParam(w, req, "id")
+	if !ok {
 		return
 	}
 

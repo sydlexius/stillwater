@@ -89,9 +89,8 @@ var validContentTypes = map[string]bool{
 // handleImageUpload handles multipart file uploads for artist images.
 // POST /api/v1/artists/{id}/images/upload
 func (r *Router) handleImageUpload(w http.ResponseWriter, req *http.Request) {
-	artistID := req.PathValue("id")
-	if artistID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing artist id"})
+	artistID, ok := RequirePathParam(w, req, "id")
+	if !ok {
 		return
 	}
 
@@ -182,9 +181,8 @@ func (r *Router) handleImageUpload(w http.ResponseWriter, req *http.Request) {
 // handleImageFetch fetches an image from a URL and saves it for the artist.
 // POST /api/v1/artists/{id}/images/fetch
 func (r *Router) handleImageFetch(w http.ResponseWriter, req *http.Request) {
-	artistID := req.PathValue("id")
-	if artistID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing artist id"})
+	artistID, ok := RequirePathParam(w, req, "id")
+	if !ok {
 		return
 	}
 
@@ -279,9 +277,8 @@ func (r *Router) handleImageFetch(w http.ResponseWriter, req *http.Request) {
 // handleImageSearch searches for images from all providers for an artist.
 // GET /api/v1/artists/{id}/images/search?type=thumb
 func (r *Router) handleImageSearch(w http.ResponseWriter, req *http.Request) {
-	artistID := req.PathValue("id")
-	if artistID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing artist id"})
+	artistID, ok := RequirePathParam(w, req, "id")
+	if !ok {
 		return
 	}
 
@@ -354,9 +351,8 @@ var validWebSearchImageTypes = map[string]bool{
 // handleWebImageSearch queries enabled web search providers for artist images.
 // GET /api/v1/artists/{id}/images/websearch?type=thumb
 func (r *Router) handleWebImageSearch(w http.ResponseWriter, req *http.Request) {
-	artistID := req.PathValue("id")
-	if artistID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing artist id"})
+	artistID, ok := RequirePathParam(w, req, "id")
+	if !ok {
 		return
 	}
 
@@ -402,9 +398,8 @@ func (r *Router) handleWebImageSearch(w http.ResponseWriter, req *http.Request) 
 // handleImageCrop accepts cropped image data and saves it.
 // POST /api/v1/artists/{id}/images/crop
 func (r *Router) handleImageCrop(w http.ResponseWriter, req *http.Request) {
-	artistID := req.PathValue("id")
-	if artistID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing artist id"})
+	artistID, ok := RequirePathParam(w, req, "id")
+	if !ok {
 		return
 	}
 
@@ -425,8 +420,7 @@ func (r *Router) handleImageCrop(w http.ResponseWriter, req *http.Request) {
 		Width     int    `json:"width"`
 		Height    int    `json:"height"`
 	}
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+	if !DecodeJSON(w, req, &body) {
 		return
 	}
 
@@ -597,6 +591,7 @@ func (r *Router) fetchImageFromURL(rawURL string) ([]byte, error) {
 	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode != http.StatusOK {
+		_, _ = io.Copy(io.Discard, resp.Body)
 		return nil, fmt.Errorf("server returned %d", resp.StatusCode)
 	}
 
@@ -611,6 +606,7 @@ func (r *Router) fetchImageFromURL(rawURL string) ([]byte, error) {
 		return nil, fmt.Errorf("reading response: %w", err)
 	}
 	if len(data) > maxUploadSize {
+		_, _ = io.Copy(io.Discard, resp.Body)
 		return nil, fmt.Errorf("image exceeds 25MB limit")
 	}
 
@@ -738,9 +734,8 @@ func (r *Router) updateArtistImageFlag(ctx context.Context, a *artist.Artist, im
 // handleServeImage serves a local artist image file from disk.
 // GET /api/v1/artists/{id}/images/{type}/file
 func (r *Router) handleServeImage(w http.ResponseWriter, req *http.Request) {
-	artistID := req.PathValue("id")
-	if artistID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing artist id"})
+	artistID, ok := RequirePathParam(w, req, "id")
+	if !ok {
 		return
 	}
 
@@ -780,9 +775,8 @@ func (r *Router) handleServeImage(w http.ResponseWriter, req *http.Request) {
 // handleImageInfo returns metadata about a local artist image (dimensions, file size).
 // GET /api/v1/artists/{id}/images/{type}/info
 func (r *Router) handleImageInfo(w http.ResponseWriter, req *http.Request) {
-	artistID := req.PathValue("id")
-	if artistID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing artist id"})
+	artistID, ok := RequirePathParam(w, req, "id")
+	if !ok {
 		return
 	}
 
@@ -842,9 +836,8 @@ func (r *Router) handleImageInfo(w http.ResponseWriter, req *http.Request) {
 // handleDeleteImage deletes a local artist image file.
 // DELETE /api/v1/artists/{id}/images/{type}
 func (r *Router) handleDeleteImage(w http.ResponseWriter, req *http.Request) {
-	artistID := req.PathValue("id")
-	if artistID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing artist id"})
+	artistID, ok := RequirePathParam(w, req, "id")
+	if !ok {
 		return
 	}
 
@@ -1001,9 +994,8 @@ func normalizeImageType(t string) string {
 // handleLogoTrim trims the transparent border from an artist's existing logo.
 // POST /api/v1/artists/{id}/images/logo/trim
 func (r *Router) handleLogoTrim(w http.ResponseWriter, req *http.Request) {
-	artistID := req.PathValue("id")
-	if artistID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing artist id"})
+	artistID, ok := RequirePathParam(w, req, "id")
+	if !ok {
 		return
 	}
 
@@ -1155,9 +1147,8 @@ func (r *Router) updateArtistFanartCount(ctx context.Context, a *artist.Artist) 
 // handleFanartList returns metadata for all fanart images of an artist.
 // GET /api/v1/artists/{id}/images/fanart/list
 func (r *Router) handleFanartList(w http.ResponseWriter, req *http.Request) {
-	artistID := req.PathValue("id")
-	if artistID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing artist id"})
+	artistID, ok := RequirePathParam(w, req, "id")
+	if !ok {
 		return
 	}
 
@@ -1196,9 +1187,8 @@ func (r *Router) handleFanartList(w http.ResponseWriter, req *http.Request) {
 // handleServeFanartByIndex serves a specific fanart image by 0-based index.
 // GET /api/v1/artists/{id}/images/fanart/{index}/file
 func (r *Router) handleServeFanartByIndex(w http.ResponseWriter, req *http.Request) {
-	artistID := req.PathValue("id")
-	if artistID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing artist id"})
+	artistID, ok := RequirePathParam(w, req, "id")
+	if !ok {
 		return
 	}
 
@@ -1230,9 +1220,8 @@ func (r *Router) handleServeFanartByIndex(w http.ResponseWriter, req *http.Reque
 // remaining files to close gaps.
 // DELETE /api/v1/artists/{id}/images/fanart/batch
 func (r *Router) handleFanartBatchDelete(w http.ResponseWriter, req *http.Request) {
-	artistID := req.PathValue("id")
-	if artistID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing artist id"})
+	artistID, ok := RequirePathParam(w, req, "id")
+	if !ok {
 		return
 	}
 
@@ -1248,8 +1237,7 @@ func (r *Router) handleFanartBatchDelete(w http.ResponseWriter, req *http.Reques
 	var body struct {
 		Indices []int `json:"indices"`
 	}
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+	if !DecodeJSON(w, req, &body) {
 		return
 	}
 	if len(body.Indices) == 0 {
@@ -1324,9 +1312,8 @@ func (r *Router) handleFanartBatchDelete(w http.ResponseWriter, req *http.Reques
 // handleFanartBatchFetch downloads multiple URLs and saves them as additional fanart.
 // POST /api/v1/artists/{id}/images/fanart/fetch-batch
 func (r *Router) handleFanartBatchFetch(w http.ResponseWriter, req *http.Request) {
-	artistID := req.PathValue("id")
-	if artistID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing artist id"})
+	artistID, ok := RequirePathParam(w, req, "id")
+	if !ok {
 		return
 	}
 
@@ -1342,8 +1329,7 @@ func (r *Router) handleFanartBatchFetch(w http.ResponseWriter, req *http.Request
 	var body struct {
 		URLs []string `json:"urls"`
 	}
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+	if !DecodeJSON(w, req, &body) {
 		return
 	}
 	if len(body.URLs) == 0 {

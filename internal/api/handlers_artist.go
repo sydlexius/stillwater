@@ -43,9 +43,8 @@ func (r *Router) handleListArtists(w http.ResponseWriter, req *http.Request) {
 // handleGetArtist returns a single artist as JSON.
 // GET /api/v1/artists/{id}
 func (r *Router) handleGetArtist(w http.ResponseWriter, req *http.Request) {
-	id := req.PathValue("id")
-	if id == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing artist id"})
+	id, ok := RequirePathParam(w, req, "id")
+	if !ok {
 		return
 	}
 

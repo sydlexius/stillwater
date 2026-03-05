@@ -57,7 +57,10 @@ func (r *Router) handleBackupHistory(w http.ResponseWriter, req *http.Request) {
 }
 
 func (r *Router) handleBackupDelete(w http.ResponseWriter, req *http.Request) {
-	filename := req.PathValue("filename")
+	filename, ok := RequirePathParam(w, req, "filename")
+	if !ok {
+		return
+	}
 	if !backup.IsValidBackupFilename(filename) {
 		writeError(w, req, http.StatusBadRequest, "invalid filename")
 		return
@@ -88,9 +91,12 @@ func (r *Router) handleBackupDelete(w http.ResponseWriter, req *http.Request) {
 }
 
 func (r *Router) handleBackupDownload(w http.ResponseWriter, req *http.Request) {
-	filename := req.PathValue("filename")
+	filename, ok := RequirePathParam(w, req, "filename")
+	if !ok {
+		return
+	}
 	if !backup.IsValidBackupFilename(filename) {
-		http.Error(w, `{"error":"invalid filename"}`, http.StatusBadRequest)
+		writeError(w, req, http.StatusBadRequest, "invalid filename")
 		return
 	}
 

@@ -24,7 +24,10 @@ func (r *Router) handleListWebhooks(w http.ResponseWriter, req *http.Request) {
 }
 
 func (r *Router) handleGetWebhook(w http.ResponseWriter, req *http.Request) {
-	id := req.PathValue("id")
+	id, ok := RequirePathParam(w, req, "id")
+	if !ok {
+		return
+	}
 	wh, err := r.webhookService.GetByID(req.Context(), id)
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "webhook not found"})
@@ -72,7 +75,10 @@ func (r *Router) handleCreateWebhook(w http.ResponseWriter, req *http.Request) {
 }
 
 func (r *Router) handleUpdateWebhook(w http.ResponseWriter, req *http.Request) {
-	id := req.PathValue("id")
+	id, ok := RequirePathParam(w, req, "id")
+	if !ok {
+		return
+	}
 	existing, err := r.webhookService.GetByID(req.Context(), id)
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "webhook not found"})
@@ -86,8 +92,7 @@ func (r *Router) handleUpdateWebhook(w http.ResponseWriter, req *http.Request) {
 		Events  []string `json:"events"`
 		Enabled *bool    `json:"enabled"`
 	}
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+	if !DecodeJSON(w, req, &body) {
 		return
 	}
 
@@ -116,7 +121,10 @@ func (r *Router) handleUpdateWebhook(w http.ResponseWriter, req *http.Request) {
 }
 
 func (r *Router) handleDeleteWebhook(w http.ResponseWriter, req *http.Request) {
-	id := req.PathValue("id")
+	id, ok := RequirePathParam(w, req, "id")
+	if !ok {
+		return
+	}
 	if err := r.webhookService.Delete(req.Context(), id); err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
 		return
@@ -125,7 +133,10 @@ func (r *Router) handleDeleteWebhook(w http.ResponseWriter, req *http.Request) {
 }
 
 func (r *Router) handleTestWebhook(w http.ResponseWriter, req *http.Request) {
-	id := req.PathValue("id")
+	id, ok := RequirePathParam(w, req, "id")
+	if !ok {
+		return
+	}
 	wh, err := r.webhookService.GetByID(req.Context(), id)
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "webhook not found"})

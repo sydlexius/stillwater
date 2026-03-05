@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -23,8 +22,7 @@ func (r *Router) handleCreateAPIToken(w http.ResponseWriter, req *http.Request) 
 		Name   string `json:"name"`
 		Scopes string `json:"scopes"`
 	}
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+	if !DecodeJSON(w, req, &body) {
 		return
 	}
 	if body.Name == "" {
@@ -101,9 +99,8 @@ func (r *Router) handleRevokeAPIToken(w http.ResponseWriter, req *http.Request) 
 		return
 	}
 
-	tokenID := req.PathValue("id")
-	if tokenID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "token id required"})
+	tokenID, ok := RequirePathParam(w, req, "id")
+	if !ok {
 		return
 	}
 

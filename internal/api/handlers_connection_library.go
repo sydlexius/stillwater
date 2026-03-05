@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -61,7 +60,10 @@ type imageDownloader interface {
 // handleDiscoverLibraries lists music libraries available on a connection.
 // GET /api/v1/connections/{id}/libraries
 func (r *Router) handleDiscoverLibraries(w http.ResponseWriter, req *http.Request) {
-	connID := req.PathValue("id")
+	connID, ok := RequirePathParam(w, req, "id")
+	if !ok {
+		return
+	}
 	conn, err := r.connectionService.GetByID(req.Context(), connID)
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "connection not found"})
@@ -164,7 +166,10 @@ func (r *Router) handleDiscoverLibraries(w http.ResponseWriter, req *http.Reques
 // handleImportLibraries imports selected libraries from a connection.
 // POST /api/v1/connections/{id}/libraries/import
 func (r *Router) handleImportLibraries(w http.ResponseWriter, req *http.Request) {
-	connID := req.PathValue("id")
+	connID, ok := RequirePathParam(w, req, "id")
+	if !ok {
+		return
+	}
 	conn, err := r.connectionService.GetByID(req.Context(), connID)
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "connection not found"})
@@ -182,8 +187,7 @@ func (r *Router) handleImportLibraries(w http.ResponseWriter, req *http.Request)
 	}
 
 	var body importRequest
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+	if !DecodeJSON(w, req, &body) {
 		return
 	}
 	if len(body.Libraries) == 0 {
@@ -241,8 +245,14 @@ func (r *Router) handleImportLibraries(w http.ResponseWriter, req *http.Request)
 // handlePopulateLibrary populates artists from a connection into an imported library.
 // POST /api/v1/connections/{id}/libraries/{libId}/populate
 func (r *Router) handlePopulateLibrary(w http.ResponseWriter, req *http.Request) {
-	connID := req.PathValue("id")
-	libID := req.PathValue("libId")
+	connID, ok := RequirePathParam(w, req, "id")
+	if !ok {
+		return
+	}
+	libID, ok := RequirePathParam(w, req, "libId")
+	if !ok {
+		return
+	}
 
 	conn, err := r.connectionService.GetByID(req.Context(), connID)
 	if err != nil {
@@ -333,8 +343,14 @@ func (r *Router) runPopulate(ctx context.Context, conn *connection.Connection, l
 // handleScanLibrary triggers an async API scan that checks metadata/image state.
 // POST /api/v1/connections/{id}/libraries/{libId}/scan
 func (r *Router) handleScanLibrary(w http.ResponseWriter, req *http.Request) {
-	connID := req.PathValue("id")
-	libID := req.PathValue("libId")
+	connID, ok := RequirePathParam(w, req, "id")
+	if !ok {
+		return
+	}
+	libID, ok := RequirePathParam(w, req, "libId")
+	if !ok {
+		return
+	}
 
 	conn, err := r.connectionService.GetByID(req.Context(), connID)
 	if err != nil {
@@ -443,7 +459,10 @@ func (r *Router) scheduleOpCleanup(libraryID string, op *LibraryOpResult) {
 // handleLibraryOpStatus returns the current operation status for a library.
 // GET /api/v1/libraries/{libId}/operation/status
 func (r *Router) handleLibraryOpStatus(w http.ResponseWriter, req *http.Request) {
-	libID := req.PathValue("libId")
+	libID, ok := RequirePathParam(w, req, "libId")
+	if !ok {
+		return
+	}
 
 	r.libraryOpsMu.Lock()
 	op, ok := r.libraryOps[libID]
