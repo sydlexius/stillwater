@@ -11,6 +11,14 @@ import (
 	"github.com/sydlexius/stillwater/internal/connection"
 )
 
+// readErrorBody reads up to 1 KB of body for use in error messages, then
+// drains any remaining bytes so the HTTP transport can reuse the connection.
+func readErrorBody(r io.Reader) string {
+	buf, _ := io.ReadAll(io.LimitReader(r, 1024))
+	_, _ = io.Copy(io.Discard, r)
+	return string(buf)
+}
+
 // BaseClient holds the common fields and HTTP transport methods shared by all platform clients.
 type BaseClient struct {
 	HTTPClient *http.Client
@@ -53,8 +61,7 @@ func (b *BaseClient) Get(ctx context.Context, path string, result any) error {
 	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		return fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(body))
+		return fmt.Errorf("unexpected status %d: %s", resp.StatusCode, readErrorBody(resp.Body))
 	}
 
 	if result != nil {
@@ -80,8 +87,7 @@ func (b *BaseClient) Post(ctx context.Context, path string, body io.Reader) erro
 	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode >= 300 {
-		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		return fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(respBody))
+		return fmt.Errorf("unexpected status %d: %s", resp.StatusCode, readErrorBody(resp.Body))
 	}
 	return nil
 }
@@ -102,8 +108,7 @@ func (b *BaseClient) GetRaw(ctx context.Context, path string) ([]byte, string, e
 	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		return nil, "", fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(body))
+		return nil, "", fmt.Errorf("unexpected status %d: %s", resp.StatusCode, readErrorBody(resp.Body))
 	}
 
 	const maxImageSize = 25 << 20 // 25 MB
@@ -134,8 +139,7 @@ func (b *BaseClient) PostJSON(ctx context.Context, path string, body io.Reader, 
 	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode >= 300 {
-		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		return fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(respBody))
+		return fmt.Errorf("unexpected status %d: %s", resp.StatusCode, readErrorBody(resp.Body))
 	}
 
 	if result != nil {
