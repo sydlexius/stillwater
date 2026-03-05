@@ -68,14 +68,14 @@ func (c *Client) PushMetadata(ctx context.Context, platformArtistID string, data
 	}
 
 	path := fmt.Sprintf("/Items/%s", platformArtistID)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, connection.BuildRequestURL(c.baseURL, path), bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, connection.BuildRequestURL(c.BaseURL, path), bytes.NewReader(payload))
 	if err != nil {
 		return fmt.Errorf("creating push request: %w", err)
 	}
-	c.setAuth(req)
+	c.AuthFunc(req)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.httpClient.Do(req) //nolint:gosec // URL constructed from trusted base + artist ID
+	resp, err := c.HTTPClient.Do(req) //nolint:gosec // URL constructed from trusted base + artist ID
 	if err != nil {
 		return fmt.Errorf("executing push request: %w", err)
 	}
@@ -87,7 +87,7 @@ func (c *Client) PushMetadata(ctx context.Context, platformArtistID string, data
 		return fmt.Errorf("push failed with status %d: %s", resp.StatusCode, string(respBody))
 	}
 
-	c.logger.Debug("metadata pushed to emby", "artist_id", platformArtistID)
+	c.Logger.Debug("metadata pushed to emby", "artist_id", platformArtistID)
 	return nil
 }
 
@@ -100,14 +100,14 @@ func (c *Client) UploadImage(ctx context.Context, platformArtistID string, image
 	}
 
 	path := fmt.Sprintf("/Items/%s/Images/%s", platformArtistID, embyType)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, connection.BuildRequestURL(c.baseURL, path), bytes.NewReader(data))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, connection.BuildRequestURL(c.BaseURL, path), bytes.NewReader(data))
 	if err != nil {
 		return fmt.Errorf("creating image upload request: %w", err)
 	}
-	c.setAuth(req)
+	c.AuthFunc(req)
 	req.Header.Set("Content-Type", contentType)
 
-	resp, err := c.httpClient.Do(req) //nolint:gosec // URL constructed from trusted base + artist ID
+	resp, err := c.HTTPClient.Do(req) //nolint:gosec // URL constructed from trusted base + artist ID
 	if err != nil {
 		return fmt.Errorf("executing image upload: %w", err)
 	}
@@ -119,7 +119,7 @@ func (c *Client) UploadImage(ctx context.Context, platformArtistID string, image
 		return fmt.Errorf("image upload failed with status %d: %s", resp.StatusCode, string(respBody))
 	}
 
-	c.logger.Debug("image uploaded to emby", "artist_id", platformArtistID, "type", embyType)
+	c.Logger.Debug("image uploaded to emby", "artist_id", platformArtistID, "type", embyType)
 	return nil
 }
 
@@ -132,13 +132,13 @@ func (c *Client) DeleteImage(ctx context.Context, platformArtistID string, image
 	}
 
 	path := fmt.Sprintf("/Items/%s/Images/%s", platformArtistID, embyType)
-	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, connection.BuildRequestURL(c.baseURL, path), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, connection.BuildRequestURL(c.BaseURL, path), nil)
 	if err != nil {
 		return fmt.Errorf("creating image delete request: %w", err)
 	}
-	c.setAuth(req)
+	c.AuthFunc(req)
 
-	resp, err := c.httpClient.Do(req) //nolint:gosec // URL constructed from trusted base + artist ID
+	resp, err := c.HTTPClient.Do(req) //nolint:gosec // URL constructed from trusted base + artist ID
 	if err != nil {
 		return fmt.Errorf("executing image delete: %w", err)
 	}
@@ -150,17 +150,17 @@ func (c *Client) DeleteImage(ctx context.Context, platformArtistID string, image
 		return fmt.Errorf("image delete failed with status %d: %s", resp.StatusCode, string(respBody))
 	}
 
-	c.logger.Debug("image deleted from emby", "artist_id", platformArtistID, "type", embyType)
+	c.Logger.Debug("image deleted from emby", "artist_id", platformArtistID, "type", embyType)
 	return nil
 }
 
 // logDateNormalization logs the result of normalizing a date field for push.
 func (c *Client) logDateNormalization(field, raw, normalized, artistID string) {
 	if normalized == "" {
-		c.logger.Warn("unparseable date dropped from push",
+		c.Logger.Warn("unparseable date dropped from push",
 			"field", field, "raw", raw, "artist_id", artistID)
 	} else if normalized != raw {
-		c.logger.Debug("date normalized for push",
+		c.Logger.Debug("date normalized for push",
 			"field", field, "raw", raw, "normalized", normalized, "artist_id", artistID)
 	}
 }
