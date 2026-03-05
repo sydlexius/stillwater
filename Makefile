@@ -1,4 +1,4 @@
-.PHONY: build run test lint fmt clean docker-build docker-run dev templ tailwind migrate favicon hooks
+.PHONY: build run test test-race test-cover lint fmt clean docker-build docker-run dev templ tailwind migrate favicon hooks
 
 # Binary name
 BINARY=stillwater
@@ -33,6 +33,11 @@ dev:
 ## test: Run all tests
 test:
 	go test -v -race -count=1 ./...
+
+## test-race: Run tests with race detector via WSL2 (requires WSL2 with Go and GCC installed)
+test-race:
+	@wsl_path=$$(echo "$(CURDIR)" | sed 's|^/\([a-zA-Z]\)/|/mnt/\1/|'); \
+	wsl -e bash -c "cd $$wsl_path && CGO_ENABLED=1 go test -race -count=1 ./..."
 
 ## test-cover: Run tests with coverage
 test-cover:

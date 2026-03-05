@@ -47,6 +47,7 @@ build/unraid/         - Unraid CA template
 make build          # Build binary (runs templ generate + tailwind first)
 make run            # Build and run locally with debug logging
 make test           # Run all tests with race detector
+make test-race      # Run tests with race detector via WSL2 (requires CGO)
 make lint           # Run golangci-lint
 make fmt            # Format Go + Templ files
 make docker-build   # Build Docker image
@@ -84,6 +85,35 @@ Key decisions from the risk review that affect implementation across milestones:
 - Integration tests use real SQLite (in-memory or temp file)
 - API tests: Bruno collections in `api/bruno/`
 - Pre-commit hooks enforce linting and formatting
+
+### Race Detector (WSL2)
+
+The Go race detector requires CGO (`CGO_ENABLED=1`), which is not available in the Windows/MSYS2 development environment. Use `make test-race` to run the race detector through WSL2:
+
+```bash
+make test-race
+```
+
+This converts the current directory path from MSYS2 format (`/d/Dev/...`) to WSL2 format (`/mnt/d/Dev/...`) and runs `go test -race` inside WSL2.
+
+**WSL2 prerequisites:**
+
+1. Install a WSL2 distro (Ubuntu recommended): `wsl --install`
+2. Inside WSL2, install Go (matching the project's Go version):
+   ```bash
+   # Example for Go 1.24 -- adjust version as needed
+   wget https://go.dev/dl/go1.24.linux-amd64.tar.gz
+   sudo tar -C /usr/local -xzf go1.24.linux-amd64.tar.gz
+   echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc
+   source ~/.bashrc
+   ```
+3. Install GCC (required by the race detector):
+   ```bash
+   sudo apt update && sudo apt install -y gcc
+   ```
+4. Verify: `wsl -e bash -c "go version && gcc --version"`
+
+**Note:** Cross-filesystem access between Windows (`/mnt/d/`) and WSL2 is slower than native Linux I/O. For large test suites, consider cloning the repo natively inside WSL2 (`~/Dev/stillwater`) and running tests there directly.
 
 ## Security
 
