@@ -4562,3 +4562,66 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+
+  /artists/{id}/push/images/{type}:
+    delete:
+      tags: [Push]
+      summary: Delete a single image from a platform
+      operationId: deletePushImage
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: type
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [thumb, fanart, logo, banner]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                connection_id:
+                  type: string
+                platform_artist_id:
+                  type: string
+                  description: >-
+                    Platform-specific artist ID. If omitted, the server
+                    looks up a stored mapping from the artist_platform_ids
+                    table. Returns 400 if no stored mapping exists.
+              required: [connection_id]
+      responses:
+        "200":
+          description: Image deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: deleted
+        "400":
+          description: Invalid request or connection disabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Artist or connection not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Platform delete failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
