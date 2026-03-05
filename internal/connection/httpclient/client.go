@@ -119,6 +119,7 @@ func (b *BaseClient) GetRaw(ctx context.Context, path string) ([]byte, string, e
 		return nil, "", fmt.Errorf("reading response body: %w", err)
 	}
 	if len(data) > maxImageSize {
+		_, _ = io.Copy(io.Discard, resp.Body)
 		return nil, "", fmt.Errorf("image exceeds 25 MB limit")
 	}
 	return data, resp.Header.Get("Content-Type"), nil
