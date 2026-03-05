@@ -33,6 +33,7 @@ func NewBase(baseURL, apiKey string, httpClient *http.Client, logger *slog.Logge
 		BaseURL:    cleaned,
 		APIKey:     apiKey,
 		Logger:     logger.With(slog.String("integration", integration)),
+		AuthFunc:   func(*http.Request) {}, // no-op; overridden by each platform client
 	}
 }
 
