@@ -295,12 +295,15 @@ func (s *Service) refreshWatchPaths(ctx context.Context) {
 	s.mu.Unlock()
 
 	// Remove watches (fsnotify I/O outside the lock).
+	// Track which removes succeeded so we only update internal state for those.
+	var removed []string
 	for _, path := range toRemove {
 		if err := s.watcher.Remove(path); err != nil {
 			s.logger.Warn("failed to remove watch", "path", path, "error", err)
-		} else {
-			s.logger.Info("stopped watching library path", "path", path)
+			continue
 		}
+		s.logger.Info("stopped watching library path", "path", path)
+		removed = append(removed, path)
 	}
 
 	// Add watches and snapshot directories (fsnotify + filesystem I/O outside the lock).
@@ -319,10 +322,10 @@ func (s *Service) refreshWatchPaths(ctx context.Context) {
 		s.logger.Info("watching library path", "path", path)
 	}
 
-	// Update internal state under the lock.
+	// Update internal state under the lock -- only for paths that actually changed.
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for _, path := range toRemove {
+	for _, path := range removed {
 		delete(s.watching, path)
 		delete(s.knownDirs, path)
 	}

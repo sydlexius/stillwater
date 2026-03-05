@@ -402,13 +402,18 @@ func run() error {
 	<-ctx.Done()
 	logger.Info("shutting down")
 
-	// Stop the scanner so any in-progress background scans are canceled.
-	scannerService.Shutdown()
-
+	// Shut down the HTTP server first to stop accepting new requests and
+	// drain in-flight ones. This prevents new scan requests from racing
+	// with the scanner's WaitGroup during shutdown.
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	return srv.Shutdown(shutdownCtx)
+	srvErr := srv.Shutdown(shutdownCtx)
+
+	// Now stop the scanner -- no new Run() calls can arrive.
+	scannerService.Shutdown()
+
+	return srvErr
 }
 
 // resolveEncryptionKey determines the encryption key to use.

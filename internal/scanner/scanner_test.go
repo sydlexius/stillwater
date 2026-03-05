@@ -883,3 +883,40 @@ func TestProcessDirectory_TransientFailurePreservesPlaceholder(t *testing.T) {
 			truncate30(a.ThumbPlaceholder), truncate30(savedPH))
 	}
 }
+
+func TestShutdownCancelsInProgressScan(t *testing.T) {
+	tmp := t.TempDir()
+
+	// Create enough artist directories to keep the scan busy.
+	for i := range 50 {
+		createArtistDir(t, tmp, fmt.Sprintf("Artist %d", i))
+	}
+
+	svc, _ := setupScanner(t, tmp)
+
+	// Start a scan.
+	_, err := svc.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	// Shutdown should cancel the scan and return (not hang).
+	done := make(chan struct{})
+	go func() {
+		svc.Shutdown()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// Shutdown returned, scan goroutine exited.
+	case <-time.After(5 * time.Second):
+		t.Fatal("Shutdown did not return within 5 seconds")
+	}
+
+	// After shutdown, the scan status should not be "running".
+	status := svc.Status()
+	if status != nil && status.Status == "running" {
+		t.Error("scan status is still 'running' after Shutdown")
+	}
+}
