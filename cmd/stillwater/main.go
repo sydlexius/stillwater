@@ -1,9 +1,14 @@
 package main
 
 import (
+	"bufio"
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
+	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -46,6 +51,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/watcher"
 	"github.com/sydlexius/stillwater/internal/webhook"
 
+	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/time/rate"
 )
 
@@ -60,6 +66,20 @@ func main() {
 			}
 			return
 		}
+	}
+
+	// Parse global flags
+	resetPwd := flag.Bool("reset-password", false, "Reset admin password and exit")
+	username := flag.String("username", "", "Username for password reset")
+	newPassword := flag.String("new-password", "", "New password (will prompt if not provided)")
+	flag.Parse()
+
+	if *resetPwd {
+		if err := resetPassword(*username, *newPassword); err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
+		return
 	}
 
 	if err := run(); err != nil {
@@ -479,6 +499,120 @@ func resetCredentials() error {
 	fmt.Println("All API keys, connection credentials, and user accounts have been cleared.")
 	fmt.Println("The application will prompt for initial setup on next start.")
 	return nil
+}
+
+// resetPassword updates the password for a user in the database.
+func resetPassword(username, password string) error {
+	configPath := os.Getenv("SW_CONFIG_PATH")
+	if configPath == "" {
+		configPath = "/data/config.yaml"
+	}
+
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		return fmt.Errorf("loading config: %w", err)
+	}
+
+	db, err := database.Open(cfg.Database.Path)
+	if err != nil {
+		return fmt.Errorf("opening database: %w", err)
+	}
+	defer db.Close() //nolint:errcheck
+
+	if err := database.Migrate(db); err != nil {
+		return fmt.Errorf("running migrations: %w", err)
+	}
+
+	ctx := context.Background()
+
+	// Determine username
+	if username == "" {
+		// Get first admin user
+		err := db.QueryRowContext(ctx, "SELECT username FROM users WHERE role = 'admin' LIMIT 1").Scan(&username)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				return fmt.Errorf("no admin users found in database")
+			}
+			return fmt.Errorf("querying admin user: %w", err)
+		}
+	} else {
+		// Verify username exists
+		var exists int
+		err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM users WHERE username = ?", username).Scan(&exists)
+		if err != nil {
+			return fmt.Errorf("querying user: %w", err)
+		}
+		if exists == 0 {
+			return fmt.Errorf("user not found: %s", username)
+		}
+	}
+
+	// Determine password
+	if password == "" {
+		var err error
+		password, err = promptPassword()
+		if err != nil {
+			return fmt.Errorf("reading password: %w", err)
+		}
+	}
+
+	// Hash password using same method as auth service
+	hash, err := bcrypt.GenerateFromPassword(prehashPassword(password), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("hashing password: %w", err)
+	}
+
+	// Update password in database
+	_, err = db.ExecContext(ctx, "UPDATE users SET password_hash = ? WHERE username = ?", string(hash), username)
+	if err != nil {
+		return fmt.Errorf("updating password: %w", err)
+	}
+
+	fmt.Printf("Password for user '%s' has been reset successfully.\n", username)
+	return nil
+}
+
+// prehashPassword mirrors the auth service implementation
+func prehashPassword(password string) []byte {
+	h := sha256.Sum256([]byte(password))
+	return []byte(hex.EncodeToString(h[:]))
+}
+
+// promptPassword reads a password from stdin without echoing it to the terminal
+func promptPassword() (string, error) {
+	fmt.Print("Enter new password: ")
+	password, err := readLineNoEcho()
+	if err != nil {
+		return "", err
+	}
+	fmt.Println()
+
+	fmt.Print("Confirm password: ")
+	confirm, err := readLineNoEcho()
+	if err != nil {
+		return "", err
+	}
+	fmt.Println()
+
+	if password != confirm {
+		return "", fmt.Errorf("passwords do not match")
+	}
+
+	if password == "" {
+		return "", fmt.Errorf("password cannot be empty")
+	}
+
+	return password, nil
+}
+
+// readLineNoEcho reads a line from stdin without echoing characters
+func readLineNoEcho() (string, error) {
+	reader := bufio.NewReader(os.Stdin)
+	line, err := reader.ReadString('\n')
+	if err != nil && err != io.EOF {
+		return "", err
+	}
+	return strings.TrimSpace(line), nil
 }
 
 // backfillDefaultLibrary ensures at least one library exists and all artists
