@@ -68,8 +68,8 @@ func (b *BaseClient) Get(ctx context.Context, path string, result any) error {
 		if err := json.NewDecoder(resp.Body).Decode(result); err != nil {
 			return fmt.Errorf("decoding response: %w", err)
 		}
-		_, _ = io.Copy(io.Discard, resp.Body)
 	}
+	_, _ = io.Copy(io.Discard, resp.Body)
 	return nil
 }
 
@@ -90,6 +90,7 @@ func (b *BaseClient) Post(ctx context.Context, path string, body io.Reader) erro
 	if resp.StatusCode >= 300 {
 		return fmt.Errorf("unexpected status %d: %s", resp.StatusCode, readErrorBody(resp.Body))
 	}
+	_, _ = io.Copy(io.Discard, resp.Body)
 	return nil
 }
 
@@ -147,7 +148,7 @@ func (b *BaseClient) PostJSON(ctx context.Context, path string, body io.Reader, 
 		if err := json.NewDecoder(resp.Body).Decode(result); err != nil {
 			return fmt.Errorf("decoding response: %w", err)
 		}
-		_, _ = io.Copy(io.Discard, resp.Body)
 	}
+	_, _ = io.Copy(io.Discard, resp.Body)
 	return nil
 }
