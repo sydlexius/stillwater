@@ -96,7 +96,7 @@ func (r *Router) handleBackupDownload(w http.ResponseWriter, req *http.Request) 
 		return
 	}
 	if !backup.IsValidBackupFilename(filename) {
-		http.Error(w, `{"error":"invalid filename"}`, http.StatusBadRequest)
+		writeError(w, req, http.StatusBadRequest, "invalid filename")
 		return
 	}
 
