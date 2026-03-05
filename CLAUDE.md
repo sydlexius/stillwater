@@ -126,9 +126,11 @@ Run `make test-race` (or `go test -race ./...` in WSL2) when changes touch:
 Skip it for single-threaded code paths:
 
 - Template changes (`.templ` files)
-- API handler request/response logic without goroutines
+- Purely local API handler request/response logic that only uses per-request data and does not access shared state or start goroutines
 - Config parsing, NFO read/write, database migrations
 - CSS, JS, documentation
+
+**Note:** `net/http` serves handlers concurrently. If a handler reads or writes shared state (package-level variables, caches, singletons, in-memory indexes, etc.), treat it as concurrent code and run the race detector.
 
 ## Security
 
