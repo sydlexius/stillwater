@@ -107,3 +107,15 @@ func TestResetPasswordNoAdminUsers(t *testing.T) {
 		t.Fatal("expected error when no admin users exist, got nil")
 	}
 }
+
+func TestResetPasswordNonAdminUser(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+	insertUser(t, ctx, db, "viewer", "oldpass", "viewer")
+
+	if err := resetPasswordDB(ctx, db, "viewer", "newpass"); err != nil {
+		t.Fatalf("resetPasswordDB: %v", err)
+	}
+	assertPassword(t, ctx, db, "viewer", "newpass")
+	assertPasswordWrong(t, ctx, db, "viewer", "oldpass")
+}
