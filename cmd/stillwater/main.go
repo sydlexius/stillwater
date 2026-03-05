@@ -1,9 +1,13 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"database/sql"
+	"errors"
+	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -46,6 +50,8 @@ import (
 	"github.com/sydlexius/stillwater/internal/watcher"
 	"github.com/sydlexius/stillwater/internal/webhook"
 
+	"golang.org/x/crypto/bcrypt"
+	"golang.org/x/term"
 	"golang.org/x/time/rate"
 )
 
@@ -60,6 +66,23 @@ func main() {
 			}
 			return
 		}
+	}
+
+	// Parse global flags
+	resetPwd := flag.Bool("reset-password", false, "Reset admin password and exit")
+	username := flag.String("username", "", "Username for password reset")
+	newPassword := flag.String("new-password", "", "New password (insecure: visible in process list; prefer interactive prompt)")
+	flag.Parse()
+
+	if *resetPwd {
+		if *newPassword != "" {
+			fmt.Fprintln(os.Stderr, "warning: --new-password exposes the password in process arguments; consider using the interactive prompt instead")
+		}
+		if err := resetPassword(*username, *newPassword); err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
+		return
 	}
 
 	if err := run(); err != nil {
@@ -479,6 +502,142 @@ func resetCredentials() error {
 	fmt.Println("All API keys, connection credentials, and user accounts have been cleared.")
 	fmt.Println("The application will prompt for initial setup on next start.")
 	return nil
+}
+
+// resetPassword updates the password for a user in the database.
+// It opens the database, runs migrations, prompts for a password if needed,
+// then delegates to resetPasswordDB.
+func resetPassword(username, password string) error {
+	configPath := os.Getenv("SW_CONFIG_PATH")
+	if configPath == "" {
+		configPath = "/data/config.yaml"
+	}
+
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		return fmt.Errorf("loading config: %w", err)
+	}
+
+	db, err := database.Open(cfg.Database.Path)
+	if err != nil {
+		return fmt.Errorf("opening database: %w", err)
+	}
+	defer db.Close() //nolint:errcheck
+
+	if err := database.Migrate(db); err != nil {
+		return fmt.Errorf("running migrations: %w", err)
+	}
+
+	if password == "" {
+		password, err = promptPassword()
+		if err != nil {
+			return fmt.Errorf("reading password: %w", err)
+		}
+	}
+
+	return resetPasswordDB(context.Background(), db, username, password)
+}
+
+// resetPasswordDB performs the password reset against an already-open database.
+// Accessible from tests in the same package.
+func resetPasswordDB(ctx context.Context, db *sql.DB, username, password string) error {
+	if username == "" {
+		if err := db.QueryRowContext(ctx,
+			"SELECT username FROM users WHERE role = 'admin' LIMIT 1").Scan(&username); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return fmt.Errorf("no admin users found in database")
+			}
+			return fmt.Errorf("querying admin user: %w", err)
+		}
+	} else {
+		var exists int
+		if err := db.QueryRowContext(ctx,
+			"SELECT COUNT(*) FROM users WHERE username = ?", username).Scan(&exists); err != nil {
+			return fmt.Errorf("querying user: %w", err)
+		}
+		if exists == 0 {
+			return fmt.Errorf("user not found: %s", username)
+		}
+	}
+
+	hash, err := bcrypt.GenerateFromPassword(auth.PrehashPassword(password), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("hashing password: %w", err)
+	}
+
+	result, err := db.ExecContext(ctx,
+		"UPDATE users SET password_hash = ? WHERE username = ?", string(hash), username)
+	if err != nil {
+		return fmt.Errorf("updating password: %w", err)
+	}
+
+	n, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("checking rows affected: %w", err)
+	}
+	if n == 0 {
+		return fmt.Errorf("user not found: %s", username)
+	}
+
+	fmt.Printf("Password for user '%s' has been reset successfully.\n", username)
+	return nil
+}
+
+// promptPassword reads a password from stdin with TTY echo suppression.
+// For TTY (interactive): prompts twice and confirms passwords match.
+// For non-TTY (pipes/scripts): reads single line without confirmation.
+func promptPassword() (string, error) {
+	fd := int(os.Stdin.Fd()) //nolint:gosec // G115: safe for file descriptors
+
+	fmt.Fprint(os.Stderr, "Enter new password: ")
+	password, err := readPasswordNoEcho()
+	if err != nil {
+		return "", err
+	}
+	fmt.Fprintln(os.Stderr)
+
+	// Only prompt for confirmation on TTY (interactive mode)
+	if term.IsTerminal(fd) {
+		fmt.Fprint(os.Stderr, "Confirm password: ")
+		confirm, err := readPasswordNoEcho()
+		if err != nil {
+			return "", err
+		}
+		fmt.Fprintln(os.Stderr)
+
+		if password != confirm {
+			return "", fmt.Errorf("passwords do not match")
+		}
+	}
+
+	if password == "" {
+		return "", fmt.Errorf("password cannot be empty")
+	}
+
+	return password, nil
+}
+
+// readPasswordNoEcho reads a password from stdin with echo suppression on TTY.
+// If stdin is not a TTY, falls back to plain line reading (for scripts/pipes).
+func readPasswordNoEcho() (string, error) {
+	fd := int(os.Stdin.Fd()) //nolint:gosec // G115: uintptr to int is safe for file descriptors
+
+	// Try to suppress echo on TTY
+	if term.IsTerminal(fd) {
+		password, err := term.ReadPassword(fd)
+		if err != nil {
+			return "", fmt.Errorf("reading password: %w", err)
+		}
+		return string(password), nil
+	}
+
+	// Fall back to plain reading for non-TTY (pipes, scripts)
+	reader := bufio.NewReader(os.Stdin)
+	line, err := reader.ReadString('\n')
+	if err != nil && err != io.EOF {
+		return "", fmt.Errorf("reading password from stdin: %w", err)
+	}
+	return strings.TrimSpace(line), nil
 }
 
 // backfillDefaultLibrary ensures at least one library exists and all artists
