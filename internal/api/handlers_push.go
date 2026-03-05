@@ -89,7 +89,7 @@ func (r *Router) handlePushMetadata(w http.ResponseWriter, req *http.Request) {
 
 	if err := pusher.PushMetadata(req.Context(), body.PlatformArtistID, data); err != nil {
 		r.logger.Error("pushing metadata", "artist", a.Name, "connection", conn.Name, "error", err)
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "push failed: " + err.Error()})
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "push failed"})
 		return
 	}
 

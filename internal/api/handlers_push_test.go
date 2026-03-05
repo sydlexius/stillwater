@@ -233,6 +233,23 @@ func TestHandleDeletePushImage_JellyfinSuccess(t *testing.T) {
 	}
 }
 
+func TestHandleDeletePushImage_InvalidJSON(t *testing.T) {
+	router, artistSvc := testRouter(t)
+	a := addTestArtist(t, artistSvc, "Radiohead")
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/artists/"+a.ID+"/push/images/thumb",
+		strings.NewReader(`{invalid`))
+	req.SetPathValue("id", a.ID)
+	req.SetPathValue("type", "thumb")
+	w := httptest.NewRecorder()
+
+	router.handleDeletePushImage(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusBadRequest, w.Body.String())
+	}
+}
+
 func TestHandleDeletePushImage_PlatformIDNotStoredAndNotProvided(t *testing.T) {
 	router, artistSvc := testRouter(t)
 	addTestConnection(t, router, "conn-1", "Emby", "emby")

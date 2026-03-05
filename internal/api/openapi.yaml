@@ -4603,12 +4603,15 @@ paths:
             application/json:
               schema:
                 type: object
+                required: [status]
                 properties:
                   status:
                     type: string
                     example: deleted
         "400":
-          description: Invalid request or connection disabled
+          description: >-
+            Invalid request (invalid image type, missing connection_id,
+            connection disabled, or no stored platform ID mapping)
           content:
             application/json:
               schema:

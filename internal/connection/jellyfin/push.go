@@ -80,7 +80,8 @@ func (c *Client) PushMetadata(ctx context.Context, platformArtistID string, data
 	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode >= 300 {
-		respBody, _ := io.ReadAll(resp.Body)
+		const maxErrBody = 1 << 20 // 1 MB
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrBody))
 		return fmt.Errorf("push failed with status %d: %s", resp.StatusCode, string(respBody))
 	}
 
