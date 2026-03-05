@@ -276,34 +276,58 @@ func (s *Service) refreshWatchPaths(ctx context.Context) {
 		wanted[lib.Path] = true
 	}
 
+	// Determine which paths to add and remove under the lock, but perform
+	// the blocking fsnotify and filesystem I/O outside the lock to avoid
+	// holding the mutex during potentially slow operations.
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	// Remove watches for paths no longer wanted.
+	var toRemove []string
 	for path := range s.watching {
 		if !wanted[path] {
-			if err := s.watcher.Remove(path); err != nil {
-				s.logger.Warn("failed to remove watch", "path", path, "error", err)
-			}
-			delete(s.watching, path)
-			delete(s.knownDirs, path)
-			s.logger.Info("stopped watching library path", "path", path)
+			toRemove = append(toRemove, path)
 		}
 	}
-
-	// Add watches for new paths.
+	var toAdd []string
 	for path := range wanted {
-		if s.watching[path] {
-			continue
+		if !s.watching[path] {
+			toAdd = append(toAdd, path)
 		}
+	}
+	s.mu.Unlock()
+
+	// Remove watches (fsnotify I/O outside the lock).
+	for _, path := range toRemove {
+		if err := s.watcher.Remove(path); err != nil {
+			s.logger.Warn("failed to remove watch", "path", path, "error", err)
+		}
+		s.logger.Info("stopped watching library path", "path", path)
+	}
+
+	// Add watches and snapshot directories (fsnotify + filesystem I/O outside the lock).
+	type addResult struct {
+		path string
+		snap map[string]struct{}
+	}
+	var added []addResult
+	for _, path := range toAdd {
 		if err := s.watcher.Add(path); err != nil {
 			s.logger.Error("failed to watch library path", "path", path, "error", err)
 			continue
 		}
-		s.watching[path] = true
-		// Snapshot existing subdirectories so Remove events can be verified.
-		s.knownDirs[path] = readDirSnapshot(path)
+		snap := readDirSnapshot(path)
+		added = append(added, addResult{path: path, snap: snap})
 		s.logger.Info("watching library path", "path", path)
+	}
+
+	// Update internal state under the lock.
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, path := range toRemove {
+		delete(s.watching, path)
+		delete(s.knownDirs, path)
+	}
+	for _, ar := range added {
+		s.watching[ar.path] = true
+		s.knownDirs[ar.path] = ar.snap
 	}
 }
 
@@ -393,51 +417,58 @@ func (s *Service) refreshPollPaths(ctx context.Context) {
 // pollDirectories checks all poll-enabled libraries for directory changes.
 // Returns true if any changes were detected.
 func (s *Service) pollDirectories() bool {
+	now := time.Now()
+
+	// Collect all state under a single lock to avoid read-check-act races.
+	type pollEntry struct {
+		path     string
+		oldSnap  map[string]struct{}
+		interval int
+	}
+
 	s.mu.Lock()
-	paths := make([]string, 0, len(s.pollSnapshots))
-	for p := range s.pollSnapshots {
-		paths = append(paths, p)
+	entries := make([]pollEntry, 0, len(s.pollSnapshots))
+	for path, snap := range s.pollSnapshots {
+		interval := s.pollIntervals[path]
+		if interval <= 0 {
+			interval = 60
+		}
+		lastPoll := s.lastPollTime[path]
+		if now.Sub(lastPoll) < time.Duration(interval)*time.Second {
+			continue
+		}
+		// Copy the snapshot so we can safely read it outside the lock.
+		snapCopy := make(map[string]struct{}, len(snap))
+		for k, v := range snap {
+			snapCopy[k] = v
+		}
+		entries = append(entries, pollEntry{path: path, oldSnap: snapCopy, interval: interval})
 	}
 	s.mu.Unlock()
 
 	changed := false
-	now := time.Now()
 
-	for _, path := range paths {
-		s.mu.Lock()
-		lastPoll := s.lastPollTime[path]
-		interval := s.pollIntervals[path]
-		oldSnap := s.pollSnapshots[path]
-		s.mu.Unlock()
-
-		if interval <= 0 {
-			interval = 60
-		}
-
-		// Check per-library interval.
-		if now.Sub(lastPoll) < time.Duration(interval)*time.Second {
-			continue
-		}
-
-		newSnap := readDirSnapshot(path)
+	for _, entry := range entries {
+		// Filesystem I/O outside the lock.
+		newSnap := readDirSnapshot(entry.path)
 		if newSnap == nil {
 			continue
 		}
 
 		// Detect new directories.
 		for name := range newSnap {
-			if _, existed := oldSnap[name]; !existed {
+			if _, existed := entry.oldSnap[name]; !existed {
 				s.logger.Info("poll: directory created in library",
-					"path", filepath.Join(path, name),
+					"path", filepath.Join(entry.path, name),
 					"name", name,
-					"library_root", path,
+					"library_root", entry.path,
 				)
 				s.eventBus.Publish(event.Event{
 					Type: event.FSDirCreated,
 					Data: map[string]any{
-						"path":         filepath.Join(path, name),
+						"path":         filepath.Join(entry.path, name),
 						"name":         name,
-						"library_root": path,
+						"library_root": entry.path,
 					},
 				})
 				changed = true
@@ -445,28 +476,33 @@ func (s *Service) pollDirectories() bool {
 		}
 
 		// Detect removed directories.
-		for name := range oldSnap {
+		for name := range entry.oldSnap {
 			if _, exists := newSnap[name]; !exists {
 				s.logger.Warn("poll: directory removed from library",
-					"path", filepath.Join(path, name),
+					"path", filepath.Join(entry.path, name),
 					"name", name,
-					"library_root", path,
+					"library_root", entry.path,
 				)
 				s.eventBus.Publish(event.Event{
 					Type: event.FSDirRemoved,
 					Data: map[string]any{
-						"path":         filepath.Join(path, name),
+						"path":         filepath.Join(entry.path, name),
 						"name":         name,
-						"library_root": path,
+						"library_root": entry.path,
 					},
 				})
 				changed = true
 			}
 		}
 
+		// Update state under the lock.
 		s.mu.Lock()
-		s.pollSnapshots[path] = newSnap
-		s.lastPollTime[path] = now
+		// Only update if the path is still tracked (may have been removed
+		// by refreshPollPaths while we were doing I/O).
+		if _, stillTracked := s.pollSnapshots[entry.path]; stillTracked {
+			s.pollSnapshots[entry.path] = newSnap
+			s.lastPollTime[entry.path] = now
+		}
 		s.mu.Unlock()
 	}
 

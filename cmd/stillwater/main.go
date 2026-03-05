@@ -402,6 +402,9 @@ func run() error {
 	<-ctx.Done()
 	logger.Info("shutting down")
 
+	// Stop the scanner so any in-progress background scans are canceled.
+	scannerService.Shutdown()
+
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
