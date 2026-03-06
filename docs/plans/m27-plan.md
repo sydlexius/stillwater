@@ -131,3 +131,11 @@ Session 4 (unified CRUD):
   one, the local record is updated during populate.
 - Image cache directory (`/data/cache/images/{artistID}/`) created automatically when
   `artist.Path` is empty. Uses `imageDir(a)` helper throughout handlers.
+
+## Cleanup
+
+When all checklist items are complete and all PRs are merged:
+1. Post a summary comment on each completed issue and close it.
+2. `git rm docs/plans/m27-plan.md` and commit directly to `main`.
+3. Remove all M27 worktrees and delete their branches (remote and local).
+4. Update `memory/worktrees.md`.
