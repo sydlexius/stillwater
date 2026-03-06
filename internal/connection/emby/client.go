@@ -126,11 +126,13 @@ func (c *Client) getFirstUserID(ctx context.Context) (string, error) {
 			c.userIDErr = fmt.Errorf("getting users: %w", err)
 			return
 		}
-		if len(users) == 0 {
-			c.userIDErr = fmt.Errorf("no users returned from /Users")
-			return
+		for _, u := range users {
+			if u.ID != "" {
+				c.userID = u.ID
+				return
+			}
 		}
-		c.userID = users[0].ID
+		c.userIDErr = fmt.Errorf("no users with a non-empty ID returned from /Users")
 	})
 	return c.userID, c.userIDErr
 }
