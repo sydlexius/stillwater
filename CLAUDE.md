@@ -63,8 +63,27 @@ When working on a GitHub issue, look for these tags in the issue body:
 - **`[model: opus]`** - Use Opus for this task. Indicates complex architecture, multi-file changes, or nuanced design decisions.
 - **`[model: sonnet]`** - Use Sonnet for this task. Good balance of capability and speed for standard feature work.
 - **`[model: haiku]`** - Use Haiku for this task. Indicates simple, well-defined changes (typo fixes, small additions, config changes).
+- **`[effort: high]`** - Enable extended thinking. Use for complex architectural decisions, multi-system design, ambiguous requirements, or security-sensitive analysis.
+- **`[effort: medium]`** - Standard reasoning. Default for most feature and bug work.
+- **`[effort: low]`** - Minimal reasoning. Use for simple, fully-specified tasks with no ambiguity (config tweaks, typo fixes, docs).
 
-If no hint is present, default to: Sonnet with Plan Mode for new features, Sonnet direct for bug fixes, Haiku for documentation-only changes.
+If no hint is present, default to: Sonnet + Plan Mode + medium effort for new features, Sonnet + direct + medium effort for bug fixes, Haiku + direct + low effort for documentation-only changes.
+
+When a model or effort hint differs from the current session state, pause before starting work and ask the user to run the appropriate command:
+
+- Model mismatch: "This issue requests `[model: opus]`. Please run `/model claude-opus-4-6` before I proceed."
+- Effort high: "This issue requests `[effort: high]`. Please run `/think` to enable extended thinking before I proceed."
+
+Do not start implementation until the user confirms or explicitly waives the hint.
+
+### Creating Issues via CLI
+
+When creating a GitHub issue with `gh issue create`, do NOT write a freeform body. Instead:
+
+1. Choose the appropriate template from `.github/ISSUE_TEMPLATE/` (`feature.md`, `bug.md`, or `task.md`).
+2. Read the template file to get its structure.
+3. Fill in all sections, including the `[mode:]`, `[model:]`, and `[effort:]` hints at the top.
+4. Pass the populated content as the `--body` argument.
 
 ## Architectural Decisions
 
