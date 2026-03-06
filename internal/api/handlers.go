@@ -50,8 +50,9 @@ func (r *Router) handleLogin(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 	} else {
-		body.Username = req.FormValue("username") //nolint:gosec // G120: login form on self-hosted instance
-		body.Password = req.FormValue("password") //nolint:gosec // G120: login form on self-hosted instance
+		req.Body = http.MaxBytesReader(w, req.Body, 1<<20)
+		body.Username = req.FormValue("username")
+		body.Password = req.FormValue("password")
 	}
 
 	token, err := r.authService.Login(req.Context(), body.Username, body.Password)
@@ -123,8 +124,9 @@ func (r *Router) handleSetup(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 	} else {
-		body.Username = req.FormValue("username") //nolint:gosec // G120: login form on self-hosted instance
-		body.Password = req.FormValue("password") //nolint:gosec // G120: login form on self-hosted instance
+		req.Body = http.MaxBytesReader(w, req.Body, 1<<20)
+		body.Username = req.FormValue("username")
+		body.Password = req.FormValue("password")
 	}
 
 	if body.Username == "" || body.Password == "" {

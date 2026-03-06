@@ -24,6 +24,7 @@ linters:
       excludes:
         - G104  # Unhandled errors (too noisy for http.Error calls)
         - G117  # Struct field matching secret pattern (false positive on API key input fields)
+        - G120  # FormValue without MaxBytesReader (authenticated endpoints only; unauthenticated handlers use MaxBytesReader directly)
     revive:
       rules:
         - name: exported
@@ -40,6 +41,7 @@ linters:
         linters:
           - gosec
           - errcheck
+          - noctx
 
 formatters:
   enable:
