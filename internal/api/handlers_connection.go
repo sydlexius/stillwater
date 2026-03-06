@@ -122,14 +122,40 @@ func (r *Router) testConnectionDirect(ctx context.Context, connType, url, apiKey
 	defer cancel()
 	switch connType {
 	case connection.TypeEmby:
-		return emby.New(url, apiKey, r.logger).TestConnection(testCtx)
+		return emby.New(url, apiKey, "", r.logger).TestConnection(testCtx)
 	case connection.TypeJellyfin:
-		return jellyfin.New(url, apiKey, r.logger).TestConnection(testCtx)
+		return jellyfin.New(url, apiKey, "", r.logger).TestConnection(testCtx)
 	case connection.TypeLidarr:
 		return lidarr.New(url, apiKey, r.logger).TestConnection(testCtx)
 	default:
 		return nil
 	}
+}
+
+// resolvePlatformUserID calls GET /Users on an emby/jellyfin server and returns the first
+// user ID. Returns an empty string (and logs a warning) if resolution fails or the type
+// does not support users. This is called after a successful connection test so that the
+// user ID can be persisted in the connections table.
+func (r *Router) resolvePlatformUserID(ctx context.Context, connType, url, apiKey string) string {
+	resolveCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	switch connType {
+	case connection.TypeEmby:
+		uid, err := emby.New(url, apiKey, "", r.logger).GetFirstUserID(resolveCtx)
+		if err != nil {
+			r.logger.Warn("could not resolve emby user id", "error", err)
+			return ""
+		}
+		return uid
+	case connection.TypeJellyfin:
+		uid, err := jellyfin.New(url, apiKey, "", r.logger).GetFirstUserID(resolveCtx)
+		if err != nil {
+			r.logger.Warn("could not resolve jellyfin user id", "error", err)
+			return ""
+		}
+		return uid
+	}
+	return ""
 }
 
 func (r *Router) handleCreateConnection(w http.ResponseWriter, req *http.Request) {
@@ -178,6 +204,12 @@ func (r *Router) handleCreateConnection(w http.ResponseWriter, req *http.Request
 		}
 	}
 
+	// Resolve platform user ID for emby/jellyfin connections after a successful test.
+	var platformUserID string
+	if !body.SkipTest {
+		platformUserID = r.resolvePlatformUserID(req.Context(), body.Type, body.URL, body.APIKey)
+	}
+
 	// Prevent duplicate connections with the same type+url
 	existing, err := r.connectionService.GetByTypeAndURL(req.Context(), body.Type, body.URL)
 	if err != nil {
@@ -191,6 +223,9 @@ func (r *Router) handleCreateConnection(w http.ResponseWriter, req *http.Request
 			existing.APIKey = body.APIKey
 		}
 		existing.Enabled = body.Enabled
+		if platformUserID != "" {
+			existing.PlatformUserID = platformUserID
+		}
 		if updateErr := r.connectionService.Update(req.Context(), existing); updateErr != nil {
 			r.logger.Error("updating existing connection", "error", updateErr)
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
@@ -217,6 +252,7 @@ func (r *Router) handleCreateConnection(w http.ResponseWriter, req *http.Request
 		FeatureLibraryImport: true,
 		FeatureNFOWrite:      true,
 		FeatureImageWrite:    true,
+		PlatformUserID:       platformUserID,
 	}
 	if err := r.connectionService.Create(req.Context(), c); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
@@ -380,11 +416,25 @@ func (r *Router) handleTestConnection(w http.ResponseWriter, req *http.Request) 
 	var testErr error
 	switch conn.Type {
 	case connection.TypeEmby:
-		client := emby.New(conn.URL, conn.APIKey, r.logger)
+		client := emby.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger)
 		testErr = client.TestConnection(req.Context())
+		if testErr == nil {
+			if uid, err := client.GetFirstUserID(req.Context()); err == nil && uid != "" {
+				if updErr := r.connectionService.UpdatePlatformUserID(req.Context(), id, uid); updErr != nil {
+					r.logger.Error("persisting emby platform user id", "error", updErr)
+				}
+			}
+		}
 	case connection.TypeJellyfin:
-		client := jellyfin.New(conn.URL, conn.APIKey, r.logger)
+		client := jellyfin.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger)
 		testErr = client.TestConnection(req.Context())
+		if testErr == nil {
+			if uid, err := client.GetFirstUserID(req.Context()); err == nil && uid != "" {
+				if updErr := r.connectionService.UpdatePlatformUserID(req.Context(), id, uid); updErr != nil {
+					r.logger.Error("persisting jellyfin platform user id", "error", updErr)
+				}
+			}
+		}
 	case connection.TypeLidarr:
 		client := lidarr.New(conn.URL, conn.APIKey, r.logger)
 		testErr = client.TestConnection(req.Context())

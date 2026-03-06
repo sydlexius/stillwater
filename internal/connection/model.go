@@ -30,6 +30,7 @@ type Connection struct {
 	FeatureLibraryImport bool       `json:"feature_library_import"`
 	FeatureNFOWrite      bool       `json:"feature_nfo_write"`
 	FeatureImageWrite    bool       `json:"feature_image_write"`
+	PlatformUserID       string     `json:"platform_user_id,omitempty"`
 }
 
 // ValidateBaseURL checks that a base URL is safe for use as an HTTP client target.

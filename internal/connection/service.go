@@ -55,14 +55,15 @@ func (s *Service) Create(ctx context.Context, c *Connection) error {
 	}
 
 	_, err = s.db.ExecContext(ctx, `
-		INSERT INTO connections (id, name, type, url, encrypted_api_key, enabled, status, status_message, last_checked_at, created_at, updated_at, feature_library_import, feature_nfo_write, feature_image_write)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO connections (id, name, type, url, encrypted_api_key, enabled, status, status_message, last_checked_at, created_at, updated_at, feature_library_import, feature_nfo_write, feature_image_write, platform_user_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		c.ID, c.Name, c.Type, c.URL, encKey,
 		dbutil.BoolToInt(c.Enabled), c.Status, c.StatusMessage,
 		dbutil.FormatNullableTime(c.LastCheckedAt),
 		now.Format(time.RFC3339), now.Format(time.RFC3339),
 		dbutil.BoolToInt(c.FeatureLibraryImport), dbutil.BoolToInt(c.FeatureNFOWrite), dbutil.BoolToInt(c.FeatureImageWrite),
+		c.PlatformUserID,
 	)
 	if err != nil {
 		return fmt.Errorf("creating connection: %w", err)
@@ -73,7 +74,7 @@ func (s *Service) Create(ctx context.Context, c *Connection) error {
 // GetByID retrieves a connection by ID with API key decrypted.
 func (s *Service) GetByID(ctx context.Context, id string) (*Connection, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT id, name, type, url, encrypted_api_key, enabled, status, status_message, last_checked_at, created_at, updated_at, feature_library_import, feature_nfo_write, feature_image_write
+		SELECT id, name, type, url, encrypted_api_key, enabled, status, status_message, last_checked_at, created_at, updated_at, feature_library_import, feature_nfo_write, feature_image_write, platform_user_id
 		FROM connections WHERE id = ?
 	`, id)
 	c, err := s.scanConnection(row)
@@ -89,7 +90,7 @@ func (s *Service) GetByID(ctx context.Context, id string) (*Connection, error) {
 // List returns all connections with API keys decrypted.
 func (s *Service) List(ctx context.Context) ([]Connection, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, name, type, url, encrypted_api_key, enabled, status, status_message, last_checked_at, created_at, updated_at, feature_library_import, feature_nfo_write, feature_image_write
+		SELECT id, name, type, url, encrypted_api_key, enabled, status, status_message, last_checked_at, created_at, updated_at, feature_library_import, feature_nfo_write, feature_image_write, platform_user_id
 		FROM connections ORDER BY name
 	`)
 	if err != nil {
@@ -115,7 +116,7 @@ func (s *Service) List(ctx context.Context) ([]Connection, error) {
 // ListByType returns connections filtered by type.
 func (s *Service) ListByType(ctx context.Context, connType string) ([]Connection, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, name, type, url, encrypted_api_key, enabled, status, status_message, last_checked_at, created_at, updated_at, feature_library_import, feature_nfo_write, feature_image_write
+		SELECT id, name, type, url, encrypted_api_key, enabled, status, status_message, last_checked_at, created_at, updated_at, feature_library_import, feature_nfo_write, feature_image_write, platform_user_id
 		FROM connections WHERE type = ? ORDER BY name
 	`, connType)
 	if err != nil {
@@ -141,7 +142,7 @@ func (s *Service) ListByType(ctx context.Context, connType string) ([]Connection
 // GetByTypeAndURL returns the most recently created connection matching type and URL, or nil if none.
 func (s *Service) GetByTypeAndURL(ctx context.Context, connType, url string) (*Connection, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT id, name, type, url, encrypted_api_key, enabled, status, status_message, last_checked_at, created_at, updated_at, feature_library_import, feature_nfo_write, feature_image_write
+		SELECT id, name, type, url, encrypted_api_key, enabled, status, status_message, last_checked_at, created_at, updated_at, feature_library_import, feature_nfo_write, feature_image_write, platform_user_id
 		FROM connections WHERE type = ? AND url = ? ORDER BY created_at DESC LIMIT 1
 	`, connType, url)
 	c, err := s.scanConnection(row)
@@ -193,13 +194,15 @@ func (s *Service) Update(ctx context.Context, c *Connection) error {
 		UPDATE connections SET
 			name = ?, type = ?, url = ?, encrypted_api_key = ?, enabled = ?,
 			status = ?, status_message = ?, updated_at = ?,
-			feature_library_import = ?, feature_nfo_write = ?, feature_image_write = ?
+			feature_library_import = ?, feature_nfo_write = ?, feature_image_write = ?,
+			platform_user_id = ?
 		WHERE id = ?
 	`,
 		c.Name, c.Type, c.URL, encKey, dbutil.BoolToInt(c.Enabled),
 		c.Status, c.StatusMessage,
 		c.UpdatedAt.Format(time.RFC3339),
 		dbutil.BoolToInt(c.FeatureLibraryImport), dbutil.BoolToInt(c.FeatureNFOWrite), dbutil.BoolToInt(c.FeatureImageWrite),
+		c.PlatformUserID,
 		c.ID,
 	)
 	if err != nil {
@@ -258,6 +261,19 @@ func (s *Service) UpdateFeatures(ctx context.Context, id string, libImport, nfoW
 	return nil
 }
 
+// UpdatePlatformUserID stores the resolved platform user ID for an emby/jellyfin connection.
+func (s *Service) UpdatePlatformUserID(ctx context.Context, id, platformUserID string) error {
+	now := time.Now().UTC()
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE connections SET platform_user_id = ?, updated_at = ?
+		WHERE id = ?
+	`, platformUserID, now.Format(time.RFC3339), id)
+	if err != nil {
+		return fmt.Errorf("updating platform user id: %w", err)
+	}
+	return nil
+}
+
 func (s *Service) scanConnection(row interface{ Scan(...any) error }) (*Connection, error) {
 	var c Connection
 	var encKey string
@@ -265,6 +281,7 @@ func (s *Service) scanConnection(row interface{ Scan(...any) error }) (*Connecti
 	var lastCheckedAt sql.NullString
 	var createdAt, updatedAt string
 	var featLibImport, featNFOWrite, featImageWrite int
+	var platformUserID sql.NullString
 
 	err := row.Scan(
 		&c.ID, &c.Name, &c.Type, &c.URL, &encKey,
@@ -272,6 +289,7 @@ func (s *Service) scanConnection(row interface{ Scan(...any) error }) (*Connecti
 		&lastCheckedAt,
 		&createdAt, &updatedAt,
 		&featLibImport, &featNFOWrite, &featImageWrite,
+		&platformUserID,
 	)
 	if err != nil {
 		return nil, err
@@ -290,6 +308,7 @@ func (s *Service) scanConnection(row interface{ Scan(...any) error }) (*Connecti
 	c.FeatureImageWrite = featImageWrite == 1
 	c.CreatedAt = dbutil.ParseTime(createdAt)
 	c.UpdatedAt = dbutil.ParseTime(updatedAt)
+	c.PlatformUserID = platformUserID.String
 
 	if lastCheckedAt.Valid {
 		t := dbutil.ParseTime(lastCheckedAt.String)
