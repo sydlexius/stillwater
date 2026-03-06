@@ -69,21 +69,28 @@ When working on a GitHub issue, look for these tags in the issue body:
 
 If no hint is present, default to: Sonnet + Plan Mode + medium effort for new features, Sonnet + direct + medium effort for bug fixes, Haiku + direct + low effort for documentation-only changes.
 
-When a model or effort hint differs from the current session state, pause before starting work and ask the user to run the appropriate command:
+When a model or effort hint differs from the current session state:
 
-- Model mismatch: "This issue requests `[model: opus]`. Please run `/model claude-opus-4-6` before I proceed."
-- Effort high: "This issue requests `[effort: high]`. Please run `/think` to enable extended thinking before I proceed."
+- **Model mismatch:** Pause before starting work and ask the user to switch. Example: "This issue requests `[model: opus]`. Please run `/model claude-opus-4-6` before I proceed."
+- **Effort high:** If extended thinking is not yet enabled, pause and ask. Example: "This issue requests `[effort: high]`. Please run `/think` to enable extended thinking before I proceed."
+- **Effort medium or low:** Do not pause. Acknowledge the requested effort level in your first reply and adjust reasoning depth accordingly -- more thorough for medium, concise and direct for low.
 
-Do not start implementation until the user confirms or explicitly waives the hint.
+Do not start implementation until the user confirms or explicitly waives any pause-required hint (model mismatch or effort high).
 
 ### Creating Issues via CLI
 
-When creating a GitHub issue with `gh issue create`, do NOT write a freeform body. Instead:
+When creating a GitHub issue with `gh issue create`, do NOT write a freeform body:
 
-1. Choose the appropriate template from `.github/ISSUE_TEMPLATE/` (`feature.md`, `bug.md`, or `task.md`).
-2. Read the template file to get its structure.
-3. Fill in all sections, including the `[mode:]`, `[model:]`, and `[effort:]` hints at the top.
-4. Pass the populated content as the `--body` argument.
+1. Pick the right template from `.github/ISSUE_TEMPLATE/`: `feature.md` (new feature),
+   `bug.md` (defect), or `task.md` (chore/cleanup).
+2. Read the template and fill in every section, including the `[mode:]`, `[model:]`, and
+   `[effort:]` hints at the top.
+3. Write the populated body to a file using the Write tool.
+4. Create the issue -- always pass `--title` and `--label` to avoid interactive prompts:
+   ```sh
+   gh issue create --title "<title>" --body-file <path> --label <label>
+   ```
+5. Delete the file after the issue is created.
 
 ## Architectural Decisions
 
