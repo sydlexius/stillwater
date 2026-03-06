@@ -51,6 +51,39 @@ func libraryDropdownLabel(lib library.Library, sources map[string]LibrarySourceI
 	return lib.Name + " (" + info.ConnectionName + ")"
 }
 
+// sortLabel returns a short display label for the sort field.
+func sortLabel(sort string) string {
+	switch sort {
+	case "sort_name":
+		return "Sort Name"
+	case "health_score":
+		return "Health"
+	case "updated_at":
+		return "Updated"
+	case "created_at":
+		return "Added"
+	default:
+		return "Name"
+	}
+}
+
+// orderLabel returns a short label for the sort order.
+func orderLabel(order string) string {
+	if order == "desc" {
+		return "desc"
+	}
+	return "asc"
+}
+
+// sortDropdownItem returns the CSS classes for a sort dropdown item, with active highlighting.
+func sortDropdownItem(active bool) string {
+	base := "w-full text-left px-4 py-1.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 "
+	if active {
+		return base + "font-semibold text-blue-600 dark:text-blue-400"
+	}
+	return base + "text-gray-700 dark:text-gray-200"
+}
+
 templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 	@Layout("Artists", assets) {
 		<div class="space-y-6">
@@ -77,6 +110,8 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 				</button>
 			</div>
 			<input type="hidden" name="view" id="artist-view-input" value={ data.View }/>
+			<input type="hidden" name="sort" id="artist-sort-input" value={ data.Sort }/>
+			<input type="hidden" name="order" id="artist-order-input" value={ data.Order }/>
 			<div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
 				<div class="relative flex-1 max-w-sm">
 					<input
@@ -88,7 +123,7 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 						hx-trigger="keyup changed delay:300ms"
 						hx-target="#artist-content"
 						hx-swap="outerHTML"
-						hx-include="[name='filter'],[name='library_id'],[name='view']"
+						hx-include="[name='filter'],[name='library_id'],[name='view'],[name='sort'],[name='order']"
 						class="block w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
 					/>
 				</div>
@@ -100,7 +135,7 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 							hx-trigger="change"
 							hx-target="#artist-content"
 							hx-swap="outerHTML"
-							hx-include="[name='search'],[name='filter'],[name='view']"
+							hx-include="[name='search'],[name='filter'],[name='view'],[name='sort'],[name='order']"
 							class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
 						>
 							<option value="" selected?={ data.LibraryID == "" }>All Libraries</option>
@@ -115,7 +150,7 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 						hx-trigger="change"
 						hx-target="#artist-content"
 						hx-swap="outerHTML"
-						hx-include="[name='search'],[name='library_id'],[name='view']"
+						hx-include="[name='search'],[name='library_id'],[name='view'],[name='sort'],[name='order']"
 						class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
 					>
 						<option value="" selected?={ data.Filter == "" }>All Artists</option>
@@ -128,6 +163,27 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 						<option value="excluded" selected?={ data.Filter == "excluded" }>Excluded</option>
 						<option value="not_excluded" selected?={ data.Filter == "not_excluded" }>Not Excluded</option>
 					</select>
+					<details id="sort-dropdown" class="relative">
+						<summary class="list-none cursor-pointer inline-flex items-center gap-1.5 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500" title="Sort">
+							<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+								<path stroke-linecap="round" stroke-linejoin="round" d="M3 7.5 7.5 3m0 0L12 7.5M7.5 3v13.5m13.5 0L16.5 21m0 0L12 16.5m4.5 4.5V7.5"></path>
+							</svg>
+							<span class="hidden sm:inline">{ sortLabel(data.Sort) }</span>
+							<span class="hidden sm:inline text-gray-400">{ orderLabel(data.Order) }</span>
+						</summary>
+						<div class="absolute right-0 top-full z-20 mt-1 w-52 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg py-1">
+							<div class="px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Sort by</div>
+							<button type="button" onclick="setSort('name')" class={ sortDropdownItem(data.Sort == "name") }>Name</button>
+							<button type="button" onclick="setSort('sort_name')" class={ sortDropdownItem(data.Sort == "sort_name") }>Sort Name</button>
+							<button type="button" onclick="setSort('health_score')" class={ sortDropdownItem(data.Sort == "health_score") }>Health Score</button>
+							<button type="button" onclick="setSort('updated_at')" class={ sortDropdownItem(data.Sort == "updated_at") }>Last Updated</button>
+							<button type="button" onclick="setSort('created_at')" class={ sortDropdownItem(data.Sort == "created_at") }>Date Added</button>
+							<div class="my-1 border-t border-gray-100 dark:border-gray-700"></div>
+							<div class="px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Direction</div>
+							<button type="button" onclick="setOrder('asc')" class={ sortDropdownItem(data.Order == "asc") }>Ascending</button>
+							<button type="button" onclick="setOrder('desc')" class={ sortDropdownItem(data.Order == "desc") }>Descending</button>
+						</div>
+					</details>
 					<div id="col-toggle-wrapper" class={ templ.KV("hidden", data.View != "table") }>
 					@components.ColumnToggle("artists", "artists-table", []components.ColumnDef{
 						{Key: "name", Label: "Name", Required: true},
@@ -145,7 +201,7 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 							hx-get="/artists"
 							hx-target="#artist-content"
 							hx-swap="outerHTML"
-							hx-include="[name='search'],[name='filter'],[name='library_id']"
+							hx-include="[name='search'],[name='filter'],[name='library_id'],[name='sort'],[name='order']"
 							hx-vals='{"view":"table","page":"1"}'
 							onclick="setView('table')"
 							class={ "p-2 transition-colors", templ.KV("bg-blue-600 text-white", data.View == "table"), templ.KV("bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700", data.View != "table") }
@@ -160,7 +216,7 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 							hx-get="/artists"
 							hx-target="#artist-content"
 							hx-swap="outerHTML"
-							hx-include="[name='search'],[name='filter'],[name='library_id']"
+							hx-include="[name='search'],[name='filter'],[name='library_id'],[name='sort'],[name='order']"
 							hx-vals='{"view":"grid","page":"1"}'
 							onclick="setView('grid')"
 							class={ "p-2 transition-colors", templ.KV("bg-blue-600 text-white", data.View == "grid"), templ.KV("bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700", data.View != "grid") }
@@ -179,6 +235,49 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 			}
 		</div>
 		<script>
+			function setSort(field) {
+				var sortInput = document.getElementById('artist-sort-input');
+				var orderInput = document.getElementById('artist-order-input');
+				if (!sortInput || !orderInput) return;
+				if (sortInput.value === field) {
+					orderInput.value = (orderInput.value === 'asc') ? 'desc' : 'asc';
+				} else {
+					sortInput.value = field;
+					orderInput.value = 'asc';
+				}
+				closeSortDropdown();
+				htmx.ajax('GET', '/artists', {
+					target: '#artist-content',
+					swap: 'outerHTML',
+					values: buildArtistParams({page: '1'})
+				});
+			}
+
+			function setOrder(dir) {
+				var orderInput = document.getElementById('artist-order-input');
+				if (orderInput) orderInput.value = dir;
+				closeSortDropdown();
+				htmx.ajax('GET', '/artists', {
+					target: '#artist-content',
+					swap: 'outerHTML',
+					values: buildArtistParams({page: '1'})
+				});
+			}
+
+			function closeSortDropdown() {
+				var d = document.getElementById('sort-dropdown');
+				if (d) d.removeAttribute('open');
+			}
+
+			function buildArtistParams(overrides) {
+				var params = {};
+				['search', 'filter', 'library_id', 'view', 'sort', 'order'].forEach(function(name) {
+					var el = document.querySelector('[name="' + name + '"]');
+					if (el) params[name] = el.value;
+				});
+				return Object.assign(params, overrides);
+			}
+
 			function setView(view) {
 				var input = document.getElementById('artist-view-input');
 				if (input) input.value = view;
@@ -270,7 +369,21 @@ templ ArtistTable(data ArtistListData) {
 				<thead class="bg-gray-50 dark:bg-gray-800">
 					<tr>
 						<th scope="col" data-col="name" class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
-							Name
+							<button
+								type="button"
+								onclick="setSort('name')"
+								class="inline-flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-200"
+								title="Sort by Name"
+							>
+								Name
+								if data.Sort == "name" {
+									if data.Order == "asc" {
+										<svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 15.75l7.5-7.5 7.5 7.5"></path></svg>
+									} else {
+										<svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5"></path></svg>
+									}
+								}
+							</button>
 						</th>
 						<th scope="col" data-col="metadata" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
 							Metadata
