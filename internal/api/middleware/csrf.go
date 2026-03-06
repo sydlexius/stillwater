@@ -3,6 +3,7 @@ package middleware
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"mime"
 	"net/http"
 	"sync"
 	"time"
@@ -34,10 +35,14 @@ func (c *CSRF) Middleware(next http.Handler) http.Handler {
 			return
 		}
 
-		// Validate CSRF token on state-changing requests
+		// Validate CSRF token on state-changing requests.
+		// Prefer the header; fall back to form value only for form-encoded requests.
 		token := r.Header.Get(csrfTokenHeader)
 		if token == "" {
-			token = r.FormValue("csrf_token")
+			if ct, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type")); ct == "application/x-www-form-urlencoded" {
+				r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+				token = r.FormValue("csrf_token")
+			}
 		}
 
 		if token == "" || !c.valid(token) {

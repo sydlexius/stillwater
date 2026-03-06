@@ -749,8 +749,8 @@ func (f *LogoTrimFixer) Fix(ctx context.Context, a *artist.Artist, _ *Violation)
 		if strings.EqualFold(oldBase, newBase) && oldBase != newBase {
 			newPath := filepath.Join(a.Path, newBase)
 
-			oldInfo, errOld := os.Stat(logoPath)
-			newInfo, errNew := os.Stat(newPath)
+			oldInfo, errOld := os.Stat(logoPath) //nolint:gosec // G703: path from trusted artist directory
+			newInfo, errNew := os.Stat(newPath)  //nolint:gosec // G703: path from trusted artist directory
 			if errOld == nil && errNew == nil && !os.SameFile(oldInfo, newInfo) {
 				if rmErr := os.Remove(logoPath); rmErr != nil {
 					f.logger.Warn("failed to remove case-mismatched logo duplicate",

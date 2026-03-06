@@ -63,7 +63,7 @@ func testRouterWithBackup(t *testing.T) (*Router, *backup.Service) {
 func TestHandleBackupCreate_JSON(t *testing.T) {
 	r, _ := testRouterWithBackup(t)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/settings/backup", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/settings/backup", nil)
 	w := httptest.NewRecorder()
 
 	r.handleBackupCreate(w, req)
@@ -92,7 +92,7 @@ func TestHandleBackupCreate_JSON(t *testing.T) {
 func TestHandleBackupCreate_HTMX(t *testing.T) {
 	r, _ := testRouterWithBackup(t)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/settings/backup", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/settings/backup", nil)
 	req.Header.Set("HX-Request", "true")
 	w := httptest.NewRecorder()
 
@@ -116,7 +116,7 @@ func TestHandleBackupCreate_HTMX(t *testing.T) {
 func TestHandleBackupHistory_JSONEmpty(t *testing.T) {
 	r, _ := testRouterWithBackup(t)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/settings/backup/history", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/settings/backup/history", nil)
 	w := httptest.NewRecorder()
 
 	r.handleBackupHistory(w, req)
@@ -146,7 +146,7 @@ func TestHandleBackupHistory_JSONWithBackups(t *testing.T) {
 		t.Fatalf("creating test backup: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/settings/backup/history", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/settings/backup/history", nil)
 	w := httptest.NewRecorder()
 
 	r.handleBackupHistory(w, req)
@@ -167,7 +167,7 @@ func TestHandleBackupHistory_JSONWithBackups(t *testing.T) {
 func TestHandleBackupHistory_HTMXEmpty(t *testing.T) {
 	r, _ := testRouterWithBackup(t)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/settings/backup/history", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/settings/backup/history", nil)
 	req.Header.Set("HX-Request", "true")
 	w := httptest.NewRecorder()
 
@@ -190,7 +190,7 @@ func TestHandleBackupHistory_HTMXWithBackups(t *testing.T) {
 		t.Fatalf("creating test backup: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/settings/backup/history", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/settings/backup/history", nil)
 	req.Header.Set("HX-Request", "true")
 	w := httptest.NewRecorder()
 
@@ -229,7 +229,7 @@ func TestHandleBackupDownload_InvalidFilename(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, "/api/v1/settings/backup/"+tc.filename, nil)
+			req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/settings/backup/"+tc.filename, nil)
 			req.SetPathValue("filename", tc.filename)
 			w := httptest.NewRecorder()
 
@@ -250,7 +250,7 @@ func TestHandleBackupDownload_ValidFile(t *testing.T) {
 		t.Fatalf("creating test backup: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/settings/backup/"+info.Filename, nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/settings/backup/"+info.Filename, nil)
 	req.SetPathValue("filename", info.Filename)
 	w := httptest.NewRecorder()
 
@@ -282,7 +282,7 @@ func TestHandleBackupDownload_FileNotFound(t *testing.T) {
 	r, _ := testRouterWithBackup(t)
 
 	filename := "stillwater-20260101-120000.db"
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/settings/backup/"+filename, nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/settings/backup/"+filename, nil)
 	req.SetPathValue("filename", filename)
 	w := httptest.NewRecorder()
 
@@ -301,7 +301,7 @@ func TestHandleBackupDelete_JSON(t *testing.T) {
 		t.Fatalf("creating test backup: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodDelete, "/api/v1/settings/backup/"+info.Filename, nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodDelete, "/api/v1/settings/backup/"+info.Filename, nil)
 	req.SetPathValue("filename", info.Filename)
 	w := httptest.NewRecorder()
 
@@ -328,7 +328,7 @@ func TestHandleBackupDelete_HTMX(t *testing.T) {
 		t.Fatalf("creating test backup: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodDelete, "/api/v1/settings/backup/"+info.Filename, nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodDelete, "/api/v1/settings/backup/"+info.Filename, nil)
 	req.SetPathValue("filename", info.Filename)
 	req.Header.Set("HX-Request", "true")
 	w := httptest.NewRecorder()
@@ -364,7 +364,7 @@ func TestHandleBackupDelete_InvalidFilename(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodDelete, "/api/v1/settings/backup/"+tc.filename, nil)
+			req := httptest.NewRequestWithContext(context.Background(), http.MethodDelete, "/api/v1/settings/backup/"+tc.filename, nil)
 			req.SetPathValue("filename", tc.filename)
 			w := httptest.NewRecorder()
 
@@ -381,7 +381,7 @@ func TestHandleBackupDelete_NotFound(t *testing.T) {
 	r, _ := testRouterWithBackup(t)
 
 	filename := "stillwater-20260101-120000.db"
-	req := httptest.NewRequest(http.MethodDelete, "/api/v1/settings/backup/"+filename, nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodDelete, "/api/v1/settings/backup/"+filename, nil)
 	req.SetPathValue("filename", filename)
 	w := httptest.NewRecorder()
 

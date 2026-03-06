@@ -47,7 +47,13 @@ type ItemsResponse struct {
 	TotalRecordCount int          `json:"TotalRecordCount"`
 }
 
-// ArtistDetailItem represents the full detail response from GET /Items/{id}.
+// UserItem represents a user entry from GET /Users.
+type UserItem struct {
+	ID   string `json:"Id"`
+	Name string `json:"Name"`
+}
+
+// ArtistDetailItem represents detailed metadata for an artist item from Emby.
 type ArtistDetailItem struct {
 	Name              string            `json:"Name"`
 	SortName          string            `json:"SortName"`

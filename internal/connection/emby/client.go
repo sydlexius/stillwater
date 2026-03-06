@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/connection"
@@ -15,6 +16,9 @@ import (
 // Client communicates with an Emby server.
 type Client struct {
 	httpclient.BaseClient
+	userIDOnce sync.Once
+	userID     string
+	userIDErr  error
 }
 
 // New creates an Emby client with default HTTP settings.
@@ -114,9 +118,32 @@ func (c *Client) GetArtistImage(ctx context.Context, artistID, imageType string)
 	return c.GetRaw(ctx, path)
 }
 
+// getFirstUserID resolves the first user ID from GET /Users, cached after the first call.
+func (c *Client) getFirstUserID(ctx context.Context) (string, error) {
+	c.userIDOnce.Do(func() {
+		var users []UserItem
+		if err := c.Get(ctx, "/Users", &users); err != nil {
+			c.userIDErr = fmt.Errorf("getting users: %w", err)
+			return
+		}
+		for _, u := range users {
+			if u.ID != "" {
+				c.userID = u.ID
+				return
+			}
+		}
+		c.userIDErr = fmt.Errorf("no users with a non-empty ID returned from /Users")
+	})
+	return c.userID, c.userIDErr
+}
+
 // GetArtistDetail fetches the current state of an artist from Emby by platform artist ID.
 func (c *Client) GetArtistDetail(ctx context.Context, platformArtistID string) (*connection.ArtistPlatformState, error) {
-	path := fmt.Sprintf("/Items/%s?Fields=Overview,Genres,Tags,SortName,ProviderIds,ImageTags,BackdropImageTags,PremiereDate,EndDate,LockedFields", platformArtistID)
+	userID, err := c.getFirstUserID(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("getting artist detail: %w", err)
+	}
+	path := fmt.Sprintf("/Users/%s/Items/%s?Fields=Overview,Genres,Tags,SortName,ProviderIds,ImageTags,BackdropImageTags,PremiereDate,EndDate,LockedFields", userID, platformArtistID)
 	var item ArtistDetailItem
 	if err := c.Get(ctx, path, &item); err != nil {
 		return nil, fmt.Errorf("getting artist detail: %w", err)

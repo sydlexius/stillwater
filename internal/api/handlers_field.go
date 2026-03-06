@@ -345,7 +345,7 @@ func (r *Router) writeBackNFO(ctx context.Context, a *artist.Artist) {
 		return
 	}
 	nfoPath := filepath.Join(a.Path, "artist.nfo")
-	if _, err := os.Stat(nfoPath); err != nil {
+	if _, err := os.Stat(nfoPath); err != nil { //nolint:gosec // G703: path constructed from DB artist record, not user input
 		if os.IsNotExist(err) {
 			return
 		}

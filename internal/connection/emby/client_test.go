@@ -446,17 +446,23 @@ func TestPost_ErrorBodyLimited(t *testing.T) {
 
 func TestGetArtistDetail_Success(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/Items/emby-001" {
-			t.Errorf("unexpected path: %s", r.URL.Path)
-		}
 		if r.Header.Get("X-Emby-Token") != "test-key" {
 			t.Errorf("missing or wrong auth header: %s", r.Header.Get("X-Emby-Token"))
 		}
-		fields := r.URL.Query().Get("Fields")
-		if fields == "" {
-			t.Errorf("Fields query param missing")
+		switch r.URL.Path {
+		case "/Users":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`[{"Id":"user-001","Name":"Admin"}]`))
+		case "/Users/user-001/Items/emby-001":
+			fields := r.URL.Query().Get("Fields")
+			if fields == "" {
+				t.Errorf("Fields query param missing")
+			}
+			http.ServeFile(w, r, "testdata/artist_detail.json")
+		default:
+			t.Errorf("unexpected path: %s", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
 		}
-		http.ServeFile(w, r, "testdata/artist_detail.json")
 	}))
 	defer srv.Close()
 
@@ -495,7 +501,14 @@ func TestGetArtistDetail_Success(t *testing.T) {
 }
 
 func TestGetArtistDetail_NotFound(t *testing.T) {
+	var reqPaths []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reqPaths = append(reqPaths, r.URL.Path)
+		if r.URL.Path == "/Users" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`[{"Id":"user-001","Name":"Admin"}]`))
+			return
+		}
 		w.WriteHeader(http.StatusNotFound)
 		_, _ = w.Write([]byte("not found"))
 	}))
@@ -505,6 +518,15 @@ func TestGetArtistDetail_NotFound(t *testing.T) {
 	_, err := c.GetArtistDetail(context.Background(), "emby-999")
 	if err == nil {
 		t.Fatal("expected error for 404 response")
+	}
+	if len(reqPaths) != 2 {
+		t.Fatalf("got %d requests, want 2 (/Users then item path)", len(reqPaths))
+	}
+	if reqPaths[0] != "/Users" {
+		t.Errorf("first request = %q, want /Users", reqPaths[0])
+	}
+	if reqPaths[1] != "/Users/user-001/Items/emby-999" {
+		t.Errorf("second request = %q, want /Users/user-001/Items/emby-999", reqPaths[1])
 	}
 }
 

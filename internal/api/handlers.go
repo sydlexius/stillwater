@@ -50,6 +50,7 @@ func (r *Router) handleLogin(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 	} else {
+		req.Body = http.MaxBytesReader(w, req.Body, 1<<20)
 		body.Username = req.FormValue("username")
 		body.Password = req.FormValue("password")
 	}
@@ -123,6 +124,7 @@ func (r *Router) handleSetup(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 	} else {
+		req.Body = http.MaxBytesReader(w, req.Body, 1<<20)
 		body.Username = req.FormValue("username")
 		body.Password = req.FormValue("password")
 	}
