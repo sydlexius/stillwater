@@ -445,7 +445,9 @@ func TestPost_ErrorBodyLimited(t *testing.T) {
 }
 
 func TestGetArtistDetail_Success(t *testing.T) {
+	var reqCount int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reqCount++
 		if r.Header.Get("X-Emby-Token") != "test-key" {
 			t.Errorf("missing or wrong auth header: %s", r.Header.Get("X-Emby-Token"))
 		}
@@ -466,6 +468,9 @@ func TestGetArtistDetail_Success(t *testing.T) {
 	state, err := c.GetArtistDetail(context.Background(), "emby-001")
 	if err != nil {
 		t.Fatalf("GetArtistDetail failed: %v", err)
+	}
+	if reqCount != 1 {
+		t.Fatalf("got %d requests, want exactly 1 (no /Users lookup)", reqCount)
 	}
 	if state.Name != "Radiohead" {
 		t.Errorf("Name = %q, want Radiohead", state.Name)
