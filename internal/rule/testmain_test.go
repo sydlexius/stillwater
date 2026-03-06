@@ -1,7 +1,9 @@
 package rule
 
 import (
+	"context"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/database"
@@ -15,13 +17,16 @@ func TestMain(m *testing.M) {
 		panic("creating temp dir: " + err.Error())
 	}
 
-	templateDBPath = dir + "/template.db"
+	templateDBPath = filepath.Join(dir, "template.db")
 	db, err := database.Open(templateDBPath)
 	if err != nil {
 		panic("opening template db: " + err.Error())
 	}
 	if err := database.Migrate(db); err != nil {
 		panic("migrating template db: " + err.Error())
+	}
+	if _, err := db.ExecContext(context.Background(), "PRAGMA wal_checkpoint(TRUNCATE)"); err != nil {
+		panic("checkpointing template db: " + err.Error())
 	}
 	_ = db.Close()
 
