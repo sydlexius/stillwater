@@ -37,7 +37,7 @@ func (r *Router) handleLidarrWebhook(w http.ResponseWriter, req *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "accepted"})
 
 	// Process asynchronously with a bounded context.
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute) //nolint:govet // G118: cancel is deferred inside the goroutine below
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute) //nolint:gosec // G118: cancel is deferred inside the goroutine below
 	go func() {
 		defer cancel()
 		defer func() {
