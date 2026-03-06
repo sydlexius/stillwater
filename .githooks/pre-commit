@@ -114,39 +114,52 @@ fi
 # --------------------------------------------------------------------------
 # 4. go build -- make sure everything compiles
 # --------------------------------------------------------------------------
-if ! go build ./... 2>/tmp/pre-commit-build.log; then
-    echo -e "${RED}${BOLD}FAIL${RESET} go build:"
-    cat /tmp/pre-commit-build.log | head -30
-    exit 1
+STAGED_GO_ANY=$(git diff --cached --name-only --diff-filter=ACM -- '*.go' 'go.mod' 'go.sum' || true)
+if [ -n "$STAGED_GO_ANY" ]; then
+    if ! go build ./... 2>/tmp/pre-commit-build.log; then
+        echo -e "${RED}${BOLD}FAIL${RESET} go build:"
+        cat /tmp/pre-commit-build.log | head -30
+        exit 1
+    fi
+    pass "go build"
+else
+    warn "go build (no staged .go / go.mod / go.sum files)"
 fi
-pass "go build"
 
 # --------------------------------------------------------------------------
 # 5. golangci-lint -- full linter suite (matches CI exactly)
 # --------------------------------------------------------------------------
-if ! command -v golangci-lint &>/dev/null; then
-    warn "golangci-lint (not installed, skipping)"
-else
-    if ! LINT_OUTPUT=$(golangci-lint run ./... 2>&1); then
-        echo -e "${RED}${BOLD}FAIL${RESET} golangci-lint:"
-        echo "$LINT_OUTPUT"
-        exit 1
+if [ -n "$STAGED_GO_ANY" ]; then
+    if ! command -v golangci-lint &>/dev/null; then
+        warn "golangci-lint (not installed, skipping)"
+    else
+        if ! LINT_OUTPUT=$(golangci-lint run ./... 2>&1); then
+            echo -e "${RED}${BOLD}FAIL${RESET} golangci-lint:"
+            echo "$LINT_OUTPUT"
+            exit 1
+        fi
+        pass "golangci-lint"
     fi
-    pass "golangci-lint"
+else
+    warn "golangci-lint (no staged .go / go.mod / go.sum files)"
 fi
 
 # --------------------------------------------------------------------------
 # 6. govulncheck -- check for known vulnerabilities in dependencies
 # --------------------------------------------------------------------------
-if ! command -v govulncheck &>/dev/null; then
-    warn "govulncheck (not installed, skipping)"
-else
-    if ! VULN_OUTPUT=$(govulncheck ./... 2>&1); then
-        echo -e "${RED}${BOLD}FAIL${RESET} govulncheck:"
-        echo "$VULN_OUTPUT"
-        exit 1
+if [ -n "$STAGED_GO_ANY" ]; then
+    if ! command -v govulncheck &>/dev/null; then
+        warn "govulncheck (not installed, skipping)"
+    else
+        if ! VULN_OUTPUT=$(govulncheck ./... 2>&1); then
+            echo -e "${RED}${BOLD}FAIL${RESET} govulncheck:"
+            echo "$VULN_OUTPUT"
+            exit 1
+        fi
+        pass "govulncheck"
     fi
-    pass "govulncheck"
+else
+    warn "govulncheck (no staged .go / go.mod / go.sum files)"
 fi
 
 echo ""
