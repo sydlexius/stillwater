@@ -527,7 +527,7 @@ func TestGetArtistDetail_EmptyUserID(t *testing.T) {
 		t.Fatal("expected error for empty user ID")
 	}
 	if !strings.Contains(err.Error(), "no user ID configured") {
-		t.Errorf("error = %q, want message about missing user ID", err)
+		t.Errorf("error = %v, want message about missing user ID", err)
 	}
 }
 
