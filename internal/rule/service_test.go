@@ -3,6 +3,8 @@ package rule
 import (
 	"context"
 	"database/sql"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -11,12 +13,17 @@ import (
 
 func setupTestDB(t *testing.T) *sql.DB {
 	t.Helper()
-	db, err := database.Open(":memory:")
+	src, err := os.ReadFile(templateDBPath)
+	if err != nil {
+		t.Fatalf("reading template db: %v", err)
+	}
+	dst := filepath.Join(t.TempDir(), "test.db")
+	if err := os.WriteFile(dst, src, 0o600); err != nil {
+		t.Fatalf("writing test db: %v", err)
+	}
+	db, err := database.Open(dst)
 	if err != nil {
 		t.Fatalf("opening test db: %v", err)
-	}
-	if err := database.Migrate(db); err != nil {
-		t.Fatalf("running migrations: %v", err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	return db

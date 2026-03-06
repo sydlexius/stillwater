@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
-	"github.com/sydlexius/stillwater/internal/database"
 )
 
 func TestScheduler_NonPositiveInterval(t *testing.T) {
@@ -58,15 +57,7 @@ func TestScheduler_ContextCancellation(t *testing.T) {
 }
 
 func TestScheduler_TickTriggersRun(t *testing.T) {
-	db, err := database.Open(":memory:")
-	if err != nil {
-		t.Fatalf("opening test db: %v", err)
-	}
-	if err := database.Migrate(db); err != nil {
-		t.Fatalf("running migrations: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-
+	db := setupTestDB(t)
 	artistSvc := artist.NewService(db)
 	ruleSvc := NewService(db)
 	logger := slog.Default()

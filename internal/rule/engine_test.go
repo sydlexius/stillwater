@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/artist"
-	"github.com/sydlexius/stillwater/internal/database"
 )
 
 func testLogger() *slog.Logger {
@@ -261,15 +260,7 @@ func TestCalculateHealthScore(t *testing.T) {
 }
 
 func TestEngine_WithRealDB(t *testing.T) {
-	db, err := database.Open(":memory:")
-	if err != nil {
-		t.Fatalf("opening db: %v", err)
-	}
-	if err := database.Migrate(db); err != nil {
-		t.Fatalf("migrating: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-
+	db := setupTestDB(t)
 	svc := NewService(db)
 	if err := svc.SeedDefaults(context.Background()); err != nil {
 		t.Fatalf("seeding: %v", err)
