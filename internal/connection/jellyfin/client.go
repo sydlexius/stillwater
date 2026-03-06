@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/connection"
@@ -16,20 +15,19 @@ import (
 // Client communicates with a Jellyfin server.
 type Client struct {
 	httpclient.BaseClient
-	userIDOnce sync.Once
-	userID     string
-	userIDErr  error
+	userID string
 }
 
 // New creates a Jellyfin client with default HTTP settings.
-func New(baseURL, apiKey string, logger *slog.Logger) *Client {
-	return NewWithHTTPClient(baseURL, apiKey, &http.Client{Timeout: 10 * time.Second}, logger)
+func New(baseURL, apiKey, userID string, logger *slog.Logger) *Client {
+	return NewWithHTTPClient(baseURL, apiKey, userID, &http.Client{Timeout: 10 * time.Second}, logger)
 }
 
 // NewWithHTTPClient creates a Jellyfin client with a custom HTTP client (for testing).
-func NewWithHTTPClient(baseURL, apiKey string, httpClient *http.Client, logger *slog.Logger) *Client {
+func NewWithHTTPClient(baseURL, apiKey, userID string, httpClient *http.Client, logger *slog.Logger) *Client {
 	c := &Client{
 		BaseClient: httpclient.NewBase(baseURL, apiKey, httpClient, logger, "jellyfin"),
+		userID:     userID,
 	}
 	c.AuthFunc = c.setAuth
 	return c
@@ -118,32 +116,27 @@ func (c *Client) GetArtistImage(ctx context.Context, artistID, imageType string)
 	return c.GetRaw(ctx, path)
 }
 
-// getFirstUserID resolves the first user ID from GET /Users, cached after the first call.
-func (c *Client) getFirstUserID(ctx context.Context) (string, error) {
-	c.userIDOnce.Do(func() {
-		var users []UserItem
-		if err := c.Get(ctx, "/Users", &users); err != nil {
-			c.userIDErr = fmt.Errorf("getting users: %w", err)
-			return
+// GetFirstUserID fetches the first user ID from GET /Users. Used at connection-test time
+// to resolve and persist the user ID in the connections table.
+func (c *Client) GetFirstUserID(ctx context.Context) (string, error) {
+	var users []UserItem
+	if err := c.Get(ctx, "/Users", &users); err != nil {
+		return "", fmt.Errorf("getting users: %w", err)
+	}
+	for _, u := range users {
+		if u.ID != "" {
+			return u.ID, nil
 		}
-		for _, u := range users {
-			if u.ID != "" {
-				c.userID = u.ID
-				return
-			}
-		}
-		c.userIDErr = fmt.Errorf("no users with a non-empty ID returned from /Users")
-	})
-	return c.userID, c.userIDErr
+	}
+	return "", fmt.Errorf("no users with a non-empty ID returned from /Users")
 }
 
 // GetArtistDetail fetches the current state of an artist from Jellyfin by platform artist ID.
 func (c *Client) GetArtistDetail(ctx context.Context, platformArtistID string) (*connection.ArtistPlatformState, error) {
-	userID, err := c.getFirstUserID(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("getting artist detail: %w", err)
+	if c.userID == "" {
+		return nil, fmt.Errorf("no user ID configured for this connection; re-test the connection to resolve")
 	}
-	path := fmt.Sprintf("/Users/%s/Items/%s?Fields=Overview,Genres,Tags,SortName,ProviderIds,ImageTags,BackdropImageTags,PremiereDate,EndDate,LockedFields", userID, platformArtistID)
+	path := fmt.Sprintf("/Users/%s/Items/%s?Fields=Overview,Genres,Tags,SortName,ProviderIds,ImageTags,BackdropImageTags,PremiereDate,EndDate,LockedFields", c.userID, platformArtistID)
 	var item ArtistDetailItem
 	if err := c.Get(ctx, path, &item); err != nil {
 		return nil, fmt.Errorf("getting artist detail: %w", err)

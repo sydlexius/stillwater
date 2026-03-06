@@ -320,7 +320,7 @@ func TestPopulateFromEmby_ImportsMetadataFields(t *testing.T) {
 	}
 
 	// Run populate using the fake Emby server.
-	client := emby.NewWithHTTPClient(embySrv.URL, "key", embySrv.Client(),
+	client := emby.NewWithHTTPClient(embySrv.URL, "key", "", embySrv.Client(),
 		slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
 	var result populateResult
 	if err := r.populateFromEmbyCtx(ctx, client, lib, &result); err != nil {
@@ -398,7 +398,7 @@ func TestPopulateFromJellyfin_ImportsMetadataFields(t *testing.T) {
 		t.Fatalf("creating library: %v", err)
 	}
 
-	client := jellyfin.NewWithHTTPClient(jfSrv.URL, "key", jfSrv.Client(),
+	client := jellyfin.NewWithHTTPClient(jfSrv.URL, "key", "", jfSrv.Client(),
 		slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
 	var result populateResult
 	if err := r.populateFromJellyfinCtx(ctx, client, lib, &result); err != nil {
@@ -550,7 +550,7 @@ func TestPopulateFromEmby_DownloadsImages(t *testing.T) {
 		t.Fatalf("creating library: %v", err)
 	}
 
-	client := emby.NewWithHTTPClient(embySrv.URL, "key", embySrv.Client(),
+	client := emby.NewWithHTTPClient(embySrv.URL, "key", "", embySrv.Client(),
 		slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
 	var result populateResult
 	if err := router.populateFromEmbyCtx(ctx, client, lib, &result); err != nil {
@@ -647,7 +647,7 @@ func TestPopulateFromEmby_SkipsExistingImage(t *testing.T) {
 		t.Fatalf("creating library: %v", err)
 	}
 
-	client := emby.NewWithHTTPClient(embySrv.URL, "key", embySrv.Client(),
+	client := emby.NewWithHTTPClient(embySrv.URL, "key", "", embySrv.Client(),
 		slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
 	var result populateResult
 	if err := router.populateFromEmbyCtx(ctx, client, lib, &result); err != nil {
@@ -711,7 +711,7 @@ func TestPopulateFromEmby_UsesImageCacheWhenNoPath(t *testing.T) {
 		t.Fatalf("creating library: %v", err)
 	}
 
-	client := emby.NewWithHTTPClient(embySrv.URL, "key", embySrv.Client(),
+	client := emby.NewWithHTTPClient(embySrv.URL, "key", "", embySrv.Client(),
 		slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
 	var result populateResult
 	if err := router.populateFromEmbyCtx(ctx, client, lib, &result); err != nil {
@@ -801,7 +801,7 @@ func TestPopulateFromJellyfin_DownloadsImages(t *testing.T) {
 		t.Fatalf("creating library: %v", err)
 	}
 
-	client := jellyfin.NewWithHTTPClient(jfSrv.URL, "key", jfSrv.Client(),
+	client := jellyfin.NewWithHTTPClient(jfSrv.URL, "key", "", jfSrv.Client(),
 		slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
 	var result populateResult
 	if err := router.populateFromJellyfinCtx(ctx, client, lib, &result); err != nil {
@@ -907,7 +907,7 @@ func TestPopulateFromEmby_DownloadsImagesForExistingArtist(t *testing.T) {
 		t.Fatalf("creating existing artist: %v", err)
 	}
 
-	client := emby.NewWithHTTPClient(embySrv.URL, "key", embySrv.Client(),
+	client := emby.NewWithHTTPClient(embySrv.URL, "key", "", embySrv.Client(),
 		slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
 	var result populateResult
 	if err := router.populateFromEmbyCtx(ctx, client, lib, &result); err != nil {
@@ -1036,7 +1036,7 @@ func TestPopulateFromEmby_PlatformPathNotStoredWhenDegraded(t *testing.T) {
 		t.Fatalf("creating library: %v", err)
 	}
 
-	client := emby.NewWithHTTPClient(embySrv.URL, "key", embySrv.Client(),
+	client := emby.NewWithHTTPClient(embySrv.URL, "key", "", embySrv.Client(),
 		slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
 	var result populateResult
 	if err := router.populateFromEmbyCtx(ctx, client, lib, &result); err != nil {
@@ -1095,7 +1095,7 @@ func TestPopulateFromEmby_PlatformPathStoredWhenUnderLibraryRoot(t *testing.T) {
 		t.Fatalf("creating library: %v", err)
 	}
 
-	client := emby.NewWithHTTPClient(embySrv.URL, "key", embySrv.Client(),
+	client := emby.NewWithHTTPClient(embySrv.URL, "key", "", embySrv.Client(),
 		slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
 	var result populateResult
 	if err := router.populateFromEmbyCtx(ctx, client, lib, &result); err != nil {
@@ -1150,7 +1150,7 @@ func TestPopulateFromEmby_PlatformPathRejectedWhenOutsideLibraryRoot(t *testing.
 		t.Fatalf("creating library: %v", err)
 	}
 
-	client := emby.NewWithHTTPClient(embySrv.URL, "key", embySrv.Client(),
+	client := emby.NewWithHTTPClient(embySrv.URL, "key", "", embySrv.Client(),
 		slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
 	var result populateResult
 	if err := router.populateFromEmbyCtx(ctx, client, lib, &result); err != nil {
@@ -1222,7 +1222,7 @@ func TestPopulateFromEmby_BackfillsMBID(t *testing.T) {
 		t.Fatal("precondition: existing artist should have no MBID")
 	}
 
-	client := emby.NewWithHTTPClient(embySrv.URL, "key", embySrv.Client(),
+	client := emby.NewWithHTTPClient(embySrv.URL, "key", "", embySrv.Client(),
 		slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
 	var result populateResult
 	if err := router.populateFromEmbyCtx(ctx, client, lib, &result); err != nil {
@@ -1291,7 +1291,7 @@ func TestPopulateFromEmby_SkipsOnMBIDConflict(t *testing.T) {
 		t.Fatalf("creating existing artist: %v", err)
 	}
 
-	client := emby.NewWithHTTPClient(embySrv.URL, "key", embySrv.Client(),
+	client := emby.NewWithHTTPClient(embySrv.URL, "key", "", embySrv.Client(),
 		slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
 	var result populateResult
 	if err := router.populateFromEmbyCtx(ctx, client, lib, &result); err != nil {
@@ -1361,7 +1361,7 @@ func TestPopulateFromJellyfin_SkipsOnMBIDConflict(t *testing.T) {
 		t.Fatalf("creating existing artist: %v", err)
 	}
 
-	client := jellyfin.NewWithHTTPClient(jfSrv.URL, "key", jfSrv.Client(),
+	client := jellyfin.NewWithHTTPClient(jfSrv.URL, "key", "", jfSrv.Client(),
 		slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
 	var result populateResult
 	if err := router.populateFromJellyfinCtx(ctx, client, lib, &result); err != nil {

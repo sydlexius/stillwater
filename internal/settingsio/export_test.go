@@ -46,7 +46,8 @@ func setupTestDB(t *testing.T) *sql.DB {
 			updated_at TEXT NOT NULL DEFAULT (datetime('now')),
 			feature_library_import INTEGER NOT NULL DEFAULT 1,
 			feature_nfo_write INTEGER NOT NULL DEFAULT 1,
-			feature_image_write INTEGER NOT NULL DEFAULT 1
+			feature_image_write INTEGER NOT NULL DEFAULT 1,
+			platform_user_id TEXT
 		)`,
 		`CREATE TABLE IF NOT EXISTS platform_profiles (
 			id TEXT PRIMARY KEY,

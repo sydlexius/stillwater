@@ -33,7 +33,7 @@ func TestTestConnection_Success(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewWithHTTPClient(srv.URL, "test-key", srv.Client(), testLogger())
+	c := NewWithHTTPClient(srv.URL, "test-key", "", srv.Client(), testLogger())
 	if err := c.TestConnection(context.Background()); err != nil {
 		t.Fatalf("TestConnection failed: %v", err)
 	}
@@ -46,7 +46,7 @@ func TestTestConnection_Unauthorized(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewWithHTTPClient(srv.URL, "bad-key", srv.Client(), testLogger())
+	c := NewWithHTTPClient(srv.URL, "bad-key", "", srv.Client(), testLogger())
 	if err := c.TestConnection(context.Background()); err == nil {
 		t.Fatal("expected error for unauthorized")
 	}
@@ -61,7 +61,7 @@ func TestGetMusicLibraries(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewWithHTTPClient(srv.URL, "test-key", srv.Client(), testLogger())
+	c := NewWithHTTPClient(srv.URL, "test-key", "", srv.Client(), testLogger())
 	libs, err := c.GetMusicLibraries(context.Background())
 	if err != nil {
 		t.Fatalf("GetMusicLibraries failed: %v", err)
@@ -92,7 +92,7 @@ func TestGetArtists(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewWithHTTPClient(srv.URL, "test-key", srv.Client(), testLogger())
+	c := NewWithHTTPClient(srv.URL, "test-key", "", srv.Client(), testLogger())
 	resp, err := c.GetArtists(context.Background(), "lib-001", 0, 50)
 	if err != nil {
 		t.Fatalf("GetArtists failed: %v", err)
@@ -144,7 +144,7 @@ func TestTriggerLibraryScan(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewWithHTTPClient(srv.URL, "test-key", srv.Client(), testLogger())
+	c := NewWithHTTPClient(srv.URL, "test-key", "", srv.Client(), testLogger())
 	if err := c.TriggerLibraryScan(context.Background()); err != nil {
 		t.Fatalf("TriggerLibraryScan failed: %v", err)
 	}
@@ -162,7 +162,7 @@ func TestTriggerArtistRefresh(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewWithHTTPClient(srv.URL, "test-key", srv.Client(), testLogger())
+	c := NewWithHTTPClient(srv.URL, "test-key", "", srv.Client(), testLogger())
 	if err := c.TriggerArtistRefresh(context.Background(), "emby-001"); err != nil {
 		t.Fatalf("TriggerArtistRefresh failed: %v", err)
 	}
@@ -178,7 +178,7 @@ func TestCheckNFOWriterEnabled_True(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewWithHTTPClient(srv.URL, "key", srv.Client(), testLogger())
+	c := NewWithHTTPClient(srv.URL, "key", "", srv.Client(), testLogger())
 	enabled, libName, err := c.CheckNFOWriterEnabled(context.Background())
 	if err != nil {
 		t.Fatalf("CheckNFOWriterEnabled failed: %v", err)
@@ -201,7 +201,7 @@ func TestCheckNFOWriterEnabled_False(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewWithHTTPClient(srv.URL, "key", srv.Client(), testLogger())
+	c := NewWithHTTPClient(srv.URL, "key", "", srv.Client(), testLogger())
 	enabled, _, err := c.CheckNFOWriterEnabled(context.Background())
 	if err != nil {
 		t.Fatalf("CheckNFOWriterEnabled failed: %v", err)
@@ -220,7 +220,7 @@ func TestCheckNFOWriterEnabled_NoMusicLibraries(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewWithHTTPClient(srv.URL, "key", srv.Client(), testLogger())
+	c := NewWithHTTPClient(srv.URL, "key", "", srv.Client(), testLogger())
 	enabled, _, err := c.CheckNFOWriterEnabled(context.Background())
 	if err != nil {
 		t.Fatalf("CheckNFOWriterEnabled failed: %v", err)
@@ -236,7 +236,7 @@ func TestCheckNFOWriterEnabled_ServerError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewWithHTTPClient(srv.URL, "key", srv.Client(), testLogger())
+	c := NewWithHTTPClient(srv.URL, "key", "", srv.Client(), testLogger())
 	enabled, _, err := c.CheckNFOWriterEnabled(context.Background())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -265,7 +265,7 @@ func TestPushMetadata(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewWithHTTPClient(srv.URL, "test-key", srv.Client(), testLogger())
+	c := NewWithHTTPClient(srv.URL, "test-key", "", srv.Client(), testLogger())
 	data := connection.ArtistPushData{
 		Name:      "Radiohead",
 		SortName:  "Radiohead",
@@ -296,7 +296,7 @@ func TestPushMetadata_ServerError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewWithHTTPClient(srv.URL, "test-key", srv.Client(), testLogger())
+	c := NewWithHTTPClient(srv.URL, "test-key", "", srv.Client(), testLogger())
 	err := c.PushMetadata(context.Background(), "emby-001", connection.ArtistPushData{Name: "Test"})
 	if err == nil {
 		t.Fatal("expected error for server error")
@@ -329,7 +329,7 @@ func TestGetArtistImage_Success(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewWithHTTPClient(srv.URL, "test-key", srv.Client(), testLogger())
+	c := NewWithHTTPClient(srv.URL, "test-key", "", srv.Client(), testLogger())
 	data, contentType, err := c.GetArtistImage(context.Background(), "emby-001", "thumb")
 	if err != nil {
 		t.Fatalf("GetArtistImage failed: %v", err)
@@ -349,7 +349,7 @@ func TestGetArtistImage_NotFound(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewWithHTTPClient(srv.URL, "test-key", srv.Client(), testLogger())
+	c := NewWithHTTPClient(srv.URL, "test-key", "", srv.Client(), testLogger())
 	_, _, err := c.GetArtistImage(context.Background(), "emby-001", "thumb")
 	if err == nil {
 		t.Fatal("expected error for 404 response")
@@ -357,7 +357,7 @@ func TestGetArtistImage_NotFound(t *testing.T) {
 }
 
 func TestGetArtistImage_UnsupportedType(t *testing.T) {
-	c := New("http://localhost", "key", testLogger())
+	c := New("http://localhost", "key", "", testLogger())
 	_, _, err := c.GetArtistImage(context.Background(), "emby-001", "clearart")
 	if err == nil {
 		t.Fatal("expected error for unsupported image type")
@@ -374,7 +374,7 @@ func TestGetRaw_OversizedImage(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewWithHTTPClient(srv.URL, "key", srv.Client(), testLogger())
+	c := NewWithHTTPClient(srv.URL, "key", "", srv.Client(), testLogger())
 	_, _, err := c.GetArtistImage(context.Background(), "emby-001", "thumb")
 	if err == nil {
 		t.Fatal("expected error for oversized image")
@@ -393,7 +393,7 @@ func TestGetRaw_ErrorBodyLimited(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewWithHTTPClient(srv.URL, "key", srv.Client(), testLogger())
+	c := NewWithHTTPClient(srv.URL, "key", "", srv.Client(), testLogger())
 	_, _, err := c.GetArtistImage(context.Background(), "emby-001", "thumb")
 	if err == nil {
 		t.Fatal("expected error for 500 response")
@@ -414,7 +414,7 @@ func TestGet_ErrorBodyLimited(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewWithHTTPClient(srv.URL, "key", srv.Client(), testLogger())
+	c := NewWithHTTPClient(srv.URL, "key", "", srv.Client(), testLogger())
 	err := c.TestConnection(context.Background()) // uses get()
 	if err == nil {
 		t.Fatal("expected error for 500 response")
@@ -433,7 +433,7 @@ func TestPost_ErrorBodyLimited(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewWithHTTPClient(srv.URL, "key", srv.Client(), testLogger())
+	c := NewWithHTTPClient(srv.URL, "key", "", srv.Client(), testLogger())
 	err := c.TriggerLibraryScan(context.Background()) // uses post()
 	if err == nil {
 		t.Fatal("expected error for 500 response")
@@ -445,31 +445,32 @@ func TestPost_ErrorBodyLimited(t *testing.T) {
 }
 
 func TestGetArtistDetail_Success(t *testing.T) {
+	var reqCount int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reqCount++
 		if r.Header.Get("X-Emby-Token") != "test-key" {
 			t.Errorf("missing or wrong auth header: %s", r.Header.Get("X-Emby-Token"))
 		}
-		switch r.URL.Path {
-		case "/Users":
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`[{"Id":"user-001","Name":"Admin"}]`))
-		case "/Users/user-001/Items/emby-001":
-			fields := r.URL.Query().Get("Fields")
-			if fields == "" {
-				t.Errorf("Fields query param missing")
-			}
-			http.ServeFile(w, r, "testdata/artist_detail.json")
-		default:
+		if r.URL.Path != "/Users/user-001/Items/emby-001" {
 			t.Errorf("unexpected path: %s", r.URL.Path)
 			w.WriteHeader(http.StatusNotFound)
+			return
 		}
+		fields := r.URL.Query().Get("Fields")
+		if fields == "" {
+			t.Errorf("Fields query param missing")
+		}
+		http.ServeFile(w, r, "testdata/artist_detail.json")
 	}))
 	defer srv.Close()
 
-	c := NewWithHTTPClient(srv.URL, "test-key", srv.Client(), testLogger())
+	c := NewWithHTTPClient(srv.URL, "test-key", "user-001", srv.Client(), testLogger())
 	state, err := c.GetArtistDetail(context.Background(), "emby-001")
 	if err != nil {
 		t.Fatalf("GetArtistDetail failed: %v", err)
+	}
+	if reqCount != 1 {
+		t.Fatalf("got %d requests, want exactly 1 (no /Users lookup)", reqCount)
 	}
 	if state.Name != "Radiohead" {
 		t.Errorf("Name = %q, want Radiohead", state.Name)
@@ -501,32 +502,68 @@ func TestGetArtistDetail_Success(t *testing.T) {
 }
 
 func TestGetArtistDetail_NotFound(t *testing.T) {
-	var reqPaths []string
+	var reqCount int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		reqPaths = append(reqPaths, r.URL.Path)
-		if r.URL.Path == "/Users" {
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`[{"Id":"user-001","Name":"Admin"}]`))
-			return
-		}
+		reqCount++
 		w.WriteHeader(http.StatusNotFound)
 		_, _ = w.Write([]byte("not found"))
 	}))
 	defer srv.Close()
 
-	c := NewWithHTTPClient(srv.URL, "test-key", srv.Client(), testLogger())
+	c := NewWithHTTPClient(srv.URL, "test-key", "user-001", srv.Client(), testLogger())
 	_, err := c.GetArtistDetail(context.Background(), "emby-999")
 	if err == nil {
 		t.Fatal("expected error for 404 response")
 	}
-	if len(reqPaths) != 2 {
-		t.Fatalf("got %d requests, want 2 (/Users then item path)", len(reqPaths))
+	if reqCount != 1 {
+		t.Fatalf("got %d requests, want exactly 1 (no /Users lookup)", reqCount)
 	}
-	if reqPaths[0] != "/Users" {
-		t.Errorf("first request = %q, want /Users", reqPaths[0])
+}
+
+func TestGetArtistDetail_EmptyUserID(t *testing.T) {
+	c := New("http://localhost", "key", "", testLogger())
+	_, err := c.GetArtistDetail(context.Background(), "emby-001")
+	if err == nil {
+		t.Fatal("expected error for empty user ID")
 	}
-	if reqPaths[1] != "/Users/user-001/Items/emby-999" {
-		t.Errorf("second request = %q, want /Users/user-001/Items/emby-999", reqPaths[1])
+	if !strings.Contains(err.Error(), "no user ID configured") {
+		t.Errorf("error = %v, want message about missing user ID", err)
+	}
+}
+
+func TestGetFirstUserID_Success(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/Users" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[{"Id":"user-001","Name":"Admin"},{"Id":"user-002","Name":"Other"}]`))
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "test-key", "", srv.Client(), testLogger())
+	uid, err := c.GetFirstUserID(context.Background())
+	if err != nil {
+		t.Fatalf("GetFirstUserID failed: %v", err)
+	}
+	if uid != "user-001" {
+		t.Errorf("user ID = %q, want user-001", uid)
+	}
+}
+
+func TestGetFirstUserID_NoUsers(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "test-key", "", srv.Client(), testLogger())
+	_, err := c.GetFirstUserID(context.Background())
+	if err == nil {
+		t.Fatal("expected error for empty users list")
 	}
 }
 
@@ -545,7 +582,7 @@ func TestDeleteImage_Success(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewWithHTTPClient(srv.URL, "test-key", srv.Client(), testLogger())
+	c := NewWithHTTPClient(srv.URL, "test-key", "", srv.Client(), testLogger())
 	if err := c.DeleteImage(context.Background(), "emby-001", "thumb"); err != nil {
 		t.Fatalf("DeleteImage failed: %v", err)
 	}
@@ -558,14 +595,14 @@ func TestDeleteImage_ServerError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewWithHTTPClient(srv.URL, "test-key", srv.Client(), testLogger())
+	c := NewWithHTTPClient(srv.URL, "test-key", "", srv.Client(), testLogger())
 	if err := c.DeleteImage(context.Background(), "emby-001", "thumb"); err == nil {
 		t.Fatal("expected error for server error response")
 	}
 }
 
 func TestDeleteImage_UnsupportedType(t *testing.T) {
-	c := New("http://localhost", "key", testLogger())
+	c := New("http://localhost", "key", "", testLogger())
 	if err := c.DeleteImage(context.Background(), "emby-001", "clearart"); err == nil {
 		t.Fatal("expected error for unsupported image type")
 	}
@@ -640,7 +677,7 @@ func TestPushMetadata_DateNormalization(t *testing.T) {
 			}))
 			defer srv.Close()
 
-			c := NewWithHTTPClient(srv.URL, "key", srv.Client(), testLogger())
+			c := NewWithHTTPClient(srv.URL, "key", "", srv.Client(), testLogger())
 			if err := c.PushMetadata(context.Background(), "emby-001", tt.data); err != nil {
 				t.Fatalf("PushMetadata failed: %v", err)
 			}

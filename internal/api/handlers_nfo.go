@@ -338,9 +338,9 @@ func (r *Router) checkConnectionForNFOWriter(ctx context.Context, conn connectio
 	case connection.TypeLidarr:
 		return lidarr.New(conn.URL, conn.APIKey, r.logger).CheckNFOWriterEnabled(ctx)
 	case connection.TypeEmby:
-		return emby.New(conn.URL, conn.APIKey, r.logger).CheckNFOWriterEnabled(ctx)
+		return emby.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger).CheckNFOWriterEnabled(ctx)
 	case connection.TypeJellyfin:
-		return jellyfin.New(conn.URL, conn.APIKey, r.logger).CheckNFOWriterEnabled(ctx)
+		return jellyfin.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger).CheckNFOWriterEnabled(ctx)
 	default:
 		return false, "", nil
 	}

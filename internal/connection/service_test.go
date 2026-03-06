@@ -432,6 +432,67 @@ func TestUpdateFeatures_NotFound(t *testing.T) {
 	}
 }
 
+func TestUpdatePlatformUserID(t *testing.T) {
+	svc := setupTestService(t)
+	ctx := context.Background()
+
+	c := &Connection{Name: "PlatUID", Type: TypeEmby, URL: "http://plat:8096", APIKey: "key", Enabled: true}
+	if err := svc.Create(ctx, c); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := svc.UpdatePlatformUserID(ctx, c.ID, "user-001"); err != nil {
+		t.Fatalf("UpdatePlatformUserID: %v", err)
+	}
+
+	got, err := svc.GetByID(ctx, c.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.PlatformUserID != "user-001" {
+		t.Errorf("PlatformUserID = %q, want user-001", got.PlatformUserID)
+	}
+
+	// Not-found path.
+	if err := svc.UpdatePlatformUserID(ctx, "nonexistent", "uid"); err == nil {
+		t.Error("expected error updating platform user ID for nonexistent connection")
+	}
+}
+
+func TestUpdate_PreservesPlatformUserID(t *testing.T) {
+	svc := setupTestService(t)
+	ctx := context.Background()
+
+	c := &Connection{Name: "Preserve", Type: TypeEmby, URL: "http://pres:8096", APIKey: "key", Enabled: true}
+	if err := svc.Create(ctx, c); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.UpdatePlatformUserID(ctx, c.ID, "user-preserve"); err != nil {
+		t.Fatalf("UpdatePlatformUserID: %v", err)
+	}
+
+	// Reload and change the name only, then call Update.
+	got, err := svc.GetByID(ctx, c.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got.Name = "PreserveUpdated"
+	if err := svc.Update(ctx, got); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+
+	after, err := svc.GetByID(ctx, c.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Name != "PreserveUpdated" {
+		t.Errorf("Name = %q, want PreserveUpdated", after.Name)
+	}
+	if after.PlatformUserID != "user-preserve" {
+		t.Errorf("PlatformUserID = %q, want user-preserve (must be preserved by Update)", after.PlatformUserID)
+	}
+}
+
 func TestUpdateStatus(t *testing.T) {
 	svc := setupTestService(t)
 	ctx := context.Background()

@@ -84,7 +84,7 @@ func (r *Router) handleDiscoverLibraries(w http.ResponseWriter, req *http.Reques
 
 	switch conn.Type {
 	case connection.TypeEmby:
-		client := emby.New(conn.URL, conn.APIKey, r.logger)
+		client := emby.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger)
 		folders, libErr := client.GetMusicLibraries(req.Context())
 		if libErr != nil {
 			r.logger.Error("discovering emby libraries", "error", libErr)
@@ -104,7 +104,7 @@ func (r *Router) handleDiscoverLibraries(w http.ResponseWriter, req *http.Reques
 		}
 
 	case connection.TypeJellyfin:
-		client := jellyfin.New(conn.URL, conn.APIKey, r.logger)
+		client := jellyfin.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger)
 		folders, libErr := client.GetMusicLibraries(req.Context())
 		if libErr != nil {
 			r.logger.Error("discovering jellyfin libraries", "error", libErr)
@@ -309,11 +309,11 @@ func (r *Router) runPopulate(ctx context.Context, conn *connection.Connection, l
 
 	switch conn.Type {
 	case connection.TypeEmby:
-		client := emby.New(conn.URL, conn.APIKey, r.logger)
+		client := emby.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger)
 		popErr = r.populateFromEmbyCtx(ctx, client, lib, &result)
 
 	case connection.TypeJellyfin:
-		client := jellyfin.New(conn.URL, conn.APIKey, r.logger)
+		client := jellyfin.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger)
 		popErr = r.populateFromJellyfinCtx(ctx, client, lib, &result)
 
 	case connection.TypeLidarr:
@@ -406,11 +406,11 @@ func (r *Router) runLibraryScan(ctx context.Context, conn *connection.Connection
 
 	switch conn.Type {
 	case connection.TypeEmby:
-		client := emby.New(conn.URL, conn.APIKey, r.logger)
+		client := emby.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger)
 		updated, scanErr = r.scanFromEmby(ctx, client, lib)
 
 	case connection.TypeJellyfin:
-		client := jellyfin.New(conn.URL, conn.APIKey, r.logger)
+		client := jellyfin.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger)
 		updated, scanErr = r.scanFromJellyfin(ctx, client, lib)
 
 	case connection.TypeLidarr:
