@@ -84,7 +84,15 @@ When creating a GitHub issue with `gh issue create`, do NOT write a freeform bod
 1. Choose the appropriate template from `.github/ISSUE_TEMPLATE/` (`feature.md`, `bug.md`, or `task.md`).
 2. Read the template file to get its structure.
 3. Fill in all sections, including the `[mode:]`, `[model:]`, and `[effort:]` hints at the top.
-4. Write the populated content to a temp file and pass it with `--body-file`: `body=$(mktemp) && gh issue create --body-file "$body"`.
+4. Write the populated content to a temp file and pass it with `--body-file`, then clean up:
+   ```sh
+   body=$(mktemp)
+   cat > "$body" << 'EOF'
+   # ... filled-out template content ...
+   EOF
+   gh issue create --body-file "$body"
+   rm "$body"
+   ```
 
 ## Architectural Decisions
 
