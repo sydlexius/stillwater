@@ -79,20 +79,18 @@ Do not start implementation until the user confirms or explicitly waives any pau
 
 ### Creating Issues via CLI
 
-When creating a GitHub issue with `gh issue create`, do NOT write a freeform body. Instead:
+When creating a GitHub issue with `gh issue create`, do NOT write a freeform body:
 
-1. Choose the appropriate template from `.github/ISSUE_TEMPLATE/` (`feature.md`, `bug.md`, or `task.md`).
-2. Read the template file to get its structure.
-3. Fill in all sections, including the `[mode:]`, `[model:]`, and `[effort:]` hints at the top.
-4. Write the populated content to a temp file and pass it with `--body-file`, then clean up:
+1. Pick the right template from `.github/ISSUE_TEMPLATE/`: `feature.md` (new feature),
+   `bug.md` (defect), or `task.md` (chore/cleanup).
+2. Read the template and fill in every section, including the `[mode:]`, `[model:]`, and
+   `[effort:]` hints at the top.
+3. Write the populated body to a file using the Write tool.
+4. Create the issue -- always pass `--title` and `--label` to avoid interactive prompts:
    ```sh
-   body=$(mktemp)
-   cat > "$body" << 'EOF'
-   # ... filled-out template content ...
-   EOF
-   gh issue create --body-file "$body"
-   rm "$body"
+   gh issue create --title "<title>" --body-file <path> --label <label>
    ```
+5. Delete the file after the issue is created.
 
 ## Architectural Decisions
 
