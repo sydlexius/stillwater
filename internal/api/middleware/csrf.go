@@ -37,7 +37,7 @@ func (c *CSRF) Middleware(next http.Handler) http.Handler {
 		// Validate CSRF token on state-changing requests
 		token := r.Header.Get(csrfTokenHeader)
 		if token == "" {
-			token = r.FormValue("csrf_token")
+			token = r.FormValue("csrf_token") //nolint:gosec // G120: CSRF token form fallback; body size limited by Go's default limit on HTMX form posts
 		}
 
 		if token == "" || !c.valid(token) {

@@ -53,7 +53,7 @@ type UserItem struct {
 	Name string `json:"Name"`
 }
 
-// ArtistDetailItem represents the full detail response from GET /Items/{id}.
+// ArtistDetailItem represents detailed metadata for an artist item from Jellyfin.
 type ArtistDetailItem struct {
 	Name              string            `json:"Name"`
 	SortName          string            `json:"SortName"`

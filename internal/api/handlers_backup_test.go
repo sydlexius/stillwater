@@ -63,7 +63,7 @@ func testRouterWithBackup(t *testing.T) (*Router, *backup.Service) {
 func TestHandleBackupCreate_JSON(t *testing.T) {
 	r, _ := testRouterWithBackup(t)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/settings/backup", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/settings/backup", nil)
 	w := httptest.NewRecorder()
 
 	r.handleBackupCreate(w, req)
@@ -92,7 +92,7 @@ func TestHandleBackupCreate_JSON(t *testing.T) {
 func TestHandleBackupCreate_HTMX(t *testing.T) {
 	r, _ := testRouterWithBackup(t)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/settings/backup", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/settings/backup", nil)
 	req.Header.Set("HX-Request", "true")
 	w := httptest.NewRecorder()
 

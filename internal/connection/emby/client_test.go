@@ -501,7 +501,9 @@ func TestGetArtistDetail_Success(t *testing.T) {
 }
 
 func TestGetArtistDetail_NotFound(t *testing.T) {
+	var reqPaths []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reqPaths = append(reqPaths, r.URL.Path)
 		if r.URL.Path == "/Users" {
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`[{"Id":"user-001","Name":"Admin"}]`))
@@ -516,6 +518,15 @@ func TestGetArtistDetail_NotFound(t *testing.T) {
 	_, err := c.GetArtistDetail(context.Background(), "emby-999")
 	if err == nil {
 		t.Fatal("expected error for 404 response")
+	}
+	if len(reqPaths) != 2 {
+		t.Fatalf("got %d requests, want 2 (/Users then item path)", len(reqPaths))
+	}
+	if reqPaths[0] != "/Users" {
+		t.Errorf("first request = %q, want /Users", reqPaths[0])
+	}
+	if reqPaths[1] != "/Users/user-001/Items/emby-999" {
+		t.Errorf("second request = %q, want /Users/user-001/Items/emby-999", reqPaths[1])
 	}
 }
 

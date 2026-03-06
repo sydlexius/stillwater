@@ -36,8 +36,8 @@ func TestArtistsPageSortParams(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.sort+"_"+tc.order, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, "/artists?sort="+tc.sort+"&order="+tc.order, nil)
-			req = req.WithContext(middleware.WithTestUserID(req.Context(), "test-user"))
+			ctx := middleware.WithTestUserID(context.Background(), "test-user")
+			req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/artists?sort="+tc.sort+"&order="+tc.order, nil)
 			w := httptest.NewRecorder()
 			r.handleArtistsPage(w, req)
 			if w.Code != http.StatusOK {
