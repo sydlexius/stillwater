@@ -264,12 +264,19 @@ func (s *Service) UpdateFeatures(ctx context.Context, id string, libImport, nfoW
 // UpdatePlatformUserID stores the resolved platform user ID for an emby/jellyfin connection.
 func (s *Service) UpdatePlatformUserID(ctx context.Context, id, platformUserID string) error {
 	now := time.Now().UTC()
-	_, err := s.db.ExecContext(ctx, `
+	result, err := s.db.ExecContext(ctx, `
 		UPDATE connections SET platform_user_id = ?, updated_at = ?
 		WHERE id = ?
 	`, platformUserID, now.Format(time.RFC3339), id)
 	if err != nil {
 		return fmt.Errorf("updating platform user id: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("checking rows affected: %w", err)
+	}
+	if rows == 0 {
+		return fmt.Errorf("connection not found: %s", id)
 	}
 	return nil
 }

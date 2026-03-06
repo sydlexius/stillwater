@@ -324,7 +324,7 @@ func TestGetArtistDetail_NotFound(t *testing.T) {
 }
 
 func TestGetArtistDetail_EmptyUserID(t *testing.T) {
-	c := NewWithHTTPClient("http://localhost", "test-key", "", nil, testLogger())
+	c := NewWithHTTPClient("http://localhost", "test-key", "", &http.Client{}, testLogger())
 	_, err := c.GetArtistDetail(context.Background(), "jf-001")
 	if err == nil {
 		t.Fatal("expected error when userID is empty")
