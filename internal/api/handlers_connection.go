@@ -133,9 +133,10 @@ func (r *Router) testConnectionDirect(ctx context.Context, connType, url, apiKey
 }
 
 // resolvePlatformUserID calls GET /Users on an emby/jellyfin server and returns the first
-// user ID. Returns an empty string (and logs a warning) if resolution fails or the type
-// does not support users. This is called after a successful connection test so that the
-// user ID can be persisted in the connections table.
+// user ID. Returns an empty string without logging when the connection type does not
+// support users. Logs a warning and returns an empty string when resolution fails.
+// This is called after a successful connection test so that the user ID can be persisted
+// in the connections table.
 func (r *Router) resolvePlatformUserID(ctx context.Context, connType, url, apiKey string) string {
 	resolveCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
@@ -419,7 +420,10 @@ func (r *Router) handleTestConnection(w http.ResponseWriter, req *http.Request) 
 		client := emby.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger)
 		testErr = client.TestConnection(req.Context())
 		if testErr == nil {
-			uid, _ := client.GetFirstUserID(req.Context())
+			uid, uidErr := client.GetFirstUserID(req.Context())
+			if uidErr != nil {
+				r.logger.Warn("could not resolve emby platform user id", "error", uidErr)
+			}
 			if updErr := r.connectionService.UpdatePlatformUserID(req.Context(), id, uid); updErr != nil {
 				r.logger.Error("persisting emby platform user id", "error", updErr)
 			}
@@ -428,7 +432,10 @@ func (r *Router) handleTestConnection(w http.ResponseWriter, req *http.Request) 
 		client := jellyfin.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger)
 		testErr = client.TestConnection(req.Context())
 		if testErr == nil {
-			uid, _ := client.GetFirstUserID(req.Context())
+			uid, uidErr := client.GetFirstUserID(req.Context())
+			if uidErr != nil {
+				r.logger.Warn("could not resolve jellyfin platform user id", "error", uidErr)
+			}
 			if updErr := r.connectionService.UpdatePlatformUserID(req.Context(), id, uid); updErr != nil {
 				r.logger.Error("persisting jellyfin platform user id", "error", updErr)
 			}
