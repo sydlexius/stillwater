@@ -446,17 +446,23 @@ func TestPost_ErrorBodyLimited(t *testing.T) {
 
 func TestGetArtistDetail_Success(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/Items/emby-001" {
-			t.Errorf("unexpected path: %s", r.URL.Path)
-		}
 		if r.Header.Get("X-Emby-Token") != "test-key" {
 			t.Errorf("missing or wrong auth header: %s", r.Header.Get("X-Emby-Token"))
 		}
-		fields := r.URL.Query().Get("Fields")
-		if fields == "" {
-			t.Errorf("Fields query param missing")
+		switch r.URL.Path {
+		case "/Users":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`[{"Id":"user-001","Name":"Admin"}]`))
+		case "/Users/user-001/Items/emby-001":
+			fields := r.URL.Query().Get("Fields")
+			if fields == "" {
+				t.Errorf("Fields query param missing")
+			}
+			http.ServeFile(w, r, "testdata/artist_detail.json")
+		default:
+			t.Errorf("unexpected path: %s", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
 		}
-		http.ServeFile(w, r, "testdata/artist_detail.json")
 	}))
 	defer srv.Close()
 
@@ -496,6 +502,11 @@ func TestGetArtistDetail_Success(t *testing.T) {
 
 func TestGetArtistDetail_NotFound(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/Users" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`[{"Id":"user-001","Name":"Admin"}]`))
+			return
+		}
 		w.WriteHeader(http.StatusNotFound)
 		_, _ = w.Write([]byte("not found"))
 	}))

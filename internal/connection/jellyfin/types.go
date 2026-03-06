@@ -47,6 +47,12 @@ type ItemsResponse struct {
 	TotalRecordCount int          `json:"TotalRecordCount"`
 }
 
+// UserItem represents a user entry from GET /Users.
+type UserItem struct {
+	ID   string `json:"Id"`
+	Name string `json:"Name"`
+}
+
 // ArtistDetailItem represents the full detail response from GET /Items/{id}.
 type ArtistDetailItem struct {
 	Name              string            `json:"Name"`
