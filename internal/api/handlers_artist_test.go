@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -15,18 +16,22 @@ func TestArtistsPageSortParams(t *testing.T) {
 	r, _, artistSvc := testRouterWithLibrary(t)
 
 	a1 := &artist.Artist{Name: "Zydeco Band"}
-	_ = artistSvc.Create(context.Background(), a1)
+	if err := artistSvc.Create(context.Background(), a1); err != nil {
+		t.Fatalf("creating artist a1: %v", err)
+	}
 	a2 := &artist.Artist{Name: "Alpha Artist"}
-	_ = artistSvc.Create(context.Background(), a2)
+	if err := artistSvc.Create(context.Background(), a2); err != nil {
+		t.Fatalf("creating artist a2: %v", err)
+	}
 
 	cases := []struct {
 		sort  string
 		order string
-		want  string // substring expected in response HTML
 	}{
-		{"name", "asc", `value="name"`},
-		{"health_score", "desc", `value="health_score"`},
-		{"updated_at", "asc", `value="updated_at"`},
+		{"name", "asc"},
+		{"name", "desc"},
+		{"health_score", "desc"},
+		{"updated_at", "asc"},
 	}
 
 	for _, tc := range cases {
@@ -39,8 +44,14 @@ func TestArtistsPageSortParams(t *testing.T) {
 				t.Fatalf("status %d, want 200", w.Code)
 			}
 			body := w.Body.String()
-			if !strings.Contains(body, tc.want) {
-				t.Errorf("response does not contain %q", tc.want)
+			// Check that sort and order values are reflected in the specific hidden inputs.
+			wantSort := fmt.Sprintf(`id="artist-sort-input" value=%q`, tc.sort)
+			wantOrder := fmt.Sprintf(`id="artist-order-input" value=%q`, tc.order)
+			if !strings.Contains(body, wantSort) {
+				t.Errorf("response missing sort input: want %s", wantSort)
+			}
+			if !strings.Contains(body, wantOrder) {
+				t.Errorf("response missing order input: want %s", wantOrder)
 			}
 		})
 	}

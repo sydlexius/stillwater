@@ -168,8 +168,8 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 							<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
 								<path stroke-linecap="round" stroke-linejoin="round" d="M3 7.5 7.5 3m0 0L12 7.5M7.5 3v13.5m13.5 0L16.5 21m0 0L12 16.5m4.5 4.5V7.5"></path>
 							</svg>
-							<span class="hidden sm:inline">{ sortLabel(data.Sort) }</span>
-							<span class="hidden sm:inline text-gray-400">{ orderLabel(data.Order) }</span>
+							<span id="sort-field-label" class="hidden sm:inline">{ sortLabel(data.Sort) }</span>
+							<span id="sort-order-label" class="hidden sm:inline text-gray-400">{ orderLabel(data.Order) }</span>
 						</summary>
 						<div class="absolute right-0 top-full z-20 mt-1 w-52 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg py-1">
 							<div class="px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Sort by</div>
@@ -235,6 +235,25 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 			}
 		</div>
 		<script>
+			var _sortActiveClass = 'w-full text-left px-4 py-1.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 font-semibold text-blue-600 dark:text-blue-400';
+			var _sortInactiveClass = 'w-full text-left px-4 py-1.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200';
+			var _sortFieldLabels = {sort_name: 'Sort Name', health_score: 'Health', updated_at: 'Updated', created_at: 'Added'};
+
+			function updateSortUI(sort, order) {
+				var fieldLabel = document.getElementById('sort-field-label');
+				var orderLabel = document.getElementById('sort-order-label');
+				if (fieldLabel) fieldLabel.textContent = _sortFieldLabels[sort] || 'Name';
+				if (orderLabel) orderLabel.textContent = order === 'desc' ? 'desc' : 'asc';
+				['name', 'sort_name', 'health_score', 'updated_at', 'created_at'].forEach(function(f) {
+					var btn = document.querySelector('#sort-dropdown button[onclick="setSort(\'' + f + '\')"]');
+					if (btn) btn.className = f === sort ? _sortActiveClass : _sortInactiveClass;
+				});
+				['asc', 'desc'].forEach(function(d) {
+					var btn = document.querySelector('#sort-dropdown button[onclick="setOrder(\'' + d + '\')"]');
+					if (btn) btn.className = d === order ? _sortActiveClass : _sortInactiveClass;
+				});
+			}
+
 			function setSort(field) {
 				var sortInput = document.getElementById('artist-sort-input');
 				var orderInput = document.getElementById('artist-order-input');
@@ -245,6 +264,7 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 					sortInput.value = field;
 					orderInput.value = 'asc';
 				}
+				updateSortUI(sortInput.value, orderInput.value);
 				closeSortDropdown();
 				htmx.ajax('GET', '/artists', {
 					target: '#artist-content',
@@ -254,8 +274,11 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 			}
 
 			function setOrder(dir) {
+				var sortInput = document.getElementById('artist-sort-input');
 				var orderInput = document.getElementById('artist-order-input');
-				if (orderInput) orderInput.value = dir;
+				if (!orderInput) return;
+				orderInput.value = dir;
+				updateSortUI(sortInput ? sortInput.value : '', dir);
 				closeSortDropdown();
 				htmx.ajax('GET', '/artists', {
 					target: '#artist-content',
