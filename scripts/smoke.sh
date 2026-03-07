@@ -186,7 +186,7 @@ if [[ "$login_code" != "200" ]]; then
 fi
 
 # Extract CSRF token from cookie jar (set on the health GET above)
-CSRF_TOKEN=$(grep "csrf_token" "$COOKIE_JAR" | awk '{print $NF}' | tail -1)
+CSRF_TOKEN=$(grep "csrf_token" "$COOKIE_JAR" | awk '{print $NF}' | tail -1 || true)
 if [[ -z "$CSRF_TOKEN" ]]; then
   echo "FATAL: csrf_token cookie not found after health GET."
   exit 1
@@ -548,7 +548,7 @@ if [[ "$FULL" -eq 1 ]]; then
     -X POST "$SW_BASE/api/v1/artists/$ARTIST_ID/images/fetch" \
     -H "Content-Type: application/json" \
     -d '{"url":"https://upload.wikimedia.org/wikipedia/en/a/aa/A-ha_band_2015.jpg","type":"thumb"}')
-  assert_status_range "POST /api/v1/artists/$ARTIST_ID/images/fetch (--full)" 200 422 "$fetch_img_code"
+  assert_status_in "POST /api/v1/artists/$ARTIST_ID/images/fetch (--full)" "$fetch_img_code" 200 409
 
   backup_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
     -X POST "$SW_BASE/api/v1/settings/backup")
