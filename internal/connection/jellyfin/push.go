@@ -100,7 +100,9 @@ func (c *Client) UploadImage(ctx context.Context, platformArtistID string, image
 		return fmt.Errorf("unsupported image type: %s", imageType)
 	}
 
-	// Jellyfin 10.x expects the image body to be base64-encoded.
+	// Jellyfin 10.x expects the image body to be base64-encoded plain text.
+	// The Content-Type header still declares the image format (image/jpeg or
+	// image/png); Jellyfin uses it to determine the save format after decoding.
 	encoded := base64.StdEncoding.EncodeToString(data)
 
 	path := fmt.Sprintf("/Items/%s/Images/%s", platformArtistID, jfType)

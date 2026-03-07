@@ -235,6 +235,7 @@ func (r *Router) handleImageFetch(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		r.updateArtistFanartCount(req.Context(), a)
+		r.syncImageToPlatforms(req.Context(), a, imageType)
 		if isHTMXRequest(req) {
 			w.Header().Set("HX-Refresh", "true")
 			w.WriteHeader(http.StatusNoContent)
@@ -917,7 +918,11 @@ func (r *Router) clearArtistImageFlag(ctx context.Context, a *artist.Artist, ima
 // caller -- the local operation already succeeded.
 func (r *Router) syncImageToPlatforms(ctx context.Context, a *artist.Artist, imageType string) {
 	platformIDs, err := r.artistService.GetPlatformIDs(ctx, a.ID)
-	if err != nil || len(platformIDs) == 0 {
+	if err != nil {
+		r.logger.Error("getting platform IDs for image sync", "artist_id", a.ID, "type", imageType, "error", err)
+		return
+	}
+	if len(platformIDs) == 0 {
 		return
 	}
 
@@ -945,6 +950,7 @@ func (r *Router) syncImageToPlatforms(ctx context.Context, a *artist.Artist, ima
 			continue
 		}
 		if !conn.Enabled {
+			r.logger.Debug("skipping disabled connection for image sync", "connection", conn.Name, "type", imageType)
 			continue
 		}
 
@@ -968,7 +974,11 @@ func (r *Router) syncImageToPlatforms(ctx context.Context, a *artist.Artist, ima
 // has a stored artist ID mapping. Errors are logged but do not affect the caller.
 func (r *Router) deleteImageFromPlatforms(ctx context.Context, a *artist.Artist, imageType string) {
 	platformIDs, err := r.artistService.GetPlatformIDs(ctx, a.ID)
-	if err != nil || len(platformIDs) == 0 {
+	if err != nil {
+		r.logger.Error("getting platform IDs for image delete sync", "artist_id", a.ID, "type", imageType, "error", err)
+		return
+	}
+	if len(platformIDs) == 0 {
 		return
 	}
 
@@ -979,6 +989,7 @@ func (r *Router) deleteImageFromPlatforms(ctx context.Context, a *artist.Artist,
 			continue
 		}
 		if !conn.Enabled {
+			r.logger.Debug("skipping disabled connection for image delete sync", "connection", conn.Name, "type", imageType)
 			continue
 		}
 
