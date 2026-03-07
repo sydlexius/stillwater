@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"fmt"
 	"image"
 	"image/color"
 	"image/jpeg"
@@ -717,9 +718,31 @@ func TestHandleImageUpload_SyncWarnings_UnsupportedConnType(t *testing.T) {
 }
 
 func TestSetSyncWarningTrigger_Truncation(t *testing.T) {
-	t.Run("per-message truncation", func(t *testing.T) {
-		// Build a message that exceeds maxWarningLen (200 chars).
-		long := strings.Repeat("x", 201)
+	// assertTruncated decodes the HX-Trigger header, verifies the first warning
+	// was cut to exactly maxWarningRunes runes with the "(truncated)" suffix, and
+	// confirms the header is valid JSON.
+	assertTruncated := func(t *testing.T, hdr string) {
+		t.Helper()
+		if !strings.Contains(hdr, "(truncated)") {
+			t.Fatalf("expected truncation marker in header, got: %s", hdr)
+		}
+		var payload map[string][]string
+		if err := json.Unmarshal([]byte(hdr), &payload); err != nil {
+			t.Fatalf("HX-Trigger is not valid JSON: %v -- value: %s", err, hdr)
+		}
+		msgs := payload["syncWarning"]
+		if len(msgs) == 0 {
+			t.Fatal("syncWarning missing from header payload")
+		}
+		preserved := strings.TrimSuffix(msgs[0], " (truncated)")
+		if got := len([]rune(preserved)); got != maxWarningRunes {
+			t.Errorf("preserved rune count = %d, want %d", got, maxWarningRunes)
+		}
+	}
+
+	t.Run("per-message truncation ASCII", func(t *testing.T) {
+		// 201 ASCII chars: byte and rune counts are identical.
+		long := strings.Repeat("x", maxWarningRunes+1)
 		w := httptest.NewRecorder()
 		setSyncWarningTrigger(w, []string{long})
 
@@ -727,22 +750,92 @@ func TestSetSyncWarningTrigger_Truncation(t *testing.T) {
 		if hdr == "" {
 			t.Fatal("HX-Trigger header not set")
 		}
-		if !strings.Contains(hdr, "(truncated)") {
-			t.Errorf("expected truncation marker in header, got: %s", hdr)
-		}
-		// Original 201-char message must be cut, not present verbatim.
+		assertTruncated(t, hdr)
 		if strings.Contains(hdr, long) {
 			t.Error("full untruncated message should not appear in header")
 		}
 	})
 
+	t.Run("per-message truncation 2-byte rune", func(t *testing.T) {
+		// 201 two-byte runes (é = U+00E9). Byte-based slicing at byte 200 would
+		// split the 200th rune; rune-based truncation must preserve exactly 200 runes.
+		long := strings.Repeat("\u00e9", maxWarningRunes+1)
+		w := httptest.NewRecorder()
+		setSyncWarningTrigger(w, []string{long})
+
+		hdr := w.Header().Get("HX-Trigger")
+		if hdr == "" {
+			t.Fatal("HX-Trigger header not set")
+		}
+		assertTruncated(t, hdr)
+	})
+
+	t.Run("per-message truncation 4-byte rune", func(t *testing.T) {
+		// 201 four-byte runes (emoji). Verifies all Unicode planes are handled,
+		// not just the basic multilingual plane.
+		long := strings.Repeat("\U0001F600", maxWarningRunes+1)
+		w := httptest.NewRecorder()
+		setSyncWarningTrigger(w, []string{long})
+
+		hdr := w.Header().Get("HX-Trigger")
+		if hdr == "" {
+			t.Fatal("HX-Trigger header not set")
+		}
+		assertTruncated(t, hdr)
+	})
+
+	t.Run("per-message truncation mixed ASCII and multibyte", func(t *testing.T) {
+		// ASCII prefix followed by multibyte runes: models real platform names like
+		// "My Emby Server" with occasional accented characters. Byte position 200
+		// falls inside a multibyte rune; must not split it.
+		long := strings.Repeat("a", maxWarningRunes-2) + strings.Repeat("\u00e9", 3)
+		w := httptest.NewRecorder()
+		setSyncWarningTrigger(w, []string{long})
+
+		hdr := w.Header().Get("HX-Trigger")
+		if hdr == "" {
+			t.Fatal("HX-Trigger header not set")
+		}
+		assertTruncated(t, hdr)
+	})
+
+	t.Run("no truncation at exact limit ASCII", func(t *testing.T) {
+		// Exactly maxWarningRunes ASCII chars: must pass through unchanged.
+		exact := strings.Repeat("y", maxWarningRunes)
+		w := httptest.NewRecorder()
+		setSyncWarningTrigger(w, []string{exact})
+
+		hdr := w.Header().Get("HX-Trigger")
+		if hdr == "" {
+			t.Fatal("HX-Trigger header not set")
+		}
+		if strings.Contains(hdr, "(truncated)") {
+			t.Errorf("message at exact ASCII limit should not be truncated, got: %s", hdr)
+		}
+	})
+
+	t.Run("no truncation at exact limit multibyte", func(t *testing.T) {
+		// Exactly maxWarningRunes two-byte runes = 400 bytes. The old byte-based
+		// check (len(msg) > 200) would incorrectly truncate this.
+		exact := strings.Repeat("\u00e9", maxWarningRunes)
+		w := httptest.NewRecorder()
+		setSyncWarningTrigger(w, []string{exact})
+
+		hdr := w.Header().Get("HX-Trigger")
+		if hdr == "" {
+			t.Fatal("HX-Trigger header not set")
+		}
+		if strings.Contains(hdr, "(truncated)") {
+			t.Errorf("200-rune multibyte message should not be truncated, got: %s", hdr)
+		}
+	})
+
 	t.Run("total payload cap fallback", func(t *testing.T) {
-		// Build enough warnings to exceed maxHeaderBytes (1000 bytes) even after
-		// per-message truncation. 10 warnings of 200 chars each produce a JSON
-		// payload well over 1000 bytes.
+		// 10 warnings of maxWarningRunes runes each: after per-rune truncation the
+		// JSON payload exceeds maxHeaderBytes, triggering the summary fallback.
 		warnings := make([]string, 10)
 		for i := range warnings {
-			warnings[i] = strings.Repeat("w", 200)
+			warnings[i] = strings.Repeat("w", maxWarningRunes)
 		}
 		w := httptest.NewRecorder()
 		setSyncWarningTrigger(w, warnings)
@@ -751,21 +844,10 @@ func TestSetSyncWarningTrigger_Truncation(t *testing.T) {
 		if hdr == "" {
 			t.Fatal("HX-Trigger header not set")
 		}
-		// Fallback replaces individual messages with a summary count.
-		if !strings.Contains(hdr, "platform sync warnings") {
-			t.Errorf("expected summary count fallback in header, got: %s", hdr)
-		}
-	})
-
-	t.Run("no truncation at exact limit", func(t *testing.T) {
-		// A message of exactly maxWarningLen (200) chars should not be truncated.
-		exact := strings.Repeat("y", 200)
-		w := httptest.NewRecorder()
-		setSyncWarningTrigger(w, []string{exact})
-
-		hdr := w.Header().Get("HX-Trigger")
-		if strings.Contains(hdr, "(truncated)") {
-			t.Errorf("message at exact limit should not be truncated, got: %s", hdr)
+		// Fallback replaces individual messages with a single summary count.
+		want := fmt.Sprintf("%d platform sync warnings", len(warnings))
+		if !strings.Contains(hdr, want) {
+			t.Errorf("expected %q in header, got: %s", want, hdr)
 		}
 	})
 }

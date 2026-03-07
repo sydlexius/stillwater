@@ -1067,30 +1067,32 @@ func (r *Router) deleteImageFromPlatforms(ctx context.Context, a *artist.Artist,
 }
 
 const (
-	maxWarningLen  = 200
-	maxHeaderBytes = 1000
+	maxWarningRunes = 200
+	maxHeaderBytes  = 1000
 )
 
 // setSyncWarningTrigger encodes sync warnings as an HX-Trigger header so the
 // HTMX frontend can display them as non-blocking toast notifications.
-// Truncation is applied in two stages: each warning is first capped at
-// maxWarningLen chars, then if the full JSON payload still exceeds
-// maxHeaderBytes, all individual messages are replaced with a single summary
-// count string. Both limits prevent HTTP 431 (Request Header Fields Too Large)
-// errors from intermediary proxies.
+// Truncation is applied in two stages: first, each warning is capped at
+// maxWarningRunes Unicode codepoints (runes). Then, if the full JSON payload
+// still exceeds maxHeaderBytes, all individual messages are replaced with a
+// single summary count string. Both limits prevent HTTP 431 (Request Header
+// Fields Too Large) errors from intermediary proxies.
 func setSyncWarningTrigger(w http.ResponseWriter, warnings []string) {
 	if len(warnings) == 0 {
 		return
 	}
 	truncated := make([]string, len(warnings))
 	for i, msg := range warnings {
-		if len(msg) > maxWarningLen {
-			truncated[i] = msg[:maxWarningLen] + " (truncated)"
+		if runes := []rune(msg); len(runes) > maxWarningRunes {
+			truncated[i] = string(runes[:maxWarningRunes]) + " (truncated)"
 		} else {
 			truncated[i] = msg
 		}
 	}
-	// json.Marshal cannot fail for map[string][]string; errors are intentionally ignored.
+	// The two json.Marshal calls in this function are guaranteed to succeed:
+	// map[string][]string contains no values that json.Marshal rejects.
+	// Errors are intentionally ignored.
 	data, _ := json.Marshal(map[string][]string{"syncWarning": truncated})
 	if len(data) > maxHeaderBytes {
 		data, _ = json.Marshal(map[string][]string{
