@@ -3,6 +3,7 @@ package emby
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"image"
 	"image/color"
@@ -692,14 +693,12 @@ func TestPushMetadata_DateNormalization(t *testing.T) {
 	}
 }
 
-func TestUploadImage_Success(t *testing.T) {
-	imageData := []byte{0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10} // JPEG magic bytes
+func TestUploadImage_BodyIsBase64(t *testing.T) {
+	jpegData := createTestJPEG(t)
+	bodyCh := make(chan []byte, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/Items/emby-001/Images/Primary" {
-			t.Errorf("unexpected path: %s", r.URL.Path)
-		}
-		if r.Method != http.MethodPost {
-			t.Errorf("method = %s, want POST", r.Method)
+		if r.Method != http.MethodPost || r.URL.Path != "/Items/emby-001/Images/Primary" {
+			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
 		}
 		if r.Header.Get("X-Emby-Token") != "test-key" {
 			t.Errorf("missing or wrong auth header: %s", r.Header.Get("X-Emby-Token"))
@@ -707,22 +706,27 @@ func TestUploadImage_Success(t *testing.T) {
 		if ct := r.Header.Get("Content-Type"); ct != "image/jpeg" {
 			t.Errorf("Content-Type = %q, want image/jpeg", ct)
 		}
-		// Emby expects raw binary, not base64.
-		body, err := io.ReadAll(r.Body)
-		if err != nil {
-			t.Errorf("failed to read request body: %v", err)
-			return
+		body, readErr := io.ReadAll(r.Body)
+		if readErr != nil {
+			t.Errorf("reading request body: %v", readErr)
 		}
-		if string(body) != string(imageData) {
-			t.Errorf("body not raw bytes: got %q, want %q", body, imageData)
-		}
+		bodyCh <- body
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()
 
 	c := NewWithHTTPClient(srv.URL, "test-key", "", srv.Client(), testLogger())
-	if err := c.UploadImage(context.Background(), "emby-001", "thumb", imageData, "image/jpeg"); err != nil {
+	if err := c.UploadImage(context.Background(), "emby-001", "thumb", jpegData, "image/jpeg"); err != nil {
 		t.Fatalf("UploadImage failed: %v", err)
+	}
+
+	gotBody := <-bodyCh
+	decoded, err := base64.StdEncoding.DecodeString(string(gotBody))
+	if err != nil {
+		t.Fatalf("body is not valid base64: %v", err)
+	}
+	if !bytes.Equal(decoded, jpegData) {
+		t.Errorf("decoded body differs from input: got %d bytes, want %d", len(decoded), len(jpegData))
 	}
 }
 
