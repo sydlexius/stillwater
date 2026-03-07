@@ -990,6 +990,7 @@ func (r *Router) syncImageToPlatforms(ctx context.Context, a *artist.Artist, ima
 		conn, connErr := r.connectionService.GetByID(ctx, pid.ConnectionID)
 		if connErr != nil {
 			r.logger.Error("getting connection for image sync", "connection_id", pid.ConnectionID, "error", connErr)
+			warnings = append(warnings, fmt.Sprintf("connection %s: failed to load: %v", pid.ConnectionID, connErr))
 			continue
 		}
 		if !conn.Enabled {
@@ -1004,6 +1005,8 @@ func (r *Router) syncImageToPlatforms(ctx context.Context, a *artist.Artist, ima
 		case connection.TypeJellyfin:
 			uploader = jellyfin.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger)
 		default:
+			r.logger.Warn("unsupported connection type for image sync", "type", conn.Type)
+			warnings = append(warnings, fmt.Sprintf("%s: unsupported connection type %q", conn.Name, conn.Type))
 			continue
 		}
 
@@ -1017,7 +1020,8 @@ func (r *Router) syncImageToPlatforms(ctx context.Context, a *artist.Artist, ima
 
 // deleteImageFromPlatforms removes the image from every platform connection that
 // has a stored artist ID mapping. Errors are logged and returned as warning
-// strings so the caller can surface them to the client.
+// strings so the caller can surface them to the client. The local operation
+// already succeeded, so failures here are non-fatal.
 func (r *Router) deleteImageFromPlatforms(ctx context.Context, a *artist.Artist, imageType string) []string {
 	warnings := make([]string, 0)
 
@@ -1034,6 +1038,7 @@ func (r *Router) deleteImageFromPlatforms(ctx context.Context, a *artist.Artist,
 		conn, connErr := r.connectionService.GetByID(ctx, pid.ConnectionID)
 		if connErr != nil {
 			r.logger.Error("getting connection for image delete sync", "connection_id", pid.ConnectionID, "error", connErr)
+			warnings = append(warnings, fmt.Sprintf("connection %s: failed to load: %v", pid.ConnectionID, connErr))
 			continue
 		}
 		if !conn.Enabled {
@@ -1048,6 +1053,8 @@ func (r *Router) deleteImageFromPlatforms(ctx context.Context, a *artist.Artist,
 		case connection.TypeJellyfin:
 			deleter = jellyfin.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger)
 		default:
+			r.logger.Warn("unsupported connection type for image delete sync", "type", conn.Type)
+			warnings = append(warnings, fmt.Sprintf("%s: unsupported connection type %q", conn.Name, conn.Type))
 			continue
 		}
 
@@ -1059,13 +1066,37 @@ func (r *Router) deleteImageFromPlatforms(ctx context.Context, a *artist.Artist,
 	return warnings
 }
 
+const (
+	maxWarningLen  = 200
+	maxHeaderBytes = 1000
+)
+
 // setSyncWarningTrigger encodes sync warnings as an HX-Trigger header so the
 // HTMX frontend can display them as non-blocking toast notifications.
+// Truncation is applied in two stages: each warning is first capped at
+// maxWarningLen chars, then if the full JSON payload still exceeds
+// maxHeaderBytes, all individual messages are replaced with a single summary
+// count string. Both limits prevent HTTP 431 (Request Header Fields Too Large)
+// errors from intermediary proxies.
 func setSyncWarningTrigger(w http.ResponseWriter, warnings []string) {
 	if len(warnings) == 0 {
 		return
 	}
-	data, _ := json.Marshal(map[string][]string{"syncWarning": warnings})
+	truncated := make([]string, len(warnings))
+	for i, msg := range warnings {
+		if len(msg) > maxWarningLen {
+			truncated[i] = msg[:maxWarningLen] + " (truncated)"
+		} else {
+			truncated[i] = msg
+		}
+	}
+	// json.Marshal cannot fail for map[string][]string; errors are intentionally ignored.
+	data, _ := json.Marshal(map[string][]string{"syncWarning": truncated})
+	if len(data) > maxHeaderBytes {
+		data, _ = json.Marshal(map[string][]string{
+			"syncWarning": {fmt.Sprintf("%d platform sync warnings (see server log for details)", len(warnings))},
+		})
+	}
 	w.Header().Set("HX-Trigger", string(data))
 }
 

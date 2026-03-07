@@ -366,14 +366,23 @@ func TestHandleImageUpload_SyncsToPlatform(t *testing.T) {
 	// because CreateFormFile defaults to application/octet-stream.
 	var body bytes.Buffer
 	mw := multipart.NewWriter(&body)
-	_ = mw.WriteField("type", "thumb")
+	if err := mw.WriteField("type", "thumb"); err != nil {
+		t.Fatalf("writing multipart field: %v", err)
+	}
 	partHeader := make(map[string][]string)
 	partHeader["Content-Disposition"] = []string{`form-data; name="file"; filename="thumb.jpg"`}
 	partHeader["Content-Type"] = []string{"image/jpeg"}
-	fw, _ := mw.CreatePart(partHeader)
+	fw, err := mw.CreatePart(partHeader)
+	if err != nil {
+		t.Fatalf("creating multipart part: %v", err)
+	}
 	testImg := image.NewRGBA(image.Rect(0, 0, 100, 100))
-	_ = jpeg.Encode(fw, testImg, nil)
-	mw.Close()
+	if err := jpeg.Encode(fw, testImg, nil); err != nil {
+		t.Fatalf("encoding JPEG: %v", err)
+	}
+	if err := mw.Close(); err != nil {
+		t.Fatalf("closing multipart writer: %v", err)
+	}
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/images/upload", &body)
 	req.Header.Set("Content-Type", mw.FormDataContentType())
@@ -457,14 +466,23 @@ func buildThumbUploadRequest(t *testing.T, artistID string) *http.Request {
 	t.Helper()
 	var body bytes.Buffer
 	mw := multipart.NewWriter(&body)
-	_ = mw.WriteField("type", "thumb")
+	if err := mw.WriteField("type", "thumb"); err != nil {
+		t.Fatalf("writing multipart field: %v", err)
+	}
 	partHeader := make(map[string][]string)
 	partHeader["Content-Disposition"] = []string{`form-data; name="file"; filename="thumb.jpg"`}
 	partHeader["Content-Type"] = []string{"image/jpeg"}
-	fw, _ := mw.CreatePart(partHeader)
+	fw, err := mw.CreatePart(partHeader)
+	if err != nil {
+		t.Fatalf("creating multipart part: %v", err)
+	}
 	testImg := image.NewRGBA(image.Rect(0, 0, 100, 100))
-	_ = jpeg.Encode(fw, testImg, nil)
-	mw.Close()
+	if err := jpeg.Encode(fw, testImg, nil); err != nil {
+		t.Fatalf("encoding JPEG: %v", err)
+	}
+	if err := mw.Close(); err != nil {
+		t.Fatalf("closing multipart writer: %v", err)
+	}
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+artistID+"/images/upload", &body)
 	req.Header.Set("Content-Type", mw.FormDataContentType())
 	req.SetPathValue("id", artistID)
@@ -614,4 +632,140 @@ func TestHandleDeleteImage_SyncWarnings_PlatformFailure(t *testing.T) {
 	if !strings.Contains(warnings[0], "image delete failed") {
 		t.Errorf("warning should mention delete failure, got %q", warnings[0])
 	}
+}
+
+func TestSyncImageToPlatforms_GetByIDError(t *testing.T) {
+	r, artistSvc := testRouterWithPlatform(t)
+	dir := t.TempDir()
+	a := &artist.Artist{Name: "Test Artist", SortName: "Test Artist", Path: dir}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	// Write a JPEG so syncImageToPlatforms can find and read an image to upload.
+	writeJPEG(t, filepath.Join(dir, "folder.jpg"), 100, 100)
+
+	// Create a connection and link it as a platform ID.
+	addTestConnection(t, r, "conn-orphan", "Orphaned Server", "emby")
+	if err := artistSvc.SetPlatformID(context.Background(), a.ID, "conn-orphan", "emby-artist-1"); err != nil {
+		t.Fatalf("SetPlatformID: %v", err)
+	}
+
+	// Delete the connection with FK enforcement off so the platform ID row
+	// remains, simulating an orphaned mapping after a connection is removed.
+	if _, err := r.db.ExecContext(context.Background(), "PRAGMA foreign_keys = OFF"); err != nil {
+		t.Fatalf("disabling FK: %v", err)
+	}
+	if _, err := r.db.ExecContext(context.Background(), "DELETE FROM connections WHERE id = 'conn-orphan'"); err != nil {
+		t.Fatalf("deleting orphaned connection: %v", err)
+	}
+	if _, err := r.db.ExecContext(context.Background(), "PRAGMA foreign_keys = ON"); err != nil {
+		t.Fatalf("re-enabling FK: %v", err)
+	}
+
+	warnings := r.syncImageToPlatforms(context.Background(), a, "thumb")
+
+	if len(warnings) == 0 {
+		t.Fatal("expected warning for orphaned connection, got none")
+	}
+	if !strings.Contains(warnings[0], "failed to load") {
+		t.Errorf("warning should mention load failure, got %q", warnings[0])
+	}
+}
+
+func TestHandleImageUpload_SyncWarnings_UnsupportedConnType(t *testing.T) {
+	r, artistSvc := testRouterWithPlatform(t)
+	r.imageCacheDir = t.TempDir()
+
+	// A connection whose type is not handled by the image sync switch.
+	addTestConnection(t, r, "conn-lidarr", "Lidarr", "lidarr")
+
+	a := &artist.Artist{Name: "Platform Artist", SortName: "Platform Artist", Path: ""}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+	if err := artistSvc.SetPlatformID(context.Background(), a.ID, "conn-lidarr", "lidarr-artist-1"); err != nil {
+		t.Fatalf("SetPlatformID: %v", err)
+	}
+
+	req := buildThumbUploadRequest(t, a.ID)
+	w := httptest.NewRecorder()
+	r.handleImageUpload(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp map[string]json.RawMessage
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	raw, ok := resp["sync_warnings"]
+	if !ok {
+		t.Fatal("response missing sync_warnings field")
+	}
+	var warnings []string
+	if err := json.Unmarshal(raw, &warnings); err != nil {
+		t.Fatalf("decoding sync_warnings: %v", err)
+	}
+	if len(warnings) == 0 {
+		t.Fatal("expected warning for unsupported connection type, got none")
+	}
+	if !strings.Contains(warnings[0], "unsupported connection type") {
+		t.Errorf("warning should mention unsupported type, got %q", warnings[0])
+	}
+}
+
+func TestSetSyncWarningTrigger_Truncation(t *testing.T) {
+	t.Run("per-message truncation", func(t *testing.T) {
+		// Build a message that exceeds maxWarningLen (200 chars).
+		long := strings.Repeat("x", 201)
+		w := httptest.NewRecorder()
+		setSyncWarningTrigger(w, []string{long})
+
+		hdr := w.Header().Get("HX-Trigger")
+		if hdr == "" {
+			t.Fatal("HX-Trigger header not set")
+		}
+		if !strings.Contains(hdr, "(truncated)") {
+			t.Errorf("expected truncation marker in header, got: %s", hdr)
+		}
+		// Original 201-char message must be cut, not present verbatim.
+		if strings.Contains(hdr, long) {
+			t.Error("full untruncated message should not appear in header")
+		}
+	})
+
+	t.Run("total payload cap fallback", func(t *testing.T) {
+		// Build enough warnings to exceed maxHeaderBytes (1000 bytes) even after
+		// per-message truncation. 10 warnings of 200 chars each produce a JSON
+		// payload well over 1000 bytes.
+		warnings := make([]string, 10)
+		for i := range warnings {
+			warnings[i] = strings.Repeat("w", 200)
+		}
+		w := httptest.NewRecorder()
+		setSyncWarningTrigger(w, warnings)
+
+		hdr := w.Header().Get("HX-Trigger")
+		if hdr == "" {
+			t.Fatal("HX-Trigger header not set")
+		}
+		// Fallback replaces individual messages with a summary count.
+		if !strings.Contains(hdr, "platform sync warnings") {
+			t.Errorf("expected summary count fallback in header, got: %s", hdr)
+		}
+	})
+
+	t.Run("no truncation at exact limit", func(t *testing.T) {
+		// A message of exactly maxWarningLen (200) chars should not be truncated.
+		exact := strings.Repeat("y", 200)
+		w := httptest.NewRecorder()
+		setSyncWarningTrigger(w, []string{exact})
+
+		hdr := w.Header().Get("HX-Trigger")
+		if strings.Contains(hdr, "(truncated)") {
+			t.Errorf("message at exact limit should not be truncated, got: %s", hdr)
+		}
+	})
 }
