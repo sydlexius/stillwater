@@ -194,10 +194,10 @@ templ RefreshOOBFragments(data RefreshOOBData) {
 	<section id={ "artist-images-" + data.Artist.ID } hx-swap-oob="outerHTML" class="sw-card rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
 		<h2 class="text-lg font-semibold mb-3">Images</h2>
 		<div class="grid grid-cols-2 gap-3">
-			@ImagePreviewCard(data.Artist.ID, "thumb", data.Artist.ThumbExists, "Thumbnail", data.IsDegraded, 0)
-			@ImagePreviewCard(data.Artist.ID, "fanart", data.Artist.FanartExists, "Fanart", data.IsDegraded, data.Artist.FanartCount)
-			@ImagePreviewCard(data.Artist.ID, "logo", data.Artist.LogoExists, "Logo", data.IsDegraded, 0)
-			@ImagePreviewCard(data.Artist.ID, "banner", data.Artist.BannerExists, "Banner", data.IsDegraded, 0)
+			@ImagePreviewCard(data.Artist.ID, "thumb", data.Artist.ThumbExists, "Thumbnail", 0)
+			@ImagePreviewCard(data.Artist.ID, "fanart", data.Artist.FanartExists, "Fanart", data.Artist.FanartCount)
+			@ImagePreviewCard(data.Artist.ID, "logo", data.Artist.LogoExists, "Logo", 0)
+			@ImagePreviewCard(data.Artist.ID, "banner", data.Artist.BannerExists, "Banner", 0)
 		</div>
 		<div class="mt-3">
 			@components.StatusBadge(data.Artist.NFOExists, "Metadata")

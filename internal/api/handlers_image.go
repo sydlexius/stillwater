@@ -19,6 +19,9 @@ import (
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/connection"
+	"github.com/sydlexius/stillwater/internal/connection/emby"
+	"github.com/sydlexius/stillwater/internal/connection/jellyfin"
 	img "github.com/sydlexius/stillwater/internal/image"
 	"github.com/sydlexius/stillwater/internal/provider"
 	"github.com/sydlexius/stillwater/web/templates"
@@ -146,6 +149,7 @@ func (r *Router) handleImageUpload(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		r.updateArtistFanartCount(req.Context(), a)
+		r.syncImageToPlatforms(req.Context(), a, imageType)
 		writeJSON(w, http.StatusOK, map[string]any{
 			"status": "ok",
 			"saved":  saved,
@@ -166,6 +170,7 @@ func (r *Router) handleImageUpload(w http.ResponseWriter, req *http.Request) {
 	if imageType == "fanart" {
 		r.updateArtistFanartCount(req.Context(), a)
 	}
+	r.syncImageToPlatforms(req.Context(), a, imageType)
 
 	resp := map[string]any{
 		"status": "ok",
@@ -256,6 +261,7 @@ func (r *Router) handleImageFetch(w http.ResponseWriter, req *http.Request) {
 	if imageType == "fanart" {
 		r.updateArtistFanartCount(req.Context(), a)
 	}
+	r.syncImageToPlatforms(req.Context(), a, imageType)
 
 	if isHTMXRequest(req) {
 		w.Header().Set("HX-Refresh", "true")
@@ -463,6 +469,7 @@ func (r *Router) handleImageCrop(w http.ResponseWriter, req *http.Request) {
 	}
 
 	r.updateArtistImageFlag(req.Context(), a, body.Type)
+	r.syncImageToPlatforms(req.Context(), a, body.Type)
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status": "ok",
@@ -871,8 +878,9 @@ func (r *Router) handleDeleteImage(w http.ResponseWriter, req *http.Request) {
 		patterns := r.getActiveNamingConfig(req.Context(), imageType)
 		deleted = append(deleted, deleteImageFiles(r.imageDir(a), patterns, r.logger)...)
 		r.updateArtistFanartCount(req.Context(), a)
+		r.deleteImageFromPlatforms(req.Context(), a, imageType)
 		if req.Header.Get("HX-Request") == "true" {
-			renderTempl(w, req, templates.ImagePreviewCard(a.ID, imageType, false, imageTypeLabel(imageType), false, 0))
+			renderTempl(w, req, templates.ImagePreviewCard(a.ID, imageType, false, imageTypeLabel(imageType), 0))
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
@@ -886,9 +894,10 @@ func (r *Router) handleDeleteImage(w http.ResponseWriter, req *http.Request) {
 	deleted := deleteImageFiles(r.imageDir(a), patterns, r.logger)
 
 	r.clearArtistImageFlag(req.Context(), a, imageType)
+	r.deleteImageFromPlatforms(req.Context(), a, imageType)
 
 	if req.Header.Get("HX-Request") == "true" {
-		renderTempl(w, req, templates.ImagePreviewCard(a.ID, imageType, false, imageTypeLabel(imageType), false, 0))
+		renderTempl(w, req, templates.ImagePreviewCard(a.ID, imageType, false, imageTypeLabel(imageType), 0))
 		return
 	}
 
@@ -901,6 +910,92 @@ func (r *Router) handleDeleteImage(w http.ResponseWriter, req *http.Request) {
 // clearArtistImageFlag sets the image existence flag to false and persists it.
 func (r *Router) clearArtistImageFlag(ctx context.Context, a *artist.Artist, imageType string) {
 	r.setArtistImageFlag(ctx, a, imageType, false)
+}
+
+// syncImageToPlatforms uploads the just-saved image to every platform connection
+// that has a stored artist ID mapping. Errors are logged but do not affect the
+// caller -- the local operation already succeeded.
+func (r *Router) syncImageToPlatforms(ctx context.Context, a *artist.Artist, imageType string) {
+	platformIDs, err := r.artistService.GetPlatformIDs(ctx, a.ID)
+	if err != nil || len(platformIDs) == 0 {
+		return
+	}
+
+	patterns := r.getActiveNamingConfig(ctx, imageType)
+	filePath, found := findExistingImage(r.imageDir(a), patterns)
+	if !found {
+		return
+	}
+
+	data, err := os.ReadFile(filePath) //nolint:gosec // path from trusted naming patterns
+	if err != nil {
+		r.logger.Error("reading image for platform sync", "artist", a.Name, "type", imageType, "error", err)
+		return
+	}
+
+	ct := "image/jpeg"
+	if strings.EqualFold(filepath.Ext(filePath), ".png") {
+		ct = "image/png"
+	}
+
+	for _, pid := range platformIDs {
+		conn, connErr := r.connectionService.GetByID(ctx, pid.ConnectionID)
+		if connErr != nil {
+			r.logger.Error("getting connection for image sync", "connection_id", pid.ConnectionID, "error", connErr)
+			continue
+		}
+		if !conn.Enabled {
+			continue
+		}
+
+		var uploader connection.ImageUploader
+		switch conn.Type {
+		case connection.TypeEmby:
+			uploader = emby.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger)
+		case connection.TypeJellyfin:
+			uploader = jellyfin.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger)
+		default:
+			continue
+		}
+
+		if uploadErr := uploader.UploadImage(ctx, pid.PlatformArtistID, imageType, data, ct); uploadErr != nil {
+			r.logger.Error("syncing image to platform", "artist", a.Name, "connection", conn.Name, "type", imageType, "error", uploadErr)
+		}
+	}
+}
+
+// deleteImageFromPlatforms removes the image from every platform connection that
+// has a stored artist ID mapping. Errors are logged but do not affect the caller.
+func (r *Router) deleteImageFromPlatforms(ctx context.Context, a *artist.Artist, imageType string) {
+	platformIDs, err := r.artistService.GetPlatformIDs(ctx, a.ID)
+	if err != nil || len(platformIDs) == 0 {
+		return
+	}
+
+	for _, pid := range platformIDs {
+		conn, connErr := r.connectionService.GetByID(ctx, pid.ConnectionID)
+		if connErr != nil {
+			r.logger.Error("getting connection for image delete sync", "connection_id", pid.ConnectionID, "error", connErr)
+			continue
+		}
+		if !conn.Enabled {
+			continue
+		}
+
+		var deleter connection.ImageDeleter
+		switch conn.Type {
+		case connection.TypeEmby:
+			deleter = emby.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger)
+		case connection.TypeJellyfin:
+			deleter = jellyfin.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger)
+		default:
+			continue
+		}
+
+		if delErr := deleter.DeleteImage(ctx, pid.PlatformArtistID, imageType); delErr != nil {
+			r.logger.Error("deleting image from platform", "artist", a.Name, "connection", conn.Name, "type", imageType, "error", delErr)
+		}
+	}
 }
 
 // findExistingImage searches for the first matching image file in a directory.
@@ -1042,6 +1137,7 @@ func (r *Router) handleLogoTrim(w http.ResponseWriter, req *http.Request) {
 	}
 
 	r.updateArtistImageFlag(req.Context(), a, "logo")
+	r.syncImageToPlatforms(req.Context(), a, "logo")
 
 	if isHTMXRequest(req) {
 		w.Header().Set("HX-Refresh", "true")

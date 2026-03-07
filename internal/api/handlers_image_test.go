@@ -7,6 +7,7 @@ import (
 	"image"
 	"image/color"
 	"image/jpeg"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -325,5 +326,106 @@ func TestSetArtistImageFlag_TransientPreservesPlaceholder(t *testing.T) {
 	if a.ThumbPlaceholder != existingPH {
 		t.Errorf("ThumbPlaceholder = %q, want %q (should be preserved on transient failure)",
 			a.ThumbPlaceholder[:min(len(a.ThumbPlaceholder), 30)], existingPH)
+	}
+}
+
+func TestHandleImageUpload_SyncsToPlatform(t *testing.T) {
+	var uploaded bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if req.Method == http.MethodPost && strings.Contains(req.URL.Path, "/Images/Primary") {
+			uploaded = true
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	r, artistSvc := testRouterWithPlatform(t)
+	r.imageCacheDir = t.TempDir()
+	addTestConnectionWithURL(t, r, "conn-emby", "Emby", "emby", srv.URL)
+
+	// Platform artist: no local path, images stored in cache dir.
+	a := &artist.Artist{Name: "Platform Artist", SortName: "Platform Artist", Path: ""}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+	if err := artistSvc.SetPlatformID(context.Background(), a.ID, "conn-emby", "emby-artist-1"); err != nil {
+		t.Fatalf("SetPlatformID: %v", err)
+	}
+
+	// Build a multipart upload request with a small JPEG.
+	// Use CreatePart (not CreateFormFile) to set Content-Type: image/jpeg,
+	// because CreateFormFile defaults to application/octet-stream.
+	var body bytes.Buffer
+	mw := multipart.NewWriter(&body)
+	_ = mw.WriteField("type", "thumb")
+	partHeader := make(map[string][]string)
+	partHeader["Content-Disposition"] = []string{`form-data; name="file"; filename="thumb.jpg"`}
+	partHeader["Content-Type"] = []string{"image/jpeg"}
+	fw, _ := mw.CreatePart(partHeader)
+	testImg := image.NewRGBA(image.Rect(0, 0, 100, 100))
+	_ = jpeg.Encode(fw, testImg, nil)
+	mw.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/images/upload", &body)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	req.SetPathValue("id", a.ID)
+	w := httptest.NewRecorder()
+
+	r.handleImageUpload(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	if !uploaded {
+		t.Error("expected platform sync upload call, but mock server received none")
+	}
+}
+
+func TestHandleDeleteImage_SyncsToPlatform(t *testing.T) {
+	var deleted bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if req.Method == http.MethodDelete && strings.Contains(req.URL.Path, "/Images/Primary") {
+			deleted = true
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	r, artistSvc := testRouterWithPlatform(t)
+	cacheDir := t.TempDir()
+	r.imageCacheDir = cacheDir
+	addTestConnectionWithURL(t, r, "conn-emby", "Emby", "emby", srv.URL)
+
+	// Platform artist: no local path, images stored in cache dir.
+	a := &artist.Artist{
+		Name: "Platform Artist", SortName: "Platform Artist", Path: "",
+		ThumbExists: true,
+	}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+	if err := artistSvc.SetPlatformID(context.Background(), a.ID, "conn-emby", "emby-artist-1"); err != nil {
+		t.Fatalf("SetPlatformID: %v", err)
+	}
+
+	// Write a thumb image to the cache dir so the delete has a file to remove.
+	artistCacheDir := filepath.Join(cacheDir, a.ID)
+	if err := os.MkdirAll(artistCacheDir, 0o755); err != nil {
+		t.Fatalf("creating cache dir: %v", err)
+	}
+	writeJPEG(t, filepath.Join(artistCacheDir, "folder.jpg"), 100, 100)
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/artists/"+a.ID+"/images/thumb", nil)
+	req.SetPathValue("id", a.ID)
+	req.SetPathValue("type", "thumb")
+	w := httptest.NewRecorder()
+
+	r.handleDeleteImage(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	if !deleted {
+		t.Error("expected platform sync delete call, but mock server received none")
 	}
 }
