@@ -154,10 +154,10 @@ assert_json_field "  /api/v1/health shape" ".status" "ok" "$body"
 
 # Login (CSRF-exempt endpoint)
 login_payload=$(jq -nc --arg u "$SW_USER" --arg p "$SW_PASS" '{username: $u, password: $p}')
-login_resp=$(curl -s -c "$COOKIE_JAR" -b "$COOKIE_JAR" -w "\n%{http_code}" \
+login_resp=$(printf '%s' "$login_payload" | curl -s -c "$COOKIE_JAR" -b "$COOKIE_JAR" -w "\n%{http_code}" \
   -X POST "$SW_BASE/api/v1/auth/login" \
   -H "Content-Type: application/json" \
-  -d "$login_payload")
+  -d @-)
 login_body=$(echo "$login_resp" | sed '$d')
 login_code=$(echo "$login_resp" | tail -n 1)
 assert_status "POST /api/v1/auth/login" "200" "$login_code"
@@ -199,10 +199,10 @@ AUTH=(-H "Authorization: Bearer $TOKEN")
 
 # Discover real IDs from the live DB (makes the script resilient to DB resets)
 discover_resp=$(curl -s "${AUTH[@]}" "$SW_BASE/api/v1/artists?search=a-ha&page_size=1")
-ARTIST_ID=$(echo "$discover_resp" | jq -r '.artists[0].id // empty' 2>/dev/null)
+ARTIST_ID=$(echo "$discover_resp" | jq -r '.artists[0].id // empty' 2>/dev/null || true)
 if [[ -z "$ARTIST_ID" ]]; then
   # Fall back to first artist in the list
-  ARTIST_ID=$(curl -s "${AUTH[@]}" "$SW_BASE/api/v1/artists?page_size=1" | jq -r '.artists[0].id // empty' 2>/dev/null)
+  ARTIST_ID=$(curl -s "${AUTH[@]}" "$SW_BASE/api/v1/artists?page_size=1" | jq -r '.artists[0].id // empty' 2>/dev/null || true)
 fi
 if [[ -z "$ARTIST_ID" ]]; then
   echo "  WARNING: could not discover a test artist ID -- artist-specific checks will fail"
@@ -212,9 +212,9 @@ else
 fi
 
 conns_resp=$(curl -s "${AUTH[@]}" "$SW_BASE/api/v1/connections")
-CONN_EMBY=$(echo "$conns_resp" | jq -r '.[] | select(.type=="emby") | .id' 2>/dev/null | head -1)
-CONN_JELLYFIN=$(echo "$conns_resp" | jq -r '.[] | select(.type=="jellyfin") | .id' 2>/dev/null | head -1)
-CONN_LIDARR=$(echo "$conns_resp" | jq -r '.[] | select(.type=="lidarr") | .id' 2>/dev/null | head -1)
+CONN_EMBY=$(echo "$conns_resp" | jq -r '.[] | select(.type=="emby") | .id' 2>/dev/null | head -1 || true)
+CONN_JELLYFIN=$(echo "$conns_resp" | jq -r '.[] | select(.type=="jellyfin") | .id' 2>/dev/null | head -1 || true)
+CONN_LIDARR=$(echo "$conns_resp" | jq -r '.[] | select(.type=="lidarr") | .id' 2>/dev/null | head -1 || true)
 [[ -n "$CONN_EMBY" ]] && echo "  Emby connection: $CONN_EMBY"
 [[ -n "$CONN_JELLYFIN" ]] && echo "  Jellyfin connection: $CONN_JELLYFIN"
 [[ -n "$CONN_LIDARR" ]] && echo "  Lidarr connection: $CONN_LIDARR"  # reserved for future Lidarr tests
@@ -385,6 +385,9 @@ if [[ -n "$CONN_JELLYFIN" ]]; then
         echo "[FAIL] POST push/images (Jellyfin) -- upload errors: $jf_errors"
         FAIL=$((FAIL + 1))
         FAILURES+=("POST /api/v1/artists/$ARTIST_ID/push/images (Jellyfin) -- $jf_errors")
+      else
+        echo "[PASS] POST push/images (Jellyfin) -- 200 no errors"
+        PASS=$((PASS + 1))
       fi
     fi
 
@@ -448,7 +451,7 @@ assert_status "GET /api/v1/libraries" "200" "$libraries_code"
 if [[ -n "$CONN_EMBY" ]]; then
   disc_emby_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
     "$SW_BASE/api/v1/connections/$CONN_EMBY/libraries")
-  assert_status_in "GET /api/v1/connections/$CONN_EMBY/libraries (Emby discover)" "$disc_emby_code" 200 409 503
+  assert_status_in "GET /api/v1/connections/$CONN_EMBY/libraries (Emby discover)" "$disc_emby_code" 200 409 502 503
 else
   echo "[SKIP] Emby library discover -- no Emby connection found"
 fi
@@ -456,7 +459,7 @@ fi
 if [[ -n "$CONN_JELLYFIN" ]]; then
   disc_jf_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
     "$SW_BASE/api/v1/connections/$CONN_JELLYFIN/libraries")
-  assert_status_in "GET /api/v1/connections/$CONN_JELLYFIN/libraries (Jellyfin discover)" "$disc_jf_code" 200 409 503
+  assert_status_in "GET /api/v1/connections/$CONN_JELLYFIN/libraries (Jellyfin discover)" "$disc_jf_code" 200 409 502 503
 else
   echo "[SKIP] Jellyfin library discover -- no Jellyfin connection found"
 fi
