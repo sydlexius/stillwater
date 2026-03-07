@@ -174,7 +174,7 @@ func (r *Router) handleImageUpload(w http.ResponseWriter, req *http.Request) {
 	if imageType == "fanart" {
 		r.updateArtistFanartCount(req.Context(), a)
 	}
-	r.syncImageToPlatforms(req.Context(), a, imageType)
+	r.launchImageSync(a, imageType)
 
 	resp := map[string]any{
 		"status": "ok",
@@ -268,7 +268,7 @@ func (r *Router) handleImageFetch(w http.ResponseWriter, req *http.Request) {
 	if imageType == "fanart" {
 		r.updateArtistFanartCount(req.Context(), a)
 	}
-	r.syncImageToPlatforms(req.Context(), a, imageType)
+	r.launchImageSync(a, imageType)
 
 	if isHTMXRequest(req) {
 		w.Header().Set("HX-Refresh", "true")
@@ -476,7 +476,7 @@ func (r *Router) handleImageCrop(w http.ResponseWriter, req *http.Request) {
 	}
 
 	r.updateArtistImageFlag(req.Context(), a, body.Type)
-	r.syncImageToPlatforms(req.Context(), a, body.Type)
+	r.launchImageSync(a, body.Type)
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status": "ok",
@@ -886,7 +886,7 @@ func (r *Router) handleDeleteImage(w http.ResponseWriter, req *http.Request) {
 		deleted = append(deleted, deleteImageFiles(r.imageDir(a), patterns, r.logger)...)
 		r.updateArtistFanartCount(req.Context(), a)
 		if len(deleted) > 0 {
-			r.deleteImageFromPlatforms(req.Context(), a, imageType)
+			r.launchImageDelete(a, imageType)
 		}
 		if req.Header.Get("HX-Request") == "true" {
 			renderTempl(w, req, templates.ImagePreviewCard(a.ID, imageType, false, imageTypeLabel(imageType), 0))
@@ -904,7 +904,7 @@ func (r *Router) handleDeleteImage(w http.ResponseWriter, req *http.Request) {
 
 	r.clearArtistImageFlag(req.Context(), a, imageType)
 	if len(deleted) > 0 {
-		r.deleteImageFromPlatforms(req.Context(), a, imageType)
+		r.launchImageDelete(a, imageType)
 	}
 
 	if req.Header.Get("HX-Request") == "true" {
@@ -1022,6 +1022,38 @@ func (r *Router) deleteImageFromPlatforms(ctx context.Context, a *artist.Artist,
 			r.logger.Error("deleting image from platform", "artist", a.Name, "connection", conn.Name, "type", imageType, "error", delErr)
 		}
 	}
+}
+
+// launchImageSync runs syncImageToPlatforms in a detached goroutine. The local
+// operation already succeeded; platform sync is best-effort and must not block
+// the HTTP response. A 60s background context bounds the total sync time; the
+// existing http.Client.Timeout inside each platform client guards individual requests.
+func (r *Router) launchImageSync(a *artist.Artist, imageType string) {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		defer func() {
+			if v := recover(); v != nil {
+				r.logger.Error("panic in platform image sync", "artist_id", a.ID, "type", imageType, "panic", v)
+			}
+		}()
+		r.syncImageToPlatforms(ctx, a, imageType)
+	}()
+}
+
+// launchImageDelete runs deleteImageFromPlatforms in a detached goroutine with the
+// same semantics as launchImageSync.
+func (r *Router) launchImageDelete(a *artist.Artist, imageType string) {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		defer func() {
+			if v := recover(); v != nil {
+				r.logger.Error("panic in platform image delete sync", "artist_id", a.ID, "type", imageType, "panic", v)
+			}
+		}()
+		r.deleteImageFromPlatforms(ctx, a, imageType)
+	}()
 }
 
 // findExistingImage searches for the first matching image file in a directory.
@@ -1163,7 +1195,7 @@ func (r *Router) handleLogoTrim(w http.ResponseWriter, req *http.Request) {
 	}
 
 	r.updateArtistImageFlag(req.Context(), a, "logo")
-	r.syncImageToPlatforms(req.Context(), a, "logo")
+	r.launchImageSync(a, "logo")
 
 	if isHTMXRequest(req) {
 		w.Header().Set("HX-Refresh", "true")

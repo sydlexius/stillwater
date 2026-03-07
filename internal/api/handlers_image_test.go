@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/platform"
@@ -330,15 +331,16 @@ func TestSetArtistImageFlag_TransientPreservesPlaceholder(t *testing.T) {
 }
 
 func TestHandleImageUpload_SyncsToPlatform(t *testing.T) {
-	var uploaded bool
+	type syncCapture struct {
+		contentLength int64
+		contentType   string
+	}
+	uploadedCh := make(chan syncCapture, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		if req.Method == http.MethodPost && strings.Contains(req.URL.Path, "/Images/Primary") {
-			uploaded = true
-			if req.ContentLength <= 0 {
-				t.Error("expected non-empty image body in platform sync request")
-			}
-			if ct := req.Header.Get("Content-Type"); ct != "image/jpeg" {
-				t.Errorf("Content-Type = %q, want image/jpeg", ct)
+			select {
+			case uploadedCh <- syncCapture{req.ContentLength, req.Header.Get("Content-Type")}:
+			default:
 			}
 		}
 		w.WriteHeader(http.StatusOK)
@@ -382,16 +384,27 @@ func TestHandleImageUpload_SyncsToPlatform(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
 	}
-	if !uploaded {
+	select {
+	case got := <-uploadedCh:
+		if got.contentLength <= 0 {
+			t.Error("expected non-empty image body in platform sync request")
+		}
+		if got.contentType != "image/jpeg" {
+			t.Errorf("Content-Type = %q, want image/jpeg", got.contentType)
+		}
+	case <-time.After(5 * time.Second):
 		t.Error("expected platform sync upload call, but mock server received none")
 	}
 }
 
 func TestHandleDeleteImage_SyncsToPlatform(t *testing.T) {
-	var deleted bool
+	deletedCh := make(chan struct{}, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		if req.Method == http.MethodDelete && strings.Contains(req.URL.Path, "/Images/Primary") {
-			deleted = true
+			select {
+			case deletedCh <- struct{}{}:
+			default:
+			}
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}))
@@ -431,7 +444,9 @@ func TestHandleDeleteImage_SyncsToPlatform(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
 	}
-	if !deleted {
+	select {
+	case <-deletedCh:
+	case <-time.After(5 * time.Second):
 		t.Error("expected platform sync delete call, but mock server received none")
 	}
 }
