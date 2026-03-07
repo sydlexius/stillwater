@@ -17,9 +17,8 @@ import (
 type ArtistDetailData struct {
 	Artist              artist.Artist
 	Members             []artist.BandMember
-	Aliases             []artist.Alias
-	HasConnections      bool
-	FieldProviders      map[string][]string
+	Aliases        []artist.Alias
+	FieldProviders map[string][]string
 	LibraryName         string
 	IsDegraded          bool
 	LibrarySource       string

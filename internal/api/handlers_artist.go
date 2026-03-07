@@ -214,8 +214,6 @@ func (r *Router) handleArtistDetailPage(w http.ResponseWriter, req *http.Request
 		r.logger.Warn("listing aliases for page", "artist_id", id, "error", err)
 	}
 
-	conns, _ := r.connectionService.List(req.Context())
-
 	priorities, _ := r.providerSettings.GetPriorities(req.Context())
 	fieldProviders := buildFieldProvidersMap(priorities)
 
@@ -234,7 +232,6 @@ func (r *Router) handleArtistDetailPage(w http.ResponseWriter, req *http.Request
 		Artist:         *a,
 		Members:        members,
 		Aliases:        aliases,
-		HasConnections: len(conns) > 0,
 		FieldProviders: fieldProviders,
 		LibraryName:    libraryName,
 		IsDegraded:     isDegraded,
