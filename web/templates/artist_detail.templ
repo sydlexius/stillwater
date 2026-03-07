@@ -17,13 +17,11 @@ import (
 type ArtistDetailData struct {
 	Artist              artist.Artist
 	Members             []artist.BandMember
-	Aliases             []artist.Alias
-	HasConnections      bool
-	FieldProviders      map[string][]string
+	Aliases        []artist.Alias
+	FieldProviders map[string][]string
 	LibraryName         string
 	IsDegraded          bool
 	LibrarySource       string
-	PlatformConnections []connection.Connection
 }
 
 templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
@@ -320,22 +318,6 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 				</div>
 			</div>
 		</div>
-		if len(data.PlatformConnections) > 0 {
-			<section class="sw-card rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
-				<h2 class="text-lg font-semibold mb-4">Platform State</h2>
-				<div class="space-y-4">
-					for _, conn := range data.PlatformConnections {
-						<div
-							hx-get={ "/api/v1/artists/" + data.Artist.ID + "/platform-state?connection_id=" + conn.ID }
-							hx-trigger="load"
-							hx-swap="outerHTML"
-						>
-							<p class="text-sm text-gray-400">Loading { conn.Name }...</p>
-						</div>
-					}
-				</div>
-			</section>
-		}
 	}
 }
 
