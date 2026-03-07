@@ -1,0 +1,564 @@
+#!/usr/bin/env bash
+# smoke.sh -- API smoke test suite for Stillwater
+#
+# Usage:
+#   bash scripts/smoke.sh [--full]
+#
+# Environment:
+#   SW_USER  -- admin username (default: admin)
+#   SW_PASS  -- admin password (default: admin)
+#   SW_BASE  -- base URL       (default: http://localhost:1973)
+#
+# --full enables Tier 4 destructive/stateful checks (off by default)
+
+set -euo pipefail
+
+SW_USER="${SW_USER:-admin}"
+SW_PASS="${SW_PASS:-admin}"
+SW_BASE="${SW_BASE:-http://localhost:1973}"
+
+FULL=0
+for arg in "$@"; do
+  [[ "$arg" == "--full" ]] && FULL=1
+done
+
+# IDs are discovered dynamically after login; these are fallbacks if discovery fails.
+ARTIST_ID=""
+CONN_EMBY=""
+CONN_JELLYFIN=""
+CONN_LIDARR=""
+
+PASS=0
+FAIL=0
+FAILURES=()
+
+TOKEN=""
+TOKEN_ID=""
+COOKIE_JAR=""
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+assert_status() {
+  local label="$1"
+  local expected="$2"
+  local got="$3"
+
+  if [[ "$got" == "$expected" ]]; then
+    echo "[PASS] $label -- $got"
+    PASS=$((PASS + 1))
+  else
+    echo "[FAIL] $label -- expected $expected, got $got"
+    FAIL=$((FAIL + 1))
+    FAILURES+=("$label -- expected HTTP $expected, got $got")
+  fi
+}
+
+assert_status_range() {
+  local label="$1"
+  local lo="$2"
+  local hi="$3"
+  local got="$4"
+  local note="${5:-}"
+
+  if [[ "$got" -ge "$lo" && "$got" -le "$hi" ]]; then
+    echo "[PASS] $label -- $got${note:+ ($note)}"
+    PASS=$((PASS + 1))
+  else
+    echo "[FAIL] $label -- expected ${lo}-${hi}, got $got${note:+ ($note)}"
+    FAIL=$((FAIL + 1))
+    FAILURES+=("$label -- expected HTTP ${lo}-${hi}, got $got")
+  fi
+}
+
+assert_json_field() {
+  local label="$1"
+  local field="$2"
+  local expected="$3"
+  local json="$4"
+
+  local got
+  got=$(echo "$json" | jq -r "$field" 2>/dev/null || echo "PARSE_ERROR")
+  if [[ "$got" == "$expected" ]]; then
+    echo "[PASS] $label -- $field=$got"
+    PASS=$((PASS + 1))
+  else
+    echo "[FAIL] $label -- $field expected \"$expected\", got \"$got\""
+    FAIL=$((FAIL + 1))
+    FAILURES+=("$label -- $field expected \"$expected\", got \"$got\"")
+  fi
+}
+
+assert_json_exists() {
+  local label="$1"
+  local field="$2"
+  local json="$3"
+
+  local got
+  got=$(echo "$json" | jq -r "$field" 2>/dev/null || echo "null")
+  if [[ "$got" != "null" && "$got" != "" && "$got" != "PARSE_ERROR" ]]; then
+    echo "[PASS] $label -- $field present"
+    PASS=$((PASS + 1))
+  else
+    echo "[FAIL] $label -- $field missing or null"
+    FAIL=$((FAIL + 1))
+    FAILURES+=("$label -- $field missing or null in response")
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# Cleanup trap: revoke test token on exit
+# ---------------------------------------------------------------------------
+
+cleanup() {
+  if [[ -n "$TOKEN" && -n "$TOKEN_ID" ]]; then
+    code=$(curl -s -o /dev/null -w "%{http_code}" -X DELETE \
+      -H "Authorization: Bearer $TOKEN" \
+      "$SW_BASE/api/v1/auth/tokens/$TOKEN_ID")
+    if [[ "$code" == "200" ]]; then
+      echo ""
+      echo "[cleanup] Test token $TOKEN_ID revoked."
+    else
+      echo ""
+      echo "[cleanup] WARNING: failed to revoke token $TOKEN_ID (HTTP $code)"
+    fi
+  fi
+  [[ -n "$COOKIE_JAR" ]] && rm -f "$COOKIE_JAR"
+}
+trap cleanup EXIT
+
+echo "======================================================="
+echo "  Stillwater Smoke Test"
+echo "  Base: $SW_BASE"
+echo "  User: $SW_USER"
+echo "======================================================="
+echo ""
+
+# ---------------------------------------------------------------------------
+# Tier 1: Core
+# ---------------------------------------------------------------------------
+
+echo "--- Tier 1: Core ---"
+echo ""
+
+# Create cookie jar early so the health GET can receive the csrf_token cookie
+COOKIE_JAR=$(mktemp /tmp/smoke-cookies-XXXXXX)
+
+# Health (public, no auth) -- also seeds the csrf_token cookie
+resp=$(curl -s -c "$COOKIE_JAR" -w "\n%{http_code}" "$SW_BASE/api/v1/health")
+body=$(echo "$resp" | head -n -1)
+code=$(echo "$resp" | tail -n 1)
+assert_status "GET /api/v1/health" "200" "$code"
+assert_json_field "  /api/v1/health shape" ".status" "ok" "$body"
+
+# Login (CSRF-exempt endpoint)
+login_resp=$(curl -s -c "$COOKIE_JAR" -b "$COOKIE_JAR" -w "\n%{http_code}" \
+  -X POST "$SW_BASE/api/v1/auth/login" \
+  -H "Content-Type: application/json" \
+  -d "{\"username\":\"$SW_USER\",\"password\":\"$SW_PASS\"}")
+login_body=$(echo "$login_resp" | head -n -1)
+login_code=$(echo "$login_resp" | tail -n 1)
+assert_status "POST /api/v1/auth/login" "200" "$login_code"
+
+if [[ "$login_code" != "200" ]]; then
+  echo ""
+  echo "FATAL: login failed -- cannot proceed. Check SW_USER/SW_PASS."
+  exit 1
+fi
+
+# Extract CSRF token from cookie jar (set on the health GET above)
+CSRF_TOKEN=$(grep "csrf_token" "$COOKIE_JAR" | awk '{print $NF}' | tail -1)
+if [[ -z "$CSRF_TOKEN" ]]; then
+  echo "FATAL: csrf_token cookie not found after health GET."
+  exit 1
+fi
+
+# Mint API token using session cookie + CSRF token header
+token_resp=$(curl -s -b "$COOKIE_JAR" -w "\n%{http_code}" \
+  -X POST "$SW_BASE/api/v1/auth/tokens" \
+  -H "Content-Type: application/json" \
+  -H "X-CSRF-Token: $CSRF_TOKEN" \
+  -d '{"name":"smoke-test","scopes":"read,write,admin"}')
+token_body=$(echo "$token_resp" | head -n -1)
+token_code=$(echo "$token_resp" | tail -n 1)
+assert_status "POST /api/v1/auth/tokens (mint)" "201" "$token_code"
+
+TOKEN=$(echo "$token_body" | jq -r '.token' 2>/dev/null || echo "")
+TOKEN_ID=$(echo "$token_body" | jq -r '.id' 2>/dev/null || echo "")
+
+if [[ -z "$TOKEN" || "$TOKEN" == "null" ]]; then
+  echo ""
+  echo "FATAL: failed to mint API token."
+  exit 1
+fi
+echo "  Token minted: ${TOKEN:0:12}... (id=$TOKEN_ID)"
+
+AUTH=(-H "Authorization: Bearer $TOKEN")
+
+# Discover real IDs from the live DB (makes the script resilient to DB resets)
+discover_resp=$(curl -s "${AUTH[@]}" "$SW_BASE/api/v1/artists?search=a-ha&page_size=1")
+ARTIST_ID=$(echo "$discover_resp" | jq -r '.artists[0].id // empty' 2>/dev/null)
+if [[ -z "$ARTIST_ID" ]]; then
+  # Fall back to first artist in the list
+  ARTIST_ID=$(curl -s "${AUTH[@]}" "$SW_BASE/api/v1/artists?page_size=1" | jq -r '.artists[0].id // empty' 2>/dev/null)
+fi
+if [[ -z "$ARTIST_ID" ]]; then
+  echo "  WARNING: could not discover a test artist ID -- artist-specific checks will fail"
+  ARTIST_ID="unknown"
+else
+  echo "  Discovered artist ID: $ARTIST_ID"
+fi
+
+conns_resp=$(curl -s "${AUTH[@]}" "$SW_BASE/api/v1/connections")
+CONN_EMBY=$(echo "$conns_resp" | jq -r '.[] | select(.type=="emby") | .id' 2>/dev/null | head -1)
+CONN_JELLYFIN=$(echo "$conns_resp" | jq -r '.[] | select(.type=="jellyfin") | .id' 2>/dev/null | head -1)
+CONN_LIDARR=$(echo "$conns_resp" | jq -r '.[] | select(.type=="lidarr") | .id' 2>/dev/null | head -1)
+[[ -n "$CONN_EMBY" ]] && echo "  Emby connection: $CONN_EMBY"
+[[ -n "$CONN_JELLYFIN" ]] && echo "  Jellyfin connection: $CONN_JELLYFIN"
+[[ -n "$CONN_LIDARR" ]] && echo "  Lidarr connection: $CONN_LIDARR"
+
+# GET /api/v1/auth/me
+me_resp=$(curl -s -w "\n%{http_code}" "${AUTH[@]}" "$SW_BASE/api/v1/auth/me")
+me_body=$(echo "$me_resp" | head -n -1)
+me_code=$(echo "$me_resp" | tail -n 1)
+assert_status "GET /api/v1/auth/me" "200" "$me_code"
+assert_json_exists "  /api/v1/auth/me has user_id" ".user_id" "$me_body"
+
+# List artists
+artists_resp=$(curl -s -w "\n%{http_code}" "${AUTH[@]}" "$SW_BASE/api/v1/artists")
+artists_body=$(echo "$artists_resp" | head -n -1)
+artists_code=$(echo "$artists_resp" | tail -n 1)
+assert_status "GET /api/v1/artists" "200" "$artists_code"
+assert_json_exists "  /api/v1/artists has artists array" ".artists" "$artists_body"
+assert_json_exists "  /api/v1/artists has total" ".total" "$artists_body"
+
+# Search artists
+search_resp=$(curl -s -w "\n%{http_code}" "${AUTH[@]}" \
+  "$SW_BASE/api/v1/artists?search=a-ha")
+search_body=$(echo "$search_resp" | head -n -1)
+search_code=$(echo "$search_resp" | tail -n 1)
+assert_status "GET /api/v1/artists?search=a-ha" "200" "$search_code"
+assert_json_exists "  search returns artists" ".artists" "$search_body"
+
+# Get specific artist (a-ha)
+artist_resp=$(curl -s -w "\n%{http_code}" "${AUTH[@]}" \
+  "$SW_BASE/api/v1/artists/$ARTIST_ID")
+artist_body=$(echo "$artist_resp" | head -n -1)
+artist_code=$(echo "$artist_resp" | tail -n 1)
+assert_status "GET /api/v1/artists/$ARTIST_ID (a-ha)" "200" "$artist_code"
+assert_json_exists "  artist has id" ".artist.id" "$artist_body"
+assert_json_exists "  artist has name" ".artist.name" "$artist_body"
+
+# Image info
+img_info_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
+  "$SW_BASE/api/v1/artists/$ARTIST_ID/images/thumb/info")
+assert_status "GET /api/v1/artists/$ARTIST_ID/images/thumb/info" "200" "$img_info_code"
+
+# Image file (200 or 404, not 500)
+img_file_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
+  "$SW_BASE/api/v1/artists/$ARTIST_ID/images/thumb/file")
+assert_status_range "GET /api/v1/artists/$ARTIST_ID/images/thumb/file" 200 404 "$img_file_code" "not 500"
+
+# Connections list
+conn_resp=$(curl -s -w "\n%{http_code}" "${AUTH[@]}" "$SW_BASE/api/v1/connections")
+conn_body=$(echo "$conn_resp" | head -n -1)
+conn_code=$(echo "$conn_resp" | tail -n 1)
+assert_status "GET /api/v1/connections" "200" "$conn_code"
+
+# Get Emby connection
+if [[ -n "$CONN_EMBY" ]]; then
+  emby_resp=$(curl -s -w "\n%{http_code}" "${AUTH[@]}" \
+    "$SW_BASE/api/v1/connections/$CONN_EMBY")
+  emby_body=$(echo "$emby_resp" | head -n -1)
+  emby_code=$(echo "$emby_resp" | tail -n 1)
+  assert_status "GET /api/v1/connections/$CONN_EMBY (Emby)" "200" "$emby_code"
+  assert_json_exists "  Emby connection has id" ".id" "$emby_body"
+
+  test_emby_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
+    -X POST "$SW_BASE/api/v1/connections/$CONN_EMBY/test")
+  assert_status "POST /api/v1/connections/$CONN_EMBY/test (Emby)" "200" "$test_emby_code"
+else
+  echo "[SKIP] Emby connection -- no Emby connection found"
+fi
+
+# Test Jellyfin connection
+if [[ -n "$CONN_JELLYFIN" ]]; then
+  test_jf_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
+    -X POST "$SW_BASE/api/v1/connections/$CONN_JELLYFIN/test")
+  assert_status "POST /api/v1/connections/$CONN_JELLYFIN/test (Jellyfin)" "200" "$test_jf_code"
+else
+  echo "[SKIP] Jellyfin connection test -- no Jellyfin connection found"
+fi
+
+# Settings
+settings_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
+  "$SW_BASE/api/v1/settings")
+assert_status "GET /api/v1/settings" "200" "$settings_code"
+
+# Logout (uses session cookie + CSRF token; Bearer token bypass does not apply here)
+logout_code=$(curl -s -o /dev/null -w "%{http_code}" -b "$COOKIE_JAR" \
+  -H "X-CSRF-Token: $CSRF_TOKEN" \
+  -X POST "$SW_BASE/api/v1/auth/logout")
+assert_status "POST /api/v1/auth/logout" "200" "$logout_code"
+
+echo ""
+
+# ---------------------------------------------------------------------------
+# Tier 2: Platform Integration
+# ---------------------------------------------------------------------------
+
+echo "--- Tier 2: Platform Integration ---"
+echo ""
+
+# Artist platform IDs
+plat_ids_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
+  "$SW_BASE/api/v1/artists/$ARTIST_ID/platform-ids")
+assert_status "GET /api/v1/artists/$ARTIST_ID/platform-ids" "200" "$plat_ids_code"
+
+# Platform state (Emby)
+if [[ -n "$CONN_EMBY" ]]; then
+  ps_emby_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
+    "$SW_BASE/api/v1/artists/$ARTIST_ID/platform-state?connection_id=$CONN_EMBY")
+  assert_status_range "GET platform-state (Emby)" 200 404 "$ps_emby_code" "200=found, 404=no stored ID"
+else
+  echo "[SKIP] platform-state (Emby) -- no Emby connection found"
+fi
+
+# Platform state (Jellyfin)
+if [[ -n "$CONN_JELLYFIN" ]]; then
+  ps_jf_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
+    "$SW_BASE/api/v1/artists/$ARTIST_ID/platform-state?connection_id=$CONN_JELLYFIN")
+  assert_status_range "GET platform-state (Jellyfin)" 200 404 "$ps_jf_code" "200=found, 404=no stored ID"
+else
+  echo "[SKIP] platform-state (Jellyfin) -- no Jellyfin connection found"
+fi
+
+# Push images to Emby -- KNOWN BUG: Emby server expects base64, we send binary
+if [[ -n "$CONN_EMBY" ]]; then
+  push_emby_resp=$(curl -s -w "\n%{http_code}" "${AUTH[@]}" \
+    -X POST "$SW_BASE/api/v1/artists/$ARTIST_ID/push/images" \
+    -H "Content-Type: application/json" \
+    -d "{\"connection_id\":\"$CONN_EMBY\",\"image_types\":[\"thumb\"]}")
+  push_emby_body=$(echo "$push_emby_resp" | head -n -1)
+  push_emby_code=$(echo "$push_emby_resp" | tail -n 1)
+  if [[ "$push_emby_code" == "200" ]]; then
+    emby_err_count=$(echo "$push_emby_body" | jq -r '.errors | length' 2>/dev/null || echo "0")
+    if [[ "$emby_err_count" != "0" && "$emby_err_count" != "null" ]]; then
+      emby_errors=$(echo "$push_emby_body" | jq -r '.errors[]?' 2>/dev/null || echo "")
+      echo "[FAIL] POST push/images (Emby) -- 200 but upload errors: $emby_errors"
+      FAIL=$((FAIL + 1))
+      FAILURES+=("POST /api/v1/artists/$ARTIST_ID/push/images (Emby) -- KNOWN BUG: binary vs base64 -- $emby_errors")
+    else
+      echo "[PASS] POST push/images (Emby) -- 200 (bug may be fixed)"
+      PASS=$((PASS + 1))
+    fi
+  else
+    echo "[XFAIL] POST push/images (Emby) -- $push_emby_code (KNOWN BUG: Emby expects base64, not binary)"
+    FAIL=$((FAIL + 1))
+    FAILURES+=("POST /api/v1/artists/$ARTIST_ID/push/images (Emby) -- KNOWN BUG: Emby expects base64, not binary -- HTTP $push_emby_code")
+  fi
+else
+  echo "[SKIP] POST push/images (Emby) -- no Emby connection found"
+fi
+
+# Push images to Jellyfin -- EXPECTED PASS
+# Requires a stored platform ID for this artist on the Jellyfin connection.
+if [[ -n "$CONN_JELLYFIN" ]]; then
+  jf_platform_id=$(curl -s "${AUTH[@]}" \
+    "$SW_BASE/api/v1/artists/$ARTIST_ID/platform-ids" | \
+    jq -r ".[] | select(.connection_id==\"$CONN_JELLYFIN\") | .platform_artist_id" 2>/dev/null || echo "")
+  if [[ -z "$jf_platform_id" || "$jf_platform_id" == "null" ]]; then
+    echo "[SKIP] POST push/images (Jellyfin) -- no stored platform ID for this artist"
+    echo "[SKIP] POST push metadata (Jellyfin) -- no stored platform ID for this artist"
+    echo "[SKIP] DELETE push/images/thumb (Jellyfin) -- no stored platform ID for this artist"
+  else
+    push_jf_resp=$(curl -s -w "\n%{http_code}" "${AUTH[@]}" \
+      -X POST "$SW_BASE/api/v1/artists/$ARTIST_ID/push/images" \
+      -H "Content-Type: application/json" \
+      -d "{\"connection_id\":\"$CONN_JELLYFIN\",\"image_types\":[\"thumb\"]}")
+    push_jf_body=$(echo "$push_jf_resp" | head -n -1)
+    push_jf_code=$(echo "$push_jf_resp" | tail -n 1)
+    assert_status_range "POST push/images (Jellyfin)" 200 204 "$push_jf_code"
+    if [[ "$push_jf_code" == "200" ]]; then
+      jf_err_count=$(echo "$push_jf_body" | jq -r '.errors | length' 2>/dev/null || echo "0")
+      if [[ "$jf_err_count" != "0" && "$jf_err_count" != "null" ]]; then
+        jf_errors=$(echo "$push_jf_body" | jq -r '.errors[]?' 2>/dev/null || echo "")
+        echo "[FAIL] POST push/images (Jellyfin) -- upload errors: $jf_errors"
+        FAIL=$((FAIL + 1))
+        FAILURES+=("POST /api/v1/artists/$ARTIST_ID/push/images (Jellyfin) -- $jf_errors")
+      fi
+    fi
+
+    # Push metadata to Jellyfin
+    push_meta_resp=$(curl -s -w "\n%{http_code}" "${AUTH[@]}" \
+      -X POST "$SW_BASE/api/v1/artists/$ARTIST_ID/push" \
+      -H "Content-Type: application/json" \
+      -d "{\"connection_id\":\"$CONN_JELLYFIN\"}")
+    push_meta_code=$(echo "$push_meta_resp" | tail -n 1)
+    assert_status_range "POST push metadata (Jellyfin)" 200 204 "$push_meta_code"
+
+    # Delete thumb from Jellyfin
+    del_img_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
+      -X DELETE "$SW_BASE/api/v1/artists/$ARTIST_ID/push/images/thumb" \
+      -H "Content-Type: application/json" \
+      -d "{\"connection_id\":\"$CONN_JELLYFIN\"}")
+    assert_status_range "DELETE push/images/thumb (Jellyfin)" 200 204 "$del_img_code"
+  fi
+else
+  echo "[SKIP] Jellyfin push/delete checks -- no Jellyfin connection found"
+fi
+
+echo ""
+
+# ---------------------------------------------------------------------------
+# Tier 3: Feature Coverage
+# ---------------------------------------------------------------------------
+
+echo "--- Tier 3: Feature Coverage ---"
+echo ""
+
+nfo_diff_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
+  "$SW_BASE/api/v1/artists/$ARTIST_ID/nfo/diff")
+assert_status_range "GET /api/v1/artists/$ARTIST_ID/nfo/diff" 200 422 "$nfo_diff_code"
+
+nfo_conflict_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
+  "$SW_BASE/api/v1/artists/$ARTIST_ID/nfo/conflict")
+# 409 is returned when the artist's library has no filesystem path configured; treat as non-fatal
+assert_status_range "GET /api/v1/artists/$ARTIST_ID/nfo/conflict" 200 409 "$nfo_conflict_code"
+
+nfo_snaps_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
+  "$SW_BASE/api/v1/artists/$ARTIST_ID/nfo/snapshots")
+assert_status "GET /api/v1/artists/$ARTIST_ID/nfo/snapshots" "200" "$nfo_snaps_code"
+
+health_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
+  "$SW_BASE/api/v1/artists/$ARTIST_ID/health")
+assert_status "GET /api/v1/artists/$ARTIST_ID/health" "200" "$health_code"
+
+dupes_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
+  "$SW_BASE/api/v1/artists/duplicates")
+assert_status "GET /api/v1/artists/duplicates" "200" "$dupes_code"
+
+aliases_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
+  "$SW_BASE/api/v1/artists/$ARTIST_ID/aliases")
+assert_status "GET /api/v1/artists/$ARTIST_ID/aliases" "200" "$aliases_code"
+
+libraries_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
+  "$SW_BASE/api/v1/libraries")
+assert_status "GET /api/v1/libraries" "200" "$libraries_code"
+
+if [[ -n "$CONN_EMBY" ]]; then
+  disc_emby_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
+    "$SW_BASE/api/v1/connections/$CONN_EMBY/libraries")
+  assert_status_range "GET /api/v1/connections/$CONN_EMBY/libraries (Emby discover)" 200 503 "$disc_emby_code"
+else
+  echo "[SKIP] Emby library discover -- no Emby connection found"
+fi
+
+if [[ -n "$CONN_JELLYFIN" ]]; then
+  disc_jf_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
+    "$SW_BASE/api/v1/connections/$CONN_JELLYFIN/libraries")
+  assert_status_range "GET /api/v1/connections/$CONN_JELLYFIN/libraries (Jellyfin discover)" 200 503 "$disc_jf_code"
+else
+  echo "[SKIP] Jellyfin library discover -- no Jellyfin connection found"
+fi
+
+rules_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
+  "$SW_BASE/api/v1/rules")
+assert_status "GET /api/v1/rules" "200" "$rules_code"
+
+notif_counts_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
+  "$SW_BASE/api/v1/notifications/counts")
+assert_status "GET /api/v1/notifications/counts" "200" "$notif_counts_code"
+
+notif_badge_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
+  "$SW_BASE/api/v1/notifications/badge")
+assert_status "GET /api/v1/notifications/badge" "200" "$notif_badge_code"
+
+report_health_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
+  "$SW_BASE/api/v1/reports/health")
+assert_status "GET /api/v1/reports/health" "200" "$report_health_code"
+
+report_compliance_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
+  "$SW_BASE/api/v1/reports/compliance")
+assert_status "GET /api/v1/reports/compliance" "200" "$report_compliance_code"
+
+bulk_jobs_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
+  "$SW_BASE/api/v1/bulk/jobs")
+assert_status "GET /api/v1/bulk/jobs" "200" "$bulk_jobs_code"
+
+scanner_status_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
+  "$SW_BASE/api/v1/scanner/status")
+assert_status "GET /api/v1/scanner/status" "200" "$scanner_status_code"
+
+providers_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
+  "$SW_BASE/api/v1/providers")
+assert_status "GET /api/v1/providers" "200" "$providers_code"
+
+priorities_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
+  "$SW_BASE/api/v1/providers/priorities")
+assert_status "GET /api/v1/providers/priorities" "200" "$priorities_code"
+
+backup_hist_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
+  "$SW_BASE/api/v1/settings/backup/history")
+assert_status "GET /api/v1/settings/backup/history" "200" "$backup_hist_code"
+
+logging_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
+  "$SW_BASE/api/v1/settings/logging")
+assert_status "GET /api/v1/settings/logging" "200" "$logging_code"
+
+maint_status_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
+  "$SW_BASE/api/v1/settings/maintenance/status")
+assert_status "GET /api/v1/settings/maintenance/status" "200" "$maint_status_code"
+
+webhooks_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
+  "$SW_BASE/api/v1/webhooks")
+assert_status "GET /api/v1/webhooks" "200" "$webhooks_code"
+
+tokens_list_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
+  "$SW_BASE/api/v1/auth/tokens")
+assert_status "GET /api/v1/auth/tokens (list)" "200" "$tokens_list_code"
+
+echo ""
+
+# ---------------------------------------------------------------------------
+# Tier 4: Destructive/Stateful (opt-in with --full)
+# ---------------------------------------------------------------------------
+
+if [[ "$FULL" -eq 1 ]]; then
+  echo "--- Tier 4: Destructive/Stateful (--full) ---"
+  echo ""
+
+  fetch_img_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
+    -X POST "$SW_BASE/api/v1/artists/$ARTIST_ID/images/fetch" \
+    -H "Content-Type: application/json" \
+    -d '{"url":"https://upload.wikimedia.org/wikipedia/en/a/aa/A-ha_band_2015.jpg","type":"thumb"}')
+  assert_status_range "POST /api/v1/artists/$ARTIST_ID/images/fetch (--full)" 200 422 "$fetch_img_code"
+
+  backup_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
+    -X POST "$SW_BASE/api/v1/settings/backup")
+  assert_status "POST /api/v1/settings/backup (--full)" "200" "$backup_code"
+
+  echo ""
+fi
+
+# ---------------------------------------------------------------------------
+# Summary
+# ---------------------------------------------------------------------------
+
+TOTAL=$((PASS + FAIL))
+echo "======================================================="
+echo "=== RESULTS: $PASS passed, $FAIL failed (of $TOTAL checks) ==="
+echo "======================================================="
+
+if [[ ${#FAILURES[@]} -gt 0 ]]; then
+  echo ""
+  echo "FAILED:"
+  for f in "${FAILURES[@]}"; do
+    echo "  $f"
+  done
+  echo ""
+  exit 1
+fi
+
+exit 0
