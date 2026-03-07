@@ -3,10 +3,12 @@ package jellyfin
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"image"
 	"image/color"
 	"image/jpeg"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -684,5 +686,51 @@ func TestPushMetadata_DateNormalization(t *testing.T) {
 				t.Errorf("EndDate = %q, want %q", gotBody.EndDate, tt.wantEnd)
 			}
 		})
+	}
+}
+
+func TestUploadImage_BodyIsBase64(t *testing.T) {
+	jpegData := createTestJPEG(t)
+	var gotBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/Items/jf-001/Images/Primary" {
+			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+		}
+		gotBody, _ = io.ReadAll(r.Body)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "key", "", srv.Client(), testLogger())
+	if err := c.UploadImage(context.Background(), "jf-001", "thumb", jpegData, "image/jpeg"); err != nil {
+		t.Fatalf("UploadImage failed: %v", err)
+	}
+
+	decoded, err := base64.StdEncoding.DecodeString(string(gotBody))
+	if err != nil {
+		t.Fatalf("body is not valid base64: %v", err)
+	}
+	if !bytes.Equal(decoded, jpegData) {
+		t.Errorf("decoded body differs from input: got %d bytes, want %d", len(decoded), len(jpegData))
+	}
+}
+
+func TestUploadImage_ServerError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"error":"internal"}`))
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "key", "", srv.Client(), testLogger())
+	if err := c.UploadImage(context.Background(), "jf-001", "thumb", []byte("data"), "image/jpeg"); err == nil {
+		t.Fatal("expected error for server error response")
+	}
+}
+
+func TestUploadImage_UnsupportedType(t *testing.T) {
+	c := New("http://localhost", "key", "", testLogger())
+	if err := c.UploadImage(context.Background(), "jf-001", "clearart", []byte("data"), "image/jpeg"); err == nil {
+		t.Fatal("expected error for unsupported image type")
 	}
 }

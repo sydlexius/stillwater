@@ -3,10 +3,12 @@ package jellyfin
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/sydlexius/stillwater/internal/connection"
 )
@@ -99,8 +101,13 @@ func (c *Client) UploadImage(ctx context.Context, platformArtistID string, image
 		return fmt.Errorf("unsupported image type: %s", imageType)
 	}
 
+	// Jellyfin 10.x expects the image body to be base64-encoded plain text.
+	// The Content-Type header still declares the image format (image/jpeg or
+	// image/png); Jellyfin uses it to determine the save format after decoding.
+	encoded := base64.StdEncoding.EncodeToString(data)
+
 	path := fmt.Sprintf("/Items/%s/Images/%s", platformArtistID, jfType)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, connection.BuildRequestURL(c.BaseURL, path), bytes.NewReader(data))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, connection.BuildRequestURL(c.BaseURL, path), strings.NewReader(encoded))
 	if err != nil {
 		return fmt.Errorf("creating image upload request: %w", err)
 	}

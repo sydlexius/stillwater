@@ -787,19 +787,19 @@ func RefreshOOBFragments(data RefreshOOBData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = ImagePreviewCard(data.Artist.ID, "thumb", data.Artist.ThumbExists, "Thumbnail", data.IsDegraded, 0).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = ImagePreviewCard(data.Artist.ID, "thumb", data.Artist.ThumbExists, "Thumbnail", 0).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = ImagePreviewCard(data.Artist.ID, "fanart", data.Artist.FanartExists, "Fanart", data.IsDegraded, data.Artist.FanartCount).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = ImagePreviewCard(data.Artist.ID, "fanart", data.Artist.FanartExists, "Fanart", data.Artist.FanartCount).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = ImagePreviewCard(data.Artist.ID, "logo", data.Artist.LogoExists, "Logo", data.IsDegraded, 0).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = ImagePreviewCard(data.Artist.ID, "logo", data.Artist.LogoExists, "Logo", 0).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = ImagePreviewCard(data.Artist.ID, "banner", data.Artist.BannerExists, "Banner", data.IsDegraded, 0).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = ImagePreviewCard(data.Artist.ID, "banner", data.Artist.BannerExists, "Banner", 0).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
