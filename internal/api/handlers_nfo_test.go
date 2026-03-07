@@ -264,8 +264,8 @@ func TestHandleNFODiff_PathlessArtist(t *testing.T) {
 
 	r.handleNFODiff(w, req)
 
-	if w.Code != http.StatusConflict {
-		t.Fatalf("status = %d, want %d", w.Code, http.StatusConflict)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusUnprocessableEntity)
 	}
 }
 
@@ -288,8 +288,8 @@ func TestHandleNFOConflictCheck_PathlessArtist(t *testing.T) {
 
 	r.handleNFOConflictCheck(w, req)
 
-	if w.Code != http.StatusConflict {
-		t.Fatalf("status = %d, want %d", w.Code, http.StatusConflict)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusUnprocessableEntity)
 	}
 }
 
