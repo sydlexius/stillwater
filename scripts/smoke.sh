@@ -72,6 +72,23 @@ assert_status_range() {
   fi
 }
 
+assert_status_in() {
+  local label="$1"
+  local got="$2"
+  shift 2
+  local valid=("$@")
+  for code in "${valid[@]}"; do
+    if [[ "$got" == "$code" ]]; then
+      echo "[PASS] $label -- $got"
+      PASS=$((PASS + 1))
+      return
+    fi
+  done
+  echo "[FAIL] $label -- expected one of {${valid[*]}}, got $got"
+  FAIL=$((FAIL + 1))
+  FAILURES+=("$label -- expected HTTP {${valid[*]}}, got $got")
+}
+
 assert_json_field() {
   local label="$1"
   local field="$2"
@@ -147,17 +164,18 @@ COOKIE_JAR=$(mktemp /tmp/smoke-cookies-XXXXXX)
 
 # Health (public, no auth) -- also seeds the csrf_token cookie
 resp=$(curl -s -c "$COOKIE_JAR" -w "\n%{http_code}" "$SW_BASE/api/v1/health")
-body=$(echo "$resp" | head -n -1)
+body=$(echo "$resp" | sed '$d')
 code=$(echo "$resp" | tail -n 1)
 assert_status "GET /api/v1/health" "200" "$code"
 assert_json_field "  /api/v1/health shape" ".status" "ok" "$body"
 
 # Login (CSRF-exempt endpoint)
+login_payload=$(jq -nc --arg u "$SW_USER" --arg p "$SW_PASS" '{username: $u, password: $p}')
 login_resp=$(curl -s -c "$COOKIE_JAR" -b "$COOKIE_JAR" -w "\n%{http_code}" \
   -X POST "$SW_BASE/api/v1/auth/login" \
   -H "Content-Type: application/json" \
-  -d "{\"username\":\"$SW_USER\",\"password\":\"$SW_PASS\"}")
-login_body=$(echo "$login_resp" | head -n -1)
+  -d "$login_payload")
+login_body=$(echo "$login_resp" | sed '$d')
 login_code=$(echo "$login_resp" | tail -n 1)
 assert_status "POST /api/v1/auth/login" "200" "$login_code"
 
@@ -180,7 +198,7 @@ token_resp=$(curl -s -b "$COOKIE_JAR" -w "\n%{http_code}" \
   -H "Content-Type: application/json" \
   -H "X-CSRF-Token: $CSRF_TOKEN" \
   -d '{"name":"smoke-test","scopes":"read,write,admin"}')
-token_body=$(echo "$token_resp" | head -n -1)
+token_body=$(echo "$token_resp" | sed '$d')
 token_code=$(echo "$token_resp" | tail -n 1)
 assert_status "POST /api/v1/auth/tokens (mint)" "201" "$token_code"
 
@@ -216,18 +234,18 @@ CONN_JELLYFIN=$(echo "$conns_resp" | jq -r '.[] | select(.type=="jellyfin") | .i
 CONN_LIDARR=$(echo "$conns_resp" | jq -r '.[] | select(.type=="lidarr") | .id' 2>/dev/null | head -1)
 [[ -n "$CONN_EMBY" ]] && echo "  Emby connection: $CONN_EMBY"
 [[ -n "$CONN_JELLYFIN" ]] && echo "  Jellyfin connection: $CONN_JELLYFIN"
-[[ -n "$CONN_LIDARR" ]] && echo "  Lidarr connection: $CONN_LIDARR"
+[[ -n "$CONN_LIDARR" ]] && echo "  Lidarr connection: $CONN_LIDARR"  # reserved for future Lidarr tests
 
 # GET /api/v1/auth/me
 me_resp=$(curl -s -w "\n%{http_code}" "${AUTH[@]}" "$SW_BASE/api/v1/auth/me")
-me_body=$(echo "$me_resp" | head -n -1)
+me_body=$(echo "$me_resp" | sed '$d')
 me_code=$(echo "$me_resp" | tail -n 1)
 assert_status "GET /api/v1/auth/me" "200" "$me_code"
 assert_json_exists "  /api/v1/auth/me has user_id" ".user_id" "$me_body"
 
 # List artists
 artists_resp=$(curl -s -w "\n%{http_code}" "${AUTH[@]}" "$SW_BASE/api/v1/artists")
-artists_body=$(echo "$artists_resp" | head -n -1)
+artists_body=$(echo "$artists_resp" | sed '$d')
 artists_code=$(echo "$artists_resp" | tail -n 1)
 assert_status "GET /api/v1/artists" "200" "$artists_code"
 assert_json_exists "  /api/v1/artists has artists array" ".artists" "$artists_body"
@@ -236,7 +254,7 @@ assert_json_exists "  /api/v1/artists has total" ".total" "$artists_body"
 # Search artists
 search_resp=$(curl -s -w "\n%{http_code}" "${AUTH[@]}" \
   "$SW_BASE/api/v1/artists?search=a-ha")
-search_body=$(echo "$search_resp" | head -n -1)
+search_body=$(echo "$search_resp" | sed '$d')
 search_code=$(echo "$search_resp" | tail -n 1)
 assert_status "GET /api/v1/artists?search=a-ha" "200" "$search_code"
 assert_json_exists "  search returns artists" ".artists" "$search_body"
@@ -244,7 +262,7 @@ assert_json_exists "  search returns artists" ".artists" "$search_body"
 # Get specific artist (a-ha)
 artist_resp=$(curl -s -w "\n%{http_code}" "${AUTH[@]}" \
   "$SW_BASE/api/v1/artists/$ARTIST_ID")
-artist_body=$(echo "$artist_resp" | head -n -1)
+artist_body=$(echo "$artist_resp" | sed '$d')
 artist_code=$(echo "$artist_resp" | tail -n 1)
 assert_status "GET /api/v1/artists/$ARTIST_ID (a-ha)" "200" "$artist_code"
 assert_json_exists "  artist has id" ".artist.id" "$artist_body"
@@ -262,7 +280,7 @@ assert_status_range "GET /api/v1/artists/$ARTIST_ID/images/thumb/file" 200 404 "
 
 # Connections list
 conn_resp=$(curl -s -w "\n%{http_code}" "${AUTH[@]}" "$SW_BASE/api/v1/connections")
-conn_body=$(echo "$conn_resp" | head -n -1)
+conn_body=$(echo "$conn_resp" | sed '$d')
 conn_code=$(echo "$conn_resp" | tail -n 1)
 assert_status "GET /api/v1/connections" "200" "$conn_code"
 
@@ -270,7 +288,7 @@ assert_status "GET /api/v1/connections" "200" "$conn_code"
 if [[ -n "$CONN_EMBY" ]]; then
   emby_resp=$(curl -s -w "\n%{http_code}" "${AUTH[@]}" \
     "$SW_BASE/api/v1/connections/$CONN_EMBY")
-  emby_body=$(echo "$emby_resp" | head -n -1)
+  emby_body=$(echo "$emby_resp" | sed '$d')
   emby_code=$(echo "$emby_resp" | tail -n 1)
   assert_status "GET /api/v1/connections/$CONN_EMBY (Emby)" "200" "$emby_code"
   assert_json_exists "  Emby connection has id" ".id" "$emby_body"
@@ -334,29 +352,26 @@ else
   echo "[SKIP] platform-state (Jellyfin) -- no Jellyfin connection found"
 fi
 
-# Push images to Emby -- KNOWN BUG: Emby server expects base64, we send binary
+# Push images to Emby -- binary encoding bug fixed in PR #408
 if [[ -n "$CONN_EMBY" ]]; then
   push_emby_resp=$(curl -s -w "\n%{http_code}" "${AUTH[@]}" \
     -X POST "$SW_BASE/api/v1/artists/$ARTIST_ID/push/images" \
     -H "Content-Type: application/json" \
     -d "{\"connection_id\":\"$CONN_EMBY\",\"image_types\":[\"thumb\"]}")
-  push_emby_body=$(echo "$push_emby_resp" | head -n -1)
+  push_emby_body=$(echo "$push_emby_resp" | sed '$d')
   push_emby_code=$(echo "$push_emby_resp" | tail -n 1)
+  assert_status "POST push/images (Emby)" "200" "$push_emby_code"
   if [[ "$push_emby_code" == "200" ]]; then
     emby_err_count=$(echo "$push_emby_body" | jq -r '.errors | length' 2>/dev/null || echo "0")
     if [[ "$emby_err_count" != "0" && "$emby_err_count" != "null" ]]; then
       emby_errors=$(echo "$push_emby_body" | jq -r '.errors[]?' 2>/dev/null || echo "")
       echo "[FAIL] POST push/images (Emby) -- 200 but upload errors: $emby_errors"
       FAIL=$((FAIL + 1))
-      FAILURES+=("POST /api/v1/artists/$ARTIST_ID/push/images (Emby) -- KNOWN BUG: binary vs base64 -- $emby_errors")
+      FAILURES+=("POST /api/v1/artists/$ARTIST_ID/push/images (Emby) -- upload errors: $emby_errors")
     else
-      echo "[PASS] POST push/images (Emby) -- 200 (bug may be fixed)"
+      echo "[PASS] POST push/images (Emby) -- 200 no errors"
       PASS=$((PASS + 1))
     fi
-  else
-    echo "[XFAIL] POST push/images (Emby) -- $push_emby_code (KNOWN BUG: Emby expects base64, not binary)"
-    FAIL=$((FAIL + 1))
-    FAILURES+=("POST /api/v1/artists/$ARTIST_ID/push/images (Emby) -- KNOWN BUG: Emby expects base64, not binary -- HTTP $push_emby_code")
   fi
 else
   echo "[SKIP] POST push/images (Emby) -- no Emby connection found"
@@ -377,7 +392,7 @@ if [[ -n "$CONN_JELLYFIN" ]]; then
       -X POST "$SW_BASE/api/v1/artists/$ARTIST_ID/push/images" \
       -H "Content-Type: application/json" \
       -d "{\"connection_id\":\"$CONN_JELLYFIN\",\"image_types\":[\"thumb\"]}")
-    push_jf_body=$(echo "$push_jf_resp" | head -n -1)
+    push_jf_body=$(echo "$push_jf_resp" | sed '$d')
     push_jf_code=$(echo "$push_jf_resp" | tail -n 1)
     assert_status_range "POST push/images (Jellyfin)" 200 204 "$push_jf_code"
     if [[ "$push_jf_code" == "200" ]]; then
@@ -420,7 +435,7 @@ echo ""
 
 nfo_diff_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
   "$SW_BASE/api/v1/artists/$ARTIST_ID/nfo/diff")
-assert_status_range "GET /api/v1/artists/$ARTIST_ID/nfo/diff" 200 422 "$nfo_diff_code"
+assert_status_range "GET /api/v1/artists/$ARTIST_ID/nfo/diff" 200 409 "$nfo_diff_code"
 
 nfo_conflict_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
   "$SW_BASE/api/v1/artists/$ARTIST_ID/nfo/conflict")
@@ -450,7 +465,7 @@ assert_status "GET /api/v1/libraries" "200" "$libraries_code"
 if [[ -n "$CONN_EMBY" ]]; then
   disc_emby_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
     "$SW_BASE/api/v1/connections/$CONN_EMBY/libraries")
-  assert_status_range "GET /api/v1/connections/$CONN_EMBY/libraries (Emby discover)" 200 503 "$disc_emby_code"
+  assert_status_in "GET /api/v1/connections/$CONN_EMBY/libraries (Emby discover)" "$disc_emby_code" 200 503
 else
   echo "[SKIP] Emby library discover -- no Emby connection found"
 fi
@@ -458,7 +473,7 @@ fi
 if [[ -n "$CONN_JELLYFIN" ]]; then
   disc_jf_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
     "$SW_BASE/api/v1/connections/$CONN_JELLYFIN/libraries")
-  assert_status_range "GET /api/v1/connections/$CONN_JELLYFIN/libraries (Jellyfin discover)" 200 503 "$disc_jf_code"
+  assert_status_in "GET /api/v1/connections/$CONN_JELLYFIN/libraries (Jellyfin discover)" "$disc_jf_code" 200 503
 else
   echo "[SKIP] Jellyfin library discover -- no Jellyfin connection found"
 fi
