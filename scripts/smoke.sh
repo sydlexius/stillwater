@@ -421,12 +421,12 @@ echo ""
 
 nfo_diff_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
   "$SW_BASE/api/v1/artists/$ARTIST_ID/nfo/diff")
-assert_status_in "GET /api/v1/artists/$ARTIST_ID/nfo/diff" "$nfo_diff_code" 200 409
+assert_status_in "GET /api/v1/artists/$ARTIST_ID/nfo/diff" "$nfo_diff_code" 200 422
 
 nfo_conflict_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
   "$SW_BASE/api/v1/artists/$ARTIST_ID/nfo/conflict")
-# 409 is returned when the artist's library has no filesystem path configured; treat as non-fatal
-assert_status_in "GET /api/v1/artists/$ARTIST_ID/nfo/conflict" "$nfo_conflict_code" 200 409
+# 422 is returned when the artist's library has no filesystem path configured; treat as non-fatal
+assert_status_in "GET /api/v1/artists/$ARTIST_ID/nfo/conflict" "$nfo_conflict_code" 200 422
 
 nfo_snaps_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
   "$SW_BASE/api/v1/artists/$ARTIST_ID/nfo/snapshots")
@@ -534,7 +534,7 @@ if [[ "$FULL" -eq 1 ]]; then
     -X POST "$SW_BASE/api/v1/artists/$ARTIST_ID/images/fetch" \
     -H "Content-Type: application/json" \
     -d '{"url":"https://upload.wikimedia.org/wikipedia/en/a/aa/A-ha_band_2015.jpg","type":"thumb"}')
-  assert_status_in "POST /api/v1/artists/$ARTIST_ID/images/fetch (--full)" "$fetch_img_code" 200 409
+  assert_status_in "POST /api/v1/artists/$ARTIST_ID/images/fetch (--full)" "$fetch_img_code" 200 422
 
   backup_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
     -X POST "$SW_BASE/api/v1/settings/backup")
