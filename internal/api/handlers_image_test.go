@@ -331,17 +331,15 @@ func TestSetArtistImageFlag_TransientPreservesPlaceholder(t *testing.T) {
 }
 
 func TestHandleImageUpload_SyncsToPlatform(t *testing.T) {
-	uploadedCh := make(chan struct{}, 1)
+	type syncCapture struct {
+		contentLength int64
+		contentType   string
+	}
+	uploadedCh := make(chan syncCapture, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		if req.Method == http.MethodPost && strings.Contains(req.URL.Path, "/Images/Primary") {
-			if req.ContentLength <= 0 {
-				t.Error("expected non-empty image body in platform sync request")
-			}
-			if ct := req.Header.Get("Content-Type"); ct != "image/jpeg" {
-				t.Errorf("Content-Type = %q, want image/jpeg", ct)
-			}
 			select {
-			case uploadedCh <- struct{}{}:
+			case uploadedCh <- syncCapture{req.ContentLength, req.Header.Get("Content-Type")}:
 			default:
 			}
 		}
@@ -387,7 +385,13 @@ func TestHandleImageUpload_SyncsToPlatform(t *testing.T) {
 		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
 	}
 	select {
-	case <-uploadedCh:
+	case got := <-uploadedCh:
+		if got.contentLength <= 0 {
+			t.Error("expected non-empty image body in platform sync request")
+		}
+		if got.contentType != "image/jpeg" {
+			t.Errorf("Content-Type = %q, want image/jpeg", got.contentType)
+		}
 	case <-time.After(5 * time.Second):
 		t.Error("expected platform sync upload call, but mock server received none")
 	}
