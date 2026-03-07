@@ -335,7 +335,7 @@ else
   echo "[SKIP] platform-state (Jellyfin) -- no Jellyfin connection found"
 fi
 
-# Push images to Emby -- binary encoding bug fixed in PR #408
+# Push images to Emby -- Emby expects base64-encoded body (fixed in #408)
 if [[ -n "$CONN_EMBY" ]]; then
   push_emby_resp=$(curl -s -w "\n%{http_code}" "${AUTH[@]}" \
     -X POST "$SW_BASE/api/v1/artists/$ARTIST_ID/push/images" \
