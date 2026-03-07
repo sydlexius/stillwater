@@ -897,7 +897,9 @@ func (r *Router) handleDeleteImage(w http.ResponseWriter, req *http.Request) {
 	deleted := deleteImageFiles(r.imageDir(a), patterns, r.logger)
 
 	r.clearArtistImageFlag(req.Context(), a, imageType)
-	r.deleteImageFromPlatforms(req.Context(), a, imageType)
+	if len(deleted) > 0 {
+		r.deleteImageFromPlatforms(req.Context(), a, imageType)
+	}
 
 	if req.Header.Get("HX-Request") == "true" {
 		renderTempl(w, req, templates.ImagePreviewCard(a.ID, imageType, false, imageTypeLabel(imageType), 0))
@@ -930,6 +932,7 @@ func (r *Router) syncImageToPlatforms(ctx context.Context, a *artist.Artist, ima
 
 	dir := r.imageDir(a)
 	if dir == "" {
+		r.logger.Warn("skipping platform image sync: artist has no image directory", "artist", a.Name, "type", imageType)
 		return
 	}
 	patterns := r.getActiveNamingConfig(ctx, imageType)

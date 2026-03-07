@@ -5,9 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"image"
-	"io"
 	"image/color"
 	"image/jpeg"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -708,7 +708,11 @@ func TestUploadImage_Success(t *testing.T) {
 			t.Errorf("Content-Type = %q, want image/jpeg", ct)
 		}
 		// Emby expects raw binary, not base64.
-		body, _ := io.ReadAll(r.Body)
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("failed to read request body: %v", err)
+			return
+		}
 		if string(body) != string(imageData) {
 			t.Errorf("body not raw bytes: got %q, want %q", body, imageData)
 		}
