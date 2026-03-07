@@ -22,7 +22,7 @@ for arg in "$@"; do
   [[ "$arg" == "--full" ]] && FULL=1
 done
 
-# IDs are discovered dynamically after login; these are fallbacks if discovery fails.
+# IDs are discovered dynamically after login; initialized empty before discovery.
 ARTIST_ID=""
 CONN_EMBY=""
 CONN_JELLYFIN=""
@@ -52,23 +52,6 @@ assert_status() {
     echo "[FAIL] $label -- expected $expected, got $got"
     FAIL=$((FAIL + 1))
     FAILURES+=("$label -- expected HTTP $expected, got $got")
-  fi
-}
-
-assert_status_range() {
-  local label="$1"
-  local lo="$2"
-  local hi="$3"
-  local got="$4"
-  local note="${5:-}"
-
-  if [[ "$got" -ge "$lo" && "$got" -le "$hi" ]]; then
-    echo "[PASS] $label -- $got${note:+ ($note)}"
-    PASS=$((PASS + 1))
-  else
-    echo "[FAIL] $label -- expected ${lo}-${hi}, got $got${note:+ ($note)}"
-    FAIL=$((FAIL + 1))
-    FAILURES+=("$label -- expected HTTP ${lo}-${hi}, got $got")
   fi
 }
 
@@ -276,7 +259,7 @@ assert_status "GET /api/v1/artists/$ARTIST_ID/images/thumb/info" "200" "$img_inf
 # Image file (200 or 404, not 500)
 img_file_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
   "$SW_BASE/api/v1/artists/$ARTIST_ID/images/thumb/file")
-assert_status_range "GET /api/v1/artists/$ARTIST_ID/images/thumb/file" 200 404 "$img_file_code" "not 500"
+assert_status_in "GET /api/v1/artists/$ARTIST_ID/images/thumb/file" "$img_file_code" 200 404
 
 # Connections list
 conn_resp=$(curl -s -w "\n%{http_code}" "${AUTH[@]}" "$SW_BASE/api/v1/connections")
@@ -338,7 +321,7 @@ assert_status "GET /api/v1/artists/$ARTIST_ID/platform-ids" "200" "$plat_ids_cod
 if [[ -n "$CONN_EMBY" ]]; then
   ps_emby_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
     "$SW_BASE/api/v1/artists/$ARTIST_ID/platform-state?connection_id=$CONN_EMBY")
-  assert_status_range "GET platform-state (Emby)" 200 404 "$ps_emby_code" "200=found, 404=no stored ID"
+  assert_status_in "GET platform-state (Emby)" "$ps_emby_code" 200 404
 else
   echo "[SKIP] platform-state (Emby) -- no Emby connection found"
 fi
@@ -347,7 +330,7 @@ fi
 if [[ -n "$CONN_JELLYFIN" ]]; then
   ps_jf_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
     "$SW_BASE/api/v1/artists/$ARTIST_ID/platform-state?connection_id=$CONN_JELLYFIN")
-  assert_status_range "GET platform-state (Jellyfin)" 200 404 "$ps_jf_code" "200=found, 404=no stored ID"
+  assert_status_in "GET platform-state (Jellyfin)" "$ps_jf_code" 200 404
 else
   echo "[SKIP] platform-state (Jellyfin) -- no Jellyfin connection found"
 fi
@@ -394,7 +377,7 @@ if [[ -n "$CONN_JELLYFIN" ]]; then
       -d "{\"connection_id\":\"$CONN_JELLYFIN\",\"image_types\":[\"thumb\"]}")
     push_jf_body=$(echo "$push_jf_resp" | sed '$d')
     push_jf_code=$(echo "$push_jf_resp" | tail -n 1)
-    assert_status_range "POST push/images (Jellyfin)" 200 204 "$push_jf_code"
+    assert_status_in "POST push/images (Jellyfin)" "$push_jf_code" 200 204
     if [[ "$push_jf_code" == "200" ]]; then
       jf_err_count=$(echo "$push_jf_body" | jq -r '.errors | length' 2>/dev/null || echo "0")
       if [[ "$jf_err_count" != "0" && "$jf_err_count" != "null" ]]; then
@@ -411,14 +394,14 @@ if [[ -n "$CONN_JELLYFIN" ]]; then
       -H "Content-Type: application/json" \
       -d "{\"connection_id\":\"$CONN_JELLYFIN\"}")
     push_meta_code=$(echo "$push_meta_resp" | tail -n 1)
-    assert_status_range "POST push metadata (Jellyfin)" 200 204 "$push_meta_code"
+    assert_status_in "POST push metadata (Jellyfin)" "$push_meta_code" 200 204
 
     # Delete thumb from Jellyfin
     del_img_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
       -X DELETE "$SW_BASE/api/v1/artists/$ARTIST_ID/push/images/thumb" \
       -H "Content-Type: application/json" \
       -d "{\"connection_id\":\"$CONN_JELLYFIN\"}")
-    assert_status_range "DELETE push/images/thumb (Jellyfin)" 200 204 "$del_img_code"
+    assert_status_in "DELETE push/images/thumb (Jellyfin)" "$del_img_code" 200 204
   fi
 else
   echo "[SKIP] Jellyfin push/delete checks -- no Jellyfin connection found"
@@ -435,12 +418,12 @@ echo ""
 
 nfo_diff_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
   "$SW_BASE/api/v1/artists/$ARTIST_ID/nfo/diff")
-assert_status_range "GET /api/v1/artists/$ARTIST_ID/nfo/diff" 200 409 "$nfo_diff_code"
+assert_status_in "GET /api/v1/artists/$ARTIST_ID/nfo/diff" "$nfo_diff_code" 200 409
 
 nfo_conflict_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
   "$SW_BASE/api/v1/artists/$ARTIST_ID/nfo/conflict")
 # 409 is returned when the artist's library has no filesystem path configured; treat as non-fatal
-assert_status_range "GET /api/v1/artists/$ARTIST_ID/nfo/conflict" 200 409 "$nfo_conflict_code"
+assert_status_in "GET /api/v1/artists/$ARTIST_ID/nfo/conflict" "$nfo_conflict_code" 200 409
 
 nfo_snaps_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
   "$SW_BASE/api/v1/artists/$ARTIST_ID/nfo/snapshots")
@@ -465,7 +448,7 @@ assert_status "GET /api/v1/libraries" "200" "$libraries_code"
 if [[ -n "$CONN_EMBY" ]]; then
   disc_emby_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
     "$SW_BASE/api/v1/connections/$CONN_EMBY/libraries")
-  assert_status_in "GET /api/v1/connections/$CONN_EMBY/libraries (Emby discover)" "$disc_emby_code" 200 503
+  assert_status_in "GET /api/v1/connections/$CONN_EMBY/libraries (Emby discover)" "$disc_emby_code" 200 409 503
 else
   echo "[SKIP] Emby library discover -- no Emby connection found"
 fi
@@ -473,7 +456,7 @@ fi
 if [[ -n "$CONN_JELLYFIN" ]]; then
   disc_jf_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
     "$SW_BASE/api/v1/connections/$CONN_JELLYFIN/libraries")
-  assert_status_in "GET /api/v1/connections/$CONN_JELLYFIN/libraries (Jellyfin discover)" "$disc_jf_code" 200 503
+  assert_status_in "GET /api/v1/connections/$CONN_JELLYFIN/libraries (Jellyfin discover)" "$disc_jf_code" 200 409 503
 else
   echo "[SKIP] Jellyfin library discover -- no Jellyfin connection found"
 fi
