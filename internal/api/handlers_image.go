@@ -51,7 +51,7 @@ func (r *Router) imageDir(a *artist.Artist) string {
 // Use for NFO and other filesystem operations that need a.Path.
 func (r *Router) requireArtistPath(w http.ResponseWriter, req *http.Request, a *artist.Artist) bool {
 	if a.Path == "" {
-		writeError(w, req, http.StatusConflict,
+		writeError(w, req, http.StatusUnprocessableEntity,
 			"filesystem operations are not available for this artist (library has no path configured)")
 		return false
 	}
@@ -63,7 +63,7 @@ func (r *Router) requireArtistPath(w http.ResponseWriter, req *http.Request, a *
 func (r *Router) requireImageDir(w http.ResponseWriter, req *http.Request, a *artist.Artist) bool {
 	dir := r.imageDir(a)
 	if dir == "" {
-		writeError(w, req, http.StatusConflict,
+		writeError(w, req, http.StatusUnprocessableEntity,
 			"no image directory available for this artist (no filesystem path or cache configured)")
 		return false
 	}

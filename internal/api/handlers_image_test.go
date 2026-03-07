@@ -132,8 +132,8 @@ func TestRequireArtistPath_Degraded(t *testing.T) {
 	if ok {
 		t.Fatal("expected requireArtistPath to return false for empty path")
 	}
-	if w.Code != http.StatusConflict {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusConflict)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusUnprocessableEntity)
 	}
 
 	// Artist with a path should pass
@@ -190,8 +190,8 @@ func TestRequireImageDir_RejectsNoCacheNoPath(t *testing.T) {
 	if ok {
 		t.Fatal("expected requireImageDir to return false when no cache and no path")
 	}
-	if w.Code != http.StatusConflict {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusConflict)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusUnprocessableEntity)
 	}
 }
 
