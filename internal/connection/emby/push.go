@@ -3,10 +3,12 @@ package emby
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/sydlexius/stillwater/internal/connection"
 )
@@ -101,8 +103,13 @@ func (c *Client) UploadImage(ctx context.Context, platformArtistID string, image
 		return fmt.Errorf("unsupported image type: %s", imageType)
 	}
 
+	// Emby expects the image body to be base64-encoded plain text, identical to
+	// the Jellyfin API contract. The Content-Type header still declares the image
+	// format; Emby uses it to determine the save format after decoding.
+	encoded := base64.StdEncoding.EncodeToString(data)
+
 	path := fmt.Sprintf("/Items/%s/Images/%s", platformArtistID, embyType)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, connection.BuildRequestURL(c.BaseURL, path), bytes.NewReader(data))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, connection.BuildRequestURL(c.BaseURL, path), strings.NewReader(encoded))
 	if err != nil {
 		return fmt.Errorf("creating image upload request: %w", err)
 	}
