@@ -696,7 +696,11 @@ func TestUploadImage_BodyIsBase64(t *testing.T) {
 		if r.Method != http.MethodPost || r.URL.Path != "/Items/jf-001/Images/Primary" {
 			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
 		}
-		gotBody, _ = io.ReadAll(r.Body)
+		var readErr error
+		gotBody, readErr = io.ReadAll(r.Body)
+		if readErr != nil {
+			t.Errorf("reading request body: %v", readErr)
+		}
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer srv.Close()

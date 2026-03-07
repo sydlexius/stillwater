@@ -706,7 +706,11 @@ func TestUploadImage_BodyIsBase64(t *testing.T) {
 		if ct := r.Header.Get("Content-Type"); ct != "image/jpeg" {
 			t.Errorf("Content-Type = %q, want image/jpeg", ct)
 		}
-		gotBody, _ = io.ReadAll(r.Body)
+		var readErr error
+		gotBody, readErr = io.ReadAll(r.Body)
+		if readErr != nil {
+			t.Errorf("reading request body: %v", readErr)
+		}
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()
