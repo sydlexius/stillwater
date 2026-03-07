@@ -6,7 +6,6 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/artist"
-	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/web/components"
 	"github.com/sydlexius/stillwater/web/templates"
 )
@@ -231,38 +230,15 @@ func (r *Router) handleArtistDetailPage(w http.ResponseWriter, req *http.Request
 		}
 	}
 
-	// Collect connections that have a stored platform ID for this artist and
-	// are of a type that supports platform state (emby or jellyfin).
-	var platformConns []connection.Connection
-	if len(conns) > 0 {
-		platformIDs, _ := r.artistService.GetPlatformIDs(req.Context(), id)
-		storedIDs := make(map[string]bool, len(platformIDs))
-		for _, pid := range platformIDs {
-			storedIDs[pid.ConnectionID] = true
-		}
-		for _, c := range conns {
-			if !storedIDs[c.ID] {
-				continue
-			}
-			if !c.Enabled {
-				continue
-			}
-			if c.Type == connection.TypeEmby || c.Type == connection.TypeJellyfin {
-				platformConns = append(platformConns, c)
-			}
-		}
-	}
-
 	data := templates.ArtistDetailData{
-		Artist:              *a,
-		Members:             members,
-		Aliases:             aliases,
-		HasConnections:      len(conns) > 0,
-		FieldProviders:      fieldProviders,
-		LibraryName:         libraryName,
-		IsDegraded:          isDegraded,
-		LibrarySource:       librarySource,
-		PlatformConnections: platformConns,
+		Artist:         *a,
+		Members:        members,
+		Aliases:        aliases,
+		HasConnections: len(conns) > 0,
+		FieldProviders: fieldProviders,
+		LibraryName:    libraryName,
+		IsDegraded:     isDegraded,
+		LibrarySource:  librarySource,
 	}
 	renderTempl(w, req, templates.ArtistDetailPage(r.assets(), data))
 }
