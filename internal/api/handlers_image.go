@@ -149,7 +149,11 @@ func (r *Router) handleImageUpload(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		r.updateArtistFanartCount(req.Context(), a)
-		r.syncImageToPlatforms(req.Context(), a, imageType)
+		// Skip platform sync for fanart appends: platforms only support a single
+		// backdrop image, and the primary (fanart.jpg) was already synced when
+		// first saved. Re-syncing here would re-push the primary, not the new
+		// variant (fanart2.jpg etc.), because syncImageToPlatforms discovers
+		// files via findExistingImage which always returns the primary.
 		writeJSON(w, http.StatusOK, map[string]any{
 			"status": "ok",
 			"saved":  saved,
@@ -235,7 +239,9 @@ func (r *Router) handleImageFetch(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		r.updateArtistFanartCount(req.Context(), a)
-		r.syncImageToPlatforms(req.Context(), a, imageType)
+		// Skip platform sync for fanart appends: platforms only support a single
+		// backdrop image, and the primary (fanart.jpg) was already synced when
+		// first saved. See handleImageUpload for the same rationale.
 		if isHTMXRequest(req) {
 			w.Header().Set("HX-Refresh", "true")
 			w.WriteHeader(http.StatusNoContent)
@@ -1498,6 +1504,8 @@ func (r *Router) handleFanartBatchFetch(w http.ResponseWriter, req *http.Request
 	}
 
 	r.updateArtistFanartCount(req.Context(), a)
+	// No platform sync for batch appends: platforms only support a single
+	// backdrop image per artist. See handleImageUpload for full rationale.
 
 	if isHTMXRequest(req) {
 		w.Header().Set("HX-Refresh", "true")
