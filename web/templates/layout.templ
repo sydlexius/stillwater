@@ -120,6 +120,28 @@ templ Layout(title string, assets AssetPaths) {
 						setTimeout(function() { toast.remove(); }, 300);
 					}, 5000);
 				}
+				function showWarningToast(msg) {
+					var container = document.getElementById('error-toast-container');
+					var toast = document.createElement('div');
+					toast.className = 'fixed top-4 right-4 z-50 flex items-center gap-3 rounded-lg px-4 py-3 text-sm shadow-lg bg-amber-50 dark:bg-amber-900/50 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-800 transition-opacity duration-300';
+					var span = document.createElement('span');
+					span.textContent = msg;
+					var btn = document.createElement('button');
+					btn.className = 'ml-2 font-bold opacity-70 hover:opacity-100';
+					btn.textContent = '\u00d7';
+					btn.onclick = function() { toast.remove(); };
+					toast.appendChild(span);
+					toast.appendChild(btn);
+					container.appendChild(toast);
+					setTimeout(function() {
+						toast.style.opacity = '0';
+						setTimeout(function() { toast.remove(); }, 300);
+					}, 8000);
+				}
+				document.body.addEventListener('syncWarning', function(evt) {
+					var msgs = Array.isArray(evt.detail) ? evt.detail : [evt.detail];
+					msgs.forEach(function(m) { showWarningToast(m); });
+				});
 			</script>
 			<script>
 				// Confirmation modal interceptor for HTMX hx-confirm events.

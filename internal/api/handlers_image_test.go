@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"image"
 	"image/color"
 	"image/jpeg"
@@ -448,5 +449,169 @@ func TestHandleDeleteImage_SyncsToPlatform(t *testing.T) {
 	case <-deletedCh:
 	case <-time.After(5 * time.Second):
 		t.Error("expected platform sync delete call, but mock server received none")
+	}
+}
+
+// buildThumbUploadRequest constructs a multipart POST for a small JPEG thumb upload.
+func buildThumbUploadRequest(t *testing.T, artistID string) *http.Request {
+	t.Helper()
+	var body bytes.Buffer
+	mw := multipart.NewWriter(&body)
+	_ = mw.WriteField("type", "thumb")
+	partHeader := make(map[string][]string)
+	partHeader["Content-Disposition"] = []string{`form-data; name="file"; filename="thumb.jpg"`}
+	partHeader["Content-Type"] = []string{"image/jpeg"}
+	fw, _ := mw.CreatePart(partHeader)
+	testImg := image.NewRGBA(image.Rect(0, 0, 100, 100))
+	_ = jpeg.Encode(fw, testImg, nil)
+	mw.Close()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+artistID+"/images/upload", &body)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	req.SetPathValue("id", artistID)
+	return req
+}
+
+func TestHandleImageUpload_SyncWarnings_NoPlatforms(t *testing.T) {
+	r, artistSvc := testRouterWithPlatform(t)
+	dir := t.TempDir()
+	a := &artist.Artist{Name: "Local Artist", SortName: "Local Artist", Path: dir}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	req := buildThumbUploadRequest(t, a.ID)
+	w := httptest.NewRecorder()
+	r.handleImageUpload(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp map[string]json.RawMessage
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	raw, ok := resp["sync_warnings"]
+	if !ok {
+		t.Fatal("response missing sync_warnings field")
+	}
+	var warnings []string
+	if err := json.Unmarshal(raw, &warnings); err != nil {
+		t.Fatalf("decoding sync_warnings: %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("expected empty sync_warnings, got %v", warnings)
+	}
+}
+
+func TestHandleImageUpload_SyncWarnings_PlatformFailure(t *testing.T) {
+	// Mock server that returns 500 for every request, simulating a broken platform.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	r, artistSvc := testRouterWithPlatform(t)
+	r.imageCacheDir = t.TempDir()
+	addTestConnectionWithURL(t, r, "conn-emby", "Emby", "emby", srv.URL)
+
+	a := &artist.Artist{Name: "Platform Artist", SortName: "Platform Artist", Path: ""}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+	if err := artistSvc.SetPlatformID(context.Background(), a.ID, "conn-emby", "emby-artist-1"); err != nil {
+		t.Fatalf("SetPlatformID: %v", err)
+	}
+
+	req := buildThumbUploadRequest(t, a.ID)
+	w := httptest.NewRecorder()
+	r.handleImageUpload(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp map[string]json.RawMessage
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	raw, ok := resp["sync_warnings"]
+	if !ok {
+		t.Fatal("response missing sync_warnings field")
+	}
+	var warnings []string
+	if err := json.Unmarshal(raw, &warnings); err != nil {
+		t.Fatalf("decoding sync_warnings: %v", err)
+	}
+	if len(warnings) == 0 {
+		t.Fatal("expected non-empty sync_warnings when platform returns 500")
+	}
+	if !strings.Contains(warnings[0], "Emby") {
+		t.Errorf("warning should contain connection name, got %q", warnings[0])
+	}
+	if !strings.Contains(warnings[0], "image upload failed") {
+		t.Errorf("warning should mention upload failure, got %q", warnings[0])
+	}
+}
+
+func TestHandleDeleteImage_SyncWarnings_PlatformFailure(t *testing.T) {
+	// Mock server that returns 500 for every request, simulating a broken platform.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	r, artistSvc := testRouterWithPlatform(t)
+	cacheDir := t.TempDir()
+	r.imageCacheDir = cacheDir
+	addTestConnectionWithURL(t, r, "conn-emby", "Emby", "emby", srv.URL)
+
+	a := &artist.Artist{
+		Name: "Platform Artist", SortName: "Platform Artist", Path: "",
+		ThumbExists: true,
+	}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+	if err := artistSvc.SetPlatformID(context.Background(), a.ID, "conn-emby", "emby-artist-1"); err != nil {
+		t.Fatalf("SetPlatformID: %v", err)
+	}
+
+	artistCacheDir := filepath.Join(cacheDir, a.ID)
+	if err := os.MkdirAll(artistCacheDir, 0o755); err != nil {
+		t.Fatalf("creating cache dir: %v", err)
+	}
+	writeJPEG(t, filepath.Join(artistCacheDir, "folder.jpg"), 100, 100)
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/artists/"+a.ID+"/images/thumb", nil)
+	req.SetPathValue("id", a.ID)
+	req.SetPathValue("type", "thumb")
+	w := httptest.NewRecorder()
+	r.handleDeleteImage(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp map[string]json.RawMessage
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	raw, ok := resp["sync_warnings"]
+	if !ok {
+		t.Fatal("response missing sync_warnings field")
+	}
+	var warnings []string
+	if err := json.Unmarshal(raw, &warnings); err != nil {
+		t.Fatalf("decoding sync_warnings: %v", err)
+	}
+	if len(warnings) == 0 {
+		t.Fatal("expected non-empty sync_warnings when platform returns 500")
+	}
+	if !strings.Contains(warnings[0], "Emby") {
+		t.Errorf("warning should contain connection name, got %q", warnings[0])
+	}
+	if !strings.Contains(warnings[0], "image delete failed") {
+		t.Errorf("warning should mention delete failure, got %q", warnings[0])
 	}
 }

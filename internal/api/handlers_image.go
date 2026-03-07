@@ -155,10 +155,11 @@ func (r *Router) handleImageUpload(w http.ResponseWriter, req *http.Request) {
 		// variant (fanart2.jpg etc.), because syncImageToPlatforms discovers
 		// files via findExistingImage which always returns the primary.
 		writeJSON(w, http.StatusOK, map[string]any{
-			"status": "ok",
-			"saved":  saved,
-			"type":   imageType,
-			"count":  a.FanartCount,
+			"status":        "ok",
+			"saved":         saved,
+			"type":          imageType,
+			"count":         a.FanartCount,
+			"sync_warnings": []string{},
 		})
 		return
 	}
@@ -174,12 +175,16 @@ func (r *Router) handleImageUpload(w http.ResponseWriter, req *http.Request) {
 	if imageType == "fanart" {
 		r.updateArtistFanartCount(req.Context(), a)
 	}
-	r.launchImageSync(a, imageType)
+
+	syncCtx, cancel := context.WithTimeout(req.Context(), 30*time.Second)
+	defer cancel()
+	warnings := r.syncImageToPlatforms(syncCtx, a, imageType)
 
 	resp := map[string]any{
-		"status": "ok",
-		"saved":  saved,
-		"type":   imageType,
+		"status":        "ok",
+		"saved":         saved,
+		"type":          imageType,
+		"sync_warnings": warnings,
 	}
 	if imageType == "fanart" {
 		resp["count"] = a.FanartCount
@@ -248,10 +253,11 @@ func (r *Router) handleImageFetch(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
-			"status": "ok",
-			"saved":  saved,
-			"type":   imageType,
-			"count":  a.FanartCount,
+			"status":        "ok",
+			"saved":         saved,
+			"type":          imageType,
+			"count":         a.FanartCount,
+			"sync_warnings": []string{},
 		})
 		return
 	}
@@ -268,18 +274,23 @@ func (r *Router) handleImageFetch(w http.ResponseWriter, req *http.Request) {
 	if imageType == "fanart" {
 		r.updateArtistFanartCount(req.Context(), a)
 	}
-	r.launchImageSync(a, imageType)
+
+	syncCtx, cancel := context.WithTimeout(req.Context(), 30*time.Second)
+	defer cancel()
+	warnings := r.syncImageToPlatforms(syncCtx, a, imageType)
 
 	if isHTMXRequest(req) {
+		setSyncWarningTrigger(w, warnings)
 		w.Header().Set("HX-Refresh", "true")
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 
 	resp := map[string]any{
-		"status": "ok",
-		"saved":  saved,
-		"type":   imageType,
+		"status":        "ok",
+		"saved":         saved,
+		"type":          imageType,
+		"sync_warnings": warnings,
 	}
 	if imageType == "fanart" {
 		resp["count"] = a.FanartCount
@@ -476,12 +487,16 @@ func (r *Router) handleImageCrop(w http.ResponseWriter, req *http.Request) {
 	}
 
 	r.updateArtistImageFlag(req.Context(), a, body.Type)
-	r.launchImageSync(a, body.Type)
+
+	syncCtx, cancel := context.WithTimeout(req.Context(), 30*time.Second)
+	defer cancel()
+	warnings := r.syncImageToPlatforms(syncCtx, a, body.Type)
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"status": "ok",
-		"saved":  saved,
-		"type":   body.Type,
+		"status":        "ok",
+		"saved":         saved,
+		"type":          body.Type,
+		"sync_warnings": warnings,
 	})
 }
 
@@ -885,16 +900,21 @@ func (r *Router) handleDeleteImage(w http.ResponseWriter, req *http.Request) {
 		patterns := r.getActiveNamingConfig(req.Context(), imageType)
 		deleted = append(deleted, deleteImageFiles(r.imageDir(a), patterns, r.logger)...)
 		r.updateArtistFanartCount(req.Context(), a)
+		fanartWarnings := make([]string, 0)
 		if len(deleted) > 0 {
-			r.launchImageDelete(a, imageType)
+			delCtx, delCancel := context.WithTimeout(req.Context(), 30*time.Second)
+			defer delCancel()
+			fanartWarnings = r.deleteImageFromPlatforms(delCtx, a, imageType)
 		}
 		if req.Header.Get("HX-Request") == "true" {
+			setSyncWarningTrigger(w, fanartWarnings)
 			renderTempl(w, req, templates.ImagePreviewCard(a.ID, imageType, false, imageTypeLabel(imageType), 0))
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
-			"status":  "deleted",
-			"deleted": deleted,
+			"status":        "deleted",
+			"deleted":       deleted,
+			"sync_warnings": fanartWarnings,
 		})
 		return
 	}
@@ -903,18 +923,23 @@ func (r *Router) handleDeleteImage(w http.ResponseWriter, req *http.Request) {
 	deleted := deleteImageFiles(r.imageDir(a), patterns, r.logger)
 
 	r.clearArtistImageFlag(req.Context(), a, imageType)
+	warnings := make([]string, 0)
 	if len(deleted) > 0 {
-		r.launchImageDelete(a, imageType)
+		delCtx, delCancel := context.WithTimeout(req.Context(), 30*time.Second)
+		defer delCancel()
+		warnings = r.deleteImageFromPlatforms(delCtx, a, imageType)
 	}
 
 	if req.Header.Get("HX-Request") == "true" {
+		setSyncWarningTrigger(w, warnings)
 		renderTempl(w, req, templates.ImagePreviewCard(a.ID, imageType, false, imageTypeLabel(imageType), 0))
 		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"status":  "deleted",
-		"deleted": deleted,
+		"status":        "deleted",
+		"deleted":       deleted,
+		"sync_warnings": warnings,
 	})
 }
 
@@ -924,33 +949,36 @@ func (r *Router) clearArtistImageFlag(ctx context.Context, a *artist.Artist, ima
 }
 
 // syncImageToPlatforms uploads the just-saved image to every platform connection
-// that has a stored artist ID mapping. Errors are logged but do not affect the
-// caller -- the local operation already succeeded.
-func (r *Router) syncImageToPlatforms(ctx context.Context, a *artist.Artist, imageType string) {
+// that has a stored artist ID mapping. Errors are logged and returned as warning
+// strings so the caller can surface them to the client. The local operation
+// already succeeded, so failures here are non-fatal.
+func (r *Router) syncImageToPlatforms(ctx context.Context, a *artist.Artist, imageType string) []string {
+	warnings := make([]string, 0)
+
 	platformIDs, err := r.artistService.GetPlatformIDs(ctx, a.ID)
 	if err != nil {
 		r.logger.Error("getting platform IDs for image sync", "artist_id", a.ID, "type", imageType, "error", err)
-		return
+		return warnings
 	}
 	if len(platformIDs) == 0 {
-		return
+		return warnings
 	}
 
 	dir := r.imageDir(a)
 	if dir == "" {
 		r.logger.Warn("skipping platform image sync: artist has no image directory", "artist", a.Name, "type", imageType)
-		return
+		return warnings
 	}
 	patterns := r.getActiveNamingConfig(ctx, imageType)
 	filePath, found := findExistingImage(dir, patterns)
 	if !found {
-		return
+		return warnings
 	}
 
 	data, err := os.ReadFile(filePath) //nolint:gosec // path from trusted naming patterns
 	if err != nil {
 		r.logger.Error("reading image for platform sync", "artist", a.Name, "type", imageType, "path", filePath, "error", err)
-		return
+		return warnings
 	}
 
 	ct := "image/jpeg"
@@ -981,20 +1009,25 @@ func (r *Router) syncImageToPlatforms(ctx context.Context, a *artist.Artist, ima
 
 		if uploadErr := uploader.UploadImage(ctx, pid.PlatformArtistID, imageType, data, ct); uploadErr != nil {
 			r.logger.Error("syncing image to platform", "artist", a.Name, "connection", conn.Name, "type", imageType, "error", uploadErr)
+			warnings = append(warnings, fmt.Sprintf("%s (%s): image upload failed: %v", conn.Name, conn.Type, uploadErr))
 		}
 	}
+	return warnings
 }
 
 // deleteImageFromPlatforms removes the image from every platform connection that
-// has a stored artist ID mapping. Errors are logged but do not affect the caller.
-func (r *Router) deleteImageFromPlatforms(ctx context.Context, a *artist.Artist, imageType string) {
+// has a stored artist ID mapping. Errors are logged and returned as warning
+// strings so the caller can surface them to the client.
+func (r *Router) deleteImageFromPlatforms(ctx context.Context, a *artist.Artist, imageType string) []string {
+	warnings := make([]string, 0)
+
 	platformIDs, err := r.artistService.GetPlatformIDs(ctx, a.ID)
 	if err != nil {
 		r.logger.Error("getting platform IDs for image delete sync", "artist_id", a.ID, "type", imageType, "error", err)
-		return
+		return warnings
 	}
 	if len(platformIDs) == 0 {
-		return
+		return warnings
 	}
 
 	for _, pid := range platformIDs {
@@ -1020,40 +1053,20 @@ func (r *Router) deleteImageFromPlatforms(ctx context.Context, a *artist.Artist,
 
 		if delErr := deleter.DeleteImage(ctx, pid.PlatformArtistID, imageType); delErr != nil {
 			r.logger.Error("deleting image from platform", "artist", a.Name, "connection", conn.Name, "type", imageType, "error", delErr)
+			warnings = append(warnings, fmt.Sprintf("%s (%s): image delete failed: %v", conn.Name, conn.Type, delErr))
 		}
 	}
+	return warnings
 }
 
-// launchImageSync runs syncImageToPlatforms in a detached goroutine. The local
-// operation already succeeded; platform sync is best-effort and must not block
-// the HTTP response. A 60s background context bounds the total sync time; the
-// existing http.Client.Timeout inside each platform client guards individual requests.
-func (r *Router) launchImageSync(a *artist.Artist, imageType string) {
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-		defer cancel()
-		defer func() {
-			if v := recover(); v != nil {
-				r.logger.Error("panic in platform image sync", "artist_id", a.ID, "type", imageType, "panic", v)
-			}
-		}()
-		r.syncImageToPlatforms(ctx, a, imageType)
-	}()
-}
-
-// launchImageDelete runs deleteImageFromPlatforms in a detached goroutine with the
-// same semantics as launchImageSync.
-func (r *Router) launchImageDelete(a *artist.Artist, imageType string) {
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-		defer cancel()
-		defer func() {
-			if v := recover(); v != nil {
-				r.logger.Error("panic in platform image delete sync", "artist_id", a.ID, "type", imageType, "panic", v)
-			}
-		}()
-		r.deleteImageFromPlatforms(ctx, a, imageType)
-	}()
+// setSyncWarningTrigger encodes sync warnings as an HX-Trigger header so the
+// HTMX frontend can display them as non-blocking toast notifications.
+func setSyncWarningTrigger(w http.ResponseWriter, warnings []string) {
+	if len(warnings) == 0 {
+		return
+	}
+	data, _ := json.Marshal(map[string][]string{"syncWarning": warnings})
+	w.Header().Set("HX-Trigger", string(data))
 }
 
 // findExistingImage searches for the first matching image file in a directory.
@@ -1195,15 +1208,22 @@ func (r *Router) handleLogoTrim(w http.ResponseWriter, req *http.Request) {
 	}
 
 	r.updateArtistImageFlag(req.Context(), a, "logo")
-	r.launchImageSync(a, "logo")
+
+	syncCtx, cancel := context.WithTimeout(req.Context(), 30*time.Second)
+	defer cancel()
+	warnings := r.syncImageToPlatforms(syncCtx, a, "logo")
 
 	if isHTMXRequest(req) {
+		setSyncWarningTrigger(w, warnings)
 		w.Header().Set("HX-Refresh", "true")
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":        "ok",
+		"sync_warnings": warnings,
+	})
 }
 
 // imageTypeLabel returns a human-readable label for an image type.
