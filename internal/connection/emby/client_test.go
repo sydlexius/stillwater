@@ -695,7 +695,7 @@ func TestPushMetadata_DateNormalization(t *testing.T) {
 
 func TestUploadImage_BodyIsBase64(t *testing.T) {
 	jpegData := createTestJPEG(t)
-	var gotBody []byte
+	bodyCh := make(chan []byte, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/Items/emby-001/Images/Primary" {
 			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
@@ -706,11 +706,11 @@ func TestUploadImage_BodyIsBase64(t *testing.T) {
 		if ct := r.Header.Get("Content-Type"); ct != "image/jpeg" {
 			t.Errorf("Content-Type = %q, want image/jpeg", ct)
 		}
-		var readErr error
-		gotBody, readErr = io.ReadAll(r.Body)
+		body, readErr := io.ReadAll(r.Body)
 		if readErr != nil {
 			t.Errorf("reading request body: %v", readErr)
 		}
+		bodyCh <- body
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()
@@ -720,6 +720,7 @@ func TestUploadImage_BodyIsBase64(t *testing.T) {
 		t.Fatalf("UploadImage failed: %v", err)
 	}
 
+	gotBody := <-bodyCh
 	decoded, err := base64.StdEncoding.DecodeString(string(gotBody))
 	if err != nil {
 		t.Fatalf("body is not valid base64: %v", err)
