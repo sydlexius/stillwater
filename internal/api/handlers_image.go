@@ -879,7 +879,9 @@ func (r *Router) handleDeleteImage(w http.ResponseWriter, req *http.Request) {
 		patterns := r.getActiveNamingConfig(req.Context(), imageType)
 		deleted = append(deleted, deleteImageFiles(r.imageDir(a), patterns, r.logger)...)
 		r.updateArtistFanartCount(req.Context(), a)
-		r.deleteImageFromPlatforms(req.Context(), a, imageType)
+		if len(deleted) > 0 {
+			r.deleteImageFromPlatforms(req.Context(), a, imageType)
+		}
 		if req.Header.Get("HX-Request") == "true" {
 			renderTempl(w, req, templates.ImagePreviewCard(a.ID, imageType, false, imageTypeLabel(imageType), 0))
 			return
@@ -895,7 +897,9 @@ func (r *Router) handleDeleteImage(w http.ResponseWriter, req *http.Request) {
 	deleted := deleteImageFiles(r.imageDir(a), patterns, r.logger)
 
 	r.clearArtistImageFlag(req.Context(), a, imageType)
-	r.deleteImageFromPlatforms(req.Context(), a, imageType)
+	if len(deleted) > 0 {
+		r.deleteImageFromPlatforms(req.Context(), a, imageType)
+	}
 
 	if req.Header.Get("HX-Request") == "true" {
 		renderTempl(w, req, templates.ImagePreviewCard(a.ID, imageType, false, imageTypeLabel(imageType), 0))
@@ -926,15 +930,20 @@ func (r *Router) syncImageToPlatforms(ctx context.Context, a *artist.Artist, ima
 		return
 	}
 
+	dir := r.imageDir(a)
+	if dir == "" {
+		r.logger.Warn("skipping platform image sync: artist has no image directory", "artist", a.Name, "type", imageType)
+		return
+	}
 	patterns := r.getActiveNamingConfig(ctx, imageType)
-	filePath, found := findExistingImage(r.imageDir(a), patterns)
+	filePath, found := findExistingImage(dir, patterns)
 	if !found {
 		return
 	}
 
 	data, err := os.ReadFile(filePath) //nolint:gosec // path from trusted naming patterns
 	if err != nil {
-		r.logger.Error("reading image for platform sync", "artist", a.Name, "type", imageType, "error", err)
+		r.logger.Error("reading image for platform sync", "artist", a.Name, "type", imageType, "path", filePath, "error", err)
 		return
 	}
 

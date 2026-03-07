@@ -7,6 +7,7 @@ import (
 	"image"
 	"image/color"
 	"image/jpeg"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -688,5 +689,59 @@ func TestPushMetadata_DateNormalization(t *testing.T) {
 				t.Errorf("EndDate = %q, want %q", gotBody.EndDate, tt.wantEnd)
 			}
 		})
+	}
+}
+
+func TestUploadImage_Success(t *testing.T) {
+	imageData := []byte{0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10} // JPEG magic bytes
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/Items/emby-001/Images/Primary" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		if r.Method != http.MethodPost {
+			t.Errorf("method = %s, want POST", r.Method)
+		}
+		if r.Header.Get("X-Emby-Token") != "test-key" {
+			t.Errorf("missing or wrong auth header: %s", r.Header.Get("X-Emby-Token"))
+		}
+		if ct := r.Header.Get("Content-Type"); ct != "image/jpeg" {
+			t.Errorf("Content-Type = %q, want image/jpeg", ct)
+		}
+		// Emby expects raw binary, not base64.
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("failed to read request body: %v", err)
+			return
+		}
+		if string(body) != string(imageData) {
+			t.Errorf("body not raw bytes: got %q, want %q", body, imageData)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "test-key", "", srv.Client(), testLogger())
+	if err := c.UploadImage(context.Background(), "emby-001", "thumb", imageData, "image/jpeg"); err != nil {
+		t.Fatalf("UploadImage failed: %v", err)
+	}
+}
+
+func TestUploadImage_ServerError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"error":"internal"}`))
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "test-key", "", srv.Client(), testLogger())
+	if err := c.UploadImage(context.Background(), "emby-001", "thumb", []byte{1, 2, 3}, "image/jpeg"); err == nil {
+		t.Fatal("expected error for server error response")
+	}
+}
+
+func TestUploadImage_UnsupportedType(t *testing.T) {
+	c := New("http://localhost", "key", "", testLogger())
+	if err := c.UploadImage(context.Background(), "emby-001", "clearart", []byte{1}, "image/jpeg"); err == nil {
+		t.Fatal("expected error for unsupported image type")
 	}
 }

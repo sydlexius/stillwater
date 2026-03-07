@@ -334,6 +334,12 @@ func TestHandleImageUpload_SyncsToPlatform(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		if req.Method == http.MethodPost && strings.Contains(req.URL.Path, "/Images/Primary") {
 			uploaded = true
+			if req.ContentLength <= 0 {
+				t.Error("expected non-empty image body in platform sync request")
+			}
+			if ct := req.Header.Get("Content-Type"); ct != "image/jpeg" {
+				t.Errorf("Content-Type = %q, want image/jpeg", ct)
+			}
 		}
 		w.WriteHeader(http.StatusOK)
 	}))
