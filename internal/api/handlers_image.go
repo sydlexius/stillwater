@@ -419,7 +419,9 @@ func (r *Router) handleWebImageSearch(w http.ResponseWriter, req *http.Request) 
 	writeJSON(w, http.StatusOK, map[string]any{"images": allImages})
 }
 
-// handleImageCrop accepts cropped image data and saves it.
+// handleImageCrop accepts base64-encoded image data, optionally applies a server-side crop
+// when coordinates are provided, saves the result, then syncs it to all configured platform
+// connections. Sync failures are returned as non-blocking warnings in the response.
 // POST /api/v1/artists/{id}/images/crop
 func (r *Router) handleImageCrop(w http.ResponseWriter, req *http.Request) {
 	artistID, ok := RequirePathParam(w, req, "id")
@@ -994,7 +996,7 @@ func (r *Router) syncImageToPlatforms(ctx context.Context, a *artist.Artist, ima
 		conn, connErr := r.connectionService.GetByID(ctx, pid.ConnectionID)
 		if connErr != nil {
 			r.logger.Error("getting connection for image sync", "connection_id", pid.ConnectionID, "error", connErr)
-			warnings = append(warnings, truncateWarning(fmt.Sprintf("connection %s: failed to load: %v", pid.ConnectionID, connErr)))
+			warnings = append(warnings, truncateWarning(fmt.Sprintf("connection %s: failed to load", pid.ConnectionID)))
 			continue
 		}
 		if !conn.Enabled {
@@ -1043,7 +1045,7 @@ func (r *Router) deleteImageFromPlatforms(ctx context.Context, a *artist.Artist,
 		conn, connErr := r.connectionService.GetByID(ctx, pid.ConnectionID)
 		if connErr != nil {
 			r.logger.Error("getting connection for image delete sync", "connection_id", pid.ConnectionID, "error", connErr)
-			warnings = append(warnings, truncateWarning(fmt.Sprintf("connection %s: failed to load: %v", pid.ConnectionID, connErr)))
+			warnings = append(warnings, truncateWarning(fmt.Sprintf("connection %s: failed to load", pid.ConnectionID)))
 			continue
 		}
 		if !conn.Enabled {

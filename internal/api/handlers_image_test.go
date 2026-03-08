@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"image"
@@ -938,4 +939,123 @@ func TestSetSyncWarningTrigger_Truncation(t *testing.T) {
 			t.Errorf("expected %q in header, got: %s", want, hdr)
 		}
 	})
+}
+
+func TestHandleImageCrop_SyncWarnings_NoPlatforms(t *testing.T) {
+	r, artistSvc := testRouterWithPlatform(t)
+	dir := t.TempDir()
+	a := &artist.Artist{Name: "Crop Artist", SortName: "Crop Artist", Path: dir}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	// Encode a small JPEG as base64 for the crop request body.
+	testImg := image.NewRGBA(image.Rect(0, 0, 100, 100))
+	var jpegBuf bytes.Buffer
+	if err := jpeg.Encode(&jpegBuf, testImg, nil); err != nil {
+		t.Fatalf("encoding JPEG: %v", err)
+	}
+	b64Data := base64.StdEncoding.EncodeToString(jpegBuf.Bytes())
+
+	reqBody, err := json.Marshal(map[string]string{
+		"image_data": b64Data,
+		"type":       "thumb",
+	})
+	if err != nil {
+		t.Fatalf("marshaling request body: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/images/crop", bytes.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", a.ID)
+	w := httptest.NewRecorder()
+	r.handleImageCrop(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp map[string]json.RawMessage
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	raw, ok := resp["sync_warnings"]
+	if !ok {
+		t.Fatal("response missing sync_warnings field")
+	}
+	var warnings []string
+	if err := json.Unmarshal(raw, &warnings); err != nil {
+		t.Fatalf("decoding sync_warnings: %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("expected empty sync_warnings, got %v", warnings)
+	}
+}
+
+func TestHandleImageCrop_SyncWarnings_PlatformFailure(t *testing.T) {
+	// Mock server that returns 500 for every request, simulating a broken platform.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	r, artistSvc := testRouterWithPlatform(t)
+	r.imageCacheDir = t.TempDir()
+	addTestConnectionWithURL(t, r, "conn-emby", "Emby", "emby", srv.URL)
+
+	a := &artist.Artist{Name: "Platform Crop Artist", SortName: "Platform Crop Artist", Path: ""}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+	if err := artistSvc.SetPlatformID(context.Background(), a.ID, "conn-emby", "emby-artist-1"); err != nil {
+		t.Fatalf("SetPlatformID: %v", err)
+	}
+
+	// Encode a small JPEG as base64 for the crop request body.
+	testImg := image.NewRGBA(image.Rect(0, 0, 100, 100))
+	var jpegBuf bytes.Buffer
+	if err := jpeg.Encode(&jpegBuf, testImg, nil); err != nil {
+		t.Fatalf("encoding JPEG: %v", err)
+	}
+	b64Data := base64.StdEncoding.EncodeToString(jpegBuf.Bytes())
+
+	reqBody, err := json.Marshal(map[string]string{
+		"image_data": b64Data,
+		"type":       "thumb",
+	})
+	if err != nil {
+		t.Fatalf("marshaling request body: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/images/crop", bytes.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", a.ID)
+	w := httptest.NewRecorder()
+	r.handleImageCrop(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp map[string]json.RawMessage
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	raw, ok := resp["sync_warnings"]
+	if !ok {
+		t.Fatal("response missing sync_warnings field")
+	}
+	var warnings []string
+	if err := json.Unmarshal(raw, &warnings); err != nil {
+		t.Fatalf("decoding sync_warnings: %v", err)
+	}
+	if len(warnings) == 0 {
+		t.Fatal("expected non-empty sync_warnings when platform returns 500")
+	}
+	if !strings.Contains(warnings[0], "Emby") {
+		t.Errorf("warning should contain connection name, got %q", warnings[0])
+	}
+	if !strings.Contains(warnings[0], "image upload failed") {
+		t.Errorf("warning should mention upload failure, got %q", warnings[0])
+	}
 }
