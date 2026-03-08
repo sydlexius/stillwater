@@ -15,11 +15,11 @@ const (
 // Jellyfin sends MusicAlbum items (not MusicArtist) with artist info embedded.
 // Note: for multi-artist albums, only the first artist's MBID is included.
 type JellyfinPayload struct {
-	NotificationType              string `json:"NotificationType"`
-	ItemID                        string `json:"ItemId"`
-	ItemType                      string `json:"ItemType"` // "MusicAlbum"
-	Name                          string `json:"Name"`
-	Artist                        string `json:"Artist"`
+	NotificationType               string `json:"NotificationType"`
+	ItemID                         string `json:"ItemId"`
+	ItemType                       string `json:"ItemType"` // "MusicAlbum"
+	Name                           string `json:"Name"`
+	Artist                         string `json:"Artist"`
 	ProviderMusicBrainzAlbumArtist string `json:"Provider_musicbrainzalbumartist"`
 }
 
