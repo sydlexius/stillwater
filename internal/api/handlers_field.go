@@ -366,7 +366,7 @@ func (r *Router) asyncPushMetadataToConnections(ctx context.Context, a *artist.A
 	for _, pid := range platformIDs {
 		pid := pid
 		go func() {
-			gCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			gCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second) //nolint:gosec // G118: intentional -- goroutine must outlive the HTTP request context
 			defer cancel()
 			defer func() {
 				if v := recover(); v != nil {
