@@ -21,14 +21,16 @@ base=$(git merge-base main HEAD)
 git diff --name-only "$base"..HEAD
 ```
 
-If the diff includes `internal/api/handlers_*.go` or `internal/api/openapi.yaml`, run
-both checks. If only handler files changed (no openapi.yaml), flag that as a finding
-immediately -- the spec was not updated.
+If the diff includes `internal/api/handlers_*.go`, proceed to step 2 to check whether
+any response fields changed. If the diff includes `internal/api/openapi.yaml`, verify
+descriptions and schema shapes in steps 3-5. Do not immediately flag "spec not updated"
+just because handler files changed -- many handler changes (refactors, logging, internal
+behavior) do not affect the API surface.
 
 ### 2. Extract response field names from changed handlers
 
-For each changed handler file, grep for fields returned in `map[string]any` or struct
-literals that are marshalled as JSON responses:
+For each changed handler file, grep for JSON key names returned in `map[string]any`
+response literals (the primary pattern in this codebase):
 
 ```bash
 base=$(git merge-base main HEAD)

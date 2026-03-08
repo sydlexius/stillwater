@@ -44,9 +44,15 @@ If tests pass: note it and continue.
 
 ## Step 3 -- OpenAPI consistency check
 
-Follow the logic in `.claude/commands/check-openapi.md` against the current diff
-(`git diff main`). Do not skip this step even if `openapi.yaml` is not in the diff --
-the check must verify that handler changes are reflected in the spec.
+Follow the logic in `.claude/commands/check-openapi.md` against the PR-wide diff:
+
+```bash
+base=$(git merge-base main HEAD)
+git diff "$base"..HEAD --name-only
+```
+
+Do not use `git diff main` directly -- that can include unrelated commits that landed
+on main after this branch was cut.
 
 Report findings using the same CRITICAL / IMPORTANT / OK format defined in that file.
 

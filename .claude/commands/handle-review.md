@@ -38,7 +38,8 @@ me=$(gh api user --jq .login)
 Then fetch comments using the resolved repo:
 
 ```bash
-gh api "repos/$repo/pulls/{PR}/comments" \
+pr_number=$(gh pr view --json number --jq .number)
+gh api "repos/$repo/pulls/$pr_number/comments" \
   --paginate \
   --jq '.[] | {id, user: .user.login, body, path, line: .original_line, reply_to: .in_reply_to_id}'
 ```
@@ -47,7 +48,7 @@ Also fetch review-level (non-inline) comments from review bodies if any reviewer
 them as part of a review submission:
 
 ```bash
-gh api "repos/$repo/pulls/{PR}/reviews" \
+gh api "repos/$repo/pulls/$pr_number/reviews" \
   --jq '.[] | select(.body != "") | {id, user: .user.login, body: .body, type: "review-body"}'
 ```
 
@@ -189,11 +190,11 @@ Now substitute the real SHA into all "Fixed in <sha>" reply drafts from step 6.
 Post all replies in one batch (do not wait between them):
 
 ```bash
-gh api "repos/$repo/pulls/{PR}/comments/{COMMENT_ID}/replies" \
+gh api "repos/$repo/pulls/$pr_number/comments/{COMMENT_ID}/replies" \
   -f body='<reply text>'
 ```
 
-(`$repo` was resolved in step 2.)
+(`$repo` and `$pr_number` were resolved in step 2.)
 
 Run one `gh api` call per open comment. Log each one as it completes.
 

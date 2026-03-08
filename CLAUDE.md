@@ -303,6 +303,7 @@ Before squashing and pushing, verify these categories that Copilot consistently 
 **Test code:**
 - [ ] No unprotected shared variables written in test handler goroutines and read in the test goroutine
 - [ ] `multipart.Writer` methods (`CreatePart`, `WriteField`, `Close`) errors are checked in test helpers
+- [ ] `io.ReadAll(r.Body)` errors are checked before using the result in test handlers
 
 ## Parallel Work (Worktrees)
 
