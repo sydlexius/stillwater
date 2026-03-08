@@ -44,3 +44,54 @@ templates, and Tailwind CSS. Structured logging via slog.
 - Do not comment on test function names, test comment wording, or test variable naming
 - Style preferences that do not affect correctness
 - Suggestions to refactor working code for hypothetical testability improvements
+
+## OpenAPI spec consistency (always check)
+
+When a PR adds or changes any JSON response field in a handler:
+
+- Verify `internal/api/openapi.yaml` is updated for every affected endpoint -- field
+  present in the schema, correct type, and an accurate description.
+- Descriptions must reflect what the code actually does. "Empty when X" is wrong if the
+  code also makes the field non-empty when Y. Prefer describing the invariant: what it
+  means when the field is empty ("Empty only when there are no warnings") rather than
+  listing every condition that causes it to be empty.
+- If a handler response schema references `$ref: "#/components/schemas/SomeType"` but
+  the actual response shape includes additional fields not in that schema, flag it.
+
+## Error path warning completeness (always check)
+
+When a function is designed to surface failures as user-visible warnings (returns
+`[]string` warnings, appends to a warning slice, or emits HX-Trigger header values):
+
+- Verify that ALL error paths append a warning before returning -- not just the path
+  that reaches the primary operation. Early-return paths (service lookup failure,
+  missing file, unsupported type, disabled connection, etc.) must also emit a warning
+  if the function's purpose is to surface failures.
+- Client-visible warning strings must be generic -- never include raw `error.Error()`
+  text from database operations, internal services, or system calls. The full error
+  belongs in a server-side `slog` call; the client gets a sanitized message.
+- "We logged it" is not sufficient. If sync was skipped due to an internal error, the
+  client should see a warning that sync was skipped, even if the cause is redacted.
+
+## Generated files (always check)
+
+- If any `.templ` file changed, the corresponding `*_templ.go` generated file must also
+  be committed with matching changes. Flag if `.templ` changed but `*_templ.go` did not.
+- Stale generated files will cause CI to fail (`make build` runs `templ generate`).
+
+## Test code correctness (always check)
+
+- Variables written inside an `httptest.NewRecorder` handler goroutine (or any closure
+  passed to a test server) and read in the test goroutine after `Do()` returns must be
+  synchronized via channel or mutex. Unprotected shared variables are data races.
+- Test helpers that use `multipart.NewWriter` (`CreatePart`, `WriteField`, `w.Close()`)
+  must check errors and call `t.Fatal`/`t.Fatalf` on failure. Ignored write errors
+  produce malformed requests and misleading test failures.
+- `io.ReadAll(r.Body)` in test handlers must check the error before using the result.
+
+## CI / GitHub Actions (flag when wrong)
+
+- `actions/setup-go` steps should use `go-version-file: go.mod` rather than a hardcoded
+  `go-version` string. Hardcoded versions drift from `go.mod` and cause CI breakage.
+- When an endpoint's HTTP status code changes, verify that `scripts/smoke.sh` and any
+  integration tests are updated to expect the new code.
