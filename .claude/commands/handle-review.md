@@ -1,13 +1,16 @@
 ---
-description: "Triage all open PR review comments, fix everything in one pass, reply in batch, push once"
+description: "Triage open Copilot/bot PR review comments, fix everything in one pass, reply in batch, push once"
 argument-hint: "[PR number -- defaults to current branch's PR]"
 allowed-tools: ["Bash", "Glob", "Grep", "Read", "Edit", "Write", "Agent", "Task"]
 ---
 
 # Handle PR Review
 
-Resolve all open review comments in a single pass. The invariant: **one push, after all
-fixes are complete**. Never push per-comment.
+Resolve all open Copilot/bot review comments in a single pass. The invariant: **one push,
+after all fixes are complete**. Never push per-comment.
+
+This command targets bot reviewer comments (logins containing `copilot` or ending with
+`[bot]`). For human reviewer comments, apply the same triage and fix discipline manually.
 
 **PR number (optional):** "$ARGUMENTS"
 
@@ -59,6 +62,7 @@ them as part of a review submission:
 
 ```bash
 gh api "repos/$repo/pulls/$pr_number/reviews" \
+  --paginate \
   --jq '.[] | select(.body != "") | {id, user: .user.login, body: .body, type: "review-body"}'
 ```
 
