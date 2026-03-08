@@ -200,11 +200,11 @@ Now substitute the real SHA into all "Fixed in <sha>" reply drafts from step 6.
 Post all replies in one batch (do not wait between them):
 
 ```bash
-gh api "repos/$repo/pulls/comments/{COMMENT_ID}/replies" \
+gh api "repos/$repo/pulls/$pr_number/comments/{COMMENT_ID}/replies" \
   -f body='<reply text>'
 ```
 
-(`$repo` was resolved in Step 1. Note: the reply endpoint does not include the pull number.)
+(`$repo` and `$pr_number` were resolved in Step 1.)
 
 Run one `gh api` call per open comment. Log each one as it completes.
 
