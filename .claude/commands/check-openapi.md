@@ -30,7 +30,7 @@ literals that are marshalled as JSON responses:
 ```bash
 git diff HEAD~1..HEAD -- internal/api/handlers_*.go \
   | grep '^+' \
-  | grep -E '"[a-z_]+":\s*(warnings|[a-zA-Z])'
+  | grep -E '"[a-zA-Z0-9_]+":'
 ```
 
 Collect every field name that appears in `+` lines (newly added or changed).
@@ -83,12 +83,11 @@ warnings slice, read the full function body and verify:
 ### 7. Check generated file staleness
 
 ```bash
-git diff --name-only HEAD~1..HEAD | grep '\.templ$'
-git diff --name-only HEAD~1..HEAD | grep '_templ\.go$'
+templ_changed=$(git diff --name-only HEAD~1..HEAD -- '*.templ')
+generated_changed=$(git diff --name-only HEAD~1..HEAD -- '*_templ.go')
 ```
 
-**Flag as CRITICAL** if `.templ` files changed but the corresponding `*_templ.go` files
-did not change.
+**Flag as CRITICAL** if `$templ_changed` is non-empty and `$generated_changed` is empty.
 
 ## Output format
 

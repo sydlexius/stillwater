@@ -77,7 +77,8 @@ When a function is designed to surface failures as user-visible warnings (return
 
 - If any `.templ` file changed, the corresponding `*_templ.go` generated file must also
   be committed with matching changes. Flag if `.templ` changed but `*_templ.go` did not.
-- Stale generated files will cause CI to fail (`make build` runs `templ generate`).
+- CI does not currently enforce this automatically -- flag it as a review issue so it
+  is caught before merge rather than discovered at runtime.
 
 ## Test code correctness (always check)
 

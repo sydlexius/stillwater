@@ -95,13 +95,17 @@ Wait for the user's answer before continuing.
 ## Step 5 -- Generated file check
 
 ```bash
-# Check for stale templ generated files
-git diff main --name-only | grep '\.templ$'
-git diff main --name-only | grep '_templ\.go$'
+templ_changed=$(git diff --name-only main -- '*.templ')
+generated_changed=$(git diff --name-only main -- '*_templ.go')
+
+if [ -n "$templ_changed" ] && [ -z "$generated_changed" ]; then
+  echo "ERROR: .templ files changed but *_templ.go files did not."
+  echo "Run 'templ generate' and stage the generated files before pushing."
+  exit 1
+fi
 ```
 
-If `.templ` files changed but `*_templ.go` files did not: stop.
-"Run `templ generate` and stage the generated files before pushing."
+If the check exits with an error, stop and show the message.
 
 ---
 
