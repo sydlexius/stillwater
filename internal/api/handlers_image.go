@@ -1078,12 +1078,11 @@ const (
 
 // setSyncWarningTrigger encodes sync warnings as an HX-Trigger header so the
 // HTMX frontend can display them as non-blocking toast notifications.
-// Truncation is applied in two stages: each warning is already capped at
-// maxWarningRunes runes by truncateWarning before reaching this function. As
-// a second stage, if the full JSON payload still exceeds maxHeaderBytes, all
-// individual messages are replaced with a single summary count string. Both
-// limits prevent HTTP 431 (Request Header Fields Too Large) errors from
-// intermediary proxies.
+// Truncation is applied in two stages: first, this function caps each warning
+// at maxWarningRunes runes. Second, if the full JSON payload still exceeds
+// maxHeaderBytes, all individual messages are replaced with a single summary
+// count string. Both limits prevent HTTP 431 (Request Header Fields Too Large)
+// errors from intermediary proxies.
 func setSyncWarningTrigger(w http.ResponseWriter, warnings []string) {
 	if len(warnings) == 0 {
 		return
