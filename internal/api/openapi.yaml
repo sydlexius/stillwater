@@ -761,6 +761,11 @@ paths:
                       type: string
                   type:
                     type: string
+                  sync_warnings:
+                    type: array
+                    items:
+                      type: string
+                    description: Platform sync warnings. Empty if no platforms are connected or all syncs succeeded.
         "413":
           description: File exceeds 25MB limit
           content:
@@ -819,6 +824,11 @@ paths:
                       type: string
                   type:
                     type: string
+                  sync_warnings:
+                    type: array
+                    items:
+                      type: string
+                    description: Platform sync warnings. Empty if no platforms are connected or all syncs succeeded.
 
   /artists/{id}/images/search:
     get:
@@ -905,6 +915,11 @@ paths:
                       type: string
                   type:
                     type: string
+                  sync_warnings:
+                    type: array
+                    items:
+                      type: string
+                    description: Platform sync warnings. Empty if no platforms are connected or all syncs succeeded.
 
   /artists/{id}/nfo/diff:
     get:
@@ -4318,6 +4333,11 @@ paths:
                       type: string
                   count:
                     type: integer
+                  sync_warnings:
+                    type: array
+                    items:
+                      type: string
+                    description: Platform sync warnings. Empty if no platforms are connected or all syncs succeeded.
         "409":
           description: No filesystem path
           content:
@@ -4489,6 +4509,11 @@ paths:
                     type: array
                     items:
                       type: string
+                  sync_warnings:
+                    type: array
+                    items:
+                      type: string
+                    description: Platform sync warnings. Empty if no platforms are connected or all syncs succeeded.
             text/html:
               schema:
                 type: string

@@ -717,6 +717,94 @@ func TestHandleImageUpload_SyncWarnings_UnsupportedConnType(t *testing.T) {
 	}
 }
 
+func TestDeleteImageFromPlatforms_GetByIDError(t *testing.T) {
+	r, artistSvc := testRouterWithPlatform(t)
+	dir := t.TempDir()
+	a := &artist.Artist{Name: "Test Artist", SortName: "Test Artist", Path: dir}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	addTestConnection(t, r, "conn-orphan", "Orphaned Server", "emby")
+	if err := artistSvc.SetPlatformID(context.Background(), a.ID, "conn-orphan", "emby-artist-1"); err != nil {
+		t.Fatalf("SetPlatformID: %v", err)
+	}
+
+	// Delete the connection with FK enforcement off so the platform ID row
+	// remains, simulating an orphaned mapping after a connection is removed.
+	if _, err := r.db.ExecContext(context.Background(), "PRAGMA foreign_keys = OFF"); err != nil {
+		t.Fatalf("disabling FK: %v", err)
+	}
+	if _, err := r.db.ExecContext(context.Background(), "DELETE FROM connections WHERE id = 'conn-orphan'"); err != nil {
+		t.Fatalf("deleting orphaned connection: %v", err)
+	}
+	if _, err := r.db.ExecContext(context.Background(), "PRAGMA foreign_keys = ON"); err != nil {
+		t.Fatalf("re-enabling FK: %v", err)
+	}
+
+	warnings := r.deleteImageFromPlatforms(context.Background(), a, "thumb")
+
+	if len(warnings) == 0 {
+		t.Fatal("expected warning for orphaned connection, got none")
+	}
+	if !strings.Contains(warnings[0], "failed to load") {
+		t.Errorf("warning should mention load failure, got %q", warnings[0])
+	}
+}
+
+func TestHandleDeleteImage_SyncWarnings_UnsupportedConnType(t *testing.T) {
+	r, artistSvc := testRouterWithPlatform(t)
+	cacheDir := t.TempDir()
+	r.imageCacheDir = cacheDir
+
+	addTestConnection(t, r, "conn-lidarr", "Lidarr", "lidarr")
+
+	a := &artist.Artist{Name: "Platform Artist", SortName: "Platform Artist", Path: "", ThumbExists: true}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+	if err := artistSvc.SetPlatformID(context.Background(), a.ID, "conn-lidarr", "lidarr-artist-1"); err != nil {
+		t.Fatalf("SetPlatformID: %v", err)
+	}
+
+	// Create a thumb file so deleteImageFiles finds something to delete,
+	// which triggers the platform sync (and its warning).
+	artistCacheDir := filepath.Join(cacheDir, a.ID)
+	if err := os.MkdirAll(artistCacheDir, 0o755); err != nil {
+		t.Fatalf("creating cache dir: %v", err)
+	}
+	writeJPEG(t, filepath.Join(artistCacheDir, "folder.jpg"), 100, 100)
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/artists/"+a.ID+"/images/thumb", nil)
+	req.SetPathValue("id", a.ID)
+	req.SetPathValue("type", "thumb")
+	w := httptest.NewRecorder()
+	r.handleDeleteImage(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp map[string]json.RawMessage
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	raw, ok := resp["sync_warnings"]
+	if !ok {
+		t.Fatal("response missing sync_warnings field")
+	}
+	var warnings []string
+	if err := json.Unmarshal(raw, &warnings); err != nil {
+		t.Fatalf("decoding sync_warnings: %v", err)
+	}
+	if len(warnings) == 0 {
+		t.Fatal("expected warning for unsupported connection type, got none")
+	}
+	if !strings.Contains(warnings[0], "unsupported connection type") {
+		t.Errorf("warning should mention unsupported type, got %q", warnings[0])
+	}
+}
+
 func TestSetSyncWarningTrigger_Truncation(t *testing.T) {
 	// assertTruncated decodes the HX-Trigger header, verifies the first warning
 	// was cut to exactly maxWarningRunes runes with the "(truncated)" suffix, and
