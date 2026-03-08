@@ -15,9 +15,10 @@ Run every pre-push check in order. Gate on failures. Squash and push only when c
 ## Step 1 -- Orient
 
 ```bash
+base=$(git merge-base main HEAD)
 git branch --show-current
 git log main..HEAD --oneline
-git diff main --stat
+git diff "$base"..HEAD --stat
 ```
 
 Report:
@@ -62,7 +63,7 @@ If any CRITICAL finding: stop. List what must be fixed.
 
 ## Step 4 -- Local code review
 
-Launch the following agents against the current diff (`git diff main`), in parallel if
+Launch the following agents against the PR-wide diff (`git diff "$(git merge-base main HEAD)"..HEAD`), in parallel if
 possible:
 
 - `pr-review-toolkit:code-reviewer` -- general quality and CLAUDE.md compliance
@@ -101,8 +102,9 @@ Wait for the user's answer before continuing.
 ## Step 5 -- Generated file check
 
 ```bash
-templ_changed=$(git diff --name-only main -- '*.templ')
-generated_changed=$(git diff --name-only main -- '*_templ.go')
+base=$(git merge-base main HEAD)
+templ_changed=$(git diff --name-only "$base"..HEAD -- '*.templ')
+generated_changed=$(git diff --name-only "$base"..HEAD -- '*_templ.go')
 
 if [ -n "$templ_changed" ] && [ -z "$generated_changed" ]; then
   echo "ERROR: .templ files changed but *_templ.go files did not."

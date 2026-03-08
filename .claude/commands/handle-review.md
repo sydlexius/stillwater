@@ -15,30 +15,40 @@ fixes are complete**. Never push per-comment.
 
 ## Step 1 -- Identify the PR
 
-If `$ARGUMENTS` is provided, use it as the PR number. Otherwise detect from the current
-branch:
-
-```bash
-gh pr view --json number,url,headRefName,baseRefName
-```
-
-Store the PR number. If no PR found, stop: "No open PR found for this branch."
-
----
-
-## Step 2 -- Fetch all review comments
-
-First, resolve the repo and current user dynamically so nothing is hardcoded:
+Resolve `pr_number` and `repo`:
 
 ```bash
 repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
 me=$(gh api user --jq .login)
 ```
 
-Then fetch comments using the resolved repo:
+If `$ARGUMENTS` is a number, use it directly:
+
+```bash
+pr_number="$ARGUMENTS"
+```
+
+Otherwise detect from the current branch:
 
 ```bash
 pr_number=$(gh pr view --json number --jq .number)
+```
+
+Print the PR URL for confirmation:
+
+```bash
+gh pr view "$pr_number" --json url --jq .url
+```
+
+If no PR found, stop: "No open PR found for this branch."
+
+---
+
+## Step 2 -- Fetch all review comments
+
+(`repo`, `me`, and `pr_number` were resolved in Step 1.)
+
+```bash
 gh api "repos/$repo/pulls/$pr_number/comments" \
   --paginate \
   --jq '.[] | {id, user: .user.login, body, path, line: .original_line, reply_to: .in_reply_to_id}'
