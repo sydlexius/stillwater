@@ -28,8 +28,17 @@ Store the PR number. If no PR found, stop: "No open PR found for this branch."
 
 ## Step 2 -- Fetch all review comments
 
+First, resolve the repo and current user dynamically so nothing is hardcoded:
+
 ```bash
-gh api repos/sydlexius/stillwater/pulls/{PR}/comments \
+repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
+me=$(gh api user --jq .login)
+```
+
+Then fetch comments using the resolved repo:
+
+```bash
+gh api "repos/$repo/pulls/{PR}/comments" \
   --paginate \
   --jq '.[] | {id, user: .user.login, body, path, line: .original_line, reply_to: .in_reply_to_id}'
 ```
@@ -38,7 +47,7 @@ Also fetch review-level (non-inline) comments from review bodies if any reviewer
 them as part of a review submission:
 
 ```bash
-gh api repos/sydlexius/stillwater/pulls/{PR}/reviews \
+gh api "repos/$repo/pulls/{PR}/reviews" \
   --jq '.[] | select(.body != "") | {id, user: .user.login, body: .body, type: "review-body"}'
 ```
 
@@ -47,13 +56,14 @@ gh api repos/sydlexius/stillwater/pulls/{PR}/reviews \
 ## Step 3 -- Identify open (unreplied) comments
 
 A comment is **open** if:
-1. It is a top-level comment (`reply_to` is null) from `Copilot`
-2. AND there is no subsequent comment in the same thread from `sydlexius`
+1. It is a top-level comment (`reply_to` is null) from a reviewer bot (login contains
+   `copilot` or ends with `[bot]`, case-insensitive)
+2. AND there is no subsequent comment in the same thread from `$me` (the current user)
 
 Build the open list:
-- Collect all comment IDs that have a reply from `sydlexius` (where `reply_to` matches
-  the Copilot comment's `id`)
-- Subtract from the full list of top-level Copilot comments
+- Collect all comment IDs that have a reply from `$me` (where `reply_to` matches
+  the reviewer comment's `id`)
+- Subtract from the full list of top-level bot/reviewer comments
 
 Print a numbered list of open comments:
 ```
@@ -179,9 +189,11 @@ Now substitute the real SHA into all "Fixed in <sha>" reply drafts from step 6.
 Post all replies in one batch (do not wait between them):
 
 ```bash
-gh api repos/sydlexius/stillwater/pulls/{PR}/comments/{COMMENT_ID}/replies \
+gh api "repos/$repo/pulls/{PR}/comments/{COMMENT_ID}/replies" \
   -f body='<reply text>'
 ```
+
+(`$repo` was resolved in step 2.)
 
 Run one `gh api` call per open comment. Log each one as it completes.
 

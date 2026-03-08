@@ -14,8 +14,11 @@ no longer match what the code actually does.
 
 ### 1. Determine scope
 
+Compute the PR-wide diff base so all commits on the branch are included:
+
 ```bash
-git diff --name-only HEAD~1..HEAD 2>/dev/null || git diff --name-only
+base=$(git merge-base main HEAD)
+git diff --name-only "$base"..HEAD
 ```
 
 If the diff includes `internal/api/handlers_*.go` or `internal/api/openapi.yaml`, run
@@ -28,7 +31,8 @@ For each changed handler file, grep for fields returned in `map[string]any` or s
 literals that are marshalled as JSON responses:
 
 ```bash
-git diff HEAD~1..HEAD -- internal/api/handlers_*.go \
+base=$(git merge-base main HEAD)
+git diff "$base"..HEAD -- internal/api/handlers_*.go \
   | grep '^+' \
   | grep -E '"[a-zA-Z0-9_]+":'
 ```
@@ -83,8 +87,9 @@ warnings slice, read the full function body and verify:
 ### 7. Check generated file staleness
 
 ```bash
-templ_changed=$(git diff --name-only HEAD~1..HEAD -- '*.templ')
-generated_changed=$(git diff --name-only HEAD~1..HEAD -- '*_templ.go')
+base=$(git merge-base main HEAD)
+templ_changed=$(git diff --name-only "$base"..HEAD -- '*.templ')
+generated_changed=$(git diff --name-only "$base"..HEAD -- '*_templ.go')
 ```
 
 **Flag as CRITICAL** if `$templ_changed` is non-empty and `$generated_changed` is empty.
