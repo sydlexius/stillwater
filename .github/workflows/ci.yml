@@ -18,7 +18,7 @@ jobs:
 
       - uses: actions/setup-go@v6
         with:
-          go-version: "1.26"
+          go-version-file: go.mod
 
       - name: Install templ
         run: go install github.com/a-h/templ/cmd/templ@latest
@@ -49,7 +49,7 @@ jobs:
 
       - uses: actions/setup-go@v6
         with:
-          go-version: "1.26"
+          go-version-file: go.mod
 
       - name: Install templ
         run: go install github.com/a-h/templ/cmd/templ@latest
@@ -69,7 +69,7 @@ jobs:
 
       - uses: actions/setup-go@v6
         with:
-          go-version: "1.26"
+          go-version-file: go.mod
 
       - name: Install templ
         run: go install github.com/a-h/templ/cmd/templ@latest

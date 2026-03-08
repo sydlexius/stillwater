@@ -958,6 +958,7 @@ func (r *Router) syncImageToPlatforms(ctx context.Context, a *artist.Artist, ima
 	platformIDs, err := r.artistService.GetPlatformIDs(ctx, a.ID)
 	if err != nil {
 		r.logger.Error("getting platform IDs for image sync", "artist_id", a.ID, "type", imageType, "error", err)
+		warnings = append(warnings, "platform sync skipped: failed to load platform mappings")
 		return warnings
 	}
 	if len(platformIDs) == 0 {
@@ -967,17 +968,20 @@ func (r *Router) syncImageToPlatforms(ctx context.Context, a *artist.Artist, ima
 	dir := r.imageDir(a)
 	if dir == "" {
 		r.logger.Warn("skipping platform image sync: artist has no image directory", "artist", a.Name, "type", imageType)
+		warnings = append(warnings, "platform sync skipped: artist has no image directory configured")
 		return warnings
 	}
 	patterns := r.getActiveNamingConfig(ctx, imageType)
 	filePath, found := findExistingImage(dir, patterns)
 	if !found {
+		warnings = append(warnings, "platform sync skipped: no local image found to upload")
 		return warnings
 	}
 
 	data, err := os.ReadFile(filePath) //nolint:gosec // path from trusted naming patterns
 	if err != nil {
 		r.logger.Error("reading image for platform sync", "artist", a.Name, "type", imageType, "path", filePath, "error", err)
+		warnings = append(warnings, "platform sync skipped: failed to read image for upload")
 		return warnings
 	}
 
@@ -1028,6 +1032,7 @@ func (r *Router) deleteImageFromPlatforms(ctx context.Context, a *artist.Artist,
 	platformIDs, err := r.artistService.GetPlatformIDs(ctx, a.ID)
 	if err != nil {
 		r.logger.Error("getting platform IDs for image delete sync", "artist_id", a.ID, "type", imageType, "error", err)
+		warnings = append(warnings, "platform delete sync skipped: failed to load platform mappings")
 		return warnings
 	}
 	if len(platformIDs) == 0 {

@@ -4213,7 +4213,15 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Status"
+                type: object
+                properties:
+                  status:
+                    type: string
+                  sync_warnings:
+                    type: array
+                    items:
+                      type: string
+                    description: Platform sync warnings. Empty if no platforms are connected or all syncs succeeded.
         "404":
           description: Artist or logo not found
           content:
