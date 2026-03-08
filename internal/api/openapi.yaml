@@ -765,7 +765,7 @@ paths:
                     type: array
                     items:
                       type: string
-                    description: Platform sync warnings. Empty when no sync was attempted (no platforms connected, or sync intentionally skipped) or when all attempted syncs succeeded.
+                    description: Platform sync warnings, including failures and reasons why sync was skipped. Empty only when there are no warnings.
                   count:
                     type: integer
                     description: Total number of fanart images now on disk for this artist. Present only when type is fanart.
@@ -831,7 +831,7 @@ paths:
                     type: array
                     items:
                       type: string
-                    description: Platform sync warnings. Empty when no sync was attempted (no platforms connected, or sync intentionally skipped) or when all attempted syncs succeeded.
+                    description: Platform sync warnings, including failures and reasons why sync was skipped. Empty only when there are no warnings.
                   count:
                     type: integer
                     description: Total number of fanart images now on disk for this artist. Present only when type is fanart.
@@ -925,7 +925,7 @@ paths:
                     type: array
                     items:
                       type: string
-                    description: Platform sync warnings. Empty when no sync was attempted (no platforms connected, or sync intentionally skipped) or when all attempted syncs succeeded.
+                    description: Platform sync warnings, including failures and reasons why sync was skipped. Empty only when there are no warnings.
 
   /artists/{id}/nfo/diff:
     get:
@@ -4227,7 +4227,7 @@ paths:
                     type: array
                     items:
                       type: string
-                    description: Platform sync warnings. Empty when no sync was attempted (no platforms connected, or sync intentionally skipped) or when all attempted syncs succeeded.
+                    description: Platform sync warnings, including failures and reasons why sync was skipped. Empty only when there are no warnings.
         "404":
           description: Artist or logo not found
           content:
@@ -4351,7 +4351,7 @@ paths:
                     type: array
                     items:
                       type: string
-                    description: Platform sync warnings. Empty when no sync was attempted (no platforms connected, or sync intentionally skipped) or when all attempted syncs succeeded.
+                    description: Platform sync warnings, including failures and reasons why sync was skipped. Empty only when there are no warnings.
         "409":
           description: No filesystem path
           content:
@@ -4527,7 +4527,7 @@ paths:
                     type: array
                     items:
                       type: string
-                    description: Platform sync warnings. Empty when no sync was attempted (no platforms connected, or sync intentionally skipped) or when all attempted syncs succeeded.
+                    description: Platform sync warnings, including failures and reasons why sync was skipped. Empty only when there are no warnings.
             text/html:
               schema:
                 type: string
