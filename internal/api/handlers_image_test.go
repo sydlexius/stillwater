@@ -572,6 +572,18 @@ func TestHandleImageUpload_SyncWarnings_PlatformFailure(t *testing.T) {
 	if !strings.Contains(warnings[0], "image upload failed") {
 		t.Errorf("warning should mention upload failure, got %q", warnings[0])
 	}
+
+	hxTrigger := w.Header().Get("HX-Trigger")
+	if hxTrigger == "" {
+		t.Fatal("HX-Trigger header not set when sync warnings present")
+	}
+	var triggerPayload map[string][]string
+	if err := json.Unmarshal([]byte(hxTrigger), &triggerPayload); err != nil {
+		t.Fatalf("HX-Trigger is not valid JSON: %v -- value: %s", err, hxTrigger)
+	}
+	if len(triggerPayload["syncWarning"]) == 0 {
+		t.Error("HX-Trigger syncWarning payload is empty")
+	}
 }
 
 func TestHandleDeleteImage_SyncWarnings_PlatformFailure(t *testing.T) {
