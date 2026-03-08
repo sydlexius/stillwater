@@ -98,7 +98,7 @@ if [ -n "$STAGED_TEMPL" ]; then
     fi
 
     # Check if any _templ.go files are now dirty (unstaged changes)
-    DIRTY_TEMPL=$(git diff --name-only -- '*_templ.go' || true)
+    DIRTY_TEMPL=$(git diff --name-only | grep -E '_templ\.go$' || true)
     if [ -n "$DIRTY_TEMPL" ]; then
         echo -e "${RED}${BOLD}FAIL${RESET} templ: generated files are out of date:"
         echo "$DIRTY_TEMPL" | sed 's/^/  /'

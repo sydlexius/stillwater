@@ -26,6 +26,16 @@ jobs:
       - name: Generate templ
         run: templ generate
 
+      - name: Verify generated files are up-to-date
+        run: |
+          DIRTY=$(git diff --name-only | grep -E '_templ\.go$' || true)
+          if [ -n "$DIRTY" ]; then
+            echo "Generated templ files are out of date:"
+            echo "$DIRTY" | sed 's/^/  /'
+            echo "Run 'templ generate' locally and commit the results."
+            exit 1
+          fi
+
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
