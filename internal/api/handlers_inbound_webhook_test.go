@@ -11,7 +11,7 @@ import (
 func TestHandleEmbyWebhook_OK(t *testing.T) {
 	r, _ := testRouter(t)
 
-	body := `{"NotificationType":"test"}`
+	body := `{"Event":"system.notificationtest"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/inbound/emby",
 		strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -40,8 +40,8 @@ func TestHandleEmbyWebhook_InvalidJSON(t *testing.T) {
 	}
 }
 
-// TestHandleEmbyWebhook_MissingNotificationType verifies 400 when field is absent.
-func TestHandleEmbyWebhook_MissingNotificationType(t *testing.T) {
+// TestHandleEmbyWebhook_MissingEvent verifies 400 when Event field is absent.
+func TestHandleEmbyWebhook_MissingEvent(t *testing.T) {
 	r, _ := testRouter(t)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/inbound/emby",
@@ -60,7 +60,7 @@ func TestHandleEmbyWebhook_MissingNotificationType(t *testing.T) {
 func TestHandleEmbyWebhook_UnknownEventType(t *testing.T) {
 	r, _ := testRouter(t)
 
-	body := `{"NotificationType":"SomeUnknownEvent"}`
+	body := `{"Event":"some.unknown.event"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/inbound/emby",
 		strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")

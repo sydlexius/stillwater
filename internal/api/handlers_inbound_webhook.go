@@ -183,16 +183,18 @@ func (r *Router) handleEmbyWebhook(w http.ResponseWriter, req *http.Request) {
 
 	var payload webhook.EmbyPayload
 	if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
+		r.logger.Warn("emby webhook: failed to decode payload", "error", err)
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON payload"})
 		return
 	}
 
-	if payload.NotificationType == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "NotificationType is required"})
+	if payload.Event == "" {
+		r.logger.Warn("emby webhook: missing Event field")
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Event is required"})
 		return
 	}
 
-	r.logger.Info("received emby webhook", "notification_type", payload.NotificationType)
+	r.logger.Info("received emby webhook", "event", payload.Event)
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "accepted"})
 
@@ -202,7 +204,7 @@ func (r *Router) handleEmbyWebhook(w http.ResponseWriter, req *http.Request) {
 		defer func() {
 			if v := recover(); v != nil {
 				r.logger.Error("panic in emby webhook handler",
-					"notification_type", payload.NotificationType,
+					"notification_type", payload.Event,
 					"panic", v,
 					"stack", string(debug.Stack()),
 				)
@@ -213,19 +215,19 @@ func (r *Router) handleEmbyWebhook(w http.ResponseWriter, req *http.Request) {
 }
 
 func (r *Router) processEmbyEvent(ctx context.Context, payload webhook.EmbyPayload) {
-	switch payload.NotificationType {
+	switch payload.Event {
 	case webhook.EmbyEventTest:
 		r.logger.Info("emby test event received")
 		return
 
 	case webhook.EmbyEventItemAdded, webhook.EmbyEventItemUpdated:
-		r.handleEmbyArtistUpdate(ctx, payload, payload.NotificationType)
+		r.handleEmbyArtistUpdate(ctx, payload, payload.Event)
 
 	case webhook.EmbyEventLibraryChanged:
 		r.handleEmbyLibraryScan(ctx)
 
 	default:
-		r.logger.Debug("unhandled emby event type", "notification_type", payload.NotificationType)
+		r.logger.Debug("unhandled emby event type", "notification_type", payload.Event)
 	}
 }
 
@@ -234,16 +236,17 @@ func (r *Router) handleEmbyArtistUpdate(ctx context.Context, payload webhook.Emb
 		r.logger.Warn("emby artist update: payload has no item data, skipping")
 		return
 	}
-	if payload.Item.Type != "MusicArtist" {
-		r.logger.Debug("emby item update: skipping non-artist item",
+	// Emby 4.9 sends MusicAlbum items (not MusicArtist); artist info is in ArtistItems.
+	if payload.Item.Type != "MusicAlbum" {
+		r.logger.Debug("emby item update: skipping non-album item",
 			"item_type", payload.Item.Type,
 			"item_name", payload.Item.Name)
 		return
 	}
 
-	mbid := payload.Item.MBID()
-	if mbid == "" {
-		r.logger.Warn("emby artist update: no MBID in payload, skipping",
+	mbids := payload.Item.ArtistMBIDs()
+	if len(mbids) == 0 {
+		r.logger.Warn("emby artist update: no artist MBIDs in payload, skipping",
 			"item_name", payload.Item.Name)
 		return
 	}
@@ -252,37 +255,33 @@ func (r *Router) handleEmbyArtistUpdate(ctx context.Context, payload webhook.Emb
 		r.eventBus.Publish(event.Event{
 			Type:      event.EmbyArtistUpdate,
 			Timestamp: time.Now().UTC(),
-			Data: map[string]any{
-				"artist_name": payload.Item.Name,
-				"mbid":        mbid,
-			},
+			Data:      map[string]any{"album_name": payload.Item.Name},
 		})
 	}
 
-	existing, err := r.artistService.GetByMBID(ctx, mbid)
-	if err != nil {
-		r.logger.Error("looking up artist by MBID for emby webhook", "mbid", mbid, "error", err)
-		return
-	}
-
-	if existing == nil {
-		// Emby item events do not imply a new directory was created, so we do not
-		// trigger a scan here. Unknown artists will be picked up on the next scan.
-		r.logger.Info("emby artist update: artist not tracked, skipping",
-			"notification_type", notificationType, "artist", payload.Item.Name, "mbid", mbid)
-		return
-	}
-
-	if r.pipeline == nil {
-		r.logger.Warn("emby artist update: rule pipeline not configured, skipping evaluation",
-			"artist", existing.Name)
-		return
-	}
-
-	r.logger.Info("emby artist update: artist tracked, evaluating rules",
-		"notification_type", notificationType, "artist", existing.Name, "mbid", mbid)
-	if _, err := r.pipeline.RunForArtist(ctx, existing); err != nil {
-		r.logger.Error("rule evaluation after emby artist update failed", "artist", existing.Name, "error", err)
+	for _, mbid := range mbids {
+		existing, err := r.artistService.GetByMBID(ctx, mbid)
+		if err != nil {
+			r.logger.Error("looking up artist by MBID for emby webhook", "mbid", mbid, "error", err)
+			continue
+		}
+		if existing == nil {
+			// Emby item events do not imply a new directory was created, so we do not
+			// trigger a scan here. Unknown artists will be picked up on the next scan.
+			r.logger.Info("emby artist update: artist not tracked, skipping",
+				"notification_type", notificationType, "mbid", mbid)
+			continue
+		}
+		if r.pipeline == nil {
+			r.logger.Warn("emby artist update: rule pipeline not configured, skipping evaluation",
+				"artist", existing.Name)
+			continue
+		}
+		r.logger.Info("emby artist update: artist tracked, evaluating rules",
+			"notification_type", notificationType, "artist", existing.Name, "mbid", mbid)
+		if _, err := r.pipeline.RunForArtist(ctx, existing); err != nil {
+			r.logger.Error("rule evaluation after emby artist update failed", "artist", existing.Name, "error", err)
+		}
 	}
 }
 
@@ -315,11 +314,13 @@ func (r *Router) handleJellyfinWebhook(w http.ResponseWriter, req *http.Request)
 
 	var payload webhook.JellyfinPayload
 	if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
+		r.logger.Warn("jellyfin webhook: failed to decode payload", "error", err)
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON payload"})
 		return
 	}
 
 	if payload.NotificationType == "" {
+		r.logger.Warn("jellyfin webhook: missing NotificationType")
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "NotificationType is required"})
 		return
 	}
@@ -362,8 +363,9 @@ func (r *Router) processJellyfinEvent(ctx context.Context, payload webhook.Jelly
 }
 
 func (r *Router) handleJellyfinArtistUpdate(ctx context.Context, payload webhook.JellyfinPayload, notificationType string) {
-	if payload.ItemType != "MusicArtist" {
-		r.logger.Debug("jellyfin item update: skipping non-artist item",
+	// Jellyfin sends MusicAlbum items (not MusicArtist); artist MBID is in ProviderMusicBrainzAlbumArtist.
+	if payload.ItemType != "MusicAlbum" {
+		r.logger.Debug("jellyfin item update: skipping non-album item",
 			"item_type", payload.ItemType,
 			"item_name", payload.Name)
 		return

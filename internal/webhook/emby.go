@@ -1,39 +1,55 @@
 package webhook
 
-// Emby webhook event types (NotificationType values).
-// Note: EmbyEventTest uses lowercase per Emby's notification type naming convention,
-// unlike Jellyfin which uses title case for its Test event.
+import "strings"
+
+// Emby webhook event types (Event field values confirmed via UAT against Emby 4.9).
+// Emby uses dot-separated lowercase event names.
+// TODO(UAT): confirm ItemUpdated and LibraryChanged event names from real events.
 const (
-	EmbyEventTest           = "test"
-	EmbyEventLibraryChanged = "LibraryChanged"
-	EmbyEventItemAdded      = "ItemAdded"
-	EmbyEventItemUpdated    = "ItemUpdated"
+	EmbyEventTest           = "system.notificationtest"
+	EmbyEventLibraryChanged = "library.changed"
+	EmbyEventItemAdded      = "library.new"
+	EmbyEventItemUpdated    = "item.updated"
 )
 
-// embyMBIDArtistKey is the ProviderIds key for the MusicBrainz artist ID in Emby payloads.
-// Emby has historically used both "MusicBrainzArtist" and "MusicBrainzArtistId"; the
-// current Emby API uses "MusicBrainzArtist". Confirm against your Emby version during UAT.
-const embyMBIDArtistKey = "MusicBrainzArtist"
+// embyMBIDAlbumArtistKey is the ProviderIds key for the MusicBrainz album artist ID.
+// For multi-artist albums, multiple MBIDs are slash-separated.
+// Confirmed via UAT against Emby 4.9.
+const embyMBIDAlbumArtistKey = "MusicBrainzAlbumArtist"
+
+// EmbyArtistItem is an artist reference within an Emby item payload.
+type EmbyArtistItem struct {
+	ID   string `json:"Id"`
+	Name string `json:"Name"`
+}
 
 // EmbyItem is the item payload within an Emby webhook notification.
+// Emby 4.9 sends MusicAlbum items (not MusicArtist) with artist info embedded.
 type EmbyItem struct {
 	ID          string            `json:"Id"`
 	Name        string            `json:"Name"`
-	Type        string            `json:"Type"`        // "MusicArtist"
+	Type        string            `json:"Type"` // "MusicAlbum"
 	ProviderIds map[string]string `json:"ProviderIds"`
 	Path        string            `json:"Path"`
+	ArtistItems []EmbyArtistItem  `json:"ArtistItems"`
 }
 
-// MBID returns the MusicBrainz artist ID from ProviderIds.
-func (i EmbyItem) MBID() string {
+// ArtistMBIDs returns the MusicBrainz artist IDs from ProviderIds.
+// Emby encodes multiple artists as slash-separated values.
+func (i EmbyItem) ArtistMBIDs() []string {
 	if i.ProviderIds == nil {
-		return ""
+		return nil
 	}
-	return i.ProviderIds[embyMBIDArtistKey]
+	raw := i.ProviderIds[embyMBIDAlbumArtistKey]
+	if raw == "" {
+		return nil
+	}
+	return strings.Split(raw, "/")
 }
 
-// EmbyPayload is the inbound webhook payload from Emby.
+// EmbyPayload is the inbound webhook payload from Emby 4.9.
+// The event type is carried in the Event field (not NotificationType as in older docs).
 type EmbyPayload struct {
-	NotificationType string    `json:"NotificationType"`
-	Item             *EmbyItem `json:"Item,omitempty"`
+	Event string    `json:"Event"`
+	Item  *EmbyItem `json:"Item,omitempty"`
 }

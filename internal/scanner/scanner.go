@@ -25,10 +25,10 @@ type LibraryLister interface {
 	List(ctx context.Context) ([]library.Library, error)
 }
 
-// Image filename patterns to detect for each type.
 // ErrScanInProgress is returned by Run when a scan is already running.
 var ErrScanInProgress = fmt.Errorf("scan already in progress")
 
+// Image filename patterns to detect for each type.
 var (
 	thumbPatterns  = []string{"folder.jpg", "folder.png", "artist.jpg", "artist.png", "poster.jpg", "poster.png"}
 	fanartPatterns = []string{"fanart.jpg", "fanart.png", "backdrop.jpg", "backdrop.png"}
