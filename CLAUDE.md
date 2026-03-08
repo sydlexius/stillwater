@@ -242,6 +242,25 @@ A local helper script `setupdocker.ps1` automates the full stop/build/start cycl
 
 Run from PowerShell, not Git Bash -- MSYS2 path conversion in Git Bash breaks Docker volume mounts on Windows. The script stops and removes any running `stillwater*` containers, rebuilds the image, runs `docker compose -f docker-compose.local.yml up -d`, and tails the startup logs.
 
+## PR Workflow
+
+**Run `/pr-review-toolkit:review-pr` locally BEFORE pushing and opening the PR -- never after.**
+
+Copilot reviews only the diff on each push, not the whole file. Opening the PR fires Copilot
+immediately; each fixup commit then exposes the next layer of issues it did not see before.
+Running the local review toolkit first surfaces everything in one pass and eliminates the
+whack-a-mole cycle of one-complaint-per-push.
+
+Correct order:
+1. Write code and tests
+2. `go test ./...` -- all tests pass
+3. `/pr-review-toolkit:review-pr` -- fix any critical or important findings
+4. Commit all fixes
+5. Push and open the PR
+
+Do not open the PR until step 3-4 are complete. A PR opened with unfixed review findings will
+produce exactly as many Copilot review rounds as there are findings.
+
 ## Parallel Work (Worktrees)
 
 When multiple issues or agents need to work concurrently, use git worktrees to isolate
