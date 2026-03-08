@@ -220,11 +220,12 @@ CONN_LIDARR=$(echo "$conns_resp" | jq -r '.[] | select(.type=="lidarr") | .id' 2
 LIBRARY_ID=""
 libs_resp=$(curl -s "${AUTH[@]}" "$SW_BASE/api/v1/libraries")
 if [[ -n "$CONN_EMBY" ]]; then
-  LIBRARY_ID=$(echo "$libs_resp" | jq -r ".libraries[] | select(.source==\"emby\") | .id" 2>/dev/null | head -1 || true)
+  LIBRARY_ID=$(echo "$libs_resp" | jq -r '.[] | select(.source=="emby") | .id' 2>/dev/null | head -1 || true)
 fi
 if [[ -z "$LIBRARY_ID" && -n "$CONN_JELLYFIN" ]]; then
-  LIBRARY_ID=$(echo "$libs_resp" | jq -r ".libraries[] | select(.source==\"jellyfin\") | .id" 2>/dev/null | head -1 || true)
+  LIBRARY_ID=$(echo "$libs_resp" | jq -r '.[] | select(.source=="jellyfin") | .id' 2>/dev/null | head -1 || true)
 fi
+LIB_CONN_ID=$(echo "$libs_resp" | jq -r --arg id "$LIBRARY_ID" '.[] | select(.id==$id) | .connection_id' 2>/dev/null || true)
 [[ -n "$LIBRARY_ID" ]] && echo "  Platform library: $LIBRARY_ID"
 [[ -n "$CONN_EMBY" ]] && echo "  Emby connection: $CONN_EMBY"
 [[ -n "$CONN_JELLYFIN" ]] && echo "  Jellyfin connection: $CONN_JELLYFIN"
@@ -571,19 +572,19 @@ if [[ "$FULL" -eq 1 ]]; then
 
   # Populate from Emby or Jellyfin and verify the response includes backdrop image counts.
   # This exercises the multi-backdrop download path added in #357.
-  if [[ -n "$LIBRARY_ID" ]]; then
+  if [[ -n "$LIBRARY_ID" && -n "$LIB_CONN_ID" && "$LIB_CONN_ID" != "null" ]]; then
     pop_resp=$(curl -s -w "\n%{http_code}" "${AUTH[@]}" \
-      -X POST "$SW_BASE/api/v1/libraries/$LIBRARY_ID/populate")
+      -X POST "$SW_BASE/api/v1/connections/$LIB_CONN_ID/libraries/$LIBRARY_ID/populate")
     pop_body=$(echo "$pop_resp" | sed '$d')
     pop_code=$(echo "$pop_resp" | tail -n 1)
-    assert_status_in "POST /api/v1/libraries/$LIBRARY_ID/populate (--full)" "$pop_code" 200 202
+    assert_status_in "POST /api/v1/connections/$LIB_CONN_ID/libraries/$LIBRARY_ID/populate (--full)" "$pop_code" 200 202
     if [[ "$pop_code" == "200" || "$pop_code" == "202" ]]; then
       assert_json_exists "  populate response has artists field" ".artists" "$pop_body"
       assert_json_exists "  populate response has images field" ".images" "$pop_body"
       assert_json_exists "  populate response has skipped field" ".skipped" "$pop_body"
     fi
   else
-    echo "[SKIP] POST populate (--full) -- no Emby/Jellyfin library found"
+    echo "[SKIP] POST populate (--full) -- no Emby/Jellyfin library or connection found"
   fi
 
   backup_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \

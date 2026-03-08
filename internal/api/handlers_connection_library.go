@@ -882,14 +882,32 @@ func (r *Router) downloadPlatformImages(ctx context.Context, dl imageDownloader,
 				continue
 			}
 			filename := img.FanartFilename(primary, i, kodi)
-			fullPath := filepath.Join(dir, filename)
-			_, statErr := os.Stat(fullPath) //nolint:gosec // path built from validated dir + platform-naming function
-			if statErr == nil {
+			// Check all common image extensions for this slot. img.Resize converts WebP
+			// to PNG, so a previously-saved file may have a different extension than the
+			// one produced by the naming function (which always uses .jpg).
+			// base is safe to reuse: ValidateImageNaming enforces .jpg/.jpeg/.png on save.
+			base := strings.TrimSuffix(filename, filepath.Ext(filename))
+			slotExists := false
+			skipDownload := false
+			for _, ext := range []string{".jpg", ".jpeg", ".png"} {
+				candidate := filepath.Join(dir, base+ext)
+				_, statErr := os.Stat(candidate) //nolint:gosec // path from validated dir + naming fn
+				if statErr == nil {
+					slotExists = true
+					break
+				}
+				if !errors.Is(statErr, fs.ErrNotExist) {
+					r.logger.Warn("checking backdrop existence", "artist", a.Name, "index", i, "file", base+ext, "error", statErr)
+					skipDownload = true
+					// Continue checking remaining extensions -- this candidate may be temporarily inaccessible.
+				}
+			}
+			if slotExists {
 				r.logger.Debug("skipping existing backdrop", "artist", a.Name, "index", i)
 				continue
 			}
-			if !errors.Is(statErr, fs.ErrNotExist) {
-				r.logger.Warn("checking backdrop existence", "artist", a.Name, "index", i, "file", filename, "error", statErr)
+			if skipDownload {
+				r.logger.Warn("skipping backdrop download due to filesystem error", "artist", a.Name, "index", i)
 				continue
 			}
 			data, _, dlErr := dl.GetArtistBackdrop(ctx, platformArtistID, i)
