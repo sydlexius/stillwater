@@ -231,7 +231,7 @@ func (r *Router) processEmbyEvent(ctx context.Context, payload webhook.EmbyPaylo
 	}
 }
 
-func (r *Router) handleEmbyArtistUpdate(ctx context.Context, payload webhook.EmbyPayload, notificationType string) {
+func (r *Router) handleEmbyArtistUpdate(ctx context.Context, payload webhook.EmbyPayload, eventType string) {
 	if payload.Item == nil {
 		r.logger.Warn("emby artist update: payload has no item data, skipping")
 		return
@@ -269,7 +269,7 @@ func (r *Router) handleEmbyArtistUpdate(ctx context.Context, payload webhook.Emb
 			// Emby item events do not imply a new directory was created, so we do not
 			// trigger a scan here. Unknown artists will be picked up on the next scan.
 			r.logger.Info("emby artist update: artist not tracked, skipping",
-				"notification_type", notificationType, "mbid", mbid)
+				"event", eventType, "mbid", mbid)
 			continue
 		}
 		if r.pipeline == nil {
@@ -278,7 +278,7 @@ func (r *Router) handleEmbyArtistUpdate(ctx context.Context, payload webhook.Emb
 			continue
 		}
 		r.logger.Info("emby artist update: artist tracked, evaluating rules",
-			"notification_type", notificationType, "artist", existing.Name, "mbid", mbid)
+			"event", eventType, "artist", existing.Name, "mbid", mbid)
 		if _, err := r.pipeline.RunForArtist(ctx, existing); err != nil {
 			r.logger.Error("rule evaluation after emby artist update failed", "artist", existing.Name, "error", err)
 		}
@@ -400,7 +400,7 @@ func (r *Router) handleJellyfinArtistUpdate(ctx context.Context, payload webhook
 		// Jellyfin item events do not imply a new directory was created, so we do not
 		// trigger a scan here. Unknown artists will be picked up on the next scan.
 		r.logger.Info("jellyfin artist update: artist not tracked, skipping",
-			"notification_type", notificationType, "artist", payload.Name, "mbid", mbid)
+			"notification_type", notificationType, "artist", payload.Artist, "mbid", mbid)
 		return
 	}
 
@@ -411,7 +411,7 @@ func (r *Router) handleJellyfinArtistUpdate(ctx context.Context, payload webhook
 	}
 
 	r.logger.Info("jellyfin artist update: artist tracked, evaluating rules",
-		"notification_type", notificationType, "artist", existing.Name, "mbid", mbid)
+		"notification_type", notificationType, "artist", payload.Artist, "mbid", mbid)
 	if _, err := r.pipeline.RunForArtist(ctx, existing); err != nil {
 		r.logger.Error("rule evaluation after jellyfin artist update failed", "artist", existing.Name, "error", err)
 	}
