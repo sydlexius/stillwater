@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
 	"image"
 	"image/color"
 	"image/jpeg"
@@ -365,14 +368,23 @@ func TestHandleImageUpload_SyncsToPlatform(t *testing.T) {
 	// because CreateFormFile defaults to application/octet-stream.
 	var body bytes.Buffer
 	mw := multipart.NewWriter(&body)
-	_ = mw.WriteField("type", "thumb")
+	if err := mw.WriteField("type", "thumb"); err != nil {
+		t.Fatalf("writing multipart field: %v", err)
+	}
 	partHeader := make(map[string][]string)
 	partHeader["Content-Disposition"] = []string{`form-data; name="file"; filename="thumb.jpg"`}
 	partHeader["Content-Type"] = []string{"image/jpeg"}
-	fw, _ := mw.CreatePart(partHeader)
+	fw, err := mw.CreatePart(partHeader)
+	if err != nil {
+		t.Fatalf("creating multipart part: %v", err)
+	}
 	testImg := image.NewRGBA(image.Rect(0, 0, 100, 100))
-	_ = jpeg.Encode(fw, testImg, nil)
-	mw.Close()
+	if err := jpeg.Encode(fw, testImg, nil); err != nil {
+		t.Fatalf("encoding JPEG: %v", err)
+	}
+	if err := mw.Close(); err != nil {
+		t.Fatalf("closing multipart writer: %v", err)
+	}
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/images/upload", &body)
 	req.Header.Set("Content-Type", mw.FormDataContentType())
@@ -448,5 +460,602 @@ func TestHandleDeleteImage_SyncsToPlatform(t *testing.T) {
 	case <-deletedCh:
 	case <-time.After(5 * time.Second):
 		t.Error("expected platform sync delete call, but mock server received none")
+	}
+}
+
+// buildThumbUploadRequest constructs a multipart POST for a small JPEG thumb upload.
+func buildThumbUploadRequest(t *testing.T, artistID string) *http.Request {
+	t.Helper()
+	var body bytes.Buffer
+	mw := multipart.NewWriter(&body)
+	if err := mw.WriteField("type", "thumb"); err != nil {
+		t.Fatalf("writing multipart field: %v", err)
+	}
+	partHeader := make(map[string][]string)
+	partHeader["Content-Disposition"] = []string{`form-data; name="file"; filename="thumb.jpg"`}
+	partHeader["Content-Type"] = []string{"image/jpeg"}
+	fw, err := mw.CreatePart(partHeader)
+	if err != nil {
+		t.Fatalf("creating multipart part: %v", err)
+	}
+	testImg := image.NewRGBA(image.Rect(0, 0, 100, 100))
+	if err := jpeg.Encode(fw, testImg, nil); err != nil {
+		t.Fatalf("encoding JPEG: %v", err)
+	}
+	if err := mw.Close(); err != nil {
+		t.Fatalf("closing multipart writer: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+artistID+"/images/upload", &body)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	req.SetPathValue("id", artistID)
+	return req
+}
+
+func TestHandleImageUpload_SyncWarnings_NoPlatforms(t *testing.T) {
+	r, artistSvc := testRouterWithPlatform(t)
+	dir := t.TempDir()
+	a := &artist.Artist{Name: "Local Artist", SortName: "Local Artist", Path: dir}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	req := buildThumbUploadRequest(t, a.ID)
+	w := httptest.NewRecorder()
+	r.handleImageUpload(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp map[string]json.RawMessage
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	raw, ok := resp["sync_warnings"]
+	if !ok {
+		t.Fatal("response missing sync_warnings field")
+	}
+	var warnings []string
+	if err := json.Unmarshal(raw, &warnings); err != nil {
+		t.Fatalf("decoding sync_warnings: %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("expected empty sync_warnings, got %v", warnings)
+	}
+}
+
+func TestHandleImageUpload_SyncWarnings_PlatformFailure(t *testing.T) {
+	// Mock server that returns 500 for every request, simulating a broken platform.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	r, artistSvc := testRouterWithPlatform(t)
+	r.imageCacheDir = t.TempDir()
+	addTestConnectionWithURL(t, r, "conn-emby", "Emby", "emby", srv.URL)
+
+	a := &artist.Artist{Name: "Platform Artist", SortName: "Platform Artist", Path: ""}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+	if err := artistSvc.SetPlatformID(context.Background(), a.ID, "conn-emby", "emby-artist-1"); err != nil {
+		t.Fatalf("SetPlatformID: %v", err)
+	}
+
+	req := buildThumbUploadRequest(t, a.ID)
+	w := httptest.NewRecorder()
+	r.handleImageUpload(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp map[string]json.RawMessage
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	raw, ok := resp["sync_warnings"]
+	if !ok {
+		t.Fatal("response missing sync_warnings field")
+	}
+	var warnings []string
+	if err := json.Unmarshal(raw, &warnings); err != nil {
+		t.Fatalf("decoding sync_warnings: %v", err)
+	}
+	if len(warnings) == 0 {
+		t.Fatal("expected non-empty sync_warnings when platform returns 500")
+	}
+	if !strings.Contains(warnings[0], "Emby") {
+		t.Errorf("warning should contain connection name, got %q", warnings[0])
+	}
+	if !strings.Contains(warnings[0], "image upload failed") {
+		t.Errorf("warning should mention upload failure, got %q", warnings[0])
+	}
+}
+
+func TestHandleDeleteImage_SyncWarnings_PlatformFailure(t *testing.T) {
+	// Mock server that returns 500 for every request, simulating a broken platform.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	r, artistSvc := testRouterWithPlatform(t)
+	cacheDir := t.TempDir()
+	r.imageCacheDir = cacheDir
+	addTestConnectionWithURL(t, r, "conn-emby", "Emby", "emby", srv.URL)
+
+	a := &artist.Artist{
+		Name: "Platform Artist", SortName: "Platform Artist", Path: "",
+		ThumbExists: true,
+	}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+	if err := artistSvc.SetPlatformID(context.Background(), a.ID, "conn-emby", "emby-artist-1"); err != nil {
+		t.Fatalf("SetPlatformID: %v", err)
+	}
+
+	artistCacheDir := filepath.Join(cacheDir, a.ID)
+	if err := os.MkdirAll(artistCacheDir, 0o755); err != nil {
+		t.Fatalf("creating cache dir: %v", err)
+	}
+	writeJPEG(t, filepath.Join(artistCacheDir, "folder.jpg"), 100, 100)
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/artists/"+a.ID+"/images/thumb", nil)
+	req.SetPathValue("id", a.ID)
+	req.SetPathValue("type", "thumb")
+	w := httptest.NewRecorder()
+	r.handleDeleteImage(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp map[string]json.RawMessage
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	raw, ok := resp["sync_warnings"]
+	if !ok {
+		t.Fatal("response missing sync_warnings field")
+	}
+	var warnings []string
+	if err := json.Unmarshal(raw, &warnings); err != nil {
+		t.Fatalf("decoding sync_warnings: %v", err)
+	}
+	if len(warnings) == 0 {
+		t.Fatal("expected non-empty sync_warnings when platform returns 500")
+	}
+	if !strings.Contains(warnings[0], "Emby") {
+		t.Errorf("warning should contain connection name, got %q", warnings[0])
+	}
+	if !strings.Contains(warnings[0], "image delete failed") {
+		t.Errorf("warning should mention delete failure, got %q", warnings[0])
+	}
+}
+
+func TestSyncImageToPlatforms_GetByIDError(t *testing.T) {
+	r, artistSvc := testRouterWithPlatform(t)
+	dir := t.TempDir()
+	a := &artist.Artist{Name: "Test Artist", SortName: "Test Artist", Path: dir}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	// Write a JPEG so syncImageToPlatforms can find and read an image to upload.
+	writeJPEG(t, filepath.Join(dir, "folder.jpg"), 100, 100)
+
+	// Create a connection and link it as a platform ID.
+	addTestConnection(t, r, "conn-orphan", "Orphaned Server", "emby")
+	if err := artistSvc.SetPlatformID(context.Background(), a.ID, "conn-orphan", "emby-artist-1"); err != nil {
+		t.Fatalf("SetPlatformID: %v", err)
+	}
+
+	// Delete the connection with FK enforcement off so the platform ID row
+	// remains, simulating an orphaned mapping after a connection is removed.
+	if _, err := r.db.ExecContext(context.Background(), "PRAGMA foreign_keys = OFF"); err != nil {
+		t.Fatalf("disabling FK: %v", err)
+	}
+	if _, err := r.db.ExecContext(context.Background(), "DELETE FROM connections WHERE id = 'conn-orphan'"); err != nil {
+		t.Fatalf("deleting orphaned connection: %v", err)
+	}
+	if _, err := r.db.ExecContext(context.Background(), "PRAGMA foreign_keys = ON"); err != nil {
+		t.Fatalf("re-enabling FK: %v", err)
+	}
+
+	warnings := r.syncImageToPlatforms(context.Background(), a, "thumb")
+
+	if len(warnings) == 0 {
+		t.Fatal("expected warning for orphaned connection, got none")
+	}
+	if !strings.Contains(warnings[0], "failed to load") {
+		t.Errorf("warning should mention load failure, got %q", warnings[0])
+	}
+}
+
+func TestHandleImageUpload_SyncWarnings_UnsupportedConnType(t *testing.T) {
+	r, artistSvc := testRouterWithPlatform(t)
+	r.imageCacheDir = t.TempDir()
+
+	// A connection whose type is not handled by the image sync switch.
+	addTestConnection(t, r, "conn-lidarr", "Lidarr", "lidarr")
+
+	a := &artist.Artist{Name: "Platform Artist", SortName: "Platform Artist", Path: ""}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+	if err := artistSvc.SetPlatformID(context.Background(), a.ID, "conn-lidarr", "lidarr-artist-1"); err != nil {
+		t.Fatalf("SetPlatformID: %v", err)
+	}
+
+	req := buildThumbUploadRequest(t, a.ID)
+	w := httptest.NewRecorder()
+	r.handleImageUpload(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp map[string]json.RawMessage
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	raw, ok := resp["sync_warnings"]
+	if !ok {
+		t.Fatal("response missing sync_warnings field")
+	}
+	var warnings []string
+	if err := json.Unmarshal(raw, &warnings); err != nil {
+		t.Fatalf("decoding sync_warnings: %v", err)
+	}
+	if len(warnings) == 0 {
+		t.Fatal("expected warning for unsupported connection type, got none")
+	}
+	if !strings.Contains(warnings[0], "unsupported connection type") {
+		t.Errorf("warning should mention unsupported type, got %q", warnings[0])
+	}
+}
+
+func TestDeleteImageFromPlatforms_GetByIDError(t *testing.T) {
+	r, artistSvc := testRouterWithPlatform(t)
+	dir := t.TempDir()
+	a := &artist.Artist{Name: "Test Artist", SortName: "Test Artist", Path: dir}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	addTestConnection(t, r, "conn-orphan", "Orphaned Server", "emby")
+	if err := artistSvc.SetPlatformID(context.Background(), a.ID, "conn-orphan", "emby-artist-1"); err != nil {
+		t.Fatalf("SetPlatformID: %v", err)
+	}
+
+	// Delete the connection with FK enforcement off so the platform ID row
+	// remains, simulating an orphaned mapping after a connection is removed.
+	if _, err := r.db.ExecContext(context.Background(), "PRAGMA foreign_keys = OFF"); err != nil {
+		t.Fatalf("disabling FK: %v", err)
+	}
+	if _, err := r.db.ExecContext(context.Background(), "DELETE FROM connections WHERE id = 'conn-orphan'"); err != nil {
+		t.Fatalf("deleting orphaned connection: %v", err)
+	}
+	if _, err := r.db.ExecContext(context.Background(), "PRAGMA foreign_keys = ON"); err != nil {
+		t.Fatalf("re-enabling FK: %v", err)
+	}
+
+	warnings := r.deleteImageFromPlatforms(context.Background(), a, "thumb")
+
+	if len(warnings) == 0 {
+		t.Fatal("expected warning for orphaned connection, got none")
+	}
+	if !strings.Contains(warnings[0], "failed to load") {
+		t.Errorf("warning should mention load failure, got %q", warnings[0])
+	}
+}
+
+func TestHandleDeleteImage_SyncWarnings_UnsupportedConnType(t *testing.T) {
+	r, artistSvc := testRouterWithPlatform(t)
+	cacheDir := t.TempDir()
+	r.imageCacheDir = cacheDir
+
+	addTestConnection(t, r, "conn-lidarr", "Lidarr", "lidarr")
+
+	a := &artist.Artist{Name: "Platform Artist", SortName: "Platform Artist", Path: "", ThumbExists: true}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+	if err := artistSvc.SetPlatformID(context.Background(), a.ID, "conn-lidarr", "lidarr-artist-1"); err != nil {
+		t.Fatalf("SetPlatformID: %v", err)
+	}
+
+	// Create a thumb file so deleteImageFiles finds something to delete,
+	// which triggers the platform sync (and its warning).
+	artistCacheDir := filepath.Join(cacheDir, a.ID)
+	if err := os.MkdirAll(artistCacheDir, 0o755); err != nil {
+		t.Fatalf("creating cache dir: %v", err)
+	}
+	writeJPEG(t, filepath.Join(artistCacheDir, "folder.jpg"), 100, 100)
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/artists/"+a.ID+"/images/thumb", nil)
+	req.SetPathValue("id", a.ID)
+	req.SetPathValue("type", "thumb")
+	w := httptest.NewRecorder()
+	r.handleDeleteImage(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp map[string]json.RawMessage
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	raw, ok := resp["sync_warnings"]
+	if !ok {
+		t.Fatal("response missing sync_warnings field")
+	}
+	var warnings []string
+	if err := json.Unmarshal(raw, &warnings); err != nil {
+		t.Fatalf("decoding sync_warnings: %v", err)
+	}
+	if len(warnings) == 0 {
+		t.Fatal("expected warning for unsupported connection type, got none")
+	}
+	if !strings.Contains(warnings[0], "unsupported connection type") {
+		t.Errorf("warning should mention unsupported type, got %q", warnings[0])
+	}
+}
+
+func TestSetSyncWarningTrigger_Truncation(t *testing.T) {
+	// assertTruncated decodes the HX-Trigger header, verifies the first warning
+	// was cut to exactly maxWarningRunes runes with the "(truncated)" suffix, and
+	// confirms the header is valid JSON.
+	assertTruncated := func(t *testing.T, hdr string) {
+		t.Helper()
+		if !strings.Contains(hdr, "(truncated)") {
+			t.Fatalf("expected truncation marker in header, got: %s", hdr)
+		}
+		var payload map[string][]string
+		if err := json.Unmarshal([]byte(hdr), &payload); err != nil {
+			t.Fatalf("HX-Trigger is not valid JSON: %v -- value: %s", err, hdr)
+		}
+		msgs := payload["syncWarning"]
+		if len(msgs) == 0 {
+			t.Fatal("syncWarning missing from header payload")
+		}
+		preserved := strings.TrimSuffix(msgs[0], " (truncated)")
+		if got := len([]rune(preserved)); got != maxWarningRunes {
+			t.Errorf("preserved rune count = %d, want %d", got, maxWarningRunes)
+		}
+	}
+
+	t.Run("per-message truncation ASCII", func(t *testing.T) {
+		// 201 ASCII chars: byte and rune counts are identical.
+		long := strings.Repeat("x", maxWarningRunes+1)
+		w := httptest.NewRecorder()
+		setSyncWarningTrigger(w, []string{long})
+
+		hdr := w.Header().Get("HX-Trigger")
+		if hdr == "" {
+			t.Fatal("HX-Trigger header not set")
+		}
+		assertTruncated(t, hdr)
+		if strings.Contains(hdr, long) {
+			t.Error("full untruncated message should not appear in header")
+		}
+	})
+
+	t.Run("per-message truncation 2-byte rune", func(t *testing.T) {
+		// 201 two-byte runes (é = U+00E9). Byte-based slicing at byte 200 would
+		// split the 200th rune; rune-based truncation must preserve exactly 200 runes.
+		long := strings.Repeat("\u00e9", maxWarningRunes+1)
+		w := httptest.NewRecorder()
+		setSyncWarningTrigger(w, []string{long})
+
+		hdr := w.Header().Get("HX-Trigger")
+		if hdr == "" {
+			t.Fatal("HX-Trigger header not set")
+		}
+		assertTruncated(t, hdr)
+	})
+
+	t.Run("per-message truncation 4-byte rune", func(t *testing.T) {
+		// 201 four-byte runes (emoji). Verifies all Unicode planes are handled,
+		// not just the basic multilingual plane.
+		long := strings.Repeat("\U0001F600", maxWarningRunes+1)
+		w := httptest.NewRecorder()
+		setSyncWarningTrigger(w, []string{long})
+
+		hdr := w.Header().Get("HX-Trigger")
+		if hdr == "" {
+			t.Fatal("HX-Trigger header not set")
+		}
+		assertTruncated(t, hdr)
+	})
+
+	t.Run("per-message truncation mixed ASCII and multibyte", func(t *testing.T) {
+		// ASCII prefix followed by multibyte runes: models real platform names like
+		// "My Emby Server" with occasional accented characters. Byte position 200
+		// falls inside a multibyte rune; must not split it.
+		long := strings.Repeat("a", maxWarningRunes-2) + strings.Repeat("\u00e9", 3)
+		w := httptest.NewRecorder()
+		setSyncWarningTrigger(w, []string{long})
+
+		hdr := w.Header().Get("HX-Trigger")
+		if hdr == "" {
+			t.Fatal("HX-Trigger header not set")
+		}
+		assertTruncated(t, hdr)
+	})
+
+	t.Run("no truncation at exact limit ASCII", func(t *testing.T) {
+		// Exactly maxWarningRunes ASCII chars: must pass through unchanged.
+		exact := strings.Repeat("y", maxWarningRunes)
+		w := httptest.NewRecorder()
+		setSyncWarningTrigger(w, []string{exact})
+
+		hdr := w.Header().Get("HX-Trigger")
+		if hdr == "" {
+			t.Fatal("HX-Trigger header not set")
+		}
+		if strings.Contains(hdr, "(truncated)") {
+			t.Errorf("message at exact ASCII limit should not be truncated, got: %s", hdr)
+		}
+	})
+
+	t.Run("no truncation at exact limit multibyte", func(t *testing.T) {
+		// Exactly maxWarningRunes two-byte runes = 400 bytes. The old byte-based
+		// check (len(msg) > 200) would incorrectly truncate this.
+		exact := strings.Repeat("\u00e9", maxWarningRunes)
+		w := httptest.NewRecorder()
+		setSyncWarningTrigger(w, []string{exact})
+
+		hdr := w.Header().Get("HX-Trigger")
+		if hdr == "" {
+			t.Fatal("HX-Trigger header not set")
+		}
+		if strings.Contains(hdr, "(truncated)") {
+			t.Errorf("200-rune multibyte message should not be truncated, got: %s", hdr)
+		}
+	})
+
+	t.Run("total payload cap fallback", func(t *testing.T) {
+		// 10 warnings of maxWarningRunes runes each: after per-rune truncation the
+		// JSON payload exceeds maxHeaderBytes, triggering the summary fallback.
+		warnings := make([]string, 10)
+		for i := range warnings {
+			warnings[i] = strings.Repeat("w", maxWarningRunes)
+		}
+		w := httptest.NewRecorder()
+		setSyncWarningTrigger(w, warnings)
+
+		hdr := w.Header().Get("HX-Trigger")
+		if hdr == "" {
+			t.Fatal("HX-Trigger header not set")
+		}
+		// Fallback replaces individual messages with a single summary count.
+		want := fmt.Sprintf("%d platform sync warnings", len(warnings))
+		if !strings.Contains(hdr, want) {
+			t.Errorf("expected %q in header, got: %s", want, hdr)
+		}
+	})
+}
+
+func TestHandleImageCrop_SyncWarnings_NoPlatforms(t *testing.T) {
+	r, artistSvc := testRouterWithPlatform(t)
+	dir := t.TempDir()
+	a := &artist.Artist{Name: "Crop Artist", SortName: "Crop Artist", Path: dir}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	// Encode a small JPEG as base64 for the crop request body.
+	testImg := image.NewRGBA(image.Rect(0, 0, 100, 100))
+	var jpegBuf bytes.Buffer
+	if err := jpeg.Encode(&jpegBuf, testImg, nil); err != nil {
+		t.Fatalf("encoding JPEG: %v", err)
+	}
+	b64Data := base64.StdEncoding.EncodeToString(jpegBuf.Bytes())
+
+	reqBody, err := json.Marshal(map[string]string{
+		"image_data": b64Data,
+		"type":       "thumb",
+	})
+	if err != nil {
+		t.Fatalf("marshaling request body: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/images/crop", bytes.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", a.ID)
+	w := httptest.NewRecorder()
+	r.handleImageCrop(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp map[string]json.RawMessage
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	raw, ok := resp["sync_warnings"]
+	if !ok {
+		t.Fatal("response missing sync_warnings field")
+	}
+	var warnings []string
+	if err := json.Unmarshal(raw, &warnings); err != nil {
+		t.Fatalf("decoding sync_warnings: %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("expected empty sync_warnings, got %v", warnings)
+	}
+}
+
+func TestHandleImageCrop_SyncWarnings_PlatformFailure(t *testing.T) {
+	// Mock server that returns 500 for every request, simulating a broken platform.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	r, artistSvc := testRouterWithPlatform(t)
+	r.imageCacheDir = t.TempDir()
+	addTestConnectionWithURL(t, r, "conn-emby", "Emby", "emby", srv.URL)
+
+	a := &artist.Artist{Name: "Platform Crop Artist", SortName: "Platform Crop Artist", Path: ""}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+	if err := artistSvc.SetPlatformID(context.Background(), a.ID, "conn-emby", "emby-artist-1"); err != nil {
+		t.Fatalf("SetPlatformID: %v", err)
+	}
+
+	// Encode a small JPEG as base64 for the crop request body.
+	testImg := image.NewRGBA(image.Rect(0, 0, 100, 100))
+	var jpegBuf bytes.Buffer
+	if err := jpeg.Encode(&jpegBuf, testImg, nil); err != nil {
+		t.Fatalf("encoding JPEG: %v", err)
+	}
+	b64Data := base64.StdEncoding.EncodeToString(jpegBuf.Bytes())
+
+	reqBody, err := json.Marshal(map[string]string{
+		"image_data": b64Data,
+		"type":       "thumb",
+	})
+	if err != nil {
+		t.Fatalf("marshaling request body: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/images/crop", bytes.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", a.ID)
+	w := httptest.NewRecorder()
+	r.handleImageCrop(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp map[string]json.RawMessage
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	raw, ok := resp["sync_warnings"]
+	if !ok {
+		t.Fatal("response missing sync_warnings field")
+	}
+	var warnings []string
+	if err := json.Unmarshal(raw, &warnings); err != nil {
+		t.Fatalf("decoding sync_warnings: %v", err)
+	}
+	if len(warnings) == 0 {
+		t.Fatal("expected non-empty sync_warnings when platform returns 500")
+	}
+	if !strings.Contains(warnings[0], "Emby") {
+		t.Errorf("warning should contain connection name, got %q", warnings[0])
+	}
+	if !strings.Contains(warnings[0], "image upload failed") {
+		t.Errorf("warning should mention upload failure, got %q", warnings[0])
 	}
 }

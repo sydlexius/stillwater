@@ -18,13 +18,23 @@ jobs:
 
       - uses: actions/setup-go@v6
         with:
-          go-version: "1.26"
+          go-version-file: go.mod
 
       - name: Install templ
         run: go install github.com/a-h/templ/cmd/templ@latest
 
       - name: Generate templ
         run: templ generate
+
+      - name: Verify generated files are up-to-date
+        run: |
+          DIRTY=$(git diff --name-only | grep -E '_templ\.go$' || true)
+          if [ -n "$DIRTY" ]; then
+            echo "Generated templ files are out of date:"
+            echo "$DIRTY" | sed 's/^/  /'
+            echo "Run 'templ generate' locally and commit the results."
+            exit 1
+          fi
 
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v9
@@ -39,7 +49,7 @@ jobs:
 
       - uses: actions/setup-go@v6
         with:
-          go-version: "1.26"
+          go-version-file: go.mod
 
       - name: Install templ
         run: go install github.com/a-h/templ/cmd/templ@latest
@@ -59,7 +69,7 @@ jobs:
 
       - uses: actions/setup-go@v6
         with:
-          go-version: "1.26"
+          go-version-file: go.mod
 
       - name: Install templ
         run: go install github.com/a-h/templ/cmd/templ@latest

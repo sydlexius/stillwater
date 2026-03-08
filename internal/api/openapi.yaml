@@ -761,6 +761,14 @@ paths:
                       type: string
                   type:
                     type: string
+                  sync_warnings:
+                    type: array
+                    items:
+                      type: string
+                    description: Platform sync warnings, including failures and reasons why sync was skipped. Empty only when there are no warnings.
+                  count:
+                    type: integer
+                    description: Total number of fanart images now on disk for this artist. Present only when type is fanart.
         "413":
           description: File exceeds 25MB limit
           content:
@@ -819,6 +827,14 @@ paths:
                       type: string
                   type:
                     type: string
+                  sync_warnings:
+                    type: array
+                    items:
+                      type: string
+                    description: Platform sync warnings, including failures and reasons why sync was skipped. Empty only when there are no warnings.
+                  count:
+                    type: integer
+                    description: Total number of fanart images now on disk for this artist. Present only when type is fanart.
 
   /artists/{id}/images/search:
     get:
@@ -905,6 +921,11 @@ paths:
                       type: string
                   type:
                     type: string
+                  sync_warnings:
+                    type: array
+                    items:
+                      type: string
+                    description: Platform sync warnings, including failures and reasons why sync was skipped. Empty only when there are no warnings.
 
   /artists/{id}/nfo/diff:
     get:
@@ -4198,7 +4219,15 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Status"
+                type: object
+                properties:
+                  status:
+                    type: string
+                  sync_warnings:
+                    type: array
+                    items:
+                      type: string
+                    description: Platform sync warnings, including failures and reasons why sync was skipped. Empty only when there are no warnings.
         "404":
           description: Artist or logo not found
           content:
@@ -4318,6 +4347,11 @@ paths:
                       type: string
                   count:
                     type: integer
+                  sync_warnings:
+                    type: array
+                    items:
+                      type: string
+                    description: Platform sync warnings, including failures and reasons why sync was skipped. Empty only when there are no warnings.
         "409":
           description: No filesystem path
           content:
@@ -4489,6 +4523,11 @@ paths:
                     type: array
                     items:
                       type: string
+                  sync_warnings:
+                    type: array
+                    items:
+                      type: string
+                    description: Platform sync warnings, including failures and reasons why sync was skipped. Empty only when there are no warnings.
             text/html:
               schema:
                 type: string
