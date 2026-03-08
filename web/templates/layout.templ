@@ -139,7 +139,15 @@ templ Layout(title string, assets AssetPaths) {
 					}, 8000);
 				}
 				document.body.addEventListener('syncWarning', function(evt) {
-					var msgs = Array.isArray(evt.detail) ? evt.detail : [evt.detail];
+					// HTMX wraps non-object HX-Trigger payloads (including arrays) as { value: ... }.
+					// Unwrap when present; fall back to evt.detail for programmatic dispatches.
+					var detail = (evt && evt.detail && typeof evt.detail === 'object' && 'value' in evt.detail)
+						? evt.detail.value
+						: evt.detail;
+					if (detail == null) {
+						return;
+					}
+					var msgs = Array.isArray(detail) ? detail : [detail];
 					msgs.forEach(function(m) { showWarningToast(m); });
 				});
 			</script>
