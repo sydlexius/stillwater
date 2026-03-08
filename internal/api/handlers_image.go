@@ -189,6 +189,7 @@ func (r *Router) handleImageUpload(w http.ResponseWriter, req *http.Request) {
 	if imageType == "fanart" {
 		resp["count"] = a.FanartCount
 	}
+	setSyncWarningTrigger(w, warnings)
 	writeJSON(w, http.StatusOK, resp)
 }
 
