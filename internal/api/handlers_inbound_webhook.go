@@ -383,7 +383,8 @@ func (r *Router) handleJellyfinArtistUpdate(ctx context.Context, payload webhook
 			Type:      event.JellyfinArtistUpdate,
 			Timestamp: time.Now().UTC(),
 			Data: map[string]any{
-				"artist_name": payload.Name,
+				"album_name":  payload.Name,
+				"artist_name": payload.Artist,
 				"mbid":        mbid,
 			},
 		})

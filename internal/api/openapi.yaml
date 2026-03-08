@@ -3457,9 +3457,11 @@ paths:
             schema:
               type: object
               properties:
-                NotificationType:
+                Event:
                   type: string
-                  description: Emby event type (test, LibraryChanged, ItemAdded, ItemUpdated)
+                  description: >
+                    Emby event type (system.notificationtest, library.new,
+                    item.updated, library.changed)
                 Item:
                   type: object
                   properties:
@@ -3469,14 +3471,24 @@ paths:
                       type: string
                     Type:
                       type: string
-                      description: Media type, e.g. MusicArtist
+                      description: Media type, e.g. MusicAlbum
                     ProviderIds:
                       type: object
                       additionalProperties:
                         type: string
                     Path:
                       type: string
-              required: [NotificationType]
+                    ArtistItems:
+                      type: array
+                      description: Related artist references (Emby 4.9+)
+                      items:
+                        type: object
+                        properties:
+                          Id:
+                            type: string
+                          Name:
+                            type: string
+              required: [Event]
       responses:
         "200":
           description: Event accepted for async processing
@@ -3521,17 +3533,20 @@ paths:
               properties:
                 NotificationType:
                   type: string
-                  description: Jellyfin event type (Test, LibraryChanged, ItemAdded, ItemUpdated)
+                  description: Jellyfin event type (Test, ItemAdded, ItemUpdated, LibraryChanged)
                 ItemId:
                   type: string
                 ItemType:
                   type: string
-                  description: Media type, e.g. MusicArtist
+                  description: Media type, e.g. MusicAlbum
                 Name:
                   type: string
-                Provider_musicbrainzartist:
+                Artist:
                   type: string
-                  description: MusicBrainz artist ID from the Jellyfin webhook plugin
+                  description: Artist name from the Jellyfin webhook plugin
+                Provider_musicbrainzalbumartist:
+                  type: string
+                  description: MusicBrainz album artist ID from the Jellyfin webhook plugin
               required: [NotificationType]
       responses:
         "200":
