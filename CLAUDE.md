@@ -256,10 +256,54 @@ Correct order:
 2. `go test ./...` -- all tests pass
 3. `/pr-review-toolkit:review-pr` -- fix any critical or important findings
 4. Commit all fixes
-5. Push and open the PR
+5. Squash all development commits into clean, coherent commits (see below)
+6. Push and open the PR
 
-Do not open the PR until step 3-4 are complete. A PR opened with unfixed review findings will
+Do not open the PR until steps 3-5 are complete. A PR opened with unfixed review findings will
 produce exactly as many Copilot review rounds as there are findings.
+
+### Squash before first push
+
+Squash all development/fixup commits into clean, logical commits before the first push.
+Copilot reviews only the diff it sees on each push. Incremental commits hide the full
+changeset from it, causing it to rediscover issues on each push. Squashing presents the
+final state once.
+
+```bash
+# Squash all commits since branching from main into one clean commit:
+git rebase -i main
+# In the editor: mark the first commit "pick", all others "squash" or "fixup"
+```
+
+For larger PRs with logically distinct phases (e.g., data model + API + UI), two or three
+coherent commits is fine. The goal is coherence, not a single commit at all costs.
+
+**Do not squash after opening the PR.** Copilot has already reviewed the first push.
+Force-pushing a rebase after opening a PR destroys review context and resets Copilot's
+diff window to the squashed commit, which may trigger a full re-review from scratch.
+
+### Pre-push checklist
+
+Before squashing and pushing, verify these categories that Copilot consistently flags:
+
+**OpenAPI spec:**
+- [ ] Every new or changed response field has a matching entry in `internal/api/openapi.yaml`
+- [ ] OpenAPI descriptions accurately describe the invariant (not "empty when X" if the code also makes it non-empty when Y)
+- [ ] Any endpoint that uses `$ref` to a shared schema actually matches that schema's shape
+
+**Error path completeness:**
+- [ ] Functions that return user-visible warnings emit a warning on ALL error paths, not just the main operation path
+- [ ] Client-visible warning strings contain no raw `error.Error()` output from DB/internal services
+- [ ] Full errors are logged server-side before emitting a sanitized client message
+
+**Generated files:**
+- [ ] If any `.templ` changed, `templ generate` was run and `*_templ.go` committed
+- [ ] If any HTTP status code changed, `scripts/smoke.sh` and integration test assertions are updated
+
+**Test code:**
+- [ ] No unprotected shared variables written in test handler goroutines and read in the test goroutine
+- [ ] `multipart.Writer` methods (`CreatePart`, `WriteField`, `Close`) errors are checked in test helpers
+- [ ] `io.ReadAll(r.Body)` errors are checked before using the result in test handlers
 
 ## Parallel Work (Worktrees)
 
