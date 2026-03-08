@@ -3,11 +3,13 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
-	"strings"
+	"runtime/debug"
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/event"
+	"github.com/sydlexius/stillwater/internal/scanner"
 	"github.com/sydlexius/stillwater/internal/webhook"
 )
 
@@ -45,6 +47,7 @@ func (r *Router) handleLidarrWebhook(w http.ResponseWriter, req *http.Request) {
 				r.logger.Error("panic in lidarr webhook handler",
 					"event_type", payload.EventType,
 					"panic", v,
+					"stack", string(debug.Stack()),
 				)
 			}
 		}()
@@ -114,7 +117,7 @@ func (r *Router) handleLidarrArtistAdd(ctx context.Context, payload webhook.Lida
 	r.logger.Info("lidarr ArtistAdded: new artist, triggering scan",
 		"artist", payload.Artist.Name, "mbid", mbid)
 	if _, err := r.scannerService.Run(ctx); err != nil {
-		if strings.Contains(err.Error(), "already in progress") {
+		if errors.Is(err, scanner.ErrScanInProgress) {
 			r.logger.Info("scan after lidarr ArtistAdded skipped: scan already in progress")
 		} else {
 			r.logger.Error("scan after lidarr ArtistAdded failed", "error", err)
@@ -171,4 +174,264 @@ func artistNameFromPayload(p webhook.LidarrPayload) string {
 		return p.Artist.Name
 	}
 	return ""
+}
+
+// handleEmbyWebhook receives inbound webhook events from Emby.
+// POST /api/v1/webhooks/inbound/emby
+func (r *Router) handleEmbyWebhook(w http.ResponseWriter, req *http.Request) {
+	req.Body = http.MaxBytesReader(w, req.Body, 1<<20)
+
+	var payload webhook.EmbyPayload
+	if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON payload"})
+		return
+	}
+
+	if payload.NotificationType == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "NotificationType is required"})
+		return
+	}
+
+	r.logger.Info("received emby webhook", "notification_type", payload.NotificationType)
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "accepted"})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute) //nolint:gosec // G118: cancel is deferred inside the goroutine below
+	go func() {
+		defer cancel()
+		defer func() {
+			if v := recover(); v != nil {
+				r.logger.Error("panic in emby webhook handler",
+					"notification_type", payload.NotificationType,
+					"panic", v,
+					"stack", string(debug.Stack()),
+				)
+			}
+		}()
+		r.processEmbyEvent(ctx, payload)
+	}()
+}
+
+func (r *Router) processEmbyEvent(ctx context.Context, payload webhook.EmbyPayload) {
+	switch payload.NotificationType {
+	case webhook.EmbyEventTest:
+		r.logger.Info("emby test event received")
+		return
+
+	case webhook.EmbyEventItemAdded, webhook.EmbyEventItemUpdated:
+		r.handleEmbyArtistUpdate(ctx, payload, payload.NotificationType)
+
+	case webhook.EmbyEventLibraryChanged:
+		r.handleEmbyLibraryScan(ctx)
+
+	default:
+		r.logger.Debug("unhandled emby event type", "notification_type", payload.NotificationType)
+	}
+}
+
+func (r *Router) handleEmbyArtistUpdate(ctx context.Context, payload webhook.EmbyPayload, notificationType string) {
+	if payload.Item == nil {
+		r.logger.Warn("emby artist update: payload has no item data, skipping")
+		return
+	}
+	if payload.Item.Type != "MusicArtist" {
+		r.logger.Debug("emby item update: skipping non-artist item",
+			"item_type", payload.Item.Type,
+			"item_name", payload.Item.Name)
+		return
+	}
+
+	mbid := payload.Item.MBID()
+	if mbid == "" {
+		r.logger.Warn("emby artist update: no MBID in payload, skipping",
+			"item_name", payload.Item.Name)
+		return
+	}
+
+	if r.eventBus != nil {
+		r.eventBus.Publish(event.Event{
+			Type:      event.EmbyArtistUpdate,
+			Timestamp: time.Now().UTC(),
+			Data: map[string]any{
+				"artist_name": payload.Item.Name,
+				"mbid":        mbid,
+			},
+		})
+	}
+
+	existing, err := r.artistService.GetByMBID(ctx, mbid)
+	if err != nil {
+		r.logger.Error("looking up artist by MBID for emby webhook", "mbid", mbid, "error", err)
+		return
+	}
+
+	if existing == nil {
+		// Emby item events do not imply a new directory was created, so we do not
+		// trigger a scan here. Unknown artists will be picked up on the next scan.
+		r.logger.Info("emby artist update: artist not tracked, skipping",
+			"notification_type", notificationType, "artist", payload.Item.Name, "mbid", mbid)
+		return
+	}
+
+	if r.pipeline == nil {
+		r.logger.Warn("emby artist update: rule pipeline not configured, skipping evaluation",
+			"artist", existing.Name)
+		return
+	}
+
+	r.logger.Info("emby artist update: artist tracked, evaluating rules",
+		"notification_type", notificationType, "artist", existing.Name, "mbid", mbid)
+	if _, err := r.pipeline.RunForArtist(ctx, existing); err != nil {
+		r.logger.Error("rule evaluation after emby artist update failed", "artist", existing.Name, "error", err)
+	}
+}
+
+func (r *Router) handleEmbyLibraryScan(ctx context.Context) {
+	if r.eventBus != nil {
+		r.eventBus.Publish(event.Event{
+			Type:      event.EmbyLibraryScan,
+			Timestamp: time.Now().UTC(),
+		})
+	}
+
+	if r.scannerService == nil {
+		r.logger.Warn("emby library changed: scanner service not configured, skipping scan")
+		return
+	}
+
+	if _, err := r.scannerService.Run(ctx); err != nil {
+		if errors.Is(err, scanner.ErrScanInProgress) {
+			r.logger.Info("scan after emby library changed skipped: scan already in progress")
+		} else {
+			r.logger.Error("scan after emby library changed failed", "error", err)
+		}
+	}
+}
+
+// handleJellyfinWebhook receives inbound webhook events from the Jellyfin webhook plugin.
+// POST /api/v1/webhooks/inbound/jellyfin
+func (r *Router) handleJellyfinWebhook(w http.ResponseWriter, req *http.Request) {
+	req.Body = http.MaxBytesReader(w, req.Body, 1<<20)
+
+	var payload webhook.JellyfinPayload
+	if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON payload"})
+		return
+	}
+
+	if payload.NotificationType == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "NotificationType is required"})
+		return
+	}
+
+	r.logger.Info("received jellyfin webhook", "notification_type", payload.NotificationType)
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "accepted"})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute) //nolint:gosec // G118: cancel is deferred inside the goroutine below
+	go func() {
+		defer cancel()
+		defer func() {
+			if v := recover(); v != nil {
+				r.logger.Error("panic in jellyfin webhook handler",
+					"notification_type", payload.NotificationType,
+					"panic", v,
+					"stack", string(debug.Stack()),
+				)
+			}
+		}()
+		r.processJellyfinEvent(ctx, payload)
+	}()
+}
+
+func (r *Router) processJellyfinEvent(ctx context.Context, payload webhook.JellyfinPayload) {
+	switch payload.NotificationType {
+	case webhook.JellyfinEventTest:
+		r.logger.Info("jellyfin test event received")
+		return
+
+	case webhook.JellyfinEventItemAdded, webhook.JellyfinEventItemUpdated:
+		r.handleJellyfinArtistUpdate(ctx, payload, payload.NotificationType)
+
+	case webhook.JellyfinEventLibraryChanged:
+		r.handleJellyfinLibraryScan(ctx)
+
+	default:
+		r.logger.Debug("unhandled jellyfin event type", "notification_type", payload.NotificationType)
+	}
+}
+
+func (r *Router) handleJellyfinArtistUpdate(ctx context.Context, payload webhook.JellyfinPayload, notificationType string) {
+	if payload.ItemType != "MusicArtist" {
+		r.logger.Debug("jellyfin item update: skipping non-artist item",
+			"item_type", payload.ItemType,
+			"item_name", payload.Name)
+		return
+	}
+
+	mbid := payload.MBID()
+	if mbid == "" {
+		r.logger.Warn("jellyfin artist update: no MBID in payload, skipping",
+			"item_name", payload.Name)
+		return
+	}
+
+	if r.eventBus != nil {
+		r.eventBus.Publish(event.Event{
+			Type:      event.JellyfinArtistUpdate,
+			Timestamp: time.Now().UTC(),
+			Data: map[string]any{
+				"artist_name": payload.Name,
+				"mbid":        mbid,
+			},
+		})
+	}
+
+	existing, err := r.artistService.GetByMBID(ctx, mbid)
+	if err != nil {
+		r.logger.Error("looking up artist by MBID for jellyfin webhook", "mbid", mbid, "error", err)
+		return
+	}
+
+	if existing == nil {
+		// Jellyfin item events do not imply a new directory was created, so we do not
+		// trigger a scan here. Unknown artists will be picked up on the next scan.
+		r.logger.Info("jellyfin artist update: artist not tracked, skipping",
+			"notification_type", notificationType, "artist", payload.Name, "mbid", mbid)
+		return
+	}
+
+	if r.pipeline == nil {
+		r.logger.Warn("jellyfin artist update: rule pipeline not configured, skipping evaluation",
+			"artist", existing.Name)
+		return
+	}
+
+	r.logger.Info("jellyfin artist update: artist tracked, evaluating rules",
+		"notification_type", notificationType, "artist", existing.Name, "mbid", mbid)
+	if _, err := r.pipeline.RunForArtist(ctx, existing); err != nil {
+		r.logger.Error("rule evaluation after jellyfin artist update failed", "artist", existing.Name, "error", err)
+	}
+}
+
+func (r *Router) handleJellyfinLibraryScan(ctx context.Context) {
+	if r.eventBus != nil {
+		r.eventBus.Publish(event.Event{
+			Type:      event.JellyfinLibraryScan,
+			Timestamp: time.Now().UTC(),
+		})
+	}
+
+	if r.scannerService == nil {
+		r.logger.Warn("jellyfin library changed: scanner service not configured, skipping scan")
+		return
+	}
+
+	if _, err := r.scannerService.Run(ctx); err != nil {
+		if errors.Is(err, scanner.ErrScanInProgress) {
+			r.logger.Info("scan after jellyfin library changed skipped: scan already in progress")
+		} else {
+			r.logger.Error("scan after jellyfin library changed failed", "error", err)
+		}
+	}
 }

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"image"
 	"image/png"
@@ -379,7 +380,7 @@ func TestScan_ConcurrentPrevention(t *testing.T) {
 	// Either it fails because scan is still running, or it succeeds because scan already finished
 	// We just verify it doesn't panic
 	if err != nil {
-		if err.Error() != "scan already in progress" {
+		if !errors.Is(err, ErrScanInProgress) {
 			t.Errorf("unexpected error: %v", err)
 		}
 	}

@@ -211,6 +211,10 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	// Inbound webhook routes (API token with webhook scope)
 	mux.HandleFunc("POST "+bp+"/api/v1/webhooks/inbound/lidarr",
 		wrapAuth(middleware.RequireScope("webhook")(r.handleLidarrWebhook), authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/webhooks/inbound/emby",
+		wrapAuth(middleware.RequireScope("webhook")(r.handleEmbyWebhook), authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/webhooks/inbound/jellyfin",
+		wrapAuth(middleware.RequireScope("webhook")(r.handleJellyfinWebhook), authMw))
 	// Webhook routes
 	mux.HandleFunc("GET "+bp+"/api/v1/webhooks", wrapAuth(r.handleListWebhooks, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/webhooks", wrapAuth(r.handleCreateWebhook, authMw))

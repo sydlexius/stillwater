@@ -94,3 +94,4 @@ func (r *sqlitePlatformIDRepo) DeleteByArtistID(ctx context.Context, artistID st
 	}
 	return nil
 }
+
