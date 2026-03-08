@@ -15,6 +15,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -1057,5 +1058,216 @@ func TestHandleImageCrop_SyncWarnings_PlatformFailure(t *testing.T) {
 	}
 	if !strings.Contains(warnings[0], "image upload failed") {
 		t.Errorf("warning should mention upload failure, got %q", warnings[0])
+	}
+}
+
+func TestExtractImageFetchParams_MalformedJSON(t *testing.T) {
+	body := strings.NewReader(`{bad json`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/x/images/fetch", body)
+	req.Header.Set("Content-Type", "application/json")
+
+	_, _, err := extractImageFetchParams(req)
+	if err == nil {
+		t.Fatal("expected error for malformed JSON, got nil")
+	}
+	if !strings.Contains(err.Error(), "invalid request body") {
+		t.Errorf("error should mention invalid request body, got %q", err.Error())
+	}
+}
+
+func TestExtractImageFetchParams_ValidJSON(t *testing.T) {
+	body := strings.NewReader(`{"url":"https://example.com/img.jpg","type":"thumb"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/x/images/fetch", body)
+	req.Header.Set("Content-Type", "application/json")
+
+	u, it, err := extractImageFetchParams(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if u != "https://example.com/img.jpg" {
+		t.Errorf("url = %q, want %q", u, "https://example.com/img.jpg")
+	}
+	if it != "thumb" {
+		t.Errorf("type = %q, want %q", it, "thumb")
+	}
+}
+
+func TestHandleDeleteImage_FanartRemoveFailure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("permission-based test not reliable on Windows")
+	}
+	if os.Getuid() == 0 {
+		t.Skip("permission-based test not reliable as root")
+	}
+
+	// Mock server that records whether a DELETE was received.
+	// Use a channel (not a bare bool) to avoid an unprotected cross-goroutine write
+	// if the production guard is ever relaxed.
+	deletedCh := make(chan struct{}, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if req.Method == http.MethodDelete {
+			select {
+			case deletedCh <- struct{}{}:
+			default:
+			}
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	r, artistSvc := testRouterWithPlatform(t)
+	dir := t.TempDir()
+	addTestConnectionWithURL(t, r, "conn-emby", "Emby", "emby", srv.URL)
+
+	a := &artist.Artist{
+		Name: "Fanart Artist", SortName: "Fanart Artist", Path: dir,
+		FanartExists: true,
+	}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+	if err := artistSvc.SetPlatformID(context.Background(), a.ID, "conn-emby", "emby-artist-1"); err != nil {
+		t.Fatalf("SetPlatformID: %v", err)
+	}
+
+	// Create two fanart files: both will be undeletable.
+	writeJPEG(t, filepath.Join(dir, "fanart.jpg"), 100, 100)
+	writeJPEG(t, filepath.Join(dir, "fanart2.jpg"), 100, 100)
+
+	// Remove write permission on the directory to make os.Remove fail.
+	if err := os.Chmod(dir, 0o555); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chmod(dir, 0o755)
+	})
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/artists/"+a.ID+"/images/fanart", nil)
+	req.SetPathValue("id", a.ID)
+	req.SetPathValue("type", "fanart")
+	w := httptest.NewRecorder()
+	r.handleDeleteImage(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp map[string]json.RawMessage
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+
+	// Verify warning is surfaced about failed removals.
+	raw, ok := resp["sync_warnings"]
+	if !ok {
+		t.Fatal("response missing sync_warnings field")
+	}
+	var warnings []string
+	if err := json.Unmarshal(raw, &warnings); err != nil {
+		t.Fatalf("decoding sync_warnings: %v", err)
+	}
+	found := false
+	for _, msg := range warnings {
+		if strings.Contains(msg, "could not be deleted") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected warning about failed deletion, got %v", warnings)
+	}
+
+	// Platform delete must NOT be called when local removal failed.
+	select {
+	case <-deletedCh:
+		t.Error("platform delete was called despite local removal failure")
+	default:
+	}
+}
+
+func TestHandleDeleteImage_ThumbRemoveFailure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("permission-based test not reliable on Windows")
+	}
+	if os.Getuid() == 0 {
+		t.Skip("permission-based test not reliable as root")
+	}
+
+	// Mock server that records whether a DELETE was received.
+	deletedCh := make(chan struct{}, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if req.Method == http.MethodDelete {
+			select {
+			case deletedCh <- struct{}{}:
+			default:
+			}
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	r, artistSvc := testRouterWithPlatform(t)
+	dir := t.TempDir()
+	addTestConnectionWithURL(t, r, "conn-emby", "Emby", "emby", srv.URL)
+
+	a := &artist.Artist{
+		Name: "Thumb Artist", SortName: "Thumb Artist", Path: dir,
+		ThumbExists: true,
+	}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+	if err := artistSvc.SetPlatformID(context.Background(), a.ID, "conn-emby", "emby-artist-1"); err != nil {
+		t.Fatalf("SetPlatformID: %v", err)
+	}
+
+	writeJPEG(t, filepath.Join(dir, "folder.jpg"), 100, 100)
+
+	// Remove write permission on the directory to make os.Remove fail.
+	if err := os.Chmod(dir, 0o555); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chmod(dir, 0o755)
+	})
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/artists/"+a.ID+"/images/thumb", nil)
+	req.SetPathValue("id", a.ID)
+	req.SetPathValue("type", "thumb")
+	w := httptest.NewRecorder()
+	r.handleDeleteImage(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp map[string]json.RawMessage
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	raw, ok := resp["sync_warnings"]
+	if !ok {
+		t.Fatal("response missing sync_warnings field")
+	}
+	var warnings []string
+	if err := json.Unmarshal(raw, &warnings); err != nil {
+		t.Fatalf("decoding sync_warnings: %v", err)
+	}
+	found := false
+	for _, msg := range warnings {
+		if strings.Contains(msg, "could not be deleted") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected warning about failed deletion, got %v", warnings)
+	}
+
+	// Platform delete must NOT be called when local removal failed.
+	select {
+	case <-deletedCh:
+		t.Error("platform delete was called despite local removal failure")
+	default:
 	}
 }

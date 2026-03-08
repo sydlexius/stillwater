@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -209,7 +210,14 @@ func (r *Router) handleImageFetch(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	imageURL, imageType := extractImageFetchParams(req)
+	imageURL, imageType, err := extractImageFetchParams(req)
+	if err != nil {
+		r.logger.Debug("invalid image fetch request body",
+			slog.String("artist_id", artistID),
+			slog.String("error", err.Error()))
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
 
 	if imageURL == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "url is required"})
@@ -713,10 +721,29 @@ func (r *Router) setArtistImageFlag(ctx context.Context, a *artist.Artist, image
 		if filePath, found := findExistingImage(r.imageDir(a), patterns); found {
 			if f, openErr := os.Open(filePath); openErr == nil { //nolint:gosec // path from trusted naming patterns
 				defer f.Close() //nolint:errcheck
-				w, h, _ := img.GetDimensions(f)
+				w, h, dimErr := img.GetDimensions(f)
+				if dimErr != nil {
+					r.logger.Warn("reading image dimensions",
+						slog.String("artist_id", a.ID),
+						slog.String("image_type", imageType),
+						slog.String("error", dimErr.Error()))
+				}
 				lowRes = img.IsLowResolution(w, h, imageType)
-				if _, seekErr := f.Seek(0, io.SeekStart); seekErr == nil {
-					placeholder, _ = img.GeneratePlaceholder(f, imageType)
+				if _, seekErr := f.Seek(0, io.SeekStart); seekErr != nil {
+					r.logger.Warn("seeking image file for placeholder",
+						slog.String("artist_id", a.ID),
+						slog.String("image_type", imageType),
+						slog.String("error", seekErr.Error()))
+				} else {
+					ph, phErr := img.GeneratePlaceholder(f, imageType)
+					if phErr != nil {
+						r.logger.Warn("generating image placeholder",
+							slog.String("artist_id", a.ID),
+							slog.String("image_type", imageType),
+							slog.String("error", phErr.Error()))
+					} else {
+						placeholder = ph
+					}
 				}
 			}
 		}
@@ -846,10 +873,24 @@ func (r *Router) handleImageInfo(w http.ResponseWriter, req *http.Request) {
 	f, err := os.Open(filePath) //nolint:gosec // path is constructed from trusted patterns
 	if err == nil {
 		defer func() { _ = f.Close() }()
-		width, height, _ = img.GetDimensions(f)
+		var dimErr error
+		width, height, dimErr = img.GetDimensions(f)
+		if dimErr != nil {
+			r.logger.Warn("reading image dimensions for info",
+				slog.String("artist_id", artistID),
+				slog.String("image_type", imageType),
+				slog.String("path", filePath),
+				slog.String("error", dimErr.Error()))
+		}
+	} else {
+		r.logger.Warn("opening image for info",
+			slog.String("artist_id", artistID),
+			slog.String("image_type", imageType),
+			slog.String("path", filePath),
+			slog.String("error", err.Error()))
 	}
 
-	if req.Header.Get("HX-Request") == "true" {
+	if isHTMXRequest(req) {
 		renderTempl(w, req, templates.ImageInfoBadge(width, height, stat.Size()))
 		return
 	}
@@ -892,23 +933,36 @@ func (r *Router) handleDeleteImage(w http.ResponseWriter, req *http.Request) {
 		primary := r.getActiveFanartPrimary(req.Context())
 		fanartPaths := img.DiscoverFanart(r.imageDir(a), primary)
 		var deleted []string
+		var removeFailed bool
 		for _, p := range fanartPaths {
 			if err := os.Remove(p); err == nil { //nolint:gosec // path from DiscoverFanart, not user input
 				deleted = append(deleted, filepath.Base(p))
 				r.logger.Info("deleted fanart", slog.String("path", p))
+			} else {
+				removeFailed = true
+				r.logger.Warn("failed to delete fanart",
+					slog.String("path", p),
+					slog.String("error", err.Error()))
 			}
 		}
 		// Also clean up the standard naming config patterns (alternate names)
 		patterns := r.getActiveNamingConfig(req.Context(), imageType)
-		deleted = append(deleted, deleteImageFiles(r.imageDir(a), patterns, r.logger)...)
+		patternDeleted, patternFailed := deleteImageFiles(r.imageDir(a), patterns, r.logger)
+		deleted = append(deleted, patternDeleted...)
+		if patternFailed {
+			removeFailed = true
+		}
 		r.updateArtistFanartCount(req.Context(), a)
 		fanartWarnings := make([]string, 0)
-		if len(deleted) > 0 {
+		if removeFailed {
+			fanartWarnings = append(fanartWarnings, "some fanart files could not be deleted from disk")
+		}
+		if len(deleted) > 0 && !removeFailed {
 			delCtx, delCancel := context.WithTimeout(req.Context(), 30*time.Second)
 			defer delCancel()
-			fanartWarnings = r.deleteImageFromPlatforms(delCtx, a, imageType)
+			fanartWarnings = append(fanartWarnings, r.deleteImageFromPlatforms(delCtx, a, imageType)...)
 		}
-		if req.Header.Get("HX-Request") == "true" {
+		if isHTMXRequest(req) {
 			setSyncWarningTrigger(w, fanartWarnings)
 			renderTempl(w, req, templates.ImagePreviewCard(a.ID, imageType, false, imageTypeLabel(imageType), 0))
 			return
@@ -922,17 +976,20 @@ func (r *Router) handleDeleteImage(w http.ResponseWriter, req *http.Request) {
 	}
 
 	patterns := r.getActiveNamingConfig(req.Context(), imageType)
-	deleted := deleteImageFiles(r.imageDir(a), patterns, r.logger)
+	deleted, deleteFailed := deleteImageFiles(r.imageDir(a), patterns, r.logger)
 
 	r.clearArtistImageFlag(req.Context(), a, imageType)
 	warnings := make([]string, 0)
-	if len(deleted) > 0 {
+	if deleteFailed {
+		warnings = append(warnings, "some image files could not be deleted from disk")
+	}
+	if len(deleted) > 0 && !deleteFailed {
 		delCtx, delCancel := context.WithTimeout(req.Context(), 30*time.Second)
 		defer delCancel()
-		warnings = r.deleteImageFromPlatforms(delCtx, a, imageType)
+		warnings = append(warnings, r.deleteImageFromPlatforms(delCtx, a, imageType)...)
 	}
 
-	if req.Header.Get("HX-Request") == "true" {
+	if isHTMXRequest(req) {
 		setSyncWarningTrigger(w, warnings)
 		renderTempl(w, req, templates.ImagePreviewCard(a.ID, imageType, false, imageTypeLabel(imageType), 0))
 		return
@@ -1018,7 +1075,7 @@ func (r *Router) syncImageToPlatforms(ctx context.Context, a *artist.Artist, ima
 
 		if uploadErr := uploader.UploadImage(ctx, pid.PlatformArtistID, imageType, data, ct); uploadErr != nil {
 			r.logger.Error("syncing image to platform", "artist", a.Name, "connection", conn.Name, "type", imageType, "error", uploadErr)
-			warnings = append(warnings, truncateWarning(fmt.Sprintf("%s (%s): image upload failed: %v", conn.Name, conn.Type, uploadErr)))
+			warnings = append(warnings, truncateWarning(fmt.Sprintf("%s (%s): image upload failed", conn.Name, conn.Type)))
 		}
 	}
 	return warnings
@@ -1067,7 +1124,7 @@ func (r *Router) deleteImageFromPlatforms(ctx context.Context, a *artist.Artist,
 
 		if delErr := deleter.DeleteImage(ctx, pid.PlatformArtistID, imageType); delErr != nil {
 			r.logger.Error("deleting image from platform", "artist", a.Name, "connection", conn.Name, "type", imageType, "error", delErr)
-			warnings = append(warnings, truncateWarning(fmt.Sprintf("%s (%s): image delete failed: %v", conn.Name, conn.Type, delErr)))
+			warnings = append(warnings, truncateWarning(fmt.Sprintf("%s (%s): image delete failed", conn.Name, conn.Type)))
 		}
 	}
 	return warnings
@@ -1144,16 +1201,21 @@ func findExistingImage(dir string, patterns []string) (string, bool) {
 	return "", false
 }
 
-// deleteImageFiles removes all matching image files from a directory and returns deleted filenames.
-// For each pattern, it also probes alternate extensions (.jpg, .jpeg, .png) to catch cases where
-// the saved format differs from the configured name. Patterns are trusted naming conventions.
-func deleteImageFiles(dir string, patterns []string, logger *slog.Logger) []string {
-	var deleted []string
+// deleteImageFiles removes all matching image files from a directory and returns deleted filenames
+// and whether any removal failed. For each pattern, it also probes alternate extensions
+// (.jpg, .jpeg, .png) to catch cases where the saved format differs from the configured name.
+// Patterns are trusted naming conventions. Files that do not exist are not counted as failures.
+func deleteImageFiles(dir string, patterns []string, logger *slog.Logger) (deleted []string, failed bool) {
 	for _, pattern := range patterns {
 		p := filepath.Join(dir, pattern)
 		if err := os.Remove(p); err == nil { //nolint:gosec // path from trusted naming patterns
 			logger.Info("deleted image file", slog.String("path", p))
 			deleted = append(deleted, pattern)
+		} else if !errors.Is(err, os.ErrNotExist) {
+			failed = true
+			logger.Warn("failed to delete image file",
+				slog.String("path", p),
+				slog.String("error", err.Error()))
 		}
 		// Also try alternate extensions in case format diverged from config.
 		base := strings.TrimSuffix(pattern, filepath.Ext(pattern))
@@ -1166,30 +1228,36 @@ func deleteImageFiles(dir string, patterns []string, logger *slog.Logger) []stri
 			if err := os.Remove(altPath); err == nil { //nolint:gosec // path from trusted naming patterns
 				logger.Info("deleted image file (alt ext)", slog.String("path", altPath))
 				deleted = append(deleted, alt)
+			} else if !errors.Is(err, os.ErrNotExist) {
+				failed = true
+				logger.Warn("failed to delete image file (alt ext)",
+					slog.String("path", altPath),
+					slog.String("error", err.Error()))
 			}
 		}
 	}
-	return deleted
+	return deleted, failed
 }
 
 // extractImageFetchParams reads the URL and type from an image fetch request.
 // Supports both form-encoded (HTMX) and JSON payloads (API clients).
 // Provider image types (hdlogo, widethumb, background) are normalized to their
 // base types (logo, thumb, fanart) for filesystem naming.
-func extractImageFetchParams(req *http.Request) (string, string) {
+func extractImageFetchParams(req *http.Request) (string, string, error) {
 	var rawURL, rawType string
 	if strings.HasPrefix(req.Header.Get("Content-Type"), "application/json") {
 		var body struct {
 			URL  string `json:"url"`
 			Type string `json:"type"`
 		}
-		if err := json.NewDecoder(req.Body).Decode(&body); err == nil {
-			rawURL, rawType = body.URL, body.Type
+		if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+			return "", "", fmt.Errorf("invalid request body: %w", err)
 		}
+		rawURL, rawType = body.URL, body.Type
 	} else {
 		rawURL, rawType = req.FormValue("url"), req.FormValue("type")
 	}
-	return rawURL, normalizeImageType(rawType)
+	return rawURL, normalizeImageType(rawType), nil
 }
 
 // normalizeImageType maps provider-specific image types to the base types
@@ -1355,9 +1423,20 @@ func (r *Router) updateArtistFanartCount(ctx context.Context, a *artist.Artist) 
 	a.FanartLowRes = false
 	if count > 0 {
 		if f, err := os.Open(existing[0]); err == nil { //nolint:gosec // path from discovery
-			w, h, _ := img.GetDimensions(f)
+			w, h, dimErr := img.GetDimensions(f)
 			_ = f.Close()
+			if dimErr != nil {
+				r.logger.Warn("reading fanart dimensions",
+					slog.String("artist_id", a.ID),
+					slog.String("path", existing[0]),
+					slog.String("error", dimErr.Error()))
+			}
 			a.FanartLowRes = img.IsLowResolution(w, h, "fanart")
+		} else {
+			r.logger.Warn("opening primary fanart for dimension check",
+				slog.String("artist_id", a.ID),
+				slog.String("path", existing[0]),
+				slog.String("error", err.Error()))
 		}
 	}
 
@@ -1390,12 +1469,28 @@ func (r *Router) handleFanartList(w http.ResponseWriter, req *http.Request) {
 		item := templates.FanartGalleryItem{Index: i, Filename: filepath.Base(p)}
 		if stat, statErr := os.Stat(p); statErr == nil { //nolint:gosec // path from DiscoverFanart, not user input
 			item.Size = stat.Size()
+		} else {
+			r.logger.Warn("stat fanart for gallery",
+				slog.String("artist_id", artistID),
+				slog.String("path", p),
+				slog.String("error", statErr.Error()))
 		}
 		if f, openErr := os.Open(p); openErr == nil { //nolint:gosec // path from discovery
-			w, h, _ := img.GetDimensions(f)
+			w, h, dimErr := img.GetDimensions(f)
 			_ = f.Close()
+			if dimErr != nil {
+				r.logger.Warn("reading fanart dimensions for gallery",
+					slog.String("artist_id", artistID),
+					slog.String("path", p),
+					slog.String("error", dimErr.Error()))
+			}
 			item.Width = w
 			item.Height = h
+		} else {
+			r.logger.Warn("opening fanart for gallery",
+				slog.String("artist_id", artistID),
+				slog.String("path", p),
+				slog.String("error", openErr.Error()))
 		}
 		items = append(items, item)
 	}
@@ -1483,12 +1578,19 @@ func (r *Router) handleFanartBatchDelete(w http.ResponseWriter, req *http.Reques
 
 	// Delete the selected files
 	var deleted []string
+	var removeFailed bool
 	for idx := range deleteSet {
 		if err := os.Remove(paths[idx]); err == nil { //nolint:gosec // path from DiscoverFanart, not user input
 			deleted = append(deleted, filepath.Base(paths[idx]))
 			r.logger.Info("deleted fanart",
 				slog.String("artist_id", artistID),
 				slog.String("file", paths[idx]))
+		} else {
+			removeFailed = true
+			r.logger.Warn("failed to delete fanart",
+				slog.String("artist_id", artistID),
+				slog.String("path", paths[idx]),
+				slog.String("error", err.Error()))
 		}
 	}
 
@@ -1520,16 +1622,23 @@ func (r *Router) handleFanartBatchDelete(w http.ResponseWriter, req *http.Reques
 
 	r.updateArtistFanartCount(req.Context(), a)
 
+	warnings := make([]string, 0)
+	if removeFailed {
+		warnings = append(warnings, "some fanart files could not be deleted from disk")
+	}
+
 	if isHTMXRequest(req) {
+		setSyncWarningTrigger(w, warnings)
 		w.Header().Set("HX-Refresh", "true")
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"status":  "deleted",
-		"deleted": deleted,
-		"count":   a.FanartCount,
+		"status":        "deleted",
+		"deleted":       deleted,
+		"count":         a.FanartCount,
+		"sync_warnings": warnings,
 	})
 }
 
