@@ -204,7 +204,7 @@ func (r *Router) handleEmbyWebhook(w http.ResponseWriter, req *http.Request) {
 		defer func() {
 			if v := recover(); v != nil {
 				r.logger.Error("panic in emby webhook handler",
-					"notification_type", payload.Event,
+					"event", payload.Event,
 					"panic", v,
 					"stack", string(debug.Stack()),
 				)
@@ -227,7 +227,7 @@ func (r *Router) processEmbyEvent(ctx context.Context, payload webhook.EmbyPaylo
 		r.handleEmbyLibraryScan(ctx)
 
 	default:
-		r.logger.Debug("unhandled emby event type", "notification_type", payload.Event)
+		r.logger.Debug("unhandled emby event type", "event", payload.Event)
 	}
 }
 
