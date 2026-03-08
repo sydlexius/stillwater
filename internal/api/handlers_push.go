@@ -2,11 +2,13 @@ package api
 
 import (
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/connection/emby"
 	"github.com/sydlexius/stillwater/internal/connection/jellyfin"
@@ -61,29 +63,10 @@ func (r *Router) handlePushMetadata(w http.ResponseWriter, req *http.Request) {
 		body.PlatformArtistID = stored
 	}
 
-	data := connection.ArtistPushData{
-		Name:           a.Name,
-		SortName:       a.SortName,
-		Biography:      a.Biography,
-		Genres:         a.Genres,
-		Styles:         a.Styles,
-		Moods:          a.Moods,
-		Disambiguation: a.Disambiguation,
-		Born:           a.Born,
-		Formed:         a.Formed,
-		Died:           a.Died,
-		Disbanded:      a.Disbanded,
-		YearsActive:    a.YearsActive,
-		MusicBrainzID:  a.MusicBrainzID,
-	}
+	data := buildArtistPushData(a)
 
-	var pusher connection.MetadataPusher
-	switch conn.Type {
-	case connection.TypeEmby:
-		pusher = emby.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger)
-	case connection.TypeJellyfin:
-		pusher = jellyfin.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger)
-	default:
+	pusher, ok := newMetadataPusher(conn, r.logger)
+	if !ok {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "connection type does not support metadata push"})
 		return
 	}
@@ -279,4 +262,39 @@ func (r *Router) handleDeletePushImage(w http.ResponseWriter, req *http.Request)
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+}
+
+// buildArtistPushData constructs an ArtistPushData from an artist record.
+// Shared by handlePushMetadata (synchronous) and asyncPushMetadataToConnections
+// (fire-and-forget). Update this function when adding new push fields.
+func buildArtistPushData(a *artist.Artist) connection.ArtistPushData {
+	return connection.ArtistPushData{
+		Name:           a.Name,
+		SortName:       a.SortName,
+		Biography:      a.Biography,
+		Genres:         a.Genres,
+		Styles:         a.Styles,
+		Moods:          a.Moods,
+		Disambiguation: a.Disambiguation,
+		Born:           a.Born,
+		Formed:         a.Formed,
+		Died:           a.Died,
+		Disbanded:      a.Disbanded,
+		YearsActive:    a.YearsActive,
+		MusicBrainzID:  a.MusicBrainzID,
+	}
+}
+
+// newMetadataPusher constructs a MetadataPusher for the given connection type.
+// Returns (nil, false) for connection types that do not support metadata push
+// (e.g. Lidarr). Shared by handlePushMetadata and asyncPushMetadataToConnections.
+func newMetadataPusher(conn *connection.Connection, logger *slog.Logger) (connection.MetadataPusher, bool) {
+	switch conn.Type {
+	case connection.TypeEmby:
+		return emby.New(conn.URL, conn.APIKey, conn.PlatformUserID, logger), true
+	case connection.TypeJellyfin:
+		return jellyfin.New(conn.URL, conn.APIKey, conn.PlatformUserID, logger), true
+	default:
+		return nil, false
+	}
 }
