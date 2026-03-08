@@ -867,6 +867,66 @@ func TestFetchedAt_EmptyProviderID_RoundTrip(t *testing.T) {
 	}
 }
 
+func TestExtractImageMetadata_FanartCountPersistsSlots(t *testing.T) {
+	// FanartCount > 1 must produce ArtistImage entries for slots 1..FanartCount-1
+	// so that FanartCount round-trips through the database.
+	a := &Artist{
+		ID:           "test-id",
+		FanartExists: true,
+		FanartCount:  3,
+	}
+	imgs := extractImageMetadata(a)
+
+	var fanartSlots []int
+	for _, img := range imgs {
+		if img.ImageType == "fanart" {
+			fanartSlots = append(fanartSlots, img.SlotIndex)
+		}
+	}
+	if len(fanartSlots) != 3 {
+		t.Errorf("got %d fanart ArtistImage entries, want 3 (slots 0, 1, 2)", len(fanartSlots))
+	}
+	for _, img := range imgs {
+		if img.ImageType == "fanart" && img.SlotIndex > 0 && !img.Exists {
+			t.Errorf("fanart slot %d: Exists = false, want true", img.SlotIndex)
+		}
+	}
+}
+
+func TestExtractImageMetadata_FanartCountOneProducesOneSlot(t *testing.T) {
+	a := &Artist{
+		ID:           "test-id",
+		FanartExists: true,
+		FanartCount:  1,
+	}
+	imgs := extractImageMetadata(a)
+
+	var count int
+	for _, img := range imgs {
+		if img.ImageType == "fanart" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("got %d fanart entries for FanartCount=1, want 1", count)
+	}
+}
+
+func TestExtractImageMetadata_FanartCountZeroProducesNoSlots(t *testing.T) {
+	a := &Artist{
+		ID:           "test-id",
+		FanartExists: false,
+		FanartCount:  0,
+	}
+	imgs := extractImageMetadata(a)
+
+	for _, img := range imgs {
+		if img.ImageType == "fanart" {
+			t.Errorf("expected no fanart entries for FanartExists=false FanartCount=0, got slot %d", img.SlotIndex)
+		}
+	}
+}
+
 func TestList_LibraryIDFilter(t *testing.T) {
 	db := setupTestDB(t)
 	svc := NewService(db)

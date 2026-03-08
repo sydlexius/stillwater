@@ -23,17 +23,18 @@ type VirtualFolder struct {
 
 // ArtistItem represents an artist from the AlbumArtists endpoint.
 type ArtistItem struct {
-	Name         string            `json:"Name"`
-	SortName     string            `json:"SortName"`
-	ID           string            `json:"Id"`
-	Path         string            `json:"Path"`
-	Overview     string            `json:"Overview"`
-	Genres       []string          `json:"Genres"`
-	Tags         []string          `json:"Tags"`
-	PremiereDate string            `json:"PremiereDate"`
-	EndDate      string            `json:"EndDate"`
-	ProviderIDs  ProviderIDs       `json:"ProviderIds"`
-	ImageTags    map[string]string `json:"ImageTags"`
+	Name              string            `json:"Name"`
+	SortName          string            `json:"SortName"`
+	ID                string            `json:"Id"`
+	Path              string            `json:"Path"`
+	Overview          string            `json:"Overview"`
+	Genres            []string          `json:"Genres"`
+	Tags              []string          `json:"Tags"`
+	PremiereDate      string            `json:"PremiereDate"`
+	EndDate           string            `json:"EndDate"`
+	ProviderIDs       ProviderIDs       `json:"ProviderIds"`
+	ImageTags         map[string]string `json:"ImageTags"`
+	BackdropImageTags []string          `json:"BackdropImageTags"`
 }
 
 // ProviderIDs contains external provider identifiers.

@@ -1,8 +1,11 @@
 package api
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -14,6 +17,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/connection/emby"
 	"github.com/sydlexius/stillwater/internal/connection/jellyfin"
 	"github.com/sydlexius/stillwater/internal/connection/lidarr"
+	img "github.com/sydlexius/stillwater/internal/image"
 	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/web/templates"
 )
@@ -55,6 +59,7 @@ type populateResult struct {
 // imageDownloader can retrieve raw image bytes from a media platform.
 type imageDownloader interface {
 	GetArtistImage(ctx context.Context, artistID, imageType string) ([]byte, string, error)
+	GetArtistBackdrop(ctx context.Context, artistID string, index int) ([]byte, string, error)
 }
 
 // handleDiscoverLibraries lists music libraries available on a connection.
@@ -534,7 +539,7 @@ func (r *Router) populateFromEmbyCtx(ctx context.Context, client *emby.Client, l
 					r.logger.Warn("storing emby platform id", "name", existing.Name, "error", setErr)
 				}
 				// Download any missing images.
-				r.downloadPlatformImages(ctx, client, item.ID, item.ImageTags, existing, result)
+				r.downloadPlatformImages(ctx, client, item.ID, item.ImageTags, item.BackdropImageTags, existing, result)
 				result.Skipped++
 				continue
 			}
@@ -567,7 +572,7 @@ func (r *Router) populateFromEmbyCtx(ctx context.Context, client *emby.Client, l
 				r.logger.Warn("storing emby platform id", "name", a.Name, "error", setErr)
 			}
 
-			r.downloadPlatformImages(ctx, client, item.ID, item.ImageTags, a, result)
+			r.downloadPlatformImages(ctx, client, item.ID, item.ImageTags, item.BackdropImageTags, a, result)
 		}
 
 		startIndex += pageSize
@@ -635,7 +640,7 @@ func (r *Router) populateFromJellyfinCtx(ctx context.Context, client *jellyfin.C
 					r.logger.Warn("storing jellyfin platform id", "name", existing.Name, "error", setErr)
 				}
 				// Download any missing images.
-				r.downloadPlatformImages(ctx, client, item.ID, item.ImageTags, existing, result)
+				r.downloadPlatformImages(ctx, client, item.ID, item.ImageTags, item.BackdropImageTags, existing, result)
 				result.Skipped++
 				continue
 			}
@@ -668,7 +673,7 @@ func (r *Router) populateFromJellyfinCtx(ctx context.Context, client *jellyfin.C
 				r.logger.Warn("storing jellyfin platform id", "name", a.Name, "error", setErr)
 			}
 
-			r.downloadPlatformImages(ctx, client, item.ID, item.ImageTags, a, result)
+			r.downloadPlatformImages(ctx, client, item.ID, item.ImageTags, item.BackdropImageTags, a, result)
 		}
 
 		startIndex += pageSize
@@ -787,17 +792,18 @@ func validatedArtistPath(itemPath, libraryPath string) string {
 	return itemReal
 }
 
-// platformToStillwaterType maps Emby/Jellyfin image tag keys to Stillwater image types.
+// platformToStillwaterType maps Emby/Jellyfin ImageTags keys to Stillwater image types.
+// Backdrops are excluded: they are returned in BackdropImageTags (not ImageTags) and
+// downloaded separately via the indexed GetArtistBackdrop path.
 var platformToStillwaterType = map[string]string{
-	"Primary":  "thumb",
-	"Backdrop": "fanart",
-	"Logo":     "logo",
-	"Banner":   "banner",
+	"Primary": "thumb",
+	"Logo":    "logo",
+	"Banner":  "banner",
 }
 
 // downloadPlatformImages downloads available images from a media platform for a single artist.
 // Errors are non-fatal: logged as warnings and skipped.
-func (r *Router) downloadPlatformImages(ctx context.Context, dl imageDownloader, platformArtistID string, imageTags map[string]string, a *artist.Artist, result *populateResult) {
+func (r *Router) downloadPlatformImages(ctx context.Context, dl imageDownloader, platformArtistID string, imageTags map[string]string, backdropTags []string, a *artist.Artist, result *populateResult) {
 	dir := r.imageDir(a)
 	if dir == "" {
 		r.logger.Debug("skipping image download: no path or cache dir", "artist", a.Name)
@@ -850,10 +856,72 @@ func (r *Router) downloadPlatformImages(ctx context.Context, dl imageDownloader,
 		}
 
 		r.updateArtistImageFlag(ctx, a, stillwaterType)
-		if stillwaterType == "fanart" {
+		result.Images++
+	}
+
+	if len(backdropTags) > 0 {
+		// Resolve naming config once; log if the DB call fails so the fallback
+		// is visible rather than silently producing wrong filenames.
+		profile, profileErr := r.platformService.GetActive(ctx)
+		if profileErr != nil {
+			r.logger.Warn("loading active platform profile for backdrop naming; using defaults", "artist", a.Name, "error", profileErr)
+		}
+		primary := img.PrimaryFileName(img.DefaultFileNames, "fanart")
+		kodi := false
+		if profileErr == nil && profile != nil {
+			if name := profile.ImageNaming.PrimaryName("fanart"); name != "" {
+				primary = name
+			}
+			kodi = strings.EqualFold(profile.ID, "kodi")
+		}
+
+		downloaded := 0
+		for i, tag := range backdropTags {
+			if tag == "" {
+				r.logger.Debug("skipping backdrop with empty tag", "artist", a.Name, "index", i)
+				continue
+			}
+			filename := img.FanartFilename(primary, i, kodi)
+			fullPath := filepath.Join(dir, filename)
+			_, statErr := os.Stat(fullPath) //nolint:gosec // path built from validated dir + platform-naming function
+			if statErr == nil {
+				r.logger.Debug("skipping existing backdrop", "artist", a.Name, "index", i)
+				continue
+			}
+			if !errors.Is(statErr, fs.ErrNotExist) {
+				r.logger.Warn("checking backdrop existence", "artist", a.Name, "index", i, "file", filename, "error", statErr)
+				continue
+			}
+			data, _, dlErr := dl.GetArtistBackdrop(ctx, platformArtistID, i)
+			if dlErr != nil {
+				r.logger.Warn("downloading backdrop from platform", "artist", a.Name, "index", i, "error", dlErr)
+				continue
+			}
+			if len(data) == 0 {
+				r.logger.Warn("empty backdrop response from platform", "artist", a.Name, "index", i)
+				continue
+			}
+			resized, _, resizeErr := img.Resize(bytes.NewReader(data), 4096, 4096)
+			if resizeErr != nil {
+				r.logger.Warn("resizing backdrop", "artist", a.Name, "index", i, "error", resizeErr)
+				continue
+			}
+			saved, saveErr := img.Save(dir, "fanart", resized, []string{filename}, false, r.logger)
+			if saveErr != nil {
+				r.logger.Warn("saving backdrop", "artist", a.Name, "index", i, "error", saveErr)
+				continue
+			}
+			if len(saved) == 0 {
+				r.logger.Warn("saving backdrop produced no files", "artist", a.Name, "index", i, "dir", dir, "filename", filename)
+				continue
+			}
+			downloaded++
+			result.Images++
+		}
+		if downloaded > 0 {
+			r.updateArtistImageFlag(ctx, a, "fanart")
 			r.updateArtistFanartCount(ctx, a)
 		}
-		result.Images++
 	}
 }
 
@@ -894,10 +962,10 @@ func (r *Router) scanFromEmby(ctx context.Context, client *emby.Client, lib *lib
 			var thumbExists, fanartExists, logoExists, bannerExists bool
 			if item.ImageTags != nil {
 				thumbExists = item.ImageTags["Primary"] != ""
-				fanartExists = item.ImageTags["Backdrop"] != ""
 				logoExists = item.ImageTags["Logo"] != ""
 				bannerExists = item.ImageTags["Banner"] != ""
 			}
+			fanartExists = len(item.BackdropImageTags) > 0
 
 			if a.ThumbExists != thumbExists || a.FanartExists != fanartExists ||
 				a.LogoExists != logoExists || a.BannerExists != bannerExists {
@@ -958,10 +1026,10 @@ func (r *Router) scanFromJellyfin(ctx context.Context, client *jellyfin.Client, 
 			var thumbExists, fanartExists, logoExists, bannerExists bool
 			if item.ImageTags != nil {
 				thumbExists = item.ImageTags["Primary"] != ""
-				fanartExists = item.ImageTags["Backdrop"] != ""
 				logoExists = item.ImageTags["Logo"] != ""
 				bannerExists = item.ImageTags["Banner"] != ""
 			}
+			fanartExists = len(item.BackdropImageTags) > 0
 
 			if a.ThumbExists != thumbExists || a.FanartExists != fanartExists ||
 				a.LogoExists != logoExists || a.BannerExists != bannerExists {
