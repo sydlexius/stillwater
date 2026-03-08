@@ -7,7 +7,9 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/nfo"
@@ -98,6 +100,7 @@ func (r *Router) handleFieldUpdate(w http.ResponseWriter, req *http.Request) {
 	}
 
 	r.writeBackNFO(req.Context(), a)
+	r.asyncPushMetadataToConnections(req.Context(), a)
 
 	if isHTMXRequest(req) {
 		providers := r.fieldProviderNames(req, field)
@@ -135,6 +138,7 @@ func (r *Router) handleFieldClear(w http.ResponseWriter, req *http.Request) {
 	}
 
 	r.writeBackNFO(req.Context(), a)
+	r.asyncPushMetadataToConnections(req.Context(), a)
 
 	if isHTMXRequest(req) {
 		providers := r.fieldProviderNames(req, field)
@@ -333,6 +337,78 @@ func buildFieldProvidersMap(priorities []provider.FieldPriority) map[string][]st
 		m[pri.Field] = names
 	}
 	return m
+}
+
+// asyncPushMetadataToConnections fires a background PushMetadata call for every
+// enabled Emby or Jellyfin connection that has a platform ID mapping for the
+// artist. Each connection runs in its own goroutine so they are independent.
+// Errors are logged server-side only and never affect the HTTP response.
+//
+// ctx is the request context and is used only for the synchronous GetPlatformIDs
+// call. Each goroutine creates its own context.Background()-based timeout so the
+// push outlives the HTTP response without blocking it.
+func (r *Router) asyncPushMetadataToConnections(ctx context.Context, a *artist.Artist) {
+	platformIDs, err := r.artistService.GetPlatformIDs(ctx, a.ID)
+	if err != nil {
+		r.logger.Error("auto-push: listing platform IDs",
+			slog.String("artist_id", a.ID),
+			slog.String("error", err.Error()))
+		return
+	}
+	if len(platformIDs) == 0 {
+		return
+	}
+
+	// a is a freshly-allocated struct from GetByID with no shared mutable
+	// references; reading its fields from goroutines is safe.
+	data := buildArtistPushData(a)
+
+	for _, pid := range platformIDs {
+		pid := pid
+		go func() { //nolint:gosec // G118: goroutine must outlive the HTTP request context; context.Background() with explicit timeout is correct here
+			gCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			defer func() {
+				if v := recover(); v != nil {
+					r.logger.Error("auto-push: panic in goroutine",
+						slog.String("artist_id", a.ID),
+						slog.String("connection_id", pid.ConnectionID),
+						slog.Any("panic", v),
+						slog.String("stack", string(debug.Stack())))
+				}
+			}()
+
+			conn, err := r.connectionService.GetByID(gCtx, pid.ConnectionID)
+			if err != nil {
+				r.logger.Error("auto-push: fetching connection",
+					slog.String("artist_id", a.ID),
+					slog.String("connection_id", pid.ConnectionID),
+					slog.String("error", err.Error()))
+				return
+			}
+			if !conn.Enabled {
+				return
+			}
+
+			pusher, ok := newMetadataPusher(conn, r.logger)
+			if !ok {
+				return // connection type does not support PushMetadata (e.g. Lidarr)
+			}
+
+			if err := pusher.PushMetadata(gCtx, pid.PlatformArtistID, data); err != nil {
+				r.logger.Error("auto-push: metadata push failed",
+					slog.String("artist_id", a.ID),
+					slog.String("artist_name", a.Name),
+					slog.String("connection", conn.Name),
+					slog.String("error", err.Error()))
+			} else {
+				r.logger.Info("auto-push: metadata pushed",
+					slog.String("artist_id", a.ID),
+					slog.String("artist_name", a.Name),
+					slog.String("connection", conn.Name))
+			}
+		}()
+	}
 }
 
 // writeBackNFO writes the artist's current metadata to its artist.nfo file
