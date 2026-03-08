@@ -259,6 +259,8 @@ func run() error {
 		event.ArtistNew, event.MetadataFixed, event.ReviewNeeded,
 		event.RuleViolation, event.BulkCompleted, event.ScanCompleted,
 		event.LidarrArtistAdd, event.LidarrDownload,
+		event.EmbyArtistUpdate, event.EmbyLibraryScan,
+		event.JellyfinArtistUpdate, event.JellyfinLibraryScan,
 		event.FSDirCreated, event.FSDirRemoved,
 	} {
 		eventBus.Subscribe(eventType, webhookDispatcher.HandleEvent)

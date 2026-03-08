@@ -3441,6 +3441,139 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  /webhooks/inbound/emby:
+    post:
+      tags: [Webhooks]
+      summary: Receive Emby webhook event
+      description: >
+        Accepts inbound webhook events from Emby. Responds immediately with 200
+        and processes the event asynchronously. Uses standard authentication
+        (session cookie, bearer token, or API key query parameter).
+      operationId: handleEmbyWebhook
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                Event:
+                  type: string
+                  description: >
+                    Emby event type (system.notificationtest, library.new,
+                    item.updated, library.changed)
+                Item:
+                  type: object
+                  properties:
+                    Id:
+                      type: string
+                    Name:
+                      type: string
+                    Type:
+                      type: string
+                      description: Media type, e.g. MusicAlbum
+                    ProviderIds:
+                      type: object
+                      additionalProperties:
+                        type: string
+                    Path:
+                      type: string
+                    ArtistItems:
+                      type: array
+                      description: Related artist references (Emby 4.9+)
+                      items:
+                        type: object
+                        properties:
+                          Id:
+                            type: string
+                          Name:
+                            type: string
+              required: [Event]
+      responses:
+        "200":
+          description: Event accepted for async processing
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+        "400":
+          description: Invalid webhook payload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Authentication required or invalid token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Missing required webhook scope
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /webhooks/inbound/jellyfin:
+    post:
+      tags: [Webhooks]
+      summary: Receive Jellyfin webhook event
+      description: >
+        Accepts inbound webhook events from the Jellyfin webhook plugin. Responds
+        immediately with 200 and processes the event asynchronously. Uses standard
+        authentication (session cookie, bearer token, or API key query parameter).
+      operationId: handleJellyfinWebhook
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                NotificationType:
+                  type: string
+                  description: Jellyfin event type (Test, ItemAdded, ItemUpdated, LibraryChanged)
+                ItemId:
+                  type: string
+                ItemType:
+                  type: string
+                  description: Media type, e.g. MusicAlbum
+                Name:
+                  type: string
+                Artist:
+                  type: string
+                  description: Artist name from the Jellyfin webhook plugin
+                Provider_musicbrainzalbumartist:
+                  type: string
+                  description: MusicBrainz album artist ID from the Jellyfin webhook plugin
+              required: [NotificationType]
+      responses:
+        "200":
+          description: Event accepted for async processing
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+        "400":
+          description: Invalid webhook payload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Authentication required or invalid token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Missing required webhook scope
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   # --- Settings extras ---
 
   /settings/logging:

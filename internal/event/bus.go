@@ -11,16 +11,20 @@ type Type string
 
 // Known event types.
 const (
-	ArtistNew       Type = "artist.new"
-	MetadataFixed   Type = "metadata.fixed"
-	ReviewNeeded    Type = "review.needed"
-	RuleViolation   Type = "rule.violation"
-	BulkCompleted   Type = "bulk.completed"
-	ScanCompleted   Type = "scan.completed"
-	LidarrArtistAdd Type = "lidarr.artist.add"
-	LidarrDownload  Type = "lidarr.download"
-	FSDirCreated    Type = "fs.dir.created"
-	FSDirRemoved    Type = "fs.dir.removed"
+	ArtistNew            Type = "artist.new"
+	MetadataFixed        Type = "metadata.fixed"
+	ReviewNeeded         Type = "review.needed"
+	RuleViolation        Type = "rule.violation"
+	BulkCompleted        Type = "bulk.completed"
+	ScanCompleted        Type = "scan.completed"
+	LidarrArtistAdd      Type = "lidarr.artist.add"
+	LidarrDownload       Type = "lidarr.download"
+	EmbyArtistUpdate     Type = "emby.artist.update"
+	EmbyLibraryScan      Type = "emby.library.scan"
+	JellyfinArtistUpdate Type = "jellyfin.artist.update"
+	JellyfinLibraryScan  Type = "jellyfin.library.scan"
+	FSDirCreated         Type = "fs.dir.created"
+	FSDirRemoved         Type = "fs.dir.removed"
 )
 
 // Event represents something that happened in the system.

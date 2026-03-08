@@ -25,6 +25,9 @@ type LibraryLister interface {
 	List(ctx context.Context) ([]library.Library, error)
 }
 
+// ErrScanInProgress is returned by Run when a scan is already running.
+var ErrScanInProgress = fmt.Errorf("scan already in progress")
+
 // Image filename patterns to detect for each type.
 var (
 	thumbPatterns  = []string{"folder.jpg", "folder.png", "artist.jpg", "artist.png", "poster.jpg", "poster.png"}
@@ -103,7 +106,7 @@ func (s *Service) Run(ctx context.Context) (*ScanResult, error) {
 	s.mu.Lock()
 	if s.currentScan != nil && s.currentScan.Status == "running" {
 		s.mu.Unlock()
-		return nil, fmt.Errorf("scan already in progress")
+		return nil, ErrScanInProgress
 	}
 
 	result := &ScanResult{
