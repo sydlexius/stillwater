@@ -766,6 +766,9 @@ paths:
                     items:
                       type: string
                     description: Platform sync warnings. Empty if no platforms are connected or all syncs succeeded.
+                  count:
+                    type: integer
+                    description: Total number of fanart images now on disk for this artist. Present only when type is fanart.
         "413":
           description: File exceeds 25MB limit
           content:
@@ -829,6 +832,9 @@ paths:
                     items:
                       type: string
                     description: Platform sync warnings. Empty if no platforms are connected or all syncs succeeded.
+                  count:
+                    type: integer
+                    description: Total number of fanart images now on disk for this artist. Present only when type is fanart.
 
   /artists/{id}/images/search:
     get:

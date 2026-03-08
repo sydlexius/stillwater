@@ -994,7 +994,7 @@ func (r *Router) syncImageToPlatforms(ctx context.Context, a *artist.Artist, ima
 		conn, connErr := r.connectionService.GetByID(ctx, pid.ConnectionID)
 		if connErr != nil {
 			r.logger.Error("getting connection for image sync", "connection_id", pid.ConnectionID, "error", connErr)
-			warnings = append(warnings, fmt.Sprintf("connection %s: failed to load: %v", pid.ConnectionID, connErr))
+			warnings = append(warnings, truncateWarning(fmt.Sprintf("connection %s: failed to load: %v", pid.ConnectionID, connErr)))
 			continue
 		}
 		if !conn.Enabled {
@@ -1010,13 +1010,13 @@ func (r *Router) syncImageToPlatforms(ctx context.Context, a *artist.Artist, ima
 			uploader = jellyfin.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger)
 		default:
 			r.logger.Warn("unsupported connection type for image sync", "type", conn.Type)
-			warnings = append(warnings, fmt.Sprintf("%s: unsupported connection type %q", conn.Name, conn.Type))
+			warnings = append(warnings, truncateWarning(fmt.Sprintf("%s: unsupported connection type %q", conn.Name, conn.Type)))
 			continue
 		}
 
 		if uploadErr := uploader.UploadImage(ctx, pid.PlatformArtistID, imageType, data, ct); uploadErr != nil {
 			r.logger.Error("syncing image to platform", "artist", a.Name, "connection", conn.Name, "type", imageType, "error", uploadErr)
-			warnings = append(warnings, fmt.Sprintf("%s (%s): image upload failed: %v", conn.Name, conn.Type, uploadErr))
+			warnings = append(warnings, truncateWarning(fmt.Sprintf("%s (%s): image upload failed: %v", conn.Name, conn.Type, uploadErr)))
 		}
 	}
 	return warnings
@@ -1043,7 +1043,7 @@ func (r *Router) deleteImageFromPlatforms(ctx context.Context, a *artist.Artist,
 		conn, connErr := r.connectionService.GetByID(ctx, pid.ConnectionID)
 		if connErr != nil {
 			r.logger.Error("getting connection for image delete sync", "connection_id", pid.ConnectionID, "error", connErr)
-			warnings = append(warnings, fmt.Sprintf("connection %s: failed to load: %v", pid.ConnectionID, connErr))
+			warnings = append(warnings, truncateWarning(fmt.Sprintf("connection %s: failed to load: %v", pid.ConnectionID, connErr)))
 			continue
 		}
 		if !conn.Enabled {
@@ -1059,13 +1059,13 @@ func (r *Router) deleteImageFromPlatforms(ctx context.Context, a *artist.Artist,
 			deleter = jellyfin.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger)
 		default:
 			r.logger.Warn("unsupported connection type for image delete sync", "type", conn.Type)
-			warnings = append(warnings, fmt.Sprintf("%s: unsupported connection type %q", conn.Name, conn.Type))
+			warnings = append(warnings, truncateWarning(fmt.Sprintf("%s: unsupported connection type %q", conn.Name, conn.Type)))
 			continue
 		}
 
 		if delErr := deleter.DeleteImage(ctx, pid.PlatformArtistID, imageType); delErr != nil {
 			r.logger.Error("deleting image from platform", "artist", a.Name, "connection", conn.Name, "type", imageType, "error", delErr)
-			warnings = append(warnings, fmt.Sprintf("%s (%s): image delete failed: %v", conn.Name, conn.Type, delErr))
+			warnings = append(warnings, truncateWarning(fmt.Sprintf("%s (%s): image delete failed: %v", conn.Name, conn.Type, delErr)))
 		}
 	}
 	return warnings
@@ -1078,11 +1078,12 @@ const (
 
 // setSyncWarningTrigger encodes sync warnings as an HX-Trigger header so the
 // HTMX frontend can display them as non-blocking toast notifications.
-// Truncation is applied in two stages: first, each warning is capped at
-// maxWarningRunes Unicode codepoints (runes). Then, if the full JSON payload
-// still exceeds maxHeaderBytes, all individual messages are replaced with a
-// single summary count string. Both limits prevent HTTP 431 (Request Header
-// Fields Too Large) errors from intermediary proxies.
+// Truncation is applied in two stages: each warning is already capped at
+// maxWarningRunes runes by truncateWarning before reaching this function. As
+// a second stage, if the full JSON payload still exceeds maxHeaderBytes, all
+// individual messages are replaced with a single summary count string. Both
+// limits prevent HTTP 431 (Request Header Fields Too Large) errors from
+// intermediary proxies.
 func setSyncWarningTrigger(w http.ResponseWriter, warnings []string) {
 	if len(warnings) == 0 {
 		return
@@ -1105,6 +1106,16 @@ func setSyncWarningTrigger(w http.ResponseWriter, warnings []string) {
 		})
 	}
 	w.Header().Set("HX-Trigger", string(data))
+}
+
+// truncateWarning caps a warning string at maxWarningRunes so that platform
+// error messages (which may embed full HTTP response bodies) cannot inflate
+// JSON response bodies or HX-Trigger headers to unreasonable sizes.
+func truncateWarning(msg string) string {
+	if runes := []rune(msg); len(runes) > maxWarningRunes {
+		return string(runes[:maxWarningRunes]) + " (truncated)"
+	}
+	return msg
 }
 
 // findExistingImage searches for the first matching image file in a directory.
