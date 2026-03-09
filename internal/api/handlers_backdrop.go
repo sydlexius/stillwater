@@ -584,7 +584,7 @@ func (r *Router) handleFanartReorder(w http.ResponseWriter, req *http.Request) {
 			}
 			errMsg := "failed to reorder fanart files"
 			if rollbackIncomplete {
-				errMsg = "failed to reorder fanart files; rollback incomplete, check artist directory for .tmp files"
+				errMsg = "failed to reorder fanart files; rollback incomplete, a rescan may be needed"
 			}
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": errMsg})
 			return
@@ -642,7 +642,7 @@ func (r *Router) handleFanartReorder(w http.ResponseWriter, req *http.Request) {
 		}
 		errMsg := "failed to finalize fanart reorder"
 		if rollbackIncomplete {
-			errMsg = "failed to finalize fanart reorder; rollback incomplete, check artist directory for .tmp files"
+			errMsg = "failed to finalize fanart reorder; rollback incomplete, a rescan may be needed"
 		}
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": errMsg})
 		return
@@ -713,6 +713,11 @@ func (r *Router) handleFanartSyncState(w http.ResponseWriter, req *http.Request)
 			slog.String("error", discoverErr.Error()))
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to read fanart directory"})
 		return
+	}
+	if errors.Is(discoverErr, os.ErrNotExist) {
+		r.logger.Debug("fanart directory does not exist for sync state",
+			slog.String("artist_id", artistID),
+			slog.String("dir", r.imageDir(a)))
 	}
 	localCount := len(discovered)
 
