@@ -860,20 +860,8 @@ func (r *Router) downloadPlatformImages(ctx context.Context, dl imageDownloader,
 	}
 
 	if len(backdropTags) > 0 {
-		// Resolve naming config once; log if the DB call fails so the fallback
-		// is visible rather than silently producing wrong filenames.
-		profile, profileErr := r.platformService.GetActive(ctx)
-		if profileErr != nil {
-			r.logger.Warn("loading active platform profile for backdrop naming; using defaults", "artist", a.Name, "error", profileErr)
-		}
-		primary := img.PrimaryFileName(img.DefaultFileNames, "fanart")
-		kodi := false
-		if profileErr == nil && profile != nil {
-			if name := profile.ImageNaming.PrimaryName("fanart"); name != "" {
-				primary = name
-			}
-			kodi = strings.EqualFold(profile.ID, "kodi")
-		}
+		primary := r.getActiveFanartPrimary(ctx)
+		kodi := r.isKodiNumbering(ctx)
 
 		downloaded := 0
 		anyExisted := false
@@ -939,8 +927,48 @@ func (r *Router) downloadPlatformImages(ctx context.Context, dl imageDownloader,
 			result.Images++
 		}
 		if downloaded > 0 || anyExisted {
+			// When backdrop index 0 failed (empty tag, download error, etc.)
+			// but later indexes succeeded, no primary fanart file exists.
+			// The UI serves the background image from /images/fanart/file which
+			// only matches the primary name pattern. Compact the numbered files
+			// so the lowest available becomes the primary -- same pattern used
+			// by handleFanartBatchDelete.
+			r.compactFanartIfNeeded(dir, primary, kodi)
 			r.updateArtistImageFlag(ctx, a, "fanart")
 			r.updateArtistFanartCount(ctx, a)
+		}
+	}
+}
+
+// compactFanartIfNeeded renumbers fanart files when the primary slot is missing
+// but numbered files exist. This closes gaps so the primary filename always
+// corresponds to the first available fanart.
+func (r *Router) compactFanartIfNeeded(dir, primary string, kodi bool) {
+	paths := img.DiscoverFanart(dir, primary)
+	if len(paths) == 0 {
+		return
+	}
+	// Check whether the primary slot exists. DiscoverFanart returns sorted
+	// paths where index 0 is the primary. If the primary file is present,
+	// its base (sans extension) will match the primary base exactly.
+	primaryBase := strings.TrimSuffix(primary, filepath.Ext(primary))
+	firstBase := strings.TrimSuffix(filepath.Base(paths[0]), filepath.Ext(paths[0]))
+	if strings.EqualFold(firstBase, primaryBase) {
+		return // primary exists, nothing to compact
+	}
+	// Renumber all discovered files sequentially from index 0.
+	for i, oldPath := range paths {
+		newName := img.FanartFilename(primary, i, kodi)
+		// Preserve actual extension from the existing file.
+		actualExt := filepath.Ext(oldPath)
+		newBase := strings.TrimSuffix(newName, filepath.Ext(newName))
+		newPath := filepath.Join(dir, newBase+actualExt)
+		if oldPath != newPath {
+			if err := os.Rename(oldPath, newPath); err != nil { //nolint:gosec // paths from DiscoverFanart and FanartFilename, not user input
+				r.logger.Warn("renaming fanart during compact, aborting remaining renames",
+					"from", oldPath, "to", newPath, "remaining", len(paths)-i-1, "error", err)
+				return // stop -- continuing would produce inconsistent numbering
+			}
 		}
 	}
 }

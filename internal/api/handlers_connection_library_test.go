@@ -1805,13 +1805,15 @@ func TestPopulateFromEmby_PartialBackdropDownloadFailure(t *testing.T) {
 		t.Errorf("images = %d, want 1 (only index 1 succeeded)", result.Images)
 	}
 
-	// Kodi numbering: index 1 maps to fanart1.jpg.
-	if _, err := os.Stat(filepath.Join(artistDir, "fanart1.jpg")); err != nil {
-		t.Errorf("expected fanart1.jpg to exist: %v", err)
+	// Kodi numbering: index 1 maps to fanart1.jpg during download. After the
+	// loop, compactFanartIfNeeded renames it to fanart.jpg (the primary slot)
+	// so that the UI's /images/fanart/file endpoint can serve it.
+	if _, err := os.Stat(filepath.Join(artistDir, "fanart.jpg")); err != nil {
+		t.Errorf("expected fanart.jpg to exist after compaction: %v", err)
 	}
-	// index 0 failed, so fanart.jpg must not exist.
-	if _, err := os.Stat(filepath.Join(artistDir, "fanart.jpg")); err == nil {
-		t.Error("fanart.jpg must not exist when backdrop index 0 failed")
+	// fanart1.jpg should no longer exist -- it was renamed to primary.
+	if _, err := os.Stat(filepath.Join(artistDir, "fanart1.jpg")); err == nil {
+		t.Error("fanart1.jpg should not exist after compaction to primary slot")
 	}
 }
 
