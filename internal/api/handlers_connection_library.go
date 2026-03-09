@@ -909,12 +909,12 @@ func (r *Router) downloadPlatformImages(ctx context.Context, dl imageDownloader,
 				r.logger.Warn("empty backdrop response from platform", "artist", a.Name, "index", i)
 				continue
 			}
-			resized, _, resizeErr := img.ConvertFormat(bytes.NewReader(data))
-			if resizeErr != nil {
-				r.logger.Warn("converting backdrop format", "artist", a.Name, "index", i, "error", resizeErr)
+			converted, _, convertErr := img.ConvertFormat(bytes.NewReader(data))
+			if convertErr != nil {
+				r.logger.Warn("converting backdrop format", "artist", a.Name, "index", i, "error", convertErr)
 				continue
 			}
-			saved, saveErr := img.Save(dir, "fanart", resized, []string{filename}, false, r.logger)
+			saved, saveErr := img.Save(dir, "fanart", converted, []string{filename}, false, r.logger)
 			if saveErr != nil {
 				r.logger.Warn("saving backdrop", "artist", a.Name, "index", i, "error", saveErr)
 				continue

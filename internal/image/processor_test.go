@@ -153,6 +153,33 @@ func TestResize_AlreadyFits(t *testing.T) {
 	}
 }
 
+// minimalWebP is a minimal valid 1x1 lossless WebP image used for format-conversion tests.
+// Generated offline; contains a single white pixel encoded with VP8L.
+var minimalWebP = []byte{
+	0x52, 0x49, 0x46, 0x46, 0x24, 0x00, 0x00, 0x00, // RIFF....
+	0x57, 0x45, 0x42, 0x50, 0x56, 0x50, 0x38, 0x4c, // WEBPVP8L
+	0x15, 0x00, 0x00, 0x00, 0x2f, 0x00, 0x00, 0x00, // ..../.
+	0x10, 0x07, 0x10, 0x11, 0x11, 0x88, 0x88, 0x08,
+	0x08, 0x00, 0x00, 0x00,
+}
+
+func TestConvertFormat_WebP_ConvertsToPNG(t *testing.T) {
+	result, format, err := ConvertFormat(bytes.NewReader(minimalWebP))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if format != FormatPNG {
+		t.Errorf("got format %q, want %q", format, FormatPNG)
+	}
+	w, h, err := GetDimensions(bytes.NewReader(result))
+	if err != nil {
+		t.Fatalf("reading result dimensions: %v", err)
+	}
+	if w != 1 || h != 1 {
+		t.Errorf("expected 1x1, got %dx%d -- dimensions not preserved through WebP-to-PNG conversion", w, h)
+	}
+}
+
 func TestConvertFormat_JPEG_PreservesNativeResolution(t *testing.T) {
 	// A large JPEG (simulating a 4K backdrop) must not be downscaled.
 	data := makeJPEG(t, 3840, 2160)
