@@ -487,7 +487,7 @@ fanart_list_body=$(echo "$fanart_list_resp" | sed '$d')
 fanart_list_code=$(echo "$fanart_list_resp" | tail -n 1)
 assert_status "GET /api/v1/artists/$ARTIST_ID/images/fanart/list" "200" "$fanart_list_code"
 if [[ "$fanart_list_code" == "200" ]]; then
-  fanart_arr_len=$(echo "$fanart_list_body" | jq 'length' 2>/dev/null)
+  fanart_arr_len=$(echo "$fanart_list_body" | jq 'length' 2>/dev/null || echo "")
   if [[ -n "$fanart_arr_len" && "$fanart_arr_len" =~ ^[0-9]+$ ]]; then
     echo "[PASS]   fanart list returns array (length=$fanart_arr_len)"
     PASS=$((PASS + 1))
