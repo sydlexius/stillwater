@@ -63,7 +63,7 @@ jobs:
               sleep 30
             fi
           done
-          echo "PR #$PR_NUMBER not approved after 5 minutes, skipping"
+          echo "PR #$PR_NUMBER not approved after ~5 minutes, skipping"
           echo "decision=$DECISION" >> "$GITHUB_OUTPUT"
 
       - name: Wait for required checks and merge
