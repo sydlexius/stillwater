@@ -40,9 +40,9 @@ type indexedFile struct {
 // The primary name comes from the active platform profile (e.g., "backdrop.jpg"
 // for Emby, "fanart.jpg" for Kodi). Files are returned in index order: primary
 // first, then numbered variants sorted ascending.
-func DiscoverFanart(dir string, primaryName string) []string {
+func DiscoverFanart(dir string, primaryName string) ([]string, error) {
 	if primaryName == "" {
-		return nil
+		return nil, nil
 	}
 
 	base := strings.TrimSuffix(primaryName, filepath.Ext(primaryName))
@@ -50,7 +50,7 @@ func DiscoverFanart(dir string, primaryName string) []string {
 
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("reading directory %s: %w", dir, err)
 	}
 
 	var files []indexedFile
@@ -109,7 +109,7 @@ func DiscoverFanart(dir string, primaryName string) []string {
 		lastIdx = f.index
 		paths = append(paths, f.path)
 	}
-	return paths
+	return paths, nil
 }
 
 // MaxFanartIndex scans an artist directory and returns the highest numeric
@@ -188,4 +188,84 @@ func NextFanartIndex(maxSuffix int, kodi bool) int {
 	}
 	// Non-Kodi: suffix N = index N-1, so next index = maxSuffix.
 	return maxSuffix
+}
+
+// RenumberFanart renames the given survivor paths so they occupy contiguous
+// 0-based indices. Each file keeps its original extension. primaryName is the
+// base name for index 0 (e.g. "backdrop.jpg"). dir is the parent directory.
+// kodi controls the numbering convention (see FanartFilename).
+func RenumberFanart(dir, primaryName string, survivors []string, kodi bool) error {
+	if len(survivors) == 0 {
+		return nil
+	}
+
+	// Phase 1: stage all survivors to temporary names to avoid collisions
+	// when renaming (e.g., fanart1->fanart0 while fanart0 still exists).
+	type staged struct {
+		tmpPath string
+		ext     string
+	}
+	stagedFiles := make([]staged, len(survivors))
+	for i, oldPath := range survivors {
+		ext := filepath.Ext(oldPath)
+		tmpName := fmt.Sprintf("fanart_renumber_%d%s.tmp", i, ext)
+		tmpPath := filepath.Join(dir, tmpName)
+		// Remove any leftover temp file from a previous crashed operation.
+		if removeErr := os.Remove(tmpPath); removeErr != nil && !os.IsNotExist(removeErr) {
+			return fmt.Errorf("clearing stale temp file %s: %w", tmpName, removeErr)
+		}
+		if err := os.Rename(oldPath, tmpPath); err != nil {
+			// Best-effort rollback of already-staged files.
+			var rollbackErrs []string
+			for rollback := range i {
+				if rbErr := os.Rename(stagedFiles[rollback].tmpPath, survivors[rollback]); rbErr != nil { //nolint:gosec // rollback index bounded by loop range
+					rollbackErrs = append(rollbackErrs, fmt.Sprintf("restore %s: %v", filepath.Base(stagedFiles[rollback].tmpPath), rbErr))
+				}
+			}
+			if len(rollbackErrs) > 0 {
+				return fmt.Errorf("staging %s for renumber: %w (rollback errors: %s)", filepath.Base(oldPath), err, strings.Join(rollbackErrs, "; "))
+			}
+			return fmt.Errorf("staging %s for renumber: %w", filepath.Base(oldPath), err)
+		}
+		stagedFiles[i] = staged{tmpPath: tmpPath, ext: ext}
+	}
+
+	// Phase 2: rename staged files to their final contiguous names.
+	// Track finalized files for rollback on failure.
+	type finalized struct {
+		finalPath string
+		tmpPath   string
+	}
+	var done []finalized
+	var phase2Err error
+	for i, sf := range stagedFiles {
+		newName := FanartFilename(primaryName, i, kodi)
+		newBase := strings.TrimSuffix(newName, filepath.Ext(newName))
+		finalName := newBase + sf.ext
+		finalPath := filepath.Join(dir, finalName)
+		if err := os.Rename(sf.tmpPath, finalPath); err != nil {
+			phase2Err = fmt.Errorf("renaming %s to %s: %w", filepath.Base(sf.tmpPath), finalName, err)
+			break
+		}
+		done = append(done, finalized{finalPath: finalPath, tmpPath: sf.tmpPath})
+	}
+	if phase2Err != nil {
+		// Best-effort rollback: revert finalized files to tmp, then restore originals.
+		var rollbackErrs []string
+		for _, f := range done {
+			if rbErr := os.Rename(f.finalPath, f.tmpPath); rbErr != nil {
+				rollbackErrs = append(rollbackErrs, fmt.Sprintf("revert %s: %v", filepath.Base(f.finalPath), rbErr))
+			}
+		}
+		for i, sf := range stagedFiles {
+			if rbErr := os.Rename(sf.tmpPath, survivors[i]); rbErr != nil { //nolint:gosec // stagedFiles and survivors have same length
+				rollbackErrs = append(rollbackErrs, fmt.Sprintf("restore %s: %v", filepath.Base(sf.tmpPath), rbErr))
+			}
+		}
+		if len(rollbackErrs) > 0 {
+			return fmt.Errorf("%w (rollback errors: %s)", phase2Err, strings.Join(rollbackErrs, "; "))
+		}
+		return phase2Err
+	}
+	return nil
 }

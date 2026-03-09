@@ -112,6 +112,16 @@ func hxValsJSON(pairs map[string]string) string {
 	return string(b)
 }
 
+// hxValsJSONAny is like hxValsJSON but accepts mixed-type values (strings,
+// ints, bools) for use in hx-vals attributes that need non-string JSON values.
+func hxValsJSONAny(pairs map[string]any) string {
+	b, err := json.Marshal(pairs)
+	if err != nil {
+		return "{}"
+	}
+	return string(b)
+}
+
 // mergeSliceValues combines current and provider slices, deduplicating
 // case-insensitively while preserving original casing. Returns a raw
 // comma-separated string suitable for passing to hxValsJSON.

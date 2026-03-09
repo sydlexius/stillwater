@@ -331,6 +331,14 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/images/fanart/{index}/file", wrapAuth(r.handleServeFanartByIndex, authMw))
 	mux.HandleFunc("DELETE "+bp+"/api/v1/artists/{id}/images/fanart/batch", wrapAuth(r.handleFanartBatchDelete, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/images/fanart/fetch-batch", wrapAuth(r.handleFanartBatchFetch, authMw))
+	// Fanart slot management routes
+	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/images/fanart/reorder", wrapAuth(r.handleFanartReorder, authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/images/fanart/{slot}/assign", wrapAuth(r.handleFanartSlotAssign, authMw))
+	mux.HandleFunc("DELETE "+bp+"/api/v1/artists/{id}/images/fanart/{slot}", wrapAuth(r.handleFanartSlotDelete, authMw))
+	// Platform backdrop routes
+	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/platform-backdrops", wrapAuth(r.handlePlatformBackdrops, authMw))
+	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/platform-backdrops/{connectionId}/{index}/thumbnail", wrapAuth(r.handlePlatformBackdropThumbnail, authMw))
+	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/fanart-sync-state", wrapAuth(r.handleFanartSyncState, authMw))
 	// Generic image routes
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/images/{type}/file", wrapAuth(r.handleServeImage, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/images/{type}/info", wrapAuth(r.handleImageInfo, authMw))

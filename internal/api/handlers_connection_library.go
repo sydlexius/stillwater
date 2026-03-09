@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -944,7 +945,13 @@ func (r *Router) downloadPlatformImages(ctx context.Context, dl imageDownloader,
 // but numbered files exist. This closes gaps so the primary filename always
 // corresponds to the first available fanart.
 func (r *Router) compactFanartIfNeeded(dir, primary string, kodi bool) {
-	paths := img.DiscoverFanart(dir, primary)
+	paths, discoverErr := img.DiscoverFanart(dir, primary)
+	if discoverErr != nil {
+		r.logger.Warn("discovering fanart for compact",
+			slog.String("dir", dir),
+			slog.String("error", discoverErr.Error()))
+		return
+	}
 	if len(paths) == 0 {
 		return
 	}
@@ -957,19 +964,9 @@ func (r *Router) compactFanartIfNeeded(dir, primary string, kodi bool) {
 		return // primary exists, nothing to compact
 	}
 	// Renumber all discovered files sequentially from index 0.
-	for i, oldPath := range paths {
-		newName := img.FanartFilename(primary, i, kodi)
-		// Preserve actual extension from the existing file.
-		actualExt := filepath.Ext(oldPath)
-		newBase := strings.TrimSuffix(newName, filepath.Ext(newName))
-		newPath := filepath.Join(dir, newBase+actualExt)
-		if oldPath != newPath {
-			if err := os.Rename(oldPath, newPath); err != nil { //nolint:gosec // paths from DiscoverFanart and FanartFilename, not user input
-				r.logger.Warn("renaming fanart during compact, aborting remaining renames",
-					"from", oldPath, "to", newPath, "remaining", len(paths)-i-1, "error", err)
-				return // stop -- continuing would produce inconsistent numbering
-			}
-		}
+	if err := img.RenumberFanart(dir, primary, paths, kodi); err != nil {
+		r.logger.Warn("compacting fanart after primary removal",
+			slog.String("error", err.Error()))
 	}
 }
 
