@@ -68,6 +68,7 @@ jobs:
           PR_NUMBER: ${{ steps.pr.outputs.number }}
           REPO: ${{ github.repository }}
         run: |
+          DECISION="unknown"
           for i in $(seq 1 10); do
             DECISION=$(gh pr view "$PR_NUMBER" --repo "$REPO" \
               --json reviewDecision --jq '.reviewDecision') || {
