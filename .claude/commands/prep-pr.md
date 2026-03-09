@@ -45,7 +45,16 @@ If tests pass: note it and continue.
 
 ## Step 3 -- OpenAPI consistency check
 
-Follow the logic in `.claude/commands/check-openapi.md` against the PR-wide diff:
+Run the AST-based consistency test first:
+
+```bash
+go test -run TestOpenAPIConsistency -v ./internal/api/
+```
+
+If it fails, fix the reported spec drift before continuing.
+
+Then follow the semantic checks in `.claude/commands/check-openapi.md` against the
+PR-wide diff:
 
 ```bash
 base=$(git merge-base main HEAD)
@@ -58,6 +67,43 @@ on main after this branch was cut.
 Report findings using the same CRITICAL / IMPORTANT / OK format defined in that file.
 
 If any CRITICAL finding: stop. List what must be fixed.
+
+---
+
+## Step 3b -- Rename completeness check
+
+If the diff contains any renamed functions, variables, types, or constants:
+
+```bash
+base=$(git merge-base main HEAD)
+git diff "$base"..HEAD | grep '^-.*func \|^-.*type \|^-.*var \|^-.*const ' | \
+  sed 's/^-//' | grep -oE '[A-Z][a-zA-Z0-9]*'
+```
+
+For each old name found, grep the full codebase for remaining references:
+
+```bash
+grep -rn "OldName" --include='*.go' --include='*.templ' .
+```
+
+**Flag as CRITICAL** if the old name still appears in code (excluding the diff's `-` lines
+and comments). Incomplete renames cause compilation errors or silent behavior changes.
+
+---
+
+## Step 3c -- Raw error leak check
+
+Check for raw internal error messages leaking to clients:
+
+```bash
+base=$(git merge-base main HEAD)
+git diff "$base"..HEAD -- internal/api/handlers_*.go | grep '^+' | \
+  grep -E 'err\.(Error|String)\(\)|fmt\.(Sprintf|Errorf).*err[^o]' | \
+  grep -v 'slog\.\|logger\.\|log\.'
+```
+
+**Flag as IMPORTANT** if any handler response path includes raw `err.Error()` text.
+Client-visible messages must be generic; the full error belongs in a server-side `slog` call.
 
 ---
 
@@ -197,3 +243,7 @@ if not.
 
 If a PR already exists, print its URL and say "PR already open -- Copilot will review
 the push automatically."
+
+**Note:** Copilot review cannot be re-triggered via API (bot accounts return 422). The
+first push is the only chance for a clean review. This is why steps 2-5 gate so
+aggressively -- every issue caught before the first push saves a review round.

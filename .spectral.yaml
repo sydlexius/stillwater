@@ -1,0 +1,46 @@
+extends:
+  - spectral:oas
+
+rules:
+  # Require descriptions on all schema properties in response bodies.
+  # This is the #1 Copilot review comment -- fields added without descriptions.
+  oas3-schema-properties-must-have-description:
+    description: Every schema property must have a description.
+    severity: warn
+    given: "$.components.schemas..properties[*]"
+    then:
+      field: description
+      function: truthy
+
+  # Require descriptions on inline response properties (not using $ref).
+  oas3-response-properties-must-have-description:
+    description: Every inline response property must have a description.
+    severity: warn
+    given: "$.paths..responses..properties[*]"
+    then:
+      field: description
+      function: truthy
+
+  # Warn on additionalProperties: true without documentation.
+  # Open schemas are risky -- they silently accept unknown fields.
+  no-undocumented-additional-properties:
+    description: "additionalProperties: true must include a description explaining why."
+    severity: warn
+    given: "$.components.schemas[?(@.additionalProperties == true)]"
+    then:
+      field: description
+      function: truthy
+
+  # Ensure all endpoints have operationId for code generation and docs.
+  operation-operationId:
+    description: Every operation must have an operationId.
+    severity: warn
+    given: "$.paths[*][get,put,post,delete,patch]"
+    then:
+      field: operationId
+      function: truthy
+
+  # Disable noisy built-in rules that are not relevant for this project.
+  info-contact: false
+  info-description: false
+  oas3-api-servers: false

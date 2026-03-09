@@ -1,4 +1,4 @@
-.PHONY: build run test test-race test-cover lint fmt clean docker-build docker-run dev templ tailwind migrate favicon hooks
+.PHONY: build run test test-race test-cover lint fmt clean docker-build docker-run dev templ tailwind migrate favicon hooks check-openapi
 
 # Binary name
 BINARY=stillwater
@@ -85,6 +85,10 @@ docker-run:
 ## docker-stop: Stop Docker container
 docker-stop:
 	docker compose down
+
+## check-openapi: Verify OpenAPI spec matches handler implementations
+check-openapi:
+	go test -run TestOpenAPIConsistency -v ./internal/api/
 
 ## hooks: Install git pre-commit hook (mirrors CI lint checks)
 hooks:
