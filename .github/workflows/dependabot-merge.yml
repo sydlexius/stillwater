@@ -58,8 +58,10 @@ jobs:
               echo "decision=APPROVED" >> "$GITHUB_OUTPUT"
               exit 0
             fi
-            echo "Attempt $i/10: PR #$PR_NUMBER not yet approved (status: $DECISION), waiting 30s..."
-            sleep 30
+            if [ "$i" -lt 10 ]; then
+              echo "Attempt $i/10: PR #$PR_NUMBER not yet approved (status: $DECISION), waiting 30s..."
+              sleep 30
+            fi
           done
           echo "PR #$PR_NUMBER not approved after 5 minutes, skipping"
           echo "decision=$DECISION" >> "$GITHUB_OUTPUT"

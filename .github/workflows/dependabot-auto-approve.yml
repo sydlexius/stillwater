@@ -7,7 +7,7 @@
 #   - "Allow GitHub Actions to create and approve pull requests" enabled
 #     (Settings > Actions > General > Workflow permissions)
 
-name: Auto-merge Dependabot PRs
+name: Auto-approve Dependabot PRs
 
 on:
   pull_request:
@@ -18,11 +18,11 @@ permissions:
   pull-requests: write
 
 jobs:
-  auto-merge:
+  auto-approve:
     runs-on: ubuntu-latest
     if: github.event.pull_request.user.login == 'dependabot[bot]'
     concurrency:
-      group: dependabot-auto-merge-${{ github.event.pull_request.number }}
+      group: dependabot-auto-approve-${{ github.event.pull_request.number }}
       cancel-in-progress: true
     steps:
       - name: Fetch Dependabot metadata
