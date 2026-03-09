@@ -357,14 +357,14 @@ func (e *BulkExecutor) saveBestImage(ctx context.Context, a *artist.Artist, imag
 			continue
 		}
 
-		resized, _, err := img.ConvertFormat(bytes.NewReader(data))
+		converted, _, err := img.ConvertFormat(bytes.NewReader(data))
 		if err != nil {
 			continue
 		}
 
 		naming := img.FileNamesForType(img.DefaultFileNames, imageType)
 		useSymlinks := activeUseSymlinks(ctx, e.platformService)
-		if _, err := img.Save(a.Path, imageType, resized, naming, useSymlinks, e.logger); err != nil {
+		if _, err := img.Save(a.Path, imageType, converted, naming, useSymlinks, e.logger); err != nil {
 			continue
 		}
 
