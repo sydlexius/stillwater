@@ -873,8 +873,8 @@ func (r *Router) downloadPlatformImages(ctx context.Context, dl imageDownloader,
 			filename := img.FanartFilename(primary, i, kodi)
 			// Check all common image extensions for this slot. img.Resize converts WebP
 			// to PNG, so a previously-saved file may have a different extension than the
-			// one produced by the naming function (which always uses .jpg).
-			// base is safe to reuse: ValidateImageNaming enforces .jpg/.jpeg/.png on save.
+			// current filename. FanartFilename preserves the extension from the active
+			// primary name, so the saved file and the generated name may legitimately differ.
 			base := strings.TrimSuffix(filename, filepath.Ext(filename))
 			slotExists := false
 			skipDownload := false
@@ -948,9 +948,9 @@ func (r *Router) compactFanartIfNeeded(dir, primary string, kodi bool) {
 	if len(paths) == 0 {
 		return
 	}
-	// Check whether the primary slot exists. DiscoverFanart returns sorted
-	// paths where index 0 is the primary. If the primary file is present,
-	// its base (sans extension) will match the primary base exactly.
+	// Check whether the primary slot exists. DiscoverFanart returns paths
+	// in index order, with the primary file (if present) appearing first.
+	// Compare bases to confirm the primary is present.
 	primaryBase := strings.TrimSuffix(primary, filepath.Ext(primary))
 	firstBase := strings.TrimSuffix(filepath.Base(paths[0]), filepath.Ext(paths[0]))
 	if strings.EqualFold(firstBase, primaryBase) {

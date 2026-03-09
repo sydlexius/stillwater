@@ -570,7 +570,10 @@ func TestPopulateFromEmby_DownloadsImages(t *testing.T) {
 
 	// Verify the image file exists on disk.
 	found := false
-	entries, _ := os.ReadDir(artistDir)
+	entries, err := os.ReadDir(artistDir)
+	if err != nil {
+		t.Fatalf("reading artist dir: %v", err)
+	}
 	for _, e := range entries {
 		if strings.HasPrefix(e.Name(), "folder") {
 			found = true
@@ -738,7 +741,10 @@ func TestPopulateFromEmby_UsesImageCacheWhenNoPath(t *testing.T) {
 		t.Errorf("artist path = %q, want empty (no filesystem path)", a.Path)
 	}
 	cacheDir := filepath.Join(router.imageCacheDir, a.ID)
-	entries, _ := os.ReadDir(cacheDir)
+	entries, err := os.ReadDir(cacheDir)
+	if err != nil {
+		t.Fatalf("reading cache dir: %v", err)
+	}
 	found := false
 	for _, e := range entries {
 		if strings.HasPrefix(e.Name(), "folder") {
@@ -821,7 +827,10 @@ func TestPopulateFromJellyfin_DownloadsImages(t *testing.T) {
 
 	// Verify the image file exists on disk.
 	found := false
-	entries, _ := os.ReadDir(artistDir)
+	entries, err := os.ReadDir(artistDir)
+	if err != nil {
+		t.Fatalf("reading artist dir: %v", err)
+	}
 	for _, e := range entries {
 		if strings.HasPrefix(e.Name(), "folder") {
 			found = true
@@ -931,7 +940,10 @@ func TestPopulateFromEmby_DownloadsImagesForExistingArtist(t *testing.T) {
 
 	// Verify file saved to the existing artist's local path, not Emby's path.
 	found := false
-	entries, _ := os.ReadDir(artistDir)
+	entries, err := os.ReadDir(artistDir)
+	if err != nil {
+		t.Fatalf("reading artist dir: %v", err)
+	}
 	for _, e := range entries {
 		if strings.HasPrefix(e.Name(), "folder") {
 			found = true

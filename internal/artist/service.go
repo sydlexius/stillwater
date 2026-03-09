@@ -630,13 +630,15 @@ func extractImageMetadata(a *Artist) []ArtistImage {
 		// Persist additional fanart slots so FanartCount round-trips through the DB.
 		// Slots 1..FanartCount-1 only track existence; per-slot metadata (dimensions,
 		// placeholder) is not maintained for non-primary fanart files.
-		for i := 1; i < a.FanartCount; i++ {
-			imgs = append(imgs, ArtistImage{
-				ArtistID:  a.ID,
-				ImageType: "fanart",
-				SlotIndex: i,
-				Exists:    true,
-			})
+		if a.FanartExists {
+			for i := 1; i < a.FanartCount; i++ {
+				imgs = append(imgs, ArtistImage{
+					ArtistID:  a.ID,
+					ImageType: "fanart",
+					SlotIndex: i,
+					Exists:    true,
+				})
+			}
 		}
 	}
 	if a.LogoExists || a.LogoLowRes || a.LogoPlaceholder != "" {
