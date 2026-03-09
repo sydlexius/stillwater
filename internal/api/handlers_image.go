@@ -511,25 +511,24 @@ func (r *Router) handleImageCrop(w http.ResponseWriter, req *http.Request) {
 	})
 }
 
-// processAndSaveImage processes image data (resize if oversized, optimize) and saves it.
+// processAndSaveImage processes image data (convert format, optimize) and saves it.
 // For logos, transparent borders are automatically trimmed before saving.
 func (r *Router) processAndSaveImage(ctx context.Context, dir string, imageType string, data []byte) ([]string, error) {
-	// Resize if oversized (max 3000px on any dimension)
-	resized, _, err := img.Resize(bytes.NewReader(data), 3000, 3000)
+	converted, _, err := img.ConvertFormat(bytes.NewReader(data))
 	if err != nil {
-		return nil, fmt.Errorf("resizing: %w", err)
+		return nil, fmt.Errorf("converting format: %w", err)
 	}
 
 	// Logos: trim transparent borders so the image renders without padding.
 	if imageType == "logo" {
-		if trimmed, _, trimErr := img.TrimAlpha(bytes.NewReader(resized), 10); trimErr == nil {
-			resized = trimmed
+		if trimmed, _, trimErr := img.TrimAlpha(bytes.NewReader(converted), 10); trimErr == nil {
+			converted = trimmed
 		}
 	}
 
 	naming, useSymlinks := r.getActiveNamingAndSymlinks(ctx, imageType)
 
-	saved, err := img.Save(dir, imageType, resized, naming, useSymlinks, r.logger)
+	saved, err := img.Save(dir, imageType, converted, naming, useSymlinks, r.logger)
 	if err != nil {
 		return nil, fmt.Errorf("saving: %w", err)
 	}
@@ -1389,9 +1388,9 @@ func (r *Router) isKodiNumbering(ctx context.Context) bool {
 // processAndAppendFanart processes image data and saves it as the next
 // numbered fanart file. Returns the saved filenames.
 func (r *Router) processAndAppendFanart(ctx context.Context, dir string, data []byte) ([]string, error) {
-	resized, _, err := img.Resize(bytes.NewReader(data), 3000, 3000)
+	converted, _, err := img.ConvertFormat(bytes.NewReader(data))
 	if err != nil {
-		return nil, fmt.Errorf("resizing: %w", err)
+		return nil, fmt.Errorf("converting format: %w", err)
 	}
 
 	primary := r.getActiveFanartPrimary(ctx)
@@ -1403,7 +1402,7 @@ func (r *Router) processAndAppendFanart(ctx context.Context, dir string, data []
 	nextIndex := img.NextFanartIndex(maxIdx, kodi)
 	nextName := img.FanartFilename(primary, nextIndex, kodi)
 
-	saved, err := img.Save(dir, "fanart", resized, []string{nextName}, false, r.logger)
+	saved, err := img.Save(dir, "fanart", converted, []string{nextName}, false, r.logger)
 	if err != nil {
 		return nil, fmt.Errorf("saving: %w", err)
 	}

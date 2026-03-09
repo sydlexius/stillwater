@@ -187,6 +187,36 @@ func Resize(src io.Reader, maxWidth, maxHeight int) ([]byte, string, error) {
 	return data, outFormat, nil
 }
 
+// ConvertFormat decodes src and re-encodes it in a storage-safe format.
+// JPEG and PNG are returned as-is (bytes are passed through without re-encoding).
+// WebP is converted to PNG because no WebP encoder is available.
+// Use this instead of Resize when no dimension cap is desired.
+func ConvertFormat(src io.Reader) ([]byte, string, error) {
+	format, replay, err := DetectFormat(src)
+	if err != nil {
+		return nil, "", fmt.Errorf("detecting format: %w", err)
+	}
+
+	if format != FormatWebP {
+		data, readErr := io.ReadAll(replay)
+		if readErr != nil {
+			return nil, "", fmt.Errorf("reading image: %w", readErr)
+		}
+		return data, format, nil
+	}
+
+	// WebP: decode and re-encode as PNG.
+	decoded, _, err := image.Decode(replay)
+	if err != nil {
+		return nil, "", fmt.Errorf("decoding webp: %w", err)
+	}
+	data, err := encode(decoded, FormatPNG, 85)
+	if err != nil {
+		return nil, "", err
+	}
+	return data, FormatPNG, nil
+}
+
 // Optimize re-encodes the image at the given quality setting.
 // For JPEG, quality controls compression (1-100). For PNG, quality is ignored.
 func Optimize(src io.Reader, format string, quality int) ([]byte, error) {
