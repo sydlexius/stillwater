@@ -253,6 +253,10 @@ func (r *Router) handleFanartSlotAssign(w http.ResponseWriter, req *http.Request
 	if !DecodeJSON(w, req, &body) {
 		return
 	}
+	if body.PlatformIndex < 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "platform_index must be non-negative"})
+		return
+	}
 
 	// Validate slot density: reject gaps (slot must be <= current count).
 	primary := r.getActiveFanartPrimary(req.Context())
@@ -424,11 +428,15 @@ func (r *Router) handleFanartSlotDelete(w http.ResponseWriter, req *http.Request
 
 	r.updateArtistFanartCount(req.Context(), a)
 
-	// Sync updated fanart set to connected platforms.
-	syncCtx, cancel := context.WithTimeout(req.Context(), 30*time.Second)
-	defer cancel()
-	syncWarnings := r.syncAllFanartToPlatforms(syncCtx, a)
-	if renumberWarning != "" {
+	// Only sync to platforms if renumbering succeeded -- pushing misindexed
+	// fanart would corrupt platform galleries too.
+	var syncWarnings []string
+	if renumberWarning == "" {
+		syncCtx, cancel := context.WithTimeout(req.Context(), 30*time.Second)
+		defer cancel()
+		syncWarnings = r.syncAllFanartToPlatforms(syncCtx, a)
+	} else {
+		renumberWarning += ", platform sync skipped"
 		syncWarnings = append(syncWarnings, renumberWarning)
 	}
 

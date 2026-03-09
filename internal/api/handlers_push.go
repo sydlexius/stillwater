@@ -156,6 +156,7 @@ func (r *Router) handlePushImages(w http.ResponseWriter, req *http.Request) {
 
 	for _, imgType := range body.ImageTypes {
 		if !validImageTypes[imgType] {
+			errors = append(errors, fmt.Sprintf("%s: invalid image type", imgType))
 			continue
 		}
 
@@ -179,7 +180,10 @@ func (r *Router) handlePushImages(w http.ResponseWriter, req *http.Request) {
 					ct = "image/png"
 				}
 				if uploadErr := client.UploadImageAtIndex(req.Context(), body.PlatformArtistID, imgType, i, data, ct); uploadErr != nil {
-					r.logger.Error("uploading fanart", "artist", a.Name, "index", i, "error", uploadErr)
+					r.logger.Error("uploading fanart",
+						slog.String("artist", a.Name),
+						slog.Int("index", i),
+						slog.String("error", uploadErr.Error()))
 					errors = append(errors, fmt.Sprintf("fanart[%d]: upload failed", i))
 					continue
 				}
@@ -196,6 +200,11 @@ func (r *Router) handlePushImages(w http.ResponseWriter, req *http.Request) {
 
 		data, readErr := os.ReadFile(filePath) //nolint:gosec // path from trusted naming patterns
 		if readErr != nil {
+			r.logger.Error("reading image for push",
+				slog.String("path", filePath),
+				slog.String("artist", a.Name),
+				slog.String("type", imgType),
+				slog.String("error", readErr.Error()))
 			errors = append(errors, fmt.Sprintf("%s: read failed", imgType))
 			continue
 		}
@@ -206,8 +215,11 @@ func (r *Router) handlePushImages(w http.ResponseWriter, req *http.Request) {
 		}
 
 		if uploadErr := client.UploadImage(req.Context(), body.PlatformArtistID, imgType, data, ct); uploadErr != nil {
-			r.logger.Error("uploading image", "artist", a.Name, "type", imgType, "error", uploadErr)
-			errors = append(errors, fmt.Sprintf("%s: %v", imgType, uploadErr))
+			r.logger.Error("uploading image",
+				slog.String("artist", a.Name),
+				slog.String("type", imgType),
+				slog.String("error", uploadErr.Error()))
+			errors = append(errors, fmt.Sprintf("%s: upload failed", imgType))
 			continue
 		}
 

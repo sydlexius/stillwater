@@ -4436,6 +4436,12 @@ paths:
           required: true
           schema:
             type: string
+        - name: management
+          in: query
+          required: false
+          description: When true and request is HTMX, returns the management gallery variant with per-slot controls
+          schema:
+            type: boolean
       responses:
         "200":
           description: Fanart gallery items (returns HTML gallery when HX-Request header is set)
@@ -4535,7 +4541,7 @@ paths:
                     type: array
                     items:
                       type: string
-                    description: Platform sync warnings, including failures and reasons why sync was skipped. Empty only when there are no warnings.
+                    description: Warnings from batch deletion, including file removal failures, renumbering issues, and platform sync errors. Empty only when there are no warnings.
         "409":
           description: No filesystem path
           content:
@@ -4671,6 +4677,7 @@ paths:
                   description: ID of the platform connection to download from
                 platform_index:
                   type: integer
+                  minimum: 0
                   description: 0-based index of the backdrop on the platform
               required: [connection_id, platform_index]
       responses:
@@ -4738,7 +4745,7 @@ paths:
                     type: integer
                   sync_warnings:
                     type: array
-                    description: Warnings from syncing fanart to connected platforms after deletion. Empty only when there are no sync issues.
+                    description: Warnings from fanart deletion, including renumbering issues and platform sync errors. Empty only when there are no warnings.
                     items:
                       type: string
         "400":

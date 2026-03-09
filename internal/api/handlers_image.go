@@ -1686,7 +1686,9 @@ func (r *Router) handleFanartBatchDelete(w http.ResponseWriter, req *http.Reques
 	}
 
 	// Re-number survivors sequentially
+	var renumberWarning bool
 	if renumberErr := img.RenumberFanart(r.imageDir(a), primary, survivors, kodi); renumberErr != nil {
+		renumberWarning = true
 		r.logger.Warn("renumbering fanart after batch delete",
 			slog.String("artist_id", artistID),
 			slog.String("error", renumberErr.Error()))
@@ -1694,10 +1696,23 @@ func (r *Router) handleFanartBatchDelete(w http.ResponseWriter, req *http.Reques
 
 	r.updateArtistFanartCount(req.Context(), a)
 
+	// Only sync to platforms if renumbering succeeded -- pushing misindexed
+	// fanart would corrupt platform galleries too.
+	var syncWarnings []string
+	if !renumberWarning {
+		syncCtx, cancel := context.WithTimeout(req.Context(), 30*time.Second)
+		defer cancel()
+		syncWarnings = r.syncAllFanartToPlatforms(syncCtx, a)
+	}
+
 	warnings := make([]string, 0)
 	if removeFailed {
 		warnings = append(warnings, "some fanart files could not be deleted from disk")
 	}
+	if renumberWarning {
+		warnings = append(warnings, "fanart files could not be renumbered; gallery order may be incorrect, platform sync skipped")
+	}
+	warnings = append(warnings, syncWarnings...)
 
 	if isHTMXRequest(req) {
 		setSyncWarningTrigger(w, warnings)
