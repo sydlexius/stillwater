@@ -1,0 +1,108 @@
+# Merge approved Dependabot PRs after CI passes.
+#
+# Triggers on CI workflow completion for Dependabot branches. Waits for all
+# required checks to finish, then squash-merges the PR if it has been approved
+# by the auto-approve workflow.
+#
+# This avoids the repo-level "Allow auto-merge" setting, which would expose
+# the auto-merge toggle on all PRs including human-authored ones.
+
+name: Merge approved Dependabot PRs
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types:
+      - completed
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  merge:
+    runs-on: ubuntu-latest
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      startsWith(github.event.workflow_run.head_branch, 'dependabot/')
+    concurrency:
+      group: dependabot-merge-${{ github.event.workflow_run.head_branch }}
+      cancel-in-progress: false
+    steps:
+      - name: Find pull request
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+          REPO: ${{ github.repository }}
+        run: |
+          PR_NUMBER=$(gh pr list --repo "$REPO" \
+            --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
+          if [ -z "$PR_NUMBER" ]; then
+            echo "::warning::No open PR found for branch $BRANCH (may have been closed or merged already)"
+            exit 0
+          fi
+          echo "number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+
+      - name: Verify PR author is Dependabot
+        if: steps.pr.outputs.number
+        id: author
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          AUTHOR=$(gh pr view "$PR_NUMBER" --repo "$REPO" \
+            --json author --jq '.author.login')
+          if [ "$AUTHOR" != "dependabot[bot]" ]; then
+            echo "::warning::PR #$PR_NUMBER author is '$AUTHOR', not dependabot[bot]. Skipping."
+            exit 0
+          fi
+          echo "verified=true" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for PR approval
+        if: steps.pr.outputs.number && steps.author.outputs.verified == 'true'
+        id: review
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          DECISION="unknown"
+          for i in $(seq 1 10); do
+            DECISION=$(gh pr view "$PR_NUMBER" --repo "$REPO" \
+              --json reviewDecision --jq '.reviewDecision') || {
+              echo "::warning::Failed to fetch review status for PR #$PR_NUMBER (attempt $i/10)"
+              if [ "$i" -lt 10 ]; then sleep 30; fi
+              continue
+            }
+            if [ "$DECISION" = "APPROVED" ]; then
+              echo "decision=APPROVED" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            if [ "$i" -lt 10 ]; then
+              echo "Attempt $i/10: PR #$PR_NUMBER not yet approved (status: $DECISION), waiting 30s..."
+              sleep 30
+            fi
+          done
+          echo "::warning::PR #$PR_NUMBER not approved after ~5 minutes (last status: $DECISION), skipping merge"
+          echo "decision=$DECISION" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for required checks and merge
+        if: steps.pr.outputs.number && steps.review.outputs.decision == 'APPROVED'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+          REPO: ${{ github.repository }}
+        timeout-minutes: 15
+        run: |
+          echo "Waiting for required checks on PR #$PR_NUMBER..."
+          if ! gh pr checks "$PR_NUMBER" --repo "$REPO" --watch --required; then
+            echo "::error::Required checks failed for PR #$PR_NUMBER, cannot merge"
+            exit 1
+          fi
+          if ! gh pr merge "$PR_NUMBER" --repo "$REPO" --squash --delete-branch; then
+            echo "::error::Failed to merge PR #$PR_NUMBER. Check for merge conflicts or branch protection changes."
+            exit 1
+          fi
+          echo "Successfully merged PR #$PR_NUMBER"

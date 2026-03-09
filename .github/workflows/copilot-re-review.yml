@@ -1,0 +1,54 @@
+# Re-request Copilot code review when new commits are pushed to a PR.
+#
+# Only triggers for round 2+: checks whether Copilot has already submitted
+# a review before re-requesting. This avoids duplicate requests on the
+# initial PR open (Copilot auto-reviews new PRs natively).
+
+name: Re-request Copilot review
+
+on:
+  pull_request:
+    types:
+      - synchronize
+
+permissions:
+  pull-requests: write
+
+jobs:
+  re-request:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.user.login != 'dependabot[bot]'
+    steps:
+      - name: Check for prior Copilot review
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          REVIEW_COUNT=$(gh api "repos/$REPO/pulls/$PR_NUMBER/reviews" \
+            --jq '[.[] | select(.user.login == "copilot-pull-request-reviewer[bot]")] | length') || {
+            echo "::warning::Failed to fetch PR reviews from GitHub API"
+            exit 0
+          }
+          if ! [[ "$REVIEW_COUNT" =~ ^[0-9]+$ ]]; then
+            echo "::warning::Unexpected review count value: '$REVIEW_COUNT'"
+            exit 0
+          fi
+          echo "count=$REVIEW_COUNT" >> "$GITHUB_OUTPUT"
+          if [ "$REVIEW_COUNT" -eq 0 ]; then
+            echo "No prior Copilot review found, skipping re-request"
+          else
+            echo "Found $REVIEW_COUNT prior Copilot review(s), will re-request"
+          fi
+
+      - name: Re-request Copilot review
+        if: steps.check.outputs.count != '' && steps.check.outputs.count != '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh api "repos/$REPO/pulls/$PR_NUMBER/requested_reviewers" \
+            -X POST --input - <<< '{"reviewers":["copilot-pull-request-reviewer[bot]"]}'
+          echo "Re-requested Copilot review on PR #$PR_NUMBER"
