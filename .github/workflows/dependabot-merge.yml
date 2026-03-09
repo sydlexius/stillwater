@@ -34,26 +34,47 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BRANCH: ${{ github.event.workflow_run.head_branch }}
+          REPO: ${{ github.repository }}
         run: |
-          PR_NUMBER=$(gh pr list --repo "${{ github.repository }}" \
-            --head "$BRANCH" --state open --json number --jq '.[0].number')
+          PR_NUMBER=$(gh pr list --repo "$REPO" \
+            --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
           if [ -z "$PR_NUMBER" ]; then
-            echo "No open PR found for branch $BRANCH"
+            echo "::warning::No open PR found for branch $BRANCH (may have been closed or merged already)"
             exit 0
           fi
           echo "number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
 
-      - name: Wait for PR approval
+      - name: Verify PR author is Dependabot
         if: steps.pr.outputs.number
+        id: author
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          AUTHOR=$(gh pr view "$PR_NUMBER" --repo "$REPO" \
+            --json author --jq '.author.login')
+          if [ "$AUTHOR" != "dependabot[bot]" ]; then
+            echo "::warning::PR #$PR_NUMBER author is '$AUTHOR', not dependabot[bot]. Skipping."
+            exit 0
+          fi
+          echo "verified=true" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for PR approval
+        if: steps.pr.outputs.number && steps.author.outputs.verified == 'true'
         id: review
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ steps.pr.outputs.number }}
+          REPO: ${{ github.repository }}
         run: |
           for i in $(seq 1 10); do
-            DECISION=$(gh pr view "$PR_NUMBER" \
-              --repo "${{ github.repository }}" \
-              --json reviewDecision --jq '.reviewDecision')
+            DECISION=$(gh pr view "$PR_NUMBER" --repo "$REPO" \
+              --json reviewDecision --jq '.reviewDecision') || {
+              echo "::warning::Failed to fetch review status for PR #$PR_NUMBER (attempt $i/10)"
+              if [ "$i" -lt 10 ]; then sleep 30; fi
+              continue
+            }
             if [ "$DECISION" = "APPROVED" ]; then
               echo "decision=APPROVED" >> "$GITHUB_OUTPUT"
               exit 0
@@ -63,7 +84,7 @@ jobs:
               sleep 30
             fi
           done
-          echo "PR #$PR_NUMBER not approved after ~5 minutes, skipping"
+          echo "::warning::PR #$PR_NUMBER not approved after ~5 minutes (last status: $DECISION), skipping merge"
           echo "decision=$DECISION" >> "$GITHUB_OUTPUT"
 
       - name: Wait for required checks and merge
@@ -71,11 +92,16 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ steps.pr.outputs.number }}
+          REPO: ${{ github.repository }}
         timeout-minutes: 15
         run: |
           echo "Waiting for required checks on PR #$PR_NUMBER..."
-          if ! gh pr checks "$PR_NUMBER" --repo "${{ github.repository }}" --watch --required; then
-            echo "Required checks failed, skipping merge"
-            exit 0
+          if ! gh pr checks "$PR_NUMBER" --repo "$REPO" --watch --required; then
+            echo "::error::Required checks failed for PR #$PR_NUMBER, cannot merge"
+            exit 1
           fi
-          gh pr merge "$PR_NUMBER" --repo "${{ github.repository }}" --squash --delete-branch
+          if ! gh pr merge "$PR_NUMBER" --repo "$REPO" --squash --delete-branch; then
+            echo "::error::Failed to merge PR #$PR_NUMBER. Check for merge conflicts or branch protection changes."
+            exit 1
+          fi
+          echo "Successfully merged PR #$PR_NUMBER"

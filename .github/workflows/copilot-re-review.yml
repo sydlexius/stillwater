@@ -24,9 +24,17 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
         run: |
-          REVIEW_COUNT=$(gh api "repos/${{ github.repository }}/pulls/$PR_NUMBER/reviews" \
-            --jq '[.[] | select(.user.login == "copilot-pull-request-reviewer[bot]")] | length')
+          REVIEW_COUNT=$(gh api "repos/$REPO/pulls/$PR_NUMBER/reviews" \
+            --jq '[.[] | select(.user.login == "copilot-pull-request-reviewer[bot]")] | length') || {
+            echo "::warning::Failed to fetch PR reviews from GitHub API"
+            exit 0
+          }
+          if ! [[ "$REVIEW_COUNT" =~ ^[0-9]+$ ]]; then
+            echo "::warning::Unexpected review count value: '$REVIEW_COUNT'"
+            exit 0
+          fi
           echo "count=$REVIEW_COUNT" >> "$GITHUB_OUTPUT"
           if [ "$REVIEW_COUNT" -eq 0 ]; then
             echo "No prior Copilot review found, skipping re-request"
@@ -39,7 +47,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
         run: |
-          gh api "repos/${{ github.repository }}/pulls/$PR_NUMBER/requested_reviewers" \
+          gh api "repos/$REPO/pulls/$PR_NUMBER/requested_reviewers" \
             -X POST --input - <<< '{"reviewers":["copilot-pull-request-reviewer[bot]"]}'
           echo "Re-requested Copilot review on PR #$PR_NUMBER"
