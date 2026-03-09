@@ -125,7 +125,11 @@ templ FanartManagementGallery(artistID string, items []FanartGalleryItem) {
 						body: JSON.stringify({indices: indices}),
 						credentials: 'same-origin'
 					}).then(function(r) {
-						if (r.ok) window.location.reload();
+						if (r.ok) { window.location.reload(); return; }
+						r.json().then(function(b) { alert('Delete failed: ' + (b.error || 'unknown error')); })
+							.catch(function() { alert('Delete failed (HTTP ' + r.status + ')'); });
+					}).catch(function() {
+						alert('Network error. Please check your connection and try again.');
 					});
 				});
 
@@ -155,7 +159,11 @@ templ FanartManagementGallery(artistID string, items []FanartGalleryItem) {
 						body: JSON.stringify({order: order}),
 						credentials: 'same-origin'
 					}).then(function(r) {
-						if (r.ok) window.location.reload();
+						if (r.ok) { window.location.reload(); return; }
+						r.json().then(function(b) { alert('Reorder failed: ' + (b.error || 'unknown error')); })
+							.catch(function() { alert('Reorder failed (HTTP ' + r.status + ')'); });
+					}).catch(function() {
+						alert('Network error. Please check your connection and try again.');
 					});
 				});
 			})();
@@ -194,7 +202,10 @@ templ PlatformBackdropsPanel(artistID string, connections []PlatformBackdropConn
 									type="button"
 									class="absolute top-1 right-1 z-10 hidden group-hover:block text-xs px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700"
 									hx-post={ fmt.Sprintf("/api/v1/artists/%s/images/fanart/%d/assign", artistID, bd.NextSlot) }
-									hx-vals={ fmt.Sprintf(`{"connection_id":"%s","platform_index":%d}`, conn.ConnectionID, bd.Index) }
+									hx-vals={ hxValsJSONAny(map[string]any{
+									"connection_id":  conn.ConnectionID,
+									"platform_index": bd.Index,
+								}) }
 									hx-confirm="Assign this backdrop as the next fanart?"
 									hx-swap="none"
 								>

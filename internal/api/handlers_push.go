@@ -166,6 +166,11 @@ func (r *Router) handlePushImages(w http.ResponseWriter, req *http.Request) {
 			for i, fp := range fanartPaths {
 				data, readErr := os.ReadFile(fp) //nolint:gosec // path from trusted fanart discovery
 				if readErr != nil {
+					r.logger.Error("reading fanart for push",
+						slog.String("path", fp),
+						slog.String("artist", a.Name),
+						slog.Int("index", i),
+						slog.String("error", readErr.Error()))
 					errors = append(errors, fmt.Sprintf("fanart[%d]: read failed", i))
 					continue
 				}

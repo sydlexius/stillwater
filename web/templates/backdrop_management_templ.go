@@ -274,7 +274,7 @@ func FanartManagementGallery(artistID string, items []FanartGalleryItem) templ.C
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "<script>\n\t\t\t(function() {\n\t\t\t\tvar gallery = document.getElementById('fanart-management-gallery');\n\t\t\t\tif (!gallery) return;\n\t\t\t\tvar deleteBtn = document.getElementById('fanart-delete-selected');\n\n\t\t\t\t// Batch select/delete\n\t\t\t\tgallery.addEventListener('change', function() {\n\t\t\t\t\tvar checked = gallery.querySelectorAll('.fanart-cb:checked');\n\t\t\t\t\tif (checked.length > 0) {\n\t\t\t\t\t\tdeleteBtn.classList.remove('hidden');\n\t\t\t\t\t\tdeleteBtn.textContent = 'Delete ' + checked.length + ' selected';\n\t\t\t\t\t} else {\n\t\t\t\t\t\tdeleteBtn.classList.add('hidden');\n\t\t\t\t\t}\n\t\t\t\t});\n\t\t\t\tdeleteBtn.addEventListener('click', function() {\n\t\t\t\t\tvar checked = gallery.querySelectorAll('.fanart-cb:checked');\n\t\t\t\t\tif (checked.length === 0) return;\n\t\t\t\t\tif (!confirm('Delete ' + checked.length + ' fanart image(s)?')) return;\n\t\t\t\t\tvar indices = [];\n\t\t\t\t\tfor (var i = 0; i < checked.length; i++) {\n\t\t\t\t\t\tindices.push(parseInt(checked[i].value, 10));\n\t\t\t\t\t}\n\t\t\t\t\tvar id = gallery.dataset.artistId;\n\t\t\t\t\tfetch('/api/v1/artists/' + id + '/images/fanart/batch', {\n\t\t\t\t\t\tmethod: 'DELETE',\n\t\t\t\t\t\theaders: {\n\t\t\t\t\t\t\t'Content-Type': 'application/json',\n\t\t\t\t\t\t\t'X-CSRF-Token': document.cookie.replace(/(?:(?:^|.*;\\s*)csrf_token\\s*=\\s*([^;]*).*$)|^.*$/, \"$1\")\n\t\t\t\t\t\t},\n\t\t\t\t\t\tbody: JSON.stringify({indices: indices}),\n\t\t\t\t\t\tcredentials: 'same-origin'\n\t\t\t\t\t}).then(function(r) {\n\t\t\t\t\t\tif (r.ok) window.location.reload();\n\t\t\t\t\t});\n\t\t\t\t});\n\n\t\t\t\t// Reorder (move up/down)\n\t\t\t\tgallery.addEventListener('click', function(e) {\n\t\t\t\t\tvar btn = e.target.closest('.fanart-move-btn');\n\t\t\t\t\tif (!btn) return;\n\t\t\t\t\tvar idx = parseInt(btn.dataset.index, 10);\n\t\t\t\t\tvar dir = btn.dataset.direction;\n\t\t\t\t\tvar id = btn.dataset.artistId;\n\t\t\t\t\tvar total = gallery.querySelectorAll('.fanart-cb').length;\n\n\t\t\t\t\t// Build the new order: swap idx with idx-1 (up) or idx+1 (down)\n\t\t\t\t\tvar order = [];\n\t\t\t\t\tfor (var i = 0; i < total; i++) order.push(i);\n\t\t\t\t\tvar swapWith = dir === 'up' ? idx - 1 : idx + 1;\n\t\t\t\t\tif (swapWith < 0 || swapWith >= total) return;\n\t\t\t\t\torder[idx] = swapWith;\n\t\t\t\t\torder[swapWith] = idx;\n\n\t\t\t\t\tfetch('/api/v1/artists/' + id + '/images/fanart/reorder', {\n\t\t\t\t\t\tmethod: 'POST',\n\t\t\t\t\t\theaders: {\n\t\t\t\t\t\t\t'Content-Type': 'application/json',\n\t\t\t\t\t\t\t'X-CSRF-Token': document.cookie.replace(/(?:(?:^|.*;\\s*)csrf_token\\s*=\\s*([^;]*).*$)|^.*$/, \"$1\")\n\t\t\t\t\t\t},\n\t\t\t\t\t\tbody: JSON.stringify({order: order}),\n\t\t\t\t\t\tcredentials: 'same-origin'\n\t\t\t\t\t}).then(function(r) {\n\t\t\t\t\t\tif (r.ok) window.location.reload();\n\t\t\t\t\t});\n\t\t\t\t});\n\t\t\t})();\n\t\t</script></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "<script>\n\t\t\t(function() {\n\t\t\t\tvar gallery = document.getElementById('fanart-management-gallery');\n\t\t\t\tif (!gallery) return;\n\t\t\t\tvar deleteBtn = document.getElementById('fanart-delete-selected');\n\n\t\t\t\t// Batch select/delete\n\t\t\t\tgallery.addEventListener('change', function() {\n\t\t\t\t\tvar checked = gallery.querySelectorAll('.fanart-cb:checked');\n\t\t\t\t\tif (checked.length > 0) {\n\t\t\t\t\t\tdeleteBtn.classList.remove('hidden');\n\t\t\t\t\t\tdeleteBtn.textContent = 'Delete ' + checked.length + ' selected';\n\t\t\t\t\t} else {\n\t\t\t\t\t\tdeleteBtn.classList.add('hidden');\n\t\t\t\t\t}\n\t\t\t\t});\n\t\t\t\tdeleteBtn.addEventListener('click', function() {\n\t\t\t\t\tvar checked = gallery.querySelectorAll('.fanart-cb:checked');\n\t\t\t\t\tif (checked.length === 0) return;\n\t\t\t\t\tif (!confirm('Delete ' + checked.length + ' fanart image(s)?')) return;\n\t\t\t\t\tvar indices = [];\n\t\t\t\t\tfor (var i = 0; i < checked.length; i++) {\n\t\t\t\t\t\tindices.push(parseInt(checked[i].value, 10));\n\t\t\t\t\t}\n\t\t\t\t\tvar id = gallery.dataset.artistId;\n\t\t\t\t\tfetch('/api/v1/artists/' + id + '/images/fanart/batch', {\n\t\t\t\t\t\tmethod: 'DELETE',\n\t\t\t\t\t\theaders: {\n\t\t\t\t\t\t\t'Content-Type': 'application/json',\n\t\t\t\t\t\t\t'X-CSRF-Token': document.cookie.replace(/(?:(?:^|.*;\\s*)csrf_token\\s*=\\s*([^;]*).*$)|^.*$/, \"$1\")\n\t\t\t\t\t\t},\n\t\t\t\t\t\tbody: JSON.stringify({indices: indices}),\n\t\t\t\t\t\tcredentials: 'same-origin'\n\t\t\t\t\t}).then(function(r) {\n\t\t\t\t\t\tif (r.ok) { window.location.reload(); return; }\n\t\t\t\t\t\tr.json().then(function(b) { alert('Delete failed: ' + (b.error || 'unknown error')); })\n\t\t\t\t\t\t\t.catch(function() { alert('Delete failed (HTTP ' + r.status + ')'); });\n\t\t\t\t\t}).catch(function() {\n\t\t\t\t\t\talert('Network error. Please check your connection and try again.');\n\t\t\t\t\t});\n\t\t\t\t});\n\n\t\t\t\t// Reorder (move up/down)\n\t\t\t\tgallery.addEventListener('click', function(e) {\n\t\t\t\t\tvar btn = e.target.closest('.fanart-move-btn');\n\t\t\t\t\tif (!btn) return;\n\t\t\t\t\tvar idx = parseInt(btn.dataset.index, 10);\n\t\t\t\t\tvar dir = btn.dataset.direction;\n\t\t\t\t\tvar id = btn.dataset.artistId;\n\t\t\t\t\tvar total = gallery.querySelectorAll('.fanart-cb').length;\n\n\t\t\t\t\t// Build the new order: swap idx with idx-1 (up) or idx+1 (down)\n\t\t\t\t\tvar order = [];\n\t\t\t\t\tfor (var i = 0; i < total; i++) order.push(i);\n\t\t\t\t\tvar swapWith = dir === 'up' ? idx - 1 : idx + 1;\n\t\t\t\t\tif (swapWith < 0 || swapWith >= total) return;\n\t\t\t\t\torder[idx] = swapWith;\n\t\t\t\t\torder[swapWith] = idx;\n\n\t\t\t\t\tfetch('/api/v1/artists/' + id + '/images/fanart/reorder', {\n\t\t\t\t\t\tmethod: 'POST',\n\t\t\t\t\t\theaders: {\n\t\t\t\t\t\t\t'Content-Type': 'application/json',\n\t\t\t\t\t\t\t'X-CSRF-Token': document.cookie.replace(/(?:(?:^|.*;\\s*)csrf_token\\s*=\\s*([^;]*).*$)|^.*$/, \"$1\")\n\t\t\t\t\t\t},\n\t\t\t\t\t\tbody: JSON.stringify({order: order}),\n\t\t\t\t\t\tcredentials: 'same-origin'\n\t\t\t\t\t}).then(function(r) {\n\t\t\t\t\t\tif (r.ok) { window.location.reload(); return; }\n\t\t\t\t\t\tr.json().then(function(b) { alert('Reorder failed: ' + (b.error || 'unknown error')); })\n\t\t\t\t\t\t\t.catch(function() { alert('Reorder failed (HTTP ' + r.status + ')'); });\n\t\t\t\t\t}).catch(function() {\n\t\t\t\t\t\talert('Network error. Please check your connection and try again.');\n\t\t\t\t\t});\n\t\t\t\t});\n\t\t\t})();\n\t\t</script></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -323,7 +323,7 @@ func PlatformBackdropsPanel(artistID string, connections []PlatformBackdropConne
 				var templ_7745c5c3_Var18 string
 				templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(conn.ConnectionName)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 176, Col: 27}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 184, Col: 27}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
 				if templ_7745c5c3_Err != nil {
@@ -336,7 +336,7 @@ func PlatformBackdropsPanel(artistID string, connections []PlatformBackdropConne
 				var templ_7745c5c3_Var19 string
 				templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(conn.ConnectionType)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 177, Col: 64}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 185, Col: 64}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 				if templ_7745c5c3_Err != nil {
@@ -354,7 +354,7 @@ func PlatformBackdropsPanel(artistID string, connections []PlatformBackdropConne
 					var templ_7745c5c3_Var20 string
 					templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(bd.ThumbnailURL)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 184, Col: 31}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 192, Col: 31}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
 					if templ_7745c5c3_Err != nil {
@@ -367,7 +367,7 @@ func PlatformBackdropsPanel(artistID string, connections []PlatformBackdropConne
 					var templ_7745c5c3_Var21 string
 					templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("Backdrop %d", bd.Index))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 185, Col: 52}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 193, Col: 52}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var21))
 					if templ_7745c5c3_Err != nil {
@@ -380,7 +380,7 @@ func PlatformBackdropsPanel(artistID string, connections []PlatformBackdropConne
 					var templ_7745c5c3_Var22 string
 					templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(bd.Index))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 191, Col: 97}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 199, Col: 97}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
 					if templ_7745c5c3_Err != nil {
@@ -393,7 +393,7 @@ func PlatformBackdropsPanel(artistID string, connections []PlatformBackdropConne
 					var templ_7745c5c3_Var23 string
 					templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/api/v1/artists/%s/images/fanart/%d/assign", artistID, bd.NextSlot))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 196, Col: 99}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 204, Col: 99}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
 					if templ_7745c5c3_Err != nil {
@@ -404,9 +404,12 @@ func PlatformBackdropsPanel(artistID string, connections []PlatformBackdropConne
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var24 string
-					templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf(`{"connection_id":"%s","platform_index":%d}`, conn.ConnectionID, bd.Index))
+					templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinStringErrs(hxValsJSONAny(map[string]any{
+						"connection_id":  conn.ConnectionID,
+						"platform_index": bd.Index,
+					}))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 197, Col: 105}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 208, Col: 10}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
 					if templ_7745c5c3_Err != nil {
@@ -549,7 +552,7 @@ func FanartSyncBadge(data FanartSyncBadgeData) templ.Component {
 		var templ_7745c5c3_Var29 string
 		templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(data.Index))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 264, Col: 44}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 275, Col: 44}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var29))
 		if templ_7745c5c3_Err != nil {
@@ -562,7 +565,7 @@ func FanartSyncBadge(data FanartSyncBadgeData) templ.Component {
 		var templ_7745c5c3_Var30 string
 		templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.JoinStringErrs(data.Tooltip)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 266, Col: 22}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 277, Col: 22}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var30))
 		if templ_7745c5c3_Err != nil {
@@ -615,7 +618,7 @@ func FanartSyncBadges(badges []FanartSyncBadgeData) templ.Component {
 			var templ_7745c5c3_Var32 string
 			templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(b.Index))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 277, Col: 42}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 288, Col: 42}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var32))
 			if templ_7745c5c3_Err != nil {
@@ -628,7 +631,7 @@ func FanartSyncBadges(badges []FanartSyncBadgeData) templ.Component {
 			var templ_7745c5c3_Var33 string
 			templ_7745c5c3_Var33, templ_7745c5c3_Err = templ.JoinStringErrs(b.Tooltip)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 279, Col: 20}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 290, Col: 20}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var33))
 			if templ_7745c5c3_Err != nil {
@@ -641,7 +644,7 @@ func FanartSyncBadges(badges []FanartSyncBadgeData) templ.Component {
 			var templ_7745c5c3_Var34 string
 			templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.JoinStringErrs("outerHTML:[data-sync-badge='" + strconv.Itoa(b.Index) + "']")
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 280, Col: 78}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 291, Col: 78}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var34))
 			if templ_7745c5c3_Err != nil {

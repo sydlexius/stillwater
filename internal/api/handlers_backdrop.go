@@ -90,6 +90,10 @@ func (r *Router) handlePlatformBackdrops(w http.ResponseWriter, req *http.Reques
 
 		client, clientErr := r.newBackdropClient(conn)
 		if clientErr != nil {
+			r.logger.Warn("skipping connection for backdrop listing",
+				slog.String("connection_id", conn.ID),
+				slog.String("type", conn.Type),
+				slog.String("error", clientErr.Error()))
 			continue
 		}
 
@@ -175,7 +179,15 @@ func (r *Router) handlePlatformBackdropThumbnail(w http.ResponseWriter, req *htt
 
 	// Look up the platform artist ID for this connection.
 	platformArtistID, err := r.artistService.GetPlatformID(req.Context(), artistID, connID)
-	if err != nil || platformArtistID == "" {
+	if err != nil {
+		r.logger.Error("looking up platform ID for backdrop thumbnail",
+			slog.String("artist_id", artistID),
+			slog.String("connection_id", connID),
+			slog.String("error", err.Error()))
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to look up platform mapping"})
+		return
+	}
+	if platformArtistID == "" {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "no platform mapping for this connection"})
 		return
 	}
@@ -255,7 +267,15 @@ func (r *Router) handleFanartSlotAssign(w http.ResponseWriter, req *http.Request
 
 	// Look up platform artist ID and download the backdrop.
 	platformArtistID, err := r.artistService.GetPlatformID(req.Context(), artistID, body.ConnectionID)
-	if err != nil || platformArtistID == "" {
+	if err != nil {
+		r.logger.Error("looking up platform ID for slot assign",
+			slog.String("artist_id", artistID),
+			slog.String("connection_id", body.ConnectionID),
+			slog.String("error", err.Error()))
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to look up platform mapping"})
+		return
+	}
+	if platformArtistID == "" {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "no platform mapping for this connection"})
 		return
 	}
@@ -394,10 +414,12 @@ func (r *Router) handleFanartSlotDelete(w http.ResponseWriter, req *http.Request
 		}
 	}
 
+	var renumberWarning string
 	if renumberErr := img.RenumberFanart(r.imageDir(a), primary, survivors, kodi); renumberErr != nil {
 		r.logger.Warn("renumbering fanart after slot delete",
 			slog.String("artist_id", artistID),
 			slog.String("error", renumberErr.Error()))
+		renumberWarning = "fanart files could not be renumbered; gallery order may be incorrect"
 	}
 
 	r.updateArtistFanartCount(req.Context(), a)
@@ -406,6 +428,9 @@ func (r *Router) handleFanartSlotDelete(w http.ResponseWriter, req *http.Request
 	syncCtx, cancel := context.WithTimeout(req.Context(), 30*time.Second)
 	defer cancel()
 	syncWarnings := r.syncAllFanartToPlatforms(syncCtx, a)
+	if renumberWarning != "" {
+		syncWarnings = append(syncWarnings, renumberWarning)
+	}
 
 	if isHTMXRequest(req) {
 		setSyncWarningTrigger(w, syncWarnings)
@@ -481,6 +506,15 @@ func (r *Router) handleFanartReorder(w http.ResponseWriter, req *http.Request) {
 				slog.String("from", paths[srcIdx]),
 				slog.String("to", tmpPath),
 				slog.String("error", renameErr.Error()))
+			// Best-effort rollback of already-staged files.
+			for rollback := range i {
+				if rbErr := os.Rename(staged[rollback].tmpPath, paths[body.Order[rollback]]); rbErr != nil { //nolint:gosec // rollback to original trusted paths
+					r.logger.Error("rollback: restoring staged file",
+						slog.String("from", staged[rollback].tmpPath),
+						slog.String("to", paths[body.Order[rollback]]),
+						slog.String("error", rbErr.Error()))
+				}
+			}
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to reorder fanart files"})
 			return
 		}
@@ -516,11 +550,21 @@ func (r *Router) handleFanartReorder(w http.ResponseWriter, req *http.Request) {
 		// Best-effort rollback: move finalized files back to tmp, then
 		// restore all tmp files to their original paths.
 		for _, ff := range finalized {
-			_ = os.Rename(ff.finalPath, ff.tmpPath)
+			if rbErr := os.Rename(ff.finalPath, ff.tmpPath); rbErr != nil {
+				r.logger.Error("rollback: reverting finalized file",
+					slog.String("from", ff.finalPath),
+					slog.String("to", ff.tmpPath),
+					slog.String("error", rbErr.Error()))
+			}
 		}
 		for i, sf := range staged {
 			srcIdx := body.Order[i]
-			_ = os.Rename(sf.tmpPath, paths[srcIdx]) //nolint:gosec // rollback to original trusted paths
+			if rbErr := os.Rename(sf.tmpPath, paths[srcIdx]); rbErr != nil { //nolint:gosec // rollback to original trusted paths
+				r.logger.Error("rollback: restoring original file",
+					slog.String("from", sf.tmpPath),
+					slog.String("to", paths[srcIdx]),
+					slog.String("error", rbErr.Error()))
+			}
 		}
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to finalize fanart reorder"})
 		return
@@ -604,6 +648,9 @@ func (r *Router) handleFanartSyncState(w http.ResponseWriter, req *http.Request)
 	for _, pid := range platformIDs {
 		conn, connErr := r.connectionService.GetByID(req.Context(), pid.ConnectionID)
 		if connErr != nil {
+			r.logger.Warn("skipping connection for sync state",
+				slog.String("connection_id", pid.ConnectionID),
+				slog.String("error", connErr.Error()))
 			continue
 		}
 		if !conn.Enabled || conn.Status != "ok" {
@@ -612,6 +659,10 @@ func (r *Router) handleFanartSyncState(w http.ResponseWriter, req *http.Request)
 
 		client, clientErr := r.newBackdropClient(conn)
 		if clientErr != nil {
+			r.logger.Warn("skipping connection for sync state",
+				slog.String("connection_id", conn.ID),
+				slog.String("type", conn.Type),
+				slog.String("error", clientErr.Error()))
 			continue
 		}
 

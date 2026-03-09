@@ -195,17 +195,39 @@ func NextFanartIndex(maxSuffix int, kodi bool) int {
 // base name for index 0 (e.g. "backdrop.jpg"). dir is the parent directory.
 // kodi controls the numbering convention (see FanartFilename).
 func RenumberFanart(dir, primaryName string, survivors []string, kodi bool) error {
+	if len(survivors) == 0 {
+		return nil
+	}
+
+	// Phase 1: stage all survivors to temporary names to avoid collisions
+	// when renaming (e.g., fanart1->fanart0 while fanart0 still exists).
+	type staged struct {
+		tmpPath string
+		ext     string
+	}
+	stagedFiles := make([]staged, len(survivors))
 	for i, oldPath := range survivors {
-		newName := FanartFilename(primaryName, i, kodi)
-		// Preserve actual extension from the existing file.
-		actualExt := filepath.Ext(oldPath)
-		newBase := strings.TrimSuffix(newName, filepath.Ext(newName))
-		newName = newBase + actualExt
-		newPath := filepath.Join(dir, newName)
-		if oldPath != newPath {
-			if err := os.Rename(oldPath, newPath); err != nil {
-				return fmt.Errorf("renaming %s to %s: %w", filepath.Base(oldPath), newName, err)
+		ext := filepath.Ext(oldPath)
+		tmpName := fmt.Sprintf("fanart_renumber_%d%s.tmp", i, ext)
+		tmpPath := filepath.Join(dir, tmpName)
+		if err := os.Rename(oldPath, tmpPath); err != nil {
+			// Best-effort rollback of already-staged files.
+			for rollback := range i {
+				_ = os.Rename(stagedFiles[rollback].tmpPath, survivors[rollback])
 			}
+			return fmt.Errorf("staging %s for renumber: %w", filepath.Base(oldPath), err)
+		}
+		stagedFiles[i] = staged{tmpPath: tmpPath, ext: ext}
+	}
+
+	// Phase 2: rename staged files to their final contiguous names.
+	for i, sf := range stagedFiles {
+		newName := FanartFilename(primaryName, i, kodi)
+		newBase := strings.TrimSuffix(newName, filepath.Ext(newName))
+		finalName := newBase + sf.ext
+		finalPath := filepath.Join(dir, finalName)
+		if err := os.Rename(sf.tmpPath, finalPath); err != nil {
+			return fmt.Errorf("renaming %s to %s: %w", filepath.Base(sf.tmpPath), finalName, err)
 		}
 	}
 	return nil
