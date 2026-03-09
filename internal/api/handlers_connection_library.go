@@ -876,6 +876,7 @@ func (r *Router) downloadPlatformImages(ctx context.Context, dl imageDownloader,
 		}
 
 		downloaded := 0
+		anyExisted := false
 		for i, tag := range backdropTags {
 			if tag == "" {
 				r.logger.Debug("skipping backdrop with empty tag", "artist", a.Name, "index", i)
@@ -904,6 +905,7 @@ func (r *Router) downloadPlatformImages(ctx context.Context, dl imageDownloader,
 			}
 			if slotExists {
 				r.logger.Debug("skipping existing backdrop", "artist", a.Name, "index", i)
+				anyExisted = true
 				continue
 			}
 			if skipDownload {
@@ -936,7 +938,7 @@ func (r *Router) downloadPlatformImages(ctx context.Context, dl imageDownloader,
 			downloaded++
 			result.Images++
 		}
-		if downloaded > 0 {
+		if downloaded > 0 || anyExisted {
 			r.updateArtistImageFlag(ctx, a, "fanart")
 			r.updateArtistFanartCount(ctx, a)
 		}
