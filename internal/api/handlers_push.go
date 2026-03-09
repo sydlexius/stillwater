@@ -12,6 +12,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/connection/emby"
 	"github.com/sydlexius/stillwater/internal/connection/jellyfin"
+	img "github.com/sydlexius/stillwater/internal/image"
 )
 
 func (r *Router) handlePushMetadata(w http.ResponseWriter, req *http.Request) {
@@ -136,12 +137,15 @@ func (r *Router) handlePushImages(w http.ResponseWriter, req *http.Request) {
 		body.ImageTypes = []string{"thumb", "fanart", "logo", "banner"}
 	}
 
-	var uploader connection.ImageUploader
+	var client interface {
+		connection.ImageUploader
+		connection.IndexedImageUploader
+	}
 	switch conn.Type {
 	case connection.TypeEmby:
-		uploader = emby.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger)
+		client = emby.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger)
 	case connection.TypeJellyfin:
-		uploader = jellyfin.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger)
+		client = jellyfin.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger)
 	default:
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "connection type does not support image upload"})
 		return
@@ -154,8 +158,33 @@ func (r *Router) handlePushImages(w http.ResponseWriter, req *http.Request) {
 		if !validImageTypes[imgType] {
 			continue
 		}
+
+		// Fanart: upload all discovered fanart files at their respective indices.
+		if imgType == "fanart" {
+			primary := r.getActiveFanartPrimary(req.Context())
+			fanartPaths := img.DiscoverFanart(r.imageDir(a), primary)
+			for i, fp := range fanartPaths {
+				data, readErr := os.ReadFile(fp) //nolint:gosec // path from trusted fanart discovery
+				if readErr != nil {
+					errors = append(errors, fmt.Sprintf("fanart[%d]: read failed", i))
+					continue
+				}
+				ct := "image/jpeg"
+				if strings.EqualFold(filepath.Ext(fp), ".png") {
+					ct = "image/png"
+				}
+				if uploadErr := client.UploadImageAtIndex(req.Context(), body.PlatformArtistID, imgType, i, data, ct); uploadErr != nil {
+					r.logger.Error("uploading fanart", "artist", a.Name, "index", i, "error", uploadErr)
+					errors = append(errors, fmt.Sprintf("fanart[%d]: upload failed", i))
+					continue
+				}
+				uploaded = append(uploaded, fmt.Sprintf("fanart[%d]", i))
+			}
+			continue
+		}
+
 		patterns := r.getActiveNamingConfig(req.Context(), imgType)
-		filePath, found := findExistingImage(a.Path, patterns)
+		filePath, found := findExistingImage(r.imageDir(a), patterns)
 		if !found {
 			continue
 		}
@@ -171,7 +200,7 @@ func (r *Router) handlePushImages(w http.ResponseWriter, req *http.Request) {
 			ct = "image/png"
 		}
 
-		if uploadErr := uploader.UploadImage(req.Context(), body.PlatformArtistID, imgType, data, ct); uploadErr != nil {
+		if uploadErr := client.UploadImage(req.Context(), body.PlatformArtistID, imgType, data, ct); uploadErr != nil {
 			r.logger.Error("uploading image", "artist", a.Name, "type", imgType, "error", uploadErr)
 			errors = append(errors, fmt.Sprintf("%s: %v", imgType, uploadErr))
 			continue

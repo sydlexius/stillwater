@@ -132,6 +132,43 @@ func (c *Client) UploadImage(ctx context.Context, platformArtistID string, image
 	return nil
 }
 
+// UploadImageAtIndex uploads an image at a specific index to the Jellyfin server.
+// POST /Items/{id}/Images/{type}/{index}
+// This is used for backdrop images where Jellyfin supports multiple images per artist.
+func (c *Client) UploadImageAtIndex(ctx context.Context, platformArtistID string, imageType string, index int, data []byte, contentType string) error {
+	jfType := mapImageType(imageType)
+	if jfType == "" {
+		return fmt.Errorf("unsupported image type: %s", imageType)
+	}
+
+	encoded := base64.StdEncoding.EncodeToString(data)
+
+	path := fmt.Sprintf("/Items/%s/Images/%s/%d", platformArtistID, jfType, index)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, connection.BuildRequestURL(c.BaseURL, path), strings.NewReader(encoded))
+	if err != nil {
+		return fmt.Errorf("creating indexed image upload request: %w", err)
+	}
+	c.AuthFunc(req)
+	req.Header.Set("Content-Type", contentType)
+
+	resp, err := c.HTTPClient.Do(req) //nolint:gosec // URL constructed from trusted base + artist ID
+	if err != nil {
+		return fmt.Errorf("executing indexed image upload: %w", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+
+	if resp.StatusCode >= 300 {
+		const maxErrBody = 1 << 20 // 1 MB
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrBody))
+		_, _ = io.Copy(io.Discard, resp.Body)
+		return fmt.Errorf("indexed image upload failed with status %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	_, _ = io.Copy(io.Discard, resp.Body)
+	c.Logger.Debug("image uploaded to jellyfin at index", "artist_id", platformArtistID, "type", jfType, "index", index)
+	return nil
+}
+
 // DeleteImage deletes an image from the Jellyfin server for the given artist.
 // DELETE /Items/{id}/Images/{type}
 func (c *Client) DeleteImage(ctx context.Context, platformArtistID string, imageType string) error {
@@ -168,7 +205,7 @@ func (c *Client) DeleteImage(ctx context.Context, platformArtistID string, image
 // logDateNormalization logs the result of normalizing a date field for push.
 func (c *Client) logDateNormalization(field, raw, normalized, artistID string) {
 	if normalized == "" {
-		c.Logger.Warn("unparseable date dropped from push",
+		c.Logger.Warn("unparsable date dropped from push",
 			"field", field, "raw", raw, "artist_id", artistID)
 	} else if normalized != raw {
 		c.Logger.Debug("date normalized for push",

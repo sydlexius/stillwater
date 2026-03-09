@@ -253,10 +253,13 @@ func (r *Router) handleImageFetch(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		r.updateArtistFanartCount(req.Context(), a)
-		// Skip platform sync for fanart appends: platforms only support a single
-		// backdrop image, and the primary (fanart.jpg) was already synced when
-		// first saved. See handleImageUpload for the same rationale.
+
+		syncCtx, cancel := context.WithTimeout(req.Context(), 30*time.Second)
+		defer cancel()
+		syncWarnings := r.syncAllFanartToPlatforms(syncCtx, a)
+
 		if isHTMXRequest(req) {
+			setSyncWarningTrigger(w, syncWarnings)
 			w.Header().Set("HX-Refresh", "true")
 			w.WriteHeader(http.StatusNoContent)
 			return
@@ -266,7 +269,7 @@ func (r *Router) handleImageFetch(w http.ResponseWriter, req *http.Request) {
 			"saved":         saved,
 			"type":          imageType,
 			"count":         a.FanartCount,
-			"sync_warnings": []string{},
+			"sync_warnings": syncWarnings,
 		})
 		return
 	}
@@ -1081,6 +1084,82 @@ func (r *Router) syncImageToPlatforms(ctx context.Context, a *artist.Artist, ima
 	return warnings
 }
 
+// syncAllFanartToPlatforms uploads all local fanart files to every connected
+// platform at their respective indices. Unlike syncImageToPlatforms which only
+// syncs the primary image, this discovers all fanart files and uploads each one
+// at the correct backdrop index. Errors are logged and returned as warnings.
+func (r *Router) syncAllFanartToPlatforms(ctx context.Context, a *artist.Artist) []string {
+	warnings := make([]string, 0)
+
+	platformIDs, err := r.artistService.GetPlatformIDs(ctx, a.ID)
+	if err != nil {
+		r.logger.Error("getting platform IDs for fanart sync", "artist_id", a.ID, "error", err)
+		warnings = append(warnings, "platform sync skipped: failed to load platform mappings")
+		return warnings
+	}
+	if len(platformIDs) == 0 {
+		return warnings
+	}
+
+	dir := r.imageDir(a)
+	if dir == "" {
+		r.logger.Warn("skipping platform fanart sync: artist has no image directory", "artist", a.Name)
+		warnings = append(warnings, "platform sync skipped: artist has no image directory configured")
+		return warnings
+	}
+
+	primary := r.getActiveFanartPrimary(ctx)
+	fanartPaths := img.DiscoverFanart(dir, primary)
+	if len(fanartPaths) == 0 {
+		return warnings
+	}
+
+	for _, pid := range platformIDs {
+		conn, connErr := r.connectionService.GetByID(ctx, pid.ConnectionID)
+		if connErr != nil {
+			r.logger.Error("getting connection for fanart sync", "connection_id", pid.ConnectionID, "error", connErr)
+			warnings = append(warnings, truncateWarning(fmt.Sprintf("connection %s: failed to load", pid.ConnectionID)))
+			continue
+		}
+		if !conn.Enabled {
+			r.logger.Debug("skipping disabled connection for fanart sync", "connection", conn.Name)
+			continue
+		}
+
+		var uploader connection.IndexedImageUploader
+		switch conn.Type {
+		case connection.TypeEmby:
+			uploader = emby.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger)
+		case connection.TypeJellyfin:
+			uploader = jellyfin.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger)
+		default:
+			r.logger.Warn("unsupported connection type for fanart sync", "type", conn.Type)
+			warnings = append(warnings, truncateWarning(fmt.Sprintf("%s: unsupported connection type %q", conn.Name, conn.Type)))
+			continue
+		}
+
+		for i, fp := range fanartPaths {
+			data, readErr := os.ReadFile(fp) //nolint:gosec // path from trusted fanart discovery
+			if readErr != nil {
+				r.logger.Error("reading fanart for platform sync", "path", fp, "error", readErr)
+				warnings = append(warnings, truncateWarning(fmt.Sprintf("%s: failed to read fanart %d", conn.Name, i)))
+				continue
+			}
+
+			ct := "image/jpeg"
+			if strings.EqualFold(filepath.Ext(fp), ".png") {
+				ct = "image/png"
+			}
+
+			if uploadErr := uploader.UploadImageAtIndex(ctx, pid.PlatformArtistID, "fanart", i, data, ct); uploadErr != nil {
+				r.logger.Error("syncing fanart to platform", "artist", a.Name, "connection", conn.Name, "index", i, "error", uploadErr)
+				warnings = append(warnings, truncateWarning(fmt.Sprintf("%s (%s): fanart %d upload failed", conn.Name, conn.Type, i)))
+			}
+		}
+	}
+	return warnings
+}
+
 // deleteImageFromPlatforms removes the image from every platform connection that
 // has a stored artist ID mapping. Errors are logged and returned as warning
 // strings so the caller can surface them to the client. The local operation
@@ -1496,7 +1575,11 @@ func (r *Router) handleFanartList(w http.ResponseWriter, req *http.Request) {
 	}
 
 	if isHTMXRequest(req) {
-		renderTempl(w, req, templates.FanartGallery(artistID, items))
+		if req.URL.Query().Get("management") == "true" {
+			renderTempl(w, req, templates.FanartManagementGallery(artistID, items))
+		} else {
+			renderTempl(w, req, templates.FanartGallery(artistID, items))
+		}
 		return
 	}
 
@@ -1603,21 +1686,10 @@ func (r *Router) handleFanartBatchDelete(w http.ResponseWriter, req *http.Reques
 	}
 
 	// Re-number survivors sequentially
-	for i, oldPath := range survivors {
-		newName := img.FanartFilename(primary, i, kodi)
-		// Preserve actual extension from the existing file
-		actualExt := filepath.Ext(oldPath)
-		newBase := strings.TrimSuffix(newName, filepath.Ext(newName))
-		newName = newBase + actualExt
-		newPath := filepath.Join(r.imageDir(a), newName)
-		if oldPath != newPath {
-			if renameErr := os.Rename(oldPath, newPath); renameErr != nil { //nolint:gosec // paths from DiscoverFanart and FanartFilename, not user input
-				r.logger.Warn("renaming fanart during re-number",
-					slog.String("from", oldPath),
-					slog.String("to", newPath),
-					slog.String("error", renameErr.Error()))
-			}
-		}
+	if renumberErr := img.RenumberFanart(r.imageDir(a), primary, survivors, kodi); renumberErr != nil {
+		r.logger.Warn("renumbering fanart after batch delete",
+			slog.String("artist_id", artistID),
+			slog.String("error", renumberErr.Error()))
 	}
 
 	r.updateArtistFanartCount(req.Context(), a)
@@ -1715,19 +1787,27 @@ func (r *Router) handleFanartBatchFetch(w http.ResponseWriter, req *http.Request
 	}
 
 	r.updateArtistFanartCount(req.Context(), a)
-	// No platform sync for batch appends: platforms only support a single
-	// backdrop image per artist. See handleImageUpload for full rationale.
+
+	// Sync all fanart to connected platforms (synchronous with timeout).
+	var syncWarnings []string
+	if len(allSaved) > 0 {
+		syncCtx, cancel := context.WithTimeout(req.Context(), 30*time.Second)
+		defer cancel()
+		syncWarnings = r.syncAllFanartToPlatforms(syncCtx, a)
+	}
 
 	if isHTMXRequest(req) {
+		setSyncWarningTrigger(w, syncWarnings)
 		w.Header().Set("HX-Refresh", "true")
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"status": "ok",
-		"saved":  allSaved,
-		"errors": errors,
-		"count":  a.FanartCount,
+		"status":        "ok",
+		"saved":         allSaved,
+		"errors":        errors,
+		"count":         a.FanartCount,
+		"sync_warnings": syncWarnings,
 	})
 }

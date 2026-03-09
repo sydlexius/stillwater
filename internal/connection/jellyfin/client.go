@@ -158,6 +158,7 @@ func (c *Client) GetArtistDetail(ctx context.Context, platformArtistID string) (
 		MusicBrainzID: item.ProviderIDs.MusicBrainzArtist,
 		HasThumb:      item.ImageTags["Primary"] != "",
 		HasFanart:     len(item.BackdropImageTags) > 0,
+		BackdropCount: len(item.BackdropImageTags),
 		HasLogo:       item.ImageTags["Logo"] != "",
 		HasBanner:     item.ImageTags["Banner"] != "",
 		IsLocked:      item.IsLocked,

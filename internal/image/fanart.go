@@ -189,3 +189,24 @@ func NextFanartIndex(maxSuffix int, kodi bool) int {
 	// Non-Kodi: suffix N = index N-1, so next index = maxSuffix.
 	return maxSuffix
 }
+
+// RenumberFanart renames the given survivor paths so they occupy contiguous
+// 0-based indices. Each file keeps its original extension. primaryName is the
+// base name for index 0 (e.g. "backdrop.jpg"). dir is the parent directory.
+// kodi controls the numbering convention (see FanartFilename).
+func RenumberFanart(dir, primaryName string, survivors []string, kodi bool) error {
+	for i, oldPath := range survivors {
+		newName := FanartFilename(primaryName, i, kodi)
+		// Preserve actual extension from the existing file.
+		actualExt := filepath.Ext(oldPath)
+		newBase := strings.TrimSuffix(newName, filepath.Ext(newName))
+		newName = newBase + actualExt
+		newPath := filepath.Join(dir, newName)
+		if oldPath != newPath {
+			if err := os.Rename(oldPath, newPath); err != nil {
+				return fmt.Errorf("renaming %s to %s: %w", filepath.Base(oldPath), newName, err)
+			}
+		}
+	}
+	return nil
+}
