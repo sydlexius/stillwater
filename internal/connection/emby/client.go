@@ -80,7 +80,7 @@ func (c *Client) CheckNFOWriterEnabled(ctx context.Context) (bool, string, error
 
 // GetArtists returns album artists from a specific library (by parent ID) with pagination.
 func (c *Client) GetArtists(ctx context.Context, libraryID string, startIndex, limit int) (*ItemsResponse, error) {
-	path := fmt.Sprintf("/Artists/AlbumArtists?ParentId=%s&StartIndex=%d&Limit=%d&Recursive=true&Fields=Path,ProviderIds,ImageTags,Overview,Genres,Tags,SortName,PremiereDate,EndDate", libraryID, startIndex, limit)
+	path := fmt.Sprintf("/Artists/AlbumArtists?ParentId=%s&StartIndex=%d&Limit=%d&Recursive=true&Fields=Path,ProviderIds,ImageTags,BackdropImageTags,Overview,Genres,Tags,SortName,PremiereDate,EndDate", libraryID, startIndex, limit)
 	var resp ItemsResponse
 	if err := c.Get(ctx, path, &resp); err != nil {
 		return nil, fmt.Errorf("getting artists: %w", err)
@@ -113,6 +113,12 @@ func (c *Client) GetArtistImage(ctx context.Context, artistID, imageType string)
 		return nil, "", fmt.Errorf("unsupported image type: %s", imageType)
 	}
 	path := fmt.Sprintf("/Items/%s/Images/%s", artistID, platformType)
+	return c.GetRaw(ctx, path)
+}
+
+// GetArtistBackdrop downloads a backdrop image at the given 0-based index.
+func (c *Client) GetArtistBackdrop(ctx context.Context, artistID string, index int) ([]byte, string, error) {
+	path := fmt.Sprintf("/Items/%s/Images/Backdrop/%d", artistID, index)
 	return c.GetRaw(ctx, path)
 }
 

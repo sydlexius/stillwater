@@ -215,6 +215,18 @@ conns_resp=$(curl -s "${AUTH[@]}" "$SW_BASE/api/v1/connections")
 CONN_EMBY=$(echo "$conns_resp" | jq -r '.[] | select(.type=="emby") | .id' 2>/dev/null | head -1 || true)
 CONN_JELLYFIN=$(echo "$conns_resp" | jq -r '.[] | select(.type=="jellyfin") | .id' 2>/dev/null | head -1 || true)
 CONN_LIDARR=$(echo "$conns_resp" | jq -r '.[] | select(.type=="lidarr") | .id' 2>/dev/null | head -1 || true)
+
+# Discover a library connected to Emby or Jellyfin for populate smoke tests
+LIBRARY_ID=""
+libs_resp=$(curl -s "${AUTH[@]}" "$SW_BASE/api/v1/libraries")
+if [[ -n "$CONN_EMBY" ]]; then
+  LIBRARY_ID=$(echo "$libs_resp" | jq -r '.[] | select(.source=="emby") | .id' 2>/dev/null | head -1 || true)
+fi
+if [[ -z "$LIBRARY_ID" && -n "$CONN_JELLYFIN" ]]; then
+  LIBRARY_ID=$(echo "$libs_resp" | jq -r '.[] | select(.source=="jellyfin") | .id' 2>/dev/null | head -1 || true)
+fi
+LIB_CONN_ID=$(echo "$libs_resp" | jq -r --arg id "$LIBRARY_ID" '.[] | select(.id==$id) | .connection_id' 2>/dev/null || true)
+[[ -n "$LIBRARY_ID" ]] && echo "  Platform library: $LIBRARY_ID"
 [[ -n "$CONN_EMBY" ]] && echo "  Emby connection: $CONN_EMBY"
 [[ -n "$CONN_JELLYFIN" ]] && echo "  Jellyfin connection: $CONN_JELLYFIN"
 [[ -n "$CONN_LIDARR" ]] && echo "  Lidarr connection: $CONN_LIDARR"  # reserved for future Lidarr tests
@@ -468,6 +480,28 @@ rules_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
   "$SW_BASE/api/v1/rules")
 assert_status "GET /api/v1/rules" "200" "$rules_code"
 
+# Fanart list endpoint -- verifies multi-backdrop support is accessible
+fanart_list_resp=$(curl -s -w "\n%{http_code}" "${AUTH[@]}" \
+  "$SW_BASE/api/v1/artists/$ARTIST_ID/images/fanart/list")
+fanart_list_body=$(echo "$fanart_list_resp" | sed '$d')
+fanart_list_code=$(echo "$fanart_list_resp" | tail -n 1)
+assert_status "GET /api/v1/artists/$ARTIST_ID/images/fanart/list" "200" "$fanart_list_code"
+if [[ "$fanart_list_code" == "200" ]]; then
+  fanart_arr_len=$(echo "$fanart_list_body" | jq 'length' 2>/dev/null || echo "")
+  if [[ -n "$fanart_arr_len" && "$fanart_arr_len" =~ ^[0-9]+$ ]]; then
+    echo "[PASS]   fanart list returns array (length=$fanart_arr_len)"
+    PASS=$((PASS + 1))
+  else
+    echo "[FAIL]   fanart list did not return a valid array"
+    FAIL=$((FAIL + 1))
+    FAILURES+=("fanart list did not return a valid array")
+  fi
+fi
+
+# Artist fanart_count field in artist detail response
+fanart_count_resp=$(curl -s "${AUTH[@]}" "$SW_BASE/api/v1/artists/$ARTIST_ID")
+assert_json_exists "  artist detail has fanart_count field" ".artist.fanart_count" "$fanart_count_resp"
+
 notif_counts_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
   "$SW_BASE/api/v1/notifications/counts")
 assert_status "GET /api/v1/notifications/counts" "200" "$notif_counts_code"
@@ -535,6 +569,26 @@ if [[ "$FULL" -eq 1 ]]; then
     -H "Content-Type: application/json" \
     -d '{"url":"https://upload.wikimedia.org/wikipedia/en/a/aa/A-ha_band_2015.jpg","type":"thumb"}')
   assert_status_in "POST /api/v1/artists/$ARTIST_ID/images/fetch (--full)" "$fetch_img_code" 200 422
+
+  # Populate from Emby or Jellyfin and verify the response includes backdrop image counts.
+  # This exercises the multi-backdrop download path added in #357.
+  if [[ -n "$LIBRARY_ID" && -n "$LIB_CONN_ID" && "$LIB_CONN_ID" != "null" ]]; then
+    pop_resp=$(curl -s -w "\n%{http_code}" "${AUTH[@]}" \
+      -X POST "$SW_BASE/api/v1/connections/$LIB_CONN_ID/libraries/$LIBRARY_ID/populate")
+    pop_body=$(echo "$pop_resp" | sed '$d')
+    pop_code=$(echo "$pop_resp" | tail -n 1)
+    assert_status_in "POST /api/v1/connections/$LIB_CONN_ID/libraries/$LIBRARY_ID/populate (--full)" "$pop_code" 200 202
+    if [[ "$pop_code" == "200" ]]; then
+      assert_json_exists "  populate 200 response has artists field" ".artists" "$pop_body"
+      assert_json_exists "  populate 200 response has images field" ".images" "$pop_body"
+      assert_json_exists "  populate 200 response has skipped field" ".skipped" "$pop_body"
+    elif [[ "$pop_code" == "202" ]]; then
+      assert_json_exists "  populate 202 response has library_id field" ".library_id" "$pop_body"
+      assert_json_exists "  populate 202 response has status field" ".status" "$pop_body"
+    fi
+  else
+    echo "[SKIP] POST populate (--full) -- no Emby/Jellyfin library or connection found"
+  fi
 
   backup_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
     -X POST "$SW_BASE/api/v1/settings/backup")

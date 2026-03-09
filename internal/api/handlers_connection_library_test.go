@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -569,7 +570,10 @@ func TestPopulateFromEmby_DownloadsImages(t *testing.T) {
 
 	// Verify the image file exists on disk.
 	found := false
-	entries, _ := os.ReadDir(artistDir)
+	entries, err := os.ReadDir(artistDir)
+	if err != nil {
+		t.Fatalf("reading artist dir: %v", err)
+	}
 	for _, e := range entries {
 		if strings.HasPrefix(e.Name(), "folder") {
 			found = true
@@ -737,7 +741,10 @@ func TestPopulateFromEmby_UsesImageCacheWhenNoPath(t *testing.T) {
 		t.Errorf("artist path = %q, want empty (no filesystem path)", a.Path)
 	}
 	cacheDir := filepath.Join(router.imageCacheDir, a.ID)
-	entries, _ := os.ReadDir(cacheDir)
+	entries, err := os.ReadDir(cacheDir)
+	if err != nil {
+		t.Fatalf("reading cache dir: %v", err)
+	}
 	found := false
 	for _, e := range entries {
 		if strings.HasPrefix(e.Name(), "folder") {
@@ -820,7 +827,10 @@ func TestPopulateFromJellyfin_DownloadsImages(t *testing.T) {
 
 	// Verify the image file exists on disk.
 	found := false
-	entries, _ := os.ReadDir(artistDir)
+	entries, err := os.ReadDir(artistDir)
+	if err != nil {
+		t.Fatalf("reading artist dir: %v", err)
+	}
 	for _, e := range entries {
 		if strings.HasPrefix(e.Name(), "folder") {
 			found = true
@@ -930,7 +940,10 @@ func TestPopulateFromEmby_DownloadsImagesForExistingArtist(t *testing.T) {
 
 	// Verify file saved to the existing artist's local path, not Emby's path.
 	found := false
-	entries, _ := os.ReadDir(artistDir)
+	entries, err := os.ReadDir(artistDir)
+	if err != nil {
+		t.Fatalf("reading artist dir: %v", err)
+	}
 	for _, e := range entries {
 		if strings.HasPrefix(e.Name(), "folder") {
 			found = true
@@ -1399,5 +1412,665 @@ func TestValidatedArtistPath_SymlinkEscape(t *testing.T) {
 	got := validatedArtistPath(symlinkPath, libDir)
 	if got != "" {
 		t.Errorf("validatedArtistPath(%q, %q) = %q, want empty (symlink escapes library root)", symlinkPath, libDir, got)
+	}
+}
+
+func TestPopulateFromEmby_DownloadsMultipleBackdrops(t *testing.T) {
+	jpegData := createTestJPEGForHandler(t)
+	artistDir := t.TempDir()
+	libPath := filepath.Dir(artistDir)
+
+	var backdrop0Requested, backdrop1Requested atomic.Bool
+	embySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/Artists/AlbumArtists":
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintf(w, `{
+				"Items":[{
+					"Name":"Radiohead",
+					"SortName":"Radiohead",
+					"Id":"emby-001",
+					"Path":%q,
+					"Overview":"",
+					"Genres":[],
+					"Tags":[],
+					"PremiereDate":"",
+					"EndDate":"",
+					"ProviderIds":{"MusicBrainzArtist":"mbid-001"},
+					"ImageTags":{},
+					"BackdropImageTags":["hash1","hash2"]
+				}],
+				"TotalRecordCount":1
+			}`, artistDir)
+		case "/Items/emby-001/Images/Backdrop/0":
+			backdrop0Requested.Store(true)
+			w.Header().Set("Content-Type", "image/jpeg")
+			_, _ = w.Write(jpegData)
+		case "/Items/emby-001/Images/Backdrop/1":
+			backdrop1Requested.Store(true)
+			w.Header().Set("Content-Type", "image/jpeg")
+			_, _ = w.Write(jpegData)
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer embySrv.Close()
+
+	router := testRouterForLibraryOps(t)
+	ctx := context.Background()
+
+	lib := &library.Library{
+		Name:       "Test Music",
+		Path:       libPath,
+		Type:       library.TypeRegular,
+		Source:     connection.TypeEmby,
+		ExternalID: "emby-lib-1",
+	}
+	if err := router.libraryService.Create(ctx, lib); err != nil {
+		t.Fatalf("creating library: %v", err)
+	}
+
+	client := emby.NewWithHTTPClient(embySrv.URL, "key", "", embySrv.Client(),
+		slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
+	var result populateResult
+	if err := router.populateFromEmbyCtx(ctx, client, lib, &result); err != nil {
+		t.Fatalf("populateFromEmbyCtx: %v", err)
+	}
+
+	if !backdrop0Requested.Load() {
+		t.Error("expected backdrop index 0 to be downloaded")
+	}
+	if !backdrop1Requested.Load() {
+		t.Error("expected backdrop index 1 to be downloaded")
+	}
+	if result.Images != 2 {
+		t.Errorf("images = %d, want 2", result.Images)
+	}
+
+	// Verify both fanart files exist on disk (Kodi numbering: fanart.jpg and fanart1.jpg).
+	if _, err := os.Stat(filepath.Join(artistDir, "fanart.jpg")); err != nil {
+		t.Errorf("expected fanart.jpg to exist: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(artistDir, "fanart1.jpg")); err != nil {
+		t.Errorf("expected fanart1.jpg to exist: %v", err)
+	}
+
+	a, err := router.artistService.GetByNameAndLibrary(ctx, "Radiohead", lib.ID)
+	if err != nil || a == nil {
+		t.Fatalf("looking up artist: %v", err)
+	}
+	if a.FanartCount != 2 {
+		t.Errorf("FanartCount = %d, want 2", a.FanartCount)
+	}
+}
+
+func TestPopulateFromEmby_SkipsExistingBackdrop(t *testing.T) {
+	jpegData := createTestJPEGForHandler(t)
+	artistDir := t.TempDir()
+	libPath := filepath.Dir(artistDir)
+
+	// Pre-create fanart.jpg so backdrop index 0 should be skipped.
+	if err := os.WriteFile(filepath.Join(artistDir, "fanart.jpg"), jpegData, 0o644); err != nil {
+		t.Fatalf("writing existing fanart: %v", err)
+	}
+
+	var backdrop0Requested, backdrop1Requested atomic.Bool
+	embySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/Artists/AlbumArtists":
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintf(w, `{
+				"Items":[{
+					"Name":"Bjork",
+					"SortName":"Bjork",
+					"Id":"emby-002",
+					"Path":%q,
+					"Overview":"",
+					"Genres":[],
+					"Tags":[],
+					"PremiereDate":"",
+					"EndDate":"",
+					"ProviderIds":{},
+					"ImageTags":{},
+					"BackdropImageTags":["hash1","hash2"]
+				}],
+				"TotalRecordCount":1
+			}`, artistDir)
+		case "/Items/emby-002/Images/Backdrop/0":
+			backdrop0Requested.Store(true)
+			w.Header().Set("Content-Type", "image/jpeg")
+			_, _ = w.Write(jpegData)
+		case "/Items/emby-002/Images/Backdrop/1":
+			backdrop1Requested.Store(true)
+			w.Header().Set("Content-Type", "image/jpeg")
+			_, _ = w.Write(jpegData)
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer embySrv.Close()
+
+	router := testRouterForLibraryOps(t)
+	ctx := context.Background()
+
+	lib := &library.Library{
+		Name:       "Test Music Skip",
+		Path:       libPath,
+		Type:       library.TypeRegular,
+		Source:     connection.TypeEmby,
+		ExternalID: "emby-lib-2",
+	}
+	if err := router.libraryService.Create(ctx, lib); err != nil {
+		t.Fatalf("creating library: %v", err)
+	}
+
+	client := emby.NewWithHTTPClient(embySrv.URL, "key", "", embySrv.Client(),
+		slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
+	var result populateResult
+	if err := router.populateFromEmbyCtx(ctx, client, lib, &result); err != nil {
+		t.Fatalf("populateFromEmbyCtx: %v", err)
+	}
+
+	if backdrop0Requested.Load() {
+		t.Error("expected backdrop index 0 to be skipped (file already exists)")
+	}
+	if !backdrop1Requested.Load() {
+		t.Error("expected backdrop index 1 to be downloaded")
+	}
+	if result.Images != 1 {
+		t.Errorf("images = %d, want 1", result.Images)
+	}
+	if _, err := os.Stat(filepath.Join(artistDir, "fanart1.jpg")); err != nil {
+		t.Errorf("expected fanart1.jpg to exist: %v", err)
+	}
+}
+
+func TestPopulateFromJellyfin_DownloadsMultipleBackdrops(t *testing.T) {
+	jpegData := createTestJPEGForHandler(t)
+	artistDir := t.TempDir()
+	libPath := filepath.Dir(artistDir)
+
+	var backdrop0Requested, backdrop1Requested atomic.Bool
+	jfSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/Artists/AlbumArtists":
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintf(w, `{
+				"Items":[{
+					"Name":"Bjork",
+					"SortName":"Bjork",
+					"Id":"jf-001",
+					"Path":%q,
+					"Overview":"",
+					"Genres":[],
+					"Tags":[],
+					"PremiereDate":"",
+					"EndDate":"",
+					"ProviderIds":{"MusicBrainzArtist":"mbid-002"},
+					"ImageTags":{},
+					"BackdropImageTags":["hash1","hash2"]
+				}],
+				"TotalRecordCount":1
+			}`, artistDir)
+		case "/Items/jf-001/Images/Backdrop/0":
+			backdrop0Requested.Store(true)
+			w.Header().Set("Content-Type", "image/jpeg")
+			_, _ = w.Write(jpegData)
+		case "/Items/jf-001/Images/Backdrop/1":
+			backdrop1Requested.Store(true)
+			w.Header().Set("Content-Type", "image/jpeg")
+			_, _ = w.Write(jpegData)
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer jfSrv.Close()
+
+	router := testRouterForLibraryOps(t)
+	ctx := context.Background()
+
+	lib := &library.Library{
+		Name:       "Test Music JF",
+		Path:       libPath,
+		Type:       library.TypeRegular,
+		Source:     connection.TypeJellyfin,
+		ExternalID: "jf-lib-1",
+	}
+	if err := router.libraryService.Create(ctx, lib); err != nil {
+		t.Fatalf("creating library: %v", err)
+	}
+
+	client := jellyfin.NewWithHTTPClient(jfSrv.URL, "key", "", jfSrv.Client(),
+		slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
+	var result populateResult
+	if err := router.populateFromJellyfinCtx(ctx, client, lib, &result); err != nil {
+		t.Fatalf("populateFromJellyfinCtx: %v", err)
+	}
+
+	if !backdrop0Requested.Load() {
+		t.Error("expected backdrop index 0 to be downloaded")
+	}
+	if !backdrop1Requested.Load() {
+		t.Error("expected backdrop index 1 to be downloaded")
+	}
+	if result.Images != 2 {
+		t.Errorf("images = %d, want 2", result.Images)
+	}
+
+	if _, err := os.Stat(filepath.Join(artistDir, "fanart.jpg")); err != nil {
+		t.Errorf("expected fanart.jpg to exist: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(artistDir, "fanart1.jpg")); err != nil {
+		t.Errorf("expected fanart1.jpg to exist: %v", err)
+	}
+
+	a, err := router.artistService.GetByNameAndLibrary(ctx, "Bjork", lib.ID)
+	if err != nil || a == nil {
+		t.Fatalf("looking up artist: %v", err)
+	}
+	if a.FanartCount != 2 {
+		t.Errorf("FanartCount = %d, want 2", a.FanartCount)
+	}
+}
+
+func TestPopulateFromEmby_NoBackdropsWhenTagsEmpty(t *testing.T) {
+	jpegData := createTestJPEGForHandler(t)
+	artistDir := t.TempDir()
+	libPath := filepath.Dir(artistDir)
+
+	var backdropRequested atomic.Bool
+	embySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "Images/Backdrop") {
+			backdropRequested.Store(true)
+		}
+		switch r.URL.Path {
+		case "/Artists/AlbumArtists":
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintf(w, `{
+				"Items":[{
+					"Name":"Radiohead",
+					"SortName":"Radiohead",
+					"Id":"emby-003",
+					"Path":%q,
+					"Overview":"",
+					"Genres":[],
+					"Tags":[],
+					"PremiereDate":"",
+					"EndDate":"",
+					"ProviderIds":{"MusicBrainzArtist":"mbid-003"},
+					"ImageTags":{"Primary":"hash-thumb"},
+					"BackdropImageTags":[]
+				}],
+				"TotalRecordCount":1
+			}`, artistDir)
+		case "/Items/emby-003/Images/Primary":
+			w.Header().Set("Content-Type", "image/jpeg")
+			_, _ = w.Write(jpegData)
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer embySrv.Close()
+
+	router := testRouterForLibraryOps(t)
+	ctx := context.Background()
+
+	lib := &library.Library{
+		Name:       "Test Music NoBackdrop",
+		Path:       libPath,
+		Type:       library.TypeRegular,
+		Source:     connection.TypeEmby,
+		ExternalID: "emby-lib-3",
+	}
+	if err := router.libraryService.Create(ctx, lib); err != nil {
+		t.Fatalf("creating library: %v", err)
+	}
+
+	client := emby.NewWithHTTPClient(embySrv.URL, "key", "", embySrv.Client(),
+		slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
+	var result populateResult
+	if err := router.populateFromEmbyCtx(ctx, client, lib, &result); err != nil {
+		t.Fatalf("populateFromEmbyCtx: %v", err)
+	}
+
+	if backdropRequested.Load() {
+		t.Error("expected no backdrop requests when BackdropImageTags is empty")
+	}
+	// The thumb image should still be downloaded.
+	if result.Images != 1 {
+		t.Errorf("images = %d, want 1 (thumb only)", result.Images)
+	}
+}
+
+func TestPopulateFromEmby_PartialBackdropDownloadFailure(t *testing.T) {
+	// Backdrop index 0 returns 404; index 1 returns a valid JPEG.
+	// The loop must continue past the failure and count only the successful download.
+	jpegData := createTestJPEGForHandler(t)
+	artistDir := t.TempDir()
+	libPath := filepath.Dir(artistDir)
+
+	var backdrop1Requested atomic.Bool
+	embySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/Artists/AlbumArtists":
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintf(w, `{
+				"Items":[{
+					"Name":"Portishead",
+					"SortName":"Portishead",
+					"Id":"emby-004",
+					"Path":%q,
+					"Overview":"",
+					"Genres":[],
+					"Tags":[],
+					"PremiereDate":"",
+					"EndDate":"",
+					"ProviderIds":{"MusicBrainzArtist":"mbid-004"},
+					"ImageTags":{},
+					"BackdropImageTags":["hash1","hash2"]
+				}],
+				"TotalRecordCount":1
+			}`, artistDir)
+		case "/Items/emby-004/Images/Backdrop/0":
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte("not found"))
+		case "/Items/emby-004/Images/Backdrop/1":
+			backdrop1Requested.Store(true)
+			w.Header().Set("Content-Type", "image/jpeg")
+			_, _ = w.Write(jpegData)
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer embySrv.Close()
+
+	router := testRouterForLibraryOps(t)
+	ctx := context.Background()
+
+	lib := &library.Library{
+		Name:       "Test Music Partial",
+		Path:       libPath,
+		Type:       library.TypeRegular,
+		Source:     connection.TypeEmby,
+		ExternalID: "emby-lib-4",
+	}
+	if err := router.libraryService.Create(ctx, lib); err != nil {
+		t.Fatalf("creating library: %v", err)
+	}
+
+	client := emby.NewWithHTTPClient(embySrv.URL, "key", "", embySrv.Client(),
+		slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
+	var result populateResult
+	if err := router.populateFromEmbyCtx(ctx, client, lib, &result); err != nil {
+		t.Fatalf("populateFromEmbyCtx: %v", err)
+	}
+
+	if !backdrop1Requested.Load() {
+		t.Error("expected backdrop index 1 to be attempted after index 0 failure")
+	}
+	if result.Images != 1 {
+		t.Errorf("images = %d, want 1 (only index 1 succeeded)", result.Images)
+	}
+
+	// Kodi numbering: index 1 maps to fanart1.jpg during download. After the
+	// loop, compactFanartIfNeeded renames it to fanart.jpg (the primary slot)
+	// so that the UI's /images/fanart/file endpoint can serve it.
+	if _, err := os.Stat(filepath.Join(artistDir, "fanart.jpg")); err != nil {
+		t.Errorf("expected fanart.jpg to exist after compaction: %v", err)
+	}
+	// fanart1.jpg should no longer exist -- it was renamed to primary.
+	if _, err := os.Stat(filepath.Join(artistDir, "fanart1.jpg")); err == nil {
+		t.Error("fanart1.jpg should not exist after compaction to primary slot")
+	}
+}
+
+func TestScanFromEmby_FanartExistsFromBackdropImageTags(t *testing.T) {
+	artistDir := t.TempDir()
+	libPath := filepath.Dir(artistDir)
+
+	embySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/Artists/AlbumArtists" {
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintf(w, `{
+				"Items":[{
+					"Name":"Bjork",
+					"SortName":"Bjork",
+					"Id":"emby-scan-001",
+					"Path":%q,
+					"Overview":"",
+					"Genres":[],
+					"Tags":[],
+					"PremiereDate":"",
+					"EndDate":"",
+					"ProviderIds":{"MusicBrainzArtist":"mbid-scan-001"},
+					"ImageTags":{},
+					"BackdropImageTags":["hash1"]
+				}],
+				"TotalRecordCount":1
+			}`, artistDir)
+		} else {
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer embySrv.Close()
+
+	router := testRouterForLibraryOps(t)
+	ctx := context.Background()
+
+	lib := &library.Library{
+		Name:       "Scan Test",
+		Path:       libPath,
+		Type:       library.TypeRegular,
+		Source:     connection.TypeEmby,
+		ExternalID: "emby-scan-lib-1",
+	}
+	if err := router.libraryService.Create(ctx, lib); err != nil {
+		t.Fatalf("creating library: %v", err)
+	}
+
+	existing := &artist.Artist{
+		Name:          "Bjork",
+		SortName:      "Bjork",
+		MusicBrainzID: "mbid-scan-001",
+		LibraryID:     lib.ID,
+		Path:          artistDir,
+	}
+	if err := router.artistService.Create(ctx, existing); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	client := emby.NewWithHTTPClient(embySrv.URL, "key", "", embySrv.Client(),
+		slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
+
+	updated, err := router.scanFromEmby(ctx, client, lib)
+	if err != nil {
+		t.Fatalf("scanFromEmby: %v", err)
+	}
+	if updated != 1 {
+		t.Errorf("updated = %d, want 1", updated)
+	}
+
+	got, err := router.artistService.GetByMBIDAndLibrary(ctx, "mbid-scan-001", lib.ID)
+	if err != nil || got == nil {
+		t.Fatalf("looking up artist after scan: %v", err)
+	}
+	if !got.FanartExists {
+		t.Error("FanartExists should be true after scan with non-empty BackdropImageTags")
+	}
+}
+
+func TestScanFromJellyfin_FanartExistsFromBackdropImageTags(t *testing.T) {
+	artistDir := t.TempDir()
+	libPath := filepath.Dir(artistDir)
+
+	jfSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/Artists/AlbumArtists" {
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintf(w, `{
+				"Items":[{
+					"Name":"Bjork",
+					"SortName":"Bjork",
+					"Id":"jf-scan-001",
+					"Path":%q,
+					"Overview":"",
+					"Genres":[],
+					"Tags":[],
+					"PremiereDate":"",
+					"EndDate":"",
+					"ProviderIds":{"MusicBrainzArtist":"mbid-scan-002"},
+					"ImageTags":{},
+					"BackdropImageTags":["hash1"]
+				}],
+				"TotalRecordCount":1
+			}`, artistDir)
+		} else {
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer jfSrv.Close()
+
+	router := testRouterForLibraryOps(t)
+	ctx := context.Background()
+
+	lib := &library.Library{
+		Name:       "JF Scan Test",
+		Path:       libPath,
+		Type:       library.TypeRegular,
+		Source:     connection.TypeJellyfin,
+		ExternalID: "jf-scan-lib-1",
+	}
+	if err := router.libraryService.Create(ctx, lib); err != nil {
+		t.Fatalf("creating library: %v", err)
+	}
+
+	existing := &artist.Artist{
+		Name:          "Bjork",
+		SortName:      "Bjork",
+		MusicBrainzID: "mbid-scan-002",
+		LibraryID:     lib.ID,
+		Path:          artistDir,
+	}
+	if err := router.artistService.Create(ctx, existing); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	client := jellyfin.NewWithHTTPClient(jfSrv.URL, "key", "", jfSrv.Client(),
+		slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
+
+	updated, err := router.scanFromJellyfin(ctx, client, lib)
+	if err != nil {
+		t.Fatalf("scanFromJellyfin: %v", err)
+	}
+	if updated != 1 {
+		t.Errorf("updated = %d, want 1", updated)
+	}
+
+	got, err := router.artistService.GetByMBIDAndLibrary(ctx, "mbid-scan-002", lib.ID)
+	if err != nil || got == nil {
+		t.Fatalf("looking up artist after scan: %v", err)
+	}
+	if !got.FanartExists {
+		t.Error("FanartExists should be true after scan with non-empty BackdropImageTags")
+	}
+}
+
+func TestPopulateFromEmby_NonKodiBackdropNaming(t *testing.T) {
+	jpegData := createTestJPEGForHandler(t)
+	artistDir := t.TempDir()
+	libPath := filepath.Dir(artistDir)
+
+	var backdrop0Requested, backdrop1Requested atomic.Bool
+	embySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/Artists/AlbumArtists":
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintf(w, `{
+				"Items":[{
+					"Name":"Sigur Ros",
+					"SortName":"Sigur Ros",
+					"Id":"emby-nk-001",
+					"Path":%q,
+					"Overview":"",
+					"Genres":[],
+					"Tags":[],
+					"PremiereDate":"",
+					"EndDate":"",
+					"ProviderIds":{"MusicBrainzArtist":"mbid-nk-001"},
+					"ImageTags":{},
+					"BackdropImageTags":["hash1","hash2"]
+				}],
+				"TotalRecordCount":1
+			}`, artistDir)
+		case "/Items/emby-nk-001/Images/Backdrop/0":
+			backdrop0Requested.Store(true)
+			w.Header().Set("Content-Type", "image/jpeg")
+			_, _ = w.Write(jpegData)
+		case "/Items/emby-nk-001/Images/Backdrop/1":
+			backdrop1Requested.Store(true)
+			w.Header().Set("Content-Type", "image/jpeg")
+			_, _ = w.Write(jpegData)
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer embySrv.Close()
+
+	router := testRouterForLibraryOps(t)
+	ctx := context.Background()
+
+	// Activate the Emby platform profile so backdrops use non-Kodi naming:
+	// index 0 -> backdrop.jpg, index 1 -> backdrop2.jpg.
+	if err := router.platformService.SetActive(ctx, "emby"); err != nil {
+		t.Fatalf("setting emby platform active: %v", err)
+	}
+
+	lib := &library.Library{
+		Name:       "NonKodi Music",
+		Path:       libPath,
+		Type:       library.TypeRegular,
+		Source:     connection.TypeEmby,
+		ExternalID: "emby-nk-lib-1",
+	}
+	if err := router.libraryService.Create(ctx, lib); err != nil {
+		t.Fatalf("creating library: %v", err)
+	}
+
+	client := emby.NewWithHTTPClient(embySrv.URL, "key", "", embySrv.Client(),
+		slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
+	var result populateResult
+	if err := router.populateFromEmbyCtx(ctx, client, lib, &result); err != nil {
+		t.Fatalf("populateFromEmbyCtx: %v", err)
+	}
+
+	if !backdrop0Requested.Load() {
+		t.Error("expected backdrop index 0 to be downloaded")
+	}
+	if !backdrop1Requested.Load() {
+		t.Error("expected backdrop index 1 to be downloaded")
+	}
+	if result.Images != 2 {
+		t.Errorf("images = %d, want 2", result.Images)
+	}
+
+	// Non-Kodi (Emby) numbering: index 0 -> backdrop.jpg, index 1 -> backdrop2.jpg.
+	if _, err := os.Stat(filepath.Join(artistDir, "backdrop.jpg")); err != nil {
+		t.Errorf("expected backdrop.jpg to exist: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(artistDir, "backdrop2.jpg")); err != nil {
+		t.Errorf("expected backdrop2.jpg to exist: %v", err)
+	}
+
+	a, err := router.artistService.GetByNameAndLibrary(ctx, "Sigur Ros", lib.ID)
+	if err != nil || a == nil {
+		t.Fatalf("looking up artist: %v", err)
+	}
+	if a.FanartCount != 2 {
+		t.Errorf("FanartCount = %d, want 2", a.FanartCount)
 	}
 }

@@ -99,7 +99,7 @@ func TestGetArtists(t *testing.T) {
 			t.Errorf("unexpected path: %s", r.URL.Path)
 		}
 		fields := r.URL.Query().Get("Fields")
-		if fields != "Path,ProviderIds,ImageTags,Overview,Genres,Tags,SortName,PremiereDate,EndDate" {
+		if fields != "Path,ProviderIds,ImageTags,BackdropImageTags,Overview,Genres,Tags,SortName,PremiereDate,EndDate" {
 			t.Errorf("Fields = %q, want expanded field list", fields)
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -634,7 +634,7 @@ func TestPushMetadata_DateNormalization(t *testing.T) {
 			wantPremiere: "1985-01-01T00:00:00.0000000Z",
 		},
 		{
-			name:         "unparseable date omitted",
+			name:         "unparsable date omitted",
 			data:         connection.ArtistPushData{Name: "Test", Born: "not a date"},
 			wantPremiere: "",
 		},
@@ -737,5 +737,50 @@ func TestUploadImage_UnsupportedType(t *testing.T) {
 	c := New("http://localhost", "key", "", testLogger())
 	if err := c.UploadImage(context.Background(), "jf-001", "clearart", []byte("data"), "image/jpeg"); err == nil {
 		t.Fatal("expected error for unsupported image type")
+	}
+}
+
+func TestGetArtistBackdrop_Success(t *testing.T) {
+	jpegData := createTestJPEG(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/Items/jf-001/Images/Backdrop/2" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		auth := r.Header.Get("Authorization")
+		if !strings.HasPrefix(auth, `MediaBrowser Token="`) {
+			t.Errorf("unexpected auth header: %s", auth)
+		}
+		w.Header().Set("Content-Type", "image/jpeg")
+		_, _ = w.Write(jpegData)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "test-key", "", srv.Client(), testLogger())
+	data, contentType, err := c.GetArtistBackdrop(context.Background(), "jf-001", 2)
+	if err != nil {
+		t.Fatalf("GetArtistBackdrop failed: %v", err)
+	}
+	if contentType != "image/jpeg" {
+		t.Errorf("content-type = %q, want image/jpeg", contentType)
+	}
+	if !bytes.Equal(data, jpegData) {
+		t.Errorf("image data mismatch: got %d bytes, want %d", len(data), len(jpegData))
+	}
+}
+
+func TestGetArtistBackdrop_NotFound(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/Items/jf-001/Images/Backdrop/0" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte("not found"))
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "test-key", "", srv.Client(), testLogger())
+	_, _, err := c.GetArtistBackdrop(context.Background(), "jf-001", 0)
+	if err == nil {
+		t.Fatal("expected error for 404 response")
 	}
 }
