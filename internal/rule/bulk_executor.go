@@ -357,7 +357,7 @@ func (e *BulkExecutor) saveBestImage(ctx context.Context, a *artist.Artist, imag
 			continue
 		}
 
-		resized, _, err := img.Resize(bytes.NewReader(data), 3000, 3000)
+		resized, _, err := img.ConvertFormat(bytes.NewReader(data))
 		if err != nil {
 			continue
 		}

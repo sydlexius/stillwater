@@ -153,6 +153,43 @@ func TestResize_AlreadyFits(t *testing.T) {
 	}
 }
 
+func TestConvertFormat_JPEG_PreservesNativeResolution(t *testing.T) {
+	// A large JPEG (simulating a 4K backdrop) must not be downscaled.
+	data := makeJPEG(t, 3840, 2160)
+	result, format, err := ConvertFormat(bytes.NewReader(data))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if format != FormatJPEG {
+		t.Errorf("got format %q, want %q", format, FormatJPEG)
+	}
+	w, h, err := GetDimensions(bytes.NewReader(result))
+	if err != nil {
+		t.Fatalf("reading result dimensions: %v", err)
+	}
+	if w != 3840 || h != 2160 {
+		t.Errorf("expected 3840x2160, got %dx%d -- image was silently downscaled", w, h)
+	}
+}
+
+func TestConvertFormat_PNG_PreservesNativeResolution(t *testing.T) {
+	data := makePNG(t, 3000, 3000)
+	result, format, err := ConvertFormat(bytes.NewReader(data))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if format != FormatPNG {
+		t.Errorf("got format %q, want %q", format, FormatPNG)
+	}
+	w, h, err := GetDimensions(bytes.NewReader(result))
+	if err != nil {
+		t.Fatalf("reading result dimensions: %v", err)
+	}
+	if w != 3000 || h != 3000 {
+		t.Errorf("expected 3000x3000, got %dx%d", w, h)
+	}
+}
+
 func TestOptimize_JPEG(t *testing.T) {
 	data := makeJPEG(t, 200, 200)
 	result, err := Optimize(bytes.NewReader(data), FormatJPEG, 50)

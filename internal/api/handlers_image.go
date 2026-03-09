@@ -511,13 +511,12 @@ func (r *Router) handleImageCrop(w http.ResponseWriter, req *http.Request) {
 	})
 }
 
-// processAndSaveImage processes image data (resize if oversized, optimize) and saves it.
+// processAndSaveImage processes image data (convert format, optimize) and saves it.
 // For logos, transparent borders are automatically trimmed before saving.
 func (r *Router) processAndSaveImage(ctx context.Context, dir string, imageType string, data []byte) ([]string, error) {
-	// Resize if oversized (max 3000px on any dimension)
-	resized, _, err := img.Resize(bytes.NewReader(data), 3000, 3000)
+	resized, _, err := img.ConvertFormat(bytes.NewReader(data))
 	if err != nil {
-		return nil, fmt.Errorf("resizing: %w", err)
+		return nil, fmt.Errorf("converting format: %w", err)
 	}
 
 	// Logos: trim transparent borders so the image renders without padding.
@@ -1389,9 +1388,9 @@ func (r *Router) isKodiNumbering(ctx context.Context) bool {
 // processAndAppendFanart processes image data and saves it as the next
 // numbered fanart file. Returns the saved filenames.
 func (r *Router) processAndAppendFanart(ctx context.Context, dir string, data []byte) ([]string, error) {
-	resized, _, err := img.Resize(bytes.NewReader(data), 3000, 3000)
+	resized, _, err := img.ConvertFormat(bytes.NewReader(data))
 	if err != nil {
-		return nil, fmt.Errorf("resizing: %w", err)
+		return nil, fmt.Errorf("converting format: %w", err)
 	}
 
 	primary := r.getActiveFanartPrimary(ctx)

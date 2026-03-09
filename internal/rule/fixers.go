@@ -378,9 +378,9 @@ func (f *ImageFixer) Fix(ctx context.Context, a *artist.Artist, v *Violation) (*
 			}
 		}
 
-		resized, _, err := img.Resize(bytes.NewReader(data), 3000, 3000)
+		resized, _, err := img.ConvertFormat(bytes.NewReader(data))
 		if err != nil {
-			f.logger.Debug("image resize failed", "url", c.URL, "error", err)
+			f.logger.Debug("image format conversion failed", "url", c.URL, "error", err)
 			continue
 		}
 
@@ -447,9 +447,9 @@ func ApplyImageCandidate(ctx context.Context, a *artist.Artist, imageType, rawUR
 		return fmt.Errorf("downloading image: %w", err)
 	}
 
-	resized, _, err := img.Resize(bytes.NewReader(data), 3000, 3000)
+	resized, _, err := img.ConvertFormat(bytes.NewReader(data))
 	if err != nil {
-		return fmt.Errorf("resizing image: %w", err)
+		return fmt.Errorf("converting image format: %w", err)
 	}
 
 	if len(naming) == 0 {

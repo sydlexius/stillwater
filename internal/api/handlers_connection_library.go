@@ -871,7 +871,7 @@ func (r *Router) downloadPlatformImages(ctx context.Context, dl imageDownloader,
 				continue
 			}
 			filename := img.FanartFilename(primary, i, kodi)
-			// Check all common image extensions for this slot. img.Resize converts WebP
+			// Check all common image extensions for this slot. img.ConvertFormat converts WebP
 			// to PNG, so a previously-saved file may have a different extension than the
 			// current filename. FanartFilename preserves the extension from the active
 			// primary name, so the saved file and the generated name may legitimately differ.
@@ -909,9 +909,9 @@ func (r *Router) downloadPlatformImages(ctx context.Context, dl imageDownloader,
 				r.logger.Warn("empty backdrop response from platform", "artist", a.Name, "index", i)
 				continue
 			}
-			resized, _, resizeErr := img.Resize(bytes.NewReader(data), 4096, 4096)
+			resized, _, resizeErr := img.ConvertFormat(bytes.NewReader(data))
 			if resizeErr != nil {
-				r.logger.Warn("resizing backdrop", "artist", a.Name, "index", i, "error", resizeErr)
+				r.logger.Warn("converting backdrop format", "artist", a.Name, "index", i, "error", resizeErr)
 				continue
 			}
 			saved, saveErr := img.Save(dir, "fanart", resized, []string{filename}, false, r.logger)
