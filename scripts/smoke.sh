@@ -578,10 +578,13 @@ if [[ "$FULL" -eq 1 ]]; then
     pop_body=$(echo "$pop_resp" | sed '$d')
     pop_code=$(echo "$pop_resp" | tail -n 1)
     assert_status_in "POST /api/v1/connections/$LIB_CONN_ID/libraries/$LIBRARY_ID/populate (--full)" "$pop_code" 200 202
-    if [[ "$pop_code" == "200" || "$pop_code" == "202" ]]; then
-      assert_json_exists "  populate response has artists field" ".artists" "$pop_body"
-      assert_json_exists "  populate response has images field" ".images" "$pop_body"
-      assert_json_exists "  populate response has skipped field" ".skipped" "$pop_body"
+    if [[ "$pop_code" == "200" ]]; then
+      assert_json_exists "  populate 200 response has artists field" ".artists" "$pop_body"
+      assert_json_exists "  populate 200 response has images field" ".images" "$pop_body"
+      assert_json_exists "  populate 200 response has skipped field" ".skipped" "$pop_body"
+    elif [[ "$pop_code" == "202" ]]; then
+      assert_json_exists "  populate 202 response has library_id field" ".library_id" "$pop_body"
+      assert_json_exists "  populate 202 response has status field" ".status" "$pop_body"
     fi
   else
     echo "[SKIP] POST populate (--full) -- no Emby/Jellyfin library or connection found"
