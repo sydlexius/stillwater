@@ -1,0 +1,73 @@
+# Merge approved Dependabot PRs after CI passes.
+#
+# Triggers on CI workflow completion for Dependabot branches. Waits for all
+# remaining checks (CodeQL, etc.) to finish, then squash-merges the PR if it
+# has been approved by the auto-approve workflow.
+#
+# This avoids the repo-level "Allow auto-merge" setting, which would expose
+# the auto-merge toggle on all PRs including human-authored ones.
+
+name: Merge approved Dependabot PRs
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types:
+      - completed
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  merge:
+    runs-on: ubuntu-latest
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      startsWith(github.event.workflow_run.head_branch, 'dependabot/')
+    concurrency:
+      group: dependabot-merge-${{ github.event.workflow_run.head_branch }}
+      cancel-in-progress: true
+    steps:
+      - name: Find pull request
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          PR_NUMBER=$(gh pr list --repo "${{ github.repository }}" \
+            --head "$BRANCH" --state open --json number --jq '.[0].number')
+          if [ -z "$PR_NUMBER" ]; then
+            echo "No open PR found for branch $BRANCH"
+            exit 0
+          fi
+          echo "number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+
+      - name: Check PR is approved
+        if: steps.pr.outputs.number
+        id: review
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+        run: |
+          DECISION=$(gh pr view "$PR_NUMBER" \
+            --repo "${{ github.repository }}" \
+            --json reviewDecision --jq '.reviewDecision')
+          echo "decision=$DECISION" >> "$GITHUB_OUTPUT"
+          if [ "$DECISION" != "APPROVED" ]; then
+            echo "PR #$PR_NUMBER not approved (status: $DECISION), skipping"
+          fi
+
+      - name: Wait for remaining checks and merge
+        if: steps.pr.outputs.number && steps.review.outputs.decision == 'APPROVED'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+        timeout-minutes: 15
+        run: |
+          echo "Waiting for all checks on PR #$PR_NUMBER..."
+          if ! gh pr checks "$PR_NUMBER" --repo "${{ github.repository }}" --watch; then
+            echo "Some checks failed, skipping merge"
+            exit 0
+          fi
+          gh pr merge "$PR_NUMBER" --repo "${{ github.repository }}" --squash
