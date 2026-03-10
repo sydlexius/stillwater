@@ -256,9 +256,9 @@ func (r *Router) handleImportLibraries(w http.ResponseWriter, req *http.Request)
 }
 
 // startPopulateBackground registers a library populate operation and runs it
-// in a background goroutine. Silently returns if an operation is already running
-// for this library. Used by both handlePopulateLibrary (explicit) and
-// handleImportLibraries (auto-populate on import).
+// in a background goroutine. Returns immediately if an operation is already
+// running for this library. Use this for fire-and-forget populate triggers
+// where no HTTP response for the operation status is needed at call time.
 func (r *Router) startPopulateBackground(conn *connection.Connection, lib *library.Library) {
 	r.libraryOpsMu.Lock()
 	if existing, ok := r.libraryOps[lib.ID]; ok && existing.Status == "running" {

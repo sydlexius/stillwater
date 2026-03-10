@@ -1055,7 +1055,7 @@ paths:
                   last_modified:
                     type: string
                     format: date-time
-                    description: Absent when no on-disk NFO file exists (pathless artists).
+                    description: Present when the NFO file exists and is accessible; contains the file's last-modified timestamp regardless of conflict status. Omitted when the file does not exist or cannot be accessed (pathless artists, missing file, or filesystem errors).
 
   /artists/{id}/nfo/snapshots:
     get:
