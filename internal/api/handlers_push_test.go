@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/connection"
@@ -40,7 +41,7 @@ func TestHandleDeletePushImage_Success(t *testing.T) {
 		method string
 		path   string
 	}
-	captureCh := make(chan capture, 1)
+	captureCh := make(chan capture, 3)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		select {
 		case captureCh <- capture{method: r.Method, path: r.URL.Path}:
@@ -74,8 +75,14 @@ func TestHandleDeletePushImage_Success(t *testing.T) {
 		if !strings.Contains(got.path, "/Images/Primary") {
 			t.Errorf("unexpected path: %s", got.path)
 		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("mock server received no request within timeout")
+	}
+	// Drain check: verify no unexpected extra platform delete requests.
+	select {
+	case <-captureCh:
+		t.Error("unexpected extra platform delete request")
 	default:
-		t.Error("mock server received no request")
 	}
 	var resp map[string]string
 	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
@@ -87,7 +94,7 @@ func TestHandleDeletePushImage_Success(t *testing.T) {
 }
 
 func TestHandleDeletePushImage_AutoLookupPlatformID(t *testing.T) {
-	pathCh := make(chan string, 1)
+	pathCh := make(chan string, 3)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		select {
 		case pathCh <- r.URL.Path:
@@ -124,8 +131,14 @@ func TestHandleDeletePushImage_AutoLookupPlatformID(t *testing.T) {
 		if !strings.Contains(got, "/Items/emby-stored-id/Images/Primary") {
 			t.Errorf("unexpected path: %s (want stored platform id in path)", got)
 		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("mock server received no request within timeout")
+	}
+	// Drain check: verify no unexpected extra platform delete requests.
+	select {
+	case <-pathCh:
+		t.Error("unexpected extra platform delete request")
 	default:
-		t.Error("mock server received no request")
 	}
 }
 
@@ -238,7 +251,7 @@ func TestHandleDeletePushImage_JellyfinSuccess(t *testing.T) {
 		method string
 		path   string
 	}
-	captureCh := make(chan capture, 1)
+	captureCh := make(chan capture, 3)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		select {
 		case captureCh <- capture{method: r.Method, path: r.URL.Path}:
@@ -272,8 +285,14 @@ func TestHandleDeletePushImage_JellyfinSuccess(t *testing.T) {
 		if !strings.Contains(got.path, "/Images/Logo") {
 			t.Errorf("unexpected path: %s", got.path)
 		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("mock server received no request within timeout")
+	}
+	// Drain check: verify no unexpected extra platform delete requests.
+	select {
+	case <-captureCh:
+		t.Error("unexpected extra platform delete request")
 	default:
-		t.Error("mock server received no request")
 	}
 }
 
