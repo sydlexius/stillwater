@@ -46,6 +46,18 @@ COOKIE_JAR=""
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+#
+# Curl failure convention: Tier 3-5 curl calls guard against transport
+# failures so that a curl error records a FAIL rather than aborting the
+# script under set -e. Three guard patterns are used:
+#   || code="000"      -- status-only calls (feeds assert_status)
+#   || resp=$'\n000'   -- body+status calls (feeds sed/tail + assert_status)
+#   || variable=""     -- body-only calls (feeds assert_json_exists or manual checks)
+# Status "000" means curl itself failed (DNS, connection refused, timeout),
+# not an HTTP response. Tier 1 calls are left unguarded intentionally -- if
+# the server is unreachable during core checks, the entire test run is
+# unreliable and immediate abort is correct. Tier 2 guards only the
+# platform-ids discovery calls that gate subsequent push/delete sequences.
 
 assert_status() {
   local label="$1"
@@ -135,29 +147,127 @@ assert_json_value() {
 # Both Emby and Jellyfin return sparse item responses unless Fields is specified.
 # The /Items/{id} path does not work for GETs on artist items; use /Items?Ids={id}
 # with explicit Fields to get Overview, ProviderIds, PremiereDate etc.
+# Returns sentinel JSON with ._error on failure:
+#   HTTP_REQUEST_FAILED  -- curl could not complete the request
+#   HTTP_<status>        -- non-200 response from the platform
+#   PARSE_ERROR          -- response body is not valid JSON
+#   ITEM_NOT_FOUND       -- Items array is empty or null
+# Always returns exit code 0; callers must check ._error in the output JSON.
 platform_get_item() {
   local url="$1" key="$2" item_id="$3"
-  curl -s "${url}/Items?api_key=${key}&Ids=${item_id}&Fields=Overview,ProviderIds,PremiereDate,EndDate,Genres,Tags,TagItems" | \
-    jq '.Items[0]' 2>/dev/null
+  local resp body status parsed
+
+  if ! resp=$(curl -s -w 'HTTPSTATUS:%{http_code}' \
+    "${url}/Items?api_key=${key}&Ids=${item_id}&Fields=Overview,ProviderIds,PremiereDate,EndDate,Genres,Tags,TagItems"); then
+    echo '{"_error":"HTTP_REQUEST_FAILED","status":0}'
+    return 0
+  fi
+
+  body=${resp%HTTPSTATUS:*}
+  status=${resp##*HTTPSTATUS:}
+
+  if [[ "$status" != "200" ]]; then
+    echo "{\"_error\":\"HTTP_${status}\",\"status\":${status}}"
+    return 0
+  fi
+
+  if ! parsed=$(jq '.Items[0]' 2>/dev/null <<<"$body"); then
+    echo '{"_error":"PARSE_ERROR","status":200}'
+    return 0
+  fi
+
+  if [[ -z "$parsed" || "$parsed" == "null" ]]; then
+    echo '{"_error":"ITEM_NOT_FOUND","status":200}'
+    return 0
+  fi
+
+  echo "$parsed"
 }
 
-# Fetch an item, modify Overview, and POST it back. Strips read-only fields that
-# cause 400 errors on Jellyfin (ServerId, ImageBlurHashes, etc.) while keeping
-# fields that Emby requires (Genres, Tags, etc.).
+# Fetch an item, modify Overview, and POST it back.
+# GET omits TagItems from Fields because this function only mutates Overview;
+# unspecified fields are preserved by the platform on POST.
+# POST body strips read-only fields that cause 400 errors on Jellyfin
+# (ServerId, ImageBlurHashes, etc.) while keeping fields Emby requires.
+# Returns the POST HTTP status code, or a sentinel if something fails:
+#   GET stage:  CURL_FAILED, GET_FAILED_<status>, GET_PARSE_ERROR, GET_EMPTY_ITEMS
+#   POST stage: UPDATE_BODY_PARSE_ERROR, UPDATE_BODY_EMPTY, POST_CURL_FAILED
+# Always returns exit code 0.
 platform_modify_overview() {
   local url="$1" key="$2" item_id="$3" new_overview="$4"
-  local item
-  item=$(curl -s "${url}/Items?api_key=${key}&Ids=${item_id}&Fields=Overview,ProviderIds,PremiereDate,EndDate,Genres,Tags")
+  local resp body status
+
+  if ! resp=$(curl -s -w 'HTTPSTATUS:%{http_code}' \
+    "${url}/Items?api_key=${key}&Ids=${item_id}&Fields=Overview,ProviderIds,PremiereDate,EndDate,Genres,Tags"); then
+    echo "CURL_FAILED"
+    return 0
+  fi
+
+  body=${resp%HTTPSTATUS:*}
+  status=${resp##*HTTPSTATUS:}
+
+  if [[ "$status" != "200" ]]; then
+    echo "GET_FAILED_${status}"
+    return 0
+  fi
+
+  local first_item
+  if ! first_item=$(echo "$body" | jq '.Items[0]' 2>/dev/null); then
+    echo "GET_PARSE_ERROR"
+    return 0
+  fi
+
+  if [[ -z "$first_item" || "$first_item" == "null" ]]; then
+    echo "GET_EMPTY_ITEMS"
+    return 0
+  fi
+
   local update_body
-  update_body=$(echo "$item" | jq --arg bio "$new_overview" \
-    '.Items[0] | del(.ServerId, .ImageBlurHashes, .ImageTags, .BackdropImageTags, .LocationType, .MediaType, .ChannelId) | .Overview = $bio')
-  curl -s -o /dev/null -w "%{http_code}" \
+  if ! update_body=$(echo "$first_item" | jq --arg bio "$new_overview" \
+    'del(.ServerId, .ImageBlurHashes, .ImageTags, .BackdropImageTags, .LocationType, .MediaType, .ChannelId) | .Overview = $bio'); then
+    echo "UPDATE_BODY_PARSE_ERROR"
+    return 0
+  fi
+
+  if [[ -z "$update_body" || "$update_body" == "null" ]]; then
+    echo "UPDATE_BODY_EMPTY"
+    return 0
+  fi
+
+  local post_status
+  if ! post_status=$(curl -s -o /dev/null -w "%{http_code}" \
     -X POST "${url}/Items/${item_id}?api_key=${key}" \
     -H "Content-Type: application/json" \
-    -d "$update_body"
+    -d "$update_body"); then
+    echo "POST_CURL_FAILED"
+    return 0
+  fi
+  echo "$post_status"
+}
+
+# Portable mtime helper: GNU stat uses -c %Y, BSD/macOS uses -f %m.
+# Returns "MISSING" if the file does not exist, "ERROR" on other stat failures.
+# Always returns exit code 0; callers check the output string.
+get_mtime() {
+  local path="$1"
+  if [[ ! -e "$path" ]]; then
+    echo "MISSING"
+    return 0
+  fi
+  local mtime
+  if stat --version &>/dev/null; then
+    mtime=$(stat -c %Y "$path" 2>/dev/null) || { echo "ERROR"; return 0; }
+  else
+    mtime=$(stat -f %m "$path" 2>/dev/null) || { echo "ERROR"; return 0; }
+  fi
+  if [[ -z "$mtime" ]]; then echo "ERROR"; return 0; fi
+  echo "$mtime"
 }
 
 # Poll for an NFO file's mtime to change (indicates platform wrote it).
+# Returns 0 if mtime changed within the timeout, 1 if it did not.
+# When original_mtime is "MISSING", any file creation counts as a change.
+# Defaults: timeout=30s, interval=3s.
 wait_for_nfo_change() {
   local nfo_path="$1" original_mtime="$2" timeout="${3:-30}" interval="${4:-3}"
   local elapsed=0
@@ -165,7 +275,10 @@ wait_for_nfo_change() {
     sleep "$interval"
     elapsed=$((elapsed + interval))
     local current_mtime
-    current_mtime=$(stat -c %Y "$nfo_path" 2>/dev/null || echo "0")
+    current_mtime=$(get_mtime "$nfo_path")
+    if [[ "$current_mtime" == "ERROR" ]]; then
+      continue  # stat failed this cycle; retry
+    fi
     if [[ "$current_mtime" != "$original_mtime" ]]; then
       return 0
     fi
@@ -181,7 +294,7 @@ cleanup() {
   if [[ -n "$TOKEN" && -n "$TOKEN_ID" ]]; then
     code=$(curl -s -o /dev/null -w "%{http_code}" -X DELETE \
       -H "Authorization: Bearer $TOKEN" \
-      "$SW_BASE/api/v1/auth/tokens/$TOKEN_ID")
+      "$SW_BASE/api/v1/auth/tokens/$TOKEN_ID") || code="CURL_FAILED"
     if [[ "$code" == "200" ]]; then
       echo ""
       echo "[cleanup] Test token $TOKEN_ID revoked."
@@ -294,7 +407,7 @@ LIB_CONN_ID=$(echo "$libs_resp" | jq -r --arg id "$LIBRARY_ID" '.[] | select(.id
 [[ -n "$LIBRARY_ID" ]] && echo "  Platform library: $LIBRARY_ID"
 [[ -n "$CONN_EMBY" ]] && echo "  Emby connection: $CONN_EMBY"
 [[ -n "$CONN_JELLYFIN" ]] && echo "  Jellyfin connection: $CONN_JELLYFIN"
-[[ -n "$CONN_LIDARR" ]] && echo "  Lidarr connection: $CONN_LIDARR"  # reserved for future Lidarr tests
+[[ -n "$CONN_LIDARR" ]] && echo "  Lidarr connection: $CONN_LIDARR"
 
 # GET /api/v1/auth/me
 me_resp=$(curl -s -w "\n%{http_code}" "${AUTH[@]}" "$SW_BASE/api/v1/auth/me")
@@ -411,66 +524,131 @@ else
   echo "[SKIP] platform-state (Jellyfin) -- no Jellyfin connection found"
 fi
 
-# Push images to Emby -- Emby expects base64-encoded body (fixed in #408)
+# Push images to Emby -- push/delete/re-push cycle for all 4 image types.
 # Requires a stored platform ID for this artist on the Emby connection.
 if [[ -n "$CONN_EMBY" ]]; then
-  emby_platform_id=$(curl -s "${AUTH[@]}" \
-    "$SW_BASE/api/v1/artists/$ARTIST_ID/platform-ids" | \
+  emby_pid_resp=$(curl -s "${AUTH[@]}" \
+    "$SW_BASE/api/v1/artists/$ARTIST_ID/platform-ids") || emby_pid_resp=""
+  if [[ -z "$emby_pid_resp" ]]; then
+    echo "[SKIP] Emby image push -- platform-ids API call failed"
+  else
+  emby_platform_id=$(echo "$emby_pid_resp" | \
     jq -r ".[] | select(.connection_id==\"$CONN_EMBY\") | .platform_artist_id" 2>/dev/null || echo "")
   if [[ -z "$emby_platform_id" || "$emby_platform_id" == "null" ]]; then
-    echo "[SKIP] POST push/images (Emby) -- no stored platform ID for this artist"
+    echo "[SKIP] Emby image push -- no stored platform ID for this artist"
   else
+    # Push all 4 image types at once.
     push_emby_resp=$(curl -s -w "\n%{http_code}" "${AUTH[@]}" \
       -X POST "$SW_BASE/api/v1/artists/$ARTIST_ID/push/images" \
       -H "Content-Type: application/json" \
-      -d "{\"connection_id\":\"$CONN_EMBY\",\"image_types\":[\"thumb\"]}")
+      -d "{\"connection_id\":\"$CONN_EMBY\",\"image_types\":[\"thumb\",\"fanart\",\"logo\",\"banner\"]}")
     push_emby_body=$(echo "$push_emby_resp" | sed '$d')
     push_emby_code=$(echo "$push_emby_resp" | tail -n 1)
-    assert_status "POST push/images (Emby)" "200" "$push_emby_code"
+    assert_status "POST push/images all types (Emby)" "200" "$push_emby_code"
     if [[ "$push_emby_code" == "200" ]]; then
       emby_err_count=$(echo "$push_emby_body" | jq -r '.errors | length' 2>/dev/null || echo "0")
       if [[ "$emby_err_count" != "0" && "$emby_err_count" != "null" ]]; then
         emby_errors=$(echo "$push_emby_body" | jq -r '.errors[]?' 2>/dev/null || echo "")
-        echo "[FAIL] POST push/images (Emby) -- 200 but upload errors: $emby_errors"
+        echo "[FAIL] POST push/images all types (Emby) -- upload errors: $emby_errors"
         FAIL=$((FAIL + 1))
-        FAILURES+=("POST /api/v1/artists/$ARTIST_ID/push/images (Emby) -- upload errors: $emby_errors")
+        FAILURES+=("POST push/images all types (Emby) -- upload errors: $emby_errors")
       else
-        echo "[PASS] POST push/images (Emby) -- 200 no errors"
+        echo "[PASS] POST push/images all types (Emby) -- 200 no errors"
+        PASS=$((PASS + 1))
+      fi
+    fi
+
+    # Delete banner from Emby.
+    del_emby_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
+      -X DELETE "$SW_BASE/api/v1/artists/$ARTIST_ID/push/images/banner" \
+      -H "Content-Type: application/json" \
+      -d "{\"connection_id\":\"$CONN_EMBY\"}")
+    assert_status_in "DELETE push/images/banner (Emby)" "$del_emby_code" 200 204
+
+    # Re-push banner to restore.
+    repush_emby_resp=$(curl -s -w "\n%{http_code}" "${AUTH[@]}" \
+      -X POST "$SW_BASE/api/v1/artists/$ARTIST_ID/push/images" \
+      -H "Content-Type: application/json" \
+      -d "{\"connection_id\":\"$CONN_EMBY\",\"image_types\":[\"banner\"]}")
+    repush_emby_body=$(echo "$repush_emby_resp" | sed '$d')
+    repush_emby_code=$(echo "$repush_emby_resp" | tail -n 1)
+    assert_status "POST push/images banner re-push (Emby)" "200" "$repush_emby_code"
+    if [[ "$repush_emby_code" == "200" ]]; then
+      repush_err=$(echo "$repush_emby_body" | jq -r '.errors | length' 2>/dev/null || echo "0")
+      if [[ "$repush_err" != "0" && "$repush_err" != "null" ]]; then
+        echo "[FAIL] POST push/images banner re-push (Emby) -- errors: $(echo "$repush_emby_body" | jq -r '.errors[]?' 2>/dev/null)"
+        FAIL=$((FAIL + 1))
+        FAILURES+=("POST push/images banner re-push (Emby) -- errors")
+      else
+        echo "[PASS] POST push/images banner re-push (Emby) -- 200 no errors"
         PASS=$((PASS + 1))
       fi
     fi
   fi
+  fi  # emby_pid_resp guard
 else
-  echo "[SKIP] POST push/images (Emby) -- no Emby connection found"
+  echo "[SKIP] Emby image push -- no Emby connection found"
 fi
 
-# Push images to Jellyfin -- EXPECTED PASS
+# Push images to Jellyfin -- push/delete/re-push cycle for all 4 image types.
 # Requires a stored platform ID for this artist on the Jellyfin connection.
 if [[ -n "$CONN_JELLYFIN" ]]; then
-  jf_platform_id=$(curl -s "${AUTH[@]}" \
-    "$SW_BASE/api/v1/artists/$ARTIST_ID/platform-ids" | \
+  jf_pid_resp=$(curl -s "${AUTH[@]}" \
+    "$SW_BASE/api/v1/artists/$ARTIST_ID/platform-ids") || jf_pid_resp=""
+  if [[ -z "$jf_pid_resp" ]]; then
+    echo "[SKIP] Jellyfin image push -- platform-ids API call failed"
+    echo "[SKIP] POST push metadata (Jellyfin) -- platform-ids API call failed"
+  else
+  jf_platform_id=$(echo "$jf_pid_resp" | \
     jq -r ".[] | select(.connection_id==\"$CONN_JELLYFIN\") | .platform_artist_id" 2>/dev/null || echo "")
   if [[ -z "$jf_platform_id" || "$jf_platform_id" == "null" ]]; then
-    echo "[SKIP] POST push/images (Jellyfin) -- no stored platform ID for this artist"
+    echo "[SKIP] Jellyfin image push -- no stored platform ID for this artist"
     echo "[SKIP] POST push metadata (Jellyfin) -- no stored platform ID for this artist"
-    echo "[SKIP] DELETE push/images/thumb (Jellyfin) -- no stored platform ID for this artist"
   else
+    # Push all 4 image types at once.
     push_jf_resp=$(curl -s -w "\n%{http_code}" "${AUTH[@]}" \
       -X POST "$SW_BASE/api/v1/artists/$ARTIST_ID/push/images" \
       -H "Content-Type: application/json" \
-      -d "{\"connection_id\":\"$CONN_JELLYFIN\",\"image_types\":[\"thumb\"]}")
+      -d "{\"connection_id\":\"$CONN_JELLYFIN\",\"image_types\":[\"thumb\",\"fanart\",\"logo\",\"banner\"]}")
     push_jf_body=$(echo "$push_jf_resp" | sed '$d')
     push_jf_code=$(echo "$push_jf_resp" | tail -n 1)
-    assert_status_in "POST push/images (Jellyfin)" "$push_jf_code" 200 204
+    assert_status_in "POST push/images all types (Jellyfin)" "$push_jf_code" 200 204
     if [[ "$push_jf_code" == "200" ]]; then
       jf_err_count=$(echo "$push_jf_body" | jq -r '.errors | length' 2>/dev/null || echo "0")
       if [[ "$jf_err_count" != "0" && "$jf_err_count" != "null" ]]; then
         jf_errors=$(echo "$push_jf_body" | jq -r '.errors[]?' 2>/dev/null || echo "")
-        echo "[FAIL] POST push/images (Jellyfin) -- upload errors: $jf_errors"
+        echo "[FAIL] POST push/images all types (Jellyfin) -- upload errors: $jf_errors"
         FAIL=$((FAIL + 1))
-        FAILURES+=("POST /api/v1/artists/$ARTIST_ID/push/images (Jellyfin) -- $jf_errors")
+        FAILURES+=("POST push/images all types (Jellyfin) -- upload errors: $jf_errors")
       else
-        echo "[PASS] POST push/images (Jellyfin) -- 200 no errors"
+        echo "[PASS] POST push/images all types (Jellyfin) -- 200 no errors"
+        PASS=$((PASS + 1))
+      fi
+    fi
+
+    # Delete banner from Jellyfin.
+    del_jf_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
+      -X DELETE "$SW_BASE/api/v1/artists/$ARTIST_ID/push/images/banner" \
+      -H "Content-Type: application/json" \
+      -d "{\"connection_id\":\"$CONN_JELLYFIN\"}")
+    assert_status_in "DELETE push/images/banner (Jellyfin)" "$del_jf_code" 200 204
+
+    # Re-push banner to restore.
+    repush_jf_resp=$(curl -s -w "\n%{http_code}" "${AUTH[@]}" \
+      -X POST "$SW_BASE/api/v1/artists/$ARTIST_ID/push/images" \
+      -H "Content-Type: application/json" \
+      -d "{\"connection_id\":\"$CONN_JELLYFIN\",\"image_types\":[\"banner\"]}")
+    repush_jf_body=$(echo "$repush_jf_resp" | sed '$d')
+    repush_jf_code=$(echo "$repush_jf_resp" | tail -n 1)
+    assert_status_in "POST push/images banner re-push (Jellyfin)" "$repush_jf_code" 200 204
+    if [[ "$repush_jf_code" == "200" ]]; then
+      repush_jf_err=$(echo "$repush_jf_body" | jq -r '.errors | length' 2>/dev/null || echo "0")
+      if [[ "$repush_jf_err" != "0" && "$repush_jf_err" != "null" ]]; then
+        echo "[FAIL] POST push/images banner re-push (Jellyfin) -- errors: $(echo "$repush_jf_body" | jq -r '.errors[]?' 2>/dev/null)"
+        FAIL=$((FAIL + 1))
+        FAILURES+=("POST push/images banner re-push (Jellyfin) -- errors")
+      else
+        echo "[PASS] POST push/images banner re-push (Jellyfin) -- 200 no errors"
         PASS=$((PASS + 1))
       fi
     fi
@@ -482,16 +660,10 @@ if [[ -n "$CONN_JELLYFIN" ]]; then
       -d "{\"connection_id\":\"$CONN_JELLYFIN\"}")
     push_meta_code=$(echo "$push_meta_resp" | tail -n 1)
     assert_status_in "POST push metadata (Jellyfin)" "$push_meta_code" 200 204
-
-    # Delete thumb from Jellyfin
-    del_img_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
-      -X DELETE "$SW_BASE/api/v1/artists/$ARTIST_ID/push/images/thumb" \
-      -H "Content-Type: application/json" \
-      -d "{\"connection_id\":\"$CONN_JELLYFIN\"}")
-    assert_status_in "DELETE push/images/thumb (Jellyfin)" "$del_img_code" 200 204
   fi
+  fi  # jf_pid_resp guard
 else
-  echo "[SKIP] Jellyfin push/delete checks -- no Jellyfin connection found"
+  echo "[SKIP] Jellyfin image push -- no Jellyfin connection found"
 fi
 
 echo ""
@@ -504,37 +676,37 @@ echo "--- Tier 3: Feature Coverage ---"
 echo ""
 
 nfo_diff_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
-  "$SW_BASE/api/v1/artists/$ARTIST_ID/nfo/diff")
+  "$SW_BASE/api/v1/artists/$ARTIST_ID/nfo/diff") || nfo_diff_code="000"
 assert_status_in "GET /api/v1/artists/$ARTIST_ID/nfo/diff" "$nfo_diff_code" 200 422
 
 nfo_conflict_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
-  "$SW_BASE/api/v1/artists/$ARTIST_ID/nfo/conflict")
+  "$SW_BASE/api/v1/artists/$ARTIST_ID/nfo/conflict") || nfo_conflict_code="000"
 # 422 is returned when the artist's library has no filesystem path configured; treat as non-fatal
 assert_status_in "GET /api/v1/artists/$ARTIST_ID/nfo/conflict" "$nfo_conflict_code" 200 422
 
 nfo_snaps_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
-  "$SW_BASE/api/v1/artists/$ARTIST_ID/nfo/snapshots")
+  "$SW_BASE/api/v1/artists/$ARTIST_ID/nfo/snapshots") || nfo_snaps_code="000"
 assert_status "GET /api/v1/artists/$ARTIST_ID/nfo/snapshots" "200" "$nfo_snaps_code"
 
 health_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
-  "$SW_BASE/api/v1/artists/$ARTIST_ID/health")
+  "$SW_BASE/api/v1/artists/$ARTIST_ID/health") || health_code="000"
 assert_status "GET /api/v1/artists/$ARTIST_ID/health" "200" "$health_code"
 
 dupes_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
-  "$SW_BASE/api/v1/artists/duplicates")
+  "$SW_BASE/api/v1/artists/duplicates") || dupes_code="000"
 assert_status "GET /api/v1/artists/duplicates" "200" "$dupes_code"
 
 aliases_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
-  "$SW_BASE/api/v1/artists/$ARTIST_ID/aliases")
+  "$SW_BASE/api/v1/artists/$ARTIST_ID/aliases") || aliases_code="000"
 assert_status "GET /api/v1/artists/$ARTIST_ID/aliases" "200" "$aliases_code"
 
 libraries_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
-  "$SW_BASE/api/v1/libraries")
+  "$SW_BASE/api/v1/libraries") || libraries_code="000"
 assert_status "GET /api/v1/libraries" "200" "$libraries_code"
 
 if [[ -n "$CONN_EMBY" ]]; then
   disc_emby_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
-    "$SW_BASE/api/v1/connections/$CONN_EMBY/libraries")
+    "$SW_BASE/api/v1/connections/$CONN_EMBY/libraries") || disc_emby_code="000"
   assert_status_in "GET /api/v1/connections/$CONN_EMBY/libraries (Emby discover)" "$disc_emby_code" 200 409 502 503
 else
   echo "[SKIP] Emby library discover -- no Emby connection found"
@@ -542,19 +714,19 @@ fi
 
 if [[ -n "$CONN_JELLYFIN" ]]; then
   disc_jf_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
-    "$SW_BASE/api/v1/connections/$CONN_JELLYFIN/libraries")
+    "$SW_BASE/api/v1/connections/$CONN_JELLYFIN/libraries") || disc_jf_code="000"
   assert_status_in "GET /api/v1/connections/$CONN_JELLYFIN/libraries (Jellyfin discover)" "$disc_jf_code" 200 409 502 503
 else
   echo "[SKIP] Jellyfin library discover -- no Jellyfin connection found"
 fi
 
 rules_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
-  "$SW_BASE/api/v1/rules")
+  "$SW_BASE/api/v1/rules") || rules_code="000"
 assert_status "GET /api/v1/rules" "200" "$rules_code"
 
 # Fanart list endpoint -- verifies multi-backdrop support is accessible
 fanart_list_resp=$(curl -s -w "\n%{http_code}" "${AUTH[@]}" \
-  "$SW_BASE/api/v1/artists/$ARTIST_ID/images/fanart/list")
+  "$SW_BASE/api/v1/artists/$ARTIST_ID/images/fanart/list") || fanart_list_resp=$'\n000'
 fanart_list_body=$(echo "$fanart_list_resp" | sed '$d')
 fanart_list_code=$(echo "$fanart_list_resp" | tail -n 1)
 assert_status "GET /api/v1/artists/$ARTIST_ID/images/fanart/list" "200" "$fanart_list_code"
@@ -571,59 +743,59 @@ if [[ "$fanart_list_code" == "200" ]]; then
 fi
 
 # Artist fanart_count field in artist detail response
-fanart_count_resp=$(curl -s "${AUTH[@]}" "$SW_BASE/api/v1/artists/$ARTIST_ID")
+fanart_count_resp=$(curl -s "${AUTH[@]}" "$SW_BASE/api/v1/artists/$ARTIST_ID") || fanart_count_resp=""
 assert_json_exists "  artist detail has fanart_count field" ".artist.fanart_count" "$fanart_count_resp"
 
 notif_counts_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
-  "$SW_BASE/api/v1/notifications/counts")
+  "$SW_BASE/api/v1/notifications/counts") || notif_counts_code="000"
 assert_status "GET /api/v1/notifications/counts" "200" "$notif_counts_code"
 
 notif_badge_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
-  "$SW_BASE/api/v1/notifications/badge")
+  "$SW_BASE/api/v1/notifications/badge") || notif_badge_code="000"
 assert_status "GET /api/v1/notifications/badge" "200" "$notif_badge_code"
 
 report_health_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
-  "$SW_BASE/api/v1/reports/health")
+  "$SW_BASE/api/v1/reports/health") || report_health_code="000"
 assert_status "GET /api/v1/reports/health" "200" "$report_health_code"
 
 report_compliance_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
-  "$SW_BASE/api/v1/reports/compliance")
+  "$SW_BASE/api/v1/reports/compliance") || report_compliance_code="000"
 assert_status "GET /api/v1/reports/compliance" "200" "$report_compliance_code"
 
 bulk_jobs_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
-  "$SW_BASE/api/v1/bulk/jobs")
+  "$SW_BASE/api/v1/bulk/jobs") || bulk_jobs_code="000"
 assert_status "GET /api/v1/bulk/jobs" "200" "$bulk_jobs_code"
 
 scanner_status_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
-  "$SW_BASE/api/v1/scanner/status")
+  "$SW_BASE/api/v1/scanner/status") || scanner_status_code="000"
 assert_status "GET /api/v1/scanner/status" "200" "$scanner_status_code"
 
 providers_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
-  "$SW_BASE/api/v1/providers")
+  "$SW_BASE/api/v1/providers") || providers_code="000"
 assert_status "GET /api/v1/providers" "200" "$providers_code"
 
 priorities_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
-  "$SW_BASE/api/v1/providers/priorities")
+  "$SW_BASE/api/v1/providers/priorities") || priorities_code="000"
 assert_status "GET /api/v1/providers/priorities" "200" "$priorities_code"
 
 backup_hist_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
-  "$SW_BASE/api/v1/settings/backup/history")
+  "$SW_BASE/api/v1/settings/backup/history") || backup_hist_code="000"
 assert_status "GET /api/v1/settings/backup/history" "200" "$backup_hist_code"
 
 logging_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
-  "$SW_BASE/api/v1/settings/logging")
+  "$SW_BASE/api/v1/settings/logging") || logging_code="000"
 assert_status "GET /api/v1/settings/logging" "200" "$logging_code"
 
 maint_status_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
-  "$SW_BASE/api/v1/settings/maintenance/status")
+  "$SW_BASE/api/v1/settings/maintenance/status") || maint_status_code="000"
 assert_status "GET /api/v1/settings/maintenance/status" "200" "$maint_status_code"
 
 webhooks_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
-  "$SW_BASE/api/v1/webhooks")
+  "$SW_BASE/api/v1/webhooks") || webhooks_code="000"
 assert_status "GET /api/v1/webhooks" "200" "$webhooks_code"
 
 tokens_list_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
-  "$SW_BASE/api/v1/auth/tokens")
+  "$SW_BASE/api/v1/auth/tokens") || tokens_list_code="000"
 assert_status "GET /api/v1/auth/tokens (list)" "200" "$tokens_list_code"
 
 echo ""
@@ -639,14 +811,14 @@ if [[ "$FULL" -eq 1 ]]; then
   fetch_img_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
     -X POST "$SW_BASE/api/v1/artists/$ARTIST_ID/images/fetch" \
     -H "Content-Type: application/json" \
-    -d '{"url":"https://upload.wikimedia.org/wikipedia/en/a/aa/A-ha_band_2015.jpg","type":"thumb"}')
+    -d '{"url":"https://upload.wikimedia.org/wikipedia/en/a/aa/A-ha_band_2015.jpg","type":"thumb"}') || fetch_img_code="000"
   assert_status_in "POST /api/v1/artists/$ARTIST_ID/images/fetch (--full)" "$fetch_img_code" 200 422
 
   # Populate from Emby or Jellyfin and verify the response includes backdrop image counts.
-  # This exercises the multi-backdrop download path added in #357.
+  # This exercises the multi-backdrop download path.
   if [[ -n "$LIBRARY_ID" && -n "$LIB_CONN_ID" && "$LIB_CONN_ID" != "null" ]]; then
     pop_resp=$(curl -s -w "\n%{http_code}" "${AUTH[@]}" \
-      -X POST "$SW_BASE/api/v1/connections/$LIB_CONN_ID/libraries/$LIBRARY_ID/populate")
+      -X POST "$SW_BASE/api/v1/connections/$LIB_CONN_ID/libraries/$LIBRARY_ID/populate") || pop_resp=$'\n000'
     pop_body=$(echo "$pop_resp" | sed '$d')
     pop_code=$(echo "$pop_resp" | tail -n 1)
     assert_status_in "POST /api/v1/connections/$LIB_CONN_ID/libraries/$LIBRARY_ID/populate (--full)" "$pop_code" 200 202
@@ -663,7 +835,7 @@ if [[ "$FULL" -eq 1 ]]; then
   fi
 
   backup_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
-    -X POST "$SW_BASE/api/v1/settings/backup")
+    -X POST "$SW_BASE/api/v1/settings/backup") || backup_code="000"
   assert_status "POST /api/v1/settings/backup (--full)" "200" "$backup_code"
 
   echo ""
@@ -759,7 +931,19 @@ if [[ "$ROUNDTRIP" -eq 1 ]]; then
     echo ""
 
     # Save original artist values so we can restore after the test.
-    sw_artist_orig=$(curl -s "${AUTH[@]}" "$SW_BASE/api/v1/artists/$RT_ARTIST_ID")
+    sw_artist_orig=$(curl -s "${AUTH[@]}" "$SW_BASE/api/v1/artists/$RT_ARTIST_ID") || sw_artist_orig=""
+    if ! echo "$sw_artist_orig" | jq -e '.artist.id' >/dev/null 2>&1; then
+      echo "[FAIL] Roundtrip -- failed to fetch original artist data (invalid API response)"
+      FAIL=$((FAIL + 1))
+      FAILURES+=("Roundtrip -- failed to fetch original artist data for restore")
+      RT_SETUP_OK=0
+    else
+      RT_SETUP_OK=1
+    fi
+
+    if [[ "$RT_SETUP_OK" -eq 1 ]]; then
+
+    RT_ARTIST_TYPE=$(echo "$sw_artist_orig" | jq -r '.artist.type // "Group"' 2>/dev/null || echo "Group")
     orig_bio=$(echo "$sw_artist_orig" | jq -r '.artist.biography // empty' 2>/dev/null || true)
     orig_formed=$(echo "$sw_artist_orig" | jq -r '.artist.formed // empty' 2>/dev/null || true)
     orig_disbanded=$(echo "$sw_artist_orig" | jq -r '.artist.disbanded // empty' 2>/dev/null || true)
@@ -774,44 +958,80 @@ if [[ "$ROUNDTRIP" -eq 1 ]]; then
     RT_FORMED="1985-01-15"
     RT_DISBANDED="2010-12-04"
     # The field-edit API expects comma-separated strings for slice fields,
-    # not JSON arrays. See issue #461 (extractFieldValue reads string only).
+    # not JSON arrays. The server-side extractFieldValue handler reads the
+    # value as a plain string.
     RT_GENRES="Synth-Pop, New Wave"
     RT_STYLES="Electronic, Scandinavian"
     RT_MOODS="Melancholic, Uplifting"
 
     # Write test values to Stillwater via the field-edit API.
+    # Self-reports failures via FAIL counter; callers use || true to avoid set -e abort.
     sw_patch() {
       local field="$1" value="$2"
-      curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
+      local code
+      if ! code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
         -X PATCH "$SW_BASE/api/v1/artists/$RT_ARTIST_ID/fields/$field" \
         -H "Content-Type: application/json" \
-        -d "{\"value\":$value}"
+        -d "{\"value\":$value}"); then
+        echo "[FAIL] sw_patch $field (curl failed)"
+        FAIL=$((FAIL + 1))
+        FAILURES+=("sw_patch $field -- curl command failed")
+        return 1
+      fi
+      if [[ "$code" != "200" && "$code" != "204" ]]; then
+        echo "[FAIL] sw_patch $field (HTTP $code)"
+        FAIL=$((FAIL + 1))
+        FAILURES+=("sw_patch $field failed (HTTP $code)")
+        return 1
+      fi
+      return 0
     }
 
     echo "  Setting synthetic test data on Stillwater artist..."
-    sw_patch "biography" "$(jq -n --arg v "$RT_BIO" '$v')"
-    sw_patch "formed" "$(jq -n --arg v "$RT_FORMED" '$v')"
-    sw_patch "disbanded" "$(jq -n --arg v "$RT_DISBANDED" '$v')"
-    sw_patch "genres" "$(jq -n --arg v "$RT_GENRES" '$v')"
-    sw_patch "styles" "$(jq -n --arg v "$RT_STYLES" '$v')"
-    sw_patch "moods" "$(jq -n --arg v "$RT_MOODS" '$v')"
+    pre_setup_fails=$FAIL
+    sw_patch "biography" "$(jq -n --arg v "$RT_BIO" '$v')" || true
+    sw_patch "formed" "$(jq -n --arg v "$RT_FORMED" '$v')" || true
+    sw_patch "disbanded" "$(jq -n --arg v "$RT_DISBANDED" '$v')" || true
+    sw_patch "genres" "$(jq -n --arg v "$RT_GENRES" '$v')" || true
+    sw_patch "styles" "$(jq -n --arg v "$RT_STYLES" '$v')" || true
+    sw_patch "moods" "$(jq -n --arg v "$RT_MOODS" '$v')" || true
+
+    if [[ $FAIL -gt $pre_setup_fails ]]; then
+      echo "[SKIP] Roundtrip Direction 1 -- setup patches failed; results would be unreliable"
+    else
 
     # Re-read artist to get the canonical values Stillwater will push.
-    sw_artist=$(curl -s "${AUTH[@]}" "$SW_BASE/api/v1/artists/$RT_ARTIST_ID")
-    sw_bio=$(echo "$sw_artist" | jq -r '.artist.biography // empty' 2>/dev/null || true)
-    sw_mbid=$(echo "$sw_artist" | jq -r '.artist.musicbrainz_id // empty' 2>/dev/null || true)
+    sw_artist=$(curl -s "${AUTH[@]}" "$SW_BASE/api/v1/artists/$RT_ARTIST_ID") || sw_artist=""
+    if ! echo "$sw_artist" | jq -e '.artist.id' >/dev/null 2>&1; then
+      echo "[FAIL] Roundtrip -- failed to re-read artist after patching test values"
+      FAIL=$((FAIL + 1))
+      FAILURES+=("Roundtrip -- failed to re-read artist after patching test values")
+      # Use synthetic values as expected baseline so assertions fail clearly
+      # rather than comparing empty strings against platform data.
+      sw_bio="$RT_BIO"
+      sw_mbid=""
+    else
+      sw_bio=$(echo "$sw_artist" | jq -r '.artist.biography // empty' 2>/dev/null || true)
+      sw_mbid=$(echo "$sw_artist" | jq -r '.artist.musicbrainz_id // empty' 2>/dev/null || true)
+    fi
 
     # --- Direction 1 per-platform verification function ---
-    # Verifies pushed fields on a single platform, then returns.
-    verify_direction1() {
+    # Pushes metadata from Stillwater to a single platform, verifies the pushed
+    # fields match, then returns.
+    verify_push_to_platform() {
       local platform="$1" platform_url="$2" platform_key="$3" platform_item_id="$4" conn_id="$5"
 
       # Push metadata from Stillwater to the platform.
       local push_code
-      push_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
+      if ! push_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
         -X POST "$SW_BASE/api/v1/artists/$RT_ARTIST_ID/push" \
         -H "Content-Type: application/json" \
-        -d "{\"connection_id\":\"$conn_id\"}")
+        -d "{\"connection_id\":\"$conn_id\"}"); then
+        echo "[FAIL] $platform Direction 1 -- push curl command failed"
+        FAIL=$((FAIL + 1))
+        FAILURES+=("$platform Direction 1 -- push curl command failed")
+        return
+      fi
       assert_status "POST push metadata to $platform (roundtrip)" "200" "$push_code"
 
       # If the push failed, skip field-level assertions -- comparing stale values
@@ -826,6 +1046,17 @@ if [[ "$ROUNDTRIP" -eq 1 ]]; then
       # Fetch the artist from the platform and compare all fields.
       local p_item p_bio p_mbid p_date p_end_date p_genres p_tags
       p_item=$(platform_get_item "$platform_url" "$platform_key" "$platform_item_id")
+
+      # Check for sentinel error from platform_get_item.
+      local p_error
+      p_error=$(echo "$p_item" | jq -r '._error // empty' 2>/dev/null || true)
+      if [[ -n "$p_error" ]]; then
+        echo "[FAIL] $platform Direction 1 -- platform_get_item failed: $p_error"
+        FAIL=$((FAIL + 1))
+        FAILURES+=("$platform Direction 1 -- platform_get_item failed: $p_error")
+        return
+      fi
+
       p_bio=$(echo "$p_item" | jq -r '.Overview // empty' 2>/dev/null || true)
       p_mbid=$(echo "$p_item" | jq -r '.ProviderIds.MusicBrainzArtist // empty' 2>/dev/null || true)
       p_date=$(echo "$p_item" | jq -r '.PremiereDate // empty' 2>/dev/null || true)
@@ -845,13 +1076,17 @@ if [[ "$ROUNDTRIP" -eq 1 ]]; then
         echo "[SKIP] $platform roundtrip MBID -- no MBID in Stillwater"
       fi
 
-      # Formed date -> PremiereDate (compare YYYY-MM-DD portion)
-      local p_date_short="${p_date:0:10}"
-      assert_json_value "$platform roundtrip formed->PremiereDate" "$RT_FORMED" "$p_date_short"
+      # Formed/Disbanded -> PremiereDate/EndDate (Groups only).
+      # Person-type artists use Born/Died which are not standard Items API fields.
+      if [[ "$RT_ARTIST_TYPE" == "Person" ]]; then
+        echo "[SKIP] $platform roundtrip formed/disbanded -- Person type (no PremiereDate/EndDate)"
+      else
+        local p_date_short="${p_date:0:10}"
+        assert_json_value "$platform roundtrip formed->PremiereDate" "$RT_FORMED" "$p_date_short"
 
-      # Disbanded date -> EndDate (compare YYYY-MM-DD portion)
-      local p_end_short="${p_end_date:0:10}"
-      assert_json_value "$platform roundtrip disbanded->EndDate" "$RT_DISBANDED" "$p_end_short"
+        local p_end_short="${p_end_date:0:10}"
+        assert_json_value "$platform roundtrip disbanded->EndDate" "$RT_DISBANDED" "$p_end_short"
+      fi
 
       # Genres (Stillwater pushes RT_GENRES -> platform Genres)
       local has_synth has_newwave
@@ -888,7 +1123,7 @@ if [[ "$ROUNDTRIP" -eq 1 ]]; then
     elif ! curl -sf "${EMBY_URL}/System/Info?api_key=${EMBY_API_KEY}" >/dev/null 2>&1; then
       echo "[SKIP] Emby Direction 1 -- Emby unreachable at $EMBY_URL"
     else
-      verify_direction1 "Emby" "$EMBY_URL" "$EMBY_API_KEY" "$RT_EMBY_PLATFORM_ID" "$CONN_EMBY"
+      verify_push_to_platform "Emby" "$EMBY_URL" "$EMBY_API_KEY" "$RT_EMBY_PLATFORM_ID" "$CONN_EMBY"
     fi
 
     # --- Jellyfin Direction 1 ---
@@ -899,28 +1134,35 @@ if [[ "$ROUNDTRIP" -eq 1 ]]; then
     elif ! curl -sf "${JELLYFIN_URL}/System/Info?api_key=${JELLYFIN_API_KEY}" >/dev/null 2>&1; then
       echo "[SKIP] Jellyfin Direction 1 -- Jellyfin unreachable at $JELLYFIN_URL"
     else
-      verify_direction1 "Jellyfin" "$JELLYFIN_URL" "$JELLYFIN_API_KEY" "$RT_JELLYFIN_PLATFORM_ID" "$CONN_JELLYFIN"
+      verify_push_to_platform "Jellyfin" "$JELLYFIN_URL" "$JELLYFIN_API_KEY" "$RT_JELLYFIN_PLATFORM_ID" "$CONN_JELLYFIN"
     fi
+
+    fi  # pre_setup_fails guard
 
     # Restore original values on Stillwater artist.
     echo "  Restoring original artist data on Stillwater..."
-    sw_patch "biography" "$(echo "$orig_bio" | jq -Rs '.')"
+    pre_restore_fails=$FAIL
+    sw_patch "biography" "$(jq -n --arg v "$orig_bio" '$v')" || true
     if [[ -n "$orig_formed" ]]; then
-      sw_patch "formed" "$(jq -n --arg v "$orig_formed" '$v')"
+      sw_patch "formed" "$(jq -n --arg v "$orig_formed" '$v')" || true
     else
-      sw_patch "formed" '""'
+      sw_patch "formed" '""' || true
     fi
     if [[ -n "$orig_disbanded" ]]; then
-      sw_patch "disbanded" "$(jq -n --arg v "$orig_disbanded" '$v')"
+      sw_patch "disbanded" "$(jq -n --arg v "$orig_disbanded" '$v')" || true
     else
-      sw_patch "disbanded" '""'
+      sw_patch "disbanded" '""' || true
     fi
-    sw_patch "genres" "$(jq -n --arg v "$orig_genres" '$v')"
-    sw_patch "styles" "$(jq -n --arg v "$orig_styles" '$v')"
-    sw_patch "moods" "$(jq -n --arg v "$orig_moods" '$v')"
+    sw_patch "genres" "$(jq -n --arg v "$orig_genres" '$v')" || true
+    sw_patch "styles" "$(jq -n --arg v "$orig_styles" '$v')" || true
+    sw_patch "moods" "$(jq -n --arg v "$orig_moods" '$v')" || true
+    restore_fail_count=$((FAIL - pre_restore_fails))
+    if [[ $restore_fail_count -gt 0 ]]; then
+      echo "[FAIL] $restore_fail_count restore patches failed -- artist data may have test values"
+    fi
 
-    # Each sw_patch triggers asyncPushMetadataToConnections (fire-and-forget
-    # goroutines that push to Emby/Jellyfin). Wait for them to settle before
+    # Each sw_patch triggers fire-and-forget background pushes to Emby/Jellyfin
+    # on the server side. Wait for them to settle before
     # starting Direction 2, otherwise a late async push might overwrite the
     # biography modification that Direction 2 makes on the platform.
     sleep 5
@@ -935,6 +1177,114 @@ if [[ "$ROUNDTRIP" -eq 1 ]]; then
     # NFO changes.
     # -------------------------------------------------------------------
 
+    # --- Direction 2 per-platform verification function ---
+    # Modifies biography on the platform, waits for NFO write, verifies
+    # diff/conflict endpoints, then restores the original biography.
+    # Args: platform platform_url platform_key platform_item_id [timeout=30] [interval=3]
+    verify_nfo_from_platform() {
+      local platform="$1" platform_url="$2" platform_key="$3" platform_item_id="$4"
+      local d2_timeout="${5:-30}" d2_interval="${6:-3}"
+
+      local nfo_path="${RT_ARTIST_PATH}/artist.nfo"
+      local original_mtime
+      original_mtime=$(get_mtime "$nfo_path")
+
+      if [[ "$original_mtime" == "ERROR" ]]; then
+        echo "[FAIL] $platform Direction 2 -- stat failed on NFO file"
+        FAIL=$((FAIL + 1))
+        FAILURES+=("$platform Direction 2 -- stat failed on $nfo_path")
+        return
+      fi
+
+      if [[ "$original_mtime" == "MISSING" ]]; then
+        echo "[INFO] $platform Direction 2 -- NFO file does not exist yet; will detect creation"
+      fi
+
+      # Fetch current biography from the platform.
+      local original_item d2_error original_bio
+      original_item=$(platform_get_item "$platform_url" "$platform_key" "$platform_item_id")
+      d2_error=$(echo "$original_item" | jq -r '._error // empty' 2>/dev/null || true)
+      if [[ -n "$d2_error" ]]; then
+        echo "[FAIL] $platform Direction 2 -- platform_get_item failed: $d2_error"
+        FAIL=$((FAIL + 1))
+        FAILURES+=("$platform Direction 2 -- platform_get_item failed: $d2_error")
+        return
+      fi
+
+      original_bio=$(echo "$original_item" | jq -r '.Overview // empty' 2>/dev/null || true)
+
+      # Modify biography on the platform (append marker).
+      local modified_bio="${original_bio} [roundtrip-test]"
+      local update_code
+      update_code=$(platform_modify_overview "$platform_url" "$platform_key" "$platform_item_id" "$modified_bio")
+      if [[ "$update_code" != "204" && "$update_code" != "200" ]]; then
+        echo "[FAIL] $platform Direction 2 -- failed to update biography (HTTP $update_code)"
+        FAIL=$((FAIL + 1))
+        FAILURES+=("$platform Direction 2 -- failed to update biography (HTTP $update_code)")
+        return
+      fi
+
+      # Emby does not write NFO immediately after POST /Items/{id}. Trigger a
+      # metadata refresh with ReplaceAllMetadata=true to force the NFO write.
+      if [[ "$platform" == "Emby" ]]; then
+        local refresh_code
+        if ! refresh_code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+          "${platform_url}/Items/${platform_item_id}/Refresh?api_key=${platform_key}&ReplaceAllMetadata=true&ReplaceAllImages=false"); then
+          echo "[WARN] $platform Direction 2 -- metadata refresh curl failed"
+        elif [[ "$refresh_code" != "204" && "$refresh_code" != "200" ]]; then
+          echo "[WARN] $platform Direction 2 -- metadata refresh returned HTTP $refresh_code"
+        fi
+      fi
+
+      # Poll for NFO mtime change.
+      if wait_for_nfo_change "$nfo_path" "$original_mtime" "$d2_timeout" "$d2_interval"; then
+        echo "[PASS] $platform Direction 2 -- NFO write detected (mtime changed)"
+        PASS=$((PASS + 1))
+
+        # Verify Stillwater can parse the externally-modified NFO.
+        local diff_resp has_diff bio_status
+        diff_resp=$(curl -s "${AUTH[@]}" "$SW_BASE/api/v1/artists/$RT_ARTIST_ID/nfo/diff") || diff_resp=""
+        has_diff=$(echo "$diff_resp" | jq -r '.has_diff' 2>/dev/null || echo "false")
+        bio_status=$(echo "$diff_resp" | jq -r '.fields[] | select(.field=="Biography") | .status' 2>/dev/null || echo "")
+        assert_json_value "NFO diff has_diff after $platform write" "true" "$has_diff"
+        if [[ -n "$bio_status" ]]; then
+          # Accept "changed" or "added" -- the status depends on whether the
+          # NFO previously had a biography field.
+          if [[ "$bio_status" == "changed" || "$bio_status" == "added" ]]; then
+            echo "[PASS] NFO diff biography status after $platform write -- $bio_status"
+            PASS=$((PASS + 1))
+          else
+            echo "[FAIL] NFO diff biography status after $platform write -- expected changed or added, got $bio_status"
+            FAIL=$((FAIL + 1))
+            FAILURES+=("NFO diff biography status after $platform write -- expected changed or added, got $bio_status")
+          fi
+        else
+          echo "[SKIP] NFO diff biography status -- biography field not in diff output"
+        fi
+
+        # Check conflict endpoint detects the external modification.
+        local conflict_resp has_conflict
+        conflict_resp=$(curl -s "${AUTH[@]}" "$SW_BASE/api/v1/artists/$RT_ARTIST_ID/nfo/conflict") || conflict_resp=""
+        has_conflict=$(echo "$conflict_resp" | jq -r '.has_conflict' 2>/dev/null || echo "false")
+        assert_json_value "NFO conflict detected after $platform write" "true" "$has_conflict"
+      else
+        echo "[FAIL] $platform Direction 2 -- no NFO mtime change within ${d2_timeout}s"
+        FAIL=$((FAIL + 1))
+        FAILURES+=("$platform Direction 2 -- no NFO mtime change within ${d2_timeout}s")
+      fi
+
+      # Restore original biography on the platform.
+      local restore_code
+      restore_code=$(platform_modify_overview "$platform_url" "$platform_key" "$platform_item_id" "$original_bio")
+      if [[ "$restore_code" == "204" || "$restore_code" == "200" ]]; then
+        echo "[INFO] Restored original biography on $platform"
+      else
+        echo "[FAIL] $platform Direction 2 -- failed to restore biography (HTTP $restore_code); artist may have test marker"
+        FAIL=$((FAIL + 1))
+        FAILURES+=("$platform Direction 2 restore failed (HTTP $restore_code)")
+      fi
+    }
+
     echo "  -- Direction 2: Platform writes NFO -> Stillwater reads --"
     echo ""
 
@@ -947,71 +1297,11 @@ if [[ "$ROUNDTRIP" -eq 1 ]]; then
       echo "[SKIP] Emby Direction 2 -- NFO writer not enabled on Emby"
     elif ! curl -sf "${EMBY_URL}/System/Info?api_key=${EMBY_API_KEY}" >/dev/null 2>&1; then
       echo "[SKIP] Emby Direction 2 -- Emby unreachable at $EMBY_URL"
+    elif [[ -z "$RT_ARTIST_PATH" || ! -d "$RT_ARTIST_PATH" ]]; then
+      echo "[SKIP] Emby Direction 2 -- artist path not accessible locally"
     else
-      nfo_path="${RT_ARTIST_PATH}/artist.nfo"
-      original_mtime=$(stat -c %Y "$nfo_path" 2>/dev/null || echo "0")
-
-      # Fetch current biography from Emby.
-      original_item=$(platform_get_item "$EMBY_URL" "$EMBY_API_KEY" "$RT_EMBY_PLATFORM_ID")
-      original_bio=$(echo "$original_item" | jq -r '.Overview // empty' 2>/dev/null || true)
-
-      # Modify biography on Emby (append marker).
-      modified_bio="${original_bio} [roundtrip-test]"
-      update_code=$(platform_modify_overview "$EMBY_URL" "$EMBY_API_KEY" "$RT_EMBY_PLATFORM_ID" "$modified_bio")
-      if [[ "$update_code" != "204" && "$update_code" != "200" ]]; then
-        echo "[FAIL] Emby Direction 2 -- failed to update biography on Emby (HTTP $update_code)"
-        FAIL=$((FAIL + 1))
-        FAILURES+=("Emby Direction 2 -- failed to update biography (HTTP $update_code)")
-      else
-        # Emby does not write NFO immediately after POST /Items/{id}. Trigger a
-        # metadata refresh with ReplaceAllMetadata=true to force the NFO write.
-        curl -s -o /dev/null -X POST \
-          "${EMBY_URL}/Items/${RT_EMBY_PLATFORM_ID}/Refresh?api_key=${EMBY_API_KEY}&ReplaceAllMetadata=true&ReplaceAllImages=false"
-
-        # Poll for NFO mtime change. Emby refresh can take 45-60s, so use a
-        # longer timeout than Jellyfin (which writes immediately).
-        if wait_for_nfo_change "$nfo_path" "$original_mtime" 60 5; then
-          echo "[PASS] Emby Direction 2 -- NFO write detected (mtime changed)"
-          PASS=$((PASS + 1))
-
-          # Verify Stillwater can parse the externally-modified NFO.
-          diff_resp=$(curl -s "${AUTH[@]}" "$SW_BASE/api/v1/artists/$RT_ARTIST_ID/nfo/diff")
-          has_diff=$(echo "$diff_resp" | jq -r '.has_diff' 2>/dev/null || echo "false")
-          bio_status=$(echo "$diff_resp" | jq -r '.fields[] | select(.field=="Biography") | .status' 2>/dev/null || echo "")
-          assert_json_value "NFO diff has_diff after Emby write" "true" "$has_diff"
-          if [[ -n "$bio_status" ]]; then
-            # Accept "changed" or "added" -- the status depends on whether the
-            # NFO previously had a biography field.
-            if [[ "$bio_status" == "changed" || "$bio_status" == "added" ]]; then
-              echo "[PASS] NFO diff biography status after Emby write -- $bio_status"
-              PASS=$((PASS + 1))
-            else
-              echo "[FAIL] NFO diff biography status after Emby write -- expected changed or added, got $bio_status"
-              FAIL=$((FAIL + 1))
-              FAILURES+=("NFO diff biography status after Emby write -- expected changed or added, got $bio_status")
-            fi
-          else
-            echo "[SKIP] NFO diff biography status -- biography field not in diff output"
-          fi
-
-          # Check conflict endpoint detects the external modification.
-          conflict_resp=$(curl -s "${AUTH[@]}" "$SW_BASE/api/v1/artists/$RT_ARTIST_ID/nfo/conflict")
-          has_conflict=$(echo "$conflict_resp" | jq -r '.has_conflict' 2>/dev/null || echo "false")
-          assert_json_value "NFO conflict detected after Emby write" "true" "$has_conflict"
-        else
-          echo "[FAIL] Emby Direction 2 -- no NFO mtime change within 60s"
-          FAIL=$((FAIL + 1))
-          FAILURES+=("Emby Direction 2 -- no NFO mtime change within 60s")
-        fi
-
-        # Restore original biography on Emby.
-        restore_code=$(platform_modify_overview "$EMBY_URL" "$EMBY_API_KEY" "$RT_EMBY_PLATFORM_ID" "$original_bio")
-        if [[ "$restore_code" == "204" || "$restore_code" == "200" ]]; then
-          echo "[INFO] Restored original biography on Emby"
-        else
-          echo "[WARN] Failed to restore biography on Emby (HTTP $restore_code)"
-        fi
-      fi
+      # Emby refresh can take 45-60s; use 60s timeout with 5s interval.
+      verify_nfo_from_platform "Emby" "$EMBY_URL" "$EMBY_API_KEY" "$RT_EMBY_PLATFORM_ID" 60 5
     fi
 
     # Brief pause after Emby Direction 2 restore before starting Jellyfin.
@@ -1027,69 +1317,16 @@ if [[ "$ROUNDTRIP" -eq 1 ]]; then
       echo "[SKIP] Jellyfin Direction 2 -- NFO writer not enabled on Jellyfin"
     elif ! curl -sf "${JELLYFIN_URL}/System/Info?api_key=${JELLYFIN_API_KEY}" >/dev/null 2>&1; then
       echo "[SKIP] Jellyfin Direction 2 -- Jellyfin unreachable at $JELLYFIN_URL"
+    elif [[ -z "$RT_ARTIST_PATH" || ! -d "$RT_ARTIST_PATH" ]]; then
+      echo "[SKIP] Jellyfin Direction 2 -- artist path not accessible locally"
     else
-      nfo_path="${RT_ARTIST_PATH}/artist.nfo"
-      original_mtime=$(stat -c %Y "$nfo_path" 2>/dev/null || echo "0")
-
-      # Fetch current biography from Jellyfin for later restore.
-      original_item=$(platform_get_item "$JELLYFIN_URL" "$JELLYFIN_API_KEY" "$RT_JELLYFIN_PLATFORM_ID")
-      original_bio=$(echo "$original_item" | jq -r '.Overview // empty' 2>/dev/null || true)
-
-      # Modify biography on Jellyfin (append marker).
-      # Use platform_modify_overview which fetches the full item and strips read-only fields.
-      modified_bio="${original_bio} [roundtrip-test]"
-      update_code=$(platform_modify_overview "$JELLYFIN_URL" "$JELLYFIN_API_KEY" "$RT_JELLYFIN_PLATFORM_ID" "$modified_bio")
-      if [[ "$update_code" != "204" && "$update_code" != "200" ]]; then
-        echo "[FAIL] Jellyfin Direction 2 -- failed to update biography on Jellyfin (HTTP $update_code)"
-        FAIL=$((FAIL + 1))
-        FAILURES+=("Jellyfin Direction 2 -- failed to update biography (HTTP $update_code)")
-      else
-        # Poll for NFO mtime change (30s timeout, 3s interval).
-        if wait_for_nfo_change "$nfo_path" "$original_mtime"; then
-          echo "[PASS] Jellyfin Direction 2 -- NFO write detected (mtime changed)"
-          PASS=$((PASS + 1))
-
-          # Verify Stillwater can parse the externally-modified NFO.
-          diff_resp=$(curl -s "${AUTH[@]}" "$SW_BASE/api/v1/artists/$RT_ARTIST_ID/nfo/diff")
-          has_diff=$(echo "$diff_resp" | jq -r '.has_diff' 2>/dev/null || echo "false")
-          bio_status=$(echo "$diff_resp" | jq -r '.fields[] | select(.field=="Biography") | .status' 2>/dev/null || echo "")
-          assert_json_value "NFO diff has_diff after Jellyfin write" "true" "$has_diff"
-          if [[ -n "$bio_status" ]]; then
-            # Accept "changed" or "added" -- the status depends on whether the
-            # NFO previously had a biography field.
-            if [[ "$bio_status" == "changed" || "$bio_status" == "added" ]]; then
-              echo "[PASS] NFO diff biography status after Jellyfin write -- $bio_status"
-              PASS=$((PASS + 1))
-            else
-              echo "[FAIL] NFO diff biography status after Jellyfin write -- expected changed or added, got $bio_status"
-              FAIL=$((FAIL + 1))
-              FAILURES+=("NFO diff biography status after Jellyfin write -- expected changed or added, got $bio_status")
-            fi
-          else
-            echo "[SKIP] NFO diff biography status -- biography field not in diff output"
-          fi
-
-          # Check conflict endpoint detects the external modification.
-          conflict_resp=$(curl -s "${AUTH[@]}" "$SW_BASE/api/v1/artists/$RT_ARTIST_ID/nfo/conflict")
-          has_conflict=$(echo "$conflict_resp" | jq -r '.has_conflict' 2>/dev/null || echo "false")
-          assert_json_value "NFO conflict detected after Jellyfin write" "true" "$has_conflict"
-        else
-          echo "[FAIL] Jellyfin Direction 2 -- no NFO mtime change within 30s"
-          FAIL=$((FAIL + 1))
-          FAILURES+=("Jellyfin Direction 2 -- no NFO mtime change within 30s")
-        fi
-
-        # Restore original biography on Jellyfin.
-        restore_code=$(platform_modify_overview "$JELLYFIN_URL" "$JELLYFIN_API_KEY" "$RT_JELLYFIN_PLATFORM_ID" "$original_bio")
-        if [[ "$restore_code" == "204" || "$restore_code" == "200" ]]; then
-          echo "[INFO] Restored original biography on Jellyfin"
-        else
-          echo "[WARN] Failed to restore biography on Jellyfin (HTTP $restore_code)"
-        fi
-      fi
+      # Jellyfin writes NFO immediately; default 30s/3s is sufficient.
+      verify_nfo_from_platform "Jellyfin" "$JELLYFIN_URL" "$JELLYFIN_API_KEY" "$RT_JELLYFIN_PLATFORM_ID"
     fi
 
     echo ""
+
+    fi  # RT_SETUP_OK guard
   fi
 fi
 
