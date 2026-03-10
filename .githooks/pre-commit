@@ -115,7 +115,7 @@ fi
 # --------------------------------------------------------------------------
 # 3b. OpenAPI spec reminder -- warn if API handlers changed without the spec
 # --------------------------------------------------------------------------
-STAGED_API_GO=$(git diff --cached --name-only --diff-filter=ACM -- 'internal/api/handlers_*.go' | grep -v '_test\.go$' || true)
+STAGED_API_GO=$(git diff --cached --name-only --diff-filter=ACM -- 'internal/api/handlers.go' 'internal/api/handlers_*.go' | grep -v '_test\.go$' || true)
 STAGED_OPENAPI=$(git diff --cached --name-only --diff-filter=ACM -- 'internal/api/openapi.yaml' || true)
 if [ -n "$STAGED_API_GO" ] && [ -z "$STAGED_OPENAPI" ]; then
     echo -e "${YELLOW}WARN${RESET} openapi: API handler files changed but openapi.yaml is not staged."

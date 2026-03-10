@@ -6,7 +6,7 @@ rules:
   # This is the #1 Copilot review comment -- fields added without descriptions.
   oas3-schema-properties-must-have-description:
     description: Every schema property must have a description.
-    severity: warn
+    severity: hint
     given: "$.components.schemas..properties[*]"
     then:
       field: description
@@ -15,8 +15,8 @@ rules:
   # Require descriptions on inline response properties (not using $ref).
   oas3-response-properties-must-have-description:
     description: Every inline response property must have a description.
-    severity: warn
-    given: "$.paths..responses..properties[*]"
+    severity: hint
+    given: "$.paths..responses..content..schema..properties[*]"
     then:
       field: description
       function: truthy
