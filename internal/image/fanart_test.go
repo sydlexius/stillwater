@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -464,6 +465,110 @@ func TestRenumberFanart_SingleSurvivor(t *testing.T) {
 	// The original file should be gone.
 	if _, err := os.Stat(filepath.Join(dir, "backdrop3.jpg")); !os.IsNotExist(err) {
 		t.Errorf("expected backdrop3.jpg to be gone after renumber")
+	}
+}
+
+func TestRenumberFanart_Phase1Rollback(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create 2 real files and reference a third that does not exist.
+	if err := os.WriteFile(filepath.Join(dir, "backdrop2.jpg"), []byte("content-a"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "backdrop3.jpg"), []byte("content-b"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	survivors := []string{
+		filepath.Join(dir, "backdrop2.jpg"),
+		filepath.Join(dir, "backdrop3.jpg"),
+		filepath.Join(dir, "nonexistent.jpg"), // triggers Phase 1 failure
+	}
+
+	err := RenumberFanart(dir, "backdrop.jpg", survivors, false)
+	if err == nil {
+		t.Fatal("expected error from non-existent survivor, got nil")
+	}
+	if !strings.Contains(err.Error(), "staging") {
+		t.Errorf("expected error to mention 'staging', got: %v", err)
+	}
+
+	// Rollback should restore the first two files to their original paths.
+	for i, path := range survivors[:2] {
+		data, readErr := os.ReadFile(path)
+		if readErr != nil {
+			t.Errorf("survivor[%d] (%s) not restored: %v", i, filepath.Base(path), readErr)
+			continue
+		}
+		want := []string{"content-a", "content-b"}[i]
+		if string(data) != want {
+			t.Errorf("survivor[%d] content = %q, want %q", i, string(data), want)
+		}
+	}
+
+	// Temp files should not be left behind.
+	entries, readErr := os.ReadDir(dir)
+	if readErr != nil {
+		t.Fatalf("reading dir after rollback: %v", readErr)
+	}
+	for _, e := range entries {
+		if strings.Contains(e.Name(), "fanart_renumber_") {
+			t.Errorf("leftover temp file after rollback: %s", e.Name())
+		}
+	}
+}
+
+func TestRenumberFanart_Phase2Rollback(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create 2 survivor files at non-contiguous indices.
+	if err := os.WriteFile(filepath.Join(dir, "backdrop3.jpg"), []byte("alpha"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "backdrop5.jpg"), []byte("bravo"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a directory at the target path for index 0. On Linux os.Rename
+	// returns EISDIR when trying to rename a file over a directory, which
+	// triggers the Phase 2 rollback path.
+	target := filepath.Join(dir, "backdrop.jpg")
+	if err := os.MkdirAll(target, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	survivors := []string{
+		filepath.Join(dir, "backdrop3.jpg"),
+		filepath.Join(dir, "backdrop5.jpg"),
+	}
+
+	err := RenumberFanart(dir, "backdrop.jpg", survivors, false)
+	if err == nil {
+		t.Fatal("expected error from Phase 2 collision with directory, got nil")
+	}
+
+	// Rollback should restore both files to their original paths.
+	for i, path := range survivors {
+		data, readErr := os.ReadFile(path)
+		if readErr != nil {
+			t.Errorf("survivor[%d] (%s) not restored: %v", i, filepath.Base(path), readErr)
+			continue
+		}
+		want := []string{"alpha", "bravo"}[i]
+		if string(data) != want {
+			t.Errorf("survivor[%d] content = %q, want %q", i, string(data), want)
+		}
+	}
+
+	// Temp files should not be left behind.
+	entries, readErr := os.ReadDir(dir)
+	if readErr != nil {
+		t.Fatalf("reading dir after rollback: %v", readErr)
+	}
+	for _, e := range entries {
+		if strings.Contains(e.Name(), "fanart_renumber_") {
+			t.Errorf("leftover temp file after rollback: %s", e.Name())
+		}
 	}
 }
 
