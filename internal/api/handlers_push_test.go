@@ -422,7 +422,7 @@ func TestHandlePushImages_ReadFailureProducesSanitizedError(t *testing.T) {
 	// Create a symlink to a non-existent target. DiscoverFanart will find it
 	// (it passes the IsDir check), but os.ReadFile will fail.
 	if err := os.Symlink(filepath.Join(dir, "does-not-exist"), filepath.Join(dir, "fanart.jpg")); err != nil {
-		t.Fatal(err)
+		t.Skip("symlinks not supported on this platform")
 	}
 
 	body := `{"connection_id":"conn-emby","platform_artist_id":"emby-rf-1","image_types":["fanart"]}`
