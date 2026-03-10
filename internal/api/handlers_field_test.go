@@ -199,6 +199,78 @@ func TestWriteBackNFO_CreatesSnapshot(t *testing.T) {
 // TestWriteBackNFO_StatNotExist verifies that writeBackNFO skips silently when
 // the artist has a path and NFOExists is true in the DB, but the file was
 // deleted from disk (os.IsNotExist). No NFO file should be created.
+func TestExtractFieldValue(t *testing.T) {
+	tests := []struct {
+		name        string
+		contentType string
+		body        string
+		want        string
+		wantErr     bool
+	}{
+		{
+			name:        "json string value",
+			contentType: "application/json",
+			body:        `{"value":"rock band"}`,
+			want:        "rock band",
+		},
+		{
+			name:        "json array value",
+			contentType: "application/json",
+			body:        `{"value":["Rock","Alternative","Post-Punk"]}`,
+			want:        "Rock, Alternative, Post-Punk",
+		},
+		{
+			name:        "json empty array",
+			contentType: "application/json",
+			body:        `{"value":[]}`,
+			want:        "",
+		},
+		{
+			name:        "json empty string",
+			contentType: "application/json",
+			body:        `{"value":""}`,
+			want:        "",
+		},
+		{
+			name:        "form-encoded value",
+			contentType: "application/x-www-form-urlencoded",
+			body:        "value=hello+world",
+			want:        "hello world",
+		},
+		{
+			name:        "json malformed body",
+			contentType: "application/json",
+			body:        `{invalid`,
+			wantErr:     true,
+		},
+		{
+			name:        "json unsupported value type",
+			contentType: "application/json",
+			body:        `{"value":42}`,
+			wantErr:     true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPatch, "/test", strings.NewReader(tt.body))
+			req.Header.Set("Content-Type", tt.contentType)
+			got, err := extractFieldValue(req)
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("extractFieldValue() error = nil, want error")
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("extractFieldValue() unexpected error: %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("extractFieldValue() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestWriteBackNFO_StatNotExist(t *testing.T) {
 	r, artistSvc := testRouter(t)
 

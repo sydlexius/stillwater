@@ -156,6 +156,47 @@ func TestGetArtist(t *testing.T) {
 	}
 }
 
+func TestMapArtist_GroupExcludesBorn(t *testing.T) {
+	// When FormedYear is set (indicating a group), BornYear and DiedYear
+	// should not be mapped to Born/Died to avoid cross-contamination.
+	art := &AudioDBArtist{
+		IDArtist:   "12345",
+		Artist:     "a-ha",
+		FormedYear: "1985",
+		BornYear:   "1982",
+		DiedYear:   "0",
+		Disbanded:  "2010",
+	}
+	meta := mapArtist(art)
+	if meta.Formed != "1985" {
+		t.Errorf("Formed = %q, want 1985", meta.Formed)
+	}
+	if meta.Born != "" {
+		t.Errorf("Born = %q, want empty (group should not have Born)", meta.Born)
+	}
+	if meta.Disbanded != "2010" {
+		t.Errorf("Disbanded = %q, want 2010", meta.Disbanded)
+	}
+}
+
+func TestMapArtist_PersonGetsBorn(t *testing.T) {
+	// When only BornYear is set (no FormedYear), it maps to Born (person).
+	art := &AudioDBArtist{
+		IDArtist:   "67890",
+		Artist:     "Bjork",
+		FormedYear: "0",
+		BornYear:   "1965",
+		DiedYear:   "0",
+	}
+	meta := mapArtist(art)
+	if meta.Born != "1965" {
+		t.Errorf("Born = %q, want 1965", meta.Born)
+	}
+	if meta.Formed != "" {
+		t.Errorf("Formed = %q, want empty", meta.Formed)
+	}
+}
+
 func TestGetArtistNotFound(t *testing.T) {
 	limiter, settings := setupTest(t)
 	srv := newTestServer(t)

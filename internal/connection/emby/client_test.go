@@ -14,6 +14,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/connection"
@@ -251,6 +252,11 @@ func TestCheckNFOWriterEnabled_ServerError(t *testing.T) {
 func TestPushMetadata(t *testing.T) {
 	var gotBody itemUpdateBody
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// PushMetadata now also calls refreshItem (POST /Items/{id}/Refresh).
+		if strings.HasSuffix(r.URL.Path, "/Refresh") {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 		if r.URL.Path != "/Items/emby-artist-1" {
 			t.Errorf("unexpected path: %s", r.URL.Path)
 		}
@@ -288,6 +294,71 @@ func TestPushMetadata(t *testing.T) {
 	}
 	if len(gotBody.Genres) != 2 {
 		t.Errorf("got %d genres, want 2", len(gotBody.Genres))
+	}
+}
+
+// TestPushMetadata_TagItems verifies that styles and moods are sent as TagItems
+// (Emby's {Name} object format) rather than flat Tags strings.
+func TestPushMetadata_TagItems(t *testing.T) {
+	var gotBody itemUpdateBody
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/Refresh") {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatalf("decoding body: %v", err)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "key", "", srv.Client(), testLogger())
+	data := connection.ArtistPushData{
+		Name:   "Test",
+		Styles: []string{"Shoegaze", "Dream Pop"},
+		Moods:  []string{"Melancholy"},
+	}
+	if err := c.PushMetadata(context.Background(), "emby-001", data); err != nil {
+		t.Fatalf("PushMetadata failed: %v", err)
+	}
+	if len(gotBody.TagItems) != 3 {
+		t.Fatalf("got %d TagItems, want 3", len(gotBody.TagItems))
+	}
+	if gotBody.TagItems[0].Name != "Shoegaze" {
+		t.Errorf("TagItems[0].Name = %q, want Shoegaze", gotBody.TagItems[0].Name)
+	}
+	if gotBody.TagItems[2].Name != "Melancholy" {
+		t.Errorf("TagItems[2].Name = %q, want Melancholy", gotBody.TagItems[2].Name)
+	}
+}
+
+// TestPushMetadata_RefreshCalled verifies that PushMetadata triggers a metadata
+// refresh call after a successful push.
+func TestPushMetadata_RefreshCalled(t *testing.T) {
+	var refreshCalled atomic.Bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/Refresh") {
+			refreshCalled.Store(true)
+			if r.Method != http.MethodPost {
+				t.Errorf("refresh method = %s, want POST", r.Method)
+			}
+			if !strings.Contains(r.URL.RawQuery, "ReplaceAllMetadata=false") {
+				t.Errorf("refresh query missing ReplaceAllMetadata=false: %s", r.URL.RawQuery)
+			}
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "key", "", srv.Client(), testLogger())
+	if err := c.PushMetadata(context.Background(), "emby-001", connection.ArtistPushData{Name: "Test"}); err != nil {
+		t.Fatalf("PushMetadata failed: %v", err)
+	}
+	if !refreshCalled.Load() {
+		t.Error("refreshItem was not called after successful push")
 	}
 }
 
@@ -672,6 +743,10 @@ func TestPushMetadata_DateNormalization(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var gotBody itemUpdateBody
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if strings.HasSuffix(r.URL.Path, "/Refresh") {
+					w.WriteHeader(http.StatusNoContent)
+					return
+				}
 				if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
 					t.Fatalf("decoding body: %v", err)
 				}

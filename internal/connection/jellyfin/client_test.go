@@ -375,6 +375,13 @@ func TestGetFirstUserID_NoUsers(t *testing.T) {
 func TestPushMetadata(t *testing.T) {
 	var gotBody itemUpdateBody
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// PushMetadata now first fetches the item (GET /Items?Ids=...) then
+		// POSTs the merged body back.
+		if r.Method == http.MethodGet && r.URL.Path == "/Items" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"Items":[{"Name":"Bjork","Id":"jf-artist-1"}]}`))
+			return
+		}
 		if r.URL.Path != "/Items/jf-artist-1" {
 			t.Errorf("unexpected path: %s", r.URL.Path)
 		}
@@ -423,6 +430,154 @@ func TestPushMetadata_ServerError(t *testing.T) {
 	err := c.PushMetadata(context.Background(), "jf-001", connection.ArtistPushData{Name: "Test"})
 	if err == nil {
 		t.Fatal("expected error for server error")
+	}
+}
+
+// TestPushMetadata_FetchItemError verifies that PushMetadata returns an error
+// when the initial item fetch fails (e.g. item not found).
+func TestPushMetadata_FetchItemError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/Items" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"Items":[]}`))
+			return
+		}
+		t.Error("unexpected request after fetch failure")
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "key", "", srv.Client(), testLogger())
+	err := c.PushMetadata(context.Background(), "nonexistent", connection.ArtistPushData{Name: "Test"})
+	if err == nil {
+		t.Fatal("expected error when item not found")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("error = %q, want it to contain 'not found'", err.Error())
+	}
+}
+
+// TestPushMetadata_StripsReadOnlyFields verifies that read-only fields from the
+// fetched item are removed before POSTing the merged body.
+func TestPushMetadata_StripsReadOnlyFields(t *testing.T) {
+	var postedBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/Items" {
+			w.Header().Set("Content-Type", "application/json")
+			// Include read-only fields that should be stripped.
+			_, _ = w.Write([]byte(`{"Items":[{
+				"Name":"Test","Id":"jf-001","ServerId":"abc123",
+				"ImageBlurHashes":{"Primary":{"abc":"def"}},
+				"ImageTags":{"Primary":"abc"},
+				"LocationType":"FileSystem"
+			}]}`))
+			return
+		}
+		if err := json.NewDecoder(r.Body).Decode(&postedBody); err != nil {
+			t.Fatalf("decoding post body: %v", err)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "key", "", srv.Client(), testLogger())
+	err := c.PushMetadata(context.Background(), "jf-001", connection.ArtistPushData{Name: "Test"})
+	if err != nil {
+		t.Fatalf("PushMetadata failed: %v", err)
+	}
+
+	for _, field := range []string{"ServerId", "ImageBlurHashes", "ImageTags", "LocationType"} {
+		if _, ok := postedBody[field]; ok {
+			t.Errorf("read-only field %q was not stripped from POST body", field)
+		}
+	}
+	if postedBody["Name"] != "Test" {
+		t.Errorf("Name = %v, want Test", postedBody["Name"])
+	}
+}
+
+// TestPushMetadata_MergesTags verifies that styles and moods are merged as Tags
+// into the existing item body.
+func TestPushMetadata_MergesTags(t *testing.T) {
+	var postedBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/Items" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"Items":[{"Name":"Existing","Id":"jf-001"}]}`))
+			return
+		}
+		if err := json.NewDecoder(r.Body).Decode(&postedBody); err != nil {
+			t.Fatalf("decoding post body: %v", err)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "key", "", srv.Client(), testLogger())
+	data := connection.ArtistPushData{
+		Name:   "Test",
+		Styles: []string{"Shoegaze", "Dream Pop"},
+		Moods:  []string{"Melancholy"},
+	}
+	if err := c.PushMetadata(context.Background(), "jf-001", data); err != nil {
+		t.Fatalf("PushMetadata failed: %v", err)
+	}
+
+	tags, ok := postedBody["Tags"]
+	if !ok {
+		t.Fatal("Tags field missing from POST body")
+	}
+	tagSlice, ok := tags.([]any)
+	if !ok {
+		t.Fatalf("Tags is %T, want []any", tags)
+	}
+	if len(tagSlice) != 3 {
+		t.Errorf("got %d tags, want 3", len(tagSlice))
+	}
+}
+
+// TestPushMetadata_MergesProviderIds verifies that PushMetadata merges the
+// MusicBrainzArtist ID into existing ProviderIds rather than replacing them.
+func TestPushMetadata_MergesProviderIds(t *testing.T) {
+	var postedBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/Items" {
+			w.Header().Set("Content-Type", "application/json")
+			// Existing item has TheAudioDb and Discogs provider IDs.
+			_, _ = w.Write([]byte(`{"Items":[{
+				"Name":"Existing","Id":"jf-001",
+				"ProviderIds":{"TheAudioDb":"111","Discogs":"222"}
+			}]}`))
+			return
+		}
+		if err := json.NewDecoder(r.Body).Decode(&postedBody); err != nil {
+			t.Fatalf("decoding post body: %v", err)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "key", "", srv.Client(), testLogger())
+	data := connection.ArtistPushData{
+		Name:          "Test",
+		MusicBrainzID: "mbid-999",
+	}
+	if err := c.PushMetadata(context.Background(), "jf-001", data); err != nil {
+		t.Fatalf("PushMetadata failed: %v", err)
+	}
+
+	pids, ok := postedBody["ProviderIds"].(map[string]any)
+	if !ok {
+		t.Fatal("ProviderIds missing or wrong type in POST body")
+	}
+	// All three IDs should be present: the two existing ones plus the new MBID.
+	if pids["MusicBrainzArtist"] != "mbid-999" {
+		t.Errorf("MusicBrainzArtist = %v, want mbid-999", pids["MusicBrainzArtist"])
+	}
+	if pids["TheAudioDb"] != "111" {
+		t.Errorf("TheAudioDb = %v, want 111 (existing ID was lost)", pids["TheAudioDb"])
+	}
+	if pids["Discogs"] != "222" {
+		t.Errorf("Discogs = %v, want 222 (existing ID was lost)", pids["Discogs"])
 	}
 }
 
@@ -668,6 +823,11 @@ func TestPushMetadata_DateNormalization(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var gotBody itemUpdateBody
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodGet && r.URL.Path == "/Items" {
+					w.Header().Set("Content-Type", "application/json")
+					_, _ = w.Write([]byte(`{"Items":[{"Name":"Existing","Id":"jf-001"}]}`))
+					return
+				}
 				if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
 					t.Fatalf("decoding body: %v", err)
 				}
