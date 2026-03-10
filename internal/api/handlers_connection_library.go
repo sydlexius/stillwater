@@ -251,7 +251,7 @@ func (r *Router) handleImportLibraries(w http.ResponseWriter, req *http.Request)
 	// Auto-populate each newly imported library in the background.
 	for i := range created {
 		lib := created[i]
-		r.startPopulateBackground(conn, &lib)
+		r.startPopulateBackground(context.WithoutCancel(req.Context()), conn, &lib)
 	}
 }
 
@@ -259,7 +259,7 @@ func (r *Router) handleImportLibraries(w http.ResponseWriter, req *http.Request)
 // in a background goroutine. Returns immediately if an operation is already
 // running for this library. Use this for fire-and-forget populate triggers
 // where no HTTP response for the operation status is needed at call time.
-func (r *Router) startPopulateBackground(conn *connection.Connection, lib *library.Library) {
+func (r *Router) startPopulateBackground(ctx context.Context, conn *connection.Connection, lib *library.Library) {
 	r.libraryOpsMu.Lock()
 	if existing, ok := r.libraryOps[lib.ID]; ok && existing.Status == "running" {
 		r.libraryOpsMu.Unlock()
@@ -275,7 +275,7 @@ func (r *Router) startPopulateBackground(conn *connection.Connection, lib *libra
 	r.libraryOps[lib.ID] = op
 	r.libraryOpsMu.Unlock()
 
-	go r.runPopulate(context.Background(), conn, lib, op)
+	go r.runPopulate(ctx, conn, lib, op)
 }
 
 // handlePopulateLibrary populates artists from a connection into an imported library.
@@ -352,6 +352,7 @@ func (r *Router) runPopulate(ctx context.Context, conn *connection.Connection, l
 			op.Status = "failed"
 			op.Message = "populate failed unexpectedly"
 			r.libraryOpsMu.Unlock()
+			go r.scheduleOpCleanup(lib.ID, op)
 		}
 	}()
 
@@ -464,6 +465,7 @@ func (r *Router) runLibraryScan(ctx context.Context, conn *connection.Connection
 			op.Status = "failed"
 			op.Message = "scan failed unexpectedly"
 			r.libraryOpsMu.Unlock()
+			go r.scheduleOpCleanup(lib.ID, op)
 		}
 	}()
 
