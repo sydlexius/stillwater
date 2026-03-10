@@ -352,7 +352,7 @@ To run UAT from a worktree, either:
 After a PR is merged:
 1. Remove the worktree: `git worktree remove ../stillwater-{issue}`
 2. Delete the local branch: `git branch -d feat/{issue}-short-desc`
-3. Delete the remote branch: `gh api repos/{owner}/{repo}/git/refs/heads/feat/{issue}-short-desc -X DELETE`
+3. Delete the remote branch: `encoded=$(printf '%s' "feat/{issue}-short-desc" | jq -sRr @uri) && gh api "repos/{owner}/{repo}/git/refs/heads/$encoded" -X DELETE`
 4. Update `memory/worktrees.md`
 
 ## Milestone Work Protocol
@@ -473,7 +473,7 @@ Once every sub-issue PR is merged to `main`:
 1. Post findings comments to all research/analysis issues and close them.
 2. Post a summary comment to the umbrella issue and close it.
 3. Remove all worktrees: run `git worktree list` and `git worktree remove <path>` for each matching worktree (do not use glob patterns -- they are not reliably expanded by all shells).
-4. Delete all merged feature branches (remote and local): `gh api repos/.../git/refs/heads/<branch> -X DELETE` then `git branch -d`.
+4. Delete all merged feature branches (remote and local): `encoded=$(printf '%s' "<branch>" | jq -sRr @uri) && gh api "repos/.../git/refs/heads/$encoded" -X DELETE` then `git branch -d`.
 5. Run `git fetch --prune` to remove stale tracking refs.
 6. Delete the plan file: `git rm docs/plans/m<N>-plan.md` and commit directly to `main`.
 7. Update `memory/worktrees.md` to move entries to "Completed" or remove them.
