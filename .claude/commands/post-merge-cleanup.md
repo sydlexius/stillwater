@@ -65,7 +65,8 @@ If the branch is not fully merged, stop and warn. Do not force-delete.
 ## Step 5 -- Delete remote branch
 
 ```bash
-gh api "repos/sydlexius/stillwater/git/refs/heads/$branch" -X DELETE
+encoded_branch=$(printf '%s' "$branch" | jq -sRr @uri)
+gh api "repos/sydlexius/stillwater/git/refs/heads/$encoded_branch" -X DELETE
 ```
 
 If the remote branch is already deleted (404), note it and continue.

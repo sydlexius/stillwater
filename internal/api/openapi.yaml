@@ -1139,7 +1139,8 @@ paths:
       summary: Pull artist metadata from platform
       description: >-
         Fetches the artist's metadata from the specified platform connection
-        and overwrites local biography, genres, and date fields that differ.
+        and overwrites local biography, genres, and date fields with any
+        non-empty values returned by the platform.
       operationId: pullMetadata
       parameters:
         - name: id
@@ -1167,7 +1168,7 @@ paths:
                     type: array
                     items:
                       type: string
-                    description: List of artist fields that were updated from the platform.
+                    description: List of artist fields that were written from platform data.
         "400":
           description: Bad request
           content:

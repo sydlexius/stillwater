@@ -38,8 +38,10 @@ func TestOpenAPIConsistency(t *testing.T) {
 		t.Fatalf("parsing handler files: %v", err)
 	}
 
-	// Common fields used in many handlers that are implicitly covered by
-	// generic schemas (Error, Status) or are wrapper keys for lists.
+	// Common fields used in many handlers that are excluded from the
+	// consistency check: "error" and "status" are covered by the Error
+	// and Status schemas; "message" appears in domain schemas
+	// (LibraryOpResult, Rule) and ad-hoc success responses.
 	wellKnown := map[string]bool{
 		"error":   true,
 		"status":  true,
