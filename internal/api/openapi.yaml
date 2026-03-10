@@ -998,6 +998,9 @@ paths:
     get:
       tags: [NFO]
       summary: Get NFO field-level diff
+      description: >
+        For pathless artists (no filesystem path), returns a virtual NFO
+        generated from database fields instead of reading from disk.
       operationId: getNFODiff
       parameters:
         - name: id
@@ -1025,6 +1028,9 @@ paths:
     get:
       tags: [NFO]
       summary: Check for external NFO modifications
+      description: >
+        For pathless artists, always returns no conflict since there is
+        no on-disk NFO file to be modified externally.
       operationId: checkNFOConflict
       parameters:
         - name: id
@@ -1046,6 +1052,10 @@ paths:
                     type: string
                   external_writer:
                     type: string
+                  last_modified:
+                    type: string
+                    format: date-time
+                    description: Present when the NFO file exists and is accessible; contains the file's last-modified timestamp regardless of conflict status. Omitted when the file does not exist or cannot be accessed (pathless artists, missing file, or filesystem errors).
 
   /artists/{id}/nfo/snapshots:
     get:
@@ -1075,6 +1085,10 @@ paths:
     post:
       tags: [NFO]
       summary: Restore NFO from snapshot
+      description: >
+        For pathless artists, applies the snapshot fields to the database
+        and pushes updated metadata to connected platforms instead of
+        writing to disk.
       operationId: restoreNFOSnapshot
       parameters:
         - name: id
@@ -2746,6 +2760,11 @@ paths:
     get:
       tags: [Connections]
       summary: Check for NFO/image write conflicts
+      description: >
+        When no library has a filesystem path configured, returns an empty
+        risk list immediately since there are no on-disk files to conflict
+        with. Otherwise checks all enabled connections for NFO/image writing
+        configuration that could overwrite Stillwater-managed files.
       operationId: clobberCheck
       responses:
         "200":
@@ -2863,6 +2882,10 @@ paths:
     post:
       tags: [Connections]
       summary: Import libraries from connection
+      description: >
+        After creating each library, automatically starts a background
+        populate operation to fetch artists from the connection. Poll
+        GET /api/v1/libraries/{libId}/operation/status for progress.
       operationId: importLibraries
       parameters:
         - name: id

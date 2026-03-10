@@ -505,7 +505,7 @@ func TestPopulateFromEmby_DownloadsImages(t *testing.T) {
 	artistDir := t.TempDir()
 	libPath := filepath.Dir(artistDir)
 
-	var imageRequested bool
+	var imageRequested atomic.Bool
 	embySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/Artists/AlbumArtists":
@@ -527,7 +527,7 @@ func TestPopulateFromEmby_DownloadsImages(t *testing.T) {
 				"TotalRecordCount":1
 			}`, artistDir)
 		case "/Items/emby-001/Images/Primary":
-			imageRequested = true
+			imageRequested.Store(true)
 			w.Header().Set("Content-Type", "image/jpeg")
 			_, _ = w.Write(jpegData)
 		default:
@@ -561,7 +561,7 @@ func TestPopulateFromEmby_DownloadsImages(t *testing.T) {
 	if result.Created != 1 {
 		t.Fatalf("created = %d, want 1", result.Created)
 	}
-	if !imageRequested {
+	if !imageRequested.Load() {
 		t.Error("expected image download request, but none was made")
 	}
 	if result.Images != 1 {
@@ -606,7 +606,7 @@ func TestPopulateFromEmby_SkipsExistingImage(t *testing.T) {
 		t.Fatalf("creating existing image: %v", err)
 	}
 
-	var imageRequested bool
+	var imageRequested atomic.Bool
 	embySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/Artists/AlbumArtists":
@@ -628,7 +628,7 @@ func TestPopulateFromEmby_SkipsExistingImage(t *testing.T) {
 				"TotalRecordCount":1
 			}`, artistDir)
 		case strings.HasPrefix(r.URL.Path, "/Items/emby-002/Images/"):
-			imageRequested = true
+			imageRequested.Store(true)
 			w.Header().Set("Content-Type", "image/jpeg")
 			_, _ = w.Write(createTestJPEGForHandler(t))
 		default:
@@ -661,7 +661,7 @@ func TestPopulateFromEmby_SkipsExistingImage(t *testing.T) {
 	if result.Created != 1 {
 		t.Fatalf("created = %d, want 1", result.Created)
 	}
-	if imageRequested {
+	if imageRequested.Load() {
 		t.Error("expected no image download when file already exists")
 	}
 	if result.Images != 0 {
@@ -671,7 +671,7 @@ func TestPopulateFromEmby_SkipsExistingImage(t *testing.T) {
 
 func TestPopulateFromEmby_UsesImageCacheWhenNoPath(t *testing.T) {
 	jpegData := createTestJPEGForHandler(t)
-	var imageRequested bool
+	var imageRequested atomic.Bool
 	embySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/Artists/AlbumArtists":
@@ -693,7 +693,7 @@ func TestPopulateFromEmby_UsesImageCacheWhenNoPath(t *testing.T) {
 				"TotalRecordCount":1
 			}`))
 		case strings.HasPrefix(r.URL.Path, "/Items/emby-003/Images/"):
-			imageRequested = true
+			imageRequested.Store(true)
 			w.Header().Set("Content-Type", "image/jpeg")
 			_, _ = w.Write(jpegData)
 		default:
@@ -725,7 +725,7 @@ func TestPopulateFromEmby_UsesImageCacheWhenNoPath(t *testing.T) {
 	if result.Created != 1 {
 		t.Fatalf("created = %d, want 1", result.Created)
 	}
-	if !imageRequested {
+	if !imageRequested.Load() {
 		t.Error("expected image download via cache dir, but no request was made")
 	}
 	if result.Images != 1 {
@@ -762,7 +762,7 @@ func TestPopulateFromJellyfin_DownloadsImages(t *testing.T) {
 	artistDir := t.TempDir()
 	libPath := filepath.Dir(artistDir)
 
-	var imageRequested bool
+	var imageRequested atomic.Bool
 	jfSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/Artists/AlbumArtists":
@@ -784,7 +784,7 @@ func TestPopulateFromJellyfin_DownloadsImages(t *testing.T) {
 				"TotalRecordCount":1
 			}`, artistDir)
 		case "/Items/jf-001/Images/Primary":
-			imageRequested = true
+			imageRequested.Store(true)
 			w.Header().Set("Content-Type", "image/jpeg")
 			_, _ = w.Write(jpegData)
 		default:
@@ -818,7 +818,7 @@ func TestPopulateFromJellyfin_DownloadsImages(t *testing.T) {
 	if result.Created != 1 {
 		t.Fatalf("created = %d, want 1", result.Created)
 	}
-	if !imageRequested {
+	if !imageRequested.Load() {
 		t.Error("expected image download request, but none was made")
 	}
 	if result.Images != 1 {
@@ -857,7 +857,7 @@ func TestPopulateFromEmby_DownloadsImagesForExistingArtist(t *testing.T) {
 	jpegData := createTestJPEGForHandler(t)
 	artistDir := t.TempDir()
 
-	var imageRequested bool
+	var imageRequested atomic.Bool
 	embySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/Artists/AlbumArtists":
@@ -881,7 +881,7 @@ func TestPopulateFromEmby_DownloadsImagesForExistingArtist(t *testing.T) {
 				"TotalRecordCount":1
 			}`)
 		case "/Items/emby-001/Images/Primary":
-			imageRequested = true
+			imageRequested.Store(true)
 			w.Header().Set("Content-Type", "image/jpeg")
 			_, _ = w.Write(jpegData)
 		default:
@@ -931,7 +931,7 @@ func TestPopulateFromEmby_DownloadsImagesForExistingArtist(t *testing.T) {
 	if result.Skipped != 1 {
 		t.Errorf("skipped = %d, want 1", result.Skipped)
 	}
-	if !imageRequested {
+	if !imageRequested.Load() {
 		t.Error("expected image download for existing artist, but none was made")
 	}
 	if result.Images != 1 {
@@ -1013,7 +1013,7 @@ func TestValidatedArtistPath(t *testing.T) {
 	}
 }
 
-func TestPopulateFromEmby_PlatformPathNotStoredWhenDegraded(t *testing.T) {
+func TestPopulateFromEmby_PlatformPathNotStoredWhenPathless(t *testing.T) {
 	embySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
@@ -1038,12 +1038,12 @@ func TestPopulateFromEmby_PlatformPathNotStoredWhenDegraded(t *testing.T) {
 	router := testRouterForLibraryOps(t)
 	ctx := context.Background()
 
-	// Degraded library: no Path set.
+	// Pathless library: no Path set.
 	lib := &library.Library{
-		Name:       "Degraded Emby",
+		Name:       "Pathless Emby",
 		Type:       library.TypeRegular,
 		Source:     connection.TypeEmby,
-		ExternalID: "emby-lib-degraded",
+		ExternalID: "emby-lib-pathless",
 	}
 	if err := router.libraryService.Create(ctx, lib); err != nil {
 		t.Fatalf("creating library: %v", err)
@@ -1064,7 +1064,7 @@ func TestPopulateFromEmby_PlatformPathNotStoredWhenDegraded(t *testing.T) {
 		t.Fatalf("looking up artist: %v", err)
 	}
 	if a.Path != "" {
-		t.Errorf("artist path = %q, want empty (degraded library should not store platform path)", a.Path)
+		t.Errorf("artist path = %q, want empty (pathless library should not store platform path)", a.Path)
 	}
 }
 
@@ -1095,7 +1095,7 @@ func TestPopulateFromEmby_PlatformPathStoredWhenUnderLibraryRoot(t *testing.T) {
 	router := testRouterForLibraryOps(t)
 	ctx := context.Background()
 
-	// Non-degraded library with Path set to parent of artistDir.
+	// Non-pathless library with Path set to parent of artistDir.
 	libPath := filepath.Dir(artistDir)
 	lib := &library.Library{
 		Name:       "Rooted Emby",
@@ -2072,5 +2072,91 @@ func TestPopulateFromEmby_NonKodiBackdropNaming(t *testing.T) {
 	}
 	if a.FanartCount != 2 {
 		t.Errorf("FanartCount = %d, want 2", a.FanartCount)
+	}
+}
+
+func TestImportLibraries_AutoPopulate(t *testing.T) {
+	// Stand up a fake Emby server that returns one artist.
+	embySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"Items":[{
+				"Name":"Auto Artist",
+				"SortName":"Auto Artist",
+				"Id":"emby-auto-001",
+				"Path":"",
+				"Overview":"",
+				"Genres":[],
+				"Tags":[],
+				"PremiereDate":"",
+				"EndDate":"",
+				"ProviderIds":{},
+				"ImageTags":{}
+			}],
+			"TotalRecordCount":1
+		}`))
+	}))
+	defer embySrv.Close()
+
+	router := testRouterForLibraryOps(t)
+	ctx := context.Background()
+
+	// Create an enabled, tested connection.
+	conn := &connection.Connection{
+		Name:    "Auto Emby",
+		Type:    connection.TypeEmby,
+		URL:     embySrv.URL,
+		APIKey:  "test-key",
+		Enabled: true,
+		Status:  "ok",
+	}
+	if err := router.connectionService.Create(ctx, conn); err != nil {
+		t.Fatalf("creating connection: %v", err)
+	}
+
+	// Build the import request.
+	body := `{"libraries":[{"external_id":"emby-lib-auto","name":"Auto Library"}]}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/connections/"+conn.ID+"/libraries/import", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", conn.ID)
+	w := httptest.NewRecorder()
+
+	router.handleImportLibraries(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("import status = %d, want %d; body: %s", w.Code, http.StatusCreated, w.Body.String())
+	}
+
+	var created []library.Library
+	if err := json.NewDecoder(w.Body).Decode(&created); err != nil {
+		t.Fatalf("decoding import response: %v", err)
+	}
+	if len(created) != 1 {
+		t.Fatalf("created = %d, want 1", len(created))
+	}
+
+	// Wait for the background populate to complete.
+	libID := created[0].ID
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		router.libraryOpsMu.Lock()
+		op, ok := router.libraryOps[libID]
+		done := ok && op.Status != "running"
+		router.libraryOpsMu.Unlock()
+		if done {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	// Verify the operation completed.
+	router.libraryOpsMu.Lock()
+	op, ok := router.libraryOps[libID]
+	router.libraryOpsMu.Unlock()
+	if !ok {
+		t.Fatal("expected a populate operation to have been registered")
+	}
+	if op.Status != "completed" {
+		t.Errorf("operation status = %q, want %q; message: %s", op.Status, "completed", op.Message)
 	}
 }

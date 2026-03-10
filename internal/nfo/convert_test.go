@@ -1,6 +1,10 @@
 package nfo
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/sydlexius/stillwater/internal/artist"
+)
 
 func TestToArtist(t *testing.T) {
 	n := &ArtistNFO{
@@ -117,5 +121,84 @@ func TestConversionRoundTrip(t *testing.T) {
 	}
 	if result.YearsActive != original.YearsActive {
 		t.Errorf("YearsActive mismatch: %q vs %q", result.YearsActive, original.YearsActive)
+	}
+}
+
+func TestApplyNFOToArtist(t *testing.T) {
+	// Start with an artist that has non-NFO fields set.
+	a := &artist.Artist{
+		ID:        "keep-id",
+		Path:      "/music/original",
+		LibraryID: "lib-1",
+		Name:      "Old Name",
+		SortName:  "Old Name",
+		// Image flags that should be preserved.
+		ThumbExists:  true,
+		FanartExists: true,
+	}
+
+	n := &ArtistNFO{
+		Name:                "Nirvana",
+		SortName:            "Nirvana",
+		Type:                "group",
+		Gender:              "male",
+		Disambiguation:      "American rock band",
+		MusicBrainzArtistID: "5b11f4ce-a62d-471e-81fc-a69a8278c7da",
+		AudioDBArtistID:     "111239",
+		DiscogsArtistID:     "125246",
+		WikidataID:          "Q11649",
+		DeezerArtistID:      "412",
+		SpotifyArtistID:     "6olE6TJLqED3rqDCT0FyPh",
+		Genres:              []string{"Rock", "Grunge"},
+		Styles:              []string{"Grunge"},
+		Moods:               []string{"Aggressive"},
+		YearsActive:         "1987 - 1994",
+		Born:                "",
+		Formed:              "1987",
+		Died:                "",
+		Disbanded:           "1994",
+		Biography:           "American rock band.",
+	}
+
+	ApplyNFOToArtist(n, a)
+
+	// NFO fields should be updated.
+	if a.Name != "Nirvana" {
+		t.Errorf("Name = %q, want %q", a.Name, "Nirvana")
+	}
+	if a.Type != "group" {
+		t.Errorf("Type = %q, want %q", a.Type, "group")
+	}
+	if a.MusicBrainzID != "5b11f4ce-a62d-471e-81fc-a69a8278c7da" {
+		t.Errorf("MusicBrainzID = %q", a.MusicBrainzID)
+	}
+	if a.DeezerID != "412" {
+		t.Errorf("DeezerID = %q, want %q", a.DeezerID, "412")
+	}
+	if a.SpotifyID != "6olE6TJLqED3rqDCT0FyPh" {
+		t.Errorf("SpotifyID = %q", a.SpotifyID)
+	}
+	if len(a.Genres) != 2 {
+		t.Errorf("Genres count = %d, want 2", len(a.Genres))
+	}
+	if a.Disbanded != "1994" {
+		t.Errorf("Disbanded = %q, want %q", a.Disbanded, "1994")
+	}
+
+	// Non-NFO fields should be preserved.
+	if a.ID != "keep-id" {
+		t.Errorf("ID = %q, want %q (should be preserved)", a.ID, "keep-id")
+	}
+	if a.Path != "/music/original" {
+		t.Errorf("Path = %q, want %q (should be preserved)", a.Path, "/music/original")
+	}
+	if a.LibraryID != "lib-1" {
+		t.Errorf("LibraryID = %q, want %q (should be preserved)", a.LibraryID, "lib-1")
+	}
+	if !a.ThumbExists {
+		t.Error("ThumbExists should be preserved as true")
+	}
+	if !a.FanartExists {
+		t.Error("FanartExists should be preserved as true")
 	}
 }

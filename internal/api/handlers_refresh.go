@@ -307,18 +307,10 @@ func (r *Router) renderRefreshWithOOB(w http.ResponseWriter, req *http.Request, 
 	priorities, _ := r.providerSettings.GetPriorities(req.Context())
 	fieldProviders := buildFieldProvidersMap(priorities)
 
-	var isDegraded bool
-	if r.libraryService != nil && a.LibraryID != "" {
-		if lib, err := r.libraryService.GetByID(req.Context(), a.LibraryID); err == nil {
-			isDegraded = lib.IsDegraded()
-		}
-	}
-
 	oobData := templates.RefreshOOBData{
 		Artist:         *a,
 		Members:        members,
 		FieldProviders: fieldProviders,
-		IsDegraded:     isDegraded,
 	}
 
 	// Write primary response then OOB fragments sequentially

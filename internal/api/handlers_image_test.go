@@ -125,10 +125,10 @@ func TestSetArtistImageFlag_Delete(t *testing.T) {
 	}
 }
 
-func TestRequireArtistPath_Degraded(t *testing.T) {
+func TestRequireArtistPath_Pathless(t *testing.T) {
 	r, _ := testRouterWithPlatform(t)
 
-	// Artist with empty path (degraded library)
+	// Artist with empty path (pathless library)
 	a := &artist.Artist{Name: "API Only Artist", SortName: "API Only Artist", Path: ""}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/artists/test/images", nil)

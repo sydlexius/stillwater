@@ -636,7 +636,7 @@ func ArtistsPage(assets AssetPaths, data ArtistListData) templ.Component {
 	})
 }
 
-func degradedLibraryBanner(data ArtistListData) templ.Component {
+func pathlessLibraryBanner(data ArtistListData) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -687,7 +687,7 @@ func ArtistTable(data ArtistListData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = degradedLibraryBanner(data).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = pathlessLibraryBanner(data).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -957,7 +957,7 @@ func ArtistGrid(data ArtistListData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = degradedLibraryBanner(data).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = pathlessLibraryBanner(data).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

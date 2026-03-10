@@ -232,8 +232,8 @@ func DiscoverResults(connID string, libs []DiscoveredLib, isOOBE bool) templ.Com
 
 func importSelectedLibraries(connID string) templ.ComponentScript {
 	return templ.ComponentScript{
-		Name: `__templ_importSelectedLibraries_e782`,
-		Function: `function __templ_importSelectedLibraries_e782(connID){var form = document.getElementById("import-form-" + connID);
+		Name: `__templ_importSelectedLibraries_dad9`,
+		Function: `function __templ_importSelectedLibraries_dad9(connID){var form = document.getElementById("import-form-" + connID);
 	var checked = form.querySelectorAll('input[name="lib"]:checked');
 	if (checked.length === 0) { alert("Select at least one library to import."); return; }
 	var libs = [];
@@ -246,19 +246,44 @@ func importSelectedLibraries(connID string) templ.ComponentScript {
 		headers: {"Content-Type": "application/json", "X-CSRF-Token": csrfToken},
 		body: JSON.stringify({libraries: libs})
 	}).then(function(res) {
-		if (res.ok) { window.location.reload(); }
-		else { res.json().then(function(data) { alert(data.error || "Import failed"); }); }
+		if (res.ok) {
+			return res.json().then(function(data) {
+				var count = Array.isArray(data) ? data.length : 0;
+				if (typeof showSuccessToast === 'function') {
+					if (count > 0) {
+						var word = count === 1 ? "library" : "libraries";
+						showSuccessToast(count + " " + word + " imported. Auto-populating artists...");
+					} else {
+						showSuccessToast("No new libraries to import.");
+					}
+				}
+				setTimeout(function() { window.location.reload(); }, 1500);
+			}).catch(function() {
+				if (typeof showSuccessToast === 'function') {
+					showSuccessToast("Libraries imported.");
+				}
+				setTimeout(function() { window.location.reload(); }, 1500);
+			});
+		} else {
+			return res.json().then(function(data) {
+				alert(data.error || "Import failed");
+			}).catch(function() {
+				alert("Import failed (HTTP " + res.status + ")");
+			});
+		}
+	}).catch(function() {
+		alert("Network error. Check your connection and try again.");
 	});
 }`,
-		Call:       templ.SafeScript(`__templ_importSelectedLibraries_e782`, connID),
-		CallInline: templ.SafeScriptInline(`__templ_importSelectedLibraries_e782`, connID),
+		Call:       templ.SafeScript(`__templ_importSelectedLibraries_dad9`, connID),
+		CallInline: templ.SafeScriptInline(`__templ_importSelectedLibraries_dad9`, connID),
 	}
 }
 
 func importSelectedLibrariesOOBE(connID string) templ.ComponentScript {
 	return templ.ComponentScript{
-		Name: `__templ_importSelectedLibrariesOOBE_f124`,
-		Function: `function __templ_importSelectedLibrariesOOBE_f124(connID){var form = document.getElementById("import-form-" + connID);
+		Name: `__templ_importSelectedLibrariesOOBE_3985`,
+		Function: `function __templ_importSelectedLibrariesOOBE_3985(connID){var form = document.getElementById("import-form-" + connID);
 	var checked = form.querySelectorAll('input[name="lib"]:checked');
 	if (checked.length === 0) { alert("Select at least one library to import."); return; }
 	var libs = [];
@@ -275,15 +300,27 @@ func importSelectedLibrariesOOBE(connID string) templ.ComponentScript {
 			return res.json().then(function(data) {
 				var count = Array.isArray(data) ? data.length : 0;
 				var word = count === 1 ? "library" : "libraries";
-				form.innerHTML = '<p class="text-xs text-green-600 dark:text-green-400 py-1">' + count + ' ' + word + ' imported.</p>';
+				if (count > 0) {
+					form.innerHTML = '<p class="text-xs text-green-600 dark:text-green-400 py-1">' + count + ' ' + word + ' imported. Auto-populating artists...</p>';
+				} else {
+					form.innerHTML = '<p class="text-xs text-gray-500 dark:text-gray-400 py-1">All libraries already imported.</p>';
+				}
+			}).catch(function() {
+				form.innerHTML = '<p class="text-xs text-green-600 dark:text-green-400 py-1">Libraries imported.</p>';
 			});
 		} else {
-			res.json().then(function(data) { alert(data.error || "Import failed"); });
+			return res.json().then(function(data) {
+				alert(data.error || "Import failed");
+			}).catch(function() {
+				alert("Import failed (HTTP " + res.status + ")");
+			});
 		}
+	}).catch(function() {
+		form.innerHTML = '<p class="text-xs text-red-600 dark:text-red-400 py-1">Network error. Check your connection and try again.</p>';
 	});
 }`,
-		Call:       templ.SafeScript(`__templ_importSelectedLibrariesOOBE_f124`, connID),
-		CallInline: templ.SafeScriptInline(`__templ_importSelectedLibrariesOOBE_f124`, connID),
+		Call:       templ.SafeScript(`__templ_importSelectedLibrariesOOBE_3985`, connID),
+		CallInline: templ.SafeScriptInline(`__templ_importSelectedLibrariesOOBE_3985`, connID),
 	}
 }
 

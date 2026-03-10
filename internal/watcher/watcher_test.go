@@ -194,10 +194,10 @@ func TestFileCreationIgnored(t *testing.T) {
 	}
 }
 
-func TestDegradedLibrarySkipped(t *testing.T) {
+func TestPathlessLibrarySkipped(t *testing.T) {
 	var scanCount atomic.Int32
 	libs := &mockLibraryLister{libs: []library.Library{
-		{ID: "1", Name: "Degraded", Path: "", Type: "regular", FSWatch: library.FSModeWatch},
+		{ID: "1", Name: "Pathless", Path: "", Type: "regular", FSWatch: library.FSModeWatch},
 	}}
 
 	svc, _, ctx, cancel := newTestService(t, &scanCount, libs, NewProbeCache())
@@ -215,7 +215,7 @@ func TestDegradedLibrarySkipped(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	if watchCount != 0 {
-		t.Errorf("expected 0 watched paths for degraded library, got %d", watchCount)
+		t.Errorf("expected 0 watched paths for pathless library, got %d", watchCount)
 	}
 }
 

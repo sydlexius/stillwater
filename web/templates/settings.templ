@@ -1859,8 +1859,8 @@ templ settingsLibraryRow(lib library.Library) {
 			}
 			<div class="flex items-center gap-1.5 mt-1">
 				<span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300">{ lib.Type }</span>
-				if lib.IsDegraded() {
-					<span class="inline-flex items-center rounded-full bg-amber-100 dark:bg-amber-900/30 px-2 py-0.5 text-xs text-amber-700 dark:text-amber-400">No path (API only)</span>
+				if lib.ConnectionID != "" {
+					<span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300">Connection</span>
 				}
 				if lib.Source != "" && lib.Source != "manual" {
 					<span class="inline-flex items-center gap-1 rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300">
@@ -1871,7 +1871,7 @@ templ settingsLibraryRow(lib library.Library) {
 			</div>
 		</div>
 		<div class="flex items-center gap-2">
-			if !lib.IsDegraded() {
+			if !lib.IsPathless() {
 				<select
 					class="text-xs rounded border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 focus:ring-blue-500 px-1.5 py-1"
 					title="Filesystem monitoring mode"
@@ -1899,7 +1899,7 @@ templ settingsLibraryRow(lib library.Library) {
 					</select>
 				}
 			}
-			if lib.IsDegraded() && lib.ConnectionID != "" {
+			if lib.ConnectionID != "" {
 				<button
 					type="button"
 					id={ "populate-btn-" + lib.ID }
@@ -1907,7 +1907,7 @@ templ settingsLibraryRow(lib library.Library) {
 					onclick={ settingsAsyncLibOp(lib.ConnectionID, lib.ID, "populate") }
 				>
 					<svg id={ "populate-spinner-" + lib.ID } class="hidden animate-spin h-3 w-3" viewBox="0 0 24 24" fill="none"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
-					<span id={ "populate-label-" + lib.ID }>Populate Artists</span>
+					<span id={ "populate-label-" + lib.ID }>Re-sync Artists</span>
 				</button>
 			}
 			if lib.ConnectionID != "" {
@@ -1981,7 +1981,7 @@ templ settingsLibraryScript() {
 					div.textContent = lib.type;
 					var safeType = div.innerHTML;
 					var pathLine = lib.path ? '<div class="text-xs text-gray-500 dark:text-gray-400">' + safePath + '</div>' : '';
-					var degradedBadge = !lib.path ? '<span class="inline-flex items-center rounded-full bg-amber-100 dark:bg-amber-900/30 px-2 py-0.5 text-xs text-amber-700 dark:text-amber-400">No path (API only)</span>' : '';
+					var connectionBadge = lib.connection_id ? '<span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300">Connection</span>' : '';
 					var sourceBadge = '';
 					if (lib.source && lib.source !== 'manual' && sourceNames[lib.source]) {
 						sourceBadge = '<span class="inline-flex items-center gap-1 rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300">'
@@ -2016,10 +2016,10 @@ templ settingsLibraryScript() {
 						}
 					}
 					var populateBtn = '';
-					if (!lib.path && lib.connection_id) {
+					if (lib.connection_id) {
 						populateBtn = '<button type="button" id="populate-btn-' + lib.id + '" class="text-xs px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors inline-flex items-center gap-1" onclick="runLibraryOp(&apos;' + lib.connection_id + '&apos;, &apos;' + lib.id + '&apos;, &apos;populate&apos;)">'
 							+ spinnerSvg.replace('class="hidden', 'id="populate-spinner-' + lib.id + '" class="hidden')
-							+ '<span id="populate-label-' + lib.id + '">Populate Artists</span></button>';
+							+ '<span id="populate-label-' + lib.id + '">Re-sync Artists</span></button>';
 					}
 					var scanBtn = '';
 					if (lib.connection_id) {
@@ -2033,7 +2033,7 @@ templ settingsLibraryScript() {
 						+ pathLine
 						+ '<div class="flex items-center gap-1.5 mt-1">'
 						+ '<span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300">' + safeType + '</span>'
-						+ degradedBadge
+						+ connectionBadge
 						+ sourceBadge
 						+ '</div>'
 						+ '</div>'
@@ -2109,7 +2109,7 @@ templ settingsLibraryScript() {
 			function resetUI() {
 				if (btn) btn.disabled = false;
 				if (spinner) spinner.classList.add('hidden');
-				if (label) label.textContent = operation === 'populate' ? 'Populate Artists' : 'Scan Library';
+				if (label) label.textContent = operation === 'populate' ? 'Re-sync Artists' : 'Scan Library';
 			}
 			var poll = setInterval(function() {
 				attempts++;
