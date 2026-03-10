@@ -10,6 +10,17 @@ catches the class of issues that Copilot flags most often in this project -- res
 fields added to handlers that are not reflected in the spec, and spec descriptions that
 no longer match what the code actually does.
 
+## Automated checks (run first)
+
+Before the manual steps below, run the AST-based consistency test:
+
+```bash
+go test -count=1 -run TestOpenAPIConsistency -v ./internal/api/
+```
+
+If this test fails, it reports handler response fields missing from the spec. Fix those
+before proceeding to the manual semantic checks below.
+
 ## Steps
 
 ### 1. Determine scope

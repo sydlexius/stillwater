@@ -305,6 +305,48 @@ Before squashing and pushing, verify these categories that Copilot consistently 
 - [ ] `multipart.Writer` methods (`CreatePart`, `WriteField`, `Close`) errors are checked in test helpers
 - [ ] `io.ReadAll(r.Body)` errors are checked before using the result in test handlers
 
+### Review comment scope policy
+
+**Default: fix now.** When a Copilot review comment or adjacent code issue is discovered
+during PR work, the default action is to fix it in the current PR. Use judgment case by
+case. The burden of proof is on *deferring*, not on fixing.
+
+**To defer, you must justify.** A fix should only be deferred to a separate issue when:
+- It requires architectural changes that would fundamentally alter the PR's scope
+- It touches subsystems unrelated to the PR's purpose AND requires its own test suite
+- It would add a new database migration or breaking API change unrelated to the feature
+
+**Never reply "out of scope" without creating a tracking issue.** If you defer, open an
+issue immediately with the `task` template, link it to the current PR, and reply to
+the review comment with the issue number.
+
+### Reading PR comments (gh API)
+
+The `!` character triggers bash history expansion, even inside double quotes. This breaks
+`--jq` filters that use `!=`. Always use one of these safe patterns:
+
+```bash
+# List all PR review comments (safe -- no != operator):
+gh api "repos/{owner}/{repo}/pulls/{number}/comments" --paginate \
+  --jq '[.[] | select(.body | length > 0) | {id, user: .user.login, path, line, body}]'
+
+# Filter out a specific user (use "== X | not" instead of "!= X"):
+gh api "repos/{owner}/{repo}/pulls/{number}/comments" --paginate \
+  --jq '[.[] | select(.user.login == "some-bot" | not) | {id, user: .user.login, body}]'
+
+# Reply to a review comment:
+gh api "repos/{owner}/{repo}/pulls/{number}/comments/{comment_id}/replies" \
+  -f body='Fixed in <commit>.'
+```
+
+**Never use `!=` in `--jq` expressions from bash.** Use `select(.field == "value" | not)`.
+
+### Copilot re-review limitation
+
+The GitHub API does not support re-requesting review from Copilot (bot accounts return
+422). The `copilot-re-review.yml` workflow also does not work. This means the first push
+to a PR is the only chance to get a clean Copilot review. Get it right before pushing.
+
 ## Parallel Work (Worktrees)
 
 When multiple issues or agents need to work concurrently, use git worktrees to isolate

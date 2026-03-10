@@ -41,6 +41,9 @@ jobs:
         with:
           version: latest
 
+      - name: Validate OpenAPI spec
+        run: npx --yes @stoplight/spectral-cli@6.15.0 lint internal/api/openapi.yaml --ruleset .spectral.yaml --fail-severity=warn
+
   test:
     name: Test
     runs-on: ubuntu-latest

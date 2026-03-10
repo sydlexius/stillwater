@@ -1,4 +1,4 @@
-.PHONY: build run test test-race test-cover lint fmt clean docker-build docker-run dev templ tailwind migrate favicon hooks
+.PHONY: build run test test-race test-cover lint fmt clean docker-build docker-run dev templ tailwind migrate favicon hooks check-openapi
 
 # Binary name
 BINARY=stillwater
@@ -41,7 +41,7 @@ test-race:
 
 ## test-cover: Run tests with coverage
 test-cover:
-	go test -v -race -coverprofile=coverage.out ./...
+	go test -count=1 -v -race -coverprofile=coverage.out ./...
 	go tool cover -html=coverage.out -o coverage.html
 
 ## lint: Run golangci-lint
@@ -85,6 +85,10 @@ docker-run:
 ## docker-stop: Stop Docker container
 docker-stop:
 	docker compose down
+
+## check-openapi: Verify OpenAPI spec matches handler implementations
+check-openapi:
+	go test -count=1 -run TestOpenAPIConsistency -v ./internal/api/
 
 ## hooks: Install git pre-commit hook (mirrors CI lint checks)
 hooks:

@@ -39,24 +39,38 @@ templates, and Tailwind CSS. Structured logging via slog.
 - `//nolint` directives in test files are intentional.
 - `#nosec` annotations have been reviewed and are intentional.
 
+## Review priority order
+
+Focus review effort in this order: security > correctness > completeness > style.
+Skip issues in a lower-priority category if there are unresolved issues in a
+higher-priority category.
+
+## Skip entirely (handled by other tools)
+
+- **Style and formatting** -- enforced by the pre-commit hook (gofmt, goimports)
+  and golangci-lint in CI. Do not comment on formatting, import order, variable
+  naming style, or line length.
+- **OpenAPI spec structure** -- validated by Spectral in CI (`npx @stoplight/spectral-cli`).
+  Structural issues (missing descriptions, invalid $ref) are caught automatically. Focus
+  only on *semantic* spec issues (description does not match code behavior).
+- **Generated `*_templ.go` files** -- skip entirely. CI verifies templ freshness.
+  Review the `.templ` source files instead.
+
 ## Lower priority (mention only if clearly wrong)
 
 - Do not comment on test function names, test comment wording, or test variable naming
-- Style preferences that do not affect correctness
 - Suggestions to refactor working code for hypothetical testability improvements
 
-## OpenAPI spec consistency (always check)
+## OpenAPI spec consistency (semantic review only)
 
-When a PR adds or changes any JSON response field in a handler:
+CI validates structural spec correctness (Spectral linter) and handler-spec field
+consistency (AST-based Go test in `internal/api/openapi_test.go`). Copilot should
+focus on *semantic* accuracy only:
 
-- Verify `internal/api/openapi.yaml` is updated for every affected endpoint -- field
-  present in the schema, correct type, and an accurate description.
 - Descriptions must reflect what the code actually does. "Empty when X" is wrong if the
   code also makes the field non-empty when Y. Prefer describing the invariant: what it
   means when the field is empty ("Empty only when there are no warnings") rather than
   listing every condition that causes it to be empty.
-- If a handler response schema references `$ref: "#/components/schemas/SomeType"` but
-  the actual response shape includes additional fields not in that schema, flag it.
 
 ## Error path warning completeness (always check)
 
@@ -73,12 +87,10 @@ When a function is designed to surface failures as user-visible warnings (return
 - "We logged it" is not sufficient. If sync was skipped due to an internal error, the
   client should see a warning that sync was skipped, even if the cause is redacted.
 
-## Generated files (always check)
+## Generated files (CI enforced)
 
-- If any `.templ` file changed, the corresponding `*_templ.go` generated file must also
-  be committed with matching changes. Flag if `.templ` changed but `*_templ.go` did not.
-- CI does not currently enforce this automatically -- flag it as a review issue so it
-  is caught before merge rather than discovered at runtime.
+CI verifies that `*_templ.go` files match their `.templ` sources. No need to flag
+templ freshness issues -- CI catches them. Only flag if CI is not running on this PR.
 
 ## Test code correctness (always check)
 

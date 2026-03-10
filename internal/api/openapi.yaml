@@ -35,6 +35,12 @@ components:
       properties:
         error:
           type: string
+          description: Human-readable error message.
+        details:
+          type: array
+          items:
+            type: string
+          description: Validation error details. Present when validation fails, containing one or more error messages.
       required: [error]
     Status:
       type: object
@@ -55,6 +61,10 @@ components:
           type: string
         has_key:
           type: boolean
+          description: Whether the connection has an API key configured.
+        has_platform_user_id:
+          type: boolean
+          description: Whether the connection has a platform user ID configured for personalized metadata.
         enabled:
           type: boolean
         status:
@@ -70,6 +80,12 @@ components:
         updated_at:
           type: string
           format: date-time
+        library_count:
+          type: integer
+          description: Number of libraries associated with this connection. Present in the single-connection detail response only, not in the list response.
+        artist_count:
+          type: integer
+          description: Total number of artists across all libraries for this connection. Present in the single-connection detail response only, not in the list response.
     Webhook:
       type: object
       properties:
@@ -316,7 +332,6 @@ components:
           type: boolean
         schedule_interval_hours:
           type: integer
-
 paths:
   /health:
     get:
@@ -1117,6 +1132,61 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Status"
+
+  /artists/{id}/pull:
+    post:
+      tags: [Platform State]
+      summary: Pull artist metadata from platform
+      description: >-
+        Fetches the artist's metadata from the specified platform connection
+        and overwrites local biography, genres, and date fields with any
+        non-empty values returned by the platform.
+      operationId: pullMetadata
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: connection_id
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Metadata pulled and local fields updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    description: Result status, typically "pulled".
+                  updated:
+                    type: array
+                    items:
+                      type: string
+                    description: List of artist fields that were written from platform data.
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Artist or connection not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /artists/{id}/push:
     post:

@@ -6,6 +6,7 @@
 #   1. typos -- spell check staged files (uses .typos.toml config)
 #   2. gofmt -- staged .go files are correctly formatted
 #   3. templ freshness -- generated _templ.go files match their .templ sources
+#   3b. OpenAPI reminder -- warn if API handlers changed without spec update
 #   4. go build -- code compiles
 #   5. golangci-lint -- full linter suite from .golangci.yml
 #   6. govulncheck -- known vulnerabilities in dependencies
@@ -109,6 +110,19 @@ if [ -n "$STAGED_TEMPL" ]; then
     pass "templ generate"
 else
     warn "templ (no staged .templ files)"
+fi
+
+# --------------------------------------------------------------------------
+# 3b. OpenAPI spec reminder -- warn if API handlers changed without the spec
+# --------------------------------------------------------------------------
+STAGED_API_GO=$(git diff --cached --name-only --diff-filter=ACM -- 'internal/api/handlers.go' 'internal/api/handlers_*.go' | grep -v '_test\.go$' || true)
+STAGED_OPENAPI=$(git diff --cached --name-only --diff-filter=ACM -- 'internal/api/openapi.yaml' || true)
+if [ -n "$STAGED_API_GO" ] && [ -z "$STAGED_OPENAPI" ]; then
+    echo -e "${YELLOW}WARN${RESET} openapi: API handler files changed but openapi.yaml is not staged."
+    echo "      If response fields changed, update internal/api/openapi.yaml and stage it."
+    echo "      Handler files changed:"
+    echo "$STAGED_API_GO" | sed 's/^/        /'
+    echo ""
 fi
 
 # --------------------------------------------------------------------------
