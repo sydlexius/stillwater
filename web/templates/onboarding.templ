@@ -422,7 +422,7 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 						var html = '';
 						libs.forEach(function(lib) {
 							var pathLine = lib.path ? '<div class="text-xs text-gray-500 dark:text-gray-400">' + escapeHtml(lib.path) + '</div>' : '';
-							var connectionBadge = !lib.path ? '<span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300">Connection</span>' : '';
+							var connectionBadge = lib.connection_id ? '<span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300">Connection</span>' : '';
 							html += '<div class="flex items-center justify-between rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3" id="ob-lib-' + lib.id + '">'
 								+ '<div>'
 								+ '<div class="font-medium text-sm text-gray-900 dark:text-gray-100">' + escapeHtml(lib.name) + '</div>'
@@ -549,7 +549,7 @@ templ onboardingLibraryRow(lib library.Library) {
 			}
 			<div class="flex items-center gap-1.5 mt-1">
 				<span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300">{ lib.Type }</span>
-				if lib.IsPathless() {
+				if lib.ConnectionID != "" {
 					<span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300">Connection</span>
 				}
 			</div>

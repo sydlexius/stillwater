@@ -34,7 +34,7 @@ func ValidatePath(raw string) (string, error) {
 
 // CheckPathExists verifies that path exists and is a directory.
 // Empty paths are rejected; callers that allow pathless
-// libraries must guard with "if path != """ before calling.
+// libraries must guard with 'if path != ""' before calling.
 func CheckPathExists(path string) error {
 	if path == "" {
 		return fmt.Errorf("library path must not be empty")

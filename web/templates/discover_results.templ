@@ -96,13 +96,32 @@ script importSelectedLibraries(connID string) {
 		body: JSON.stringify({libraries: libs})
 	}).then(function(res) {
 		if (res.ok) {
-			if (typeof showSuccessToast === 'function') {
-				showSuccessToast("Libraries imported. Auto-populating artists...");
-			}
-			setTimeout(function() { window.location.reload(); }, 1500);
+			return res.json().then(function(data) {
+				var count = Array.isArray(data) ? data.length : 0;
+				if (typeof showSuccessToast === 'function') {
+					if (count > 0) {
+						var word = count === 1 ? "library" : "libraries";
+						showSuccessToast(count + " " + word + " imported. Auto-populating artists...");
+					} else {
+						showSuccessToast("No new libraries to import.");
+					}
+				}
+				setTimeout(function() { window.location.reload(); }, 1500);
+			}).catch(function() {
+				if (typeof showSuccessToast === 'function') {
+					showSuccessToast("Libraries imported.");
+				}
+				setTimeout(function() { window.location.reload(); }, 1500);
+			});
 		} else {
-			res.json().then(function(data) { alert(data.error || "Import failed"); });
+			return res.json().then(function(data) {
+				alert(data.error || "Import failed");
+			}).catch(function() {
+				alert("Import failed (HTTP " + res.status + ")");
+			});
 		}
+	}).catch(function() {
+		alert("Network error. Check your connection and try again.");
 	});
 }
 
@@ -124,10 +143,22 @@ script importSelectedLibrariesOOBE(connID string) {
 			return res.json().then(function(data) {
 				var count = Array.isArray(data) ? data.length : 0;
 				var word = count === 1 ? "library" : "libraries";
-				form.innerHTML = '<p class="text-xs text-green-600 dark:text-green-400 py-1">' + count + ' ' + word + ' imported. Auto-populating artists...</p>';
+				if (count > 0) {
+					form.innerHTML = '<p class="text-xs text-green-600 dark:text-green-400 py-1">' + count + ' ' + word + ' imported. Auto-populating artists...</p>';
+				} else {
+					form.innerHTML = '<p class="text-xs text-gray-500 dark:text-gray-400 py-1">All libraries already imported.</p>';
+				}
+			}).catch(function() {
+				form.innerHTML = '<p class="text-xs text-green-600 dark:text-green-400 py-1">Libraries imported.</p>';
 			});
 		} else {
-			res.json().then(function(data) { alert(data.error || "Import failed"); });
+			return res.json().then(function(data) {
+				alert(data.error || "Import failed");
+			}).catch(function() {
+				alert("Import failed (HTTP " + res.status + ")");
+			});
 		}
+	}).catch(function() {
+		form.innerHTML = '<p class="text-xs text-red-600 dark:text-red-400 py-1">Network error. Check your connection and try again.</p>';
 	});
 }

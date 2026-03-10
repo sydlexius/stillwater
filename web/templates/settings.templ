@@ -1859,7 +1859,7 @@ templ settingsLibraryRow(lib library.Library) {
 			}
 			<div class="flex items-center gap-1.5 mt-1">
 				<span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300">{ lib.Type }</span>
-				if lib.IsPathless() {
+				if lib.ConnectionID != "" {
 					<span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300">Connection</span>
 				}
 				if lib.Source != "" && lib.Source != "manual" {
@@ -1981,7 +1981,7 @@ templ settingsLibraryScript() {
 					div.textContent = lib.type;
 					var safeType = div.innerHTML;
 					var pathLine = lib.path ? '<div class="text-xs text-gray-500 dark:text-gray-400">' + safePath + '</div>' : '';
-					var connectionBadge = !lib.path ? '<span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300">Connection</span>' : '';
+					var connectionBadge = lib.connection_id ? '<span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300">Connection</span>' : '';
 					var sourceBadge = '';
 					if (lib.source && lib.source !== 'manual' && sourceNames[lib.source]) {
 						sourceBadge = '<span class="inline-flex items-center gap-1 rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300">'
@@ -2109,7 +2109,7 @@ templ settingsLibraryScript() {
 			function resetUI() {
 				if (btn) btn.disabled = false;
 				if (spinner) spinner.classList.add('hidden');
-				if (label) label.textContent = operation === 'populate' ? 'Populate Artists' : 'Scan Library';
+				if (label) label.textContent = operation === 'populate' ? 'Re-sync Artists' : 'Scan Library';
 			}
 			var poll = setInterval(function() {
 				attempts++;
