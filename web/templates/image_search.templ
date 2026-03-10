@@ -230,19 +230,25 @@ templ imageSearchContextualized(data ImageSearchData) {
 			// -- Upload status --
 			<div id="upload-status" class="mt-2"></div>
 		</section>
-		// -- Fanart gallery (when viewing fanart type with multiple images) --
-		if data.SelectedType == "fanart" && data.Artist.FanartCount > 1 {
+		// -- Fanart gallery (when viewing fanart type with images) --
+		if data.SelectedType == "fanart" && data.Artist.FanartCount >= 1 {
 			<section class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow" data-artist-id={ data.Artist.ID }>
 				<div class="flex items-center justify-between mb-4">
 					<h2 class="text-lg font-semibold">Fanart Gallery</h2>
 				</div>
 				<div
-					hx-get={ fmt.Sprintf("/api/v1/artists/%s/images/fanart/list", data.Artist.ID) }
+					hx-get={ fmt.Sprintf("/api/v1/artists/%s/images/fanart/list?management=true", data.Artist.ID) }
 					hx-trigger="load"
 					hx-swap="innerHTML"
 				>
 					<span class="text-sm text-gray-400">Loading gallery...</span>
 				</div>
+				// Lazy-load sync state badges via OOB swap after gallery renders
+				<div
+					hx-get={ fmt.Sprintf("/api/v1/artists/%s/fanart-sync-state", data.Artist.ID) }
+					hx-trigger="load delay:500ms"
+					hx-swap="none"
+				></div>
 			</section>
 		}
 		// -- Search results (shared area, auto-fires only when auto-fetch is enabled) --

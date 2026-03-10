@@ -1,6 +1,7 @@
 package image
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -46,7 +47,10 @@ func TestDiscoverFanart(t *testing.T) {
 		}
 	}
 
-	paths := DiscoverFanart(dir, "backdrop.jpg")
+	paths, err := DiscoverFanart(dir, "backdrop.jpg")
+	if err != nil {
+		t.Fatalf("DiscoverFanart() error: %v", err)
+	}
 	if len(paths) != 3 {
 		t.Fatalf("expected 3 fanart files, got %d: %v", len(paths), paths)
 	}
@@ -69,7 +73,10 @@ func TestDiscoverFanart_KodiNaming(t *testing.T) {
 		}
 	}
 
-	paths := DiscoverFanart(dir, "fanart.jpg")
+	paths, err := DiscoverFanart(dir, "fanart.jpg")
+	if err != nil {
+		t.Fatalf("DiscoverFanart() error: %v", err)
+	}
 	if len(paths) != 3 {
 		t.Fatalf("expected 3 fanart files, got %d: %v", len(paths), paths)
 	}
@@ -83,9 +90,23 @@ func TestDiscoverFanart_KodiNaming(t *testing.T) {
 	}
 }
 
+func TestDiscoverFanart_NonexistentDir(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "no-such-subdir")
+	_, err := DiscoverFanart(dir, "backdrop.jpg")
+	if err == nil {
+		t.Fatal("expected error for nonexistent directory, got nil")
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("expected error wrapping os.ErrNotExist, got: %v", err)
+	}
+}
+
 func TestDiscoverFanart_EmptyDir(t *testing.T) {
 	dir := t.TempDir()
-	paths := DiscoverFanart(dir, "backdrop.jpg")
+	paths, err := DiscoverFanart(dir, "backdrop.jpg")
+	if err != nil {
+		t.Fatalf("DiscoverFanart() error: %v", err)
+	}
 	if len(paths) != 0 {
 		t.Errorf("expected 0 fanart files, got %d", len(paths))
 	}
@@ -100,7 +121,10 @@ func TestDiscoverFanart_MixedCase(t *testing.T) {
 		}
 	}
 
-	paths := DiscoverFanart(dir, "backdrop.jpg")
+	paths, err := DiscoverFanart(dir, "backdrop.jpg")
+	if err != nil {
+		t.Fatalf("DiscoverFanart() error: %v", err)
+	}
 	if len(paths) != 3 {
 		t.Fatalf("expected 3 fanart files (mixed case), got %d: %v", len(paths), paths)
 	}
@@ -243,7 +267,10 @@ func TestDiscoverFanart_DuplicateExtension(t *testing.T) {
 		}
 	}
 
-	paths := DiscoverFanart(dir, "backdrop.jpg")
+	paths, err := DiscoverFanart(dir, "backdrop.jpg")
+	if err != nil {
+		t.Fatalf("DiscoverFanart() error: %v", err)
+	}
 	if len(paths) != 1 {
 		t.Fatalf("expected 1 fanart file (dedup), got %d: %v", len(paths), paths)
 	}
@@ -262,7 +289,10 @@ func TestDiscoverFanart_DuplicateNumbered(t *testing.T) {
 		}
 	}
 
-	paths := DiscoverFanart(dir, "backdrop.jpg")
+	paths, err := DiscoverFanart(dir, "backdrop.jpg")
+	if err != nil {
+		t.Fatalf("DiscoverFanart() error: %v", err)
+	}
 	if len(paths) != 2 {
 		t.Fatalf("expected 2 fanart files (primary + one numbered), got %d: %v", len(paths), paths)
 	}
@@ -279,11 +309,204 @@ func TestDiscoverFanart_AlternateExtension(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	paths := DiscoverFanart(dir, "backdrop.jpg")
+	paths, err := DiscoverFanart(dir, "backdrop.jpg")
+	if err != nil {
+		t.Fatalf("DiscoverFanart() error: %v", err)
+	}
 	if len(paths) != 1 {
 		t.Fatalf("expected 1 fanart file (alternate ext), got %d: %v", len(paths), paths)
 	}
 	if filepath.Base(paths[0]) != "backdrop.png" {
 		t.Errorf("expected backdrop.png, got %q", filepath.Base(paths[0]))
+	}
+}
+
+func TestRenumberFanart_Basic(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create 3 files at indices 0, 1, 2.
+	names := []string{"backdrop.jpg", "backdrop2.jpg", "backdrop3.jpg"}
+	for _, name := range names {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("fake"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Delete index 1 (backdrop2.jpg). Survivors are index 0 and index 2.
+	survivors := []string{
+		filepath.Join(dir, "backdrop.jpg"),
+		filepath.Join(dir, "backdrop3.jpg"),
+	}
+
+	if err := RenumberFanart(dir, "backdrop.jpg", survivors, false); err != nil {
+		t.Fatalf("RenumberFanart() error: %v", err)
+	}
+
+	// After renumber: index 0 = backdrop.jpg, index 1 = backdrop2.jpg
+	wantFiles := []string{"backdrop.jpg", "backdrop2.jpg"}
+	for _, want := range wantFiles {
+		path := filepath.Join(dir, want)
+		if _, err := os.Stat(path); err != nil {
+			t.Errorf("expected file %s to exist: %v", want, err)
+		}
+	}
+	// The old backdrop3.jpg should no longer exist.
+	if _, err := os.Stat(filepath.Join(dir, "backdrop3.jpg")); !os.IsNotExist(err) {
+		t.Errorf("expected backdrop3.jpg to be gone, but it still exists or stat returned unexpected error: %v", err)
+	}
+}
+
+func TestRenumberFanart_MixedExtensions(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create files with mixed extensions.
+	files := map[string]string{
+		"backdrop.jpg":  "jpg-primary",
+		"backdrop2.png": "png-second",
+		"backdrop3.jpg": "jpg-third",
+	}
+	for name, content := range files {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Remove index 0 (backdrop.jpg). Survivors are backdrop2.png and backdrop3.jpg.
+	survivors := []string{
+		filepath.Join(dir, "backdrop2.png"),
+		filepath.Join(dir, "backdrop3.jpg"),
+	}
+
+	if err := RenumberFanart(dir, "backdrop.jpg", survivors, false); err != nil {
+		t.Fatalf("RenumberFanart() error: %v", err)
+	}
+
+	// Index 0 should keep .png extension, index 1 should keep .jpg extension.
+	// FanartFilename("backdrop.jpg", 0, false) = "backdrop.jpg" but ext is .png => "backdrop.png"
+	// FanartFilename("backdrop.jpg", 1, false) = "backdrop2.jpg" and ext is .jpg => "backdrop2.jpg"
+	wantExists := []string{"backdrop.png", "backdrop2.jpg"}
+	for _, want := range wantExists {
+		path := filepath.Join(dir, want)
+		if _, err := os.Stat(path); err != nil {
+			t.Errorf("expected file %s to exist: %v", want, err)
+		}
+	}
+}
+
+func TestRenumberFanart_KodiNumbering(t *testing.T) {
+	dir := t.TempDir()
+
+	// Kodi naming: fanart.jpg, fanart1.jpg, fanart2.jpg
+	names := []string{"fanart.jpg", "fanart1.jpg", "fanart2.jpg"}
+	for _, name := range names {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("fake"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Delete index 1 (fanart1.jpg). Survivors are index 0 and index 2.
+	survivors := []string{
+		filepath.Join(dir, "fanart.jpg"),
+		filepath.Join(dir, "fanart2.jpg"),
+	}
+
+	if err := RenumberFanart(dir, "fanart.jpg", survivors, true); err != nil {
+		t.Fatalf("RenumberFanart() error: %v", err)
+	}
+
+	// After renumber with kodi=true:
+	// Index 0 = fanart.jpg (FanartFilename("fanart.jpg", 0, true) = "fanart.jpg")
+	// Index 1 = fanart1.jpg (FanartFilename("fanart.jpg", 1, true) = "fanart1.jpg")
+	wantFiles := []string{"fanart.jpg", "fanart1.jpg"}
+	for _, want := range wantFiles {
+		path := filepath.Join(dir, want)
+		if _, err := os.Stat(path); err != nil {
+			t.Errorf("expected file %s to exist: %v", want, err)
+		}
+	}
+	// The old fanart2.jpg should no longer exist.
+	if _, err := os.Stat(filepath.Join(dir, "fanart2.jpg")); !os.IsNotExist(err) {
+		t.Errorf("expected fanart2.jpg to be gone, but it still exists or stat returned unexpected error: %v", err)
+	}
+}
+
+func TestRenumberFanart_EmptySurvivors(t *testing.T) {
+	dir := t.TempDir()
+
+	// Empty survivors should return nil without crashing.
+	if err := RenumberFanart(dir, "backdrop.jpg", nil, false); err != nil {
+		t.Errorf("RenumberFanart(nil survivors) = %v, want nil", err)
+	}
+	if err := RenumberFanart(dir, "backdrop.jpg", []string{}, false); err != nil {
+		t.Errorf("RenumberFanart(empty survivors) = %v, want nil", err)
+	}
+}
+
+func TestRenumberFanart_SingleSurvivor(t *testing.T) {
+	dir := t.TempDir()
+
+	// Single file at index 2 should become the primary (index 0).
+	if err := os.WriteFile(filepath.Join(dir, "backdrop3.jpg"), []byte("only-one"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	survivors := []string{filepath.Join(dir, "backdrop3.jpg")}
+
+	if err := RenumberFanart(dir, "backdrop.jpg", survivors, false); err != nil {
+		t.Fatalf("RenumberFanart() error: %v", err)
+	}
+
+	// Should be renamed to the primary name (index 0).
+	path := filepath.Join(dir, "backdrop.jpg")
+	if _, err := os.Stat(path); err != nil {
+		t.Errorf("expected backdrop.jpg to exist: %v", err)
+	}
+	// The original file should be gone.
+	if _, err := os.Stat(filepath.Join(dir, "backdrop3.jpg")); !os.IsNotExist(err) {
+		t.Errorf("expected backdrop3.jpg to be gone after renumber")
+	}
+}
+
+func TestRenumberFanart_ContentPreservation(t *testing.T) {
+	dir := t.TempDir()
+
+	// Write distinct content to each file so we can verify it survives renumber.
+	contents := map[string]string{
+		"backdrop.jpg":  "content-for-index-zero",
+		"backdrop2.jpg": "content-for-index-one",
+		"backdrop3.jpg": "content-for-index-two",
+	}
+	for name, content := range contents {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Remove index 1 (backdrop2.jpg). Survivors: index 0 and index 2.
+	survivors := []string{
+		filepath.Join(dir, "backdrop.jpg"),
+		filepath.Join(dir, "backdrop3.jpg"),
+	}
+
+	if err := RenumberFanart(dir, "backdrop.jpg", survivors, false); err != nil {
+		t.Fatalf("RenumberFanart() error: %v", err)
+	}
+
+	// backdrop.jpg (index 0) should still contain "content-for-index-zero"
+	got, err := os.ReadFile(filepath.Join(dir, "backdrop.jpg"))
+	if err != nil {
+		t.Fatalf("reading backdrop.jpg: %v", err)
+	}
+	if string(got) != "content-for-index-zero" {
+		t.Errorf("backdrop.jpg content = %q, want %q", string(got), "content-for-index-zero")
+	}
+
+	// backdrop2.jpg (index 1, was backdrop3.jpg) should contain "content-for-index-two"
+	got, err = os.ReadFile(filepath.Join(dir, "backdrop2.jpg"))
+	if err != nil {
+		t.Fatalf("reading backdrop2.jpg: %v", err)
+	}
+	if string(got) != "content-for-index-two" {
+		t.Errorf("backdrop2.jpg content = %q, want %q", string(got), "content-for-index-two")
 	}
 }

@@ -3,6 +3,7 @@ package rule
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -619,7 +620,13 @@ func expectedImageFiles(profile *platform.Profile, artistPath string) map[string
 		}
 		kodiNumbering := profile != nil && strings.EqualFold(profile.ID, "kodi")
 		for _, fanartName := range fanartNames {
-			discovered := image.DiscoverFanart(artistPath, fanartName)
+			discovered, discoverErr := image.DiscoverFanart(artistPath, fanartName)
+			if discoverErr != nil {
+				slog.Warn("discovering fanart for expected-files whitelist",
+					slog.String("dir", artistPath),
+					slog.String("primary", fanartName),
+					slog.String("error", discoverErr.Error()))
+			}
 			for i, p := range discovered {
 				// Whitelist the actual file on disk.
 				expected[strings.ToLower(filepath.Base(p))] = true

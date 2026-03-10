@@ -16,6 +16,7 @@ type ArtistPlatformState struct {
 	HasFanart     bool
 	HasLogo       bool
 	HasBanner     bool
+	BackdropCount int
 	IsLocked      bool
 	LockedFields  []string
 }

@@ -253,10 +253,13 @@ func (r *Router) handleImageFetch(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		r.updateArtistFanartCount(req.Context(), a)
-		// Skip platform sync for fanart appends: platforms only support a single
-		// backdrop image, and the primary (fanart.jpg) was already synced when
-		// first saved. See handleImageUpload for the same rationale.
+
+		syncCtx, cancel := context.WithTimeout(req.Context(), 30*time.Second)
+		defer cancel()
+		syncWarnings := r.syncAllFanartToPlatforms(syncCtx, a)
+
 		if isHTMXRequest(req) {
+			setSyncWarningTrigger(w, syncWarnings)
 			w.Header().Set("HX-Refresh", "true")
 			w.WriteHeader(http.StatusNoContent)
 			return
@@ -266,7 +269,7 @@ func (r *Router) handleImageFetch(w http.ResponseWriter, req *http.Request) {
 			"saved":         saved,
 			"type":          imageType,
 			"count":         a.FanartCount,
-			"sync_warnings": []string{},
+			"sync_warnings": syncWarnings,
 		})
 		return
 	}
@@ -931,7 +934,14 @@ func (r *Router) handleDeleteImage(w http.ResponseWriter, req *http.Request) {
 	// For fanart, delete ALL numbered variants as well.
 	if imageType == "fanart" {
 		primary := r.getActiveFanartPrimary(req.Context())
-		fanartPaths := img.DiscoverFanart(r.imageDir(a), primary)
+		fanartPaths, fanartErr := img.DiscoverFanart(r.imageDir(a), primary)
+		if fanartErr != nil {
+			r.logger.Error("discovering fanart for delete",
+				slog.String("artist_id", artistID),
+				slog.String("error", fanartErr.Error()))
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to read fanart directory"})
+			return
+		}
 		var deleted []string
 		var removeFailed bool
 		for _, p := range fanartPaths {
@@ -1076,6 +1086,103 @@ func (r *Router) syncImageToPlatforms(ctx context.Context, a *artist.Artist, ima
 		if uploadErr := uploader.UploadImage(ctx, pid.PlatformArtistID, imageType, data, ct); uploadErr != nil {
 			r.logger.Error("syncing image to platform", "artist", a.Name, "connection", conn.Name, "type", imageType, "error", uploadErr)
 			warnings = append(warnings, truncateWarning(fmt.Sprintf("%s (%s): image upload failed", conn.Name, conn.Type)))
+		}
+	}
+	return warnings
+}
+
+// syncAllFanartToPlatforms uploads all local fanart files to every connected
+// platform at their respective indices. Unlike syncImageToPlatforms which only
+// syncs the primary image, this discovers all fanart files and uploads each one
+// at the correct backdrop index. Errors are logged and returned as warnings.
+func (r *Router) syncAllFanartToPlatforms(ctx context.Context, a *artist.Artist) []string {
+	warnings := make([]string, 0)
+
+	platformIDs, err := r.artistService.GetPlatformIDs(ctx, a.ID)
+	if err != nil {
+		r.logger.Error("getting platform IDs for fanart sync",
+			slog.String("artist_id", a.ID),
+			slog.String("error", err.Error()))
+		warnings = append(warnings, "platform sync skipped: failed to load platform mappings")
+		return warnings
+	}
+	if len(platformIDs) == 0 {
+		return warnings
+	}
+
+	dir := r.imageDir(a)
+	if dir == "" {
+		r.logger.Warn("skipping platform fanart sync: artist has no image directory",
+			slog.String("artist", a.Name))
+		warnings = append(warnings, "platform sync skipped: artist has no image directory configured")
+		return warnings
+	}
+
+	primary := r.getActiveFanartPrimary(ctx)
+	fanartPaths, discoverErr := img.DiscoverFanart(dir, primary)
+	if discoverErr != nil {
+		r.logger.Error("discovering fanart for platform sync",
+			slog.String("artist_id", a.ID),
+			slog.String("error", discoverErr.Error()))
+		warnings = append(warnings, "platform sync skipped: failed to read fanart directory")
+		return warnings
+	}
+	if len(fanartPaths) == 0 {
+		return warnings
+	}
+
+	for _, pid := range platformIDs {
+		conn, connErr := r.connectionService.GetByID(ctx, pid.ConnectionID)
+		if connErr != nil {
+			r.logger.Error("getting connection for fanart sync",
+				slog.String("connection_id", pid.ConnectionID),
+				slog.String("error", connErr.Error()))
+			warnings = append(warnings, truncateWarning(fmt.Sprintf("connection %s: failed to load", pid.ConnectionID)))
+			continue
+		}
+		if !conn.Enabled || conn.Status != "ok" {
+			r.logger.Debug("skipping connection for fanart sync",
+				slog.String("connection", conn.Name),
+				slog.String("status", conn.Status))
+			continue
+		}
+
+		var uploader connection.IndexedImageUploader
+		switch conn.Type {
+		case connection.TypeEmby:
+			uploader = emby.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger)
+		case connection.TypeJellyfin:
+			uploader = jellyfin.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger)
+		default:
+			r.logger.Warn("unsupported connection type for fanart sync",
+				slog.String("type", conn.Type))
+			warnings = append(warnings, truncateWarning(fmt.Sprintf("%s: unsupported connection type %q", conn.Name, conn.Type)))
+			continue
+		}
+
+		for i, fp := range fanartPaths {
+			data, readErr := os.ReadFile(fp) //nolint:gosec // path from trusted fanart discovery
+			if readErr != nil {
+				r.logger.Error("reading fanart for platform sync",
+					slog.String("path", fp),
+					slog.String("error", readErr.Error()))
+				warnings = append(warnings, truncateWarning(fmt.Sprintf("%s: failed to read fanart %d", conn.Name, i)))
+				continue
+			}
+
+			ct := "image/jpeg"
+			if strings.EqualFold(filepath.Ext(fp), ".png") {
+				ct = "image/png"
+			}
+
+			if uploadErr := uploader.UploadImageAtIndex(ctx, pid.PlatformArtistID, "fanart", i, data, ct); uploadErr != nil {
+				r.logger.Error("syncing fanart to platform",
+					slog.String("artist", a.Name),
+					slog.String("connection", conn.Name),
+					slog.Int("index", i),
+					slog.String("error", uploadErr.Error()))
+				warnings = append(warnings, truncateWarning(fmt.Sprintf("%s (%s): fanart %d upload failed", conn.Name, conn.Type, i)))
+			}
 		}
 	}
 	return warnings
@@ -1414,7 +1521,13 @@ func (r *Router) processAndAppendFanart(ctx context.Context, dir string, data []
 // flag and count on the artist record.
 func (r *Router) updateArtistFanartCount(ctx context.Context, a *artist.Artist) {
 	primary := r.getActiveFanartPrimary(ctx)
-	existing := img.DiscoverFanart(r.imageDir(a), primary)
+	existing, discoverErr := img.DiscoverFanart(r.imageDir(a), primary)
+	if discoverErr != nil {
+		r.logger.Warn("discovering fanart for count update; skipping DB update",
+			slog.String("artist_id", a.ID),
+			slog.String("error", discoverErr.Error()))
+		return
+	}
 	count := len(existing)
 	a.FanartExists = count > 0
 	a.FanartCount = count
@@ -1462,7 +1575,14 @@ func (r *Router) handleFanartList(w http.ResponseWriter, req *http.Request) {
 	}
 
 	primary := r.getActiveFanartPrimary(req.Context())
-	paths := img.DiscoverFanart(r.imageDir(a), primary)
+	paths, discoverErr := img.DiscoverFanart(r.imageDir(a), primary)
+	if discoverErr != nil {
+		r.logger.Error("discovering fanart for gallery",
+			slog.String("artist_id", artistID),
+			slog.String("error", discoverErr.Error()))
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to read fanart directory"})
+		return
+	}
 
 	items := make([]templates.FanartGalleryItem, 0, len(paths))
 	for i, p := range paths {
@@ -1496,7 +1616,11 @@ func (r *Router) handleFanartList(w http.ResponseWriter, req *http.Request) {
 	}
 
 	if isHTMXRequest(req) {
-		renderTempl(w, req, templates.FanartGallery(artistID, items))
+		if req.URL.Query().Get("management") == "true" {
+			renderTempl(w, req, templates.FanartManagementGallery(artistID, items))
+		} else {
+			renderTempl(w, req, templates.FanartGallery(artistID, items))
+		}
 		return
 	}
 
@@ -1525,7 +1649,14 @@ func (r *Router) handleServeFanartByIndex(w http.ResponseWriter, req *http.Reque
 	}
 
 	primary := r.getActiveFanartPrimary(req.Context())
-	paths := img.DiscoverFanart(r.imageDir(a), primary)
+	paths, discoverErr := img.DiscoverFanart(r.imageDir(a), primary)
+	if discoverErr != nil {
+		r.logger.Error("discovering fanart for serve",
+			slog.String("artist_id", artistID),
+			slog.String("error", discoverErr.Error()))
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to read fanart directory"})
+		return
+	}
 	if index >= len(paths) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "fanart index out of range"})
 		return
@@ -1566,7 +1697,14 @@ func (r *Router) handleFanartBatchDelete(w http.ResponseWriter, req *http.Reques
 
 	primary := r.getActiveFanartPrimary(req.Context())
 	kodi := r.isKodiNumbering(req.Context())
-	paths := img.DiscoverFanart(r.imageDir(a), primary)
+	paths, discoverErr := img.DiscoverFanart(r.imageDir(a), primary)
+	if discoverErr != nil {
+		r.logger.Error("discovering fanart for batch delete",
+			slog.String("artist_id", artistID),
+			slog.String("error", discoverErr.Error()))
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to read fanart directory"})
+		return
+	}
 
 	// Build set of indices to delete
 	deleteSet := make(map[int]bool, len(body.Indices))
@@ -1602,30 +1740,40 @@ func (r *Router) handleFanartBatchDelete(w http.ResponseWriter, req *http.Reques
 		}
 	}
 
-	// Re-number survivors sequentially
-	for i, oldPath := range survivors {
-		newName := img.FanartFilename(primary, i, kodi)
-		// Preserve actual extension from the existing file
-		actualExt := filepath.Ext(oldPath)
-		newBase := strings.TrimSuffix(newName, filepath.Ext(newName))
-		newName = newBase + actualExt
-		newPath := filepath.Join(r.imageDir(a), newName)
-		if oldPath != newPath {
-			if renameErr := os.Rename(oldPath, newPath); renameErr != nil { //nolint:gosec // paths from DiscoverFanart and FanartFilename, not user input
-				r.logger.Warn("renaming fanart during re-number",
-					slog.String("from", oldPath),
-					slog.String("to", newPath),
-					slog.String("error", renameErr.Error()))
-			}
-		}
+	// Re-number survivors sequentially. Skip when some deletes failed --
+	// renaming survivors while un-deleted files still occupy their original
+	// names risks overwriting data.
+	var renumberWarning bool
+	if removeFailed {
+		renumberWarning = true
+		r.logger.Warn("skipping fanart renumber due to failed deletes",
+			slog.String("artist_id", artistID))
+	} else if renumberErr := img.RenumberFanart(r.imageDir(a), primary, survivors, kodi); renumberErr != nil {
+		renumberWarning = true
+		r.logger.Warn("renumbering fanart after batch delete",
+			slog.String("artist_id", artistID),
+			slog.String("error", renumberErr.Error()))
 	}
 
 	r.updateArtistFanartCount(req.Context(), a)
+
+	// Only sync to platforms if renumbering succeeded -- pushing misindexed
+	// fanart would corrupt platform galleries too.
+	var syncWarnings []string
+	if !renumberWarning {
+		syncCtx, cancel := context.WithTimeout(req.Context(), 30*time.Second)
+		defer cancel()
+		syncWarnings = r.syncAllFanartToPlatforms(syncCtx, a)
+	}
 
 	warnings := make([]string, 0)
 	if removeFailed {
 		warnings = append(warnings, "some fanart files could not be deleted from disk")
 	}
+	if renumberWarning {
+		warnings = append(warnings, "fanart files could not be renumbered; gallery order may be incorrect, platform sync skipped")
+	}
+	warnings = append(warnings, syncWarnings...)
 
 	if isHTMXRequest(req) {
 		setSyncWarningTrigger(w, warnings)
@@ -1715,19 +1863,27 @@ func (r *Router) handleFanartBatchFetch(w http.ResponseWriter, req *http.Request
 	}
 
 	r.updateArtistFanartCount(req.Context(), a)
-	// No platform sync for batch appends: platforms only support a single
-	// backdrop image per artist. See handleImageUpload for full rationale.
+
+	// Sync all fanart to connected platforms (synchronous with timeout).
+	var syncWarnings []string
+	if len(allSaved) > 0 {
+		syncCtx, cancel := context.WithTimeout(req.Context(), 30*time.Second)
+		defer cancel()
+		syncWarnings = r.syncAllFanartToPlatforms(syncCtx, a)
+	}
 
 	if isHTMXRequest(req) {
+		setSyncWarningTrigger(w, syncWarnings)
 		w.Header().Set("HX-Refresh", "true")
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"status": "ok",
-		"saved":  allSaved,
-		"errors": errors,
-		"count":  a.FanartCount,
+		"status":        "ok",
+		"saved":         allSaved,
+		"errors":        errors,
+		"count":         a.FanartCount,
+		"sync_warnings": syncWarnings,
 	})
 }

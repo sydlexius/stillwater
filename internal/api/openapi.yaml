@@ -332,6 +332,58 @@ components:
           type: boolean
         schedule_interval_hours:
           type: integer
+    PlatformBackdropConnection:
+      type: object
+      properties:
+        connection_id:
+          type: string
+        connection_name:
+          type: string
+        connection_type:
+          type: string
+          enum: [emby, jellyfin]
+        backdrops:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlatformBackdropItem"
+    PlatformBackdropItem:
+      type: object
+      properties:
+        index:
+          type: integer
+          description: 0-based index of the backdrop on the platform
+        thumbnail_url:
+          type: string
+          description: Proxy URL to fetch the backdrop thumbnail through Stillwater
+    FanartSyncSlotConnection:
+      type: object
+      properties:
+        connection_id:
+          type: string
+        name:
+          type: string
+          description: Display name of the connection
+        type:
+          type: string
+          enum: [emby, jellyfin]
+        synced:
+          type: boolean
+          description: Whether the platform has a backdrop at this index
+    FanartSyncSlot:
+      type: object
+      properties:
+        index:
+          type: integer
+          description: 0-based fanart slot index
+        state:
+          type: string
+          enum: [synced, partial, unsynced]
+          description: Aggregate sync state across all reachable connections
+        connections:
+          type: array
+          items:
+            $ref: "#/components/schemas/FanartSyncSlotConnection"
+
 paths:
   /health:
     get:
@@ -4455,6 +4507,12 @@ paths:
           required: true
           schema:
             type: string
+        - name: management
+          in: query
+          required: false
+          description: When true and request is HTMX, returns the management gallery variant with per-slot controls
+          schema:
+            type: boolean
       responses:
         "200":
           description: Fanart gallery items (returns HTML gallery when HX-Request header is set)
@@ -4554,7 +4612,7 @@ paths:
                     type: array
                     items:
                       type: string
-                    description: Platform sync warnings, including failures and reasons why sync was skipped. Empty only when there are no warnings.
+                    description: Warnings from batch deletion, including file removal failures, renumbering issues, and platform sync errors. Empty only when there are no warnings.
         "409":
           description: No filesystem path
           content:
@@ -4607,8 +4665,277 @@ paths:
                       type: string
                   count:
                     type: integer
+                  sync_warnings:
+                    type: array
+                    description: Warnings from syncing fanart to connected platforms after batch fetch. Empty when there are no sync issues.
+                    items:
+                      type: string
         "409":
           description: No filesystem path
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /artists/{id}/images/fanart/reorder:
+    post:
+      tags: [Images]
+      summary: Reorder local fanart files
+      operationId: reorderFanart
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                order:
+                  type: array
+                  description: Permutation of current slot indices defining the new order. order[i] = current slot that becomes new slot i.
+                  items:
+                    type: integer
+              required: [order]
+      responses:
+        "200":
+          description: Fanart reordered
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  count:
+                    type: integer
+                  sync_warnings:
+                    type: array
+                    description: Warnings from syncing reordered fanart to connected platforms. Empty only when there are no sync issues.
+                    items:
+                      type: string
+        "400":
+          description: Invalid permutation or length mismatch
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /artists/{id}/images/fanart/{slot}/assign:
+    post:
+      tags: [Images]
+      summary: Assign a platform backdrop to a local fanart slot
+      operationId: assignFanartSlot
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: slot
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                connection_id:
+                  type: string
+                  description: ID of the platform connection to download from
+                platform_index:
+                  type: integer
+                  minimum: 0
+                  description: 0-based index of the backdrop on the platform
+              required: [connection_id, platform_index]
+      responses:
+        "200":
+          description: Backdrop assigned to slot
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  slot:
+                    type: integer
+                  count:
+                    type: integer
+                  sync_warnings:
+                    type: array
+                    description: Warnings from syncing fanart to connected platforms after assignment. Empty only when there are no sync issues.
+                    items:
+                      type: string
+        "400":
+          description: Invalid slot (gap), missing connection, or bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "502":
+          description: Failed to download backdrop from platform
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /artists/{id}/images/fanart/{slot}:
+    delete:
+      tags: [Images]
+      summary: Delete a single fanart slot and renumber remaining
+      operationId: deleteFanartSlot
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: slot
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Fanart slot deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  deleted:
+                    type: string
+                    description: Filename of the deleted file
+                  count:
+                    type: integer
+                  sync_warnings:
+                    type: array
+                    description: Warnings from fanart deletion, including renumbering issues and platform sync errors. Empty only when there are no warnings.
+                    items:
+                      type: string
+        "400":
+          description: Slot out of range
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /artists/{id}/platform-backdrops:
+    get:
+      tags: [Images]
+      summary: List available backdrops from all connected platforms
+      operationId: listPlatformBackdrops
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Platform backdrops grouped by connection (returns HTML panel when HX-Request header is set)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  connections:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/PlatformBackdropConnection"
+            text/html:
+              schema:
+                type: string
+
+  /artists/{id}/platform-backdrops/{connectionId}/{index}/thumbnail:
+    get:
+      tags: [Images]
+      summary: Proxy a platform backdrop image through Stillwater
+      operationId: getPlatformBackdropThumbnail
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: connectionId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: index
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Proxied backdrop image
+          content:
+            image/*:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: No platform mapping or connection not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "502":
+          description: Failed to fetch backdrop from platform
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /artists/{id}/fanart-sync-state:
+    get:
+      tags: [Images]
+      summary: Get per-image sync state for fanart slots across connected platforms
+      operationId: getFanartSyncState
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: >
+            Per-slot sync state. When no Emby/Jellyfin connections exist, returns
+            state "no_connections" with an empty slots array. For HTMX requests,
+            returns HTML badge fragments with OOB swap targets.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  slots:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/FanartSyncSlot"
+                  state:
+                    type: string
+                    description: >
+                      Only present when value is "no_connections", indicating no
+                      Emby/Jellyfin connections are configured for this artist
+            text/html:
+              schema:
+                type: string
+        "404":
+          description: Artist not found
           content:
             application/json:
               schema:

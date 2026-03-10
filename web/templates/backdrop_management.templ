@@ -1,0 +1,296 @@
+package templates
+
+import (
+	"fmt"
+	"strconv"
+)
+
+// FanartManagementGallery renders the fanart gallery with per-slot management
+// controls (delete, reorder). Used on the image management page only.
+templ FanartManagementGallery(artistID string, items []FanartGalleryItem) {
+	<div id="fanart-management-gallery" class="space-y-4" data-artist-id={ artistID }>
+		<div class="flex items-center justify-between">
+			<h3 class="text-sm font-semibold">{ strconv.Itoa(len(items)) } fanart images</h3>
+			<button
+				type="button"
+				id="fanart-delete-selected"
+				class="hidden text-xs px-3 py-1.5 rounded bg-red-600 text-white hover:bg-red-700 transition-colors"
+			>
+				Delete selected
+			</button>
+		</div>
+		if len(items) > 0 {
+			<div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+				for _, item := range items {
+					<div class="relative rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden group" data-fanart-index={ strconv.Itoa(item.Index) }>
+						<!-- Sync badge placeholder (populated via OOB swap) -->
+						<div data-sync-badge={ strconv.Itoa(item.Index) }></div>
+						<label class="cursor-pointer">
+							<input
+								type="checkbox"
+								class="fanart-cb absolute top-2 left-2 z-10 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+								value={ strconv.Itoa(item.Index) }
+							/>
+							<div class="aspect-video bg-gray-100 dark:bg-gray-900 flex items-center justify-center overflow-hidden">
+								<img
+									src={ fmt.Sprintf("/api/v1/artists/%s/images/fanart/%d/file", artistID, item.Index) }
+									alt={ item.Filename }
+									class="max-w-full max-h-full object-cover"
+									loading="lazy"
+								/>
+							</div>
+						</label>
+						<div class="p-1.5 flex items-center justify-between">
+							<span class="text-xs text-gray-500 dark:text-gray-400">
+								{ item.Filename }
+								if item.Width > 0 && item.Height > 0 {
+									{ " " + strconv.Itoa(item.Width) + "x" + strconv.Itoa(item.Height) }
+								}
+								{ " " + formatFileSizeTempl(item.Size) }
+							</span>
+							<div class="flex items-center gap-1">
+								if item.Index > 0 {
+									<button
+										type="button"
+										class="fanart-move-btn text-xs p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+										title="Move up"
+										data-artist-id={ artistID }
+										data-index={ strconv.Itoa(item.Index) }
+										data-direction="up"
+									>
+										&#9650;
+									</button>
+								}
+								if item.Index < len(items)-1 {
+									<button
+										type="button"
+										class="fanart-move-btn text-xs p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+										title="Move down"
+										data-artist-id={ artistID }
+										data-index={ strconv.Itoa(item.Index) }
+										data-direction="down"
+									>
+										&#9660;
+									</button>
+								}
+								<button
+									type="button"
+									class="text-xs p-1 text-red-400 hover:text-red-600"
+									title="Delete this fanart"
+									hx-delete={ fmt.Sprintf("/api/v1/artists/%s/images/fanart/%d", artistID, item.Index) }
+									hx-confirm="Delete this fanart image?"
+									hx-swap="none"
+								>
+									&#10005;
+								</button>
+							</div>
+						</div>
+					</div>
+				}
+			</div>
+		} else {
+			<p class="text-sm text-gray-400 italic">No fanart images.</p>
+		}
+		<script>
+			(function() {
+				var gallery = document.getElementById('fanart-management-gallery');
+				if (!gallery) return;
+				var deleteBtn = document.getElementById('fanart-delete-selected');
+
+				// Batch select/delete
+				gallery.addEventListener('change', function() {
+					var checked = gallery.querySelectorAll('.fanart-cb:checked');
+					if (checked.length > 0) {
+						deleteBtn.classList.remove('hidden');
+						deleteBtn.textContent = 'Delete ' + checked.length + ' selected';
+					} else {
+						deleteBtn.classList.add('hidden');
+					}
+				});
+				deleteBtn.addEventListener('click', function() {
+					var checked = gallery.querySelectorAll('.fanart-cb:checked');
+					if (checked.length === 0) return;
+					if (!confirm('Delete ' + checked.length + ' fanart image(s)?')) return;
+					var indices = [];
+					for (var i = 0; i < checked.length; i++) {
+						indices.push(parseInt(checked[i].value, 10));
+					}
+					var id = gallery.dataset.artistId;
+					fetch('/api/v1/artists/' + id + '/images/fanart/batch', {
+						method: 'DELETE',
+						headers: {
+							'Content-Type': 'application/json',
+							'X-CSRF-Token': document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1")
+						},
+						body: JSON.stringify({indices: indices}),
+						credentials: 'same-origin'
+					}).then(function(r) {
+						if (r.ok) { window.location.reload(); return; }
+						r.json().then(function(b) { alert('Delete failed: ' + (b.error || 'unknown error')); })
+							.catch(function() { alert('Delete failed (HTTP ' + r.status + ')'); });
+					}).catch(function() {
+						alert('Network error. Please check your connection and try again.');
+					});
+				});
+
+				// Reorder (move up/down)
+				gallery.addEventListener('click', function(e) {
+					var btn = e.target.closest('.fanart-move-btn');
+					if (!btn) return;
+					var idx = parseInt(btn.dataset.index, 10);
+					var dir = btn.dataset.direction;
+					var id = btn.dataset.artistId;
+					var total = gallery.querySelectorAll('.fanart-cb').length;
+
+					// Build the new order: swap idx with idx-1 (up) or idx+1 (down)
+					var order = [];
+					for (var i = 0; i < total; i++) order.push(i);
+					var swapWith = dir === 'up' ? idx - 1 : idx + 1;
+					if (swapWith < 0 || swapWith >= total) return;
+					order[idx] = swapWith;
+					order[swapWith] = idx;
+
+					fetch('/api/v1/artists/' + id + '/images/fanart/reorder', {
+						method: 'POST',
+						headers: {
+							'Content-Type': 'application/json',
+							'X-CSRF-Token': document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1")
+						},
+						body: JSON.stringify({order: order}),
+						credentials: 'same-origin'
+					}).then(function(r) {
+						if (r.ok) { window.location.reload(); return; }
+						r.json().then(function(b) { alert('Reorder failed: ' + (b.error || 'unknown error')); })
+							.catch(function() { alert('Reorder failed (HTTP ' + r.status + ')'); });
+					}).catch(function() {
+						alert('Network error. Please check your connection and try again.');
+					});
+				});
+			})();
+		</script>
+	</div>
+}
+
+// PlatformBackdropsPanel renders the available platform backdrops grouped by
+// connection. Intended to be lazy-loaded via hx-get.
+templ PlatformBackdropsPanel(artistID string, connections []PlatformBackdropConnectionData) {
+	<div id="platform-backdrops-panel">
+		if len(connections) == 0 {
+			<p class="text-sm text-gray-400 italic">No platform connections have backdrops for this artist.</p>
+		} else {
+			for _, conn := range connections {
+				<div class="mb-4">
+					<h4 class="text-sm font-semibold mb-2">
+						{ conn.ConnectionName }
+						<span class="text-xs text-gray-400">({ conn.ConnectionType })</span>
+					</h4>
+					<div class="grid grid-cols-3 sm:grid-cols-4 gap-2">
+						for _, bd := range conn.Backdrops {
+							<div class="relative rounded border border-gray-200 dark:border-gray-700 overflow-hidden group">
+								<div class="aspect-video bg-gray-100 dark:bg-gray-900 flex items-center justify-center overflow-hidden">
+									<img
+										src={ bd.ThumbnailURL }
+										alt={ fmt.Sprintf("Backdrop %d", bd.Index) }
+										class="max-w-full max-h-full object-cover"
+										loading="lazy"
+									/>
+								</div>
+								<div class="p-1 text-center">
+									<span class="text-xs text-gray-500 dark:text-gray-400">Backdrop { strconv.Itoa(bd.Index) }</span>
+								</div>
+								<button
+									type="button"
+									class="absolute top-1 right-1 z-10 hidden group-hover:block text-xs px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700"
+									hx-post={ fmt.Sprintf("/api/v1/artists/%s/images/fanart/%d/assign", artistID, bd.NextSlot) }
+									hx-vals={ hxValsJSONAny(map[string]any{
+									"connection_id":  conn.ConnectionID,
+									"platform_index": bd.Index,
+								}) }
+									hx-confirm="Assign this backdrop as the next fanart?"
+									hx-swap="none"
+								>
+									Assign
+								</button>
+							</div>
+						}
+					</div>
+				</div>
+			}
+		}
+	</div>
+}
+
+// PlatformBackdropConnectionData holds platform backdrop data for templates.
+type PlatformBackdropConnectionData struct {
+	ConnectionID   string
+	ConnectionName string
+	ConnectionType string
+	Backdrops      []PlatformBackdropItemData
+}
+
+// PlatformBackdropItemData holds a single platform backdrop item for templates.
+type PlatformBackdropItemData struct {
+	Index        int
+	ThumbnailURL string
+	NextSlot     int // The next available local fanart slot index
+}
+
+// FanartSyncBadgeData holds sync state data for a single fanart badge.
+type FanartSyncBadgeData struct {
+	Index   int
+	State   string // synced, partial, unsynced, syncing, error
+	Tooltip string
+}
+
+// iconSyncCircle renders an inline SVG sync-circle icon. CSS class controls
+// color (via currentColor) and size.
+templ iconSyncCircle(class string) {
+	<svg class={ class } xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none" stroke="currentColor" stroke-width="32" stroke-linecap="round" stroke-linejoin="round">
+		<path d="M434.67 285.59v-29.8C434.67 157.06 354.43 77 255.47 77a179 179 0 00-140.14 67.36m-38.53 82v29.8C76.8 354.94 157 435 256 435a180.45 180.45 0 00140-66.92"></path>
+		<path d="M32 256l44-44 46 44M480 256l-44 44-46-44"></path>
+	</svg>
+}
+
+// syncBadgeColorClass returns the Tailwind text color class for a sync state.
+func syncBadgeColorClass(state string) string {
+	switch state {
+	case "synced":
+		return "text-green-500"
+	case "partial":
+		return "text-amber-500"
+	case "unsynced":
+		return "text-gray-400"
+	case "syncing":
+		return "text-blue-500 animate-spin"
+	case "error":
+		return "text-red-500"
+	default:
+		return "text-gray-400"
+	}
+}
+
+// FanartSyncBadge renders a sync state badge overlay for a fanart image.
+templ FanartSyncBadge(data FanartSyncBadgeData) {
+	<div
+		data-sync-badge={ strconv.Itoa(data.Index) }
+		class="absolute top-2 right-2 z-10 bg-black/60 rounded-full p-0.5"
+		title={ data.Tooltip }
+	>
+		@iconSyncCircle("w-5 h-5 " + syncBadgeColorClass(data.State))
+	</div>
+}
+
+// FanartSyncBadges renders all sync badges as OOB swap targets.
+// Each badge uses hx-swap-oob to replace its placeholder in the gallery.
+templ FanartSyncBadges(badges []FanartSyncBadgeData) {
+	for _, b := range badges {
+		<div
+			data-sync-badge={ strconv.Itoa(b.Index) }
+			class="absolute top-2 right-2 z-10 bg-black/60 rounded-full p-0.5"
+			title={ b.Tooltip }
+			hx-swap-oob={ "outerHTML:[data-sync-badge='" + strconv.Itoa(b.Index) + "']" }
+		>
+			@iconSyncCircle("w-5 h-5 " + syncBadgeColorClass(b.State))
+		</div>
+	}
+}

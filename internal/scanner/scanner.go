@@ -645,7 +645,12 @@ func detectFiles(dirPath string, existing *artist.Artist) (detectedFiles, error)
 			d.FanartExists = true
 			d.FanartLowRes, d.FanartPlaceholder = probeImageFile(fp, "fanart", existFanartPH)
 			// Count all fanart files (primary + numbered variants).
-			fanartPaths := img.DiscoverFanart(dirPath, actual)
+			fanartPaths, fanartErr := img.DiscoverFanart(dirPath, actual)
+			if fanartErr != nil {
+				slog.Warn("discovering fanart variants during scan",
+					slog.String("dir", dirPath),
+					slog.String("error", fanartErr.Error()))
+			}
 			if len(fanartPaths) > 0 {
 				d.FanartCount = len(fanartPaths)
 			} else {
