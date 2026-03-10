@@ -5,10 +5,16 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
+	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/connection"
+	"github.com/sydlexius/stillwater/internal/platform"
 )
 
 // addTestConnectionWithURL creates a connection with a custom URL for handler tests
@@ -30,12 +36,15 @@ func addTestConnectionWithURL(t *testing.T, r *Router, id, name, connType, url s
 }
 
 func TestHandleDeletePushImage_Success(t *testing.T) {
+	type capture struct {
+		method string
+		path   string
+	}
+	captureCh := make(chan capture, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodDelete {
-			t.Errorf("method = %s, want DELETE", r.Method)
-		}
-		if !strings.Contains(r.URL.Path, "/Images/Primary") {
-			t.Errorf("unexpected path: %s", r.URL.Path)
+		select {
+		case captureCh <- capture{method: r.Method, path: r.URL.Path}:
+		default:
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}))
@@ -57,6 +66,17 @@ func TestHandleDeletePushImage_Success(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
 	}
+	select {
+	case got := <-captureCh:
+		if got.method != http.MethodDelete {
+			t.Errorf("method = %s, want DELETE", got.method)
+		}
+		if !strings.Contains(got.path, "/Images/Primary") {
+			t.Errorf("unexpected path: %s", got.path)
+		}
+	default:
+		t.Error("mock server received no request")
+	}
 	var resp map[string]string
 	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatalf("decoding response: %v", err)
@@ -67,9 +87,11 @@ func TestHandleDeletePushImage_Success(t *testing.T) {
 }
 
 func TestHandleDeletePushImage_AutoLookupPlatformID(t *testing.T) {
+	pathCh := make(chan string, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !strings.Contains(r.URL.Path, "/Items/emby-stored-id/Images/Primary") {
-			t.Errorf("unexpected path: %s (want stored platform id in path)", r.URL.Path)
+		select {
+		case pathCh <- r.URL.Path:
+		default:
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}))
@@ -96,6 +118,14 @@ func TestHandleDeletePushImage_AutoLookupPlatformID(t *testing.T) {
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	select {
+	case got := <-pathCh:
+		if !strings.Contains(got, "/Items/emby-stored-id/Images/Primary") {
+			t.Errorf("unexpected path: %s (want stored platform id in path)", got)
+		}
+	default:
+		t.Error("mock server received no request")
 	}
 }
 
@@ -204,12 +234,15 @@ func TestHandleDeletePushImage_ArtistNotFound(t *testing.T) {
 }
 
 func TestHandleDeletePushImage_JellyfinSuccess(t *testing.T) {
+	type capture struct {
+		method string
+		path   string
+	}
+	captureCh := make(chan capture, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodDelete {
-			t.Errorf("method = %s, want DELETE", r.Method)
-		}
-		if !strings.Contains(r.URL.Path, "/Images/Logo") {
-			t.Errorf("unexpected path: %s", r.URL.Path)
+		select {
+		case captureCh <- capture{method: r.Method, path: r.URL.Path}:
+		default:
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}))
@@ -230,6 +263,17 @@ func TestHandleDeletePushImage_JellyfinSuccess(t *testing.T) {
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	select {
+	case got := <-captureCh:
+		if got.method != http.MethodDelete {
+			t.Errorf("method = %s, want DELETE", got.method)
+		}
+		if !strings.Contains(got.path, "/Images/Logo") {
+			t.Errorf("unexpected path: %s", got.path)
+		}
+	default:
+		t.Error("mock server received no request")
 	}
 }
 
@@ -267,5 +311,205 @@ func TestHandleDeletePushImage_PlatformIDNotStoredAndNotProvided(t *testing.T) {
 
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusBadRequest, w.Body.String())
+	}
+}
+
+// --- handlePushImages tests ---
+
+func TestHandlePushImages_FanartUploadedAtCorrectIndices(t *testing.T) {
+	var mu sync.Mutex
+	var captured []int
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		// Emby/Jellyfin upload path: POST /Items/{id}/Images/Backdrop/{index}
+		if req.Method == http.MethodPost && strings.Contains(req.URL.Path, "/Images/Backdrop/") {
+			parts := strings.Split(req.URL.Path, "/")
+			idx, err := strconv.Atoi(parts[len(parts)-1])
+			if err == nil {
+				mu.Lock()
+				captured = append(captured, idx)
+				mu.Unlock()
+			}
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	r, artistSvc := testRouter(t)
+	r.platformService = platform.NewService(r.db)
+	dir := t.TempDir()
+
+	a := &artist.Artist{Name: "Fanart Push", SortName: "Fanart Push", Path: dir}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+	addTestConnectionWithURL(t, r, "conn-emby", "Emby", "emby", srv.URL)
+	if err := artistSvc.SetPlatformID(context.Background(), a.ID, "conn-emby", "emby-push-1"); err != nil {
+		t.Fatalf("SetPlatformID: %v", err)
+	}
+
+	// Create 3 fanart files using the default primary name (fanart.jpg).
+	for _, name := range []string{"fanart.jpg", "fanart2.jpg", "fanart3.jpg"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("fake-"+name), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	body := `{"connection_id":"conn-emby","platform_artist_id":"emby-push-1","image_types":["fanart"]}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/push/images",
+		strings.NewReader(body))
+	req.SetPathValue("id", a.ID)
+	w := httptest.NewRecorder()
+
+	r.handlePushImages(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp struct {
+		Uploaded []string `json:"uploaded"`
+		Errors   []string `json:"errors"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+
+	if len(resp.Uploaded) != 3 {
+		t.Fatalf("expected 3 uploaded, got %d: %v", len(resp.Uploaded), resp.Uploaded)
+	}
+	for i, want := range []string{"fanart[0]", "fanart[1]", "fanart[2]"} {
+		if resp.Uploaded[i] != want {
+			t.Errorf("uploaded[%d] = %q, want %q", i, resp.Uploaded[i], want)
+		}
+	}
+	if len(resp.Errors) != 0 {
+		t.Errorf("expected no errors, got %v", resp.Errors)
+	}
+
+	// Verify the mock server received uploads at indices 0, 1, 2.
+	mu.Lock()
+	defer mu.Unlock()
+	if len(captured) != 3 {
+		t.Fatalf("mock server received %d upload calls, want 3", len(captured))
+	}
+	for i, idx := range captured {
+		if idx != i {
+			t.Errorf("upload[%d] index = %d, want %d", i, idx, i)
+		}
+	}
+}
+
+func TestHandlePushImages_ReadFailureProducesSanitizedError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	r, artistSvc := testRouter(t)
+	r.platformService = platform.NewService(r.db)
+	dir := t.TempDir()
+
+	a := &artist.Artist{Name: "Read Fail", SortName: "Read Fail", Path: dir}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+	addTestConnectionWithURL(t, r, "conn-emby", "Emby", "emby", srv.URL)
+	if err := artistSvc.SetPlatformID(context.Background(), a.ID, "conn-emby", "emby-rf-1"); err != nil {
+		t.Fatalf("SetPlatformID: %v", err)
+	}
+
+	// Create a symlink to a non-existent target. DiscoverFanart will find it
+	// (it passes the IsDir check), but os.ReadFile will fail.
+	if err := os.Symlink(filepath.Join(dir, "does-not-exist"), filepath.Join(dir, "fanart.jpg")); err != nil {
+		t.Fatal(err)
+	}
+
+	body := `{"connection_id":"conn-emby","platform_artist_id":"emby-rf-1","image_types":["fanart"]}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/push/images",
+		strings.NewReader(body))
+	req.SetPathValue("id", a.ID)
+	w := httptest.NewRecorder()
+
+	r.handlePushImages(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp struct {
+		Uploaded []string `json:"uploaded"`
+		Errors   []string `json:"errors"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+
+	// The error message should say "read failed", not leak the raw OS error.
+	if len(resp.Errors) == 0 {
+		t.Fatal("expected at least one error for unreadable fanart")
+	}
+	if !strings.Contains(resp.Errors[0], "read failed") {
+		t.Errorf("error should say 'read failed', got %q", resp.Errors[0])
+	}
+	// Must not contain raw error details like "is a directory".
+	if strings.Contains(resp.Errors[0], "is a directory") {
+		t.Errorf("error leaks raw OS message: %q", resp.Errors[0])
+	}
+}
+
+func TestHandlePushImages_UploadFailureProducesSanitizedError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	r, artistSvc := testRouter(t)
+	r.platformService = platform.NewService(r.db)
+	dir := t.TempDir()
+
+	a := &artist.Artist{Name: "Upload Fail", SortName: "Upload Fail", Path: dir}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+	addTestConnectionWithURL(t, r, "conn-emby", "Emby", "emby", srv.URL)
+	if err := artistSvc.SetPlatformID(context.Background(), a.ID, "conn-emby", "emby-uf-1"); err != nil {
+		t.Fatalf("SetPlatformID: %v", err)
+	}
+
+	// Create a fanart file that can be read successfully.
+	if err := os.WriteFile(filepath.Join(dir, "fanart.jpg"), []byte("fake-image"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	body := `{"connection_id":"conn-emby","platform_artist_id":"emby-uf-1","image_types":["fanart"]}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/push/images",
+		strings.NewReader(body))
+	req.SetPathValue("id", a.ID)
+	w := httptest.NewRecorder()
+
+	r.handlePushImages(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp struct {
+		Uploaded []string `json:"uploaded"`
+		Errors   []string `json:"errors"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+
+	if len(resp.Errors) == 0 {
+		t.Fatal("expected at least one error for failed upload")
+	}
+	if !strings.Contains(resp.Errors[0], "upload failed") {
+		t.Errorf("error should say 'upload failed', got %q", resp.Errors[0])
+	}
+	// Must not contain raw HTTP status or internal error details.
+	if strings.Contains(resp.Errors[0], "500") {
+		t.Errorf("error leaks HTTP status code: %q", resp.Errors[0])
 	}
 }

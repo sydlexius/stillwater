@@ -237,13 +237,9 @@ func TestSSRFSafeTransport_PreservesDefaults(t *testing.T) {
 	if transport.IdleConnTimeout == 0 {
 		t.Error("IdleConnTimeout should be non-zero (inherited from DefaultTransport)")
 	}
-	// Verify TLS config is present (HTTP/2 support via Clone)
-	if transport.TLSClientConfig == nil {
-		// Clone may or may not set TLSClientConfig depending on DefaultTransport,
-		// but ForceAttemptHTTP2 should be inherited.
-		if !transport.ForceAttemptHTTP2 {
-			t.Log("ForceAttemptHTTP2 not set; HTTP/2 may not be available")
-		}
+	// Verify HTTP/2 support is preserved from DefaultTransport.Clone().
+	if !transport.ForceAttemptHTTP2 {
+		t.Error("ForceAttemptHTTP2 should be true (inherited from DefaultTransport)")
 	}
 }
 
@@ -408,6 +404,12 @@ func TestHandleImageUpload_SyncsToPlatform(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Error("expected platform sync upload call, but mock server received none")
 	}
+	// Drain check: verify no unexpected extra uploads.
+	select {
+	case <-uploadedCh:
+		t.Error("unexpected extra platform sync upload")
+	default:
+	}
 }
 
 func TestHandleDeleteImage_SyncsToPlatform(t *testing.T) {
@@ -461,6 +463,12 @@ func TestHandleDeleteImage_SyncsToPlatform(t *testing.T) {
 	case <-deletedCh:
 	case <-time.After(5 * time.Second):
 		t.Error("expected platform sync delete call, but mock server received none")
+	}
+	// Drain check: verify no unexpected extra deletes.
+	select {
+	case <-deletedCh:
+		t.Error("unexpected extra platform sync delete")
+	default:
 	}
 }
 
@@ -1194,6 +1202,256 @@ func TestHandleDeleteImage_FanartRemoveFailure(t *testing.T) {
 	case <-deletedCh:
 		t.Error("platform delete was called despite local removal failure")
 	default:
+	}
+}
+
+func TestHandleFanartBatchDelete_SyncCalledAfterDelete(t *testing.T) {
+	// Track uploads to the mock platform server. Use a channel so the test
+	// goroutine can wait for the uploads to arrive without polling.
+	type uploadCapture struct {
+		index string
+	}
+	uploadCh := make(chan uploadCapture, 10)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if req.Method == http.MethodPost && strings.Contains(req.URL.Path, "/Images/Backdrop/") {
+			parts := strings.Split(req.URL.Path, "/")
+			idx := parts[len(parts)-1]
+			select {
+			case uploadCh <- uploadCapture{index: idx}:
+			default:
+			}
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	r, artistSvc := testRouterWithPlatform(t)
+	dir := t.TempDir()
+	addTestConnectionWithURL(t, r, "conn-emby", "Emby", "emby", srv.URL)
+
+	a := &artist.Artist{
+		Name: "Batch Delete Sync", SortName: "Batch Delete Sync", Path: dir,
+		FanartExists: true, FanartCount: 3,
+	}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+	if err := artistSvc.SetPlatformID(context.Background(), a.ID, "conn-emby", "emby-bd-1"); err != nil {
+		t.Fatalf("SetPlatformID: %v", err)
+	}
+
+	// Create 3 fanart files (default primary = fanart.jpg).
+	for _, name := range []string{"fanart.jpg", "fanart2.jpg", "fanart3.jpg"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("img-"+name), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Delete index 1 (fanart2.jpg). Survivors: fanart.jpg and fanart3.jpg.
+	body := `{"indices": [1]}`
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/artists/"+a.ID+"/images/fanart/batch",
+		strings.NewReader(body))
+	req.SetPathValue("id", a.ID)
+	w := httptest.NewRecorder()
+
+	r.handleFanartBatchDelete(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp struct {
+		Status       string   `json:"status"`
+		Deleted      []string `json:"deleted"`
+		Count        int      `json:"count"`
+		SyncWarnings []string `json:"sync_warnings"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+
+	if resp.Status != "deleted" {
+		t.Errorf("status = %q, want deleted", resp.Status)
+	}
+	if len(resp.Deleted) != 1 {
+		t.Errorf("expected 1 deleted, got %d: %v", len(resp.Deleted), resp.Deleted)
+	}
+	if resp.Count != 2 {
+		t.Errorf("count = %d, want 2", resp.Count)
+	}
+
+	// Verify the mock platform received sync uploads for the 2 surviving fanart files.
+	received := 0
+	for range 2 {
+		select {
+		case <-uploadCh:
+			received++
+		case <-time.After(5 * time.Second):
+			t.Fatalf("timed out waiting for platform sync upload %d", received+1)
+		}
+	}
+	if received != 2 {
+		t.Errorf("expected 2 platform sync uploads, got %d", received)
+	}
+	// Drain check: verify no unexpected extra uploads.
+	select {
+	case <-uploadCh:
+		t.Error("unexpected extra platform sync upload beyond expected 2")
+	default:
+	}
+
+	if len(resp.SyncWarnings) != 0 {
+		t.Errorf("expected no sync warnings, got %v", resp.SyncWarnings)
+	}
+}
+
+func TestHandleFanartBatchDelete_RenumberFailureSkipsSync(t *testing.T) {
+	// Track whether any upload reaches the mock platform server.
+	uploadCh := make(chan struct{}, 10)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if req.Method == http.MethodPost && strings.Contains(req.URL.Path, "/Images/Backdrop/") {
+			select {
+			case uploadCh <- struct{}{}:
+			default:
+			}
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	r, artistSvc := testRouterWithPlatform(t)
+	dir := t.TempDir()
+	addTestConnectionWithURL(t, r, "conn-emby", "Emby", "emby", srv.URL)
+
+	a := &artist.Artist{
+		Name: "Renumber Fail", SortName: "Renumber Fail", Path: dir,
+		FanartExists: true, FanartCount: 3,
+	}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+	if err := artistSvc.SetPlatformID(context.Background(), a.ID, "conn-emby", "emby-rf-1"); err != nil {
+		t.Fatalf("SetPlatformID: %v", err)
+	}
+
+	// Create 3 fanart files.
+	for _, name := range []string{"fanart.jpg", "fanart2.jpg", "fanart3.jpg"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("img-"+name), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Create a non-empty directory at the temp file path that RenumberFanart
+	// uses during Phase 1. os.Remove on a non-empty directory returns ENOTEMPTY,
+	// which RenumberFanart treats as a fatal error (not ErrNotExist).
+	blocker := filepath.Join(dir, "fanart_renumber_0.jpg.tmp")
+	if err := os.MkdirAll(blocker, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(blocker, "stale"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	body := `{"indices": [1]}`
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/artists/"+a.ID+"/images/fanart/batch",
+		strings.NewReader(body))
+	req.SetPathValue("id", a.ID)
+	w := httptest.NewRecorder()
+
+	r.handleFanartBatchDelete(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp struct {
+		SyncWarnings []string `json:"sync_warnings"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+
+	// Verify the renumber warning is present.
+	found := false
+	for _, msg := range resp.SyncWarnings {
+		if strings.Contains(msg, "could not be renumbered") && strings.Contains(msg, "platform sync skipped") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected renumber failure warning, got %v", resp.SyncWarnings)
+	}
+
+	// No uploads should have reached the platform.
+	select {
+	case <-uploadCh:
+		t.Error("platform sync upload was called despite renumber failure")
+	default:
+	}
+}
+
+func TestHandleFanartBatchDelete_SyncWarningsPropagated(t *testing.T) {
+	// Mock platform server that returns 500, simulating sync failure.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	r, artistSvc := testRouterWithPlatform(t)
+	dir := t.TempDir()
+	addTestConnectionWithURL(t, r, "conn-emby", "Emby", "emby", srv.URL)
+
+	a := &artist.Artist{
+		Name: "Sync Warning", SortName: "Sync Warning", Path: dir,
+		FanartExists: true, FanartCount: 2,
+	}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+	if err := artistSvc.SetPlatformID(context.Background(), a.ID, "conn-emby", "emby-sw-1"); err != nil {
+		t.Fatalf("SetPlatformID: %v", err)
+	}
+
+	// Create 2 fanart files.
+	for _, name := range []string{"fanart.jpg", "fanart2.jpg"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("img-"+name), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Delete index 0. After renumber, fanart2.jpg becomes fanart.jpg.
+	body := `{"indices": [0]}`
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/artists/"+a.ID+"/images/fanart/batch",
+		strings.NewReader(body))
+	req.SetPathValue("id", a.ID)
+	w := httptest.NewRecorder()
+
+	r.handleFanartBatchDelete(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp struct {
+		SyncWarnings []string `json:"sync_warnings"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+
+	if len(resp.SyncWarnings) == 0 {
+		t.Fatal("expected sync warnings when platform returns 500")
+	}
+	found := false
+	for _, w := range resp.SyncWarnings {
+		if strings.Contains(w, "Emby") && strings.Contains(w, "upload failed") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected warning mentioning 'Emby' and 'upload failed', got %v", resp.SyncWarnings)
 	}
 }
 
