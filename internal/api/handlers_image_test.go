@@ -335,7 +335,7 @@ func TestHandleImageUpload_SyncsToPlatform(t *testing.T) {
 		contentLength int64
 		contentType   string
 	}
-	uploadedCh := make(chan syncCapture, 1)
+	uploadedCh := make(chan syncCapture, 3)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		if req.Method == http.MethodPost && strings.Contains(req.URL.Path, "/Images/Primary") {
 			select {
@@ -413,7 +413,7 @@ func TestHandleImageUpload_SyncsToPlatform(t *testing.T) {
 }
 
 func TestHandleDeleteImage_SyncsToPlatform(t *testing.T) {
-	deletedCh := make(chan struct{}, 1)
+	deletedCh := make(chan struct{}, 3)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		if req.Method == http.MethodDelete && strings.Contains(req.URL.Path, "/Images/Primary") {
 			select {

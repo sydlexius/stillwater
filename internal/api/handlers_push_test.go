@@ -471,9 +471,11 @@ func TestHandlePushImages_ReadFailureProducesSanitizedError(t *testing.T) {
 	if !strings.Contains(resp.Errors[0], "read failed") {
 		t.Errorf("error should say 'read failed', got %q", resp.Errors[0])
 	}
-	// Must not contain raw error details like "is a directory".
-	if strings.Contains(resp.Errors[0], "is a directory") {
-		t.Errorf("error leaks raw OS message: %q", resp.Errors[0])
+	// Must not contain raw error details (OS error text or on-disk paths/filenames).
+	for _, leak := range []string{"is a directory", "no such file", "permission denied", "does-not-exist"} {
+		if strings.Contains(resp.Errors[0], leak) {
+			t.Errorf("error leaks raw OS detail %q: %q", leak, resp.Errors[0])
+		}
 	}
 }
 
