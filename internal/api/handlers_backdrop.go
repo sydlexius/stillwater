@@ -138,14 +138,14 @@ func (r *Router) handlePlatformBackdrops(w http.ResponseWriter, req *http.Reques
 		// Compute next available fanart slot for the assign button.
 		primary := r.getActiveFanartPrimary(req.Context())
 		discovered, discoverErr := img.DiscoverFanart(r.imageDir(a), primary)
-		if discoverErr != nil {
+		if discoverErr != nil && !errors.Is(discoverErr, os.ErrNotExist) {
 			r.logger.Error("discovering fanart for backdrop listing",
 				slog.String("artist_id", a.ID),
 				slog.String("error", discoverErr.Error()))
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to determine next fanart slot"})
 			return
 		}
-		nextSlot := len(discovered)
+		nextSlot := len(discovered) // 0 when dir does not exist
 
 		var templConns []templates.PlatformBackdropConnectionData
 		for _, c := range connections {
@@ -271,6 +271,10 @@ func (r *Router) handleFanartSlotAssign(w http.ResponseWriter, req *http.Request
 	if !DecodeJSON(w, req, &body) {
 		return
 	}
+	if body.ConnectionID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "connection_id is required"})
+		return
+	}
 	if body.PlatformIndex < 0 {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "platform_index must be non-negative"})
 		return
@@ -280,7 +284,7 @@ func (r *Router) handleFanartSlotAssign(w http.ResponseWriter, req *http.Request
 	primary := r.getActiveFanartPrimary(req.Context())
 	kodi := r.isKodiNumbering(req.Context())
 	existing, discoverErr := img.DiscoverFanart(r.imageDir(a), primary)
-	if discoverErr != nil {
+	if discoverErr != nil && !errors.Is(discoverErr, os.ErrNotExist) {
 		r.logger.Error("discovering fanart for slot assign",
 			slog.String("artist_id", artistID),
 			slog.String("error", discoverErr.Error()))

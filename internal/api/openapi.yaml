@@ -378,7 +378,7 @@ components:
         state:
           type: string
           enum: [synced, partial, unsynced]
-          description: Aggregate sync state across all connections
+          description: Aggregate sync state across all reachable connections
         connections:
           type: array
           items:
