@@ -33,7 +33,7 @@ If on `main`, stop immediately: "You are on main. Create a feature branch first.
 ## Step 2 -- Tests
 
 ```bash
-go test ./... 2>&1
+go test -count=1 ./... 2>&1
 ```
 
 If any test fails: print the failures, stop, and say:
@@ -48,7 +48,7 @@ If tests pass: note it and continue.
 Run the AST-based consistency test first:
 
 ```bash
-go test -run TestOpenAPIConsistency -v ./internal/api/
+go test -count=1 -run TestOpenAPIConsistency -v ./internal/api/
 ```
 
 If it fails, fix the reported spec drift before continuing.

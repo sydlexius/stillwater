@@ -104,7 +104,7 @@ For each "Defer" item:
 After all fixes are applied:
 
 ```bash
-go test ./... 2>&1
+go test -count=1 ./... 2>&1
 ```
 
 If tests fail, fix the failures before proceeding.

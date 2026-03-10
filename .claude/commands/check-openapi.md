@@ -15,7 +15,7 @@ no longer match what the code actually does.
 Before the manual steps below, run the AST-based consistency test:
 
 ```bash
-go test -run TestOpenAPIConsistency -v ./internal/api/
+go test -count=1 -run TestOpenAPIConsistency -v ./internal/api/
 ```
 
 If this test fails, it reports handler response fields missing from the spec. Fix those

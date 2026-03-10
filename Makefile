@@ -41,7 +41,7 @@ test-race:
 
 ## test-cover: Run tests with coverage
 test-cover:
-	go test -v -race -coverprofile=coverage.out ./...
+	go test -count=1 -v -race -coverprofile=coverage.out ./...
 	go tool cover -html=coverage.out -o coverage.html
 
 ## lint: Run golangci-lint
@@ -88,7 +88,7 @@ docker-stop:
 
 ## check-openapi: Verify OpenAPI spec matches handler implementations
 check-openapi:
-	go test -run TestOpenAPIConsistency -v ./internal/api/
+	go test -count=1 -run TestOpenAPIConsistency -v ./internal/api/
 
 ## hooks: Install git pre-commit hook (mirrors CI lint checks)
 hooks:
