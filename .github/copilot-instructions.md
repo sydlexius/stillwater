@@ -47,8 +47,9 @@ higher-priority category.
 
 ## Skip entirely (handled by other tools)
 
-- **Style and formatting** -- enforced by golangci-lint in CI. Do not comment on
-  formatting, import order, variable naming style, or line length.
+- **Style and formatting** -- enforced by the pre-commit hook (gofmt, goimports)
+  and golangci-lint in CI. Do not comment on formatting, import order, variable
+  naming style, or line length.
 - **OpenAPI spec structure** -- validated by Spectral in CI (`npx @stoplight/spectral-cli`).
   Structural issues (missing descriptions, invalid $ref) are caught automatically. Focus
   only on *semantic* spec issues (description does not match code behavior).

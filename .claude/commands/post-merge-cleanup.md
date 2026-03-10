@@ -54,7 +54,7 @@ If the worktree has uncommitted changes, stop and warn:
 ## Step 4 -- Delete local branch
 
 ```bash
-git branch -d <branch-name>
+git branch -d "<branch-name>"
 ```
 
 If the branch is not fully merged, stop and warn. Do not force-delete.
