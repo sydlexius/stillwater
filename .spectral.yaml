@@ -44,3 +44,5 @@ rules:
   info-contact: false
   info-description: false
   oas3-api-servers: false
+  operation-description: false
+  operation-tag-defined: false
