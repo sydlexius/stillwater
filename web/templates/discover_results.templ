@@ -95,8 +95,14 @@ script importSelectedLibraries(connID string) {
 		headers: {"Content-Type": "application/json", "X-CSRF-Token": csrfToken},
 		body: JSON.stringify({libraries: libs})
 	}).then(function(res) {
-		if (res.ok) { window.location.reload(); }
-		else { res.json().then(function(data) { alert(data.error || "Import failed"); }); }
+		if (res.ok) {
+			if (typeof showSuccessToast === 'function') {
+				showSuccessToast("Libraries imported. Auto-populating artists...");
+			}
+			setTimeout(function() { window.location.reload(); }, 1500);
+		} else {
+			res.json().then(function(data) { alert(data.error || "Import failed"); });
+		}
 	});
 }
 
@@ -118,7 +124,7 @@ script importSelectedLibrariesOOBE(connID string) {
 			return res.json().then(function(data) {
 				var count = Array.isArray(data) ? data.length : 0;
 				var word = count === 1 ? "library" : "libraries";
-				form.innerHTML = '<p class="text-xs text-green-600 dark:text-green-400 py-1">' + count + ' ' + word + ' imported.</p>';
+				form.innerHTML = '<p class="text-xs text-green-600 dark:text-green-400 py-1">' + count + ' ' + word + ' imported. Auto-populating artists...</p>';
 			});
 		} else {
 			res.json().then(function(data) { alert(data.error || "Import failed"); });

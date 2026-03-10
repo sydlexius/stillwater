@@ -254,7 +254,7 @@ func (s *Service) refreshWatchPaths(ctx context.Context) {
 
 	wanted := make(map[string]bool)
 	for _, lib := range libs {
-		if !lib.FSWatchEnabled() || lib.IsDegraded() {
+		if !lib.FSWatchEnabled() || lib.IsPathless() {
 			continue
 		}
 		// Check probe cache: only watch if fsnotify is supported.
@@ -348,7 +348,7 @@ func (s *Service) initPollSnapshots(ctx context.Context) {
 	defer s.mu.Unlock()
 
 	for _, lib := range libs {
-		if !lib.FSPollEnabled() || lib.IsDegraded() {
+		if !lib.FSPollEnabled() || lib.IsPathless() {
 			continue
 		}
 		snap := readDirSnapshot(lib.Path)
@@ -380,7 +380,7 @@ func (s *Service) refreshPollPaths(ctx context.Context) {
 
 	wanted := make(map[string]int) // path -> interval
 	for _, lib := range libs {
-		if !lib.FSPollEnabled() || lib.IsDegraded() {
+		if !lib.FSPollEnabled() || lib.IsPathless() {
 			continue
 		}
 		interval := lib.FSPollInterval

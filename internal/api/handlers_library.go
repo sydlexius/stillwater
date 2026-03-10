@@ -211,7 +211,7 @@ func (r *Router) populateFSNotifySupported(libs []library.Library) {
 		return
 	}
 	for i := range libs {
-		if libs[i].IsDegraded() {
+		if libs[i].IsPathless() {
 			continue
 		}
 		r.resolveProbe(&libs[i])
@@ -221,7 +221,7 @@ func (r *Router) populateFSNotifySupported(libs []library.Library) {
 // populateFSNotifySupportedPtr is the single-library pointer variant used
 // by update handlers so the caller's struct is mutated directly.
 func (r *Router) populateFSNotifySupportedPtr(lib *library.Library) {
-	if r.probeCache == nil || lib.IsDegraded() {
+	if r.probeCache == nil || lib.IsPathless() {
 		return
 	}
 	r.resolveProbe(lib)

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -94,7 +95,7 @@ func (r *Router) handleDiscoverLibraries(w http.ResponseWriter, req *http.Reques
 		folders, libErr := client.GetMusicLibraries(req.Context())
 		if libErr != nil {
 			r.logger.Error("discovering emby libraries", "error", libErr)
-			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "failed to discover libraries: " + libErr.Error()})
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "failed to discover libraries from " + conn.Type})
 			return
 		}
 		for _, f := range folders {
@@ -114,7 +115,7 @@ func (r *Router) handleDiscoverLibraries(w http.ResponseWriter, req *http.Reques
 		folders, libErr := client.GetMusicLibraries(req.Context())
 		if libErr != nil {
 			r.logger.Error("discovering jellyfin libraries", "error", libErr)
-			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "failed to discover libraries: " + libErr.Error()})
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "failed to discover libraries from " + conn.Type})
 			return
 		}
 		for _, f := range folders {
@@ -246,6 +247,35 @@ func (r *Router) handleImportLibraries(w http.ResponseWriter, req *http.Request)
 	}
 
 	writeJSON(w, http.StatusCreated, created)
+
+	// Auto-populate each newly imported library in the background.
+	for i := range created {
+		lib := created[i]
+		r.startPopulateBackground(conn, &lib)
+	}
+}
+
+// startPopulateBackground registers a library populate operation and runs it
+// in a background goroutine. Silently returns if an operation is already running
+// for this library. Used by both handlePopulateLibrary (explicit) and
+// handleImportLibraries (auto-populate on import).
+func (r *Router) startPopulateBackground(conn *connection.Connection, lib *library.Library) {
+	r.libraryOpsMu.Lock()
+	if existing, ok := r.libraryOps[lib.ID]; ok && existing.Status == "running" {
+		r.libraryOpsMu.Unlock()
+		return
+	}
+	op := &LibraryOpResult{
+		LibraryID:   lib.ID,
+		LibraryName: lib.Name,
+		Operation:   "populate",
+		Status:      "running",
+		StartedAt:   time.Now().UTC(),
+	}
+	r.libraryOps[lib.ID] = op
+	r.libraryOpsMu.Unlock()
+
+	go r.runPopulate(context.Background(), conn, lib, op)
 }
 
 // handlePopulateLibrary populates artists from a connection into an imported library.
@@ -310,6 +340,21 @@ func (r *Router) handlePopulateLibrary(w http.ResponseWriter, req *http.Request)
 
 // runPopulate executes the populate operation in a background goroutine.
 func (r *Router) runPopulate(ctx context.Context, conn *connection.Connection, lib *library.Library, op *LibraryOpResult) {
+	defer func() {
+		if v := recover(); v != nil {
+			r.logger.Error("panic in populate goroutine",
+				slog.String("library", lib.Name),
+				slog.Any("panic", v),
+				slog.String("stack", string(debug.Stack())))
+			r.libraryOpsMu.Lock()
+			now := time.Now().UTC()
+			op.CompletedAt = &now
+			op.Status = "failed"
+			op.Message = "populate failed unexpectedly"
+			r.libraryOpsMu.Unlock()
+		}
+	}()
+
 	result := populateResult{}
 	var popErr error
 
@@ -335,7 +380,7 @@ func (r *Router) runPopulate(ctx context.Context, conn *connection.Connection, l
 	op.CompletedAt = &now
 	if popErr != nil {
 		op.Status = "failed"
-		op.Message = popErr.Error()
+		op.Message = fmt.Sprintf("populate failed for %s", lib.Name)
 		r.logger.Error("populate failed", "library", lib.Name, "error", popErr)
 	} else {
 		op.Status = "completed"
@@ -407,6 +452,21 @@ func (r *Router) handleScanLibrary(w http.ResponseWriter, req *http.Request) {
 
 // runLibraryScan queries the platform API and updates *_exists flags for artists.
 func (r *Router) runLibraryScan(ctx context.Context, conn *connection.Connection, lib *library.Library, op *LibraryOpResult) {
+	defer func() {
+		if v := recover(); v != nil {
+			r.logger.Error("panic in library scan goroutine",
+				slog.String("library", lib.Name),
+				slog.Any("panic", v),
+				slog.String("stack", string(debug.Stack())))
+			r.libraryOpsMu.Lock()
+			now := time.Now().UTC()
+			op.CompletedAt = &now
+			op.Status = "failed"
+			op.Message = "scan failed unexpectedly"
+			r.libraryOpsMu.Unlock()
+		}
+	}()
+
 	var updated int
 	var scanErr error
 
@@ -432,7 +492,7 @@ func (r *Router) runLibraryScan(ctx context.Context, conn *connection.Connection
 	op.CompletedAt = &now
 	if scanErr != nil {
 		op.Status = "failed"
-		op.Message = scanErr.Error()
+		op.Message = fmt.Sprintf("scan failed for %s", lib.Name)
 		r.logger.Error("library scan failed", "library", lib.Name, "error", scanErr)
 	} else {
 		op.Status = "completed"
@@ -750,7 +810,7 @@ func (r *Router) populateFromLidarrCtx(ctx context.Context, client *lidarr.Clien
 
 // validatedArtistPath returns the resolved item path only when it exists on
 // disk as a directory and falls under libraryPath. Returns empty string if
-// libraryPath is empty (degraded library), itemPath is empty, itemPath does
+// libraryPath is empty (pathless library), itemPath is empty, itemPath does
 // not exist, or itemPath escapes the library root. Resolves symlinks to
 // prevent escaping the library root via symlinked directories.
 func validatedArtistPath(itemPath, libraryPath string) string {

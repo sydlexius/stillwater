@@ -49,10 +49,10 @@ func (lib Library) FSWatchEnabled() bool { return lib.FSWatch&FSModeWatch != 0 }
 // FSPollEnabled reports whether polling is enabled.
 func (lib Library) FSPollEnabled() bool { return lib.FSWatch&FSModePoll != 0 }
 
-// IsDegraded reports whether the library has no filesystem path configured.
-// Degraded libraries support API-only operations; filesystem operations
-// (image save, NFO restore) are unavailable.
-func (lib Library) IsDegraded() bool {
+// IsPathless reports whether the library has no filesystem path configured.
+// Pathless libraries support API-only operations; filesystem operations
+// (image save, NFO write) are unavailable.
+func (lib Library) IsPathless() bool {
 	return lib.Path == ""
 }
 

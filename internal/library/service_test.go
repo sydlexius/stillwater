@@ -311,15 +311,15 @@ func TestCreate_Validation(t *testing.T) {
 	}
 }
 
-func TestIsDegraded(t *testing.T) {
+func TestIsPathless(t *testing.T) {
 	lib := Library{Name: "API Only", Path: "", Type: TypeRegular}
-	if !lib.IsDegraded() {
-		t.Error("expected IsDegraded() = true for empty path")
+	if !lib.IsPathless() {
+		t.Error("expected IsPathless() = true for empty path")
 	}
 
 	lib.Path = "/music/lib"
-	if lib.IsDegraded() {
-		t.Error("expected IsDegraded() = false for non-empty path")
+	if lib.IsPathless() {
+		t.Error("expected IsPathless() = false for non-empty path")
 	}
 }
 
@@ -356,7 +356,7 @@ func TestCreate_InvalidSource(t *testing.T) {
 	ctx := context.Background()
 
 	// Source validation occurs before path validation, so path value does
-	// not matter for this test. Use an empty path (degraded library).
+	// not matter for this test. Use an empty path (pathless library).
 	lib := &Library{Name: "Bad Source", Type: TypeRegular, Source: "spotify"}
 	err := svc.Create(ctx, lib)
 	if err == nil {
@@ -516,7 +516,7 @@ func TestCreate_PathValidation(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name: "empty path allowed (degraded)",
+			name: "empty path allowed (pathless)",
 			path: "",
 		},
 		{
@@ -575,7 +575,7 @@ func TestUpdate_PathValidation(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name: "empty path allowed (degraded)",
+			name: "empty path allowed (pathless)",
 			path: "",
 		},
 		{

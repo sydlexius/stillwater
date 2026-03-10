@@ -92,12 +92,12 @@ func (s *stubLibraryLister) List(_ context.Context) ([]library.Library, error) {
 	return s.libs, nil
 }
 
-func TestScan_DegradedLibrarySkipped(t *testing.T) {
+func TestScan_PathlessLibrarySkipped(t *testing.T) {
 	libDir := t.TempDir()
 	createArtistDir(t, libDir, "Visible Artist")
 	svc, artistSvc := setupScanner(t, libDir)
 
-	// Set up a library lister that returns one healthy library and one degraded (empty path).
+	// Set up a library lister that returns one healthy library and one pathless (empty path).
 	svc.SetLibraryLister(&stubLibraryLister{
 		libs: []library.Library{
 			{ID: "lib-1", Name: "Main", Path: libDir, Type: library.TypeRegular},
@@ -115,7 +115,7 @@ func TestScan_DegradedLibrarySkipped(t *testing.T) {
 		t.Errorf("status = %q, want completed", final.Status)
 	}
 	if final.NewArtists != 1 {
-		t.Errorf("NewArtists = %d, want 1 (degraded library should be skipped)", final.NewArtists)
+		t.Errorf("NewArtists = %d, want 1 (pathless library should be skipped)", final.NewArtists)
 	}
 
 	a, _ := artistSvc.GetByPath(ctx, filepath.Join(libDir, "Visible Artist"))

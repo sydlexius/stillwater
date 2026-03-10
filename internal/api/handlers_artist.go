@@ -152,7 +152,7 @@ func (r *Router) handleArtistsPage(w http.ResponseWriter, req *http.Request) {
 		sources := make(map[string]templates.LibrarySourceInfo)
 		connNames := map[string]string{} // cache connection ID -> name
 		for _, lib := range libs {
-			if lib.Source == "" || lib.Source == "manual" || !lib.IsDegraded() {
+			if lib.Source == "" || lib.Source == "manual" {
 				continue
 			}
 			info := templates.LibrarySourceInfo{Source: lib.Source}
@@ -218,12 +218,10 @@ func (r *Router) handleArtistDetailPage(w http.ResponseWriter, req *http.Request
 	fieldProviders := buildFieldProvidersMap(priorities)
 
 	var libraryName string
-	var isDegraded bool
 	var librarySource string
 	if r.libraryService != nil && a.LibraryID != "" {
 		if lib, err := r.libraryService.GetByID(req.Context(), a.LibraryID); err == nil {
 			libraryName = lib.Name
-			isDegraded = lib.IsDegraded()
 			librarySource = lib.Source
 		}
 	}
@@ -234,7 +232,6 @@ func (r *Router) handleArtistDetailPage(w http.ResponseWriter, req *http.Request
 		Aliases:        aliases,
 		FieldProviders: fieldProviders,
 		LibraryName:    libraryName,
-		IsDegraded:     isDegraded,
 		LibrarySource:  librarySource,
 	}
 	renderTempl(w, req, templates.ArtistDetailPage(r.assets(), data))

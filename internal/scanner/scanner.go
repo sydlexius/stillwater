@@ -176,7 +176,7 @@ func (s *Service) runScan(ctx context.Context, result *ScanResult) {
 		}
 		for _, lib := range libs {
 			if lib.Path == "" {
-				s.logger.Info("skipping degraded library (no path configured)", "library_id", lib.ID, "name", lib.Name)
+				s.logger.Info("skipping pathless library (no path configured)", "library_id", lib.ID, "name", lib.Name)
 				continue
 			}
 			targets = append(targets, scanTarget{path: lib.Path, libraryID: lib.ID})

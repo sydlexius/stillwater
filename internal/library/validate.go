@@ -8,7 +8,7 @@ import (
 )
 
 // ValidatePath sanitizes and validates a library filesystem path.
-// Empty paths are allowed (degraded/API-only libraries).
+// Empty paths are allowed (pathless/API-only libraries).
 // Non-empty paths must be absolute; the returned path is cleaned via
 // filepath.Clean. Call CheckPathExists on the result to verify the
 // target is an existing directory.
@@ -33,7 +33,7 @@ func ValidatePath(raw string) (string, error) {
 }
 
 // CheckPathExists verifies that path exists and is a directory.
-// Empty paths are rejected; callers that allow degraded (path-less)
+// Empty paths are rejected; callers that allow pathless
 // libraries must guard with "if path != """ before calling.
 func CheckPathExists(path string) error {
 	if path == "" {
