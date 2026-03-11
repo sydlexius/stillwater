@@ -59,32 +59,34 @@ func TestHandleUpdateRule_ValidModesAccepted(t *testing.T) {
 	ruleID := firstRuleID(t, r.ruleService)
 
 	for _, mode := range []string{"auto", "manual"} {
-		body := strings.NewReader(`{"automation_mode":"` + mode + `"}`)
-		req := httptest.NewRequest(http.MethodPut, "/api/v1/rules/"+ruleID, body)
-		req.Header.Set("Content-Type", "application/json")
-		req.SetPathValue("id", ruleID)
-		w := httptest.NewRecorder()
+		t.Run(mode, func(t *testing.T) {
+			body := strings.NewReader(`{"automation_mode":"` + mode + `"}`)
+			req := httptest.NewRequest(http.MethodPut, "/api/v1/rules/"+ruleID, body)
+			req.Header.Set("Content-Type", "application/json")
+			req.SetPathValue("id", ruleID)
+			w := httptest.NewRecorder()
 
-		r.handleUpdateRule(w, req)
+			r.handleUpdateRule(w, req)
 
-		if w.Code != http.StatusOK {
-			t.Errorf("mode=%q: status = %d, want %d; body: %s", mode, w.Code, http.StatusOK, w.Body.String())
-		}
+			if w.Code != http.StatusOK {
+				t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+			}
 
-		var resp rule.Rule
-		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
-			t.Errorf("mode=%q: decoding response: %v", mode, err)
-		}
-		if resp.AutomationMode != mode {
-			t.Errorf("mode=%q: response automation_mode = %q, want %q", mode, resp.AutomationMode, mode)
-		}
+			var resp rule.Rule
+			if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+				t.Fatalf("decoding response: %v", err)
+			}
+			if resp.AutomationMode != mode {
+				t.Errorf("response automation_mode = %q, want %q", resp.AutomationMode, mode)
+			}
 
-		persisted, err := r.ruleService.GetByID(context.Background(), ruleID)
-		if err != nil {
-			t.Fatalf("mode=%q: GetByID: %v", mode, err)
-		}
-		if persisted.AutomationMode != mode {
-			t.Errorf("mode=%q: persisted automation_mode = %q, want %q", mode, persisted.AutomationMode, mode)
-		}
+			persisted, err := r.ruleService.GetByID(context.Background(), ruleID)
+			if err != nil {
+				t.Fatalf("GetByID: %v", err)
+			}
+			if persisted.AutomationMode != mode {
+				t.Errorf("persisted automation_mode = %q, want %q", persisted.AutomationMode, mode)
+			}
+		})
 	}
 }
