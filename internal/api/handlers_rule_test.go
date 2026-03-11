@@ -26,6 +26,11 @@ func TestHandleUpdateRule_DisabledModeReturns400(t *testing.T) {
 
 	ruleID := firstRuleID(t, r.ruleService)
 
+	before, err := r.ruleService.GetByID(context.Background(), ruleID)
+	if err != nil {
+		t.Fatalf("GetByID before: %v", err)
+	}
+
 	body := strings.NewReader(`{"automation_mode":"disabled"}`)
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/rules/"+ruleID, body)
 	req.Header.Set("Content-Type", "application/json")
@@ -36,6 +41,17 @@ func TestHandleUpdateRule_DisabledModeReturns400(t *testing.T) {
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want %d; body: %s", w.Code, http.StatusBadRequest, w.Body.String())
+	}
+
+	after, err := r.ruleService.GetByID(context.Background(), ruleID)
+	if err != nil {
+		t.Fatalf("GetByID after: %v", err)
+	}
+	if after.AutomationMode != before.AutomationMode {
+		t.Errorf("automation_mode mutated: got %q, want %q", after.AutomationMode, before.AutomationMode)
+	}
+	if after.Enabled != before.Enabled {
+		t.Errorf("enabled mutated: got %v, want %v", after.Enabled, before.Enabled)
 	}
 }
 
@@ -63,6 +79,14 @@ func TestHandleUpdateRule_ValidModesAccepted(t *testing.T) {
 		}
 		if resp.AutomationMode != mode {
 			t.Errorf("mode=%q: response automation_mode = %q, want %q", mode, resp.AutomationMode, mode)
+		}
+
+		persisted, err := r.ruleService.GetByID(context.Background(), ruleID)
+		if err != nil {
+			t.Fatalf("mode=%q: GetByID: %v", mode, err)
+		}
+		if persisted.AutomationMode != mode {
+			t.Errorf("mode=%q: persisted automation_mode = %q, want %q", mode, persisted.AutomationMode, mode)
 		}
 	}
 }
