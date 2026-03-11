@@ -33,7 +33,7 @@ func (c *Client) PushMetadata(ctx context.Context, platformArtistID string, data
 	existing["Name"] = data.Name
 	existing["Overview"] = data.Biography
 	existing["ForcedSortName"] = data.SortName
-	existing["Genres"] = data.Genres
+	existing["Genres"] = append([]string{}, data.Genres...)
 
 	// Styles and Moods map to Tags (flat string array on Jellyfin).
 	tags := append([]string{}, data.Styles...)

@@ -477,12 +477,21 @@ func TestPushMetadata_ClearsFields(t *testing.T) {
 	if sortName, _ := got["ForcedSortName"].(string); sortName != "" {
 		t.Errorf("ForcedSortName = %q, want empty (field should be cleared)", sortName)
 	}
-	// Genres and Tags should be nil slices marshaled as JSON null, not the old values.
-	if genres, ok := got["Genres"].([]any); ok && len(genres) > 0 {
-		t.Errorf("Genres = %v, want empty/null (field should be cleared)", genres)
+	// Genres and Tags must be present as explicit clears (empty array), not omitted.
+	genres, ok := got["Genres"]
+	if !ok {
+		t.Fatal("Genres key missing from POST body")
 	}
-	if tags, ok := got["Tags"].([]any); ok && len(tags) > 0 {
-		t.Errorf("Tags = %v, want empty/null (field should be cleared)", tags)
+	if vals, ok := genres.([]any); ok && len(vals) > 0 {
+		t.Errorf("Genres = %v, want empty (field should be cleared)", genres)
+	}
+
+	tags, ok := got["Tags"]
+	if !ok {
+		t.Fatal("Tags key missing from POST body")
+	}
+	if vals, ok := tags.([]any); ok && len(vals) > 0 {
+		t.Errorf("Tags = %v, want empty (field should be cleared)", tags)
 	}
 }
 
