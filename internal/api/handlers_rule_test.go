@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -47,11 +48,8 @@ func TestHandleUpdateRule_DisabledModeReturns400(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetByID after: %v", err)
 	}
-	if after.AutomationMode != before.AutomationMode {
-		t.Errorf("automation_mode mutated: got %q, want %q", after.AutomationMode, before.AutomationMode)
-	}
-	if after.Enabled != before.Enabled {
-		t.Errorf("enabled mutated: got %v, want %v", after.Enabled, before.Enabled)
+	if !reflect.DeepEqual(before, after) {
+		t.Errorf("rule was mutated on rejected request:\nbefore: %+v\nafter:  %+v", before, after)
 	}
 }
 
