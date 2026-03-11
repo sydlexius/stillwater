@@ -55,31 +55,39 @@ func (c *Client) PushMetadata(ctx context.Context, platformArtistID string, data
 	// Normalize dates to yyyy-MM-dd so Jellyfin does not silently discard.
 	// Only set when normalization succeeds; an empty result would overwrite a
 	// valid existing date with "" since the map-based merge has no omitempty.
-	if raw := data.Born; raw != "" {
-		normalized := connection.NormalizeDateForPlatform(raw)
-		c.logDateNormalization("premiere_date", raw, normalized, platformArtistID)
+	// The default branch clears the date when all source fields are empty,
+	// ensuring that date clears in Stillwater propagate to Jellyfin.
+	switch {
+	case data.Born != "":
+		normalized := connection.NormalizeDateForPlatform(data.Born)
+		c.logDateNormalization("premiere_date", data.Born, normalized, platformArtistID)
 		if normalized != "" {
 			existing["PremiereDate"] = normalized
 		}
-	} else if raw := data.Formed; raw != "" {
-		normalized := connection.NormalizeDateForPlatform(raw)
-		c.logDateNormalization("premiere_date", raw, normalized, platformArtistID)
+	case data.Formed != "":
+		normalized := connection.NormalizeDateForPlatform(data.Formed)
+		c.logDateNormalization("premiere_date", data.Formed, normalized, platformArtistID)
 		if normalized != "" {
 			existing["PremiereDate"] = normalized
 		}
+	default:
+		existing["PremiereDate"] = ""
 	}
-	if raw := data.Died; raw != "" {
-		normalized := connection.NormalizeDateForPlatform(raw)
-		c.logDateNormalization("end_date", raw, normalized, platformArtistID)
+	switch {
+	case data.Died != "":
+		normalized := connection.NormalizeDateForPlatform(data.Died)
+		c.logDateNormalization("end_date", data.Died, normalized, platformArtistID)
 		if normalized != "" {
 			existing["EndDate"] = normalized
 		}
-	} else if raw := data.Disbanded; raw != "" {
-		normalized := connection.NormalizeDateForPlatform(raw)
-		c.logDateNormalization("end_date", raw, normalized, platformArtistID)
+	case data.Disbanded != "":
+		normalized := connection.NormalizeDateForPlatform(data.Disbanded)
+		c.logDateNormalization("end_date", data.Disbanded, normalized, platformArtistID)
 		if normalized != "" {
 			existing["EndDate"] = normalized
 		}
+	default:
+		existing["EndDate"] = ""
 	}
 
 	// Strip read-only fields that Jellyfin rejects in a POST.

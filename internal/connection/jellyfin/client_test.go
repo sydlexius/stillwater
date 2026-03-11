@@ -449,7 +449,8 @@ func TestPushMetadata_ClearsFields(t *testing.T) {
 			_, _ = w.Write([]byte(`{"Items":[{
 				"Name":"Old Name","Id":"jf-clear-1",
 				"Overview":"Old bio","ForcedSortName":"Old Sort",
-				"Genres":["Rock"],"Tags":["Grunge"]
+				"Genres":["Rock"],"Tags":["Grunge"],
+				"PremiereDate":"1985-01-01","EndDate":"2003-01-01"
 			}]}`))
 			return
 		}
@@ -482,16 +483,32 @@ func TestPushMetadata_ClearsFields(t *testing.T) {
 	if !ok {
 		t.Fatal("Genres key missing from POST body")
 	}
-	if vals, ok := genres.([]any); ok && len(vals) > 0 {
-		t.Errorf("Genres = %v, want empty (field should be cleared)", genres)
+	genreVals, ok := genres.([]any)
+	if !ok {
+		t.Fatalf("Genres = %T, want []any", genres)
+	}
+	if len(genreVals) != 0 {
+		t.Errorf("Genres = %v, want empty array", genres)
 	}
 
 	tags, ok := got["Tags"]
 	if !ok {
 		t.Fatal("Tags key missing from POST body")
 	}
-	if vals, ok := tags.([]any); ok && len(vals) > 0 {
-		t.Errorf("Tags = %v, want empty (field should be cleared)", tags)
+	tagVals, ok := tags.([]any)
+	if !ok {
+		t.Fatalf("Tags = %T, want []any", tags)
+	}
+	if len(tagVals) != 0 {
+		t.Errorf("Tags = %v, want empty array", tags)
+	}
+
+	// PremiereDate and EndDate must be cleared when all date sources are empty.
+	if premiere, _ := got["PremiereDate"].(string); premiere != "" {
+		t.Errorf("PremiereDate = %q, want empty (date should be cleared)", premiere)
+	}
+	if endDate, _ := got["EndDate"].(string); endDate != "" {
+		t.Errorf("EndDate = %q, want empty (date should be cleared)", endDate)
 	}
 }
 
