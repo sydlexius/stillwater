@@ -220,6 +220,63 @@ func TestHandleRunArtistRules_HTMX_ViolationsFound(t *testing.T) {
 	}
 }
 
+func TestHandleRunArtistRules_BasePath(t *testing.T) {
+	r, artistSvc, _ := testRouterWithPipelineFull(t)
+	r.basePath = "/app"
+
+	a := addTestArtist(t, artistSvc, "BasePath Artist")
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/run-rules", nil)
+	req.SetPathValue("id", a.ID)
+	w := httptest.NewRecorder()
+
+	r.handleRunArtistRules(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	got, ok := resp["notifications_url"]
+	if !ok {
+		t.Error("response missing notifications_url field")
+	} else if got != "/app/notifications" {
+		t.Errorf("notifications_url = %q, want %q", got, "/app/notifications")
+	}
+}
+
+func TestHandleRunArtistRules_HTMX_DBError(t *testing.T) {
+	r, artistSvc := testRouterWithPipeline(t)
+
+	a := addTestArtist(t, artistSvc, "DB Error Artist")
+
+	// Close the DB to force a database error on the lookup.
+	if err := r.db.Close(); err != nil {
+		t.Fatalf("closing db: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/run-rules", nil)
+	req.Header.Set("HX-Request", "true")
+	req.SetPathValue("id", a.ID)
+	w := httptest.NewRecorder()
+
+	r.handleRunArtistRules(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	body := w.Body.String()
+	if strings.Contains(body, "Artist not found") {
+		t.Errorf("HTMX body = %q, DB error must not be reported as 'Artist not found'", body)
+	}
+	if !strings.Contains(body, "Failed") {
+		t.Errorf("HTMX body = %q, expected a failure message", body)
+	}
+}
+
 // TestHandleRunArtistRules_ReturnsHTMLForHTMX verifies content-type switching.
 // Branch-level body assertions are covered by TestHandleRunArtistRules_HTMX_NoViolations
 // and TestHandleRunArtistRules_HTMX_ViolationsFound.

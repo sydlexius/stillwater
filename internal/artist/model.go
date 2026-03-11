@@ -2,8 +2,12 @@ package artist
 
 import (
 	"encoding/json"
+	"errors"
 	"time"
 )
+
+// ErrNotFound is returned by repository methods when an artist record does not exist.
+var ErrNotFound = errors.New("artist not found")
 
 // Artist represents a music artist or group with full metadata.
 type Artist struct {

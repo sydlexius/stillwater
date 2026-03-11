@@ -2,11 +2,13 @@ package api
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"strconv"
 	"time"
 
+	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/rule"
 )
 
@@ -147,15 +149,26 @@ func (r *Router) handleRunArtistRules(w http.ResponseWriter, req *http.Request) 
 
 	a, err := r.artistService.GetByID(req.Context(), artistID)
 	if err != nil {
-		r.logger.Warn("looking up artist for run-rules", "artist_id", artistID, "error", err)
+		if errors.Is(err, artist.ErrNotFound) {
+			if req.Header.Get("HX-Request") == "true" {
+				w.Header().Set("Content-Type", "text/html; charset=utf-8")
+				if _, werr := io.WriteString(w, `<div class="text-sm text-red-600 dark:text-red-400">Artist not found.</div>`); werr != nil {
+					r.logger.Warn("writing HTMX artist-not-found fragment", "artist_id", artistID, "error", werr)
+				}
+				return
+			}
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "artist not found"})
+			return
+		}
+		r.logger.Error("looking up artist for run-rules", "artist_id", artistID, "error", err)
 		if req.Header.Get("HX-Request") == "true" {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			if _, werr := io.WriteString(w, `<div class="text-sm text-red-600 dark:text-red-400">Artist not found.</div>`); werr != nil {
-				r.logger.Warn("writing HTMX artist-not-found fragment", "artist_id", artistID, "error", werr)
+			if _, werr := io.WriteString(w, `<div class="text-sm text-red-600 dark:text-red-400">Failed to look up artist. Please try again.</div>`); werr != nil {
+				r.logger.Warn("writing HTMX artist-lookup-error fragment", "artist_id", artistID, "error", werr)
 			}
 			return
 		}
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "artist not found"})
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to look up artist"})
 		return
 	}
 
@@ -164,7 +177,7 @@ func (r *Router) handleRunArtistRules(w http.ResponseWriter, req *http.Request) 
 		r.logger.Error("running rules for artist", "artist_id", artistID, "error", err)
 		if req.Header.Get("HX-Request") == "true" {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			if _, werr := io.WriteString(w, `<div class="text-sm text-red-600 dark:text-red-400">Failed to run rules. Check server logs.</div>`); werr != nil {
+			if _, werr := io.WriteString(w, `<div class="text-sm text-red-600 dark:text-red-400">Failed to run rules. Please try again.</div>`); werr != nil {
 				r.logger.Warn("writing HTMX error fragment", "artist_id", artistID, "error", werr)
 			}
 			return
@@ -185,7 +198,7 @@ func (r *Router) handleRunArtistRules(w http.ResponseWriter, req *http.Request) 
 				strconv.Itoa(result.ViolationsFound) +
 				` violation(s). <a href="` + notificationsURL + `" class="text-blue-600 dark:text-blue-400 underline hover:text-blue-800">View in Notifications</a></div>`
 		}
-		if _, werr := io.WriteString(w, fragment); werr != nil { //nolint:gosec // G705: fragment contains only static strings and strconv.Itoa output; no user input
+		if _, werr := io.WriteString(w, fragment); werr != nil { //nolint:gosec // G203: fragment contains only static strings and strconv.Itoa output; no user input
 			r.logger.Warn("writing HTMX run-rules fragment", "artist_id", artistID, "error", werr)
 		}
 		return
