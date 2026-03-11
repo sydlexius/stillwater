@@ -534,3 +534,80 @@ func TestHandlePushImages_UploadFailureProducesSanitizedError(t *testing.T) {
 		t.Errorf("error leaks HTTP status code: %q", resp.Errors[0])
 	}
 }
+
+func TestBuildArtistPushData_TypeAwareDates(t *testing.T) {
+	tests := []struct {
+		name          string
+		artistType    string
+		wantBorn      string
+		wantFormed    string
+		wantDied      string
+		wantDisbanded string
+	}{
+		{
+			name:          "group excludes born and died",
+			artistType:    "group",
+			wantBorn:      "",
+			wantFormed:    "1985",
+			wantDied:      "",
+			wantDisbanded: "2010",
+		},
+		{
+			name:          "orchestra excludes born and died",
+			artistType:    "orchestra",
+			wantBorn:      "",
+			wantFormed:    "1985",
+			wantDied:      "",
+			wantDisbanded: "2010",
+		},
+		{
+			name:          "solo excludes formed and disbanded",
+			artistType:    "solo",
+			wantBorn:      "1982",
+			wantFormed:    "",
+			wantDied:      "2016",
+			wantDisbanded: "",
+		},
+		{
+			name:          "choir excludes born and died",
+			artistType:    "choir",
+			wantBorn:      "",
+			wantFormed:    "1985",
+			wantDied:      "",
+			wantDisbanded: "2010",
+		},
+		{
+			name:          "unknown type includes all fields",
+			artistType:    "",
+			wantBorn:      "1982",
+			wantFormed:    "1985",
+			wantDied:      "2016",
+			wantDisbanded: "2010",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			a := &artist.Artist{
+				Name:      "Test",
+				Type:      tt.artistType,
+				Born:      "1982",
+				Formed:    "1985",
+				Died:      "2016",
+				Disbanded: "2010",
+			}
+			data := buildArtistPushData(a)
+			if data.Born != tt.wantBorn {
+				t.Errorf("Born = %q, want %q", data.Born, tt.wantBorn)
+			}
+			if data.Formed != tt.wantFormed {
+				t.Errorf("Formed = %q, want %q", data.Formed, tt.wantFormed)
+			}
+			if data.Died != tt.wantDied {
+				t.Errorf("Died = %q, want %q", data.Died, tt.wantDied)
+			}
+			if data.Disbanded != tt.wantDisbanded {
+				t.Errorf("Disbanded = %q, want %q", data.Disbanded, tt.wantDisbanded)
+			}
+		})
+	}
+}

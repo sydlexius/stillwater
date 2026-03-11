@@ -320,8 +320,13 @@ func (r *Router) handleDeletePushImage(w http.ResponseWriter, req *http.Request)
 // buildArtistPushData constructs an ArtistPushData from an artist record.
 // Shared by handlePushMetadata (synchronous) and asyncPushMetadataToConnections
 // (fire-and-forget). Update this function when adding new push fields.
+//
+// Date fields are filtered by artist type to prevent cross-contamination from
+// providers that do not distinguish persons from groups. Groups get Formed and
+// Disbanded; persons get Born and Died. Unknown types get all four fields so the
+// push code's Born > Formed fallback chain still works.
 func buildArtistPushData(a *artist.Artist) connection.ArtistPushData {
-	return connection.ArtistPushData{
+	data := connection.ArtistPushData{
 		Name:           a.Name,
 		SortName:       a.SortName,
 		Biography:      a.Biography,
@@ -329,13 +334,23 @@ func buildArtistPushData(a *artist.Artist) connection.ArtistPushData {
 		Styles:         a.Styles,
 		Moods:          a.Moods,
 		Disambiguation: a.Disambiguation,
-		Born:           a.Born,
-		Formed:         a.Formed,
-		Died:           a.Died,
-		Disbanded:      a.Disbanded,
 		YearsActive:    a.YearsActive,
 		MusicBrainzID:  a.MusicBrainzID,
 	}
+	switch a.Type {
+	case "group", "orchestra", "choir":
+		data.Formed = a.Formed
+		data.Disbanded = a.Disbanded
+	case "solo":
+		data.Born = a.Born
+		data.Died = a.Died
+	default:
+		data.Born = a.Born
+		data.Formed = a.Formed
+		data.Died = a.Died
+		data.Disbanded = a.Disbanded
+	}
+	return data
 }
 
 // newMetadataPusher constructs a MetadataPusher for the given connection type.

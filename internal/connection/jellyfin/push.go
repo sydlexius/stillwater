@@ -8,66 +8,99 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/sydlexius/stillwater/internal/connection"
 )
 
-// itemUpdateBody is the payload for POST /Items/{id}.
-type itemUpdateBody struct {
-	Name           string            `json:"Name"`
-	ForcedSortName string            `json:"ForcedSortName,omitempty"`
-	Overview       string            `json:"Overview,omitempty"`
-	Genres         []string          `json:"Genres,omitempty"`
-	Tags           []string          `json:"Tags,omitempty"`
-	ProviderIds    map[string]string `json:"ProviderIds,omitempty"`
-	PremiereDate   string            `json:"PremiereDate,omitempty"`
-	EndDate        string            `json:"EndDate,omitempty"`
-}
-
 // PushMetadata updates metadata for an artist item on the Jellyfin server.
+//
+// Jellyfin's POST /Items/{id} requires the full item body; partial updates
+// with only the changed fields return 400. This method fetches the current
+// item, merges Stillwater's fields into it, strips read-only fields that
+// Jellyfin rejects, and POSTs the complete body back.
 func (c *Client) PushMetadata(ctx context.Context, platformArtistID string, data connection.ArtistPushData) error {
-	// Styles map to Tags; Moods are appended as additional tags since
-	// Jellyfin has no dedicated moods field. Disambiguation and YearsActive
-	// have no corresponding Jellyfin fields and are omitted.
+	// Fetch the current item from Jellyfin to get the full body.
+	existing, err := c.fetchItem(ctx, platformArtistID)
+	if err != nil {
+		return fmt.Errorf("fetching current item for merge: %w", err)
+	}
+
+	// Merge Stillwater's fields into the existing item. Empty values are
+	// written unconditionally so that field clears in Stillwater propagate
+	// to Jellyfin (the fetch-merge pattern preserves all other fields).
+	existing["Name"] = data.Name
+	existing["Overview"] = data.Biography
+	existing["ForcedSortName"] = data.SortName
+	existing["Genres"] = append([]string{}, data.Genres...)
+
+	// Styles and Moods map to Tags (flat string array on Jellyfin).
 	tags := append([]string{}, data.Styles...)
 	tags = append(tags, data.Moods...)
-	body := itemUpdateBody{
-		Name:     data.Name,
-		Overview: data.Biography,
-		Genres:   data.Genres,
-		Tags:     tags,
-	}
-	if data.SortName != "" {
-		body.ForcedSortName = data.SortName
-	}
+	existing["Tags"] = tags
+
 	if data.MusicBrainzID != "" {
-		body.ProviderIds = map[string]string{
-			"MusicBrainzArtist": data.MusicBrainzID,
+		// Merge into existing ProviderIds to preserve IDs managed by Jellyfin
+		// (e.g. TheAudioDb, Discogs). The fetched JSON deserializes inner maps
+		// as map[string]any, not map[string]string.
+		providerIds, _ := existing["ProviderIds"].(map[string]any)
+		if providerIds == nil {
+			providerIds = make(map[string]any)
 		}
-	}
-	// Normalize to yyyy-MM-dd so Jellyfin does not silently discard partial dates.
-	if raw := data.Born; raw != "" {
-		body.PremiereDate = connection.NormalizeDateForPlatform(raw)
-		c.logDateNormalization("premiere_date", raw, body.PremiereDate, platformArtistID)
-	} else if raw := data.Formed; raw != "" {
-		body.PremiereDate = connection.NormalizeDateForPlatform(raw)
-		c.logDateNormalization("premiere_date", raw, body.PremiereDate, platformArtistID)
-	}
-	if raw := data.Died; raw != "" {
-		body.EndDate = connection.NormalizeDateForPlatform(raw)
-		c.logDateNormalization("end_date", raw, body.EndDate, platformArtistID)
-	} else if raw := data.Disbanded; raw != "" {
-		body.EndDate = connection.NormalizeDateForPlatform(raw)
-		c.logDateNormalization("end_date", raw, body.EndDate, platformArtistID)
+		providerIds["MusicBrainzArtist"] = data.MusicBrainzID
+		existing["ProviderIds"] = providerIds
 	}
 
-	payload, err := json.Marshal(body)
+	// Normalize dates to yyyy-MM-dd so Jellyfin does not silently discard.
+	// Only set when normalization succeeds; an empty result would overwrite a
+	// valid existing date with "" since the map-based merge has no omitempty.
+	// The default branch clears the date when all source fields are empty,
+	// ensuring that date clears in Stillwater propagate to Jellyfin.
+	switch {
+	case data.Born != "":
+		normalized := connection.NormalizeDateForPlatform(data.Born)
+		c.logDateNormalization("premiere_date", data.Born, normalized, platformArtistID)
+		if normalized != "" {
+			existing["PremiereDate"] = normalized
+		}
+	case data.Formed != "":
+		normalized := connection.NormalizeDateForPlatform(data.Formed)
+		c.logDateNormalization("premiere_date", data.Formed, normalized, platformArtistID)
+		if normalized != "" {
+			existing["PremiereDate"] = normalized
+		}
+	default:
+		existing["PremiereDate"] = ""
+	}
+	switch {
+	case data.Died != "":
+		normalized := connection.NormalizeDateForPlatform(data.Died)
+		c.logDateNormalization("end_date", data.Died, normalized, platformArtistID)
+		if normalized != "" {
+			existing["EndDate"] = normalized
+		}
+	case data.Disbanded != "":
+		normalized := connection.NormalizeDateForPlatform(data.Disbanded)
+		c.logDateNormalization("end_date", data.Disbanded, normalized, platformArtistID)
+		if normalized != "" {
+			existing["EndDate"] = normalized
+		}
+	default:
+		existing["EndDate"] = ""
+	}
+
+	// Strip read-only fields that Jellyfin rejects in a POST.
+	for _, key := range jellyfinReadOnlyFields {
+		delete(existing, key)
+	}
+
+	payload, err := json.Marshal(existing)
 	if err != nil {
 		return fmt.Errorf("marshaling push body: %w", err)
 	}
 
-	path := fmt.Sprintf("/Items/%s", platformArtistID)
+	path := fmt.Sprintf("/Items/%s", url.PathEscape(platformArtistID))
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, connection.BuildRequestURL(c.BaseURL, path), bytes.NewReader(payload))
 	if err != nil {
 		return fmt.Errorf("creating push request: %w", err)
@@ -93,6 +126,50 @@ func (c *Client) PushMetadata(ctx context.Context, platformArtistID string, data
 	return nil
 }
 
+// jellyfinReadOnlyFields are item fields that Jellyfin rejects in POST
+// /Items/{id}. These must be stripped from the GET response before POSTing.
+var jellyfinReadOnlyFields = []string{
+	"ServerId", "ImageBlurHashes", "ImageTags", "BackdropImageTags",
+	"LocationType", "MediaType", "ChannelId",
+}
+
+// fetchItem retrieves a single item from Jellyfin by ID, returning the
+// full item body as a generic map. Uses /Items?Ids={id}&Fields=... to
+// ensure metadata fields are populated.
+func (c *Client) fetchItem(ctx context.Context, itemID string) (map[string]any, error) {
+	path := fmt.Sprintf("/Items?Ids=%s&Fields=Overview,ProviderIds,PremiereDate,EndDate,Genres,Tags", url.QueryEscape(itemID))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, connection.BuildRequestURL(c.BaseURL, path), nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating fetch request: %w", err)
+	}
+	c.AuthFunc(req)
+
+	resp, err := c.HTTPClient.Do(req) //nolint:gosec // URL constructed from trusted base + item ID
+	if err != nil {
+		return nil, fmt.Errorf("executing fetch request: %w", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+
+	if resp.StatusCode >= 300 {
+		const maxErrBody = 1 << 20
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrBody))
+		_, _ = io.Copy(io.Discard, resp.Body)
+		return nil, fmt.Errorf("fetch failed with status %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var result struct {
+		Items []map[string]any `json:"Items"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decoding fetch response: %w", err)
+	}
+	_, _ = io.Copy(io.Discard, resp.Body)
+	if len(result.Items) == 0 {
+		return nil, fmt.Errorf("item %s not found", itemID)
+	}
+	return result.Items[0], nil
+}
+
 // UploadImage uploads an image to the Jellyfin server for the given artist.
 // POST /Items/{id}/Images/{type}
 func (c *Client) UploadImage(ctx context.Context, platformArtistID string, imageType string, data []byte, contentType string) error {
@@ -106,7 +183,7 @@ func (c *Client) UploadImage(ctx context.Context, platformArtistID string, image
 	// image/png); Jellyfin uses it to determine the save format after decoding.
 	encoded := base64.StdEncoding.EncodeToString(data)
 
-	path := fmt.Sprintf("/Items/%s/Images/%s", platformArtistID, jfType)
+	path := fmt.Sprintf("/Items/%s/Images/%s", url.PathEscape(platformArtistID), jfType)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, connection.BuildRequestURL(c.BaseURL, path), strings.NewReader(encoded))
 	if err != nil {
 		return fmt.Errorf("creating image upload request: %w", err)
@@ -146,7 +223,7 @@ func (c *Client) UploadImageAtIndex(ctx context.Context, platformArtistID string
 
 	encoded := base64.StdEncoding.EncodeToString(data)
 
-	path := fmt.Sprintf("/Items/%s/Images/%s/%d", platformArtistID, jfType, index)
+	path := fmt.Sprintf("/Items/%s/Images/%s/%d", url.PathEscape(platformArtistID), jfType, index)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, connection.BuildRequestURL(c.BaseURL, path), strings.NewReader(encoded))
 	if err != nil {
 		return fmt.Errorf("creating indexed image upload request: %w", err)
@@ -180,7 +257,7 @@ func (c *Client) DeleteImage(ctx context.Context, platformArtistID string, image
 		return fmt.Errorf("unsupported image type: %s", imageType)
 	}
 
-	path := fmt.Sprintf("/Items/%s/Images/%s", platformArtistID, jfType)
+	path := fmt.Sprintf("/Items/%s/Images/%s", url.PathEscape(platformArtistID), jfType)
 	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, connection.BuildRequestURL(c.BaseURL, path), nil)
 	if err != nil {
 		return fmt.Errorf("creating image delete request: %w", err)

@@ -14,6 +14,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/connection"
@@ -249,8 +250,13 @@ func TestCheckNFOWriterEnabled_ServerError(t *testing.T) {
 }
 
 func TestPushMetadata(t *testing.T) {
-	var gotBody itemUpdateBody
+	bodyCh := make(chan itemUpdateBody, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// PushMetadata now also calls refreshItem (POST /Items/{id}/Refresh).
+		if strings.HasSuffix(r.URL.Path, "/Refresh") {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 		if r.URL.Path != "/Items/emby-artist-1" {
 			t.Errorf("unexpected path: %s", r.URL.Path)
 		}
@@ -260,9 +266,13 @@ func TestPushMetadata(t *testing.T) {
 		if r.Header.Get("Content-Type") != "application/json" {
 			t.Errorf("content-type = %s, want application/json", r.Header.Get("Content-Type"))
 		}
-		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
-			t.Fatalf("decoding body: %v", err)
+		var b itemUpdateBody
+		if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
+			t.Errorf("decoding body: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
 		}
+		bodyCh <- b
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer srv.Close()
@@ -277,6 +287,7 @@ func TestPushMetadata(t *testing.T) {
 	if err := c.PushMetadata(context.Background(), "emby-artist-1", data); err != nil {
 		t.Fatalf("PushMetadata failed: %v", err)
 	}
+	gotBody := <-bodyCh
 	if gotBody.Name != "Radiohead" {
 		t.Errorf("Name = %q, want Radiohead", gotBody.Name)
 	}
@@ -288,6 +299,100 @@ func TestPushMetadata(t *testing.T) {
 	}
 	if len(gotBody.Genres) != 2 {
 		t.Errorf("got %d genres, want 2", len(gotBody.Genres))
+	}
+}
+
+// TestPushMetadata_TagItems verifies that styles and moods are sent as TagItems
+// (Emby's {Name} object format) rather than flat Tags strings.
+func TestPushMetadata_TagItems(t *testing.T) {
+	bodyCh := make(chan itemUpdateBody, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/Refresh") {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		var b itemUpdateBody
+		if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
+			t.Errorf("decoding body: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		bodyCh <- b
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "key", "", srv.Client(), testLogger())
+	data := connection.ArtistPushData{
+		Name:   "Test",
+		Styles: []string{"Shoegaze", "Dream Pop"},
+		Moods:  []string{"Melancholy"},
+	}
+	if err := c.PushMetadata(context.Background(), "emby-001", data); err != nil {
+		t.Fatalf("PushMetadata failed: %v", err)
+	}
+	gotBody := <-bodyCh
+	if len(gotBody.TagItems) != 3 {
+		t.Fatalf("got %d TagItems, want 3", len(gotBody.TagItems))
+	}
+	if gotBody.TagItems[0].Name != "Shoegaze" {
+		t.Errorf("TagItems[0].Name = %q, want Shoegaze", gotBody.TagItems[0].Name)
+	}
+	if gotBody.TagItems[2].Name != "Melancholy" {
+		t.Errorf("TagItems[2].Name = %q, want Melancholy", gotBody.TagItems[2].Name)
+	}
+}
+
+// TestPushMetadata_RefreshCalled verifies that PushMetadata triggers a metadata
+// refresh call after a successful push.
+func TestPushMetadata_RefreshCalled(t *testing.T) {
+	var refreshCalled atomic.Bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/Refresh") {
+			refreshCalled.Store(true)
+			if r.Method != http.MethodPost {
+				t.Errorf("refresh method = %s, want POST", r.Method)
+			}
+			if !strings.Contains(r.URL.RawQuery, "ReplaceAllMetadata=false") {
+				t.Errorf("refresh query missing ReplaceAllMetadata=false: %s", r.URL.RawQuery)
+			}
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "key", "", srv.Client(), testLogger())
+	if err := c.PushMetadata(context.Background(), "emby-001", connection.ArtistPushData{Name: "Test"}); err != nil {
+		t.Fatalf("PushMetadata failed: %v", err)
+	}
+	if !refreshCalled.Load() {
+		t.Error("refreshItem was not called after successful push")
+	}
+}
+
+// TestPushMetadata_SpecialCharacterID verifies that platformArtistID values
+// containing path-breaking characters are correctly escaped in the URL.
+func TestPushMetadata_SpecialCharacterID(t *testing.T) {
+	pathCh := make(chan string, 2)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case pathCh <- r.URL.EscapedPath():
+		default:
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "key", "", srv.Client(), testLogger())
+	err := c.PushMetadata(context.Background(), "id/with spaces", connection.ArtistPushData{Name: "Test"})
+	if err != nil {
+		t.Fatalf("PushMetadata failed: %v", err)
+	}
+	got := <-pathCh
+	if !strings.Contains(got, "id%2Fwith%20spaces") {
+		t.Errorf("path = %q, want escaped id containing 'id%%2Fwith%%20spaces'", got)
 	}
 }
 
@@ -670,11 +775,19 @@ func TestPushMetadata_DateNormalization(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var gotBody itemUpdateBody
+			bodyCh := make(chan itemUpdateBody, 1)
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
-					t.Fatalf("decoding body: %v", err)
+				if strings.HasSuffix(r.URL.Path, "/Refresh") {
+					w.WriteHeader(http.StatusNoContent)
+					return
 				}
+				var b itemUpdateBody
+				if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
+					t.Errorf("decoding body: %v", err)
+					w.WriteHeader(http.StatusBadRequest)
+					return
+				}
+				bodyCh <- b
 				w.WriteHeader(http.StatusNoContent)
 			}))
 			defer srv.Close()
@@ -683,6 +796,7 @@ func TestPushMetadata_DateNormalization(t *testing.T) {
 			if err := c.PushMetadata(context.Background(), "emby-001", tt.data); err != nil {
 				t.Fatalf("PushMetadata failed: %v", err)
 			}
+			gotBody := <-bodyCh
 			if gotBody.PremiereDate != tt.wantPremiere {
 				t.Errorf("PremiereDate = %q, want %q", gotBody.PremiereDate, tt.wantPremiere)
 			}

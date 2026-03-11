@@ -8,10 +8,18 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/sydlexius/stillwater/internal/connection"
 )
+
+// tagItem is a named tag for Emby's TagItems field.
+// Emby uses {Name, Id} objects instead of flat strings; only Name is required
+// when writing.
+type tagItem struct {
+	Name string `json:"Name"`
+}
 
 // itemUpdateBody is the payload for POST /Items/{id}.
 type itemUpdateBody struct {
@@ -19,7 +27,7 @@ type itemUpdateBody struct {
 	ForcedSortName string            `json:"ForcedSortName,omitempty"`
 	Overview       string            `json:"Overview,omitempty"`
 	Genres         []string          `json:"Genres,omitempty"`
-	Tags           []string          `json:"Tags,omitempty"`
+	TagItems       []tagItem         `json:"TagItems,omitempty"`
 	ProviderIds    map[string]string `json:"ProviderIds,omitempty"`
 	PremiereDate   string            `json:"PremiereDate,omitempty"`
 	EndDate        string            `json:"EndDate,omitempty"`
@@ -27,16 +35,21 @@ type itemUpdateBody struct {
 
 // PushMetadata updates metadata for an artist item on the Emby server.
 func (c *Client) PushMetadata(ctx context.Context, platformArtistID string, data connection.ArtistPushData) error {
-	// Styles map to Tags; Moods are appended as additional tags since
-	// Emby has no dedicated moods field. Disambiguation and YearsActive
-	// have no corresponding Emby fields and are omitted.
-	tags := append([]string{}, data.Styles...)
-	tags = append(tags, data.Moods...)
+	// Styles and Moods map to TagItems (Emby uses {Name} objects, not flat
+	// strings). Disambiguation and YearsActive have no corresponding Emby
+	// fields and are omitted.
+	var items []tagItem
+	for _, s := range data.Styles {
+		items = append(items, tagItem{Name: s})
+	}
+	for _, m := range data.Moods {
+		items = append(items, tagItem{Name: m})
+	}
 	body := itemUpdateBody{
 		Name:     data.Name,
 		Overview: data.Biography,
 		Genres:   data.Genres,
-		Tags:     tags,
+		TagItems: items,
 	}
 	if data.SortName != "" {
 		body.ForcedSortName = data.SortName
@@ -48,20 +61,33 @@ func (c *Client) PushMetadata(ctx context.Context, platformArtistID string, data
 	}
 	// Use Born for persons, Formed for groups as premiere date.
 	// Normalize to yyyy-MM-dd so Emby does not silently discard partial dates.
+	// Only set when normalization succeeds to avoid sending empty strings.
 	if raw := data.Born; raw != "" {
-		body.PremiereDate = connection.NormalizeDateForPlatform(raw)
-		c.logDateNormalization("premiere_date", raw, body.PremiereDate, platformArtistID)
+		normalized := connection.NormalizeDateForPlatform(raw)
+		c.logDateNormalization("premiere_date", raw, normalized, platformArtistID)
+		if normalized != "" {
+			body.PremiereDate = normalized
+		}
 	} else if raw := data.Formed; raw != "" {
-		body.PremiereDate = connection.NormalizeDateForPlatform(raw)
-		c.logDateNormalization("premiere_date", raw, body.PremiereDate, platformArtistID)
+		normalized := connection.NormalizeDateForPlatform(raw)
+		c.logDateNormalization("premiere_date", raw, normalized, platformArtistID)
+		if normalized != "" {
+			body.PremiereDate = normalized
+		}
 	}
 	// Use Died for persons, Disbanded for groups as end date.
 	if raw := data.Died; raw != "" {
-		body.EndDate = connection.NormalizeDateForPlatform(raw)
-		c.logDateNormalization("end_date", raw, body.EndDate, platformArtistID)
+		normalized := connection.NormalizeDateForPlatform(raw)
+		c.logDateNormalization("end_date", raw, normalized, platformArtistID)
+		if normalized != "" {
+			body.EndDate = normalized
+		}
 	} else if raw := data.Disbanded; raw != "" {
-		body.EndDate = connection.NormalizeDateForPlatform(raw)
-		c.logDateNormalization("end_date", raw, body.EndDate, platformArtistID)
+		normalized := connection.NormalizeDateForPlatform(raw)
+		c.logDateNormalization("end_date", raw, normalized, platformArtistID)
+		if normalized != "" {
+			body.EndDate = normalized
+		}
 	}
 
 	payload, err := json.Marshal(body)
@@ -69,7 +95,7 @@ func (c *Client) PushMetadata(ctx context.Context, platformArtistID string, data
 		return fmt.Errorf("marshaling push body: %w", err)
 	}
 
-	path := fmt.Sprintf("/Items/%s", platformArtistID)
+	path := fmt.Sprintf("/Items/%s", url.PathEscape(platformArtistID))
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, connection.BuildRequestURL(c.BaseURL, path), bytes.NewReader(payload))
 	if err != nil {
 		return fmt.Errorf("creating push request: %w", err)
@@ -92,7 +118,39 @@ func (c *Client) PushMetadata(ctx context.Context, platformArtistID string, data
 
 	_, _ = io.Copy(io.Discard, resp.Body)
 	c.Logger.Debug("metadata pushed to emby", "artist_id", platformArtistID)
+
+	// Emby does not write NFO files immediately after POST /Items/{id}.
+	// Trigger a metadata refresh so the on-disk NFO reflects the update.
+	// Failure is non-fatal and only logged.
+	c.refreshItem(ctx, platformArtistID)
+
 	return nil
+}
+
+// refreshItem triggers a metadata refresh for a single item on the Emby server.
+// This forces Emby to persist updated metadata to NFO files on disk. The call
+// is fire-and-forget: errors are logged but do not fail the parent operation.
+func (c *Client) refreshItem(ctx context.Context, platformArtistID string) {
+	path := fmt.Sprintf("/Items/%s/Refresh", url.PathEscape(platformArtistID))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		connection.BuildRequestURL(c.BaseURL, path+"?ReplaceAllMetadata=false&ReplaceAllImages=false"), nil)
+	if err != nil {
+		c.Logger.Warn("creating emby refresh request", "artist_id", platformArtistID, "error", err)
+		return
+	}
+	c.AuthFunc(req)
+
+	resp, err := c.HTTPClient.Do(req) //nolint:gosec // URL constructed from trusted base + artist ID
+	if err != nil {
+		c.Logger.Warn("emby refresh request failed", "artist_id", platformArtistID, "error", err)
+		return
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	_, _ = io.Copy(io.Discard, resp.Body)
+
+	if resp.StatusCode >= 300 {
+		c.Logger.Warn("emby refresh returned error", "artist_id", platformArtistID, "status", resp.StatusCode)
+	}
 }
 
 // UploadImage uploads an image to the Emby server for the given artist.
@@ -108,7 +166,7 @@ func (c *Client) UploadImage(ctx context.Context, platformArtistID string, image
 	// format; Emby uses it to determine the save format after decoding.
 	encoded := base64.StdEncoding.EncodeToString(data)
 
-	path := fmt.Sprintf("/Items/%s/Images/%s", platformArtistID, embyType)
+	path := fmt.Sprintf("/Items/%s/Images/%s", url.PathEscape(platformArtistID), embyType)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, connection.BuildRequestURL(c.BaseURL, path), strings.NewReader(encoded))
 	if err != nil {
 		return fmt.Errorf("creating image upload request: %w", err)
@@ -148,7 +206,7 @@ func (c *Client) UploadImageAtIndex(ctx context.Context, platformArtistID string
 
 	encoded := base64.StdEncoding.EncodeToString(data)
 
-	path := fmt.Sprintf("/Items/%s/Images/%s/%d", platformArtistID, embyType, index)
+	path := fmt.Sprintf("/Items/%s/Images/%s/%d", url.PathEscape(platformArtistID), embyType, index)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, connection.BuildRequestURL(c.BaseURL, path), strings.NewReader(encoded))
 	if err != nil {
 		return fmt.Errorf("creating indexed image upload request: %w", err)
@@ -182,7 +240,7 @@ func (c *Client) DeleteImage(ctx context.Context, platformArtistID string, image
 		return fmt.Errorf("unsupported image type: %s", imageType)
 	}
 
-	path := fmt.Sprintf("/Items/%s/Images/%s", platformArtistID, embyType)
+	path := fmt.Sprintf("/Items/%s/Images/%s", url.PathEscape(platformArtistID), embyType)
 	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, connection.BuildRequestURL(c.BaseURL, path), nil)
 	if err != nil {
 		return fmt.Errorf("creating image delete request: %w", err)

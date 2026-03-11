@@ -196,9 +196,121 @@ func TestWriteBackNFO_CreatesSnapshot(t *testing.T) {
 	}
 }
 
-// TestWriteBackNFO_StatNotExist verifies that writeBackNFO skips silently when
-// the artist has a path and NFOExists is true in the DB, but the file was
-// deleted from disk (os.IsNotExist). No NFO file should be created.
+func TestExtractFieldValue(t *testing.T) {
+	tests := []struct {
+		name        string
+		field       string
+		contentType string
+		body        string
+		want        string
+		wantErr     bool
+	}{
+		{
+			name:        "json string value",
+			field:       "biography",
+			contentType: "application/json",
+			body:        `{"value":"rock band"}`,
+			want:        "rock band",
+		},
+		{
+			name:        "json array value for slice field",
+			field:       "genres",
+			contentType: "application/json",
+			body:        `{"value":["Rock","Alternative","Post-Punk"]}`,
+			want:        "Rock, Alternative, Post-Punk",
+		},
+		{
+			name:        "json array rejected for scalar field",
+			field:       "biography",
+			contentType: "application/json",
+			body:        `{"value":["Rock","Alternative"]}`,
+			wantErr:     true,
+		},
+		{
+			name:        "json empty array for slice field",
+			field:       "genres",
+			contentType: "application/json",
+			body:        `{"value":[]}`,
+			want:        "",
+		},
+		{
+			name:        "json empty string",
+			field:       "biography",
+			contentType: "application/json",
+			body:        `{"value":""}`,
+			want:        "",
+		},
+		{
+			name:        "form-encoded value",
+			field:       "biography",
+			contentType: "application/x-www-form-urlencoded",
+			body:        "value=hello+world",
+			want:        "hello world",
+		},
+		{
+			name:        "json malformed body",
+			field:       "biography",
+			contentType: "application/json",
+			body:        `{invalid`,
+			wantErr:     true,
+		},
+		{
+			name:        "json unsupported value type",
+			field:       "biography",
+			contentType: "application/json",
+			body:        `{"value":42}`,
+			wantErr:     true,
+		},
+		{
+			name:        "json null value returns empty",
+			field:       "biography",
+			contentType: "application/json",
+			body:        `{"value":null}`,
+			want:        "",
+		},
+		{
+			name:        "json missing value key returns empty",
+			field:       "biography",
+			contentType: "application/json",
+			body:        `{}`,
+			want:        "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPatch, "/test", strings.NewReader(tt.body))
+			req.Header.Set("Content-Type", tt.contentType)
+			got, err := extractFieldValue(req, tt.field)
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("extractFieldValue() error = nil, want error")
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("extractFieldValue() unexpected error: %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("extractFieldValue() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestExtractFieldValue_QueryParamNotAccepted verifies that form-encoded
+// requests only read from the POST body, not from URL query parameters.
+func TestExtractFieldValue_QueryParamNotAccepted(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPatch, "/test?value=injected", strings.NewReader(""))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	got, err := extractFieldValue(req, "biography")
+	if err != nil {
+		t.Fatalf("extractFieldValue() unexpected error: %v", err)
+	}
+	if got != "" {
+		t.Errorf("extractFieldValue() = %q, want empty (query param should not be accepted)", got)
+	}
+}
+
 func TestWriteBackNFO_StatNotExist(t *testing.T) {
 	r, artistSvc := testRouter(t)
 

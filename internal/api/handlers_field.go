@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -85,7 +86,15 @@ func (r *Router) handleFieldUpdate(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	value := extractFieldValue(req)
+	value, err := extractFieldValue(req, field)
+	if err != nil {
+		r.logger.Warn("invalid field value",
+			slog.String("field", field),
+			slog.String("artist_id", artistID),
+			slog.String("error", err.Error()))
+		writeError(w, req, http.StatusBadRequest, "invalid field value")
+		return
+	}
 
 	if err := r.artistService.UpdateField(req.Context(), artistID, field, value); err != nil {
 		writeError(w, req, http.StatusInternalServerError, "failed to update field")
@@ -242,18 +251,43 @@ func (r *Router) handleFieldProviders(w http.ResponseWriter, req *http.Request) 
 }
 
 // extractFieldValue reads the field value from a PATCH request body.
-// Supports both form-encoded and JSON payloads.
-func extractFieldValue(req *http.Request) string {
+// Supports both form-encoded and JSON payloads. JSON payloads accept
+// either a string value ({"value": "text"}) or, for slice fields only,
+// an array of strings ({"value": ["a","b"]}), with arrays joined as
+// comma-separated text for storage via UpdateField. The field parameter
+// controls which JSON types are accepted: scalar fields reject arrays.
+// The form path uses req.PostForm to avoid accepting values from query
+// parameters.
+func extractFieldValue(req *http.Request, field string) (string, error) {
 	if strings.HasPrefix(req.Header.Get("Content-Type"), "application/json") {
 		var body struct {
-			Value string `json:"value"`
+			Value json.RawMessage `json:"value"`
 		}
-		if err := json.NewDecoder(req.Body).Decode(&body); err == nil {
-			return body.Value
+		if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+			return "", fmt.Errorf("invalid JSON body: %w", err)
 		}
-		return ""
+		if len(body.Value) == 0 || string(body.Value) == "null" {
+			return "", nil
+		}
+		// Try string first (most common case).
+		var s string
+		if err := json.Unmarshal(body.Value, &s); err == nil {
+			return s, nil
+		}
+		// Try array of strings only for slice fields (genres, styles, moods).
+		if artist.IsSliceField(field) {
+			var arr []string
+			if err := json.Unmarshal(body.Value, &arr); err == nil {
+				return strings.Join(arr, ", "), nil
+			}
+			return "", fmt.Errorf("value must be a string or array of strings")
+		}
+		return "", fmt.Errorf("value must be a string")
 	}
-	return req.FormValue("value")
+	if err := req.ParseForm(); err != nil {
+		return "", fmt.Errorf("parsing form: %w", err)
+	}
+	return req.PostForm.Get("value"), nil
 }
 
 // fieldProviderNames returns the provider name strings for a given field,
@@ -364,7 +398,6 @@ func (r *Router) asyncPushMetadataToConnections(ctx context.Context, a *artist.A
 	data := buildArtistPushData(a)
 
 	for _, pid := range platformIDs {
-		pid := pid
 		go func() { //nolint:gosec // G118: goroutine must outlive the HTTP request context; context.Background() with explicit timeout is correct here
 			gCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
@@ -430,6 +463,7 @@ func (r *Router) writeBackNFO(ctx context.Context, a *artist.Artist) {
 			slog.String("nfo_path", nfoPath),
 			slog.String("error", err.Error()),
 		)
+		return
 	}
 	if err := nfo.WriteBackArtistNFO(ctx, a, r.nfoSnapshotService, r.logger); err != nil {
 		r.logger.Error("NFO write-back failed",

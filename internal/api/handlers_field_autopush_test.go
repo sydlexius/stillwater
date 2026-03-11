@@ -192,6 +192,13 @@ func TestFieldUpdate_AutoPush_SkipsDisabledConnection(t *testing.T) {
 func TestFieldUpdate_AutoPush_JellyfinFires(t *testing.T) {
 	received := make(chan struct{}, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Jellyfin PushMetadata now GETs the current item before POSTing the
+		// merged body. Serve a valid item response for the fetch.
+		if r.Method == http.MethodGet && r.URL.Path == "/Items" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"Items":[{"Name":"Portishead","Id":"jf-artist-1"}]}`))
+			return
+		}
 		if r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/Items/") {
 			select {
 			case received <- struct{}{}:
