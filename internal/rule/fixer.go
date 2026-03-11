@@ -110,11 +110,6 @@ func (p *Pipeline) RunRule(ctx context.Context, ruleID string) (*RunResult, erro
 				}
 				result.ViolationsFound++
 
-				// Skip if automation is disabled
-				if targetRule.AutomationMode == AutomationModeDisabled {
-					continue
-				}
-
 				// Manual mode: discover candidates but never auto-apply.
 				// Only invoke fixers that support candidate discovery
 				// without side effects. Side-effect fixers (LogoTrimFixer,
@@ -258,10 +253,6 @@ func (p *Pipeline) RunForArtist(ctx context.Context, a *artist.Artist) (*RunResu
 				continue
 			}
 			ruleCache[v.RuleID] = r
-		}
-
-		if r.AutomationMode == AutomationModeDisabled {
-			continue
 		}
 
 		if r.AutomationMode == AutomationModeManual {
@@ -410,10 +401,6 @@ func (p *Pipeline) RunAll(ctx context.Context) (*RunResult, error) {
 						continue
 					}
 					ruleCache[v.RuleID] = r
-				}
-
-				if r.AutomationMode == AutomationModeDisabled {
-					continue
 				}
 
 				// Manual mode: discover candidates but never auto-apply.
