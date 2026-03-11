@@ -1,5 +1,5 @@
 ---
-description: "Triage open bot PR review comments (Copilot, CodeRabbit, etc.), fix everything in one pass, reply in batch, push once"
+description: "Triage open bot PR review comments (Copilot, CodeRabbit, Dependabot, or any `[bot]`-suffixed reviewer), fix everything in one pass, reply in batch, push once"
 argument-hint: "<PR-number>"
 allowed-tools: ["Bash", "Glob", "Grep", "Read", "Edit", "Agent"]
 ---
