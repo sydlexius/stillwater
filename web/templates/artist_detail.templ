@@ -190,6 +190,18 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 							@components.IconArrowPath("h-4 w-4")
 							Refresh Metadata
 						</button>
+						<button
+							type="button"
+							id={ "run-rules-btn-" + data.Artist.ID }
+							class="inline-flex items-center gap-2 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
+							hx-post={ "/api/v1/artists/" + data.Artist.ID + "/run-rules" }
+							hx-target="#refresh-panel"
+							hx-swap="innerHTML"
+							hx-indicator="#rules-spinner"
+						>
+							@components.IconCheck("h-4 w-4")
+							Run Rules
+						</button>
 						if data.Artist.MusicBrainzID != "" {
 							@components.ContextMenu("reidentify-"+data.Artist.ID, false) {
 								<button
@@ -208,6 +220,14 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 					</div>
 				</div>
 				<div id="refresh-panel" class="mt-3"></div>
+				<span
+					id="rules-spinner"
+					class={
+						"htmx-indicator text-sm",
+						templ.KV("text-gray-500", !data.Artist.FanartExists),
+						templ.KV("text-white/70 drop-shadow", data.Artist.FanartExists),
+					}
+				>Running rules...</span>
 				<span
 					id="refresh-spinner"
 					class={

@@ -91,7 +91,7 @@ func (r *sqliteArtistRepo) GetByID(ctx context.Context, id string) (*Artist, err
 	row := r.db.QueryRowContext(ctx, `SELECT `+artistColumns+` FROM artists WHERE id = ?`, id)
 	a, err := scanArtist(row)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, fmt.Errorf("artist not found: %s", id)
+		return nil, fmt.Errorf("%w: %s", ErrNotFound, id)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("getting artist by id: %w", err)
