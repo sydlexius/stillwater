@@ -4458,7 +4458,7 @@ paths:
             type: string
       responses:
         "200":
-          description: Rules ran successfully; returns violation count and link to notifications view
+          description: Rules ran successfully; returns violation count and link to notifications view (JSON) or an inline HTML fragment (HTMX)
           content:
             application/json:
               schema:
@@ -4470,6 +4470,10 @@ paths:
                   notifications_url:
                     type: string
                     description: URL to the notifications page
+            text/html:
+              schema:
+                type: string
+                description: Inline result fragment for HTMX callers
         "404":
           description: Artist not found
           content:
@@ -4482,6 +4486,10 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+            text/html:
+              schema:
+                type: string
+                description: Inline error fragment for HTMX callers
 
   # --- Additional image routes ---
 

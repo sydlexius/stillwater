@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -20,8 +21,9 @@ import (
 	"log/slog"
 )
 
-// testRouterWithPipeline creates a Router that includes a rule pipeline for run-rules tests.
-func testRouterWithPipeline(t *testing.T) (*Router, *artist.Service) {
+// testRouterWithPipelineFull creates a Router with a rule pipeline and returns the rule service
+// so callers can manipulate rule state (e.g., disable all rules for isolation).
+func testRouterWithPipelineFull(t *testing.T) (*Router, *artist.Service, *rule.Service) {
 	t.Helper()
 
 	db, err := database.Open(":memory:")
@@ -66,6 +68,13 @@ func testRouterWithPipeline(t *testing.T) (*Router, *artist.Service) {
 		StaticDir:          "../../web/static",
 	})
 
+	return r, artistSvc, ruleSvc
+}
+
+// testRouterWithPipeline creates a Router that includes a rule pipeline for run-rules tests.
+func testRouterWithPipeline(t *testing.T) (*Router, *artist.Service) {
+	t.Helper()
+	r, artistSvc, _ := testRouterWithPipelineFull(t)
 	return r, artistSvc
 }
 
@@ -105,11 +114,80 @@ func TestHandleRunArtistRules_ReturnsJSON(t *testing.T) {
 	if _, ok := resp["violations_found"]; !ok {
 		t.Error("response missing violations_found field")
 	}
-	if _, ok := resp["notifications_url"]; !ok {
+	if got, ok := resp["notifications_url"]; !ok {
 		t.Error("response missing notifications_url field")
+	} else if got != "/notifications" {
+		t.Errorf("notifications_url = %q, want %q", got, "/notifications")
 	}
 }
 
+func TestHandleRunArtistRules_HTMX_NoViolations(t *testing.T) {
+	r, artistSvc, ruleSvc := testRouterWithPipelineFull(t)
+
+	// Disable all rules so a fresh artist produces zero violations.
+	rules, err := ruleSvc.List(context.Background())
+	if err != nil {
+		t.Fatalf("listing rules: %v", err)
+	}
+	for i := range rules {
+		rules[i].Enabled = false
+		if err := ruleSvc.Update(context.Background(), &rules[i]); err != nil {
+			t.Fatalf("disabling rule %s: %v", rules[i].ID, err)
+		}
+	}
+
+	a := addTestArtist(t, artistSvc, "Clean Artist")
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/run-rules", nil)
+	req.Header.Set("HX-Request", "true")
+	req.SetPathValue("id", a.ID)
+	w := httptest.NewRecorder()
+
+	r.handleRunArtistRules(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	if ct := w.Header().Get("Content-Type"); ct != "text/html; charset=utf-8" {
+		t.Errorf("Content-Type = %q, want %q", ct, "text/html; charset=utf-8")
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "No violations found.") {
+		t.Errorf("HTMX body = %q, want 'No violations found.'", body)
+	}
+}
+
+func TestHandleRunArtistRules_HTMX_ViolationsFound(t *testing.T) {
+	// With default rules enabled, a fresh artist with no NFO or images triggers violations.
+	r, artistSvc := testRouterWithPipeline(t)
+
+	a := addTestArtist(t, artistSvc, "Violation Artist")
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/run-rules", nil)
+	req.Header.Set("HX-Request", "true")
+	req.SetPathValue("id", a.ID)
+	w := httptest.NewRecorder()
+
+	r.handleRunArtistRules(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	if ct := w.Header().Get("Content-Type"); ct != "text/html; charset=utf-8" {
+		t.Errorf("Content-Type = %q, want %q", ct, "text/html; charset=utf-8")
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "violation(s).") {
+		t.Errorf("HTMX body = %q, want violations message with 'violation(s).'", body)
+	}
+	if !strings.Contains(body, "/notifications") {
+		t.Errorf("HTMX body = %q, want /notifications link", body)
+	}
+}
+
+// TestHandleRunArtistRules_ReturnsHTMLForHTMX verifies content-type switching.
+// Branch-level body assertions are covered by TestHandleRunArtistRules_HTMX_NoViolations
+// and TestHandleRunArtistRules_HTMX_ViolationsFound.
 func TestHandleRunArtistRules_ReturnsHTMLForHTMX(t *testing.T) {
 	r, artistSvc := testRouterWithPipeline(t)
 
@@ -125,9 +203,12 @@ func TestHandleRunArtistRules_ReturnsHTMLForHTMX(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
 	}
-
 	ct := w.Header().Get("Content-Type")
 	if ct != "text/html; charset=utf-8" {
 		t.Errorf("Content-Type = %q, want %q", ct, "text/html; charset=utf-8")
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "<div") {
+		t.Errorf("HTMX body = %q, want a <div> fragment", body)
 	}
 }

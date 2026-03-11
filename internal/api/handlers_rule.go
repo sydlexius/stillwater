@@ -28,6 +28,7 @@ type ruleRunStatus struct {
 func (r *Router) handleListRules(w http.ResponseWriter, req *http.Request) {
 	rules, err := r.ruleService.List(req.Context())
 	if err != nil {
+		r.logger.Error("listing rules", "error", err)
 		writeError(w, req, http.StatusInternalServerError, "failed to list rules")
 		return
 	}
@@ -75,6 +76,7 @@ func (r *Router) handleUpdateRule(w http.ResponseWriter, req *http.Request) {
 	}
 
 	if err := r.ruleService.Update(req.Context(), existing); err != nil {
+		r.logger.Error("updating rule", "rule_id", ruleID, "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to update rule"})
 		return
 	}
@@ -145,6 +147,7 @@ func (r *Router) handleRunArtistRules(w http.ResponseWriter, req *http.Request) 
 
 	a, err := r.artistService.GetByID(req.Context(), artistID)
 	if err != nil {
+		r.logger.Warn("looking up artist for run-rules", "artist_id", artistID, "error", err)
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "artist not found"})
 		return
 	}
@@ -155,7 +158,9 @@ func (r *Router) handleRunArtistRules(w http.ResponseWriter, req *http.Request) 
 		if req.Header.Get("HX-Request") == "true" {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			w.WriteHeader(http.StatusInternalServerError)
-			_, _ = io.WriteString(w, `<div class="text-sm text-red-600 dark:text-red-400">Failed to run rules. Check server logs.</div>`)
+			if _, werr := io.WriteString(w, `<div class="text-sm text-red-600 dark:text-red-400">Failed to run rules. Check server logs.</div>`); werr != nil {
+				r.logger.Warn("writing HTMX error fragment", "artist_id", artistID, "error", werr)
+			}
 			return
 		}
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to run rules"})
@@ -164,13 +169,16 @@ func (r *Router) handleRunArtistRules(w http.ResponseWriter, req *http.Request) 
 
 	if req.Header.Get("HX-Request") == "true" {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		var fragment string
 		if result.ViolationsFound == 0 {
-			_, _ = io.WriteString(w, `<div class="text-sm text-green-600 dark:text-green-400">No violations found.</div>`)
+			fragment = `<div class="text-sm text-green-600 dark:text-green-400">No violations found.</div>`
 		} else {
-			msg := `<div class="text-sm text-gray-700 dark:text-gray-300">Found ` +
+			fragment = `<div class="text-sm text-gray-700 dark:text-gray-300">Found ` +
 				strconv.Itoa(result.ViolationsFound) +
 				` violation(s). <a href="/notifications" class="text-blue-600 dark:text-blue-400 underline hover:text-blue-800">View in Notifications</a></div>`
-			_, _ = io.WriteString(w, msg) //nolint:gosec // G705: ViolationsFound is an integer, not user input; no XSS risk
+		}
+		if _, werr := io.WriteString(w, fragment); werr != nil { //nolint:gosec // G705: fragment contains only static strings and strconv.Itoa output; no user input
+			r.logger.Warn("writing HTMX run-rules fragment", "artist_id", artistID, "error", werr)
 		}
 		return
 	}
