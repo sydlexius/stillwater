@@ -1913,6 +1913,10 @@ paths:
               properties:
                 enabled:
                   type: boolean
+                automation_mode:
+                  type: string
+                  enum: [auto, manual]
+                  description: Automation mode for this rule. Use the enabled flag to disable a rule; "disabled" is not a valid automation_mode value.
                 config:
                   type: object
       responses:
@@ -1922,6 +1926,12 @@ paths:
             application/json:
               schema:
                 type: object
+        "400":
+          description: Invalid request (e.g., unsupported automation_mode value)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /rules/{id}/run:
     post:

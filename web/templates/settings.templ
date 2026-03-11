@@ -3280,8 +3280,7 @@ templ ruleRow(rl rule.Rule) {
 				>
 					<option value="auto" selected?={ rl.AutomationMode == "auto" || rl.AutomationMode == "" }>Auto-fix</option>
 					<option value="manual" selected?={ rl.AutomationMode == "manual" }>Manual (notify only)</option>
-					<option value="disabled" selected?={ rl.AutomationMode == "disabled" }>Disabled</option>
-				</select>
+					</select>
 				<button
 					type="button"
 					class={ ruleToggleBtnClasses(rl.Enabled) }

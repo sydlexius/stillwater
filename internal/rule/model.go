@@ -7,9 +7,8 @@ import (
 
 // Automation modes for rules
 const (
-	AutomationModeAuto     = "auto"
-	AutomationModeManual   = "manual"
-	AutomationModeDisabled = "disabled"
+	AutomationModeAuto   = "auto"
+	AutomationModeManual = "manual"
 )
 
 // Rule represents a validation rule stored in the database.
@@ -19,7 +18,7 @@ type Rule struct {
 	Description    string     `json:"description"`
 	Category       string     `json:"category"` // "nfo", "image", "metadata"
 	Enabled        bool       `json:"enabled"`
-	AutomationMode string     `json:"automation_mode"` // "auto", "manual", "disabled"
+	AutomationMode string     `json:"automation_mode"` // "auto", "manual"
 	Config         RuleConfig `json:"config"`
 	CreatedAt      time.Time  `json:"created_at"`
 	UpdatedAt      time.Time  `json:"updated_at"`
