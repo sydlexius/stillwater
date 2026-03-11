@@ -158,8 +158,21 @@ func TestHandleRunArtistRules_HTMX_NoViolations(t *testing.T) {
 }
 
 func TestHandleRunArtistRules_HTMX_ViolationsFound(t *testing.T) {
-	// With default rules enabled, a fresh artist with no NFO or images triggers violations.
-	r, artistSvc := testRouterWithPipeline(t)
+	// Enable only RuleBioExists so the test does not depend on filesystem state or
+	// pathless-library handling (which may change as the degraded-mode concept is retired).
+	// A fresh artist with no biography always violates this DB-only rule.
+	r, artistSvc, ruleSvc := testRouterWithPipelineFull(t)
+
+	rules, err := ruleSvc.List(context.Background())
+	if err != nil {
+		t.Fatalf("listing rules: %v", err)
+	}
+	for i := range rules {
+		rules[i].Enabled = rules[i].ID == rule.RuleBioExists
+		if err := ruleSvc.Update(context.Background(), &rules[i]); err != nil {
+			t.Fatalf("updating rule %s: %v", rules[i].ID, err)
+		}
+	}
 
 	a := addTestArtist(t, artistSvc, "Violation Artist")
 
