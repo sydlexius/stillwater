@@ -943,7 +943,7 @@ if [[ "$ROUNDTRIP" -eq 1 ]]; then
 
     if [[ "$RT_SETUP_OK" -eq 1 ]]; then
 
-    RT_ARTIST_TYPE=$(echo "$sw_artist_orig" | jq -r '.artist.type // "Group"' 2>/dev/null || echo "Group")
+    RT_ARTIST_TYPE=$(echo "$sw_artist_orig" | jq -r '.artist.type // "group"' 2>/dev/null || echo "group")
     orig_bio=$(echo "$sw_artist_orig" | jq -r '.artist.biography // empty' 2>/dev/null || true)
     orig_formed=$(echo "$sw_artist_orig" | jq -r '.artist.formed // empty' 2>/dev/null || true)
     orig_disbanded=$(echo "$sw_artist_orig" | jq -r '.artist.disbanded // empty' 2>/dev/null || true)
@@ -1076,10 +1076,10 @@ if [[ "$ROUNDTRIP" -eq 1 ]]; then
         echo "[SKIP] $platform roundtrip MBID -- no MBID in Stillwater"
       fi
 
-      # Formed/Disbanded -> PremiereDate/EndDate (Groups only).
-      # Person-type artists use Born/Died which are not standard Items API fields.
-      if [[ "$RT_ARTIST_TYPE" == "Person" ]]; then
-        echo "[SKIP] $platform roundtrip formed/disbanded -- Person type (no PremiereDate/EndDate)"
+      # Formed/Disbanded -> PremiereDate/EndDate (group types only).
+      # Non-group artists use Born/Died which are not standard Items API fields.
+      if [[ "$RT_ARTIST_TYPE" != "group" && "$RT_ARTIST_TYPE" != "orchestra" && "$RT_ARTIST_TYPE" != "choir" ]]; then
+        echo "[SKIP] $platform roundtrip formed/disbanded -- $RT_ARTIST_TYPE type (uses born/died, not PremiereDate/EndDate)"
       else
         local p_date_short="${p_date:0:10}"
         assert_json_value "$platform roundtrip formed->PremiereDate" "$RT_FORMED" "$p_date_short"
