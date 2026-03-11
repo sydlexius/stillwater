@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"html"
 	"io"
 	"net/http"
 	"strconv"
@@ -129,6 +130,12 @@ func (r *Router) handleRunRule(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	if r.pipeline == nil {
+		r.logger.Error("run-rule: pipeline not configured", "rule_id", ruleID)
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "rule pipeline not configured"})
+		return
+	}
+
 	result, err := r.pipeline.RunRule(req.Context(), ruleID)
 	if err != nil {
 		r.logger.Error("running rule", "rule_id", ruleID, "error", err)
@@ -172,6 +179,19 @@ func (r *Router) handleRunArtistRules(w http.ResponseWriter, req *http.Request) 
 		return
 	}
 
+	if r.pipeline == nil {
+		r.logger.Warn("run-artist-rules: pipeline not configured", "artist_id", artistID)
+		if req.Header.Get("HX-Request") == "true" {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			if _, werr := io.WriteString(w, `<div class="text-sm text-red-600 dark:text-red-400">Rule pipeline not configured.</div>`); werr != nil {
+				r.logger.Warn("writing HTMX pipeline-nil fragment", "artist_id", artistID, "error", werr)
+			}
+			return
+		}
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "rule pipeline not configured"})
+		return
+	}
+
 	result, err := r.pipeline.RunForArtist(req.Context(), a)
 	if err != nil {
 		r.logger.Error("running rules for artist", "artist_id", artistID, "error", err)
@@ -196,9 +216,9 @@ func (r *Router) handleRunArtistRules(w http.ResponseWriter, req *http.Request) 
 		} else {
 			fragment = `<div class="text-sm text-gray-700 dark:text-gray-300">Found ` +
 				strconv.Itoa(result.ViolationsFound) +
-				` violation(s). <a href="` + notificationsURL + `" class="text-blue-600 dark:text-blue-400 underline hover:text-blue-800">View in Notifications</a></div>`
+				` violation(s). <a href="` + html.EscapeString(notificationsURL) + `" class="text-blue-600 dark:text-blue-400 underline hover:text-blue-800">View in Notifications</a></div>`
 		}
-		if _, werr := io.WriteString(w, fragment); werr != nil { //nolint:gosec // G203: fragment contains only static strings and strconv.Itoa output; no user input
+		if _, werr := io.WriteString(w, fragment); werr != nil { //nolint:gosec // G203: notificationsURL is HTML-escaped; fragment contains only static strings and strconv.Itoa output
 			r.logger.Warn("writing HTMX run-rules fragment", "artist_id", artistID, "error", werr)
 		}
 		return
@@ -215,6 +235,12 @@ func (r *Router) handleRunArtistRules(w http.ResponseWriter, req *http.Request) 
 // Returns 409 Conflict if a run is already in progress.
 // POST /api/v1/rules/run-all
 func (r *Router) handleRunAllRules(w http.ResponseWriter, req *http.Request) {
+	if r.pipeline == nil {
+		r.logger.Error("run-all-rules: pipeline not configured")
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "rule pipeline not configured"})
+		return
+	}
+
 	r.ruleRunMu.Lock()
 	if r.ruleRun != nil && r.ruleRun.Running {
 		r.ruleRunMu.Unlock()
@@ -375,7 +401,8 @@ func (r *Router) startBulkJob(w http.ResponseWriter, req *http.Request, jobType 
 	job.ArtistIDs = body.ArtistIDs
 
 	if err := r.bulkExecutor.Start(req.Context(), job); err != nil {
-		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+		r.logger.Error("starting bulk job", "type", jobType, "job_id", job.ID, "error", err)
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "a bulk job is already running"})
 		return
 	}
 

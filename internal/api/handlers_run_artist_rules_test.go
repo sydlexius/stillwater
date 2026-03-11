@@ -52,7 +52,7 @@ func testRouterWithPipelineFull(t *testing.T) (*Router, *artist.Service, *rule.S
 	ruleEngine := rule.NewEngine(ruleSvc, db, nil, logger)
 	pipeline := rule.NewPipeline(ruleEngine, artistSvc, ruleSvc, nil, logger)
 	nfoSnapSvc := nfo.NewSnapshotService(db)
-	providerSettings := provider.NewSettingsService(db, nil)
+	providerSettings := provider.NewSettingsService(db, enc)
 
 	r := NewRouter(RouterDeps{
 		AuthService:        authSvc,

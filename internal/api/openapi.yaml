@@ -4475,13 +4475,19 @@ paths:
                 type: string
                 description: Inline result fragment for HTMX callers
         "404":
-          description: Artist not found
+          description: Artist not found (non-HTMX callers only; HTMX callers receive a 200 with an inline error fragment)
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
         "500":
           description: Rule evaluation failed (non-HTMX callers only; HTMX callers receive a 200 with an inline error fragment)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Rule pipeline not configured (non-HTMX callers only; HTMX callers receive a 200 with an inline error fragment)
           content:
             application/json:
               schema:
