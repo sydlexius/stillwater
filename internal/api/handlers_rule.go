@@ -148,6 +148,13 @@ func (r *Router) handleRunArtistRules(w http.ResponseWriter, req *http.Request) 
 	a, err := r.artistService.GetByID(req.Context(), artistID)
 	if err != nil {
 		r.logger.Warn("looking up artist for run-rules", "artist_id", artistID, "error", err)
+		if req.Header.Get("HX-Request") == "true" {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			if _, werr := io.WriteString(w, `<div class="text-sm text-red-600 dark:text-red-400">Artist not found.</div>`); werr != nil {
+				r.logger.Warn("writing HTMX artist-not-found fragment", "artist_id", artistID, "error", werr)
+			}
+			return
+		}
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "artist not found"})
 		return
 	}
@@ -157,7 +164,6 @@ func (r *Router) handleRunArtistRules(w http.ResponseWriter, req *http.Request) 
 		r.logger.Error("running rules for artist", "artist_id", artistID, "error", err)
 		if req.Header.Get("HX-Request") == "true" {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			w.WriteHeader(http.StatusInternalServerError)
 			if _, werr := io.WriteString(w, `<div class="text-sm text-red-600 dark:text-red-400">Failed to run rules. Check server logs.</div>`); werr != nil {
 				r.logger.Warn("writing HTMX error fragment", "artist_id", artistID, "error", werr)
 			}
@@ -167,6 +173,8 @@ func (r *Router) handleRunArtistRules(w http.ResponseWriter, req *http.Request) 
 		return
 	}
 
+	notificationsURL := r.basePath + "/notifications"
+
 	if req.Header.Get("HX-Request") == "true" {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		var fragment string
@@ -175,7 +183,7 @@ func (r *Router) handleRunArtistRules(w http.ResponseWriter, req *http.Request) 
 		} else {
 			fragment = `<div class="text-sm text-gray-700 dark:text-gray-300">Found ` +
 				strconv.Itoa(result.ViolationsFound) +
-				` violation(s). <a href="/notifications" class="text-blue-600 dark:text-blue-400 underline hover:text-blue-800">View in Notifications</a></div>`
+				` violation(s). <a href="` + notificationsURL + `" class="text-blue-600 dark:text-blue-400 underline hover:text-blue-800">View in Notifications</a></div>`
 		}
 		if _, werr := io.WriteString(w, fragment); werr != nil { //nolint:gosec // G705: fragment contains only static strings and strconv.Itoa output; no user input
 			r.logger.Warn("writing HTMX run-rules fragment", "artist_id", artistID, "error", werr)
@@ -185,7 +193,7 @@ func (r *Router) handleRunArtistRules(w http.ResponseWriter, req *http.Request) 
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"violations_found":  result.ViolationsFound,
-		"notifications_url": "/notifications",
+		"notifications_url": notificationsURL,
 	})
 }
 

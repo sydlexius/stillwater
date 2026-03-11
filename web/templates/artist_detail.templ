@@ -197,7 +197,7 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 							hx-post={ "/api/v1/artists/" + data.Artist.ID + "/run-rules" }
 							hx-target="#refresh-panel"
 							hx-swap="innerHTML"
-							hx-indicator="#refresh-spinner"
+							hx-indicator="#rules-spinner"
 						>
 							@components.IconCheck("h-4 w-4")
 							Run Rules
@@ -220,6 +220,14 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 					</div>
 				</div>
 				<div id="refresh-panel" class="mt-3"></div>
+				<span
+					id="rules-spinner"
+					class={
+						"htmx-indicator text-sm",
+						templ.KV("text-gray-500", !data.Artist.FanartExists),
+						templ.KV("text-white/70 drop-shadow", data.Artist.FanartExists),
+					}
+				>Running rules...</span>
 				<span
 					id="refresh-spinner"
 					class={

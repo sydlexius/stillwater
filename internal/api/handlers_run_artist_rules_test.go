@@ -92,6 +92,28 @@ func TestHandleRunArtistRules_NotFound(t *testing.T) {
 	}
 }
 
+func TestHandleRunArtistRules_HTMX_NotFound(t *testing.T) {
+	r, _ := testRouterWithPipeline(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/nonexistent/run-rules", nil)
+	req.Header.Set("HX-Request", "true")
+	req.SetPathValue("id", "nonexistent")
+	w := httptest.NewRecorder()
+
+	r.handleRunArtistRules(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	if ct := w.Header().Get("Content-Type"); ct != "text/html; charset=utf-8" {
+		t.Errorf("Content-Type = %q, want %q", ct, "text/html; charset=utf-8")
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "Artist not found") {
+		t.Errorf("HTMX body = %q, want 'Artist not found' fragment", body)
+	}
+}
+
 func TestHandleRunArtistRules_ReturnsJSON(t *testing.T) {
 	r, artistSvc := testRouterWithPipeline(t)
 
