@@ -569,6 +569,14 @@ func TestBuildArtistPushData_TypeAwareDates(t *testing.T) {
 			wantDisbanded: "",
 		},
 		{
+			name:          "choir excludes born and died",
+			artistType:    "choir",
+			wantBorn:      "",
+			wantFormed:    "1985",
+			wantDied:      "",
+			wantDisbanded: "2010",
+		},
+		{
 			name:          "unknown type includes all fields",
 			artistType:    "",
 			wantBorn:      "1982",

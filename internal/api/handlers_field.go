@@ -86,7 +86,7 @@ func (r *Router) handleFieldUpdate(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	value, err := extractFieldValue(req)
+	value, err := extractFieldValue(req, field)
 	if err != nil {
 		r.logger.Warn("invalid field value",
 			slog.String("field", field),
@@ -252,10 +252,13 @@ func (r *Router) handleFieldProviders(w http.ResponseWriter, req *http.Request) 
 
 // extractFieldValue reads the field value from a PATCH request body.
 // Supports both form-encoded and JSON payloads. JSON payloads accept
-// either a string value ({"value": "text"}) or an array of strings
-// ({"value": ["a","b"]}), with arrays joined as comma-separated text
-// for storage via UpdateField.
-func extractFieldValue(req *http.Request) (string, error) {
+// either a string value ({"value": "text"}) or, for slice fields only,
+// an array of strings ({"value": ["a","b"]}), with arrays joined as
+// comma-separated text for storage via UpdateField. The field parameter
+// controls which JSON types are accepted: scalar fields reject arrays.
+// The form path uses req.PostForm to avoid accepting values from query
+// parameters.
+func extractFieldValue(req *http.Request, field string) (string, error) {
 	if strings.HasPrefix(req.Header.Get("Content-Type"), "application/json") {
 		var body struct {
 			Value json.RawMessage `json:"value"`
@@ -268,14 +271,20 @@ func extractFieldValue(req *http.Request) (string, error) {
 		if err := json.Unmarshal(body.Value, &s); err == nil {
 			return s, nil
 		}
-		// Try array of strings (for genres, styles, moods).
-		var arr []string
-		if err := json.Unmarshal(body.Value, &arr); err == nil {
-			return strings.Join(arr, ", "), nil
+		// Try array of strings only for slice fields (genres, styles, moods).
+		if artist.IsSliceField(field) {
+			var arr []string
+			if err := json.Unmarshal(body.Value, &arr); err == nil {
+				return strings.Join(arr, ", "), nil
+			}
+			return "", fmt.Errorf("value must be a string or array of strings")
 		}
-		return "", fmt.Errorf("value must be a string or array of strings")
+		return "", fmt.Errorf("value must be a string")
 	}
-	return req.FormValue("value"), nil
+	if err := req.ParseForm(); err != nil {
+		return "", fmt.Errorf("parsing form: %w", err)
+	}
+	return req.PostForm.Get("value"), nil
 }
 
 // fieldProviderNames returns the provider name strings for a given field,

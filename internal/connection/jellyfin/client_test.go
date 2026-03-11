@@ -19,6 +19,20 @@ import (
 	"github.com/sydlexius/stillwater/internal/connection"
 )
 
+// itemUpdateBody is used by tests to decode the Jellyfin POST /Items/{id}
+// body into a typed struct for assertion. Production code marshals a
+// map[string]any directly (see push.go PushMetadata).
+type itemUpdateBody struct {
+	Name           string            `json:"Name"`
+	ForcedSortName string            `json:"ForcedSortName,omitempty"`
+	Overview       string            `json:"Overview,omitempty"`
+	Genres         []string          `json:"Genres,omitempty"`
+	Tags           []string          `json:"Tags,omitempty"`
+	ProviderIds    map[string]string `json:"ProviderIds,omitempty"`
+	PremiereDate   string            `json:"PremiereDate,omitempty"`
+	EndDate        string            `json:"EndDate,omitempty"`
+}
+
 func testLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 }
@@ -373,7 +387,7 @@ func TestGetFirstUserID_NoUsers(t *testing.T) {
 }
 
 func TestPushMetadata(t *testing.T) {
-	var gotBody itemUpdateBody
+	bodyCh := make(chan itemUpdateBody, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// PushMetadata now first fetches the item (GET /Items?Ids=...) then
 		// POSTs the merged body back.
@@ -395,9 +409,13 @@ func TestPushMetadata(t *testing.T) {
 		if !strings.HasPrefix(auth, `MediaBrowser Token="`) {
 			t.Errorf("unexpected auth header: %s", auth)
 		}
-		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
-			t.Fatalf("decoding body: %v", err)
+		var b itemUpdateBody
+		if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
+			t.Errorf("decoding body: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
 		}
+		bodyCh <- b
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer srv.Close()
@@ -412,6 +430,7 @@ func TestPushMetadata(t *testing.T) {
 	if err := c.PushMetadata(context.Background(), "jf-artist-1", data); err != nil {
 		t.Fatalf("PushMetadata failed: %v", err)
 	}
+	gotBody := <-bodyCh
 	if gotBody.Name != "Bjork" {
 		t.Errorf("Name = %q, want Bjork", gotBody.Name)
 	}
@@ -422,6 +441,12 @@ func TestPushMetadata(t *testing.T) {
 
 func TestPushMetadata_ServerError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Serve a valid item for the GET fetch, return 500 only for the POST.
+		if r.Method == http.MethodGet && r.URL.Path == "/Items" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"Items":[{"Name":"Test","Id":"jf-001"}]}`))
+			return
+		}
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer srv.Close()
@@ -430,6 +455,38 @@ func TestPushMetadata_ServerError(t *testing.T) {
 	err := c.PushMetadata(context.Background(), "jf-001", connection.ArtistPushData{Name: "Test"})
 	if err == nil {
 		t.Fatal("expected error for server error")
+	}
+	if !strings.Contains(err.Error(), "push failed with status 500") {
+		t.Errorf("error = %q, want message about push failed with status 500", err.Error())
+	}
+}
+
+// TestPushMetadata_SpecialCharacterID verifies that platformArtistID values
+// containing path-breaking characters are correctly escaped in the URL.
+func TestPushMetadata_SpecialCharacterID(t *testing.T) {
+	pathCh := make(chan string, 2)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/Items" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"Items":[{"Name":"Test","Id":"jf-001"}]}`))
+			return
+		}
+		select {
+		case pathCh <- r.URL.RawPath:
+		default:
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "key", "", srv.Client(), testLogger())
+	err := c.PushMetadata(context.Background(), "id/with spaces", connection.ArtistPushData{Name: "Test"})
+	if err != nil {
+		t.Fatalf("PushMetadata failed: %v", err)
+	}
+	got := <-pathCh
+	if !strings.Contains(got, "id%2Fwith%20spaces") {
+		t.Errorf("path = %q, want escaped id containing 'id%%2Fwith%%20spaces'", got)
 	}
 }
 
@@ -459,7 +516,7 @@ func TestPushMetadata_FetchItemError(t *testing.T) {
 // TestPushMetadata_StripsReadOnlyFields verifies that read-only fields from the
 // fetched item are removed before POSTing the merged body.
 func TestPushMetadata_StripsReadOnlyFields(t *testing.T) {
-	var postedBody map[string]any
+	bodyCh := make(chan map[string]any, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet && r.URL.Path == "/Items" {
 			w.Header().Set("Content-Type", "application/json")
@@ -472,9 +529,13 @@ func TestPushMetadata_StripsReadOnlyFields(t *testing.T) {
 			}]}`))
 			return
 		}
-		if err := json.NewDecoder(r.Body).Decode(&postedBody); err != nil {
-			t.Fatalf("decoding post body: %v", err)
+		var b map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
+			t.Errorf("decoding post body: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
 		}
+		bodyCh <- b
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer srv.Close()
@@ -485,6 +546,7 @@ func TestPushMetadata_StripsReadOnlyFields(t *testing.T) {
 		t.Fatalf("PushMetadata failed: %v", err)
 	}
 
+	postedBody := <-bodyCh
 	for _, field := range []string{"ServerId", "ImageBlurHashes", "ImageTags", "LocationType"} {
 		if _, ok := postedBody[field]; ok {
 			t.Errorf("read-only field %q was not stripped from POST body", field)
@@ -498,16 +560,20 @@ func TestPushMetadata_StripsReadOnlyFields(t *testing.T) {
 // TestPushMetadata_MergesTags verifies that styles and moods are merged as Tags
 // into the existing item body.
 func TestPushMetadata_MergesTags(t *testing.T) {
-	var postedBody map[string]any
+	bodyCh := make(chan map[string]any, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet && r.URL.Path == "/Items" {
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"Items":[{"Name":"Existing","Id":"jf-001"}]}`))
 			return
 		}
-		if err := json.NewDecoder(r.Body).Decode(&postedBody); err != nil {
-			t.Fatalf("decoding post body: %v", err)
+		var b map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
+			t.Errorf("decoding post body: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
 		}
+		bodyCh <- b
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer srv.Close()
@@ -522,6 +588,7 @@ func TestPushMetadata_MergesTags(t *testing.T) {
 		t.Fatalf("PushMetadata failed: %v", err)
 	}
 
+	postedBody := <-bodyCh
 	tags, ok := postedBody["Tags"]
 	if !ok {
 		t.Fatal("Tags field missing from POST body")
@@ -538,7 +605,7 @@ func TestPushMetadata_MergesTags(t *testing.T) {
 // TestPushMetadata_MergesProviderIds verifies that PushMetadata merges the
 // MusicBrainzArtist ID into existing ProviderIds rather than replacing them.
 func TestPushMetadata_MergesProviderIds(t *testing.T) {
-	var postedBody map[string]any
+	bodyCh := make(chan map[string]any, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet && r.URL.Path == "/Items" {
 			w.Header().Set("Content-Type", "application/json")
@@ -549,9 +616,13 @@ func TestPushMetadata_MergesProviderIds(t *testing.T) {
 			}]}`))
 			return
 		}
-		if err := json.NewDecoder(r.Body).Decode(&postedBody); err != nil {
-			t.Fatalf("decoding post body: %v", err)
+		var b map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
+			t.Errorf("decoding post body: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
 		}
+		bodyCh <- b
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer srv.Close()
@@ -565,6 +636,7 @@ func TestPushMetadata_MergesProviderIds(t *testing.T) {
 		t.Fatalf("PushMetadata failed: %v", err)
 	}
 
+	postedBody := <-bodyCh
 	pids, ok := postedBody["ProviderIds"].(map[string]any)
 	if !ok {
 		t.Fatal("ProviderIds missing or wrong type in POST body")
@@ -821,16 +893,20 @@ func TestPushMetadata_DateNormalization(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var gotBody itemUpdateBody
+			bodyCh := make(chan itemUpdateBody, 1)
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.Method == http.MethodGet && r.URL.Path == "/Items" {
 					w.Header().Set("Content-Type", "application/json")
 					_, _ = w.Write([]byte(`{"Items":[{"Name":"Existing","Id":"jf-001"}]}`))
 					return
 				}
-				if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
-					t.Fatalf("decoding body: %v", err)
+				var b itemUpdateBody
+				if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
+					t.Errorf("decoding body: %v", err)
+					w.WriteHeader(http.StatusBadRequest)
+					return
 				}
+				bodyCh <- b
 				w.WriteHeader(http.StatusNoContent)
 			}))
 			defer srv.Close()
@@ -839,6 +915,7 @@ func TestPushMetadata_DateNormalization(t *testing.T) {
 			if err := c.PushMetadata(context.Background(), "jf-001", tt.data); err != nil {
 				t.Fatalf("PushMetadata failed: %v", err)
 			}
+			gotBody := <-bodyCh
 			if gotBody.PremiereDate != tt.wantPremiere {
 				t.Errorf("PremiereDate = %q, want %q", gotBody.PremiereDate, tt.wantPremiere)
 			}

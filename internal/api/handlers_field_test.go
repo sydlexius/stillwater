@@ -202,6 +202,7 @@ func TestWriteBackNFO_CreatesSnapshot(t *testing.T) {
 func TestExtractFieldValue(t *testing.T) {
 	tests := []struct {
 		name        string
+		field       string
 		contentType string
 		body        string
 		want        string
@@ -209,42 +210,56 @@ func TestExtractFieldValue(t *testing.T) {
 	}{
 		{
 			name:        "json string value",
+			field:       "biography",
 			contentType: "application/json",
 			body:        `{"value":"rock band"}`,
 			want:        "rock band",
 		},
 		{
-			name:        "json array value",
+			name:        "json array value for slice field",
+			field:       "genres",
 			contentType: "application/json",
 			body:        `{"value":["Rock","Alternative","Post-Punk"]}`,
 			want:        "Rock, Alternative, Post-Punk",
 		},
 		{
-			name:        "json empty array",
+			name:        "json array rejected for scalar field",
+			field:       "biography",
+			contentType: "application/json",
+			body:        `{"value":["Rock","Alternative"]}`,
+			wantErr:     true,
+		},
+		{
+			name:        "json empty array for slice field",
+			field:       "genres",
 			contentType: "application/json",
 			body:        `{"value":[]}`,
 			want:        "",
 		},
 		{
 			name:        "json empty string",
+			field:       "biography",
 			contentType: "application/json",
 			body:        `{"value":""}`,
 			want:        "",
 		},
 		{
 			name:        "form-encoded value",
+			field:       "biography",
 			contentType: "application/x-www-form-urlencoded",
 			body:        "value=hello+world",
 			want:        "hello world",
 		},
 		{
 			name:        "json malformed body",
+			field:       "biography",
 			contentType: "application/json",
 			body:        `{invalid`,
 			wantErr:     true,
 		},
 		{
 			name:        "json unsupported value type",
+			field:       "biography",
 			contentType: "application/json",
 			body:        `{"value":42}`,
 			wantErr:     true,
@@ -254,7 +269,7 @@ func TestExtractFieldValue(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPatch, "/test", strings.NewReader(tt.body))
 			req.Header.Set("Content-Type", tt.contentType)
-			got, err := extractFieldValue(req)
+			got, err := extractFieldValue(req, tt.field)
 			if tt.wantErr {
 				if err == nil {
 					t.Errorf("extractFieldValue() error = nil, want error")
@@ -268,6 +283,20 @@ func TestExtractFieldValue(t *testing.T) {
 				t.Errorf("extractFieldValue() = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+// TestExtractFieldValue_QueryParamNotAccepted verifies that form-encoded
+// requests only read from the POST body, not from URL query parameters.
+func TestExtractFieldValue_QueryParamNotAccepted(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPatch, "/test?value=injected", strings.NewReader(""))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	got, err := extractFieldValue(req, "biography")
+	if err != nil {
+		t.Fatalf("extractFieldValue() unexpected error: %v", err)
+	}
+	if got != "" {
+		t.Errorf("extractFieldValue() = %q, want empty (query param should not be accepted)", got)
 	}
 }
 

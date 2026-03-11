@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/sydlexius/stillwater/internal/connection"
@@ -94,7 +95,7 @@ func (c *Client) PushMetadata(ctx context.Context, platformArtistID string, data
 		return fmt.Errorf("marshaling push body: %w", err)
 	}
 
-	path := fmt.Sprintf("/Items/%s", platformArtistID)
+	path := fmt.Sprintf("/Items/%s", url.PathEscape(platformArtistID))
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, connection.BuildRequestURL(c.BaseURL, path), bytes.NewReader(payload))
 	if err != nil {
 		return fmt.Errorf("creating push request: %w", err)
@@ -130,7 +131,7 @@ func (c *Client) PushMetadata(ctx context.Context, platformArtistID string, data
 // This forces Emby to persist updated metadata to NFO files on disk. The call
 // is fire-and-forget: errors are logged but do not fail the parent operation.
 func (c *Client) refreshItem(ctx context.Context, platformArtistID string) {
-	path := fmt.Sprintf("/Items/%s/Refresh", platformArtistID)
+	path := fmt.Sprintf("/Items/%s/Refresh", url.PathEscape(platformArtistID))
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		connection.BuildRequestURL(c.BaseURL, path+"?ReplaceAllMetadata=false&ReplaceAllImages=false"), nil)
 	if err != nil {
@@ -165,7 +166,7 @@ func (c *Client) UploadImage(ctx context.Context, platformArtistID string, image
 	// format; Emby uses it to determine the save format after decoding.
 	encoded := base64.StdEncoding.EncodeToString(data)
 
-	path := fmt.Sprintf("/Items/%s/Images/%s", platformArtistID, embyType)
+	path := fmt.Sprintf("/Items/%s/Images/%s", url.PathEscape(platformArtistID), embyType)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, connection.BuildRequestURL(c.BaseURL, path), strings.NewReader(encoded))
 	if err != nil {
 		return fmt.Errorf("creating image upload request: %w", err)
@@ -205,7 +206,7 @@ func (c *Client) UploadImageAtIndex(ctx context.Context, platformArtistID string
 
 	encoded := base64.StdEncoding.EncodeToString(data)
 
-	path := fmt.Sprintf("/Items/%s/Images/%s/%d", platformArtistID, embyType, index)
+	path := fmt.Sprintf("/Items/%s/Images/%s/%d", url.PathEscape(platformArtistID), embyType, index)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, connection.BuildRequestURL(c.BaseURL, path), strings.NewReader(encoded))
 	if err != nil {
 		return fmt.Errorf("creating indexed image upload request: %w", err)
@@ -239,7 +240,7 @@ func (c *Client) DeleteImage(ctx context.Context, platformArtistID string, image
 		return fmt.Errorf("unsupported image type: %s", imageType)
 	}
 
-	path := fmt.Sprintf("/Items/%s/Images/%s", platformArtistID, embyType)
+	path := fmt.Sprintf("/Items/%s/Images/%s", url.PathEscape(platformArtistID), embyType)
 	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, connection.BuildRequestURL(c.BaseURL, path), nil)
 	if err != nil {
 		return fmt.Errorf("creating image delete request: %w", err)

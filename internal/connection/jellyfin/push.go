@@ -8,22 +8,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/sydlexius/stillwater/internal/connection"
 )
-
-// itemUpdateBody is the payload for POST /Items/{id}.
-type itemUpdateBody struct {
-	Name           string            `json:"Name"`
-	ForcedSortName string            `json:"ForcedSortName,omitempty"`
-	Overview       string            `json:"Overview,omitempty"`
-	Genres         []string          `json:"Genres,omitempty"`
-	Tags           []string          `json:"Tags,omitempty"`
-	ProviderIds    map[string]string `json:"ProviderIds,omitempty"`
-	PremiereDate   string            `json:"PremiereDate,omitempty"`
-	EndDate        string            `json:"EndDate,omitempty"`
-}
 
 // PushMetadata updates metadata for an artist item on the Jellyfin server.
 //
@@ -109,7 +98,7 @@ func (c *Client) PushMetadata(ctx context.Context, platformArtistID string, data
 		return fmt.Errorf("marshaling push body: %w", err)
 	}
 
-	path := fmt.Sprintf("/Items/%s", platformArtistID)
+	path := fmt.Sprintf("/Items/%s", url.PathEscape(platformArtistID))
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, connection.BuildRequestURL(c.BaseURL, path), bytes.NewReader(payload))
 	if err != nil {
 		return fmt.Errorf("creating push request: %w", err)
@@ -146,7 +135,7 @@ var jellyfinReadOnlyFields = []string{
 // full item body as a generic map. Uses /Items?Ids={id}&Fields=... to
 // ensure metadata fields are populated.
 func (c *Client) fetchItem(ctx context.Context, itemID string) (map[string]any, error) {
-	path := fmt.Sprintf("/Items?Ids=%s&Fields=Overview,ProviderIds,PremiereDate,EndDate,Genres,Tags", itemID)
+	path := fmt.Sprintf("/Items?Ids=%s&Fields=Overview,ProviderIds,PremiereDate,EndDate,Genres,Tags", url.QueryEscape(itemID))
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, connection.BuildRequestURL(c.BaseURL, path), nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating fetch request: %w", err)
@@ -191,7 +180,7 @@ func (c *Client) UploadImage(ctx context.Context, platformArtistID string, image
 	// image/png); Jellyfin uses it to determine the save format after decoding.
 	encoded := base64.StdEncoding.EncodeToString(data)
 
-	path := fmt.Sprintf("/Items/%s/Images/%s", platformArtistID, jfType)
+	path := fmt.Sprintf("/Items/%s/Images/%s", url.PathEscape(platformArtistID), jfType)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, connection.BuildRequestURL(c.BaseURL, path), strings.NewReader(encoded))
 	if err != nil {
 		return fmt.Errorf("creating image upload request: %w", err)
@@ -231,7 +220,7 @@ func (c *Client) UploadImageAtIndex(ctx context.Context, platformArtistID string
 
 	encoded := base64.StdEncoding.EncodeToString(data)
 
-	path := fmt.Sprintf("/Items/%s/Images/%s/%d", platformArtistID, jfType, index)
+	path := fmt.Sprintf("/Items/%s/Images/%s/%d", url.PathEscape(platformArtistID), jfType, index)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, connection.BuildRequestURL(c.BaseURL, path), strings.NewReader(encoded))
 	if err != nil {
 		return fmt.Errorf("creating indexed image upload request: %w", err)
@@ -265,7 +254,7 @@ func (c *Client) DeleteImage(ctx context.Context, platformArtistID string, image
 		return fmt.Errorf("unsupported image type: %s", imageType)
 	}
 
-	path := fmt.Sprintf("/Items/%s/Images/%s", platformArtistID, jfType)
+	path := fmt.Sprintf("/Items/%s/Images/%s", url.PathEscape(platformArtistID), jfType)
 	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, connection.BuildRequestURL(c.BaseURL, path), nil)
 	if err != nil {
 		return fmt.Errorf("creating image delete request: %w", err)
