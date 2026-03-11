@@ -1,12 +1,13 @@
 ---
-description: "Triage open Copilot/bot PR review comments, fix everything in one pass, reply in batch, push once"
+description: "Triage open bot PR review comments (Copilot, CodeRabbit, etc.), fix everything in one pass, reply in batch, push once"
 argument-hint: "<PR-number>"
 allowed-tools: ["Bash", "Glob", "Grep", "Read", "Edit", "Agent"]
 ---
 
 # Handle PR Review Comments
 
-Read, triage, fix, reply, and push all PR review comments in a single pass.
+Read, triage, fix, reply, and push all bot PR review comments (Copilot, CodeRabbit,
+Dependabot, or any `[bot]`-suffixed reviewer) in a single pass.
 
 **PR number:** $ARGUMENTS
 
