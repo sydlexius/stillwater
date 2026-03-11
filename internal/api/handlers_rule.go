@@ -180,7 +180,7 @@ func (r *Router) handleRunArtistRules(w http.ResponseWriter, req *http.Request) 
 	}
 
 	if r.pipeline == nil {
-		r.logger.Warn("run-artist-rules: pipeline not configured", "artist_id", artistID)
+		r.logger.Error("run-artist-rules: pipeline not configured", "artist_id", artistID)
 		if req.Header.Get("HX-Request") == "true" {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			if _, werr := io.WriteString(w, `<div class="text-sm text-red-600 dark:text-red-400">Rule pipeline not configured.</div>`); werr != nil {
