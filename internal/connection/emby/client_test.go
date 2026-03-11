@@ -378,7 +378,7 @@ func TestPushMetadata_SpecialCharacterID(t *testing.T) {
 	pathCh := make(chan string, 2)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		select {
-		case pathCh <- r.URL.RawPath:
+		case pathCh <- r.URL.EscapedPath():
 		default:
 		}
 		w.WriteHeader(http.StatusNoContent)

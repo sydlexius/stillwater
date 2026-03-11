@@ -545,7 +545,7 @@ func TestPushMetadata_SpecialCharacterID(t *testing.T) {
 			return
 		}
 		select {
-		case pathCh <- r.URL.RawPath:
+		case pathCh <- r.URL.EscapedPath():
 		default:
 		}
 		w.WriteHeader(http.StatusNoContent)

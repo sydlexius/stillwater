@@ -163,6 +163,7 @@ func (c *Client) fetchItem(ctx context.Context, itemID string) (map[string]any, 
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("decoding fetch response: %w", err)
 	}
+	_, _ = io.Copy(io.Discard, resp.Body)
 	if len(result.Items) == 0 {
 		return nil, fmt.Errorf("item %s not found", itemID)
 	}
