@@ -4445,6 +4445,44 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  /artists/{id}/run-rules:
+    post:
+      tags: [Artists, Rules]
+      summary: Run all enabled rules scoped to a single artist
+      operationId: runArtistRules
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Rules ran successfully; returns violation count and link to notifications view
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  violations_found:
+                    type: integer
+                    description: Number of violations detected for this artist
+                  notifications_url:
+                    type: string
+                    description: URL to the notifications page
+        "404":
+          description: Artist not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Rule evaluation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   # --- Additional image routes ---
 
   /artists/{id}/images/websearch:

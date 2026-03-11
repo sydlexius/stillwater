@@ -2,7 +2,9 @@ package api
 
 import (
 	"context"
+	"io"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/rule"
@@ -131,6 +133,52 @@ func (r *Router) handleRunRule(w http.ResponseWriter, req *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, result)
+}
+
+// handleRunArtistRules runs all enabled rules scoped to a single artist.
+// POST /api/v1/artists/{id}/run-rules
+func (r *Router) handleRunArtistRules(w http.ResponseWriter, req *http.Request) {
+	artistID, ok := RequirePathParam(w, req, "id")
+	if !ok {
+		return
+	}
+
+	a, err := r.artistService.GetByID(req.Context(), artistID)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "artist not found"})
+		return
+	}
+
+	result, err := r.pipeline.RunForArtist(req.Context(), a)
+	if err != nil {
+		r.logger.Error("running rules for artist", "artist_id", artistID, "error", err)
+		if req.Header.Get("HX-Request") == "true" {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = io.WriteString(w, `<div class="text-sm text-red-600 dark:text-red-400">Failed to run rules. Check server logs.</div>`)
+			return
+		}
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to run rules"})
+		return
+	}
+
+	if req.Header.Get("HX-Request") == "true" {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		if result.ViolationsFound == 0 {
+			_, _ = io.WriteString(w, `<div class="text-sm text-green-600 dark:text-green-400">No violations found.</div>`)
+		} else {
+			msg := `<div class="text-sm text-gray-700 dark:text-gray-300">Found ` +
+				strconv.Itoa(result.ViolationsFound) +
+				` violation(s). <a href="/notifications" class="text-blue-600 dark:text-blue-400 underline hover:text-blue-800">View in Notifications</a></div>`
+			_, _ = io.WriteString(w, msg) //nolint:gosec // G705: ViolationsFound is an integer, not user input; no XSS risk
+		}
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"violations_found":  result.ViolationsFound,
+		"notifications_url": "/notifications",
+	})
 }
 
 // handleRunAllRules starts an async run of all enabled rules against all artists.
