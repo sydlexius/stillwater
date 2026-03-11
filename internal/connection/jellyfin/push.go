@@ -27,24 +27,18 @@ func (c *Client) PushMetadata(ctx context.Context, platformArtistID string, data
 		return fmt.Errorf("fetching current item for merge: %w", err)
 	}
 
-	// Merge Stillwater's fields into the existing item.
+	// Merge Stillwater's fields into the existing item. Empty values are
+	// written unconditionally so that field clears in Stillwater propagate
+	// to Jellyfin (the fetch-merge pattern preserves all other fields).
 	existing["Name"] = data.Name
-	if data.Biography != "" {
-		existing["Overview"] = data.Biography
-	}
-	if data.SortName != "" {
-		existing["ForcedSortName"] = data.SortName
-	}
-	if len(data.Genres) > 0 {
-		existing["Genres"] = data.Genres
-	}
+	existing["Overview"] = data.Biography
+	existing["ForcedSortName"] = data.SortName
+	existing["Genres"] = data.Genres
 
 	// Styles and Moods map to Tags (flat string array on Jellyfin).
 	tags := append([]string{}, data.Styles...)
 	tags = append(tags, data.Moods...)
-	if len(tags) > 0 {
-		existing["Tags"] = tags
-	}
+	existing["Tags"] = tags
 
 	if data.MusicBrainzID != "" {
 		// Merge into existing ProviderIds to preserve IDs managed by Jellyfin

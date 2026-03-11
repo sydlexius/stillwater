@@ -266,6 +266,9 @@ func extractFieldValue(req *http.Request, field string) (string, error) {
 		if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
 			return "", fmt.Errorf("invalid JSON body: %w", err)
 		}
+		if len(body.Value) == 0 || string(body.Value) == "null" {
+			return "", nil
+		}
 		// Try string first (most common case).
 		var s string
 		if err := json.Unmarshal(body.Value, &s); err == nil {
@@ -395,7 +398,6 @@ func (r *Router) asyncPushMetadataToConnections(ctx context.Context, a *artist.A
 	data := buildArtistPushData(a)
 
 	for _, pid := range platformIDs {
-		pid := pid
 		go func() { //nolint:gosec // G118: goroutine must outlive the HTTP request context; context.Background() with explicit timeout is correct here
 			gCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()

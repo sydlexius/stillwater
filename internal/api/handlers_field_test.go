@@ -196,9 +196,6 @@ func TestWriteBackNFO_CreatesSnapshot(t *testing.T) {
 	}
 }
 
-// TestWriteBackNFO_StatNotExist verifies that writeBackNFO skips silently when
-// the artist has a path and NFOExists is true in the DB, but the file was
-// deleted from disk (os.IsNotExist). No NFO file should be created.
 func TestExtractFieldValue(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -263,6 +260,20 @@ func TestExtractFieldValue(t *testing.T) {
 			contentType: "application/json",
 			body:        `{"value":42}`,
 			wantErr:     true,
+		},
+		{
+			name:        "json null value returns empty",
+			field:       "biography",
+			contentType: "application/json",
+			body:        `{"value":null}`,
+			want:        "",
+		},
+		{
+			name:        "json missing value key returns empty",
+			field:       "biography",
+			contentType: "application/json",
+			body:        `{}`,
+			want:        "",
 		},
 	}
 	for _, tt := range tests {

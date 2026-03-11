@@ -439,6 +439,53 @@ func TestPushMetadata(t *testing.T) {
 	}
 }
 
+// TestPushMetadata_ClearsFields verifies that empty values in the push data
+// overwrite existing Jellyfin values, allowing field clears to propagate.
+func TestPushMetadata_ClearsFields(t *testing.T) {
+	bodyCh := make(chan map[string]any, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/Items" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"Items":[{
+				"Name":"Old Name","Id":"jf-clear-1",
+				"Overview":"Old bio","ForcedSortName":"Old Sort",
+				"Genres":["Rock"],"Tags":["Grunge"]
+			}]}`))
+			return
+		}
+		var m map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&m); err != nil {
+			t.Errorf("decoding body: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		bodyCh <- m
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "key", "", srv.Client(), testLogger())
+	// Push with empty Biography, SortName, and nil Genres/Styles/Moods.
+	data := connection.ArtistPushData{Name: "New Name"}
+	if err := c.PushMetadata(context.Background(), "jf-clear-1", data); err != nil {
+		t.Fatalf("PushMetadata failed: %v", err)
+	}
+	got := <-bodyCh
+	if overview, _ := got["Overview"].(string); overview != "" {
+		t.Errorf("Overview = %q, want empty (field should be cleared)", overview)
+	}
+	if sortName, _ := got["ForcedSortName"].(string); sortName != "" {
+		t.Errorf("ForcedSortName = %q, want empty (field should be cleared)", sortName)
+	}
+	// Genres and Tags should be nil slices marshaled as JSON null, not the old values.
+	if genres, ok := got["Genres"].([]any); ok && len(genres) > 0 {
+		t.Errorf("Genres = %v, want empty/null (field should be cleared)", genres)
+	}
+	if tags, ok := got["Tags"].([]any); ok && len(tags) > 0 {
+		t.Errorf("Tags = %v, want empty/null (field should be cleared)", tags)
+	}
+}
+
 func TestPushMetadata_ServerError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Serve a valid item for the GET fetch, return 500 only for the POST.
@@ -510,6 +557,25 @@ func TestPushMetadata_FetchItemError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "not found") {
 		t.Errorf("error = %q, want it to contain 'not found'", err.Error())
+	}
+}
+
+// TestPushMetadata_FetchItemHTTPError verifies that PushMetadata returns a clear
+// error when the GET /Items call itself returns a non-2xx status.
+func TestPushMetadata_FetchItemHTTPError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("internal server error"))
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "key", "", srv.Client(), testLogger())
+	err := c.PushMetadata(context.Background(), "jf-001", connection.ArtistPushData{Name: "Test"})
+	if err == nil {
+		t.Fatal("expected error when fetch returns 500")
+	}
+	if !strings.Contains(err.Error(), "fetch failed with status 500") {
+		t.Errorf("error = %q, want message about fetch failed with status 500", err.Error())
 	}
 }
 

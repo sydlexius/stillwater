@@ -164,7 +164,7 @@ func TestMapArtist_GroupExcludesBorn(t *testing.T) {
 		Artist:     "a-ha",
 		FormedYear: "1985",
 		BornYear:   "1982",
-		DiedYear:   "0",
+		DiedYear:   "2010",
 		Disbanded:  "2010",
 	}
 	meta := mapArtist(art)
@@ -173,6 +173,9 @@ func TestMapArtist_GroupExcludesBorn(t *testing.T) {
 	}
 	if meta.Born != "" {
 		t.Errorf("Born = %q, want empty (group should not have Born)", meta.Born)
+	}
+	if meta.Died != "" {
+		t.Errorf("Died = %q, want empty (group should not have Died)", meta.Died)
 	}
 	if meta.Disbanded != "2010" {
 		t.Errorf("Disbanded = %q, want 2010", meta.Disbanded)

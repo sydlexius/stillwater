@@ -261,12 +261,13 @@ func mapArtist(art *AudioDBArtist) *provider.ArtistMetadata {
 		meta.Moods = splitAndTrim(art.Mood)
 	}
 
-	// AudioDB returns separate FormedYear and BornYear fields but does not
-	// distinguish groups from persons. Apply the same heuristic as MusicBrainz:
-	// if FormedYear is set the entity is a group, so map FormedYear to Formed
-	// and skip BornYear/DiedYear entirely. BornYear and DiedYear are only used
-	// for non-groups (persons). This prevents groups from getting a Born value
-	// that would take precedence over Formed in the push code.
+	// AudioDB returns separate FormedYear and BornYear fields but has no
+	// explicit type field (unlike MusicBrainz's Person/Group/Orchestra/Choir).
+	// Infer group status from FormedYear: if set, treat the entity as a group,
+	// map FormedYear to Formed, and skip BornYear/DiedYear entirely. BornYear
+	// and DiedYear are only used for non-groups (persons). This prevents groups
+	// from getting a Born value that would take precedence over Formed in the
+	// push code.
 	isGroup := art.FormedYear != "" && art.FormedYear != "0"
 	if isGroup {
 		meta.Formed = art.FormedYear
