@@ -9,13 +9,13 @@ import (
 // Scheduler periodically runs enabled rules via the pipeline, respecting
 // each rule's automation mode.
 type Scheduler struct {
-	pipeline    *Pipeline
+	pipeline    PipelineRunner
 	ruleService *Service
 	logger      *slog.Logger
 }
 
 // NewScheduler creates a rule scheduler.
-func NewScheduler(pipeline *Pipeline, ruleService *Service, logger *slog.Logger) *Scheduler {
+func NewScheduler(pipeline PipelineRunner, ruleService *Service, logger *slog.Logger) *Scheduler {
 	return &Scheduler{
 		pipeline:    pipeline,
 		ruleService: ruleService,

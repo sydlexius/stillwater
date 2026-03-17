@@ -22,7 +22,7 @@ type BulkExecutor struct {
 	bulkService     *BulkService
 	artistService   *artist.Service
 	orchestrator    *provider.Orchestrator
-	pipeline        *Pipeline
+	pipeline        PipelineRunner
 	snapshotService *nfo.SnapshotService
 	platformService *platform.Service
 	logger          *slog.Logger
@@ -39,7 +39,7 @@ func (e *BulkExecutor) SetEventBus(bus *event.Bus) {
 }
 
 // NewBulkExecutor creates a BulkExecutor.
-func NewBulkExecutor(bulkService *BulkService, artistService *artist.Service, orchestrator *provider.Orchestrator, pipeline *Pipeline, snapshotService *nfo.SnapshotService, platformService *platform.Service, logger *slog.Logger) *BulkExecutor {
+func NewBulkExecutor(bulkService *BulkService, artistService *artist.Service, orchestrator *provider.Orchestrator, pipeline PipelineRunner, snapshotService *nfo.SnapshotService, platformService *platform.Service, logger *slog.Logger) *BulkExecutor {
 	return &BulkExecutor{
 		bulkService:     bulkService,
 		artistService:   artistService,

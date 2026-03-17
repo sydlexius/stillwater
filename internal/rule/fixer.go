@@ -43,6 +43,17 @@ type RunResult struct {
 	Results          []FixResult `json:"results"`
 }
 
+// PipelineRunner abstracts the rule pipeline so consumers can be tested
+// with stubs instead of requiring a full Engine, Service, and Fixer chain.
+type PipelineRunner interface {
+	RunForArtist(ctx context.Context, a *artist.Artist) (*RunResult, error)
+	RunRule(ctx context.Context, ruleID string) (*RunResult, error)
+	RunAll(ctx context.Context) (*RunResult, error)
+}
+
+// Compile-time assertion: *Pipeline implements PipelineRunner.
+var _ PipelineRunner = (*Pipeline)(nil)
+
 // Pipeline orchestrates rule evaluation and auto-fixing across artists.
 type Pipeline struct {
 	engine        *Engine
