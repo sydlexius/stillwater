@@ -22,14 +22,15 @@ const (
 	RuleLogoExists   = "logo_exists"
 	RuleBioExists    = "bio_exists"
 	// Image quality rule IDs.
-	RuleFanartMinRes     = "fanart_min_res"
-	RuleFanartAspect     = "fanart_aspect"
-	RuleLogoMinRes       = "logo_min_res"
-	RuleBannerExists     = "banner_exists"
-	RuleBannerMinRes     = "banner_min_res"
-	RuleExtraneousImages = "extraneous_images"
-	RuleArtistIDMismatch = "artist_id_mismatch"
-	RuleLogoTrimmable    = "logo_trimmable"
+	RuleFanartMinRes          = "fanart_min_res"
+	RuleFanartAspect          = "fanart_aspect"
+	RuleLogoMinRes            = "logo_min_res"
+	RuleBannerExists          = "banner_exists"
+	RuleBannerMinRes          = "banner_min_res"
+	RuleExtraneousImages      = "extraneous_images"
+	RuleArtistIDMismatch      = "artist_id_mismatch"
+	RuleLogoTrimmable         = "logo_trimmable"
+	RuleDirectoryNameMismatch = "directory_name_mismatch"
 )
 
 // defaultRules defines the built-in rules seeded on first startup.
@@ -164,6 +165,14 @@ var defaultRules = []Rule{
 		Enabled:        false,
 		AutomationMode: "manual",
 		Config:         RuleConfig{ThresholdPercent: 5, Severity: "info"},
+	},
+	{
+		ID:          RuleDirectoryNameMismatch,
+		Name:        "Directory name matches artist",
+		Description: "Artist directory name should match the canonical artist name",
+		Category:    "metadata",
+		Enabled:     true,
+		Config:      RuleConfig{Severity: "warning", ArticleMode: "prefix"},
 	},
 }
 
