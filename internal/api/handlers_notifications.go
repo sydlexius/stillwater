@@ -104,10 +104,52 @@ func (r *Router) handleClearResolvedViolations(w http.ResponseWriter, req *http.
 	writeJSON(w, http.StatusOK, map[string]string{"status": "cleared"})
 }
 
+// parseNotificationParams extracts filter/sort/group params from the request.
+func parseNotificationParams(req *http.Request) rule.ViolationListParams {
+	q := req.URL.Query()
+
+	status := q.Get("status")
+	if status == "" {
+		status = "active"
+	}
+
+	return rule.ViolationListParams{
+		Status:   status,
+		Sort:     q.Get("sort"),
+		Order:    q.Get("order"),
+		Severity: q.Get("severity"),
+		Category: q.Get("category"),
+		RuleID:   q.Get("rule_id"),
+		GroupBy:  q.Get("group_by"),
+	}
+}
+
+// buildNotificationsData creates the template data from params and violations.
+func buildNotificationsData(p rule.ViolationListParams, violations []rule.RuleViolation) templates.NotificationsData {
+	data := templates.NotificationsData{
+		Violations: violations,
+		Sort:       p.Sort,
+		Order:      p.Order,
+		Severity:   p.Severity,
+		Category:   p.Category,
+		RuleID:     p.RuleID,
+		GroupBy:    p.GroupBy,
+	}
+
+	if p.GroupBy != "" {
+		data.Groups = rule.GroupViolations(violations, p.GroupBy)
+		data.Grouped = true
+	}
+
+	return data
+}
+
 // handleNotificationsPage renders the notifications page.
 // GET /notifications
 func (r *Router) handleNotificationsPage(w http.ResponseWriter, req *http.Request) {
-	violations, err := r.ruleService.ListViolations(req.Context(), "active")
+	p := parseNotificationParams(req)
+
+	violations, err := r.ruleService.ListViolationsFiltered(req.Context(), p)
 	if err != nil {
 		writeError(w, req, http.StatusInternalServerError, "failed to load violations")
 		return
@@ -117,9 +159,7 @@ func (r *Router) handleNotificationsPage(w http.ResponseWriter, req *http.Reques
 		violations = []rule.RuleViolation{}
 	}
 
-	data := templates.NotificationsData{
-		Violations: violations,
-	}
+	data := buildNotificationsData(p, violations)
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_ = templates.NotificationsPage(r.assets(), data).Render(req.Context(), w)
@@ -282,7 +322,9 @@ func (r *Router) handleNotificationBadge(w http.ResponseWriter, req *http.Reques
 // handleNotificationsTable renders the notifications table for HTMX swaps.
 // GET /notifications/table
 func (r *Router) handleNotificationsTable(w http.ResponseWriter, req *http.Request) {
-	violations, err := r.ruleService.ListViolations(req.Context(), "active")
+	p := parseNotificationParams(req)
+
+	violations, err := r.ruleService.ListViolationsFiltered(req.Context(), p)
 	if err != nil {
 		writeError(w, req, http.StatusInternalServerError, "failed to load violations")
 		return
@@ -292,9 +334,7 @@ func (r *Router) handleNotificationsTable(w http.ResponseWriter, req *http.Reque
 		violations = []rule.RuleViolation{}
 	}
 
-	data := templates.NotificationsData{
-		Violations: violations,
-	}
+	data := buildNotificationsData(p, violations)
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_ = templates.NotificationsTable(data).Render(req.Context(), w)

@@ -457,6 +457,401 @@ func TestMarshalUnmarshalCandidates(t *testing.T) {
 	}
 }
 
+func TestListViolationsFiltered_DefaultSort(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("SeedDefaults: %v", err)
+	}
+
+	// Insert violations with different severities
+	violations := []*RuleViolation{
+		{RuleID: RuleNFOExists, ArtistID: "a1", ArtistName: "Charlie", Severity: "info", Message: "m1", Status: ViolationStatusOpen},
+		{RuleID: RuleThumbExists, ArtistID: "a2", ArtistName: "Alice", Severity: "error", Message: "m2", Status: ViolationStatusOpen},
+		{RuleID: RuleFanartExists, ArtistID: "a3", ArtistName: "Bob", Severity: "warning", Message: "m3", Status: ViolationStatusOpen},
+	}
+	for _, v := range violations {
+		if err := svc.UpsertViolation(ctx, v); err != nil {
+			t.Fatalf("UpsertViolation: %v", err)
+		}
+	}
+
+	// Default sort should return results (severity DESC, created_at DESC)
+	result, err := svc.ListViolationsFiltered(ctx, ViolationListParams{Status: "active"})
+	if err != nil {
+		t.Fatalf("ListViolationsFiltered: %v", err)
+	}
+	if len(result) != 3 {
+		t.Fatalf("expected 3 violations, got %d", len(result))
+	}
+}
+
+func TestListViolationsFiltered_SortByArtistName(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("SeedDefaults: %v", err)
+	}
+
+	violations := []*RuleViolation{
+		{RuleID: RuleNFOExists, ArtistID: "a1", ArtistName: "Charlie", Severity: "error", Message: "m1", Status: ViolationStatusOpen},
+		{RuleID: RuleThumbExists, ArtistID: "a2", ArtistName: "Alice", Severity: "warning", Message: "m2", Status: ViolationStatusOpen},
+		{RuleID: RuleFanartExists, ArtistID: "a3", ArtistName: "Bob", Severity: "info", Message: "m3", Status: ViolationStatusOpen},
+	}
+	for _, v := range violations {
+		if err := svc.UpsertViolation(ctx, v); err != nil {
+			t.Fatalf("UpsertViolation: %v", err)
+		}
+	}
+
+	result, err := svc.ListViolationsFiltered(ctx, ViolationListParams{
+		Status: "active",
+		Sort:   "artist_name",
+		Order:  "asc",
+	})
+	if err != nil {
+		t.Fatalf("ListViolationsFiltered: %v", err)
+	}
+	if len(result) != 3 {
+		t.Fatalf("expected 3 violations, got %d", len(result))
+	}
+	if result[0].ArtistName != "Alice" {
+		t.Errorf("first artist = %q, want Alice", result[0].ArtistName)
+	}
+	if result[1].ArtistName != "Bob" {
+		t.Errorf("second artist = %q, want Bob", result[1].ArtistName)
+	}
+	if result[2].ArtistName != "Charlie" {
+		t.Errorf("third artist = %q, want Charlie", result[2].ArtistName)
+	}
+}
+
+func TestListViolationsFiltered_FilterBySeverity(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("SeedDefaults: %v", err)
+	}
+
+	violations := []*RuleViolation{
+		{RuleID: RuleNFOExists, ArtistID: "a1", ArtistName: "A1", Severity: "error", Message: "m1", Status: ViolationStatusOpen},
+		{RuleID: RuleThumbExists, ArtistID: "a2", ArtistName: "A2", Severity: "warning", Message: "m2", Status: ViolationStatusOpen},
+		{RuleID: RuleFanartExists, ArtistID: "a3", ArtistName: "A3", Severity: "error", Message: "m3", Status: ViolationStatusOpen},
+	}
+	for _, v := range violations {
+		if err := svc.UpsertViolation(ctx, v); err != nil {
+			t.Fatalf("UpsertViolation: %v", err)
+		}
+	}
+
+	result, err := svc.ListViolationsFiltered(ctx, ViolationListParams{
+		Status:   "active",
+		Severity: "error",
+	})
+	if err != nil {
+		t.Fatalf("ListViolationsFiltered: %v", err)
+	}
+	if len(result) != 2 {
+		t.Fatalf("expected 2 error violations, got %d", len(result))
+	}
+	for _, v := range result {
+		if v.Severity != "error" {
+			t.Errorf("severity = %q, want error", v.Severity)
+		}
+	}
+}
+
+func TestListViolationsFiltered_FilterByCategory(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("SeedDefaults: %v", err)
+	}
+
+	violations := []*RuleViolation{
+		{RuleID: RuleNFOExists, ArtistID: "a1", ArtistName: "A1", Severity: "error", Message: "m1", Status: ViolationStatusOpen},
+		{RuleID: RuleThumbExists, ArtistID: "a2", ArtistName: "A2", Severity: "warning", Message: "m2", Status: ViolationStatusOpen},
+		{RuleID: RuleBioExists, ArtistID: "a3", ArtistName: "A3", Severity: "info", Message: "m3", Status: ViolationStatusOpen},
+	}
+	for _, v := range violations {
+		if err := svc.UpsertViolation(ctx, v); err != nil {
+			t.Fatalf("UpsertViolation: %v", err)
+		}
+	}
+
+	// Filter by "nfo" category (only nfo_exists should match)
+	result, err := svc.ListViolationsFiltered(ctx, ViolationListParams{
+		Status:   "active",
+		Category: "nfo",
+	})
+	if err != nil {
+		t.Fatalf("ListViolationsFiltered: %v", err)
+	}
+	if len(result) != 1 {
+		t.Fatalf("expected 1 nfo violation, got %d", len(result))
+	}
+	if result[0].RuleID != RuleNFOExists {
+		t.Errorf("rule_id = %q, want %q", result[0].RuleID, RuleNFOExists)
+	}
+}
+
+func TestListViolationsFiltered_FilterByRuleID(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("SeedDefaults: %v", err)
+	}
+
+	violations := []*RuleViolation{
+		{RuleID: RuleNFOExists, ArtistID: "a1", ArtistName: "A1", Severity: "error", Message: "m1", Status: ViolationStatusOpen},
+		{RuleID: RuleThumbExists, ArtistID: "a2", ArtistName: "A2", Severity: "warning", Message: "m2", Status: ViolationStatusOpen},
+	}
+	for _, v := range violations {
+		if err := svc.UpsertViolation(ctx, v); err != nil {
+			t.Fatalf("UpsertViolation: %v", err)
+		}
+	}
+
+	result, err := svc.ListViolationsFiltered(ctx, ViolationListParams{
+		Status: "active",
+		RuleID: RuleThumbExists,
+	})
+	if err != nil {
+		t.Fatalf("ListViolationsFiltered: %v", err)
+	}
+	if len(result) != 1 {
+		t.Fatalf("expected 1 violation, got %d", len(result))
+	}
+	if result[0].RuleID != RuleThumbExists {
+		t.Errorf("rule_id = %q, want %q", result[0].RuleID, RuleThumbExists)
+	}
+}
+
+func TestListViolationsFiltered_ActiveStatus(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("SeedDefaults: %v", err)
+	}
+
+	violations := []*RuleViolation{
+		{RuleID: RuleNFOExists, ArtistID: "a1", ArtistName: "A1", Severity: "error", Message: "m1", Status: ViolationStatusOpen},
+		{RuleID: RuleThumbExists, ArtistID: "a2", ArtistName: "A2", Severity: "warning", Message: "m2", Status: ViolationStatusDismissed},
+		{RuleID: RuleFanartExists, ArtistID: "a3", ArtistName: "A3", Severity: "info", Message: "m3", Status: ViolationStatusPendingChoice,
+			Candidates: []ImageCandidate{{URL: "http://example.com/img.jpg", Width: 500, Height: 500, Source: "test", ImageType: "thumb"}}},
+	}
+	for _, v := range violations {
+		if err := svc.UpsertViolation(ctx, v); err != nil {
+			t.Fatalf("UpsertViolation: %v", err)
+		}
+	}
+
+	result, err := svc.ListViolationsFiltered(ctx, ViolationListParams{Status: "active"})
+	if err != nil {
+		t.Fatalf("ListViolationsFiltered: %v", err)
+	}
+	if len(result) != 2 {
+		t.Fatalf("expected 2 active violations, got %d", len(result))
+	}
+	for _, v := range result {
+		if v.Status == ViolationStatusDismissed {
+			t.Error("dismissed violation should not appear in active results")
+		}
+	}
+}
+
+func TestListViolationsFiltered_CombinedFilters(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("SeedDefaults: %v", err)
+	}
+
+	violations := []*RuleViolation{
+		{RuleID: RuleNFOExists, ArtistID: "a1", ArtistName: "A1", Severity: "error", Message: "m1", Status: ViolationStatusOpen},
+		{RuleID: RuleNFOHasMBID, ArtistID: "a2", ArtistName: "A2", Severity: "warning", Message: "m2", Status: ViolationStatusOpen},
+		{RuleID: RuleThumbExists, ArtistID: "a3", ArtistName: "A3", Severity: "error", Message: "m3", Status: ViolationStatusOpen},
+	}
+	for _, v := range violations {
+		if err := svc.UpsertViolation(ctx, v); err != nil {
+			t.Fatalf("UpsertViolation: %v", err)
+		}
+	}
+
+	// Filter by category=nfo AND severity=error
+	result, err := svc.ListViolationsFiltered(ctx, ViolationListParams{
+		Status:   "active",
+		Category: "nfo",
+		Severity: "error",
+	})
+	if err != nil {
+		t.Fatalf("ListViolationsFiltered: %v", err)
+	}
+	if len(result) != 1 {
+		t.Fatalf("expected 1 violation (nfo + error), got %d", len(result))
+	}
+	if result[0].RuleID != RuleNFOExists {
+		t.Errorf("rule_id = %q, want %q", result[0].RuleID, RuleNFOExists)
+	}
+}
+
+func TestListViolationsFiltered_InvalidSort(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("SeedDefaults: %v", err)
+	}
+
+	// An invalid sort column should fall back to default (no SQL injection)
+	_, err := svc.ListViolationsFiltered(ctx, ViolationListParams{
+		Sort: "DROP TABLE rule_violations; --",
+	})
+	if err != nil {
+		t.Fatalf("ListViolationsFiltered with invalid sort should not error: %v", err)
+	}
+}
+
+func TestGroupViolations_ByArtist(t *testing.T) {
+	violations := []RuleViolation{
+		{ArtistID: "a1", ArtistName: "Alice", RuleID: RuleNFOExists, Severity: "error"},
+		{ArtistID: "a2", ArtistName: "Bob", RuleID: RuleThumbExists, Severity: "warning"},
+		{ArtistID: "a1", ArtistName: "Alice", RuleID: RuleFanartExists, Severity: "info"},
+	}
+
+	groups := GroupViolations(violations, "artist")
+	if len(groups) != 2 {
+		t.Fatalf("expected 2 groups, got %d", len(groups))
+	}
+
+	// First group should be Alice (a1) with 2 violations
+	if groups[0].Key != "a1" {
+		t.Errorf("first group key = %q, want a1", groups[0].Key)
+	}
+	if groups[0].Label != "Alice" {
+		t.Errorf("first group label = %q, want Alice", groups[0].Label)
+	}
+	if groups[0].Count != 2 {
+		t.Errorf("first group count = %d, want 2", groups[0].Count)
+	}
+	if groups[1].Key != "a2" {
+		t.Errorf("second group key = %q, want a2", groups[1].Key)
+	}
+	if groups[1].Count != 1 {
+		t.Errorf("second group count = %d, want 1", groups[1].Count)
+	}
+}
+
+func TestGroupViolations_BySeverity(t *testing.T) {
+	violations := []RuleViolation{
+		{ArtistID: "a1", ArtistName: "A1", RuleID: RuleNFOExists, Severity: "error"},
+		{ArtistID: "a2", ArtistName: "A2", RuleID: RuleThumbExists, Severity: "warning"},
+		{ArtistID: "a3", ArtistName: "A3", RuleID: RuleFanartExists, Severity: "error"},
+	}
+
+	groups := GroupViolations(violations, "severity")
+	if len(groups) != 2 {
+		t.Fatalf("expected 2 groups, got %d", len(groups))
+	}
+	if groups[0].Key != "error" {
+		t.Errorf("first group key = %q, want error", groups[0].Key)
+	}
+	if groups[0].Count != 2 {
+		t.Errorf("error group count = %d, want 2", groups[0].Count)
+	}
+	if groups[1].Key != "warning" {
+		t.Errorf("second group key = %q, want warning", groups[1].Key)
+	}
+}
+
+func TestGroupViolations_ByRule(t *testing.T) {
+	violations := []RuleViolation{
+		{ArtistID: "a1", ArtistName: "A1", RuleID: RuleNFOExists, Severity: "error"},
+		{ArtistID: "a2", ArtistName: "A2", RuleID: RuleNFOExists, Severity: "error"},
+		{ArtistID: "a3", ArtistName: "A3", RuleID: RuleThumbExists, Severity: "warning"},
+	}
+
+	groups := GroupViolations(violations, "rule")
+	if len(groups) != 2 {
+		t.Fatalf("expected 2 groups, got %d", len(groups))
+	}
+	if groups[0].Key != RuleNFOExists {
+		t.Errorf("first group key = %q, want %q", groups[0].Key, RuleNFOExists)
+	}
+	if groups[0].Count != 2 {
+		t.Errorf("first group count = %d, want 2", groups[0].Count)
+	}
+}
+
+func TestGroupViolations_ByCategory(t *testing.T) {
+	violations := []RuleViolation{
+		{ArtistID: "a1", ArtistName: "A1", RuleID: RuleNFOExists, Severity: "error"},
+		{ArtistID: "a2", ArtistName: "A2", RuleID: RuleThumbExists, Severity: "warning"},
+		{ArtistID: "a3", ArtistName: "A3", RuleID: RuleBioExists, Severity: "info"},
+		{ArtistID: "a4", ArtistName: "A4", RuleID: RuleFanartExists, Severity: "warning"},
+	}
+
+	groups := GroupViolations(violations, "category")
+	if len(groups) != 3 {
+		t.Fatalf("expected 3 groups (nfo, image, metadata), got %d", len(groups))
+	}
+
+	// Build a map for easier assertion
+	byKey := make(map[string]ViolationGroup)
+	for _, g := range groups {
+		byKey[g.Key] = g
+	}
+	if byKey["nfo"].Count != 1 {
+		t.Errorf("nfo group count = %d, want 1", byKey["nfo"].Count)
+	}
+	if byKey["image"].Count != 2 {
+		t.Errorf("image group count = %d, want 2", byKey["image"].Count)
+	}
+	if byKey["metadata"].Count != 1 {
+		t.Errorf("metadata group count = %d, want 1", byKey["metadata"].Count)
+	}
+}
+
+func TestGroupViolations_Empty(t *testing.T) {
+	groups := GroupViolations(nil, "artist")
+	if len(groups) != 0 {
+		t.Errorf("expected 0 groups for nil violations, got %d", len(groups))
+	}
+}
+
+func TestGroupViolations_NoGroupBy(t *testing.T) {
+	violations := []RuleViolation{
+		{ArtistID: "a1", ArtistName: "A1", RuleID: RuleNFOExists, Severity: "error"},
+		{ArtistID: "a2", ArtistName: "A2", RuleID: RuleThumbExists, Severity: "warning"},
+	}
+
+	groups := GroupViolations(violations, "")
+	if len(groups) != 1 {
+		t.Fatalf("expected 1 group for empty groupBy, got %d", len(groups))
+	}
+	if groups[0].Count != 2 {
+		t.Errorf("group count = %d, want 2", groups[0].Count)
+	}
+	if groups[0].Key != "all" {
+		t.Errorf("group key = %q, want all", groups[0].Key)
+	}
+}
+
 func TestList_OrderedByCategoryAndName(t *testing.T) {
 	db := setupTestDB(t)
 	svc := NewService(db)
