@@ -800,8 +800,10 @@ templ candidateScript() {
 			method: 'POST',
 			headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
 			credentials: 'same-origin'
-		}).then(function(resp) { return resp.json(); })
-		.then(function(data) {
+		}).then(function(resp) {
+			if (!resp.ok && resp.status !== 409) throw new Error('HTTP ' + resp.status);
+			return resp.json();
+		}).then(function(data) {
 			if (data.status === 'running' && data.total) {
 				if (typeof showSuccessToast === 'function') showSuccessToast('Applying fixes for ' + data.total + ' violations...');
 				pollFixAllStatus();

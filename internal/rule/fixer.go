@@ -32,6 +32,7 @@ type CandidateDiscoverer interface {
 type FixResult struct {
 	RuleID     string           `json:"rule_id"`
 	Fixed      bool             `json:"fixed"`
+	Dismissed  bool             `json:"dismissed,omitempty"` // true when violation was auto-dismissed (e.g. orphaned artist)
 	Message    string           `json:"message"`
 	Candidates []ImageCandidate `json:"candidates,omitempty"` // set when multiple candidates need user selection
 }
@@ -559,7 +560,7 @@ func (p *Pipeline) FixViolation(ctx context.Context, violationID string) (*FixRe
 				p.logger.Warn("failed to dismiss orphaned violation", "id", rv.ID, "error", dErr)
 				return &FixResult{RuleID: rv.RuleID, Fixed: false, Message: "artist deleted; dismiss failed"}, nil
 			}
-			return &FixResult{RuleID: rv.RuleID, Fixed: false, Message: "artist deleted; violation dismissed"}, nil
+			return &FixResult{RuleID: rv.RuleID, Dismissed: true, Message: "artist deleted; violation dismissed"}, nil
 		}
 		return nil, fmt.Errorf("loading artist %s: %w", rv.ArtistID, err)
 	}

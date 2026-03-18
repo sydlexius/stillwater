@@ -6,7 +6,6 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 
@@ -44,7 +43,7 @@ func (r *Router) handleFixViolation(w http.ResponseWriter, req *http.Request) {
 	switch {
 	case fr.Fixed:
 		status = "fixed"
-	case strings.Contains(fr.Message, "dismissed"):
+	case fr.Dismissed:
 		status = "dismissed"
 	default:
 		status = "failed"
@@ -123,8 +122,17 @@ func (r *Router) handleFixAll(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	// Claim the fix-all slot atomically: set progress before releasing the lock.
 	scoped := len(idSet) > 0
-	r.startFixAll(req.Context(), fixable, scoped)
+	progress := &FixAllProgress{
+		Status: "running",
+		Total:  len(fixable),
+	}
+	r.fixAllMu.Lock()
+	r.fixAllProgress = progress
+	r.fixAllMu.Unlock()
+
+	r.runFixAll(req.Context(), fixable, scoped, progress)
 
 	writeJSON(w, http.StatusAccepted, map[string]any{
 		"status": "running",
@@ -158,24 +166,16 @@ func (r *Router) handleFixAllStatus(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
-// startFixAll begins fixing violations in a background goroutine.
+// runFixAll begins fixing violations in a background goroutine.
+// The caller must set r.fixAllProgress before calling this method.
 //
 // Optimizations over a naive per-violation loop:
 //  1. Orphan cleanup: dismiss violations for deleted artists in one SQL query
 //     (skipped when the request is scoped to specific IDs)
-//  2. Artist grouping: load each artist once, fix all its violations together
+//  2. Artist grouping: check each artist once, skip orphaned groups
 //  3. Rule caching: Pipeline caches rule lookups across the entire run
 //  4. Yield: sleep between artist groups to release the SQLite write lock
-func (r *Router) startFixAll(reqCtx context.Context, violations []rule.RuleViolation, scoped bool) {
-	progress := &FixAllProgress{
-		Status: "running",
-		Total:  len(violations),
-	}
-
-	r.fixAllMu.Lock()
-	r.fixAllProgress = progress
-	r.fixAllMu.Unlock()
-
+func (r *Router) runFixAll(reqCtx context.Context, violations []rule.RuleViolation, scoped bool, progress *FixAllProgress) {
 	go func() {
 		// Detach from request lifecycle but preserve request-scoped values.
 		ctx := context.WithoutCancel(reqCtx)
