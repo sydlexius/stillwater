@@ -1,3 +1,19 @@
+language: en-US
 reviews:
-  # Never stop reviewing after N rounds (default: 5)
-  max_iterations: 0
+  auto_review:
+    enabled: true
+    drafts: false
+    auto_pause_after_reviewed_commits: 0
+  path_filters:
+    - "!**/*.csv"
+    - "!**/*.env*"
+  profile: assertive
+  request_changes_workflow: true
+  high_level_summary: true
+  poem: false
+  review_instructions: |
+    After completing your full review, end your summary comment
+    with the exact phrase on its own line:
+    "This is the Way."
+chat:
+  auto_reply: true
