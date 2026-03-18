@@ -739,6 +739,7 @@ func canonicalDirName(name, articleMode string) string {
 			prefix := art + " "
 			if len(name) > len(prefix) && strings.EqualFold(name[:len(prefix)], prefix) {
 				name = name[len(prefix):]
+				break // strip at most one leading article
 			}
 		}
 	}
@@ -757,6 +758,11 @@ func checkDirectoryNameMismatch(a *artist.Artist, cfg RuleConfig) *Violation {
 
 	dirName := filepath.Base(a.Path)
 	canonical := canonicalDirName(a.Name, cfg.ArticleMode)
+
+	// Skip if the artist name cannot produce a safe directory name.
+	if canonical == "" {
+		return nil
+	}
 
 	if strings.EqualFold(dirName, canonical) {
 		return nil
