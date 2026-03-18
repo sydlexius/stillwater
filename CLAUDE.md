@@ -181,7 +181,7 @@ Skip it for single-threaded code paths:
   - `band_members` -- members of bands/groups with instruments and tenure
   - `nfo_snapshots` -- historical NFO file versions for undo/restore
 - Shared database helpers (type conversions, nullable handling) in `internal/dbutil/`
-- All artist-related tables use `ON DELETE CASCADE` on `artist_id` foreign keys (including `rule_violations`). `DismissOrphanedViolations` handles cleanup for violations whose rule was deleted, not artist deletion.
+- All artist-related tables use `ON DELETE CASCADE` on `artist_id` foreign keys; `rule_violations` also cascades on `rule_id`. `DismissOrphanedViolations` is a safety net for orphaned violations when foreign keys are disabled or data is inconsistent.
 
 ## Rule Engine Internals
 
