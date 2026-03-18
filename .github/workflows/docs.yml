@@ -31,8 +31,10 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Check typos
+      - name: Check typos in markdown
         uses: crate-ci/typos@v1.44.0
+        with:
+          files: '**/*.md'
 
       - name: Lint markdown
         uses: DavidAnson/markdownlint-cli2-action@v19
