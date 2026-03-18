@@ -825,6 +825,7 @@ func (e *Engine) makeImageDuplicateChecker() Checker {
 			hashes = append(hashes, slotHash{slot: slot, hash: h})
 		}
 		if err := rows.Err(); err != nil {
+			e.logger.Debug("iterating image hash rows", "artist", a.Name, "error", err)
 			return nil
 		}
 
