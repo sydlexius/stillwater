@@ -31,6 +31,7 @@ const (
 	RuleArtistIDMismatch      = "artist_id_mismatch"
 	RuleLogoTrimmable         = "logo_trimmable"
 	RuleDirectoryNameMismatch = "directory_name_mismatch"
+	RuleImageDuplicate        = "image_duplicate"
 )
 
 // defaultRules defines the built-in rules seeded on first startup.
@@ -174,6 +175,14 @@ var defaultRules = []Rule{
 		Enabled:        true,
 		AutomationMode: AutomationModeManual,
 		Config:         RuleConfig{Severity: "warning", ArticleMode: "prefix"},
+	},
+	{
+		ID:          RuleImageDuplicate,
+		Name:        "No duplicate images",
+		Description: "Different image slots should not contain visually similar images (default threshold: 90%)",
+		Category:    "image",
+		Enabled:     false,
+		Config:      RuleConfig{Severity: "warning", Tolerance: 0.90},
 	},
 }
 

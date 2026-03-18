@@ -776,4 +776,77 @@ func checkDirectoryNameMismatch(a *artist.Artist, cfg RuleConfig) *Violation {
 		Message:  fmt.Sprintf("directory %q does not match expected %q", dirName, canonical),
 		Fixable:  true,
 	}
+
+}
+
+// makeImageDuplicateChecker returns a Checker closure that detects visually
+// similar images across different image slots for the same artist. It reads
+// pre-computed dHash values from the artist_images table and compares all
+// pairs using Hamming distance.
+func (e *Engine) makeImageDuplicateChecker() Checker {
+	return func(a *artist.Artist, cfg RuleConfig) *Violation {
+		if a.Path == "" || e.db == nil {
+			return nil
+		}
+
+		tolerance := cfg.Tolerance
+		if tolerance <= 0 || tolerance > 1.0 {
+			tolerance = 0.90
+		}
+
+		type slotHash struct {
+			slot string
+			hash uint64
+		}
+
+		// Select one hash per image_type (slot_index = 0) to compare across
+		// different types only. Within-type comparison (e.g. fanart slot 0 vs 1)
+		// is not the goal of this rule.
+		rows, err := e.db.QueryContext(context.Background(),
+			`SELECT image_type, phash FROM artist_images WHERE artist_id = ? AND slot_index = 0 AND exists_flag = 1 AND phash IS NOT NULL AND phash != '' AND phash != '0000000000000000'`,
+			a.ID)
+		if err != nil {
+			e.logger.Debug("querying image hashes", "artist", a.Name, "error", err)
+			return nil
+		}
+		defer rows.Close() //nolint:errcheck
+
+		var hashes []slotHash
+		for rows.Next() {
+			var slot, hashStr string
+			if err := rows.Scan(&slot, &hashStr); err != nil {
+				e.logger.Debug("scanning image hash row", "artist", a.Name, "error", err)
+				continue
+			}
+			h, err := image.ParseHashHex(hashStr)
+			if err != nil || h == 0 {
+				continue
+			}
+			hashes = append(hashes, slotHash{slot: slot, hash: h})
+		}
+		if err := rows.Err(); err != nil {
+			e.logger.Debug("iterating image hash rows", "artist", a.Name, "error", err)
+			return nil
+		}
+
+		// Compare all pairs.
+		for i := 0; i < len(hashes); i++ {
+			for j := i + 1; j < len(hashes); j++ {
+				sim := image.Similarity(hashes[i].hash, hashes[j].hash)
+				if sim >= tolerance {
+					return &Violation{
+						RuleID:   RuleImageDuplicate,
+						RuleName: "No duplicate images",
+						Category: "image",
+						Severity: effectiveSeverity(cfg),
+						Message: fmt.Sprintf("artist %q: %s and %s are %.0f%% similar",
+							a.Name, hashes[i].slot, hashes[j].slot, sim*100),
+						Fixable: false,
+					}
+				}
+			}
+		}
+
+		return nil
+	}
 }

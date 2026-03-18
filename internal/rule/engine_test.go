@@ -103,14 +103,14 @@ func TestEvaluate_EmptyArtist(t *testing.T) {
 		t.Fatalf("Evaluate: %v", err)
 	}
 
-	// Should fail 6 of 8 remaining enabled rules (extraneous_images and directory_name_mismatch pass)
+	// 8 enabled rules (image_duplicate and logo_trimmable disabled). Passes: extraneous_images, directory_name_mismatch.
 	if result.RulesTotal != 8 {
 		t.Errorf("RulesTotal = %d, want 8", result.RulesTotal)
 	}
 	if result.RulesPassed != 2 {
 		t.Errorf("RulesPassed = %d, want 2", result.RulesPassed)
 	}
-	expectedScore := 25.0 // 2/8 * 100, rounded to 1 decimal
+	expectedScore := 25.0 // 2/8 * 100
 	if result.HealthScore != expectedScore {
 		t.Errorf("HealthScore = %.1f, want %.1f", result.HealthScore, expectedScore)
 	}
@@ -288,8 +288,8 @@ func TestEngine_WithRealDB(t *testing.T) {
 		t.Fatal("expected non-nil engine")
 	}
 
-	// Verify all checkers are registered (8 core + 5 image quality + 1 extraneous + 1 mismatch + 1 logo trim + 1 dir name = 17)
-	if len(engine.checkers) != 17 {
-		t.Errorf("expected 17 checkers, got %d", len(engine.checkers))
+	// 8 core + 5 image quality + 1 extraneous + 1 mismatch + 1 logo trim + 1 dir name + 1 image dedup = 18
+	if len(engine.checkers) != 18 {
+		t.Errorf("expected 18 checkers, got %d", len(engine.checkers))
 	}
 }
