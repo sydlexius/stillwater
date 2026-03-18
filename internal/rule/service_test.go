@@ -478,13 +478,70 @@ func TestListViolationsFiltered_DefaultSort(t *testing.T) {
 		}
 	}
 
-	// Default sort should return results (severity DESC, created_at DESC)
+	// Default sort should return errors first, then warning, then info
 	result, err := svc.ListViolationsFiltered(ctx, ViolationListParams{Status: "active"})
 	if err != nil {
 		t.Fatalf("ListViolationsFiltered: %v", err)
 	}
 	if len(result) != 3 {
 		t.Fatalf("expected 3 violations, got %d", len(result))
+	}
+	if result[0].Severity != "error" {
+		t.Errorf("result[0].Severity = %q, want %q", result[0].Severity, "error")
+	}
+	if result[1].Severity != "warning" {
+		t.Errorf("result[1].Severity = %q, want %q", result[1].Severity, "warning")
+	}
+	if result[2].Severity != "info" {
+		t.Errorf("result[2].Severity = %q, want %q", result[2].Severity, "info")
+	}
+}
+
+func TestListViolationsFiltered_ExplicitSeveritySort(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("SeedDefaults: %v", err)
+	}
+
+	violations := []*RuleViolation{
+		{RuleID: RuleNFOExists, ArtistID: "a1", ArtistName: "Charlie", Severity: "info", Message: "m1", Status: ViolationStatusOpen},
+		{RuleID: RuleThumbExists, ArtistID: "a2", ArtistName: "Alice", Severity: "error", Message: "m2", Status: ViolationStatusOpen},
+		{RuleID: RuleFanartExists, ArtistID: "a3", ArtistName: "Bob", Severity: "warning", Message: "m3", Status: ViolationStatusOpen},
+	}
+	for _, v := range violations {
+		if err := svc.UpsertViolation(ctx, v); err != nil {
+			t.Fatalf("UpsertViolation: %v", err)
+		}
+	}
+
+	// Explicit sort=severity DESC should order error > warning > info
+	result, err := svc.ListViolationsFiltered(ctx, ViolationListParams{Status: "active", Sort: "severity", Order: "desc"})
+	if err != nil {
+		t.Fatalf("ListViolationsFiltered: %v", err)
+	}
+	if len(result) != 3 {
+		t.Fatalf("expected 3 violations, got %d", len(result))
+	}
+	if result[0].Severity != "error" {
+		t.Errorf("DESC result[0].Severity = %q, want %q", result[0].Severity, "error")
+	}
+	if result[2].Severity != "info" {
+		t.Errorf("DESC result[2].Severity = %q, want %q", result[2].Severity, "info")
+	}
+
+	// Explicit sort=severity ASC should order info > warning > error
+	result, err = svc.ListViolationsFiltered(ctx, ViolationListParams{Status: "active", Sort: "severity", Order: "asc"})
+	if err != nil {
+		t.Fatalf("ListViolationsFiltered ASC: %v", err)
+	}
+	if result[0].Severity != "info" {
+		t.Errorf("ASC result[0].Severity = %q, want %q", result[0].Severity, "info")
+	}
+	if result[2].Severity != "error" {
+		t.Errorf("ASC result[2].Severity = %q, want %q", result[2].Severity, "error")
 	}
 }
 

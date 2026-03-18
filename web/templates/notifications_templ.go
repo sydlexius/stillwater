@@ -60,7 +60,7 @@ func NotificationsPage(assets AssetPaths, data NotificationsData) templ.Componen
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"space-y-6\"><div class=\"sw-card rounded-lg px-6 py-4\"><h1 class=\"text-2xl font-bold\">Rule Violation Notifications</h1><p class=\"mt-1 text-sm text-gray-500 dark:text-gray-400\">Review and manage unresolved rule violations</p></div><!-- Filter bar --><div class=\"flex flex-wrap items-center gap-3\"><select name=\"severity\" hx-get=\"/notifications/table\" hx-trigger=\"change\" hx-target=\"#notifications-table\" hx-swap=\"innerHTML\" hx-include=\"[name='category'],[name='group_by'],[name='rule_id'],#notif-sort,#notif-order\" class=\"rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500\"><option value=\"\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"space-y-6\"><div class=\"sw-card rounded-lg px-6 py-4\"><h1 class=\"text-2xl font-bold\">Rule Violation Notifications</h1><p class=\"mt-1 text-sm text-gray-500 dark:text-gray-400\">Review and manage unresolved rule violations</p></div><!-- Filter bar --><div class=\"flex flex-wrap items-center gap-3\"><select name=\"severity\" id=\"notif-severity\" aria-label=\"Filter by severity\" hx-get=\"/notifications/table\" hx-trigger=\"change\" hx-target=\"#notifications-table\" hx-swap=\"innerHTML\" hx-include=\"[name='category'],[name='group_by'],[name='rule_id'],#notif-sort,#notif-order\" class=\"rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500\"><option value=\"\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -100,7 +100,7 @@ func NotificationsPage(assets AssetPaths, data NotificationsData) templ.Componen
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, ">Info</option></select> <select name=\"category\" hx-get=\"/notifications/table\" hx-trigger=\"change\" hx-target=\"#notifications-table\" hx-swap=\"innerHTML\" hx-include=\"[name='severity'],[name='group_by'],[name='rule_id'],#notif-sort,#notif-order\" class=\"rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500\"><option value=\"\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, ">Info</option></select> <select name=\"category\" id=\"notif-category\" aria-label=\"Filter by category\" hx-get=\"/notifications/table\" hx-trigger=\"change\" hx-target=\"#notifications-table\" hx-swap=\"innerHTML\" hx-include=\"[name='severity'],[name='group_by'],[name='rule_id'],#notif-sort,#notif-order\" class=\"rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500\"><option value=\"\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -140,7 +140,7 @@ func NotificationsPage(assets AssetPaths, data NotificationsData) templ.Componen
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, ">Metadata</option></select> <select name=\"group_by\" hx-get=\"/notifications/table\" hx-trigger=\"change\" hx-target=\"#notifications-table\" hx-swap=\"innerHTML\" hx-include=\"[name='severity'],[name='category'],[name='rule_id'],#notif-sort,#notif-order\" class=\"rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500\"><option value=\"\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, ">Metadata</option></select> <select name=\"group_by\" id=\"notif-group-by\" aria-label=\"Group violations by\" hx-get=\"/notifications/table\" hx-trigger=\"change\" hx-target=\"#notifications-table\" hx-swap=\"innerHTML\" hx-include=\"[name='severity'],[name='category'],[name='rule_id'],#notif-sort,#notif-order\" class=\"rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500\"><option value=\"\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -197,7 +197,7 @@ func NotificationsPage(assets AssetPaths, data NotificationsData) templ.Componen
 			var templ_7745c5c3_Var3 string
 			templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(data.Sort)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 78, Col: 69}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 84, Col: 69}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 			if templ_7745c5c3_Err != nil {
@@ -210,13 +210,13 @@ func NotificationsPage(assets AssetPaths, data NotificationsData) templ.Componen
 			var templ_7745c5c3_Var4 string
 			templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(data.Order)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 79, Col: 72}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 85, Col: 72}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "\"><div id=\"notifications-table\" hx-get=\"/notifications/table\" hx-trigger=\"load\" hx-swap=\"innerHTML\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "\"><div id=\"notifications-table\" hx-get=\"/notifications/table\" hx-trigger=\"load\" hx-swap=\"innerHTML\" hx-include=\"[name='severity'],[name='category'],[name='group_by'],[name='rule_id'],#notif-sort,#notif-order\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -329,7 +329,7 @@ func notificationsTableContent(data NotificationsData) templ.Component {
 		var templ_7745c5c3_Var7 string
 		templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(sortIcon(data.Sort, "artist_name", data.Order))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 155, Col: 60}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 162, Col: 60}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 		if templ_7745c5c3_Err != nil {
@@ -342,7 +342,7 @@ func notificationsTableContent(data NotificationsData) templ.Component {
 		var templ_7745c5c3_Var8 string
 		templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(sortIcon(data.Sort, "rule_id", data.Order))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 164, Col: 54}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 171, Col: 54}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 		if templ_7745c5c3_Err != nil {
@@ -355,7 +355,7 @@ func notificationsTableContent(data NotificationsData) templ.Component {
 		var templ_7745c5c3_Var9 string
 		templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(sortIcon(data.Sort, "severity", data.Order))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 173, Col: 59}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 180, Col: 59}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 		if templ_7745c5c3_Err != nil {
@@ -368,7 +368,7 @@ func notificationsTableContent(data NotificationsData) templ.Component {
 		var templ_7745c5c3_Var10 string
 		templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(sortIcon(data.Sort, "created_at", data.Order))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 183, Col: 56}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 190, Col: 56}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 		if templ_7745c5c3_Err != nil {
@@ -462,7 +462,7 @@ func notificationsGroupedContent(data NotificationsData) templ.Component {
 			var templ_7745c5c3_Var13 string
 			templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(g.Label)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 244, Col: 14}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 251, Col: 14}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 			if templ_7745c5c3_Err != nil {
@@ -475,7 +475,7 @@ func notificationsGroupedContent(data NotificationsData) templ.Component {
 			var templ_7745c5c3_Var14 string
 			templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", g.Count))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 248, Col: 34}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 255, Col: 34}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 			if templ_7745c5c3_Err != nil {
@@ -488,7 +488,7 @@ func notificationsGroupedContent(data NotificationsData) templ.Component {
 			var templ_7745c5c3_Var15 string
 			templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("notif-group-%d-icon", i))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 250, Col: 52}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 257, Col: 52}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 			if templ_7745c5c3_Err != nil {
@@ -501,7 +501,7 @@ func notificationsGroupedContent(data NotificationsData) templ.Component {
 			var templ_7745c5c3_Var16 string
 			templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("notif-group-%d", i))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 255, Col: 45}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 262, Col: 45}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 			if templ_7745c5c3_Err != nil {
@@ -514,7 +514,7 @@ func notificationsGroupedContent(data NotificationsData) templ.Component {
 			var templ_7745c5c3_Var17 string
 			templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(sortIcon(data.Sort, "artist_name", data.Order))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 273, Col: 62}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 280, Col: 62}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 			if templ_7745c5c3_Err != nil {
@@ -527,7 +527,7 @@ func notificationsGroupedContent(data NotificationsData) templ.Component {
 			var templ_7745c5c3_Var18 string
 			templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(sortIcon(data.Sort, "rule_id", data.Order))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 282, Col: 56}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 289, Col: 56}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
 			if templ_7745c5c3_Err != nil {
@@ -540,7 +540,7 @@ func notificationsGroupedContent(data NotificationsData) templ.Component {
 			var templ_7745c5c3_Var19 string
 			templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(sortIcon(data.Sort, "severity", data.Order))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 291, Col: 61}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 298, Col: 61}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 			if templ_7745c5c3_Err != nil {
@@ -553,7 +553,7 @@ func notificationsGroupedContent(data NotificationsData) templ.Component {
 			var templ_7745c5c3_Var20 string
 			templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(sortIcon(data.Sort, "created_at", data.Order))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 301, Col: 58}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 308, Col: 58}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
 			if templ_7745c5c3_Err != nil {
@@ -606,7 +606,7 @@ func notifViolationRow(v rule.RuleViolation) templ.Component {
 		var templ_7745c5c3_Var22 string
 		templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinStringErrs("notif-" + v.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 316, Col: 28}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 323, Col: 28}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
 		if templ_7745c5c3_Err != nil {
@@ -619,7 +619,7 @@ func notifViolationRow(v rule.RuleViolation) templ.Component {
 		var templ_7745c5c3_Var23 string
 		templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(v.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 322, Col: 29}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 329, Col: 29}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
 		if templ_7745c5c3_Err != nil {
@@ -632,7 +632,7 @@ func notifViolationRow(v rule.RuleViolation) templ.Component {
 		var templ_7745c5c3_Var24 string
 		templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinStringErrs(v.ArtistName)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 326, Col: 92}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 333, Col: 92}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
 		if templ_7745c5c3_Err != nil {
@@ -645,7 +645,7 @@ func notifViolationRow(v rule.RuleViolation) templ.Component {
 		var templ_7745c5c3_Var25 string
 		templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.JoinStringErrs(v.RuleID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 327, Col: 76}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 334, Col: 76}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var25))
 		if templ_7745c5c3_Err != nil {
@@ -680,7 +680,7 @@ func notifViolationRow(v rule.RuleViolation) templ.Component {
 		var templ_7745c5c3_Var28 string
 		templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.JoinStringErrs(v.Severity)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 330, Col: 17}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 337, Col: 17}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var28))
 		if templ_7745c5c3_Err != nil {
@@ -693,7 +693,7 @@ func notifViolationRow(v rule.RuleViolation) templ.Component {
 		var templ_7745c5c3_Var29 string
 		templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.JoinStringErrs(v.Message)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 333, Col: 77}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 340, Col: 77}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var29))
 		if templ_7745c5c3_Err != nil {
@@ -706,7 +706,7 @@ func notifViolationRow(v rule.RuleViolation) templ.Component {
 		var templ_7745c5c3_Var30 string
 		templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.JoinStringErrs(formatAge(v.CreatedAt))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 335, Col: 28}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 342, Col: 28}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var30))
 		if templ_7745c5c3_Err != nil {
@@ -724,7 +724,7 @@ func notifViolationRow(v rule.RuleViolation) templ.Component {
 			var templ_7745c5c3_Var31 string
 			templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.JoinStringErrs("candidates-" + v.ID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 342, Col: 48}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 349, Col: 48}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var31))
 			if templ_7745c5c3_Err != nil {
@@ -742,7 +742,7 @@ func notifViolationRow(v rule.RuleViolation) templ.Component {
 		var templ_7745c5c3_Var32 string
 		templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.JoinStringErrs("/api/v1/notifications/" + v.ID + "/dismiss")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 350, Col: 60}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 357, Col: 60}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var32))
 		if templ_7745c5c3_Err != nil {
@@ -755,13 +755,13 @@ func notifViolationRow(v rule.RuleViolation) templ.Component {
 		var templ_7745c5c3_Var33 string
 		templ_7745c5c3_Var33, templ_7745c5c3_Err = templ.JoinStringErrs("#notif-" + v.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 352, Col: 34}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 359, Col: 34}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var33))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 67, "\" hx-swap=\"outerHTML swap:300ms\" class=\"font-semibold text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300\">Dismiss</button></div></td></tr>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 67, "\" hx-swap=\"outerHTML swap:300ms\" hx-on::after-request=\"if(event.detail.successful) reloadNotificationsTable()\" class=\"font-semibold text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300\">Dismiss</button></div></td></tr>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -773,7 +773,7 @@ func notifViolationRow(v rule.RuleViolation) templ.Component {
 			var templ_7745c5c3_Var34 string
 			templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.JoinStringErrs("candidates-" + v.ID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 362, Col: 32}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 370, Col: 32}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var34))
 			if templ_7745c5c3_Err != nil {
@@ -786,7 +786,7 @@ func notifViolationRow(v rule.RuleViolation) templ.Component {
 			var templ_7745c5c3_Var35 string
 			templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d candidate(s) -- click image to preview, then apply", len(v.Candidates)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 369, Col: 96}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 377, Col: 96}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var35))
 			if templ_7745c5c3_Err != nil {
@@ -804,7 +804,7 @@ func notifViolationRow(v rule.RuleViolation) templ.Component {
 				var templ_7745c5c3_Var36 string
 				templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.JoinStringErrs(c.URL)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 378, Col: 21}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 386, Col: 21}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var36))
 				if templ_7745c5c3_Err != nil {
@@ -817,7 +817,7 @@ func notifViolationRow(v rule.RuleViolation) templ.Component {
 				var templ_7745c5c3_Var37 string
 				templ_7745c5c3_Var37, templ_7745c5c3_Err = templ.JoinStringErrs(providerDisplayName(c.Source))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 379, Col: 45}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 387, Col: 45}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var37))
 				if templ_7745c5c3_Err != nil {
@@ -830,7 +830,7 @@ func notifViolationRow(v rule.RuleViolation) templ.Component {
 				var templ_7745c5c3_Var38 string
 				templ_7745c5c3_Var38, templ_7745c5c3_Err = templ.JoinStringErrs(v.ID)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 386, Col: 34}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 394, Col: 34}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var38))
 				if templ_7745c5c3_Err != nil {
@@ -843,7 +843,7 @@ func notifViolationRow(v rule.RuleViolation) templ.Component {
 				var templ_7745c5c3_Var39 string
 				templ_7745c5c3_Var39, templ_7745c5c3_Err = templ.JoinStringErrs(c.URL)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 387, Col: 26}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 395, Col: 26}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var39))
 				if templ_7745c5c3_Err != nil {
@@ -856,7 +856,7 @@ func notifViolationRow(v rule.RuleViolation) templ.Component {
 				var templ_7745c5c3_Var40 string
 				templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.JoinStringErrs(c.ImageType)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 388, Col: 39}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 396, Col: 39}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var40))
 				if templ_7745c5c3_Err != nil {
@@ -869,7 +869,7 @@ func notifViolationRow(v rule.RuleViolation) templ.Component {
 				var templ_7745c5c3_Var41 string
 				templ_7745c5c3_Var41, templ_7745c5c3_Err = templ.JoinStringErrs(c.Source)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 389, Col: 32}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 397, Col: 32}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var41))
 				if templ_7745c5c3_Err != nil {
@@ -887,7 +887,7 @@ func notifViolationRow(v rule.RuleViolation) templ.Component {
 					var templ_7745c5c3_Var42 string
 					templ_7745c5c3_Var42, templ_7745c5c3_Err = templ.JoinStringErrs(logoSrc(c.Source))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 411, Col: 34}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 419, Col: 34}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var42))
 					if templ_7745c5c3_Err != nil {
@@ -900,7 +900,7 @@ func notifViolationRow(v rule.RuleViolation) templ.Component {
 					var templ_7745c5c3_Var43 string
 					templ_7745c5c3_Var43, templ_7745c5c3_Err = templ.JoinStringErrs(providerDisplayName(c.Source))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 412, Col: 46}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 420, Col: 46}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var43))
 					if templ_7745c5c3_Err != nil {
@@ -913,7 +913,7 @@ func notifViolationRow(v rule.RuleViolation) templ.Component {
 					var templ_7745c5c3_Var44 string
 					templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.JoinStringErrs(providerDisplayName(c.Source))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 413, Col: 48}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 421, Col: 48}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var44))
 					if templ_7745c5c3_Err != nil {
@@ -936,7 +936,7 @@ func notifViolationRow(v rule.RuleViolation) templ.Component {
 				var templ_7745c5c3_Var45 string
 				templ_7745c5c3_Var45, templ_7745c5c3_Err = templ.JoinStringErrs(v.ID)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 421, Col: 34}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 429, Col: 34}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var45))
 				if templ_7745c5c3_Err != nil {
@@ -949,7 +949,7 @@ func notifViolationRow(v rule.RuleViolation) templ.Component {
 				var templ_7745c5c3_Var46 string
 				templ_7745c5c3_Var46, templ_7745c5c3_Err = templ.JoinStringErrs(c.URL)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 422, Col: 26}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 430, Col: 26}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var46))
 				if templ_7745c5c3_Err != nil {
@@ -962,7 +962,7 @@ func notifViolationRow(v rule.RuleViolation) templ.Component {
 				var templ_7745c5c3_Var47 string
 				templ_7745c5c3_Var47, templ_7745c5c3_Err = templ.JoinStringErrs(c.ImageType)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 423, Col: 39}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 431, Col: 39}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var47))
 				if templ_7745c5c3_Err != nil {
@@ -1037,7 +1037,7 @@ func candidateScript() templ.Component {
 			templ_7745c5c3_Var49 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 90, "<script>\n\t// ---- Violation row toggle ----\n\tfunction toggleCandidates(id) {\n\t\tvar row = document.getElementById(id);\n\t\tif (row) row.classList.toggle('hidden');\n\t}\n\n\t// ---- Apply candidate (shared by card button and modal) ----\n\tfunction applyCandidate(violationID, url, imageType) {\n\t\tvar csrfToken = document.cookie.replace(\n\t\t\t/(?:(?:^|.*;\\s*)csrf_token\\s*=\\s*([^;]*).*$)|^.*$/, '$1'\n\t\t);\n\t\tfetch('/api/v1/notifications/' + violationID + '/apply-candidate', {\n\t\t\tmethod: 'POST',\n\t\t\theaders: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},\n\t\t\tbody: JSON.stringify({url: url, image_type: imageType}),\n\t\t\tcredentials: 'same-origin'\n\t\t}).then(function(r) {\n\t\t\tif (r.ok) {\n\t\t\t\tvar tbody = document.getElementById('notif-' + violationID);\n\t\t\t\tif (tbody) tbody.remove();\n\t\t\t\tupdateBulkButton();\n\t\t\t} else if (typeof showToast === 'function') {\n\t\t\t\tshowToast('Failed to apply image.');\n\t\t\t}\n\t\t}).catch(function() {\n\t\t\tif (typeof showToast === 'function') showToast('Network error applying image.');\n\t\t});\n\t}\n\n\t// ---- Card dimension update (fires on img load) ----\n\tfunction updateCandidateCardDims(img) {\n\t\tif (img.naturalWidth > 0) {\n\t\t\tvar card = img.closest('.candidate-card');\n\t\t\tif (card) {\n\t\t\t\tvar el = card.querySelector('.candidate-dims');\n\t\t\t\tif (el) el.textContent = img.naturalWidth + 'x' + img.naturalHeight;\n\t\t\t}\n\t\t}\n\t}\n\n\t// ---- Candidate preview modal ----\n\tvar _previewViolationID, _previewURL, _previewImageType;\n\tvar _previewTriggerEl = null;\n\n\tfunction _providerDisplayName(source) {\n\t\tvar names = {\n\t\t\t'fanarttv':    'Fanart.tv',\n\t\t\t'audiodb':     'TheAudioDB',\n\t\t\t'discogs':     'Discogs',\n\t\t\t'musicbrainz': 'MusicBrainz',\n\t\t\t'lastfm':      'Last.fm',\n\t\t\t'deezer':      'Deezer',\n\t\t\t'duckduckgo':  'DuckDuckGo',\n\t\t\t'genius':      'Genius'\n\t\t};\n\t\treturn names[source] || source;\n\t}\n\n\tfunction _providerLogoURL(source) {\n\t\tvar logos = {\n\t\t\t'fanarttv':    '/static/img/logos/fanarttv.svg',\n\t\t\t'audiodb':     '/static/img/logos/audiodb-32.png',\n\t\t\t'discogs':     '/static/img/logos/discogs.svg',\n\t\t\t'musicbrainz': '/static/img/logos/musicbrainz.svg',\n\t\t\t'lastfm':      '/static/img/logos/lastfm.svg',\n\t\t\t'deezer':      '/static/img/logos/deezer.svg',\n\t\t\t'genius':      '/static/img/logos/genius.svg'\n\t\t};\n\t\treturn logos[source] || '';\n\t}\n\n\tfunction openCandidatePreview(violationID, url, imageType, source) {\n\t\t_previewViolationID = violationID;\n\t\t_previewURL = url;\n\t\t_previewImageType = imageType;\n\n\t\tvar img = document.getElementById('preview-image');\n\t\timg.src = '';\n\t\tdocument.getElementById('preview-dims').textContent = 'Loading...';\n\t\tdocument.getElementById('preview-provider-name').textContent = _providerDisplayName(source);\n\n\t\tvar logo = document.getElementById('preview-provider-logo');\n\t\tvar logoURL = _providerLogoURL(source);\n\t\tif (logoURL) {\n\t\t\tlogo.src = logoURL;\n\t\t\tlogo.alt = _providerDisplayName(source);\n\t\t\tlogo.title = _providerDisplayName(source);\n\t\t\tlogo.classList.remove('hidden');\n\t\t} else {\n\t\t\tlogo.classList.add('hidden');\n\t\t}\n\n\t\timg.src = url;\n\t\t_previewTriggerEl = document.activeElement;\n\t\tdocument.getElementById('candidate-preview-modal').classList.remove('hidden');\n\t\tdocument.body.style.overflow = 'hidden';\n\t\tvar closeBtn = document.querySelector('#candidate-preview-modal button[aria-label=\"Close preview\"]');\n\t\tif (closeBtn) closeBtn.focus();\n\t}\n\n\tfunction closeCandidatePreview() {\n\t\tdocument.getElementById('candidate-preview-modal').classList.add('hidden');\n\t\tdocument.body.style.overflow = '';\n\t\t// Clear src to stop any in-progress load\n\t\tdocument.getElementById('preview-image').src = '';\n\t\tif (_previewTriggerEl) { _previewTriggerEl.focus(); _previewTriggerEl = null; }\n\t}\n\n\tfunction updatePreviewDims(img) {\n\t\tvar el = document.getElementById('preview-dims');\n\t\tif (el) {\n\t\t\tel.textContent = img.naturalWidth > 0 ? img.naturalWidth + 'x' + img.naturalHeight : '';\n\t\t}\n\t}\n\n\tfunction applyFromPreview() {\n\t\tvar vid = _previewViolationID, url = _previewURL, type = _previewImageType;\n\t\tcloseCandidatePreview();\n\t\tapplyCandidate(vid, url, type);\n\t}\n\n\t// Close on Escape key (guard against multiple registrations on HTMX swaps)\n\tif (!window.__candidateEscapeListenerRegistered) {\n\t\tdocument.addEventListener('keydown', function(e) {\n\t\t\tif (e.key === 'Escape') closeCandidatePreview();\n\t\t});\n\t\twindow.__candidateEscapeListenerRegistered = true;\n\t}\n\n\t// ---- Bulk selection ----\n\tfunction toggleSelectAll(cb) {\n\t\tdocument.querySelectorAll('.violation-checkbox').forEach(function(c) {\n\t\t\tc.checked = cb.checked;\n\t\t});\n\t\tupdateBulkButton();\n\t}\n\n\tfunction updateBulkButton() {\n\t\tvar checked = document.querySelectorAll('.violation-checkbox:checked');\n\t\tvar btn = document.getElementById('bulk-dismiss-btn');\n\t\tif (!btn) return;\n\t\tif (checked.length > 0) {\n\t\t\tbtn.textContent = 'Dismiss ' + checked.length + ' selected';\n\t\t\tbtn.classList.remove('hidden');\n\t\t} else {\n\t\t\tbtn.classList.add('hidden');\n\t\t}\n\t}\n\n\tfunction bulkDismissAll() {\n\t\tif (!confirm('Dismiss all active violations?')) return;\n\t\tvar csrfToken = document.cookie.replace(\n\t\t\t/(?:(?:^|.*;\\s*)csrf_token\\s*=\\s*([^;]*).*$)|^.*$/, '$1'\n\t\t);\n\t\tfetch('/api/v1/notifications/bulk-dismiss', {\n\t\t\tmethod: 'POST',\n\t\t\theaders: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},\n\t\t\tbody: '{}',\n\t\t\tcredentials: 'same-origin'\n\t\t}).then(function(r) {\n\t\t\tif (r.ok) {\n\t\t\t\thtmx.ajax('GET', '/notifications/table', {target: '#notifications-table', swap: 'innerHTML'});\n\t\t\t} else if (typeof showToast === 'function') {\n\t\t\t\tshowToast('Failed to dismiss violations.');\n\t\t\t}\n\t\t}).catch(function() {\n\t\t\tif (typeof showToast === 'function') showToast('Network error dismissing violations.');\n\t\t});\n\t}\n\n\tfunction bulkDismissSelected() {\n\t\tvar ids = [];\n\t\tdocument.querySelectorAll('.violation-checkbox:checked').forEach(function(c) {\n\t\t\tids.push(c.dataset.violationId);\n\t\t});\n\t\tif (ids.length === 0) return;\n\t\tvar csrfToken = document.cookie.replace(\n\t\t\t/(?:(?:^|.*;\\s*)csrf_token\\s*=\\s*([^;]*).*$)|^.*$/, '$1'\n\t\t);\n\t\tfetch('/api/v1/notifications/bulk-dismiss', {\n\t\t\tmethod: 'POST',\n\t\t\theaders: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},\n\t\t\tbody: JSON.stringify({ids: ids}),\n\t\t\tcredentials: 'same-origin'\n\t\t}).then(function(r) {\n\t\t\tif (r.ok) {\n\t\t\t\thtmx.ajax('GET', '/notifications/table', {target: '#notifications-table', swap: 'innerHTML'});\n\t\t\t} else if (typeof showToast === 'function') {\n\t\t\t\tshowToast('Failed to dismiss violations.');\n\t\t\t}\n\t\t}).catch(function() {\n\t\t\tif (typeof showToast === 'function') showToast('Network error dismissing violations.');\n\t\t});\n\t}\n\n\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 90, "<script>\n\t// ---- Violation row toggle ----\n\tfunction toggleCandidates(id) {\n\t\tvar row = document.getElementById(id);\n\t\tif (row) row.classList.toggle('hidden');\n\t}\n\n\t// ---- Apply candidate (shared by card button and modal) ----\n\tfunction applyCandidate(violationID, url, imageType) {\n\t\tvar csrfToken = document.cookie.replace(\n\t\t\t/(?:(?:^|.*;\\s*)csrf_token\\s*=\\s*([^;]*).*$)|^.*$/, '$1'\n\t\t);\n\t\tfetch('/api/v1/notifications/' + violationID + '/apply-candidate', {\n\t\t\tmethod: 'POST',\n\t\t\theaders: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},\n\t\t\tbody: JSON.stringify({url: url, image_type: imageType}),\n\t\t\tcredentials: 'same-origin'\n\t\t}).then(function(r) {\n\t\t\tif (r.ok) {\n\t\t\t\tvar tbody = document.getElementById('notif-' + violationID);\n\t\t\t\tif (tbody) tbody.remove();\n\t\t\t\tupdateBulkButton();\n\t\t\t} else if (typeof showToast === 'function') {\n\t\t\t\tshowToast('Failed to apply image.');\n\t\t\t}\n\t\t}).catch(function() {\n\t\t\tif (typeof showToast === 'function') showToast('Network error applying image.');\n\t\t});\n\t}\n\n\t// ---- Card dimension update (fires on img load) ----\n\tfunction updateCandidateCardDims(img) {\n\t\tif (img.naturalWidth > 0) {\n\t\t\tvar card = img.closest('.candidate-card');\n\t\t\tif (card) {\n\t\t\t\tvar el = card.querySelector('.candidate-dims');\n\t\t\t\tif (el) el.textContent = img.naturalWidth + 'x' + img.naturalHeight;\n\t\t\t}\n\t\t}\n\t}\n\n\t// ---- Candidate preview modal ----\n\tvar _previewViolationID, _previewURL, _previewImageType;\n\tvar _previewTriggerEl = null;\n\n\tfunction _providerDisplayName(source) {\n\t\tvar names = {\n\t\t\t'fanarttv':    'Fanart.tv',\n\t\t\t'audiodb':     'TheAudioDB',\n\t\t\t'discogs':     'Discogs',\n\t\t\t'musicbrainz': 'MusicBrainz',\n\t\t\t'lastfm':      'Last.fm',\n\t\t\t'deezer':      'Deezer',\n\t\t\t'duckduckgo':  'DuckDuckGo',\n\t\t\t'genius':      'Genius'\n\t\t};\n\t\treturn names[source] || source;\n\t}\n\n\tfunction _providerLogoURL(source) {\n\t\tvar logos = {\n\t\t\t'fanarttv':    '/static/img/logos/fanarttv.svg',\n\t\t\t'audiodb':     '/static/img/logos/audiodb-32.png',\n\t\t\t'discogs':     '/static/img/logos/discogs.svg',\n\t\t\t'musicbrainz': '/static/img/logos/musicbrainz.svg',\n\t\t\t'lastfm':      '/static/img/logos/lastfm.svg',\n\t\t\t'deezer':      '/static/img/logos/deezer.svg',\n\t\t\t'genius':      '/static/img/logos/genius.svg'\n\t\t};\n\t\treturn logos[source] || '';\n\t}\n\n\tfunction openCandidatePreview(violationID, url, imageType, source) {\n\t\t_previewViolationID = violationID;\n\t\t_previewURL = url;\n\t\t_previewImageType = imageType;\n\n\t\tvar img = document.getElementById('preview-image');\n\t\timg.src = '';\n\t\tdocument.getElementById('preview-dims').textContent = 'Loading...';\n\t\tdocument.getElementById('preview-provider-name').textContent = _providerDisplayName(source);\n\n\t\tvar logo = document.getElementById('preview-provider-logo');\n\t\tvar logoURL = _providerLogoURL(source);\n\t\tif (logoURL) {\n\t\t\tlogo.src = logoURL;\n\t\t\tlogo.alt = _providerDisplayName(source);\n\t\t\tlogo.title = _providerDisplayName(source);\n\t\t\tlogo.classList.remove('hidden');\n\t\t} else {\n\t\t\tlogo.classList.add('hidden');\n\t\t}\n\n\t\timg.src = url;\n\t\t_previewTriggerEl = document.activeElement;\n\t\tdocument.getElementById('candidate-preview-modal').classList.remove('hidden');\n\t\tdocument.body.style.overflow = 'hidden';\n\t\tvar closeBtn = document.querySelector('#candidate-preview-modal button[aria-label=\"Close preview\"]');\n\t\tif (closeBtn) closeBtn.focus();\n\t}\n\n\tfunction closeCandidatePreview() {\n\t\tdocument.getElementById('candidate-preview-modal').classList.add('hidden');\n\t\tdocument.body.style.overflow = '';\n\t\t// Clear src to stop any in-progress load\n\t\tdocument.getElementById('preview-image').src = '';\n\t\tif (_previewTriggerEl) { _previewTriggerEl.focus(); _previewTriggerEl = null; }\n\t}\n\n\tfunction updatePreviewDims(img) {\n\t\tvar el = document.getElementById('preview-dims');\n\t\tif (el) {\n\t\t\tel.textContent = img.naturalWidth > 0 ? img.naturalWidth + 'x' + img.naturalHeight : '';\n\t\t}\n\t}\n\n\tfunction applyFromPreview() {\n\t\tvar vid = _previewViolationID, url = _previewURL, type = _previewImageType;\n\t\tcloseCandidatePreview();\n\t\tapplyCandidate(vid, url, type);\n\t}\n\n\t// Close on Escape key (guard against multiple registrations on HTMX swaps)\n\tif (!window.__candidateEscapeListenerRegistered) {\n\t\tdocument.addEventListener('keydown', function(e) {\n\t\t\tif (e.key === 'Escape') closeCandidatePreview();\n\t\t});\n\t\twindow.__candidateEscapeListenerRegistered = true;\n\t}\n\n\t// ---- Bulk selection ----\n\tfunction toggleSelectAll(cb) {\n\t\t// Scope to the closest table so group headers only affect their own group.\n\t\tvar table = cb.closest('table');\n\t\tvar scope = table || document;\n\t\tscope.querySelectorAll('.violation-checkbox').forEach(function(c) {\n\t\t\tc.checked = cb.checked;\n\t\t});\n\t\tupdateBulkButton();\n\t}\n\n\tfunction updateBulkButton() {\n\t\tvar checked = document.querySelectorAll('.violation-checkbox:checked');\n\t\tvar btn = document.getElementById('bulk-dismiss-btn');\n\t\tif (!btn) return;\n\t\tif (checked.length > 0) {\n\t\t\tbtn.textContent = 'Dismiss ' + checked.length + ' selected';\n\t\t\tbtn.classList.remove('hidden');\n\t\t} else {\n\t\t\tbtn.classList.add('hidden');\n\t\t}\n\t}\n\n\t// Reload the notifications table preserving current filter/sort/group state.\n\t// Called after dismiss/apply to keep group counts and empty-state accurate.\n\tfunction reloadNotificationsTable() {\n\t\tvar params = new URLSearchParams();\n\t\tvar sev = document.getElementById('notif-severity');\n\t\tif (sev && sev.value) params.set('severity', sev.value);\n\t\tvar cat = document.getElementById('notif-category');\n\t\tif (cat && cat.value) params.set('category', cat.value);\n\t\tvar grp = document.getElementById('notif-group-by');\n\t\tif (grp && grp.value) params.set('group_by', grp.value);\n\t\tvar sortEl = document.getElementById('notif-sort');\n\t\tif (sortEl && sortEl.value) params.set('sort', sortEl.value);\n\t\tvar orderEl = document.getElementById('notif-order');\n\t\tif (orderEl && orderEl.value) params.set('order', orderEl.value);\n\t\tvar url = '/notifications/table';\n\t\tvar qs = params.toString();\n\t\tif (qs) url += '?' + qs;\n\t\thtmx.ajax('GET', url, {target: '#notifications-table', swap: 'innerHTML'});\n\t}\n\n\tfunction bulkDismissAll() {\n\t\tif (!confirm('Dismiss all active violations?')) return;\n\t\tvar csrfToken = document.cookie.replace(\n\t\t\t/(?:(?:^|.*;\\s*)csrf_token\\s*=\\s*([^;]*).*$)|^.*$/, '$1'\n\t\t);\n\t\tfetch('/api/v1/notifications/bulk-dismiss', {\n\t\t\tmethod: 'POST',\n\t\t\theaders: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},\n\t\t\tbody: '{}',\n\t\t\tcredentials: 'same-origin'\n\t\t}).then(function(r) {\n\t\t\tif (r.ok) {\n\t\t\t\treloadNotificationsTable();\n\t\t\t} else if (typeof showToast === 'function') {\n\t\t\t\tshowToast('Failed to dismiss violations.');\n\t\t\t}\n\t\t}).catch(function() {\n\t\t\tif (typeof showToast === 'function') showToast('Network error dismissing violations.');\n\t\t});\n\t}\n\n\tfunction bulkDismissSelected() {\n\t\tvar ids = [];\n\t\tdocument.querySelectorAll('.violation-checkbox:checked').forEach(function(c) {\n\t\t\tids.push(c.dataset.violationId);\n\t\t});\n\t\tif (ids.length === 0) return;\n\t\tvar csrfToken = document.cookie.replace(\n\t\t\t/(?:(?:^|.*;\\s*)csrf_token\\s*=\\s*([^;]*).*$)|^.*$/, '$1'\n\t\t);\n\t\tfetch('/api/v1/notifications/bulk-dismiss', {\n\t\t\tmethod: 'POST',\n\t\t\theaders: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},\n\t\t\tbody: JSON.stringify({ids: ids}),\n\t\t\tcredentials: 'same-origin'\n\t\t}).then(function(r) {\n\t\t\tif (r.ok) {\n\t\t\t\treloadNotificationsTable();\n\t\t\t} else if (typeof showToast === 'function') {\n\t\t\t\tshowToast('Failed to dismiss violations.');\n\t\t\t}\n\t\t}).catch(function() {\n\t\t\tif (typeof showToast === 'function') showToast('Network error dismissing violations.');\n\t\t});\n\t}\n\n\t</script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

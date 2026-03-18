@@ -431,9 +431,11 @@ func (s *Service) ListViolationsFiltered(ctx context.Context, p ViolationListPar
 	}
 
 	// Sort with whitelisted columns
+	severityRank := `CASE rv.severity WHEN 'error' THEN 3 WHEN 'warning' THEN 2 WHEN 'info' THEN 1 ELSE 0 END`
+
 	sortCols := map[string]string{
 		"artist_name": "rv.artist_name",
-		"severity":    "rv.severity",
+		"severity":    severityRank,
 		"rule_id":     "rv.rule_id",
 		"created_at":  "rv.created_at",
 	}
@@ -444,10 +446,10 @@ func (s *Service) ListViolationsFiltered(ctx context.Context, p ViolationListPar
 	}
 
 	if col, ok := sortCols[p.Sort]; ok {
-		query += " ORDER BY " + col + " " + order
+		query += " ORDER BY " + col + " " + order //nolint:gosec // G202: col is from whitelist map, not user input
 	} else {
 		// Default sort: severity DESC (errors first), then newest
-		query += " ORDER BY rv.severity DESC, rv.created_at DESC"
+		query += " ORDER BY " + severityRank + " DESC, rv.created_at DESC" //nolint:gosec // G202: severityRank is a constant CASE expression
 	}
 
 	rows, err := s.db.QueryContext(ctx, query, args...)

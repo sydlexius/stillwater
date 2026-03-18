@@ -159,24 +159,35 @@ func TestHandleNotificationsTable_GroupBy(t *testing.T) {
 
 func TestParseNotificationParams(t *testing.T) {
 	tests := []struct {
-		name     string
-		url      string
-		wantSort string
-		wantSev  string
-		wantCat  string
-		wantGB   string
+		name      string
+		url       string
+		wantSort  string
+		wantOrder string
+		wantSev   string
+		wantCat   string
+		wantGB    string
 	}{
 		{
-			name: "defaults",
-			url:  "/notifications/table",
+			name:      "defaults",
+			url:       "/notifications/table",
+			wantSort:  "severity",
+			wantOrder: "desc",
 		},
 		{
-			name:     "all params",
-			url:      "/notifications/table?sort=artist_name&order=desc&severity=error&category=nfo&group_by=artist&rule_id=nfo_exists",
-			wantSort: "artist_name",
-			wantSev:  "error",
-			wantCat:  "nfo",
-			wantGB:   "artist",
+			name:      "all params",
+			url:       "/notifications/table?sort=artist_name&order=desc&severity=error&category=nfo&group_by=artist&rule_id=nfo_exists",
+			wantSort:  "artist_name",
+			wantOrder: "desc",
+			wantSev:   "error",
+			wantCat:   "nfo",
+			wantGB:    "artist",
+		},
+		{
+			name:      "invalid group_by ignored",
+			url:       "/notifications/table?group_by=invalid_value",
+			wantSort:  "severity",
+			wantOrder: "desc",
+			wantGB:    "",
 		},
 	}
 
@@ -186,6 +197,9 @@ func TestParseNotificationParams(t *testing.T) {
 			p := parseNotificationParams(req)
 			if p.Sort != tc.wantSort {
 				t.Errorf("Sort = %q, want %q", p.Sort, tc.wantSort)
+			}
+			if p.Order != tc.wantOrder {
+				t.Errorf("Order = %q, want %q", p.Order, tc.wantOrder)
 			}
 			if p.Severity != tc.wantSev {
 				t.Errorf("Severity = %q, want %q", p.Severity, tc.wantSev)

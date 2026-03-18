@@ -31,6 +31,8 @@ templ NotificationsPage(assets AssetPaths, data NotificationsData) {
 			<div class="flex flex-wrap items-center gap-3">
 				<select
 					name="severity"
+					id="notif-severity"
+					aria-label="Filter by severity"
 					hx-get="/notifications/table"
 					hx-trigger="change"
 					hx-target="#notifications-table"
@@ -45,6 +47,8 @@ templ NotificationsPage(assets AssetPaths, data NotificationsData) {
 				</select>
 				<select
 					name="category"
+					id="notif-category"
+					aria-label="Filter by category"
 					hx-get="/notifications/table"
 					hx-trigger="change"
 					hx-target="#notifications-table"
@@ -59,6 +63,8 @@ templ NotificationsPage(assets AssetPaths, data NotificationsData) {
 				</select>
 				<select
 					name="group_by"
+					id="notif-group-by"
+					aria-label="Group violations by"
 					hx-get="/notifications/table"
 					hx-trigger="change"
 					hx-target="#notifications-table"
@@ -83,6 +89,7 @@ templ NotificationsPage(assets AssetPaths, data NotificationsData) {
 				hx-get="/notifications/table"
 				hx-trigger="load"
 				hx-swap="innerHTML"
+				hx-include="[name='severity'],[name='category'],[name='group_by'],[name='rule_id'],#notif-sort,#notif-order"
 			>
 				@NotificationsTable(data)
 			</div>
@@ -351,6 +358,7 @@ templ notifViolationRow(v rule.RuleViolation) {
 						hx-confirm="Dismiss this violation?"
 						hx-target={ "#notif-" + v.ID }
 						hx-swap="outerHTML swap:300ms"
+						hx-on::after-request="if(event.detail.successful) reloadNotificationsTable()"
 						class="font-semibold text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300"
 					>
 						Dismiss
@@ -624,7 +632,10 @@ templ candidateScript() {
 
 	// ---- Bulk selection ----
 	function toggleSelectAll(cb) {
-		document.querySelectorAll('.violation-checkbox').forEach(function(c) {
+		// Scope to the closest table so group headers only affect their own group.
+		var table = cb.closest('table');
+		var scope = table || document;
+		scope.querySelectorAll('.violation-checkbox').forEach(function(c) {
 			c.checked = cb.checked;
 		});
 		updateBulkButton();
@@ -642,6 +653,26 @@ templ candidateScript() {
 		}
 	}
 
+	// Reload the notifications table preserving current filter/sort/group state.
+	// Called after dismiss/apply to keep group counts and empty-state accurate.
+	function reloadNotificationsTable() {
+		var params = new URLSearchParams();
+		var sev = document.getElementById('notif-severity');
+		if (sev && sev.value) params.set('severity', sev.value);
+		var cat = document.getElementById('notif-category');
+		if (cat && cat.value) params.set('category', cat.value);
+		var grp = document.getElementById('notif-group-by');
+		if (grp && grp.value) params.set('group_by', grp.value);
+		var sortEl = document.getElementById('notif-sort');
+		if (sortEl && sortEl.value) params.set('sort', sortEl.value);
+		var orderEl = document.getElementById('notif-order');
+		if (orderEl && orderEl.value) params.set('order', orderEl.value);
+		var url = '/notifications/table';
+		var qs = params.toString();
+		if (qs) url += '?' + qs;
+		htmx.ajax('GET', url, {target: '#notifications-table', swap: 'innerHTML'});
+	}
+
 	function bulkDismissAll() {
 		if (!confirm('Dismiss all active violations?')) return;
 		var csrfToken = document.cookie.replace(
@@ -654,7 +685,7 @@ templ candidateScript() {
 			credentials: 'same-origin'
 		}).then(function(r) {
 			if (r.ok) {
-				htmx.ajax('GET', '/notifications/table', {target: '#notifications-table', swap: 'innerHTML'});
+				reloadNotificationsTable();
 			} else if (typeof showToast === 'function') {
 				showToast('Failed to dismiss violations.');
 			}
@@ -679,7 +710,7 @@ templ candidateScript() {
 			credentials: 'same-origin'
 		}).then(function(r) {
 			if (r.ok) {
-				htmx.ajax('GET', '/notifications/table', {target: '#notifications-table', swap: 'innerHTML'});
+				reloadNotificationsTable();
 			} else if (typeof showToast === 'function') {
 				showToast('Failed to dismiss violations.');
 			}

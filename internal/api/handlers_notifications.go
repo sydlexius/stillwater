@@ -9,15 +9,12 @@ import (
 	"github.com/sydlexius/stillwater/web/templates"
 )
 
-// handleListNotifications returns all open rule violations.
-// GET /api/v1/notifications?status=open
+// handleListNotifications returns rule violations with optional filtering and sorting.
+// GET /api/v1/notifications?status=open&severity=error&category=image&sort=artist_name&order=asc&group_by=artist
 func (r *Router) handleListNotifications(w http.ResponseWriter, req *http.Request) {
-	status := req.URL.Query().Get("status")
-	if status == "" {
-		status = rule.ViolationStatusOpen
-	}
+	p := parseNotificationParams(req)
 
-	violations, err := r.ruleService.ListViolations(req.Context(), status)
+	violations, err := r.ruleService.ListViolationsFiltered(req.Context(), p)
 	if err != nil {
 		writeError(w, req, http.StatusInternalServerError, "failed to list violations")
 		return
@@ -104,6 +101,14 @@ func (r *Router) handleClearResolvedViolations(w http.ResponseWriter, req *http.
 	writeJSON(w, http.StatusOK, map[string]string{"status": "cleared"})
 }
 
+// validGroupByValues are the accepted group_by parameter values.
+var validGroupByValues = map[string]bool{
+	"artist":   true,
+	"rule":     true,
+	"severity": true,
+	"category": true,
+}
+
 // parseNotificationParams extracts filter/sort/group params from the request.
 func parseNotificationParams(req *http.Request) rule.ViolationListParams {
 	q := req.URL.Query()
@@ -113,14 +118,29 @@ func parseNotificationParams(req *http.Request) rule.ViolationListParams {
 		status = "active"
 	}
 
+	sort := q.Get("sort")
+	order := q.Get("order")
+	// Normalize defaults so UI sort icons match actual query behavior.
+	if sort == "" {
+		sort = "severity"
+	}
+	if order == "" {
+		order = "desc"
+	}
+
+	groupBy := q.Get("group_by")
+	if !validGroupByValues[groupBy] {
+		groupBy = ""
+	}
+
 	return rule.ViolationListParams{
 		Status:   status,
-		Sort:     q.Get("sort"),
-		Order:    q.Get("order"),
+		Sort:     sort,
+		Order:    order,
 		Severity: q.Get("severity"),
 		Category: q.Get("category"),
 		RuleID:   q.Get("rule_id"),
-		GroupBy:  q.Get("group_by"),
+		GroupBy:  groupBy,
 	}
 }
 
