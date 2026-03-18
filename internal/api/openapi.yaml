@@ -3487,8 +3487,8 @@ paths:
                 properties:
                   status:
                     type: string
-                    enum: [fixed, failed]
-                    description: Whether the fix was successfully applied
+                    enum: [fixed, dismissed, failed]
+                    description: Fix result state
                   message:
                     type: string
                     description: Human-readable result description

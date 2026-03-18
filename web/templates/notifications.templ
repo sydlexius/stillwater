@@ -817,7 +817,10 @@ templ candidateScript() {
 
 	function pollFixAllStatus() {
 		fetch('/api/v1/notifications/fix-all/status', {credentials: 'same-origin'})
-		.then(function(resp) { return resp.json(); })
+		.then(function(resp) {
+			if (!resp.ok) throw new Error('HTTP ' + resp.status);
+			return resp.json();
+		})
 		.then(function(data) {
 			if (data.status === 'running') {
 				setTimeout(pollFixAllStatus, 1000);
