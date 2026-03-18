@@ -3547,6 +3547,12 @@ paths:
                     type: string
                   total:
                     type: integer
+        "400":
+          description: Malformed JSON body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "409":
           description: Fix-all already in progress
           content:

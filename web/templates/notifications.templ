@@ -771,10 +771,12 @@ templ candidateScript() {
 			method: 'POST',
 			headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
 			credentials: 'same-origin'
-		}).then(function(resp) { return resp.json(); })
-		.then(function(data) {
-			if (data.status === 'fixed') {
-				if (typeof showSuccessToast === 'function') showSuccessToast('Fixed: ' + (data.message || 'Fix applied'));
+		}).then(function(resp) {
+			if (!resp.ok) throw new Error('HTTP ' + resp.status);
+			return resp.json();
+		}).then(function(data) {
+			if (data.status === 'fixed' || data.status === 'dismissed') {
+				if (typeof showSuccessToast === 'function') showSuccessToast(data.message || 'Fix applied');
 				reloadNotificationsTable();
 			} else {
 				if (typeof showToast === 'function') showToast('Fix failed: ' + (data.message || 'Unknown error'));

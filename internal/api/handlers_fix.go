@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -39,8 +40,13 @@ func (r *Router) handleFixViolation(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	status := "fixed"
-	if !fr.Fixed {
+	var status string
+	switch {
+	case fr.Fixed:
+		status = "fixed"
+	case strings.Contains(fr.Message, "dismissed"):
+		status = "dismissed"
+	default:
 		status = "failed"
 	}
 
@@ -212,7 +218,9 @@ func (r *Router) startFixAll(reqCtx context.Context, violations []rule.RuleViola
 			if aErr != nil && errors.Is(aErr, artist.ErrNotFound) {
 				// Explicitly dismiss each violation for this deleted artist.
 				for _, rv := range g.violations {
-					_ = r.ruleService.DismissViolation(ctx, rv.ID)
+					if dErr := r.ruleService.DismissViolation(ctx, rv.ID); dErr != nil {
+						r.logger.Warn("fix-all: failed to dismiss orphan violation", "id", rv.ID, "error", dErr)
+					}
 					progress.mu.Lock()
 					progress.Processed++
 					progress.Skipped++
