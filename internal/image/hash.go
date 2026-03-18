@@ -3,11 +3,11 @@ package image
 import (
 	"fmt"
 	"image"
-	"image/color"
 	_ "image/jpeg"
 	_ "image/png"
 	"io"
 	"math/bits"
+	"strconv"
 
 	"golang.org/x/image/draw"
 )
@@ -63,16 +63,7 @@ func HashHex(h uint64) string {
 }
 
 // ParseHashHex parses a hex-encoded perceptual hash string.
+// Returns an error if the string is not a valid 64-bit hex value.
 func ParseHashHex(s string) (uint64, error) {
-	var h uint64
-	_, err := fmt.Sscanf(s, "%x", &h)
-	return h, err
-}
-
-// GrayscaleLuminance converts an RGBA color to its grayscale luminance value.
-func GrayscaleLuminance(c color.Color) uint8 {
-	r, g, b, _ := c.RGBA()
-	// Standard luminance formula (ITU-R BT.601)
-	lum := (19595*r + 38470*g + 7471*b + 1<<15) >> 24
-	return uint8(lum)
+	return strconv.ParseUint(s, 16, 64)
 }

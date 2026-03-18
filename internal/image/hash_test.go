@@ -48,18 +48,21 @@ func TestPerceptualHash_IdenticalImages(t *testing.T) {
 	}
 }
 
-func TestPerceptualHash_DifferentImages(t *testing.T) {
+func TestPerceptualHash_SolidImages(t *testing.T) {
+	// Solid images have no gradient, so dHash produces all-zero hashes
+	// regardless of color. Both should hash identically.
 	black := solidImage(100, 100, color.Black)
 	white := solidImage(100, 100, color.White)
 
 	h1 := PerceptualHashFromImage(black)
 	h2 := PerceptualHashFromImage(white)
 
-	sim := Similarity(h1, h2)
-	// Solid black and solid white images have zero gradient in both cases,
-	// so they may actually produce similar hashes. The key test is that
-	// a gradient image differs from a solid one.
-	t.Logf("black vs white similarity: %.2f (hashes: %x, %x)", sim, h1, h2)
+	if h1 != h2 {
+		t.Errorf("solid black hash (%x) should equal solid white hash (%x) -- dHash has no gradient in either", h1, h2)
+	}
+	if Similarity(h1, h2) != 1.0 {
+		t.Errorf("solid images should have similarity 1.0, got %f", Similarity(h1, h2))
+	}
 }
 
 func TestPerceptualHash_CheckerboardVsSolid(t *testing.T) {

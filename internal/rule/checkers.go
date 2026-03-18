@@ -800,7 +800,7 @@ func (e *Engine) makeImageDuplicateChecker() Checker {
 		}
 
 		rows, err := e.db.QueryContext(context.Background(),
-			`SELECT image_type, phash FROM artist_images WHERE artist_id = ? AND phash IS NOT NULL AND phash != '' AND phash != '0000000000000000'`,
+			`SELECT image_type, phash FROM artist_images WHERE artist_id = ? AND exists_flag = 1 AND phash IS NOT NULL AND phash != '' AND phash != '0000000000000000'`,
 			a.ID)
 		if err != nil {
 			e.logger.Debug("querying image hashes", "artist", a.Name, "error", err)
@@ -812,6 +812,7 @@ func (e *Engine) makeImageDuplicateChecker() Checker {
 		for rows.Next() {
 			var slot, hashStr string
 			if err := rows.Scan(&slot, &hashStr); err != nil {
+				e.logger.Debug("scanning image hash row", "artist", a.Name, "error", err)
 				continue
 			}
 			h, err := image.ParseHashHex(hashStr)
