@@ -3,30 +3,46 @@ name: CI
 on:
   push:
     branches: [main]
-    paths-ignore:
-      - 'docs/**'
-      - '**/*.md'
-      - '.github/ISSUE_TEMPLATE/**'
-      - 'api/bruno/**'
-      - 'build/swag/**'
-      - 'build/unraid/**'
   pull_request:
     branches: [main]
-    paths-ignore:
-      - 'docs/**'
-      - '**/*.md'
-      - '.github/ISSUE_TEMPLATE/**'
-      - 'api/bruno/**'
-      - 'build/swag/**'
-      - 'build/unraid/**'
 
 permissions:
   contents: read
 
 jobs:
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            code:
+              - '**/*.go'
+              - 'go.mod'
+              - 'go.sum'
+              - '**/*.templ'
+              - 'web/static/**'
+              - 'internal/**'
+              - 'cmd/**'
+              - 'Makefile'
+              - 'build/docker/**'
+              - '.github/workflows/ci.yml'
+              - '.goreleaser.yml'
+              - '.golangci.yml'
+              - '.spectral.yaml'
+              - 'internal/api/openapi.yaml'
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
+    needs: [changes]
+    if: needs.changes.outputs.code == 'true'
     steps:
       - uses: actions/checkout@v6
 
@@ -61,6 +77,8 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
+    needs: [changes]
+    if: needs.changes.outputs.code == 'true'
     steps:
       - uses: actions/checkout@v6
 
@@ -80,7 +98,8 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
-    needs: [lint, test]
+    needs: [changes, lint, test]
+    if: needs.changes.outputs.code == 'true'
     steps:
       - uses: actions/checkout@v6
 
@@ -107,8 +126,8 @@ jobs:
   docker:
     name: Docker Build
     runs-on: ubuntu-latest
-    needs: [lint, test]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [changes, lint, test]
+    if: needs.changes.outputs.code == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       contents: read
       packages: write
