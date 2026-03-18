@@ -446,7 +446,10 @@ func (s *Service) ListViolationsFiltered(ctx context.Context, p ViolationListPar
 	}
 
 	if col, ok := sortCols[p.Sort]; ok {
-		query += " ORDER BY " + col + " " + order + ", rv.created_at DESC" //nolint:gosec // G202: col is from whitelist map, not user input
+		query += " ORDER BY " + col + " " + order //nolint:gosec // G202: col is from whitelist map, not user input
+		if p.Sort != "created_at" {
+			query += ", rv.created_at DESC"
+		}
 	} else {
 		// Default sort: severity DESC (errors first), then newest
 		query += " ORDER BY " + severityRank + " DESC, rv.created_at DESC" //nolint:gosec // G202: severityRank is a constant CASE expression
