@@ -132,6 +132,14 @@ rule execution.
 - [ ] Integrates with existing manual trim tool
 - [ ] Tests
 
+### Issue #526 -- Detect and filter low-quality placeholder metadata
+- [ ] Ingestion filter rejects junk values ("?", "N/A", "Unknown", etc.) during fetch
+- [ ] Rejected values fall through to next provider in priority chain
+- [ ] Detection rule finds existing junk values in the database
+- [ ] Three modes: disabled, manual (clear/re-fetch/keep), auto (clear + optional re-fetch)
+- [ ] Configurable junk patterns and field-specific minimum lengths
+- [ ] Tests
+
 ### Issue #523 -- Per-rule "Run Now" button
 - [ ] "Run Now" button on each enabled rule row in Rules settings
 - [ ] Evaluates single rule against all applicable artists
@@ -161,9 +169,10 @@ Session 4 (new rules -- independent):
 8. PR for #287 (base: main) -- image deduplication rule
 9. PR for #313 (base: main) -- directory rename rule
 10. PR for #521 (base: main) -- logo padding rule
+11. PR for #526 (base: main) -- junk metadata detection + ingestion filter
 
 Session 5 (rule engine enhancements):
-11. PR for #523 (base: main) -- per-rule "Run Now" button
+12. PR for #523 (base: main) -- per-rule "Run Now" button
 
 ## Notes
 
