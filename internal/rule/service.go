@@ -167,12 +167,13 @@ var defaultRules = []Rule{
 		Config:         RuleConfig{ThresholdPercent: 5, Severity: "info"},
 	},
 	{
-		ID:          RuleDirectoryNameMismatch,
-		Name:        "Directory name matches artist",
-		Description: "Artist directory name should match the canonical artist name",
-		Category:    "metadata",
-		Enabled:     true,
-		Config:      RuleConfig{Severity: "warning", ArticleMode: "prefix"},
+		ID:             RuleDirectoryNameMismatch,
+		Name:           "Directory name matches artist",
+		Description:    "Artist directory name should match the canonical artist name",
+		Category:       "metadata",
+		Enabled:        true,
+		AutomationMode: AutomationModeManual,
+		Config:         RuleConfig{Severity: "warning", ArticleMode: "prefix"},
 	},
 }
 
