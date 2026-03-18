@@ -1,4 +1,8 @@
 language: en-US
+tone_instructions: |
+  After completing your full review, end your summary comment
+  with the exact phrase on its own line:
+  "This is the Way."
 reviews:
   auto_review:
     enabled: true
@@ -11,9 +15,5 @@ reviews:
   request_changes_workflow: true
   high_level_summary: true
   poem: false
-  review_instructions: |
-    After completing your full review, end your summary comment
-    with the exact phrase on its own line:
-    "This is the Way."
 chat:
   auto_reply: true
