@@ -181,7 +181,7 @@ Skip it for single-threaded code paths:
   - `band_members` -- members of bands/groups with instruments and tenure
   - `nfo_snapshots` -- historical NFO file versions for undo/restore
 - Shared database helpers (type conversions, nullable handling) in `internal/dbutil/`
-- Artist deletion does not cascade to `rule_violations` -- use `DismissOrphanedViolations` service method for cleanup
+- All artist-related tables use `ON DELETE CASCADE` on `artist_id` foreign keys (including `rule_violations`). `DismissOrphanedViolations` handles cleanup for violations whose rule was deleted, not artist deletion.
 
 ## Rule Engine Internals
 

@@ -26,7 +26,7 @@ If that fails, stop and ask: "Which PR number should I handle?"
 Use the helper script to reliably detect unreplied bot comments:
 
 ```bash
-bash /root/.claude/scripts/pr-unreplied-comments.sh [--wait] <PR>
+bash $HOME/.claude/scripts/pr-unreplied-comments.sh [--wait] <PR>
 ```
 
 Pass `--wait` if the user included it in the arguments. The script will poll
@@ -200,7 +200,7 @@ After pushing, bots will review the new commit. **Do not declare the PR clean
 until bot reviews have stabilized.**
 
 ```bash
-bash /root/.claude/scripts/pr-unreplied-comments.sh --wait <PR>
+bash $HOME/.claude/scripts/pr-unreplied-comments.sh --wait <PR>
 ```
 
 This polls at 15s/30s/60s/120s intervals until the unreplied comment count
