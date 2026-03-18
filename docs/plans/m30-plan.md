@@ -118,23 +118,106 @@ early since it touches the migration foundation. #360 (image caching) benefits f
 - [ ] Provider image cache toggleable with configurable size
 - [ ] Tests
 
+### Issue #516 -- Replace Refresh Metadata ellipsis menu with dropdown split button
+- [ ] Split button: primary "Refresh Metadata" + dropdown arrow with "Re-identify Artist"
+- [ ] Dropdown arrow clearly visible (chevron, not "...")
+- [ ] Keyboard-accessible (Enter, arrow keys, Escape)
+- [ ] Tests
+- [ ] PR merged
+
+### Issue #501 -- Aggregate metadata completeness reports
+- [ ] Completeness calculation: populated fields / applicable fields per artist type
+- [ ] Per-field breakdown with count, total, percentage
+- [ ] Per-library breakdown
+- [ ] Scanner exclusion list artists excluded from metrics
+- [ ] "Lowest completeness" bottom-N artists table
+- [ ] API endpoint: `GET /api/v1/reports/metadata-completeness`
+- [ ] Dashboard widget with Chart.js
+- [ ] Tests
+- [ ] PR merged
+
+### Issue #504 -- Archive and purge revoked API tokens
+- [ ] Token lifecycle: active -> revoked -> archived -> deleted
+- [ ] "Archive" button, "Show Archived" toggle, "Delete" with confirmation
+- [ ] Audit log entries anonymized on delete
+- [ ] API endpoints with proper status codes
+- [ ] Tests
+- [ ] PR merged
+
+### Issue #508 -- Audit and complete Bruno API test collections
+- [ ] Compare all routes in router.go against Bruno requests
+- [ ] Add missing endpoint requests
+- [ ] Add error case requests for key endpoints
+- [ ] Collection runs end-to-end without failures
+- [ ] PR merged
+
+### Issue #510 -- Codebase documentation audit
+- [ ] All exported types, interfaces, functions have doc comments
+- [ ] Package-level documentation for all packages in `internal/`
+- [ ] `go doc` output clean for each package
+- [ ] Tests
+- [ ] PR merged
+
+### Issue #511 -- Performance profiling via fuzzing and load testing
+- [ ] Fuzz tests for NFO parser, JSON handlers, image upload
+- [ ] Load test scripts (k6 or vegeta) for key API endpoints
+- [ ] pprof enabled in debug mode
+- [ ] Slow queries identified via EXPLAIN QUERY PLAN
+- [ ] Findings documented
+- [ ] PR merged
+
+### Issue #524 -- smoke.sh configurable music path parameter
+- [ ] `--music-path` CLI argument and `SW_MUSIC_PATH` env var
+- [ ] Precedence: CLI > env var > Stillwater API query
+- [ ] Updated usage/help text
+- [ ] Tests
+- [ ] PR merged
+
+## Worktrees
+
+| Directory | Branch | Issue | Status |
+|-----------|--------|-------|--------|
+| (created when work begins) | | | |
+
 ## UAT / Merge Order
 
-1. #350 (SQL squash) -- foundation change, merge first -- MERGED
-2. #323 (code analysis) -- no runtime changes
-3. #351 (runtime safety) -- fixes across multiple packages
-4. #352 (refactoring) -- structural improvements -- MERGED (phase 1)
-5. #349 (artist sort) -- UI feature
-6. #322 (universal field editing) -- extends existing field system
-7. #321 (history tab) -- builds on final field set from #322
-8. #360 (image caching) -- after #352 refactoring lands
+Session 1 (foundation -- completed):
+1. #350 (SQL squash) -- MERGED
+2. #352 (refactoring) -- MERGED (phase 1)
+
+Session 2 (analysis + safety):
+3. #323 (code analysis) -- no runtime changes
+4. #351 (runtime safety) -- fixes across multiple packages
+
+Session 3 (quick wins):
+5. #524 (smoke.sh path parameter) -- small, independent
+6. #516 (refresh metadata dropdown) -- UX improvement
+
+Session 4 (UI features):
+7. #349 (artist sort) -- UI feature
+8. #501 (metadata completeness reports) -- reports/dashboard
+
+Session 5 (field system + settings):
+9. #322 (universal field editing) -- extends existing field system
+10. #504 (API token lifecycle) -- settings feature
+11. #321 (history tab) -- builds on final field set from #322
+
+Session 6 (code health):
+12. #508 (Bruno audit) -- testing infrastructure
+13. #510 (code docs audit) -- documentation
+
+Session 7 (performance + caching):
+14. #511 (perf profiling) -- fuzzing, load testing
+15. #360 (image caching) -- after #352 refactoring lands
 
 ## Notes
 
 - 2026-03-01: Plan file created.
-- 2026-03-02: Added #349 (artist sort), #350 (SQL squash), #351 (runtime safety), #352 (refactoring audit) to milestone scope.
-- 2026-03-02: Added #360 (image caching) to milestone scope. Depends on #352 for shared write path abstraction.
+- 2026-03-02: Added #349, #350, #351, #352 to milestone scope.
+- 2026-03-02: Added #360 (image caching). Depends on #352.
+- 2026-03-18: Added #501, #504, #508, #510, #511, #516, #524 from batch issue creation.
 - #321 is `scope: large` with `[mode: plan] [model: opus]`; #322 is `scope: medium` with `[mode: plan] [model: sonnet]`; #323 is `scope: medium` with `[mode: direct] [model: sonnet]`.
 - #349 is `scope: small` with `[mode: direct] [model: sonnet]`; #350 is `scope: medium` with `[mode: plan] [model: sonnet]`; #351 is `scope: medium` with `[mode: direct] [model: opus]`; #352 is `scope: medium` with `[mode: plan] [model: sonnet]`.
+- #511 is `scope: large` with `[mode: plan] [model: opus] [effort: high]`.
 - Existing `nfo_snapshots` table tracks full NFO XML; new `metadata_changes` table tracks individual field-level changes -- these are complementary, not replacements.
 - Image archive directory: `{dataDir}/image_archive/{artistID}/` with timestamped filenames.

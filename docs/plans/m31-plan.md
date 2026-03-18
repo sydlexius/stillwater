@@ -16,13 +16,14 @@ Enhance the metadata provider pipeline with web scraping capabilities, new image
 ## Dependency Map
 
 ```
-#342 (fallback optimization) -- no deps, can start first
-#339 (Last.fm scraper)       -- no deps, parallel with #342
-#340 (Wikidata images)       -- no deps, parallel with #339/#342
-#341 (Wikipedia metadata)    -- loosely depends on #340 (Wikidata supplies Wikipedia URL)
+#522 (image search regression) -- independent, investigate first
+#342 (fallback optimization)  -- no deps, can start first
+#339 (Last.fm scraper)        -- no deps, parallel with #342
+#340 (Wikidata images)        -- no deps, parallel with #339/#342
+#341 (Wikipedia metadata)     -- loosely depends on #340 (Wikidata supplies Wikipedia URL)
 ```
 
-#342 is the foundational optimization that ensures new providers do not add unnecessary API calls. #339 and #340 are independent and can proceed in parallel. #341 benefits from #340 (Wikidata SPARQL changes to extract Wikipedia sitelinks) but can also work independently via Wikipedia API search.
+#522 should be investigated first to identify the root cause of the image search regression. #342 is the foundational optimization that ensures new providers do not add unnecessary API calls. #339 and #340 are independent and can proceed in parallel. #341 benefits from #340 (Wikidata SPARQL changes to extract Wikipedia sitelinks) but can also work independently via Wikipedia API search.
 
 ## Checklist
 
@@ -62,6 +63,16 @@ Enhance the metadata provider pipeline with web scraping capabilities, new image
 - [ ] Update rate limiting, Settings UI, OOBE
 - [ ] Tests (infobox parser, API mocks, integration)
 
+### Issue #522 -- Provider image search returning single result instead of multiple
+- [ ] Investigate why only single image candidate returned per slot
+- [ ] Check provider API key validity and response parsing
+- [ ] Check deduplication/filtering for over-aggressiveness
+- [ ] Verify fallback chain executes fully
+- [ ] Check Fanart.tv specifically for a-ha results
+- [ ] Fix root cause and verify multiple candidates returned
+- [ ] Tests
+- [ ] PR merged
+
 ## Worktrees
 
 | Directory | Branch | Issue | Status |
@@ -70,13 +81,20 @@ Enhance the metadata provider pipeline with web scraping capabilities, new image
 | stillwater-339 | feat/339-lastfm-scraper | #339 | pending |
 | stillwater-340 | feat/340-wikidata-images | #340 | pending |
 | stillwater-341 | feat/341-wikipedia-provider | #341 | pending |
+| stillwater-522 | feat/522-provider-image-fix | #522 | pending |
 
 ## UAT / Merge Order
 
-1. PR for #342 (base: main) -- fallback optimization first to establish clean baseline
-2. PR for #339 (base: main) -- Last.fm scraper, independent
-3. PR for #340 (base: main) -- Wikidata images, independent
-4. PR for #341 (base: main) -- Wikipedia provider, may reference Wikidata SPARQL changes from #340
+Session 1 (investigation + optimization):
+1. PR for #522 (base: main) -- image search regression fix
+2. PR for #342 (base: main) -- fallback optimization (clean baseline)
+
+Session 2 (new providers):
+3. PR for #339 (base: main) -- Last.fm scraper
+4. PR for #340 (base: main) -- Wikidata images
+
+Session 3 (Wikipedia):
+5. PR for #341 (base: main) -- Wikipedia provider (may reference #340)
 
 ## New Dependencies
 

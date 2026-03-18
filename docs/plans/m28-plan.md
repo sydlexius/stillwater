@@ -16,6 +16,11 @@ rule execution.
 - [ ] Image deduplication rule detects exact and perceptually similar duplicates
 - [ ] Directory rename rule detects and optionally fixes artist folder name mismatches
 - [ ] Per-artist "Run Rules" button on artist detail page
+- [ ] Rule violation artist names are clickable hyperlinks with library context
+- [ ] Backdrop/fanart sequencing rule detects and fixes numbering gaps (enabled toggle + automation mode: manual/auto)
+- [ ] Extraneous image rule is backdrop-sequencing-aware (does not flag valid sequences)
+- [ ] Logo padding rule detects excessive transparent borders (enabled toggle + automation mode: manual/auto)
+- [ ] Per-rule "Run Now" button for individual rule evaluation
 
 ## Dependency Map
 
@@ -32,6 +37,13 @@ rule execution.
 #288 should be completed first to inform the design of #286 and #310.
 #310 should be completed before #286 (fix panels are rendered within the table).
 #287, #313, and #314 are independent and can proceed in parallel.
+
+#512 (rule hyperlinks) -- independent UX improvement
+#519 (backdrop sequencing rule) -- independent, new rule
+#520 (extraneous image rule update) -- depends on #519 (must know what valid sequences look like)
+#521 (logo padding rule) -- independent, new rule
+#523 (per-rule Run Now) -- independent, extends rule engine
+#526 (junk metadata detection) -- independent, new rule + ingestion filter
 
 ## Checklist
 
@@ -93,6 +105,55 @@ rule execution.
 - [ ] Update tests referencing AutomationModeDisabled
 - [ ] Add test: PATCH with `automation_mode: "disabled"` returns 400
 
+### Issue #512 -- Rule violation artist names as hyperlinks with library context
+- [ ] Artist name in violation entries links to `/artists/{id}`
+- [ ] Library name/path displayed alongside artist name for disambiguation
+- [ ] Works in table and any other violation display modes
+- [ ] Tests
+- [ ] PR merged
+
+### Issue #519 -- Backdrop/fanart image sequencing gap rule
+- [ ] Detection: gaps in backdrop/fanart sequences (filesystem + Emby/Jellyfin API)
+- [ ] Detection: `backdrop1.ext` without `backdrop.ext` (wrong first position)
+- [ ] Enabled toggle; manual mode (preview renames) / auto mode (fix during evaluation)
+- [ ] Platform-aware naming (fanart for Kodi, backdrop for Emby/Jellyfin)
+- [ ] Atomic file renames for filesystem fixes
+- [ ] Tests
+- [ ] PR merged
+
+### Issue #520 -- Update extraneous image rule for backdrop sequencing awareness
+- [ ] Correctly allows sequential backdrop/fanart files as non-extraneous
+- [ ] Flags non-standard naming patterns (`backdrop_old.png`, etc.)
+- [ ] Enabled toggle + automation mode: manual/auto
+- [ ] No overlap with sequencing rule (#519)
+- [ ] Tests
+- [ ] PR merged
+
+### Issue #521 -- Logo padding detection rule
+- [ ] Detection: logos with padding exceeding configurable threshold
+- [ ] Enabled toggle; manual mode (auto-trim + open trim tool) / auto mode (trim during evaluation)
+- [ ] Configurable padding threshold and trim margin
+- [ ] Integrates with existing manual trim tool
+- [ ] Tests
+- [ ] PR merged
+
+### Issue #526 -- Detect and filter low-quality placeholder metadata
+- [ ] Ingestion filter rejects junk values ("?", "N/A", "Unknown", etc.) during fetch
+- [ ] Rejected values fall through to next provider in priority chain
+- [ ] Detection rule finds existing junk values in the database
+- [ ] Enabled toggle; manual mode (clear/re-fetch/keep) / auto mode (clear + optional re-fetch)
+- [ ] Configurable junk patterns and field-specific minimum lengths
+- [ ] Tests
+- [ ] PR merged
+
+### Issue #523 -- Per-rule "Run Now" button
+- [ ] "Run Now" button on each enabled rule row in Rules settings
+- [ ] Evaluates single rule against all applicable artists
+- [ ] Progress indicator and result summary
+- [ ] API: `POST /api/v1/rules/{rule_id}/evaluate`
+- [ ] Tests
+- [ ] PR merged
+
 ## UAT / Merge Order
 
 Session 0 (quick fix):
@@ -104,11 +165,21 @@ Session 1 (foundations):
 
 Session 2 (notifications overhaul):
 3. PR for #310 (base: main) -- notifications table UX
-4. PR for #286 (base: main, after #310 merges) -- inline fix panels
+4. PR for #512 (base: main) -- rule violation artist hyperlinks with library context
+5. PR for #286 (base: main, after #310 merges) -- inline fix panels
 
-Session 3 (new rules):
-5. PR for #287 (base: main) -- image deduplication rule
-6. PR for #313 (base: main) -- directory rename rule
+Session 3 (new rules -- image sequencing):
+6. PR for #519 (base: main) -- backdrop/fanart sequencing rule
+7. PR for #520 (base: main, after #519 merges) -- extraneous image rule update
+
+Session 4 (new rules -- independent):
+8. PR for #287 (base: main) -- image deduplication rule
+9. PR for #313 (base: main) -- directory rename rule
+10. PR for #521 (base: main) -- logo padding rule
+11. PR for #526 (base: main) -- junk metadata detection + ingestion filter
+
+Session 5 (rule engine enhancements):
+12. PR for #523 (base: main) -- per-rule "Run Now" button
 
 ## Notes
 
