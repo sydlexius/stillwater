@@ -16,10 +16,11 @@ Enhance the metadata provider pipeline with web scraping capabilities, new image
 ## Dependency Map
 
 ```
-#342 (fallback optimization) -- no deps, can start first
-#339 (Last.fm scraper)       -- no deps, parallel with #342
-#340 (Wikidata images)       -- no deps, parallel with #339/#342
-#341 (Wikipedia metadata)    -- loosely depends on #340 (Wikidata supplies Wikipedia URL)
+#522 (image search regression) -- independent, investigate first
+#342 (fallback optimization)  -- no deps, can start first
+#339 (Last.fm scraper)        -- no deps, parallel with #342
+#340 (Wikidata images)        -- no deps, parallel with #339/#342
+#341 (Wikipedia metadata)     -- loosely depends on #340 (Wikidata supplies Wikipedia URL)
 ```
 
 #342 is the foundational optimization that ensures new providers do not add unnecessary API calls. #339 and #340 are independent and can proceed in parallel. #341 benefits from #340 (Wikidata SPARQL changes to extract Wikipedia sitelinks) but can also work independently via Wikipedia API search.

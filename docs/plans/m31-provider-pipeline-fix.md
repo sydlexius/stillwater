@@ -153,7 +153,7 @@ Session 3 (re-evaluate born/formed):
 
 - The `FetchImages()` method already uses provider-specific IDs via
   `getProviderImageID()` -- use the same pattern for `FetchMetadata()`
-- All three issues are in M31 (Provider Pipeline & Scraping)
+- All issues (#529, #528, #527) are in M31 (Provider Pipeline & Scraping); #466 is a re-evaluation
 - The Adele artist ID for testing: `78e7d8af-cda4-4d8d-a4bd-d82542cb66d5`
 - Correct Adele MBID: `1f9df192-a621-4f54-8850-2c5373b7eac9`
 - Wrong Adele MBID (currently stored): `cc2c9c3c-b7bc-4b8b-84d8-4fbd8779e493`
