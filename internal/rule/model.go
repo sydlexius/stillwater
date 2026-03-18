@@ -102,6 +102,25 @@ type RuleViolation struct {
 	UpdatedAt   time.Time        `json:"updated_at"`
 }
 
+// ViolationListParams controls filtering, sorting, and grouping of violations.
+type ViolationListParams struct {
+	Status   string // "active", "open", "resolved", "dismissed", "pending_choice", "" (all)
+	Sort     string // "artist_name", "severity", "rule_id", "created_at"
+	Order    string // "asc", "desc"
+	Severity string // filter: "error", "warning", "info"
+	Category string // filter: "nfo", "image", "metadata"
+	RuleID   string // filter by specific rule
+	GroupBy  string // "artist", "rule", "severity", "category", ""
+}
+
+// ViolationGroup holds a group of violations for grouped display.
+type ViolationGroup struct {
+	Key        string
+	Label      string
+	Count      int
+	Violations []RuleViolation
+}
+
 // MarshalConfig serializes a RuleConfig to a JSON string.
 func MarshalConfig(cfg RuleConfig) string {
 	data, _ := json.Marshal(cfg)

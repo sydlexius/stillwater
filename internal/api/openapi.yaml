@@ -3300,16 +3300,49 @@ paths:
   /notifications:
     get:
       tags: [Notifications]
-      summary: List rule violations
+      summary: List rule violations with optional filtering and sorting
       operationId: listNotifications
       parameters:
         - name: status
           in: query
-          description: Filter by violation status
+          description: Filter by violation status. "active" returns open + pending_choice.
           schema:
             type: string
-            enum: [open, dismissed, resolved, pending_choice]
-            default: open
+            enum: [active, open, dismissed, resolved, pending_choice]
+            default: active
+        - name: sort
+          in: query
+          description: Sort column
+          schema:
+            type: string
+            enum: [severity, artist_name, rule_id, created_at]
+            default: severity
+        - name: order
+          in: query
+          description: Sort direction
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: desc
+        - name: severity
+          in: query
+          description: Filter by severity level
+          schema:
+            type: string
+            enum: [error, warning, info]
+        - name: category
+          in: query
+          description: Filter by rule category
+          schema:
+            type: string
+            enum: [nfo, image, metadata]
+        - name: rule_id
+          in: query
+          description: Filter by specific rule ID
+          schema:
+            type: string
+        # group_by is supported on the HTML endpoint (/notifications/table) only.
+        # It is not included here because the JSON response is always a flat array.
       responses:
         "200":
           description: Violations matching filter

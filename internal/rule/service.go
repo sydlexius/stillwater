@@ -382,6 +382,166 @@ func (s *Service) ListViolations(ctx context.Context, status string) ([]RuleViol
 	return violations, rows.Err()
 }
 
+// ListViolationsFiltered returns violations matching the given params with dynamic SQL.
+func (s *Service) ListViolationsFiltered(ctx context.Context, p ViolationListParams) ([]RuleViolation, error) {
+	var (
+		whereClauses []string
+		args         []any
+		needJoin     bool
+	)
+
+	// Status filter (same "active" logic as ListViolations)
+	switch p.Status {
+	case "active":
+		whereClauses = append(whereClauses, "rv.status IN (?, ?)")
+		args = append(args, ViolationStatusOpen, ViolationStatusPendingChoice)
+	case "":
+		// no filter
+	default:
+		whereClauses = append(whereClauses, "rv.status = ?")
+		args = append(args, p.Status)
+	}
+
+	// Severity filter
+	if p.Severity != "" {
+		whereClauses = append(whereClauses, "rv.severity = ?")
+		args = append(args, p.Severity)
+	}
+
+	// Rule ID filter
+	if p.RuleID != "" {
+		whereClauses = append(whereClauses, "rv.rule_id = ?")
+		args = append(args, p.RuleID)
+	}
+
+	// Category filter requires joining the rules table
+	if p.Category != "" {
+		needJoin = true
+		whereClauses = append(whereClauses, "r.category = ?")
+		args = append(args, p.Category)
+	}
+
+	// Build query
+	query := `SELECT rv.id, rv.rule_id, rv.artist_id, rv.artist_name, rv.severity, rv.message, rv.fixable, rv.status, rv.candidates, rv.dismissed_at, rv.resolved_at, rv.created_at, rv.updated_at FROM rule_violations rv`
+	if needJoin {
+		query += ` JOIN rules r ON r.id = rv.rule_id`
+	}
+	if len(whereClauses) > 0 {
+		query += " WHERE " + joinStrings(whereClauses, " AND ") //nolint:gosec // G202: all clauses use parameterized placeholders
+	}
+
+	// Sort with whitelisted columns
+	severityRank := `CASE rv.severity WHEN 'error' THEN 3 WHEN 'warning' THEN 2 WHEN 'info' THEN 1 ELSE 0 END`
+
+	sortCols := map[string]string{
+		"artist_name": "rv.artist_name",
+		"severity":    severityRank,
+		"rule_id":     "rv.rule_id",
+		"created_at":  "rv.created_at",
+	}
+
+	order := "DESC"
+	if p.Order == "asc" {
+		order = "ASC"
+	}
+
+	if col, ok := sortCols[p.Sort]; ok {
+		query += " ORDER BY " + col + " " + order //nolint:gosec // G202: col is from whitelist map, not user input
+		if p.Sort != "created_at" {
+			query += ", rv.created_at DESC"
+		}
+	} else {
+		// Default sort: severity DESC (errors first), then newest
+		query += " ORDER BY " + severityRank + " DESC, rv.created_at DESC" //nolint:gosec // G202: severityRank is a constant CASE expression
+	}
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("listing filtered violations: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck
+
+	var violations []RuleViolation
+	for rows.Next() {
+		v, err := scanViolation(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scanning filtered violation row: %w", err)
+		}
+		violations = append(violations, *v)
+	}
+	return violations, rows.Err()
+}
+
+// GroupViolations groups violations by the specified field.
+func GroupViolations(violations []RuleViolation, groupBy string) []ViolationGroup {
+	if groupBy == "" {
+		return []ViolationGroup{{
+			Key:        "all",
+			Label:      "All Violations",
+			Count:      len(violations),
+			Violations: violations,
+		}}
+	}
+
+	// categoryFromRuleID extracts a category hint from the rule ID prefix.
+	categoryFromRuleID := func(ruleID string) string {
+		prefixMap := map[string]string{
+			"nfo":        "nfo",
+			"thumb":      "image",
+			"fanart":     "image",
+			"logo":       "image",
+			"banner":     "image",
+			"extraneous": "image",
+			"bio":        "metadata",
+			"artist":     "metadata",
+		}
+		for prefix, cat := range prefixMap {
+			if len(ruleID) >= len(prefix) && ruleID[:len(prefix)] == prefix {
+				return cat
+			}
+		}
+		return "other"
+	}
+
+	keyFunc := func(v RuleViolation) (string, string) {
+		switch groupBy {
+		case "artist":
+			return v.ArtistID, v.ArtistName
+		case "rule":
+			return v.RuleID, v.RuleID
+		case "severity":
+			return v.Severity, v.Severity
+		case "category":
+			cat := categoryFromRuleID(v.RuleID)
+			return cat, cat
+		default:
+			return "all", "All Violations"
+		}
+	}
+
+	// Preserve insertion order with a slice of keys and a map for lookup.
+	var order []string
+	groups := make(map[string]*ViolationGroup)
+
+	for _, v := range violations {
+		key, label := keyFunc(v)
+		g, exists := groups[key]
+		if !exists {
+			g = &ViolationGroup{Key: key, Label: label}
+			groups[key] = g
+			order = append(order, key)
+		}
+		g.Violations = append(g.Violations, v)
+		g.Count++
+	}
+
+	result := make([]ViolationGroup, 0, len(order))
+	for _, key := range order {
+		result = append(result, *groups[key])
+	}
+	return result
+}
+
 // GetViolationByID retrieves a single rule violation by its primary key.
 func (s *Service) GetViolationByID(ctx context.Context, id string) (*RuleViolation, error) {
 	row := s.db.QueryRowContext(ctx, `
