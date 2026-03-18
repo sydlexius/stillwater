@@ -103,7 +103,7 @@ func TestEvaluate_EmptyArtist(t *testing.T) {
 		t.Fatalf("Evaluate: %v", err)
 	}
 
-	// 9 enabled rules (image_duplicate disabled). Passes: extraneous_images, directory_name_mismatch (2 of 8).
+	// 8 enabled rules (image_duplicate and logo_trimmable disabled). Passes: extraneous_images, directory_name_mismatch.
 	if result.RulesTotal != 8 {
 		t.Errorf("RulesTotal = %d, want 8", result.RulesTotal)
 	}
