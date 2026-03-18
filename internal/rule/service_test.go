@@ -938,3 +938,57 @@ func TestList_OrderedByCategoryAndName(t *testing.T) {
 		prevName = r.Name
 	}
 }
+
+func TestDismissOrphanedViolations(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	// Create a real artist violation and an orphaned one.
+	// First insert a real artist directly so we have a valid artist_id.
+	_, err := db.ExecContext(ctx, `INSERT INTO artists (id, name, sort_name, type, path) VALUES (?, ?, ?, ?, ?)`,
+		"real-artist", "Real Artist", "Real Artist", "person", "/music/Real Artist")
+	if err != nil {
+		t.Fatalf("inserting real artist: %v", err)
+	}
+
+	realV := &RuleViolation{
+		RuleID: RuleNFOExists, ArtistID: "real-artist", ArtistName: "Real Artist",
+		Severity: "error", Message: "missing nfo", Fixable: true, Status: ViolationStatusOpen,
+	}
+	orphanV := &RuleViolation{
+		RuleID: RuleThumbExists, ArtistID: "deleted-artist", ArtistName: "Deleted",
+		Severity: "warning", Message: "missing thumb", Fixable: true, Status: ViolationStatusOpen,
+	}
+	for _, v := range []*RuleViolation{realV, orphanV} {
+		if err := svc.UpsertViolation(ctx, v); err != nil {
+			t.Fatalf("upserting violation: %v", err)
+		}
+	}
+
+	n, err := svc.DismissOrphanedViolations(ctx)
+	if err != nil {
+		t.Fatalf("DismissOrphanedViolations: %v", err)
+	}
+	if n != 1 {
+		t.Errorf("dismissed = %d, want 1", n)
+	}
+
+	// Orphaned violation should be dismissed.
+	got, err := svc.GetViolationByID(ctx, orphanV.ID)
+	if err != nil {
+		t.Fatalf("GetViolationByID: %v", err)
+	}
+	if got.Status != ViolationStatusDismissed {
+		t.Errorf("orphan status = %q, want %q", got.Status, ViolationStatusDismissed)
+	}
+
+	// Real violation should still be open.
+	got, err = svc.GetViolationByID(ctx, realV.ID)
+	if err != nil {
+		t.Fatalf("GetViolationByID: %v", err)
+	}
+	if got.Status != ViolationStatusOpen {
+		t.Errorf("real status = %q, want %q", got.Status, ViolationStatusOpen)
+	}
+}

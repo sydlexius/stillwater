@@ -101,6 +101,8 @@ type Router struct {
 	libraryOpsMu       sync.Mutex
 	ruleRun            *ruleRunStatus
 	ruleRunMu          sync.Mutex
+	fixAllProgress     *FixAllProgress
+	fixAllMu           sync.RWMutex
 }
 
 // NewRouter creates a new Router with all routes configured.
@@ -279,11 +281,14 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	// Notifications (rule violations) routes
 	mux.HandleFunc("GET "+bp+"/api/v1/notifications/counts", wrapAuth(r.handleNotificationCounts, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/notifications/badge", wrapAuth(r.handleNotificationBadge, authMw))
+	mux.HandleFunc("GET "+bp+"/api/v1/notifications/fix-all/status", wrapAuth(r.handleFixAllStatus, authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/notifications/fix-all", wrapAuth(r.handleFixAll, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/notifications", wrapAuth(r.handleListNotifications, authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/notifications/bulk-dismiss", wrapAuth(r.handleBulkDismissViolations, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/notifications/{id}/dismiss", wrapAuth(r.handleDismissViolation, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/notifications/{id}/resolve", wrapAuth(r.handleResolveViolation, authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/notifications/{id}/fix", wrapAuth(r.handleFixViolation, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/notifications/{id}/apply-candidate", wrapAuth(r.handleApplyViolationCandidate, authMw))
-	mux.HandleFunc("POST "+bp+"/api/v1/notifications/bulk-dismiss", wrapAuth(r.handleBulkDismissViolations, authMw))
 	mux.HandleFunc("DELETE "+bp+"/api/v1/notifications/resolved", wrapAuth(r.handleClearResolvedViolations, authMw))
 
 	// Bulk operation routes

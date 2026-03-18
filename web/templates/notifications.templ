@@ -2,6 +2,7 @@ package templates
 
 import (
 	"fmt"
+	"strings"
 	"time"
 	"github.com/sydlexius/stillwater/internal/rule"
 )
@@ -126,6 +127,16 @@ templ notificationsTableContent(data NotificationsData) {
 		>
 			Dismiss selected
 		</button>
+		if countFixable(data.Violations) > 0 {
+			<button
+				type="button"
+				onclick="fixAll()"
+				aria-label={ fmt.Sprintf("Fix all %d fixable violations", countFixable(data.Violations)) }
+				class="rounded border border-green-300 dark:border-green-700 bg-green-50 dark:bg-green-900/30 px-3 py-1.5 text-xs font-semibold text-green-700 dark:text-green-300 hover:bg-green-100 dark:hover:bg-green-900/50 transition-colors"
+			>
+				{ fmt.Sprintf("Fix All (%d)", countFixable(data.Violations)) }
+			</button>
+		}
 		<button
 			type="button"
 			onclick="bulkDismissAll()"
@@ -222,6 +233,16 @@ templ notificationsGroupedContent(data NotificationsData) {
 		>
 			Dismiss selected
 		</button>
+		if countFixable(data.Violations) > 0 {
+			<button
+				type="button"
+				onclick="fixAll()"
+				aria-label={ fmt.Sprintf("Fix all %d fixable violations", countFixable(data.Violations)) }
+				class="rounded border border-green-300 dark:border-green-700 bg-green-50 dark:bg-green-900/30 px-3 py-1.5 text-xs font-semibold text-green-700 dark:text-green-300 hover:bg-green-100 dark:hover:bg-green-900/50 transition-colors"
+			>
+				{ fmt.Sprintf("Fix All (%d)", countFixable(data.Violations)) }
+			</button>
+		}
 		<button
 			type="button"
 			onclick="bulkDismissAll()"
@@ -354,6 +375,17 @@ templ notifViolationRow(v rule.RuleViolation) {
 							Select image
 						</button>
 					}
+					if v.Fixable && v.Status == rule.ViolationStatusOpen {
+						<button
+							type="button"
+							data-violation-id={ v.ID }
+							onclick="fixViolation(this, this.dataset.violationId)"
+							aria-label={ fmt.Sprintf("%s for %s", fixButtonLabel(v.RuleID), v.ArtistName) }
+							class="font-semibold text-green-600 dark:text-green-400 hover:text-green-800 dark:hover:text-green-300"
+						>
+							{ fixButtonLabel(v.RuleID) }
+						</button>
+					}
 					<button
 						hx-post={ "/api/v1/notifications/" + v.ID + "/dismiss" }
 						hx-confirm="Dismiss this violation?"
@@ -379,10 +411,15 @@ templ notifViolationRow(v rule.RuleViolation) {
 						</p>
 					</div>
 					<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-						for _, c := range v.Candidates {
+						for i, c := range v.Candidates {
 							<div class="candidate-card flex flex-col rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden bg-white dark:bg-gray-900">
 								<!-- Image with magnifying glass overlay -->
 								<div class="relative bg-gray-100 dark:bg-gray-800" style="height:120px">
+									if i == 0 {
+										<span class="absolute top-1 left-1 z-10 text-[10px] px-1.5 py-0.5 bg-green-600 text-white rounded-full font-semibold leading-tight">
+											Recommended
+										</span>
+									}
 									<img
 										src={ c.URL }
 										alt={ providerDisplayName(c.Source) }
@@ -722,6 +759,90 @@ templ candidateScript() {
 		});
 	}
 
+	// ---- Fix single violation ----
+	function fixViolation(btn, violationID) {
+		var originalText = btn.textContent;
+		btn.disabled = true;
+		btn.textContent = 'Fixing...';
+		var csrfToken = document.cookie.replace(
+			/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, '$1'
+		);
+		fetch('/api/v1/notifications/' + violationID + '/fix', {
+			method: 'POST',
+			headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
+			credentials: 'same-origin'
+		}).then(function(resp) {
+			if (!resp.ok) throw new Error('HTTP ' + resp.status);
+			return resp.json();
+		}).then(function(data) {
+			if (data.status === 'fixed' || data.status === 'dismissed') {
+				if (typeof showSuccessToast === 'function') showSuccessToast(data.message || 'Fix applied');
+				reloadNotificationsTable();
+			} else {
+				if (typeof showToast === 'function') showToast('Fix failed: ' + (data.message || 'Unknown error'));
+				btn.disabled = false;
+				btn.textContent = originalText;
+			}
+		}).catch(function() {
+			if (typeof showToast === 'function') showToast('Network error applying fix.');
+			btn.disabled = false;
+			btn.textContent = originalText;
+		});
+	}
+
+	// ---- Fix All ----
+	function fixAll() {
+		if (!confirm('Apply recommended fixes for all fixable violations?')) return;
+		var csrfToken = document.cookie.replace(
+			/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, '$1'
+		);
+		fetch('/api/v1/notifications/fix-all', {
+			method: 'POST',
+			headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
+			credentials: 'same-origin'
+		}).then(function(resp) {
+			if (!resp.ok && resp.status !== 409) throw new Error('HTTP ' + resp.status);
+			return resp.json();
+		}).then(function(data) {
+			if (data.status === 'running' && data.total) {
+				if (typeof showSuccessToast === 'function') showSuccessToast('Applying fixes for ' + data.total + ' violations...');
+				pollFixAllStatus();
+			} else if (data.status === 'completed') {
+				if (typeof showSuccessToast === 'function') showSuccessToast(data.message || 'No fixable violations');
+			} else {
+				if (typeof showToast === 'function') showToast(data.message || 'Failed to start fix-all');
+			}
+		}).catch(function() {
+			if (typeof showToast === 'function') showToast('Network error starting fix-all.');
+		});
+	}
+
+	function pollFixAllStatus() {
+		fetch('/api/v1/notifications/fix-all/status', {credentials: 'same-origin'})
+		.then(function(resp) {
+			if (!resp.ok) throw new Error('HTTP ' + resp.status);
+			return resp.json();
+		})
+		.then(function(data) {
+			if (data.status === 'running') {
+				setTimeout(pollFixAllStatus, 1000);
+			} else {
+				var msg = 'Fixed ' + data.fixed + ' of ' + data.total;
+				if (data.skipped > 0) msg += ', ' + data.skipped + ' skipped';
+				if (data.failed > 0) msg += ', ' + data.failed + ' failed';
+
+				if (data.failed > 0 && typeof showWarningToast === 'function') {
+					showWarningToast(msg);
+				} else if (typeof showSuccessToast === 'function') {
+					showSuccessToast(msg);
+				}
+				reloadNotificationsTable();
+			}
+		}).catch(function() {
+			setTimeout(pollFixAllStatus, 2000);
+		});
+	}
+
 	</script>
 }
 
@@ -776,4 +897,37 @@ func formatAge(t time.Time) string {
 		return fmt.Sprintf("%dh", int(ago.Hours()))
 	}
 	return fmt.Sprintf("%dd", int(ago.Hours()/24))
+}
+
+func fixButtonLabel(ruleID string) string {
+	switch ruleID {
+	case rule.RuleNFOExists:
+		return "Generate NFO"
+	case rule.RuleNFOHasMBID:
+		return "Fetch MBID"
+	case rule.RuleBioExists:
+		return "Fetch biography"
+	case rule.RuleExtraneousImages:
+		return "Delete extraneous"
+	case rule.RuleLogoTrimmable:
+		return "Trim logo"
+	case rule.RuleDirectoryNameMismatch:
+		return "Rename directory"
+	default:
+		if strings.Contains(ruleID, "thumb") || strings.Contains(ruleID, "fanart") ||
+			strings.Contains(ruleID, "logo") || strings.Contains(ruleID, "banner") {
+			return "Fetch best image"
+		}
+		return "Fix"
+	}
+}
+
+func countFixable(violations []rule.RuleViolation) int {
+	n := 0
+	for _, v := range violations {
+		if v.Fixable && v.Status == rule.ViolationStatusOpen {
+			n++
+		}
+	}
+	return n
 }

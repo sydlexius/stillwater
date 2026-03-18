@@ -2,8 +2,10 @@ package rule
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -30,6 +32,7 @@ type CandidateDiscoverer interface {
 type FixResult struct {
 	RuleID     string           `json:"rule_id"`
 	Fixed      bool             `json:"fixed"`
+	Dismissed  bool             `json:"dismissed,omitempty"` // true when violation was auto-dismissed (e.g. orphaned artist)
 	Message    string           `json:"message"`
 	Candidates []ImageCandidate `json:"candidates,omitempty"` // set when multiple candidates need user selection
 }
@@ -49,6 +52,7 @@ type PipelineRunner interface {
 	RunForArtist(ctx context.Context, a *artist.Artist) (*RunResult, error)
 	RunRule(ctx context.Context, ruleID string) (*RunResult, error)
 	RunAll(ctx context.Context) (*RunResult, error)
+	FixViolation(ctx context.Context, violationID string) (*FixResult, error)
 }
 
 // Compile-time assertion: *Pipeline implements PipelineRunner.
@@ -61,6 +65,9 @@ type Pipeline struct {
 	ruleService   *Service
 	fixers        []Fixer
 	logger        *slog.Logger
+
+	ruleCacheMu sync.RWMutex
+	ruleCache   map[string]*Rule
 }
 
 // NewPipeline creates a new fix pipeline.
@@ -522,6 +529,104 @@ func (p *Pipeline) RunAll(ctx context.Context) (*RunResult, error) {
 	return result, nil
 }
 
+// FixViolation applies the recommended fix for a single persisted violation.
+// For pending_choice violations with image candidates, it returns a non-fixed
+// FixResult directing the caller to use the apply-candidate endpoint instead.
+// For other fixable violations, it runs the appropriate fixer from the
+// registered chain.
+func (p *Pipeline) FixViolation(ctx context.Context, violationID string) (*FixResult, error) {
+	rv, err := p.ruleService.GetViolationByID(ctx, violationID)
+	if err != nil {
+		return nil, fmt.Errorf("loading violation %s: %w", violationID, err)
+	}
+
+	if !rv.Fixable {
+		return &FixResult{RuleID: rv.RuleID, Fixed: false, Message: "violation is not fixable"}, nil
+	}
+
+	if rv.Status == ViolationStatusDismissed || rv.Status == ViolationStatusResolved {
+		return &FixResult{RuleID: rv.RuleID, Fixed: false, Message: "violation is already " + rv.Status}, nil
+	}
+
+	if rv.Status == ViolationStatusPendingChoice && len(rv.Candidates) > 0 {
+		return &FixResult{RuleID: rv.RuleID, Fixed: false, Message: "candidate selection required"}, nil
+	}
+
+	a, err := p.artistService.GetByID(ctx, rv.ArtistID)
+	if err != nil {
+		// Auto-dismiss orphaned violations whose artist no longer exists.
+		if errors.Is(err, artist.ErrNotFound) {
+			if dErr := p.ruleService.DismissViolation(ctx, rv.ID); dErr != nil {
+				p.logger.Warn("failed to dismiss orphaned violation", "id", rv.ID, "error", dErr)
+				return &FixResult{RuleID: rv.RuleID, Fixed: false, Message: "artist deleted; dismiss failed"}, nil
+			}
+			return &FixResult{RuleID: rv.RuleID, Dismissed: true, Message: "artist deleted; violation dismissed"}, nil
+		}
+		return nil, fmt.Errorf("loading artist %s: %w", rv.ArtistID, err)
+	}
+
+	r, err := p.getCachedRule(ctx, rv.RuleID)
+	if err != nil {
+		return nil, fmt.Errorf("loading rule %s: %w", rv.RuleID, err)
+	}
+
+	// Build transient violation for the fixer chain.
+	v := &Violation{
+		RuleID:   rv.RuleID,
+		Severity: rv.Severity,
+		Message:  rv.Message,
+		Fixable:  rv.Fixable,
+		Config:   r.Config,
+	}
+
+	fr := p.attemptFix(ctx, a, v)
+
+	if fr.Fixed {
+		if err := p.artistService.Update(ctx, a); err != nil {
+			return nil, fmt.Errorf("updating artist after fix: %w", err)
+		}
+		if err := p.ruleService.ResolveViolation(ctx, rv.ID); err != nil {
+			return nil, fmt.Errorf("resolving violation after fix: %w", err)
+		}
+		p.updateHealthScore(ctx, a)
+	}
+
+	return fr, nil
+}
+
+// getCachedRule returns a rule by ID, using an in-memory cache to avoid
+// repeated DB queries during batch operations like fix-all.
+func (p *Pipeline) getCachedRule(ctx context.Context, ruleID string) (*Rule, error) {
+	p.ruleCacheMu.RLock()
+	if r, ok := p.ruleCache[ruleID]; ok {
+		p.ruleCacheMu.RUnlock()
+		return r, nil
+	}
+	p.ruleCacheMu.RUnlock()
+
+	r, err := p.ruleService.GetByID(ctx, ruleID)
+	if err != nil {
+		return nil, err
+	}
+
+	p.ruleCacheMu.Lock()
+	if p.ruleCache == nil {
+		p.ruleCache = make(map[string]*Rule)
+	}
+	p.ruleCache[ruleID] = r
+	p.ruleCacheMu.Unlock()
+
+	return r, nil
+}
+
+// ClearRuleCache discards all cached rule lookups. Call this after rule
+// configuration changes to ensure subsequent FixViolation calls see fresh data.
+func (p *Pipeline) ClearRuleCache() {
+	p.ruleCacheMu.Lock()
+	p.ruleCache = nil
+	p.ruleCacheMu.Unlock()
+}
+
 // findFixer returns the first registered fixer that can handle the violation, or nil.
 func (p *Pipeline) findFixer(v *Violation) Fixer {
 	for _, f := range p.fixers {
@@ -553,7 +658,7 @@ func (p *Pipeline) attemptFix(ctx context.Context, a *artist.Artist, v *Violatio
 			return &FixResult{
 				RuleID:  v.RuleID,
 				Fixed:   false,
-				Message: fmt.Sprintf("fix failed: %v", err),
+				Message: "fix failed",
 			}
 		}
 		return fr
