@@ -104,5 +104,5 @@ Session 4 (release pipeline):
 - Current state: GoReleaser already creates `latest`, `<major>.<minor>`, and `<version>` tags
 - CI already pushes `latest` and `<sha>` on main branch
 - Nightly builds should use the same Dockerfile but with a distinct tag
-- #509 (SQL squash) also listed in M30 plan; primary ownership here in M29 for release readiness
+- #509 (SQL squash) is the successor to #350 (consolidated in M30, now merged); primary ownership here in M29 for release readiness
 - #500 (SBOM): recommended tools are Syft+Grype (free, Apache 2.0) + govulncheck (Go-specific)

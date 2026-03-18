@@ -62,15 +62,6 @@ Enhance the metadata provider pipeline with web scraping capabilities, new image
 - [ ] Update rate limiting, Settings UI, OOBE
 - [ ] Tests (infobox parser, API mocks, integration)
 
-## Worktrees
-
-| Directory | Branch | Issue | Status |
-|-----------|--------|-------|--------|
-| stillwater-342 | feat/342-fallback-optimization | #342 | pending |
-| stillwater-339 | feat/339-lastfm-scraper | #339 | pending |
-| stillwater-340 | feat/340-wikidata-images | #340 | pending |
-| stillwater-341 | feat/341-wikipedia-provider | #341 | pending |
-
 ### Issue #522 -- Provider image search returning single result instead of multiple
 - [ ] Investigate why only single image candidate returned per slot
 - [ ] Check provider API key validity and response parsing
@@ -80,6 +71,15 @@ Enhance the metadata provider pipeline with web scraping capabilities, new image
 - [ ] Fix root cause and verify multiple candidates returned
 - [ ] Tests
 - [ ] PR merged
+
+## Worktrees
+
+| Directory | Branch | Issue | Status |
+|-----------|--------|-------|--------|
+| stillwater-342 | feat/342-fallback-optimization | #342 | pending |
+| stillwater-339 | feat/339-lastfm-scraper | #339 | pending |
+| stillwater-340 | feat/340-wikidata-images | #340 | pending |
+| stillwater-341 | feat/341-wikipedia-provider | #341 | pending |
 
 ## UAT / Merge Order
 

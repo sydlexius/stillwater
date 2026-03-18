@@ -59,7 +59,7 @@ form bugs, and preserve filter state across navigation.
 - [ ] Master enable/disable toggle
 - [ ] "Test Notification" button
 - [ ] No duplicate with in-page toasts
-- [ ] notification.js vendored
+- [ ] notifications.js vendored
 - [ ] Tests
 - [ ] PR merged
 

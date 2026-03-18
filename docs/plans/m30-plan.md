@@ -123,6 +123,7 @@ early since it touches the migration foundation. #360 (image caching) benefits f
 - [ ] Dropdown arrow clearly visible (chevron, not "...")
 - [ ] Keyboard-accessible (Enter, arrow keys, Escape)
 - [ ] Tests
+- [ ] PR merged
 
 ### Issue #501 -- Aggregate metadata completeness reports
 - [ ] Completeness calculation: populated fields / applicable fields per artist type
@@ -133,6 +134,7 @@ early since it touches the migration foundation. #360 (image caching) benefits f
 - [ ] API endpoint: `GET /api/v1/reports/metadata-completeness`
 - [ ] Dashboard widget with Chart.js
 - [ ] Tests
+- [ ] PR merged
 
 ### Issue #504 -- Archive and purge revoked API tokens
 - [ ] Token lifecycle: active -> revoked -> archived -> deleted
@@ -140,17 +142,20 @@ early since it touches the migration foundation. #360 (image caching) benefits f
 - [ ] Audit log entries anonymized on delete
 - [ ] API endpoints with proper status codes
 - [ ] Tests
+- [ ] PR merged
 
 ### Issue #508 -- Audit and complete Bruno API test collections
 - [ ] Compare all routes in router.go against Bruno requests
 - [ ] Add missing endpoint requests
 - [ ] Add error case requests for key endpoints
 - [ ] Collection runs end-to-end without failures
+- [ ] PR merged
 
 ### Issue #510 -- Codebase documentation audit
 - [ ] All exported types, interfaces, functions have doc comments
 - [ ] Package-level documentation for all packages in `internal/`
 - [ ] `go doc` output clean for each package
+- [ ] PR merged
 
 ### Issue #511 -- Performance profiling via fuzzing and load testing
 - [ ] Fuzz tests for NFO parser, JSON handlers, image upload
@@ -158,11 +163,13 @@ early since it touches the migration foundation. #360 (image caching) benefits f
 - [ ] pprof enabled in debug mode
 - [ ] Slow queries identified via EXPLAIN QUERY PLAN
 - [ ] Findings documented
+- [ ] PR merged
 
 ### Issue #524 -- smoke.sh configurable music path parameter
 - [ ] `--music-path` CLI argument and `SW_MUSIC_PATH` env var
 - [ ] Precedence: CLI > env var > Stillwater API query
 - [ ] Updated usage/help text
+- [ ] PR merged
 
 ## Worktrees
 
