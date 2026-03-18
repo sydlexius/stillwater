@@ -1,0 +1,3 @@
+reviews:
+  # Never stop reviewing after N rounds (default: 5)
+  max_iterations: 0
