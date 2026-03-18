@@ -68,25 +68,27 @@ jobs:
           PR_NUMBER: ${{ steps.pr.outputs.number }}
           REPO: ${{ github.repository }}
         run: |
-          DECISION="unknown"
+          # Check for an APPROVED review directly via the reviews API.
+          # This works regardless of whether branch protection requires
+          # pull request reviews (which controls the reviewDecision field).
           for i in $(seq 1 10); do
-            DECISION=$(gh pr view "$PR_NUMBER" --repo "$REPO" \
-              --json reviewDecision --jq '.reviewDecision') || {
-              echo "::warning::Failed to fetch review status for PR #$PR_NUMBER (attempt $i/10)"
+            APPROVALS=$(gh api "repos/$REPO/pulls/$PR_NUMBER/reviews" \
+              --jq '[.[] | select(.state == "APPROVED")] | length') || {
+              echo "::warning::Failed to fetch reviews for PR #$PR_NUMBER (attempt $i/10)"
               if [ "$i" -lt 10 ]; then sleep 30; fi
               continue
             }
-            if [ "$DECISION" = "APPROVED" ]; then
+            if [ "$APPROVALS" -gt 0 ]; then
               echo "decision=APPROVED" >> "$GITHUB_OUTPUT"
               exit 0
             fi
             if [ "$i" -lt 10 ]; then
-              echo "Attempt $i/10: PR #$PR_NUMBER not yet approved (status: $DECISION), waiting 30s..."
+              echo "Attempt $i/10: PR #$PR_NUMBER has no approvals yet, waiting 30s..."
               sleep 30
             fi
           done
-          echo "::warning::PR #$PR_NUMBER not approved after ~5 minutes (last status: $DECISION), skipping merge"
-          echo "decision=$DECISION" >> "$GITHUB_OUTPUT"
+          echo "::warning::PR #$PR_NUMBER not approved after ~5 minutes, skipping merge"
+          echo "decision=NOT_APPROVED" >> "$GITHUB_OUTPUT"
 
       - name: Wait for required checks and merge
         if: steps.pr.outputs.number && steps.review.outputs.decision == 'APPROVED'
