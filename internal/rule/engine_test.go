@@ -104,9 +104,8 @@ func TestEvaluate_EmptyArtist(t *testing.T) {
 	}
 
 	// An empty artist (no NFO, no images, no bio, no MBID) should fail most rules.
-	// Only extraneous_images and directory_name_mismatch pass (nothing extraneous,
-	// dir name matches). Assert relative properties rather than exact counts so
-	// adding new rules does not break this test.
+	// Assert relative properties so adding new rules does not break this test,
+	// but verify specific known rules by checking the violations list.
 	if result.RulesTotal == 0 {
 		t.Fatal("RulesTotal = 0, expected enabled rules to be evaluated")
 	}
@@ -118,6 +117,22 @@ func TestEvaluate_EmptyArtist(t *testing.T) {
 	}
 	if result.HealthScore >= 100.0 {
 		t.Errorf("HealthScore = %.1f, expected < 100 for an empty artist", result.HealthScore)
+	}
+	// Verify specific known rules fire for an empty artist.
+	violationRules := map[string]bool{}
+	for _, v := range result.Violations {
+		violationRules[v.RuleID] = true
+	}
+	for _, expected := range []string{RuleNFOExists, RuleThumbExists, RuleFanartExists, RuleBioExists} {
+		if !violationRules[expected] {
+			t.Errorf("expected violation for %s, not found", expected)
+		}
+	}
+	// These rules should pass for an empty artist (nothing extraneous, dir name matches).
+	for _, notExpected := range []string{RuleExtraneousImages, RuleDirectoryNameMismatch} {
+		if violationRules[notExpected] {
+			t.Errorf("unexpected violation for %s", notExpected)
+		}
 	}
 }
 
@@ -160,9 +175,8 @@ func TestEvaluate_PartialCompliance(t *testing.T) {
 		t.Fatalf("Evaluate: %v", err)
 	}
 
-	// Partial artist has NFO + MBID, so nfo_exists, nfo_has_mbid, extraneous_images,
-	// and directory_name_mismatch should pass. Assert relative properties so adding
-	// new rules does not break this test.
+	// Partial artist has NFO + MBID but no images or bio. Assert relative
+	// properties and verify specific known rules by checking violations.
 	if result.RulesPassed == 0 {
 		t.Error("RulesPassed = 0, expected nfo_exists and nfo_has_mbid to pass")
 	}
@@ -171,6 +185,22 @@ func TestEvaluate_PartialCompliance(t *testing.T) {
 	}
 	if result.HealthScore <= 0 || result.HealthScore >= 100.0 {
 		t.Errorf("HealthScore = %.1f, expected between 0 and 100 for partial compliance", result.HealthScore)
+	}
+	// Verify specific rules: nfo_exists and nfo_has_mbid should NOT appear in violations.
+	violationRules := map[string]bool{}
+	for _, v := range result.Violations {
+		violationRules[v.RuleID] = true
+	}
+	for _, shouldPass := range []string{RuleNFOExists, RuleNFOHasMBID, RuleExtraneousImages} {
+		if violationRules[shouldPass] {
+			t.Errorf("unexpected violation for %s (artist has NFO + MBID)", shouldPass)
+		}
+	}
+	// Image rules should fire.
+	for _, shouldFail := range []string{RuleThumbExists, RuleFanartExists, RuleBioExists} {
+		if !violationRules[shouldFail] {
+			t.Errorf("expected violation for %s, not found", shouldFail)
+		}
 	}
 }
 
