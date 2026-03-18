@@ -155,6 +155,7 @@ early since it touches the migration foundation. #360 (image caching) benefits f
 - [ ] All exported types, interfaces, functions have doc comments
 - [ ] Package-level documentation for all packages in `internal/`
 - [ ] `go doc` output clean for each package
+- [ ] Tests
 - [ ] PR merged
 
 ### Issue #511 -- Performance profiling via fuzzing and load testing
@@ -169,6 +170,7 @@ early since it touches the migration foundation. #360 (image caching) benefits f
 - [ ] `--music-path` CLI argument and `SW_MUSIC_PATH` env var
 - [ ] Precedence: CLI > env var > Stillwater API query
 - [ ] Updated usage/help text
+- [ ] Tests
 - [ ] PR merged
 
 ## Worktrees

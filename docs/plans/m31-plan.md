@@ -80,6 +80,7 @@ Enhance the metadata provider pipeline with web scraping capabilities, new image
 | stillwater-339 | feat/339-lastfm-scraper | #339 | pending |
 | stillwater-340 | feat/340-wikidata-images | #340 | pending |
 | stillwater-341 | feat/341-wikipedia-provider | #341 | pending |
+| stillwater-522 | feat/522-provider-image-fix | #522 | pending |
 
 ## UAT / Merge Order
 

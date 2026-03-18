@@ -7,6 +7,16 @@ metadata fetch, re-identification persists correctly, and providers validate
 returned data against the search term. The test case is Adele: wrong MBID, correct
 AudioDB ID, Genius returning Kim Kardashian's biography.
 
+## Acceptance Criteria
+
+- [ ] Re-identify artist persists MBID correctly
+- [ ] Orchestrator uses stored provider IDs for metadata fetch
+- [ ] Provider ID lookup order: provider ID > MBID > name
+- [ ] Genius validates returned artist name against search term
+- [ ] Adele test case passes: correct bio with wrong MBID + correct AudioDB ID
+- [ ] Born/formed fields correct after re-identify + refresh
+- [ ] All tests pass with race detector
+
 ## Issues
 
 | Issue | Title | Priority | Session |
@@ -106,6 +116,15 @@ Checklist:
 - [ ] Consider propagating validation to other name-lookup providers
 - [ ] PR merged
 
+## Worktrees
+
+| Directory | Branch | Issue | Status |
+|-----------|--------|-------|--------|
+| stillwater-529 | feat/529-reidentify-persist | #529 | pending |
+| stillwater-528 | feat/528-orchestrator-provider-ids | #528 | pending |
+| stillwater-527 | feat/527-genius-validation | #527 | pending |
+| (re-evaluate only) | N/A | #466 | pending |
+
 ## Session 3: Re-evaluate born/formed (#466)
 
 After sessions 1-2 land on main:
@@ -114,6 +133,21 @@ After sessions 1-2 land on main:
 3. Check if born/formed fields are now correct
 4. If the bug persists, proceed with #466 implementation
 5. If resolved, close #466 with a note that the root cause was provider ID mismatch
+
+## UAT / Merge Order
+
+Session 1 (re-identify + orchestrator):
+1. PR for #529 (base: main) -- re-identify persistence fix
+2. PR for #528 (base: main) -- orchestrator provider IDs
+   UAT: re-identify Adele with correct MBID, refresh metadata, verify AudioDB bio
+
+Session 2 (Genius validation):
+3. PR for #527 (base: main) -- Genius name validation
+   UAT: search "Adele" returns correct result, search "Radiohead" still works
+
+Session 3 (re-evaluate born/formed):
+4. Re-evaluate #466 after sessions 1-2 land
+   UAT: check born/formed fields on Adele after correct provider data flows
 
 ## Notes
 

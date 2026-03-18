@@ -55,6 +55,7 @@ and prepare the codebase for initial release.
 ### Issue #505 -- CI/quality badges in README.md
 - [ ] CI status, release, Go Report Card, license, Go version badges
 - [ ] Badges render correctly on GitHub
+- [ ] Tests
 - [ ] PR merged
 
 ### Issue #509 -- Squash SQL migrations for initial release
