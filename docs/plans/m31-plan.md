@@ -71,12 +71,27 @@ Enhance the metadata provider pipeline with web scraping capabilities, new image
 | stillwater-340 | feat/340-wikidata-images | #340 | pending |
 | stillwater-341 | feat/341-wikipedia-provider | #341 | pending |
 
+### Issue #522 -- Provider image search returning single result instead of multiple
+- [ ] Investigate why only single image candidate returned per slot
+- [ ] Check provider API key validity and response parsing
+- [ ] Check deduplication/filtering for over-aggressiveness
+- [ ] Verify fallback chain executes fully
+- [ ] Check Fanart.tv specifically for a-ha results
+- [ ] Fix root cause and verify multiple candidates returned
+- [ ] Tests
+
 ## UAT / Merge Order
 
-1. PR for #342 (base: main) -- fallback optimization first to establish clean baseline
-2. PR for #339 (base: main) -- Last.fm scraper, independent
-3. PR for #340 (base: main) -- Wikidata images, independent
-4. PR for #341 (base: main) -- Wikipedia provider, may reference Wikidata SPARQL changes from #340
+Session 1 (investigation + optimization):
+1. PR for #522 (base: main) -- image search regression fix
+2. PR for #342 (base: main) -- fallback optimization (clean baseline)
+
+Session 2 (new providers):
+3. PR for #339 (base: main) -- Last.fm scraper
+4. PR for #340 (base: main) -- Wikidata images
+
+Session 3 (Wikipedia):
+5. PR for #341 (base: main) -- Wikipedia provider (may reference #340)
 
 ## New Dependencies
 
