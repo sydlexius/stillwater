@@ -23,7 +23,7 @@ Enhance the metadata provider pipeline with web scraping capabilities, new image
 #341 (Wikipedia metadata)     -- loosely depends on #340 (Wikidata supplies Wikipedia URL)
 ```
 
-#342 is the foundational optimization that ensures new providers do not add unnecessary API calls. #339 and #340 are independent and can proceed in parallel. #341 benefits from #340 (Wikidata SPARQL changes to extract Wikipedia sitelinks) but can also work independently via Wikipedia API search.
+#522 should be investigated first to identify the root cause of the image search regression. #342 is the foundational optimization that ensures new providers do not add unnecessary API calls. #339 and #340 are independent and can proceed in parallel. #341 benefits from #340 (Wikidata SPARQL changes to extract Wikipedia sitelinks) but can also work independently via Wikipedia API search.
 
 ## Checklist
 

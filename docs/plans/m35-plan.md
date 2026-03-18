@@ -15,12 +15,12 @@ the artist list, and automatic crop workflow for wrong-geometry uploads.
 ## Dependency Map
 
 ```
-#518 (nomenclature) --> #506 (platform badges use platform-specific terms)
+#518 (nomenclature) -- independent
+#506 (platform badges) -- independent
 #507 (auto-crop) -- independent
 ```
 
-#518 (nomenclature) should land before #506 (badges) so badges use the correct terms.
-#507 (auto-crop) is fully independent.
+All three issues are independent and can proceed in parallel.
 
 ## Checklist
 
@@ -57,14 +57,10 @@ the artist list, and automatic crop workflow for wrong-geometry uploads.
 
 ## UAT / Merge Order
 
-Session 1 (foundation):
+All three are independent and can be worked in any order:
 1. PR for #518 (base: main) -- platform-specific terminology
-
-Session 2 (badges):
-2. PR for #506 (base: main, after #518) -- platform badges
-
-Session 3 (crop workflow):
-3. PR for #507 (base: main) -- auto-crop
+2. PR for #506 (base: main) -- platform badges
+3. PR for #507 (base: main) -- auto-crop workflow
 
 ## Notes
 
