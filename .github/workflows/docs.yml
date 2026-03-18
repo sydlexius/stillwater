@@ -7,11 +7,15 @@ on:
       - 'docs/**'
       - '**/*.md'
       - '.github/ISSUE_TEMPLATE/**'
+      - '.markdownlint-cli2.yaml'
+      - '.github/workflows/docs.yml'
   pull_request:
     paths:
       - 'docs/**'
       - '**/*.md'
       - '.github/ISSUE_TEMPLATE/**'
+      - '.markdownlint-cli2.yaml'
+      - '.github/workflows/docs.yml'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
