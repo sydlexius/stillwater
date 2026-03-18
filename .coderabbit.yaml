@@ -11,6 +11,19 @@ reviews:
   path_filters:
     - "!**/*.csv"
     - "!**/*.env*"
+  path_instructions:
+    - path: "docs/plans/m*-plan.md"
+      instructions: |
+        Milestone plan files follow a standard structure: Goal, Acceptance Criteria,
+        Dependency Map, Checklist (with sub-issue sections containing implementation,
+        tests, and PR merged items), Worktrees table, UAT/Merge Order, and Notes.
+        PR titles are summaries -- issues added in follow-up commits are intentionally
+        in scope even if not mentioned in the title.
+    - path: "docs/plans/*.md"
+      instructions: |
+        Plan files may reference issues beyond the PR title scope. This is intentional
+        when follow-up commits add related work. Do not flag scope mismatches between
+        PR title and plan file content.
   profile: assertive
   request_changes_workflow: true
   high_level_summary: true

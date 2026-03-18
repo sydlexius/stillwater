@@ -181,6 +181,13 @@ Skip it for single-threaded code paths:
   - `band_members` -- members of bands/groups with instruments and tenure
   - `nfo_snapshots` -- historical NFO file versions for undo/restore
 - Shared database helpers (type conversions, nullable handling) in `internal/dbutil/`
+- All artist-related tables use `ON DELETE CASCADE` on `artist_id` foreign keys; `rule_violations` also cascades on `rule_id`. `DismissOrphanedViolations` is a safety net for orphaned violations when foreign keys are disabled or data is inconsistent.
+
+## Rule Engine Internals
+
+- Fix-all uses an in-memory progress tracker with mutex protection, not the BulkJob database pattern. Only one fix-all can run at a time (409 on concurrent starts).
+- `FixResult` has three outcome states: `Fixed`, `Dismissed`, and neither (failed/skipped).
+- All rules support three states: enabled toggle (on/off) + automation mode (`manual` or `auto`). The `disabled` automation mode was removed in #353.
 
 ## Versioning
 
@@ -307,6 +314,13 @@ Before squashing and pushing, verify these categories that Copilot consistently 
 **Accessibility:**
 - [ ] Interactive elements (selects, buttons, collapsible panels) have `aria-label`, `aria-expanded`, or `aria-controls` as appropriate
 - [ ] Group collapse/expand buttons maintain `aria-expanded` state
+
+**Frontend fetch calls:**
+- [ ] All `fetch()` calls check `resp.ok` before parsing the response body
+- [ ] Error responses show user-friendly messages, not raw JSON
+
+**Concurrency:**
+- [ ] Background goroutines use `context.WithoutCancel(reqCtx)`, never `context.Background()`, to preserve request-scoped values (gosec G118)
 
 **Test code:**
 - [ ] No unprotected shared variables written in test handler goroutines and read in the test goroutine
@@ -541,6 +555,35 @@ Once every sub-issue PR is merged to `main`:
 5. Run `git fetch --prune` to remove stale tracking refs.
 6. Delete the plan file: `git rm docs/plans/m<N>-plan.md` and commit directly to `main`.
 7. Update `memory/worktrees.md` to move entries to "Completed" or remove them.
+
+## CI/CD
+
+### GitHub Actions pinning
+
+All GitHub Actions are pinned to commit SHAs (not version tags) for supply chain security.
+The original version tag is kept as an inline comment for maintainability:
+
+```yaml
+uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+```
+
+When updating an action version, look up the new SHA:
+```bash
+gh api repos/<owner>/<action>/git/ref/tags/<version> --jq '.object.sha'
+```
+
+### Docs-only PRs
+
+The CI workflow uses `dorny/paths-filter` to detect code changes. Docs-only PRs
+skip Go build/test/lint but still report green required status checks (skipped jobs).
+A separate `docs.yml` workflow runs typos and markdownlint on markdown changes.
+
+**Do not use `paths-ignore`** on workflow triggers when required status checks exist.
+GitHub treats missing checks as "not satisfied" and blocks the merge.
+
+### Helper scripts
+
+- `~/.claude/scripts/pr-unreplied-comments.sh [--wait] [--count-only] <PR>` -- detect unreplied bot review comments. Use `--wait` after pushing to poll until bot reviews stabilize. Output includes `commit` and `stale` fields for stale-diff detection.
 
 ## License
 
