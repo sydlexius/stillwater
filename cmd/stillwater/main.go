@@ -219,6 +219,7 @@ func run() error {
 		rule.NewImageFixer(orchestrator, platformService, logger),
 		rule.NewExtraneousImagesFixer(platformService, logger),
 		rule.NewLogoTrimFixer(platformService, logger),
+		rule.NewDirectoryRenameFixer(logger),
 	}
 	pipeline := rule.NewPipeline(ruleEngine, artistService, ruleService, fixers, logger)
 

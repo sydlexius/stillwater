@@ -802,6 +802,69 @@ func fetchImageURL(ctx context.Context, rawURL string) ([]byte, error) {
 	return data, nil
 }
 
+// DirectoryRenameFixer renames an artist's directory to match the canonical name.
+type DirectoryRenameFixer struct {
+	logger *slog.Logger
+}
+
+// NewDirectoryRenameFixer creates a DirectoryRenameFixer.
+func NewDirectoryRenameFixer(logger *slog.Logger) *DirectoryRenameFixer {
+	return &DirectoryRenameFixer{logger: logger.With(slog.String("component", "directory-rename-fixer"))}
+}
+
+// CanFix returns true for the directory_name_mismatch rule.
+func (f *DirectoryRenameFixer) CanFix(v *Violation) bool {
+	return v.RuleID == RuleDirectoryNameMismatch
+}
+
+// Fix renames the artist directory to the canonical name derived from the
+// artist's name and the rule's article mode configuration.
+func (f *DirectoryRenameFixer) Fix(_ context.Context, a *artist.Artist, v *Violation) (*FixResult, error) {
+	if a.Path == "" {
+		return &FixResult{RuleID: v.RuleID, Fixed: false, Message: "artist has no path"}, nil
+	}
+
+	canonical := canonicalDirName(a.Name, v.Config.ArticleMode)
+	if canonical == "" {
+		return &FixResult{RuleID: v.RuleID, Fixed: false, Message: "canonical name is empty or unsafe"}, nil
+	}
+
+	newPath := filepath.Join(filepath.Dir(a.Path), canonical)
+
+	if a.Path == newPath {
+		return &FixResult{RuleID: v.RuleID, Fixed: false, Message: "paths already match"}, nil
+	}
+
+	// Check destination does not already exist.
+	if _, err := os.Stat(newPath); !os.IsNotExist(err) {
+		if err == nil {
+			return &FixResult{
+				RuleID:  v.RuleID,
+				Fixed:   false,
+				Message: fmt.Sprintf("destination %q already exists", canonical),
+			}, nil
+		}
+		return nil, fmt.Errorf("checking destination %q: %w", newPath, err)
+	}
+
+	if err := filesystem.RenameDirAtomic(a.Path, newPath); err != nil {
+		return nil, fmt.Errorf("renaming %q to %q: %w", a.Path, newPath, err)
+	}
+
+	f.logger.Info("renamed artist directory",
+		"artist", a.Name,
+		"old_path", a.Path,
+		"new_path", newPath)
+
+	a.Path = newPath
+
+	return &FixResult{
+		RuleID:  v.RuleID,
+		Fixed:   true,
+		Message: fmt.Sprintf("renamed directory to %q", canonical),
+	}, nil
+}
+
 // activeUseSymlinks returns the UseSymlinks flag from the active platform profile.
 // Returns false if the service is nil or the profile cannot be fetched.
 func activeUseSymlinks(ctx context.Context, svc *platform.Service) bool {

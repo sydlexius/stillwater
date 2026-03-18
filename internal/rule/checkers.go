@@ -695,3 +695,85 @@ func (e *Engine) makeExtraneousImagesChecker() Checker {
 		}
 	}
 }
+
+// commonArticles are English articles stripped, suffixed, or kept as-is
+// depending on ArticleMode.
+var commonArticles = []string{"The", "A", "An"}
+
+// canonicalDirName returns the expected directory name for an artist given
+// the article handling mode. Returns empty string if the name is empty or
+// results in an unsafe path element.
+func canonicalDirName(name, articleMode string) string {
+	if articleMode == "" {
+		articleMode = "prefix"
+	}
+
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return ""
+	}
+
+	// Replace characters not allowed in directory names on common filesystems.
+	name = strings.NewReplacer(
+		"/", "_",
+		"\\", "_",
+		":", "_",
+		"*", "_",
+		"?", "_",
+		"\"", "_",
+		"<", "_",
+		">", "_",
+		"|", "_",
+	).Replace(name)
+
+	switch articleMode {
+	case "suffix":
+		for _, art := range commonArticles {
+			prefix := art + " "
+			if len(name) > len(prefix) && strings.EqualFold(name[:len(prefix)], prefix) {
+				return name[len(prefix):] + ", " + name[:len(art)]
+			}
+		}
+	case "strip":
+		for _, art := range commonArticles {
+			prefix := art + " "
+			if len(name) > len(prefix) && strings.EqualFold(name[:len(prefix)], prefix) {
+				name = name[len(prefix):]
+				break // strip at most one leading article
+			}
+		}
+	}
+
+	// Reject unsafe path elements.
+	if name == "" || name == "." || name == ".." {
+		return ""
+	}
+	return name
+}
+
+func checkDirectoryNameMismatch(a *artist.Artist, cfg RuleConfig) *Violation {
+	if a.Path == "" {
+		return nil
+	}
+
+	dirName := filepath.Base(a.Path)
+	canonical := canonicalDirName(a.Name, cfg.ArticleMode)
+
+	// Skip if the artist name cannot produce a safe directory name.
+	if canonical == "" {
+		return nil
+	}
+
+	if strings.EqualFold(dirName, canonical) {
+		return nil
+	}
+
+	return &Violation{
+		RuleID:   RuleDirectoryNameMismatch,
+		RuleName: "Directory name matches artist",
+		Category: "metadata",
+		Severity: effectiveSeverity(cfg),
+		Message:  fmt.Sprintf("directory %q does not match expected %q", dirName, canonical),
+		Fixable:  true,
+	}
+}

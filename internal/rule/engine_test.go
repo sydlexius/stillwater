@@ -3,6 +3,8 @@ package rule
 import (
 	"context"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -32,6 +34,11 @@ func TestEvaluate_FullyCompliant(t *testing.T) {
 
 	engine := NewEngine(svc, db, nil, testLogger())
 
+	artistDir := filepath.Join(t.TempDir(), "Nirvana")
+	if err := os.MkdirAll(artistDir, 0o755); err != nil {
+		t.Fatalf("creating artist dir: %v", err)
+	}
+
 	a := &artist.Artist{
 		ID:            "test-1",
 		Name:          "Nirvana",
@@ -41,7 +48,7 @@ func TestEvaluate_FullyCompliant(t *testing.T) {
 		FanartExists:  true,
 		LogoExists:    true,
 		Biography:     "Nirvana was an American rock band.",
-		Path:          t.TempDir(),
+		Path:          artistDir,
 	}
 
 	result, err := engine.Evaluate(ctx, a)
@@ -80,10 +87,15 @@ func TestEvaluate_EmptyArtist(t *testing.T) {
 
 	engine := NewEngine(svc, db, nil, testLogger())
 
+	artistDir := filepath.Join(t.TempDir(), "Empty Artist")
+	if err := os.MkdirAll(artistDir, 0o755); err != nil {
+		t.Fatalf("creating artist dir: %v", err)
+	}
+
 	a := &artist.Artist{
 		ID:   "test-2",
 		Name: "Empty Artist",
-		Path: t.TempDir(),
+		Path: artistDir,
 	}
 
 	result, err := engine.Evaluate(ctx, a)
@@ -91,14 +103,14 @@ func TestEvaluate_EmptyArtist(t *testing.T) {
 		t.Fatalf("Evaluate: %v", err)
 	}
 
-	// Should fail 6 of 7 remaining enabled rules (extraneous_images passes on empty dir)
-	if result.RulesTotal != 7 {
-		t.Errorf("RulesTotal = %d, want 7", result.RulesTotal)
+	// Should fail 6 of 8 remaining enabled rules (extraneous_images and directory_name_mismatch pass)
+	if result.RulesTotal != 8 {
+		t.Errorf("RulesTotal = %d, want 8", result.RulesTotal)
 	}
-	if result.RulesPassed != 1 {
-		t.Errorf("RulesPassed = %d, want 1", result.RulesPassed)
+	if result.RulesPassed != 2 {
+		t.Errorf("RulesPassed = %d, want 2", result.RulesPassed)
 	}
-	expectedScore := 14.3 // 1/7 * 100, rounded to 1 decimal
+	expectedScore := 25.0 // 2/8 * 100, rounded to 1 decimal
 	if result.HealthScore != expectedScore {
 		t.Errorf("HealthScore = %.1f, want %.1f", result.HealthScore, expectedScore)
 	}
@@ -128,12 +140,17 @@ func TestEvaluate_PartialCompliance(t *testing.T) {
 	engine := NewEngine(svc, db, nil, testLogger())
 
 	// Artist has NFO and MBID but nothing else
+	artistDir := filepath.Join(t.TempDir(), "Partial")
+	if err := os.MkdirAll(artistDir, 0o755); err != nil {
+		t.Fatalf("creating artist dir: %v", err)
+	}
+
 	a := &artist.Artist{
 		ID:            "test-3",
 		Name:          "Partial",
 		MusicBrainzID: "abc-123",
 		NFOExists:     true,
-		Path:          t.TempDir(),
+		Path:          artistDir,
 	}
 
 	result, err := engine.Evaluate(ctx, a)
@@ -141,15 +158,15 @@ func TestEvaluate_PartialCompliance(t *testing.T) {
 		t.Fatalf("Evaluate: %v", err)
 	}
 
-	// Passes: nfo_exists, nfo_has_mbid, extraneous_images (3 of 7)
-	if result.RulesPassed != 3 {
-		t.Errorf("RulesPassed = %d, want 3", result.RulesPassed)
+	// Passes: nfo_exists, nfo_has_mbid, extraneous_images, directory_name_mismatch (4 of 8)
+	if result.RulesPassed != 4 {
+		t.Errorf("RulesPassed = %d, want 4", result.RulesPassed)
 	}
-	if result.RulesTotal != 7 {
-		t.Errorf("RulesTotal = %d, want 7", result.RulesTotal)
+	if result.RulesTotal != 8 {
+		t.Errorf("RulesTotal = %d, want 8", result.RulesTotal)
 	}
 
-	expectedScore := 42.9 // 3/7 * 100, rounded to 1 decimal
+	expectedScore := 50.0 // 4/8 * 100
 	if result.HealthScore != expectedScore {
 		t.Errorf("HealthScore = %.1f, want %.1f", result.HealthScore, expectedScore)
 	}
@@ -271,8 +288,8 @@ func TestEngine_WithRealDB(t *testing.T) {
 		t.Fatal("expected non-nil engine")
 	}
 
-	// Verify all checkers are registered (8 core + 5 image quality + 1 extraneous + 1 mismatch + 1 logo trim = 16)
-	if len(engine.checkers) != 16 {
-		t.Errorf("expected 16 checkers, got %d", len(engine.checkers))
+	// Verify all checkers are registered (8 core + 5 image quality + 1 extraneous + 1 mismatch + 1 logo trim + 1 dir name = 17)
+	if len(engine.checkers) != 17 {
+		t.Errorf("expected 17 checkers, got %d", len(engine.checkers))
 	}
 }
