@@ -70,7 +70,7 @@ Key files:
 Implementation:
 1. Add provider ID map to `FetchMetadata()` signature (or an `ArtistIdentity` struct)
 2. In `getProviderResult()`: try stored provider ID first, then MBID, then name
-3. Mirror the approach already used in `FetchImages()` via `getProviderImageID()`
+3. Mirror the approach already used in `FetchImages()`, which accepts `providerIDs map[ProviderName]string`
 4. Update all callers to pass stored provider IDs
 5. Tests for: provider ID precedence, wrong MBID + correct provider ID, no provider ID fallback
 
@@ -151,8 +151,8 @@ Session 3 (re-evaluate born/formed):
 
 ## Notes
 
-- The `FetchImages()` method already uses provider-specific IDs via
-  `getProviderImageID()` -- use the same pattern for `FetchMetadata()`
+- `FetchImages()` already accepts a `providerIDs map[ProviderName]string` parameter
+  -- use the same pattern for `FetchMetadata()`
 - All issues (#529, #528, #527) are in M31 (Provider Pipeline & Scraping); #466 is a re-evaluation
 - The Adele artist ID for testing: `78e7d8af-cda4-4d8d-a4bd-d82542cb66d5`
 - Correct Adele MBID: `1f9df192-a621-4f54-8850-2c5373b7eac9`
