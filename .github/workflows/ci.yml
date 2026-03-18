@@ -3,8 +3,22 @@ name: CI
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+      - '.github/ISSUE_TEMPLATE/**'
+      - 'api/bruno/**'
+      - 'build/swag/**'
+      - 'build/unraid/**'
   pull_request:
     branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+      - '.github/ISSUE_TEMPLATE/**'
+      - 'api/bruno/**'
+      - 'build/swag/**'
+      - 'build/unraid/**'
 
 permissions:
   contents: read

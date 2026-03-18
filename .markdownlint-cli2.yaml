@@ -1,0 +1,27 @@
+config:
+  # Allow long lines -- plan files and tables often exceed 80 chars
+  MD013: false
+  # Allow issue references at line start that look like headings (#288, #310)
+  MD018: false
+  # Allow headings without surrounding blank lines
+  MD022: false
+  # Allow duplicate headings -- plan files reuse "Tests", "Checklist", etc.
+  MD024: false
+  # Allow trailing punctuation in headings
+  MD026: false
+  # Allow fenced code blocks without surrounding blank lines
+  MD031: false
+  # Allow lists without surrounding blank lines
+  MD032: false
+  # Allow inline HTML -- used in issue templates
+  MD033: false
+  # Allow bare URLs
+  MD034: false
+  # Allow emphasis used as headings -- architecture docs use this pattern
+  MD036: false
+  # Allow fenced code blocks without language specifier
+  MD040: false
+  # Allow files without a top-level heading -- issue templates have frontmatter
+  MD041: false
+  # Allow compact table pipe style
+  MD060: false
