@@ -103,19 +103,36 @@ func TestEvaluate_EmptyArtist(t *testing.T) {
 		t.Fatalf("Evaluate: %v", err)
 	}
 
-	// 8 enabled rules (image_duplicate and logo_trimmable disabled). Passes: extraneous_images, directory_name_mismatch.
-	if result.RulesTotal != 8 {
-		t.Errorf("RulesTotal = %d, want 8", result.RulesTotal)
+	// An empty artist (no NFO, no images, no bio, no MBID) should fail most rules.
+	// Assert relative properties so adding new rules does not break this test,
+	// but verify specific known rules by checking the violations list.
+	if result.RulesTotal == 0 {
+		t.Fatal("RulesTotal = 0, expected enabled rules to be evaluated")
 	}
-	if result.RulesPassed != 2 {
-		t.Errorf("RulesPassed = %d, want 2", result.RulesPassed)
+	if result.RulesPassed >= result.RulesTotal {
+		t.Errorf("RulesPassed = %d, RulesTotal = %d, expected violations for an empty artist", result.RulesPassed, result.RulesTotal)
 	}
-	expectedScore := 25.0 // 2/8 * 100
-	if result.HealthScore != expectedScore {
-		t.Errorf("HealthScore = %.1f, want %.1f", result.HealthScore, expectedScore)
+	if len(result.Violations) == 0 {
+		t.Error("expected at least one violation for an empty artist")
 	}
-	if len(result.Violations) != 6 {
-		t.Errorf("Violations = %d, want 6", len(result.Violations))
+	if result.HealthScore >= 100.0 {
+		t.Errorf("HealthScore = %.1f, expected < 100 for an empty artist", result.HealthScore)
+	}
+	// Verify specific known rules fire for an empty artist.
+	violationRules := map[string]bool{}
+	for _, v := range result.Violations {
+		violationRules[v.RuleID] = true
+	}
+	for _, expected := range []string{RuleNFOExists, RuleThumbExists, RuleFanartExists, RuleBioExists} {
+		if !violationRules[expected] {
+			t.Errorf("expected violation for %s, not found", expected)
+		}
+	}
+	// These rules should pass for an empty artist (nothing extraneous, dir name matches).
+	for _, notExpected := range []string{RuleExtraneousImages, RuleDirectoryNameMismatch} {
+		if violationRules[notExpected] {
+			t.Errorf("unexpected violation for %s", notExpected)
+		}
 	}
 }
 
@@ -158,17 +175,32 @@ func TestEvaluate_PartialCompliance(t *testing.T) {
 		t.Fatalf("Evaluate: %v", err)
 	}
 
-	// Passes: nfo_exists, nfo_has_mbid, extraneous_images, directory_name_mismatch (4 of 8)
-	if result.RulesPassed != 4 {
-		t.Errorf("RulesPassed = %d, want 4", result.RulesPassed)
+	// Partial artist has NFO + MBID but no images or bio. Assert relative
+	// properties and verify specific known rules by checking violations.
+	if result.RulesPassed == 0 {
+		t.Error("RulesPassed = 0, expected nfo_exists and nfo_has_mbid to pass")
 	}
-	if result.RulesTotal != 8 {
-		t.Errorf("RulesTotal = %d, want 8", result.RulesTotal)
+	if result.RulesPassed >= result.RulesTotal {
+		t.Errorf("RulesPassed = %d, RulesTotal = %d, expected some violations (no images, no bio)", result.RulesPassed, result.RulesTotal)
 	}
-
-	expectedScore := 50.0 // 4/8 * 100
-	if result.HealthScore != expectedScore {
-		t.Errorf("HealthScore = %.1f, want %.1f", result.HealthScore, expectedScore)
+	if result.HealthScore <= 0 || result.HealthScore >= 100.0 {
+		t.Errorf("HealthScore = %.1f, expected between 0 and 100 for partial compliance", result.HealthScore)
+	}
+	// Verify specific rules: nfo_exists and nfo_has_mbid should NOT appear in violations.
+	violationRules := map[string]bool{}
+	for _, v := range result.Violations {
+		violationRules[v.RuleID] = true
+	}
+	for _, shouldPass := range []string{RuleNFOExists, RuleNFOHasMBID, RuleExtraneousImages} {
+		if violationRules[shouldPass] {
+			t.Errorf("unexpected violation for %s (artist has NFO + MBID)", shouldPass)
+		}
+	}
+	// Image rules should fire.
+	for _, shouldFail := range []string{RuleThumbExists, RuleFanartExists, RuleBioExists} {
+		if !violationRules[shouldFail] {
+			t.Errorf("expected violation for %s, not found", shouldFail)
+		}
 	}
 }
 
@@ -288,8 +320,12 @@ func TestEngine_WithRealDB(t *testing.T) {
 		t.Fatal("expected non-nil engine")
 	}
 
-	// 8 core + 5 image quality + 1 extraneous + 1 mismatch + 1 logo trim + 1 dir name + 1 image dedup = 18
-	if len(engine.checkers) != 18 {
-		t.Errorf("expected 18 checkers, got %d", len(engine.checkers))
+	// Verify all default rules have a corresponding checker registered.
+	rules, err := svc.List(context.Background())
+	if err != nil {
+		t.Fatalf("listing rules: %v", err)
+	}
+	if len(engine.checkers) != len(rules) {
+		t.Errorf("checkers (%d) != rules (%d): every seeded rule should have a checker", len(engine.checkers), len(rules))
 	}
 }

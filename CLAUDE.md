@@ -300,10 +300,19 @@ Before squashing and pushing, verify these categories that Copilot consistently 
 - [ ] If any `.templ` changed, `templ generate` was run and `*_templ.go` committed
 - [ ] If any HTTP status code changed, `scripts/smoke.sh` and integration test assertions are updated
 
+**SQL correctness:**
+- [ ] ORDER BY on string columns that represent enums (severity, status) uses a CASE expression for correct ordering, not lexicographic sort
+- [ ] Dynamic SQL query builders use whitelisted column maps, not user input
+
+**Accessibility:**
+- [ ] Interactive elements (selects, buttons, collapsible panels) have `aria-label`, `aria-expanded`, or `aria-controls` as appropriate
+- [ ] Group collapse/expand buttons maintain `aria-expanded` state
+
 **Test code:**
 - [ ] No unprotected shared variables written in test handler goroutines and read in the test goroutine
 - [ ] `multipart.Writer` methods (`CreatePart`, `WriteField`, `Close`) errors are checked in test helpers
 - [ ] `io.ReadAll(r.Body)` errors are checked before using the result in test handlers
+- [ ] Engine/rule tests assert relative properties (e.g., "violations > 0") rather than exact counts that break when new rules are added
 
 ### Review comment scope policy
 
@@ -388,6 +397,19 @@ Every session that creates or destroys a worktree must update that file.
 To run UAT from a worktree, either:
 - Copy the script into the worktree, or
 - Run it from the main repo after checking out the worktree's branch there temporarily
+
+### Parallel Rule PRs
+
+Multiple rule PRs (new checkers, fixers, default rule entries) will conflict on merge
+because they all modify the same files: `engine.go` (checker registration), `service.go`
+(constants + defaults), `checkers.go` (checker functions), and `engine_test.go`.
+
+When developing multiple rules in parallel worktrees:
+- Merge them sequentially, not simultaneously
+- The second PR to merge will need a rebase to resolve conflicts
+- After rebase, re-run `go test ./internal/rule/...` before pushing
+- Engine tests use relative assertions (not exact counts) so new rules
+  do not break existing tests, but verify the rebase did not drop code
 
 ### Cleanup
 
