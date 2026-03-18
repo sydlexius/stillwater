@@ -90,14 +90,18 @@ func TestHandleFixViolation_PipelineError(t *testing.T) {
 
 func TestHandleFixAll_StartsJob(t *testing.T) {
 	stub := &stubPipeline{}
-	r, _ := testRouterWithStubPipeline(t, stub)
+	r, artistSvc := testRouterWithStubPipeline(t, stub)
 	ctx := context.Background()
+
+	// Create real artists so violations are not treated as orphaned.
+	a1 := addTestArtist(t, artistSvc, "Alpha")
+	a2 := addTestArtist(t, artistSvc, "Beta")
 
 	// Seed fixable violations.
 	for _, v := range []*rule.RuleViolation{
-		{RuleID: rule.RuleNFOExists, ArtistID: "a1", ArtistName: "Alpha",
+		{RuleID: rule.RuleNFOExists, ArtistID: a1.ID, ArtistName: a1.Name,
 			Severity: "error", Message: "missing nfo", Fixable: true, Status: rule.ViolationStatusOpen},
-		{RuleID: rule.RuleThumbExists, ArtistID: "a2", ArtistName: "Beta",
+		{RuleID: rule.RuleThumbExists, ArtistID: a2.ID, ArtistName: a2.Name,
 			Severity: "warning", Message: "missing thumb", Fixable: true, Status: rule.ViolationStatusOpen},
 	} {
 		if err := r.ruleService.UpsertViolation(ctx, v); err != nil {
@@ -227,11 +231,14 @@ func TestHandleFixAll_Completion(t *testing.T) {
 			return &rule.FixResult{Fixed: true, Message: "fixed"}, nil
 		},
 	}
-	r, _ := testRouterWithStubPipeline(t, stub)
+	r, artistSvc := testRouterWithStubPipeline(t, stub)
+
+	// Create a real artist so the violation is not treated as orphaned.
+	a := addTestArtist(t, artistSvc, "Fix Completion Artist")
 
 	// Seed a fixable violation via the rule service.
 	v := &rule.RuleViolation{
-		RuleID: rule.RuleNFOExists, ArtistID: "a1", ArtistName: "Alpha",
+		RuleID: rule.RuleNFOExists, ArtistID: a.ID, ArtistName: a.Name,
 		Severity: "error", Message: "missing nfo", Fixable: true, Status: rule.ViolationStatusOpen,
 	}
 	if err := r.ruleService.UpsertViolation(context.Background(), v); err != nil {

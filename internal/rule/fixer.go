@@ -2,8 +2,10 @@ package rule
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -62,6 +64,9 @@ type Pipeline struct {
 	ruleService   *Service
 	fixers        []Fixer
 	logger        *slog.Logger
+
+	ruleCacheMu sync.RWMutex
+	ruleCache   map[string]*Rule
 }
 
 // NewPipeline creates a new fix pipeline.
@@ -544,10 +549,15 @@ func (p *Pipeline) FixViolation(ctx context.Context, violationID string) (*FixRe
 
 	a, err := p.artistService.GetByID(ctx, rv.ArtistID)
 	if err != nil {
+		// Auto-dismiss orphaned violations whose artist no longer exists.
+		if errors.Is(err, artist.ErrNotFound) {
+			_ = p.ruleService.DismissViolation(ctx, rv.ID)
+			return &FixResult{RuleID: rv.RuleID, Fixed: false, Message: "artist deleted; violation dismissed"}, nil
+		}
 		return nil, fmt.Errorf("loading artist %s: %w", rv.ArtistID, err)
 	}
 
-	r, err := p.ruleService.GetByID(ctx, rv.RuleID)
+	r, err := p.getCachedRule(ctx, rv.RuleID)
 	if err != nil {
 		return nil, fmt.Errorf("loading rule %s: %w", rv.RuleID, err)
 	}
@@ -574,6 +584,39 @@ func (p *Pipeline) FixViolation(ctx context.Context, violationID string) (*FixRe
 	}
 
 	return fr, nil
+}
+
+// getCachedRule returns a rule by ID, using an in-memory cache to avoid
+// repeated DB queries during batch operations like fix-all.
+func (p *Pipeline) getCachedRule(ctx context.Context, ruleID string) (*Rule, error) {
+	p.ruleCacheMu.RLock()
+	if r, ok := p.ruleCache[ruleID]; ok {
+		p.ruleCacheMu.RUnlock()
+		return r, nil
+	}
+	p.ruleCacheMu.RUnlock()
+
+	r, err := p.ruleService.GetByID(ctx, ruleID)
+	if err != nil {
+		return nil, err
+	}
+
+	p.ruleCacheMu.Lock()
+	if p.ruleCache == nil {
+		p.ruleCache = make(map[string]*Rule)
+	}
+	p.ruleCache[ruleID] = r
+	p.ruleCacheMu.Unlock()
+
+	return r, nil
+}
+
+// ClearRuleCache discards all cached rule lookups. Call this after rule
+// configuration changes to ensure subsequent FixViolation calls see fresh data.
+func (p *Pipeline) ClearRuleCache() {
+	p.ruleCacheMu.Lock()
+	p.ruleCache = nil
+	p.ruleCacheMu.Unlock()
 }
 
 // findFixer returns the first registered fixer that can handle the violation, or nil.

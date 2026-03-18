@@ -1612,3 +1612,51 @@ func TestPipeline_FixViolation_NotFound(t *testing.T) {
 		t.Error("expected error for nonexistent violation, got nil")
 	}
 }
+
+func TestPipeline_FixViolation_OrphanedArtist(t *testing.T) {
+	db := setupTestDB(t)
+	artistSvc := artist.NewService(db)
+	ruleSvc := NewService(db)
+	ctx := context.Background()
+
+	if err := ruleSvc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("seeding rules: %v", err)
+	}
+
+	// Upsert a violation referencing an artist ID that does not exist.
+	rv := &RuleViolation{
+		RuleID:     RuleNFOExists,
+		ArtistID:   "deleted-artist-id",
+		ArtistName: "Gone Artist",
+		Severity:   "error",
+		Message:    "missing artist.nfo",
+		Fixable:    true,
+		Status:     ViolationStatusOpen,
+	}
+	if err := ruleSvc.UpsertViolation(ctx, rv); err != nil {
+		t.Fatalf("upserting violation: %v", err)
+	}
+
+	engine := NewEngine(ruleSvc, db, nil, testLogger())
+	pipeline := NewPipeline(engine, artistSvc, ruleSvc, nil, testLogger())
+
+	fr, err := pipeline.FixViolation(ctx, rv.ID)
+	if err != nil {
+		t.Fatalf("FixViolation should not return error for orphaned artist, got: %v", err)
+	}
+	if fr.Fixed {
+		t.Error("Fixed = true, want false for orphaned artist")
+	}
+	if !strings.Contains(fr.Message, "artist deleted") {
+		t.Errorf("Message = %q, want it to contain 'artist deleted'", fr.Message)
+	}
+
+	// Verify the violation was auto-dismissed.
+	got, err := ruleSvc.GetViolationByID(ctx, rv.ID)
+	if err != nil {
+		t.Fatalf("GetViolationByID: %v", err)
+	}
+	if got.Status != ViolationStatusDismissed {
+		t.Errorf("status = %q, want %q", got.Status, ViolationStatusDismissed)
+	}
+}

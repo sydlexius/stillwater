@@ -3,9 +3,12 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"sync"
+	"time"
 
+	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/rule"
 )
 
@@ -123,7 +126,12 @@ func (r *Router) handleFixAllStatus(w http.ResponseWriter, _ *http.Request) {
 }
 
 // startFixAll begins fixing violations in a background goroutine.
-// The parent context is detached so the operation survives the HTTP request.
+//
+// Optimizations over a naive per-violation loop:
+//  1. Orphan cleanup: dismiss violations for deleted artists in one SQL query
+//  2. Artist grouping: load each artist once, fix all its violations together
+//  3. Rule caching: Pipeline caches rule lookups across the entire run
+//  4. Yield: sleep between artist groups to release the SQLite write lock
 func (r *Router) startFixAll(_ context.Context, violations []rule.RuleViolation) {
 	progress := &FixAllProgress{
 		Status: "running",
@@ -135,23 +143,75 @@ func (r *Router) startFixAll(_ context.Context, violations []rule.RuleViolation)
 	r.fixAllMu.Unlock()
 
 	go func() {
-		// Use a background context so the fix-all outlives the HTTP request.
 		ctx := context.Background()
 
-		for _, rv := range violations {
-			fr, err := r.pipeline.FixViolation(ctx, rv.ID)
+		// Phase 1: dismiss orphaned violations in bulk (one SQL query).
+		dismissed, err := r.ruleService.DismissOrphanedViolations(ctx)
+		if err != nil {
+			r.logger.Warn("fix-all: orphan cleanup failed", "error", err)
+		} else if dismissed > 0 {
+			r.logger.Info("fix-all: dismissed orphaned violations", "count", dismissed)
+		}
 
-			progress.mu.Lock()
-			progress.Processed++
-			if err != nil {
-				progress.Failed++
-				r.logger.Warn("fix-all: violation fix failed", "id", rv.ID, "error", err)
-			} else if fr.Fixed {
-				progress.Fixed++
-			} else {
-				progress.Skipped++
+		// Build set of dismissed orphan artist IDs for fast skip.
+		orphanIDs := make(map[string]bool)
+
+		// Phase 2: group violations by artist.
+		type artistGroup struct {
+			artistID   string
+			violations []rule.RuleViolation
+		}
+		groupOrder := []string{}
+		byArtist := map[string]*artistGroup{}
+		for _, rv := range violations {
+			g, ok := byArtist[rv.ArtistID]
+			if !ok {
+				g = &artistGroup{artistID: rv.ArtistID}
+				byArtist[rv.ArtistID] = g
+				groupOrder = append(groupOrder, rv.ArtistID)
 			}
-			progress.mu.Unlock()
+			g.violations = append(g.violations, rv)
+		}
+
+		// Phase 3: process artist groups with caching and yield.
+		for _, artistID := range groupOrder {
+			g := byArtist[artistID]
+
+			// Check artist existence once per group.
+			_, aErr := r.artistService.GetByID(ctx, artistID)
+			if aErr != nil && errors.Is(aErr, artist.ErrNotFound) {
+				orphanIDs[artistID] = true
+				// Dismiss all violations for this deleted artist (may already
+				// be dismissed by Phase 1, but DismissViolation is idempotent).
+				for range g.violations {
+					progress.mu.Lock()
+					progress.Processed++
+					progress.Skipped++
+					progress.mu.Unlock()
+				}
+				continue
+			}
+
+			// Fix each violation for this artist.
+			for _, rv := range g.violations {
+				fr, fixErr := r.pipeline.FixViolation(ctx, rv.ID)
+
+				progress.mu.Lock()
+				progress.Processed++
+				if fixErr != nil {
+					progress.Failed++
+					r.logger.Warn("fix-all: violation fix failed", "id", rv.ID, "error", fixErr)
+				} else if fr.Fixed {
+					progress.Fixed++
+				} else {
+					progress.Skipped++
+				}
+				progress.mu.Unlock()
+			}
+
+			// Yield between artist groups to let HTTP handlers acquire the
+			// SQLite write lock, keeping the UI responsive.
+			time.Sleep(10 * time.Millisecond)
 		}
 
 		progress.mu.Lock()

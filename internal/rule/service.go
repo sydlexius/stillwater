@@ -664,6 +664,23 @@ func (s *Service) CountActiveViolationsBySeverity(ctx context.Context) (map[stri
 	return counts, rows.Err()
 }
 
+// DismissOrphanedViolations dismisses all active violations whose artist_id
+// no longer exists in the artists table. Returns the number dismissed.
+func (s *Service) DismissOrphanedViolations(ctx context.Context) (int, error) {
+	now := time.Now().UTC().Format(time.RFC3339)
+	res, err := s.db.ExecContext(ctx, `
+		UPDATE rule_violations
+		SET status = ?, dismissed_at = ?, updated_at = ?
+		WHERE status IN (?, ?)
+		AND artist_id NOT IN (SELECT id FROM artists)
+	`, ViolationStatusDismissed, now, now, ViolationStatusOpen, ViolationStatusPendingChoice)
+	if err != nil {
+		return 0, fmt.Errorf("dismissing orphaned violations: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return int(n), nil
+}
+
 // ClearResolvedViolations deletes resolved violations older than the given age.
 func (s *Service) ClearResolvedViolations(ctx context.Context, daysOld int) error {
 	cutoff := time.Now().UTC().AddDate(0, 0, -daysOld)
