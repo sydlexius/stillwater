@@ -79,6 +79,7 @@ Enhance the metadata provider pipeline with web scraping capabilities, new image
 - [ ] Check Fanart.tv specifically for a-ha results
 - [ ] Fix root cause and verify multiple candidates returned
 - [ ] Tests
+- [ ] PR merged
 
 ## UAT / Merge Order
 

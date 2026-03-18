@@ -50,10 +50,12 @@ and prepare the codebase for initial release.
 - [ ] SBOM artifact attached to GitHub Releases
 - [ ] govulncheck integrated as supplementary check
 - [ ] Tests
+- [ ] PR merged
 
 ### Issue #505 -- CI/quality badges in README.md
 - [ ] CI status, release, Go Report Card, license, Go version badges
 - [ ] Badges render correctly on GitHub
+- [ ] PR merged
 
 ### Issue #509 -- Squash SQL migrations for initial release
 - [ ] Single migration file with complete current schema
@@ -61,6 +63,7 @@ and prepare the codebase for initial release.
 - [ ] Fresh database initializes correctly
 - [ ] All tests pass against new migration
 - [ ] goose version tracking works with reset numbering
+- [ ] PR merged
 
 ### Issue #499 -- Container security penetration testing
 - [ ] Container scanned with Trivy and Dockle
@@ -71,6 +74,13 @@ and prepare the codebase for initial release.
 - [ ] SQL injection, XSS, SSRF, file upload tests pass
 - [ ] Security scanning CI workflow added
 - [ ] Findings documented
+- [ ] PR merged
+
+## Worktrees
+
+| Directory | Branch | Issue | Status |
+|-----------|--------|-------|--------|
+| (created when work begins) | | | |
 
 ## UAT / Merge Order
 

@@ -17,9 +17,9 @@ rule execution.
 - [ ] Directory rename rule detects and optionally fixes artist folder name mismatches
 - [ ] Per-artist "Run Rules" button on artist detail page
 - [ ] Rule violation artist names are clickable hyperlinks with library context
-- [ ] Backdrop/fanart sequencing rule detects and fixes numbering gaps (disabled/manual/auto)
+- [ ] Backdrop/fanart sequencing rule detects and fixes numbering gaps (enabled toggle + automation mode: manual/auto)
 - [ ] Extraneous image rule is backdrop-sequencing-aware (does not flag valid sequences)
-- [ ] Logo padding rule detects excessive transparent borders (disabled/manual/auto)
+- [ ] Logo padding rule detects excessive transparent borders (enabled toggle + automation mode: manual/auto)
 - [ ] Per-rule "Run Now" button for individual rule evaluation
 
 ## Dependency Map
@@ -43,6 +43,7 @@ rule execution.
 #520 (extraneous image rule update) -- depends on #519 (must know what valid sequences look like)
 #521 (logo padding rule) -- independent, new rule
 #523 (per-rule Run Now) -- independent, extends rule engine
+#526 (junk metadata detection) -- independent, new rule + ingestion filter
 
 ## Checklist
 
@@ -109,36 +110,41 @@ rule execution.
 - [ ] Library name/path displayed alongside artist name for disambiguation
 - [ ] Works in table and any other violation display modes
 - [ ] Tests
+- [ ] PR merged
 
 ### Issue #519 -- Backdrop/fanart image sequencing gap rule
 - [ ] Detection: gaps in backdrop/fanart sequences (filesystem + Emby/Jellyfin API)
 - [ ] Detection: `backdrop1.ext` without `backdrop.ext` (wrong first position)
-- [ ] Three modes: disabled, manual (preview renames), auto (fix during evaluation)
+- [ ] Enabled toggle; manual mode (preview renames) / auto mode (fix during evaluation)
 - [ ] Platform-aware naming (fanart for Kodi, backdrop for Emby/Jellyfin)
 - [ ] Atomic file renames for filesystem fixes
 - [ ] Tests
+- [ ] PR merged
 
 ### Issue #520 -- Update extraneous image rule for backdrop sequencing awareness
 - [ ] Correctly allows sequential backdrop/fanart files as non-extraneous
 - [ ] Flags non-standard naming patterns (`backdrop_old.png`, etc.)
-- [ ] Three modes: disabled, manual, auto
+- [ ] Enabled toggle + automation mode: manual/auto
 - [ ] No overlap with sequencing rule (#519)
 - [ ] Tests
+- [ ] PR merged
 
 ### Issue #521 -- Logo padding detection rule
 - [ ] Detection: logos with padding exceeding configurable threshold
-- [ ] Three modes: disabled, manual (auto-trim + open trim tool), auto (trim during evaluation)
+- [ ] Enabled toggle; manual mode (auto-trim + open trim tool) / auto mode (trim during evaluation)
 - [ ] Configurable padding threshold and trim margin
 - [ ] Integrates with existing manual trim tool
 - [ ] Tests
+- [ ] PR merged
 
 ### Issue #526 -- Detect and filter low-quality placeholder metadata
 - [ ] Ingestion filter rejects junk values ("?", "N/A", "Unknown", etc.) during fetch
 - [ ] Rejected values fall through to next provider in priority chain
 - [ ] Detection rule finds existing junk values in the database
-- [ ] Three modes: disabled, manual (clear/re-fetch/keep), auto (clear + optional re-fetch)
+- [ ] Enabled toggle; manual mode (clear/re-fetch/keep) / auto mode (clear + optional re-fetch)
 - [ ] Configurable junk patterns and field-specific minimum lengths
 - [ ] Tests
+- [ ] PR merged
 
 ### Issue #523 -- Per-rule "Run Now" button
 - [ ] "Run Now" button on each enabled rule row in Rules settings
@@ -146,6 +152,7 @@ rule execution.
 - [ ] Progress indicator and result summary
 - [ ] API: `POST /api/v1/rules/{rule_id}/evaluate`
 - [ ] Tests
+- [ ] PR merged
 
 ## UAT / Merge Order
 

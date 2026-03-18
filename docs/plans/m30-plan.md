@@ -164,6 +164,12 @@ early since it touches the migration foundation. #360 (image caching) benefits f
 - [ ] Precedence: CLI > env var > Stillwater API query
 - [ ] Updated usage/help text
 
+## Worktrees
+
+| Directory | Branch | Issue | Status |
+|-----------|--------|-------|--------|
+| (created when work begins) | | | |
+
 ## UAT / Merge Order
 
 Session 1 (foundation -- completed):

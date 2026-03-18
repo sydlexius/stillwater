@@ -36,18 +36,21 @@ form bugs, and preserve filter state across navigation.
 - [ ] `autocomplete="username"` and `autocomplete="current-password"` attributes
 - [ ] Test with 1Password, Bitwarden, and browser built-in password manager
 - [ ] Tests
+- [ ] PR merged
 
 ### Issue #515 -- Clipboard paste doubles input
 - [ ] Investigate event handlers on login fields (input, paste, HTMX triggers)
 - [ ] Fix duplicate event processing (preventDefault or remove manual insertion)
 - [ ] Test with keyboard paste (Ctrl+V) and context menu paste
 - [ ] Tests
+- [ ] PR merged
 
 ### Issue #503 -- Keyboard navigation and accessibility
 - [ ] Phase 1: tab order, focus indicators, ARIA roles, skip-to-content, modal keyboard support
 - [ ] Phase 2: global shortcuts (/, ?, g+x), j/k list navigation, ? help overlay
 - [ ] keyboard.js vendored (no external dependencies)
 - [ ] Tests for shortcut registration
+- [ ] PR merged
 
 ### Issue #513 -- Browser notifications via SSE
 - [ ] SSE endpoint: `GET /api/v1/events/stream`
@@ -58,6 +61,7 @@ form bugs, and preserve filter state across navigation.
 - [ ] No duplicate with in-page toasts
 - [ ] notification.js vendored
 - [ ] Tests
+- [ ] PR merged
 
 ### Issue #517 -- Preserve search filters on back navigation
 - [ ] Filter state stored in URL query parameters
@@ -65,6 +69,13 @@ form bugs, and preserve filter state across navigation.
 - [ ] Filters restored from URL on page load
 - [ ] Works across Chrome, Firefox, Safari, Edge
 - [ ] Tests
+- [ ] PR merged
+
+## Worktrees
+
+| Directory | Branch | Issue | Status |
+|-----------|--------|-------|--------|
+| (created when work begins) | | | |
 
 ## UAT / Merge Order
 

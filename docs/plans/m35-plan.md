@@ -29,6 +29,7 @@ the artist list, and automatic crop workflow for wrong-geometry uploads.
 - [ ] Dynamic labels based on active platform profile
 - [ ] Multi-platform display includes platform attribution
 - [ ] Tests for terminology mapping
+- [ ] PR merged
 
 ### Issue #506 -- Lidarr and filesystem platform badges on artist list
 - [ ] Lidarr badge when artist has Lidarr platform ID
@@ -37,6 +38,7 @@ the artist list, and automatic crop workflow for wrong-geometry uploads.
 - [ ] Tooltips show source details
 - [ ] Consistent badge ordering
 - [ ] Tests
+- [ ] PR merged
 
 ### Issue #507 -- Auto-crop workflow for wrong-geometry uploads
 - [ ] Image upload detects dimension mismatch with slot requirements
@@ -45,6 +47,13 @@ the artist list, and automatic crop workflow for wrong-geometry uploads.
 - [ ] Works for all image slots
 - [ ] User can cancel and discard
 - [ ] Tests
+- [ ] PR merged
+
+## Worktrees
+
+| Directory | Branch | Issue | Status |
+|-----------|--------|-------|--------|
+| (created when work begins) | | | |
 
 ## UAT / Merge Order
 
