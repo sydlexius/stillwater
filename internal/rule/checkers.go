@@ -790,7 +790,7 @@ func (e *Engine) makeImageDuplicateChecker() Checker {
 		}
 
 		tolerance := cfg.Tolerance
-		if tolerance <= 0 {
+		if tolerance <= 0 || tolerance > 1.0 {
 			tolerance = 0.90
 		}
 
@@ -799,8 +799,11 @@ func (e *Engine) makeImageDuplicateChecker() Checker {
 			hash uint64
 		}
 
+		// Select one hash per image_type (slot_index = 0) to compare across
+		// different types only. Within-type comparison (e.g. fanart slot 0 vs 1)
+		// is not the goal of this rule.
 		rows, err := e.db.QueryContext(context.Background(),
-			`SELECT image_type, phash FROM artist_images WHERE artist_id = ? AND exists_flag = 1 AND phash IS NOT NULL AND phash != '' AND phash != '0000000000000000'`,
+			`SELECT image_type, phash FROM artist_images WHERE artist_id = ? AND slot_index = 0 AND exists_flag = 1 AND phash IS NOT NULL AND phash != '' AND phash != '0000000000000000'`,
 			a.ID)
 		if err != nil {
 			e.logger.Debug("querying image hashes", "artist", a.Name, "error", err)
