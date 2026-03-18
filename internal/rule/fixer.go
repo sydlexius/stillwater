@@ -547,6 +547,10 @@ func (p *Pipeline) FixViolation(ctx context.Context, violationID string) (*FixRe
 		return &FixResult{RuleID: rv.RuleID, Fixed: false, Message: "violation is already " + rv.Status}, nil
 	}
 
+	if rv.Status == ViolationStatusPendingChoice && len(rv.Candidates) > 0 {
+		return &FixResult{RuleID: rv.RuleID, Fixed: false, Message: "candidate selection required"}, nil
+	}
+
 	a, err := p.artistService.GetByID(ctx, rv.ArtistID)
 	if err != nil {
 		// Auto-dismiss orphaned violations whose artist no longer exists.
@@ -650,7 +654,7 @@ func (p *Pipeline) attemptFix(ctx context.Context, a *artist.Artist, v *Violatio
 			return &FixResult{
 				RuleID:  v.RuleID,
 				Fixed:   false,
-				Message: fmt.Sprintf("fix failed: %v", err),
+				Message: "fix failed",
 			}
 		}
 		return fr

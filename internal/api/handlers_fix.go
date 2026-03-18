@@ -50,8 +50,26 @@ func (r *Router) handleFixViolation(w http.ResponseWriter, req *http.Request) {
 }
 
 // handleFixAll starts an async bulk fix for all active fixable violations.
+// Rejects concurrent starts with 409 Conflict.
 // POST /api/v1/notifications/fix-all
 func (r *Router) handleFixAll(w http.ResponseWriter, req *http.Request) {
+	// Reject if already running.
+	r.fixAllMu.RLock()
+	if r.fixAllProgress != nil {
+		r.fixAllProgress.mu.RLock()
+		running := r.fixAllProgress.Status == "running"
+		r.fixAllProgress.mu.RUnlock()
+		if running {
+			r.fixAllMu.RUnlock()
+			writeJSON(w, http.StatusConflict, map[string]any{
+				"status":  "running",
+				"message": "fix-all already in progress",
+			})
+			return
+		}
+	}
+	r.fixAllMu.RUnlock()
+
 	var body struct {
 		IDs []string `json:"ids"`
 	}
@@ -71,9 +89,11 @@ func (r *Router) handleFixAll(w http.ResponseWriter, req *http.Request) {
 		idSet[id] = true
 	}
 
+	// Only include open fixable violations; skip pending_choice (requires
+	// user candidate selection) and non-fixable violations.
 	var fixable []rule.RuleViolation
 	for _, v := range violations {
-		if !v.Fixable {
+		if !v.Fixable || v.Status != rule.ViolationStatusOpen {
 			continue
 		}
 		if len(idSet) > 0 && !idSet[v.ID] {
@@ -132,7 +152,7 @@ func (r *Router) handleFixAllStatus(w http.ResponseWriter, _ *http.Request) {
 //  2. Artist grouping: load each artist once, fix all its violations together
 //  3. Rule caching: Pipeline caches rule lookups across the entire run
 //  4. Yield: sleep between artist groups to release the SQLite write lock
-func (r *Router) startFixAll(_ context.Context, violations []rule.RuleViolation) {
+func (r *Router) startFixAll(reqCtx context.Context, violations []rule.RuleViolation) {
 	progress := &FixAllProgress{
 		Status: "running",
 		Total:  len(violations),
@@ -143,7 +163,8 @@ func (r *Router) startFixAll(_ context.Context, violations []rule.RuleViolation)
 	r.fixAllMu.Unlock()
 
 	go func() {
-		ctx := context.Background()
+		// Detach from request lifecycle but preserve request-scoped values.
+		ctx := context.WithoutCancel(reqCtx)
 
 		// Phase 1: dismiss orphaned violations in bulk (one SQL query).
 		dismissed, err := r.ruleService.DismissOrphanedViolations(ctx)
@@ -152,9 +173,6 @@ func (r *Router) startFixAll(_ context.Context, violations []rule.RuleViolation)
 		} else if dismissed > 0 {
 			r.logger.Info("fix-all: dismissed orphaned violations", "count", dismissed)
 		}
-
-		// Build set of dismissed orphan artist IDs for fast skip.
-		orphanIDs := make(map[string]bool)
 
 		// Phase 2: group violations by artist.
 		type artistGroup struct {
@@ -180,7 +198,6 @@ func (r *Router) startFixAll(_ context.Context, violations []rule.RuleViolation)
 			// Check artist existence once per group.
 			_, aErr := r.artistService.GetByID(ctx, artistID)
 			if aErr != nil && errors.Is(aErr, artist.ErrNotFound) {
-				orphanIDs[artistID] = true
 				// Dismiss all violations for this deleted artist (may already
 				// be dismissed by Phase 1, but DismissViolation is idempotent).
 				for range g.violations {

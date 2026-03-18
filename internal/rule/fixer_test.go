@@ -1613,6 +1613,60 @@ func TestPipeline_FixViolation_NotFound(t *testing.T) {
 	}
 }
 
+func TestPipeline_FixViolation_PendingChoice(t *testing.T) {
+	db := setupTestDB(t)
+	artistSvc := artist.NewService(db)
+	ruleSvc := NewService(db)
+	ctx := context.Background()
+
+	if err := ruleSvc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("seeding rules: %v", err)
+	}
+
+	a := &artist.Artist{
+		Name:     "Pending Choice Artist",
+		SortName: "Pending Choice Artist",
+		Path:     t.TempDir(),
+	}
+	if err := artistSvc.Create(ctx, a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	rv := &RuleViolation{
+		RuleID:     RuleFanartExists,
+		ArtistID:   a.ID,
+		ArtistName: a.Name,
+		Severity:   "warning",
+		Message:    "missing fanart",
+		Fixable:    true,
+		Status:     ViolationStatusPendingChoice,
+		Candidates: []ImageCandidate{
+			{URL: "http://example.com/img.jpg", Width: 1920, Height: 1080, Source: "prov", ImageType: "fanart"},
+		},
+	}
+	if err := ruleSvc.UpsertViolation(ctx, rv); err != nil {
+		t.Fatalf("upserting violation: %v", err)
+	}
+
+	engine := NewEngine(ruleSvc, db, nil, testLogger())
+	fixer := &mockFixer{canFix: true}
+	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{fixer}, testLogger())
+
+	fr, err := pipeline.FixViolation(ctx, rv.ID)
+	if err != nil {
+		t.Fatalf("FixViolation: %v", err)
+	}
+	if fr.Fixed {
+		t.Error("Fixed = true, want false for pending_choice violation")
+	}
+	if fr.Message != "candidate selection required" {
+		t.Errorf("Message = %q, want %q", fr.Message, "candidate selection required")
+	}
+	if fixer.calls != 0 {
+		t.Errorf("fixer.calls = %d, want 0 (should not enter fixer chain)", fixer.calls)
+	}
+}
+
 func TestPipeline_FixViolation_OrphanedArtist(t *testing.T) {
 	db := setupTestDB(t)
 	artistSvc := artist.NewService(db)

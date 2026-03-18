@@ -3546,6 +3546,24 @@ paths:
                     type: string
                   total:
                     type: integer
+        "409":
+          description: Fix-all already in progress
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [running]
+                  message:
+                    type: string
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /notifications/fix-all/status:
     get:
@@ -3563,7 +3581,7 @@ paths:
                 properties:
                   status:
                     type: string
-                    enum: [idle, running, completed, failed]
+                    enum: [idle, running, completed]
                   total:
                     type: integer
                   processed:
@@ -3574,6 +3592,12 @@ paths:
                     type: integer
                   failed:
                     type: integer
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /notifications/resolved:
     delete:

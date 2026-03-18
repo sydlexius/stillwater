@@ -131,6 +131,7 @@ templ notificationsTableContent(data NotificationsData) {
 			<button
 				type="button"
 				onclick="fixAll()"
+				aria-label={ fmt.Sprintf("Fix all %d fixable violations", countFixable(data.Violations)) }
 				class="rounded border border-green-300 dark:border-green-700 bg-green-50 dark:bg-green-900/30 px-3 py-1.5 text-xs font-semibold text-green-700 dark:text-green-300 hover:bg-green-100 dark:hover:bg-green-900/50 transition-colors"
 			>
 				{ fmt.Sprintf("Fix All (%d)", countFixable(data.Violations)) }
@@ -236,6 +237,7 @@ templ notificationsGroupedContent(data NotificationsData) {
 			<button
 				type="button"
 				onclick="fixAll()"
+				aria-label={ fmt.Sprintf("Fix all %d fixable violations", countFixable(data.Violations)) }
 				class="rounded border border-green-300 dark:border-green-700 bg-green-50 dark:bg-green-900/30 px-3 py-1.5 text-xs font-semibold text-green-700 dark:text-green-300 hover:bg-green-100 dark:hover:bg-green-900/50 transition-colors"
 			>
 				{ fmt.Sprintf("Fix All (%d)", countFixable(data.Violations)) }
@@ -378,6 +380,7 @@ templ notifViolationRow(v rule.RuleViolation) {
 							type="button"
 							data-violation-id={ v.ID }
 							onclick="fixViolation(this, this.dataset.violationId)"
+							aria-label={ fmt.Sprintf("%s for %s", fixButtonLabel(v.RuleID), v.ArtistName) }
 							class="font-semibold text-green-600 dark:text-green-400 hover:text-green-800 dark:hover:text-green-300"
 						>
 							{ fixButtonLabel(v.RuleID) }
@@ -811,7 +814,7 @@ templ candidateScript() {
 	}
 
 	function pollFixAllStatus() {
-		fetch('/api/v1/notifications/fix-all/status')
+		fetch('/api/v1/notifications/fix-all/status', {credentials: 'same-origin'})
 		.then(function(resp) { return resp.json(); })
 		.then(function(data) {
 			if (data.status === 'running') {
@@ -915,7 +918,7 @@ func fixButtonLabel(ruleID string) string {
 func countFixable(violations []rule.RuleViolation) int {
 	n := 0
 	for _, v := range violations {
-		if v.Fixable && (v.Status == rule.ViolationStatusOpen || v.Status == rule.ViolationStatusPendingChoice) {
+		if v.Fixable && v.Status == rule.ViolationStatusOpen {
 			n++
 		}
 	}
