@@ -41,7 +41,7 @@ type RouterDeps struct {
 	Orchestrator       *provider.Orchestrator
 	RuleService        *rule.Service
 	RuleEngine         *rule.Engine
-	Pipeline           *rule.Pipeline
+	Pipeline           rule.PipelineRunner
 	BulkService        *rule.BulkService
 	BulkExecutor       *rule.BulkExecutor
 	NFOSnapshotService *nfo.SnapshotService
@@ -76,7 +76,7 @@ type Router struct {
 	orchestrator       *provider.Orchestrator
 	ruleService        *rule.Service
 	ruleEngine         *rule.Engine
-	pipeline           *rule.Pipeline
+	pipeline           rule.PipelineRunner
 	bulkService        *rule.BulkService
 	bulkExecutor       *rule.BulkExecutor
 	nfoSnapshotService *nfo.SnapshotService
