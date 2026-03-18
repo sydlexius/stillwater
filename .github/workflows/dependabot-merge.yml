@@ -72,13 +72,20 @@ jobs:
           # This works regardless of whether branch protection requires
           # pull request reviews (which controls the reviewDecision field).
           for i in $(seq 1 10); do
-            APPROVALS=$(gh api "repos/$REPO/pulls/$PR_NUMBER/reviews" \
-              --jq '[.[] | select(.state == "APPROVED")] | length') || {
+            # Use --paginate and take the latest review per user to avoid
+            # counting stale approvals that were superseded by later reviews.
+            APPROVED=$(gh api "repos/$REPO/pulls/$PR_NUMBER/reviews" --paginate \
+              --jq '
+                group_by(.user.login)
+                | map(sort_by(.submitted_at) | last)
+                | map(select(.state == "APPROVED"))
+                | length
+              ') || {
               echo "::warning::Failed to fetch reviews for PR #$PR_NUMBER (attempt $i/10)"
               if [ "$i" -lt 10 ]; then sleep 30; fi
               continue
             }
-            if [ "$APPROVALS" -gt 0 ]; then
+            if [ "$APPROVED" -gt 0 ]; then
               echo "decision=APPROVED" >> "$GITHUB_OUTPUT"
               exit 0
             fi
