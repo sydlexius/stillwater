@@ -3341,12 +3341,8 @@ paths:
           description: Filter by specific rule ID
           schema:
             type: string
-        - name: group_by
-          in: query
-          description: Group results by field (only affects HTML responses)
-          schema:
-            type: string
-            enum: [artist, rule, severity, category]
+        # group_by is supported on the HTML endpoint (/notifications/table) only.
+        # It is not included here because the JSON response is always a flat array.
       responses:
         "200":
           description: Violations matching filter

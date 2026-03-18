@@ -10,7 +10,7 @@ import (
 )
 
 // handleListNotifications returns rule violations with optional filtering and sorting.
-// GET /api/v1/notifications?status=open&severity=error&category=image&sort=artist_name&order=asc&group_by=artist
+// GET /api/v1/notifications?status=open&severity=error&category=image&sort=artist_name&order=asc
 func (r *Router) handleListNotifications(w http.ResponseWriter, req *http.Request) {
 	p := parseNotificationParams(req)
 

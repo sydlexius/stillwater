@@ -204,14 +204,11 @@ script toggleNotifGroup(id string) {
 	var el = document.getElementById(id);
 	if (!el) return;
 	el.classList.toggle('hidden');
+	var btn = document.getElementById(id + '-btn');
 	var icon = document.getElementById(id + '-icon');
-	if (icon) {
-		if (el.classList.contains('hidden')) {
-			icon.style.transform = 'rotate(-90deg)';
-		} else {
-			icon.style.transform = '';
-		}
-	}
+	var collapsed = el.classList.contains('hidden');
+	if (btn) btn.setAttribute('aria-expanded', String(!collapsed));
+	if (icon) icon.style.transform = collapsed ? 'rotate(-90deg)' : '';
 }
 
 templ notificationsGroupedContent(data NotificationsData) {
@@ -245,6 +242,9 @@ templ notificationsGroupedContent(data NotificationsData) {
 			<!-- Collapsible group header -->
 			<button
 				type="button"
+				id={ fmt.Sprintf("notif-group-%d-btn", i) }
+				aria-expanded="true"
+				aria-controls={ fmt.Sprintf("notif-group-%d", i) }
 				onclick={ toggleNotifGroup(fmt.Sprintf("notif-group-%d", i)) }
 				class="w-full flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-left"
 			>
