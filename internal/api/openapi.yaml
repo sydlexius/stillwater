@@ -3461,6 +3461,120 @@ paths:
                   dismissed:
                     type: integer
 
+  /notifications/{id}/fix:
+    post:
+      tags: [Notifications]
+      summary: Apply recommended fix for a violation
+      description: |
+        Applies the recommended fix for a single violation. For open fixable
+        violations, routes through the appropriate fixer (NFO generation,
+        metadata fetch, image fetch, directory rename, etc.). Returns the
+        fix result with status and message.
+      operationId: fixViolation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Fix result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [fixed, failed]
+                    description: Whether the fix was successfully applied
+                  message:
+                    type: string
+                    description: Human-readable result description
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /notifications/fix-all:
+    post:
+      tags: [Notifications]
+      summary: Start async bulk fix for fixable violations
+      description: |
+        Starts an asynchronous operation that applies the recommended fix for
+        all active fixable violations. Returns 202 with the total count. Poll
+        /notifications/fix-all/status for progress.
+      operationId: fixAllViolations
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ids:
+                  type: array
+                  items:
+                    type: string
+                  description: Optional subset of violation IDs. Omit to fix all fixable.
+      responses:
+        "202":
+          description: Fix-all operation started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [running]
+                  total:
+                    type: integer
+        "200":
+          description: No fixable violations found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [completed]
+                  message:
+                    type: string
+                  total:
+                    type: integer
+
+  /notifications/fix-all/status:
+    get:
+      tags: [Notifications]
+      summary: Get fix-all operation progress
+      description: Returns the current state of the most recent fix-all operation.
+      operationId: fixAllStatus
+      responses:
+        "200":
+          description: Fix-all progress
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [idle, running, completed, failed]
+                  total:
+                    type: integer
+                  processed:
+                    type: integer
+                  fixed:
+                    type: integer
+                  skipped:
+                    type: integer
+                  failed:
+                    type: integer
+
   /notifications/resolved:
     delete:
       tags: [Notifications]

@@ -1445,3 +1445,170 @@ func TestPipeline_ManualMode_FixableGuard_NoFixer(t *testing.T) {
 		t.Error("expected open violation for manual-mode nfo_exists, none found")
 	}
 }
+
+func TestPipeline_FixViolation_Success(t *testing.T) {
+	db := setupTestDB(t)
+	artistSvc := artist.NewService(db)
+	ruleSvc := NewService(db)
+	ctx := context.Background()
+
+	if err := ruleSvc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("seeding rules: %v", err)
+	}
+
+	a := &artist.Artist{
+		Name:     "Fix Test Artist",
+		SortName: "Fix Test Artist",
+		Path:     t.TempDir(),
+	}
+	if err := artistSvc.Create(ctx, a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	// Upsert an open fixable violation.
+	rv := &RuleViolation{
+		RuleID:     RuleNFOExists,
+		ArtistID:   a.ID,
+		ArtistName: a.Name,
+		Severity:   "error",
+		Message:    "missing artist.nfo",
+		Fixable:    true,
+		Status:     ViolationStatusOpen,
+	}
+	if err := ruleSvc.UpsertViolation(ctx, rv); err != nil {
+		t.Fatalf("upserting violation: %v", err)
+	}
+
+	fixer := &mockFixer{canFix: true}
+	engine := NewEngine(ruleSvc, db, nil, testLogger())
+	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{fixer}, testLogger())
+
+	fr, err := pipeline.FixViolation(ctx, rv.ID)
+	if err != nil {
+		t.Fatalf("FixViolation: %v", err)
+	}
+	if !fr.Fixed {
+		t.Errorf("Fixed = false, want true; message: %s", fr.Message)
+	}
+
+	// Verify violation is now resolved.
+	got, err := ruleSvc.GetViolationByID(ctx, rv.ID)
+	if err != nil {
+		t.Fatalf("GetViolationByID: %v", err)
+	}
+	if got.Status != ViolationStatusResolved {
+		t.Errorf("status = %q, want %q", got.Status, ViolationStatusResolved)
+	}
+}
+
+func TestPipeline_FixViolation_NotFixable(t *testing.T) {
+	db := setupTestDB(t)
+	artistSvc := artist.NewService(db)
+	ruleSvc := NewService(db)
+	ctx := context.Background()
+
+	if err := ruleSvc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("seeding rules: %v", err)
+	}
+
+	a := &artist.Artist{
+		Name:     "Unfixable Artist",
+		SortName: "Unfixable Artist",
+		Path:     t.TempDir(),
+	}
+	if err := artistSvc.Create(ctx, a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	rv := &RuleViolation{
+		RuleID:     RuleNFOExists,
+		ArtistID:   a.ID,
+		ArtistName: a.Name,
+		Severity:   "error",
+		Message:    "missing artist.nfo",
+		Fixable:    false,
+		Status:     ViolationStatusOpen,
+	}
+	if err := ruleSvc.UpsertViolation(ctx, rv); err != nil {
+		t.Fatalf("upserting violation: %v", err)
+	}
+
+	engine := NewEngine(ruleSvc, db, nil, testLogger())
+	pipeline := NewPipeline(engine, artistSvc, ruleSvc, nil, testLogger())
+
+	fr, err := pipeline.FixViolation(ctx, rv.ID)
+	if err != nil {
+		t.Fatalf("FixViolation: %v", err)
+	}
+	if fr.Fixed {
+		t.Error("Fixed = true, want false for unfixable violation")
+	}
+	if fr.Message != "violation is not fixable" {
+		t.Errorf("Message = %q, want %q", fr.Message, "violation is not fixable")
+	}
+}
+
+func TestPipeline_FixViolation_AlreadyResolved(t *testing.T) {
+	db := setupTestDB(t)
+	artistSvc := artist.NewService(db)
+	ruleSvc := NewService(db)
+	ctx := context.Background()
+
+	if err := ruleSvc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("seeding rules: %v", err)
+	}
+
+	a := &artist.Artist{
+		Name:     "Resolved Artist",
+		SortName: "Resolved Artist",
+		Path:     t.TempDir(),
+	}
+	if err := artistSvc.Create(ctx, a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	rv := &RuleViolation{
+		RuleID:     RuleNFOExists,
+		ArtistID:   a.ID,
+		ArtistName: a.Name,
+		Severity:   "error",
+		Message:    "missing artist.nfo",
+		Fixable:    true,
+		Status:     ViolationStatusOpen,
+	}
+	if err := ruleSvc.UpsertViolation(ctx, rv); err != nil {
+		t.Fatalf("upserting violation: %v", err)
+	}
+	if err := ruleSvc.ResolveViolation(ctx, rv.ID); err != nil {
+		t.Fatalf("resolving violation: %v", err)
+	}
+
+	engine := NewEngine(ruleSvc, db, nil, testLogger())
+	pipeline := NewPipeline(engine, artistSvc, ruleSvc, nil, testLogger())
+
+	fr, err := pipeline.FixViolation(ctx, rv.ID)
+	if err != nil {
+		t.Fatalf("FixViolation: %v", err)
+	}
+	if fr.Fixed {
+		t.Error("Fixed = true, want false for already-resolved violation")
+	}
+	if !strings.Contains(fr.Message, "already resolved") {
+		t.Errorf("Message = %q, want it to contain 'already resolved'", fr.Message)
+	}
+}
+
+func TestPipeline_FixViolation_NotFound(t *testing.T) {
+	db := setupTestDB(t)
+	artistSvc := artist.NewService(db)
+	ruleSvc := NewService(db)
+	ctx := context.Background()
+
+	engine := NewEngine(ruleSvc, db, nil, testLogger())
+	pipeline := NewPipeline(engine, artistSvc, ruleSvc, nil, testLogger())
+
+	_, err := pipeline.FixViolation(ctx, "nonexistent-id")
+	if err == nil {
+		t.Error("expected error for nonexistent violation, got nil")
+	}
+}

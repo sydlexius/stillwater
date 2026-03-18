@@ -24,6 +24,7 @@ import (
 // preconfigured results without requiring a real Engine or Service.
 type stubPipeline struct {
 	runForArtistFn func(ctx context.Context, a *artist.Artist) (*rule.RunResult, error)
+	fixViolationFn func(ctx context.Context, violationID string) (*rule.FixResult, error)
 }
 
 func (s *stubPipeline) RunForArtist(ctx context.Context, a *artist.Artist) (*rule.RunResult, error) {
@@ -39,6 +40,13 @@ func (s *stubPipeline) RunRule(_ context.Context, _ string) (*rule.RunResult, er
 
 func (s *stubPipeline) RunAll(_ context.Context) (*rule.RunResult, error) {
 	return &rule.RunResult{}, nil
+}
+
+func (s *stubPipeline) FixViolation(ctx context.Context, violationID string) (*rule.FixResult, error) {
+	if s.fixViolationFn != nil {
+		return s.fixViolationFn(ctx, violationID)
+	}
+	return &rule.FixResult{Fixed: true, Message: "stub fixed"}, nil
 }
 
 // testRouterWithStubPipeline creates a Router backed by a stubPipeline,
@@ -65,11 +73,16 @@ func testRouterWithStubPipeline(t *testing.T, stub *stubPipeline) (*Router, *art
 	authSvc := auth.NewService(db)
 	artistSvc := artist.NewService(db)
 	connSvc := connection.NewService(db, enc)
+	ruleSvc := rule.NewService(db)
+	if err := ruleSvc.SeedDefaults(context.Background()); err != nil {
+		t.Fatalf("seeding rules: %v", err)
+	}
 
 	r := NewRouter(RouterDeps{
 		AuthService:       authSvc,
 		ArtistService:     artistSvc,
 		ConnectionService: connSvc,
+		RuleService:       ruleSvc,
 		Pipeline:          stub,
 		DB:                db,
 		Logger:            logger,

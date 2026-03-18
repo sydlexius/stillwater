@@ -49,6 +49,7 @@ type PipelineRunner interface {
 	RunForArtist(ctx context.Context, a *artist.Artist) (*RunResult, error)
 	RunRule(ctx context.Context, ruleID string) (*RunResult, error)
 	RunAll(ctx context.Context) (*RunResult, error)
+	FixViolation(ctx context.Context, violationID string) (*FixResult, error)
 }
 
 // Compile-time assertion: *Pipeline implements PipelineRunner.
@@ -520,6 +521,59 @@ func (p *Pipeline) RunAll(ctx context.Context) (*RunResult, error) {
 	}
 
 	return result, nil
+}
+
+// FixViolation applies the recommended fix for a single persisted violation.
+// For pending_choice violations with image candidates, it returns an error
+// directing the caller to use the apply-candidate endpoint instead.
+// For other fixable violations, it runs the appropriate fixer from the
+// registered chain.
+func (p *Pipeline) FixViolation(ctx context.Context, violationID string) (*FixResult, error) {
+	rv, err := p.ruleService.GetViolationByID(ctx, violationID)
+	if err != nil {
+		return nil, fmt.Errorf("loading violation %s: %w", violationID, err)
+	}
+
+	if !rv.Fixable {
+		return &FixResult{RuleID: rv.RuleID, Fixed: false, Message: "violation is not fixable"}, nil
+	}
+
+	if rv.Status == ViolationStatusDismissed || rv.Status == ViolationStatusResolved {
+		return &FixResult{RuleID: rv.RuleID, Fixed: false, Message: "violation is already " + rv.Status}, nil
+	}
+
+	a, err := p.artistService.GetByID(ctx, rv.ArtistID)
+	if err != nil {
+		return nil, fmt.Errorf("loading artist %s: %w", rv.ArtistID, err)
+	}
+
+	r, err := p.ruleService.GetByID(ctx, rv.RuleID)
+	if err != nil {
+		return nil, fmt.Errorf("loading rule %s: %w", rv.RuleID, err)
+	}
+
+	// Build transient violation for the fixer chain.
+	v := &Violation{
+		RuleID:   rv.RuleID,
+		Severity: rv.Severity,
+		Message:  rv.Message,
+		Fixable:  rv.Fixable,
+		Config:   r.Config,
+	}
+
+	fr := p.attemptFix(ctx, a, v)
+
+	if fr.Fixed {
+		if err := p.artistService.Update(ctx, a); err != nil {
+			return nil, fmt.Errorf("updating artist after fix: %w", err)
+		}
+		if err := p.ruleService.ResolveViolation(ctx, rv.ID); err != nil {
+			return nil, fmt.Errorf("resolving violation after fix: %w", err)
+		}
+		p.updateHealthScore(ctx, a)
+	}
+
+	return fr, nil
 }
 
 // findFixer returns the first registered fixer that can handle the violation, or nil.
