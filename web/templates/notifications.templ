@@ -80,7 +80,8 @@ templ NotificationsPage(assets AssetPaths, data NotificationsData) {
 				</select>
 			</div>
 
-			<!-- Hidden sort inputs -->
+			<!-- Hidden filter/sort inputs -->
+			<input type="hidden" name="rule_id" id="notif-rule-id" value={ data.RuleID }/>
 			<input type="hidden" name="sort" id="notif-sort" value={ data.Sort }/>
 			<input type="hidden" name="order" id="notif-order" value={ data.Order }/>
 
@@ -663,6 +664,8 @@ templ candidateScript() {
 		if (cat && cat.value) params.set('category', cat.value);
 		var grp = document.getElementById('notif-group-by');
 		if (grp && grp.value) params.set('group_by', grp.value);
+		var rid = document.getElementById('notif-rule-id');
+		if (rid && rid.value) params.set('rule_id', rid.value);
 		var sortEl = document.getElementById('notif-sort');
 		if (sortEl && sortEl.value) params.set('sort', sortEl.value);
 		var orderEl = document.getElementById('notif-order');
