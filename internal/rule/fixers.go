@@ -825,6 +825,10 @@ func (f *DirectoryRenameFixer) Fix(_ context.Context, a *artist.Artist, v *Viola
 	}
 
 	canonical := canonicalDirName(a.Name, v.Config.ArticleMode)
+	if canonical == "" {
+		return &FixResult{RuleID: v.RuleID, Fixed: false, Message: "canonical name is empty or unsafe"}, nil
+	}
+
 	newPath := filepath.Join(filepath.Dir(a.Path), canonical)
 
 	if a.Path == newPath {
@@ -832,12 +836,15 @@ func (f *DirectoryRenameFixer) Fix(_ context.Context, a *artist.Artist, v *Viola
 	}
 
 	// Check destination does not already exist.
-	if _, err := os.Stat(newPath); err == nil {
-		return &FixResult{
-			RuleID:  v.RuleID,
-			Fixed:   false,
-			Message: fmt.Sprintf("destination %q already exists", canonical),
-		}, nil
+	if _, err := os.Stat(newPath); !os.IsNotExist(err) {
+		if err == nil {
+			return &FixResult{
+				RuleID:  v.RuleID,
+				Fixed:   false,
+				Message: fmt.Sprintf("destination %q already exists", canonical),
+			}, nil
+		}
+		return nil, fmt.Errorf("checking destination %q: %w", newPath, err)
 	}
 
 	if err := filesystem.RenameDirAtomic(a.Path, newPath); err != nil {

@@ -701,13 +701,17 @@ func (e *Engine) makeExtraneousImagesChecker() Checker {
 var commonArticles = []string{"The", "A", "An"}
 
 // canonicalDirName returns the expected directory name for an artist given
-// the article handling mode.
+// the article handling mode. Returns empty string if the name is empty or
+// results in an unsafe path element.
 func canonicalDirName(name, articleMode string) string {
 	if articleMode == "" {
 		articleMode = "prefix"
 	}
 
 	name = strings.TrimSpace(name)
+	if name == "" {
+		return ""
+	}
 
 	// Replace characters not allowed in directory names on common filesystems.
 	name = strings.NewReplacer(
@@ -734,11 +738,15 @@ func canonicalDirName(name, articleMode string) string {
 		for _, art := range commonArticles {
 			prefix := art + " "
 			if len(name) > len(prefix) && strings.EqualFold(name[:len(prefix)], prefix) {
-				return name[len(prefix):]
+				name = name[len(prefix):]
 			}
 		}
 	}
-	// "prefix" or no match: keep as-is
+
+	// Reject unsafe path elements.
+	if name == "" || name == "." || name == ".." {
+		return ""
+	}
 	return name
 }
 

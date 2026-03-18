@@ -69,6 +69,24 @@ func TestCanonicalDirName_InvalidChars(t *testing.T) {
 	}
 }
 
+func TestCanonicalDirName_EdgeCases(t *testing.T) {
+	tests := []struct {
+		name string
+		want string
+	}{
+		{"", ""},
+		{"   ", ""},
+		{".", ""},
+		{"..", ""},
+	}
+	for _, tt := range tests {
+		got := canonicalDirName(tt.name, "prefix")
+		if got != tt.want {
+			t.Errorf("canonicalDirName(%q) = %q, want %q", tt.name, got, tt.want)
+		}
+	}
+}
+
 func TestCheckDirectoryNameMismatch(t *testing.T) {
 	cfg := RuleConfig{Severity: "warning", ArticleMode: "prefix"}
 

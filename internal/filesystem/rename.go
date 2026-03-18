@@ -8,16 +8,22 @@ import (
 
 // RenameDirAtomic renames src to dst using os.Rename. If that fails (e.g.
 // cross-device move), it falls back to a recursive copy followed by removal
-// of the source directory.
+// of the source directory. The caller must ensure dst does not already exist;
+// if dst exists the behavior is platform-dependent.
 func RenameDirAtomic(src, dst string) error {
 	if err := os.Rename(src, dst); err == nil {
 		return nil
 	}
 
+	// Snapshot dst state so we only clean up our own partial copy on failure.
+	_, statErr := os.Stat(dst)
+
 	// Fallback: recursive copy + delete for cross-device moves.
 	if err := copyDirRecursive(src, dst); err != nil {
-		// Clean up partial copy on failure.
-		_ = os.RemoveAll(dst)
+		if os.IsNotExist(statErr) {
+			// dst was created by us; safe to clean up.
+			_ = os.RemoveAll(dst)
+		}
 		return fmt.Errorf("copy fallback failed: %w", err)
 	}
 

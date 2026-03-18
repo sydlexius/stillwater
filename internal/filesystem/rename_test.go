@@ -49,7 +49,7 @@ func TestRenameDirAtomic(t *testing.T) {
 	}
 }
 
-func TestRenameDirAtomic_DestExists(t *testing.T) {
+func TestRenameDirAtomic_EmptyDir(t *testing.T) {
 	tmp := t.TempDir()
 
 	src := filepath.Join(tmp, "src")
@@ -57,25 +57,16 @@ func TestRenameDirAtomic_DestExists(t *testing.T) {
 	if err := os.MkdirAll(src, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(src, "a.txt"), []byte("a"), 0o644); err != nil {
-		t.Fatal(err)
-	}
 
-	// Create destination with different content.
-	if err := os.MkdirAll(dst, 0o755); err != nil {
-		t.Fatal(err)
-	}
-
-	// os.Rename on same device with existing dst replaces it.
 	if err := RenameDirAtomic(src, dst); err != nil {
 		t.Fatalf("RenameDirAtomic: %v", err)
 	}
 
-	data, err := os.ReadFile(filepath.Join(dst, "a.txt"))
+	info, err := os.Stat(dst)
 	if err != nil {
-		t.Fatalf("reading a.txt: %v", err)
+		t.Fatalf("stat dst: %v", err)
 	}
-	if string(data) != "a" {
-		t.Errorf("a.txt = %q, want %q", data, "a")
+	if !info.IsDir() {
+		t.Error("dst should be a directory")
 	}
 }
