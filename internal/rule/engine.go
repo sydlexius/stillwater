@@ -46,6 +46,7 @@ func NewEngine(service *Service, db *sql.DB, platformService *platform.Service, 
 		},
 	}
 	e.checkers[RuleExtraneousImages] = e.makeExtraneousImagesChecker()
+	e.checkers[RuleImageDuplicate] = e.makeImageDuplicateChecker()
 	return e
 }
 
