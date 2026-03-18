@@ -3505,8 +3505,9 @@ paths:
       summary: Start async bulk fix for fixable violations
       description: |
         Starts an asynchronous operation that applies the recommended fix for
-        all active fixable violations. Returns 202 with the total count. Poll
-        /notifications/fix-all/status for progress.
+        all open fixable violations (pending_choice violations that require
+        user candidate selection are excluded). Returns 202 with the total
+        count. Poll /notifications/fix-all/status for progress.
       operationId: fixAllViolations
       requestBody:
         content:

@@ -529,8 +529,8 @@ func (p *Pipeline) RunAll(ctx context.Context) (*RunResult, error) {
 }
 
 // FixViolation applies the recommended fix for a single persisted violation.
-// For pending_choice violations with image candidates, it returns an error
-// directing the caller to use the apply-candidate endpoint instead.
+// For pending_choice violations with image candidates, it returns a non-fixed
+// FixResult directing the caller to use the apply-candidate endpoint instead.
 // For other fixable violations, it runs the appropriate fixer from the
 // registered chain.
 func (p *Pipeline) FixViolation(ctx context.Context, violationID string) (*FixResult, error) {
@@ -555,7 +555,10 @@ func (p *Pipeline) FixViolation(ctx context.Context, violationID string) (*FixRe
 	if err != nil {
 		// Auto-dismiss orphaned violations whose artist no longer exists.
 		if errors.Is(err, artist.ErrNotFound) {
-			_ = p.ruleService.DismissViolation(ctx, rv.ID)
+			if dErr := p.ruleService.DismissViolation(ctx, rv.ID); dErr != nil {
+				p.logger.Warn("failed to dismiss orphaned violation", "id", rv.ID, "error", dErr)
+				return &FixResult{RuleID: rv.RuleID, Fixed: false, Message: "artist deleted; dismiss failed"}, nil
+			}
 			return &FixResult{RuleID: rv.RuleID, Fixed: false, Message: "artist deleted; violation dismissed"}, nil
 		}
 		return nil, fmt.Errorf("loading artist %s: %w", rv.ArtistID, err)

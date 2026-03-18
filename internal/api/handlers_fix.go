@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"sync"
 	"time"
@@ -49,18 +50,18 @@ func (r *Router) handleFixViolation(w http.ResponseWriter, req *http.Request) {
 	})
 }
 
-// handleFixAll starts an async bulk fix for all active fixable violations.
+// handleFixAll starts an async bulk fix for all open fixable violations.
 // Rejects concurrent starts with 409 Conflict.
 // POST /api/v1/notifications/fix-all
 func (r *Router) handleFixAll(w http.ResponseWriter, req *http.Request) {
-	// Reject if already running.
-	r.fixAllMu.RLock()
+	// Atomic check-and-set: reject if already running, otherwise claim the slot.
+	r.fixAllMu.Lock()
 	if r.fixAllProgress != nil {
 		r.fixAllProgress.mu.RLock()
 		running := r.fixAllProgress.Status == "running"
 		r.fixAllProgress.mu.RUnlock()
 		if running {
-			r.fixAllMu.RUnlock()
+			r.fixAllMu.Unlock()
 			writeJSON(w, http.StatusConflict, map[string]any{
 				"status":  "running",
 				"message": "fix-all already in progress",
@@ -68,12 +69,17 @@ func (r *Router) handleFixAll(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 	}
-	r.fixAllMu.RUnlock()
+	r.fixAllMu.Unlock()
 
+	// Parse optional ID filter. Return 400 for malformed JSON (but allow
+	// empty body / EOF to mean "fix all").
 	var body struct {
 		IDs []string `json:"ids"`
 	}
-	_ = json.NewDecoder(req.Body).Decode(&body)
+	if err := json.NewDecoder(req.Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
+		return
+	}
 
 	violations, err := r.ruleService.ListViolationsFiltered(req.Context(), rule.ViolationListParams{
 		Status: "active",
@@ -111,7 +117,8 @@ func (r *Router) handleFixAll(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	r.startFixAll(req.Context(), fixable)
+	scoped := len(idSet) > 0
+	r.startFixAll(req.Context(), fixable, scoped)
 
 	writeJSON(w, http.StatusAccepted, map[string]any{
 		"status": "running",
@@ -149,10 +156,11 @@ func (r *Router) handleFixAllStatus(w http.ResponseWriter, _ *http.Request) {
 //
 // Optimizations over a naive per-violation loop:
 //  1. Orphan cleanup: dismiss violations for deleted artists in one SQL query
+//     (skipped when the request is scoped to specific IDs)
 //  2. Artist grouping: load each artist once, fix all its violations together
 //  3. Rule caching: Pipeline caches rule lookups across the entire run
 //  4. Yield: sleep between artist groups to release the SQLite write lock
-func (r *Router) startFixAll(reqCtx context.Context, violations []rule.RuleViolation) {
+func (r *Router) startFixAll(reqCtx context.Context, violations []rule.RuleViolation, scoped bool) {
 	progress := &FixAllProgress{
 		Status: "running",
 		Total:  len(violations),
@@ -167,11 +175,15 @@ func (r *Router) startFixAll(reqCtx context.Context, violations []rule.RuleViola
 		ctx := context.WithoutCancel(reqCtx)
 
 		// Phase 1: dismiss orphaned violations in bulk (one SQL query).
-		dismissed, err := r.ruleService.DismissOrphanedViolations(ctx)
-		if err != nil {
-			r.logger.Warn("fix-all: orphan cleanup failed", "error", err)
-		} else if dismissed > 0 {
-			r.logger.Info("fix-all: dismissed orphaned violations", "count", dismissed)
+		// Skip when the request targets specific IDs to avoid side effects
+		// on unrelated violations.
+		if !scoped {
+			dismissed, err := r.ruleService.DismissOrphanedViolations(ctx)
+			if err != nil {
+				r.logger.Warn("fix-all: orphan cleanup failed", "error", err)
+			} else if dismissed > 0 {
+				r.logger.Info("fix-all: dismissed orphaned violations", "count", dismissed)
+			}
 		}
 
 		// Phase 2: group violations by artist.
@@ -198,9 +210,9 @@ func (r *Router) startFixAll(reqCtx context.Context, violations []rule.RuleViola
 			// Check artist existence once per group.
 			_, aErr := r.artistService.GetByID(ctx, artistID)
 			if aErr != nil && errors.Is(aErr, artist.ErrNotFound) {
-				// Dismiss all violations for this deleted artist (may already
-				// be dismissed by Phase 1, but DismissViolation is idempotent).
-				for range g.violations {
+				// Explicitly dismiss each violation for this deleted artist.
+				for _, rv := range g.violations {
+					_ = r.ruleService.DismissViolation(ctx, rv.ID)
 					progress.mu.Lock()
 					progress.Processed++
 					progress.Skipped++
