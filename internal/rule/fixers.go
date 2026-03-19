@@ -158,8 +158,7 @@ func (f *MetadataFixer) fixMBID(ctx context.Context, a *artist.Artist) (*FixResu
 }
 
 func (f *MetadataFixer) fixBio(ctx context.Context, a *artist.Artist) (*FixResult, error) {
-	providerIDs := provider.BuildProviderIDMap(a.AudioDBID, a.DiscogsID, a.DeezerID, a.SpotifyID)
-	result, err := f.orchestrator.FetchMetadata(ctx, a.MusicBrainzID, a.Name, providerIDs)
+	result, err := f.orchestrator.FetchMetadata(ctx, a.MusicBrainzID, a.Name, a.ProviderIDMap())
 	if err != nil {
 		return nil, fmt.Errorf("fetching metadata: %w", err)
 	}
@@ -253,8 +252,7 @@ func (f *ImageFixer) Fix(ctx context.Context, a *artist.Artist, v *Violation) (*
 		return nil, fmt.Errorf("no image type for rule %s", v.RuleID)
 	}
 
-	providerIDs := provider.BuildProviderIDMap(a.AudioDBID, a.DiscogsID, a.DeezerID, a.SpotifyID)
-	result, err := f.fetchImages(ctx, a.MusicBrainzID, providerIDs)
+	result, err := f.fetchImages(ctx, a.MusicBrainzID, a.ProviderIDMap())
 	if err != nil {
 		return nil, fmt.Errorf("fetching images: %w", err)
 	}

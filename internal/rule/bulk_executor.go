@@ -201,8 +201,7 @@ func (e *BulkExecutor) fetchMetadata(ctx context.Context, a *artist.Artist, mode
 		return BulkItemSkipped, "already has MBID and biography"
 	}
 
-	providerIDs := provider.BuildProviderIDMap(a.AudioDBID, a.DiscogsID, a.DeezerID, a.SpotifyID)
-	result, err := e.orchestrator.FetchMetadata(ctx, a.MusicBrainzID, a.Name, providerIDs)
+	result, err := e.orchestrator.FetchMetadata(ctx, a.MusicBrainzID, a.Name, a.ProviderIDMap())
 	if err != nil {
 		return BulkItemFailed, fmt.Sprintf("fetch failed: %v", err)
 	}
@@ -255,15 +254,7 @@ func (e *BulkExecutor) fetchMetadata(ctx context.Context, a *artist.Artist, mode
 		return BulkItemFailed, fmt.Sprintf("update failed: %v", err)
 	}
 
-	// Update per-provider fetch timestamps so the UI can show "Not found" vs "Not set".
-	for _, prov := range result.AttemptedProviders {
-		if err := e.artistService.UpdateProviderFetchedAt(ctx, a.ID, string(prov)); err != nil {
-			e.logger.Warn("updating provider fetched_at",
-				"artist_id", a.ID,
-				"provider", prov,
-				"error", err)
-		}
-	}
+	UpdateProviderFetchTimestamps(ctx, e.artistService, a.ID, result.AttemptedProviders, e.logger)
 
 	if a.NFOExists {
 		writeArtistNFO(ctx, a, e.snapshotService, e.logger)
@@ -308,7 +299,7 @@ func (e *BulkExecutor) fetchImages(ctx context.Context, a *artist.Artist, mode s
 		return BulkItemSkipped, "all images present"
 	}
 
-	imgResult, err := e.orchestrator.FetchImages(ctx, a.MusicBrainzID, provider.BuildProviderIDMap(a.AudioDBID, a.DiscogsID, a.DeezerID, a.SpotifyID))
+	imgResult, err := e.orchestrator.FetchImages(ctx, a.MusicBrainzID, a.ProviderIDMap())
 	if err != nil {
 		return BulkItemFailed, fmt.Sprintf("image fetch failed: %v", err)
 	}

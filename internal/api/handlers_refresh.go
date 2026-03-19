@@ -10,6 +10,7 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/provider"
+	"github.com/sydlexius/stillwater/internal/rule"
 	"github.com/sydlexius/stillwater/web/templates"
 )
 
@@ -47,7 +48,7 @@ func (r *Router) handleArtistRefresh(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	r.evaluateArtistHealth(req.Context(), a)
+	rule.EvaluateAndPersistHealth(req.Context(), r.ruleEngine, r.artistService, a, r.logger)
 
 	if isHTMXRequest(req) {
 		r.renderRefreshWithOOB(w, req, a.ID, result.Sources)
@@ -189,7 +190,7 @@ func (r *Router) handleRefreshLink(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
-	r.evaluateArtistHealth(req.Context(), a)
+	rule.EvaluateAndPersistHealth(req.Context(), r.ruleEngine, r.artistService, a, r.logger)
 
 	if isHTMXRequest(req) {
 		r.renderRefreshWithOOB(w, req, a.ID, result.Sources)
@@ -203,8 +204,7 @@ func (r *Router) handleRefreshLink(w http.ResponseWriter, req *http.Request) {
 
 // executeRefresh runs the orchestrator's FetchMetadata and applies results to the artist.
 func (r *Router) executeRefresh(req *http.Request, a *artist.Artist) (*provider.FetchResult, error) {
-	providerIDs := provider.BuildProviderIDMap(a.AudioDBID, a.DiscogsID, a.DeezerID, a.SpotifyID)
-	result, err := r.orchestrator.FetchMetadata(req.Context(), a.MusicBrainzID, a.Name, providerIDs)
+	result, err := r.orchestrator.FetchMetadata(req.Context(), a.MusicBrainzID, a.Name, a.ProviderIDMap())
 	if err != nil {
 		r.logger.Error("metadata refresh failed",
 			"artist_id", a.ID,
@@ -227,15 +227,7 @@ func (r *Router) executeRefresh(req *http.Request, a *artist.Artist) (*provider.
 
 	r.writeBackNFO(req.Context(), a)
 
-	// Update per-provider fetch timestamps so the UI can show "Not found" vs "Not set".
-	for _, prov := range result.AttemptedProviders {
-		if err := r.artistService.UpdateProviderFetchedAt(req.Context(), a.ID, string(prov)); err != nil {
-			r.logger.Warn("updating provider fetched_at",
-				"artist_id", a.ID,
-				"provider", prov,
-				"error", err)
-		}
-	}
+	rule.UpdateProviderFetchTimestamps(req.Context(), r.artistService, a.ID, result.AttemptedProviders, r.logger)
 
 	// Update members if provided
 	if result.Metadata != nil && len(result.Metadata.Members) > 0 {
@@ -513,26 +505,6 @@ func (r *Router) enrichWithAlbumComparison(ctx context.Context, results []provid
 	}
 
 	return candidates
-}
-
-// evaluateArtistHealth runs the rule engine against an artist and updates
-// the stored health score. Errors are logged but not propagated (non-blocking).
-// Callers should pass the artist object they already have to avoid an extra DB read.
-func (r *Router) evaluateArtistHealth(ctx context.Context, a *artist.Artist) {
-	if r.ruleEngine == nil {
-		return
-	}
-
-	result, err := r.ruleEngine.Evaluate(ctx, a)
-	if err != nil {
-		r.logger.Warn("evaluating artist health", slog.String("artist_id", a.ID), slog.String("error", err.Error()))
-		return
-	}
-
-	a.HealthScore = result.HealthScore
-	if err := r.artistService.Update(ctx, a); err != nil {
-		r.logger.Warn("saving artist health score", slog.String("artist_id", a.ID), slog.String("error", err.Error()))
-	}
 }
 
 // extractFormOrJSONField reads a named value from either a JSON body or form data.

@@ -226,9 +226,8 @@ func (r *Router) handleFieldProviders(w http.ResponseWriter, req *http.Request) 
 		return
 	}
 
-	providerIDs := provider.BuildProviderIDMap(a.AudioDBID, a.DiscogsID, a.DeezerID, a.SpotifyID)
 	results, err := r.orchestrator.FetchFieldFromProviders(
-		req.Context(), a.MusicBrainzID, a.Name, field, providerIDs,
+		req.Context(), a.MusicBrainzID, a.Name, field, a.ProviderIDMap(),
 	)
 	if err != nil {
 		r.logger.Error("fetching field from providers",

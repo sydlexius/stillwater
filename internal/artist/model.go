@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"time"
+
+	"github.com/sydlexius/stillwater/internal/provider"
 )
 
 // ErrNotFound is returned by repository methods when an artist record does not exist.
@@ -60,6 +62,21 @@ type Artist struct {
 	LastScannedAt       *time.Time        `json:"last_scanned_at,omitempty"`
 	CreatedAt           time.Time         `json:"created_at"`
 	UpdatedAt           time.Time         `json:"updated_at"`
+}
+
+// ProviderIDMap returns the artist's provider-specific IDs as a map keyed by
+// provider name, suitable for passing to orchestrator FetchMetadata/FetchImages.
+//
+// All four providers are always included in the map. For FetchMetadata, an
+// empty value causes fallback to MBID. For FetchImages, an empty value signals
+// "skip this provider" (it cannot accept MBIDs).
+func (a *Artist) ProviderIDMap() map[provider.ProviderName]string {
+	return map[provider.ProviderName]string{
+		provider.NameAudioDB: a.AudioDBID,
+		provider.NameDiscogs: a.DiscogsID,
+		provider.NameDeezer:  a.DeezerID,
+		provider.NameSpotify: a.SpotifyID,
+	}
 }
 
 // BandMember represents a member of a band or group.

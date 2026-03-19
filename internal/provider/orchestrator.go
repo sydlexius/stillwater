@@ -636,9 +636,11 @@ func extractProviderIDsFromURLs(meta *ArtistMetadata) {
 }
 
 // BuildProviderIDMap constructs a provider-specific ID map from individual ID
-// strings. This is used by callers that have an artist record and need to pass
-// stored provider IDs into FetchMetadata or FetchImages. Takes strings (not
-// *artist.Artist) to avoid a circular import between provider and artist.
+// strings. Takes strings (not *artist.Artist) to avoid a circular import
+// between provider and artist.
+//
+// Deprecated: Callers with an *artist.Artist should use Artist.ProviderIDMap()
+// instead. This function remains for use in contexts without an Artist struct.
 //
 // All four providers are always included in the map. For FetchMetadata's
 // getProviderResult, an empty value causes fallback to MBID. For FetchImages,
