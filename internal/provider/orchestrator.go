@@ -22,6 +22,7 @@ type FetchResult struct {
 	Sources            []FieldSource   `json:"sources"`
 	Errors             []string        `json:"errors"`
 	AttemptedProviders []ProviderName  `json:"attempted_providers,omitempty"`
+	AttemptedFields    []string        `json:"attempted_fields,omitempty"`
 }
 
 // ScraperExecutor is implemented by the scraper.Executor to avoid circular imports.
@@ -85,6 +86,7 @@ func (o *Orchestrator) FetchMetadata(ctx context.Context, mbid, name string, pro
 	cache := make(map[ProviderName]*providerResult)
 
 	for _, pri := range priorities {
+		queried := false
 		for _, provName := range pri.EnabledProviders() {
 			if !available[provName] {
 				continue
@@ -94,9 +96,13 @@ func (o *Orchestrator) FetchMetadata(ctx context.Context, mbid, name string, pro
 				continue
 			}
 
+			queried = true
 			if applyField(result, pri.Field, pr, provName) {
 				break
 			}
+		}
+		if queried {
+			result.AttemptedFields = append(result.AttemptedFields, pri.Field)
 		}
 	}
 

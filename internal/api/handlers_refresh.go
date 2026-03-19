@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -40,7 +41,7 @@ func (r *Router) handleArtistRefresh(w http.ResponseWriter, req *http.Request) {
 	}
 
 	// MBID available -- run full refresh
-	sources, err := r.executeRefresh(req, a)
+	result, err := r.executeRefresh(req, a)
 	if err != nil {
 		writeError(w, req, http.StatusInternalServerError, "metadata refresh failed")
 		return
@@ -49,12 +50,12 @@ func (r *Router) handleArtistRefresh(w http.ResponseWriter, req *http.Request) {
 	r.evaluateArtistHealth(req.Context(), a)
 
 	if isHTMXRequest(req) {
-		r.renderRefreshWithOOB(w, req, a.ID, sources)
+		r.renderRefreshWithOOB(w, req, a.ID, result.Sources)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status":  "refreshed",
-		"sources": sources,
+		"sources": result.Sources,
 	})
 }
 
@@ -77,7 +78,8 @@ func (r *Router) handleRefreshSearch(w http.ResponseWriter, req *http.Request) {
 
 	results, err := r.orchestrator.SearchForLinking(req.Context(), query, linkProviders)
 	if err != nil {
-		writeError(w, req, http.StatusInternalServerError, "search failed: "+err.Error())
+		r.logger.Error("search failed", "error", err)
+		writeError(w, req, http.StatusInternalServerError, "search failed")
 		return
 	}
 
@@ -148,26 +150,59 @@ func (r *Router) handleRefreshLink(w http.ResponseWriter, req *http.Request) {
 	)
 
 	// Now run the full refresh with the linked MBID
-	sources, err := r.executeRefresh(req, a)
+	result, err := r.executeRefresh(req, a)
 	if err != nil {
 		writeError(w, req, http.StatusInternalServerError, "metadata refresh failed")
 		return
 	}
 
+	// Re-identify is an explicit "this artist is someone else" action, so
+	// update the display name and sort name from provider data. The artist
+	// is only mutated after a successful DB update to avoid the UI or NFO
+	// showing a name that was never persisted.
+	if result.Metadata != nil {
+		newName := result.Metadata.Name
+		newSort := result.Metadata.SortName
+		nameChanged := (newName != "" && newName != a.Name) ||
+			(newSort != "" && newSort != a.SortName)
+
+		if nameChanged {
+			origName, origSort := a.Name, a.SortName
+			if newName != "" {
+				a.Name = newName
+			}
+			if newSort != "" {
+				a.SortName = newSort
+			}
+			if err := r.artistService.Update(req.Context(), a); err != nil {
+				r.logger.Error("updating artist name after re-identify",
+					"artist_id", a.ID,
+					"error", err)
+				a.Name, a.SortName = origName, origSort
+			} else {
+				// Re-write the NFO so it reflects the updated name.
+				// The NFO written by executeRefresh still has the old
+				// name because the name update happens after the
+				// refresh completes.
+				r.writeBackNFO(req.Context(), a)
+			}
+		}
+	}
+
 	r.evaluateArtistHealth(req.Context(), a)
 
 	if isHTMXRequest(req) {
-		r.renderRefreshWithOOB(w, req, a.ID, sources)
+		r.renderRefreshWithOOB(w, req, a.ID, result.Sources)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status":  "linked_and_refreshed",
-		"sources": sources,
+		"sources": result.Sources,
 	})
 }
 
 // executeRefresh runs the orchestrator's FetchMetadata and applies results to the artist.
-func (r *Router) executeRefresh(req *http.Request, a *artist.Artist) ([]provider.FieldSource, error) {
+func (r *Router) executeRefresh(req *http.Request, a *artist.Artist) (*provider.FetchResult, error) {
 	providerIDs := provider.BuildProviderIDMap(a.AudioDBID, a.DiscogsID, a.DeezerID, a.SpotifyID)
 	result, err := r.orchestrator.FetchMetadata(req.Context(), a.MusicBrainzID, a.Name, providerIDs)
 	if err != nil {
@@ -175,6 +210,9 @@ func (r *Router) executeRefresh(req *http.Request, a *artist.Artist) ([]provider
 			"artist_id", a.ID,
 			"error", err)
 		return nil, err
+	}
+	if result == nil {
+		return nil, fmt.Errorf("fetch metadata returned nil result for %s", a.ID)
 	}
 
 	// Apply fetched metadata to the artist
@@ -209,51 +247,65 @@ func (r *Router) executeRefresh(req *http.Request, a *artist.Artist) ([]provider
 		}
 	}
 
-	return result.Sources, nil
+	return result, nil
 }
 
-// applyRefreshResult merges a FetchResult into an artist record.
+// applyRefreshResult overwrites artist metadata fields from a FetchResult.
+// Only fields that were attempted (at least one provider was successfully queried)
+// are overwritten -- including clearing fields that providers returned empty.
+// Fields that were not attempted (e.g., provider was down) are left untouched.
+// After applying provider data, type-inappropriate date fields are cleared
+// unconditionally via filterDatesByArtistType (regardless of AttemptedFields).
 func applyRefreshResult(a *artist.Artist, result *provider.FetchResult) {
 	if result.Metadata == nil {
 		return
 	}
 	m := result.Metadata
 
-	if m.Biography != "" {
+	attempted := make(map[string]bool, len(result.AttemptedFields))
+	for _, f := range result.AttemptedFields {
+		attempted[f] = true
+	}
+
+	// Overwrite attempted metadata fields (even if empty = clear).
+	if attempted["biography"] {
 		a.Biography = m.Biography
 	}
-	if len(m.Genres) > 0 {
+	if attempted["genres"] {
 		a.Genres = m.Genres
 	}
-	if len(m.Styles) > 0 {
+	if attempted["styles"] {
 		a.Styles = m.Styles
 	}
-	if len(m.Moods) > 0 {
+	if attempted["moods"] {
 		a.Moods = m.Moods
 	}
-	if m.Formed != "" {
+	if attempted["formed"] {
 		a.Formed = m.Formed
 	}
-	if m.Born != "" {
+	if attempted["born"] {
 		a.Born = m.Born
 	}
-	if m.Died != "" {
+	if attempted["died"] {
 		a.Died = m.Died
 	}
-	if m.Disbanded != "" {
+	if attempted["disbanded"] {
 		a.Disbanded = m.Disbanded
 	}
-	if m.YearsActive != "" {
-		a.YearsActive = m.YearsActive
-	}
+
+	// Type and gender: only overwrite with non-empty values (clearing these
+	// would lose classification data that no other field can recover).
 	if m.Type != "" {
 		a.Type = m.Type
 	}
 	if m.Gender != "" {
 		a.Gender = m.Gender
 	}
+	if m.YearsActive != "" {
+		a.YearsActive = m.YearsActive
+	}
 
-	// Merge provider IDs
+	// Provider IDs: only fill empty slots, never overwrite or clear.
 	if m.MusicBrainzID != "" && a.MusicBrainzID == "" {
 		a.MusicBrainzID = m.MusicBrainzID
 	}
@@ -273,13 +325,31 @@ func applyRefreshResult(a *artist.Artist, result *provider.FetchResult) {
 		a.SpotifyID = m.SpotifyID
 	}
 
-	// Update metadata sources
+	// Type-aware date filtering: clear semantically inappropriate date fields.
+	filterDatesByArtistType(a)
+
+	// Update metadata sources.
 	if a.MetadataSources == nil {
 		a.MetadataSources = make(map[string]string)
 	}
 	for _, src := range result.Sources {
 		a.MetadataSources[src.Field] = string(src.Provider)
 	}
+}
+
+// filterDatesByArtistType clears date fields that are semantically wrong for
+// the artist's type. Solo/person artists should not have formed/disbanded;
+// group/orchestra/choir artists should not have born/died.
+func filterDatesByArtistType(a *artist.Artist) {
+	switch a.Type {
+	case "solo", "person", "character":
+		a.Formed = ""
+		a.Disbanded = ""
+	case "group", "orchestra", "choir":
+		a.Born = ""
+		a.Died = ""
+	}
+	// Unknown or empty type: no filtering.
 }
 
 // convertProviderMembers converts provider MemberInfo to artist BandMember models.
