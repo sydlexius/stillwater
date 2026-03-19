@@ -1,10 +1,14 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/webhook"
 )
 
 // TestHandleEmbyWebhook_OK verifies the handler returns 200 immediately.
@@ -137,4 +141,57 @@ func TestHandleJellyfinWebhook_UnknownEventType(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
 	}
+}
+
+// TestLidarrArtistAdd_NilPipeline verifies that handleLidarrArtistAdd does not
+// panic when pipeline is nil and an existing artist is found.
+func TestLidarrArtistAdd_NilPipeline(t *testing.T) {
+	r, artistSvc := testRouter(t)
+	// testRouter does not set pipeline, so r.pipeline == nil.
+
+	mbid := "a74b1b7f-71a5-4011-9441-d0b5e4122711"
+	a := &artist.Artist{
+		Name:          "Radiohead",
+		SortName:      "Radiohead",
+		Type:          "group",
+		Path:          "/music/Radiohead",
+		MusicBrainzID: mbid,
+	}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	payload := webhook.LidarrPayload{
+		EventType: webhook.LidarrEventArtistAdd,
+		Artist:    &webhook.LidarrArtist{Name: "Radiohead", MBId: mbid},
+	}
+
+	// Should not panic; should log warning and return gracefully.
+	r.handleLidarrArtistAdd(context.Background(), payload)
+}
+
+// TestLidarrDownload_NilPipeline verifies that handleLidarrDownload does not
+// panic when pipeline is nil and an existing artist is found.
+func TestLidarrDownload_NilPipeline(t *testing.T) {
+	r, artistSvc := testRouter(t)
+
+	mbid := "a74b1b7f-71a5-4011-9441-d0b5e4122711"
+	a := &artist.Artist{
+		Name:          "Radiohead",
+		SortName:      "Radiohead",
+		Type:          "group",
+		Path:          "/music/Radiohead",
+		MusicBrainzID: mbid,
+	}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	payload := webhook.LidarrPayload{
+		EventType: webhook.LidarrEventDownload,
+		Artist:    &webhook.LidarrArtist{Name: "Radiohead", MBId: mbid},
+	}
+
+	// Should not panic; should log warning and return gracefully.
+	r.handleLidarrDownload(context.Background(), payload)
 }

@@ -49,7 +49,12 @@ func (r *Router) handleUpdateRule(w http.ResponseWriter, req *http.Request) {
 
 	existing, err := r.ruleService.GetByID(req.Context(), ruleID)
 	if err != nil {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "rule not found"})
+		if errors.Is(err, rule.ErrNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "rule not found"})
+			return
+		}
+		r.logger.Error("looking up rule", "rule_id", ruleID, "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to look up rule"})
 		return
 	}
 
@@ -97,7 +102,12 @@ func (r *Router) handleEvaluateArtist(w http.ResponseWriter, req *http.Request) 
 
 	a, err := r.artistService.GetByID(req.Context(), artistID)
 	if err != nil {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "artist not found"})
+		if errors.Is(err, artist.ErrNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "artist not found"})
+			return
+		}
+		r.logger.Error("looking up artist for health evaluation", "artist_id", artistID, "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to look up artist"})
 		return
 	}
 
@@ -110,11 +120,16 @@ func (r *Router) handleEvaluateArtist(w http.ResponseWriter, req *http.Request) 
 
 	// Update the artist's health score in the database
 	a.HealthScore = result.HealthScore
+	var warning string
 	if err := r.artistService.Update(req.Context(), a); err != nil {
-		r.logger.Warn("updating artist health score", "artist_id", artistID, "error", err)
+		r.logger.Error("persisting artist health score", "artist_id", artistID, "error", err)
+		warning = "health score computed but failed to save"
 	}
 
-	writeJSON(w, http.StatusOK, result)
+	writeJSON(w, http.StatusOK, struct {
+		*rule.EvaluationResult
+		Warning string `json:"warning,omitempty"`
+	}{result, warning})
 }
 
 // handleRunRule runs a single rule against all artists and attempts to fix violations.
@@ -126,7 +141,12 @@ func (r *Router) handleRunRule(w http.ResponseWriter, req *http.Request) {
 	}
 
 	if _, err := r.ruleService.GetByID(req.Context(), ruleID); err != nil {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "rule not found"})
+		if errors.Is(err, rule.ErrNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "rule not found"})
+			return
+		}
+		r.logger.Error("looking up rule", "rule_id", ruleID, "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to look up rule"})
 		return
 	}
 
@@ -414,6 +434,7 @@ func (r *Router) startBulkJob(w http.ResponseWriter, req *http.Request, jobType 
 func (r *Router) handleBulkJobList(w http.ResponseWriter, req *http.Request) {
 	jobs, err := r.bulkService.ListJobs(req.Context(), 20)
 	if err != nil {
+		r.logger.Error("listing bulk jobs", "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to list jobs"})
 		return
 	}
@@ -430,13 +451,20 @@ func (r *Router) handleBulkJobStatus(w http.ResponseWriter, req *http.Request) {
 
 	job, err := r.bulkService.GetJob(req.Context(), jobID)
 	if err != nil {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "job not found"})
+		if errors.Is(err, rule.ErrJobNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "job not found"})
+			return
+		}
+		r.logger.Error("looking up bulk job", "job_id", jobID, "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to look up job"})
 		return
 	}
 
 	items, err := r.bulkService.ListItems(req.Context(), jobID)
 	if err != nil {
-		r.logger.Warn("listing job items", "job_id", jobID, "error", err)
+		r.logger.Error("listing job items", "job_id", jobID, "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to list job items"})
+		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{

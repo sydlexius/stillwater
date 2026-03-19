@@ -3,6 +3,7 @@ package rule
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -52,7 +53,14 @@ func (s *BulkService) GetJob(ctx context.Context, id string) (*BulkJob, error) {
 		FROM bulk_jobs WHERE id = ?
 	`, id)
 
-	return scanBulkJob(row)
+	job, err := scanBulkJob(row)
+	if err != nil {
+		if errors.Is(err, ErrJobNotFound) {
+			return nil, fmt.Errorf("%w: %s", ErrJobNotFound, id)
+		}
+		return nil, err
+	}
+	return job, nil
 }
 
 // ListJobs returns recent bulk jobs ordered by creation time descending.
@@ -163,8 +171,8 @@ func scanBulkJob(row interface{ Scan(...any) error }) (*BulkJob, error) {
 		&job.SkippedItems, &job.FailedItems, &errStr,
 		&createdAt, &startedAt, &completedAt)
 	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("bulk job not found")
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrJobNotFound
 		}
 		return nil, err
 	}

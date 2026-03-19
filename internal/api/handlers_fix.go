@@ -32,6 +32,12 @@ func (r *Router) handleFixViolation(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	if r.pipeline == nil {
+		r.logger.Error("fix-violation: pipeline not configured", "id", id)
+		writeError(w, req, http.StatusServiceUnavailable, "rule pipeline not configured")
+		return
+	}
+
 	fr, err := r.pipeline.FixViolation(req.Context(), id)
 	if err != nil {
 		r.logger.Error("fix violation failed", "id", id, "error", err)
@@ -59,7 +65,26 @@ func (r *Router) handleFixViolation(w http.ResponseWriter, req *http.Request) {
 // Rejects concurrent starts with 409 Conflict.
 // POST /api/v1/notifications/fix-all
 func (r *Router) handleFixAll(w http.ResponseWriter, req *http.Request) {
-	// Atomic check-and-set: reject if already running, otherwise claim the slot.
+	if r.pipeline == nil {
+		r.logger.Error("fix-all: pipeline not configured")
+		writeError(w, req, http.StatusServiceUnavailable, "rule pipeline not configured")
+		return
+	}
+
+	// Parse optional ID filter before claiming the slot so a slow/stalled
+	// client cannot hold the singleton open. Return 400 for malformed JSON
+	// (but allow empty body / EOF to mean "fix all").
+	var body struct {
+		IDs []string `json:"ids"`
+	}
+	if err := json.NewDecoder(req.Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
+		return
+	}
+
+	// Atomic check-and-set: reject if already running, otherwise claim the slot
+	// immediately so concurrent requests cannot both pass the check.
+	progress := &FixAllProgress{Status: "running"}
 	r.fixAllMu.Lock()
 	if r.fixAllProgress != nil {
 		r.fixAllProgress.mu.RLock()
@@ -74,22 +99,24 @@ func (r *Router) handleFixAll(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 	}
+	r.fixAllProgress = progress
 	r.fixAllMu.Unlock()
 
-	// Parse optional ID filter. Return 400 for malformed JSON (but allow
-	// empty body / EOF to mean "fix all").
-	var body struct {
-		IDs []string `json:"ids"`
-	}
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
-		return
+	// releaseProgress clears the slot if this request still owns it, allowing
+	// a subsequent request to start a new fix-all.
+	releaseProgress := func() {
+		r.fixAllMu.Lock()
+		if r.fixAllProgress == progress {
+			r.fixAllProgress = nil
+		}
+		r.fixAllMu.Unlock()
 	}
 
 	violations, err := r.ruleService.ListViolationsFiltered(req.Context(), rule.ViolationListParams{
 		Status: "active",
 	})
 	if err != nil {
+		releaseProgress()
 		r.logger.Error("listing violations for fix-all", "error", err)
 		writeError(w, req, http.StatusInternalServerError, "failed to list violations")
 		return
@@ -114,6 +141,7 @@ func (r *Router) handleFixAll(w http.ResponseWriter, req *http.Request) {
 	}
 
 	if len(fixable) == 0 {
+		releaseProgress()
 		writeJSON(w, http.StatusOK, map[string]any{
 			"status":  "completed",
 			"message": "no fixable violations",
@@ -122,15 +150,11 @@ func (r *Router) handleFixAll(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	// Claim the fix-all slot atomically: set progress before releasing the lock.
+	// Set the total now that we know the count.
 	scoped := len(idSet) > 0
-	progress := &FixAllProgress{
-		Status: "running",
-		Total:  len(fixable),
-	}
-	r.fixAllMu.Lock()
-	r.fixAllProgress = progress
-	r.fixAllMu.Unlock()
+	progress.mu.Lock()
+	progress.Total = len(fixable)
+	progress.mu.Unlock()
 
 	r.runFixAll(req.Context(), fixable, scoped, progress)
 

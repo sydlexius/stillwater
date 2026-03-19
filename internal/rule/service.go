@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -252,8 +253,8 @@ func (s *Service) GetByID(ctx context.Context, id string) (*Rule, error) {
 	`, id)
 	r, err := scanRule(row)
 	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("rule not found: %s", id)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("%w: %s", ErrNotFound, id)
 		}
 		return nil, fmt.Errorf("getting rule by id: %w", err)
 	}

@@ -105,6 +105,11 @@ func (r *Router) handleLidarrArtistAdd(ctx context.Context, payload webhook.Lida
 
 	if existing != nil {
 		// Artist known: re-evaluate rules for this artist only
+		if r.pipeline == nil {
+			r.logger.Warn("lidarr ArtistAdded: rule pipeline not configured, skipping evaluation",
+				"artist", existing.Name)
+			return
+		}
 		r.logger.Info("lidarr ArtistAdded: artist already tracked, evaluating rules",
 			"artist", existing.Name, "mbid", mbid)
 		if _, err := r.pipeline.RunForArtist(ctx, existing); err != nil {
@@ -159,6 +164,12 @@ func (r *Router) handleLidarrDownload(ctx context.Context, payload webhook.Lidar
 	if existing == nil {
 		r.logger.Info("lidarr download event for unknown artist, skipping",
 			"artist", payload.Artist.Name, "mbid", mbid)
+		return
+	}
+
+	if r.pipeline == nil {
+		r.logger.Warn("lidarr download: rule pipeline not configured, skipping evaluation",
+			"artist", existing.Name)
 		return
 	}
 
