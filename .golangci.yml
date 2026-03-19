@@ -19,6 +19,7 @@ linters:
     - wastedassign
     - misspell
     - revive
+    - nilerr
   settings:
     gosec:
       excludes:

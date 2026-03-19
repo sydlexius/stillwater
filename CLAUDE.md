@@ -364,11 +364,27 @@ gh api "repos/{owner}/{repo}/pulls/{number}/comments/{comment_id}/replies" \
 
 **Never use `!=` in `--jq` expressions from bash.** Use `select(.field == "value" | not)`.
 
-### Copilot re-review limitation
+### Copilot review policy
 
-The GitHub API does not support re-requesting review from Copilot (bot accounts return
-422). The `copilot-re-review.yml` workflow also does not work. This means the first push
-to a PR is the only chance to get a clean Copilot review. Get it right before pushing.
+Copilot's automatic re-review on push is **disabled** (`review_on_push: false` in the
+repository ruleset). Copilot reviews only the initial PR diff. This eliminates the 61%
+repeat noise rate observed in later-round reviews.
+
+Re-review must be triggered manually by the user from the GitHub PR page when warranted.
+The GitHub API does not support re-requesting review from bot accounts (422 error).
+
+The `/handle-review` and `/review-stack` skills assess whether a manual Copilot re-review
+is recommended after pushing fixes, based on the scope of changes.
+
+### Copilot instruction files
+
+Global instructions are in `.github/copilot-instructions.md` (must stay under 4,000
+characters -- Copilot silently ignores content beyond that limit). Domain-specific
+guidance is in path-scoped files under `.github/instructions/`:
+
+- `go-api.instructions.md` -- API handlers: OpenAPI semantic review, error paths, concurrency
+- `go-tests.instructions.md` -- Test code: data races, multipart errors, assertion quality
+- `ci-actions.instructions.md` -- GitHub Actions: version pinning, smoke test alignment
 
 ## Parallel Work (Worktrees)
 
