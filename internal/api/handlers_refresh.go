@@ -173,6 +173,10 @@ func (r *Router) handleRefreshLink(w http.ResponseWriter, req *http.Request) {
 					"artist_id", a.ID,
 					"error", err)
 			}
+			// Re-write the NFO so it reflects the updated name. The NFO
+			// written by executeRefresh still has the old name because
+			// the name update happens after the refresh completes.
+			r.writeBackNFO(req.Context(), a)
 		}
 	}
 
