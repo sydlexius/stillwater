@@ -304,7 +304,7 @@ func (s *Service) processDirectory(ctx context.Context, dirPath, name, libraryID
 			return fmt.Errorf("creating artist: %w", err)
 		}
 
-		s.evaluateHealthScore(ctx, a)
+		rule.EvaluateAndPersistHealth(ctx, s.ruleEngine, s.artistService, a, s.logger)
 
 		s.mu.Lock()
 		result.NewArtists++
@@ -385,7 +385,7 @@ func (s *Service) processDirectory(ctx context.Context, dirPath, name, libraryID
 				return fmt.Errorf("updating artist: %w", err)
 			}
 
-			s.evaluateHealthScore(ctx, existing)
+			rule.EvaluateAndPersistHealth(ctx, s.ruleEngine, s.artistService, existing, s.logger)
 
 			s.mu.Lock()
 			result.UpdatedArtists++
@@ -441,22 +441,6 @@ func (s *Service) populateFromNFO(dirPath string, a *artist.Artist) {
 	a.Disbanded = converted.Disbanded
 	if converted.Biography != "" {
 		a.Biography = converted.Biography
-	}
-}
-
-// evaluateHealthScore runs the rule engine against an artist and persists the score.
-func (s *Service) evaluateHealthScore(ctx context.Context, a *artist.Artist) {
-	if s.ruleEngine == nil {
-		return
-	}
-	eval, err := s.ruleEngine.Evaluate(ctx, a)
-	if err != nil {
-		s.logger.Warn("evaluating health score", "artist", a.Name, "error", err)
-		return
-	}
-	a.HealthScore = eval.HealthScore
-	if err := s.artistService.Update(ctx, a); err != nil {
-		s.logger.Warn("persisting health score", "artist", a.Name, "error", err)
 	}
 }
 
