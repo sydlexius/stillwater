@@ -55,5 +55,5 @@ higher-priority category.
 
 ## Lower priority (mention only if clearly wrong)
 
-- Test function names, test comment wording, or test variable naming
-- Suggestions to refactor working code for hypothetical testability improvements
+- Do not comment on test function names, test comment wording, or test variable naming
+- Do not suggest refactoring working code for hypothetical testability improvements

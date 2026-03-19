@@ -25,7 +25,8 @@ produce malformed requests and misleading test failures.
 
 ## Test quality
 
-- Prefer table-driven tests with `t.Run` subtests
+- Prefer table-driven tests; use `t.Run` subtests when case names improve
+  failure output or cases need isolation
 - Assert specific values, not just `err == nil`
 - Test error paths, not just success paths
 - Engine/rule tests should assert relative properties (e.g., "violations > 0")

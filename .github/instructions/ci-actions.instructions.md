@@ -1,5 +1,5 @@
 ---
-applyTo: ".github/workflows/*.yml"
+applyTo: ".github/workflows/*.{yml,yaml}"
 ---
 
 # CI / GitHub Actions Review

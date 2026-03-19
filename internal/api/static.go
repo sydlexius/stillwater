@@ -83,8 +83,12 @@ func (sa *StaticAssets) scan(logger *slog.Logger) {
 	hashes := make(map[string]string)
 
 	if err := filepath.WalkDir(sa.dir, func(path string, d fs.DirEntry, err error) error { //nolint:gosec // G703: sa.dir is set at startup from trusted config, not user input
-		if err != nil || d.IsDir() {
-			return nil //nolint:nilerr // WalkDir callback: return nil to skip problem entries and continue walking
+		if err != nil {
+			logger.Warn("failed to walk static asset", "path", path, "error", err)
+			return nil //nolint:nilerr // WalkDir callback: log and skip problem entries to continue walking
+		}
+		if d.IsDir() {
+			return nil
 		}
 
 		data, err := os.ReadFile(path) //nolint:gosec // G304: path is constructed from trusted sa.dir
