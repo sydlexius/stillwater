@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -209,6 +210,9 @@ func (r *Router) executeRefresh(req *http.Request, a *artist.Artist) (*provider.
 			"artist_id", a.ID,
 			"error", err)
 		return nil, err
+	}
+	if result == nil {
+		return nil, fmt.Errorf("fetch metadata returned nil result for %s", a.ID)
 	}
 
 	// Apply fetched metadata to the artist

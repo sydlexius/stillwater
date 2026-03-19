@@ -93,15 +93,17 @@ func (e *Executor) ScrapeAll(ctx context.Context, mbid, name, scope string, prov
 	}
 
 	// Apply mergeable fields only from providers that were actually selected.
-	// Also populate AttemptedProviders so callers can update per-provider
-	// fetch timestamps (mirrors the legacy orchestrator behavior).
+	// Also populate AttemptedProviders for providers that responded without
+	// error, so callers can update per-provider fetch timestamps. Errored
+	// providers are excluded to avoid hiding outages behind misleading
+	// "attempted" markers.
 	mu.Lock()
 	for provName, pr := range cache {
-		result.AttemptedProviders = append(result.AttemptedProviders, provName)
-		if !selectedProviders[provName] {
+		if pr.err != nil {
 			continue
 		}
-		if pr.err != nil || pr.meta == nil {
+		result.AttemptedProviders = append(result.AttemptedProviders, provName)
+		if !selectedProviders[provName] || pr.meta == nil {
 			continue
 		}
 		applyMergeableFields(result, pr.meta, provName)
@@ -374,6 +376,9 @@ func applyMergeableFields(result *provider.FetchResult, meta *provider.ArtistMet
 	}
 	if meta.Disambiguation != "" && result.Metadata.Disambiguation == "" {
 		result.Metadata.Disambiguation = meta.Disambiguation
+	}
+	if meta.YearsActive != "" && result.Metadata.YearsActive == "" {
+		result.Metadata.YearsActive = meta.YearsActive
 	}
 
 	// Merge URLs
