@@ -275,7 +275,9 @@ const minNameSimilarity = 60
 func nameSimilarity(a, b string) int {
 	// Fast path: case-insensitive exact match before normalization.
 	// Handles punctuation-heavy names like "!!!" that normalize to empty.
-	if strings.EqualFold(strings.TrimSpace(a), strings.TrimSpace(b)) {
+	// Guard: whitespace-only ("   ") must not match empty ("") via TrimSpace.
+	ta, tb := strings.TrimSpace(a), strings.TrimSpace(b)
+	if strings.EqualFold(ta, tb) && (ta != "" || (a == "" && b == "")) {
 		return 100
 	}
 	a = normalizeName(a)

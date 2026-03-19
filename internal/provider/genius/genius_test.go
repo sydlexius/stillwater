@@ -354,10 +354,20 @@ func TestSearchArtistScoresReflectSimilarity(t *testing.T) {
 	if len(results) == 0 {
 		t.Fatal("expected at least one result")
 	}
-	// "Kim Kardashian" should have a low similarity score to "Adele".
-	if results[0].Score >= minNameSimilarity {
+	// Find Kim Kardashian by name (not by index) to avoid fixture-order dependency.
+	kimScore := -1
+	for _, result := range results {
+		if result.Name == "Kim Kardashian" {
+			kimScore = result.Score
+			break
+		}
+	}
+	if kimScore == -1 {
+		t.Fatal("expected Kim Kardashian in search results")
+	}
+	if kimScore >= minNameSimilarity {
 		t.Errorf("expected score below %d for Kim Kardashian vs Adele, got %d",
-			minNameSimilarity, results[0].Score)
+			minNameSimilarity, kimScore)
 	}
 }
 
@@ -381,6 +391,7 @@ func TestNameSimilarity(t *testing.T) {
 		{"Mot\u00f6rhead", "Motorhead", 80, 100}, // Unicode: single rune difference
 		{"", "Radiohead", 0, 0},
 		{"Radiohead", "", 0, 0},
+		{"   ", "", 0, 0}, // whitespace-only vs empty: must not score 100
 		{"", "", 100, 100},
 		// Boundary: score at and just below threshold.
 		{"abcde", "abcXX", 60, 60}, // exactly at threshold (accepted)
