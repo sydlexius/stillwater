@@ -11,7 +11,23 @@ reviews:
   path_filters:
     - "!**/*.csv"
     - "!**/*.env*"
+  profile: assertive
+  request_changes_workflow: true
+  high_level_summary: true
+  poem: false
   path_instructions:
+    - path: "**"
+      instructions: |
+        Go project using net/http stdlib routing, SQLite (modernc.org/sqlite, no CGO),
+        HTMX, and Templ templates. Key conventions:
+        - Error wrapping: fmt.Errorf("...: %w", err)
+        - Structured logging: slog only (never log package)
+        - API keys encrypted at rest (AES-256-GCM)
+        - All file writes use atomic pattern (tmp/bak/rename via internal/filesystem)
+        - net/http serves handlers concurrently -- any shared state access is concurrent
+        - Repository pattern for data access via interfaces
+        - HTMX responses use HX-Trigger headers for client-side state updates
+        - Pure Go SQLite (modernc.org/sqlite) -- no CGO, no C dependencies
     - path: "docs/plans/m*-plan.md"
       instructions: |
         Milestone plan files follow a standard structure: Goal, Acceptance Criteria,
@@ -24,9 +40,86 @@ reviews:
         Plan files may reference issues beyond the PR title scope. This is intentional
         when follow-up commits add related work. Do not flag scope mismatches between
         PR title and plan file content.
-  profile: assertive
-  request_changes_workflow: true
-  high_level_summary: true
-  poem: false
+    - path: "internal/scanner/**/*.go"
+      instructions: |
+        This package runs background goroutines. Check for:
+        - Shared state accessed without mutex protection
+        - Map reads/writes from multiple goroutines
+        - Variables captured by goroutine closures that are also read/written outside
+        - context.Background() where context.WithoutCancel(reqCtx) should be used
+        - Missing sync.WaitGroup or channel synchronization
+    - path: "internal/rule/**/*.go"
+      instructions: |
+        Rule engine code runs in background jobs and HTTP handlers concurrently. Check for:
+        - Shared state accessed without mutex protection
+        - Race conditions between fix-all background job and per-artist handler fixes
+        - context.Background() where context.WithoutCancel(reqCtx) should be used
+    - path: "internal/api/**/*.go"
+      instructions: |
+        HTTP handlers run concurrently (net/http). Check for:
+        - Package-level variables read or written without synchronization
+        - Shared caches, maps, or singletons accessed from handlers
+        - Race conditions between handler goroutines and background workers
+        - ALL error paths must emit warnings if the function's purpose is to surface failures
+        - Client-visible warnings must not contain raw error.Error() text
+        - Full errors go to slog; client gets a sanitized message
+        - When handler response fields change, verify internal/api/openapi.yaml matches
+    - path: "internal/api/openapi.yaml"
+      instructions: |
+        Cross-reference with handler code in internal/api/. Check:
+        - Every new response field in handlers has a matching schema entry
+        - Descriptions accurately reflect code behavior (not "empty when X" if code
+          also makes it non-empty when Y)
+        - $ref schemas match the actual response shape
+    - path: "**/*.go"
+      instructions: |
+        Check for null/empty edge cases:
+        - Functions returning (value, error) where value may be zero/nil on success
+        - Slice/map parameters that could be nil vs empty
+        - String fields that could be "" and need distinct handling from missing
+        - SQL NULL vs Go zero-value mismatches (use dbutil helpers)
+        - Pointer dereferences without nil checks after type assertions
+    - path: "internal/filesystem/**/*.go"
+      instructions: |
+        This code runs on Linux containers but may process paths from Windows
+        hosts (Docker volume mounts). Check for:
+        - Hardcoded "/" or "\\" path separators instead of filepath.Join
+        - filepath.Separator assumptions that break on cross-mount paths
+        - Case sensitivity assumptions (Windows paths are case-insensitive)
+    - path: "**/*_test.go"
+      instructions: |
+        Verify tests are thorough:
+        - Prefer table-driven tests; use t.Run subtests when case names
+          improve failure output or cases need isolation
+        - Error cases are tested, not just success
+        - Assertions check specific values, not just err == nil
+        - Mock servers/handlers check request bodies and headers
+        - Variables written inside httptest handler goroutines and read in the
+          test goroutine must be synchronized (data race)
+        - Engine/rule tests should assert relative properties rather than exact
+          counts that break when new rules are added
+  tools:
+    golangci-lint:
+      enabled: true
+      config_file: ".golangci.yml"
+    shellcheck:
+      enabled: true
+    hadolint:
+      enabled: true
+    actionlint:
+      enabled: true
+    yamllint:
+      enabled: true
+    gitleaks:
+      enabled: true
+knowledge_base:
+  opt_out: false
+  learnings:
+    scope: auto
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      - "CLAUDE.md"
+      - ".github/copilot-instructions.md"
 chat:
   auto_reply: true
