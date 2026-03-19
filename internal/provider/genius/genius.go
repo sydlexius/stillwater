@@ -298,8 +298,8 @@ func nameSimilarity(a, b string) int {
 	return 100 - (dist*100)/maxLen
 }
 
-// normalizeName lowercases, strips "the " prefix, and removes non-alphanumeric
-// characters for comparison purposes.
+// normalizeName lowercases, strips "the " prefix, and removes punctuation and
+// symbols (keeping letters, digits, and spaces) for comparison purposes.
 func normalizeName(s string) string {
 	s = strings.ToLower(strings.TrimSpace(s))
 	s = strings.TrimPrefix(s, "the ")
@@ -322,13 +322,13 @@ func levenshteinRunes(a, b []rune) int {
 	if len(b) == 0 {
 		return len(a)
 	}
-	// Use a single-row DP approach.
+	// Use a single-row DP approach with reused row buffers.
 	prev := make([]int, len(b)+1)
+	curr := make([]int, len(b)+1)
 	for j := range prev {
 		prev[j] = j
 	}
 	for i := 1; i <= len(a); i++ {
-		curr := make([]int, len(b)+1)
 		curr[0] = i
 		for j := 1; j <= len(b); j++ {
 			cost := 1
@@ -346,7 +346,7 @@ func levenshteinRunes(a, b []rune) int {
 				curr[j] = sub
 			}
 		}
-		prev = curr
+		prev, curr = curr, prev
 	}
 	return prev[len(b)]
 }
