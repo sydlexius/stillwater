@@ -16,17 +16,19 @@ func EvaluateAndPersistHealth(ctx context.Context, engine *Engine, svc *artist.S
 	}
 	result, err := engine.Evaluate(ctx, a)
 	if err != nil {
-		logger.Warn("evaluating health score", "artist", a.Name, "error", err)
+		logger.Warn("evaluating health score", "artist_id", a.ID, "artist", a.Name, "error", err)
 		return
 	}
 	a.HealthScore = result.HealthScore
 	if err := svc.Update(ctx, a); err != nil {
-		logger.Warn("persisting health score", "artist", a.Name, "error", err)
+		logger.Warn("persisting health score", "artist_id", a.ID, "artist", a.Name, "error", err)
 	}
 }
 
 // UpdateProviderFetchTimestamps records the current time as the last-fetched
-// timestamp for each provider that was attempted during a metadata fetch.
+// timestamp for each attempted provider. Only providers with a corresponding
+// fetched_at column (audiodb, discogs, wikidata, lastfm) are persisted;
+// unsupported providers are logged as warnings and skipped.
 func UpdateProviderFetchTimestamps(ctx context.Context, svc *artist.Service, artistID string, attempted []provider.ProviderName, logger *slog.Logger) {
 	for _, prov := range attempted {
 		if err := svc.UpdateProviderFetchedAt(ctx, artistID, string(prov)); err != nil {

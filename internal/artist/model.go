@@ -66,8 +66,17 @@ type Artist struct {
 
 // ProviderIDMap returns the artist's provider-specific IDs as a map keyed by
 // provider name, suitable for passing to orchestrator FetchMetadata/FetchImages.
+//
+// All four providers are always included in the map. For FetchMetadata, an
+// empty value causes fallback to MBID. For FetchImages, an empty value signals
+// "skip this provider" (it cannot accept MBIDs).
 func (a *Artist) ProviderIDMap() map[provider.ProviderName]string {
-	return provider.BuildProviderIDMap(a.AudioDBID, a.DiscogsID, a.DeezerID, a.SpotifyID)
+	return map[provider.ProviderName]string{
+		provider.NameAudioDB: a.AudioDBID,
+		provider.NameDiscogs: a.DiscogsID,
+		provider.NameDeezer:  a.DeezerID,
+		provider.NameSpotify: a.SpotifyID,
+	}
 }
 
 // BandMember represents a member of a band or group.
