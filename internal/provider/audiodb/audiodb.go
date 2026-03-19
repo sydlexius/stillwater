@@ -101,8 +101,10 @@ func (a *Adapter) SearchArtist(ctx context.Context, name string) ([]provider.Art
 	return results, nil
 }
 
-// GetArtist fetches full metadata for an artist by their MusicBrainz ID.
-func (a *Adapter) GetArtist(ctx context.Context, mbid string) (*provider.ArtistMetadata, error) {
+// GetArtist fetches full metadata for an artist. The id parameter can be either
+// a MusicBrainz UUID (routed to artist-mb.php) or an AudioDB numeric ID
+// (routed to artist.php for direct lookup).
+func (a *Adapter) GetArtist(ctx context.Context, id string) (*provider.ArtistMetadata, error) {
 	apiKey, err := a.getAPIKey(ctx)
 	if err != nil {
 		return nil, err
@@ -115,20 +117,26 @@ func (a *Adapter) GetArtist(ctx context.Context, mbid string) (*provider.ArtistM
 		}
 	}
 
-	reqURL := a.buildLookupURL(apiKey, mbid)
+	var reqURL string
+	if isNumericID(id) {
+		reqURL = a.buildDirectLookupURL(apiKey, id)
+	} else {
+		reqURL = a.buildLookupURL(apiKey, id)
+	}
 	artists, err := a.fetchArtists(ctx, reqURL, apiKey)
 	if err != nil {
 		return nil, err
 	}
 	if len(artists) == 0 {
-		return nil, &provider.ErrNotFound{Provider: provider.NameAudioDB, ID: mbid}
+		return nil, &provider.ErrNotFound{Provider: provider.NameAudioDB, ID: id}
 	}
 
 	return mapArtist(&artists[0]), nil
 }
 
-// GetImages fetches available images for an artist by their MusicBrainz ID.
-func (a *Adapter) GetImages(ctx context.Context, mbid string) ([]provider.ImageResult, error) {
+// GetImages fetches available images for an artist. Like GetArtist, the id
+// parameter can be a MusicBrainz UUID or an AudioDB numeric ID.
+func (a *Adapter) GetImages(ctx context.Context, id string) ([]provider.ImageResult, error) {
 	apiKey, err := a.getAPIKey(ctx)
 	if err != nil {
 		return nil, err
@@ -141,13 +149,18 @@ func (a *Adapter) GetImages(ctx context.Context, mbid string) ([]provider.ImageR
 		}
 	}
 
-	reqURL := a.buildLookupURL(apiKey, mbid)
+	var reqURL string
+	if isNumericID(id) {
+		reqURL = a.buildDirectLookupURL(apiKey, id)
+	} else {
+		reqURL = a.buildLookupURL(apiKey, id)
+	}
 	artists, err := a.fetchArtists(ctx, reqURL, apiKey)
 	if err != nil {
 		return nil, err
 	}
 	if len(artists) == 0 {
-		return nil, &provider.ErrNotFound{Provider: provider.NameAudioDB, ID: mbid}
+		return nil, &provider.ErrNotFound{Provider: provider.NameAudioDB, ID: id}
 	}
 
 	return mapImages(&artists[0]), nil
@@ -187,6 +200,15 @@ func (a *Adapter) buildSearchURL(apiKey, name string) string {
 		return fmt.Sprintf("%s/search/artist/%s", a.v2BaseURL, url.PathEscape(name))
 	}
 	return fmt.Sprintf("%s/%s/search.php?s=%s", a.v1BaseURL, apiKey, url.QueryEscape(name))
+}
+
+// buildDirectLookupURL constructs the direct numeric ID lookup endpoint URL.
+// AudioDB's artist.php endpoint accepts the AudioDB-specific numeric ID.
+func (a *Adapter) buildDirectLookupURL(apiKey, tadbID string) string {
+	if isPremiumKey(apiKey) {
+		return fmt.Sprintf("%s/lookup/artist/%s", a.v2BaseURL, url.PathEscape(tadbID))
+	}
+	return fmt.Sprintf("%s/%s/artist.php?i=%s", a.v1BaseURL, apiKey, url.QueryEscape(tadbID))
 }
 
 // buildLookupURL constructs the MBID lookup endpoint URL for the appropriate API tier.
@@ -248,7 +270,7 @@ func mapArtist(art *AudioDBArtist) *provider.ArtistMetadata {
 		Name:          art.Artist,
 		Gender:        strings.ToLower(art.Gender),
 		Country:       art.Country,
-		Biography:     art.BiographyEN,
+		Biography:     firstNonEmpty(art.Biography, art.BiographyEN),
 	}
 
 	if art.Genre != "" {
@@ -313,6 +335,31 @@ func mapImages(art *AudioDBArtist) []provider.ImageResult {
 	addImage(art.ArtistFanart4, provider.ImageFanart)
 
 	return images
+}
+
+// isNumericID reports whether s consists entirely of ASCII digits (an AudioDB
+// numeric ID). MusicBrainz UUIDs contain dashes and hex letters, so this
+// reliably distinguishes the two ID formats.
+func isNumericID(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// firstNonEmpty returns the first non-empty string from the arguments.
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 func splitAndTrim(s string) []string {

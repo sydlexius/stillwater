@@ -247,7 +247,7 @@ func TestIntegration_Orchestrator_AHa(t *testing.T) {
 
 	orch := provider.NewOrchestrator(registry, settings, logger)
 
-	result, err := orch.FetchMetadata(testCtx(t), aHaMBID, aHaName)
+	result, err := orch.FetchMetadata(testCtx(t), aHaMBID, aHaName, nil)
 	if err != nil {
 		t.Fatalf("FetchMetadata: %v", err)
 	}

@@ -201,7 +201,8 @@ func (e *BulkExecutor) fetchMetadata(ctx context.Context, a *artist.Artist, mode
 		return BulkItemSkipped, "already has MBID and biography"
 	}
 
-	result, err := e.orchestrator.FetchMetadata(ctx, a.MusicBrainzID, a.Name)
+	providerIDs := provider.BuildProviderIDMap(a.AudioDBID, a.DiscogsID, a.DeezerID, a.SpotifyID)
+	result, err := e.orchestrator.FetchMetadata(ctx, a.MusicBrainzID, a.Name, providerIDs)
 	if err != nil {
 		return BulkItemFailed, fmt.Sprintf("fetch failed: %v", err)
 	}
@@ -307,9 +308,7 @@ func (e *BulkExecutor) fetchImages(ctx context.Context, a *artist.Artist, mode s
 		return BulkItemSkipped, "all images present"
 	}
 
-	imgResult, err := e.orchestrator.FetchImages(ctx, a.MusicBrainzID, map[provider.ProviderName]string{
-		provider.NameDeezer: a.DeezerID,
-	})
+	imgResult, err := e.orchestrator.FetchImages(ctx, a.MusicBrainzID, provider.BuildProviderIDMap(a.AudioDBID, a.DiscogsID, a.DeezerID, a.SpotifyID))
 	if err != nil {
 		return BulkItemFailed, fmt.Sprintf("image fetch failed: %v", err)
 	}

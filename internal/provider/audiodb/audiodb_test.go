@@ -91,8 +91,14 @@ func newTestServerCapturing(t *testing.T, capturedKey *string, capturedPath *str
 			w.Write([]byte(`{"lookup":null}`))
 		case strings.Contains(r.URL.Path, "/lookup/artist_mb/"):
 			w.Write(loadFixture(t, "lookup_radiohead.json"))
+		case strings.Contains(r.URL.Path, "/lookup/artist/"):
+			// v2 direct numeric ID lookup
+			w.Write(loadFixture(t, "lookup_radiohead.json"))
 		// v1 paths
 		case strings.Contains(r.URL.Path, "/search.php"):
+			w.Write(loadFixture(t, "search_radiohead.json"))
+		case strings.Contains(r.URL.Path, "/artist.php"):
+			// v1 direct numeric ID lookup
 			w.Write(loadFixture(t, "search_radiohead.json"))
 		case strings.Contains(r.URL.Path, "/artist-mb.php"):
 			if r.URL.Query().Get("i") == "not-found" {
@@ -279,5 +285,95 @@ func TestRequiresAuth(t *testing.T) {
 
 	if a.RequiresAuth() {
 		t.Error("expected RequiresAuth to return false (free tier available)")
+	}
+}
+
+func TestNumericIDRoutesToDirectEndpoint(t *testing.T) {
+	limiter, settings := setupTest(t)
+	var capturedPath string
+	srv := newTestServerCapturing(t, nil, &capturedPath)
+	defer srv.Close()
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	a := NewWithBaseURL(limiter, settings, logger, srv.URL)
+
+	// Numeric ID should route to the direct lookup endpoint (artist.php / lookup/artist/)
+	_, err := a.GetArtist(context.Background(), "111239")
+	if err != nil {
+		t.Fatalf("GetArtist with numeric ID: %v", err)
+	}
+	if !strings.Contains(capturedPath, "/lookup/artist/") {
+		t.Errorf("numeric ID should route to /lookup/artist/, got %q", capturedPath)
+	}
+}
+
+func TestUUIDRoutesToMBIDEndpoint(t *testing.T) {
+	limiter, settings := setupTest(t)
+	var capturedPath string
+	srv := newTestServerCapturing(t, nil, &capturedPath)
+	defer srv.Close()
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	a := NewWithBaseURL(limiter, settings, logger, srv.URL)
+
+	// UUID should route to the MBID lookup endpoint (artist-mb.php / lookup/artist_mb/)
+	_, err := a.GetArtist(context.Background(), "a74b1b7f-71a5-4011-9441-d0b5e4122711")
+	if err != nil {
+		t.Fatalf("GetArtist with UUID: %v", err)
+	}
+	if !strings.Contains(capturedPath, "/lookup/artist_mb/") {
+		t.Errorf("UUID should route to /lookup/artist_mb/, got %q", capturedPath)
+	}
+}
+
+func TestNumericIDRoutesImages(t *testing.T) {
+	limiter, settings := setupTest(t)
+	var capturedPath string
+	srv := newTestServerCapturing(t, nil, &capturedPath)
+	defer srv.Close()
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	a := NewWithBaseURL(limiter, settings, logger, srv.URL)
+
+	_, err := a.GetImages(context.Background(), "111239")
+	if err != nil {
+		t.Fatalf("GetImages with numeric ID: %v", err)
+	}
+	if !strings.Contains(capturedPath, "/lookup/artist/") {
+		t.Errorf("numeric ID for images should route to /lookup/artist/, got %q", capturedPath)
+	}
+}
+
+func TestFreeKeyNumericIDRoutesToV1Direct(t *testing.T) {
+	limiter, settings := setupFreeTest(t)
+	var capturedPath string
+	srv := newTestServerCapturing(t, nil, &capturedPath)
+	defer srv.Close()
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	a := NewWithBaseURL(limiter, settings, logger, srv.URL)
+
+	_, err := a.GetArtist(context.Background(), "111239")
+	if err != nil {
+		t.Fatalf("GetArtist with numeric ID (free key): %v", err)
+	}
+	if !strings.Contains(capturedPath, "/artist.php") {
+		t.Errorf("numeric ID with free key should route to /artist.php, got %q", capturedPath)
+	}
+}
+
+func TestIsNumericID(t *testing.T) {
+	tests := []struct {
+		id   string
+		want bool
+	}{
+		{"111239", true},
+		{"0", true},
+		{"999999999", true},
+		{"a74b1b7f-71a5-4011-9441-d0b5e4122711", false},
+		{"abc123", false},
+		{"", false},
+		{"12 34", false},
+	}
+	for _, tt := range tests {
+		if got := isNumericID(tt.id); got != tt.want {
+			t.Errorf("isNumericID(%q) = %v, want %v", tt.id, got, tt.want)
+		}
 	}
 }

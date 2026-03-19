@@ -30,6 +30,7 @@ type AudioDBArtist struct {
 	Genre           string `json:"strGenre"`
 	Style           string `json:"strStyle"`
 	Mood            string `json:"strMood"`
+	Biography       string `json:"strBiography"`
 	BiographyEN     string `json:"strBiographyEN"`
 	Gender          string `json:"strGender"`
 	Country         string `json:"strCountry"`

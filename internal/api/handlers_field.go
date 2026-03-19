@@ -226,11 +226,16 @@ func (r *Router) handleFieldProviders(w http.ResponseWriter, req *http.Request) 
 		return
 	}
 
+	providerIDs := provider.BuildProviderIDMap(a.AudioDBID, a.DiscogsID, a.DeezerID, a.SpotifyID)
 	results, err := r.orchestrator.FetchFieldFromProviders(
-		req.Context(), a.MusicBrainzID, a.Name, field,
+		req.Context(), a.MusicBrainzID, a.Name, field, providerIDs,
 	)
 	if err != nil {
-		writeError(w, req, http.StatusInternalServerError, "failed to fetch from providers: "+err.Error())
+		r.logger.Error("fetching field from providers",
+			slog.String("artist_id", artistID),
+			slog.String("field", field),
+			slog.String("error", err.Error()))
+		writeError(w, req, http.StatusInternalServerError, "failed to fetch from providers")
 		return
 	}
 

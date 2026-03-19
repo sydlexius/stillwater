@@ -27,7 +27,7 @@ type FetchResult struct {
 // ScraperExecutor is implemented by the scraper.Executor to avoid circular imports.
 // When set on the Orchestrator, FetchMetadata delegates to it.
 type ScraperExecutor interface {
-	ScrapeAll(ctx context.Context, mbid, name, scope string) (*FetchResult, error)
+	ScrapeAll(ctx context.Context, mbid, name, scope string, providerIDs map[ProviderName]string) (*FetchResult, error)
 }
 
 // Orchestrator queries providers in priority order and merges results.
@@ -54,11 +54,14 @@ func (o *Orchestrator) SetExecutor(e ScraperExecutor) {
 
 // FetchMetadata queries all providers in priority order and merges the results.
 // It uses the artist's MBID when available, falling back to name-based search.
+// providerIDs supplies provider-specific IDs (AudioDB numeric ID, Discogs ID, etc.)
+// so that each provider receives its own stored ID instead of the MBID. A nil map
+// preserves backward-compatible MBID-first behavior.
 // When a ScraperExecutor is configured, delegates to it for scraper-config-driven
 // per-field fetching with fallback chains.
-func (o *Orchestrator) FetchMetadata(ctx context.Context, mbid string, name string) (*FetchResult, error) {
+func (o *Orchestrator) FetchMetadata(ctx context.Context, mbid, name string, providerIDs map[ProviderName]string) (*FetchResult, error) {
 	if o.executor != nil {
-		return o.executor.ScrapeAll(ctx, mbid, name, "global")
+		return o.executor.ScrapeAll(ctx, mbid, name, "global", providerIDs)
 	}
 
 	priorities, err := o.settings.GetPriorities(ctx)
@@ -86,7 +89,7 @@ func (o *Orchestrator) FetchMetadata(ctx context.Context, mbid string, name stri
 			if !available[provName] {
 				continue
 			}
-			pr := o.getProviderResult(ctx, provName, mbid, name, cache, &mu)
+			pr := o.getProviderResult(ctx, provName, mbid, name, providerIDs, cache, &mu)
 			if pr.err != nil {
 				continue
 			}
@@ -192,7 +195,7 @@ type providerResult struct {
 	err    error
 }
 
-func (o *Orchestrator) getProviderResult(ctx context.Context, name ProviderName, mbid string, artistName string, cache map[ProviderName]*providerResult, mu *sync.Mutex) *providerResult {
+func (o *Orchestrator) getProviderResult(ctx context.Context, name ProviderName, mbid string, artistName string, providerIDs map[ProviderName]string, cache map[ProviderName]*providerResult, mu *sync.Mutex) *providerResult {
 	mu.Lock()
 	if pr, ok := cache[name]; ok {
 		mu.Unlock()
@@ -211,19 +214,24 @@ func (o *Orchestrator) getProviderResult(ctx context.Context, name ProviderName,
 
 	pr := &providerResult{}
 
-	// Try to get artist metadata using MBID first, then name
+	// Lookup precedence: provider-specific ID > MBID > artist name.
+	// Providers like AudioDB, Discogs, and Deezer have their own numeric IDs
+	// that are more reliable than passing an MBID they may not recognize.
+	usedProviderID := false
 	id := mbid
-	if id == "" {
+	if pid, ok := providerIDs[name]; ok && pid != "" {
+		id = pid
+		usedProviderID = true
+	} else if id == "" {
 		id = artistName
 	}
 
 	if id != "" {
 		meta, err := p.GetArtist(ctx, id)
-		// If we used an MBID and the provider returned not-found, retry with
-		// the artist name -- but only for providers that support name lookups
-		// (e.g. Genius, Last.fm). Other providers only accept provider-specific
-		// IDs, so retrying with a name would waste an HTTP call.
-		if err != nil && mbid != "" && artistName != "" {
+		// If we used an MBID (not a provider-specific ID) and the provider
+		// returned not-found, retry with the artist name -- but only for
+		// providers that support name lookups (e.g. Genius, Last.fm).
+		if err != nil && !usedProviderID && mbid != "" && artistName != "" {
 			var notFound *ErrNotFound
 			if errors.As(err, &notFound) {
 				if nlp, ok := p.(NameLookupProvider); ok && nlp.SupportsNameLookup() {
@@ -244,10 +252,18 @@ func (o *Orchestrator) getProviderResult(ctx context.Context, name ProviderName,
 		}
 	}
 
-	// Also fetch images if available
-	if mbid != "" {
-		images, err := p.GetImages(ctx, mbid)
-		if err == nil {
+	// Fetch images using the same precedence: provider ID > MBID.
+	imgID := mbid
+	if pid, ok := providerIDs[name]; ok && pid != "" {
+		imgID = pid
+	}
+	if imgID != "" {
+		images, err := p.GetImages(ctx, imgID)
+		if err != nil {
+			o.logger.Debug("provider GetImages failed",
+				slog.String("provider", string(name)),
+				slog.String("error", err.Error()))
+		} else {
 			pr.images = images
 		}
 	}
@@ -371,7 +387,7 @@ type FieldProviderResult struct {
 // FetchFieldFromProviders queries all configured providers for a given field
 // and returns each provider's result without merging. This enables a
 // side-by-side comparison UI where the user picks which provider's value to use.
-func (o *Orchestrator) FetchFieldFromProviders(ctx context.Context, mbid, name, field string) ([]FieldProviderResult, error) {
+func (o *Orchestrator) FetchFieldFromProviders(ctx context.Context, mbid, name, field string, providerIDs map[ProviderName]string) ([]FieldProviderResult, error) {
 	priorities, err := o.settings.GetPriorities(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("loading priorities: %w", err)
@@ -403,7 +419,7 @@ func (o *Orchestrator) FetchFieldFromProviders(ctx context.Context, mbid, name, 
 	var results []FieldProviderResult
 
 	for _, provName := range providers {
-		pr := o.getProviderResult(ctx, provName, mbid, name, cache, &mu)
+		pr := o.getProviderResult(ctx, provName, mbid, name, providerIDs, cache, &mu)
 		fpr := FieldProviderResult{
 			Provider: provName,
 		}
@@ -611,6 +627,27 @@ func extractProviderIDsFromURLs(meta *ArtistMetadata) {
 			}
 		}
 	}
+}
+
+// BuildProviderIDMap constructs a provider-specific ID map from individual ID
+// strings. This is used by callers that have an artist record and need to pass
+// stored provider IDs into FetchMetadata or FetchImages. Takes strings (not
+// *artist.Artist) to avoid a circular import between provider and artist.
+func BuildProviderIDMap(audioDBID, discogsID, deezerID, spotifyID string) map[ProviderName]string {
+	m := make(map[ProviderName]string, 4)
+	if audioDBID != "" {
+		m[NameAudioDB] = audioDBID
+	}
+	if discogsID != "" {
+		m[NameDiscogs] = discogsID
+	}
+	if deezerID != "" {
+		m[NameDeezer] = deezerID
+	}
+	if spotifyID != "" {
+		m[NameSpotify] = spotifyID
+	}
+	return m
 }
 
 // isSpotifyID reports whether s is a valid 22-character base62 Spotify ID.
