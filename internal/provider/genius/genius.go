@@ -291,7 +291,7 @@ func nameSimilarity(a, b string) int {
 	if len(rb) > maxLen {
 		maxLen = len(rb)
 	}
-	dist := levenshtein(a, b)
+	dist := levenshteinRunes(ra, rb)
 	if dist >= maxLen {
 		return 0
 	}
@@ -312,28 +312,27 @@ func normalizeName(s string) string {
 	return b.String()
 }
 
-// levenshtein computes the Levenshtein edit distance between two strings.
-// It operates on runes so that multi-byte Unicode characters (accented letters,
-// CJK, Cyrillic) are counted as single characters.
-func levenshtein(a, b string) int {
-	ra, rb := []rune(a), []rune(b)
-	if len(ra) == 0 {
-		return len(rb)
+// levenshteinRunes computes the Levenshtein edit distance between two rune
+// slices. Operating on runes ensures multi-byte Unicode characters (accented
+// letters, CJK, Cyrillic) are counted as single characters.
+func levenshteinRunes(a, b []rune) int {
+	if len(a) == 0 {
+		return len(b)
 	}
-	if len(rb) == 0 {
-		return len(ra)
+	if len(b) == 0 {
+		return len(a)
 	}
 	// Use a single-row DP approach.
-	prev := make([]int, len(rb)+1)
+	prev := make([]int, len(b)+1)
 	for j := range prev {
 		prev[j] = j
 	}
-	for i := 1; i <= len(ra); i++ {
-		curr := make([]int, len(rb)+1)
+	for i := 1; i <= len(a); i++ {
+		curr := make([]int, len(b)+1)
 		curr[0] = i
-		for j := 1; j <= len(rb); j++ {
+		for j := 1; j <= len(b); j++ {
 			cost := 1
-			if ra[i-1] == rb[j-1] {
+			if a[i-1] == b[j-1] {
 				cost = 0
 			}
 			ins := curr[j-1] + 1
@@ -349,7 +348,7 @@ func levenshtein(a, b string) int {
 		}
 		prev = curr
 	}
-	return prev[len(rb)]
+	return prev[len(b)]
 }
 
 // isUUID returns true if s looks like a UUID (8-4-4-4-12 hex format).

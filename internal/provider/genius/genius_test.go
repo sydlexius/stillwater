@@ -410,7 +410,7 @@ func TestNormalizeName(t *testing.T) {
 	}
 }
 
-func TestLevenshtein(t *testing.T) {
+func TestLevenshteinRunes(t *testing.T) {
 	tests := []struct {
 		a, b string
 		want int
@@ -424,8 +424,8 @@ func TestLevenshtein(t *testing.T) {
 		{"mot\u00f6rhead", "motorhead", 1}, // single rune difference, not 2 bytes
 	}
 	for _, tt := range tests {
-		if got := levenshtein(tt.a, tt.b); got != tt.want {
-			t.Errorf("levenshtein(%q, %q) = %d, want %d", tt.a, tt.b, got, tt.want)
+		if got := levenshteinRunes([]rune(tt.a), []rune(tt.b)); got != tt.want {
+			t.Errorf("levenshteinRunes(%q, %q) = %d, want %d", tt.a, tt.b, got, tt.want)
 		}
 	}
 }
