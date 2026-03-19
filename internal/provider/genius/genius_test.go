@@ -299,8 +299,11 @@ func TestGetArtistByNameRejectsMismatch(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when top result is a name mismatch")
 	}
-	if _, ok := err.(*provider.ErrNotFound); !ok {
+	nf, ok := err.(*provider.ErrNotFound)
+	if !ok {
 		t.Errorf("expected ErrNotFound, got %T: %v", err, err)
+	} else if nf.ID != "Adele" {
+		t.Errorf("expected ErrNotFound.ID to be %q, got %q", "Adele", nf.ID)
 	}
 }
 
