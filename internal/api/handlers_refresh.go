@@ -156,27 +156,35 @@ func (r *Router) handleRefreshLink(w http.ResponseWriter, req *http.Request) {
 	}
 
 	// Re-identify is an explicit "this artist is someone else" action, so
-	// update the display name and sort name from provider data.
+	// update the display name and sort name from provider data. The artist
+	// is only mutated after a successful DB update to avoid the UI or NFO
+	// showing a name that was never persisted.
 	if result.Metadata != nil {
-		nameChanged := false
-		if result.Metadata.Name != "" && result.Metadata.Name != a.Name {
-			a.Name = result.Metadata.Name
-			nameChanged = true
-		}
-		if result.Metadata.SortName != "" && result.Metadata.SortName != a.SortName {
-			a.SortName = result.Metadata.SortName
-			nameChanged = true
-		}
+		newName := result.Metadata.Name
+		newSort := result.Metadata.SortName
+		nameChanged := (newName != "" && newName != a.Name) ||
+			(newSort != "" && newSort != a.SortName)
+
 		if nameChanged {
+			origName, origSort := a.Name, a.SortName
+			if newName != "" {
+				a.Name = newName
+			}
+			if newSort != "" {
+				a.SortName = newSort
+			}
 			if err := r.artistService.Update(req.Context(), a); err != nil {
 				r.logger.Error("updating artist name after re-identify",
 					"artist_id", a.ID,
 					"error", err)
+				a.Name, a.SortName = origName, origSort
+			} else {
+				// Re-write the NFO so it reflects the updated name.
+				// The NFO written by executeRefresh still has the old
+				// name because the name update happens after the
+				// refresh completes.
+				r.writeBackNFO(req.Context(), a)
 			}
-			// Re-write the NFO so it reflects the updated name. The NFO
-			// written by executeRefresh still has the old name because
-			// the name update happens after the refresh completes.
-			r.writeBackNFO(req.Context(), a)
 		}
 	}
 
@@ -242,7 +250,8 @@ func (r *Router) executeRefresh(req *http.Request, a *artist.Artist) (*provider.
 // Only fields that were attempted (at least one provider was successfully queried)
 // are overwritten -- including clearing fields that providers returned empty.
 // Fields that were not attempted (e.g., provider was down) are left untouched.
-// After applying provider data, type-inappropriate date fields are cleared.
+// After applying provider data, type-inappropriate date fields are cleared
+// unconditionally via filterDatesByArtistType (regardless of AttemptedFields).
 func applyRefreshResult(a *artist.Artist, result *provider.FetchResult) {
 	if result.Metadata == nil {
 		return
@@ -329,7 +338,7 @@ func applyRefreshResult(a *artist.Artist, result *provider.FetchResult) {
 // group/orchestra/choir artists should not have born/died.
 func filterDatesByArtistType(a *artist.Artist) {
 	switch a.Type {
-	case "solo", "character":
+	case "solo", "person", "character":
 		a.Formed = ""
 		a.Disbanded = ""
 	case "group", "orchestra", "choir":

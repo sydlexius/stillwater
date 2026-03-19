@@ -92,9 +92,12 @@ func (e *Executor) ScrapeAll(ctx context.Context, mbid, name, scope string, prov
 		}
 	}
 
-	// Apply mergeable fields only from providers that were actually selected
+	// Apply mergeable fields only from providers that were actually selected.
+	// Also populate AttemptedProviders so callers can update per-provider
+	// fetch timestamps (mirrors the legacy orchestrator behavior).
 	mu.Lock()
 	for provName, pr := range cache {
+		result.AttemptedProviders = append(result.AttemptedProviders, provName)
 		if !selectedProviders[provName] {
 			continue
 		}

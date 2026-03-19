@@ -454,6 +454,7 @@ func TestFilterDatesByArtistType(t *testing.T) {
 		wantDied, wantDisbanded string
 	}{
 		{"solo", "solo", "1988", "", "2050", ""},
+		{"person", "person", "1988", "", "2050", ""},
 		{"character", "character", "1988", "", "2050", ""},
 		{"group", "group", "", "1982", "", "2010"},
 		{"orchestra", "orchestra", "", "1982", "", "2010"},
