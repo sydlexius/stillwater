@@ -82,6 +82,12 @@ func (r *Router) handleFixAll(w http.ResponseWriter, req *http.Request) {
 	}
 	r.fixAllMu.Unlock()
 
+	if r.pipeline == nil {
+		r.logger.Error("fix-all: pipeline not configured")
+		writeError(w, req, http.StatusServiceUnavailable, "rule pipeline not configured")
+		return
+	}
+
 	// Parse optional ID filter. Return 400 for malformed JSON (but allow
 	// empty body / EOF to mean "fix all").
 	var body struct {
@@ -125,12 +131,6 @@ func (r *Router) handleFixAll(w http.ResponseWriter, req *http.Request) {
 			"message": "no fixable violations",
 			"total":   0,
 		})
-		return
-	}
-
-	if r.pipeline == nil {
-		r.logger.Error("fix-all: pipeline not configured")
-		writeError(w, req, http.StatusServiceUnavailable, "rule pipeline not configured")
 		return
 	}
 

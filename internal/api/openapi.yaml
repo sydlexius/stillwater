@@ -706,6 +706,20 @@ paths:
               schema:
                 type: object
                 properties:
+                  artist_id:
+                    type: string
+                  artist_name:
+                    type: string
+                  violations:
+                    type: array
+                    items:
+                      type: object
+                  rules_passed:
+                    type: integer
+                  rules_total:
+                    type: integer
+                  health_score:
+                    type: number
                   warning:
                     type: string
                     description: Present when the health score was computed but failed to persist.
@@ -2022,6 +2036,18 @@ paths:
                 properties:
                   error:
                     type: string
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Rule pipeline not configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /rules/run-all/status:
     get:
@@ -3562,6 +3588,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "503":
+          description: Rule pipeline not configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /notifications/fix-all:
     post:
@@ -3631,6 +3663,12 @@ paths:
                     type: string
         "500":
           description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Rule pipeline not configured
           content:
             application/json:
               schema:
