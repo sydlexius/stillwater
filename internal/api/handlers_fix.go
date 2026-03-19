@@ -32,6 +32,12 @@ func (r *Router) handleFixViolation(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	if r.pipeline == nil {
+		r.logger.Error("fix-violation: pipeline not configured", "id", id)
+		writeError(w, req, http.StatusServiceUnavailable, "rule pipeline not configured")
+		return
+	}
+
 	fr, err := r.pipeline.FixViolation(req.Context(), id)
 	if err != nil {
 		r.logger.Error("fix violation failed", "id", id, "error", err)
@@ -119,6 +125,12 @@ func (r *Router) handleFixAll(w http.ResponseWriter, req *http.Request) {
 			"message": "no fixable violations",
 			"total":   0,
 		})
+		return
+	}
+
+	if r.pipeline == nil {
+		r.logger.Error("fix-all: pipeline not configured")
+		writeError(w, req, http.StatusServiceUnavailable, "rule pipeline not configured")
 		return
 	}
 

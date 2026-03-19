@@ -2,8 +2,15 @@ package rule
 
 import (
 	"encoding/json"
+	"errors"
 	"time"
 )
+
+// ErrNotFound is returned when a rule record does not exist.
+var ErrNotFound = errors.New("rule not found")
+
+// ErrJobNotFound is returned when a bulk job record does not exist.
+var ErrJobNotFound = errors.New("bulk job not found")
 
 // Automation modes for rules
 const (

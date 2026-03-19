@@ -705,6 +705,22 @@ paths:
             application/json:
               schema:
                 type: object
+                properties:
+                  warning:
+                    type: string
+                    description: Present when the health score was computed but failed to persist.
+        "404":
+          description: Artist not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /artists/{id}/aliases:
     get:
@@ -1932,6 +1948,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "404":
+          description: Rule not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /rules/{id}/run:
     post:
@@ -1951,6 +1979,24 @@ paths:
             application/json:
               schema:
                 type: object
+        "404":
+          description: Rule not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Rule pipeline not configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /rules/run-all:
     post:
@@ -2101,6 +2147,12 @@ paths:
                     type: array
                     items:
                       type: object
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /bulk/jobs/{id}:
     get:
@@ -2127,6 +2179,18 @@ paths:
                     type: array
                     items:
                       type: object
+        "404":
+          description: Job not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /bulk/jobs/{id}/cancel:
     post:
