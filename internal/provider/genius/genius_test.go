@@ -370,6 +370,7 @@ func TestNameSimilarity(t *testing.T) {
 		{"Radiohead", "Radiohead", 100, 100},
 		{"radiohead", "Radiohead", 100, 100},
 		{"The Beatles", "Beatles", 100, 100},
+		{"The The", "The", 0, 59}, // "The The" is a real band, must not match "The"
 		{"Adele", "Kim Kardashian", 0, 30},
 		{"Guns N' Roses", "Guns N Roses", 80, 100},
 		{"AC/DC", "ACDC", 100, 100},
@@ -399,6 +400,7 @@ func TestNormalizeName(t *testing.T) {
 	}{
 		{"Radiohead", "radiohead"},
 		{"The Beatles", "beatles"},
+		{"The The", "the the"}, // real band: "the " not stripped when remainder is "the"
 		{"  Adele  ", "adele"},
 		{"AC/DC", "acdc"},
 		{"Guns N' Roses", "guns n roses"},
