@@ -18,7 +18,8 @@ templates, and Tailwind CSS. Structured logging via slog.
 
 - Prefer `fmt.Errorf("...: %w", err)` for error wrapping
 - Prefer `slog` over the `log` package
-- Prefer table-driven tests with `t.Run` subtests
+- Prefer table-driven tests; use `t.Run` subtests when case names improve
+  failure output or cases need isolation
 - Prefer `context.Context` as the first parameter
 - All exported functions and types require doc comments
 

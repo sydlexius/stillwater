@@ -34,3 +34,8 @@ HTTP handlers run concurrently (net/http). Check for:
 - Shared caches, maps, or singletons accessed from handlers
 - Goroutines using `context.Background()` where `context.WithoutCancel(reqCtx)`
   should be used (gosec G118)
+
+## Status code changes
+
+When an endpoint's HTTP status code changes, verify that `scripts/smoke.sh` and
+any integration tests are updated to expect the new code.
