@@ -302,18 +302,22 @@ func nameSimilarity(a, b string) int {
 // symbols (keeping letters, digits, and spaces) for comparison purposes.
 func normalizeName(s string) string {
 	s = strings.ToLower(strings.TrimSpace(s))
-	// Strip leading "the " only when the remainder is a distinct name, not
-	// another article (e.g., "The The" is a real band, not "The" + article).
-	if after, found := strings.CutPrefix(s, "the "); found && after != "the" {
-		s = after
-	}
 	var b strings.Builder
 	for _, r := range s {
 		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == ' ' {
 			b.WriteRune(r)
 		}
 	}
-	return b.String()
+	s = strings.TrimSpace(b.String())
+	// Strip leading "the " only when the cleaned remainder is a distinct name,
+	// not another article (e.g., "The The" is a real band, not "The" + article).
+	if after, found := strings.CutPrefix(s, "the "); found {
+		after = strings.TrimSpace(after)
+		if after != "" && after != "the" {
+			s = after
+		}
+	}
+	return s
 }
 
 // levenshteinRunes computes the Levenshtein edit distance between two rune

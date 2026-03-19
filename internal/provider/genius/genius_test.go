@@ -312,10 +312,10 @@ func TestGetArtistByNameAcceptsCorrectMatch(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		switch {
-		case r.URL.Path == "/search":
+		switch r.URL.Path {
+		case "/search":
 			_, _ = w.Write(loadFixture(t, "search_adele_correct.json"))
-		case strings.HasPrefix(r.URL.Path, "/artists/"):
+		case "/artists/2137": // exact Adele ID from fixture
 			_, _ = w.Write(loadFixture(t, "artist_adele.json"))
 		default:
 			w.WriteHeader(http.StatusBadRequest)
@@ -370,7 +370,9 @@ func TestNameSimilarity(t *testing.T) {
 		{"Radiohead", "Radiohead", 100, 100},
 		{"radiohead", "Radiohead", 100, 100},
 		{"The Beatles", "Beatles", 100, 100},
-		{"The The", "The", 0, 59}, // "The The" is a real band, must not match "The"
+		{"The The", "The", 0, 59},    // "The The" is a real band, must not match "The"
+		{"The The!", "The", 0, 59},   // punctuated variant, same protection
+		{"!!! !!!", "@@@ @@@", 0, 0}, // whitespace-only after punctuation removal
 		{"Adele", "Kim Kardashian", 0, 30},
 		{"Guns N' Roses", "Guns N Roses", 80, 100},
 		{"AC/DC", "ACDC", 100, 100},
@@ -400,7 +402,9 @@ func TestNormalizeName(t *testing.T) {
 	}{
 		{"Radiohead", "radiohead"},
 		{"The Beatles", "beatles"},
-		{"The The", "the the"}, // real band: "the " not stripped when remainder is "the"
+		{"The The", "the the"},  // real band: "the " not stripped when remainder is "the"
+		{"The The!", "the the"}, // punctuated variant: same protection after cleanup
+		{"!!! !!!", ""},         // whitespace-only after punctuation removal -> empty
 		{"  Adele  ", "adele"},
 		{"AC/DC", "acdc"},
 		{"Guns N' Roses", "guns n roses"},
