@@ -421,7 +421,7 @@ func (r *Router) handleProviderFetch(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	result, err := r.orchestrator.FetchMetadata(req.Context(), body.MBID, body.Name)
+	result, err := r.orchestrator.FetchMetadata(req.Context(), body.MBID, body.Name, nil)
 	if err != nil {
 		r.logger.Error("provider fetch", "error", err)
 		writeError(w, req, http.StatusInternalServerError, "fetch failed")

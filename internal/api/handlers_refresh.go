@@ -124,11 +124,13 @@ func (r *Router) handleRefreshLink(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	// Store the selected ID(s)
-	if body.MBID != "" && a.MusicBrainzID == "" {
+	// Store the selected ID(s). This handler is only invoked from the
+	// disambiguation UI where the user explicitly chose an identity, so
+	// we overwrite unconditionally (supports re-identification).
+	if body.MBID != "" {
 		a.MusicBrainzID = body.MBID
 	}
-	if body.DiscogsID != "" && a.DiscogsID == "" {
+	if body.DiscogsID != "" {
 		a.DiscogsID = body.DiscogsID
 	}
 
@@ -136,6 +138,14 @@ func (r *Router) handleRefreshLink(w http.ResponseWriter, req *http.Request) {
 		writeError(w, req, http.StatusInternalServerError, "failed to store provider ID")
 		return
 	}
+
+	r.logger.Debug("linked provider IDs after disambiguation",
+		slog.String("artist_id", a.ID),
+		slog.String("artist_name", a.Name),
+		slog.String("mbid", a.MusicBrainzID),
+		slog.String("discogs_id", a.DiscogsID),
+		slog.String("source", body.Source),
+	)
 
 	// Now run the full refresh with the linked MBID
 	sources, err := r.executeRefresh(req, a)
@@ -158,7 +168,8 @@ func (r *Router) handleRefreshLink(w http.ResponseWriter, req *http.Request) {
 
 // executeRefresh runs the orchestrator's FetchMetadata and applies results to the artist.
 func (r *Router) executeRefresh(req *http.Request, a *artist.Artist) ([]provider.FieldSource, error) {
-	result, err := r.orchestrator.FetchMetadata(req.Context(), a.MusicBrainzID, a.Name)
+	providerIDs := provider.BuildProviderIDMap(a.AudioDBID, a.DiscogsID, a.DeezerID, a.SpotifyID)
+	result, err := r.orchestrator.FetchMetadata(req.Context(), a.MusicBrainzID, a.Name, providerIDs)
 	if err != nil {
 		r.logger.Error("metadata refresh failed",
 			"artist_id", a.ID,
@@ -258,6 +269,9 @@ func applyRefreshResult(a *artist.Artist, result *provider.FetchResult) {
 	if m.DeezerID != "" && a.DeezerID == "" {
 		a.DeezerID = m.DeezerID
 	}
+	if m.SpotifyID != "" && a.SpotifyID == "" {
+		a.SpotifyID = m.SpotifyID
+	}
 
 	// Update metadata sources
 	if a.MetadataSources == nil {
@@ -351,6 +365,7 @@ func (r *Router) handleReidentify(w http.ResponseWriter, req *http.Request) {
 	a.DiscogsID = ""
 	a.WikidataID = ""
 	a.DeezerID = ""
+	a.SpotifyID = ""
 	a.AudioDBIDFetchedAt = nil
 	a.DiscogsIDFetchedAt = nil
 	a.WikidataIDFetchedAt = nil

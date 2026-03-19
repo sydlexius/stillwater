@@ -158,7 +158,8 @@ func (f *MetadataFixer) fixMBID(ctx context.Context, a *artist.Artist) (*FixResu
 }
 
 func (f *MetadataFixer) fixBio(ctx context.Context, a *artist.Artist) (*FixResult, error) {
-	result, err := f.orchestrator.FetchMetadata(ctx, a.MusicBrainzID, a.Name)
+	providerIDs := provider.BuildProviderIDMap(a.AudioDBID, a.DiscogsID, a.DeezerID, a.SpotifyID)
+	result, err := f.orchestrator.FetchMetadata(ctx, a.MusicBrainzID, a.Name, providerIDs)
 	if err != nil {
 		return nil, fmt.Errorf("fetching metadata: %w", err)
 	}
@@ -201,17 +202,22 @@ func NewImageFixer(orchestrator imageProvider, platformService *platform.Service
 	}
 }
 
-// fetchImages returns provider images for the given MBID, using a per-instance
-// cache to avoid duplicate provider calls when an artist has multiple violations.
-func (f *ImageFixer) fetchImages(ctx context.Context, mbid, deezerID string) (*provider.FetchResult, error) {
-	cacheKey := mbid + ":" + deezerID
+// fetchImages returns provider images for the given MBID and provider IDs,
+// using a per-instance cache to avoid duplicate provider calls when an artist
+// has multiple violations.
+func (f *ImageFixer) fetchImages(ctx context.Context, mbid string, providerIDs map[provider.ProviderName]string) (*provider.FetchResult, error) {
+	cacheKey := fmt.Sprintf("%s|audiodb=%s|discogs=%s|deezer=%s|spotify=%s",
+		mbid,
+		providerIDs[provider.NameAudioDB],
+		providerIDs[provider.NameDiscogs],
+		providerIDs[provider.NameDeezer],
+		providerIDs[provider.NameSpotify],
+	)
 	if entry, ok := f.imageCache.Load(cacheKey); ok {
 		e := entry.(*imageCacheEntry)
 		return e.result, e.err
 	}
-	result, err := f.orchestrator.FetchImages(ctx, mbid, map[provider.ProviderName]string{
-		provider.NameDeezer: deezerID,
-	})
+	result, err := f.orchestrator.FetchImages(ctx, mbid, providerIDs)
 	f.imageCache.Store(cacheKey, &imageCacheEntry{result: result, err: err})
 	return result, err
 }
@@ -247,7 +253,8 @@ func (f *ImageFixer) Fix(ctx context.Context, a *artist.Artist, v *Violation) (*
 		return nil, fmt.Errorf("no image type for rule %s", v.RuleID)
 	}
 
-	result, err := f.fetchImages(ctx, a.MusicBrainzID, a.DeezerID)
+	providerIDs := provider.BuildProviderIDMap(a.AudioDBID, a.DiscogsID, a.DeezerID, a.SpotifyID)
+	result, err := f.fetchImages(ctx, a.MusicBrainzID, providerIDs)
 	if err != nil {
 		return nil, fmt.Errorf("fetching images: %w", err)
 	}

@@ -103,7 +103,7 @@ func TestOrchestratorFallback(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	orch := NewOrchestrator(registry, settings, logger)
 
-	result, err := orch.FetchMetadata(context.Background(), "mbid-123", "Radiohead")
+	result, err := orch.FetchMetadata(context.Background(), "mbid-123", "Radiohead", nil)
 	if err != nil {
 		t.Fatalf("FetchMetadata: %v", err)
 	}
@@ -153,7 +153,7 @@ func TestOrchestratorProviderError(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	orch := NewOrchestrator(registry, settings, logger)
 
-	result, err := orch.FetchMetadata(context.Background(), "mbid-123", "Radiohead")
+	result, err := orch.FetchMetadata(context.Background(), "mbid-123", "Radiohead", nil)
 	if err != nil {
 		t.Fatalf("FetchMetadata: %v", err)
 	}
@@ -233,7 +233,7 @@ func TestOrchestratorCustomPriority(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	orch := NewOrchestrator(registry, settings, logger)
 
-	result, err := orch.FetchMetadata(context.Background(), "mbid-123", "Radiohead")
+	result, err := orch.FetchMetadata(context.Background(), "mbid-123", "Radiohead", nil)
 	if err != nil {
 		t.Fatalf("FetchMetadata: %v", err)
 	}
@@ -289,7 +289,7 @@ func TestOrchestratorMBIDFallbackToName(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	orch := NewOrchestrator(registry, settings, logger)
 
-	result, err := orch.FetchMetadata(context.Background(), "mbid-uuid-1234", "Radiohead")
+	result, err := orch.FetchMetadata(context.Background(), "mbid-uuid-1234", "Radiohead", nil)
 	if err != nil {
 		t.Fatalf("FetchMetadata: %v", err)
 	}
@@ -333,7 +333,7 @@ func TestOrchestratorMBIDNoRetryWithoutNameLookup(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	orch := NewOrchestrator(registry, settings, logger)
 
-	_, _ = orch.FetchMetadata(context.Background(), "mbid-uuid-1234", "Radiohead")
+	_, _ = orch.FetchMetadata(context.Background(), "mbid-uuid-1234", "Radiohead", nil)
 
 	// Discogs should only be called once (MBID attempt). No name retry.
 	if discogsCalls != 1 {
@@ -348,6 +348,133 @@ func findSource(sources []FieldSource, field string) *FieldSource {
 		}
 	}
 	return nil
+}
+
+func TestOrchestratorProviderIDPrecedence(t *testing.T) {
+	registry, settings := setupOrchestratorTest(t)
+
+	// AudioDB requires no key (free tier). Register it with a mock that records
+	// which ID it receives.
+	var audioDBReceivedID string
+	registry.Register(&mockProvider{
+		name: NameAudioDB,
+		getArtFn: func(_ context.Context, id string) (*ArtistMetadata, error) {
+			audioDBReceivedID = id
+			return &ArtistMetadata{
+				Name:      "Adele",
+				AudioDBID: "111493",
+				Biography: "Correct biography from AudioDB",
+			}, nil
+		},
+	})
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	orch := NewOrchestrator(registry, settings, logger)
+
+	// Pass a wrong MBID but the correct AudioDB numeric ID in providerIDs.
+	// The orchestrator should prefer the provider-specific ID.
+	providerIDs := map[ProviderName]string{
+		NameAudioDB: "111493",
+	}
+	result, err := orch.FetchMetadata(context.Background(), "wrong-mbid-123", "Adele", providerIDs)
+	if err != nil {
+		t.Fatalf("FetchMetadata: %v", err)
+	}
+
+	// AudioDB should have received its own numeric ID, not the wrong MBID
+	if audioDBReceivedID != "111493" {
+		t.Errorf("AudioDB received ID %q, want %q", audioDBReceivedID, "111493")
+	}
+
+	if result.Metadata.Biography != "Correct biography from AudioDB" {
+		t.Errorf("expected biography from AudioDB, got: %s", result.Metadata.Biography)
+	}
+}
+
+func TestOrchestratorNilProviderIDsPreservesBehavior(t *testing.T) {
+	registry, settings := setupOrchestratorTest(t)
+
+	// With nil providerIDs, the orchestrator should use MBID as before.
+	var receivedID string
+	registry.Register(&mockProvider{
+		name: NameMusicBrainz,
+		getArtFn: func(_ context.Context, id string) (*ArtistMetadata, error) {
+			receivedID = id
+			return &ArtistMetadata{
+				Name:      "Radiohead",
+				Biography: "From MB",
+			}, nil
+		},
+	})
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	orch := NewOrchestrator(registry, settings, logger)
+
+	_, err := orch.FetchMetadata(context.Background(), "mbid-123", "Radiohead", nil)
+	if err != nil {
+		t.Fatalf("FetchMetadata: %v", err)
+	}
+
+	if receivedID != "mbid-123" {
+		t.Errorf("provider received ID %q, want %q (MBID)", receivedID, "mbid-123")
+	}
+}
+
+func TestOrchestratorEmptyProviderIDFallsBackToMBID(t *testing.T) {
+	registry, settings := setupOrchestratorTest(t)
+
+	var receivedID string
+	registry.Register(&mockProvider{
+		name: NameAudioDB,
+		getArtFn: func(_ context.Context, id string) (*ArtistMetadata, error) {
+			receivedID = id
+			return &ArtistMetadata{Name: "Test"}, nil
+		},
+	})
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	orch := NewOrchestrator(registry, settings, logger)
+
+	// Provider ID entry exists but is empty -- should fall back to MBID.
+	providerIDs := map[ProviderName]string{
+		NameAudioDB: "",
+	}
+	_, err := orch.FetchMetadata(context.Background(), "mbid-456", "Test", providerIDs)
+	if err != nil {
+		t.Fatalf("FetchMetadata: %v", err)
+	}
+
+	if receivedID != "mbid-456" {
+		t.Errorf("provider received ID %q, want %q (MBID fallback)", receivedID, "mbid-456")
+	}
+}
+
+func TestBuildProviderIDMap(t *testing.T) {
+	m := BuildProviderIDMap("111493", "24941", "3106", "4Z8W4fKeB5YxbusRsdQVPb")
+	if m[NameAudioDB] != "111493" {
+		t.Errorf("AudioDB = %q, want 111493", m[NameAudioDB])
+	}
+	if m[NameDiscogs] != "24941" {
+		t.Errorf("Discogs = %q, want 24941", m[NameDiscogs])
+	}
+	if m[NameDeezer] != "3106" {
+		t.Errorf("Deezer = %q, want 3106", m[NameDeezer])
+	}
+	if m[NameSpotify] != "4Z8W4fKeB5YxbusRsdQVPb" {
+		t.Errorf("Spotify = %q, want 4Z8W4fKeB5YxbusRsdQVPb", m[NameSpotify])
+	}
+
+	// Empty strings are included (FetchImages uses empty value as "skip" signal).
+	m2 := BuildProviderIDMap("", "24941", "", "")
+	if m2[NameAudioDB] != "" {
+		t.Errorf("AudioDB = %q, want empty", m2[NameAudioDB])
+	}
+	if m2[NameDiscogs] != "24941" {
+		t.Errorf("Discogs = %q, want 24941", m2[NameDiscogs])
+	}
+	if len(m2) != 4 {
+		t.Errorf("map length = %d, want 4 (all providers always included)", len(m2))
+	}
 }
 
 func TestExtractProviderIDsFromURLs(t *testing.T) {

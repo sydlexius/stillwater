@@ -39,7 +39,7 @@ func NewExecutor(service *Service, registry *provider.Registry, settings *provid
 // ScrapeAll scrapes all enabled fields using the scraper configuration for the
 // given scope. It returns a merged FetchResult compatible with the
 // provider.Orchestrator output.
-func (e *Executor) ScrapeAll(ctx context.Context, mbid, name, scope string) (*provider.FetchResult, error) {
+func (e *Executor) ScrapeAll(ctx context.Context, mbid, name, scope string, providerIDs map[provider.ProviderName]string) (*provider.FetchResult, error) {
 	cfg, err := e.service.GetConfig(ctx, scope)
 	if err != nil {
 		return nil, fmt.Errorf("loading scraper config: %w", err)
@@ -71,7 +71,7 @@ func (e *Executor) ScrapeAll(ctx context.Context, mbid, name, scope string) (*pr
 			continue
 		}
 
-		fr := e.scrapeField(ctx, mbid, name, field, *chain, available, cache, &mu, result)
+		fr := e.scrapeField(ctx, mbid, name, field, *chain, available, providerIDs, cache, &mu, result)
 		if fr.Err != nil {
 			result.Errors = append(result.Errors,
 				fmt.Sprintf("%s: %s", fr.Field, fr.Err.Error()))
@@ -111,13 +111,14 @@ func (e *Executor) scrapeField(
 	field FieldConfig,
 	chain FallbackChain,
 	available map[provider.ProviderName]bool,
+	providerIDs map[provider.ProviderName]string,
 	cache map[provider.ProviderName]*providerResult,
 	mu *sync.Mutex,
 	result *provider.FetchResult,
 ) FieldResult {
 	// Try primary provider first (if configured)
 	if available[field.Primary] {
-		pr := e.getProviderResult(ctx, field.Primary, mbid, name, cache, mu)
+		pr := e.getProviderResult(ctx, field.Primary, mbid, name, providerIDs, cache, mu)
 		if pr.err == nil && applyFieldValue(field.Field, pr, result) {
 			return FieldResult{Field: field.Field, Provider: field.Primary}
 		}
@@ -129,7 +130,7 @@ func (e *Executor) scrapeField(
 			continue
 		}
 
-		pr := e.getProviderResult(ctx, provName, mbid, name, cache, mu)
+		pr := e.getProviderResult(ctx, provName, mbid, name, providerIDs, cache, mu)
 		if pr.err != nil {
 			continue
 		}
@@ -158,6 +159,7 @@ func (e *Executor) getProviderResult(
 	ctx context.Context,
 	name provider.ProviderName,
 	mbid, artistName string,
+	providerIDs map[provider.ProviderName]string,
 	cache map[provider.ProviderName]*providerResult,
 	mu *sync.Mutex,
 ) *providerResult {
@@ -179,19 +181,22 @@ func (e *Executor) getProviderResult(
 
 	pr := &providerResult{}
 
-	// Use MBID first, fall back to name
+	// Lookup precedence: provider-specific ID > MBID > artist name.
+	usedProviderID := false
 	id := mbid
-	if id == "" {
+	if pid, ok := providerIDs[name]; ok && pid != "" {
+		id = pid
+		usedProviderID = true
+	} else if id == "" {
 		id = artistName
 	}
 
 	if id != "" {
 		meta, err := p.GetArtist(ctx, id)
-		// If we used an MBID and the provider returned not-found, retry with
-		// the artist name -- but only for providers that support name lookups
-		// (e.g. Genius, Last.fm). Other providers only accept provider-specific
-		// IDs, so retrying with a name would waste an HTTP call.
-		if err != nil && mbid != "" && artistName != "" {
+		// If we used an MBID (not a provider-specific ID) and the provider
+		// returned not-found, retry with the artist name -- but only for
+		// providers that support name lookups (e.g. Genius, Last.fm).
+		if err != nil && !usedProviderID && mbid != "" && artistName != "" {
 			var notFound *provider.ErrNotFound
 			if errors.As(err, &notFound) {
 				if nlp, ok := p.(provider.NameLookupProvider); ok && nlp.SupportsNameLookup() {
@@ -212,10 +217,18 @@ func (e *Executor) getProviderResult(
 		}
 	}
 
-	// Also fetch images if MBID is available
-	if mbid != "" {
-		images, err := p.GetImages(ctx, mbid)
-		if err == nil {
+	// Fetch images using the same precedence: provider ID > MBID.
+	imgID := mbid
+	if pid, ok := providerIDs[name]; ok && pid != "" {
+		imgID = pid
+	}
+	if imgID != "" {
+		images, err := p.GetImages(ctx, imgID)
+		if err != nil {
+			e.logger.Debug("provider GetImages failed",
+				slog.String("provider", string(name)),
+				slog.String("error", err.Error()))
+		} else {
 			pr.images = images
 		}
 	}
@@ -323,6 +336,12 @@ func applyMergeableFields(result *provider.FetchResult, meta *provider.ArtistMet
 	}
 	if meta.WikidataID != "" && result.Metadata.WikidataID == "" {
 		result.Metadata.WikidataID = meta.WikidataID
+	}
+	if meta.DeezerID != "" && result.Metadata.DeezerID == "" {
+		result.Metadata.DeezerID = meta.DeezerID
+	}
+	if meta.SpotifyID != "" && result.Metadata.SpotifyID == "" {
+		result.Metadata.SpotifyID = meta.SpotifyID
 	}
 	if meta.Name != "" && result.Metadata.Name == "" {
 		result.Metadata.Name = meta.Name
