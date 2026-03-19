@@ -23,6 +23,7 @@ type FieldResult struct {
 	Field       FieldName             `json:"field"`
 	Provider    provider.ProviderName `json:"provider"`
 	WasFallback bool                  `json:"was_fallback"`
+	Queried     bool                  `json:"queried"`
 	Err         error                 `json:"-"`
 }
 
@@ -78,6 +79,10 @@ func (e *Executor) ScrapeAll(ctx context.Context, mbid, name, scope string, prov
 			continue
 		}
 
+		if fr.Queried {
+			result.AttemptedFields = append(result.AttemptedFields, string(fr.Field))
+		}
+
 		if fr.Provider != "" {
 			selectedProviders[fr.Provider] = true
 			result.Sources = append(result.Sources, provider.FieldSource{
@@ -104,7 +109,9 @@ func (e *Executor) ScrapeAll(ctx context.Context, mbid, name, scope string, prov
 }
 
 // scrapeField tries the primary provider for a field, then walks the fallback chain.
-// Matched field data is written into the merged result.
+// Matched field data is written into the merged result. Queried is set to true if at
+// least one provider was successfully reached (no error), even if none returned data
+// for this field.
 func (e *Executor) scrapeField(
 	ctx context.Context,
 	mbid, name string,
@@ -116,11 +123,16 @@ func (e *Executor) scrapeField(
 	mu *sync.Mutex,
 	result *provider.FetchResult,
 ) FieldResult {
+	queried := false
+
 	// Try primary provider first (if configured)
 	if available[field.Primary] {
 		pr := e.getProviderResult(ctx, field.Primary, mbid, name, providerIDs, cache, mu)
-		if pr.err == nil && applyFieldValue(field.Field, pr, result) {
-			return FieldResult{Field: field.Field, Provider: field.Primary}
+		if pr.err == nil {
+			queried = true
+			if applyFieldValue(field.Field, pr, result) {
+				return FieldResult{Field: field.Field, Provider: field.Primary, Queried: true}
+			}
 		}
 	}
 
@@ -135,16 +147,18 @@ func (e *Executor) scrapeField(
 			continue
 		}
 
+		queried = true
 		if applyFieldValue(field.Field, pr, result) {
 			return FieldResult{
 				Field:       field.Field,
 				Provider:    provName,
 				WasFallback: true,
+				Queried:     true,
 			}
 		}
 	}
 
-	return FieldResult{Field: field.Field}
+	return FieldResult{Field: field.Field, Queried: queried}
 }
 
 // providerResult caches a single provider's API response.
