@@ -1,0 +1,32 @@
+{
+  "response": {
+    "hits": [
+      {
+        "type": "song",
+        "result": {
+          "id": 999999,
+          "title": "Break My Soul (feat. Adele) [Remix]",
+          "url": "https://genius.com/Kim-kardashian-break-my-soul-lyrics",
+          "primary_artist": {
+            "id": 55555,
+            "name": "Kim Kardashian",
+            "url": "https://genius.com/artists/Kim-kardashian"
+          }
+        }
+      },
+      {
+        "type": "song",
+        "result": {
+          "id": 999998,
+          "title": "Some Other Song",
+          "url": "https://genius.com/Another-artist-some-song-lyrics",
+          "primary_artist": {
+            "id": 77777,
+            "name": "DJ Adele Tribute",
+            "url": "https://genius.com/artists/Dj-adele-tribute"
+          }
+        }
+      }
+    ]
+  }
+}

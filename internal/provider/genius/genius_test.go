@@ -59,14 +59,14 @@ func newTestServer(t *testing.T) *httptest.Server {
 		path := r.URL.Path
 		switch {
 		case path == "/search":
-			w.Write(loadFixture(t, "search_radiohead.json"))
+			_, _ = w.Write(loadFixture(t, "search_radiohead.json"))
 		case strings.HasPrefix(path, "/artists/"):
 			id := strings.TrimPrefix(path, "/artists/")
 			if id == "0" || id == "nonexistent" {
 				w.WriteHeader(http.StatusNotFound)
 				return
 			}
-			w.Write(loadFixture(t, "artist_radiohead.json"))
+			_, _ = w.Write(loadFixture(t, "artist_radiohead.json"))
 		default:
 			w.WriteHeader(http.StatusBadRequest)
 		}
@@ -98,6 +98,10 @@ func TestSearchArtist(t *testing.T) {
 	}
 	if results[0].Source != "genius" {
 		t.Errorf("expected source genius, got %s", results[0].Source)
+	}
+	// Exact match should score 100.
+	if results[0].Score != 100 {
+		t.Errorf("expected score 100 for exact match, got %d", results[0].Score)
 	}
 }
 
@@ -166,7 +170,7 @@ func TestGetArtistNotFound(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		// Return empty search results so getArtistByName finds nothing.
 		if r.URL.Path == "/search" {
-			w.Write([]byte(`{"response":{"hits":[]}}`))
+			_, _ = w.Write([]byte(`{"response":{"hits":[]}}`))
 			return
 		}
 		w.WriteHeader(http.StatusNotFound)
@@ -268,6 +272,180 @@ func TestIsUUID(t *testing.T) {
 	for _, tt := range tests {
 		if got := isUUID(tt.input); got != tt.want {
 			t.Errorf("isUUID(%q) = %v, want %v", tt.input, got, tt.want)
+		}
+	}
+}
+
+func TestGetArtistByNameRejectsMismatch(t *testing.T) {
+	limiter, settings := setupTest(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if auth := r.Header.Get("Authorization"); auth != "Bearer test-token" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/search" {
+			// Return Kim Kardashian when searching for "Adele".
+			_, _ = w.Write(loadFixture(t, "search_adele_mismatch.json"))
+			return
+		}
+		w.WriteHeader(http.StatusBadRequest)
+	}))
+	defer srv.Close()
+	a := NewWithBaseURL(limiter, settings, testLogger(), srv.URL)
+
+	// Searching "Adele" should not return Kim Kardashian's data.
+	_, err := a.GetArtist(context.Background(), "Adele")
+	if err == nil {
+		t.Fatal("expected error when top result is a name mismatch")
+	}
+	nf, ok := err.(*provider.ErrNotFound)
+	if !ok {
+		t.Errorf("expected ErrNotFound, got %T: %v", err, err)
+	} else if nf.ID != "Adele" {
+		t.Errorf("expected ErrNotFound.ID to be %q, got %q", "Adele", nf.ID)
+	}
+}
+
+func TestGetArtistByNameAcceptsCorrectMatch(t *testing.T) {
+	limiter, settings := setupTest(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if auth := r.Header.Get("Authorization"); auth != "Bearer test-token" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/search":
+			_, _ = w.Write(loadFixture(t, "search_adele_correct.json"))
+		case "/artists/2137": // exact Adele ID from fixture
+			_, _ = w.Write(loadFixture(t, "artist_adele.json"))
+		default:
+			w.WriteHeader(http.StatusBadRequest)
+		}
+	}))
+	defer srv.Close()
+	a := NewWithBaseURL(limiter, settings, testLogger(), srv.URL)
+
+	meta, err := a.GetArtist(context.Background(), "Adele")
+	if err != nil {
+		t.Fatalf("GetArtist: %v", err)
+	}
+	if meta.Name != "Adele" {
+		t.Errorf("expected Adele, got %s", meta.Name)
+	}
+}
+
+func TestSearchArtistScoresReflectSimilarity(t *testing.T) {
+	limiter, settings := setupTest(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if auth := r.Header.Get("Authorization"); auth != "Bearer test-token" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		// Return mismatched results for an "Adele" search.
+		_, _ = w.Write(loadFixture(t, "search_adele_mismatch.json"))
+	}))
+	defer srv.Close()
+	a := NewWithBaseURL(limiter, settings, testLogger(), srv.URL)
+
+	results, err := a.SearchArtist(context.Background(), "Adele")
+	if err != nil {
+		t.Fatalf("SearchArtist: %v", err)
+	}
+	if len(results) == 0 {
+		t.Fatal("expected at least one result")
+	}
+	// Find Kim Kardashian by name (not by index) to avoid fixture-order dependency.
+	kimScore := -1
+	for _, result := range results {
+		if result.Name == "Kim Kardashian" {
+			kimScore = result.Score
+			break
+		}
+	}
+	if kimScore == -1 {
+		t.Fatal("expected Kim Kardashian in search results")
+	}
+	if kimScore >= minNameSimilarity {
+		t.Errorf("expected score below %d for Kim Kardashian vs Adele, got %d",
+			minNameSimilarity, kimScore)
+	}
+}
+
+func TestNameSimilarity(t *testing.T) {
+	tests := []struct {
+		a, b string
+		min  int
+		max  int
+	}{
+		{"Radiohead", "Radiohead", 100, 100},
+		{"radiohead", "Radiohead", 100, 100},
+		{"The Beatles", "Beatles", 100, 100},
+		{"The The", "The", 0, 59},    // "The The" is a real band, must not match "The"
+		{"The The!", "The", 0, 59},   // punctuated variant, same protection
+		{"!!! !!!", "@@@ @@@", 0, 0}, // whitespace-only after punctuation removal
+		{"Adele", "Kim Kardashian", 0, 30},
+		{"Guns N' Roses", "Guns N Roses", 80, 100},
+		{"AC/DC", "ACDC", 100, 100},
+		{"!!!", "!!!", 100, 100},                 // punctuation-only: pre-normalization exact match
+		{"!!!", "???", 0, 0},                     // different punctuation-only names: both normalize to empty
+		{"Mot\u00f6rhead", "Motorhead", 80, 100}, // Unicode: single rune difference
+		{"", "Radiohead", 0, 0},
+		{"Radiohead", "", 0, 0},
+		{"   ", "", 0, 0}, // whitespace-only vs empty: must not score 100
+		{"", "", 100, 100},
+		// Boundary: score at and just below threshold.
+		{"abcde", "abcXX", 60, 60}, // exactly at threshold (accepted)
+		{"abcde", "aXXXX", 0, 59},  // below threshold (rejected)
+	}
+	for _, tt := range tests {
+		score := nameSimilarity(tt.a, tt.b)
+		if score < tt.min || score > tt.max {
+			t.Errorf("nameSimilarity(%q, %q) = %d, want [%d, %d]",
+				tt.a, tt.b, score, tt.min, tt.max)
+		}
+	}
+}
+
+func TestNormalizeName(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"Radiohead", "radiohead"},
+		{"The Beatles", "beatles"},
+		{"The The", "the the"},  // real band: "the " not stripped when remainder is "the"
+		{"The The!", "the the"}, // punctuated variant: same protection after cleanup
+		{"!!! !!!", ""},         // whitespace-only after punctuation removal -> empty
+		{"  Adele  ", "adele"},
+		{"AC/DC", "acdc"},
+		{"Guns N' Roses", "guns n roses"},
+	}
+	for _, tt := range tests {
+		if got := normalizeName(tt.input); got != tt.want {
+			t.Errorf("normalizeName(%q) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}
+
+func TestLevenshteinRunes(t *testing.T) {
+	tests := []struct {
+		a, b string
+		want int
+	}{
+		{"", "", 0},
+		{"abc", "", 3},
+		{"", "abc", 3},
+		{"kitten", "sitting", 3},
+		{"radiohead", "radiohead", 0},
+		{"adele", "kim kardashian", 12},
+		{"mot\u00f6rhead", "motorhead", 1}, // single rune difference, not 2 bytes
+	}
+	for _, tt := range tests {
+		if got := levenshteinRunes([]rune(tt.a), []rune(tt.b)); got != tt.want {
+			t.Errorf("levenshteinRunes(%q, %q) = %d, want %d", tt.a, tt.b, got, tt.want)
 		}
 	}
 }

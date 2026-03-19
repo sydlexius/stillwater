@@ -1,0 +1,13 @@
+{
+  "response": {
+    "artist": {
+      "id": 2137,
+      "name": "Adele",
+      "url": "https://genius.com/artists/Adele",
+      "description": {
+        "plain": "Adele Laurie Blue Adkins MBE is an English singer-songwriter. After graduating in arts from the BRIT School in 2006, Adele signed a record deal with XL Recordings."
+      },
+      "alternate_names": ["Adele Adkins"]
+    }
+  }
+}

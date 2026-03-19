@@ -1,0 +1,32 @@
+{
+  "response": {
+    "hits": [
+      {
+        "type": "song",
+        "result": {
+          "id": 200001,
+          "title": "Hello",
+          "url": "https://genius.com/Adele-hello-lyrics",
+          "primary_artist": {
+            "id": 2137,
+            "name": "Adele",
+            "url": "https://genius.com/artists/Adele"
+          }
+        }
+      },
+      {
+        "type": "song",
+        "result": {
+          "id": 200002,
+          "title": "Rolling in the Deep",
+          "url": "https://genius.com/Adele-rolling-in-the-deep-lyrics",
+          "primary_artist": {
+            "id": 2137,
+            "name": "Adele",
+            "url": "https://genius.com/artists/Adele"
+          }
+        }
+      }
+    ]
+  }
+}
