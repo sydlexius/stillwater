@@ -342,7 +342,7 @@ func TestSearchArtistScoresReflectSimilarity(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		// Return mismatched results for an "Adele" search.
-		w.Write(loadFixture(t, "search_adele_mismatch.json"))
+		_, _ = w.Write(loadFixture(t, "search_adele_mismatch.json"))
 	}))
 	defer srv.Close()
 	a := NewWithBaseURL(limiter, settings, testLogger(), srv.URL)
@@ -374,6 +374,7 @@ func TestNameSimilarity(t *testing.T) {
 		{"Guns N' Roses", "Guns N Roses", 80, 100},
 		{"AC/DC", "ACDC", 100, 100},
 		{"!!!", "!!!", 100, 100},                 // punctuation-only: pre-normalization exact match
+		{"!!!", "???", 0, 0},                     // different punctuation-only names: both normalize to empty
 		{"Mot\u00f6rhead", "Motorhead", 80, 100}, // Unicode: single rune difference
 		{"", "Radiohead", 0, 0},
 		{"Radiohead", "", 0, 0},

@@ -178,10 +178,7 @@ func (a *Adapter) getArtistByName(ctx context.Context, name string) (*provider.A
 			slog.Int("similarity", best.Score),
 			slog.Int("threshold", minNameSimilarity),
 		)
-		return nil, &provider.ErrNotFound{
-			Provider: provider.NameGenius,
-			ID:       fmt.Sprintf("%s (best match %q scored %d/%d)", name, best.Name, best.Score, minNameSimilarity),
-		}
+		return nil, &provider.ErrNotFound{Provider: provider.NameGenius, ID: name}
 	}
 	return a.getArtistByID(ctx, best.ProviderID)
 }
@@ -283,11 +280,11 @@ func nameSimilarity(a, b string) int {
 	}
 	a = normalizeName(a)
 	b = normalizeName(b)
-	if a == b {
-		return 100
-	}
 	if a == "" || b == "" {
 		return 0
+	}
+	if a == b {
+		return 100
 	}
 	ra, rb := []rune(a), []rune(b)
 	maxLen := len(ra)
