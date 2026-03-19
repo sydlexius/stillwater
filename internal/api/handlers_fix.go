@@ -71,6 +71,17 @@ func (r *Router) handleFixAll(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	// Parse optional ID filter before claiming the slot so a slow/stalled
+	// client cannot hold the singleton open. Return 400 for malformed JSON
+	// (but allow empty body / EOF to mean "fix all").
+	var body struct {
+		IDs []string `json:"ids"`
+	}
+	if err := json.NewDecoder(req.Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
+		return
+	}
+
 	// Atomic check-and-set: reject if already running, otherwise claim the slot
 	// immediately so concurrent requests cannot both pass the check.
 	progress := &FixAllProgress{Status: "running"}
@@ -99,17 +110,6 @@ func (r *Router) handleFixAll(w http.ResponseWriter, req *http.Request) {
 			r.fixAllProgress = nil
 		}
 		r.fixAllMu.Unlock()
-	}
-
-	// Parse optional ID filter. Return 400 for malformed JSON (but allow
-	// empty body / EOF to mean "fix all").
-	var body struct {
-		IDs []string `json:"ids"`
-	}
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
-		releaseProgress()
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
-		return
 	}
 
 	violations, err := r.ruleService.ListViolationsFiltered(req.Context(), rule.ViolationListParams{
