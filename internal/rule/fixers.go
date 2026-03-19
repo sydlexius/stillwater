@@ -206,7 +206,13 @@ func NewImageFixer(orchestrator imageProvider, platformService *platform.Service
 // using a per-instance cache to avoid duplicate provider calls when an artist
 // has multiple violations.
 func (f *ImageFixer) fetchImages(ctx context.Context, mbid string, providerIDs map[provider.ProviderName]string) (*provider.FetchResult, error) {
-	cacheKey := mbid
+	cacheKey := fmt.Sprintf("%s|audiodb=%s|discogs=%s|deezer=%s|spotify=%s",
+		mbid,
+		providerIDs[provider.NameAudioDB],
+		providerIDs[provider.NameDiscogs],
+		providerIDs[provider.NameDeezer],
+		providerIDs[provider.NameSpotify],
+	)
 	if entry, ok := f.imageCache.Load(cacheKey); ok {
 		e := entry.(*imageCacheEntry)
 		return e.result, e.err

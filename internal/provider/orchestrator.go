@@ -633,21 +633,19 @@ func extractProviderIDsFromURLs(meta *ArtistMetadata) {
 // strings. This is used by callers that have an artist record and need to pass
 // stored provider IDs into FetchMetadata or FetchImages. Takes strings (not
 // *artist.Artist) to avoid a circular import between provider and artist.
+//
+// All four providers are always included in the map. For FetchMetadata's
+// getProviderResult, an empty value causes fallback to MBID. For FetchImages,
+// an empty value signals "skip this provider" (it cannot accept MBIDs).
+// Omitting the key entirely would cause FetchImages to pass the MBID to
+// providers that only accept their own numeric ID format.
 func BuildProviderIDMap(audioDBID, discogsID, deezerID, spotifyID string) map[ProviderName]string {
-	m := make(map[ProviderName]string, 4)
-	if audioDBID != "" {
-		m[NameAudioDB] = audioDBID
+	return map[ProviderName]string{
+		NameAudioDB: audioDBID,
+		NameDiscogs: discogsID,
+		NameDeezer:  deezerID,
+		NameSpotify: spotifyID,
 	}
-	if discogsID != "" {
-		m[NameDiscogs] = discogsID
-	}
-	if deezerID != "" {
-		m[NameDeezer] = deezerID
-	}
-	if spotifyID != "" {
-		m[NameSpotify] = spotifyID
-	}
-	return m
 }
 
 // isSpotifyID reports whether s is a valid 22-character base62 Spotify ID.

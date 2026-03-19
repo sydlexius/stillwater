@@ -464,16 +464,16 @@ func TestBuildProviderIDMap(t *testing.T) {
 		t.Errorf("Spotify = %q, want 4Z8W4fKeB5YxbusRsdQVPb", m[NameSpotify])
 	}
 
-	// Empty strings should be excluded from the map.
+	// Empty strings are included (FetchImages uses empty value as "skip" signal).
 	m2 := BuildProviderIDMap("", "24941", "", "")
-	if _, ok := m2[NameAudioDB]; ok {
-		t.Error("empty AudioDB ID should not be in map")
+	if m2[NameAudioDB] != "" {
+		t.Errorf("AudioDB = %q, want empty", m2[NameAudioDB])
 	}
 	if m2[NameDiscogs] != "24941" {
 		t.Errorf("Discogs = %q, want 24941", m2[NameDiscogs])
 	}
-	if len(m2) != 1 {
-		t.Errorf("map length = %d, want 1 (only non-empty entries)", len(m2))
+	if len(m2) != 4 {
+		t.Errorf("map length = %d, want 4 (all providers always included)", len(m2))
 	}
 }
 
