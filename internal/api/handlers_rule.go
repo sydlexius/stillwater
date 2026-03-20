@@ -6,6 +6,7 @@ import (
 	"html"
 	"io"
 	"net/http"
+	"runtime/debug"
 	"strconv"
 	"time"
 
@@ -185,7 +186,7 @@ func (r *Router) handleRunRule(w http.ResponseWriter, req *http.Request) {
 				r.ruleRun.Error = "rule evaluation failed unexpectedly"
 				r.ruleRun.CompletedAt = time.Now().UTC()
 				r.ruleRunMu.Unlock()
-				r.logger.Error("panic in single-rule run", "rule_id", ruleID, "recover", rv)
+				r.logger.Error("panic in single-rule run", "rule_id", ruleID, "recover", rv, "stack", string(debug.Stack()))
 			}
 		}()
 
@@ -197,7 +198,7 @@ func (r *Router) handleRunRule(w http.ResponseWriter, req *http.Request) {
 
 		if err != nil {
 			r.ruleRun.Status = "failed"
-			r.ruleRun.Error = "rule evaluation failed"
+			r.ruleRun.Error = "rule " + ruleID + " evaluation failed"
 			r.ruleRunMu.Unlock()
 			r.logger.Error("running rule", "rule_id", ruleID, "error", err)
 			return
@@ -335,15 +336,17 @@ func (r *Router) handleRunAllRules(w http.ResponseWriter, req *http.Request) {
 				r.ruleRun.Error = "rule evaluation failed unexpectedly"
 				r.ruleRun.CompletedAt = time.Now().UTC()
 				r.ruleRunMu.Unlock()
-				r.logger.Error("panic in rule run", "recover", rv)
+				r.logger.Error("panic in rule run", "recover", rv, "stack", string(debug.Stack()))
 			}
 		}()
 
 		result, err := r.pipeline.RunAll(ctx)
 
 		// Compute violation count outside the mutex to avoid blocking status polls.
-		violationsFound := result.ViolationsFound
+		// Check err first -- RunAll returns nil result on error paths.
+		var violationsFound int
 		if err == nil {
+			violationsFound = result.ViolationsFound
 			counts, dbErr := r.ruleService.CountActiveViolationsBySeverity(ctx)
 			if dbErr != nil {
 				r.logger.Warn("querying active violations for toast count", "error", dbErr)

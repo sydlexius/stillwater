@@ -3821,7 +3821,8 @@ templ ruleToggleScript() {
 								s.fixes_succeeded + ' fixed';
 							showRuleToast(msg, false);
 						} else if (s.status === 'failed') {
-							showRuleToast('Rule evaluation failed.', true);
+							var errMsg = s.error ? 'Rule evaluation failed: ' + s.error : 'Rule evaluation failed.';
+							showRuleToast(errMsg, true);
 						} else if (s.status === 'idle') {
 							showRuleToast('Rule evaluation state lost (server may have restarted).', true);
 						}
