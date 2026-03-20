@@ -132,7 +132,9 @@ func (r *Router) handleEvaluateArtist(w http.ResponseWriter, req *http.Request) 
 	}{result, warning})
 }
 
-// handleRunRule runs a single rule against all artists and attempts to fix violations.
+// handleRunRule starts an async evaluation of a single rule against all artists.
+// Returns 202 Accepted immediately. Poll GET /api/v1/rules/run-all/status for progress
+// (shared status slot with run-all; 409 if either is already running).
 // POST /api/v1/rules/{id}/run
 func (r *Router) handleRunRule(w http.ResponseWriter, req *http.Request) {
 	ruleID, ok := RequirePathParam(w, req, "id")
@@ -156,14 +158,63 @@ func (r *Router) handleRunRule(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	result, err := r.pipeline.RunRule(req.Context(), ruleID)
-	if err != nil {
-		r.logger.Error("running rule", "rule_id", ruleID, "error", err)
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to run rule"})
+	// Reject if a run (single or all) is already in progress.
+	r.ruleRunMu.Lock()
+	if r.ruleRun != nil && r.ruleRun.Running {
+		r.ruleRunMu.Unlock()
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "a rule evaluation is already running"})
 		return
 	}
+	r.ruleRun = &ruleRunStatus{
+		Running:   true,
+		Status:    "running",
+		StartedAt: time.Now().UTC(),
+	}
+	r.ruleRunMu.Unlock()
 
-	writeJSON(w, http.StatusOK, result)
+	// Run in a background goroutine so the request can return immediately.
+	// WithoutCancel preserves request-scoped values but prevents navigation
+	// cancellation from aborting the pipeline.
+	ctx := context.WithoutCancel(req.Context())
+	go func() {
+		defer func() {
+			if rv := recover(); rv != nil {
+				r.ruleRunMu.Lock()
+				r.ruleRun.Running = false
+				r.ruleRun.Status = "failed"
+				r.ruleRun.Error = "rule evaluation failed unexpectedly"
+				r.ruleRun.CompletedAt = time.Now().UTC()
+				r.ruleRunMu.Unlock()
+				r.logger.Error("panic in single-rule run", "rule_id", ruleID, "recover", rv)
+			}
+		}()
+
+		result, err := r.pipeline.RunRule(ctx, ruleID)
+
+		r.ruleRunMu.Lock()
+		r.ruleRun.Running = false
+		r.ruleRun.CompletedAt = time.Now().UTC()
+
+		if err != nil {
+			r.ruleRun.Status = "failed"
+			r.ruleRun.Error = "rule evaluation failed"
+			r.ruleRunMu.Unlock()
+			r.logger.Error("running rule", "rule_id", ruleID, "error", err)
+			return
+		}
+
+		r.ruleRun.Status = "completed"
+		r.ruleRun.ArtistsProcessed = result.ArtistsProcessed
+		r.ruleRun.ViolationsFound = result.ViolationsFound
+		r.ruleRun.FixesAttempted = result.FixesAttempted
+		r.ruleRun.FixesSucceeded = result.FixesSucceeded
+		r.ruleRunMu.Unlock()
+	}()
+
+	writeJSON(w, http.StatusAccepted, map[string]any{
+		"status":  "running",
+		"rule_id": ruleID,
+	})
 }
 
 // handleRunArtistRules runs all enabled rules scoped to a single artist.
