@@ -829,3 +829,93 @@ func TestCheckLogoTrimmable_CaseInsensitive(t *testing.T) {
 		t.Errorf("RuleID = %q, want %q", v.RuleID, RuleLogoTrimmable)
 	}
 }
+
+func TestCheckBackdropSequencing_Contiguous(t *testing.T) {
+	// Non-Kodi convention: index 0 = fanart.jpg, index 1 = fanart2.jpg,
+	// index 2 = fanart3.jpg (suffix = index + 1).
+	dir := t.TempDir()
+	createTestJPEG(t, filepath.Join(dir, "fanart.jpg"), 1920, 1080)
+	createTestJPEG(t, filepath.Join(dir, "fanart2.jpg"), 1920, 1080)
+	createTestJPEG(t, filepath.Join(dir, "fanart3.jpg"), 1920, 1080)
+
+	e := &Engine{platformService: nil}
+	checker := e.makeBackdropSequencingChecker()
+
+	a := artist.Artist{Name: "Test", Path: dir}
+	v := checker(&a, RuleConfig{})
+	if v != nil {
+		t.Errorf("expected nil for contiguous sequence, got: %s", v.Message)
+	}
+}
+
+func TestCheckBackdropSequencing_WithGap(t *testing.T) {
+	dir := t.TempDir()
+	createTestJPEG(t, filepath.Join(dir, "fanart.jpg"), 1920, 1080)
+	createTestJPEG(t, filepath.Join(dir, "fanart3.jpg"), 1920, 1080)
+	// Gap at indices 1 and 2
+
+	e := &Engine{platformService: nil}
+	checker := e.makeBackdropSequencingChecker()
+
+	a := artist.Artist{Name: "Test", Path: dir}
+	v := checker(&a, RuleConfig{})
+	if v == nil {
+		t.Fatal("expected violation for gap in sequence")
+	}
+	if v.RuleID != RuleBackdropSequencing {
+		t.Errorf("RuleID = %q, want %q", v.RuleID, RuleBackdropSequencing)
+	}
+	if !v.Fixable {
+		t.Error("expected Fixable to be true")
+	}
+}
+
+func TestCheckBackdropSequencing_NumberedOnlyNoPrimary(t *testing.T) {
+	// Only numbered variants exist without the primary (fanart.jpg missing).
+	// fanart2.jpg + fanart3.jpg should trigger a violation since index 0 is absent.
+	dir := t.TempDir()
+	createTestJPEG(t, filepath.Join(dir, "fanart2.jpg"), 1920, 1080)
+	createTestJPEG(t, filepath.Join(dir, "fanart3.jpg"), 1920, 1080)
+
+	e := &Engine{platformService: nil}
+	checker := e.makeBackdropSequencingChecker()
+
+	a := artist.Artist{Name: "Test", Path: dir}
+	v := checker(&a, RuleConfig{})
+	if v == nil {
+		t.Fatal("expected violation when primary file is missing and only numbered variants exist")
+	}
+	if v.RuleID != RuleBackdropSequencing {
+		t.Errorf("RuleID = %q, want %q", v.RuleID, RuleBackdropSequencing)
+	}
+}
+
+func TestCheckBackdropSequencing_SingleNumberedOnly(t *testing.T) {
+	// A single numbered file without the primary (e.g., only fanart2.jpg)
+	// should be flagged since it doesn't start at index 0.
+	dir := t.TempDir()
+	createTestJPEG(t, filepath.Join(dir, "fanart2.jpg"), 1920, 1080)
+
+	e := &Engine{platformService: nil}
+	checker := e.makeBackdropSequencingChecker()
+
+	a := artist.Artist{Name: "Test", Path: dir}
+	v := checker(&a, RuleConfig{})
+	if v == nil {
+		t.Fatal("expected violation for single numbered file without primary")
+	}
+}
+
+func TestCheckBackdropSequencing_SingleFile(t *testing.T) {
+	dir := t.TempDir()
+	createTestJPEG(t, filepath.Join(dir, "fanart.jpg"), 1920, 1080)
+
+	e := &Engine{platformService: nil}
+	checker := e.makeBackdropSequencingChecker()
+
+	a := artist.Artist{Name: "Test", Path: dir}
+	v := checker(&a, RuleConfig{})
+	if v != nil {
+		t.Errorf("expected nil for single fanart file, got: %s", v.Message)
+	}
+}

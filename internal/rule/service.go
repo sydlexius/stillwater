@@ -36,6 +36,7 @@ const (
 	RuleDirectoryNameMismatch = "directory_name_mismatch"
 	RuleImageDuplicate        = "image_duplicate"
 	RuleMetadataQuality       = "metadata_quality"
+	RuleBackdropSequencing    = "backdrop_sequencing"
 )
 
 // defaultRules defines the built-in rules seeded on first startup.
@@ -194,6 +195,15 @@ var defaultRules = []Rule{
 		Description:    "Detects placeholder or junk metadata values (e.g. biography of just '?' or 'N/A'). Violations are fixed by clearing the junk value and re-fetching from providers.",
 		Category:       "metadata",
 		Enabled:        true,
+		AutomationMode: AutomationModeManual,
+		Config:         RuleConfig{Severity: "warning"},
+	},
+	{
+		ID:             RuleBackdropSequencing,
+		Name:           "Backdrop/fanart sequencing",
+		Description:    "Detects gaps in backdrop/fanart image sequences and incorrect numbering. Violations are fixed by renaming files to fill gaps.",
+		Category:       "image",
+		Enabled:        false,
 		AutomationMode: AutomationModeManual,
 		Config:         RuleConfig{Severity: "warning"},
 	},

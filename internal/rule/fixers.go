@@ -907,6 +907,102 @@ func (f *DirectoryRenameFixer) Fix(_ context.Context, a *artist.Artist, v *Viola
 	}, nil
 }
 
+// BackdropSequencingFixer renames fanart files to fill gaps and create a
+// contiguous sequence. Uses image.RenumberFanart for safe two-phase rename.
+type BackdropSequencingFixer struct {
+	platformService *platform.Service
+	logger          *slog.Logger
+}
+
+// NewBackdropSequencingFixer creates a BackdropSequencingFixer.
+func NewBackdropSequencingFixer(platformService *platform.Service, logger *slog.Logger) *BackdropSequencingFixer {
+	return &BackdropSequencingFixer{
+		platformService: platformService,
+		logger:          logger.With(slog.String("component", "backdrop-sequencing-fixer")),
+	}
+}
+
+// CanFix returns true for the backdrop_sequencing rule.
+func (f *BackdropSequencingFixer) CanFix(v *Violation) bool {
+	return v.RuleID == RuleBackdropSequencing
+}
+
+// Fix renumbers fanart files to occupy contiguous indices.
+func (f *BackdropSequencingFixer) Fix(ctx context.Context, a *artist.Artist, _ *Violation) (*FixResult, error) {
+	if a.Path == "" {
+		return &FixResult{RuleID: RuleBackdropSequencing, Fixed: false, Message: "artist has no path"}, nil
+	}
+
+	var profile *platform.Profile
+	if f.platformService != nil {
+		var profErr error
+		profile, profErr = f.platformService.GetActive(ctx)
+		if profErr != nil {
+			// Abort rather than falling back to default naming convention.
+			// Renaming files with the wrong convention (e.g., non-Kodi on a
+			// Kodi library) is destructive and not safely reversible.
+			return nil, fmt.Errorf("loading active platform profile: %w", profErr)
+		}
+	}
+
+	var fanartNames []string
+	if profile != nil {
+		fanartNames = profile.ImageNaming.NamesForType("fanart")
+	}
+	if len(fanartNames) == 0 {
+		fanartNames = img.FileNamesForType(img.DefaultFileNames, "fanart")
+	}
+	kodiNumbering := profile != nil && strings.EqualFold(profile.ID, "kodi")
+
+	for _, primaryName := range fanartNames {
+		discovered, err := img.DiscoverFanart(a.Path, primaryName)
+		if err != nil {
+			f.logger.Warn("discovering fanart for sequencing fix",
+				"artist", a.Name, "primary", primaryName, "error", err)
+			continue
+		}
+		if len(discovered) == 0 {
+			continue
+		}
+
+		// Check if already contiguous before renumbering.
+		needsRenumber := false
+		for i, path := range discovered {
+			expected := img.FanartFilename(primaryName, i, kodiNumbering)
+			expectedBase := strings.TrimSuffix(expected, filepath.Ext(expected))
+			actualBase := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+			if !strings.EqualFold(expectedBase, actualBase) {
+				needsRenumber = true
+				break
+			}
+		}
+		if !needsRenumber {
+			continue
+		}
+
+		if err := img.RenumberFanart(a.Path, primaryName, discovered, kodiNumbering); err != nil {
+			return nil, fmt.Errorf("renumbering fanart for %s: %w", a.Name, err)
+		}
+
+		f.logger.Info("renumbered image sequence",
+			"artist", a.Name,
+			"primary", primaryName,
+			"count", len(discovered))
+
+		return &FixResult{
+			RuleID:  RuleBackdropSequencing,
+			Fixed:   true,
+			Message: fmt.Sprintf("renumbered %d %s files for %s", len(discovered), strings.TrimSuffix(primaryName, filepath.Ext(primaryName)), a.Name),
+		}, nil
+	}
+
+	return &FixResult{
+		RuleID:  RuleBackdropSequencing,
+		Fixed:   false,
+		Message: "no fanart files needing renumbering",
+	}, nil
+}
+
 // activeUseSymlinks returns the UseSymlinks flag from the active platform profile.
 // Returns false if the service is nil or the profile cannot be fetched.
 func activeUseSymlinks(ctx context.Context, svc *platform.Service) bool {

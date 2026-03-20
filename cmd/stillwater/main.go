@@ -222,6 +222,7 @@ func run() error {
 		rule.NewExtraneousImagesFixer(platformService, logger),
 		rule.NewLogoTrimFixer(platformService, logger),
 		rule.NewDirectoryRenameFixer(logger),
+		rule.NewBackdropSequencingFixer(platformService, logger),
 	}
 	pipeline := rule.NewPipeline(ruleEngine, artistService, ruleService, fixers, logger)
 
