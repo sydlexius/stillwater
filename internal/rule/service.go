@@ -35,6 +35,7 @@ const (
 	RuleLogoTrimmable         = "logo_trimmable"
 	RuleDirectoryNameMismatch = "directory_name_mismatch"
 	RuleImageDuplicate        = "image_duplicate"
+	RuleMetadataQuality       = "metadata_quality"
 )
 
 // defaultRules defines the built-in rules seeded on first startup.
@@ -186,6 +187,14 @@ var defaultRules = []Rule{
 		Category:    "image",
 		Enabled:     false,
 		Config:      RuleConfig{Severity: "warning", Tolerance: 0.90},
+	},
+	{
+		ID:          RuleMetadataQuality,
+		Name:        "Metadata quality",
+		Description: "Detects placeholder or junk metadata values (e.g. biography of just '?' or 'N/A'). Violations are fixed by clearing the junk value and re-fetching from providers.",
+		Category:    "metadata",
+		Enabled:     true,
+		Config:      RuleConfig{Severity: "warning"},
 	},
 }
 

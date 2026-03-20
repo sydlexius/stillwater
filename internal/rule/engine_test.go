@@ -47,7 +47,7 @@ func TestEvaluate_FullyCompliant(t *testing.T) {
 		ThumbExists:   true,
 		FanartExists:  true,
 		LogoExists:    true,
-		Biography:     "Nirvana was an American rock band.",
+		Biography:     "Nirvana was an American rock band formed in Aberdeen, Washington, in 1987.",
 		Path:          artistDir,
 	}
 

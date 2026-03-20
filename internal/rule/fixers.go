@@ -94,9 +94,9 @@ func NewMetadataFixer(orchestrator *provider.Orchestrator, snapshotService *nfo.
 	return &MetadataFixer{orchestrator: orchestrator, snapshotService: snapshotService, logger: logger}
 }
 
-// CanFix returns true for nfo_has_mbid and bio_exists rules.
+// CanFix returns true for nfo_has_mbid, bio_exists, and metadata_quality rules.
 func (f *MetadataFixer) CanFix(v *Violation) bool {
-	return v.RuleID == RuleNFOHasMBID || v.RuleID == RuleBioExists
+	return v.RuleID == RuleNFOHasMBID || v.RuleID == RuleBioExists || v.RuleID == RuleMetadataQuality
 }
 
 // Fix searches providers and populates the missing metadata.
@@ -106,6 +106,8 @@ func (f *MetadataFixer) Fix(ctx context.Context, a *artist.Artist, v *Violation)
 		return f.fixMBID(ctx, a)
 	case RuleBioExists:
 		return f.fixBio(ctx, a)
+	case RuleMetadataQuality:
+		return f.fixJunkBio(ctx, a)
 	default:
 		return nil, fmt.Errorf("unsupported rule: %s", v.RuleID)
 	}
@@ -181,6 +183,41 @@ func (f *MetadataFixer) fixBio(ctx context.Context, a *artist.Artist) (*FixResul
 		RuleID:  RuleBioExists,
 		Fixed:   true,
 		Message: fmt.Sprintf("populated biography for %s", a.Name),
+	}, nil
+}
+
+// fixJunkBio clears a junk biography and re-fetches from providers.
+// The orchestrator's IsJunkBiography filter ensures the replacement
+// biography is not also junk.
+func (f *MetadataFixer) fixJunkBio(ctx context.Context, a *artist.Artist) (*FixResult, error) {
+	oldBio := a.Biography
+	a.Biography = "" // clear junk so providers are queried fresh
+
+	result, err := f.orchestrator.FetchMetadata(ctx, a.MusicBrainzID, a.Name, a.ProviderIDMap())
+	if err != nil {
+		a.Biography = oldBio // restore on error
+		return nil, fmt.Errorf("fetching metadata: %w", err)
+	}
+
+	if result.Metadata == nil || result.Metadata.Biography == "" {
+		a.Biography = oldBio // restore if no replacement found
+		return &FixResult{
+			RuleID:  RuleMetadataQuality,
+			Fixed:   false,
+			Message: fmt.Sprintf("no quality biography found for %s", a.Name),
+		}, nil
+	}
+
+	a.Biography = result.Metadata.Biography
+
+	if a.NFOExists {
+		writeArtistNFO(ctx, a, f.snapshotService, f.logger)
+	}
+
+	return &FixResult{
+		RuleID:  RuleMetadataQuality,
+		Fixed:   true,
+		Message: fmt.Sprintf("replaced junk biography for %s", a.Name),
 	}, nil
 }
 

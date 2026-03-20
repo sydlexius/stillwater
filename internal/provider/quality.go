@@ -28,26 +28,44 @@ var junkPatterns = []string{
 	"no biography available.",
 }
 
-// IsJunkBiography reports whether a biography value is too short or matches a
-// known placeholder pattern. The orchestrator uses this to skip junk values and
-// try the next provider in the priority chain.
-func IsJunkBiography(bio string) bool {
-	trimmed := strings.TrimSpace(bio)
+// defaultMinFieldLength is the minimum byte length for generic text fields
+// (excluding biography, which uses minBiographyLength). Single-character
+// values like "?" or "-" are nearly always placeholders.
+const defaultMinFieldLength = 2
+
+// IsJunkValue reports whether a metadata field value is empty, matches a
+// known placeholder pattern, or is below the field-specific minimum length.
+// Field names control the minimum length threshold:
+//   - "biography": 50 bytes (roughly one sentence)
+//   - "genres", "styles", "moods": no minimum (single words are valid)
+//   - all others: 2 bytes
+func IsJunkValue(field, value string) bool {
+	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {
 		return true
 	}
 
-	// Check case-insensitive placeholder patterns first (fast path).
+	// Check case-insensitive placeholder patterns.
 	for _, pattern := range junkPatterns {
 		if strings.EqualFold(trimmed, pattern) {
 			return true
 		}
 	}
 
-	// Reject values below the minimum length threshold.
-	if len(trimmed) < minBiographyLength {
-		return true
+	// Field-specific minimum length thresholds.
+	switch field {
+	case "biography":
+		return len(trimmed) < minBiographyLength
+	case "genres", "styles", "moods":
+		return false // single-word values are valid for list fields
+	default:
+		return len(trimmed) < defaultMinFieldLength
 	}
+}
 
-	return false
+// IsJunkBiography reports whether a biography value is too short or matches a
+// known placeholder pattern. The orchestrator uses this to skip junk values and
+// try the next provider in the priority chain.
+func IsJunkBiography(bio string) bool {
+	return IsJunkValue("biography", bio)
 }

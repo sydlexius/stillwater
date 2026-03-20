@@ -57,3 +57,38 @@ func TestIsJunkBiography(t *testing.T) {
 		})
 	}
 }
+
+func TestIsJunkValue(t *testing.T) {
+	tests := []struct {
+		name  string
+		field string
+		value string
+		want  bool
+	}{
+		// Biography uses the same logic as IsJunkBiography
+		{name: "bio/junk pattern", field: "biography", value: "?", want: true},
+		{name: "bio/too short", field: "biography", value: "Short bio", want: true},
+		{name: "bio/valid", field: "biography", value: "A full biography that is definitely longer than fifty bytes of text.", want: false},
+
+		// Generic text fields use defaultMinFieldLength=2
+		{name: "other/empty", field: "years_active", value: "", want: true},
+		{name: "other/single char", field: "born", value: "x", want: true},
+		{name: "other/junk pattern", field: "formed", value: "N/A", want: true},
+		{name: "other/valid", field: "born", value: "1985", want: false},
+
+		// List fields (genres, styles, moods) have no minimum length
+		{name: "genre/single word", field: "genres", value: "Rock", want: false},
+		{name: "genre/junk pattern", field: "genres", value: "?", want: true},
+		{name: "style/short valid", field: "styles", value: "Lo-Fi", want: false},
+		{name: "mood/short valid", field: "moods", value: "Happy", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := IsJunkValue(tt.field, tt.value)
+			if got != tt.want {
+				t.Errorf("IsJunkValue(%q, %q) = %v, want %v", tt.field, tt.value, got, tt.want)
+			}
+		})
+	}
+}
