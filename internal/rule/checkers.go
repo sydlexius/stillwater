@@ -852,12 +852,14 @@ func (e *Engine) makeImageDuplicateChecker() Checker {
 	}
 }
 
-// truncateStr returns the first max bytes of s, appending "..." if truncated.
+// truncateStr returns the first max runes of s, appending "..." if truncated.
+// Uses rune-safe slicing to avoid splitting multi-byte UTF-8 characters.
 func truncateStr(s string, max int) string {
-	if len(s) <= max {
+	runes := []rune(s)
+	if len(runes) <= max {
 		return s
 	}
-	return s[:max] + "..."
+	return string(runes[:max]) + "..."
 }
 
 func checkMetadataQuality(a *artist.Artist, cfg RuleConfig) *Violation {

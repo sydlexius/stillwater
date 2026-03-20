@@ -189,12 +189,13 @@ var defaultRules = []Rule{
 		Config:      RuleConfig{Severity: "warning", Tolerance: 0.90},
 	},
 	{
-		ID:          RuleMetadataQuality,
-		Name:        "Metadata quality",
-		Description: "Detects placeholder or junk metadata values (e.g. biography of just '?' or 'N/A'). Violations are fixed by clearing the junk value and re-fetching from providers.",
-		Category:    "metadata",
-		Enabled:     true,
-		Config:      RuleConfig{Severity: "warning"},
+		ID:             RuleMetadataQuality,
+		Name:           "Metadata quality",
+		Description:    "Detects placeholder or junk metadata values (e.g. biography of just '?' or 'N/A'). Violations are fixed by clearing the junk value and re-fetching from providers.",
+		Category:       "metadata",
+		Enabled:        true,
+		AutomationMode: AutomationModeManual,
+		Config:         RuleConfig{Severity: "warning"},
 	},
 }
 
