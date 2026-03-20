@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/dbutil"
 )
 
@@ -692,6 +694,67 @@ func (s *Service) ClearResolvedViolations(ctx context.Context, daysOld int) erro
 		return fmt.Errorf("clearing resolved violations: %w", err)
 	}
 	return nil
+}
+
+// GetComplianceForArtists returns a compliance status map for the given artist IDs.
+// Each artist ID maps to a ComplianceStatus based on the highest-severity active
+// violation (open or pending_choice). Artists with no active violations are
+// mapped to ComplianceCompliant.
+func (s *Service) GetComplianceForArtists(ctx context.Context, artistIDs []string) (map[string]artist.ComplianceStatus, error) {
+	result := make(map[string]artist.ComplianceStatus, len(artistIDs))
+	if len(artistIDs) == 0 {
+		return result, nil
+	}
+
+	// Default all artists to compliant; the query only returns artists with violations.
+	for _, id := range artistIDs {
+		result[id] = artist.ComplianceCompliant
+	}
+
+	// Build parameterised IN clause for the artist IDs.
+	placeholders := make([]string, len(artistIDs))
+	args := make([]any, 0, len(artistIDs)+2)
+	args = append(args, ViolationStatusOpen, ViolationStatusPendingChoice)
+	for i, id := range artistIDs {
+		placeholders[i] = "?"
+		args = append(args, id)
+	}
+
+	//nolint:gosec // G202: only "?" placeholders concatenated, no user input
+	query := `SELECT artist_id,
+	       MAX(CASE severity WHEN 'error' THEN 3 WHEN 'warning' THEN 2 ELSE 1 END) AS max_sev
+	FROM rule_violations
+	WHERE status IN (?, ?)
+	  AND artist_id IN (` + strings.Join(placeholders, ",") + `)
+	GROUP BY artist_id`
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("querying compliance for artists: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck
+
+	for rows.Next() {
+		var artistID string
+		var maxSev int
+		if err := rows.Scan(&artistID, &maxSev); err != nil {
+			return nil, fmt.Errorf("scanning compliance row: %w", err)
+		}
+		switch maxSev {
+		case 3:
+			result[artistID] = artist.ComplianceError
+		case 2, 1:
+			result[artistID] = artist.ComplianceWarning
+		default:
+			// Unknown severity rank from the SQL CASE expression; treat as
+			// warning but this should not happen with valid data.
+			result[artistID] = artist.ComplianceWarning
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating compliance rows: %w", err)
+	}
+	return result, nil
 }
 
 func scanHealthSnapshot(row interface{ Scan(...any) error }) (*HealthSnapshot, error) {

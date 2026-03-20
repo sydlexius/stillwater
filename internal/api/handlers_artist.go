@@ -118,6 +118,23 @@ func (r *Router) handleArtistsPage(w http.ResponseWriter, req *http.Request) {
 		totalPages++
 	}
 
+	// Collect artist IDs and fetch per-artist compliance status from active
+	// rule violations. Compliance is best-effort: a failure here does not
+	// prevent the page from rendering.
+	var complianceMap map[string]artist.ComplianceStatus
+	if r.ruleService != nil && len(artists) > 0 {
+		ids := make([]string, len(artists))
+		for i, a := range artists {
+			ids[i] = a.ID
+		}
+		cm, err := r.ruleService.GetComplianceForArtists(req.Context(), ids)
+		if err != nil {
+			r.logger.Error("fetching compliance for artist list", "error", err)
+		} else {
+			complianceMap = cm
+		}
+	}
+
 	data := templates.ArtistListData{
 		Artists: artists,
 		Pagination: components.PaginationData{
@@ -133,12 +150,13 @@ func (r *Router) handleArtistsPage(w http.ResponseWriter, req *http.Request) {
 			View:        view,
 			LibraryID:   params.LibraryID,
 		},
-		Search:    params.Search,
-		Sort:      params.Sort,
-		Order:     params.Order,
-		Filter:    params.Filter,
-		LibraryID: params.LibraryID,
-		View:      view,
+		ComplianceMap: complianceMap,
+		Search:        params.Search,
+		Sort:          params.Sort,
+		Order:         params.Order,
+		Filter:        params.Filter,
+		LibraryID:     params.LibraryID,
+		View:          view,
 	}
 
 	if r.libraryService != nil {
