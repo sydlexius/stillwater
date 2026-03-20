@@ -41,6 +41,12 @@ func NewExecutor(service *Service, registry *provider.Registry, settings *provid
 // given scope. It returns a merged FetchResult compatible with the
 // provider.Orchestrator output.
 func (e *Executor) ScrapeAll(ctx context.Context, mbid, name, scope string, providerIDs map[provider.ProviderName]string) (*provider.FetchResult, error) {
+	// Ensure providerIDs is writable so EnrichProviderIDs can populate it
+	// with IDs extracted from earlier providers' URL results.
+	if providerIDs == nil {
+		providerIDs = make(map[provider.ProviderName]string)
+	}
+
 	cfg, err := e.service.GetConfig(ctx, scope)
 	if err != nil {
 		return nil, fmt.Errorf("loading scraper config: %w", err)
@@ -134,6 +140,7 @@ func (e *Executor) scrapeField(
 	if available[field.Primary] {
 		pr := e.getProviderResult(ctx, field.Primary, mbid, name, providerIDs, cache, mu)
 		if pr.err == nil {
+			provider.EnrichProviderIDs(pr.meta, providerIDs)
 			queried = true
 			if applyFieldValue(field.Field, pr, result) {
 				return FieldResult{Field: field.Field, Provider: field.Primary, Queried: true}
@@ -152,6 +159,7 @@ func (e *Executor) scrapeField(
 			continue
 		}
 
+		provider.EnrichProviderIDs(pr.meta, providerIDs)
 		queried = true
 		if applyFieldValue(field.Field, pr, result) {
 			return FieldResult{

@@ -307,26 +307,22 @@ func TestOrchestratorMBIDFallbackToName(t *testing.T) {
 
 // TestOrchestratorMBIDNoRetryWithoutNameLookup verifies that the MBID-to-name
 // retry does NOT fire for providers that do not implement NameLookupProvider.
+// Uses AudioDB as the example since Discogs now implements NameLookupProvider.
 func TestOrchestratorMBIDNoRetryWithoutNameLookup(t *testing.T) {
 	registry, settings := setupOrchestratorTest(t)
 
-	// Discogs requires auth; store a dummy key so it passes availability check.
-	if err := settings.SetAPIKey(context.Background(), NameDiscogs, "test-token"); err != nil {
-		t.Fatalf("SetAPIKey: %v", err)
-	}
-
 	// Use a plain mockProvider (no NameLookupProvider) that returns ErrNotFound.
-	discogsCalls := 0
+	audioDBCalls := 0
 	registry.Register(&mockProvider{
-		name:    NameDiscogs,
-		authReq: true,
+		name:    NameAudioDB,
+		authReq: false,
 		getArtFn: func(_ context.Context, id string) (*ArtistMetadata, error) {
-			discogsCalls++
-			return nil, &ErrNotFound{Provider: NameDiscogs, ID: id}
+			audioDBCalls++
+			return nil, &ErrNotFound{Provider: NameAudioDB, ID: id}
 		},
 	})
 
-	if err := settings.SetPriority(context.Background(), "biography", []ProviderName{NameDiscogs}); err != nil {
+	if err := settings.SetPriority(context.Background(), "biography", []ProviderName{NameAudioDB}); err != nil {
 		t.Fatalf("SetPriority: %v", err)
 	}
 
@@ -335,9 +331,9 @@ func TestOrchestratorMBIDNoRetryWithoutNameLookup(t *testing.T) {
 
 	_, _ = orch.FetchMetadata(context.Background(), "mbid-uuid-1234", "Radiohead", nil)
 
-	// Discogs should only be called once (MBID attempt). No name retry.
-	if discogsCalls != 1 {
-		t.Errorf("expected 1 Discogs GetArtist call (no name retry), got %d", discogsCalls)
+	// AudioDB should only be called once (MBID attempt). No name retry.
+	if audioDBCalls != 1 {
+		t.Errorf("expected 1 AudioDB GetArtist call (no name retry), got %d", audioDBCalls)
 	}
 }
 
@@ -749,4 +745,136 @@ func TestOrchestratorAllJunkBiographiesLeaveFieldEmpty(t *testing.T) {
 	if bioSource != nil {
 		t.Errorf("expected no biography source, got: %v", bioSource)
 	}
+}
+
+// TestOrchestratorCrossProviderIDEnrichment verifies that provider IDs
+// extracted from one provider's URL results are used when calling subsequent
+// providers. In this case, MusicBrainz returns a Discogs URL containing the
+// numeric Discogs ID, and Discogs should receive that numeric ID instead of
+// the MBID (which would always 404).
+func TestOrchestratorCrossProviderIDEnrichment(t *testing.T) {
+	registry, settings := setupOrchestratorTest(t)
+
+	// Discogs requires auth; store a dummy key.
+	if err := settings.SetAPIKey(context.Background(), NameDiscogs, "test-token"); err != nil {
+		t.Fatalf("SetAPIKey: %v", err)
+	}
+
+	// MusicBrainz returns metadata with a Discogs URL containing the numeric ID.
+	registry.Register(&mockProvider{
+		name:    NameMusicBrainz,
+		authReq: false,
+		getArtFn: func(_ context.Context, id string) (*ArtistMetadata, error) {
+			return &ArtistMetadata{
+				Name:      "A-ha",
+				Biography: "Norwegian band",
+				URLs: map[string]string{
+					"discogs": "https://www.discogs.com/artist/24941-a-ha",
+					"deezer":  "https://www.deezer.com/artist/75798",
+				},
+			}, nil
+		},
+	})
+
+	// Discogs records which ID it receives. It should get "24941" (from the
+	// URL), not the MBID.
+	var discogsReceivedID string
+	registry.Register(&mockNameLookupProvider{
+		mockProvider: mockProvider{
+			name:    NameDiscogs,
+			authReq: true,
+			getArtFn: func(_ context.Context, id string) (*ArtistMetadata, error) {
+				discogsReceivedID = id
+				return &ArtistMetadata{
+					Name:      "A-ha",
+					DiscogsID: "24941",
+				}, nil
+			},
+		},
+	})
+
+	// Set up priorities so MusicBrainz is queried first (for biography),
+	// then Discogs (for biography fallback).
+	if err := settings.SetPriority(context.Background(), "biography", []ProviderName{NameMusicBrainz, NameDiscogs}); err != nil {
+		t.Fatalf("SetPriority: %v", err)
+	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	orch := NewOrchestrator(registry, settings, logger)
+
+	// No stored provider IDs -- only the MBID.
+	_, err := orch.FetchMetadata(context.Background(), "cc2c9c3c-b7bc-4b8b-84d8-4fbd8779e493", "A-ha", nil)
+	if err != nil {
+		t.Fatalf("FetchMetadata: %v", err)
+	}
+
+	// Discogs should have received the numeric ID extracted from MusicBrainz's
+	// Discogs URL, not the raw MBID.
+	if discogsReceivedID != "24941" {
+		t.Errorf("expected Discogs to receive ID '24941' (from MusicBrainz URL), got %q", discogsReceivedID)
+	}
+}
+
+// TestEnrichProviderIDs verifies the EnrichProviderIDs function extracts
+// provider IDs from URLs and updates the providerIDs map.
+func TestEnrichProviderIDs(t *testing.T) {
+	providerIDs := make(map[ProviderName]string)
+
+	meta := &ArtistMetadata{
+		URLs: map[string]string{
+			"discogs": "https://www.discogs.com/artist/24941-a-ha",
+			"deezer":  "https://www.deezer.com/artist/3106",
+			"spotify": "https://open.spotify.com/artist/2jzc5TC5TVFLXQlBNgQBiB",
+		},
+	}
+
+	EnrichProviderIDs(meta, providerIDs)
+
+	if providerIDs[NameDiscogs] != "24941" {
+		t.Errorf("expected Discogs ID '24941', got %q", providerIDs[NameDiscogs])
+	}
+	if providerIDs[NameDeezer] != "3106" {
+		t.Errorf("expected Deezer ID '3106', got %q", providerIDs[NameDeezer])
+	}
+	if providerIDs[NameSpotify] != "2jzc5TC5TVFLXQlBNgQBiB" {
+		t.Errorf("expected Spotify ID '2jzc5TC5TVFLXQlBNgQBiB', got %q", providerIDs[NameSpotify])
+	}
+}
+
+// TestEnrichProviderIDsNoOverwrite verifies that EnrichProviderIDs does not
+// overwrite existing entries in the providerIDs map.
+func TestEnrichProviderIDsNoOverwrite(t *testing.T) {
+	providerIDs := map[ProviderName]string{
+		NameDiscogs: "99999", // pre-existing stored ID
+	}
+
+	meta := &ArtistMetadata{
+		URLs: map[string]string{
+			"discogs": "https://www.discogs.com/artist/24941",
+		},
+	}
+
+	EnrichProviderIDs(meta, providerIDs)
+
+	// Should keep the original value, not overwrite with URL-extracted one.
+	if providerIDs[NameDiscogs] != "99999" {
+		t.Errorf("expected Discogs ID to remain '99999', got %q", providerIDs[NameDiscogs])
+	}
+}
+
+// TestEnrichProviderIDsNilInputs verifies that EnrichProviderIDs does not
+// panic when called with nil metadata or a nil providerIDs map.
+func TestEnrichProviderIDsNilInputs(t *testing.T) {
+	// nil metadata should be a no-op.
+	ids := map[ProviderName]string{}
+	EnrichProviderIDs(nil, ids)
+	if len(ids) != 0 {
+		t.Errorf("expected empty map after nil meta, got %v", ids)
+	}
+
+	// nil providerIDs map should be a no-op.
+	meta := &ArtistMetadata{
+		URLs: map[string]string{"discogs": "https://www.discogs.com/artist/24941"},
+	}
+	EnrichProviderIDs(meta, nil) // should not panic
 }

@@ -3,6 +3,7 @@ package discogs
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -127,5 +128,134 @@ func TestGetImages(t *testing.T) {
 	}
 	if images[0].Width != 500 {
 		t.Errorf("expected width 500, got %d", images[0].Width)
+	}
+}
+
+func TestGetArtistRejectsUUID(t *testing.T) {
+	limiter, settings := setupTest(t)
+	if err := settings.SetAPIKey(context.Background(), provider.NameDiscogs, "test-token"); err != nil {
+		t.Fatalf("SetAPIKey: %v", err)
+	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	a := New(limiter, settings, logger)
+
+	// A MusicBrainz UUID should be rejected immediately without making an
+	// HTTP request.
+	_, err := a.GetArtist(context.Background(), "cc2c9c3c-b7bc-4b8b-84d8-4fbd8779e493")
+	if err == nil {
+		t.Fatal("expected error for UUID ID, got nil")
+	}
+	var notFound *provider.ErrNotFound
+	if !errors.As(err, &notFound) {
+		t.Errorf("expected ErrNotFound, got: %T: %v", err, err)
+	}
+}
+
+func TestGetImagesRejectsUUID(t *testing.T) {
+	limiter, settings := setupTest(t)
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	a := New(limiter, settings, logger)
+
+	_, err := a.GetImages(context.Background(), "cc2c9c3c-b7bc-4b8b-84d8-4fbd8779e493")
+	if err == nil {
+		t.Fatal("expected error for UUID ID, got nil")
+	}
+	var notFound *provider.ErrNotFound
+	if !errors.As(err, &notFound) {
+		t.Errorf("expected ErrNotFound, got: %T: %v", err, err)
+	}
+}
+
+func TestGetArtistByNameFallback(t *testing.T) {
+	limiter, settings := setupTest(t)
+	if err := settings.SetAPIKey(context.Background(), provider.NameDiscogs, "test-token"); err != nil {
+		t.Fatalf("SetAPIKey: %v", err)
+	}
+
+	// Mock server that handles both search and artist endpoints.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/database/search") {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"results":[{"id":15885,"title":"Adele","type":"artist"}]}`))
+			return
+		}
+		if strings.Contains(r.URL.Path, "/artists/15885") {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"id":15885,"name":"Adele","profile":"English singer-songwriter","urls":[],"images":[]}`))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	a := NewWithBaseURL(limiter, settings, logger, srv.URL)
+
+	// Passing an artist name (non-numeric, non-UUID) should trigger name search.
+	meta, err := a.GetArtist(context.Background(), "Adele")
+	if err != nil {
+		t.Fatalf("GetArtist by name: %v", err)
+	}
+	if meta.Name != "Adele" {
+		t.Errorf("expected name 'Adele', got %q", meta.Name)
+	}
+	if meta.DiscogsID != "15885" {
+		t.Errorf("expected DiscogsID '15885', got %q", meta.DiscogsID)
+	}
+}
+
+func TestGetArtistByNameNoResults(t *testing.T) {
+	limiter, settings := setupTest(t)
+
+	// Mock server returns empty search results.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"results":[]}`))
+	}))
+	defer srv.Close()
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	a := NewWithBaseURL(limiter, settings, logger, srv.URL)
+
+	_, err := a.GetArtist(context.Background(), "NonexistentArtist")
+	if err == nil {
+		t.Fatal("expected error for name with no search results, got nil")
+	}
+	var notFound *provider.ErrNotFound
+	if !errors.As(err, &notFound) {
+		t.Errorf("expected ErrNotFound, got: %T: %v", err, err)
+	}
+}
+
+func TestSupportsNameLookup(t *testing.T) {
+	limiter, settings := setupTest(t)
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	a := New(limiter, settings, logger)
+
+	if !a.SupportsNameLookup() {
+		t.Error("Discogs adapter should support name lookup")
+	}
+}
+
+func TestIsNumericID(t *testing.T) {
+	tests := []struct {
+		input string
+		want  bool
+	}{
+		{"24941", true},
+		{"0", true},
+		{"123456789", true},
+		{"", false},
+		{"cc2c9c3c-b7bc-4b8b-84d8-4fbd8779e493", false},
+		{"Radiohead", false},
+		{"24941-a-ha", false},
+		{"12.34", false},
+	}
+	for _, tt := range tests {
+		if got := isNumericID(tt.input); got != tt.want {
+			t.Errorf("isNumericID(%q) = %v, want %v", tt.input, got, tt.want)
+		}
 	}
 }
