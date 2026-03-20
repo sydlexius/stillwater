@@ -3417,6 +3417,17 @@ templ ruleRow(rl rule.Rule) {
 				<p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{ rl.Description }</p>
 			</div>
 			<div class="flex items-center gap-3 shrink-0">
+				<button
+					type="button"
+					class="text-xs px-2 py-1 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+					data-rule-id={ rl.ID }
+					onclick="runRule(this)"
+					disabled?={ !rl.Enabled }
+					aria-label={ "Run " + rl.Name + " now" }
+					title="Run this rule now"
+				>
+					Run
+				</button>
 				<select
 					class="text-xs rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
 					aria-label={ "Automation mode for " + rl.Name }
@@ -3734,19 +3745,50 @@ templ ruleToggleScript() {
 			var knob = btn.querySelector('span');
 			var row = btn.closest('.py-4');
 			var sel = row ? row.querySelector('select[data-rule-id]') : null;
+			var runBtn = row ? row.querySelector('button[onclick="runRule(this)"]') : null;
 			if (newVal) {
 				btn.classList.remove('bg-gray-200', 'dark:bg-gray-600');
 				btn.classList.add('bg-blue-600');
 				knob.classList.remove('translate-x-0');
 				knob.classList.add('translate-x-5');
 				if (sel) sel.disabled = false;
+				if (runBtn) runBtn.disabled = false;
 			} else {
 				btn.classList.remove('bg-blue-600');
 				btn.classList.add('bg-gray-200', 'dark:bg-gray-600');
 				knob.classList.remove('translate-x-5');
 				knob.classList.add('translate-x-0');
 				if (sel) sel.disabled = true;
+				if (runBtn) runBtn.disabled = true;
 			}
+		}
+
+		function runRule(btn) {
+			var ruleID = btn.dataset.ruleId;
+			var origText = btn.textContent;
+			btn.disabled = true;
+			btn.textContent = 'Running...';
+			var csrfToken = document.cookie.replace(
+				/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1"
+			);
+			fetch('/api/v1/rules/' + ruleID + '/run', {
+				method: 'POST',
+				headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
+				credentials: 'same-origin'
+			}).then(function(r) {
+				if (!r.ok) throw new Error('status ' + r.status);
+				return r.json();
+			}).then(function(data) {
+				var msg = 'Evaluated ' + data.artists_processed + ' artists: ' +
+					data.violations_found + ' violations, ' +
+					data.fixes_succeeded + ' fixed';
+				if (typeof showToast === 'function') showToast(msg);
+			}).catch(function() {
+				if (typeof showToast === 'function') showToast('Failed to run rule.');
+			}).finally(function() {
+				btn.disabled = false;
+				btn.textContent = origText;
+			});
 		}
 
 		function handleRuleConfigSubmit(event) {
