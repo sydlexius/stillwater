@@ -884,3 +884,60 @@ func checkMetadataQuality(a *artist.Artist, cfg RuleConfig) *Violation {
 	}
 	return nil
 }
+
+// makeBackdropSequencingChecker returns a Checker closure that detects
+// non-contiguous backdrop/fanart numbering. When files like backdrop.jpg,
+// backdrop3.jpg exist (gap at 1,2), or backdrop1.jpg exists without
+// backdrop.jpg (wrong starting point), a violation is returned.
+func (e *Engine) makeBackdropSequencingChecker() Checker {
+	return func(a *artist.Artist, cfg RuleConfig) *Violation {
+		if a.Path == "" || a.FanartCount < 2 {
+			return nil // sequencing irrelevant with 0-1 fanart files
+		}
+
+		var profile *platform.Profile
+		if e.platformService != nil {
+			profile, _ = e.platformService.GetActive(context.Background())
+		}
+
+		var fanartNames []string
+		if profile != nil {
+			fanartNames = profile.ImageNaming.NamesForType("fanart")
+		}
+		if len(fanartNames) == 0 {
+			fanartNames = image.FileNamesForType(image.DefaultFileNames, "fanart")
+		}
+		kodiNumbering := profile != nil && strings.EqualFold(profile.ID, "kodi")
+
+		for _, primaryName := range fanartNames {
+			discovered, err := image.DiscoverFanart(a.Path, primaryName)
+			if err != nil || len(discovered) < 2 {
+				continue
+			}
+
+			// Check whether files occupy contiguous indices.
+			for i, path := range discovered {
+				expected := image.FanartFilename(primaryName, i, kodiNumbering)
+				actual := filepath.Base(path)
+				// Compare base names ignoring extension (jpg vs png is fine).
+				expectedBase := strings.TrimSuffix(expected, filepath.Ext(expected))
+				actualBase := strings.TrimSuffix(actual, filepath.Ext(actual))
+				if !strings.EqualFold(expectedBase, actualBase) {
+					var fileList []string
+					for _, p := range discovered {
+						fileList = append(fileList, filepath.Base(p))
+					}
+					return &Violation{
+						RuleID:   RuleBackdropSequencing,
+						RuleName: "Backdrop/fanart sequencing",
+						Category: "image",
+						Severity: effectiveSeverity(cfg),
+						Message:  fmt.Sprintf("artist %q has non-sequential backdrop files: %s", a.Name, strings.Join(fileList, ", ")),
+						Fixable:  true,
+					}
+				}
+			}
+		}
+		return nil
+	}
+}

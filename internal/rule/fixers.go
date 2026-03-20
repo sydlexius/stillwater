@@ -907,6 +907,75 @@ func (f *DirectoryRenameFixer) Fix(_ context.Context, a *artist.Artist, v *Viola
 	}, nil
 }
 
+// BackdropSequencingFixer renames fanart files to fill gaps and create a
+// contiguous sequence. Uses image.RenumberFanart for safe two-phase rename.
+type BackdropSequencingFixer struct {
+	platformService *platform.Service
+	logger          *slog.Logger
+}
+
+// NewBackdropSequencingFixer creates a BackdropSequencingFixer.
+func NewBackdropSequencingFixer(platformService *platform.Service, logger *slog.Logger) *BackdropSequencingFixer {
+	return &BackdropSequencingFixer{
+		platformService: platformService,
+		logger:          logger.With(slog.String("component", "backdrop-sequencing-fixer")),
+	}
+}
+
+// CanFix returns true for the backdrop_sequencing rule.
+func (f *BackdropSequencingFixer) CanFix(v *Violation) bool {
+	return v.RuleID == RuleBackdropSequencing
+}
+
+// Fix renumbers fanart files to occupy contiguous indices.
+func (f *BackdropSequencingFixer) Fix(ctx context.Context, a *artist.Artist, _ *Violation) (*FixResult, error) {
+	if a.Path == "" {
+		return &FixResult{RuleID: RuleBackdropSequencing, Fixed: false, Message: "artist has no path"}, nil
+	}
+
+	var profile *platform.Profile
+	if f.platformService != nil {
+		profile, _ = f.platformService.GetActive(ctx)
+	}
+
+	var fanartNames []string
+	if profile != nil {
+		fanartNames = profile.ImageNaming.NamesForType("fanart")
+	}
+	if len(fanartNames) == 0 {
+		fanartNames = img.FileNamesForType(img.DefaultFileNames, "fanart")
+	}
+	kodiNumbering := profile != nil && strings.EqualFold(profile.ID, "kodi")
+
+	for _, primaryName := range fanartNames {
+		discovered, err := img.DiscoverFanart(a.Path, primaryName)
+		if err != nil || len(discovered) < 2 {
+			continue
+		}
+
+		if err := img.RenumberFanart(a.Path, primaryName, discovered, kodiNumbering); err != nil {
+			return nil, fmt.Errorf("renumbering fanart for %s: %w", a.Name, err)
+		}
+
+		f.logger.Info("renumbered backdrop sequence",
+			"artist", a.Name,
+			"primary", primaryName,
+			"count", len(discovered))
+
+		return &FixResult{
+			RuleID:  RuleBackdropSequencing,
+			Fixed:   true,
+			Message: fmt.Sprintf("renumbered %d backdrop files for %s", len(discovered), a.Name),
+		}, nil
+	}
+
+	return &FixResult{
+		RuleID:  RuleBackdropSequencing,
+		Fixed:   false,
+		Message: "no fanart files needing renumbering",
+	}, nil
+}
+
 // activeUseSymlinks returns the UseSymlinks flag from the active platform profile.
 // Returns false if the service is nil or the profile cannot be fetched.
 func activeUseSymlinks(ctx context.Context, svc *platform.Service) bool {
