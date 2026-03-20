@@ -167,9 +167,6 @@ func TestGetImagesRejectsUUID(t *testing.T) {
 
 func TestGetArtistByNameFallback(t *testing.T) {
 	limiter, settings := setupTest(t)
-	if err := settings.SetAPIKey(context.Background(), provider.NameDiscogs, "test-token"); err != nil {
-		t.Fatalf("SetAPIKey: %v", err)
-	}
 
 	// Mock server that handles both search and artist endpoints.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
