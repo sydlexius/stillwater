@@ -19,6 +19,7 @@ type ArtistListData struct {
 	Artists        []artist.Artist
 	Libraries      []library.Library
 	LibrarySources map[string]LibrarySourceInfo // library ID -> source info (only for non-manual)
+	ComplianceMap  map[string]artist.ComplianceStatus // artist ID -> compliance status
 	Pagination     components.PaginationData
 	Search         string
 	Sort           string
@@ -26,6 +27,45 @@ type ArtistListData struct {
 	Filter         string
 	LibraryID      string
 	View           string // "table" or "grid"
+}
+
+// complianceDotClass returns the Tailwind background class for a compliance indicator dot.
+func complianceDotClass(status artist.ComplianceStatus) string {
+	switch status {
+	case artist.ComplianceError:
+		return "bg-red-500"
+	case artist.ComplianceWarning:
+		return "bg-yellow-500"
+	default:
+		return "bg-green-500"
+	}
+}
+
+// complianceDotTitle returns a tooltip string for the compliance indicator.
+func complianceDotTitle(status artist.ComplianceStatus) string {
+	switch status {
+	case artist.ComplianceError:
+		return "Has error violations"
+	case artist.ComplianceWarning:
+		return "Has warning or info violations"
+	default:
+		return "Compliant"
+	}
+}
+
+// complianceAvailable returns whether compliance data was successfully loaded.
+// A nil map means the query failed or was skipped; dots should be hidden.
+func complianceAvailable(m map[string]artist.ComplianceStatus) bool {
+	return m != nil
+}
+
+// artistCompliance looks up an artist's compliance status from the map,
+// defaulting to compliant if not found (artist has no active violations).
+func artistCompliance(id string, m map[string]artist.ComplianceStatus) artist.ComplianceStatus {
+	if s, ok := m[id]; ok {
+		return s
+	}
+	return artist.ComplianceCompliant
 }
 
 // artistSourceInfo returns the LibrarySourceInfo for an artist, or a zero value if manual/unknown.
@@ -426,7 +466,7 @@ templ ArtistTable(data ArtistListData) {
 						</tr>
 					}
 					for _, a := range data.Artists {
-						@ArtistRow(a, data.LibrarySources)
+						@ArtistRow(a, data.LibrarySources, data.ComplianceMap)
 					}
 				</tbody>
 			</table>
@@ -435,10 +475,18 @@ templ ArtistTable(data ArtistListData) {
 	</div>
 }
 
-templ ArtistRow(a artist.Artist, sources map[string]LibrarySourceInfo) {
+templ ArtistRow(a artist.Artist, sources map[string]LibrarySourceInfo, compliance map[string]artist.ComplianceStatus) {
 	<tr class={ "hover:bg-gray-50 dark:hover:bg-gray-800", templ.KV("opacity-50", a.IsExcluded) }>
 		<td data-col="name" class="px-4 py-3 text-sm">
 			<div class="flex items-center gap-1.5">
+				if complianceAvailable(compliance) {
+					<span
+						class={ "inline-block h-2.5 w-2.5 shrink-0 rounded-full", complianceDotClass(artistCompliance(a.ID, compliance)) }
+						title={ complianceDotTitle(artistCompliance(a.ID, compliance)) }
+						aria-label={ complianceDotTitle(artistCompliance(a.ID, compliance)) }
+						role="img"
+					></span>
+				}
 				if artistSourceInfo(a, sources).Source != "" {
 					<img
 						src={ logoSrc(artistSourceInfo(a, sources).Source) }
@@ -490,7 +538,7 @@ templ ArtistGrid(data ArtistListData) {
 		} else {
 			<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
 				for _, a := range data.Artists {
-					@ArtistCard(a, data.LibrarySources)
+					@ArtistCard(a, data.LibrarySources, data.ComplianceMap)
 				}
 			</div>
 		}
@@ -498,7 +546,7 @@ templ ArtistGrid(data ArtistListData) {
 	</div>
 }
 
-templ ArtistCard(a artist.Artist, sources map[string]LibrarySourceInfo) {
+templ ArtistCard(a artist.Artist, sources map[string]LibrarySourceInfo, compliance map[string]artist.ComplianceStatus) {
 	<a
 		href={ templ.SafeURL("/artists/" + a.ID) }
 		class={ "group block rounded-lg overflow-hidden bg-white dark:bg-gray-800 shadow hover:shadow-md transition-shadow", templ.KV("opacity-50", a.IsExcluded) }
@@ -522,6 +570,14 @@ templ ArtistCard(a artist.Artist, sources map[string]LibrarySourceInfo) {
 						<path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"></path>
 					</svg>
 				</div>
+			}
+			if complianceAvailable(compliance) {
+				<span
+					class={ "absolute top-1.5 left-1.5 h-3 w-3 rounded-full border border-white/50 dark:border-gray-900/50", complianceDotClass(artistCompliance(a.ID, compliance)) }
+					title={ complianceDotTitle(artistCompliance(a.ID, compliance)) }
+					aria-label={ complianceDotTitle(artistCompliance(a.ID, compliance)) }
+					role="img"
+				></span>
 			}
 			if artistSourceInfo(a, sources).Source != "" {
 				<div

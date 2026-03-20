@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/database"
 )
 
@@ -990,5 +991,133 @@ func TestDismissOrphanedViolations(t *testing.T) {
 	}
 	if got.Status != ViolationStatusOpen {
 		t.Errorf("real status = %q, want %q", got.Status, ViolationStatusOpen)
+	}
+}
+
+func TestGetComplianceForArtists(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	// Insert violations across multiple artists with different severities and statuses.
+	violations := []*RuleViolation{
+		// artist-1: has an error violation (open) -> ComplianceError
+		{RuleID: RuleNFOExists, ArtistID: "artist-1", ArtistName: "Artist One",
+			Severity: "error", Message: "missing nfo", Fixable: true, Status: ViolationStatusOpen},
+		// artist-1: also has a warning (should still be error overall)
+		{RuleID: RuleFanartExists, ArtistID: "artist-1", ArtistName: "Artist One",
+			Severity: "warning", Message: "missing fanart", Fixable: true, Status: ViolationStatusOpen},
+		// artist-2: only warning violations -> ComplianceWarning
+		{RuleID: RuleThumbSquare, ArtistID: "artist-2", ArtistName: "Artist Two",
+			Severity: "warning", Message: "not square", Fixable: true, Status: ViolationStatusOpen},
+		// artist-3: only info violations -> ComplianceWarning (info is treated as warning-level)
+		{RuleID: RuleLogoExists, ArtistID: "artist-3", ArtistName: "Artist Three",
+			Severity: "info", Message: "no logo", Fixable: true, Status: ViolationStatusOpen},
+		// artist-4: has an error violation but it is dismissed -> should be compliant
+		{RuleID: RuleNFOHasMBID, ArtistID: "artist-4", ArtistName: "Artist Four",
+			Severity: "error", Message: "no mbid", Fixable: true, Status: ViolationStatusDismissed},
+		// artist-5: has a pending_choice violation (error) -> ComplianceError
+		{RuleID: RuleThumbExists, ArtistID: "artist-5", ArtistName: "Artist Five",
+			Severity: "error", Message: "missing thumb", Fixable: true, Status: ViolationStatusPendingChoice,
+			Candidates: []ImageCandidate{{URL: "http://example.com/img.jpg", Width: 500, Height: 500, Source: "test", ImageType: "thumb"}}},
+	}
+	for _, v := range violations {
+		if err := svc.UpsertViolation(ctx, v); err != nil {
+			t.Fatalf("UpsertViolation: %v", err)
+		}
+	}
+
+	// Query compliance for all six artists (artist-6 has no violations at all).
+	ids := []string{"artist-1", "artist-2", "artist-3", "artist-4", "artist-5", "artist-6"}
+	result, err := svc.GetComplianceForArtists(ctx, ids)
+	if err != nil {
+		t.Fatalf("GetComplianceForArtists: %v", err)
+	}
+
+	tests := []struct {
+		id   string
+		want artist.ComplianceStatus
+	}{
+		{"artist-1", artist.ComplianceError},     // error + warning -> error
+		{"artist-2", artist.ComplianceWarning},   // warning only
+		{"artist-3", artist.ComplianceWarning},   // info only -> warning level
+		{"artist-4", artist.ComplianceCompliant}, // dismissed error -> compliant
+		{"artist-5", artist.ComplianceError},     // pending_choice error -> error
+		{"artist-6", artist.ComplianceCompliant}, // no violations
+	}
+
+	for _, tc := range tests {
+		got, ok := result[tc.id]
+		if !ok {
+			t.Errorf("artist %s missing from result", tc.id)
+			continue
+		}
+		if got != tc.want {
+			t.Errorf("artist %s: compliance = %q, want %q", tc.id, got, tc.want)
+		}
+	}
+}
+
+func TestGetComplianceForArtists_Empty(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	// Empty input should return empty map without error.
+	result, err := svc.GetComplianceForArtists(ctx, nil)
+	if err != nil {
+		t.Fatalf("GetComplianceForArtists(nil): %v", err)
+	}
+	if len(result) != 0 {
+		t.Errorf("expected empty map, got %d entries", len(result))
+	}
+
+	result, err = svc.GetComplianceForArtists(ctx, []string{})
+	if err != nil {
+		t.Fatalf("GetComplianceForArtists([]): %v", err)
+	}
+	if len(result) != 0 {
+		t.Errorf("expected empty map, got %d entries", len(result))
+	}
+}
+
+func TestGetComplianceForArtists_AllCompliant(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	// No violations in the database; all artists should be compliant.
+	ids := []string{"a1", "a2", "a3"}
+	result, err := svc.GetComplianceForArtists(ctx, ids)
+	if err != nil {
+		t.Fatalf("GetComplianceForArtists: %v", err)
+	}
+	for _, id := range ids {
+		if result[id] != artist.ComplianceCompliant {
+			t.Errorf("artist %s: compliance = %q, want %q", id, result[id], artist.ComplianceCompliant)
+		}
+	}
+}
+
+func TestGetComplianceForArtists_ResolvedNotCounted(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	// Insert a resolved error violation. Should not affect compliance.
+	v := &RuleViolation{
+		RuleID: RuleNFOExists, ArtistID: "a1", ArtistName: "A1",
+		Severity: "error", Message: "missing nfo", Fixable: true, Status: ViolationStatusResolved,
+	}
+	if err := svc.UpsertViolation(ctx, v); err != nil {
+		t.Fatalf("UpsertViolation: %v", err)
+	}
+
+	result, err := svc.GetComplianceForArtists(ctx, []string{"a1"})
+	if err != nil {
+		t.Fatalf("GetComplianceForArtists: %v", err)
+	}
+	if result["a1"] != artist.ComplianceCompliant {
+		t.Errorf("artist a1 with resolved violation: compliance = %q, want %q", result["a1"], artist.ComplianceCompliant)
 	}
 }
