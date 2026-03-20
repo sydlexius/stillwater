@@ -943,7 +943,7 @@ func (r *Router) handleDeleteImage(w http.ResponseWriter, req *http.Request) {
 		var deleted []string
 		var removeFailed bool
 		for _, p := range fanartPaths {
-			if err := os.Remove(p); err == nil { //nolint:gosec // path from DiscoverFanart, not user input
+			if err := r.fileRemover.Remove(p); err == nil { //nolint:gosec // path from DiscoverFanart, not user input
 				deleted = append(deleted, filepath.Base(p))
 				r.logger.Info("deleted fanart", slog.String("path", p))
 			} else {
@@ -955,7 +955,7 @@ func (r *Router) handleDeleteImage(w http.ResponseWriter, req *http.Request) {
 		}
 		// Also clean up the standard naming config patterns (alternate names)
 		patterns := r.getActiveNamingConfig(req.Context(), imageType)
-		patternDeleted, patternFailed := deleteImageFiles(r.imageDir(a), patterns, r.logger)
+		patternDeleted, patternFailed := deleteImageFiles(r.fileRemover, r.imageDir(a), patterns, r.logger)
 		deleted = append(deleted, patternDeleted...)
 		if patternFailed {
 			removeFailed = true
@@ -984,9 +984,11 @@ func (r *Router) handleDeleteImage(w http.ResponseWriter, req *http.Request) {
 	}
 
 	patterns := r.getActiveNamingConfig(req.Context(), imageType)
-	deleted, deleteFailed := deleteImageFiles(r.imageDir(a), patterns, r.logger)
+	deleted, deleteFailed := deleteImageFiles(r.fileRemover, r.imageDir(a), patterns, r.logger)
 
-	r.clearArtistImageFlag(req.Context(), a, imageType)
+	if _, found := findExistingImage(r.imageDir(a), patterns); !found {
+		r.clearArtistImageFlag(req.Context(), a, imageType)
+	}
 	warnings := make([]string, 0)
 	if deleteFailed {
 		warnings = append(warnings, "some image files could not be deleted from disk")
@@ -1310,10 +1312,10 @@ func findExistingImage(dir string, patterns []string) (string, bool) {
 // and whether any removal failed. For each pattern, it also probes alternate extensions
 // (.jpg, .jpeg, .png) to catch cases where the saved format differs from the configured name.
 // Patterns are trusted naming conventions. Files that do not exist are not counted as failures.
-func deleteImageFiles(dir string, patterns []string, logger *slog.Logger) (deleted []string, failed bool) {
+func deleteImageFiles(remover FileRemover, dir string, patterns []string, logger *slog.Logger) (deleted []string, failed bool) {
 	for _, pattern := range patterns {
 		p := filepath.Join(dir, pattern)
-		if err := os.Remove(p); err == nil { //nolint:gosec // path from trusted naming patterns
+		if err := remover.Remove(p); err == nil { //nolint:gosec // path from trusted naming patterns
 			logger.Info("deleted image file", slog.String("path", p))
 			deleted = append(deleted, pattern)
 		} else if !errors.Is(err, os.ErrNotExist) {
@@ -1330,7 +1332,7 @@ func deleteImageFiles(dir string, patterns []string, logger *slog.Logger) (delet
 			}
 			alt := base + ext
 			altPath := filepath.Join(dir, alt)
-			if err := os.Remove(altPath); err == nil { //nolint:gosec // path from trusted naming patterns
+			if err := remover.Remove(altPath); err == nil { //nolint:gosec // path from trusted naming patterns
 				logger.Info("deleted image file (alt ext)", slog.String("path", altPath))
 				deleted = append(deleted, alt)
 			} else if !errors.Is(err, os.ErrNotExist) {
@@ -1716,7 +1718,7 @@ func (r *Router) handleFanartBatchDelete(w http.ResponseWriter, req *http.Reques
 	var deleted []string
 	var removeFailed bool
 	for idx := range deleteSet {
-		if err := os.Remove(paths[idx]); err == nil { //nolint:gosec // path from DiscoverFanart, not user input
+		if err := r.fileRemover.Remove(paths[idx]); err == nil { //nolint:gosec // path from DiscoverFanart, not user input
 			deleted = append(deleted, filepath.Base(paths[idx]))
 			r.logger.Info("deleted fanart",
 				slog.String("artist_id", artistID),

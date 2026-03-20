@@ -15,7 +15,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -32,6 +31,11 @@ func testRouterWithPlatform(t *testing.T) (*Router, *artist.Service) {
 	r.platformService = platform.NewService(r.db)
 	return r, artistSvc
 }
+
+// failingRemover is a FileRemover stub that always returns an error.
+type failingRemover struct{ err error }
+
+func (f failingRemover) Remove(_ string) error { return f.err }
 
 // writeJPEG creates a JPEG file at path with the given dimensions.
 // The active platform profile (Kodi) uses folder.jpg as the thumb filename,
@@ -1113,13 +1117,6 @@ func TestExtractImageFetchParams_ValidJSON(t *testing.T) {
 }
 
 func TestHandleDeleteImage_FanartRemoveFailure(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("permission-based test not reliable on Windows")
-	}
-	if os.Getuid() == 0 {
-		t.Skip("permission-based test not reliable as root")
-	}
-
 	// Mock server that records whether a DELETE was received.
 	// Use a channel (not a bare bool) to avoid an unprotected cross-goroutine write
 	// if the production guard is ever relaxed.
@@ -1139,6 +1136,9 @@ func TestHandleDeleteImage_FanartRemoveFailure(t *testing.T) {
 	dir := t.TempDir()
 	addTestConnectionWithURL(t, r, "conn-emby", "Emby", "emby", srv.URL)
 
+	// Inject a remover that always fails, simulating a permission error.
+	r.fileRemover = failingRemover{err: fmt.Errorf("permission denied")}
+
 	a := &artist.Artist{
 		Name: "Fanart Artist", SortName: "Fanart Artist", Path: dir,
 		FanartExists: true,
@@ -1150,17 +1150,9 @@ func TestHandleDeleteImage_FanartRemoveFailure(t *testing.T) {
 		t.Fatalf("SetPlatformID: %v", err)
 	}
 
-	// Create two fanart files: both will be undeletable.
+	// Create two fanart files so DiscoverFanart finds them.
 	writeJPEG(t, filepath.Join(dir, "fanart.jpg"), 100, 100)
 	writeJPEG(t, filepath.Join(dir, "fanart2.jpg"), 100, 100)
-
-	// Remove write permission on the directory to make os.Remove fail.
-	if err := os.Chmod(dir, 0o555); err != nil {
-		t.Fatalf("chmod: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = os.Chmod(dir, 0o755)
-	})
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/v1/artists/"+a.ID+"/images/fanart", nil)
 	req.SetPathValue("id", a.ID)
@@ -1456,13 +1448,6 @@ func TestHandleFanartBatchDelete_SyncWarningsPropagated(t *testing.T) {
 }
 
 func TestHandleDeleteImage_ThumbRemoveFailure(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("permission-based test not reliable on Windows")
-	}
-	if os.Getuid() == 0 {
-		t.Skip("permission-based test not reliable as root")
-	}
-
 	// Mock server that records whether a DELETE was received.
 	deletedCh := make(chan struct{}, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
@@ -1480,6 +1465,9 @@ func TestHandleDeleteImage_ThumbRemoveFailure(t *testing.T) {
 	dir := t.TempDir()
 	addTestConnectionWithURL(t, r, "conn-emby", "Emby", "emby", srv.URL)
 
+	// Inject a remover that always fails, simulating a permission error.
+	r.fileRemover = failingRemover{err: fmt.Errorf("permission denied")}
+
 	a := &artist.Artist{
 		Name: "Thumb Artist", SortName: "Thumb Artist", Path: dir,
 		ThumbExists: true,
@@ -1492,14 +1480,6 @@ func TestHandleDeleteImage_ThumbRemoveFailure(t *testing.T) {
 	}
 
 	writeJPEG(t, filepath.Join(dir, "folder.jpg"), 100, 100)
-
-	// Remove write permission on the directory to make os.Remove fail.
-	if err := os.Chmod(dir, 0o555); err != nil {
-		t.Fatalf("chmod: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = os.Chmod(dir, 0o755)
-	})
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/v1/artists/"+a.ID+"/images/thumb", nil)
 	req.SetPathValue("id", a.ID)

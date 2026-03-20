@@ -51,24 +51,70 @@ INSERT OR IGNORE INTO artist_provider_ids (artist_id, provider, provider_id, fet
 SELECT id, 'wikidata', '', wikidata_id_fetched_at FROM artists
 WHERE wikidata_id_fetched_at IS NOT NULL AND (wikidata_id IS NULL OR wikidata_id = '');
 
--- Drop old per-column indexes (no longer needed).
-DROP INDEX IF EXISTS idx_artists_musicbrainz_id;
-DROP INDEX IF EXISTS idx_artists_audiodb_id;
-DROP INDEX IF EXISTS idx_artists_discogs_id;
-DROP INDEX IF EXISTS idx_artists_wikidata_id;
-DROP INDEX IF EXISTS idx_artists_deezer_id;
+-- Remove provider ID columns from artists using the table-recreation pattern.
+-- This replaces 10 individual ALTER TABLE DROP COLUMN statements that each
+-- trigger _sqlite3RenameTokenMap in the pure-Go SQLite implementation,
+-- causing test hangs under the Go race detector.
+CREATE TABLE artists_new (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    sort_name TEXT,
+    type TEXT NOT NULL DEFAULT '',
+    gender TEXT NOT NULL DEFAULT '',
+    disambiguation TEXT NOT NULL DEFAULT '',
+    genres TEXT NOT NULL DEFAULT '[]',
+    styles TEXT NOT NULL DEFAULT '[]',
+    moods TEXT NOT NULL DEFAULT '[]',
+    years_active TEXT NOT NULL DEFAULT '',
+    born TEXT NOT NULL DEFAULT '',
+    formed TEXT NOT NULL DEFAULT '',
+    died TEXT NOT NULL DEFAULT '',
+    disbanded TEXT NOT NULL DEFAULT '',
+    biography TEXT NOT NULL DEFAULT '',
+    path TEXT NOT NULL,
+    library_id TEXT REFERENCES libraries(id) DEFAULT NULL,
+    nfo_exists INTEGER NOT NULL DEFAULT 0,
+    thumb_exists INTEGER NOT NULL DEFAULT 0,
+    fanart_exists INTEGER NOT NULL DEFAULT 0,
+    logo_exists INTEGER NOT NULL DEFAULT 0,
+    banner_exists INTEGER NOT NULL DEFAULT 0,
+    fanart_count INTEGER NOT NULL DEFAULT 0,
+    thumb_low_res INTEGER NOT NULL DEFAULT 0,
+    fanart_low_res INTEGER NOT NULL DEFAULT 0,
+    logo_low_res INTEGER NOT NULL DEFAULT 0,
+    banner_low_res INTEGER NOT NULL DEFAULT 0,
+    thumb_placeholder TEXT NOT NULL DEFAULT '',
+    fanart_placeholder TEXT NOT NULL DEFAULT '',
+    logo_placeholder TEXT NOT NULL DEFAULT '',
+    banner_placeholder TEXT NOT NULL DEFAULT '',
+    health_score REAL NOT NULL DEFAULT 0.0,
+    is_excluded INTEGER NOT NULL DEFAULT 0,
+    exclusion_reason TEXT NOT NULL DEFAULT '',
+    is_classical INTEGER NOT NULL DEFAULT 0,
+    metadata_sources TEXT NOT NULL DEFAULT '{}',
+    last_scanned_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 
--- Drop the provider ID columns from the artists table (SQLite 3.35+).
-ALTER TABLE artists DROP COLUMN musicbrainz_id;
-ALTER TABLE artists DROP COLUMN audiodb_id;
-ALTER TABLE artists DROP COLUMN discogs_id;
-ALTER TABLE artists DROP COLUMN wikidata_id;
-ALTER TABLE artists DROP COLUMN deezer_id;
-ALTER TABLE artists DROP COLUMN spotify_id;
-ALTER TABLE artists DROP COLUMN audiodb_id_fetched_at;
-ALTER TABLE artists DROP COLUMN discogs_id_fetched_at;
-ALTER TABLE artists DROP COLUMN wikidata_id_fetched_at;
-ALTER TABLE artists DROP COLUMN lastfm_id_fetched_at;
+INSERT INTO artists_new SELECT
+    id, name, sort_name, type, gender, disambiguation,
+    genres, styles, moods, years_active, born, formed, died, disbanded, biography,
+    path, library_id, nfo_exists,
+    thumb_exists, fanart_exists, logo_exists, banner_exists, fanart_count,
+    thumb_low_res, fanart_low_res, logo_low_res, banner_low_res,
+    thumb_placeholder, fanart_placeholder, logo_placeholder, banner_placeholder,
+    health_score, is_excluded, exclusion_reason, is_classical, metadata_sources,
+    last_scanned_at, created_at, updated_at
+FROM artists;
+
+DROP TABLE artists;
+ALTER TABLE artists_new RENAME TO artists;
+
+-- Recreate surviving indexes (provider-specific indexes are no longer needed).
+CREATE INDEX idx_artists_name ON artists(name);
+CREATE INDEX idx_artists_path ON artists(path);
+CREATE INDEX idx_artists_library_id ON artists(library_id);
 
 -- +goose Down
 -- Re-add columns, copy data back, drop normalized table.
