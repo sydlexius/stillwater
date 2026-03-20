@@ -878,3 +878,33 @@ func TestEnrichProviderIDsNilInputs(t *testing.T) {
 	}
 	EnrichProviderIDs(meta, nil) // should not panic
 }
+
+// TestEnrichProviderIDsEmptyStringValues verifies that EnrichProviderIDs fills
+// in empty-string entries, which is how ProviderIDMap() represents unknown IDs.
+func TestEnrichProviderIDsEmptyStringValues(t *testing.T) {
+	providerIDs := map[ProviderName]string{
+		NameDiscogs: "",            // unknown -- should be filled
+		NameDeezer:  "",            // unknown -- should be filled
+		NameSpotify: "existing-id", // known -- should be preserved
+	}
+
+	meta := &ArtistMetadata{
+		URLs: map[string]string{
+			"discogs": "https://www.discogs.com/artist/24941",
+			"deezer":  "https://www.deezer.com/artist/3106",
+			"spotify": "https://open.spotify.com/artist/2jzc5TC5TVFLXQlBNgQBiB",
+		},
+	}
+
+	EnrichProviderIDs(meta, providerIDs)
+
+	if providerIDs[NameDiscogs] != "24941" {
+		t.Errorf("expected empty Discogs entry to be filled with '24941', got %q", providerIDs[NameDiscogs])
+	}
+	if providerIDs[NameDeezer] != "3106" {
+		t.Errorf("expected empty Deezer entry to be filled with '3106', got %q", providerIDs[NameDeezer])
+	}
+	if providerIDs[NameSpotify] != "existing-id" {
+		t.Errorf("expected non-empty Spotify entry to be preserved as 'existing-id', got %q", providerIDs[NameSpotify])
+	}
+}

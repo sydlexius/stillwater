@@ -56,8 +56,10 @@ func (o *Orchestrator) SetExecutor(e ScraperExecutor) {
 // FetchMetadata queries all providers in priority order and merges the results.
 // It uses the artist's MBID when available, falling back to name-based search.
 // providerIDs supplies provider-specific IDs (AudioDB numeric ID, Discogs ID, etc.)
-// so that each provider receives its own stored ID instead of the MBID. A nil map
-// preserves backward-compatible MBID-first behavior.
+// so that each provider receives its own stored ID instead of the MBID. A nil or
+// empty map is safe: the function allocates an internal map so that IDs discovered
+// from earlier providers' URL results (e.g., a Discogs numeric ID extracted from a
+// MusicBrainz URL) can be used when calling later providers.
 // When a ScraperExecutor is configured, delegates to it for scraper-config-driven
 // per-field fetching with fallback chains.
 func (o *Orchestrator) FetchMetadata(ctx context.Context, mbid, name string, providerIDs map[ProviderName]string) (*FetchResult, error) {
@@ -590,20 +592,22 @@ func EnrichProviderIDs(meta *ArtistMetadata, providerIDs map[ProviderName]string
 	}
 	extractProviderIDsFromURLs(scratch)
 
-	// Only set IDs that are not already in providerIDs. We do not overwrite
+	// Only set IDs that are not already populated. We preserve non-empty
 	// stored IDs because the caller's existing ID is authoritative.
+	// ProviderIDMap() includes keys with empty-string values for unknown
+	// providers, so we treat empty strings as unset.
 	if scratch.DiscogsID != "" {
-		if _, ok := providerIDs[NameDiscogs]; !ok {
+		if current := providerIDs[NameDiscogs]; current == "" {
 			providerIDs[NameDiscogs] = scratch.DiscogsID
 		}
 	}
 	if scratch.DeezerID != "" {
-		if _, ok := providerIDs[NameDeezer]; !ok {
+		if current := providerIDs[NameDeezer]; current == "" {
 			providerIDs[NameDeezer] = scratch.DeezerID
 		}
 	}
 	if scratch.SpotifyID != "" {
-		if _, ok := providerIDs[NameSpotify]; !ok {
+		if current := providerIDs[NameSpotify]; current == "" {
 			providerIDs[NameSpotify] = scratch.SpotifyID
 		}
 	}

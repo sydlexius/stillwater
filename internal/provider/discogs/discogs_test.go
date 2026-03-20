@@ -133,9 +133,6 @@ func TestGetImages(t *testing.T) {
 
 func TestGetArtistRejectsUUID(t *testing.T) {
 	limiter, settings := setupTest(t)
-	if err := settings.SetAPIKey(context.Background(), provider.NameDiscogs, "test-token"); err != nil {
-		t.Fatalf("SetAPIKey: %v", err)
-	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	a := New(limiter, settings, logger)
