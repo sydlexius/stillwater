@@ -935,7 +935,14 @@ func (f *BackdropSequencingFixer) Fix(ctx context.Context, a *artist.Artist, _ *
 
 	var profile *platform.Profile
 	if f.platformService != nil {
-		profile, _ = f.platformService.GetActive(ctx)
+		var profErr error
+		profile, profErr = f.platformService.GetActive(ctx)
+		if profErr != nil {
+			// Abort rather than falling back to default naming convention.
+			// Renaming files with the wrong convention (e.g., non-Kodi on a
+			// Kodi library) is destructive and not safely reversible.
+			return nil, fmt.Errorf("loading active platform profile: %w", profErr)
+		}
 	}
 
 	var fanartNames []string
