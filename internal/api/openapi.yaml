@@ -256,6 +256,9 @@ components:
           type: string
         artist_name:
           type: string
+        library_name:
+          type: string
+          description: Name of the library the artist belongs to. Empty if unknown.
         severity:
           type: string
           enum: [error, warning, info]
@@ -3774,6 +3777,8 @@ paths:
                       type: object
                       properties:
                         artist_name:
+                          type: string
+                        library_name:
                           type: string
                         rule_id:
                           type: string

@@ -99,6 +99,7 @@ type RuleViolation struct {
 	RuleID      string           `json:"rule_id"`
 	ArtistID    string           `json:"artist_id"`
 	ArtistName  string           `json:"artist_name"`
+	LibraryName string           `json:"library_name"`
 	Severity    string           `json:"severity"`
 	Message     string           `json:"message"`
 	Fixable     bool             `json:"fixable"`

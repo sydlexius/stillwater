@@ -249,7 +249,7 @@ func TestHandleNotificationsExport_CSV(t *testing.T) {
 
 	body := w.Body.String()
 	// Header row
-	if !strings.Contains(body, "Artist Name,Rule ID,Severity,Message,Status,Age") {
+	if !strings.Contains(body, "Artist Name,Library,Rule ID,Severity,Message,Status,Age") {
 		t.Error("expected CSV header row")
 	}
 	// All three seeded violations should appear (default status=active)
@@ -284,12 +284,13 @@ func TestHandleNotificationsExport_JSON(t *testing.T) {
 
 	var result struct {
 		Violations []struct {
-			ArtistName string `json:"artist_name"`
-			RuleID     string `json:"rule_id"`
-			Severity   string `json:"severity"`
-			Message    string `json:"message"`
-			Status     string `json:"status"`
-			Age        string `json:"age"`
+			ArtistName  string `json:"artist_name"`
+			LibraryName string `json:"library_name"`
+			RuleID      string `json:"rule_id"`
+			Severity    string `json:"severity"`
+			Message     string `json:"message"`
+			Status      string `json:"status"`
+			Age         string `json:"age"`
 		} `json:"violations"`
 		Count int `json:"count"`
 	}
@@ -298,6 +299,12 @@ func TestHandleNotificationsExport_JSON(t *testing.T) {
 	}
 	if result.Count != 3 {
 		t.Errorf("count = %d, want 3", result.Count)
+	}
+	// Verify library_name field is present (even if empty for test data
+	// that has no matching artist/library rows).
+	for _, v := range result.Violations {
+		// library_name should be present as a string (not omitted) per OpenAPI spec
+		_ = v.LibraryName
 	}
 	if len(result.Violations) != 3 {
 		t.Fatalf("violations length = %d, want 3", len(result.Violations))
