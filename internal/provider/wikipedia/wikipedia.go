@@ -195,12 +195,26 @@ func (a *Adapter) resolveFromMBID(ctx context.Context, mbid string) (string, err
 		return "", &provider.ErrNotFound{Provider: provider.NameWikipedia, ID: mbid}
 	}
 
-	// Extract article title from the full URL.
+	// Extract article title from the full URL and URL-decode it.
 	// e.g. "https://en.wikipedia.org/wiki/Noise_Ratchet" -> "Noise_Ratchet"
+	// URL-decoding prevents double-encoding when fetchSummary re-encodes the
+	// title for the REST API path (e.g. "AC%2FDC" -> "AC/DC" -> re-encoded).
 	articleURL := sparql.Results.Bindings[0].Article.Value
 	const wikiPrefix = "/wiki/"
 	if idx := strings.LastIndex(articleURL, wikiPrefix); idx >= 0 {
-		return articleURL[idx+len(wikiPrefix):], nil
+		raw := articleURL[idx+len(wikiPrefix):]
+		decoded, err := url.PathUnescape(raw)
+		if err != nil {
+			a.logger.Warn("failed to unescape article title from Wikidata URL",
+				slog.String("mbid", mbid),
+				slog.String("url", articleURL),
+				slog.Any("error", err))
+			return "", &provider.ErrProviderUnavailable{
+				Provider: provider.NameWikipedia,
+				Cause:    fmt.Errorf("invalid percent-encoding in Wikidata article title: %w", err),
+			}
+		}
+		return decoded, nil
 	}
 
 	// The SPARQL query returned a result but the article URL is not in the
@@ -273,7 +287,9 @@ func (a *Adapter) fetchSummary(ctx context.Context, title string) (*provider.Art
 	}
 
 	// Use the display title (cleaned up) as the name.
-	name := summary.DisplayName
+	// DisplayName ("displaytitle") can contain HTML markup from Wikipedia
+	// (e.g. <i>italics</i>); strip tags to get plain text.
+	name := stripHTMLTags(summary.DisplayName)
 	if name == "" {
 		name = summary.Title
 	}
@@ -284,10 +300,32 @@ func (a *Adapter) fetchSummary(ctx context.Context, title string) (*provider.Art
 	name = strings.ReplaceAll(name, "_", " ")
 
 	return &provider.ArtistMetadata{
-		Name:      name,
-		Biography: strings.TrimSpace(summary.Extract),
+		ProviderID: title,
+		Name:       name,
+		Biography:  strings.TrimSpace(summary.Extract),
 		URLs: map[string]string{
 			"wikipedia": "https://en.wikipedia.org/wiki/" + url.PathEscape(title),
 		},
 	}, nil
+}
+
+// stripHTMLTags removes HTML tags from s, returning plain text.
+// Wikipedia's "displaytitle" field can contain markup like <i>Name</i>.
+func stripHTMLTags(s string) string {
+	var b strings.Builder
+	inTag := false
+	for _, r := range s {
+		if r == '<' {
+			inTag = true
+			continue
+		}
+		if r == '>' {
+			inTag = false
+			continue
+		}
+		if !inTag {
+			b.WriteRune(r)
+		}
+	}
+	return strings.TrimSpace(b.String())
 }

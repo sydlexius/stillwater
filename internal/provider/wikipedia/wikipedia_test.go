@@ -3,6 +3,7 @@ package wikipedia
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -337,20 +338,12 @@ func TestSupportsNameLookup(t *testing.T) {
 	}
 }
 
-// isErrNotFound checks if err is an *provider.ErrNotFound via errors.As-like logic.
+// isErrNotFound checks if err (or any wrapped error) is an *provider.ErrNotFound.
 func isErrNotFound(err error, target **provider.ErrNotFound) bool {
-	e, ok := err.(*provider.ErrNotFound)
-	if ok {
-		*target = e
-	}
-	return ok
+	return errors.As(err, target)
 }
 
-// isErrUnavailable checks if err is an *provider.ErrProviderUnavailable.
+// isErrUnavailable checks if err (or any wrapped error) is an *provider.ErrProviderUnavailable.
 func isErrUnavailable(err error, target **provider.ErrProviderUnavailable) bool {
-	e, ok := err.(*provider.ErrProviderUnavailable)
-	if ok {
-		*target = e
-	}
-	return ok
+	return errors.As(err, target)
 }
