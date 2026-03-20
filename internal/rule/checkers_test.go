@@ -506,7 +506,7 @@ func TestCheckExtraneousImages_BackdropNaming(t *testing.T) {
 }
 
 func TestCheckExtraneousImages_NonStandardNameFlagged(t *testing.T) {
-	// Non-standard names like "backdrop_old.png" should be flagged even
+	// Non-standard names like "backdrop_old.jpg" should be flagged even
 	// when valid numbered backdrops are present.
 	dir := t.TempDir()
 	createTestJPEG(t, filepath.Join(dir, "folder.jpg"), 500, 500)
