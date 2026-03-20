@@ -2692,10 +2692,11 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 				>
 					<div class="flex flex-col gap-1.5 sm:flex-row sm:items-end">
 						<div class="flex-1">
-							<label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-0.5">
+							<label for={ "custom-base-url-" + string(pk.Name) } class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-0.5">
 								Base URL
 							</label>
 							<input
+								id={ "custom-base-url-" + string(pk.Name) }
 								type="url"
 								name="base_url"
 								placeholder="http://192.168.1.100:5000/ws/2"
@@ -2711,10 +2712,11 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 							/>
 						</div>
 						<div class="w-32">
-							<label class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-0.5">
+							<label for={ "custom-rate-limit-" + string(pk.Name) } class="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-0.5">
 								Rate (req/s)
 							</label>
 							<input
+								id={ "custom-rate-limit-" + string(pk.Name) }
 								type="number"
 								name="rate_limit"
 								placeholder="10"
@@ -2798,6 +2800,22 @@ script toggleKeyInput(providerName string) {
 script toggleProviderConfig(providerName string) {
 	const panel = document.getElementById("config-panel-" + providerName);
 	if (panel) {
+		var closing = !panel.classList.contains("hidden");
+		if (closing) {
+			var form = document.getElementById("config-form-" + providerName);
+			if (form) {
+				form.reset();
+				var customFields = document.getElementById("custom-fields-" + providerName);
+				var selected = form.querySelector('input[name="server_type"]:checked');
+				if (customFields && selected) {
+					if (selected.value === "custom") {
+						customFields.classList.remove("hidden");
+					} else {
+						customFields.classList.add("hidden");
+					}
+				}
+			}
+		}
 		panel.classList.toggle("hidden");
 		const btn = document.querySelector('[aria-controls="config-panel-' + providerName + '"]');
 		if (btn) {
