@@ -262,7 +262,7 @@ func (s *SettingsService) ListProviderKeyStatuses(ctx context.Context) ([]Provid
 // providerRequiresKey returns whether a provider needs an API key.
 func providerRequiresKey(name ProviderName) bool {
 	switch name {
-	case NameMusicBrainz, NameWikidata, NameDeezer, NameAudioDB:
+	case NameMusicBrainz, NameWikidata, NameWikipedia, NameDeezer, NameAudioDB:
 		return false
 	default:
 		return true
@@ -303,7 +303,7 @@ func (fp FieldPriority) EnabledProviders() []ProviderName {
 // DefaultPriorities returns the default provider priority order per field.
 func DefaultPriorities() []FieldPriority {
 	return []FieldPriority{
-		{Field: "biography", Providers: []ProviderName{NameMusicBrainz, NameLastFM, NameAudioDB, NameDiscogs, NameWikidata, NameGenius}},
+		{Field: "biography", Providers: []ProviderName{NameWikipedia, NameLastFM, NameAudioDB, NameDiscogs, NameWikidata, NameGenius}},
 		{Field: "genres", Providers: []ProviderName{NameMusicBrainz, NameLastFM, NameAudioDB, NameDiscogs, NameSpotify}},
 		{Field: "styles", Providers: []ProviderName{NameAudioDB, NameDiscogs}},
 		{Field: "moods", Providers: []ProviderName{NameAudioDB}},

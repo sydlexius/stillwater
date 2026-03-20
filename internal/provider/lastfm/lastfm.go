@@ -117,7 +117,7 @@ func (a *Adapter) GetArtist(ctx context.Context, id string) (*provider.ArtistMet
 		"format":  {"json"},
 	}
 	// If id looks like an MBID (UUID), use mbid parameter; otherwise use artist name
-	if isUUID(id) {
+	if provider.IsUUID(id) {
 		params.Set("mbid", id)
 	} else {
 		params.Set("artist", id)
@@ -242,22 +242,4 @@ func cleanBio(bio string) string {
 		bio = strings.TrimSpace(bio[:idx])
 	}
 	return bio
-}
-
-func isUUID(s string) bool {
-	if len(s) != 36 {
-		return false
-	}
-	for i, c := range s {
-		if i == 8 || i == 13 || i == 18 || i == 23 {
-			if c != '-' {
-				return false
-			}
-		} else {
-			if (c < '0' || c > '9') && (c < 'a' || c > 'f') && (c < 'A' || c > 'F') {
-				return false
-			}
-		}
-	}
-	return true
 }

@@ -273,7 +273,7 @@ func applyFieldValue(field FieldName, pr *providerResult, result *provider.Fetch
 
 	switch field {
 	case FieldBiography:
-		if meta.Biography == "" {
+		if meta.Biography == "" || provider.IsJunkBiography(meta.Biography) {
 			return false
 		}
 		result.Metadata.Biography = meta.Biography

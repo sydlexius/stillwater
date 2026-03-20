@@ -270,8 +270,8 @@ func TestIsUUID(t *testing.T) {
 		{"a74b1b7f-71a5-4011-9441-d0b5e412271", false}, // too short
 	}
 	for _, tt := range tests {
-		if got := isUUID(tt.input); got != tt.want {
-			t.Errorf("isUUID(%q) = %v, want %v", tt.input, got, tt.want)
+		if got := provider.IsUUID(tt.input); got != tt.want {
+			t.Errorf("IsUUID(%q) = %v, want %v", tt.input, got, tt.want)
 		}
 	}
 }
