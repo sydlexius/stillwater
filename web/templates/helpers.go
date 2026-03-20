@@ -260,13 +260,14 @@ func rateLimitText(rl *provider.RateLimitInfo) string {
 }
 
 const (
-	betaMirrorURL = "https://beta.musicbrainz.org/ws/2"
+	officialMirrorURL = "https://musicbrainz.org/ws/2"
+	betaMirrorURL     = "https://beta.musicbrainz.org/ws/2"
 )
 
 // mirrorServerType returns "official", "beta", or "custom" based on the
 // current mirror configuration.
 func mirrorServerType(m *provider.MirrorConfig) string {
-	if m == nil {
+	if m == nil || m.BaseURL == officialMirrorURL {
 		return "official"
 	}
 	if m.BaseURL == betaMirrorURL {

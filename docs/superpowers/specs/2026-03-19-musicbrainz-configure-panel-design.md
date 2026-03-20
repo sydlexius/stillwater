@@ -49,15 +49,14 @@ redesign.
 
 #### Action Buttons
 
-- **Save** -- persists the selected server config
-  - Official: `DELETE /api/v1/providers/{name}/mirror` (revert to default)
+- **Save** -- persists the selected server config based on the current radio selection
+  - Official: `DELETE /api/v1/providers/{name}/mirror` (revert to default / clear mirror)
   - Beta: `PUT /api/v1/providers/{name}/mirror` with beta URL and 1 req/s
   - Custom: `PUT /api/v1/providers/{name}/mirror` with user-provided URL and rate
-- **Test** -- `POST /api/v1/providers/{name}/test` (existing endpoint)
-- **Cancel** -- collapses the panel
+- **Cancel** -- collapses the panel without saving changes
 
-If a mirror is currently active (not official), show a **Clear** button that calls
-DELETE and reverts to official.
+To revert from a non-default server to Official, select the Official radio and
+click Save. This issues a DELETE which clears the mirror config.
 
 ### 3. Status Display
 
