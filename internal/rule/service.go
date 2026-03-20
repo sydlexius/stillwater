@@ -375,17 +375,17 @@ func (s *Service) UpsertViolation(ctx context.Context, v *RuleViolation) error {
 // ListViolations returns rule violations filtered by status.
 // If status is empty, returns all violations.
 func (s *Service) ListViolations(ctx context.Context, status string) ([]RuleViolation, error) {
-	query := `SELECT id, rule_id, artist_id, artist_name, severity, message, fixable, status, candidates, dismissed_at, resolved_at, created_at, updated_at FROM rule_violations`
+	query := `SELECT rv.id, rv.rule_id, rv.artist_id, rv.artist_name, COALESCE(l.name, '') AS library_name, rv.severity, rv.message, rv.fixable, rv.status, rv.candidates, rv.dismissed_at, rv.resolved_at, rv.created_at, rv.updated_at FROM rule_violations rv LEFT JOIN artists a ON a.id = rv.artist_id LEFT JOIN libraries l ON l.id = a.library_id`
 	args := []any{}
 	if status == "active" {
 		// active = open + pending_choice (violations that need attention)
-		query += ` WHERE status IN (?, ?)`
+		query += ` WHERE rv.status IN (?, ?)`
 		args = append(args, ViolationStatusOpen, ViolationStatusPendingChoice)
 	} else if status != "" {
-		query += ` WHERE status = ?`
+		query += ` WHERE rv.status = ?`
 		args = append(args, status)
 	}
-	query += ` ORDER BY created_at DESC`
+	query += ` ORDER BY rv.created_at DESC`
 
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -443,8 +443,8 @@ func (s *Service) ListViolationsFiltered(ctx context.Context, p ViolationListPar
 		args = append(args, p.Category)
 	}
 
-	// Build query
-	query := `SELECT rv.id, rv.rule_id, rv.artist_id, rv.artist_name, rv.severity, rv.message, rv.fixable, rv.status, rv.candidates, rv.dismissed_at, rv.resolved_at, rv.created_at, rv.updated_at FROM rule_violations rv`
+	// Build query -- always join artists/libraries for library_name context
+	query := `SELECT rv.id, rv.rule_id, rv.artist_id, rv.artist_name, COALESCE(l.name, '') AS library_name, rv.severity, rv.message, rv.fixable, rv.status, rv.candidates, rv.dismissed_at, rv.resolved_at, rv.created_at, rv.updated_at FROM rule_violations rv LEFT JOIN artists a ON a.id = rv.artist_id LEFT JOIN libraries l ON l.id = a.library_id`
 	if needJoin {
 		query += ` JOIN rules r ON r.id = rv.rule_id`
 	}
@@ -567,8 +567,8 @@ func GroupViolations(violations []RuleViolation, groupBy string) []ViolationGrou
 // GetViolationByID retrieves a single rule violation by its primary key.
 func (s *Service) GetViolationByID(ctx context.Context, id string) (*RuleViolation, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT id, rule_id, artist_id, artist_name, severity, message, fixable, status, candidates, dismissed_at, resolved_at, created_at, updated_at
-		FROM rule_violations WHERE id = ?
+		SELECT rv.id, rv.rule_id, rv.artist_id, rv.artist_name, COALESCE(l.name, '') AS library_name, rv.severity, rv.message, rv.fixable, rv.status, rv.candidates, rv.dismissed_at, rv.resolved_at, rv.created_at, rv.updated_at
+		FROM rule_violations rv LEFT JOIN artists a ON a.id = rv.artist_id LEFT JOIN libraries l ON l.id = a.library_id WHERE rv.id = ?
 	`, id)
 	v, err := scanViolation(row)
 	if err != nil {
@@ -774,14 +774,18 @@ func scanViolation(row interface{ Scan(...any) error }) (*RuleViolation, error) 
 	var fixable int
 	var candidates string
 	var createdAt, updatedAt, dismissedAt, resolvedAt sql.NullString
+	var libraryName sql.NullString
 
-	err := row.Scan(&v.ID, &v.RuleID, &v.ArtistID, &v.ArtistName, &v.Severity, &v.Message,
+	err := row.Scan(&v.ID, &v.RuleID, &v.ArtistID, &v.ArtistName, &libraryName, &v.Severity, &v.Message,
 		&fixable, &v.Status, &candidates, &dismissedAt, &resolvedAt, &createdAt, &updatedAt)
 	if err != nil {
 		return nil, err
 	}
 
 	v.Fixable = fixable == 1
+	if libraryName.Valid {
+		v.LibraryName = libraryName.String
+	}
 	v.Candidates = unmarshalCandidates(candidates)
 	v.CreatedAt = dbutil.ParseTime(createdAt.String)
 	v.UpdatedAt = dbutil.ParseTime(updatedAt.String)

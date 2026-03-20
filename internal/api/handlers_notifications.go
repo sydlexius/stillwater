@@ -58,23 +58,25 @@ func (r *Router) handleNotificationsExport(w http.ResponseWriter, req *http.Requ
 		w.WriteHeader(http.StatusOK)
 
 		type exportRow struct {
-			ArtistName string `json:"artist_name"`
-			RuleID     string `json:"rule_id"`
-			Severity   string `json:"severity"`
-			Message    string `json:"message"`
-			Status     string `json:"status"`
-			Age        string `json:"age"`
+			ArtistName  string `json:"artist_name"`
+			LibraryName string `json:"library_name,omitempty"`
+			RuleID      string `json:"rule_id"`
+			Severity    string `json:"severity"`
+			Message     string `json:"message"`
+			Status      string `json:"status"`
+			Age         string `json:"age"`
 		}
 		rows := make([]exportRow, len(violations))
 		now := time.Now()
 		for i, v := range violations {
 			rows[i] = exportRow{
-				ArtistName: v.ArtistName,
-				RuleID:     v.RuleID,
-				Severity:   v.Severity,
-				Message:    v.Message,
-				Status:     v.Status,
-				Age:        violationAge(v.CreatedAt, now),
+				ArtistName:  v.ArtistName,
+				LibraryName: v.LibraryName,
+				RuleID:      v.RuleID,
+				Severity:    v.Severity,
+				Message:     v.Message,
+				Status:      v.Status,
+				Age:         violationAge(v.CreatedAt, now),
 			}
 		}
 		if err := json.NewEncoder(w).Encode(map[string]any{
@@ -92,7 +94,7 @@ func (r *Router) handleNotificationsExport(w http.ResponseWriter, req *http.Requ
 	w.WriteHeader(http.StatusOK)
 
 	cw := csv.NewWriter(w)
-	if err := cw.Write([]string{"Artist Name", "Rule ID", "Severity", "Message", "Status", "Age"}); err != nil {
+	if err := cw.Write([]string{"Artist Name", "Library", "Rule ID", "Severity", "Message", "Status", "Age"}); err != nil {
 		r.logger.Error("writing CSV header", "error", err)
 		return
 	}
@@ -104,6 +106,7 @@ func (r *Router) handleNotificationsExport(w http.ResponseWriter, req *http.Requ
 		}
 		if err := cw.Write([]string{
 			sanitizeCSV(v.ArtistName),
+			sanitizeCSV(v.LibraryName),
 			sanitizeCSV(v.RuleID),
 			v.Severity,
 			sanitizeCSV(v.Message),

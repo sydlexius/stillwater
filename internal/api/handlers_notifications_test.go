@@ -249,7 +249,7 @@ func TestHandleNotificationsExport_CSV(t *testing.T) {
 
 	body := w.Body.String()
 	// Header row
-	if !strings.Contains(body, "Artist Name,Rule ID,Severity,Message,Status,Age") {
+	if !strings.Contains(body, "Artist Name,Library,Rule ID,Severity,Message,Status,Age") {
 		t.Error("expected CSV header row")
 	}
 	// All three seeded violations should appear (default status=active)
