@@ -285,6 +285,7 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("GET "+bp+"/api/v1/notifications/badge", wrapAuth(r.handleNotificationBadge, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/notifications/fix-all/status", wrapAuth(r.handleFixAllStatus, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/notifications/fix-all", wrapAuth(r.handleFixAll, authMw))
+	mux.HandleFunc("GET "+bp+"/api/v1/notifications/export", wrapAuth(r.handleNotificationsExport, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/notifications", wrapAuth(r.handleListNotifications, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/notifications/bulk-dismiss", wrapAuth(r.handleBulkDismissViolations, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/notifications/{id}/dismiss", wrapAuth(r.handleDismissViolation, authMw))
