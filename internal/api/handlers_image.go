@@ -986,7 +986,9 @@ func (r *Router) handleDeleteImage(w http.ResponseWriter, req *http.Request) {
 	patterns := r.getActiveNamingConfig(req.Context(), imageType)
 	deleted, deleteFailed := deleteImageFiles(r.fileRemover, r.imageDir(a), patterns, r.logger)
 
-	r.clearArtistImageFlag(req.Context(), a, imageType)
+	if _, found := findExistingImage(r.imageDir(a), patterns); !found {
+		r.clearArtistImageFlag(req.Context(), a, imageType)
+	}
 	warnings := make([]string, 0)
 	if deleteFailed {
 		warnings = append(warnings, "some image files could not be deleted from disk")

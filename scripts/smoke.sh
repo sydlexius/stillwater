@@ -56,8 +56,9 @@ COOKIE_JAR=""
 # Status "000" means curl itself failed (DNS, connection refused, timeout),
 # not an HTTP response. Tier 1 calls are left unguarded intentionally -- if
 # the server is unreachable during core checks, the entire test run is
-# unreliable and immediate abort is correct. Tier 2 guards the platform-ids
-# discovery calls and all data-modifying push/delete/re-push calls.
+# unreliable and immediate abort is correct. Tier 2 guards data-modifying
+# push/delete/re-push calls; Tier 2 read-only calls (platform-ids GET,
+# platform-state) remain unguarded and will abort on transport failure.
 # Tier 5 roundtrip discovery calls are also guarded.
 
 assert_status() {
