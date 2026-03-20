@@ -259,6 +259,36 @@ func rateLimitText(rl *provider.RateLimitInfo) string {
 	return strings.Join(parts, " / ")
 }
 
+const (
+	officialMirrorURL = "https://musicbrainz.org/ws/2"
+	betaMirrorURL     = "https://beta.musicbrainz.org/ws/2"
+)
+
+// mirrorServerType returns "official", "beta", or "custom" based on the
+// current mirror configuration.
+func mirrorServerType(m *provider.MirrorConfig) string {
+	if m == nil || m.BaseURL == officialMirrorURL {
+		return "official"
+	}
+	if m.BaseURL == betaMirrorURL {
+		return "beta"
+	}
+	return "custom"
+}
+
+// mirrorStatusLabel returns a short label for the active server config,
+// shown as a badge on the provider card header.
+func mirrorStatusLabel(m *provider.MirrorConfig) string {
+	switch mirrorServerType(m) {
+	case "beta":
+		return "Beta server"
+	case "custom":
+		return "Custom mirror"
+	default:
+		return ""
+	}
+}
+
 // albumMatchClasses returns Tailwind CSS classes for the album match badge
 // based on the match percentage: green (70%+), amber (30-69%), red (<30%).
 func albumMatchClasses(percent int) string {

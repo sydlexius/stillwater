@@ -46,7 +46,7 @@ if git diff --cached --name-only --diff-filter=ACM -- | grep -q .; then
     if ! command -v typos &>/dev/null; then
         warn "typos (not installed, skipping)"
     else
-        if ! TYPOS_OUTPUT=$(git diff --cached --name-only -z --diff-filter=ACM -- | xargs -0 typos -- 2>&1); then
+        if ! TYPOS_OUTPUT=$(git diff --cached --name-only -z --diff-filter=ACM -- | xargs -0 typos --force-exclude -- 2>&1); then
             echo -e "${RED}${BOLD}FAIL${RESET} typos:"
             echo "$TYPOS_OUTPUT"
             exit 1
