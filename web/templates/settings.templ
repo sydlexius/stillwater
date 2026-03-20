@@ -3778,24 +3778,70 @@ templ ruleToggleScript() {
 				headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
 				credentials: 'same-origin'
 			}).then(function(r) {
+				if (r.status === 409) { showRuleToast('A rule evaluation is already running.', true); return null; }
 				if (!r.ok) throw new Error('status ' + r.status);
 				return r.json();
 			}).then(function(data) {
-				var msg = 'Evaluated ' + data.artists_processed + ' artists: ' +
-					data.violations_found + ' violations, ' +
-					data.fixes_succeeded + ' fixed';
-				showRuleToast(msg, false);
+				if (!data) { finishRunBtn(btn, origText); return; }
+				// Server accepted (202) -- poll for completion.
+				pollRuleStatus(btn, origText);
 			}).catch(function() {
-				showRuleToast('Failed to run rule.', true);
-			}).finally(function() {
-				delete btn.dataset.running;
-				btn.textContent = origText;
-				// Only re-enable if the rule is still toggled on
-				var row = btn.closest('.py-4');
-				var toggle = row ? row.querySelector('[role="switch"]') : null;
-				var isEnabled = toggle ? toggle.getAttribute('aria-checked') === 'true' : true;
-				btn.disabled = !isEnabled;
+				showRuleToast('Failed to start rule evaluation.', true);
+				finishRunBtn(btn, origText);
 			});
+		}
+
+		function pollRuleStatus(btn, origText) {
+			var attempts = 0;
+			var maxAttempts = 150;
+			var poll = setInterval(function() {
+				if (++attempts > maxAttempts) {
+					clearInterval(poll);
+					showRuleToast('Rule evaluation polling timed out.', true);
+					finishRunBtn(btn, origText);
+					return;
+				}
+				fetch('/api/v1/rules/run-all/status', { credentials: 'same-origin' })
+					.then(function(r) {
+						if (!r.ok) {
+							clearInterval(poll);
+							showRuleToast('Status check failed.', true);
+							finishRunBtn(btn, origText);
+							return null;
+						}
+						return r.json();
+					})
+					.then(function(s) {
+						if (!s) return;
+						if (s.status === 'running') return; // still going
+						clearInterval(poll);
+						if (s.status === 'completed') {
+							var msg = 'Evaluated ' + s.artists_processed + ' artists: ' +
+								s.violations_found + ' violations, ' +
+								s.fixes_succeeded + ' fixed';
+							showRuleToast(msg, false);
+						} else if (s.status === 'failed') {
+							var errMsg = s.error ? 'Rule evaluation failed: ' + s.error : 'Rule evaluation failed.';
+							showRuleToast(errMsg, true);
+						} else if (s.status === 'idle') {
+							showRuleToast('Rule evaluation state lost (server may have restarted).', true);
+						}
+						finishRunBtn(btn, origText);
+					}).catch(function() {
+						clearInterval(poll);
+						showRuleToast('Lost connection while running rule.', true);
+						finishRunBtn(btn, origText);
+					});
+			}, 2000);
+		}
+
+		function finishRunBtn(btn, origText) {
+			delete btn.dataset.running;
+			btn.textContent = origText;
+			var row = btn.closest('.py-4');
+			var toggle = row ? row.querySelector('[role="switch"]') : null;
+			var isEnabled = toggle ? toggle.getAttribute('aria-checked') === 'true' : true;
+			btn.disabled = !isEnabled;
 		}
 
 		// showRuleToast displays a brief toast for rule run results.

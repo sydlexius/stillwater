@@ -1981,7 +1981,10 @@ paths:
   /rules/{id}/run:
     post:
       tags: [Rules]
-      summary: Run single rule against all artists
+      summary: Start async evaluation of a single rule against all artists
+      description: >
+        Launches rule evaluation in a background goroutine and returns immediately.
+        Shares the status slot with run-all; poll GET /rules/run-all/status for progress.
       operationId: runRule
       parameters:
         - name: id
@@ -1990,14 +1993,26 @@ paths:
           schema:
             type: string
       responses:
-        "200":
-          description: Rule execution result
+        "202":
+          description: Rule evaluation started
           content:
             application/json:
               schema:
                 type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [running]
+                  rule_id:
+                    type: string
         "404":
           description: Rule not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: A rule evaluation is already running
           content:
             application/json:
               schema:
@@ -2056,7 +2071,10 @@ paths:
     get:
       tags: [Rules]
       summary: Get async rule-run status
-      description: Returns the current status of the most recent run-all-rules operation.
+      description: >
+        Returns the current status of the most recent rule evaluation,
+        whether triggered by run-all or a single-rule run. Both share
+        the same status slot; only one can run at a time.
       operationId: getRunAllRulesStatus
       responses:
         "200":

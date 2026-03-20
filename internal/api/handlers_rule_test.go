@@ -153,6 +153,57 @@ func TestHandleRunRule_NilPipeline(t *testing.T) {
 	requireErrorBody(t, w, "rule pipeline not configured")
 }
 
+func TestHandleRunRule_Returns202(t *testing.T) {
+	r, _, ruleSvc := testRouterWithPipelineFull(t)
+	ruleID := firstRuleID(t, ruleSvc)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/rules/"+ruleID+"/run", nil)
+	req.SetPathValue("id", ruleID)
+	w := httptest.NewRecorder()
+
+	r.handleRunRule(w, req)
+
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusAccepted, w.Body.String())
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if body["status"] != "running" {
+		t.Errorf("status = %v, want running", body["status"])
+	}
+	if body["rule_id"] != ruleID {
+		t.Errorf("rule_id = %v, want %s", body["rule_id"], ruleID)
+	}
+}
+
+func TestHandleRunRule_409WhenAlreadyRunning(t *testing.T) {
+	r, _, ruleSvc := testRouterWithPipelineFull(t)
+	ruleID := firstRuleID(t, ruleSvc)
+
+	// Start a run
+	req1 := httptest.NewRequest(http.MethodPost, "/api/v1/rules/"+ruleID+"/run", nil)
+	req1.SetPathValue("id", ruleID)
+	w1 := httptest.NewRecorder()
+	r.handleRunRule(w1, req1)
+
+	if w1.Code != http.StatusAccepted {
+		t.Fatalf("first run: status = %d, want %d", w1.Code, http.StatusAccepted)
+	}
+
+	// Immediately try a second run while the first is still in progress
+	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/rules/"+ruleID+"/run", nil)
+	req2.SetPathValue("id", ruleID)
+	w2 := httptest.NewRecorder()
+	r.handleRunRule(w2, req2)
+
+	if w2.Code != http.StatusConflict {
+		t.Fatalf("second run: status = %d, want %d; body: %s", w2.Code, http.StatusConflict, w2.Body.String())
+	}
+}
+
 func TestHandleEvaluateArtist_NotFound(t *testing.T) {
 	r, _ := testRouter(t)
 
