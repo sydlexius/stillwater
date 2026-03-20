@@ -437,7 +437,7 @@ func (r *Router) handleFanartSlotDelete(w http.ResponseWriter, req *http.Request
 	}
 
 	deleted := filepath.Base(paths[slot])
-	if removeErr := os.Remove(paths[slot]); removeErr != nil { //nolint:gosec // path from trusted fanart discovery
+	if removeErr := r.fileRemover.Remove(paths[slot]); removeErr != nil { //nolint:gosec // path from trusted fanart discovery
 		r.logger.Error("deleting fanart slot",
 			slog.String("artist_id", artistID),
 			slog.Int("slot", slot),
@@ -561,7 +561,7 @@ func (r *Router) handleFanartReorder(w http.ResponseWriter, req *http.Request) {
 		tmpName := fmt.Sprintf("fanart_reorder_%d%s.tmp", i, ext)
 		tmpPath := filepath.Join(dir, tmpName)
 		// Remove any leftover temp file from a previous crashed operation.
-		if removeErr := os.Remove(tmpPath); removeErr != nil && !os.IsNotExist(removeErr) { //nolint:gosec // tmpPath from trusted fanart discovery, not user input
+		if removeErr := r.fileRemover.Remove(tmpPath); removeErr != nil && !os.IsNotExist(removeErr) { //nolint:gosec // tmpPath from trusted fanart discovery, not user input
 			r.logger.Error("clearing stale temp file for reorder",
 				slog.String("artist_id", artistID),
 				slog.String("path", tmpPath),

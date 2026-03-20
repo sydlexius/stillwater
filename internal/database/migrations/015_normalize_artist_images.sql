@@ -46,20 +46,54 @@ SELECT lower(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' || substr(h
        id, 'banner', 0, banner_exists, banner_low_res, banner_placeholder
 FROM artists WHERE banner_exists != 0 OR banner_low_res != 0 OR banner_placeholder != '';
 
--- Drop image columns from the artists table (SQLite 3.35+).
-ALTER TABLE artists DROP COLUMN thumb_exists;
-ALTER TABLE artists DROP COLUMN fanart_exists;
-ALTER TABLE artists DROP COLUMN logo_exists;
-ALTER TABLE artists DROP COLUMN banner_exists;
-ALTER TABLE artists DROP COLUMN fanart_count;
-ALTER TABLE artists DROP COLUMN thumb_low_res;
-ALTER TABLE artists DROP COLUMN fanart_low_res;
-ALTER TABLE artists DROP COLUMN logo_low_res;
-ALTER TABLE artists DROP COLUMN banner_low_res;
-ALTER TABLE artists DROP COLUMN thumb_placeholder;
-ALTER TABLE artists DROP COLUMN fanart_placeholder;
-ALTER TABLE artists DROP COLUMN logo_placeholder;
-ALTER TABLE artists DROP COLUMN banner_placeholder;
+-- Remove image columns from artists using the table-recreation pattern.
+-- This replaces 13 individual ALTER TABLE DROP COLUMN statements that each
+-- trigger _sqlite3RenameTokenMap in the pure-Go SQLite implementation,
+-- causing test hangs under the Go race detector.
+CREATE TABLE artists_new (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    sort_name TEXT,
+    type TEXT NOT NULL DEFAULT '',
+    gender TEXT NOT NULL DEFAULT '',
+    disambiguation TEXT NOT NULL DEFAULT '',
+    genres TEXT NOT NULL DEFAULT '[]',
+    styles TEXT NOT NULL DEFAULT '[]',
+    moods TEXT NOT NULL DEFAULT '[]',
+    years_active TEXT NOT NULL DEFAULT '',
+    born TEXT NOT NULL DEFAULT '',
+    formed TEXT NOT NULL DEFAULT '',
+    died TEXT NOT NULL DEFAULT '',
+    disbanded TEXT NOT NULL DEFAULT '',
+    biography TEXT NOT NULL DEFAULT '',
+    path TEXT NOT NULL,
+    library_id TEXT REFERENCES libraries(id) DEFAULT NULL,
+    nfo_exists INTEGER NOT NULL DEFAULT 0,
+    health_score REAL NOT NULL DEFAULT 0.0,
+    is_excluded INTEGER NOT NULL DEFAULT 0,
+    exclusion_reason TEXT NOT NULL DEFAULT '',
+    is_classical INTEGER NOT NULL DEFAULT 0,
+    metadata_sources TEXT NOT NULL DEFAULT '{}',
+    last_scanned_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+INSERT INTO artists_new SELECT
+    id, name, sort_name, type, gender, disambiguation,
+    genres, styles, moods, years_active, born, formed, died, disbanded, biography,
+    path, library_id, nfo_exists,
+    health_score, is_excluded, exclusion_reason, is_classical, metadata_sources,
+    last_scanned_at, created_at, updated_at
+FROM artists;
+
+DROP TABLE artists;
+ALTER TABLE artists_new RENAME TO artists;
+
+-- Recreate indexes on the new table.
+CREATE INDEX idx_artists_name ON artists(name);
+CREATE INDEX idx_artists_path ON artists(path);
+CREATE INDEX idx_artists_library_id ON artists(library_id);
 
 -- +goose Down
 -- Re-add columns, copy data back, drop normalized table.

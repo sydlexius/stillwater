@@ -96,6 +96,7 @@ type Router struct {
 	imageCacheDir      string
 	staticAssets       *StaticAssets
 	db                 *sql.DB
+	fileRemover        FileRemover
 	ssrfClient         *http.Client
 	libraryOps         map[string]*LibraryOpResult
 	libraryOpsMu       sync.Mutex
@@ -143,7 +144,8 @@ func NewRouter(deps RouterDeps) *Router {
 			Timeout:   fetchTimeout,
 			Transport: ssrfSafeTransport(),
 		},
-		libraryOps: make(map[string]*LibraryOpResult),
+		fileRemover: osRemover{},
+		libraryOps:  make(map[string]*LibraryOpResult),
 	}
 }
 

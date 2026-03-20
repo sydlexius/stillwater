@@ -8,10 +8,10 @@
 #   SW_USER        -- admin username (default: admin)
 #   SW_PASS        -- admin password (default: admin)
 #   SW_BASE        -- base URL       (default: http://localhost:1973)
-#   EMBY_URL       -- Emby server URL (required for --roundtrip)
-#   EMBY_API_KEY   -- Emby API key    (required for --roundtrip)
-#   JELLYFIN_URL   -- Jellyfin server URL (required for --roundtrip)
-#   JELLYFIN_API_KEY -- Jellyfin API key  (required for --roundtrip)
+#   EMBY_URL       -- Emby server URL (used by --roundtrip)
+#   EMBY_API_KEY   -- Emby API key    (used by --roundtrip)
+#   JELLYFIN_URL   -- Jellyfin server URL (used by --roundtrip)
+#   JELLYFIN_API_KEY -- Jellyfin API key  (used by --roundtrip)
 #
 # --full      enables Tier 4 destructive/stateful checks (off by default)
 # --roundtrip enables Tier 5 NFO roundtrip checks (off by default)
@@ -56,8 +56,9 @@ COOKIE_JAR=""
 # Status "000" means curl itself failed (DNS, connection refused, timeout),
 # not an HTTP response. Tier 1 calls are left unguarded intentionally -- if
 # the server is unreachable during core checks, the entire test run is
-# unreliable and immediate abort is correct. Tier 2 guards only the
-# platform-ids discovery calls that gate subsequent push/delete sequences.
+# unreliable and immediate abort is correct. Tier 2 guards the platform-ids
+# discovery calls and all data-modifying push/delete/re-push calls.
+# Tier 5 roundtrip discovery calls are also guarded.
 
 assert_status() {
   local label="$1"
@@ -541,7 +542,7 @@ if [[ -n "$CONN_EMBY" ]]; then
     push_emby_resp=$(curl -s -w "\n%{http_code}" "${AUTH[@]}" \
       -X POST "$SW_BASE/api/v1/artists/$ARTIST_ID/push/images" \
       -H "Content-Type: application/json" \
-      -d "{\"connection_id\":\"$CONN_EMBY\",\"image_types\":[\"thumb\",\"fanart\",\"logo\",\"banner\"]}")
+      -d "{\"connection_id\":\"$CONN_EMBY\",\"image_types\":[\"thumb\",\"fanart\",\"logo\",\"banner\"]}") || push_emby_resp=$'\n000'
     push_emby_body=$(echo "$push_emby_resp" | sed '$d')
     push_emby_code=$(echo "$push_emby_resp" | tail -n 1)
     assert_status "POST push/images all types (Emby)" "200" "$push_emby_code"
@@ -562,16 +563,28 @@ if [[ -n "$CONN_EMBY" ]]; then
     del_emby_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
       -X DELETE "$SW_BASE/api/v1/artists/$ARTIST_ID/push/images/banner" \
       -H "Content-Type: application/json" \
-      -d "{\"connection_id\":\"$CONN_EMBY\"}")
+      -d "{\"connection_id\":\"$CONN_EMBY\"}") || del_emby_code="000"
     assert_status_in "DELETE push/images/banner (Emby)" "$del_emby_code" 200 204
 
-    # Re-push banner to restore.
+    # Re-push banner to restore. Retry once if the first attempt fails,
+    # since a successful delete with a failed re-push leaves the banner
+    # deleted on the platform.
     repush_emby_resp=$(curl -s -w "\n%{http_code}" "${AUTH[@]}" \
       -X POST "$SW_BASE/api/v1/artists/$ARTIST_ID/push/images" \
       -H "Content-Type: application/json" \
-      -d "{\"connection_id\":\"$CONN_EMBY\",\"image_types\":[\"banner\"]}")
+      -d "{\"connection_id\":\"$CONN_EMBY\",\"image_types\":[\"banner\"]}") || repush_emby_resp=$'\n000'
     repush_emby_body=$(echo "$repush_emby_resp" | sed '$d')
     repush_emby_code=$(echo "$repush_emby_resp" | tail -n 1)
+    if [[ "$repush_emby_code" != "200" && ("$del_emby_code" == "200" || "$del_emby_code" == "204") ]]; then
+      echo "[WARN] Emby banner re-push failed (HTTP $repush_emby_code), retrying..."
+      sleep 2
+      repush_emby_resp=$(curl -s -w "\n%{http_code}" "${AUTH[@]}" \
+        -X POST "$SW_BASE/api/v1/artists/$ARTIST_ID/push/images" \
+        -H "Content-Type: application/json" \
+        -d "{\"connection_id\":\"$CONN_EMBY\",\"image_types\":[\"banner\"]}") || repush_emby_resp=$'\n000'
+      repush_emby_body=$(echo "$repush_emby_resp" | sed '$d')
+      repush_emby_code=$(echo "$repush_emby_resp" | tail -n 1)
+    fi
     assert_status "POST push/images banner re-push (Emby)" "200" "$repush_emby_code"
     if [[ "$repush_emby_code" == "200" ]]; then
       repush_err=$(echo "$repush_emby_body" | jq -r '.errors | length' 2>/dev/null || echo "0")
@@ -609,7 +622,7 @@ if [[ -n "$CONN_JELLYFIN" ]]; then
     push_jf_resp=$(curl -s -w "\n%{http_code}" "${AUTH[@]}" \
       -X POST "$SW_BASE/api/v1/artists/$ARTIST_ID/push/images" \
       -H "Content-Type: application/json" \
-      -d "{\"connection_id\":\"$CONN_JELLYFIN\",\"image_types\":[\"thumb\",\"fanart\",\"logo\",\"banner\"]}")
+      -d "{\"connection_id\":\"$CONN_JELLYFIN\",\"image_types\":[\"thumb\",\"fanart\",\"logo\",\"banner\"]}") || push_jf_resp=$'\n000'
     push_jf_body=$(echo "$push_jf_resp" | sed '$d')
     push_jf_code=$(echo "$push_jf_resp" | tail -n 1)
     assert_status_in "POST push/images all types (Jellyfin)" "$push_jf_code" 200 204
@@ -630,16 +643,28 @@ if [[ -n "$CONN_JELLYFIN" ]]; then
     del_jf_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
       -X DELETE "$SW_BASE/api/v1/artists/$ARTIST_ID/push/images/banner" \
       -H "Content-Type: application/json" \
-      -d "{\"connection_id\":\"$CONN_JELLYFIN\"}")
+      -d "{\"connection_id\":\"$CONN_JELLYFIN\"}") || del_jf_code="000"
     assert_status_in "DELETE push/images/banner (Jellyfin)" "$del_jf_code" 200 204
 
-    # Re-push banner to restore.
+    # Re-push banner to restore. Retry once if the first attempt fails,
+    # since a successful delete with a failed re-push leaves the banner
+    # deleted on the platform.
     repush_jf_resp=$(curl -s -w "\n%{http_code}" "${AUTH[@]}" \
       -X POST "$SW_BASE/api/v1/artists/$ARTIST_ID/push/images" \
       -H "Content-Type: application/json" \
-      -d "{\"connection_id\":\"$CONN_JELLYFIN\",\"image_types\":[\"banner\"]}")
+      -d "{\"connection_id\":\"$CONN_JELLYFIN\",\"image_types\":[\"banner\"]}") || repush_jf_resp=$'\n000'
     repush_jf_body=$(echo "$repush_jf_resp" | sed '$d')
     repush_jf_code=$(echo "$repush_jf_resp" | tail -n 1)
+    if [[ "$repush_jf_code" != "200" && "$repush_jf_code" != "204" && ("$del_jf_code" == "200" || "$del_jf_code" == "204") ]]; then
+      echo "[WARN] Jellyfin banner re-push failed (HTTP $repush_jf_code), retrying..."
+      sleep 2
+      repush_jf_resp=$(curl -s -w "\n%{http_code}" "${AUTH[@]}" \
+        -X POST "$SW_BASE/api/v1/artists/$ARTIST_ID/push/images" \
+        -H "Content-Type: application/json" \
+        -d "{\"connection_id\":\"$CONN_JELLYFIN\",\"image_types\":[\"banner\"]}") || repush_jf_resp=$'\n000'
+      repush_jf_body=$(echo "$repush_jf_resp" | sed '$d')
+      repush_jf_code=$(echo "$repush_jf_resp" | tail -n 1)
+    fi
     assert_status_in "POST push/images banner re-push (Jellyfin)" "$repush_jf_code" 200 204
     if [[ "$repush_jf_code" == "200" ]]; then
       repush_jf_err=$(echo "$repush_jf_body" | jq -r '.errors | length' 2>/dev/null || echo "0")
@@ -657,7 +682,7 @@ if [[ -n "$CONN_JELLYFIN" ]]; then
     push_meta_resp=$(curl -s -w "\n%{http_code}" "${AUTH[@]}" \
       -X POST "$SW_BASE/api/v1/artists/$ARTIST_ID/push" \
       -H "Content-Type: application/json" \
-      -d "{\"connection_id\":\"$CONN_JELLYFIN\"}")
+      -d "{\"connection_id\":\"$CONN_JELLYFIN\"}") || push_meta_resp=$'\n000'
     push_meta_code=$(echo "$push_meta_resp" | tail -n 1)
     assert_status_in "POST push metadata (Jellyfin)" "$push_meta_code" 200 204
   fi
@@ -744,7 +769,13 @@ fi
 
 # Artist fanart_count field in artist detail response
 fanart_count_resp=$(curl -s "${AUTH[@]}" "$SW_BASE/api/v1/artists/$ARTIST_ID") || fanart_count_resp=""
-assert_json_exists "  artist detail has fanart_count field" ".artist.fanart_count" "$fanart_count_resp"
+if [[ -z "$fanart_count_resp" ]]; then
+  echo "[FAIL]   artist detail fanart_count -- curl transport failure (server unreachable)"
+  FAIL=$((FAIL + 1))
+  FAILURES+=("artist detail fanart_count -- curl transport failure")
+else
+  assert_json_exists "  artist detail has fanart_count field" ".artist.fanart_count" "$fanart_count_resp"
+fi
 
 notif_counts_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
   "$SW_BASE/api/v1/notifications/counts") || notif_counts_code="000"
@@ -814,7 +845,7 @@ if [[ "$FULL" -eq 1 ]]; then
     -d '{"url":"https://upload.wikimedia.org/wikipedia/en/a/aa/A-ha_band_2015.jpg","type":"thumb"}') || fetch_img_code="000"
   assert_status_in "POST /api/v1/artists/$ARTIST_ID/images/fetch (--full)" "$fetch_img_code" 200 422
 
-  # Populate from Emby or Jellyfin and verify the response includes backdrop image counts.
+  # Populate from Emby or Jellyfin and verify the response includes the expected fields.
   # This exercises the multi-backdrop download path.
   if [[ -n "$LIBRARY_ID" && -n "$LIB_CONN_ID" && "$LIB_CONN_ID" != "null" ]]; then
     pop_resp=$(curl -s -w "\n%{http_code}" "${AUTH[@]}" \
@@ -861,7 +892,10 @@ if [[ "$ROUNDTRIP" -eq 1 ]]; then
 
   # Prefer the existing test artist (a-ha) if it qualifies.
   if [[ -n "$ARTIST_ID" && "$ARTIST_ID" != "unknown" ]]; then
-    rt_detail=$(curl -s "${AUTH[@]}" "$SW_BASE/api/v1/artists/$ARTIST_ID")
+    rt_detail=$(curl -s "${AUTH[@]}" "$SW_BASE/api/v1/artists/$ARTIST_ID") || rt_detail=""
+    if [[ -z "$rt_detail" ]]; then
+      echo "[WARN] Roundtrip artist detail -- transport failure, falling back to artist scan"
+    fi
     rt_path=$(echo "$rt_detail" | jq -r '.artist.path // empty' 2>/dev/null || true)
     if [[ -n "$rt_path" ]]; then
       RT_ARTIST_ID="$ARTIST_ID"
@@ -872,10 +906,13 @@ if [[ "$ROUNDTRIP" -eq 1 ]]; then
 
   # If a-ha does not have a path, scan the first 50 artists for one that does.
   if [[ -z "$RT_ARTIST_ID" ]]; then
-    rt_list=$(curl -s "${AUTH[@]}" "$SW_BASE/api/v1/artists?page_size=50")
+    rt_list=$(curl -s "${AUTH[@]}" "$SW_BASE/api/v1/artists?page_size=50") || rt_list=""
+    if [[ -z "$rt_list" ]]; then
+      echo "[WARN] Roundtrip artist list -- transport failure, no artists to scan"
+    fi
     rt_ids=$(echo "$rt_list" | jq -r '.artists[].id // empty' 2>/dev/null || true)
     for candidate_id in $rt_ids; do
-      candidate_detail=$(curl -s "${AUTH[@]}" "$SW_BASE/api/v1/artists/$candidate_id")
+      candidate_detail=$(curl -s "${AUTH[@]}" "$SW_BASE/api/v1/artists/$candidate_id") || candidate_detail=""
       candidate_path=$(echo "$candidate_detail" | jq -r '.artist.path // empty' 2>/dev/null || true)
       if [[ -n "$candidate_path" ]]; then
         RT_ARTIST_ID="$candidate_id"
@@ -893,7 +930,10 @@ if [[ "$ROUNDTRIP" -eq 1 ]]; then
     echo "  Roundtrip path:   $RT_ARTIST_PATH"
 
     # Discover platform IDs for the roundtrip artist.
-    rt_plat_ids=$(curl -s "${AUTH[@]}" "$SW_BASE/api/v1/artists/$RT_ARTIST_ID/platform-ids")
+    rt_plat_ids=$(curl -s "${AUTH[@]}" "$SW_BASE/api/v1/artists/$RT_ARTIST_ID/platform-ids") || rt_plat_ids=""
+    if [[ -z "$rt_plat_ids" ]]; then
+      echo "[WARN] Roundtrip platform-ids -- transport failure, platform tests may be skipped"
+    fi
     if [[ -n "$CONN_EMBY" ]]; then
       RT_EMBY_PLATFORM_ID=$(echo "$rt_plat_ids" | \
         jq -r ".[] | select(.connection_id==\"$CONN_EMBY\") | .platform_artist_id" 2>/dev/null || echo "")
@@ -911,7 +951,10 @@ if [[ "$ROUNDTRIP" -eq 1 ]]; then
     # Check which platforms have NFO writers enabled (for Direction 2).
     EMBY_NFO_WRITER=0
     JELLYFIN_NFO_WRITER=0
-    clobber_resp=$(curl -s "${AUTH[@]}" "$SW_BASE/api/v1/connections/clobber-check")
+    clobber_resp=$(curl -s "${AUTH[@]}" "$SW_BASE/api/v1/connections/clobber-check") || clobber_resp=""
+    if [[ -z "$clobber_resp" ]]; then
+      echo "[WARN] Roundtrip clobber-check -- transport failure, NFO writer detection skipped"
+    fi
     if [[ -n "$CONN_EMBY" ]]; then
       emby_nfo_w=$(echo "$clobber_resp" | jq -r ".risks[] | select(.connection_type==\"emby\") | .nfo_writer" 2>/dev/null || echo "false")
       [[ "$emby_nfo_w" == "true" ]] && EMBY_NFO_WRITER=1
