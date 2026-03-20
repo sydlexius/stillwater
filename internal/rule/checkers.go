@@ -932,7 +932,7 @@ func (e *Engine) makeBackdropSequencingChecker() Checker {
 						RuleName: "Backdrop/fanart sequencing",
 						Category: "image",
 						Severity: effectiveSeverity(cfg),
-						Message:  fmt.Sprintf("artist %q has non-sequential backdrop files: %s", a.Name, strings.Join(fileList, ", ")),
+						Message:  fmt.Sprintf("artist %q has non-sequential %s files: %s", a.Name, strings.TrimSuffix(primaryName, filepath.Ext(primaryName)), strings.Join(fileList, ", ")),
 						Fixable:  true,
 					}
 				}

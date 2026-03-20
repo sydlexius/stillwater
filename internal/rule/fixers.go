@@ -985,7 +985,7 @@ func (f *BackdropSequencingFixer) Fix(ctx context.Context, a *artist.Artist, _ *
 		return &FixResult{
 			RuleID:  RuleBackdropSequencing,
 			Fixed:   true,
-			Message: fmt.Sprintf("renumbered %d backdrop files for %s", len(discovered), a.Name),
+			Message: fmt.Sprintf("renumbered %d %s files for %s", len(discovered), strings.TrimSuffix(primaryName, filepath.Ext(primaryName)), a.Name),
 		}, nil
 	}
 

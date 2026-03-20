@@ -870,6 +870,26 @@ func TestCheckBackdropSequencing_WithGap(t *testing.T) {
 	}
 }
 
+func TestCheckBackdropSequencing_NumberedOnlyNoPrimary(t *testing.T) {
+	// Only numbered variants exist without the primary (fanart.jpg missing).
+	// fanart2.jpg + fanart3.jpg should trigger a violation since index 0 is absent.
+	dir := t.TempDir()
+	createTestJPEG(t, filepath.Join(dir, "fanart2.jpg"), 1920, 1080)
+	createTestJPEG(t, filepath.Join(dir, "fanart3.jpg"), 1920, 1080)
+
+	e := &Engine{platformService: nil}
+	checker := e.makeBackdropSequencingChecker()
+
+	a := artist.Artist{Name: "Test", Path: dir}
+	v := checker(&a, RuleConfig{})
+	if v == nil {
+		t.Fatal("expected violation when primary file is missing and only numbered variants exist")
+	}
+	if v.RuleID != RuleBackdropSequencing {
+		t.Errorf("RuleID = %q, want %q", v.RuleID, RuleBackdropSequencing)
+	}
+}
+
 func TestCheckBackdropSequencing_SingleFile(t *testing.T) {
 	dir := t.TempDir()
 	createTestJPEG(t, filepath.Join(dir, "fanart.jpg"), 1920, 1080)

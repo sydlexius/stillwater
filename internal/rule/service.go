@@ -199,12 +199,13 @@ var defaultRules = []Rule{
 		Config:         RuleConfig{Severity: "warning"},
 	},
 	{
-		ID:          RuleBackdropSequencing,
-		Name:        "Backdrop/fanart sequencing",
-		Description: "Detects gaps in backdrop/fanart image sequences and incorrect numbering. Violations are fixed by renaming files to fill gaps.",
-		Category:    "image",
-		Enabled:     false,
-		Config:      RuleConfig{Severity: "warning"},
+		ID:             RuleBackdropSequencing,
+		Name:           "Backdrop/fanart sequencing",
+		Description:    "Detects gaps in backdrop/fanart image sequences and incorrect numbering. Violations are fixed by renaming files to fill gaps.",
+		Category:       "image",
+		Enabled:        false,
+		AutomationMode: AutomationModeManual,
+		Config:         RuleConfig{Severity: "warning"},
 	},
 }
 
