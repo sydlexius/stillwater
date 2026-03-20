@@ -546,6 +546,7 @@ func (r *Router) handleLibraryOpStatus(w http.ResponseWriter, req *http.Request)
 }
 
 func (r *Router) populateFromEmbyCtx(ctx context.Context, client *emby.Client, lib *library.Library, result *populateResult) error {
+	manualLibs := r.manualLibraries(ctx)
 	startIndex := 0
 	pageSize := 100
 	for {
@@ -601,6 +602,7 @@ func (r *Router) populateFromEmbyCtx(ctx context.Context, client *emby.Client, l
 				if setErr := r.artistService.SetPlatformID(ctx, existing.ID, lib.ConnectionID, item.ID); setErr != nil {
 					r.logger.Warn("storing emby platform id", "name", existing.Name, "error", setErr)
 				}
+				r.backfillPlatformIDToManualLibs(ctx, mbid, item.Name, lib.ConnectionID, item.ID, existing.ID, manualLibs)
 				// Download any missing images.
 				r.downloadPlatformImages(ctx, client, item.ID, item.ImageTags, item.BackdropImageTags, existing, result)
 				result.Skipped++
@@ -634,6 +636,7 @@ func (r *Router) populateFromEmbyCtx(ctx context.Context, client *emby.Client, l
 			if setErr := r.artistService.SetPlatformID(ctx, a.ID, lib.ConnectionID, item.ID); setErr != nil {
 				r.logger.Warn("storing emby platform id", "name", a.Name, "error", setErr)
 			}
+			r.backfillPlatformIDToManualLibs(ctx, mbid, item.Name, lib.ConnectionID, item.ID, a.ID, manualLibs)
 
 			r.downloadPlatformImages(ctx, client, item.ID, item.ImageTags, item.BackdropImageTags, a, result)
 		}
@@ -647,6 +650,7 @@ func (r *Router) populateFromEmbyCtx(ctx context.Context, client *emby.Client, l
 }
 
 func (r *Router) populateFromJellyfinCtx(ctx context.Context, client *jellyfin.Client, lib *library.Library, result *populateResult) error {
+	manualLibs := r.manualLibraries(ctx)
 	startIndex := 0
 	pageSize := 100
 	for {
@@ -702,6 +706,7 @@ func (r *Router) populateFromJellyfinCtx(ctx context.Context, client *jellyfin.C
 				if setErr := r.artistService.SetPlatformID(ctx, existing.ID, lib.ConnectionID, item.ID); setErr != nil {
 					r.logger.Warn("storing jellyfin platform id", "name", existing.Name, "error", setErr)
 				}
+				r.backfillPlatformIDToManualLibs(ctx, mbid, item.Name, lib.ConnectionID, item.ID, existing.ID, manualLibs)
 				// Download any missing images.
 				r.downloadPlatformImages(ctx, client, item.ID, item.ImageTags, item.BackdropImageTags, existing, result)
 				result.Skipped++
@@ -735,6 +740,7 @@ func (r *Router) populateFromJellyfinCtx(ctx context.Context, client *jellyfin.C
 			if setErr := r.artistService.SetPlatformID(ctx, a.ID, lib.ConnectionID, item.ID); setErr != nil {
 				r.logger.Warn("storing jellyfin platform id", "name", a.Name, "error", setErr)
 			}
+			r.backfillPlatformIDToManualLibs(ctx, mbid, item.Name, lib.ConnectionID, item.ID, a.ID, manualLibs)
 
 			r.downloadPlatformImages(ctx, client, item.ID, item.ImageTags, item.BackdropImageTags, a, result)
 		}
@@ -748,6 +754,7 @@ func (r *Router) populateFromJellyfinCtx(ctx context.Context, client *jellyfin.C
 }
 
 func (r *Router) populateFromLidarrCtx(ctx context.Context, client *lidarr.Client, lib *library.Library, result *populateResult) error {
+	manualLibs := r.manualLibraries(ctx)
 	artists, err := client.GetArtists(ctx)
 	if err != nil {
 		return fmt.Errorf("fetching artists from lidarr: %w", err)
@@ -769,6 +776,7 @@ func (r *Router) populateFromLidarrCtx(ctx context.Context, client *lidarr.Clien
 				if setErr := r.artistService.SetPlatformID(ctx, existing.ID, lib.ConnectionID, fmt.Sprintf("%d", la.ID)); setErr != nil {
 					r.logger.Warn("storing lidarr platform id", "name", existing.Name, "error", setErr)
 				}
+				r.backfillPlatformIDToManualLibs(ctx, mbid, la.ArtistName, lib.ConnectionID, fmt.Sprintf("%d", la.ID), existing.ID, manualLibs)
 				result.Skipped++
 				continue
 			}
@@ -784,6 +792,7 @@ func (r *Router) populateFromLidarrCtx(ctx context.Context, client *lidarr.Clien
 				if setErr := r.artistService.SetPlatformID(ctx, existing.ID, lib.ConnectionID, fmt.Sprintf("%d", la.ID)); setErr != nil {
 					r.logger.Warn("storing lidarr platform id", "name", existing.Name, "error", setErr)
 				}
+				r.backfillPlatformIDToManualLibs(ctx, mbid, la.ArtistName, lib.ConnectionID, fmt.Sprintf("%d", la.ID), existing.ID, manualLibs)
 				result.Skipped++
 				continue
 			}
@@ -806,6 +815,7 @@ func (r *Router) populateFromLidarrCtx(ctx context.Context, client *lidarr.Clien
 		if setErr := r.artistService.SetPlatformID(ctx, a.ID, lib.ConnectionID, fmt.Sprintf("%d", la.ID)); setErr != nil {
 			r.logger.Warn("storing lidarr platform id", "name", a.Name, "error", setErr)
 		}
+		r.backfillPlatformIDToManualLibs(ctx, mbid, la.ArtistName, lib.ConnectionID, fmt.Sprintf("%d", la.ID), a.ID, manualLibs)
 	}
 	return nil
 }
@@ -1032,8 +1042,90 @@ func (r *Router) compactFanartIfNeeded(dir, primary string, kodi bool) {
 	}
 }
 
+// backfillPlatformIDToManualLibs copies a platform ID mapping to any matching
+// artist in the given manual-source (filesystem) libraries. It matches by
+// MBID first, then case-insensitive name. This ensures that push operations
+// from the primary filesystem artist can find the platform mapping.
+func (r *Router) backfillPlatformIDToManualLibs(
+	ctx context.Context,
+	mbid, name, connectionID, platformArtistID, connArtistID string,
+	manualLibs []library.Library,
+) {
+	for _, ml := range manualLibs {
+		fsArtist, err := r.artistService.FindByMBIDOrName(ctx, mbid, name, ml.ID)
+		if err != nil {
+			r.logger.Warn("backfill: finding filesystem artist", "name", name, "library", ml.ID, "error", err)
+			continue
+		}
+		if fsArtist == nil || fsArtist.ID == connArtistID {
+			continue
+		}
+		if setErr := r.artistService.SetPlatformID(ctx, fsArtist.ID, connectionID, platformArtistID); setErr != nil {
+			r.logger.Warn("backfill: storing platform id on filesystem artist", "name", fsArtist.Name, "error", setErr)
+			continue
+		}
+		r.logger.Debug("backfill: platform id propagated to filesystem artist",
+			"name", fsArtist.Name, "fs_artist_id", fsArtist.ID, "connection_id", connectionID)
+	}
+}
+
+// manualLibraries returns all libraries with source "manual". Used by scan
+// and populate functions to find filesystem libraries for platform ID backfill.
+func (r *Router) manualLibraries(ctx context.Context) []library.Library {
+	libs, err := r.libraryService.List(ctx)
+	if err != nil {
+		r.logger.Error("backfill: failed to list libraries, backfill will be skipped for this operation", "error", err)
+		return nil
+	}
+	var manual []library.Library
+	for _, lib := range libs {
+		if lib.Source == library.SourceManual {
+			manual = append(manual, lib)
+		}
+	}
+	return manual
+}
+
+// resolveAndBackfillPlatformID finds the connection-library artist by MBID
+// or exact name, stores the platform ID on it, and backfills the mapping to
+// any matching filesystem-library artist. Returns the connection-library
+// artist for the caller to update image flags, or nil if no match found.
+func (r *Router) resolveAndBackfillPlatformID(
+	ctx context.Context,
+	mbid, name, connectionID, platformArtistID string,
+	connLib *library.Library,
+	manualLibs []library.Library,
+) *artist.Artist {
+	var a *artist.Artist
+	var lookupErr error
+	if mbid != "" {
+		a, lookupErr = r.artistService.GetByMBIDAndLibrary(ctx, mbid, connLib.ID)
+	}
+	if a == nil && lookupErr == nil {
+		a, lookupErr = r.artistService.GetByNameAndLibrary(ctx, name, connLib.ID)
+	}
+	if lookupErr != nil {
+		r.logger.Warn("scan artist lookup", "name", name, "mbid", mbid, "platform", connLib.Source, "error", lookupErr)
+		return nil
+	}
+	if a == nil {
+		return nil
+	}
+
+	// Store platform ID on the connection-library artist.
+	if setErr := r.artistService.SetPlatformID(ctx, a.ID, connectionID, platformArtistID); setErr != nil {
+		r.logger.Warn("storing platform id during scan", "name", a.Name, "platform", connLib.Source, "error", setErr)
+	}
+
+	// Backfill to filesystem-library artists.
+	r.backfillPlatformIDToManualLibs(ctx, mbid, name, connectionID, platformArtistID, a.ID, manualLibs)
+
+	return a
+}
+
 // scanFromEmby pages through Emby artists and updates image existence flags.
 func (r *Router) scanFromEmby(ctx context.Context, client *emby.Client, lib *library.Library) (int, error) {
+	manualLibs := r.manualLibraries(ctx)
 	updated := 0
 	startIndex := 0
 	pageSize := 100
@@ -1044,26 +1136,11 @@ func (r *Router) scanFromEmby(ctx context.Context, client *emby.Client, lib *lib
 		}
 
 		for _, item := range resp.Items {
-			mbid := item.ProviderIDs.MusicBrainzArtist
-			var a *artist.Artist
-			var lookupErr error
-			if mbid != "" {
-				a, lookupErr = r.artistService.GetByMBIDAndLibrary(ctx, mbid, lib.ID)
-			}
-			if a == nil && lookupErr == nil {
-				a, lookupErr = r.artistService.GetByNameAndLibrary(ctx, item.Name, lib.ID)
-			}
-			if lookupErr != nil {
-				r.logger.Warn("scan artist lookup from emby", "name", item.Name, "mbid", mbid, "error", lookupErr)
-				continue
-			}
+			a := r.resolveAndBackfillPlatformID(ctx,
+				item.ProviderIDs.MusicBrainzArtist, item.Name,
+				lib.ConnectionID, item.ID, lib, manualLibs)
 			if a == nil {
 				continue
-			}
-
-			// Backfill the platform-to-Stillwater artist ID mapping.
-			if setErr := r.artistService.SetPlatformID(ctx, a.ID, lib.ConnectionID, item.ID); setErr != nil {
-				r.logger.Warn("storing emby platform id during scan", "name", a.Name, "error", setErr)
 			}
 
 			var thumbExists, fanartExists, logoExists, bannerExists bool
@@ -1098,6 +1175,7 @@ func (r *Router) scanFromEmby(ctx context.Context, client *emby.Client, lib *lib
 
 // scanFromJellyfin pages through Jellyfin artists and updates image existence flags.
 func (r *Router) scanFromJellyfin(ctx context.Context, client *jellyfin.Client, lib *library.Library) (int, error) {
+	manualLibs := r.manualLibraries(ctx)
 	updated := 0
 	startIndex := 0
 	pageSize := 100
@@ -1108,26 +1186,11 @@ func (r *Router) scanFromJellyfin(ctx context.Context, client *jellyfin.Client, 
 		}
 
 		for _, item := range resp.Items {
-			mbid := item.ProviderIDs.MusicBrainzArtist
-			var a *artist.Artist
-			var lookupErr error
-			if mbid != "" {
-				a, lookupErr = r.artistService.GetByMBIDAndLibrary(ctx, mbid, lib.ID)
-			}
-			if a == nil && lookupErr == nil {
-				a, lookupErr = r.artistService.GetByNameAndLibrary(ctx, item.Name, lib.ID)
-			}
-			if lookupErr != nil {
-				r.logger.Warn("scan artist lookup from jellyfin", "name", item.Name, "mbid", mbid, "error", lookupErr)
-				continue
-			}
+			a := r.resolveAndBackfillPlatformID(ctx,
+				item.ProviderIDs.MusicBrainzArtist, item.Name,
+				lib.ConnectionID, item.ID, lib, manualLibs)
 			if a == nil {
 				continue
-			}
-
-			// Backfill the platform-to-Stillwater artist ID mapping.
-			if setErr := r.artistService.SetPlatformID(ctx, a.ID, lib.ConnectionID, item.ID); setErr != nil {
-				r.logger.Warn("storing jellyfin platform id during scan", "name", a.Name, "error", setErr)
 			}
 
 			var thumbExists, fanartExists, logoExists, bannerExists bool
@@ -1162,6 +1225,7 @@ func (r *Router) scanFromJellyfin(ctx context.Context, client *jellyfin.Client, 
 
 // scanFromLidarr gets all Lidarr artists and updates image existence flags.
 func (r *Router) scanFromLidarr(ctx context.Context, client *lidarr.Client, lib *library.Library) (int, error) {
+	manualLibs := r.manualLibraries(ctx)
 	artists, err := client.GetArtists(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("fetching artists from lidarr: %w", err)
@@ -1169,26 +1233,11 @@ func (r *Router) scanFromLidarr(ctx context.Context, client *lidarr.Client, lib 
 
 	updated := 0
 	for _, la := range artists {
-		mbid := la.ForeignArtistID
-		var a *artist.Artist
-		var lookupErr error
-		if mbid != "" {
-			a, lookupErr = r.artistService.GetByMBIDAndLibrary(ctx, mbid, lib.ID)
-		}
-		if a == nil && lookupErr == nil {
-			a, lookupErr = r.artistService.GetByNameAndLibrary(ctx, la.ArtistName, lib.ID)
-		}
-		if lookupErr != nil {
-			r.logger.Warn("scan artist lookup from lidarr", "name", la.ArtistName, "mbid", mbid, "error", lookupErr)
-			continue
-		}
+		a := r.resolveAndBackfillPlatformID(ctx,
+			la.ForeignArtistID, la.ArtistName,
+			lib.ConnectionID, fmt.Sprintf("%d", la.ID), lib, manualLibs)
 		if a == nil {
 			continue
-		}
-
-		// Backfill the platform-to-Stillwater artist ID mapping.
-		if setErr := r.artistService.SetPlatformID(ctx, a.ID, lib.ConnectionID, fmt.Sprintf("%d", la.ID)); setErr != nil {
-			r.logger.Warn("storing lidarr platform id during scan", "name", a.Name, "error", setErr)
 		}
 
 		var thumbExists, fanartExists, bannerExists, logoExists bool

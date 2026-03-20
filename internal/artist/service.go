@@ -142,6 +142,23 @@ func (s *Service) GetByMBIDAndLibrary(ctx context.Context, mbid, libraryID strin
 	return a, nil
 }
 
+// FindByMBIDOrName finds an artist by MBID first, then falls back to
+// case-insensitive name match, both scoped to the given library.
+// Returns nil, nil when no match is found.
+func (s *Service) FindByMBIDOrName(ctx context.Context, mbid, name, libraryID string) (*Artist, error) {
+	a, err := s.artists.FindByMBIDOrName(ctx, mbid, name, libraryID)
+	if err != nil || a == nil {
+		return a, err
+	}
+	if err := s.hydrateProviderIDs(ctx, a); err != nil {
+		return nil, err
+	}
+	if err := s.hydrateImages(ctx, a); err != nil {
+		return nil, err
+	}
+	return a, nil
+}
+
 // GetByPath retrieves an artist by filesystem path, including provider IDs and image metadata.
 func (s *Service) GetByPath(ctx context.Context, path string) (*Artist, error) {
 	a, err := s.artists.GetByPath(ctx, path)
