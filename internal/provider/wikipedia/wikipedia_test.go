@@ -300,14 +300,104 @@ func TestGetArtist_DisplayNameFallback(t *testing.T) {
 	}
 }
 
-func TestTestConnection(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
+func TestGetArtist_PercentEncodedTitle(t *testing.T) {
+	// SPARQL returns a percent-encoded article URL (e.g. AC%2FDC)
+	sparqlServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := sparqlResponse{}
+		resp.Results.Bindings = append(resp.Results.Bindings, struct {
+			Article struct {
+				Value string `json:"value"`
+			} `json:"article"`
+		}{
+			Article: struct {
+				Value string `json:"value"`
+			}{Value: "https://en.wikipedia.org/wiki/AC%2FDC"},
+		})
+		w.Header().Set("Content-Type", "application/sparql-results+json")
+		json.NewEncoder(w).Encode(resp) //nolint:errcheck
 	}))
-	defer server.Close()
+	defer sparqlServer.Close()
+
+	wikiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := summaryResponse{
+			Title:       "AC/DC",
+			DisplayName: "AC/DC",
+			Extract:     "AC/DC are an Australian rock band formed in Sydney in 1973 by Scottish-born brothers Malcolm and Angus Young.",
+		}
+		json.NewEncoder(w).Encode(resp) //nolint:errcheck
+	}))
+	defer wikiServer.Close()
 
 	limiter := provider.NewRateLimiterMap()
-	adapter := NewWithEndpoints(limiter, silentLogger(), server.URL, "http://unused")
+	adapter := NewWithEndpoints(limiter, silentLogger(), wikiServer.URL, sparqlServer.URL)
+
+	meta, err := adapter.GetArtist(context.Background(), "a74b1b7f-71a5-4011-9441-d0b5e4122711")
+	if err != nil {
+		t.Fatalf("GetArtist: %v", err)
+	}
+	// Title should be URL-decoded: "AC/DC" not "AC%2FDC"
+	if meta.ProviderID != "AC/DC" {
+		t.Errorf("ProviderID = %q, want %q", meta.ProviderID, "AC/DC")
+	}
+	if meta.Name != "AC/DC" {
+		t.Errorf("Name = %q, want %q", meta.Name, "AC/DC")
+	}
+}
+
+func TestGetArtist_HTMLDisplayName(t *testing.T) {
+	sparqlServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := sparqlResponse{}
+		resp.Results.Bindings = append(resp.Results.Bindings, struct {
+			Article struct {
+				Value string `json:"value"`
+			} `json:"article"`
+		}{
+			Article: struct {
+				Value string `json:"value"`
+			}{Value: "https://en.wikipedia.org/wiki/The_Beatles"},
+		})
+		w.Header().Set("Content-Type", "application/sparql-results+json")
+		json.NewEncoder(w).Encode(resp) //nolint:errcheck
+	}))
+	defer sparqlServer.Close()
+
+	// Return summary with HTML markup in DisplayName
+	wikiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := summaryResponse{
+			Title:       "The_Beatles",
+			DisplayName: "<i>The</i> Beatles",
+			Extract:     "The Beatles were an English rock band formed in Liverpool in 1960, comprising John Lennon, Paul McCartney, George Harrison, and Ringo Starr.",
+		}
+		json.NewEncoder(w).Encode(resp) //nolint:errcheck
+	}))
+	defer wikiServer.Close()
+
+	limiter := provider.NewRateLimiterMap()
+	adapter := NewWithEndpoints(limiter, silentLogger(), wikiServer.URL, sparqlServer.URL)
+
+	meta, err := adapter.GetArtist(context.Background(), "a74b1b7f-71a5-4011-9441-d0b5e4122711")
+	if err != nil {
+		t.Fatalf("GetArtist: %v", err)
+	}
+	// HTML tags should be stripped from DisplayName
+	if meta.Name != "The Beatles" {
+		t.Errorf("Name = %q, want %q (HTML should be stripped)", meta.Name, "The Beatles")
+	}
+}
+
+func TestTestConnection(t *testing.T) {
+	wikiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer wikiServer.Close()
+
+	sparqlServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer sparqlServer.Close()
+
+	limiter := provider.NewRateLimiterMap()
+	adapter := NewWithEndpoints(limiter, silentLogger(), wikiServer.URL, sparqlServer.URL)
 
 	if err := adapter.TestConnection(context.Background()); err != nil {
 		t.Errorf("TestConnection: %v", err)

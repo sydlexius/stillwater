@@ -104,8 +104,10 @@ func (a *Adapter) GetImages(_ context.Context, _ string) ([]provider.ImageResult
 	return nil, nil
 }
 
-// TestConnection verifies connectivity to the Wikipedia REST API.
+// TestConnection verifies connectivity to both the Wikipedia REST API and the
+// Wikidata SPARQL endpoint, since GetArtist depends on both services.
 func (a *Adapter) TestConnection(ctx context.Context) error {
+	// Probe 1: Wikipedia REST API
 	if err := a.limiter.Wait(ctx, provider.NameWikipedia); err != nil {
 		return &provider.ErrProviderUnavailable{
 			Provider: provider.NameWikipedia,
@@ -113,20 +115,62 @@ func (a *Adapter) TestConnection(ctx context.Context) error {
 		}
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, a.wikiEndpoint+"/page/summary/Wikipedia", nil)
+	wikiReq, err := http.NewRequestWithContext(ctx, http.MethodGet, a.wikiEndpoint+"/page/summary/Wikipedia", nil)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("User-Agent", userAgent)
-	resp, err := a.client.Do(req) //nolint:gosec // URL constructed from trusted Wikipedia endpoint
+	wikiReq.Header.Set("User-Agent", userAgent)
+	wikiResp, err := a.client.Do(wikiReq) //nolint:gosec // URL constructed from trusted Wikipedia endpoint
+	if err != nil {
+		return &provider.ErrProviderUnavailable{
+			Provider: provider.NameWikipedia,
+			Cause:    fmt.Errorf("wikipedia REST API: %w", err),
+		}
+	}
+	defer wikiResp.Body.Close() //nolint:errcheck
+	_, _ = io.Copy(io.Discard, wikiResp.Body)
+	if wikiResp.StatusCode != http.StatusOK {
+		return &provider.ErrProviderUnavailable{
+			Provider: provider.NameWikipedia,
+			Cause:    fmt.Errorf("wikipedia REST API HTTP %d", wikiResp.StatusCode),
+		}
+	}
+
+	// Probe 2: Wikidata SPARQL endpoint
+	if err := a.limiter.Wait(ctx, provider.NameWikipedia); err != nil {
+		return &provider.ErrProviderUnavailable{
+			Provider: provider.NameWikipedia,
+			Cause:    fmt.Errorf("rate limiter: %w", err),
+		}
+	}
+
+	sparqlQuery := url.Values{
+		"query":  {`ASK { wd:Q5 wdt:P31 wd:Q16521 }`},
+		"format": {"json"},
+	}
+	sparqlReq, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		a.wikidataEndpoint+"?"+sparqlQuery.Encode(), nil)
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close() //nolint:errcheck
-	_, _ = io.Copy(io.Discard, resp.Body)
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("HTTP %d", resp.StatusCode)
+	sparqlReq.Header.Set("User-Agent", userAgent)
+	sparqlReq.Header.Set("Accept", "application/sparql-results+json")
+	sparqlResp, err := a.client.Do(sparqlReq) //nolint:gosec // URL constructed from trusted SPARQL endpoint
+	if err != nil {
+		return &provider.ErrProviderUnavailable{
+			Provider: provider.NameWikipedia,
+			Cause:    fmt.Errorf("wikidata SPARQL: %w", err),
+		}
 	}
+	defer sparqlResp.Body.Close() //nolint:errcheck
+	_, _ = io.Copy(io.Discard, sparqlResp.Body)
+	if sparqlResp.StatusCode != http.StatusOK {
+		return &provider.ErrProviderUnavailable{
+			Provider: provider.NameWikipedia,
+			Cause:    fmt.Errorf("wikidata SPARQL HTTP %d", sparqlResp.StatusCode),
+		}
+	}
+
 	return nil
 }
 
