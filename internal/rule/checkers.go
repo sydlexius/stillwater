@@ -13,6 +13,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/image"
 	"github.com/sydlexius/stillwater/internal/platform"
+	"github.com/sydlexius/stillwater/internal/provider"
 )
 
 // Checker evaluates a single rule against an artist.
@@ -855,4 +856,31 @@ func (e *Engine) makeImageDuplicateChecker() Checker {
 
 		return nil
 	}
+}
+
+// truncateStr returns the first max runes of s, appending "..." if truncated.
+// Uses rune-safe slicing to avoid splitting multi-byte UTF-8 characters.
+func truncateStr(s string, max int) string {
+	runes := []rune(s)
+	if len(runes) <= max {
+		return s
+	}
+	return string(runes[:max]) + "..."
+}
+
+func checkMetadataQuality(a *artist.Artist, cfg RuleConfig) *Violation {
+	// Check biography for known placeholder/junk patterns.
+	// This complements bio_exists (which checks length): a biography that is
+	// "?" passes the length check at minLength=1 but is clearly junk.
+	if a.Biography != "" && provider.IsJunkValue("biography", a.Biography) {
+		return &Violation{
+			RuleID:   RuleMetadataQuality,
+			RuleName: "Metadata quality",
+			Category: "metadata",
+			Severity: effectiveSeverity(cfg),
+			Message:  fmt.Sprintf("artist %q has placeholder biography: %q", a.Name, truncateStr(a.Biography, 50)),
+			Fixable:  true,
+		}
+	}
+	return nil
 }

@@ -43,6 +43,7 @@ func NewEngine(service *Service, db *sql.DB, platformService *platform.Service, 
 			RuleArtistIDMismatch:      checkArtistIDMismatch,
 			RuleLogoTrimmable:         checkLogoTrimmable,
 			RuleDirectoryNameMismatch: checkDirectoryNameMismatch,
+			RuleMetadataQuality:       checkMetadataQuality,
 		},
 	}
 	e.checkers[RuleExtraneousImages] = e.makeExtraneousImagesChecker()
