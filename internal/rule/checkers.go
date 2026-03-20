@@ -891,8 +891,8 @@ func checkMetadataQuality(a *artist.Artist, cfg RuleConfig) *Violation {
 // backdrop.jpg (wrong starting point), a violation is returned.
 func (e *Engine) makeBackdropSequencingChecker() Checker {
 	return func(a *artist.Artist, cfg RuleConfig) *Violation {
-		if a.Path == "" || a.FanartCount < 2 {
-			return nil // sequencing irrelevant with 0-1 fanart files
+		if a.Path == "" {
+			return nil
 		}
 
 		var profile *platform.Profile

@@ -949,7 +949,27 @@ func (f *BackdropSequencingFixer) Fix(ctx context.Context, a *artist.Artist, _ *
 
 	for _, primaryName := range fanartNames {
 		discovered, err := img.DiscoverFanart(a.Path, primaryName)
-		if err != nil || len(discovered) < 2 {
+		if err != nil {
+			f.logger.Warn("discovering fanart for sequencing fix",
+				"artist", a.Name, "primary", primaryName, "error", err)
+			continue
+		}
+		if len(discovered) < 2 {
+			continue
+		}
+
+		// Check if already contiguous before renumbering.
+		needsRenumber := false
+		for i, path := range discovered {
+			expected := img.FanartFilename(primaryName, i, kodiNumbering)
+			expectedBase := strings.TrimSuffix(expected, filepath.Ext(expected))
+			actualBase := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+			if !strings.EqualFold(expectedBase, actualBase) {
+				needsRenumber = true
+				break
+			}
+		}
+		if !needsRenumber {
 			continue
 		}
 
