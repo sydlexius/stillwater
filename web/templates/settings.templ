@@ -3421,6 +3421,7 @@ templ ruleRow(rl rule.Rule) {
 					type="button"
 					class="text-xs px-2 py-1 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
 					data-rule-id={ rl.ID }
+					data-run-btn
 					onclick="runRule(this)"
 					disabled?={ !rl.Enabled }
 					aria-label={ "Run " + rl.Name + " now" }
@@ -3745,7 +3746,7 @@ templ ruleToggleScript() {
 			var knob = btn.querySelector('span');
 			var row = btn.closest('.py-4');
 			var sel = row ? row.querySelector('select[data-rule-id]') : null;
-			var runBtn = row ? row.querySelector('button[onclick="runRule(this)"]') : null;
+			var runBtn = row ? row.querySelector('[data-run-btn]') : null;
 			if (newVal) {
 				btn.classList.remove('bg-gray-200', 'dark:bg-gray-600');
 				btn.classList.add('bg-blue-600');
@@ -3766,6 +3767,7 @@ templ ruleToggleScript() {
 		function runRule(btn) {
 			var ruleID = btn.dataset.ruleId;
 			var origText = btn.textContent;
+			btn.dataset.running = 'true';
 			btn.disabled = true;
 			btn.textContent = 'Running...';
 			var csrfToken = document.cookie.replace(
@@ -3782,13 +3784,40 @@ templ ruleToggleScript() {
 				var msg = 'Evaluated ' + data.artists_processed + ' artists: ' +
 					data.violations_found + ' violations, ' +
 					data.fixes_succeeded + ' fixed';
-				if (typeof showToast === 'function') showToast(msg);
+				showRuleToast(msg, false);
 			}).catch(function() {
-				if (typeof showToast === 'function') showToast('Failed to run rule.');
+				showRuleToast('Failed to run rule.', true);
 			}).finally(function() {
-				btn.disabled = false;
+				delete btn.dataset.running;
 				btn.textContent = origText;
+				// Only re-enable if the rule is still toggled on
+				var row = btn.closest('.py-4');
+				var toggle = row ? row.querySelector('[role="switch"]') : null;
+				var isEnabled = toggle ? toggle.getAttribute('aria-checked') === 'true' : true;
+				btn.disabled = !isEnabled;
 			});
+		}
+
+		// showRuleToast displays a brief toast for rule run results.
+		// Uses green for success, red for errors.
+		function showRuleToast(msg, isError) {
+			var container = document.getElementById('error-toast-container');
+			if (!container) { if (typeof showToast === 'function') showToast(msg); return; }
+			var toast = document.createElement('div');
+			var colors = isError
+				? 'bg-red-50 dark:bg-red-900/50 text-red-800 dark:text-red-200 border-red-200 dark:border-red-800'
+				: 'bg-green-50 dark:bg-green-900/50 text-green-800 dark:text-green-200 border-green-200 dark:border-green-800';
+			toast.className = 'flex items-center gap-3 rounded-lg px-4 py-3 text-sm shadow-lg border transition-opacity duration-300 ' + colors;
+			var span = document.createElement('span');
+			span.textContent = msg;
+			var btn = document.createElement('button');
+			btn.className = 'ml-2 font-bold opacity-70 hover:opacity-100';
+			btn.textContent = '\u00d7';
+			btn.onclick = function() { toast.remove(); };
+			toast.appendChild(span);
+			toast.appendChild(btn);
+			container.appendChild(toast);
+			setTimeout(function() { toast.style.opacity = '0'; setTimeout(function() { toast.remove(); }, 300); }, 5000);
 		}
 
 		function handleRuleConfigSubmit(event) {
