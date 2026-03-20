@@ -2197,10 +2197,12 @@ func TestScanFromEmby_BackfillsPlatformIDToFilesystemArtist(t *testing.T) {
 	// Create a connection for the Emby library.
 	addTestConnection(t, router, "conn-emby-1", "Emby Server", "emby")
 
+	musicDir := t.TempDir()
+
 	// Create a manual (filesystem) library.
 	manualLib := &library.Library{
 		Name:   "Filesystem",
-		Path:   "/music",
+		Path:   musicDir,
 		Type:   library.TypeRegular,
 		Source: library.SourceManual,
 	}
@@ -2209,12 +2211,16 @@ func TestScanFromEmby_BackfillsPlatformIDToFilesystemArtist(t *testing.T) {
 	}
 
 	// Create a filesystem artist with the same MBID.
+	deftonesFSDir := filepath.Join(musicDir, "Deftones")
+	if err := os.MkdirAll(deftonesFSDir, 0o755); err != nil {
+		t.Fatalf("creating deftones dir: %v", err)
+	}
 	fsArtist := &artist.Artist{
 		Name:          "Deftones",
 		SortName:      "Deftones",
 		MusicBrainzID: "mbid-deftones",
 		LibraryID:     manualLib.ID,
-		Path:          "/music/Deftones",
+		Path:          deftonesFSDir,
 	}
 	if err := router.artistService.Create(ctx, fsArtist); err != nil {
 		t.Fatalf("creating filesystem artist: %v", err)
@@ -2298,22 +2304,28 @@ func TestPopulateFromEmby_BackfillsPlatformIDToFilesystemArtist(t *testing.T) {
 
 	addTestConnection(t, router, "conn-emby-1", "Emby Server", "emby")
 
+	musicDir := t.TempDir()
+
 	// Create a manual (filesystem) library with an artist sharing the MBID.
 	manualLib := &library.Library{
 		Name:   "Filesystem",
-		Path:   "/music",
+		Path:   musicDir,
 		Type:   library.TypeRegular,
 		Source: library.SourceManual,
 	}
 	if err := router.libraryService.Create(ctx, manualLib); err != nil {
 		t.Fatalf("creating manual library: %v", err)
 	}
+	radioheadFSDir := filepath.Join(musicDir, "Radiohead")
+	if err := os.MkdirAll(radioheadFSDir, 0o755); err != nil {
+		t.Fatalf("creating radiohead dir: %v", err)
+	}
 	fsArtist := &artist.Artist{
 		Name:          "Radiohead",
 		SortName:      "Radiohead",
 		MusicBrainzID: "mbid-radiohead",
 		LibraryID:     manualLib.ID,
-		Path:          "/music/Radiohead",
+		Path:          radioheadFSDir,
 	}
 	if err := router.artistService.Create(ctx, fsArtist); err != nil {
 		t.Fatalf("creating filesystem artist: %v", err)
@@ -2400,20 +2412,26 @@ func TestScanFromEmby_BackfillsCaseInsensitiveName(t *testing.T) {
 
 	addTestConnection(t, router, "conn-emby-1", "Emby Server", "emby")
 
+	musicDir := t.TempDir()
+
 	manualLib := &library.Library{
 		Name:   "Filesystem",
-		Path:   "/music",
+		Path:   musicDir,
 		Type:   library.TypeRegular,
 		Source: library.SourceManual,
 	}
 	if err := router.libraryService.Create(ctx, manualLib); err != nil {
 		t.Fatalf("creating manual library: %v", err)
 	}
+	veridiaDirFS := filepath.Join(musicDir, "Veridia")
+	if err := os.MkdirAll(veridiaDirFS, 0o755); err != nil {
+		t.Fatalf("creating veridia dir: %v", err)
+	}
 	fsArtist := &artist.Artist{
 		Name:      "Veridia",
 		SortName:  "Veridia",
 		LibraryID: manualLib.ID,
-		Path:      "/music/Veridia",
+		Path:      veridiaDirFS,
 	}
 	if err := router.artistService.Create(ctx, fsArtist); err != nil {
 		t.Fatalf("creating filesystem artist: %v", err)
@@ -2486,9 +2504,11 @@ func TestBackfillPlatformIDToManualLibs_SkipsWhenNoMatch(t *testing.T) {
 
 	addTestConnection(t, router, "conn-emby-1", "Emby Server", "emby")
 
+	musicDir := t.TempDir()
+
 	manualLib := &library.Library{
 		Name:   "Filesystem",
-		Path:   "/music",
+		Path:   musicDir,
 		Type:   library.TypeRegular,
 		Source: library.SourceManual,
 	}
@@ -2558,9 +2578,11 @@ func TestBackfillPlatformIDToManualLibs_SkipsSameArtist(t *testing.T) {
 
 	addTestConnection(t, router, "conn-emby-1", "Emby Server", "emby")
 
+	musicDir := t.TempDir()
+
 	manualLib := &library.Library{
 		Name:   "Filesystem",
-		Path:   "/music",
+		Path:   musicDir,
 		Type:   library.TypeRegular,
 		Source: library.SourceManual,
 	}
@@ -2568,11 +2590,15 @@ func TestBackfillPlatformIDToManualLibs_SkipsSameArtist(t *testing.T) {
 		t.Fatalf("creating manual library: %v", err)
 	}
 
+	deftonesDir := filepath.Join(musicDir, "Deftones")
+	if err := os.MkdirAll(deftonesDir, 0o755); err != nil {
+		t.Fatalf("creating deftones dir: %v", err)
+	}
 	a := &artist.Artist{
 		Name:      "Deftones",
 		SortName:  "Deftones",
 		LibraryID: manualLib.ID,
-		Path:      "/music/Deftones",
+		Path:      deftonesDir,
 	}
 	if err := router.artistService.Create(ctx, a); err != nil {
 		t.Fatalf("creating artist: %v", err)
@@ -2627,21 +2653,27 @@ func TestScanFromJellyfin_BackfillsPlatformIDToFilesystemArtist(t *testing.T) {
 
 	addTestConnection(t, router, "conn-jf-1", "Jellyfin Server", "jellyfin")
 
+	musicDir := t.TempDir()
+
 	manualLib := &library.Library{
 		Name:   "Filesystem",
-		Path:   "/music",
+		Path:   musicDir,
 		Type:   library.TypeRegular,
 		Source: library.SourceManual,
 	}
 	if err := router.libraryService.Create(ctx, manualLib); err != nil {
 		t.Fatalf("creating manual library: %v", err)
 	}
+	bjorkFSDir := filepath.Join(musicDir, "Bjork")
+	if err := os.MkdirAll(bjorkFSDir, 0o755); err != nil {
+		t.Fatalf("creating bjork dir: %v", err)
+	}
 	fsArtist := &artist.Artist{
 		Name:          "Bjork",
 		SortName:      "Bjork",
 		MusicBrainzID: "mbid-bjork",
 		LibraryID:     manualLib.ID,
-		Path:          "/music/Bjork",
+		Path:          bjorkFSDir,
 	}
 	if err := router.artistService.Create(ctx, fsArtist); err != nil {
 		t.Fatalf("creating filesystem artist: %v", err)
@@ -2702,21 +2734,27 @@ func TestScanFromLidarr_BackfillsPlatformIDToFilesystemArtist(t *testing.T) {
 
 	addTestConnection(t, router, "conn-lidarr-1", "Lidarr Server", "lidarr")
 
+	musicDir := t.TempDir()
+
 	manualLib := &library.Library{
 		Name:   "Filesystem",
-		Path:   "/music",
+		Path:   musicDir,
 		Type:   library.TypeRegular,
 		Source: library.SourceManual,
 	}
 	if err := router.libraryService.Create(ctx, manualLib); err != nil {
 		t.Fatalf("creating manual library: %v", err)
 	}
+	radioheadFSDir := filepath.Join(musicDir, "Radiohead")
+	if err := os.MkdirAll(radioheadFSDir, 0o755); err != nil {
+		t.Fatalf("creating radiohead dir: %v", err)
+	}
 	fsArtist := &artist.Artist{
 		Name:          "Radiohead",
 		SortName:      "Radiohead",
 		MusicBrainzID: "mbid-radiohead",
 		LibraryID:     manualLib.ID,
-		Path:          "/music/Radiohead",
+		Path:          radioheadFSDir,
 	}
 	if err := router.artistService.Create(ctx, fsArtist); err != nil {
 		t.Fatalf("creating filesystem artist: %v", err)
