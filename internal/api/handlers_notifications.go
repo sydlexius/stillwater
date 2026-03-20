@@ -59,7 +59,7 @@ func (r *Router) handleNotificationsExport(w http.ResponseWriter, req *http.Requ
 
 		type exportRow struct {
 			ArtistName  string `json:"artist_name"`
-			LibraryName string `json:"library_name,omitempty"`
+			LibraryName string `json:"library_name"`
 			RuleID      string `json:"rule_id"`
 			Severity    string `json:"severity"`
 			Message     string `json:"message"`
