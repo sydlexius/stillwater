@@ -2071,7 +2071,10 @@ paths:
     get:
       tags: [Rules]
       summary: Get async rule-run status
-      description: Returns the current status of the most recent run-all-rules operation.
+      description: >
+        Returns the current status of the most recent rule evaluation,
+        whether triggered by run-all or a single-rule run. Both share
+        the same status slot; only one can run at a time.
       operationId: getRunAllRulesStatus
       responses:
         "200":
