@@ -47,18 +47,21 @@ func complianceDotTitle(status artist.ComplianceStatus) string {
 	case artist.ComplianceError:
 		return "Has error violations"
 	case artist.ComplianceWarning:
-		return "Has warning violations"
+		return "Has warning or info violations"
 	default:
 		return "Compliant"
 	}
 }
 
+// complianceAvailable returns whether compliance data was successfully loaded.
+// A nil map means the query failed or was skipped; dots should be hidden.
+func complianceAvailable(m map[string]artist.ComplianceStatus) bool {
+	return m != nil
+}
+
 // artistCompliance looks up an artist's compliance status from the map,
-// defaulting to compliant if not found.
+// defaulting to compliant if not found (artist has no active violations).
 func artistCompliance(id string, m map[string]artist.ComplianceStatus) artist.ComplianceStatus {
-	if m == nil {
-		return artist.ComplianceCompliant
-	}
 	if s, ok := m[id]; ok {
 		return s
 	}
@@ -476,11 +479,14 @@ templ ArtistRow(a artist.Artist, sources map[string]LibrarySourceInfo, complianc
 	<tr class={ "hover:bg-gray-50 dark:hover:bg-gray-800", templ.KV("opacity-50", a.IsExcluded) }>
 		<td data-col="name" class="px-4 py-3 text-sm">
 			<div class="flex items-center gap-1.5">
-				<span
-					class={ "inline-block h-2.5 w-2.5 shrink-0 rounded-full", complianceDotClass(artistCompliance(a.ID, compliance)) }
-					title={ complianceDotTitle(artistCompliance(a.ID, compliance)) }
-					aria-label={ complianceDotTitle(artistCompliance(a.ID, compliance)) }
-				></span>
+				if complianceAvailable(compliance) {
+					<span
+						class={ "inline-block h-2.5 w-2.5 shrink-0 rounded-full", complianceDotClass(artistCompliance(a.ID, compliance)) }
+						title={ complianceDotTitle(artistCompliance(a.ID, compliance)) }
+						aria-label={ complianceDotTitle(artistCompliance(a.ID, compliance)) }
+						role="img"
+					></span>
+				}
 				if artistSourceInfo(a, sources).Source != "" {
 					<img
 						src={ logoSrc(artistSourceInfo(a, sources).Source) }
@@ -565,11 +571,14 @@ templ ArtistCard(a artist.Artist, sources map[string]LibrarySourceInfo, complian
 					</svg>
 				</div>
 			}
-			<span
-				class={ "absolute top-1.5 left-1.5 h-3 w-3 rounded-full border border-white/50 dark:border-gray-900/50", complianceDotClass(artistCompliance(a.ID, compliance)) }
-				title={ complianceDotTitle(artistCompliance(a.ID, compliance)) }
-				aria-label={ complianceDotTitle(artistCompliance(a.ID, compliance)) }
-			></span>
+			if complianceAvailable(compliance) {
+				<span
+					class={ "absolute top-1.5 left-1.5 h-3 w-3 rounded-full border border-white/50 dark:border-gray-900/50", complianceDotClass(artistCompliance(a.ID, compliance)) }
+					title={ complianceDotTitle(artistCompliance(a.ID, compliance)) }
+					aria-label={ complianceDotTitle(artistCompliance(a.ID, compliance)) }
+					role="img"
+				></span>
+			}
 			if artistSourceInfo(a, sources).Source != "" {
 				<div
 					class="absolute bottom-1 right-1 rounded-full bg-black/60 p-1"
