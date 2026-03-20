@@ -7,6 +7,7 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -463,6 +464,65 @@ func TestCheckExtraneousImages_NumberedFanart(t *testing.T) {
 	v := checker(&a, RuleConfig{})
 	if v != nil {
 		t.Errorf("expected nil (numbered fanart should be whitelisted), got: %s", v.Message)
+	}
+}
+
+func TestCheckExtraneousImages_NumberedFanartWithGaps(t *testing.T) {
+	// Numbered fanart with gaps (fanart.jpg + fanart3.jpg, missing 1 and 2)
+	// should still be whitelisted. Gap detection is the backdrop_sequencing
+	// rule's responsibility, not extraneous_images.
+	dir := t.TempDir()
+	createTestJPEG(t, filepath.Join(dir, "folder.jpg"), 500, 500)
+	createTestJPEG(t, filepath.Join(dir, "fanart.jpg"), 1920, 1080)
+	createTestJPEG(t, filepath.Join(dir, "fanart3.jpg"), 1920, 1080)
+
+	e := &Engine{platformService: nil}
+	checker := e.makeExtraneousImagesChecker()
+
+	a := artist.Artist{Name: "Test", Path: dir}
+	v := checker(&a, RuleConfig{})
+	if v != nil {
+		t.Errorf("expected nil (numbered fanart with gaps should be whitelisted), got: %s", v.Message)
+	}
+}
+
+func TestCheckExtraneousImages_BackdropNaming(t *testing.T) {
+	// Backdrop naming convention (used by Emby/Jellyfin) should also be
+	// whitelisted for numbered variants.
+	dir := t.TempDir()
+	createTestJPEG(t, filepath.Join(dir, "folder.jpg"), 500, 500)
+	createTestJPEG(t, filepath.Join(dir, "backdrop.jpg"), 1920, 1080)
+	createTestJPEG(t, filepath.Join(dir, "backdrop2.jpg"), 1920, 1080)
+	createTestJPEG(t, filepath.Join(dir, "backdrop3.jpg"), 1920, 1080)
+
+	e := &Engine{platformService: nil}
+	checker := e.makeExtraneousImagesChecker()
+
+	a := artist.Artist{Name: "Test", Path: dir}
+	v := checker(&a, RuleConfig{})
+	if v != nil {
+		t.Errorf("expected nil (backdrop numbered variants should be whitelisted), got: %s", v.Message)
+	}
+}
+
+func TestCheckExtraneousImages_NonStandardNameFlagged(t *testing.T) {
+	// Non-standard names like "backdrop_old.jpg" should be flagged even
+	// when valid numbered backdrops are present.
+	dir := t.TempDir()
+	createTestJPEG(t, filepath.Join(dir, "folder.jpg"), 500, 500)
+	createTestJPEG(t, filepath.Join(dir, "backdrop.jpg"), 1920, 1080)
+	createTestJPEG(t, filepath.Join(dir, "backdrop_old.jpg"), 1920, 1080)
+
+	e := &Engine{platformService: nil}
+	checker := e.makeExtraneousImagesChecker()
+
+	a := artist.Artist{Name: "Test", Path: dir}
+	v := checker(&a, RuleConfig{})
+	if v == nil {
+		t.Fatal("expected violation for non-standard 'backdrop_old.jpg'")
+	}
+	if !strings.Contains(v.Message, "backdrop_old.jpg") {
+		t.Errorf("expected message to mention backdrop_old.jpg, got: %s", v.Message)
 	}
 }
 

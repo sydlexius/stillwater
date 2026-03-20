@@ -649,6 +649,12 @@ func expectedImageFiles(profile *platform.Profile, artistPath string) map[string
 // image files in an artist directory. The canonical set is derived from the active
 // platform profile: for each image type, all configured names plus their alternate
 // extension variants are considered expected.
+//
+// Responsibility boundary: this checker flags files with non-standard names
+// (e.g., "backdrop_old.png"). It does NOT flag valid numbered
+// fanart variants even if their indices have gaps (e.g., backdrop.jpg +
+// backdrop3.jpg with no backdrop2.jpg). Gap detection is handled by the
+// backdrop_sequencing rule (#519).
 func (e *Engine) makeExtraneousImagesChecker() Checker {
 	return func(a *artist.Artist, cfg RuleConfig) *Violation {
 		if a.Path == "" {
