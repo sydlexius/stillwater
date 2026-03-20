@@ -44,6 +44,10 @@ node_modules/
 package.json
 package-lock.json
 
+# Ephemeral docs (plans, specs)
+docs/plans/
+docs/superpowers/
+
 # Temp
 *.tmp
 *.log
