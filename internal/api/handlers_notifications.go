@@ -1,9 +1,12 @@
 package api
 
 import (
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/rule"
 	"github.com/sydlexius/stillwater/web/templates"
@@ -28,6 +31,109 @@ func (r *Router) handleListNotifications(w http.ResponseWriter, req *http.Reques
 		"violations": violations,
 		"count":      len(violations),
 	})
+}
+
+// handleNotificationsExport streams a CSV or JSON export of filtered violations.
+// Respects the same filter/sort params as handleListNotifications.
+// GET /api/v1/notifications/export
+func (r *Router) handleNotificationsExport(w http.ResponseWriter, req *http.Request) {
+	p := parseNotificationParams(req)
+
+	violations, err := r.ruleService.ListViolationsFiltered(req.Context(), p)
+	if err != nil {
+		r.logger.Error("listing violations for export", "error", err)
+		writeError(w, req, http.StatusInternalServerError, "failed to list violations")
+		return
+	}
+
+	if violations == nil {
+		violations = []rule.RuleViolation{}
+	}
+
+	// JSON export when requested via query param or Accept header
+	format := req.URL.Query().Get("format")
+	if format == "json" || strings.Contains(req.Header.Get("Accept"), "application/json") {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Disposition", `attachment; filename="violations.json"`)
+		w.WriteHeader(http.StatusOK)
+
+		type exportRow struct {
+			ArtistName string `json:"artist_name"`
+			RuleID     string `json:"rule_id"`
+			Severity   string `json:"severity"`
+			Message    string `json:"message"`
+			Status     string `json:"status"`
+			Age        string `json:"age"`
+		}
+		rows := make([]exportRow, len(violations))
+		now := time.Now()
+		for i, v := range violations {
+			rows[i] = exportRow{
+				ArtistName: v.ArtistName,
+				RuleID:     v.RuleID,
+				Severity:   v.Severity,
+				Message:    v.Message,
+				Status:     v.Status,
+				Age:        violationAge(v.CreatedAt, now),
+			}
+		}
+		if err := json.NewEncoder(w).Encode(map[string]any{
+			"violations": rows,
+			"count":      len(rows),
+		}); err != nil {
+			r.logger.Error("writing JSON export", "error", err)
+		}
+		return
+	}
+
+	// Default: CSV export
+	w.Header().Set("Content-Type", "text/csv")
+	w.Header().Set("Content-Disposition", `attachment; filename="violations.csv"`)
+	w.WriteHeader(http.StatusOK)
+
+	cw := csv.NewWriter(w)
+	if err := cw.Write([]string{"Artist Name", "Rule ID", "Severity", "Message", "Status", "Age"}); err != nil {
+		r.logger.Error("writing CSV header", "error", err)
+		return
+	}
+
+	now := time.Now()
+	for _, v := range violations {
+		if req.Context().Err() != nil {
+			break
+		}
+		if err := cw.Write([]string{
+			sanitizeCSV(v.ArtistName),
+			sanitizeCSV(v.RuleID),
+			v.Severity,
+			sanitizeCSV(v.Message),
+			v.Status,
+			violationAge(v.CreatedAt, now),
+		}); err != nil {
+			r.logger.Error("writing CSV row", "artist", v.ArtistName, "error", err)
+			return
+		}
+	}
+	cw.Flush()
+	if err := cw.Error(); err != nil {
+		r.logger.Error("flushing CSV writer", "error", err)
+	}
+}
+
+// violationAge computes a human-readable age string from a creation time.
+// Uses the same scale as the UI formatAge function: minutes, hours, or days.
+func violationAge(created time.Time, now time.Time) string {
+	if created.IsZero() {
+		return ""
+	}
+	ago := now.Sub(created)
+	if ago < time.Hour {
+		return fmt.Sprintf("%dm", int(ago.Minutes()))
+	}
+	if ago < 24*time.Hour {
+		return fmt.Sprintf("%dh", int(ago.Hours()))
+	}
+	return fmt.Sprintf("%dd", int(ago.Hours()/24))
 }
 
 // handleDismissViolation dismisses a rule violation.

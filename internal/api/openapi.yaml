@@ -3708,6 +3708,87 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  /notifications/export:
+    get:
+      tags: [Notifications]
+      summary: Export filtered violations as CSV or JSON
+      description: |
+        Streams the current filtered violation list as a CSV file download.
+        Respects the same filter and sort parameters as the list endpoint.
+        Use format=json query param or Accept: application/json header for JSON output.
+      operationId: exportNotifications
+      parameters:
+        - name: status
+          in: query
+          description: Filter by violation status. "active" returns open + pending_choice.
+          schema:
+            type: string
+            enum: [active, open, dismissed, resolved, pending_choice]
+            default: active
+        - name: severity
+          in: query
+          schema:
+            type: string
+            enum: [error, warning, info]
+        - name: category
+          in: query
+          schema:
+            type: string
+            enum: [nfo, image, metadata]
+        - name: rule_id
+          in: query
+          schema:
+            type: string
+        - name: sort
+          in: query
+          schema:
+            type: string
+            default: severity
+        - name: order
+          in: query
+          schema:
+            type: string
+            enum: [asc, desc]
+        - name: format
+          in: query
+          description: Set to "json" for JSON output instead of CSV.
+          schema:
+            type: string
+            enum: [json]
+      responses:
+        "200":
+          description: CSV file download (or JSON when format=json)
+          content:
+            text/csv:
+              schema:
+                type: string
+            application/json:
+              schema:
+                type: object
+                properties:
+                  violations:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        artist_name:
+                          type: string
+                        rule_id:
+                          type: string
+                        severity:
+                          type: string
+                          enum: [error, warning, info]
+                        message:
+                          type: string
+                        status:
+                          type: string
+                          enum: [open, dismissed, resolved, pending_choice]
+                        age:
+                          type: string
+                          description: Human-readable age (e.g. "5h", "3d")
+                  count:
+                    type: integer
+
   /notifications/resolved:
     delete:
       tags: [Notifications]
