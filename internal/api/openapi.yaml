@@ -3743,12 +3743,14 @@ paths:
           in: query
           schema:
             type: string
+            enum: [severity, artist_name, rule_id, created_at]
             default: severity
         - name: order
           in: query
           schema:
             type: string
             enum: [asc, desc]
+            default: desc
         - name: format
           in: query
           description: Set to "json" for JSON output instead of CSV.

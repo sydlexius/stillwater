@@ -21,6 +21,7 @@ type NotificationsData struct {
 	Groups     []rule.ViolationGroup
 	Sort       string
 	Order      string
+	Status     string
 	Severity   string
 	Category   string
 	RuleID     string
@@ -31,6 +32,9 @@ type NotificationsData struct {
 // notifExportURL builds the CSV export URL with current filter/sort params.
 func notifExportURL(data NotificationsData) string {
 	v := url.Values{}
+	if data.Status != "" && data.Status != "active" {
+		v.Set("status", data.Status)
+	}
 	if data.Severity != "" {
 		v.Set("severity", data.Severity)
 	}
@@ -224,7 +228,7 @@ func NotificationsPage(assets AssetPaths, data NotificationsData) templ.Componen
 			var templ_7745c5c3_Var3 string
 			templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(data.RuleID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 111, Col: 77}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 115, Col: 77}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 			if templ_7745c5c3_Err != nil {
@@ -237,7 +241,7 @@ func NotificationsPage(assets AssetPaths, data NotificationsData) templ.Componen
 			var templ_7745c5c3_Var4 string
 			templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(data.Sort)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 112, Col: 69}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 116, Col: 69}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 			if templ_7745c5c3_Err != nil {
@@ -250,7 +254,7 @@ func NotificationsPage(assets AssetPaths, data NotificationsData) templ.Componen
 			var templ_7745c5c3_Var5 string
 			templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(data.Order)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 113, Col: 72}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 117, Col: 72}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 			if templ_7745c5c3_Err != nil {
@@ -374,7 +378,7 @@ func notificationsTableContent(data NotificationsData) templ.Component {
 			var templ_7745c5c3_Var8 string
 			templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("Fix all %d fixable violations", countFixable(data.Violations)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 160, Col: 92}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 164, Col: 92}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 			if templ_7745c5c3_Err != nil {
@@ -387,7 +391,7 @@ func notificationsTableContent(data NotificationsData) templ.Component {
 			var templ_7745c5c3_Var9 string
 			templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("Fix All (%d)", countFixable(data.Violations)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 163, Col: 64}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 167, Col: 64}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 			if templ_7745c5c3_Err != nil {
@@ -405,7 +409,7 @@ func notificationsTableContent(data NotificationsData) templ.Component {
 		var templ_7745c5c3_Var10 templ.SafeURL
 		templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(notifExportURL(data)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 180, Col: 45}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 184, Col: 45}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 		if templ_7745c5c3_Err != nil {
@@ -418,7 +422,7 @@ func notificationsTableContent(data NotificationsData) templ.Component {
 		var templ_7745c5c3_Var11 string
 		templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(sortIcon(data.Sort, "artist_name", data.Order))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 210, Col: 60}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 214, Col: 60}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 		if templ_7745c5c3_Err != nil {
@@ -431,7 +435,7 @@ func notificationsTableContent(data NotificationsData) templ.Component {
 		var templ_7745c5c3_Var12 string
 		templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(sortIcon(data.Sort, "rule_id", data.Order))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 219, Col: 54}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 223, Col: 54}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 		if templ_7745c5c3_Err != nil {
@@ -444,7 +448,7 @@ func notificationsTableContent(data NotificationsData) templ.Component {
 		var templ_7745c5c3_Var13 string
 		templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(sortIcon(data.Sort, "severity", data.Order))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 228, Col: 59}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 232, Col: 59}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 		if templ_7745c5c3_Err != nil {
@@ -457,7 +461,7 @@ func notificationsTableContent(data NotificationsData) templ.Component {
 		var templ_7745c5c3_Var14 string
 		templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(sortIcon(data.Sort, "created_at", data.Order))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 238, Col: 56}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 242, Col: 56}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 		if templ_7745c5c3_Err != nil {
@@ -531,7 +535,7 @@ func notificationsGroupedContent(data NotificationsData) templ.Component {
 			var templ_7745c5c3_Var16 string
 			templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("Fix all %d fixable violations", countFixable(data.Violations)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 276, Col: 92}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 280, Col: 92}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 			if templ_7745c5c3_Err != nil {
@@ -544,7 +548,7 @@ func notificationsGroupedContent(data NotificationsData) templ.Component {
 			var templ_7745c5c3_Var17 string
 			templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("Fix All (%d)", countFixable(data.Violations)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 279, Col: 64}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 283, Col: 64}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 			if templ_7745c5c3_Err != nil {
@@ -562,7 +566,7 @@ func notificationsGroupedContent(data NotificationsData) templ.Component {
 		var templ_7745c5c3_Var18 templ.SafeURL
 		templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(notifExportURL(data)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 296, Col: 45}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 300, Col: 45}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
 		if templ_7745c5c3_Err != nil {
@@ -588,7 +592,7 @@ func notificationsGroupedContent(data NotificationsData) templ.Component {
 			var templ_7745c5c3_Var19 string
 			templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("notif-group-%d-btn", i))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 312, Col: 45}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 316, Col: 45}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 			if templ_7745c5c3_Err != nil {
@@ -601,7 +605,7 @@ func notificationsGroupedContent(data NotificationsData) templ.Component {
 			var templ_7745c5c3_Var20 string
 			templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("notif-group-%d", i))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 314, Col: 52}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 318, Col: 52}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
 			if templ_7745c5c3_Err != nil {
@@ -623,7 +627,7 @@ func notificationsGroupedContent(data NotificationsData) templ.Component {
 			var templ_7745c5c3_Var22 string
 			templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinStringErrs(g.Label)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 319, Col: 14}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 323, Col: 14}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
 			if templ_7745c5c3_Err != nil {
@@ -636,7 +640,7 @@ func notificationsGroupedContent(data NotificationsData) templ.Component {
 			var templ_7745c5c3_Var23 string
 			templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", g.Count))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 323, Col: 34}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 327, Col: 34}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
 			if templ_7745c5c3_Err != nil {
@@ -649,7 +653,7 @@ func notificationsGroupedContent(data NotificationsData) templ.Component {
 			var templ_7745c5c3_Var24 string
 			templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("notif-group-%d-icon", i))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 325, Col: 52}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 329, Col: 52}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
 			if templ_7745c5c3_Err != nil {
@@ -662,7 +666,7 @@ func notificationsGroupedContent(data NotificationsData) templ.Component {
 			var templ_7745c5c3_Var25 string
 			templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("notif-group-%d", i))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 330, Col: 45}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 334, Col: 45}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var25))
 			if templ_7745c5c3_Err != nil {
@@ -675,7 +679,7 @@ func notificationsGroupedContent(data NotificationsData) templ.Component {
 			var templ_7745c5c3_Var26 string
 			templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.JoinStringErrs(sortIcon(data.Sort, "artist_name", data.Order))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 348, Col: 62}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 352, Col: 62}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var26))
 			if templ_7745c5c3_Err != nil {
@@ -688,7 +692,7 @@ func notificationsGroupedContent(data NotificationsData) templ.Component {
 			var templ_7745c5c3_Var27 string
 			templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.JoinStringErrs(sortIcon(data.Sort, "rule_id", data.Order))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 357, Col: 56}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 361, Col: 56}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var27))
 			if templ_7745c5c3_Err != nil {
@@ -701,7 +705,7 @@ func notificationsGroupedContent(data NotificationsData) templ.Component {
 			var templ_7745c5c3_Var28 string
 			templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.JoinStringErrs(sortIcon(data.Sort, "severity", data.Order))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 366, Col: 61}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 370, Col: 61}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var28))
 			if templ_7745c5c3_Err != nil {
@@ -714,7 +718,7 @@ func notificationsGroupedContent(data NotificationsData) templ.Component {
 			var templ_7745c5c3_Var29 string
 			templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.JoinStringErrs(sortIcon(data.Sort, "created_at", data.Order))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 376, Col: 58}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 380, Col: 58}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var29))
 			if templ_7745c5c3_Err != nil {
@@ -767,7 +771,7 @@ func notifViolationRow(v rule.RuleViolation) templ.Component {
 		var templ_7745c5c3_Var31 string
 		templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.JoinStringErrs("notif-" + v.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 391, Col: 28}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 395, Col: 28}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var31))
 		if templ_7745c5c3_Err != nil {
@@ -780,7 +784,7 @@ func notifViolationRow(v rule.RuleViolation) templ.Component {
 		var templ_7745c5c3_Var32 string
 		templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.JoinStringErrs(v.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 397, Col: 29}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 401, Col: 29}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var32))
 		if templ_7745c5c3_Err != nil {
@@ -793,7 +797,7 @@ func notifViolationRow(v rule.RuleViolation) templ.Component {
 		var templ_7745c5c3_Var33 string
 		templ_7745c5c3_Var33, templ_7745c5c3_Err = templ.JoinStringErrs(v.ArtistName)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 401, Col: 92}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 405, Col: 92}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var33))
 		if templ_7745c5c3_Err != nil {
@@ -806,7 +810,7 @@ func notifViolationRow(v rule.RuleViolation) templ.Component {
 		var templ_7745c5c3_Var34 string
 		templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.JoinStringErrs(v.RuleID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 402, Col: 76}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 406, Col: 76}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var34))
 		if templ_7745c5c3_Err != nil {
@@ -841,7 +845,7 @@ func notifViolationRow(v rule.RuleViolation) templ.Component {
 		var templ_7745c5c3_Var37 string
 		templ_7745c5c3_Var37, templ_7745c5c3_Err = templ.JoinStringErrs(v.Severity)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 405, Col: 17}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 409, Col: 17}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var37))
 		if templ_7745c5c3_Err != nil {
@@ -854,7 +858,7 @@ func notifViolationRow(v rule.RuleViolation) templ.Component {
 		var templ_7745c5c3_Var38 string
 		templ_7745c5c3_Var38, templ_7745c5c3_Err = templ.JoinStringErrs(v.Message)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 408, Col: 77}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 412, Col: 77}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var38))
 		if templ_7745c5c3_Err != nil {
@@ -867,7 +871,7 @@ func notifViolationRow(v rule.RuleViolation) templ.Component {
 		var templ_7745c5c3_Var39 string
 		templ_7745c5c3_Var39, templ_7745c5c3_Err = templ.JoinStringErrs(formatAge(v.CreatedAt))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 410, Col: 28}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 414, Col: 28}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var39))
 		if templ_7745c5c3_Err != nil {
@@ -885,7 +889,7 @@ func notifViolationRow(v rule.RuleViolation) templ.Component {
 			var templ_7745c5c3_Var40 string
 			templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.JoinStringErrs("candidates-" + v.ID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 417, Col: 48}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 421, Col: 48}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var40))
 			if templ_7745c5c3_Err != nil {
@@ -904,7 +908,7 @@ func notifViolationRow(v rule.RuleViolation) templ.Component {
 			var templ_7745c5c3_Var41 string
 			templ_7745c5c3_Var41, templ_7745c5c3_Err = templ.JoinStringErrs(v.ID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 427, Col: 31}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 431, Col: 31}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var41))
 			if templ_7745c5c3_Err != nil {
@@ -917,7 +921,7 @@ func notifViolationRow(v rule.RuleViolation) templ.Component {
 			var templ_7745c5c3_Var42 string
 			templ_7745c5c3_Var42, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%s for %s", fixButtonLabel(v.RuleID), v.ArtistName))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 429, Col: 84}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 433, Col: 84}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var42))
 			if templ_7745c5c3_Err != nil {
@@ -930,7 +934,7 @@ func notifViolationRow(v rule.RuleViolation) templ.Component {
 			var templ_7745c5c3_Var43 string
 			templ_7745c5c3_Var43, templ_7745c5c3_Err = templ.JoinStringErrs(fixButtonLabel(v.RuleID))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 432, Col: 33}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 436, Col: 33}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var43))
 			if templ_7745c5c3_Err != nil {
@@ -948,7 +952,7 @@ func notifViolationRow(v rule.RuleViolation) templ.Component {
 		var templ_7745c5c3_Var44 string
 		templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.JoinStringErrs("/api/v1/notifications/" + v.ID + "/dismiss")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 436, Col: 60}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 440, Col: 60}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var44))
 		if templ_7745c5c3_Err != nil {
@@ -961,7 +965,7 @@ func notifViolationRow(v rule.RuleViolation) templ.Component {
 		var templ_7745c5c3_Var45 string
 		templ_7745c5c3_Var45, templ_7745c5c3_Err = templ.JoinStringErrs("#notif-" + v.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 438, Col: 34}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 442, Col: 34}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var45))
 		if templ_7745c5c3_Err != nil {
@@ -979,7 +983,7 @@ func notifViolationRow(v rule.RuleViolation) templ.Component {
 			var templ_7745c5c3_Var46 string
 			templ_7745c5c3_Var46, templ_7745c5c3_Err = templ.JoinStringErrs("candidates-" + v.ID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 449, Col: 32}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 453, Col: 32}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var46))
 			if templ_7745c5c3_Err != nil {
@@ -992,7 +996,7 @@ func notifViolationRow(v rule.RuleViolation) templ.Component {
 			var templ_7745c5c3_Var47 string
 			templ_7745c5c3_Var47, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d candidate(s) -- click image to preview, then apply", len(v.Candidates)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 456, Col: 96}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 460, Col: 96}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var47))
 			if templ_7745c5c3_Err != nil {
@@ -1020,7 +1024,7 @@ func notifViolationRow(v rule.RuleViolation) templ.Component {
 				var templ_7745c5c3_Var48 string
 				templ_7745c5c3_Var48, templ_7745c5c3_Err = templ.JoinStringErrs(c.URL)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 470, Col: 21}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 474, Col: 21}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var48))
 				if templ_7745c5c3_Err != nil {
@@ -1033,7 +1037,7 @@ func notifViolationRow(v rule.RuleViolation) templ.Component {
 				var templ_7745c5c3_Var49 string
 				templ_7745c5c3_Var49, templ_7745c5c3_Err = templ.JoinStringErrs(providerDisplayName(c.Source))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 471, Col: 45}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 475, Col: 45}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var49))
 				if templ_7745c5c3_Err != nil {
@@ -1046,7 +1050,7 @@ func notifViolationRow(v rule.RuleViolation) templ.Component {
 				var templ_7745c5c3_Var50 string
 				templ_7745c5c3_Var50, templ_7745c5c3_Err = templ.JoinStringErrs(v.ID)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 478, Col: 34}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 482, Col: 34}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var50))
 				if templ_7745c5c3_Err != nil {
@@ -1059,7 +1063,7 @@ func notifViolationRow(v rule.RuleViolation) templ.Component {
 				var templ_7745c5c3_Var51 string
 				templ_7745c5c3_Var51, templ_7745c5c3_Err = templ.JoinStringErrs(c.URL)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 479, Col: 26}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 483, Col: 26}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var51))
 				if templ_7745c5c3_Err != nil {
@@ -1072,7 +1076,7 @@ func notifViolationRow(v rule.RuleViolation) templ.Component {
 				var templ_7745c5c3_Var52 string
 				templ_7745c5c3_Var52, templ_7745c5c3_Err = templ.JoinStringErrs(c.ImageType)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 480, Col: 39}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 484, Col: 39}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var52))
 				if templ_7745c5c3_Err != nil {
@@ -1085,7 +1089,7 @@ func notifViolationRow(v rule.RuleViolation) templ.Component {
 				var templ_7745c5c3_Var53 string
 				templ_7745c5c3_Var53, templ_7745c5c3_Err = templ.JoinStringErrs(c.Source)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 481, Col: 32}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 485, Col: 32}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var53))
 				if templ_7745c5c3_Err != nil {
@@ -1103,7 +1107,7 @@ func notifViolationRow(v rule.RuleViolation) templ.Component {
 					var templ_7745c5c3_Var54 string
 					templ_7745c5c3_Var54, templ_7745c5c3_Err = templ.JoinStringErrs(logoSrc(c.Source))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 503, Col: 34}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 507, Col: 34}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var54))
 					if templ_7745c5c3_Err != nil {
@@ -1116,7 +1120,7 @@ func notifViolationRow(v rule.RuleViolation) templ.Component {
 					var templ_7745c5c3_Var55 string
 					templ_7745c5c3_Var55, templ_7745c5c3_Err = templ.JoinStringErrs(providerDisplayName(c.Source))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 504, Col: 46}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 508, Col: 46}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var55))
 					if templ_7745c5c3_Err != nil {
@@ -1129,7 +1133,7 @@ func notifViolationRow(v rule.RuleViolation) templ.Component {
 					var templ_7745c5c3_Var56 string
 					templ_7745c5c3_Var56, templ_7745c5c3_Err = templ.JoinStringErrs(providerDisplayName(c.Source))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 505, Col: 48}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 509, Col: 48}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var56))
 					if templ_7745c5c3_Err != nil {
@@ -1152,7 +1156,7 @@ func notifViolationRow(v rule.RuleViolation) templ.Component {
 				var templ_7745c5c3_Var57 string
 				templ_7745c5c3_Var57, templ_7745c5c3_Err = templ.JoinStringErrs(v.ID)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 513, Col: 34}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 517, Col: 34}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var57))
 				if templ_7745c5c3_Err != nil {
@@ -1165,7 +1169,7 @@ func notifViolationRow(v rule.RuleViolation) templ.Component {
 				var templ_7745c5c3_Var58 string
 				templ_7745c5c3_Var58, templ_7745c5c3_Err = templ.JoinStringErrs(c.URL)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 514, Col: 26}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 518, Col: 26}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var58))
 				if templ_7745c5c3_Err != nil {
@@ -1178,7 +1182,7 @@ func notifViolationRow(v rule.RuleViolation) templ.Component {
 				var templ_7745c5c3_Var59 string
 				templ_7745c5c3_Var59, templ_7745c5c3_Err = templ.JoinStringErrs(c.ImageType)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 515, Col: 39}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/notifications.templ`, Line: 519, Col: 39}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var59))
 				if templ_7745c5c3_Err != nil {

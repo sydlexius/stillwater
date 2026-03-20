@@ -13,6 +13,7 @@ type NotificationsData struct {
 	Groups     []rule.ViolationGroup
 	Sort       string
 	Order      string
+	Status     string
 	Severity   string
 	Category   string
 	RuleID     string
@@ -23,6 +24,9 @@ type NotificationsData struct {
 // notifExportURL builds the CSV export URL with current filter/sort params.
 func notifExportURL(data NotificationsData) string {
 	v := url.Values{}
+	if data.Status != "" && data.Status != "active" {
+		v.Set("status", data.Status)
+	}
 	if data.Severity != "" {
 		v.Set("severity", data.Severity)
 	}

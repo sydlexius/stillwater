@@ -127,6 +127,9 @@ func violationAge(created time.Time, now time.Time) string {
 		return ""
 	}
 	ago := now.Sub(created)
+	if ago < 0 {
+		ago = 0
+	}
 	if ago < time.Hour {
 		return fmt.Sprintf("%dm", int(ago.Minutes()))
 	}
@@ -256,6 +259,7 @@ func buildNotificationsData(p rule.ViolationListParams, violations []rule.RuleVi
 		Violations: violations,
 		Sort:       p.Sort,
 		Order:      p.Order,
+		Status:     p.Status,
 		Severity:   p.Severity,
 		Category:   p.Category,
 		RuleID:     p.RuleID,
