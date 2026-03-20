@@ -183,6 +183,7 @@ func DefaultConfig() *ScraperConfig {
 				Category: CategoryMetadata,
 				Providers: []provider.ProviderName{
 					provider.NameMusicBrainz,
+					provider.NameWikipedia,
 					provider.NameLastFM,
 					provider.NameDiscogs,
 					provider.NameAudioDB,
@@ -209,7 +210,7 @@ func ProviderCapabilities() []ProviderCapability {
 			DisplayName:  provider.NameMusicBrainz.DisplayName(),
 			RequiresAuth: false,
 			MetadataFields: []FieldName{
-				FieldBiography, FieldGenres, FieldMembers,
+				FieldGenres, FieldMembers,
 				FieldFormed, FieldBorn, FieldDied, FieldDisbanded,
 			},
 		},
@@ -254,6 +255,12 @@ func ProviderCapabilities() []ProviderCapability {
 			MetadataFields: []FieldName{
 				FieldMembers, FieldFormed, FieldBorn, FieldDied, FieldDisbanded,
 			},
+		},
+		{
+			Provider:       provider.NameWikipedia,
+			DisplayName:    provider.NameWikipedia.DisplayName(),
+			RequiresAuth:   false,
+			MetadataFields: []FieldName{FieldBiography},
 		},
 		{
 			Provider:       provider.NameGenius,

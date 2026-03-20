@@ -291,7 +291,7 @@ func applyField(result *FetchResult, field string, pr *providerResult, source Pr
 
 	switch field {
 	case "biography":
-		if meta.Biography != "" && result.Metadata.Biography == "" {
+		if meta.Biography != "" && result.Metadata.Biography == "" && !IsJunkBiography(meta.Biography) {
 			result.Metadata.Biography = meta.Biography
 			result.Sources = append(result.Sources, FieldSource{Field: field, Provider: source})
 			return true

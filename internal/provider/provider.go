@@ -78,6 +78,10 @@ func ProviderCapabilities() map[ProviderName]ProviderCapability {
 			HelpURL:   "https://genius.com/api-clients",
 			RateLimit: &RateLimitInfo{RequestsPerSecond: 5},
 		},
+		NameWikipedia: {
+			Tier:      TierFree,
+			RateLimit: &RateLimitInfo{RequestsPerSecond: 5},
+		},
 		NameSpotify: {
 			Tier:      TierPaid,
 			HelpURL:   "https://developer.spotify.com/dashboard",
@@ -100,6 +104,7 @@ const (
 	NameDuckDuckGo  ProviderName = "duckduckgo"
 	NameDeezer      ProviderName = "deezer"
 	NameGenius      ProviderName = "genius"
+	NameWikipedia   ProviderName = "wikipedia"
 	NameSpotify     ProviderName = "spotify"
 )
 
@@ -107,6 +112,7 @@ const (
 func AllProviderNames() []ProviderName {
 	return []ProviderName{
 		NameMusicBrainz,
+		NameWikipedia,
 		NameFanartTV,
 		NameAudioDB,
 		NameDiscogs,
@@ -139,6 +145,8 @@ func (n ProviderName) DisplayName() string {
 		return "Deezer"
 	case NameGenius:
 		return "Genius"
+	case NameWikipedia:
+		return "Wikipedia"
 	case NameSpotify:
 		return "Spotify"
 	default:
@@ -318,6 +326,24 @@ type ErrNotFound struct {
 
 func (e *ErrNotFound) Error() string {
 	return fmt.Sprintf("provider %s: artist %s not found", e.Provider, e.ID)
+}
+
+// IsUUID returns true if s looks like a UUID (8-4-4-4-12 hex format).
+// Used by provider adapters to distinguish MusicBrainz IDs from artist names.
+func IsUUID(s string) bool {
+	if len(s) != 36 {
+		return false
+	}
+	for i, c := range s {
+		if i == 8 || i == 13 || i == 18 || i == 23 {
+			if c != '-' {
+				return false
+			}
+		} else if (c < '0' || c > '9') && (c < 'a' || c > 'f') && (c < 'A' || c > 'F') {
+			return false
+		}
+	}
+	return true
 }
 
 // ErrAuthRequired indicates the provider needs an API key but none is configured.

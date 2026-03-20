@@ -94,7 +94,7 @@ func TestOrchestratorFallback(t *testing.T) {
 		getArtFn: func(_ context.Context, _ string) (*ArtistMetadata, error) {
 			return &ArtistMetadata{
 				Name:      "Radiohead",
-				Biography: "Radiohead are an English rock band.",
+				Biography: "Radiohead are an English rock band formed in Abingdon, Oxfordshire, in 1985.",
 				Genres:    []string{"alternative"},
 			}, nil
 		},
@@ -109,7 +109,7 @@ func TestOrchestratorFallback(t *testing.T) {
 	}
 
 	// Biography should come from Last.fm (MusicBrainz returned empty)
-	if result.Metadata.Biography != "Radiohead are an English rock band." {
+	if result.Metadata.Biography != "Radiohead are an English rock band formed in Abingdon, Oxfordshire, in 1985." {
 		t.Errorf("expected biography from Last.fm, got: %s", result.Metadata.Biography)
 	}
 
@@ -144,7 +144,7 @@ func TestOrchestratorProviderError(t *testing.T) {
 		getArtFn: func(_ context.Context, _ string) (*ArtistMetadata, error) {
 			return &ArtistMetadata{
 				Name:      "Radiohead",
-				Biography: "From AudioDB",
+				Biography: "AudioDB biography for this artist with enough content to pass quality checks.",
 				Formed:    "1985",
 			}, nil
 		},
@@ -159,7 +159,7 @@ func TestOrchestratorProviderError(t *testing.T) {
 	}
 
 	// Should get data from AudioDB since MusicBrainz failed
-	if result.Metadata.Biography != "From AudioDB" {
+	if result.Metadata.Biography != "AudioDB biography for this artist with enough content to pass quality checks." {
 		t.Errorf("expected biography from AudioDB, got: %s", result.Metadata.Biography)
 	}
 }
@@ -216,7 +216,7 @@ func TestOrchestratorCustomPriority(t *testing.T) {
 		getArtFn: func(_ context.Context, _ string) (*ArtistMetadata, error) {
 			return &ArtistMetadata{
 				Name:      "Radiohead",
-				Biography: "From MusicBrainz",
+				Biography: "MusicBrainz biography for this artist with enough content to pass quality checks.",
 			}, nil
 		},
 	})
@@ -225,7 +225,7 @@ func TestOrchestratorCustomPriority(t *testing.T) {
 		getArtFn: func(_ context.Context, _ string) (*ArtistMetadata, error) {
 			return &ArtistMetadata{
 				Name:      "Radiohead",
-				Biography: "From AudioDB",
+				Biography: "AudioDB biography for this artist with enough content to pass quality checks.",
 			}, nil
 		},
 	})
@@ -239,7 +239,7 @@ func TestOrchestratorCustomPriority(t *testing.T) {
 	}
 
 	// AudioDB should win for biography due to custom priority
-	if result.Metadata.Biography != "From AudioDB" {
+	if result.Metadata.Biography != "AudioDB biography for this artist with enough content to pass quality checks." {
 		t.Errorf("expected biography from AudioDB (custom priority), got: %s", result.Metadata.Biography)
 	}
 }
@@ -271,7 +271,7 @@ func TestOrchestratorMBIDFallbackToName(t *testing.T) {
 				// Called with artist name on retry
 				return &ArtistMetadata{
 					Name:      "Radiohead",
-					Biography: "From Genius",
+					Biography: "Genius biography for this artist with enough content to pass the quality checks.",
 				}, nil
 			},
 		},
@@ -295,7 +295,7 @@ func TestOrchestratorMBIDFallbackToName(t *testing.T) {
 	}
 
 	// Biography should come from Genius after MBID->name retry.
-	if result.Metadata.Biography != "From Genius" {
+	if result.Metadata.Biography != "Genius biography for this artist with enough content to pass the quality checks." {
 		t.Errorf("expected biography from Genius, got: %s", result.Metadata.Biography)
 	}
 
@@ -363,7 +363,7 @@ func TestOrchestratorProviderIDPrecedence(t *testing.T) {
 			return &ArtistMetadata{
 				Name:      "Adele",
 				AudioDBID: "111493",
-				Biography: "Correct biography from AudioDB",
+				Biography: "Correct biography from AudioDB with enough content to pass the quality gate checks.",
 			}, nil
 		},
 	})
@@ -386,7 +386,7 @@ func TestOrchestratorProviderIDPrecedence(t *testing.T) {
 		t.Errorf("AudioDB received ID %q, want %q", audioDBReceivedID, "111493")
 	}
 
-	if result.Metadata.Biography != "Correct biography from AudioDB" {
+	if result.Metadata.Biography != "Correct biography from AudioDB with enough content to pass the quality gate checks." {
 		t.Errorf("expected biography from AudioDB, got: %s", result.Metadata.Biography)
 	}
 }
@@ -402,7 +402,7 @@ func TestOrchestratorNilProviderIDsPreservesBehavior(t *testing.T) {
 			receivedID = id
 			return &ArtistMetadata{
 				Name:      "Radiohead",
-				Biography: "From MB",
+				Biography: "MusicBrainz bio for this artist with enough length to pass quality checks.",
 			}, nil
 		},
 	})
@@ -595,4 +595,158 @@ func TestExtractProviderIDsFromURLs(t *testing.T) {
 			t.Errorf("SpotifyID was overwritten: got %q", meta.SpotifyID)
 		}
 	})
+}
+
+func TestOrchestratorRejectsJunkBiography(t *testing.T) {
+	registry, settings := setupOrchestratorTest(t)
+
+	// Genius requires an API key; store a dummy so it passes availability check.
+	if err := settings.SetAPIKey(context.Background(), NameGenius, "test-key"); err != nil {
+		t.Fatalf("SetAPIKey: %v", err)
+	}
+
+	// First provider returns junk biography "?", second has a real one.
+	registry.Register(&mockNameLookupProvider{
+		mockProvider: mockProvider{
+			name: NameGenius,
+			getArtFn: func(_ context.Context, _ string) (*ArtistMetadata, error) {
+				return &ArtistMetadata{
+					Name:      "Noise Ratchet",
+					Biography: "?",
+				}, nil
+			},
+		},
+	})
+	registry.Register(&mockProvider{
+		name: NameAudioDB,
+		getArtFn: func(_ context.Context, _ string) (*ArtistMetadata, error) {
+			return &ArtistMetadata{
+				Name:      "Noise Ratchet",
+				Biography: "Noise Ratchet was an American rock band from Orange County, California, formed in 1998.",
+			}, nil
+		},
+	})
+
+	// Set priority: Genius first, then AudioDB -- simulates the scenario where
+	// Genius is tried before AudioDB and returns junk.
+	if err := settings.SetPriority(context.Background(), "biography", []ProviderName{NameGenius, NameAudioDB}); err != nil {
+		t.Fatalf("SetPriority: %v", err)
+	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	orch := NewOrchestrator(registry, settings, logger)
+
+	result, err := orch.FetchMetadata(context.Background(), "mbid-noise", "Noise Ratchet", nil)
+	if err != nil {
+		t.Fatalf("FetchMetadata: %v", err)
+	}
+
+	// Genius "?" should be rejected; biography should come from AudioDB.
+	if result.Metadata.Biography != "Noise Ratchet was an American rock band from Orange County, California, formed in 1998." {
+		t.Errorf("expected biography from AudioDB, got: %q", result.Metadata.Biography)
+	}
+
+	bioSource := findSource(result.Sources, "biography")
+	if bioSource == nil || bioSource.Provider != NameAudioDB {
+		t.Errorf("expected biography source from audiodb, got: %v", bioSource)
+	}
+}
+
+func TestOrchestratorRejectsShortBiography(t *testing.T) {
+	registry, settings := setupOrchestratorTest(t)
+
+	// LastFM requires an API key; store a dummy.
+	if err := settings.SetAPIKey(context.Background(), NameLastFM, "test-key"); err != nil {
+		t.Fatalf("SetAPIKey: %v", err)
+	}
+
+	// First provider returns a too-short biography, second has a real one.
+	registry.Register(&mockProvider{
+		name: NameLastFM,
+		getArtFn: func(_ context.Context, _ string) (*ArtistMetadata, error) {
+			return &ArtistMetadata{
+				Name:      "Test Artist",
+				Biography: "A rock band.",
+			}, nil
+		},
+	})
+	registry.Register(&mockProvider{
+		name: NameAudioDB,
+		getArtFn: func(_ context.Context, _ string) (*ArtistMetadata, error) {
+			return &ArtistMetadata{
+				Name:      "Test Artist",
+				Biography: "Test Artist is a musical project known for blending electronic and rock elements into something unique.",
+			}, nil
+		},
+	})
+
+	if err := settings.SetPriority(context.Background(), "biography", []ProviderName{NameLastFM, NameAudioDB}); err != nil {
+		t.Fatalf("SetPriority: %v", err)
+	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	orch := NewOrchestrator(registry, settings, logger)
+
+	result, err := orch.FetchMetadata(context.Background(), "mbid-test", "Test Artist", nil)
+	if err != nil {
+		t.Fatalf("FetchMetadata: %v", err)
+	}
+
+	// Short bio from Last.fm should be rejected; AudioDB should provide the bio.
+	if result.Metadata.Biography != "Test Artist is a musical project known for blending electronic and rock elements into something unique." {
+		t.Errorf("expected biography from AudioDB, got: %q", result.Metadata.Biography)
+	}
+}
+
+func TestOrchestratorAllJunkBiographiesLeaveFieldEmpty(t *testing.T) {
+	registry, settings := setupOrchestratorTest(t)
+
+	// Genius requires an API key.
+	if err := settings.SetAPIKey(context.Background(), NameGenius, "test-key"); err != nil {
+		t.Fatalf("SetAPIKey: %v", err)
+	}
+
+	// Both providers return junk.
+	registry.Register(&mockProvider{
+		name: NameAudioDB,
+		getArtFn: func(_ context.Context, _ string) (*ArtistMetadata, error) {
+			return &ArtistMetadata{
+				Name:      "Obscure Band",
+				Biography: "N/A",
+			}, nil
+		},
+	})
+	registry.Register(&mockNameLookupProvider{
+		mockProvider: mockProvider{
+			name: NameGenius,
+			getArtFn: func(_ context.Context, _ string) (*ArtistMetadata, error) {
+				return &ArtistMetadata{
+					Name:      "Obscure Band",
+					Biography: "?",
+				}, nil
+			},
+		},
+	})
+
+	if err := settings.SetPriority(context.Background(), "biography", []ProviderName{NameAudioDB, NameGenius}); err != nil {
+		t.Fatalf("SetPriority: %v", err)
+	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	orch := NewOrchestrator(registry, settings, logger)
+
+	result, err := orch.FetchMetadata(context.Background(), "mbid-obscure", "Obscure Band", nil)
+	if err != nil {
+		t.Fatalf("FetchMetadata: %v", err)
+	}
+
+	// All bios are junk -- field should remain empty.
+	if result.Metadata.Biography != "" {
+		t.Errorf("expected empty biography when all providers return junk, got: %q", result.Metadata.Biography)
+	}
+
+	bioSource := findSource(result.Sources, "biography")
+	if bioSource != nil {
+		t.Errorf("expected no biography source, got: %v", bioSource)
+	}
 }

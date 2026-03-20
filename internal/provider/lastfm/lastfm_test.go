@@ -160,13 +160,13 @@ func TestGetImagesReturnsNil(t *testing.T) {
 }
 
 func TestIsUUID(t *testing.T) {
-	if !isUUID("a74b1b7f-71a5-4011-9441-d0b5e4122711") {
+	if !provider.IsUUID("a74b1b7f-71a5-4011-9441-d0b5e4122711") {
 		t.Error("expected true for valid UUID")
 	}
-	if isUUID("not-a-uuid") {
+	if provider.IsUUID("not-a-uuid") {
 		t.Error("expected false for invalid UUID")
 	}
-	if isUUID("Radiohead") {
+	if provider.IsUUID("Radiohead") {
 		t.Error("expected false for artist name")
 	}
 }

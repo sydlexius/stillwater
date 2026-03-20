@@ -186,10 +186,10 @@ func TestListProviderKeyStatuses(t *testing.T) {
 		t.Errorf("expected MusicBrainz rate limit 1 req/s, got %v", mb.RateLimit.RequestsPerSecond)
 	}
 
-	// Fanart.tv: has key
-	fanart := statuses[1]
+	// Fanart.tv: has key (index 2; Wikipedia is at index 1)
+	fanart := statuses[2]
 	if fanart.Name != NameFanartTV {
-		t.Errorf("expected second provider to be fanarttv, got %s", fanart.Name)
+		t.Errorf("expected third provider to be fanarttv, got %s", fanart.Name)
 	}
 	if !fanart.HasKey {
 		t.Error("Fanart.tv should have key")
@@ -207,10 +207,10 @@ func TestListProviderKeyStatuses(t *testing.T) {
 		t.Error("expected Fanart.tv to have rate limit info")
 	}
 
-	// Discogs: no key configured
-	discogs := statuses[3]
+	// Discogs: no key configured (index 4; Wikipedia shifted indices by 1)
+	discogs := statuses[4]
 	if discogs.Name != NameDiscogs {
-		t.Errorf("expected fourth provider to be discogs, got %s", discogs.Name)
+		t.Errorf("expected fifth provider to be discogs, got %s", discogs.Name)
 	}
 	if discogs.HasKey {
 		t.Error("Discogs should not have key")
@@ -317,15 +317,15 @@ func TestPriorityRoundTrip(t *testing.T) {
 	if len(bio.Providers) == 0 {
 		t.Fatal("expected biography to have default providers")
 	}
-	if bio.Providers[0] != NameMusicBrainz {
-		t.Errorf("expected first biography provider to be musicbrainz, got %s", bio.Providers[0])
+	if bio.Providers[0] != NameWikipedia {
+		t.Errorf("expected first biography provider to be wikipedia, got %s", bio.Providers[0])
 	}
 
 	// Override biography with a subset of providers (simulating a user reorder).
-	// The stored list is [lastfm, musicbrainz, audiodb]; GetPriorities should
-	// reconcile by appending any default providers absent from the stored list
-	// (discogs, wikidata) so newly-added defaults surface without a manual reset.
-	newOrder := []ProviderName{NameLastFM, NameMusicBrainz, NameAudioDB}
+	// The stored list is [lastfm, audiodb]; GetPriorities should reconcile by
+	// appending any default providers absent from the stored list so
+	// newly-added defaults surface without a manual reset.
+	newOrder := []ProviderName{NameLastFM, NameAudioDB}
 	if err := svc.SetPriority(ctx, "biography", newOrder); err != nil {
 		t.Fatalf("SetPriority: %v", err)
 	}
@@ -345,7 +345,6 @@ func TestPriorityRoundTrip(t *testing.T) {
 	}
 	for _, p := range priorities {
 		if p.Field == "biography" {
-			// Stored order is preserved at the front; missing defaults are appended.
 			if len(p.Providers) != defaultBioCount {
 				t.Fatalf("expected %d providers after reconciliation, got %d", defaultBioCount, len(p.Providers))
 			}
