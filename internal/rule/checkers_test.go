@@ -890,6 +890,22 @@ func TestCheckBackdropSequencing_NumberedOnlyNoPrimary(t *testing.T) {
 	}
 }
 
+func TestCheckBackdropSequencing_SingleNumberedOnly(t *testing.T) {
+	// A single numbered file without the primary (e.g., only fanart2.jpg)
+	// should be flagged since it doesn't start at index 0.
+	dir := t.TempDir()
+	createTestJPEG(t, filepath.Join(dir, "fanart2.jpg"), 1920, 1080)
+
+	e := &Engine{platformService: nil}
+	checker := e.makeBackdropSequencingChecker()
+
+	a := artist.Artist{Name: "Test", Path: dir}
+	v := checker(&a, RuleConfig{})
+	if v == nil {
+		t.Fatal("expected violation for single numbered file without primary")
+	}
+}
+
 func TestCheckBackdropSequencing_SingleFile(t *testing.T) {
 	dir := t.TempDir()
 	createTestJPEG(t, filepath.Join(dir, "fanart.jpg"), 1920, 1080)

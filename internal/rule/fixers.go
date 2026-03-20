@@ -954,7 +954,7 @@ func (f *BackdropSequencingFixer) Fix(ctx context.Context, a *artist.Artist, _ *
 				"artist", a.Name, "primary", primaryName, "error", err)
 			continue
 		}
-		if len(discovered) < 2 {
+		if len(discovered) == 0 {
 			continue
 		}
 
@@ -977,7 +977,7 @@ func (f *BackdropSequencingFixer) Fix(ctx context.Context, a *artist.Artist, _ *
 			return nil, fmt.Errorf("renumbering fanart for %s: %w", a.Name, err)
 		}
 
-		f.logger.Info("renumbered backdrop sequence",
+		f.logger.Info("renumbered image sequence",
 			"artist", a.Name,
 			"primary", primaryName,
 			"count", len(discovered))

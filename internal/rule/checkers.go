@@ -911,7 +911,14 @@ func (e *Engine) makeBackdropSequencingChecker() Checker {
 
 		for _, primaryName := range fanartNames {
 			discovered, err := image.DiscoverFanart(a.Path, primaryName)
-			if err != nil || len(discovered) < 2 {
+			if err != nil {
+				e.logger.Debug("discovering fanart for sequencing check",
+					"dir", a.Path,
+					"primary", primaryName,
+					"error", err)
+				continue
+			}
+			if len(discovered) == 0 {
 				continue
 			}
 
