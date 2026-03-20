@@ -34,6 +34,7 @@ func TestMirrorStatusLabel(t *testing.T) {
 		want   string
 	}{
 		{"nil mirror has no label", nil, ""},
+		{"official URL has no label", &provider.MirrorConfig{BaseURL: "https://musicbrainz.org/ws/2", RateLimit: 1}, ""},
 		{"beta shows label", &provider.MirrorConfig{BaseURL: betaMirrorURL, RateLimit: 1}, "Beta server"},
 		{"custom shows label", &provider.MirrorConfig{BaseURL: "http://10.0.0.1:5000/ws/2", RateLimit: 10}, "Custom mirror"},
 	}

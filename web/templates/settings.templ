@@ -2706,6 +2706,7 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 									required
 								}
 								autocomplete="off"
+								aria-describedby={ "custom-help-" + string(pk.Name) }
 								class="w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
 							/>
 						</div>
@@ -2729,7 +2730,7 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 							/>
 						</div>
 					</div>
-					<p class="text-xs text-gray-400 dark:text-gray-500">
+					<p id={ "custom-help-" + string(pk.Name) } class="text-xs text-gray-400 dark:text-gray-500">
 						Self-hosted mirrors can often handle higher rates. Default: 10 req/s.
 					</p>
 				</div>
