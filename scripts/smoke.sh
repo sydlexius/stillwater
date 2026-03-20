@@ -57,9 +57,9 @@ COOKIE_JAR=""
 # not an HTTP response. Tier 1 calls are left unguarded intentionally -- if
 # the server is unreachable during core checks, the entire test run is
 # unreliable and immediate abort is correct. Tier 2 guards data-modifying
-# push/delete/re-push calls; Tier 2 read-only calls (platform-ids GET,
-# platform-state) remain unguarded and will abort on transport failure.
-# Tier 5 roundtrip discovery calls are also guarded.
+# push/delete/re-push calls and the platform-ids discovery GETs that gate
+# them; Tier 2 assertion GETs (platform-ids status check, platform-state)
+# remain unguarded. Tier 5 roundtrip discovery calls are also guarded.
 
 assert_status() {
   local label="$1"
