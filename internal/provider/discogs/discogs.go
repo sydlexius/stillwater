@@ -90,8 +90,35 @@ func (a *Adapter) SearchArtist(ctx context.Context, name string) ([]provider.Art
 	return results, nil
 }
 
-// GetArtist fetches full metadata for an artist by their Discogs ID.
+// SupportsNameLookup returns true because Discogs can search by artist name
+// and use the top result's numeric ID to fetch metadata. This is a last-resort
+// fallback: the orchestrator first tries to extract the Discogs numeric ID from
+// MusicBrainz/Wikidata URL relations before falling back to name-based search.
+func (a *Adapter) SupportsNameLookup() bool { return true }
+
+// GetArtist fetches full metadata for an artist by their Discogs numeric ID.
+// Non-numeric IDs (such as MusicBrainz UUIDs) are rejected immediately with
+// ErrNotFound to avoid a wasted HTTP round-trip. When the orchestrator's
+// MBID-to-name retry fires (because this adapter implements NameLookupProvider),
+// GetArtist is called again with the artist name, which routes through
+// getArtistByName for a search-then-fetch flow.
 func (a *Adapter) GetArtist(ctx context.Context, id string) (*provider.ArtistMetadata, error) {
+	if !isNumericID(id) {
+		// If the id is not numeric but also not a UUID, treat it as an
+		// artist name and fall back to name-based search.
+		if !provider.IsUUID(id) {
+			a.logger.Debug("non-numeric non-UUID ID, falling back to name search",
+				slog.String("id", id))
+			return a.getArtistByName(ctx, id)
+		}
+		return nil, &provider.ErrNotFound{Provider: provider.NameDiscogs, ID: id}
+	}
+
+	return a.getArtistByID(ctx, id)
+}
+
+// getArtistByID fetches artist metadata directly using a numeric Discogs ID.
+func (a *Adapter) getArtistByID(ctx context.Context, id string) (*provider.ArtistMetadata, error) {
 	token, err := a.getToken(ctx)
 	if err != nil {
 		return nil, err
@@ -118,8 +145,32 @@ func (a *Adapter) GetArtist(ctx context.Context, id string) (*provider.ArtistMet
 	return mapArtist(&detail), nil
 }
 
-// GetImages fetches available images for an artist by their Discogs ID.
+// getArtistByName searches Discogs by artist name and fetches metadata for the
+// top result. This is the last-resort fallback when no numeric Discogs ID was
+// found via MusicBrainz/Wikidata URL extraction.
+func (a *Adapter) getArtistByName(ctx context.Context, name string) (*provider.ArtistMetadata, error) {
+	results, err := a.SearchArtist(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	if len(results) == 0 {
+		return nil, &provider.ErrNotFound{Provider: provider.NameDiscogs, ID: name}
+	}
+	a.logger.Debug("name search selected top result",
+		slog.String("query", name),
+		slog.String("result_name", results[0].Name),
+		slog.String("result_id", results[0].ProviderID))
+	return a.getArtistByID(ctx, results[0].ProviderID)
+}
+
+// GetImages fetches available images for an artist by their Discogs numeric ID.
+// Returns ErrNotFound for non-numeric IDs (such as MusicBrainz UUIDs) without
+// making an HTTP request.
 func (a *Adapter) GetImages(ctx context.Context, id string) ([]provider.ImageResult, error) {
+	if !isNumericID(id) {
+		return nil, &provider.ErrNotFound{Provider: provider.NameDiscogs, ID: id}
+	}
+
 	token, err := a.getToken(ctx)
 	if err != nil {
 		return nil, err
@@ -247,4 +298,19 @@ func mapArtist(d *ArtistDetail) *provider.ArtistMetadata {
 	}
 
 	return meta
+}
+
+// isNumericID reports whether id contains only ASCII digits.
+// Discogs uses numeric-only artist IDs; MusicBrainz UUIDs and artist names
+// are not valid Discogs IDs.
+func isNumericID(id string) bool {
+	if id == "" {
+		return false
+	}
+	for _, r := range id {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }

@@ -56,8 +56,10 @@ func (o *Orchestrator) SetExecutor(e ScraperExecutor) {
 // FetchMetadata queries all providers in priority order and merges the results.
 // It uses the artist's MBID when available, falling back to name-based search.
 // providerIDs supplies provider-specific IDs (AudioDB numeric ID, Discogs ID, etc.)
-// so that each provider receives its own stored ID instead of the MBID. A nil map
-// preserves backward-compatible MBID-first behavior.
+// so that each provider receives its own stored ID instead of the MBID. A nil or
+// empty map is safe: the function allocates an internal map so that IDs discovered
+// from earlier providers' URL results (e.g., a Discogs numeric ID extracted from a
+// MusicBrainz URL) can be used when calling later providers.
 // When a ScraperExecutor is configured, delegates to it for scraper-config-driven
 // per-field fetching with fallback chains.
 func (o *Orchestrator) FetchMetadata(ctx context.Context, mbid, name string, providerIDs map[ProviderName]string) (*FetchResult, error) {
@@ -81,6 +83,12 @@ func (o *Orchestrator) FetchMetadata(ctx context.Context, mbid, name string, pro
 		},
 	}
 
+	// Ensure providerIDs is writable so EnrichProviderIDs can populate it
+	// with IDs extracted from earlier providers' URL results.
+	if providerIDs == nil {
+		providerIDs = make(map[ProviderName]string)
+	}
+
 	// Cache provider results to avoid duplicate calls
 	var mu sync.Mutex
 	cache := make(map[ProviderName]*providerResult)
@@ -96,6 +104,13 @@ func (o *Orchestrator) FetchMetadata(ctx context.Context, mbid, name string, pro
 				continue
 			}
 
+			// After each successful provider call, extract any provider IDs
+			// from the returned URLs and feed them to subsequent calls.
+			// For example, MusicBrainz returns Discogs URLs containing the
+			// numeric Discogs ID, so we extract it here before Discogs is
+			// called, avoiding a wasted MBID-based request that always 404s.
+			EnrichProviderIDs(pr.meta, providerIDs)
+
 			queried = true
 			if applyField(result, pri.Field, pr, provName) {
 				break
@@ -106,8 +121,8 @@ func (o *Orchestrator) FetchMetadata(ctx context.Context, mbid, name string, pro
 		}
 	}
 
-	// Backfill provider IDs from MusicBrainz URL relations when not already set.
-	// MusicBrainz returns discogs and wikidata URLs; extract the numeric/Q IDs.
+	// Final backfill pass for the merged metadata (catches any IDs not yet
+	// populated from earlier per-provider enrichment).
 	extractProviderIDsFromURLs(result.Metadata)
 
 	// Record which providers were actually queried so callers can update
@@ -552,6 +567,50 @@ func containsString(slice []string, s string) bool {
 		}
 	}
 	return false
+}
+
+// EnrichProviderIDs extracts provider-specific IDs from a single provider
+// result's metadata and updates the providerIDs map in-place. This allows
+// IDs discovered from one provider (e.g., a Discogs URL in MusicBrainz's
+// response) to be available before the corresponding provider is called.
+//
+// This solves the sequencing problem where MusicBrainz returns a Discogs URL
+// containing the numeric ID, but that ID was previously only extracted after
+// all providers had already been called (too late for Discogs to use it).
+func EnrichProviderIDs(meta *ArtistMetadata, providerIDs map[ProviderName]string) {
+	if meta == nil || providerIDs == nil {
+		return
+	}
+
+	// Temporarily extract IDs from this provider's URLs into a scratch
+	// metadata struct, then copy any newly discovered IDs into providerIDs.
+	scratch := &ArtistMetadata{
+		URLs:      meta.URLs,
+		DiscogsID: meta.DiscogsID,
+		DeezerID:  meta.DeezerID,
+		SpotifyID: meta.SpotifyID,
+	}
+	extractProviderIDsFromURLs(scratch)
+
+	// Only set IDs that are not already populated. We preserve non-empty
+	// stored IDs because the caller's existing ID is authoritative.
+	// ProviderIDMap() includes keys with empty-string values for unknown
+	// providers, so we treat empty strings as unset.
+	if scratch.DiscogsID != "" {
+		if current := providerIDs[NameDiscogs]; current == "" {
+			providerIDs[NameDiscogs] = scratch.DiscogsID
+		}
+	}
+	if scratch.DeezerID != "" {
+		if current := providerIDs[NameDeezer]; current == "" {
+			providerIDs[NameDeezer] = scratch.DeezerID
+		}
+	}
+	if scratch.SpotifyID != "" {
+		if current := providerIDs[NameSpotify]; current == "" {
+			providerIDs[NameSpotify] = scratch.SpotifyID
+		}
+	}
 }
 
 // extractProviderIDsFromURLs backfills provider IDs from URL relations returned
