@@ -141,6 +141,36 @@ func (r *sqliteArtistRepo) GetByNameAndLibrary(ctx context.Context, name, librar
 	return a, nil
 }
 
+func (r *sqliteArtistRepo) FindByMBIDOrName(ctx context.Context, mbid, name, libraryID string) (*Artist, error) {
+	// Try MBID match first (most reliable).
+	if mbid != "" {
+		row := r.db.QueryRowContext(ctx,
+			`SELECT `+artistColumns+` FROM artists
+			WHERE id IN (SELECT artist_id FROM artist_provider_ids WHERE provider = 'musicbrainz' AND provider_id = ?)
+			AND library_id = ?`, mbid, libraryID)
+		a, err := scanArtist(row)
+		if err == nil {
+			return a, nil
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("finding artist by mbid+library: %w", err)
+		}
+		// No MBID match -- fall through to name match.
+	}
+
+	// Fall back to case-insensitive name match.
+	row := r.db.QueryRowContext(ctx,
+		`SELECT `+artistColumns+` FROM artists WHERE LOWER(name) = LOWER(?) AND library_id = ?`, name, libraryID)
+	a, err := scanArtist(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("finding artist by name+library: %w", err)
+	}
+	return a, nil
+}
+
 func (r *sqliteArtistRepo) GetByPath(ctx context.Context, path string) (*Artist, error) {
 	row := r.db.QueryRowContext(ctx,
 		`SELECT `+artistColumns+` FROM artists WHERE path = ?`, path)

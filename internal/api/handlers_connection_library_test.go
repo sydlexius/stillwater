@@ -23,6 +23,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/connection/emby"
 	"github.com/sydlexius/stillwater/internal/connection/jellyfin"
+	"github.com/sydlexius/stillwater/internal/connection/lidarr"
 	"github.com/sydlexius/stillwater/internal/database"
 	"github.com/sydlexius/stillwater/internal/encryption"
 	"github.com/sydlexius/stillwater/internal/library"
@@ -2158,5 +2159,600 @@ func TestImportLibraries_AutoPopulate(t *testing.T) {
 	}
 	if op.Status != "completed" {
 		t.Errorf("operation status = %q, want %q; message: %s", op.Status, "completed", op.Message)
+	}
+}
+
+func TestScanFromEmby_BackfillsPlatformIDToFilesystemArtist(t *testing.T) {
+	artistDir := t.TempDir()
+	libPath := filepath.Dir(artistDir)
+
+	embySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/Artists/AlbumArtists" {
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintf(w, `{
+				"Items":[{
+					"Name":"Deftones",
+					"SortName":"Deftones",
+					"Id":"emby-deftones-001",
+					"Path":%q,
+					"Overview":"",
+					"Genres":[],
+					"Tags":[],
+					"PremiereDate":"",
+					"EndDate":"",
+					"ProviderIds":{"MusicBrainzArtist":"mbid-deftones"},
+					"ImageTags":{}
+				}],
+				"TotalRecordCount":1
+			}`, artistDir)
+		} else {
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer embySrv.Close()
+
+	router := testRouterForLibraryOps(t)
+	ctx := context.Background()
+
+	// Create a connection for the Emby library.
+	addTestConnection(t, router, "conn-emby-1", "Emby Server", "emby")
+
+	// Create a manual (filesystem) library.
+	manualLib := &library.Library{
+		Name:   "Filesystem",
+		Path:   "/music",
+		Type:   library.TypeRegular,
+		Source: library.SourceManual,
+	}
+	if err := router.libraryService.Create(ctx, manualLib); err != nil {
+		t.Fatalf("creating manual library: %v", err)
+	}
+
+	// Create a filesystem artist with the same MBID.
+	fsArtist := &artist.Artist{
+		Name:          "Deftones",
+		SortName:      "Deftones",
+		MusicBrainzID: "mbid-deftones",
+		LibraryID:     manualLib.ID,
+		Path:          "/music/Deftones",
+	}
+	if err := router.artistService.Create(ctx, fsArtist); err != nil {
+		t.Fatalf("creating filesystem artist: %v", err)
+	}
+
+	// Create an Emby library linked to the connection.
+	embyLib := &library.Library{
+		Name:         "Emby Music",
+		Path:         libPath,
+		Type:         library.TypeRegular,
+		Source:       library.SourceEmby,
+		ConnectionID: "conn-emby-1",
+		ExternalID:   "emby-lib-1",
+	}
+	if err := router.libraryService.Create(ctx, embyLib); err != nil {
+		t.Fatalf("creating emby library: %v", err)
+	}
+
+	// Create an Emby-library artist with the same MBID.
+	embyArtist := &artist.Artist{
+		Name:          "Deftones",
+		SortName:      "Deftones",
+		MusicBrainzID: "mbid-deftones",
+		LibraryID:     embyLib.ID,
+		Path:          artistDir,
+	}
+	if err := router.artistService.Create(ctx, embyArtist); err != nil {
+		t.Fatalf("creating emby artist: %v", err)
+	}
+
+	// Run the scan.
+	client := emby.NewWithHTTPClient(embySrv.URL, "key", "", embySrv.Client(),
+		slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
+	if _, err := router.scanFromEmby(ctx, client, embyLib); err != nil {
+		t.Fatalf("scanFromEmby: %v", err)
+	}
+
+	// Verify platform ID on Emby-library artist (existing behavior).
+	embyPlatformID, err := router.artistService.GetPlatformID(ctx, embyArtist.ID, "conn-emby-1")
+	if err != nil {
+		t.Fatalf("GetPlatformID (emby artist): %v", err)
+	}
+	if embyPlatformID != "emby-deftones-001" {
+		t.Errorf("emby artist platform ID = %q, want %q", embyPlatformID, "emby-deftones-001")
+	}
+
+	// Verify platform ID was ALSO backfilled to filesystem artist.
+	fsPlatformID, err := router.artistService.GetPlatformID(ctx, fsArtist.ID, "conn-emby-1")
+	if err != nil {
+		t.Fatalf("GetPlatformID (fs artist): %v", err)
+	}
+	if fsPlatformID != "emby-deftones-001" {
+		t.Errorf("filesystem artist platform ID = %q, want %q", fsPlatformID, "emby-deftones-001")
+	}
+}
+
+func TestPopulateFromEmby_BackfillsPlatformIDToFilesystemArtist(t *testing.T) {
+	embySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"Items":[{
+				"Name":"Radiohead",
+				"SortName":"Radiohead",
+				"Id":"emby-radiohead-001",
+				"Path":"",
+				"Overview":"English rock band.",
+				"Genres":["Rock"],
+				"Tags":[],
+				"PremiereDate":"",
+				"EndDate":"",
+				"ProviderIds":{"MusicBrainzArtist":"mbid-radiohead"},
+				"ImageTags":{}
+			}],
+			"TotalRecordCount":1
+		}`))
+	}))
+	defer embySrv.Close()
+
+	router := testRouterForLibraryOps(t)
+	ctx := context.Background()
+
+	addTestConnection(t, router, "conn-emby-1", "Emby Server", "emby")
+
+	// Create a manual (filesystem) library with an artist sharing the MBID.
+	manualLib := &library.Library{
+		Name:   "Filesystem",
+		Path:   "/music",
+		Type:   library.TypeRegular,
+		Source: library.SourceManual,
+	}
+	if err := router.libraryService.Create(ctx, manualLib); err != nil {
+		t.Fatalf("creating manual library: %v", err)
+	}
+	fsArtist := &artist.Artist{
+		Name:          "Radiohead",
+		SortName:      "Radiohead",
+		MusicBrainzID: "mbid-radiohead",
+		LibraryID:     manualLib.ID,
+		Path:          "/music/Radiohead",
+	}
+	if err := router.artistService.Create(ctx, fsArtist); err != nil {
+		t.Fatalf("creating filesystem artist: %v", err)
+	}
+
+	// Create an Emby library.
+	embyLib := &library.Library{
+		Name:         "Emby Music",
+		Type:         library.TypeRegular,
+		Source:       library.SourceEmby,
+		ConnectionID: "conn-emby-1",
+		ExternalID:   "emby-lib-1",
+	}
+	if err := router.libraryService.Create(ctx, embyLib); err != nil {
+		t.Fatalf("creating emby library: %v", err)
+	}
+
+	// Populate -- this creates a NEW emby-library artist.
+	client := emby.NewWithHTTPClient(embySrv.URL, "key", "", embySrv.Client(),
+		slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
+	var result populateResult
+	if err := router.populateFromEmbyCtx(ctx, client, embyLib, &result); err != nil {
+		t.Fatalf("populateFromEmbyCtx: %v", err)
+	}
+
+	if result.Created != 1 {
+		t.Fatalf("created = %d, want 1", result.Created)
+	}
+
+	// The emby-library artist should have a platform ID (existing behavior).
+	embyArtist, err := router.artistService.GetByNameAndLibrary(ctx, "Radiohead", embyLib.ID)
+	if err != nil || embyArtist == nil {
+		t.Fatalf("looking up emby artist: %v", err)
+	}
+	embyPlatformID, err := router.artistService.GetPlatformID(ctx, embyArtist.ID, "conn-emby-1")
+	if err != nil {
+		t.Fatalf("GetPlatformID (emby): %v", err)
+	}
+	if embyPlatformID != "emby-radiohead-001" {
+		t.Errorf("emby artist platform ID = %q, want %q", embyPlatformID, "emby-radiohead-001")
+	}
+
+	// The filesystem artist should ALSO have the platform ID (new behavior).
+	fsPlatformID, err := router.artistService.GetPlatformID(ctx, fsArtist.ID, "conn-emby-1")
+	if err != nil {
+		t.Fatalf("GetPlatformID (fs): %v", err)
+	}
+	if fsPlatformID != "emby-radiohead-001" {
+		t.Errorf("filesystem artist platform ID = %q, want %q", fsPlatformID, "emby-radiohead-001")
+	}
+}
+
+func TestScanFromEmby_BackfillsCaseInsensitiveName(t *testing.T) {
+	artistDir := t.TempDir()
+	libPath := filepath.Dir(artistDir)
+
+	embySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/Artists/AlbumArtists" {
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintf(w, `{
+				"Items":[{
+					"Name":"VERIDIA",
+					"SortName":"VERIDIA",
+					"Id":"emby-veridia-001",
+					"Path":%q,
+					"Overview":"",
+					"Genres":[],
+					"Tags":[],
+					"PremiereDate":"",
+					"EndDate":"",
+					"ProviderIds":{},
+					"ImageTags":{}
+				}],
+				"TotalRecordCount":1
+			}`, artistDir)
+		} else {
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer embySrv.Close()
+
+	router := testRouterForLibraryOps(t)
+	ctx := context.Background()
+
+	addTestConnection(t, router, "conn-emby-1", "Emby Server", "emby")
+
+	manualLib := &library.Library{
+		Name:   "Filesystem",
+		Path:   "/music",
+		Type:   library.TypeRegular,
+		Source: library.SourceManual,
+	}
+	if err := router.libraryService.Create(ctx, manualLib); err != nil {
+		t.Fatalf("creating manual library: %v", err)
+	}
+	fsArtist := &artist.Artist{
+		Name:      "Veridia",
+		SortName:  "Veridia",
+		LibraryID: manualLib.ID,
+		Path:      "/music/Veridia",
+	}
+	if err := router.artistService.Create(ctx, fsArtist); err != nil {
+		t.Fatalf("creating filesystem artist: %v", err)
+	}
+
+	embyLib := &library.Library{
+		Name:         "Emby Music",
+		Path:         libPath,
+		Type:         library.TypeRegular,
+		Source:       library.SourceEmby,
+		ConnectionID: "conn-emby-1",
+		ExternalID:   "emby-lib-1",
+	}
+	if err := router.libraryService.Create(ctx, embyLib); err != nil {
+		t.Fatalf("creating emby library: %v", err)
+	}
+	embyArtist := &artist.Artist{
+		Name:      "VERIDIA",
+		SortName:  "VERIDIA",
+		LibraryID: embyLib.ID,
+		Path:      artistDir,
+	}
+	if err := router.artistService.Create(ctx, embyArtist); err != nil {
+		t.Fatalf("creating emby artist: %v", err)
+	}
+
+	client := emby.NewWithHTTPClient(embySrv.URL, "key", "", embySrv.Client(),
+		slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
+	if _, err := router.scanFromEmby(ctx, client, embyLib); err != nil {
+		t.Fatalf("scanFromEmby: %v", err)
+	}
+
+	fsPlatformID, err := router.artistService.GetPlatformID(ctx, fsArtist.ID, "conn-emby-1")
+	if err != nil {
+		t.Fatalf("GetPlatformID (fs): %v", err)
+	}
+	if fsPlatformID != "emby-veridia-001" {
+		t.Errorf("filesystem artist platform ID = %q, want %q", fsPlatformID, "emby-veridia-001")
+	}
+}
+
+func TestResolveAndBackfillPlatformID_NilWhenNoConnectionMatch(t *testing.T) {
+	router := testRouterForLibraryOps(t)
+	ctx := context.Background()
+
+	addTestConnection(t, router, "conn-emby-1", "Emby Server", "emby")
+
+	embyLib := &library.Library{
+		Name:         "Emby Music",
+		Type:         library.TypeRegular,
+		Source:       library.SourceEmby,
+		ConnectionID: "conn-emby-1",
+		ExternalID:   "emby-lib-1",
+	}
+	if err := router.libraryService.Create(ctx, embyLib); err != nil {
+		t.Fatalf("creating emby library: %v", err)
+	}
+
+	a := router.resolveAndBackfillPlatformID(ctx,
+		"nonexistent-mbid", "Nonexistent Artist",
+		"conn-emby-1", "emby-999", embyLib, nil)
+	if a != nil {
+		t.Errorf("expected nil, got %+v", a)
+	}
+}
+
+func TestBackfillPlatformIDToManualLibs_SkipsWhenNoMatch(t *testing.T) {
+	router := testRouterForLibraryOps(t)
+	ctx := context.Background()
+
+	addTestConnection(t, router, "conn-emby-1", "Emby Server", "emby")
+
+	manualLib := &library.Library{
+		Name:   "Filesystem",
+		Path:   "/music",
+		Type:   library.TypeRegular,
+		Source: library.SourceManual,
+	}
+	if err := router.libraryService.Create(ctx, manualLib); err != nil {
+		t.Fatalf("creating manual library: %v", err)
+	}
+
+	// Call backfill with an artist name that doesn't exist. Should not panic.
+	router.backfillPlatformIDToManualLibs(ctx,
+		"", "Nonexistent Band",
+		"conn-emby-1", "emby-999", "some-conn-artist-id",
+		[]library.Library{*manualLib})
+}
+
+func TestBackfillPlatformIDToManualLibs_MultipleManualLibraries(t *testing.T) {
+	router := testRouterForLibraryOps(t)
+	ctx := context.Background()
+
+	addTestConnection(t, router, "conn-emby-1", "Emby Server", "emby")
+
+	var manualLibs []library.Library
+	var fsArtistIDs []string
+	for _, name := range []string{"Music A", "Music B"} {
+		libDir := t.TempDir()
+		lib := &library.Library{
+			Name:   name,
+			Path:   libDir,
+			Type:   library.TypeRegular,
+			Source: library.SourceManual,
+		}
+		if err := router.libraryService.Create(ctx, lib); err != nil {
+			t.Fatalf("creating library %s: %v", name, err)
+		}
+		manualLibs = append(manualLibs, *lib)
+
+		a := &artist.Artist{
+			Name:      "Tool",
+			SortName:  "Tool",
+			LibraryID: lib.ID,
+			Path:      filepath.Join(libDir, "Tool"),
+		}
+		if err := router.artistService.Create(ctx, a); err != nil {
+			t.Fatalf("creating artist in %s: %v", name, err)
+		}
+		fsArtistIDs = append(fsArtistIDs, a.ID)
+	}
+
+	router.backfillPlatformIDToManualLibs(ctx,
+		"", "Tool",
+		"conn-emby-1", "emby-tool-001", "conn-artist-id",
+		manualLibs)
+
+	for i, id := range fsArtistIDs {
+		pid, err := router.artistService.GetPlatformID(ctx, id, "conn-emby-1")
+		if err != nil {
+			t.Fatalf("GetPlatformID artist[%d]: %v", i, err)
+		}
+		if pid != "emby-tool-001" {
+			t.Errorf("artist[%d] platform ID = %q, want %q", i, pid, "emby-tool-001")
+		}
+	}
+}
+
+func TestBackfillPlatformIDToManualLibs_SkipsSameArtist(t *testing.T) {
+	router := testRouterForLibraryOps(t)
+	ctx := context.Background()
+
+	addTestConnection(t, router, "conn-emby-1", "Emby Server", "emby")
+
+	manualLib := &library.Library{
+		Name:   "Filesystem",
+		Path:   "/music",
+		Type:   library.TypeRegular,
+		Source: library.SourceManual,
+	}
+	if err := router.libraryService.Create(ctx, manualLib); err != nil {
+		t.Fatalf("creating manual library: %v", err)
+	}
+
+	a := &artist.Artist{
+		Name:      "Deftones",
+		SortName:  "Deftones",
+		LibraryID: manualLib.ID,
+		Path:      "/music/Deftones",
+	}
+	if err := router.artistService.Create(ctx, a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	// Pass the same artist ID as connArtistID -- should skip.
+	router.backfillPlatformIDToManualLibs(ctx,
+		"", "Deftones",
+		"conn-emby-1", "emby-deftones-001", a.ID,
+		[]library.Library{*manualLib})
+
+	pid, err := router.artistService.GetPlatformID(ctx, a.ID, "conn-emby-1")
+	if err != nil {
+		t.Fatalf("GetPlatformID: %v", err)
+	}
+	if pid != "" {
+		t.Errorf("platform ID = %q, want empty (should skip same artist)", pid)
+	}
+}
+
+func TestScanFromJellyfin_BackfillsPlatformIDToFilesystemArtist(t *testing.T) {
+	artistDir := t.TempDir()
+	libPath := filepath.Dir(artistDir)
+
+	jfSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/Artists/AlbumArtists" {
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintf(w, `{
+				"Items":[{
+					"Name":"Bjork",
+					"SortName":"Bjork",
+					"Id":"jf-bjork-001",
+					"Path":%q,
+					"Overview":"",
+					"Genres":[],
+					"Tags":[],
+					"PremiereDate":"",
+					"EndDate":"",
+					"ProviderIds":{"MusicBrainzArtist":"mbid-bjork"},
+					"ImageTags":{}
+				}],
+				"TotalRecordCount":1
+			}`, artistDir)
+		} else {
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer jfSrv.Close()
+
+	router := testRouterForLibraryOps(t)
+	ctx := context.Background()
+
+	addTestConnection(t, router, "conn-jf-1", "Jellyfin Server", "jellyfin")
+
+	manualLib := &library.Library{
+		Name:   "Filesystem",
+		Path:   "/music",
+		Type:   library.TypeRegular,
+		Source: library.SourceManual,
+	}
+	if err := router.libraryService.Create(ctx, manualLib); err != nil {
+		t.Fatalf("creating manual library: %v", err)
+	}
+	fsArtist := &artist.Artist{
+		Name:          "Bjork",
+		SortName:      "Bjork",
+		MusicBrainzID: "mbid-bjork",
+		LibraryID:     manualLib.ID,
+		Path:          "/music/Bjork",
+	}
+	if err := router.artistService.Create(ctx, fsArtist); err != nil {
+		t.Fatalf("creating filesystem artist: %v", err)
+	}
+
+	jfLib := &library.Library{
+		Name:         "Jellyfin Music",
+		Path:         libPath,
+		Type:         library.TypeRegular,
+		Source:       library.SourceJellyfin,
+		ConnectionID: "conn-jf-1",
+		ExternalID:   "jf-lib-1",
+	}
+	if err := router.libraryService.Create(ctx, jfLib); err != nil {
+		t.Fatalf("creating jellyfin library: %v", err)
+	}
+	jfArtist := &artist.Artist{
+		Name:          "Bjork",
+		SortName:      "Bjork",
+		MusicBrainzID: "mbid-bjork",
+		LibraryID:     jfLib.ID,
+		Path:          artistDir,
+	}
+	if err := router.artistService.Create(ctx, jfArtist); err != nil {
+		t.Fatalf("creating jellyfin artist: %v", err)
+	}
+
+	client := jellyfin.NewWithHTTPClient(jfSrv.URL, "key", "", jfSrv.Client(),
+		slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
+	if _, err := router.scanFromJellyfin(ctx, client, jfLib); err != nil {
+		t.Fatalf("scanFromJellyfin: %v", err)
+	}
+
+	fsPlatformID, err := router.artistService.GetPlatformID(ctx, fsArtist.ID, "conn-jf-1")
+	if err != nil {
+		t.Fatalf("GetPlatformID (fs): %v", err)
+	}
+	if fsPlatformID != "jf-bjork-001" {
+		t.Errorf("filesystem artist platform ID = %q, want %q", fsPlatformID, "jf-bjork-001")
+	}
+}
+
+func TestScanFromLidarr_BackfillsPlatformIDToFilesystemArtist(t *testing.T) {
+	lidarrSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/artist" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`[
+				{"id":42,"artistName":"Radiohead","foreignArtistId":"mbid-radiohead","path":"/music/Radiohead","monitored":true,"metadataProfileId":1}
+			]`))
+		} else {
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer lidarrSrv.Close()
+
+	router := testRouterForLibraryOps(t)
+	ctx := context.Background()
+
+	addTestConnection(t, router, "conn-lidarr-1", "Lidarr Server", "lidarr")
+
+	manualLib := &library.Library{
+		Name:   "Filesystem",
+		Path:   "/music",
+		Type:   library.TypeRegular,
+		Source: library.SourceManual,
+	}
+	if err := router.libraryService.Create(ctx, manualLib); err != nil {
+		t.Fatalf("creating manual library: %v", err)
+	}
+	fsArtist := &artist.Artist{
+		Name:          "Radiohead",
+		SortName:      "Radiohead",
+		MusicBrainzID: "mbid-radiohead",
+		LibraryID:     manualLib.ID,
+		Path:          "/music/Radiohead",
+	}
+	if err := router.artistService.Create(ctx, fsArtist); err != nil {
+		t.Fatalf("creating filesystem artist: %v", err)
+	}
+
+	lidarrLib := &library.Library{
+		Name:         "Lidarr Music",
+		Type:         library.TypeRegular,
+		Source:       library.SourceLidarr,
+		ConnectionID: "conn-lidarr-1",
+		ExternalID:   "lidarr",
+	}
+	if err := router.libraryService.Create(ctx, lidarrLib); err != nil {
+		t.Fatalf("creating lidarr library: %v", err)
+	}
+	lidarrArtist := &artist.Artist{
+		Name:          "Radiohead",
+		SortName:      "Radiohead",
+		MusicBrainzID: "mbid-radiohead",
+		LibraryID:     lidarrLib.ID,
+	}
+	if err := router.artistService.Create(ctx, lidarrArtist); err != nil {
+		t.Fatalf("creating lidarr artist: %v", err)
+	}
+
+	client := lidarr.NewWithHTTPClient(lidarrSrv.URL, "key", lidarrSrv.Client(),
+		slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})))
+	if _, err := router.scanFromLidarr(ctx, client, lidarrLib); err != nil {
+		t.Fatalf("scanFromLidarr: %v", err)
+	}
+
+	fsPlatformID, err := router.artistService.GetPlatformID(ctx, fsArtist.ID, "conn-lidarr-1")
+	if err != nil {
+		t.Fatalf("GetPlatformID (fs): %v", err)
+	}
+	if fsPlatformID != "42" {
+		t.Errorf("filesystem artist platform ID = %q, want %q", fsPlatformID, "42")
 	}
 }

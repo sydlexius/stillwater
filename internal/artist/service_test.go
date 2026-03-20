@@ -1011,3 +1011,260 @@ func TestList_LibraryIDFilter(t *testing.T) {
 		t.Errorf("artist = %q, want Artist B", artists[0].Name)
 	}
 }
+
+func TestFindByMBIDOrName_ByMBID(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO libraries (id, name, path, type, created_at, updated_at) VALUES ('lib-manual', 'Manual', '/music', 'regular', datetime('now'), datetime('now'))`,
+	); err != nil {
+		t.Fatalf("creating library: %v", err)
+	}
+
+	mbid := "5b11f4ce-a62d-471e-81fc-a69a8278c7da"
+	a := testArtist("Nirvana", "/music/Nirvana")
+	a.MusicBrainzID = mbid
+	a.LibraryID = "lib-manual"
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	got, err := svc.FindByMBIDOrName(ctx, mbid, "Nirvana", "lib-manual")
+	if err != nil {
+		t.Fatalf("FindByMBIDOrName: %v", err)
+	}
+	if got == nil {
+		t.Fatal("expected artist, got nil")
+	}
+	if got.Name != "Nirvana" {
+		t.Errorf("Name = %q, want Nirvana", got.Name)
+	}
+	if got.MusicBrainzID != mbid {
+		t.Errorf("MusicBrainzID = %q, want %q", got.MusicBrainzID, mbid)
+	}
+}
+
+func TestFindByMBIDOrName_ByNameCaseInsensitive(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO libraries (id, name, path, type, created_at, updated_at) VALUES ('lib-manual', 'Manual', '/music', 'regular', datetime('now'), datetime('now'))`,
+	); err != nil {
+		t.Fatalf("creating library: %v", err)
+	}
+
+	a := testArtist("Veridia", "/music/Veridia")
+	a.LibraryID = "lib-manual"
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// Search with a different case; no MBID provided.
+	got, err := svc.FindByMBIDOrName(ctx, "", "VERIDIA", "lib-manual")
+	if err != nil {
+		t.Fatalf("FindByMBIDOrName: %v", err)
+	}
+	if got == nil {
+		t.Fatal("expected artist, got nil")
+	}
+	if got.Name != "Veridia" {
+		t.Errorf("Name = %q, want Veridia", got.Name)
+	}
+}
+
+func TestFindByMBIDOrName_MBIDPreferredOverName(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO libraries (id, name, path, type, created_at, updated_at) VALUES ('lib-manual', 'Manual', '/music', 'regular', datetime('now'), datetime('now'))`,
+	); err != nil {
+		t.Fatalf("creating library: %v", err)
+	}
+
+	mbid1 := "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+	mbid2 := "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+
+	a1 := testArtist("Coldplay", "/music/Coldplay-1")
+	a1.MusicBrainzID = mbid1
+	a1.LibraryID = "lib-manual"
+	if err := svc.Create(ctx, a1); err != nil {
+		t.Fatalf("Create a1: %v", err)
+	}
+
+	a2 := testArtist("Coldplay", "/music/Coldplay-2")
+	a2.MusicBrainzID = mbid2
+	a2.LibraryID = "lib-manual"
+	if err := svc.Create(ctx, a2); err != nil {
+		t.Fatalf("Create a2: %v", err)
+	}
+
+	// Searching by mbid2 should return a2, not a1, even though both share the name.
+	got, err := svc.FindByMBIDOrName(ctx, mbid2, "Coldplay", "lib-manual")
+	if err != nil {
+		t.Fatalf("FindByMBIDOrName: %v", err)
+	}
+	if got == nil {
+		t.Fatal("expected artist, got nil")
+	}
+	if got.ID != a2.ID {
+		t.Errorf("ID = %q, want %q (a2)", got.ID, a2.ID)
+	}
+}
+
+func TestFindByMBIDOrName_NotFound(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO libraries (id, name, path, type, created_at, updated_at) VALUES ('lib-manual', 'Manual', '/music', 'regular', datetime('now'), datetime('now'))`,
+	); err != nil {
+		t.Fatalf("creating library: %v", err)
+	}
+
+	got, err := svc.FindByMBIDOrName(ctx, "nonexistent-mbid", "Nonexistent Artist", "lib-manual")
+	if err != nil {
+		t.Fatalf("FindByMBIDOrName: %v", err)
+	}
+	if got != nil {
+		t.Errorf("expected nil, got %+v", got)
+	}
+}
+
+func TestFindByMBIDOrName_RespectsLibraryScope(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	for _, q := range []string{
+		`INSERT INTO libraries (id, name, path, type, created_at, updated_at) VALUES ('lib-manual', 'Manual', '/music', 'regular', datetime('now'), datetime('now'))`,
+		`INSERT INTO libraries (id, name, path, type, created_at, updated_at) VALUES ('lib-emby', 'Emby', '/music/emby', 'regular', datetime('now'), datetime('now'))`,
+	} {
+		if _, err := db.ExecContext(ctx, q); err != nil {
+			t.Fatalf("creating library: %v", err)
+		}
+	}
+
+	mbid := "cccccccc-cccc-cccc-cccc-cccccccccccc"
+	a := testArtist("Muse", "/music/Muse")
+	a.MusicBrainzID = mbid
+	a.LibraryID = "lib-emby"
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// Artist is in the emby library; searching the manual library should return nil.
+	got, err := svc.FindByMBIDOrName(ctx, mbid, "Muse", "lib-manual")
+	if err != nil {
+		t.Fatalf("FindByMBIDOrName: %v", err)
+	}
+	if got != nil {
+		t.Errorf("expected nil for wrong library scope, got %+v", got)
+	}
+}
+
+func TestMigration018_OrphanCleanupAndBackfill(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	// Create libraries.
+	for _, lib := range []struct{ id, name, source string }{
+		{"lib-manual", "Manual", "manual"},
+		{"lib-emby", "Emby", "emby"},
+	} {
+		_, err := db.ExecContext(ctx,
+			`INSERT INTO libraries (id, name, path, type, source, created_at, updated_at) VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
+			lib.id, lib.name, "/music", "regular", lib.source)
+		if err != nil {
+			t.Fatalf("creating library %s: %v", lib.id, err)
+		}
+	}
+
+	// Create a connection.
+	_, err := db.ExecContext(ctx,
+		`INSERT INTO connections (id, name, type, url, encrypted_api_key, enabled, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
+		"conn-1", "Emby", "emby", "http://test", "key", 1, "ok")
+	if err != nil {
+		t.Fatalf("creating connection: %v", err)
+	}
+
+	// Create a filesystem artist and an emby artist with the same MBID.
+	fsArtist := testArtist("Deftones", "/music/Deftones")
+	fsArtist.MusicBrainzID = "mbid-shared"
+	fsArtist.LibraryID = "lib-manual"
+	if err := svc.Create(ctx, fsArtist); err != nil {
+		t.Fatalf("Create fs artist: %v", err)
+	}
+
+	embyArtist := testArtist("Deftones", "")
+	embyArtist.MusicBrainzID = "mbid-shared"
+	embyArtist.LibraryID = "lib-emby"
+	if err := svc.Create(ctx, embyArtist); err != nil {
+		t.Fatalf("Create emby artist: %v", err)
+	}
+
+	// Store a platform ID on the emby artist only.
+	if err := svc.SetPlatformID(ctx, embyArtist.ID, "conn-1", "emby-deftones-001"); err != nil {
+		t.Fatalf("SetPlatformID: %v", err)
+	}
+
+	// Create an orphaned platform ID row referencing a deleted connection.
+	_, err = db.ExecContext(ctx,
+		`INSERT INTO artist_platform_ids (artist_id, connection_id, platform_artist_id, created_at, updated_at)
+		VALUES (?, ?, ?, datetime('now'), datetime('now'))`,
+		embyArtist.ID, "deleted-conn", "orphan-platform-id")
+	if err != nil {
+		t.Fatalf("inserting orphan row: %v", err)
+	}
+
+	// Run the migration SQL manually.
+	_, err = db.ExecContext(ctx, `DELETE FROM artist_platform_ids
+		WHERE connection_id NOT IN (SELECT id FROM connections)`)
+	if err != nil {
+		t.Fatalf("orphan cleanup: %v", err)
+	}
+
+	_, err = db.ExecContext(ctx, `INSERT OR IGNORE INTO artist_platform_ids
+		(artist_id, connection_id, platform_artist_id, created_at, updated_at)
+	SELECT
+		fs_artist.id, plat.connection_id, plat.platform_artist_id,
+		plat.created_at, plat.updated_at
+	FROM artist_platform_ids plat
+	JOIN artists conn_artist ON conn_artist.id = plat.artist_id
+	JOIN libraries conn_lib ON conn_lib.id = conn_artist.library_id AND conn_lib.source != 'manual'
+	JOIN artist_provider_ids conn_mbid ON conn_mbid.artist_id = conn_artist.id AND conn_mbid.provider = 'musicbrainz'
+	JOIN artist_provider_ids fs_mbid ON fs_mbid.provider = 'musicbrainz'
+		AND fs_mbid.provider_id = conn_mbid.provider_id AND fs_mbid.artist_id != conn_artist.id
+	JOIN artists fs_artist ON fs_artist.id = fs_mbid.artist_id
+	JOIN libraries fs_lib ON fs_lib.id = fs_artist.library_id AND fs_lib.source = 'manual'`)
+	if err != nil {
+		t.Fatalf("backfill: %v", err)
+	}
+
+	// Verify orphan was cleaned up.
+	var orphanCount int
+	err = db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM artist_platform_ids WHERE connection_id = 'deleted-conn'`).Scan(&orphanCount)
+	if err != nil {
+		t.Fatalf("counting orphans: %v", err)
+	}
+	if orphanCount != 0 {
+		t.Errorf("orphan count = %d, want 0", orphanCount)
+	}
+
+	// Verify platform ID was backfilled to filesystem artist.
+	fsPlatformID, err := svc.GetPlatformID(ctx, fsArtist.ID, "conn-1")
+	if err != nil {
+		t.Fatalf("GetPlatformID (fs): %v", err)
+	}
+	if fsPlatformID != "emby-deftones-001" {
+		t.Errorf("fs platform ID = %q, want %q", fsPlatformID, "emby-deftones-001")
+	}
+}

@@ -9,6 +9,7 @@ type Repository interface {
 	GetByMBID(ctx context.Context, mbid string) (*Artist, error)
 	GetByMBIDAndLibrary(ctx context.Context, mbid, libraryID string) (*Artist, error)
 	GetByNameAndLibrary(ctx context.Context, name, libraryID string) (*Artist, error)
+	FindByMBIDOrName(ctx context.Context, mbid, name, libraryID string) (*Artist, error)
 	GetByPath(ctx context.Context, path string) (*Artist, error)
 	List(ctx context.Context, params ListParams) ([]Artist, int, error)
 	Update(ctx context.Context, a *Artist) error
