@@ -3811,6 +3811,8 @@ templ ruleToggleScript() {
 			var span = document.createElement('span');
 			span.textContent = msg;
 			var btn = document.createElement('button');
+			btn.type = 'button';
+			btn.setAttribute('aria-label', 'Dismiss notification');
 			btn.className = 'ml-2 font-bold opacity-70 hover:opacity-100';
 			btn.textContent = '\u00d7';
 			btn.onclick = function() { toast.remove(); };
