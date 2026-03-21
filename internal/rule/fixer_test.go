@@ -510,7 +510,7 @@ func TestImageFixer_Fix_ResolutionGate(t *testing.T) {
 		},
 	}
 
-	f := NewImageFixer(mock, nil, testLogger())
+	f := NewImageFixer(mock, nil, nil, testLogger())
 	a := &artist.Artist{
 		Name:          "Gate Test",
 		MusicBrainzID: "mbid-gate",
@@ -542,7 +542,7 @@ func TestImageFixer_FetchImages_Cached(t *testing.T) {
 		},
 	}
 
-	f := NewImageFixer(mock, nil, testLogger())
+	f := NewImageFixer(mock, nil, nil, testLogger())
 	a := &artist.Artist{
 		Name:          "Cache Test",
 		MusicBrainzID: "mbid-cache",
@@ -607,7 +607,7 @@ func TestImageFixer_Fix_PostDownloadDimensionGate(t *testing.T) {
 		t.Fatalf("writing existing thumb: %v", err)
 	}
 
-	f := NewImageFixer(mock, nil, testLogger())
+	f := NewImageFixer(mock, nil, nil, testLogger())
 	a := &artist.Artist{
 		Name:          "Adie",
 		MusicBrainzID: "mbid-adie",
@@ -662,7 +662,7 @@ func TestImageFixer_Fix_ThumbSquare_ResolutionGate(t *testing.T) {
 		t.Fatalf("writing existing thumb: %v", err)
 	}
 
-	f := NewImageFixer(mock, nil, testLogger())
+	f := NewImageFixer(mock, nil, nil, testLogger())
 	a := &artist.Artist{
 		Name:          "Adie",
 		MusicBrainzID: "mbid-adie-sq",
@@ -857,7 +857,7 @@ func TestExtraneousImagesFixer_Fix_EmptyPath(t *testing.T) {
 }
 
 func TestLogoTrimFixer_CanFix(t *testing.T) {
-	f := NewLogoTrimFixer(nil, testLogger())
+	f := NewLogoTrimFixer(nil, nil, testLogger())
 	if !f.CanFix(&Violation{RuleID: RuleLogoTrimmable}) {
 		t.Error("should handle logo_trimmable")
 	}
@@ -877,7 +877,7 @@ func TestLogoTrimFixer_Fix_TrimsPadding(t *testing.T) {
 	}
 
 	a := &artist.Artist{Name: "Trim Test", Path: dir, LogoExists: true}
-	f := NewLogoTrimFixer(nil, testLogger())
+	f := NewLogoTrimFixer(nil, nil, testLogger())
 
 	fr, err := f.Fix(context.Background(), a, &Violation{RuleID: RuleLogoTrimmable})
 	if err != nil {
@@ -913,7 +913,7 @@ func TestLogoTrimFixer_Fix_TrimsPadding(t *testing.T) {
 
 func TestLogoTrimFixer_Fix_EmptyPath(t *testing.T) {
 	a := &artist.Artist{Name: "No Path"}
-	f := NewLogoTrimFixer(nil, testLogger())
+	f := NewLogoTrimFixer(nil, nil, testLogger())
 
 	fr, err := f.Fix(context.Background(), a, &Violation{RuleID: RuleLogoTrimmable})
 	if err != nil {
@@ -930,7 +930,7 @@ func TestLogoTrimFixer_Fix_EmptyPath(t *testing.T) {
 func TestLogoTrimFixer_Fix_NoLogoOnDisk(t *testing.T) {
 	dir := t.TempDir()
 	a := &artist.Artist{Name: "No Logo", Path: dir, LogoExists: true}
-	f := NewLogoTrimFixer(nil, testLogger())
+	f := NewLogoTrimFixer(nil, nil, testLogger())
 
 	fr, err := f.Fix(context.Background(), a, &Violation{RuleID: RuleLogoTrimmable})
 	if err != nil {
@@ -950,7 +950,7 @@ func TestLogoTrimFixer_Fix_CaseInsensitiveLookup(t *testing.T) {
 	createTestPNGWithPadding(t, filepath.Join(dir, "Logo.PNG"), 200, 100, 20, 20, 15, 15)
 
 	a := &artist.Artist{Name: "Case Test", Path: dir, LogoExists: true}
-	f := NewLogoTrimFixer(nil, testLogger())
+	f := NewLogoTrimFixer(nil, nil, testLogger())
 
 	fr, err := f.Fix(context.Background(), a, &Violation{RuleID: RuleLogoTrimmable})
 	if err != nil {
@@ -962,7 +962,7 @@ func TestLogoTrimFixer_Fix_CaseInsensitiveLookup(t *testing.T) {
 }
 
 func TestLogoPaddingFixer_CanFix(t *testing.T) {
-	f := NewLogoPaddingFixer(nil, testLogger())
+	f := NewLogoPaddingFixer(nil, nil, testLogger())
 	if !f.CanFix(&Violation{RuleID: RuleLogoPadding}) {
 		t.Error("should handle logo_padding")
 	}
@@ -982,7 +982,7 @@ func TestLogoPaddingFixer_Fix_TrimsPadding(t *testing.T) {
 	}
 
 	a := &artist.Artist{Name: "Padding Test", Path: dir, LogoExists: true}
-	f := NewLogoPaddingFixer(nil, testLogger())
+	f := NewLogoPaddingFixer(nil, nil, testLogger())
 
 	// Set TrimMargin to 5 via violation config.
 	v := &Violation{RuleID: RuleLogoPadding, Config: RuleConfig{TrimMargin: 5}}
@@ -1021,7 +1021,7 @@ func TestLogoPaddingFixer_Fix_TrimsPadding(t *testing.T) {
 
 func TestLogoPaddingFixer_Fix_EmptyPath(t *testing.T) {
 	a := &artist.Artist{Name: "No Path"}
-	f := NewLogoPaddingFixer(nil, testLogger())
+	f := NewLogoPaddingFixer(nil, nil, testLogger())
 
 	fr, err := f.Fix(context.Background(), a, &Violation{RuleID: RuleLogoPadding})
 	if err != nil {
@@ -1038,7 +1038,7 @@ func TestLogoPaddingFixer_Fix_EmptyPath(t *testing.T) {
 func TestLogoPaddingFixer_Fix_NoLogoOnDisk(t *testing.T) {
 	dir := t.TempDir()
 	a := &artist.Artist{Name: "No Logo", Path: dir, LogoExists: true}
-	f := NewLogoPaddingFixer(nil, testLogger())
+	f := NewLogoPaddingFixer(nil, nil, testLogger())
 
 	fr, err := f.Fix(context.Background(), a, &Violation{RuleID: RuleLogoPadding})
 	if err != nil {
@@ -1057,7 +1057,7 @@ func TestLogoPaddingFixer_Fix_NegativeMargin(t *testing.T) {
 	createTestPNGWithPadding(t, filepath.Join(dir, "logo.png"), 200, 100, 30, 30, 30, 30)
 
 	a := &artist.Artist{Name: "Neg Margin", Path: dir, LogoExists: true}
-	f := NewLogoPaddingFixer(nil, testLogger())
+	f := NewLogoPaddingFixer(nil, nil, testLogger())
 
 	// Negative margin should be clamped to 0 (trim to exact content bounds).
 	v := &Violation{RuleID: RuleLogoPadding, Config: RuleConfig{TrimMargin: -5}}
@@ -1355,7 +1355,7 @@ func TestImageFixer_Fix_DiscoveryOnly_SingleCandidate(t *testing.T) {
 		},
 	}
 
-	f := NewImageFixer(mock, nil, testLogger())
+	f := NewImageFixer(mock, nil, nil, testLogger())
 	a := &artist.Artist{
 		Name:          "Discovery Single",
 		MusicBrainzID: "mbid-disc-single",
@@ -1400,7 +1400,7 @@ func TestImageFixer_Fix_DiscoveryOnly_SelectBestCandidate(t *testing.T) {
 		},
 	}
 
-	f := NewImageFixer(mock, nil, testLogger())
+	f := NewImageFixer(mock, nil, nil, testLogger())
 	a := &artist.Artist{
 		Name:          "Discovery Best",
 		MusicBrainzID: "mbid-disc-best",

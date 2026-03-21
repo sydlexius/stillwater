@@ -214,16 +214,20 @@ func run() error {
 	// Initialize NFO snapshot service
 	nfoSnapshotService := nfo.NewSnapshotService(db)
 
+	// Initialize shared-filesystem check (used by fixers to skip writes on
+	// libraries whose directories are also managed by a platform connection).
+	fsCheck := rule.NewSharedFSCheck(libraryService, logger)
+
 	// Initialize fix pipeline (depends on orchestrator and snapshot service)
 	fixers := []rule.Fixer{
-		&rule.NFOFixer{SnapshotService: nfoSnapshotService},
+		rule.NewNFOFixer(nfoSnapshotService, fsCheck),
 		rule.NewMetadataFixer(orchestrator, nfoSnapshotService, logger),
-		rule.NewImageFixer(orchestrator, platformService, logger),
-		rule.NewExtraneousImagesFixer(platformService, libraryService, logger),
-		rule.NewLogoTrimFixer(platformService, logger),
-		rule.NewLogoPaddingFixer(platformService, logger),
-		rule.NewDirectoryRenameFixer(libraryService, logger),
-		rule.NewBackdropSequencingFixer(platformService, logger),
+		rule.NewImageFixer(orchestrator, platformService, fsCheck, logger),
+		rule.NewExtraneousImagesFixer(platformService, fsCheck, logger),
+		rule.NewLogoTrimFixer(platformService, fsCheck, logger),
+		rule.NewLogoPaddingFixer(platformService, fsCheck, logger),
+		rule.NewDirectoryRenameFixer(fsCheck, logger),
+		rule.NewBackdropSequencingFixer(platformService, fsCheck, logger),
 	}
 	pipeline := rule.NewPipeline(ruleEngine, artistService, ruleService, fixers, logger)
 

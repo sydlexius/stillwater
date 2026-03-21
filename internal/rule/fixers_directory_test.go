@@ -127,7 +127,8 @@ func TestDirectoryRenameFixer_SharedFilesystem(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	fixer := NewDirectoryRenameFixer(libSvc, logger)
+	fsCheck := NewSharedFSCheck(libSvc, logger)
+	fixer := NewDirectoryRenameFixer(fsCheck, logger)
 
 	oldPath := filepath.Join(dir, "Old Name")
 	if err := os.MkdirAll(oldPath, 0o755); err != nil {

@@ -17,7 +17,6 @@ import (
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/filesystem"
 	img "github.com/sydlexius/stillwater/internal/image"
-	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/nfo"
 	"github.com/sydlexius/stillwater/internal/platform"
 	"github.com/sydlexius/stillwater/internal/provider"
@@ -42,6 +41,12 @@ const (
 // NFOFixer creates missing artist.nfo files from the artist's current metadata.
 type NFOFixer struct {
 	SnapshotService *nfo.SnapshotService
+	fsCheck         *SharedFSCheck
+}
+
+// NewNFOFixer creates an NFOFixer with an optional shared-filesystem guard.
+func NewNFOFixer(snapshotService *nfo.SnapshotService, fsCheck *SharedFSCheck) *NFOFixer {
+	return &NFOFixer{SnapshotService: snapshotService, fsCheck: fsCheck}
 }
 
 // CanFix returns true for the nfo_exists rule.
@@ -51,7 +56,15 @@ func (f *NFOFixer) CanFix(v *Violation) bool {
 
 // Fix creates an artist.nfo file in the artist's directory.
 // If the file already exists and was modified externally, returns without overwriting.
-func (f *NFOFixer) Fix(_ context.Context, a *artist.Artist, _ *Violation) (*FixResult, error) {
+func (f *NFOFixer) Fix(ctx context.Context, a *artist.Artist, _ *Violation) (*FixResult, error) {
+	if f.fsCheck != nil && f.fsCheck.IsShared(ctx, a) {
+		return &FixResult{
+			RuleID:  RuleNFOExists,
+			Fixed:   false,
+			Message: "skipped: NFO write disabled for shared-filesystem library; platform may overwrite",
+		}, nil
+	}
+
 	target := filepath.Join(a.Path, "artist.nfo")
 
 	// Check for external modifications before writing
@@ -226,15 +239,17 @@ func (f *MetadataFixer) fixJunkBio(ctx context.Context, a *artist.Artist) (*FixR
 type ImageFixer struct {
 	orchestrator    imageProvider
 	platformService *platform.Service
+	fsCheck         *SharedFSCheck
 	logger          *slog.Logger
 	imageCache      sync.Map // keyed by MBID; value: *imageCacheEntry
 }
 
 // NewImageFixer creates an ImageFixer.
-func NewImageFixer(orchestrator imageProvider, platformService *platform.Service, logger *slog.Logger) *ImageFixer {
+func NewImageFixer(orchestrator imageProvider, platformService *platform.Service, fsCheck *SharedFSCheck, logger *slog.Logger) *ImageFixer {
 	return &ImageFixer{
 		orchestrator:    orchestrator,
 		platformService: platformService,
+		fsCheck:         fsCheck,
 		logger:          logger,
 	}
 }
@@ -282,6 +297,14 @@ func (f *ImageFixer) Fix(ctx context.Context, a *artist.Artist, v *Violation) (*
 			RuleID:  v.RuleID,
 			Fixed:   false,
 			Message: "no MBID, cannot search image providers",
+		}, nil
+	}
+
+	if f.fsCheck != nil && f.fsCheck.IsShared(ctx, a) {
+		return &FixResult{
+			RuleID:  v.RuleID,
+			Fixed:   false,
+			Message: "skipped: image download disabled for shared-filesystem library",
 		}, nil
 	}
 
@@ -645,15 +668,15 @@ func readFileDimensions(path string) (int, int, bool) {
 // ExtraneousImagesFixer deletes non-canonical image files from artist directories.
 type ExtraneousImagesFixer struct {
 	platformService *platform.Service
-	libraryService  *library.Service
+	fsCheck         *SharedFSCheck
 	logger          *slog.Logger
 }
 
 // NewExtraneousImagesFixer creates an ExtraneousImagesFixer.
-func NewExtraneousImagesFixer(platformService *platform.Service, libraryService *library.Service, logger *slog.Logger) *ExtraneousImagesFixer {
+func NewExtraneousImagesFixer(platformService *platform.Service, fsCheck *SharedFSCheck, logger *slog.Logger) *ExtraneousImagesFixer {
 	return &ExtraneousImagesFixer{
 		platformService: platformService,
-		libraryService:  libraryService,
+		fsCheck:         fsCheck,
 		logger:          logger,
 	}
 }
@@ -681,18 +704,15 @@ func (f *ExtraneousImagesFixer) Fix(ctx context.Context, a *artist.Artist, _ *Vi
 	// When shared filesystem is detected, union expected files from all
 	// profiles so we do not delete images owned by another platform.
 	var expected map[string]bool
-	if f.libraryService != nil && a.LibraryID != "" && f.platformService != nil {
-		lib, err := f.libraryService.GetByID(ctx, a.LibraryID)
-		if err != nil {
-			// Fail closed: assume shared filesystem when the DB is unavailable
-			// to prevent deleting images that a platform actually owns.
-			f.logger.Warn("library lookup failed during extraneous-images fix; assuming shared filesystem",
-				slog.String("library_id", a.LibraryID),
-				slog.String("error", err.Error()))
-			expected = expectedImageFilesAllProfiles(ctx, f.platformService, f.logger, a.Path)
-		} else if lib.SharedFilesystem {
-			expected = expectedImageFilesAllProfiles(ctx, f.platformService, f.logger, a.Path)
+	if f.fsCheck != nil && f.fsCheck.IsShared(ctx, a) {
+		if f.platformService == nil {
+			return &FixResult{
+				RuleID:  RuleExtraneousImages,
+				Fixed:   false,
+				Message: "skipped: cannot determine safe deletion set for shared-filesystem library without platform service",
+			}, nil
 		}
+		expected = expectedImageFilesAllProfiles(ctx, f.platformService, f.logger, a.Path)
 	}
 	if expected == nil {
 		var profile *platform.Profile
@@ -748,13 +768,15 @@ func (f *ExtraneousImagesFixer) Fix(ctx context.Context, a *artist.Artist, _ *Vi
 // LogoTrimFixer trims transparent padding from logo PNG files.
 type LogoTrimFixer struct {
 	platformService *platform.Service
+	fsCheck         *SharedFSCheck
 	logger          *slog.Logger
 }
 
 // NewLogoTrimFixer creates a LogoTrimFixer.
-func NewLogoTrimFixer(platformService *platform.Service, logger *slog.Logger) *LogoTrimFixer {
+func NewLogoTrimFixer(platformService *platform.Service, fsCheck *SharedFSCheck, logger *slog.Logger) *LogoTrimFixer {
 	return &LogoTrimFixer{
 		platformService: platformService,
+		fsCheck:         fsCheck,
 		logger:          logger,
 	}
 }
@@ -766,6 +788,14 @@ func (f *LogoTrimFixer) CanFix(v *Violation) bool {
 
 // Fix trims transparent padding from the logo and saves the result.
 func (f *LogoTrimFixer) Fix(ctx context.Context, a *artist.Artist, _ *Violation) (*FixResult, error) {
+	if f.fsCheck != nil && f.fsCheck.IsShared(ctx, a) {
+		return &FixResult{
+			RuleID:  RuleLogoTrimmable,
+			Fixed:   false,
+			Message: "skipped: logo trim disabled for shared-filesystem library",
+		}, nil
+	}
+
 	if a.Path == "" {
 		return &FixResult{
 			RuleID:  RuleLogoTrimmable,
@@ -861,13 +891,15 @@ func (f *LogoTrimFixer) Fix(ctx context.Context, a *artist.Artist, _ *Violation)
 // both alpha transparency (PNG) and whitespace borders (JPG).
 type LogoPaddingFixer struct {
 	platformService *platform.Service
+	fsCheck         *SharedFSCheck
 	logger          *slog.Logger
 }
 
 // NewLogoPaddingFixer creates a LogoPaddingFixer.
-func NewLogoPaddingFixer(platformService *platform.Service, logger *slog.Logger) *LogoPaddingFixer {
+func NewLogoPaddingFixer(platformService *platform.Service, fsCheck *SharedFSCheck, logger *slog.Logger) *LogoPaddingFixer {
 	return &LogoPaddingFixer{
 		platformService: platformService,
+		fsCheck:         fsCheck,
 		logger:          logger,
 	}
 }
@@ -879,6 +911,14 @@ func (f *LogoPaddingFixer) CanFix(v *Violation) bool {
 
 // Fix trims padding from the logo, keeping TrimMargin pixels around the content.
 func (f *LogoPaddingFixer) Fix(ctx context.Context, a *artist.Artist, v *Violation) (*FixResult, error) {
+	if f.fsCheck != nil && f.fsCheck.IsShared(ctx, a) {
+		return &FixResult{
+			RuleID:  RuleLogoPadding,
+			Fixed:   false,
+			Message: "skipped: logo padding disabled for shared-filesystem library",
+		}, nil
+	}
+
 	if a.Path == "" {
 		return &FixResult{
 			RuleID:  RuleLogoPadding,
@@ -1015,15 +1055,15 @@ func fetchImageURL(ctx context.Context, rawURL string) ([]byte, error) {
 // auto-fix and returns a warning message instead, because renaming a directory
 // that a platform connection references can break the platform's metadata index.
 type DirectoryRenameFixer struct {
-	libraryService *library.Service
-	logger         *slog.Logger
+	fsCheck *SharedFSCheck
+	logger  *slog.Logger
 }
 
 // NewDirectoryRenameFixer creates a DirectoryRenameFixer.
-func NewDirectoryRenameFixer(libraryService *library.Service, logger *slog.Logger) *DirectoryRenameFixer {
+func NewDirectoryRenameFixer(fsCheck *SharedFSCheck, logger *slog.Logger) *DirectoryRenameFixer {
 	return &DirectoryRenameFixer{
-		libraryService: libraryService,
-		logger:         logger.With(slog.String("component", "directory-rename-fixer")),
+		fsCheck: fsCheck,
+		logger:  logger.With(slog.String("component", "directory-rename-fixer")),
 	}
 }
 
@@ -1042,34 +1082,12 @@ func (f *DirectoryRenameFixer) Fix(ctx context.Context, a *artist.Artist, v *Vio
 	}
 
 	// Decline to auto-fix when a platform connection shares the filesystem.
-	// Fail closed: if the library lookup errors, assume shared to prevent
-	// destructive renames when the DB is unavailable.
-	if f.libraryService != nil && a.LibraryID != "" {
-		lib, err := f.libraryService.GetByID(ctx, a.LibraryID)
-		if err != nil {
-			f.logger.Warn("library lookup failed during directory rename; assuming shared filesystem",
-				slog.String("library_id", a.LibraryID),
-				slog.String("error", err.Error()))
-			return &FixResult{
-				RuleID:  v.RuleID,
-				Fixed:   false,
-				Message: fmt.Sprintf("skipped: could not verify library %q (assuming shared filesystem)", a.LibraryID),
-			}, nil
-		}
-		if lib == nil {
-			return &FixResult{
-				RuleID:  v.RuleID,
-				Fixed:   false,
-				Message: fmt.Sprintf("skipped: library %q not found", a.LibraryID),
-			}, nil
-		}
-		if lib.SharedFilesystem {
-			return &FixResult{
-				RuleID:  v.RuleID,
-				Fixed:   false,
-				Message: fmt.Sprintf("skipped: directory rename disabled for shared-filesystem library %q", lib.Name),
-			}, nil
-		}
+	if f.fsCheck != nil && f.fsCheck.IsShared(ctx, a) {
+		return &FixResult{
+			RuleID:  v.RuleID,
+			Fixed:   false,
+			Message: "skipped: directory rename disabled for shared-filesystem library",
+		}, nil
 	}
 
 	canonical := canonicalDirName(a.Name, v.Config.ArticleMode)
@@ -1117,13 +1135,15 @@ func (f *DirectoryRenameFixer) Fix(ctx context.Context, a *artist.Artist, v *Vio
 // contiguous sequence. Uses image.RenumberFanart for safe two-phase rename.
 type BackdropSequencingFixer struct {
 	platformService *platform.Service
+	fsCheck         *SharedFSCheck
 	logger          *slog.Logger
 }
 
 // NewBackdropSequencingFixer creates a BackdropSequencingFixer.
-func NewBackdropSequencingFixer(platformService *platform.Service, logger *slog.Logger) *BackdropSequencingFixer {
+func NewBackdropSequencingFixer(platformService *platform.Service, fsCheck *SharedFSCheck, logger *slog.Logger) *BackdropSequencingFixer {
 	return &BackdropSequencingFixer{
 		platformService: platformService,
+		fsCheck:         fsCheck,
 		logger:          logger.With(slog.String("component", "backdrop-sequencing-fixer")),
 	}
 }
@@ -1135,6 +1155,14 @@ func (f *BackdropSequencingFixer) CanFix(v *Violation) bool {
 
 // Fix renumbers fanart files to occupy contiguous indices.
 func (f *BackdropSequencingFixer) Fix(ctx context.Context, a *artist.Artist, _ *Violation) (*FixResult, error) {
+	if f.fsCheck != nil && f.fsCheck.IsShared(ctx, a) {
+		return &FixResult{
+			RuleID:  RuleBackdropSequencing,
+			Fixed:   false,
+			Message: "skipped: backdrop renumbering disabled for shared-filesystem library",
+		}, nil
+	}
+
 	if a.Path == "" {
 		return &FixResult{RuleID: RuleBackdropSequencing, Fixed: false, Message: "artist has no path"}, nil
 	}
