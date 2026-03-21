@@ -52,7 +52,7 @@ WORKDIR /app
 EXPOSE 1973
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD curl -f http://localhost:1973/api/v1/health || exit 1
+  CMD sh -c 'curl -f "http://localhost:1973${SW_BASE_PATH:-}/api/v1/health" || exit 1'
 
 VOLUME ["/data", "/music"]
 
