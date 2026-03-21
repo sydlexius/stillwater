@@ -220,7 +220,7 @@ templ Layout(title string, assets AssetPaths) {
 						undoBtn.disabled = true;
 						undoBtn.textContent = 'Undoing...';
 						var bpEl = document.querySelector('meta[name="htmx-base-path"]');
-					var bp = bpEl ? bpEl.content : '';
+						var bp = bpEl ? bpEl.content : '';
 						fetch(bp + '/api/v1/notifications/undo/' + encodeURIComponent(undoID), {
 							method: 'POST',
 							headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
