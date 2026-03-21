@@ -538,8 +538,9 @@ func readPNGDescription(data []byte) (string, error) {
 			break
 		}
 
-		// Stop scanning at IDAT or IEND -- text chunks come before image data.
-		if cType == "IDAT" || cType == "IEND" {
+		// Stop scanning at IEND; ancillary chunks like tEXt may legally
+		// appear after IDAT in a valid PNG.
+		if cType == "IEND" {
 			break
 		}
 

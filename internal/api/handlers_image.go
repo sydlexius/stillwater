@@ -512,6 +512,7 @@ func (r *Router) handleImageCrop(w http.ResponseWriter, req *http.Request) {
 	}
 	cropMeta.Fetched = time.Now().UTC()
 	cropMeta.Mode = "user"
+	cropMeta.DHash = "" // Force recomputation from the cropped image data.
 
 	saved, err := r.processAndSaveImage(req.Context(), r.imageDir(a), body.Type, imgData, cropMeta)
 	if err != nil {
@@ -1461,6 +1462,7 @@ func (r *Router) handleLogoTrim(w http.ResponseWriter, req *http.Request) {
 	}
 	trimMeta.Fetched = time.Now().UTC()
 	trimMeta.Mode = "user"
+	trimMeta.DHash = "" // Force recomputation from the trimmed image data.
 
 	_, useSymlinks := r.getActiveNamingAndSymlinks(req.Context(), "logo")
 	if _, err := img.Save(r.imageDir(a), "logo", trimmed, patterns, useSymlinks, trimMeta, r.logger); err != nil {
