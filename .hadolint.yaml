@@ -1,0 +1,6 @@
+failure-threshold: warning
+ignored:
+  - DL3018 # apk version pinning handled by base image version
+trustedRegistries:
+  - docker.io
+  - ghcr.io
