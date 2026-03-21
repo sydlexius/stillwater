@@ -213,7 +213,7 @@ func (r *Router) handleUndoFix(w http.ResponseWriter, req *http.Request) {
 	}
 
 	if err := entry.Revert(req.Context()); err != nil {
-		r.logger.Error("undo fix failed", "undo_id", undoID, "violation_id", entry.ViolationID, "error", err)
+		r.logger.Error("undo fix failed", "violation_id", entry.ViolationID, "error", err)
 		writeError(w, req, http.StatusInternalServerError, "failed to revert fix")
 		return
 	}
@@ -228,7 +228,7 @@ func (r *Router) handleUndoFix(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
-	r.logger.Info("fix reverted", "undo_id", undoID, "violation_id", entry.ViolationID)
+	r.logger.Info("fix reverted", "violation_id", entry.ViolationID)
 
 	if reopenFailed {
 		// Files were restored but the violation status is inconsistent.

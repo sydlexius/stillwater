@@ -3613,9 +3613,11 @@ paths:
         violations, routes through the appropriate fixer (NFO generation,
         metadata fetch, image fetch, directory rename, etc.). Returns the
         fix result with status and message. When the fix modifies NFO files,
-        image files, or renames an artist directory, the response also
-        includes an undo_id that can be passed to
+        image files, or renames an artist directory, the response may include
+        an undo_id that can be passed to
         POST /notifications/undo/{undoId} within 30 seconds to revert it.
+        Metadata-only fixes, dismissed violations, and failed fixes do not
+        produce an undo_id.
       operationId: fixViolation
       parameters:
         - name: id
@@ -3673,8 +3675,10 @@ paths:
         The undoId is returned by POST /notifications/{id}/fix when the fix
         modified filesystem files. The undo entry is single-use and expires
         after 30 seconds. Returns 410 Gone when the window has elapsed or
-        the token has already been used. On success, reopens the violation
-        so it reappears as fixable in the notifications list.
+        the token has already been used. On success, attempts to reopen the
+        violation so it reappears as fixable in the notifications list;
+        reopening may fail even when the revert itself succeeds, in which
+        case the response status is still "reverted" with a warning message.
       operationId: undoFix
       parameters:
         - name: undoId

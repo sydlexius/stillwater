@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -315,8 +316,12 @@ func TestDirectoryRenameRevert_NonexistentSource(t *testing.T) {
 func TestMultiFileRevert_UnwritablePath(t *testing.T) {
 	// When a snapshot points to an unwritable path, MultiFileRevert should
 	// aggregate errors from all failing reverts rather than stopping early.
-	// Use /proc as the base path because it is a virtual filesystem that
-	// cannot be written to even as root.
+	// /proc/self is a virtual filesystem on Linux that rejects writes even as
+	// root, making it reliable for this test. Skip on non-Linux platforms.
+	if runtime.GOOS != "linux" {
+		t.Skip("test requires /proc filesystem (Linux only)")
+	}
+
 	snaps := []FileSnapshot{
 		{
 			Path:    "/proc/self/file1.nfo",
