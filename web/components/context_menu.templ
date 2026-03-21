@@ -28,7 +28,7 @@ templ ContextMenu(id string, compact bool) {
 			aria-haspopup="true"
 			aria-expanded="false"
 			aria-controls={ "ctx-panel-" + id }
-			onclick={ toggleContextMenu(id) }
+			onclick={ ToggleContextMenu(id) }
 		>
 			<span class="sr-only">Actions</span>
 			if compact {
@@ -47,7 +47,10 @@ templ ContextMenu(id string, compact bool) {
 	</div>
 }
 
-script toggleContextMenu(id string) {
+// ToggleContextMenu opens or closes the dropdown panel for the given context
+// menu id. It is exported so that custom split-button layouts in other packages
+// can reuse the same toggle behavior.
+script ToggleContextMenu(id string) {
 	var panel = document.getElementById('ctx-panel-' + id);
 	var btn = panel.previousElementSibling;
 	var isOpen = !panel.classList.contains('hidden');
