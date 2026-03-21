@@ -178,18 +178,55 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 							</p>
 						}
 					</div>
-					<div class="flex items-center gap-1 mr-4">
-						<button
-							type="button"
-							class="inline-flex items-center gap-2 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
-							hx-post={ "/api/v1/artists/" + data.Artist.ID + "/refresh" }
-							hx-target="#refresh-panel"
-							hx-swap="innerHTML"
-							hx-indicator="#refresh-spinner"
-						>
-							@components.IconArrowPath("h-4 w-4")
-							Refresh Metadata
-						</button>
+					<div class="flex items-center gap-2 mr-4">
+						// Split button: primary Refresh Metadata + dropdown for Re-identify
+						<div class="relative inline-flex" data-context-menu={ "refresh-split-" + data.Artist.ID }>
+							<button
+								type="button"
+								class={
+									"inline-flex items-center gap-2 bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors",
+									templ.KV("rounded-md", data.Artist.MusicBrainzID == ""),
+									templ.KV("rounded-l-md", data.Artist.MusicBrainzID != ""),
+								}
+								hx-post={ "/api/v1/artists/" + data.Artist.ID + "/refresh" }
+								hx-target="#refresh-panel"
+								hx-swap="innerHTML"
+								hx-indicator="#refresh-spinner"
+							>
+								@components.IconArrowPath("h-4 w-4")
+								Refresh Metadata
+							</button>
+							if data.Artist.MusicBrainzID != "" {
+								<button
+									type="button"
+									class="inline-flex items-center bg-blue-600 px-1.5 py-2 text-white hover:bg-blue-700 border-l border-blue-500 rounded-r-md transition-colors"
+									aria-haspopup="true"
+									aria-expanded="false"
+									aria-controls={ "ctx-panel-refresh-split-" + data.Artist.ID }
+									aria-label="More refresh options"
+									onclick={ components.ToggleContextMenu("refresh-split-" + data.Artist.ID) }
+								>
+									@components.IconChevronDown("h-4 w-4")
+								</button>
+								<div
+									id={ "ctx-panel-refresh-split-" + data.Artist.ID }
+									class="hidden absolute right-0 top-full z-40 mt-1 min-w-[12rem] rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 py-1 shadow-lg"
+									role="menu"
+								>
+									<button
+										type="button"
+										role="menuitem"
+										class="context-menu-item"
+										hx-post={ "/api/v1/artists/" + data.Artist.ID + "/reidentify" }
+										hx-target="#refresh-panel"
+										hx-swap="innerHTML"
+										hx-confirm="This will clear all provider IDs and let you re-link this artist. Continue?"
+									>
+										Re-identify Artist
+									</button>
+								</div>
+							}
+						</div>
 						<button
 							type="button"
 							id={ "run-rules-btn-" + data.Artist.ID }
@@ -202,21 +239,6 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 							@components.IconCheck("h-4 w-4")
 							Run Rules
 						</button>
-						if data.Artist.MusicBrainzID != "" {
-							@components.ContextMenu("reidentify-"+data.Artist.ID, false) {
-								<button
-									type="button"
-									role="menuitem"
-									class="context-menu-item"
-									hx-post={ "/api/v1/artists/" + data.Artist.ID + "/reidentify" }
-									hx-target="#refresh-panel"
-									hx-swap="innerHTML"
-									hx-confirm="This will clear all provider IDs and let you re-link this artist. Continue?"
-								>
-									Re-identify Artist
-								</button>
-							}
-						}
 					</div>
 				</div>
 				<div id="refresh-panel" class="mt-3"></div>
