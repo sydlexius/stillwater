@@ -548,6 +548,9 @@ func (r *Router) getActiveNamingConfig(ctx context.Context, imageType string) []
 // getActiveNamingAndSymlinks returns the filenames for the given image type and
 // the UseSymlinks flag from the active platform profile.
 func (r *Router) getActiveNamingAndSymlinks(ctx context.Context, imageType string) ([]string, bool) {
+	if r.platformService == nil {
+		return img.FileNamesForType(img.DefaultFileNames, imageType), false
+	}
 	profile, err := r.platformService.GetActive(ctx)
 	if err != nil || profile == nil {
 		return img.FileNamesForType(img.DefaultFileNames, imageType), false

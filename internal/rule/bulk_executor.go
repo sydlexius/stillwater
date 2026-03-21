@@ -1,7 +1,6 @@
 package rule
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"log/slog"
@@ -11,7 +10,6 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/event"
-	img "github.com/sydlexius/stillwater/internal/image"
 	"github.com/sydlexius/stillwater/internal/nfo"
 	"github.com/sydlexius/stillwater/internal/platform"
 	"github.com/sydlexius/stillwater/internal/provider"
@@ -340,25 +338,14 @@ func (e *BulkExecutor) saveBestImage(ctx context.Context, a *artist.Artist, imag
 		return (candidates[i].Width * candidates[i].Height) > (candidates[j].Width * candidates[j].Height)
 	})
 
+	// Pre-resolve naming and symlink config once (does not depend on candidate URL).
+	useSymlinks := activeUseSymlinks(ctx, e.platformService)
+	naming := existingImageFileNames(ctx, a.Path, imageType, e.platformService)
 	for _, c := range candidates {
-		data, err := fetchImageURL(ctx, c.URL)
-		if err != nil {
-			e.logger.Debug("image download failed", "url", c.URL, "error", err)
+		if _, err := SaveImageFromURL(ctx, a, imageType, c.URL, naming, useSymlinks, e.platformService, e.logger); err != nil {
+			e.logger.Debug("image candidate failed", "url", c.URL, "error", err)
 			continue
 		}
-
-		converted, _, err := img.ConvertFormat(bytes.NewReader(data))
-		if err != nil {
-			continue
-		}
-
-		naming := img.FileNamesForType(img.DefaultFileNames, imageType)
-		useSymlinks := activeUseSymlinks(ctx, e.platformService)
-		if _, err := img.Save(a.Path, imageType, converted, naming, useSymlinks, e.logger); err != nil {
-			continue
-		}
-
-		setImageFlag(a, imageType)
 		return true
 	}
 
