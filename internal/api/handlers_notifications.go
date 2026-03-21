@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	img "github.com/sydlexius/stillwater/internal/image"
 	"github.com/sydlexius/stillwater/internal/rule"
 	"github.com/sydlexius/stillwater/web/templates"
 )
@@ -352,8 +353,14 @@ func (r *Router) handleApplyViolationCandidate(w http.ResponseWriter, req *http.
 	}
 
 	// Download and save the chosen image using platform-aware naming
+	candidateMeta := &img.ExifMeta{
+		Source:  "user",
+		Fetched: time.Now().UTC(),
+		URL:     body.URL,
+		Mode:    "manual",
+	}
 	naming, useSymlinks := r.getActiveNamingAndSymlinks(req.Context(), body.ImageType)
-	if _, err := rule.SaveImageFromURL(req.Context(), a, body.ImageType, body.URL, naming, useSymlinks, r.platformService, r.logger); err != nil {
+	if _, err := rule.SaveImageFromURL(req.Context(), a, body.ImageType, body.URL, naming, useSymlinks, candidateMeta, r.platformService, r.logger); err != nil {
 		r.logger.Error("applying image candidate", "artist_id", a.ID, "image_type", body.ImageType, "error", err)
 		writeError(w, req, http.StatusInternalServerError, "failed to apply image candidate")
 		return

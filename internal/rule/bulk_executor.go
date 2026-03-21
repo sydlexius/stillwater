@@ -10,6 +10,7 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/event"
+	img "github.com/sydlexius/stillwater/internal/image"
 	"github.com/sydlexius/stillwater/internal/nfo"
 	"github.com/sydlexius/stillwater/internal/platform"
 	"github.com/sydlexius/stillwater/internal/provider"
@@ -342,7 +343,14 @@ func (e *BulkExecutor) saveBestImage(ctx context.Context, a *artist.Artist, imag
 	useSymlinks := activeUseSymlinks(ctx, e.platformService)
 	naming := existingImageFileNames(ctx, a.Path, imageType, e.platformService)
 	for _, c := range candidates {
-		if _, err := SaveImageFromURL(ctx, a, imageType, c.URL, naming, useSymlinks, e.platformService, e.logger); err != nil {
+		meta := &img.ExifMeta{
+			Source:  c.Source,
+			Fetched: time.Now().UTC(),
+			URL:     c.URL,
+			Rule:    imageType,
+			Mode:    "auto",
+		}
+		if _, err := SaveImageFromURL(ctx, a, imageType, c.URL, naming, useSymlinks, meta, e.platformService, e.logger); err != nil {
 			e.logger.Debug("image candidate failed", "url", c.URL, "error", err)
 			continue
 		}

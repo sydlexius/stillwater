@@ -20,7 +20,7 @@ func TestSave_SingleFile(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 
 	jpegData := makeJPEG(t, 100, 100)
-	saved, err := Save(dir, "thumb", jpegData, []string{"folder.jpg"}, false, logger)
+	saved, err := Save(dir, "thumb", jpegData, []string{"folder.jpg"}, false, nil, logger)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -40,7 +40,7 @@ func TestSave_MultipleFiles(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 
 	jpegData := makeJPEG(t, 100, 100)
-	saved, err := Save(dir, "thumb", jpegData, []string{"folder.jpg", "artist.jpg"}, false, logger)
+	saved, err := Save(dir, "thumb", jpegData, []string{"folder.jpg", "artist.jpg"}, false, nil, logger)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -62,7 +62,7 @@ func TestSave_LogoForcePNG(t *testing.T) {
 
 	// Send a JPEG to be saved as a logo -- should convert to PNG
 	jpegData := makeJPEG(t, 100, 100)
-	saved, err := Save(dir, "logo", jpegData, []string{"logo.png"}, false, logger)
+	saved, err := Save(dir, "logo", jpegData, []string{"logo.png"}, false, nil, logger)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -96,7 +96,7 @@ func TestSave_CleansUpConflicts(t *testing.T) {
 
 	// Save a PNG thumb -- should delete the old JPG
 	pngData := makePNG(t, 100, 100)
-	_, err := Save(dir, "thumb", pngData, []string{"folder.jpg"}, false, logger)
+	_, err := Save(dir, "thumb", pngData, []string{"folder.jpg"}, false, nil, logger)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -125,7 +125,7 @@ func TestSave_NoFileNames_Error(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 
 	jpegData := makeJPEG(t, 10, 10)
-	_, err := Save(dir, "thumb", jpegData, nil, false, logger)
+	_, err := Save(dir, "thumb", jpegData, nil, false, nil, logger)
 	if err == nil {
 		t.Error("expected error for empty filenames")
 	}
@@ -136,7 +136,7 @@ func TestSave_PNGThumb_KeepsPNG(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 
 	pngData := makePNG(t, 100, 100)
-	saved, err := Save(dir, "thumb", pngData, []string{"folder.jpg"}, false, logger)
+	saved, err := Save(dir, "thumb", pngData, []string{"folder.jpg"}, false, nil, logger)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -156,7 +156,7 @@ func TestSave_Symlinks(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 
 	jpegData := makeJPEG(t, 100, 100)
-	saved, err := Save(dir, "thumb", jpegData, []string{"folder.jpg", "artist.jpg"}, true, logger)
+	saved, err := Save(dir, "thumb", jpegData, []string{"folder.jpg", "artist.jpg"}, true, nil, logger)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -216,7 +216,7 @@ func TestSave_Symlinks_FanartException(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 
 	jpegData := makeJPEG(t, 100, 100)
-	saved, err := Save(dir, "fanart", jpegData, []string{"fanart.jpg", "backdrop.jpg"}, true, logger)
+	saved, err := Save(dir, "fanart", jpegData, []string{"fanart.jpg", "backdrop.jpg"}, true, nil, logger)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -248,7 +248,7 @@ func TestSave_Symlinks_ExtensionCoercionDuplicate(t *testing.T) {
 	// JPEG data. Without the guard, the second entry would delete the primary
 	// and create a self-referential symlink.
 	jpegData := makeJPEG(t, 100, 100)
-	saved, err := Save(dir, "thumb", jpegData, []string{"folder.jpg", "folder.png"}, true, logger)
+	saved, err := Save(dir, "thumb", jpegData, []string{"folder.jpg", "folder.png"}, true, nil, logger)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -295,7 +295,7 @@ func TestSave_OverwritesCaseMismatchedFile(t *testing.T) {
 
 	// Save with the canonical (lowercase) name
 	jpegData := makeJPEG(t, 100, 100)
-	saved, err := Save(dir, "thumb", jpegData, []string{"folder.jpg"}, false, logger)
+	saved, err := Save(dir, "thumb", jpegData, []string{"folder.jpg"}, false, nil, logger)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -341,7 +341,7 @@ func TestSave_Symlinks_SingleFile(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 
 	jpegData := makeJPEG(t, 100, 100)
-	saved, err := Save(dir, "thumb", jpegData, []string{"folder.jpg"}, true, logger)
+	saved, err := Save(dir, "thumb", jpegData, []string{"folder.jpg"}, true, nil, logger)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -356,5 +356,38 @@ func TestSave_Symlinks_SingleFile(t *testing.T) {
 	}
 	if fi.Mode()&os.ModeSymlink != 0 {
 		t.Error("single file should not be a symlink")
+	}
+}
+
+func TestSave_WithExifMeta(t *testing.T) {
+	dir := t.TempDir()
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+
+	jpegData := makeJPEG(t, 100, 100)
+	meta := &ExifMeta{Source: "fanarttv", Rule: "thumb_exists", Mode: "auto"}
+
+	saved, err := Save(dir, "thumb", jpegData, []string{"folder.jpg"}, false, meta, logger)
+	if err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if len(saved) != 1 {
+		t.Fatalf("saved %d files, want 1", len(saved))
+	}
+
+	got, err := ReadProvenance(filepath.Join(dir, saved[0]))
+	if err != nil {
+		t.Fatalf("ReadProvenance: %v", err)
+	}
+	if got == nil {
+		t.Fatal("ReadProvenance returned nil")
+	}
+	if got.Source != "fanarttv" {
+		t.Errorf("Source = %q, want %q", got.Source, "fanarttv")
+	}
+	if got.Rule != "thumb_exists" {
+		t.Errorf("Rule = %q, want %q", got.Rule, "thumb_exists")
+	}
+	if got.Mode != "auto" {
+		t.Errorf("Mode = %q, want %q", got.Mode, "auto")
 	}
 }

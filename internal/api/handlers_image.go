@@ -141,9 +141,12 @@ func (r *Router) handleImageUpload(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	// User uploads always get "user" source provenance.
+	uploadMeta := &img.ExifMeta{Source: "user", Fetched: time.Now().UTC(), Mode: "user"}
+
 	// Fanart: append as next numbered file when fanart already exists.
 	if imageType == "fanart" && a.FanartExists {
-		saved, saveErr := r.processAndAppendFanart(req.Context(), r.imageDir(a), data)
+		saved, saveErr := r.processAndAppendFanart(req.Context(), r.imageDir(a), data, uploadMeta)
 		if saveErr != nil {
 			r.logger.Error("appending fanart upload", "artist_id", artistID, "error", saveErr)
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to save image"})
@@ -165,7 +168,7 @@ func (r *Router) handleImageUpload(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	saved, err := r.processAndSaveImage(req.Context(), r.imageDir(a), imageType, data)
+	saved, err := r.processAndSaveImage(req.Context(), r.imageDir(a), imageType, data, uploadMeta)
 	if err != nil {
 		r.logger.Error("saving uploaded image", "artist_id", artistID, "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to save image"})
@@ -244,9 +247,11 @@ func (r *Router) handleImageFetch(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	fetchMeta := &img.ExifMeta{Source: "user", Fetched: time.Now().UTC(), URL: imageURL, Mode: "user"}
+
 	// Fanart: append as next numbered file when fanart already exists.
 	if imageType == "fanart" && a.FanartExists {
-		saved, saveErr := r.processAndAppendFanart(req.Context(), r.imageDir(a), data)
+		saved, saveErr := r.processAndAppendFanart(req.Context(), r.imageDir(a), data, fetchMeta)
 		if saveErr != nil {
 			r.logger.Error("appending fanart image", "artist_id", artistID, "error", saveErr)
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to save image"})
@@ -274,7 +279,7 @@ func (r *Router) handleImageFetch(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	saved, err := r.processAndSaveImage(req.Context(), r.imageDir(a), imageType, data)
+	saved, err := r.processAndSaveImage(req.Context(), r.imageDir(a), imageType, data, fetchMeta)
 	if err != nil {
 		r.logger.Error("saving fetched image", "artist_id", artistID, "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to save image"})
@@ -491,7 +496,8 @@ func (r *Router) handleImageCrop(w http.ResponseWriter, req *http.Request) {
 		imgData = cropped
 	}
 
-	saved, err := r.processAndSaveImage(req.Context(), r.imageDir(a), body.Type, imgData)
+	cropMeta := &img.ExifMeta{Source: "user", Fetched: time.Now().UTC(), Mode: "user"}
+	saved, err := r.processAndSaveImage(req.Context(), r.imageDir(a), body.Type, imgData, cropMeta)
 	if err != nil {
 		r.logger.Error("saving cropped image", "artist_id", artistID, "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to save image"})
@@ -514,7 +520,8 @@ func (r *Router) handleImageCrop(w http.ResponseWriter, req *http.Request) {
 
 // processAndSaveImage processes image data (convert format, optimize) and saves it.
 // For logos, transparent borders are automatically trimmed before saving.
-func (r *Router) processAndSaveImage(ctx context.Context, dir string, imageType string, data []byte) ([]string, error) {
+// meta is optional EXIF provenance metadata to embed in the saved image.
+func (r *Router) processAndSaveImage(ctx context.Context, dir string, imageType string, data []byte, meta *img.ExifMeta) ([]string, error) {
 	converted, _, err := img.ConvertFormat(bytes.NewReader(data))
 	if err != nil {
 		return nil, fmt.Errorf("converting format: %w", err)
@@ -529,7 +536,7 @@ func (r *Router) processAndSaveImage(ctx context.Context, dir string, imageType 
 
 	naming, useSymlinks := r.getActiveNamingAndSymlinks(ctx, imageType)
 
-	saved, err := img.Save(dir, imageType, converted, naming, useSymlinks, r.logger)
+	saved, err := img.Save(dir, imageType, converted, naming, useSymlinks, meta, r.logger)
 	if err != nil {
 		return nil, fmt.Errorf("saving: %w", err)
 	}
@@ -1428,8 +1435,19 @@ func (r *Router) handleLogoTrim(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	// Preserve existing provenance metadata if present, updating the rule and timestamp.
+	var trimMeta *img.ExifMeta
+	if existing, readErr := img.ReadProvenance(filePath); readErr == nil && existing != nil {
+		trimMeta = existing
+		trimMeta.Rule = "logo_trim_api"
+	} else {
+		trimMeta = &img.ExifMeta{Rule: "logo_trim_api"}
+	}
+	trimMeta.Fetched = time.Now().UTC()
+	trimMeta.Mode = "user"
+
 	_, useSymlinks := r.getActiveNamingAndSymlinks(req.Context(), "logo")
-	if _, err := img.Save(r.imageDir(a), "logo", trimmed, patterns, useSymlinks, r.logger); err != nil {
+	if _, err := img.Save(r.imageDir(a), "logo", trimmed, patterns, useSymlinks, trimMeta, r.logger); err != nil {
 		r.logger.Error("saving trimmed logo", "artist_id", artistID, "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to save trimmed logo"})
 		return
@@ -1497,7 +1515,8 @@ func (r *Router) isKodiNumbering(ctx context.Context) bool {
 
 // processAndAppendFanart processes image data and saves it as the next
 // numbered fanart file. Returns the saved filenames.
-func (r *Router) processAndAppendFanart(ctx context.Context, dir string, data []byte) ([]string, error) {
+// meta is optional EXIF provenance metadata to embed in the saved image.
+func (r *Router) processAndAppendFanart(ctx context.Context, dir string, data []byte, meta *img.ExifMeta) ([]string, error) {
 	converted, _, err := img.ConvertFormat(bytes.NewReader(data))
 	if err != nil {
 		return nil, fmt.Errorf("converting format: %w", err)
@@ -1512,7 +1531,7 @@ func (r *Router) processAndAppendFanart(ctx context.Context, dir string, data []
 	nextIndex := img.NextFanartIndex(maxIdx, kodi)
 	nextName := img.FanartFilename(primary, nextIndex, kodi)
 
-	saved, err := img.Save(dir, "fanart", converted, []string{nextName}, false, r.logger)
+	saved, err := img.Save(dir, "fanart", converted, []string{nextName}, false, meta, r.logger)
 	if err != nil {
 		return nil, fmt.Errorf("saving: %w", err)
 	}
@@ -1856,7 +1875,8 @@ func (r *Router) handleFanartBatchFetch(w http.ResponseWriter, req *http.Request
 			errors = append(errors, fmt.Sprintf("fetch failed: %s", u))
 			continue
 		}
-		saved, saveErr := r.processAndAppendFanart(req.Context(), r.imageDir(a), data)
+		batchMeta := &img.ExifMeta{Source: "user", Fetched: time.Now().UTC(), URL: u, Mode: "user"}
+		saved, saveErr := r.processAndAppendFanart(req.Context(), r.imageDir(a), data, batchMeta)
 		if saveErr != nil {
 			r.logger.Error("saving fanart image", "url", u, "error", saveErr)
 			errors = append(errors, fmt.Sprintf("save failed: %s", u))

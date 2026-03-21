@@ -604,7 +604,7 @@ func (r *Router) populateFromEmbyCtx(ctx context.Context, client *emby.Client, l
 				}
 				r.backfillPlatformIDToManualLibs(ctx, mbid, item.Name, lib.ConnectionID, item.ID, existing.ID, manualLibs)
 				// Download any missing images.
-				r.downloadPlatformImages(ctx, client, item.ID, item.ImageTags, item.BackdropImageTags, existing, result)
+				r.downloadPlatformImages(ctx, client, item.ID, item.ImageTags, item.BackdropImageTags, existing, "emby", result)
 				result.Skipped++
 				continue
 			}
@@ -638,7 +638,7 @@ func (r *Router) populateFromEmbyCtx(ctx context.Context, client *emby.Client, l
 			}
 			r.backfillPlatformIDToManualLibs(ctx, mbid, item.Name, lib.ConnectionID, item.ID, a.ID, manualLibs)
 
-			r.downloadPlatformImages(ctx, client, item.ID, item.ImageTags, item.BackdropImageTags, a, result)
+			r.downloadPlatformImages(ctx, client, item.ID, item.ImageTags, item.BackdropImageTags, a, "emby", result)
 		}
 
 		startIndex += pageSize
@@ -708,7 +708,7 @@ func (r *Router) populateFromJellyfinCtx(ctx context.Context, client *jellyfin.C
 				}
 				r.backfillPlatformIDToManualLibs(ctx, mbid, item.Name, lib.ConnectionID, item.ID, existing.ID, manualLibs)
 				// Download any missing images.
-				r.downloadPlatformImages(ctx, client, item.ID, item.ImageTags, item.BackdropImageTags, existing, result)
+				r.downloadPlatformImages(ctx, client, item.ID, item.ImageTags, item.BackdropImageTags, existing, "jellyfin", result)
 				result.Skipped++
 				continue
 			}
@@ -742,7 +742,7 @@ func (r *Router) populateFromJellyfinCtx(ctx context.Context, client *jellyfin.C
 			}
 			r.backfillPlatformIDToManualLibs(ctx, mbid, item.Name, lib.ConnectionID, item.ID, a.ID, manualLibs)
 
-			r.downloadPlatformImages(ctx, client, item.ID, item.ImageTags, item.BackdropImageTags, a, result)
+			r.downloadPlatformImages(ctx, client, item.ID, item.ImageTags, item.BackdropImageTags, a, "jellyfin", result)
 		}
 
 		startIndex += pageSize
@@ -875,8 +875,9 @@ var platformToStillwaterType = map[string]string{
 }
 
 // downloadPlatformImages downloads available images from a media platform for a single artist.
+// connType identifies the platform source (e.g. "emby", "jellyfin") for provenance metadata.
 // Errors are non-fatal: logged as warnings and skipped.
-func (r *Router) downloadPlatformImages(ctx context.Context, dl imageDownloader, platformArtistID string, imageTags map[string]string, backdropTags []string, a *artist.Artist, result *populateResult) {
+func (r *Router) downloadPlatformImages(ctx context.Context, dl imageDownloader, platformArtistID string, imageTags map[string]string, backdropTags []string, a *artist.Artist, connType string, result *populateResult) {
 	dir := r.imageDir(a)
 	if dir == "" {
 		r.logger.Debug("skipping image download: no path or cache dir", "artist", a.Name)
@@ -923,7 +924,8 @@ func (r *Router) downloadPlatformImages(ctx context.Context, dl imageDownloader,
 			continue
 		}
 
-		if _, err := r.processAndSaveImage(ctx, dir, stillwaterType, data); err != nil {
+		platformMeta := &img.ExifMeta{Source: connType, Fetched: time.Now().UTC(), Mode: "user"}
+		if _, err := r.processAndSaveImage(ctx, dir, stillwaterType, data, platformMeta); err != nil {
 			r.logger.Warn("saving downloaded image", "artist", a.Name, "type", stillwaterType, "error", err)
 			continue
 		}
@@ -987,7 +989,8 @@ func (r *Router) downloadPlatformImages(ctx context.Context, dl imageDownloader,
 				r.logger.Warn("converting backdrop format", "artist", a.Name, "index", i, "error", convertErr)
 				continue
 			}
-			saved, saveErr := img.Save(dir, "fanart", converted, []string{filename}, false, r.logger)
+			backdropMeta := &img.ExifMeta{Source: connType, Fetched: time.Now().UTC(), Mode: "user"}
+			saved, saveErr := img.Save(dir, "fanart", converted, []string{filename}, false, backdropMeta, r.logger)
 			if saveErr != nil {
 				r.logger.Warn("saving backdrop", "artist", a.Name, "index", i, "error", saveErr)
 				continue
