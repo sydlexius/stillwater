@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
+	"github.com/sydlexius/stillwater/internal/auth"
 	"github.com/sydlexius/stillwater/internal/filesystem"
 	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/platform"
@@ -226,6 +227,18 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 		r.logger.Warn("listing api tokens for settings page", "error", err)
 	}
 
+	// Fetch archived tokens separately for the "Show Archived" section.
+	allTokens, err := r.authService.ListAPITokensAll(req.Context(), userID)
+	if err != nil {
+		r.logger.Warn("listing all api tokens for settings page", "error", err)
+	}
+	var archivedTokens []auth.APIToken
+	for _, t := range allTokens {
+		if t.Status == auth.TokenStatusArchived {
+			archivedTokens = append(archivedTokens, t)
+		}
+	}
+
 	var libs []library.Library
 	if r.libraryService != nil {
 		libs, err = r.libraryService.List(req.Context())
@@ -270,6 +283,7 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 		BadgeSeverityWarning: r.getBoolSetting(req.Context(), "notif_badge_severity_warning", true),
 		BadgeSeverityInfo:    r.getBoolSetting(req.Context(), "notif_badge_severity_info", false),
 		APITokens:            apiTokens,
+		ArchivedAPITokens:    archivedTokens,
 		RuleScheduleHours:    r.getIntSetting(req.Context(), "rule_schedule.interval_hours", 0),
 		BackupRetention:      r.getIntSetting(req.Context(), "backup_retention_count", r.backupService.Retention()),
 		BackupMaxAgeDays:     r.getIntSetting(req.Context(), "backup_max_age_days", r.backupService.MaxAgeDays()),

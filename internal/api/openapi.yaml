@@ -236,6 +236,10 @@ components:
           type: string
         user_id:
           type: string
+        status:
+          type: string
+          enum: [active, revoked, archived]
+          description: "Token lifecycle state: active, revoked, or archived"
         created_at:
           type: string
           format: date-time
@@ -556,9 +560,16 @@ paths:
       tags: [Auth]
       summary: List API tokens
       operationId: listAPITokens
+      parameters:
+        - name: include_archived
+          in: query
+          description: Include archived tokens in the response
+          schema:
+            type: boolean
+            default: false
       responses:
         "200":
-          description: List of API tokens (no plaintext values)
+          description: List of API tokens (no plaintext values). Archived tokens are excluded unless include_archived=true.
           content:
             application/json:
               schema:
@@ -586,6 +597,92 @@ paths:
                 $ref: "#/components/schemas/Status"
         "404":
           description: Token not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /auth/tokens/{id}/archive:
+    patch:
+      tags: [Auth]
+      summary: Archive a revoked token
+      operationId: archiveAPIToken
+      description: Moves a revoked token to archived status. Only revoked tokens can be archived.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Token archived
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+        "404":
+          description: Token not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Token is still active or not in a valid state for archiving
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /auth/tokens/{id}/unarchive:
+    patch:
+      tags: [Auth]
+      summary: Unarchive a token
+      operationId: unarchiveAPIToken
+      description: Restores an archived token to revoked status.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Token restored to revoked status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+        "404":
+          description: Token not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /auth/tokens/{id}/permanent:
+    delete:
+      tags: [Auth]
+      summary: Permanently delete a token
+      operationId: deleteAPIToken
+      description: Permanently removes a revoked or archived token. Anonymizes associated audit log entries. Cannot delete active tokens.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Token permanently deleted
+        "404":
+          description: Token not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Token is still active and must be revoked first
           content:
             application/json:
               schema:
