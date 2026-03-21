@@ -338,10 +338,11 @@ func (e *BulkExecutor) saveBestImage(ctx context.Context, a *artist.Artist, imag
 		return (candidates[i].Width * candidates[i].Height) > (candidates[j].Width * candidates[j].Height)
 	})
 
-	// Try each candidate using the shared save pipeline (platform-aware naming)
+	// Pre-resolve naming and symlink config once (does not depend on candidate URL).
 	useSymlinks := activeUseSymlinks(ctx, e.platformService)
+	naming := existingImageFileNames(ctx, a.Path, imageType, e.platformService)
 	for _, c := range candidates {
-		if _, err := SaveImageFromURL(ctx, a, imageType, c.URL, nil, useSymlinks, e.platformService, e.logger); err != nil {
+		if _, err := SaveImageFromURL(ctx, a, imageType, c.URL, naming, useSymlinks, e.platformService, e.logger); err != nil {
 			e.logger.Debug("image candidate failed", "url", c.URL, "error", err)
 			continue
 		}

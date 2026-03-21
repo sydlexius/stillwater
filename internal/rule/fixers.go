@@ -499,7 +499,7 @@ func SaveImageFromURL(ctx context.Context, a *artist.Artist, imageType, rawURL s
 // the downloaded data (e.g. post-download dimension checks) can do so before
 // committing the save.
 //
-// When naming is non-nil, it overrides the platform-aware resolution.
+// When naming is non-empty, it overrides the platform-aware resolution.
 // Returns the list of saved filenames on success.
 func SaveImageFromData(ctx context.Context, a *artist.Artist, imageType string, data []byte, naming []string, useSymlinks bool, platformService *platform.Service, logger *slog.Logger) ([]string, error) {
 	converted, _, err := img.ConvertFormat(bytes.NewReader(data))
