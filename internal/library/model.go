@@ -38,6 +38,7 @@ type Library struct {
 	ExternalID        string    `json:"external_id"`                   // Platform-specific library ID
 	FSWatch           int       `json:"fs_watch"`                      // Bitfield: 0=off, 1=watch, 2=poll, 3=both
 	FSPollInterval    int       `json:"fs_poll_interval"`              // Poll interval in seconds
+	SharedFilesystem  bool      `json:"shared_filesystem"`             // True when a platform connection writes to the same path
 	FSNotifySupported bool      `json:"fs_notify_supported,omitempty"` // Runtime-only, not stored in DB
 	CreatedAt         time.Time `json:"created_at"`
 	UpdatedAt         time.Time `json:"updated_at"`

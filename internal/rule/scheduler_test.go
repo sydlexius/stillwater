@@ -34,7 +34,7 @@ func TestScheduler_ContextCancellation(t *testing.T) {
 	ruleSvc := NewService(db)
 
 	logger := slog.Default()
-	engine := NewEngine(ruleSvc, nil, nil, logger)
+	engine := NewEngine(ruleSvc, nil, nil, nil, logger)
 	pipeline := NewPipeline(engine, artistSvc, ruleSvc, nil, logger)
 	sched := NewScheduler(pipeline, ruleSvc, logger)
 
@@ -61,7 +61,7 @@ func TestScheduler_TickTriggersRun(t *testing.T) {
 	artistSvc := artist.NewService(db)
 	ruleSvc := NewService(db)
 	logger := slog.Default()
-	engine := NewEngine(ruleSvc, nil, nil, logger)
+	engine := NewEngine(ruleSvc, nil, nil, nil, logger)
 	pipeline := NewPipeline(engine, artistSvc, ruleSvc, nil, logger)
 	sched := NewScheduler(pipeline, ruleSvc, logger)
 

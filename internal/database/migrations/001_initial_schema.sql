@@ -91,6 +91,7 @@ CREATE TABLE IF NOT EXISTS libraries (
     external_id TEXT NOT NULL DEFAULT '',
     fs_watch INTEGER NOT NULL DEFAULT 0,
     fs_poll_interval INTEGER NOT NULL DEFAULT 60,
+    shared_filesystem INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );

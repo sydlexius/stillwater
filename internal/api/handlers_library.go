@@ -105,6 +105,10 @@ func (r *Router) handleCreateLibrary(w http.ResponseWriter, req *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 		return
 	}
+
+	// Re-evaluate shared-filesystem overlaps after adding a library.
+	r.recheckSharedFilesystemBackground(req.Context())
+
 	writeJSON(w, http.StatusCreated, lib)
 }
 
@@ -179,6 +183,10 @@ func (r *Router) handleUpdateLibrary(w http.ResponseWriter, req *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 		return
 	}
+
+	// Re-evaluate shared-filesystem overlaps after updating a library path.
+	r.recheckSharedFilesystemBackground(req.Context())
+
 	r.populateFSNotifySupportedPtr(existing)
 	writeJSON(w, http.StatusOK, existing)
 }
@@ -200,6 +208,10 @@ func (r *Router) handleDeleteLibrary(w http.ResponseWriter, req *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
+
+	// Re-evaluate shared-filesystem overlaps after deleting a library.
+	r.recheckSharedFilesystemBackground(req.Context())
+
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 

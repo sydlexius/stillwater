@@ -16,6 +16,7 @@ type LibraryOptions struct {
 // VirtualFolder represents a library folder from GET /Library/VirtualFolders.
 type VirtualFolder struct {
 	Name           string         `json:"Name"`
+	Locations      []string       `json:"Locations"` // Filesystem paths for this library
 	CollectionType string         `json:"CollectionType"`
 	ItemID         string         `json:"ItemId"`
 	LibraryOptions LibraryOptions `json:"LibraryOptions"`

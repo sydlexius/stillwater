@@ -13,7 +13,7 @@ import (
 
 func TestDirectoryRenameFixer_Fix(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	fixer := NewDirectoryRenameFixer(logger)
+	fixer := NewDirectoryRenameFixer(nil, logger)
 
 	t.Run("successful rename", func(t *testing.T) {
 		tmp := t.TempDir()

@@ -49,7 +49,7 @@ func testRouterWithPipelineFull(t *testing.T) (*Router, *artist.Service, *rule.S
 	if err := ruleSvc.SeedDefaults(context.Background()); err != nil {
 		t.Fatalf("seeding rules: %v", err)
 	}
-	ruleEngine := rule.NewEngine(ruleSvc, db, nil, logger)
+	ruleEngine := rule.NewEngine(ruleSvc, db, nil, nil, logger)
 	pipeline := rule.NewPipeline(ruleEngine, artistSvc, ruleSvc, nil, logger)
 	nfoSnapSvc := nfo.NewSnapshotService(db)
 	providerSettings := provider.NewSettingsService(db, enc)

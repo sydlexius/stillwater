@@ -7,6 +7,7 @@ import (
 	"math"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/platform"
 )
 
@@ -15,16 +16,18 @@ type Engine struct {
 	service         *Service
 	db              *sql.DB
 	platformService *platform.Service
+	libraryService  *library.Service
 	checkers        map[string]Checker
 	logger          *slog.Logger
 }
 
 // NewEngine creates a rule evaluation engine with all built-in checkers registered.
-func NewEngine(service *Service, db *sql.DB, platformService *platform.Service, logger *slog.Logger) *Engine {
+func NewEngine(service *Service, db *sql.DB, platformService *platform.Service, libraryService *library.Service, logger *slog.Logger) *Engine {
 	e := &Engine{
 		service:         service,
 		db:              db,
 		platformService: platformService,
+		libraryService:  libraryService,
 		logger:          logger.With(slog.String("component", "rule-engine")),
 		checkers: map[string]Checker{
 			RuleNFOExists:             checkNFOExists,
@@ -119,6 +122,20 @@ func (e *Engine) EvaluateAll(ctx context.Context, artists []artist.Artist) ([]Ev
 		results = append(results, *r)
 	}
 	return results, nil
+}
+
+// IsSharedFilesystem reports whether the given artist's library has the
+// shared_filesystem flag set. Returns false if the library service is nil,
+// the artist has no library ID, or any error occurs during lookup.
+func (e *Engine) IsSharedFilesystem(ctx context.Context, a *artist.Artist) bool {
+	if e.libraryService == nil || a.LibraryID == "" {
+		return false
+	}
+	lib, err := e.libraryService.GetByID(ctx, a.LibraryID)
+	if err != nil {
+		return false
+	}
+	return lib.SharedFilesystem
 }
 
 // calculateHealthScore returns the percentage of rules passed, rounded to 1 decimal.

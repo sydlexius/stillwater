@@ -728,6 +728,10 @@ func expectedImageFiles(profile *platform.Profile, artistPath string) map[string
 // platform profile: for each image type, all configured names plus their alternate
 // extension variants are considered expected.
 //
+// When the artist's library has shared_filesystem set, the expected set is expanded
+// to include filenames from ALL platform profiles so that files written by a
+// connected platform (Emby, Jellyfin, Kodi) are not flagged as extraneous.
+//
 // Responsibility boundary: this checker flags files with non-standard names
 // (e.g., "backdrop_old.png"). It does NOT flag valid numbered
 // fanart variants even if their indices have gaps (e.g., backdrop.jpg +
@@ -737,6 +741,13 @@ func (e *Engine) makeExtraneousImagesChecker() Checker {
 	return func(a *artist.Artist, cfg RuleConfig) *Violation {
 		if a.Path == "" {
 			return nil
+		}
+
+		// When shared filesystem is detected, union expected files from all
+		// profiles to avoid flagging platform-written images.
+		if e.IsSharedFilesystem(context.Background(), a) && e.platformService != nil {
+			expected := e.expectedImageFilesAllProfiles(a.Path)
+			return checkExtraneousAgainst(a, expected, cfg)
 		}
 
 		var profile *platform.Profile
@@ -778,6 +789,74 @@ func (e *Engine) makeExtraneousImagesChecker() Checker {
 			Fixable:  true,
 		}
 	}
+}
+
+// checkExtraneousAgainst is the core logic for the extraneous images checker,
+// extracted so both the normal and shared-filesystem paths can reuse it.
+func checkExtraneousAgainst(a *artist.Artist, expected map[string]bool, cfg RuleConfig) *Violation {
+	entries, readErr := os.ReadDir(a.Path)
+	if readErr != nil {
+		return nil
+	}
+
+	var extraneous []string
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		ext := strings.ToLower(filepath.Ext(name))
+		if !imageExtensions[ext] {
+			continue
+		}
+		if !expected[strings.ToLower(name)] {
+			extraneous = append(extraneous, name)
+		}
+	}
+
+	if len(extraneous) == 0 {
+		return nil
+	}
+
+	return &Violation{
+		RuleID:   RuleExtraneousImages,
+		RuleName: "Extraneous image files",
+		Category: "image",
+		Severity: effectiveSeverity(cfg),
+		Message:  fmt.Sprintf("artist %q has %d extraneous image file(s): %s", a.Name, len(extraneous), strings.Join(extraneous, ", ")),
+		Fixable:  true,
+	}
+}
+
+// expectedImageFilesAllProfiles builds the expected image filename set by
+// unioning filenames from ALL platform profiles. Used when shared_filesystem
+// is detected so that files written by any connected platform are not flagged
+// as extraneous.
+func (e *Engine) expectedImageFilesAllProfiles(artistPath string) map[string]bool {
+	profiles, err := e.platformService.List(context.Background())
+	if err != nil {
+		e.logger.Warn("listing profiles for shared-filesystem expected files",
+			slog.String("error", err.Error()))
+		// Fall back to active profile only.
+		active, _ := e.platformService.GetActive(context.Background())
+		return expectedImageFiles(active, artistPath)
+	}
+
+	merged := make(map[string]bool)
+	for i := range profiles {
+		for k, v := range expectedImageFiles(&profiles[i], artistPath) {
+			if v {
+				merged[k] = true
+			}
+		}
+	}
+	// Always include the default set too (no profile).
+	for k, v := range expectedImageFiles(nil, artistPath) {
+		if v {
+			merged[k] = true
+		}
+	}
+	return merged
 }
 
 // commonArticles are English articles stripped, suffixed, or kept as-is

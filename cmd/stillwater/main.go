@@ -159,7 +159,7 @@ func run() error {
 	if err := ruleService.SeedDefaults(context.Background()); err != nil {
 		return fmt.Errorf("seeding default rules: %w", err)
 	}
-	ruleEngine := rule.NewEngine(ruleService, db, platformService, logger)
+	ruleEngine := rule.NewEngine(ruleService, db, platformService, libraryService, logger)
 
 	// Initialize scanner (depends on rule engine for health scoring)
 	scannerService := scanner.NewService(artistService, ruleEngine, ruleService, logger, cfg.Music.LibraryPath, cfg.Scanner.Exclusions)
@@ -222,7 +222,7 @@ func run() error {
 		rule.NewExtraneousImagesFixer(platformService, logger),
 		rule.NewLogoTrimFixer(platformService, logger),
 		rule.NewLogoPaddingFixer(platformService, logger),
-		rule.NewDirectoryRenameFixer(logger),
+		rule.NewDirectoryRenameFixer(libraryService, logger),
 		rule.NewBackdropSequencingFixer(platformService, logger),
 	}
 	pipeline := rule.NewPipeline(ruleEngine, artistService, ruleService, fixers, logger)
@@ -385,6 +385,34 @@ func run() error {
 		default:
 			logger.Warn("invalid rule scheduler interval; scheduler not started",
 				"hours", ruleScheduleHours)
+		}
+	}
+
+	// Evaluate shared-filesystem overlaps on startup.
+	{
+		libs, sfErr := libraryService.List(context.Background())
+		if sfErr != nil {
+			logger.Warn("listing libraries for shared-filesystem check", "error", sfErr)
+		} else {
+			overlaps := library.DetectOverlaps(libs)
+			overlapIDs := make(map[string]bool, len(overlaps))
+			for _, o := range overlaps {
+				overlapIDs[o.LibraryID] = true
+			}
+			for _, lib := range libs {
+				shouldBeShared := overlapIDs[lib.ID]
+				if lib.SharedFilesystem != shouldBeShared {
+					if setErr := libraryService.SetSharedFilesystem(context.Background(), lib.ID, shouldBeShared); setErr != nil {
+						logger.Warn("updating shared_filesystem flag on startup",
+							slog.String("library_id", lib.ID),
+							slog.String("error", setErr.Error()))
+					}
+				}
+			}
+			if len(overlaps) > 0 {
+				logger.Warn("shared-filesystem overlap detected on startup",
+					slog.Int("libraries_affected", len(overlaps)))
+			}
 		}
 	}
 

@@ -17,6 +17,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/filesystem"
 	img "github.com/sydlexius/stillwater/internal/image"
+	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/nfo"
 	"github.com/sydlexius/stillwater/internal/platform"
 	"github.com/sydlexius/stillwater/internal/provider"
@@ -985,13 +986,20 @@ func fetchImageURL(ctx context.Context, rawURL string) ([]byte, error) {
 }
 
 // DirectoryRenameFixer renames an artist's directory to match the canonical name.
+// When the artist's library has shared_filesystem set, the fixer declines to
+// auto-fix and returns a warning message instead, because renaming a directory
+// that a platform connection references can break the platform's metadata index.
 type DirectoryRenameFixer struct {
-	logger *slog.Logger
+	libraryService *library.Service
+	logger         *slog.Logger
 }
 
 // NewDirectoryRenameFixer creates a DirectoryRenameFixer.
-func NewDirectoryRenameFixer(logger *slog.Logger) *DirectoryRenameFixer {
-	return &DirectoryRenameFixer{logger: logger.With(slog.String("component", "directory-rename-fixer"))}
+func NewDirectoryRenameFixer(libraryService *library.Service, logger *slog.Logger) *DirectoryRenameFixer {
+	return &DirectoryRenameFixer{
+		libraryService: libraryService,
+		logger:         logger.With(slog.String("component", "directory-rename-fixer")),
+	}
 }
 
 // CanFix returns true for the directory_name_mismatch rule.
@@ -1000,10 +1008,24 @@ func (f *DirectoryRenameFixer) CanFix(v *Violation) bool {
 }
 
 // Fix renames the artist directory to the canonical name derived from the
-// artist's name and the rule's article mode configuration.
-func (f *DirectoryRenameFixer) Fix(_ context.Context, a *artist.Artist, v *Violation) (*FixResult, error) {
+// artist's name and the rule's article mode configuration. When the artist's
+// library has shared_filesystem set, the fix is skipped to avoid breaking
+// platform metadata indexes that reference the current directory path.
+func (f *DirectoryRenameFixer) Fix(ctx context.Context, a *artist.Artist, v *Violation) (*FixResult, error) {
 	if a.Path == "" {
 		return &FixResult{RuleID: v.RuleID, Fixed: false, Message: "artist has no path"}, nil
+	}
+
+	// Decline to auto-fix when a platform connection shares the filesystem.
+	if f.libraryService != nil && a.LibraryID != "" {
+		lib, err := f.libraryService.GetByID(ctx, a.LibraryID)
+		if err == nil && lib.SharedFilesystem {
+			return &FixResult{
+				RuleID:  v.RuleID,
+				Fixed:   false,
+				Message: fmt.Sprintf("skipped: directory rename disabled for shared-filesystem library %q", lib.Name),
+			}, nil
+		}
 	}
 
 	canonical := canonicalDirName(a.Name, v.Config.ArticleMode)
