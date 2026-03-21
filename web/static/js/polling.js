@@ -46,7 +46,7 @@ function pollAsyncStatus(url, callbacks, options) {
       })
       .then(function (data) {
         if (!data) return;
-        if (callbacks.onData(data)) {
+        if (callbacks.onData && callbacks.onData(data)) {
           clearInterval(poll);
         }
       })

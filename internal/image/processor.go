@@ -332,8 +332,7 @@ func contentBoundsFromImage(decoded image.Image, isPNG bool) image.Rectangle {
 				r, g, b, _ := decoded.At(x, y).RGBA()
 				r8, g8, b8 := r>>8, g>>8, b>>8
 				nearWhite := r8 > 240 && g8 > 240 && b8 > 240
-				nearBlack := r8 < 15 && g8 < 15 && b8 < 15
-				isContent = !nearWhite && !nearBlack
+				isContent = !nearWhite
 			}
 			if isContent {
 				if x < minX {
@@ -383,6 +382,10 @@ func ContentBounds(src io.Reader) (content, original image.Rectangle, err error)
 // contentBoundsFromImage) plus a configurable margin in pixels on each side.
 // The margin is clamped to the original image bounds.
 func TrimWithMargin(src io.Reader, margin int) ([]byte, string, error) {
+	if margin < 0 {
+		margin = 0
+	}
+
 	format, replay, err := DetectFormat(src)
 	if err != nil {
 		return nil, "", fmt.Errorf("detecting format: %w", err)

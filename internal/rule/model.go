@@ -41,7 +41,7 @@ type RuleConfig struct {
 	MinLength           int     `json:"min_length,omitempty"`
 	Severity            string  `json:"severity,omitempty"`              // "error", "warning", "info"
 	SelectBestCandidate bool    `json:"select_best_candidate,omitempty"` // auto-pick highest-res when multiple candidates
-	ThresholdPercent    float64 `json:"threshold_percent,omitempty"`     // minimum transparent border % per side to trigger
+	ThresholdPercent    float64 `json:"threshold_percent,omitempty"`     // rule-specific threshold: per-edge border % (logo_trimmable) or total padding area % (logo_padding)
 	TrimMargin          int     `json:"trim_margin,omitempty"`           // pixels of padding to keep after trimming (logo_padding)
 	ArticleMode         string  `json:"article_mode,omitempty"`          // "prefix" (default), "suffix", "strip"
 	DiscoveryOnly       bool    `json:"-"`                               // transient: set by pipeline in manual mode, never persisted

@@ -3803,8 +3803,8 @@ templ ruleToggleScript() {
 					showRuleToast('Rule evaluation polling timed out.', true);
 					finishRunBtn(btn, origText);
 				},
-				onHTTPError: function() {
-					showRuleToast('Status check failed.', true);
+				onHTTPError: function(status) {
+					showRuleToast('Status check failed (HTTP ' + status + ').', true);
 					finishRunBtn(btn, origText);
 				},
 				onNetworkError: function() {
