@@ -85,22 +85,31 @@ docker_manifests:
       - "ghcr.io/sydlexius/stillwater:{{ .Version }}-amd64"
       - "ghcr.io/sydlexius/stillwater:{{ .Version }}-arm64"
 
+  - name_template: "ghcr.io/sydlexius/stillwater:beta"
+    skip_push: '{{ not .Prerelease }}'
+    image_templates:
+      - "ghcr.io/sydlexius/stillwater:{{ .Version }}-amd64"
+      - "ghcr.io/sydlexius/stillwater:{{ .Version }}-arm64"
+
 changelog:
   sort: asc
   use: github
   groups:
+    - title: Breaking Changes
+      regexp: '(?i)^(?:.*!:|BREAKING(?: CHANGE)?:)'
+      order: 0
     - title: Features
       regexp: '^feat(\(.+\))?:'
-      order: 0
+      order: 1
     - title: Bug Fixes
       regexp: '^fix(\(.+\))?:'
-      order: 1
+      order: 2
     - title: Performance
       regexp: '^perf(\(.+\))?:'
-      order: 2
+      order: 3
     - title: Refactoring
       regexp: '^refactor(\(.+\))?:'
-      order: 3
+      order: 4
     - title: Other
       order: 999
   filters:
@@ -119,3 +128,15 @@ release:
     name: stillwater
   prerelease: auto
   make_latest: auto
+  header: |
+    ## Stillwater {{ .Tag }}
+
+    {{ if .Prerelease }}> This is a pre-release version. Use the `beta` Docker tag to try it out.{{ end }}
+  footer: |
+    **Docker:** `docker pull ghcr.io/sydlexius/stillwater:{{ .Version }}`
+
+    {{- if .PreviousTag }}
+    **Full Changelog:** [{{ .PreviousTag }}...{{ .Tag }}](https://github.com/sydlexius/stillwater/compare/{{ .PreviousTag }}...{{ .Tag }})
+    {{- else }}
+    **Full Changelog:** [{{ .Tag }}](https://github.com/sydlexius/stillwater/releases/tag/{{ .Tag }})
+    {{- end }}
