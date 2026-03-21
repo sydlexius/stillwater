@@ -254,7 +254,7 @@ func (s *Service) ValidateAPIToken(ctx context.Context, token string) (userID st
 	}
 
 	if status != string(TokenStatusActive) {
-		return "", "", errors.New("api token revoked")
+		return "", "", fmt.Errorf("api token is %s", status)
 	}
 
 	// Best-effort update of last_used_at using the caller's context.
@@ -342,15 +342,25 @@ func (s *Service) ArchiveAPIToken(ctx context.Context, id, userID string) error 
 	if status == string(TokenStatusActive) {
 		return ErrTokenActive
 	}
+	if status == string(TokenStatusArchived) {
+		return ErrTokenNotRevoked // already archived
+	}
 	if status != string(TokenStatusRevoked) {
 		return ErrTokenNotRevoked
 	}
 
-	_, err = s.db.ExecContext(ctx, `
-		UPDATE api_tokens SET status = 'archived' WHERE id = ? AND user_id = ?
+	result, err := s.db.ExecContext(ctx, `
+		UPDATE api_tokens SET status = 'archived' WHERE id = ? AND user_id = ? AND status = 'revoked'
 	`, id, userID)
 	if err != nil {
 		return fmt.Errorf("archiving api token: %w", err)
+	}
+	n, raErr := result.RowsAffected()
+	if raErr != nil {
+		return fmt.Errorf("checking rows affected: %w", raErr)
+	}
+	if n == 0 {
+		return ErrTokenNotFound
 	}
 	return nil
 }
@@ -376,11 +386,18 @@ func (s *Service) UnarchiveAPIToken(ctx context.Context, id, userID string) erro
 		return ErrTokenNotArchived
 	}
 
-	_, err = s.db.ExecContext(ctx, `
-		UPDATE api_tokens SET status = 'revoked' WHERE id = ? AND user_id = ?
+	result, err := s.db.ExecContext(ctx, `
+		UPDATE api_tokens SET status = 'revoked' WHERE id = ? AND user_id = ? AND status = 'archived'
 	`, id, userID)
 	if err != nil {
 		return fmt.Errorf("unarchiving api token: %w", err)
+	}
+	n, raErr := result.RowsAffected()
+	if raErr != nil {
+		return fmt.Errorf("checking rows affected: %w", raErr)
+	}
+	if n == 0 {
+		return ErrTokenNotFound
 	}
 	return nil
 }
@@ -420,11 +437,18 @@ func (s *Service) DeleteAPIToken(ctx context.Context, id, userID string) error {
 	}
 
 	// Delete the token record.
-	_, err = tx.ExecContext(ctx, `
+	delResult, err := tx.ExecContext(ctx, `
 		DELETE FROM api_tokens WHERE id = ? AND user_id = ?
 	`, id, userID)
 	if err != nil {
 		return fmt.Errorf("deleting api token: %w", err)
+	}
+	delN, raErr := delResult.RowsAffected()
+	if raErr != nil {
+		return fmt.Errorf("checking delete rows affected: %w", raErr)
+	}
+	if delN == 0 {
+		return ErrTokenNotFound
 	}
 
 	// Write a final audit entry recording the deletion.

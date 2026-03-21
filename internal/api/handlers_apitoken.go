@@ -4,6 +4,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
@@ -85,7 +86,8 @@ func (r *Router) handleListAPITokens(w http.ResponseWriter, req *http.Request) {
 
 	var tokens []auth.APIToken
 	var err error
-	if req.URL.Query().Get("include_archived") == "true" {
+	includeArchived, _ := strconv.ParseBool(req.URL.Query().Get("include_archived"))
+	if includeArchived {
 		tokens, err = r.authService.ListAPITokensAll(req.Context(), userID)
 	} else {
 		tokens, err = r.authService.ListAPITokens(req.Context(), userID)

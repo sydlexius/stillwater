@@ -261,6 +261,30 @@ func TestUnarchive_RestoresToRevoked(t *testing.T) {
 	}
 }
 
+func TestUnarchiveNonArchivedToken_Returns409(t *testing.T) {
+	r, authSvc, userID := testRouterWithAuth(t)
+
+	// Create and revoke a token (but do not archive).
+	_, tokenID, err := authSvc.CreateAPIToken(context.Background(), userID, "unarchive-error-test", "read")
+	if err != nil {
+		t.Fatalf("creating token: %v", err)
+	}
+	if err := authSvc.RevokeAPIToken(context.Background(), tokenID, userID); err != nil {
+		t.Fatalf("revoking token: %v", err)
+	}
+
+	// Try to unarchive a revoked (non-archived) token.
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/auth/tokens/"+tokenID+"/unarchive", nil)
+	req.SetPathValue("id", tokenID)
+	req = withUserCtx(req, userID)
+	w := httptest.NewRecorder()
+	r.handleUnarchiveAPIToken(w, req)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("unarchive non-archived: status = %d, want %d; body: %s", w.Code, http.StatusConflict, w.Body.String())
+	}
+}
+
 func TestDeleteRevokedToken_AuditAnonymization(t *testing.T) {
 	r, authSvc, userID := testRouterWithAuth(t)
 
