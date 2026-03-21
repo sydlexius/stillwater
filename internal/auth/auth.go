@@ -16,8 +16,21 @@ import (
 
 const sessionDuration = 24 * time.Hour
 
-// ErrTokenNotFound is returned when an API token does not exist or is already revoked.
-var ErrTokenNotFound = errors.New("token not found or already revoked")
+// Sentinel errors for token operations.
+var (
+	// ErrTokenNotFound is returned when an API token does not exist or is already revoked.
+	ErrTokenNotFound = errors.New("token not found or already revoked")
+
+	// ErrTokenNotRevoked is returned when an operation requires a revoked token
+	// but the token is still active (or already archived).
+	ErrTokenNotRevoked = errors.New("token must be revoked before this operation")
+
+	// ErrTokenActive is returned when trying to delete or archive an active token.
+	ErrTokenActive = errors.New("token is still active; revoke it first")
+
+	// ErrTokenNotArchived is returned when trying to unarchive a token that is not archived.
+	ErrTokenNotArchived = errors.New("token must be archived before this operation")
+)
 
 // APITokenPrefix identifies Stillwater API tokens.
 const APITokenPrefix = "sw_"
@@ -41,15 +54,37 @@ var ValidScopes = map[TokenScope]bool{
 	ScopeAdmin:   true,
 }
 
+// TokenStatus represents the lifecycle state of an API token.
+type TokenStatus string
+
+// Token lifecycle states: Active -> Revoked -> Archived -> Deleted.
+const (
+	TokenStatusActive   TokenStatus = "active"
+	TokenStatusRevoked  TokenStatus = "revoked"
+	TokenStatusArchived TokenStatus = "archived"
+)
+
 // APIToken represents an API token (without the secret hash).
 type APIToken struct {
-	ID         string  `json:"id"`
-	Name       string  `json:"name"`
-	Scopes     string  `json:"scopes"`
-	UserID     string  `json:"user_id"`
-	CreatedAt  string  `json:"created_at"`
-	LastUsedAt *string `json:"last_used_at,omitempty"`
-	RevokedAt  *string `json:"revoked_at,omitempty"`
+	ID         string      `json:"id"`
+	Name       string      `json:"name"`
+	Scopes     string      `json:"scopes"`
+	UserID     string      `json:"user_id"`
+	Status     TokenStatus `json:"status"`
+	CreatedAt  string      `json:"created_at"`
+	LastUsedAt *string     `json:"last_used_at,omitempty"`
+	RevokedAt  *string     `json:"revoked_at,omitempty"`
+}
+
+// AuditEntry represents a single audit log entry for token lifecycle events.
+type AuditEntry struct {
+	ID        string `json:"id"`
+	Action    string `json:"action"`
+	TokenID   string `json:"token_id,omitempty"`
+	TokenName string `json:"token_name"`
+	UserID    string `json:"user_id"`
+	Detail    string `json:"detail,omitempty"`
+	CreatedAt string `json:"created_at"`
 }
 
 // Service provides authentication operations.
@@ -190,8 +225,8 @@ func (s *Service) CreateAPIToken(ctx context.Context, userID, name string, scope
 	now := time.Now().UTC().Format(time.RFC3339)
 
 	_, err = s.db.ExecContext(ctx, `
-		INSERT INTO api_tokens (id, name, token_hash, scopes, user_id, created_at)
-		VALUES (?, ?, ?, ?, ?, ?)
+		INSERT INTO api_tokens (id, name, token_hash, scopes, user_id, created_at, status)
+		VALUES (?, ?, ?, ?, ?, ?, 'active')
 	`, id, name, tokenHash, scopes, userID, now)
 	if err != nil {
 		return "", "", fmt.Errorf("inserting api token: %w", err)
@@ -201,15 +236,16 @@ func (s *Service) CreateAPIToken(ctx context.Context, userID, name string, scope
 }
 
 // ValidateAPIToken checks if an API token is valid and returns the user ID and scopes.
-// Updates last_used_at asynchronously.
+// Only tokens with status "active" are considered valid.
+// Updates last_used_at on successful validation.
 func (s *Service) ValidateAPIToken(ctx context.Context, token string) (userID string, scopes string, err error) {
 	hash := sha256.Sum256([]byte(token))
 	tokenHash := hex.EncodeToString(hash[:])
 
-	var revokedAt sql.NullString
+	var status string
 	err = s.db.QueryRowContext(ctx, `
-		SELECT user_id, scopes, revoked_at FROM api_tokens WHERE token_hash = ?
-	`, tokenHash).Scan(&userID, &scopes, &revokedAt)
+		SELECT user_id, scopes, status FROM api_tokens WHERE token_hash = ?
+	`, tokenHash).Scan(&userID, &scopes, &status)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", "", errors.New("invalid api token")
 	}
@@ -217,8 +253,8 @@ func (s *Service) ValidateAPIToken(ctx context.Context, token string) (userID st
 		return "", "", fmt.Errorf("querying api token: %w", err)
 	}
 
-	if revokedAt.Valid {
-		return "", "", errors.New("api token revoked")
+	if status != string(TokenStatusActive) {
+		return "", "", fmt.Errorf("api token is %s", status)
 	}
 
 	// Best-effort update of last_used_at using the caller's context.
@@ -229,12 +265,29 @@ func (s *Service) ValidateAPIToken(ctx context.Context, token string) (userID st
 	return userID, scopes, nil
 }
 
-// ListAPITokens returns all tokens for a user (never exposes the hash).
+// ListAPITokens returns all non-archived tokens for a user (never exposes the hash).
+// Use ListAPITokensAll to include archived tokens.
 func (s *Service) ListAPITokens(ctx context.Context, userID string) ([]APIToken, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, name, scopes, user_id, created_at, last_used_at, revoked_at
-		FROM api_tokens WHERE user_id = ? ORDER BY created_at DESC
-	`, userID)
+	return s.listTokens(ctx, userID, false)
+}
+
+// ListAPITokensAll returns all tokens for a user, including archived ones.
+func (s *Service) ListAPITokensAll(ctx context.Context, userID string) ([]APIToken, error) {
+	return s.listTokens(ctx, userID, true)
+}
+
+// listTokens queries tokens for a user. When includeArchived is false, tokens
+// with status "archived" are excluded.
+func (s *Service) listTokens(ctx context.Context, userID string, includeArchived bool) ([]APIToken, error) {
+	query := `
+		SELECT id, name, scopes, user_id, status, created_at, last_used_at, revoked_at
+		FROM api_tokens WHERE user_id = ?`
+	if !includeArchived {
+		query += ` AND status != 'archived'`
+	}
+	query += ` ORDER BY created_at DESC`
+
+	rows, err := s.db.QueryContext(ctx, query, userID)
 	if err != nil {
 		return nil, fmt.Errorf("listing api tokens: %w", err)
 	}
@@ -243,7 +296,7 @@ func (s *Service) ListAPITokens(ctx context.Context, userID string) ([]APIToken,
 	var tokens []APIToken
 	for rows.Next() {
 		var t APIToken
-		if err := rows.Scan(&t.ID, &t.Name, &t.Scopes, &t.UserID, &t.CreatedAt, &t.LastUsedAt, &t.RevokedAt); err != nil {
+		if err := rows.Scan(&t.ID, &t.Name, &t.Scopes, &t.UserID, &t.Status, &t.CreatedAt, &t.LastUsedAt, &t.RevokedAt); err != nil {
 			return nil, fmt.Errorf("scanning api token: %w", err)
 		}
 		tokens = append(tokens, t)
@@ -255,16 +308,192 @@ func (s *Service) ListAPITokens(ctx context.Context, userID string) ([]APIToken,
 func (s *Service) RevokeAPIToken(ctx context.Context, id, userID string) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 	result, err := s.db.ExecContext(ctx, `
-		UPDATE api_tokens SET revoked_at = ? WHERE id = ? AND user_id = ? AND revoked_at IS NULL
+		UPDATE api_tokens SET revoked_at = ?, status = 'revoked'
+		WHERE id = ? AND user_id = ? AND status = 'active'
 	`, now, id, userID)
 	if err != nil {
 		return fmt.Errorf("revoking api token: %w", err)
 	}
-	n, _ := result.RowsAffected()
+	n, raErr := result.RowsAffected()
+	if raErr != nil {
+		return fmt.Errorf("checking rows affected: %w", raErr)
+	}
 	if n == 0 {
 		return ErrTokenNotFound
 	}
 	return nil
+}
+
+// ArchiveAPIToken moves a revoked token to archived status.
+// Only revoked tokens can be archived. Active tokens return ErrTokenActive.
+func (s *Service) ArchiveAPIToken(ctx context.Context, id, userID string) error {
+	// First check the current status to return the right error.
+	var status string
+	err := s.db.QueryRowContext(ctx, `
+		SELECT status FROM api_tokens WHERE id = ? AND user_id = ?
+	`, id, userID).Scan(&status)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrTokenNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("checking token status: %w", err)
+	}
+
+	if status == string(TokenStatusActive) {
+		return ErrTokenActive
+	}
+	if status == string(TokenStatusArchived) {
+		return ErrTokenNotRevoked // already archived
+	}
+	if status != string(TokenStatusRevoked) {
+		return ErrTokenNotRevoked
+	}
+
+	result, err := s.db.ExecContext(ctx, `
+		UPDATE api_tokens SET status = 'archived' WHERE id = ? AND user_id = ? AND status = 'revoked'
+	`, id, userID)
+	if err != nil {
+		return fmt.Errorf("archiving api token: %w", err)
+	}
+	n, raErr := result.RowsAffected()
+	if raErr != nil {
+		return fmt.Errorf("checking rows affected: %w", raErr)
+	}
+	if n == 0 {
+		return ErrTokenNotFound
+	}
+	return nil
+}
+
+// UnarchiveAPIToken restores an archived token to revoked status.
+// Only archived tokens can be unarchived.
+func (s *Service) UnarchiveAPIToken(ctx context.Context, id, userID string) error {
+	var status string
+	err := s.db.QueryRowContext(ctx, `
+		SELECT status FROM api_tokens WHERE id = ? AND user_id = ?
+	`, id, userID).Scan(&status)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrTokenNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("checking token status: %w", err)
+	}
+
+	if status == string(TokenStatusActive) {
+		return ErrTokenActive
+	}
+	if status != string(TokenStatusArchived) {
+		return ErrTokenNotArchived
+	}
+
+	result, err := s.db.ExecContext(ctx, `
+		UPDATE api_tokens SET status = 'revoked' WHERE id = ? AND user_id = ? AND status = 'archived'
+	`, id, userID)
+	if err != nil {
+		return fmt.Errorf("unarchiving api token: %w", err)
+	}
+	n, raErr := result.RowsAffected()
+	if raErr != nil {
+		return fmt.Errorf("checking rows affected: %w", raErr)
+	}
+	if n == 0 {
+		return ErrTokenNotFound
+	}
+	return nil
+}
+
+// DeleteAPIToken permanently removes a token and anonymizes its audit log entries.
+// Only revoked or archived tokens can be deleted. Active tokens return ErrTokenActive.
+func (s *Service) DeleteAPIToken(ctx context.Context, id, userID string) error {
+	// Check current status.
+	var status, name string
+	err := s.db.QueryRowContext(ctx, `
+		SELECT status, name FROM api_tokens WHERE id = ? AND user_id = ?
+	`, id, userID).Scan(&status, &name)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrTokenNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("checking token for delete: %w", err)
+	}
+
+	if status == string(TokenStatusActive) {
+		return ErrTokenActive
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("beginning delete transaction: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	// Anonymize audit log entries that reference this token.
+	_, err = tx.ExecContext(ctx, `
+		UPDATE audit_log SET token_id = NULL, token_name = '[deleted token]'
+		WHERE token_id = ?
+	`, id)
+	if err != nil {
+		return fmt.Errorf("anonymizing audit log: %w", err)
+	}
+
+	// Delete the token record.
+	delResult, err := tx.ExecContext(ctx, `
+		DELETE FROM api_tokens WHERE id = ? AND user_id = ?
+	`, id, userID)
+	if err != nil {
+		return fmt.Errorf("deleting api token: %w", err)
+	}
+	delN, raErr := delResult.RowsAffected()
+	if raErr != nil {
+		return fmt.Errorf("checking delete rows affected: %w", raErr)
+	}
+	if delN == 0 {
+		return ErrTokenNotFound
+	}
+
+	// Write a final audit entry recording the deletion.
+	now := time.Now().UTC().Format(time.RFC3339)
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO audit_log (id, action, token_id, token_name, user_id, detail, created_at)
+		VALUES (?, 'token_deleted', NULL, ?, ?, 'permanently deleted', ?)
+	`, uuid.New().String(), name, userID, now)
+	if err != nil {
+		return fmt.Errorf("writing deletion audit entry: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("committing token delete: %w", err)
+	}
+	return nil
+}
+
+// WriteAuditLog records a token lifecycle event in the audit log.
+func (s *Service) WriteAuditLog(ctx context.Context, action, tokenID, tokenName, userID, detail string) error {
+	now := time.Now().UTC().Format(time.RFC3339)
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO audit_log (id, action, token_id, token_name, user_id, detail, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+	`, uuid.New().String(), action, tokenID, tokenName, userID, detail, now)
+	if err != nil {
+		return fmt.Errorf("writing audit log: %w", err)
+	}
+	return nil
+}
+
+// GetAPIToken returns a single token by ID for the given user.
+func (s *Service) GetAPIToken(ctx context.Context, id, userID string) (*APIToken, error) {
+	var t APIToken
+	err := s.db.QueryRowContext(ctx, `
+		SELECT id, name, scopes, user_id, status, created_at, last_used_at, revoked_at
+		FROM api_tokens WHERE id = ? AND user_id = ?
+	`, id, userID).Scan(&t.ID, &t.Name, &t.Scopes, &t.UserID, &t.Status, &t.CreatedAt, &t.LastUsedAt, &t.RevokedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrTokenNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("getting api token: %w", err)
+	}
+	return &t, nil
 }
 
 // PrehashPassword hashes the password with SHA-256 before bcrypt to support

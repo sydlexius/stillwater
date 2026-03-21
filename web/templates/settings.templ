@@ -48,6 +48,7 @@ type SettingsData struct {
 	BadgeSeverityInfo    bool
 	RuleScheduleHours    int
 	APITokens            []auth.APIToken
+	ArchivedAPITokens    []auth.APIToken
 	BackupRetention      int
 	BackupMaxAgeDays     int
 	SymlinkSupported     bool
@@ -932,10 +933,10 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 							<p class="text-sm text-gray-500 dark:text-gray-400 italic">No API tokens created.</p>
 						}
 						for _, tok := range data.APITokens {
-							<div class={ "flex items-center justify-between py-2", templ.KV("opacity-50", tok.RevokedAt != nil) }>
+							<div class={ "flex items-center justify-between py-2", templ.KV("opacity-50", tok.Status == auth.TokenStatusRevoked) }>
 								<div>
 									<span class="text-sm font-medium text-gray-900 dark:text-gray-100">{ tok.Name }</span>
-									if tok.RevokedAt != nil {
+									if tok.Status == auth.TokenStatusRevoked {
 										<span class="ml-2 text-xs font-medium text-red-600 dark:text-red-400">Revoked</span>
 									}
 									<div class="flex gap-1 mt-1">
@@ -952,17 +953,91 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 										}
 									</p>
 								</div>
-								if tok.RevokedAt == nil {
-									<button
-										type="button"
-										class="text-sm px-3 py-1 rounded border border-red-300 dark:border-red-600 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-										hx-delete={ "/api/v1/auth/tokens/" + tok.ID }
-										hx-confirm="Revoke this API token? Applications using it will lose access."
-										hx-on::after-request="if(event.detail.successful) window.location.reload()"
-									>
-										Revoke
-									</button>
-								}
+								<div class="flex gap-2">
+									if tok.Status == auth.TokenStatusActive {
+										<button
+											type="button"
+											class="text-sm px-3 py-1 rounded border border-red-300 dark:border-red-600 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+											hx-delete={ "/api/v1/auth/tokens/" + tok.ID }
+											hx-confirm="Revoke this API token? Applications using it will lose access."
+											hx-on::after-request="if(event.detail.successful) { window.location.reload(); } else { try { var r=JSON.parse(event.detail.xhr.responseText); showToast(r.error||'Operation failed'); } catch(e) { showToast('Operation failed'); } }"
+											aria-label={ "Revoke token " + tok.Name }
+										>
+											Revoke
+										</button>
+									}
+									if tok.Status == auth.TokenStatusRevoked {
+										<button
+											type="button"
+											class="text-sm px-3 py-1 rounded border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+											hx-patch={ "/api/v1/auth/tokens/" + tok.ID + "/archive" }
+											hx-confirm="Archive this token? It will be hidden from the main list."
+											hx-on::after-request="if(event.detail.successful) { window.location.reload(); } else { try { var r=JSON.parse(event.detail.xhr.responseText); showToast(r.error||'Operation failed'); } catch(e) { showToast('Operation failed'); } }"
+											aria-label={ "Archive token " + tok.Name }
+										>
+											Archive
+										</button>
+									}
+								</div>
+							</div>
+						}
+						<!-- Archived tokens section -->
+						if len(data.ArchivedAPITokens) > 0 {
+							<div class="border-t border-gray-200 dark:border-gray-700 pt-3 mt-3">
+								<button
+									type="button"
+									class="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
+									onclick="var el = document.getElementById('archived-tokens'); el.classList.toggle('hidden'); this.setAttribute('aria-expanded', el.classList.contains('hidden') ? 'false' : 'true'); this.querySelector('span').textContent = el.classList.contains('hidden') ? 'Show Archived' : 'Hide Archived'"
+									aria-expanded="false"
+									aria-controls="archived-tokens"
+								>
+									<span>Show Archived</span>
+									{ fmt.Sprintf(" (%d)", len(data.ArchivedAPITokens)) }
+								</button>
+								<div id="archived-tokens" class="hidden mt-3 space-y-3">
+									for _, tok := range data.ArchivedAPITokens {
+										<div class="flex items-center justify-between py-2 opacity-40">
+											<div>
+												<span class="text-sm font-medium text-gray-900 dark:text-gray-100">{ tok.Name }</span>
+												<span class="ml-2 text-xs font-medium text-gray-500 dark:text-gray-400">Archived</span>
+												<div class="flex gap-1 mt-1">
+													for _, scope := range strings.Split(tok.Scopes, ",") {
+														if strings.TrimSpace(scope) != "" {
+															<span class={ "inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium", scopePillClasses(scope) }>{ strings.TrimSpace(scope) }</span>
+														}
+													}
+												</div>
+												<p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+													Created { tok.CreatedAt }
+													if tok.LastUsedAt != nil {
+														{ " | Last used " + *tok.LastUsedAt }
+													}
+												</p>
+											</div>
+											<div class="flex gap-2">
+												<button
+													type="button"
+													class="text-sm px-3 py-1 rounded border border-blue-300 dark:border-blue-600 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+													hx-patch={ "/api/v1/auth/tokens/" + tok.ID + "/unarchive" }
+													hx-on::after-request="if(event.detail.successful) { window.location.reload(); } else { try { var r=JSON.parse(event.detail.xhr.responseText); showToast(r.error||'Operation failed'); } catch(e) { showToast('Operation failed'); } }"
+													aria-label={ "Unarchive token " + tok.Name }
+												>
+													Unarchive
+												</button>
+												<button
+													type="button"
+													class="text-sm px-3 py-1 rounded border border-red-300 dark:border-red-600 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+													hx-delete={ "/api/v1/auth/tokens/" + tok.ID + "/permanent" }
+													hx-confirm="Permanently delete this token? This cannot be undone. Audit log entries will be anonymized."
+													hx-on::after-request="if(event.detail.successful) { window.location.reload(); } else { try { var r=JSON.parse(event.detail.xhr.responseText); showToast(r.error||'Operation failed'); } catch(e) { showToast('Operation failed'); } }"
+													aria-label={ "Permanently delete token " + tok.Name }
+												>
+													Delete
+												</button>
+											</div>
+										</div>
+									}
+								</div>
 							</div>
 						}
 					</div>
