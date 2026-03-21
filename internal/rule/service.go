@@ -358,6 +358,9 @@ func (s *Service) GetViolationTrend(ctx context.Context, days int) ([]ViolationT
 	if days <= 0 {
 		days = 30
 	}
+	if days > 365 {
+		days = 365
+	}
 
 	// Build a full list of date strings covering the range.
 	now := time.Now().UTC()
