@@ -358,8 +358,10 @@ func (s *Service) GetViolationTrend(ctx context.Context, days int) ([]ViolationT
 	if days <= 0 {
 		days = 30
 	}
-	if days > 365 {
-		days = 365
+	// Hard cap prevents unbounded allocations from untrusted input.
+	const maxDays = 365
+	if days > maxDays {
+		days = maxDays
 	}
 
 	// Build a full list of date strings covering the range.
@@ -371,9 +373,10 @@ func (s *Service) GetViolationTrend(ctx context.Context, days int) ([]ViolationT
 	startStr := start.Format(time.RFC3339)
 	endStr := end.Format(time.RFC3339)
 
+	// Capacity is bounded by maxDays (365) above.
 	dateMap := make(map[string]*ViolationTrendPoint, days)
-	var dates []string
-	for i := 0; i < days; i++ {
+	dates := make([]string, 0, days)
+	for i := range days {
 		d := start.AddDate(0, 0, i).Format("2006-01-02")
 		dates = append(dates, d)
 		dateMap[d] = &ViolationTrendPoint{Date: d}
