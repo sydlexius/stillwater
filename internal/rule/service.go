@@ -351,6 +351,99 @@ func (s *Service) GetHealthHistory(ctx context.Context, from, to time.Time) ([]H
 	return snapshots, rows.Err()
 }
 
+// GetViolationTrend returns daily violation creation and resolution counts over a date range.
+// days is the number of past days to include; if <= 0, defaults to 30.
+// The result includes one entry per calendar day within the range, even if both counts are zero.
+func (s *Service) GetViolationTrend(ctx context.Context, days int) ([]ViolationTrendPoint, error) {
+	if days <= 0 {
+		days = 30
+	}
+	// Hard cap prevents unbounded allocations from untrusted input.
+	const maxDays = 365
+	if days > maxDays {
+		days = maxDays
+	}
+
+	// Build a full list of date strings covering the range.
+	now := time.Now().UTC()
+	start := now.AddDate(0, 0, -(days - 1)).Truncate(24 * time.Hour)
+	// end is the start of the day after "now", so the range [start, end) covers all days.
+	end := now.Truncate(24*time.Hour).AddDate(0, 0, 1)
+
+	startStr := start.Format(time.RFC3339)
+	endStr := end.Format(time.RFC3339)
+
+	// Use the constant directly so CodeQL can verify the bound statically.
+	dateMap := make(map[string]*ViolationTrendPoint, maxDays)
+	dates := make([]string, 0, maxDays)
+	for i := range days {
+		d := start.AddDate(0, 0, i).Format("2006-01-02")
+		dates = append(dates, d)
+		dateMap[d] = &ViolationTrendPoint{Date: d}
+	}
+
+	// Query daily created counts. Use raw timestamp range for index friendliness;
+	// date() is only used in SELECT/GROUP BY for bucketing.
+	createdRows, err := s.db.QueryContext(ctx, `
+		SELECT date(created_at) AS day, COUNT(*) AS cnt
+		FROM rule_violations
+		WHERE created_at >= ? AND created_at < ?
+		GROUP BY day
+	`, startStr, endStr)
+	if err != nil {
+		return nil, fmt.Errorf("querying violation created trend: %w", err)
+	}
+	defer createdRows.Close() //nolint:errcheck
+
+	for createdRows.Next() {
+		var day string
+		var cnt int
+		if err := createdRows.Scan(&day, &cnt); err != nil {
+			return nil, fmt.Errorf("scanning created trend row: %w", err)
+		}
+		if p, ok := dateMap[day]; ok {
+			p.Created = cnt
+		}
+	}
+	if err := createdRows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating created trend rows: %w", err)
+	}
+
+	// Query daily resolved counts. Same raw timestamp range approach.
+	resolvedRows, err := s.db.QueryContext(ctx, `
+		SELECT date(resolved_at) AS day, COUNT(*) AS cnt
+		FROM rule_violations
+		WHERE resolved_at IS NOT NULL
+		  AND resolved_at >= ? AND resolved_at < ?
+		GROUP BY day
+	`, startStr, endStr)
+	if err != nil {
+		return nil, fmt.Errorf("querying violation resolved trend: %w", err)
+	}
+	defer resolvedRows.Close() //nolint:errcheck
+
+	for resolvedRows.Next() {
+		var day string
+		var cnt int
+		if err := resolvedRows.Scan(&day, &cnt); err != nil {
+			return nil, fmt.Errorf("scanning resolved trend row: %w", err)
+		}
+		if p, ok := dateMap[day]; ok {
+			p.Resolved = cnt
+		}
+	}
+	if err := resolvedRows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating resolved trend rows: %w", err)
+	}
+
+	// Assemble in date order.
+	result := make([]ViolationTrendPoint, 0, maxDays)
+	for _, d := range dates {
+		result = append(result, *dateMap[d])
+	}
+	return result, nil
+}
+
 // GetLatestHealthSnapshot returns the most recent health snapshot, or nil if none exist.
 func (s *Service) GetLatestHealthSnapshot(ctx context.Context) (*HealthSnapshot, error) {
 	row := s.db.QueryRowContext(ctx, `

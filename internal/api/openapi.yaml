@@ -3933,6 +3933,48 @@ paths:
               schema:
                 $ref: "#/components/schemas/Status"
 
+  /violations/trend:
+    get:
+      tags: [Reports]
+      summary: Get daily violation creation and resolution counts
+      operationId: getViolationTrend
+      parameters:
+        - name: days
+          in: query
+          description: Number of past days to include. Values outside 1-365 default to 30.
+          schema:
+            type: integer
+            default: 30
+            minimum: 1
+            maximum: 365
+      responses:
+        "200":
+          description: Daily violation trend data
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [trend]
+                properties:
+                  trend:
+                    type: array
+                    items:
+                      type: object
+                      required: [date, created, resolved]
+                      properties:
+                        date:
+                          type: string
+                          format: date
+                          description: Calendar date (YYYY-MM-DD)
+                        created:
+                          type: integer
+                          description: Number of violations created on this date
+                        resolved:
+                          type: integer
+                          description: Number of violations resolved on this date
+        "500":
+          description: Internal server error
+
   # --- Report extras ---
 
   /reports/health/by-library:

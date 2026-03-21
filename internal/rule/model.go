@@ -135,6 +135,13 @@ type ViolationGroup struct {
 	Violations []RuleViolation
 }
 
+// ViolationTrendPoint holds daily counts of violations created and resolved.
+type ViolationTrendPoint struct {
+	Date     string `json:"date"`     // YYYY-MM-DD
+	Created  int    `json:"created"`  // violations with created_at on this date
+	Resolved int    `json:"resolved"` // violations with resolved_at on this date
+}
+
 // MarshalConfig serializes a RuleConfig to a JSON string.
 func MarshalConfig(cfg RuleConfig) string {
 	data, _ := json.Marshal(cfg)

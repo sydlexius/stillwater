@@ -305,6 +305,24 @@ func buildOverallLibrarySummary(artists []artist.Artist, results []rule.Evaluati
 	return ls
 }
 
+// handleViolationTrend returns daily violation creation and resolution counts.
+// GET /api/v1/violations/trend?days=30
+func (r *Router) handleViolationTrend(w http.ResponseWriter, req *http.Request) {
+	days := intQuery(req, "days", 30)
+	if days <= 0 || days > 365 {
+		days = 30
+	}
+
+	trend, err := r.ruleService.GetViolationTrend(req.Context(), days)
+	if err != nil {
+		r.logger.Error("fetching violation trend", "error", err)
+		writeError(w, req, http.StatusInternalServerError, "failed to fetch violation trend")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"trend": trend})
+}
+
 // handleReportCompliance returns a paginated compliance report.
 // GET /api/v1/reports/compliance
 func (r *Router) handleReportCompliance(w http.ResponseWriter, req *http.Request) {
