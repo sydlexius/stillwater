@@ -96,7 +96,7 @@ changelog:
   use: github
   groups:
     - title: Breaking Changes
-      regexp: '^.*breaking|^BREAKING'
+      regexp: '(?i)^(?:.*!:|BREAKING(?: CHANGE)?:)'
       order: 0
     - title: Features
       regexp: '^feat(\(.+\))?:'
@@ -135,4 +135,8 @@ release:
   footer: |
     **Docker:** `docker pull ghcr.io/sydlexius/stillwater:{{ .Version }}`
 
+    {{- if .PreviousTag }}
     **Full Changelog:** [{{ .PreviousTag }}...{{ .Tag }}](https://github.com/sydlexius/stillwater/compare/{{ .PreviousTag }}...{{ .Tag }})
+    {{- else }}
+    **Full Changelog:** [{{ .Tag }}](https://github.com/sydlexius/stillwater/releases/tag/{{ .Tag }})
+    {{- end }}
