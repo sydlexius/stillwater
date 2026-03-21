@@ -115,9 +115,16 @@ func scopePillClasses(scope string) string {
 }
 
 // tokenAfterRequest returns an inline JS handler for token lifecycle buttons.
-// On success it removes the row from the DOM with a fade-out animation.
-// On failure it shows a toast with the error message.
+// Revoke reloads the page so the token moves to the archive section correctly.
+// Delete fades out the row. Errors show a toast.
 func tokenAfterRequest(rowID, action string) string {
+	if action == "revoke" {
+		return "if(event.detail.successful) { " +
+			"showSuccessToast('revoke successful'); " +
+			"setTimeout(function(){ window.location.reload(); }, 500); " +
+			"} else { try { var r=JSON.parse(event.detail.xhr.responseText); " +
+			"showToast(r.error||'Operation failed'); } catch(e) { showToast('Operation failed'); } }"
+	}
 	return "if(event.detail.successful) { " +
 		"var row = document.getElementById('" + rowID + "'); " +
 		"if(row) { row.style.transition='opacity 0.3s'; row.style.opacity='0'; " +
@@ -969,7 +976,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 						</p>
 					</div>
 					<div class="px-6 py-4 space-y-3">
-						if !hasActiveTokens(data.APITokens) && !hasRevokedTokens(data.APITokens) {
+						if len(data.APITokens) == 0 {
 							<p class="text-sm text-gray-500 dark:text-gray-400 italic">No API tokens created.</p>
 						}
 						for _, tok := range data.APITokens {

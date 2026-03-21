@@ -22,10 +22,10 @@ var (
 	ErrTokenNotFound = errors.New("token not found or already revoked")
 
 	// ErrTokenNotRevoked is returned when an operation requires a revoked token
-	// but the token is still active (or already archived).
+	// but the token is still active.
 	ErrTokenNotRevoked = errors.New("token must be revoked before this operation")
 
-	// ErrTokenActive is returned when trying to delete or archive an active token.
+	// ErrTokenActive is returned when trying to delete an active token.
 	ErrTokenActive = errors.New("token is still active; revoke it first")
 )
 
@@ -54,7 +54,7 @@ var ValidScopes = map[TokenScope]bool{
 // TokenStatus represents the lifecycle state of an API token.
 type TokenStatus string
 
-// Token lifecycle states: Active -> Revoked -> Archived -> Deleted.
+// Token lifecycle states: Active -> Revoked -> Deleted.
 const (
 	TokenStatusActive  TokenStatus = "active"
 	TokenStatusRevoked TokenStatus = "revoked"
@@ -264,7 +264,9 @@ func (s *Service) ValidateAPIToken(ctx context.Context, token string) (userID st
 // ListAPITokens returns all tokens for a user (never exposes the hash).
 func (s *Service) ListAPITokens(ctx context.Context, userID string) ([]APIToken, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, name, scopes, user_id, status, created_at, last_used_at, revoked_at
+		SELECT id, name, scopes, user_id,
+		       CASE WHEN status = 'archived' THEN 'revoked' ELSE status END AS status,
+		       created_at, last_used_at, revoked_at
 		FROM api_tokens WHERE user_id = ?
 		ORDER BY created_at DESC
 	`, userID)
