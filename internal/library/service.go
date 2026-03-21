@@ -11,7 +11,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/dbutil"
 )
 
-const libraryColumns = `id, name, path, type, source, connection_id, external_id, fs_watch, fs_poll_interval, created_at, updated_at`
+const libraryColumns = `id, name, path, type, source, connection_id, external_id, fs_watch, fs_poll_interval, shared_filesystem, created_at, updated_at`
 
 // Service provides library data operations.
 type Service struct {
@@ -59,12 +59,12 @@ func (s *Service) Create(ctx context.Context, lib *Library) error {
 	lib.UpdatedAt = now
 
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO libraries (id, name, path, type, source, connection_id, external_id, fs_watch, fs_poll_interval, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO libraries (id, name, path, type, source, connection_id, external_id, fs_watch, fs_poll_interval, shared_filesystem, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		lib.ID, lib.Name, lib.Path, lib.Type,
 		lib.Source, dbutil.NullableString(lib.ConnectionID), lib.ExternalID,
-		lib.FSWatch, lib.FSPollInterval,
+		lib.FSWatch, lib.FSPollInterval, dbutil.BoolToInt(lib.SharedFilesystem),
 		now.Format(time.RFC3339), now.Format(time.RFC3339),
 	)
 	if err != nil {
@@ -169,12 +169,12 @@ func (s *Service) Update(ctx context.Context, lib *Library) error {
 	lib.UpdatedAt = time.Now().UTC()
 
 	result, err := s.db.ExecContext(ctx, `
-		UPDATE libraries SET name = ?, path = ?, type = ?, source = ?, connection_id = ?, external_id = ?, fs_watch = ?, fs_poll_interval = ?, updated_at = ?
+		UPDATE libraries SET name = ?, path = ?, type = ?, source = ?, connection_id = ?, external_id = ?, fs_watch = ?, fs_poll_interval = ?, shared_filesystem = ?, updated_at = ?
 		WHERE id = ?
 	`,
 		lib.Name, lib.Path, lib.Type,
 		lib.Source, dbutil.NullableString(lib.ConnectionID), lib.ExternalID,
-		lib.FSWatch, lib.FSPollInterval,
+		lib.FSWatch, lib.FSPollInterval, dbutil.BoolToInt(lib.SharedFilesystem),
 		lib.UpdatedAt.Format(time.RFC3339),
 		lib.ID,
 	)
@@ -307,12 +307,13 @@ func (s *Service) CountArtistsByConnectionID(ctx context.Context, connectionID s
 func scanLibrary(row interface{ Scan(...any) error }) (*Library, error) {
 	var lib Library
 	var connectionID sql.NullString
+	var sharedFS int
 	var createdAt, updatedAt string
 
 	err := row.Scan(
 		&lib.ID, &lib.Name, &lib.Path, &lib.Type,
 		&lib.Source, &connectionID, &lib.ExternalID,
-		&lib.FSWatch, &lib.FSPollInterval,
+		&lib.FSWatch, &lib.FSPollInterval, &sharedFS,
 		&createdAt, &updatedAt,
 	)
 	if err != nil {
@@ -322,10 +323,47 @@ func scanLibrary(row interface{ Scan(...any) error }) (*Library, error) {
 	if connectionID.Valid {
 		lib.ConnectionID = connectionID.String
 	}
+	lib.SharedFilesystem = sharedFS == 1
 	lib.CreatedAt = dbutil.ParseTime(createdAt)
 	lib.UpdatedAt = dbutil.ParseTime(updatedAt)
 
 	return &lib, nil
+}
+
+// SetSharedFilesystem sets the shared_filesystem flag on a library.
+func (s *Service) SetSharedFilesystem(ctx context.Context, id string, shared bool) error {
+	now := time.Now().UTC()
+	result, err := s.db.ExecContext(ctx, `
+		UPDATE libraries SET shared_filesystem = ?, updated_at = ? WHERE id = ?
+	`, dbutil.BoolToInt(shared), now.Format(time.RFC3339), id)
+	if err != nil {
+		return fmt.Errorf("setting shared_filesystem: %w", err)
+	}
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return fmt.Errorf("library not found: %s", id)
+	}
+	return nil
+}
+
+// ListSharedFilesystem returns all libraries that have the shared_filesystem flag set.
+func (s *Service) ListSharedFilesystem(ctx context.Context) ([]Library, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT `+libraryColumns+` FROM libraries WHERE shared_filesystem = 1 ORDER BY name`)
+	if err != nil {
+		return nil, fmt.Errorf("listing shared-filesystem libraries: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck
+
+	var libs []Library
+	for rows.Next() {
+		lib, err := scanLibrary(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scanning shared library: %w", err)
+		}
+		libs = append(libs, *lib)
+	}
+	return libs, rows.Err()
 }
 
 // isValidSource reports whether s is one of the allowed library source values.

@@ -257,7 +257,7 @@ func TestPipeline_PendingChoiceViolation(t *testing.T) {
 		},
 	}
 
-	engine := NewEngine(ruleSvc, db, nil, testLogger())
+	engine := NewEngine(ruleSvc, db, nil, nil, testLogger())
 	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{fixer}, testLogger())
 
 	result, err := pipeline.RunAll(ctx)
@@ -333,7 +333,7 @@ func TestPipeline_RunAll(t *testing.T) {
 		t.Fatalf("creating artist: %v", err)
 	}
 
-	engine := NewEngine(ruleSvc, db, nil, testLogger())
+	engine := NewEngine(ruleSvc, db, nil, nil, testLogger())
 	fixer := &mockFixer{canFix: true}
 	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{fixer}, testLogger())
 
@@ -372,7 +372,7 @@ func TestPipeline_RunRule(t *testing.T) {
 		t.Fatalf("creating artist: %v", err)
 	}
 
-	engine := NewEngine(ruleSvc, db, nil, testLogger())
+	engine := NewEngine(ruleSvc, db, nil, nil, testLogger())
 	fixer := &mockFixer{canFix: true}
 	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{fixer}, testLogger())
 
@@ -413,7 +413,7 @@ func TestPipeline_SkipsExcludedArtists(t *testing.T) {
 		t.Fatalf("creating artist: %v", err)
 	}
 
-	engine := NewEngine(ruleSvc, db, nil, testLogger())
+	engine := NewEngine(ruleSvc, db, nil, nil, testLogger())
 	fixer := &mockFixer{canFix: true}
 	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{fixer}, testLogger())
 
@@ -446,7 +446,7 @@ func TestPipeline_NoFixerAvailable(t *testing.T) {
 		t.Fatalf("creating artist: %v", err)
 	}
 
-	engine := NewEngine(ruleSvc, db, nil, testLogger())
+	engine := NewEngine(ruleSvc, db, nil, nil, testLogger())
 	// Register a fixer that can't fix anything
 	fixer := &mockFixer{canFix: false}
 	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{fixer}, testLogger())
@@ -766,7 +766,7 @@ func TestWriteArtistNFO(t *testing.T) {
 }
 
 func TestExtraneousImagesFixer_CanFix(t *testing.T) {
-	f := NewExtraneousImagesFixer(nil, testLogger())
+	f := NewExtraneousImagesFixer(nil, nil, testLogger())
 	if !f.CanFix(&Violation{RuleID: RuleExtraneousImages}) {
 		t.Error("should handle extraneous_images")
 	}
@@ -793,7 +793,7 @@ func TestExtraneousImagesFixer_Fix_DeletesExtraneous(t *testing.T) {
 	}
 
 	a := &artist.Artist{Name: "Fixer Test", Path: dir}
-	f := NewExtraneousImagesFixer(nil, testLogger())
+	f := NewExtraneousImagesFixer(nil, nil, testLogger())
 
 	result, err := f.Fix(context.Background(), a, &Violation{RuleID: RuleExtraneousImages})
 	if err != nil {
@@ -829,7 +829,7 @@ func TestExtraneousImagesFixer_Fix_NoExtraneous(t *testing.T) {
 	}
 
 	a := &artist.Artist{Name: "Clean Artist", Path: dir}
-	f := NewExtraneousImagesFixer(nil, testLogger())
+	f := NewExtraneousImagesFixer(nil, nil, testLogger())
 
 	result, err := f.Fix(context.Background(), a, &Violation{RuleID: RuleExtraneousImages})
 	if err != nil {
@@ -842,7 +842,7 @@ func TestExtraneousImagesFixer_Fix_NoExtraneous(t *testing.T) {
 
 func TestExtraneousImagesFixer_Fix_EmptyPath(t *testing.T) {
 	a := &artist.Artist{Name: "No Path"}
-	f := NewExtraneousImagesFixer(nil, testLogger())
+	f := NewExtraneousImagesFixer(nil, nil, testLogger())
 
 	result, err := f.Fix(context.Background(), a, &Violation{RuleID: RuleExtraneousImages})
 	if err != nil {
@@ -1106,7 +1106,7 @@ func TestPipeline_ManualMode_DiscoversCandidates(t *testing.T) {
 	// pipeline invokes it for candidate discovery in manual mode.
 	fixer := &mockCandidateFixer{canFix: true}
 
-	engine := NewEngine(ruleSvc, db, nil, testLogger())
+	engine := NewEngine(ruleSvc, db, nil, nil, testLogger())
 	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{fixer}, testLogger())
 
 	result, err := pipeline.RunRule(ctx, RuleNFOExists)
@@ -1197,7 +1197,7 @@ func TestPipeline_RunAll_RespectsManualMode(t *testing.T) {
 		},
 	}
 
-	engine := NewEngine(ruleSvc, db, nil, testLogger())
+	engine := NewEngine(ruleSvc, db, nil, nil, testLogger())
 	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{fixer}, testLogger())
 
 	_, err = pipeline.RunAll(ctx)
@@ -1308,7 +1308,7 @@ func TestPipeline_ManualMode_SkipsSideEffectFixer(t *testing.T) {
 	// logo_trimmable. It must NOT be called in manual mode.
 	seFixer := &mockSideEffectFixer{canFix: true}
 
-	engine := NewEngine(ruleSvc, db, nil, testLogger())
+	engine := NewEngine(ruleSvc, db, nil, nil, testLogger())
 	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{seFixer}, testLogger())
 
 	result, err := pipeline.RunRule(ctx, RuleLogoTrimmable)
@@ -1459,7 +1459,7 @@ func TestPipeline_ManualMode_SetsDiscoveryOnly(t *testing.T) {
 	// discoveryCaptureFixer records whether DiscoveryOnly was set when Fix was called.
 	captureFixer := &discoveryCaptureFixer{}
 
-	engine := NewEngine(ruleSvc, db, nil, testLogger())
+	engine := NewEngine(ruleSvc, db, nil, nil, testLogger())
 	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{captureFixer}, testLogger())
 
 	_, err = pipeline.RunRule(ctx, RuleThumbExists)
@@ -1532,7 +1532,7 @@ func TestPipeline_ManualMode_FixableGuard_NoFixer(t *testing.T) {
 	}
 
 	// No fixers registered at all.
-	engine := NewEngine(ruleSvc, db, nil, testLogger())
+	engine := NewEngine(ruleSvc, db, nil, nil, testLogger())
 	pipeline := NewPipeline(engine, artistSvc, ruleSvc, nil, testLogger())
 
 	_, err = pipeline.RunRule(ctx, RuleNFOExists)
@@ -1592,7 +1592,7 @@ func TestPipeline_FixViolation_Success(t *testing.T) {
 	}
 
 	fixer := &mockFixer{canFix: true}
-	engine := NewEngine(ruleSvc, db, nil, testLogger())
+	engine := NewEngine(ruleSvc, db, nil, nil, testLogger())
 	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{fixer}, testLogger())
 
 	fr, err := pipeline.FixViolation(ctx, rv.ID)
@@ -1645,7 +1645,7 @@ func TestPipeline_FixViolation_NotFixable(t *testing.T) {
 		t.Fatalf("upserting violation: %v", err)
 	}
 
-	engine := NewEngine(ruleSvc, db, nil, testLogger())
+	engine := NewEngine(ruleSvc, db, nil, nil, testLogger())
 	pipeline := NewPipeline(engine, artistSvc, ruleSvc, nil, testLogger())
 
 	fr, err := pipeline.FixViolation(ctx, rv.ID)
@@ -1695,7 +1695,7 @@ func TestPipeline_FixViolation_AlreadyResolved(t *testing.T) {
 		t.Fatalf("resolving violation: %v", err)
 	}
 
-	engine := NewEngine(ruleSvc, db, nil, testLogger())
+	engine := NewEngine(ruleSvc, db, nil, nil, testLogger())
 	pipeline := NewPipeline(engine, artistSvc, ruleSvc, nil, testLogger())
 
 	fr, err := pipeline.FixViolation(ctx, rv.ID)
@@ -1716,7 +1716,7 @@ func TestPipeline_FixViolation_NotFound(t *testing.T) {
 	ruleSvc := NewService(db)
 	ctx := context.Background()
 
-	engine := NewEngine(ruleSvc, db, nil, testLogger())
+	engine := NewEngine(ruleSvc, db, nil, nil, testLogger())
 	pipeline := NewPipeline(engine, artistSvc, ruleSvc, nil, testLogger())
 
 	_, err := pipeline.FixViolation(ctx, "nonexistent-id")
@@ -1760,7 +1760,7 @@ func TestPipeline_FixViolation_PendingChoice(t *testing.T) {
 		t.Fatalf("upserting violation: %v", err)
 	}
 
-	engine := NewEngine(ruleSvc, db, nil, testLogger())
+	engine := NewEngine(ruleSvc, db, nil, nil, testLogger())
 	fixer := &mockFixer{canFix: true}
 	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{fixer}, testLogger())
 
@@ -1803,7 +1803,7 @@ func TestPipeline_FixViolation_OrphanedArtist(t *testing.T) {
 		t.Fatalf("upserting violation: %v", err)
 	}
 
-	engine := NewEngine(ruleSvc, db, nil, testLogger())
+	engine := NewEngine(ruleSvc, db, nil, nil, testLogger())
 	pipeline := NewPipeline(engine, artistSvc, ruleSvc, nil, testLogger())
 
 	fr, err := pipeline.FixViolation(ctx, rv.ID)

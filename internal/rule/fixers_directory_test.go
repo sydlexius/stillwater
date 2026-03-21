@@ -4,16 +4,19 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"log/slog"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/database"
+	"github.com/sydlexius/stillwater/internal/library"
 )
 
 func TestDirectoryRenameFixer_Fix(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	fixer := NewDirectoryRenameFixer(logger)
+	fixer := NewDirectoryRenameFixer(nil, logger)
 
 	t.Run("successful rename", func(t *testing.T) {
 		tmp := t.TempDir()
@@ -93,4 +96,67 @@ func TestDirectoryRenameFixer_Fix(t *testing.T) {
 			t.Error("Fixed = true, want false for empty path")
 		}
 	})
+}
+
+func TestDirectoryRenameFixer_SharedFilesystem(t *testing.T) {
+	db, err := database.Open(":memory:")
+	if err != nil {
+		t.Fatalf("opening test db: %v", err)
+	}
+	if err := database.Migrate(db); err != nil {
+		t.Fatalf("running migrations: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	libSvc := library.NewService(db)
+	ctx := context.Background()
+
+	// Create a library with shared_filesystem = true.
+	dir := t.TempDir()
+	lib := &library.Library{
+		Name:   "Shared Music",
+		Path:   dir,
+		Type:   library.TypeRegular,
+		Source: library.SourceManual,
+	}
+	if err := libSvc.Create(ctx, lib); err != nil {
+		t.Fatalf("creating library: %v", err)
+	}
+	if err := libSvc.SetSharedFilesystem(ctx, lib.ID, true); err != nil {
+		t.Fatalf("setting shared_filesystem: %v", err)
+	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	fixer := NewDirectoryRenameFixer(libSvc, logger)
+
+	oldPath := filepath.Join(dir, "Old Name")
+	if err := os.MkdirAll(oldPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	a := &artist.Artist{
+		Name:      "New Name",
+		Path:      oldPath,
+		LibraryID: lib.ID,
+	}
+	v := &Violation{
+		RuleID: RuleDirectoryNameMismatch,
+		Config: RuleConfig{ArticleMode: "prefix"},
+	}
+
+	result, err := fixer.Fix(ctx, a, v)
+	if err != nil {
+		t.Fatalf("Fix: %v", err)
+	}
+	if result.Fixed {
+		t.Error("Fixed = true, want false for shared-filesystem library")
+	}
+	if !strings.Contains(result.Message, "shared-filesystem") {
+		t.Errorf("expected message to mention shared-filesystem, got: %s", result.Message)
+	}
+
+	// Verify the directory was NOT renamed.
+	if _, statErr := os.Stat(oldPath); os.IsNotExist(statErr) {
+		t.Error("original directory was renamed; expected it to remain unchanged")
+	}
 }

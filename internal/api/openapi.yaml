@@ -196,6 +196,9 @@ components:
           type: integer
         fs_poll_interval:
           type: integer
+        shared_filesystem:
+          type: boolean
+          description: True when a platform connection writes to the same filesystem path
         fs_notify_supported:
           type: boolean
         created_at:
@@ -204,6 +207,36 @@ components:
         updated_at:
           type: string
           format: date-time
+    SharedFilesystemStatus:
+      type: object
+      properties:
+        has_overlaps:
+          type: boolean
+          description: True when shared-filesystem overlaps exist
+        libraries:
+          type: array
+          items:
+            $ref: '#/components/schemas/SharedFilesystemEntry'
+        dismissed:
+          type: boolean
+          description: True when the user has permanently dismissed the warning
+    SharedFilesystemEntry:
+      type: object
+      properties:
+        library_id:
+          type: string
+        library_name:
+          type: string
+        path:
+          type: string
+        overlap_with:
+          type: string
+    SharedFilesystemRecheckResult:
+      type: object
+      properties:
+        overlaps_found:
+          type: integer
+          description: Number of libraries with shared-filesystem overlaps detected
     LibraryOpResult:
       type: object
       properties:
@@ -2530,6 +2563,45 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Status"
+
+  /shared-filesystem/status:
+    get:
+      operationId: getSharedFilesystemStatus
+      tags: [SharedFilesystem]
+      summary: Get shared-filesystem overlap status
+      description: Returns information about libraries with shared-filesystem overlaps and dismiss state.
+      responses:
+        "200":
+          description: Shared-filesystem status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SharedFilesystemStatus"
+  /shared-filesystem/dismiss:
+    post:
+      operationId: dismissSharedFilesystem
+      tags: [SharedFilesystem]
+      summary: Dismiss the shared-filesystem warning permanently
+      responses:
+        "200":
+          description: Warning dismissed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+  /shared-filesystem/recheck:
+    post:
+      operationId: recheckSharedFilesystem
+      tags: [SharedFilesystem]
+      summary: Re-evaluate shared-filesystem overlaps
+      description: Scans all libraries for path overlaps and updates the shared_filesystem flag.
+      responses:
+        "200":
+          description: Recheck result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SharedFilesystemRecheckResult"
 
   /settings:
     get:

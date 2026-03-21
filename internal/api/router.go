@@ -252,6 +252,10 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	// Settings export/import routes
 	mux.HandleFunc("POST "+bp+"/api/v1/settings/export", wrapAuth(r.handleSettingsExport, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/settings/import", wrapAuth(r.handleSettingsImport, authMw))
+	// Shared-filesystem detection routes
+	mux.HandleFunc("GET "+bp+"/api/v1/shared-filesystem/status", wrapAuth(r.handleSharedFilesystemStatus, authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/shared-filesystem/dismiss", wrapAuth(r.handleSharedFilesystemDismiss, authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/shared-filesystem/recheck", wrapAuth(r.handleSharedFilesystemRecheck, authMw))
 
 	// Provider routes
 	mux.HandleFunc("GET "+bp+"/api/v1/providers", wrapAuth(r.handleListProviders, authMw))

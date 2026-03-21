@@ -1,0 +1,99 @@
+package templates
+
+// SharedFSBarData holds data for the shared-filesystem notification bar.
+type SharedFSBarData struct {
+	HasOverlaps bool
+	Libraries   []SharedFSBarLib
+	Dismissed   bool
+}
+
+// SharedFSBarLib represents a library entry for the notification bar.
+type SharedFSBarLib struct {
+	Name string
+	Path string
+}
+
+// SharedFilesystemBar renders a persistent warning bar when shared-filesystem
+// overlaps are detected. The bar is loaded via HTMX on page load and can be
+// dismissed for the current session (sessionStorage) or persistently (API call).
+// The HTMX request is skipped when the session-dismissed flag is already set,
+// so closing the bar with X suppresses the load for the rest of the browser session.
+templ SharedFilesystemBar() {
+	<div
+		id="shared-fs-bar"
+		hx-get="/api/v1/shared-filesystem/status"
+		hx-trigger="load[!sessionStorage.getItem('shared_fs_dismissed')]"
+		hx-swap="innerHTML"
+		hx-target="#shared-fs-bar"
+	></div>
+}
+
+// SharedFilesystemBarContent renders the actual bar content based on the
+// API response. This is rendered server-side for HTMX partial responses.
+templ SharedFilesystemBarContent(data SharedFSBarData) {
+	if data.HasOverlaps && !data.Dismissed {
+		<div
+			id="shared-fs-warning"
+			class="bg-amber-50 dark:bg-amber-900/30 border-b border-amber-200 dark:border-amber-700"
+			role="alert"
+			aria-label="Shared filesystem warning"
+		>
+			<div class="mx-auto max-w-7xl px-4 py-3 sm:px-6 lg:px-8">
+				<div class="flex items-start gap-3 sm:items-center sm:justify-between">
+					<div class="flex items-start gap-2 min-w-0">
+						<svg class="h-5 w-5 flex-shrink-0 text-amber-500 dark:text-amber-400 mt-0.5 sm:mt-0" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
+							<path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"></path>
+						</svg>
+						<div class="text-sm text-amber-800 dark:text-amber-200">
+							<span class="font-medium">Shared filesystem detected:</span>
+							<span class="ml-1">
+								for i, lib := range data.Libraries {
+									if i > 0 {
+										{ ", " }
+									}
+									<span class="font-medium">{ lib.Name }</span>
+									if lib.Path != "" {
+										<span class="text-amber-600 dark:text-amber-300">({ lib.Path })</span>
+									}
+								}
+							</span>
+							<span class="ml-1">
+								A platform connection may write to the same directories Stillwater manages.
+								<a
+									href="https://github.com/sydlexius/stillwater/wiki/Shared-Filesystem"
+									target="_blank"
+									rel="noopener noreferrer"
+									class="underline font-medium hover:text-amber-900 dark:hover:text-amber-100"
+								>
+									Learn more
+								</a>
+							</span>
+						</div>
+					</div>
+					<div class="flex items-center gap-2 flex-shrink-0">
+						<button
+							type="button"
+							class="text-xs text-amber-600 dark:text-amber-400 hover:text-amber-800 dark:hover:text-amber-200 underline"
+							hx-post="/api/v1/shared-filesystem/dismiss"
+							hx-swap="outerHTML"
+							hx-target="#shared-fs-warning"
+							aria-label="Dismiss warning permanently"
+						>
+							Don't show again
+						</button>
+						<button
+							type="button"
+							class="text-amber-500 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-200"
+							onclick="this.closest('#shared-fs-warning').remove(); sessionStorage.setItem('shared_fs_dismissed', 'true')"
+							aria-label="Dismiss warning for this session"
+						>
+							<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+								<path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"></path>
+							</svg>
+						</button>
+					</div>
+				</div>
+			</div>
+		</div>
+	}
+}

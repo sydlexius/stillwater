@@ -159,7 +159,7 @@ func run() error {
 	if err := ruleService.SeedDefaults(context.Background()); err != nil {
 		return fmt.Errorf("seeding default rules: %w", err)
 	}
-	ruleEngine := rule.NewEngine(ruleService, db, platformService, logger)
+	ruleEngine := rule.NewEngine(ruleService, db, platformService, libraryService, logger)
 
 	// Initialize scanner (depends on rule engine for health scoring)
 	scannerService := scanner.NewService(artistService, ruleEngine, ruleService, logger, cfg.Music.LibraryPath, cfg.Scanner.Exclusions)
@@ -219,10 +219,10 @@ func run() error {
 		&rule.NFOFixer{SnapshotService: nfoSnapshotService},
 		rule.NewMetadataFixer(orchestrator, nfoSnapshotService, logger),
 		rule.NewImageFixer(orchestrator, platformService, logger),
-		rule.NewExtraneousImagesFixer(platformService, logger),
+		rule.NewExtraneousImagesFixer(platformService, libraryService, logger),
 		rule.NewLogoTrimFixer(platformService, logger),
 		rule.NewLogoPaddingFixer(platformService, logger),
-		rule.NewDirectoryRenameFixer(logger),
+		rule.NewDirectoryRenameFixer(libraryService, logger),
 		rule.NewBackdropSequencingFixer(platformService, logger),
 	}
 	pipeline := rule.NewPipeline(ruleEngine, artistService, ruleService, fixers, logger)
@@ -385,6 +385,17 @@ func run() error {
 		default:
 			logger.Warn("invalid rule scheduler interval; scheduler not started",
 				"hours", ruleScheduleHours)
+		}
+	}
+
+	// Evaluate shared-filesystem overlaps on startup.
+	{
+		overlapCount, sfErr := library.RecheckOverlaps(ctx, libraryService, logger)
+		if sfErr != nil {
+			logger.Warn("shared-filesystem check on startup", "error", sfErr)
+		} else if overlapCount > 0 {
+			logger.Warn("shared-filesystem overlap detected on startup",
+				slog.Int("libraries_affected", overlapCount))
 		}
 	}
 

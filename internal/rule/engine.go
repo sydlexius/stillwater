@@ -5,8 +5,10 @@ import (
 	"database/sql"
 	"log/slog"
 	"math"
+	"sync"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/platform"
 )
 
@@ -15,16 +17,26 @@ type Engine struct {
 	service         *Service
 	db              *sql.DB
 	platformService *platform.Service
+	libraryService  *library.Service
 	checkers        map[string]Checker
 	logger          *slog.Logger
+
+	// sharedFSCache caches IsSharedFilesystem results by library ID during
+	// a single evaluation run to avoid N+1 DB queries when multiple artists
+	// share the same library. Cleared at the start of each Evaluate call.
+	// Guarded by sharedFSMu because Evaluate is called from concurrent HTTP
+	// handlers (net/http serves requests in separate goroutines).
+	sharedFSMu    sync.Mutex
+	sharedFSCache map[string]bool
 }
 
 // NewEngine creates a rule evaluation engine with all built-in checkers registered.
-func NewEngine(service *Service, db *sql.DB, platformService *platform.Service, logger *slog.Logger) *Engine {
+func NewEngine(service *Service, db *sql.DB, platformService *platform.Service, libraryService *library.Service, logger *slog.Logger) *Engine {
 	e := &Engine{
 		service:         service,
 		db:              db,
 		platformService: platformService,
+		libraryService:  libraryService,
 		logger:          logger.With(slog.String("component", "rule-engine")),
 		checkers: map[string]Checker{
 			RuleNFOExists:             checkNFOExists,
@@ -55,6 +67,12 @@ func NewEngine(service *Service, db *sql.DB, platformService *platform.Service, 
 
 // Evaluate runs all enabled rules against an artist and returns the results.
 func (e *Engine) Evaluate(ctx context.Context, a *artist.Artist) (*EvaluationResult, error) {
+	// Clear per-evaluation shared-filesystem cache so each top-level Evaluate
+	// call gets fresh data while avoiding N+1 queries within the same run.
+	e.sharedFSMu.Lock()
+	e.sharedFSCache = nil
+	e.sharedFSMu.Unlock()
+
 	// Classical artists in skip mode get a perfect score with no evaluation
 	if a.IsClassical && GetClassicalMode(ctx, e.db) == ClassicalModeSkip {
 		return &EvaluationResult{
@@ -119,6 +137,56 @@ func (e *Engine) EvaluateAll(ctx context.Context, artists []artist.Artist) ([]Ev
 		results = append(results, *r)
 	}
 	return results, nil
+}
+
+// IsSharedFilesystem reports whether the given artist's library has the
+// shared_filesystem flag set. Returns false if the library service is nil
+// or the artist has no library ID. Returns true (fail closed) on DB errors
+// to prevent destructive operations when the database is unavailable.
+//
+// Results are cached per library ID for the duration of a single evaluation
+// run (cache is cleared at the start of each Evaluate call) to avoid N+1
+// DB queries when multiple checkers call this for the same artist.
+func (e *Engine) IsSharedFilesystem(ctx context.Context, a *artist.Artist) bool {
+	if e.libraryService == nil || a.LibraryID == "" {
+		return false
+	}
+
+	// Check the per-evaluation cache first.
+	e.sharedFSMu.Lock()
+	if e.sharedFSCache != nil {
+		if cached, ok := e.sharedFSCache[a.LibraryID]; ok {
+			e.sharedFSMu.Unlock()
+			return cached
+		}
+	}
+	e.sharedFSMu.Unlock()
+
+	lib, err := e.libraryService.GetByID(ctx, a.LibraryID)
+	if err != nil {
+		// Fail closed: assume shared filesystem when the DB is unavailable
+		// to prevent destructive operations (e.g. deleting "extraneous" images
+		// that a platform actually owns).
+		e.logger.Warn("library lookup failed; assuming shared filesystem",
+			slog.String("library_id", a.LibraryID),
+			slog.String("error", err.Error()))
+		e.cacheSharedFS(a.LibraryID, true)
+		return true
+	}
+
+	e.cacheSharedFS(a.LibraryID, lib.SharedFilesystem)
+	return lib.SharedFilesystem
+}
+
+// cacheSharedFS stores a shared-filesystem lookup result in the per-evaluation
+// cache, lazily initializing the map on first use.
+func (e *Engine) cacheSharedFS(libraryID string, shared bool) {
+	e.sharedFSMu.Lock()
+	defer e.sharedFSMu.Unlock()
+	if e.sharedFSCache == nil {
+		e.sharedFSCache = make(map[string]bool)
+	}
+	e.sharedFSCache[libraryID] = shared
 }
 
 // calculateHealthScore returns the percentage of rules passed, rounded to 1 decimal.

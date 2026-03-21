@@ -47,7 +47,7 @@ func testRouter(t *testing.T) (*Router, *artist.Service) {
 	if err := ruleSvc.SeedDefaults(context.Background()); err != nil {
 		t.Fatalf("seeding rules: %v", err)
 	}
-	ruleEngine := rule.NewEngine(ruleSvc, db, nil, logger)
+	ruleEngine := rule.NewEngine(ruleSvc, db, nil, nil, logger)
 	nfoSnapSvc := nfo.NewSnapshotService(db)
 	providerSettings := provider.NewSettingsService(db, nil)
 

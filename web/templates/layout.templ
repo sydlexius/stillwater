@@ -44,6 +44,7 @@ templ Layout(title string, assets AssetPaths) {
 			<div class="fixed inset-0 -z-10 bg-black/15 dark:bg-black/45 pointer-events-none" aria-hidden="true"></div>
 			<div class="min-h-full">
 				@navbar()
+				@SharedFilesystemBar()
 				<main class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
 					{ children... }
 				</main>

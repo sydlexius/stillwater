@@ -17,6 +17,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/filesystem"
 	img "github.com/sydlexius/stillwater/internal/image"
+	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/nfo"
 	"github.com/sydlexius/stillwater/internal/platform"
 	"github.com/sydlexius/stillwater/internal/provider"
@@ -644,13 +645,15 @@ func readFileDimensions(path string) (int, int, bool) {
 // ExtraneousImagesFixer deletes non-canonical image files from artist directories.
 type ExtraneousImagesFixer struct {
 	platformService *platform.Service
+	libraryService  *library.Service
 	logger          *slog.Logger
 }
 
 // NewExtraneousImagesFixer creates an ExtraneousImagesFixer.
-func NewExtraneousImagesFixer(platformService *platform.Service, logger *slog.Logger) *ExtraneousImagesFixer {
+func NewExtraneousImagesFixer(platformService *platform.Service, libraryService *library.Service, logger *slog.Logger) *ExtraneousImagesFixer {
 	return &ExtraneousImagesFixer{
 		platformService: platformService,
+		libraryService:  libraryService,
 		logger:          logger,
 	}
 }
@@ -661,6 +664,11 @@ func (f *ExtraneousImagesFixer) CanFix(v *Violation) bool {
 }
 
 // Fix deletes all extraneous image files from the artist directory.
+//
+// When the artist's library has shared_filesystem set, the expected set is
+// expanded to include image filenames from ALL platform profiles, matching the
+// same logic used by the checker. This prevents the fixer from deleting files
+// that were legitimately written by another connected platform.
 func (f *ExtraneousImagesFixer) Fix(ctx context.Context, a *artist.Artist, _ *Violation) (*FixResult, error) {
 	if a.Path == "" {
 		return &FixResult{
@@ -670,11 +678,29 @@ func (f *ExtraneousImagesFixer) Fix(ctx context.Context, a *artist.Artist, _ *Vi
 		}, nil
 	}
 
-	var profile *platform.Profile
-	if f.platformService != nil {
-		profile, _ = f.platformService.GetActive(ctx)
+	// When shared filesystem is detected, union expected files from all
+	// profiles so we do not delete images owned by another platform.
+	var expected map[string]bool
+	if f.libraryService != nil && a.LibraryID != "" && f.platformService != nil {
+		lib, err := f.libraryService.GetByID(ctx, a.LibraryID)
+		if err != nil {
+			// Fail closed: assume shared filesystem when the DB is unavailable
+			// to prevent deleting images that a platform actually owns.
+			f.logger.Warn("library lookup failed during extraneous-images fix; assuming shared filesystem",
+				slog.String("library_id", a.LibraryID),
+				slog.String("error", err.Error()))
+			expected = expectedImageFilesAllProfiles(ctx, f.platformService, f.logger, a.Path)
+		} else if lib.SharedFilesystem {
+			expected = expectedImageFilesAllProfiles(ctx, f.platformService, f.logger, a.Path)
+		}
 	}
-	expected := expectedImageFiles(profile, a.Path)
+	if expected == nil {
+		var profile *platform.Profile
+		if f.platformService != nil {
+			profile, _ = f.platformService.GetActive(ctx)
+		}
+		expected = expectedImageFiles(profile, a.Path)
+	}
 
 	entries, readErr := os.ReadDir(a.Path)
 	if readErr != nil {
@@ -985,13 +1011,20 @@ func fetchImageURL(ctx context.Context, rawURL string) ([]byte, error) {
 }
 
 // DirectoryRenameFixer renames an artist's directory to match the canonical name.
+// When the artist's library has shared_filesystem set, the fixer declines to
+// auto-fix and returns a warning message instead, because renaming a directory
+// that a platform connection references can break the platform's metadata index.
 type DirectoryRenameFixer struct {
-	logger *slog.Logger
+	libraryService *library.Service
+	logger         *slog.Logger
 }
 
 // NewDirectoryRenameFixer creates a DirectoryRenameFixer.
-func NewDirectoryRenameFixer(logger *slog.Logger) *DirectoryRenameFixer {
-	return &DirectoryRenameFixer{logger: logger.With(slog.String("component", "directory-rename-fixer"))}
+func NewDirectoryRenameFixer(libraryService *library.Service, logger *slog.Logger) *DirectoryRenameFixer {
+	return &DirectoryRenameFixer{
+		libraryService: libraryService,
+		logger:         logger.With(slog.String("component", "directory-rename-fixer")),
+	}
 }
 
 // CanFix returns true for the directory_name_mismatch rule.
@@ -1000,10 +1033,43 @@ func (f *DirectoryRenameFixer) CanFix(v *Violation) bool {
 }
 
 // Fix renames the artist directory to the canonical name derived from the
-// artist's name and the rule's article mode configuration.
-func (f *DirectoryRenameFixer) Fix(_ context.Context, a *artist.Artist, v *Violation) (*FixResult, error) {
+// artist's name and the rule's article mode configuration. When the artist's
+// library has shared_filesystem set, the fix is skipped to avoid breaking
+// platform metadata indexes that reference the current directory path.
+func (f *DirectoryRenameFixer) Fix(ctx context.Context, a *artist.Artist, v *Violation) (*FixResult, error) {
 	if a.Path == "" {
 		return &FixResult{RuleID: v.RuleID, Fixed: false, Message: "artist has no path"}, nil
+	}
+
+	// Decline to auto-fix when a platform connection shares the filesystem.
+	// Fail closed: if the library lookup errors, assume shared to prevent
+	// destructive renames when the DB is unavailable.
+	if f.libraryService != nil && a.LibraryID != "" {
+		lib, err := f.libraryService.GetByID(ctx, a.LibraryID)
+		if err != nil {
+			f.logger.Warn("library lookup failed during directory rename; assuming shared filesystem",
+				slog.String("library_id", a.LibraryID),
+				slog.String("error", err.Error()))
+			return &FixResult{
+				RuleID:  v.RuleID,
+				Fixed:   false,
+				Message: fmt.Sprintf("skipped: could not verify library %q (assuming shared filesystem)", a.LibraryID),
+			}, nil
+		}
+		if lib == nil {
+			return &FixResult{
+				RuleID:  v.RuleID,
+				Fixed:   false,
+				Message: fmt.Sprintf("skipped: library %q not found", a.LibraryID),
+			}, nil
+		}
+		if lib.SharedFilesystem {
+			return &FixResult{
+				RuleID:  v.RuleID,
+				Fixed:   false,
+				Message: fmt.Sprintf("skipped: directory rename disabled for shared-filesystem library %q", lib.Name),
+			}, nil
+		}
 	}
 
 	canonical := canonicalDirName(a.Name, v.Config.ArticleMode)
