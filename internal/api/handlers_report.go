@@ -699,3 +699,36 @@ func toTemplateSummary(s librarySummary) templates.LibrarySummaryData {
 		MissingMBID:      s.MissingMBID,
 	}
 }
+
+// handleReportMetadataCompleteness returns aggregate field-coverage metrics.
+// GET /api/v1/reports/metadata-completeness
+func (r *Router) handleReportMetadataCompleteness(w http.ResponseWriter, req *http.Request) {
+	ctx := req.Context()
+	libraryID := req.URL.Query().Get("library_id")
+
+	// Build a library-name map so the report can label per-library entries.
+	libNames := make(map[string]string)
+	if r.libraryService != nil {
+		if libs, err := r.libraryService.List(ctx); err != nil {
+			r.logger.Warn("listing libraries for metadata completeness", "error", err)
+		} else {
+			for _, lib := range libs {
+				libNames[lib.ID] = lib.Name
+			}
+		}
+	}
+
+	report, err := r.artistService.GetMetadataCompleteness(ctx, libraryID, 10, libNames)
+	if err != nil {
+		r.logger.Error("computing metadata completeness", "error", err)
+		writeError(w, req, http.StatusInternalServerError, "failed to compute metadata completeness")
+		return
+	}
+
+	if isHTMXRequest(req) {
+		renderTempl(w, req, templates.MetadataCompletenessFragment(report))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, report)
+}

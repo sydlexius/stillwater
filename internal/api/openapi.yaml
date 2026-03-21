@@ -4140,6 +4140,119 @@ paths:
               schema:
                 type: string
 
+  /reports/metadata-completeness:
+    get:
+      tags: [Reports]
+      summary: Get aggregate metadata completeness report
+      description: >
+        Returns field-level coverage percentages across all non-excluded artists.
+        Artist type-aware fields (formed for groups, born for persons) are only
+        counted for applicable artists. When library_id is provided the report
+        is scoped to that library.
+      operationId: getMetadataCompleteness
+      parameters:
+        - name: library_id
+          in: query
+          schema:
+            type: string
+          description: Scope the report to a specific library. Omit to include all libraries.
+      responses:
+        "200":
+          description: Metadata completeness report (returns HTML fragment when HX-Request header is set)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  overall_score:
+                    type: number
+                    format: float
+                    description: Mean field-coverage percentage across all applicable field/artist pairs.
+                  total_artists:
+                    type: integer
+                    description: Number of non-excluded artists included in the report.
+                  field_coverage:
+                    type: array
+                    description: Per-field breakdown sorted by percentage ascending (worst coverage first).
+                    items:
+                      type: object
+                      properties:
+                        field:
+                          type: string
+                          description: Human-readable field name.
+                        count:
+                          type: integer
+                          description: Number of artists with this field populated.
+                        total:
+                          type: integer
+                          description: Number of artists for which this field is applicable.
+                        percentage:
+                          type: number
+                          format: float
+                          description: count/total*100 rounded to one decimal place.
+                      required: [field, count, total, percentage]
+                  library_coverage:
+                    type: array
+                    description: Per-library summary. Omitted when only one or no library exists.
+                    items:
+                      type: object
+                      properties:
+                        library_id:
+                          type: string
+                        library_name:
+                          type: string
+                        total_artists:
+                          type: integer
+                        score:
+                          type: number
+                          format: float
+                        fields:
+                          type: array
+                          description: Per-field coverage breakdown for this library.
+                          items:
+                            type: object
+                            properties:
+                              field:
+                                type: string
+                                description: Human-readable field name.
+                              count:
+                                type: integer
+                                description: Number of artists with this field populated.
+                              total:
+                                type: integer
+                                description: Number of artists for which this field is applicable.
+                              percentage:
+                                type: number
+                                format: float
+                                description: count/total*100 rounded to one decimal place.
+                            required: [field, count, total, percentage]
+                  lowest_completeness:
+                    type: array
+                    description: Bottom artists by health score.
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        name:
+                          type: string
+                        library_id:
+                          type: string
+                        health_score:
+                          type: number
+                          format: float
+                      required: [id, name, library_id, health_score]
+                required: [overall_score, total_artists, field_coverage, lowest_completeness]
+            text/html:
+              schema:
+                type: string
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   # --- Inbound webhooks ---
 
   /webhooks/inbound/lidarr:
