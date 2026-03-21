@@ -53,8 +53,12 @@ while [[ $# -gt 0 ]]; do
 done
 
 # If no --music-path CLI args, fall back to SW_MUSIC_PATH env var (colon-separated).
+# Filter out empty segments from leading/trailing colons or consecutive colons.
 if [[ ${#MUSIC_PATHS[@]} -eq 0 && -n "${SW_MUSIC_PATH:-}" ]]; then
-  IFS=':' read -ra MUSIC_PATHS <<< "$SW_MUSIC_PATH"
+  IFS=':' read -ra _raw_paths <<< "$SW_MUSIC_PATH"
+  for _p in "${_raw_paths[@]}"; do
+    [[ -n "$_p" ]] && MUSIC_PATHS+=("$_p")
+  done
 fi
 
 # path_under_music_dirs checks whether a given path is under one of the
