@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"path/filepath"
@@ -45,9 +44,9 @@ func (r *Router) handleFixViolation(w http.ResponseWriter, req *http.Request) {
 
 	// Capture pre-fix state so the fix can be reverted within the undo window.
 	// Short-circuit when undo is disabled (undoStore is nil).
-	var preFixRevert rule.RevertFunc
+	var pfs *preFixState
 	if r.undoStore != nil {
-		preFixRevert = r.capturePreFixState(req.Context(), id)
+		pfs = r.capturePreFixState(req.Context(), id)
 	}
 
 	fr, err := r.pipeline.FixViolation(req.Context(), id)
@@ -72,24 +71,55 @@ func (r *Router) handleFixViolation(w http.ResponseWriter, req *http.Request) {
 		"message": fr.Message,
 	}
 
-	// Register an undo entry when the fix succeeded and we have a revert function.
-	if fr.Fixed && r.undoStore != nil && preFixRevert != nil {
-		undoID := r.undoStore.Register(id, preFixRevert)
-		resp["undo_id"] = undoID
-		resp["undo_expires_in"] = int(rule.UndoWindowDuration.Seconds())
+	// Register an undo entry when the fix succeeded and we have pre-fix state.
+	if fr.Fixed && r.undoStore != nil && pfs != nil {
+		revert := pfs.revert
+		// Directory renames: freeze the post-fix path NOW rather than lazily
+		// at revert time, so a second rename during the undo window cannot
+		// corrupt the revert target.
+		if pfs.dirRenameOldPath != "" {
+			current, aErr := r.artistService.GetByID(req.Context(), pfs.artistID)
+			switch {
+			case aErr != nil:
+				r.logger.Warn("undo: could not freeze post-fix path for directory rename; undo unavailable",
+					"artist_id", pfs.artistID, "error", aErr)
+			case current.Path == pfs.dirRenameOldPath:
+				r.logger.Debug("undo: directory path unchanged after fix; no revert needed",
+					"artist_id", pfs.artistID)
+			default:
+				revert = rule.DirectoryRenameRevert(pfs.dirRenameOldPath, current.Path)
+			}
+		}
+		if revert != nil {
+			undoID := r.undoStore.Register(id, revert)
+			resp["undo_id"] = undoID
+			resp["undo_expires_in"] = int(rule.UndoWindowDuration.Seconds())
+		}
 	}
 
 	writeJSON(w, http.StatusOK, resp)
 }
 
+// preFixState holds the pre-fix snapshot context needed to register an undo.
+// For most rules, revert contains the full revert function. For directory
+// renames, dirRenameOldPath is set instead and revert is nil; the caller
+// MUST populate revert by freezing both old and new paths after the fix
+// succeeds (see handleFixViolation). This avoids lazy path resolution that
+// could be corrupted by a second rename during the undo window.
+type preFixState struct {
+	revert           rule.RevertFunc
+	dirRenameOldPath string
+	artistID         string
+}
+
 // capturePreFixState loads the violation and the associated artist, then
-// builds a RevertFunc that can restore pre-fix state. Returns nil when no
+// builds a preFixState that can restore pre-fix state. Returns nil when no
 // relevant files are found (e.g. for pure metadata fixes that do not touch
 // the filesystem).
 //
 // Errors during snapshot capture are logged and silently ignored so that a
 // snapshot failure does not block the fix itself.
-func (r *Router) capturePreFixState(ctx context.Context, violationID string) rule.RevertFunc {
+func (r *Router) capturePreFixState(ctx context.Context, violationID string) *preFixState {
 	if r.ruleService == nil || r.artistService == nil {
 		return nil
 	}
@@ -101,27 +131,23 @@ func (r *Router) capturePreFixState(ctx context.Context, violationID string) rul
 	}
 
 	a, err := r.artistService.GetByID(ctx, rv.ArtistID)
-	if err != nil || a.Path == "" {
+	if err != nil {
+		r.logger.Debug("undo: could not load artist for pre-fix snapshot",
+			"artist_id", rv.ArtistID, "error", err)
+		return nil
+	}
+	if a.Path == "" {
 		// Pathless artists have no on-disk files to snapshot.
 		return nil
 	}
 
-	// Directory rename is a special case: capture the old path now and
-	// resolve the new path at revert time by re-reading the artist record.
+	// Directory rename: capture the old path now. The post-fix path is
+	// frozen in handleFixViolation after FixViolation succeeds, so that
+	// a second rename during the undo window cannot corrupt the target.
 	if rv.RuleID == rule.RuleDirectoryNameMismatch {
-		oldPath := a.Path
-		artistID := a.ID
-		return func(ctx context.Context) error {
-			// Re-read the artist to discover the post-fix path.
-			current, aErr := r.artistService.GetByID(ctx, artistID)
-			if aErr != nil {
-				return fmt.Errorf("undo directory rename: could not reload artist: %w", aErr)
-			}
-			if current.Path == oldPath {
-				// Path was not changed by the fix; nothing to revert.
-				return nil
-			}
-			return rule.DirectoryRenameRevert(oldPath, current.Path)(ctx)
+		return &preFixState{
+			dirRenameOldPath: a.Path,
+			artistID:         a.ID,
 		}
 	}
 
@@ -129,7 +155,7 @@ func (r *Router) capturePreFixState(ctx context.Context, violationID string) rul
 	if len(snaps) == 0 {
 		return nil
 	}
-	return rule.MultiFileRevert(snaps)
+	return &preFixState{revert: rule.MultiFileRevert(snaps)}
 }
 
 // captureFilesForRule resolves the file paths that a given rule's fixer is
@@ -212,7 +238,15 @@ func (r *Router) handleUndoFix(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	if err := entry.Revert(req.Context()); err != nil {
+	// Use a context that survives client disconnect but has a bounded
+	// deadline. Pop() already consumed the single-use token, so if the
+	// client disconnects mid-revert there is no retry path. WithoutCancel
+	// prevents premature cancellation; the 30s timeout prevents hangs on
+	// stuck filesystems or DB connections during server shutdown.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(req.Context()), 30*time.Second)
+	defer cancel()
+
+	if err := entry.Revert(ctx); err != nil {
 		r.logger.Error("undo fix failed", "violation_id", entry.ViolationID, "error", err)
 		writeError(w, req, http.StatusInternalServerError, "failed to revert fix")
 		return
@@ -221,7 +255,7 @@ func (r *Router) handleUndoFix(w http.ResponseWriter, req *http.Request) {
 	// Reopen the violation so it appears as fixable again.
 	var reopenFailed bool
 	if r.ruleService != nil {
-		if reopenErr := r.ruleService.ReopenViolation(req.Context(), entry.ViolationID); reopenErr != nil {
+		if reopenErr := r.ruleService.ReopenViolation(ctx, entry.ViolationID); reopenErr != nil {
 			r.logger.Error("undo: failed to reopen violation after successful revert",
 				"id", entry.ViolationID, "error", reopenErr)
 			reopenFailed = true
