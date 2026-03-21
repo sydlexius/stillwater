@@ -519,6 +519,83 @@ func checkLogoTrimmable(a *artist.Artist, cfg RuleConfig) *Violation {
 	}
 }
 
+// checkLogoPadding detects logos where total padding (transparent or whitespace)
+// exceeds a configurable threshold of the image area. Unlike checkLogoTrimmable
+// which checks per-edge padding, this rule uses an area-based ratio and supports
+// both PNG alpha transparency and non-PNG whitespace borders.
+func checkLogoPadding(a *artist.Artist, cfg RuleConfig) *Violation {
+	if !a.LogoExists || a.Path == "" {
+		return nil
+	}
+
+	entries, readErr := os.ReadDir(a.Path)
+	if readErr != nil {
+		return nil
+	}
+	lowerToActual := make(map[string]string, len(entries))
+	for _, e := range entries {
+		if !e.IsDir() {
+			lowerToActual[strings.ToLower(e.Name())] = e.Name()
+		}
+	}
+
+	var logoPath string
+	for _, pattern := range logoPatterns {
+		if actual, ok := lowerToActual[strings.ToLower(pattern)]; ok {
+			logoPath = filepath.Join(a.Path, actual)
+			break
+		}
+	}
+	if logoPath == "" {
+		return nil
+	}
+
+	f, err := os.Open(logoPath) //nolint:gosec // G304: path from trusted library root
+	if err != nil {
+		return nil
+	}
+	defer f.Close() //nolint:errcheck
+
+	content, original, err := image.ContentBounds(f)
+	if err != nil || original.Dx() == 0 || original.Dy() == 0 {
+		return nil
+	}
+
+	// If content fills the entire image, there is no padding.
+	if content == original {
+		return nil
+	}
+
+	totalArea := float64(original.Dx() * original.Dy())
+	contentArea := float64(content.Dx() * content.Dy())
+	paddingRatio := 1.0 - (contentArea / totalArea)
+
+	threshold := cfg.ThresholdPercent
+	if threshold <= 0 {
+		threshold = 15
+	}
+	if threshold > 100 {
+		threshold = 100
+	}
+	threshFrac := threshold / 100.0
+
+	if paddingRatio <= threshFrac {
+		return nil
+	}
+
+	return &Violation{
+		RuleID:   RuleLogoPadding,
+		RuleName: "Logo excessive padding",
+		Category: "image",
+		Severity: effectiveSeverity(cfg),
+		Message: fmt.Sprintf(
+			"artist %q logo has %.1f%% padding (threshold %.0f%%)",
+			a.Name, paddingRatio*100, threshold,
+		),
+		Fixable: true,
+	}
+}
+
 func checkArtistIDMismatch(a *artist.Artist, cfg RuleConfig) *Violation {
 	if a.Path == "" {
 		return nil

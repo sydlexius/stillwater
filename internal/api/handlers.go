@@ -35,6 +35,7 @@ func (r *Router) assets() templates.AssetPaths {
 		ChartJS:    r.staticAssets.Path("/js/chart.min.js"),
 		SortableJS: r.staticAssets.Path("/js/Sortable.min.js"),
 		HelpJS:     r.staticAssets.Path("/js/help.js"),
+		PollingJS:  r.staticAssets.Path("/js/polling.js"),
 		LoginBG:    r.staticAssets.Path("/img/login-bg.jpg"),
 	}
 }

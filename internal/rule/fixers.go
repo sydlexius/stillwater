@@ -814,6 +814,130 @@ func (f *LogoTrimFixer) Fix(ctx context.Context, a *artist.Artist, _ *Violation)
 	}, nil
 }
 
+// LogoPaddingFixer trims excessive padding from logos, preserving a configurable
+// margin around the content. It uses area-based content detection that supports
+// both alpha transparency (PNG) and whitespace borders (JPG).
+type LogoPaddingFixer struct {
+	platformService *platform.Service
+	logger          *slog.Logger
+}
+
+// NewLogoPaddingFixer creates a LogoPaddingFixer.
+func NewLogoPaddingFixer(platformService *platform.Service, logger *slog.Logger) *LogoPaddingFixer {
+	return &LogoPaddingFixer{
+		platformService: platformService,
+		logger:          logger,
+	}
+}
+
+// CanFix returns true for the logo_padding rule.
+func (f *LogoPaddingFixer) CanFix(v *Violation) bool {
+	return v.RuleID == RuleLogoPadding
+}
+
+// Fix trims padding from the logo, keeping TrimMargin pixels around the content.
+func (f *LogoPaddingFixer) Fix(ctx context.Context, a *artist.Artist, v *Violation) (*FixResult, error) {
+	if a.Path == "" {
+		return &FixResult{
+			RuleID:  RuleLogoPadding,
+			Fixed:   false,
+			Message: "artist has no path",
+		}, nil
+	}
+
+	entries, readErr := os.ReadDir(a.Path)
+	if readErr != nil {
+		return nil, fmt.Errorf("reading artist directory: %w", readErr)
+	}
+	lowerToActual := make(map[string]string, len(entries))
+	for _, e := range entries {
+		if !e.IsDir() {
+			lowerToActual[strings.ToLower(e.Name())] = e.Name()
+		}
+	}
+
+	var logoPath string
+	for _, pattern := range logoPatterns {
+		if actual, ok := lowerToActual[strings.ToLower(pattern)]; ok {
+			logoPath = filepath.Join(a.Path, actual)
+			break
+		}
+	}
+	if logoPath == "" {
+		return &FixResult{
+			RuleID:  RuleLogoPadding,
+			Fixed:   false,
+			Message: "no logo file found on disk",
+		}, nil
+	}
+
+	data, err := os.ReadFile(logoPath) //nolint:gosec // G304: path from trusted artist directory
+	if err != nil {
+		return nil, fmt.Errorf("reading logo: %w", err)
+	}
+
+	origW, origH, origErr := img.GetDimensions(bytes.NewReader(data))
+
+	// Determine the trim margin from the violation's config. The pipeline
+	// attaches the rule config to the violation, so we read it from there.
+	margin := v.Config.TrimMargin
+	if margin < 0 {
+		margin = 0
+	}
+
+	trimmed, _, err := img.TrimWithMargin(bytes.NewReader(data), margin)
+	if err != nil {
+		return nil, fmt.Errorf("trimming logo: %w", err)
+	}
+
+	newW, newH, newErr := img.GetDimensions(bytes.NewReader(trimmed))
+
+	// If dimensions are unchanged, the trim had no effect (content + margin
+	// fills the full image). Report as not fixed to avoid a fix/reappear cycle.
+	if origErr == nil && newErr == nil && origW == newW && origH == newH {
+		return &FixResult{
+			RuleID:  RuleLogoPadding,
+			Fixed:   false,
+			Message: fmt.Sprintf("logo is already %dx%d after applying margin; no change needed", origW, origH),
+		}, nil
+	}
+
+	naming := []string{filepath.Base(logoPath)}
+	useSymlinks := activeUseSymlinks(ctx, f.platformService)
+	savedNames, err := img.Save(a.Path, "logo", trimmed, naming, useSymlinks, f.logger)
+	if err != nil {
+		return nil, fmt.Errorf("saving trimmed logo: %w", err)
+	}
+
+	// Clean up case-mismatched duplicates (same logic as LogoTrimFixer).
+	if len(savedNames) > 0 {
+		oldBase := filepath.Base(logoPath)
+		newBase := savedNames[0]
+		if strings.EqualFold(oldBase, newBase) && oldBase != newBase {
+			newPath := filepath.Join(a.Path, newBase)
+			oldInfo, errOld := os.Stat(logoPath) //nolint:gosec // G703: trusted path
+			newInfo, errNew := os.Stat(newPath)  //nolint:gosec // G703: trusted path
+			if errOld == nil && errNew == nil && !os.SameFile(oldInfo, newInfo) {
+				if rmErr := os.Remove(logoPath); rmErr != nil {
+					f.logger.Warn("failed to remove case-mismatched logo duplicate",
+						slog.String("path", logoPath), slog.String("error", rmErr.Error()))
+				}
+			}
+		}
+	}
+
+	msg := fmt.Sprintf("trimmed logo padding (margin %dpx)", margin)
+	if origErr == nil && newErr == nil {
+		msg = fmt.Sprintf("trimmed logo from %dx%d to %dx%d (margin %dpx)", origW, origH, newW, newH, margin)
+	}
+
+	return &FixResult{
+		RuleID:  RuleLogoPadding,
+		Fixed:   true,
+		Message: msg,
+	}, nil
+}
+
 // fetchImageURL downloads image data from a URL with timeout and size limits.
 func fetchImageURL(ctx context.Context, rawURL string) ([]byte, error) {
 	client := &http.Client{Timeout: fetchTimeout}

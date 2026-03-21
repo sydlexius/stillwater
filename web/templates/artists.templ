@@ -384,25 +384,30 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 					spinner.classList.remove('hidden');
 					label.textContent = 'Scanning...';
 
-					var poll = setInterval(function() {
-						fetch('/api/v1/scanner/status')
-							.then(function(r) { return r.json(); })
-							.then(function(data) {
-								if (data.status === 'completed' || data.status === 'failed') {
-									clearInterval(poll);
-									btn.disabled = false;
-									spinner.classList.add('hidden');
-									label.textContent = 'Scan Library';
-									htmx.ajax('GET', window.location.pathname + window.location.search, {target: '#artist-content', swap: 'outerHTML'});
-								}
-							})
-							.catch(function() {
-								clearInterval(poll);
-								btn.disabled = false;
-								spinner.classList.add('hidden');
-								label.textContent = 'Scan Library';
-							});
-					}, 2000);
+					function resetScanUI() {
+						btn.disabled = false;
+						spinner.classList.add('hidden');
+						label.textContent = 'Scan Library';
+					}
+					pollAsyncStatus('/api/v1/scanner/status', {
+						onData: function(data) {
+							if (data.status === 'completed' || data.status === 'failed') {
+								resetScanUI();
+								htmx.ajax('GET', window.location.pathname + window.location.search, {target: '#artist-content', swap: 'outerHTML'});
+								return true;
+							}
+							return false;
+						},
+						onTimeout: function() {
+							resetScanUI();
+						},
+						onHTTPError: function() {
+							resetScanUI();
+						},
+						onNetworkError: function() {
+							resetScanUI();
+						}
+					});
 				});
 			})();
 		</script>

@@ -80,53 +80,44 @@ templ IndexPage(assets AssetPaths) {
 			}
 
 			function pollRuleStatus() {
-				var attempts = 0;
-				var maxAttempts = 150;
-				var poll = setInterval(function() {
-					if (++attempts > maxAttempts) {
-						clearInterval(poll);
+				pollAsyncStatus('/api/v1/rules/run-all/status', {
+					onData: function(data) {
+						if (data.status === 'completed') {
+							var msg = 'Rules complete: ' + data.violations_found + ' violations';
+							if (data.fixes_succeeded > 0) {
+								msg += ', ' + data.fixes_succeeded + ' fixed';
+							}
+							showSuccessToast(msg);
+							resetRuleButton();
+							htmx.ajax('GET', '/api/v1/reports/health', {target: '#health-summary', swap: 'innerHTML'});
+							htmx.ajax('GET', '/api/v1/notifications/badge', {target: '#notif-badge-desktop', swap: 'innerHTML'});
+							return true;
+						}
+						if (data.status === 'failed') {
+							showToast('Rule evaluation failed: ' + (data.error || 'unknown error'));
+							resetRuleButton();
+							return true;
+						}
+						if (data.status === 'idle') {
+							showToast('Rule run state was lost');
+							resetRuleButton();
+							return true;
+						}
+						return false;
+					},
+					onTimeout: function() {
 						showToast('Rule status polling timed out');
 						resetRuleButton();
-						return;
+					},
+					onHTTPError: function(status) {
+						showToast('Status check failed (HTTP ' + status + ')');
+						resetRuleButton();
+					},
+					onNetworkError: function() {
+						showToast('Network error while checking rule status');
+						resetRuleButton();
 					}
-					fetch('/api/v1/rules/run-all/status')
-						.then(function(r) {
-							if (!r.ok) {
-								clearInterval(poll);
-								showToast('Status check failed (HTTP ' + r.status + ')');
-								resetRuleButton();
-								return null;
-							}
-							return r.json();
-						})
-						.then(function(data) {
-							if (!data) return;
-							if (data.status === 'completed') {
-								clearInterval(poll);
-								var msg = 'Rules complete: ' + data.violations_found + ' violations';
-								if (data.fixes_succeeded > 0) {
-									msg += ', ' + data.fixes_succeeded + ' fixed';
-								}
-								showSuccessToast(msg);
-								resetRuleButton();
-								htmx.ajax('GET', '/api/v1/reports/health', {target: '#health-summary', swap: 'innerHTML'});
-								htmx.ajax('GET', '/api/v1/notifications/badge', {target: '#notif-badge-desktop', swap: 'innerHTML'});
-							} else if (data.status === 'failed') {
-								clearInterval(poll);
-								showToast('Rule evaluation failed: ' + (data.error || 'unknown error'));
-								resetRuleButton();
-							} else if (data.status === 'idle') {
-								clearInterval(poll);
-								showToast('Rule run state was lost');
-								resetRuleButton();
-							}
-						})
-						.catch(function() {
-							clearInterval(poll);
-							showToast('Network error while checking rule status');
-							resetRuleButton();
-						});
-				}, 2000);
+				});
 			}
 
 			function resetRuleButton() {

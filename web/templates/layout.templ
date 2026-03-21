@@ -11,6 +11,7 @@ type AssetPaths struct {
 	ChartJS    string
 	SortableJS string
 	HelpJS     string
+	PollingJS  string
 	LoginBG    string
 }
 
@@ -51,6 +52,7 @@ templ Layout(title string, assets AssetPaths) {
 			@components.FieldProviderModal()
 			@components.ContextMenuGlobalJS()
 			@HelpOverlay()
+			<script src={ assets.PollingJS }></script>
 			<script src={ assets.HelpJS }></script>
 			<div id="error-toast-container" class="fixed top-4 right-4 z-50 flex flex-col gap-2 w-80"></div>
 			<script>

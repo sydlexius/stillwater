@@ -465,6 +465,164 @@ func TestTrimAlphaBounds_JPEG(t *testing.T) {
 	}
 }
 
+func TestContentBounds_PNG_WithPadding(t *testing.T) {
+	data := makePNGWithPadding(t, 200, 100, 20, 20, 10, 10)
+
+	content, original, err := ContentBounds(bytes.NewReader(data))
+	if err != nil {
+		t.Fatalf("ContentBounds: %v", err)
+	}
+
+	if original.Dx() != 200 || original.Dy() != 100 {
+		t.Errorf("original = %v, want 200x100", original)
+	}
+	if content.Min.X != 20 || content.Min.Y != 10 {
+		t.Errorf("content.Min = (%d,%d), want (20,10)", content.Min.X, content.Min.Y)
+	}
+	if content.Max.X != 180 || content.Max.Y != 90 {
+		t.Errorf("content.Max = (%d,%d), want (180,90)", content.Max.X, content.Max.Y)
+	}
+}
+
+func TestContentBounds_PNG_NoPadding(t *testing.T) {
+	data := makePNG(t, 100, 100)
+
+	content, original, err := ContentBounds(bytes.NewReader(data))
+	if err != nil {
+		t.Fatalf("ContentBounds: %v", err)
+	}
+	if content != original {
+		t.Errorf("expected content == original for fully opaque PNG; content=%v, original=%v", content, original)
+	}
+}
+
+func makeJPEGWithWhitespace(t *testing.T, totalW, totalH, padLeft, padRight, padTop, padBottom int) []byte {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, totalW, totalH))
+	// Fill with white (near-white to match the > 240 threshold).
+	for y := 0; y < totalH; y++ {
+		for x := 0; x < totalW; x++ {
+			img.Set(x, y, color.RGBA{R: 255, G: 255, B: 255, A: 255})
+		}
+	}
+	// Draw colored content in the center.
+	for y := padTop; y < totalH-padBottom; y++ {
+		for x := padLeft; x < totalW-padRight; x++ {
+			img.Set(x, y, color.RGBA{R: 100, G: 50, B: 150, A: 255})
+		}
+	}
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: 100}); err != nil {
+		t.Fatalf("encoding JPEG: %v", err)
+	}
+	return buf.Bytes()
+}
+
+func TestContentBounds_JPEG_WithWhitespace(t *testing.T) {
+	data := makeJPEGWithWhitespace(t, 200, 100, 20, 20, 10, 10)
+
+	content, original, err := ContentBounds(bytes.NewReader(data))
+	if err != nil {
+		t.Fatalf("ContentBounds: %v", err)
+	}
+
+	if original.Dx() != 200 || original.Dy() != 100 {
+		t.Errorf("original = %v, want 200x100", original)
+	}
+	// JPEG compression may shift boundaries by a pixel or two.
+	// Check that the content is significantly smaller than the original.
+	contentArea := content.Dx() * content.Dy()
+	totalArea := original.Dx() * original.Dy()
+	paddingRatio := 1.0 - float64(contentArea)/float64(totalArea)
+	if paddingRatio < 0.10 {
+		t.Errorf("expected significant padding detected in JPEG; paddingRatio = %.2f", paddingRatio)
+	}
+}
+
+func TestTrimWithMargin_PNG(t *testing.T) {
+	// 200x80 PNG with 30px padding on all sides. Content = 140x20.
+	data := makePNGWithPadding(t, 200, 80, 30, 30, 30, 30)
+
+	trimmed, format, err := TrimWithMargin(bytes.NewReader(data), 5)
+	if err != nil {
+		t.Fatalf("TrimWithMargin: %v", err)
+	}
+	if format != FormatPNG {
+		t.Errorf("format = %q, want %q", format, FormatPNG)
+	}
+
+	w, h, err := GetDimensions(bytes.NewReader(trimmed))
+	if err != nil {
+		t.Fatalf("GetDimensions: %v", err)
+	}
+	// Content is 140x20, margin is 5px each side, so result should be ~150x30.
+	if w < 140 || w > 160 || h < 20 || h > 40 {
+		t.Errorf("trimmed dimensions = %dx%d, expected roughly 150x30", w, h)
+	}
+}
+
+func TestTrimWithMargin_JPEG(t *testing.T) {
+	// JPEG with whitespace borders -- verify TrimWithMargin detects and trims them.
+	data := makeJPEGWithWhitespace(t, 200, 100, 30, 30, 30, 30)
+
+	trimmed, format, err := TrimWithMargin(bytes.NewReader(data), 2)
+	if err != nil {
+		t.Fatalf("TrimWithMargin: %v", err)
+	}
+	if format != FormatJPEG {
+		t.Errorf("format = %q, want %q", format, FormatJPEG)
+	}
+
+	w, h, err := GetDimensions(bytes.NewReader(trimmed))
+	if err != nil {
+		t.Fatalf("GetDimensions: %v", err)
+	}
+	origW, origH, _ := GetDimensions(bytes.NewReader(data))
+	if w >= origW || h >= origH {
+		t.Errorf("trimmed %dx%d should be smaller than original %dx%d", w, h, origW, origH)
+	}
+}
+
+func TestTrimWithMargin_LargeMargin(t *testing.T) {
+	// Margin larger than the padding should return the full image.
+	data := makePNGWithPadding(t, 100, 100, 10, 10, 10, 10)
+
+	trimmed, _, err := TrimWithMargin(bytes.NewReader(data), 500)
+	if err != nil {
+		t.Fatalf("TrimWithMargin: %v", err)
+	}
+
+	w, h, err := GetDimensions(bytes.NewReader(trimmed))
+	if err != nil {
+		t.Fatalf("GetDimensions: %v", err)
+	}
+	if w != 100 || h != 100 {
+		t.Errorf("expected original 100x100 when margin exceeds padding, got %dx%d", w, h)
+	}
+}
+
+func TestTrimWithMargin_NoContent(t *testing.T) {
+	// Fully transparent PNG -- should return unchanged.
+	img := image.NewRGBA(image.Rect(0, 0, 50, 50))
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		t.Fatalf("encoding PNG: %v", err)
+	}
+
+	trimmed, _, err := TrimWithMargin(bytes.NewReader(buf.Bytes()), 2)
+	if err != nil {
+		t.Fatalf("TrimWithMargin: %v", err)
+	}
+
+	w, h, err := GetDimensions(bytes.NewReader(trimmed))
+	if err != nil {
+		t.Fatalf("GetDimensions: %v", err)
+	}
+	if w != 50 || h != 50 {
+		t.Errorf("expected unchanged 50x50, got %dx%d", w, h)
+	}
+}
+
 func TestGeneratePlaceholder_JPEG(t *testing.T) {
 	data := makeJPEG(t, 500, 500)
 	result, err := GeneratePlaceholder(bytes.NewReader(data), "thumb")

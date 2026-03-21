@@ -919,3 +919,119 @@ func TestCheckBackdropSequencing_SingleFile(t *testing.T) {
 		t.Errorf("expected nil for single fanart file, got: %s", v.Message)
 	}
 }
+
+// --- checkLogoPadding tests ---
+
+func TestCheckLogoPadding_ExcessPadding(t *testing.T) {
+	dir := t.TempDir()
+	// 200x100 logo with 30px padding on each side. Content = 140x40 = 5600.
+	// Total = 200*100 = 20000. Padding ratio = 1 - 5600/20000 = 72%.
+	createTestPNGWithPadding(t, filepath.Join(dir, "logo.png"), 200, 100, 30, 30, 30, 30)
+
+	a := artist.Artist{Name: "Test", LogoExists: true, Path: dir}
+	v := checkLogoPadding(&a, RuleConfig{ThresholdPercent: 15})
+	if v == nil {
+		t.Fatal("expected violation for logo with 72% padding")
+	}
+	if v.RuleID != RuleLogoPadding {
+		t.Errorf("RuleID = %q, want %q", v.RuleID, RuleLogoPadding)
+	}
+	if !v.Fixable {
+		t.Error("expected Fixable to be true")
+	}
+}
+
+func TestCheckLogoPadding_BelowThreshold(t *testing.T) {
+	dir := t.TempDir()
+	// 200x100 logo with 5px padding on each side. Content = 190x90 = 17100.
+	// Total = 20000. Padding ratio = 1 - 17100/20000 = 14.5%, below 15%.
+	createTestPNGWithPadding(t, filepath.Join(dir, "logo.png"), 200, 100, 5, 5, 5, 5)
+
+	a := artist.Artist{Name: "Test", LogoExists: true, Path: dir}
+	v := checkLogoPadding(&a, RuleConfig{ThresholdPercent: 15})
+	if v != nil {
+		t.Errorf("expected nil for logo with 14.5%% padding, got %v", v)
+	}
+}
+
+func TestCheckLogoPadding_NoPadding(t *testing.T) {
+	dir := t.TempDir()
+	createTestPNG(t, filepath.Join(dir, "logo.png"), 200, 100)
+
+	a := artist.Artist{Name: "Test", LogoExists: true, Path: dir}
+	v := checkLogoPadding(&a, RuleConfig{ThresholdPercent: 15})
+	if v != nil {
+		t.Errorf("expected nil for logo with no padding, got %v", v)
+	}
+}
+
+func TestCheckLogoPadding_NoLogo(t *testing.T) {
+	a := artist.Artist{Name: "Test", LogoExists: false, Path: t.TempDir()}
+	v := checkLogoPadding(&a, RuleConfig{ThresholdPercent: 15})
+	if v != nil {
+		t.Errorf("expected nil when logo does not exist, got %v", v)
+	}
+}
+
+func TestCheckLogoPadding_NoPath(t *testing.T) {
+	a := artist.Artist{Name: "Test", LogoExists: true, Path: ""}
+	v := checkLogoPadding(&a, RuleConfig{ThresholdPercent: 15})
+	if v != nil {
+		t.Errorf("expected nil when path is empty, got %v", v)
+	}
+}
+
+func TestCheckLogoPadding_DefaultThreshold(t *testing.T) {
+	dir := t.TempDir()
+	// 200x100 logo with 20px padding on each side. Content = 160x60 = 9600.
+	// Total = 20000. Padding ratio = 1 - 9600/20000 = 52%.
+	// Default threshold is 15%, so this should be flagged.
+	createTestPNGWithPadding(t, filepath.Join(dir, "logo.png"), 200, 100, 20, 20, 20, 20)
+
+	a := artist.Artist{Name: "Test", LogoExists: true, Path: dir}
+	v := checkLogoPadding(&a, RuleConfig{})
+	if v == nil {
+		t.Fatal("expected violation with default threshold (15%)")
+	}
+}
+
+// createTestJPEGWithWhitespace creates a JPEG with white borders around colored content.
+func createTestJPEGWithWhitespace(t *testing.T, path string, totalW, totalH, padLeft, padRight, padTop, padBottom int) {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, totalW, totalH))
+	// Fill with white.
+	for y := 0; y < totalH; y++ {
+		for x := 0; x < totalW; x++ {
+			img.Set(x, y, color.RGBA{R: 255, G: 255, B: 255, A: 255})
+		}
+	}
+	// Draw colored content in the center.
+	for y := padTop; y < totalH-padBottom; y++ {
+		for x := padLeft; x < totalW-padRight; x++ {
+			img.Set(x, y, color.RGBA{R: 100, G: 50, B: 150, A: 255})
+		}
+	}
+
+	f, err := os.Create(path) //nolint:gosec
+	if err != nil {
+		t.Fatalf("creating test jpeg: %v", err)
+	}
+	defer f.Close() //nolint:errcheck
+
+	if err := jpeg.Encode(f, img, &jpeg.Options{Quality: 95}); err != nil {
+		t.Fatalf("encoding jpeg: %v", err)
+	}
+}
+
+func TestCheckLogoPadding_JPEGWhitespace(t *testing.T) {
+	dir := t.TempDir()
+	// 200x100 JPEG with 30px white borders on each side.
+	// Content = 140x40 = 5600. Total = 20000. Padding = 72%.
+	createTestJPEGWithWhitespace(t, filepath.Join(dir, "logo.png"), 200, 100, 30, 30, 30, 30)
+
+	a := artist.Artist{Name: "Test", LogoExists: true, Path: dir}
+	v := checkLogoPadding(&a, RuleConfig{ThresholdPercent: 15})
+	if v == nil {
+		t.Fatal("expected violation for JPEG logo with whitespace padding")
+	}
+}

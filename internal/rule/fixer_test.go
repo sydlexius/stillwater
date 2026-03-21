@@ -961,6 +961,118 @@ func TestLogoTrimFixer_Fix_CaseInsensitiveLookup(t *testing.T) {
 	}
 }
 
+func TestLogoPaddingFixer_CanFix(t *testing.T) {
+	f := NewLogoPaddingFixer(nil, testLogger())
+	if !f.CanFix(&Violation{RuleID: RuleLogoPadding}) {
+		t.Error("should handle logo_padding")
+	}
+	if f.CanFix(&Violation{RuleID: RuleLogoTrimmable}) {
+		t.Error("should not handle logo_trimmable")
+	}
+}
+
+func TestLogoPaddingFixer_Fix_TrimsPadding(t *testing.T) {
+	dir := t.TempDir()
+	// 200x100 PNG with 30px padding on each side. Content = 140x40.
+	createTestPNGWithPadding(t, filepath.Join(dir, "logo.png"), 200, 100, 30, 30, 30, 30)
+
+	origData, err := os.ReadFile(filepath.Join(dir, "logo.png"))
+	if err != nil {
+		t.Fatalf("reading original logo: %v", err)
+	}
+
+	a := &artist.Artist{Name: "Padding Test", Path: dir, LogoExists: true}
+	f := NewLogoPaddingFixer(nil, testLogger())
+
+	// Set TrimMargin to 5 via violation config.
+	v := &Violation{RuleID: RuleLogoPadding, Config: RuleConfig{TrimMargin: 5}}
+	fr, err := f.Fix(context.Background(), a, v)
+	if err != nil {
+		t.Fatalf("Fix: %v", err)
+	}
+	if !fr.Fixed {
+		t.Errorf("Fixed = false, want true; message: %s", fr.Message)
+	}
+	if fr.RuleID != RuleLogoPadding {
+		t.Errorf("RuleID = %q, want %q", fr.RuleID, RuleLogoPadding)
+	}
+	if !strings.Contains(fr.Message, "margin 5px") {
+		t.Errorf("Message should mention margin; got %q", fr.Message)
+	}
+
+	// Verify the trimmed image has smaller dimensions.
+	trimmedData, err := os.ReadFile(filepath.Join(dir, "logo.png"))
+	if err != nil {
+		t.Fatalf("reading trimmed logo: %v", err)
+	}
+	origCfg, _, err := image.DecodeConfig(bytes.NewReader(origData))
+	if err != nil {
+		t.Fatalf("decoding original config: %v", err)
+	}
+	trimCfg, _, err := image.DecodeConfig(bytes.NewReader(trimmedData))
+	if err != nil {
+		t.Fatalf("decoding trimmed config: %v", err)
+	}
+	if trimCfg.Width >= origCfg.Width || trimCfg.Height >= origCfg.Height {
+		t.Errorf("trimmed dimensions %dx%d should be smaller than original %dx%d",
+			trimCfg.Width, trimCfg.Height, origCfg.Width, origCfg.Height)
+	}
+}
+
+func TestLogoPaddingFixer_Fix_EmptyPath(t *testing.T) {
+	a := &artist.Artist{Name: "No Path"}
+	f := NewLogoPaddingFixer(nil, testLogger())
+
+	fr, err := f.Fix(context.Background(), a, &Violation{RuleID: RuleLogoPadding})
+	if err != nil {
+		t.Fatalf("Fix: %v", err)
+	}
+	if fr.Fixed {
+		t.Error("Fixed = true, want false for empty path")
+	}
+	if fr.Message != "artist has no path" {
+		t.Errorf("Message = %q, want 'artist has no path'", fr.Message)
+	}
+}
+
+func TestLogoPaddingFixer_Fix_NoLogoOnDisk(t *testing.T) {
+	dir := t.TempDir()
+	a := &artist.Artist{Name: "No Logo", Path: dir, LogoExists: true}
+	f := NewLogoPaddingFixer(nil, testLogger())
+
+	fr, err := f.Fix(context.Background(), a, &Violation{RuleID: RuleLogoPadding})
+	if err != nil {
+		t.Fatalf("Fix: %v", err)
+	}
+	if fr.Fixed {
+		t.Error("Fixed = true, want false when no logo on disk")
+	}
+	if fr.Message != "no logo file found on disk" {
+		t.Errorf("Message = %q, want 'no logo file found on disk'", fr.Message)
+	}
+}
+
+func TestLogoPaddingFixer_Fix_NegativeMargin(t *testing.T) {
+	dir := t.TempDir()
+	createTestPNGWithPadding(t, filepath.Join(dir, "logo.png"), 200, 100, 30, 30, 30, 30)
+
+	a := &artist.Artist{Name: "Neg Margin", Path: dir, LogoExists: true}
+	f := NewLogoPaddingFixer(nil, testLogger())
+
+	// Negative margin should be clamped to 0 (trim to exact content bounds).
+	v := &Violation{RuleID: RuleLogoPadding, Config: RuleConfig{TrimMargin: -5}}
+	fr, err := f.Fix(context.Background(), a, v)
+	if err != nil {
+		t.Fatalf("Fix: %v", err)
+	}
+	if !fr.Fixed {
+		t.Errorf("Fixed = false, want true; message: %s", fr.Message)
+	}
+	if !strings.Contains(fr.Message, "margin 0px") {
+		t.Errorf("Message should show clamped margin of 0; got %q", fr.Message)
+	}
+}
+
 func TestPipeline_ManualMode_DiscoversCandidates(t *testing.T) {
 	db := setupTestDB(t)
 	artistSvc := artist.NewService(db)
