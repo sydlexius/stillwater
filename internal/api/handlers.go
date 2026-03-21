@@ -25,18 +25,21 @@ func (r *Router) handleHealth(w http.ResponseWriter, req *http.Request) {
 	})
 }
 
-// assets returns cache-busted asset paths for templates.
+// assets returns cache-busted asset paths and server configuration for templates.
+// BasePath is the configured server.base_path prefix (e.g. "/stillwater") so
+// templates can construct correct absolute URLs in sub-path deployments.
 func (r *Router) assets() templates.AssetPaths {
 	return templates.AssetPaths{
-		CSS:        r.staticAssets.Path("/css/styles.css"),
-		HTMX:       r.staticAssets.Path("/js/htmx.min.js"),
-		CropperJS:  r.staticAssets.Path("/js/cropper.min.js"),
-		CropperCSS: r.staticAssets.Path("/css/cropper.min.css"),
-		ChartJS:    r.staticAssets.Path("/js/chart.min.js"),
-		SortableJS: r.staticAssets.Path("/js/Sortable.min.js"),
-		HelpJS:     r.staticAssets.Path("/js/help.js"),
-		PollingJS:  r.staticAssets.Path("/js/polling.js"),
-		LoginBG:    r.staticAssets.Path("/img/login-bg.jpg"),
+		CSS:        r.basePath + r.staticAssets.Path("/css/styles.css"),
+		HTMX:       r.basePath + r.staticAssets.Path("/js/htmx.min.js"),
+		CropperJS:  r.basePath + r.staticAssets.Path("/js/cropper.min.js"),
+		CropperCSS: r.basePath + r.staticAssets.Path("/css/cropper.min.css"),
+		ChartJS:    r.basePath + r.staticAssets.Path("/js/chart.min.js"),
+		SortableJS: r.basePath + r.staticAssets.Path("/js/Sortable.min.js"),
+		HelpJS:     r.basePath + r.staticAssets.Path("/js/help.js"),
+		PollingJS:  r.basePath + r.staticAssets.Path("/js/polling.js"),
+		LoginBG:    r.basePath + r.staticAssets.Path("/img/login-bg.jpg"),
+		BasePath:   r.basePath,
 	}
 }
 
@@ -72,7 +75,7 @@ func (r *Router) handleLogin(w http.ResponseWriter, req *http.Request) {
 		MaxAge:   86400,
 	})
 
-	w.Header().Set("HX-Redirect", "/")
+	w.Header().Set("HX-Redirect", r.basePath+"/")
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
@@ -152,7 +155,7 @@ func (r *Router) handleSetup(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	w.Header().Set("HX-Redirect", "/")
+	w.Header().Set("HX-Redirect", r.basePath+"/")
 	writeJSON(w, http.StatusCreated, map[string]string{"status": "admin account created"})
 }
 

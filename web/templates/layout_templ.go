@@ -10,7 +10,8 @@ import templruntime "github.com/a-h/templ/runtime"
 
 import "github.com/sydlexius/stillwater/web/components"
 
-// AssetPaths holds cache-busted URLs for static assets.
+// AssetPaths holds cache-busted URLs for static assets and server configuration
+// used by templates to construct correct URLs for sub-path deployments.
 type AssetPaths struct {
 	CSS        string
 	HTMX       string
@@ -21,6 +22,9 @@ type AssetPaths struct {
 	HelpJS     string
 	PollingJS  string
 	LoginBG    string
+	// BasePath is the server.base_path prefix (e.g. "/stillwater"). Empty string
+	// when the app is deployed at the root. Never has a trailing slash.
+	BasePath string
 }
 
 func Layout(title string, assets AssetPaths) templ.Component {
@@ -51,7 +55,7 @@ func Layout(title string, assets AssetPaths) templ.Component {
 		var templ_7745c5c3_Var2 string
 		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinStringErrs(title)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/layout.templ`, Line: 24, Col: 17}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/layout.templ`, Line: 28, Col: 17}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
 		if templ_7745c5c3_Err != nil {
@@ -64,13 +68,78 @@ func Layout(title string, assets AssetPaths) templ.Component {
 		var templ_7745c5c3_Var3 templ.SafeURL
 		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinURLErrs(assets.CSS)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/layout.templ`, Line: 25, Col: 43}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/layout.templ`, Line: 29, Col: 43}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "\"><link rel=\"icon\" type=\"image/svg+xml\" href=\"/static/img/favicon.svg\"><link rel=\"icon\" type=\"image/png\" sizes=\"32x32\" href=\"/static/img/favicon-32x32.png\"><link rel=\"icon\" type=\"image/png\" sizes=\"16x16\" href=\"/static/img/favicon-16x16.png\"><link rel=\"apple-touch-icon\" sizes=\"180x180\" href=\"/static/img/apple-touch-icon.png\"><link rel=\"manifest\" href=\"/static/site.webmanifest\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "\"><link rel=\"icon\" type=\"image/svg+xml\" href=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var4 templ.SafeURL
+		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinURLErrs(assets.BasePath + "/static/img/favicon.svg")
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/layout.templ`, Line: 30, Col: 91}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "\"><link rel=\"icon\" type=\"image/png\" sizes=\"32x32\" href=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var5 templ.SafeURL
+		templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinURLErrs(assets.BasePath + "/static/img/favicon-32x32.png")
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/layout.templ`, Line: 31, Col: 107}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "\"><link rel=\"icon\" type=\"image/png\" sizes=\"16x16\" href=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var6 templ.SafeURL
+		templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinURLErrs(assets.BasePath + "/static/img/favicon-16x16.png")
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/layout.templ`, Line: 32, Col: 107}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "\"><link rel=\"apple-touch-icon\" sizes=\"180x180\" href=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var7 templ.SafeURL
+		templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinURLErrs(assets.BasePath + "/static/img/apple-touch-icon.png")
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/layout.templ`, Line: 33, Col: 107}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "\"><link rel=\"manifest\" href=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var8 templ.SafeURL
+		templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinURLErrs(assets.BasePath + "/static/site.webmanifest")
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/layout.templ`, Line: 34, Col: 75}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -78,37 +147,50 @@ func Layout(title string, assets AssetPaths) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<script src=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "<script src=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var4 string
-		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(assets.HTMX)
+		var templ_7745c5c3_Var9 string
+		templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(assets.HTMX)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/layout.templ`, Line: 32, Col: 28}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/layout.templ`, Line: 36, Col: 28}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "\"></script><script>\n\t\t\t\tdocument.addEventListener('htmx:configRequest', function(evt) {\n\t\t\t\t\tvar csrfToken = document.cookie.replace(/(?:(?:^|.*;\\s*)csrf_token\\s*\\=\\s*([^;]*).*$)|^.*$/, \"$1\");\n\t\t\t\t\tif (csrfToken) {\n\t\t\t\t\t\tevt.detail.headers['X-CSRF-Token'] = csrfToken;\n\t\t\t\t\t}\n\t\t\t\t});\n\t\t\t</script></head><body class=\"h-full bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100\"><img src=\"")
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var5 string
-		templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(assets.LoginBG)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/layout.templ`, Line: 43, Col: 28}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "\"></script><meta name=\"htmx-base-path\" content=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "\" alt=\"\" class=\"fixed inset-0 -z-20 h-full w-full object-cover pointer-events-none select-none\" aria-hidden=\"true\"><div class=\"fixed inset-0 -z-10 bg-black/15 dark:bg-black/45 pointer-events-none\" aria-hidden=\"true\"></div><div class=\"min-h-full\">")
+		var templ_7745c5c3_Var10 string
+		templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(assets.BasePath)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/layout.templ`, Line: 41, Col: 56}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = navbar().Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "\"><script>\n\t\t\t\t(function() {\n\t\t\t\t\tvar el = document.querySelector('meta[name=\"htmx-base-path\"]');\n\t\t\t\t\tvar bp = el ? el.content : '';\n\t\t\t\t\tdocument.addEventListener('htmx:configRequest', function(evt) {\n\t\t\t\t\t\tvar csrfToken = document.cookie.replace(/(?:(?:^|.*;\\s*)csrf_token\\s*\\=\\s*([^;]*).*$)|^.*$/, \"$1\");\n\t\t\t\t\t\tif (csrfToken) {\n\t\t\t\t\t\t\tevt.detail.headers['X-CSRF-Token'] = csrfToken;\n\t\t\t\t\t\t}\n\t\t\t\t\t\tif (bp && evt.detail.path.startsWith('/')) {\n\t\t\t\t\t\t\tevt.detail.path = bp + evt.detail.path;\n\t\t\t\t\t\t}\n\t\t\t\t\t});\n\t\t\t\t})();\n\t\t\t</script></head><body class=\"h-full bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100\"><img src=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var11 string
+		templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(assets.LoginBG)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/layout.templ`, Line: 59, Col: 28}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "\" alt=\"\" class=\"fixed inset-0 -z-20 h-full w-full object-cover pointer-events-none select-none\" aria-hidden=\"true\"><div class=\"fixed inset-0 -z-10 bg-black/15 dark:bg-black/45 pointer-events-none\" aria-hidden=\"true\"></div><div class=\"min-h-full\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = navbar(assets.BasePath).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -116,7 +198,7 @@ func Layout(title string, assets AssetPaths) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<main class=\"mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "<main class=\"mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -124,7 +206,7 @@ func Layout(title string, assets AssetPaths) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</main></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "</main></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -144,33 +226,33 @@ func Layout(title string, assets AssetPaths) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "<script src=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "<script src=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var6 string
-		templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(assets.PollingJS)
+		var templ_7745c5c3_Var12 string
+		templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(assets.PollingJS)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/layout.templ`, Line: 56, Col: 33}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/layout.templ`, Line: 72, Col: 33}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "\"></script><script src=\"")
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var7 string
-		templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(assets.HelpJS)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/layout.templ`, Line: 57, Col: 30}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "\"></script><script src=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "\"></script><div id=\"error-toast-container\" class=\"fixed top-4 right-4 z-50 flex flex-col gap-2 w-80\"></div><script>\n\t\t\t\t// Theme toggle: cycles Light -> Dark -> System\n\t\t\t\tfunction cycleTheme() {\n\t\t\t\t\tvar current = localStorage.getItem('theme');\n\t\t\t\t\tvar next;\n\t\t\t\t\tif (current === 'light') {\n\t\t\t\t\t\tnext = 'dark';\n\t\t\t\t\t} else if (current === 'dark') {\n\t\t\t\t\t\tnext = 'system';\n\t\t\t\t\t} else {\n\t\t\t\t\t\tnext = 'light';\n\t\t\t\t\t}\n\t\t\t\t\tapplyTheme(next);\n\t\t\t\t}\n\t\t\t\tfunction applyTheme(pref) {\n\t\t\t\t\tif (pref === 'system') {\n\t\t\t\t\t\tlocalStorage.removeItem('theme');\n\t\t\t\t\t} else {\n\t\t\t\t\t\tlocalStorage.setItem('theme', pref);\n\t\t\t\t\t}\n\t\t\t\t\tvar isDark = pref === 'dark' || (pref === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);\n\t\t\t\t\tdocument.documentElement.classList.toggle('dark', isDark);\n\t\t\t\t}\n\t\t\t</script><script>\n\t\t\t\tdocument.body.addEventListener('htmx:responseError', function(evt) {\n\t\t\t\t\tshowToast('Request failed: ' + (evt.detail.xhr.status || 'network error'));\n\t\t\t\t});\n\t\t\t\tdocument.body.addEventListener('htmx:timeout', function() {\n\t\t\t\t\tshowToast('Request timed out. Please try again.');\n\t\t\t\t});\n\t\t\t\tfunction showToast(msg) {\n\t\t\t\t\tvar container = document.getElementById('error-toast-container');\n\t\t\t\t\tvar toast = document.createElement('div');\n\t\t\t\t\ttoast.className = 'flex items-center gap-3 rounded-lg px-4 py-3 text-sm shadow-lg bg-red-50 dark:bg-red-900/50 text-red-800 dark:text-red-200 border border-red-200 dark:border-red-800 transition-opacity duration-300';\n\t\t\t\t\tvar span = document.createElement('span');\n\t\t\t\t\tspan.textContent = msg;\n\t\t\t\t\tvar btn = document.createElement('button');\n\t\t\t\t\tbtn.className = 'ml-2 font-bold opacity-70 hover:opacity-100';\n\t\t\t\t\tbtn.textContent = '\\u00d7';\n\t\t\t\t\tbtn.onclick = function() { toast.remove(); };\n\t\t\t\t\ttoast.appendChild(span);\n\t\t\t\t\ttoast.appendChild(btn);\n\t\t\t\t\tcontainer.appendChild(toast);\n\t\t\t\t\tsetTimeout(function() {\n\t\t\t\t\t\ttoast.style.opacity = '0';\n\t\t\t\t\t\tsetTimeout(function() { toast.remove(); }, 300);\n\t\t\t\t\t}, 5000);\n\t\t\t\t}\n\t\t\t\tfunction showSuccessToast(msg) {\n\t\t\t\t\tvar container = document.getElementById('error-toast-container');\n\t\t\t\t\tvar toast = document.createElement('div');\n\t\t\t\t\ttoast.className = 'flex items-center gap-3 rounded-lg px-4 py-3 text-sm shadow-lg bg-green-50 dark:bg-green-900/50 text-green-800 dark:text-green-200 border border-green-200 dark:border-green-800 transition-opacity duration-300';\n\t\t\t\t\tvar span = document.createElement('span');\n\t\t\t\t\tspan.textContent = msg;\n\t\t\t\t\tvar btn = document.createElement('button');\n\t\t\t\t\tbtn.className = 'ml-2 font-bold opacity-70 hover:opacity-100';\n\t\t\t\t\tbtn.textContent = '\\u00d7';\n\t\t\t\t\tbtn.onclick = function() { toast.remove(); };\n\t\t\t\t\ttoast.appendChild(span);\n\t\t\t\t\ttoast.appendChild(btn);\n\t\t\t\t\tcontainer.appendChild(toast);\n\t\t\t\t\tsetTimeout(function() {\n\t\t\t\t\t\ttoast.style.opacity = '0';\n\t\t\t\t\t\tsetTimeout(function() { toast.remove(); }, 300);\n\t\t\t\t\t}, 5000);\n\t\t\t\t}\n\t\t\t\tfunction showWarningToast(msg) {\n\t\t\t\t\tvar container = document.getElementById('error-toast-container');\n\t\t\t\t\tvar toast = document.createElement('div');\n\t\t\t\t\ttoast.className = 'flex items-center gap-3 rounded-lg px-4 py-3 text-sm shadow-lg bg-amber-50 dark:bg-amber-900/50 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-800 transition-opacity duration-300';\n\t\t\t\t\tvar span = document.createElement('span');\n\t\t\t\t\tspan.textContent = msg;\n\t\t\t\t\tvar btn = document.createElement('button');\n\t\t\t\t\tbtn.className = 'ml-2 font-bold opacity-70 hover:opacity-100';\n\t\t\t\t\tbtn.textContent = '\\u00d7';\n\t\t\t\t\tbtn.onclick = function() { toast.remove(); };\n\t\t\t\t\ttoast.appendChild(span);\n\t\t\t\t\ttoast.appendChild(btn);\n\t\t\t\t\tcontainer.appendChild(toast);\n\t\t\t\t\tsetTimeout(function() {\n\t\t\t\t\t\ttoast.style.opacity = '0';\n\t\t\t\t\t\tsetTimeout(function() { toast.remove(); }, 300);\n\t\t\t\t\t}, 8000);\n\t\t\t\t}\n\t\t\t\t// showUndoToast displays a success toast with an Undo button and a\n\t\t\t\t// countdown indicator. The countdown mirrors the server-side undo\n\t\t\t\t// window (undoSeconds). Clicking Undo calls the undo endpoint.\n\t\t\t\tfunction showUndoToast(msg, undoID, undoSeconds, csrfToken) {\n\t\t\t\t\tvar container = document.getElementById('error-toast-container');\n\t\t\t\t\tvar toast = document.createElement('div');\n\t\t\t\t\ttoast.className = 'flex items-center gap-3 rounded-lg px-4 py-3 text-sm shadow-lg bg-green-50 dark:bg-green-900/50 text-green-800 dark:text-green-200 border border-green-200 dark:border-green-800 transition-opacity duration-300';\n\n\t\t\t\t\tvar msgSpan = document.createElement('span');\n\t\t\t\t\tmsgSpan.textContent = msg;\n\n\t\t\t\t\tvar countSpan = document.createElement('span');\n\t\t\t\t\tcountSpan.className = 'ml-1 tabular-nums text-green-600 dark:text-green-300';\n\t\t\t\t\tcountSpan.textContent = '(' + undoSeconds + 's)';\n\n\t\t\t\t\tvar undoBtn = document.createElement('button');\n\t\t\t\t\tundoBtn.className = 'ml-auto rounded border border-green-400 dark:border-green-600 px-2 py-0.5 text-xs font-semibold text-green-700 dark:text-green-300 hover:bg-green-100 dark:hover:bg-green-800 transition-colors';\n\t\t\t\t\tundoBtn.textContent = 'Undo';\n\t\t\t\t\tundoBtn.setAttribute('aria-label', 'Undo applied fix');\n\n\t\t\t\t\tvar closeBtn = document.createElement('button');\n\t\t\t\t\tcloseBtn.className = 'font-bold opacity-70 hover:opacity-100';\n\t\t\t\t\tcloseBtn.textContent = '\\u00d7';\n\t\t\t\t\tcloseBtn.setAttribute('aria-label', 'Close notification');\n\n\t\t\t\t\ttoast.appendChild(msgSpan);\n\t\t\t\t\ttoast.appendChild(countSpan);\n\t\t\t\t\ttoast.appendChild(undoBtn);\n\t\t\t\t\ttoast.appendChild(closeBtn);\n\t\t\t\t\tcontainer.appendChild(toast);\n\n\t\t\t\t\t// Countdown ticker updates every second until the window expires.\n\t\t\t\t\tvar remaining = undoSeconds;\n\t\t\t\t\tvar ticker = setInterval(function() {\n\t\t\t\t\t\tremaining--;\n\t\t\t\t\t\tif (remaining <= 0) {\n\t\t\t\t\t\t\tclearInterval(ticker);\n\t\t\t\t\t\t\tcountSpan.textContent = '';\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\tcountSpan.textContent = '(' + remaining + 's)';\n\t\t\t\t\t\t}\n\t\t\t\t\t}, 1000);\n\n\t\t\t\t\t// Auto-dismiss after the undo window elapses.\n\t\t\t\t\tvar dismissTimer = setTimeout(function() {\n\t\t\t\t\t\tclearInterval(ticker);\n\t\t\t\t\t\ttoast.style.opacity = '0';\n\t\t\t\t\t\tsetTimeout(function() { toast.remove(); }, 300);\n\t\t\t\t\t}, undoSeconds * 1000);\n\n\t\t\t\t\tfunction dismissNow() {\n\t\t\t\t\t\tclearInterval(ticker);\n\t\t\t\t\t\tclearTimeout(dismissTimer);\n\t\t\t\t\t\ttoast.style.opacity = '0';\n\t\t\t\t\t\tsetTimeout(function() { toast.remove(); }, 300);\n\t\t\t\t\t}\n\n\t\t\t\t\tcloseBtn.onclick = dismissNow;\n\n\t\t\t\t\tundoBtn.onclick = function() {\n\t\t\t\t\t\tundoBtn.disabled = true;\n\t\t\t\t\t\tundoBtn.textContent = 'Undoing...';\n\t\t\t\t\t\tfetch('/api/v1/notifications/undo/' + encodeURIComponent(undoID), {\n\t\t\t\t\t\t\tmethod: 'POST',\n\t\t\t\t\t\t\theaders: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},\n\t\t\t\t\t\t\tcredentials: 'same-origin'\n\t\t\t\t\t\t}).then(function(resp) {\n\t\t\t\t\t\t\tif (!resp.ok) {\n\t\t\t\t\t\t\t\treturn resp.json().then(function(d) {\n\t\t\t\t\t\t\t\t\tthrow new Error(d.error || 'HTTP ' + resp.status);\n\t\t\t\t\t\t\t\t});\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\treturn resp.json();\n\t\t\t\t\t\t}).then(function() {\n\t\t\t\t\t\t\tdismissNow();\n\t\t\t\t\t\t\tif (typeof showSuccessToast === 'function') showSuccessToast('Fix reverted');\n\t\t\t\t\t\t\tif (typeof reloadNotificationsTable === 'function') reloadNotificationsTable();\n\t\t\t\t\t\t}).catch(function(err) {\n\t\t\t\t\t\t\tdismissNow();\n\t\t\t\t\t\t\tif (typeof showToast === 'function') showToast('Undo failed: ' + (err.message || 'Unknown error'));\n\t\t\t\t\t\t});\n\t\t\t\t\t};\n\t\t\t\t}\n\t\t\t\tdocument.body.addEventListener('syncWarning', function(evt) {\n\t\t\t\t\t// HTMX wraps non-object HX-Trigger payloads (including arrays) as { value: ... }.\n\t\t\t\t\t// Unwrap when present; fall back to evt.detail for programmatic dispatches.\n\t\t\t\t\tvar detail = (evt && evt.detail && typeof evt.detail === 'object' && 'value' in evt.detail)\n\t\t\t\t\t\t? evt.detail.value\n\t\t\t\t\t\t: evt.detail;\n\t\t\t\t\tif (detail == null) {\n\t\t\t\t\t\treturn;\n\t\t\t\t\t}\n\t\t\t\t\tvar msgs = Array.isArray(detail) ? detail : [detail];\n\t\t\t\t\tmsgs.forEach(function(m) { showWarningToast(m); });\n\t\t\t\t});\n\t\t\t</script><script>\n\t\t\t\t// Confirmation modal interceptor for HTMX hx-confirm events.\n\t\t\t\t// Replaces the native browser confirm() with a styled modal.\n\t\t\t\t// Elements with data-confirm-key support \"Don't ask again\" via localStorage.\n\t\t\t\t//\n\t\t\t\t// Also exposes window.showConfirmDialog(message, confirmKey, onConfirm)\n\t\t\t\t// for programmatic use (e.g. when the message must be built dynamically\n\t\t\t\t// after an async fetch).\n\t\t\t\t(function() {\n\t\t\t\t\tvar modal = null;\n\t\t\t\t\tvar pendingEvent = null;\n\t\t\t\t\tvar pendingCallback = null;\n\t\t\t\t\tvar pendingConfirmKey = null;\n\n\t\t\t\t\tfunction getModal() {\n\t\t\t\t\t\tif (!modal) {\n\t\t\t\t\t\t\tmodal = {\n\t\t\t\t\t\t\t\tel: document.getElementById('confirm-modal'),\n\t\t\t\t\t\t\t\ttitle: document.getElementById('confirm-modal-title'),\n\t\t\t\t\t\t\t\tmessage: document.getElementById('confirm-modal-message'),\n\t\t\t\t\t\t\t\taccept: document.getElementById('confirm-modal-accept'),\n\t\t\t\t\t\t\t\tcancel: document.getElementById('confirm-modal-cancel'),\n\t\t\t\t\t\t\t\tremember: document.getElementById('confirm-modal-remember'),\n\t\t\t\t\t\t\t\trememberLabel: document.getElementById('confirm-modal-remember-label'),\n\t\t\t\t\t\t\t\tbackdrop: document.getElementById('confirm-backdrop')\n\t\t\t\t\t\t\t};\n\t\t\t\t\t\t}\n\t\t\t\t\t\treturn modal;\n\t\t\t\t\t}\n\n\t\t\t\t\tfunction showModal(message, confirmKey, opts) {\n\t\t\t\t\t\tvar m = getModal();\n\t\t\t\t\t\tif (opts && opts.html) {\n\t\t\t\t\t\t\tm.message.innerHTML = message;\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\tm.message.textContent = message;\n\t\t\t\t\t\t}\n\t\t\t\t\t\tm.remember.checked = false;\n\t\t\t\t\t\tif (confirmKey) {\n\t\t\t\t\t\t\tm.rememberLabel.classList.remove('hidden');\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\tm.rememberLabel.classList.add('hidden');\n\t\t\t\t\t\t}\n\t\t\t\t\t\tm.el.classList.remove('hidden');\n\t\t\t\t\t}\n\n\t\t\t\t\tfunction hideModal() {\n\t\t\t\t\t\tvar m = getModal();\n\t\t\t\t\t\tm.el.classList.add('hidden');\n\t\t\t\t\t\tpendingEvent = null;\n\t\t\t\t\t\tpendingCallback = null;\n\t\t\t\t\t\tpendingConfirmKey = null;\n\t\t\t\t\t}\n\n\t\t\t\t\tdocument.body.addEventListener('htmx:confirm', function(evt) {\n\t\t\t\t\t\tvar trigger = evt.detail.elt;\n\t\t\t\t\t\tvar question = evt.detail.question;\n\t\t\t\t\t\tif (!question) return;\n\n\t\t\t\t\t\tevt.preventDefault();\n\n\t\t\t\t\t\tvar confirmKey = trigger.getAttribute('data-confirm-key');\n\t\t\t\t\t\tif (confirmKey && localStorage.getItem('ui.confirm.' + confirmKey) === 'skip') {\n\t\t\t\t\t\t\tevt.detail.issueRequest(true);\n\t\t\t\t\t\t\treturn;\n\t\t\t\t\t\t}\n\n\t\t\t\t\t\tpendingEvent = evt;\n\t\t\t\t\t\tshowModal(question, confirmKey);\n\t\t\t\t\t});\n\n\t\t\t\t\tdocument.addEventListener('click', function(e) {\n\t\t\t\t\t\tif (e.target.id === 'confirm-modal-accept') {\n\t\t\t\t\t\t\tvar m = getModal();\n\t\t\t\t\t\t\tif (pendingEvent) {\n\t\t\t\t\t\t\t\tvar trigger = pendingEvent.detail.elt;\n\t\t\t\t\t\t\t\tvar confirmKey = trigger.getAttribute('data-confirm-key');\n\t\t\t\t\t\t\t\tif (confirmKey && m.remember.checked) {\n\t\t\t\t\t\t\t\t\tlocalStorage.setItem('ui.confirm.' + confirmKey, 'skip');\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t\tpendingEvent.detail.issueRequest(true);\n\t\t\t\t\t\t\t} else if (pendingCallback) {\n\t\t\t\t\t\t\t\tif (pendingConfirmKey && m.remember.checked) {\n\t\t\t\t\t\t\t\t\tlocalStorage.setItem('ui.confirm.' + pendingConfirmKey, 'skip');\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t\tpendingCallback();\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\thideModal();\n\t\t\t\t\t\t} else if (e.target.id === 'confirm-modal-cancel' || e.target.id === 'confirm-backdrop') {\n\t\t\t\t\t\t\thideModal();\n\t\t\t\t\t\t}\n\t\t\t\t\t});\n\n\t\t\t\t\tdocument.addEventListener('keydown', function(e) {\n\t\t\t\t\t\tif (e.key === 'Escape' && (pendingEvent || pendingCallback)) {\n\t\t\t\t\t\t\thideModal();\n\t\t\t\t\t\t}\n\t\t\t\t\t});\n\n\t\t\t\t\t// Global API for programmatic confirmation dialogs.\n\t\t\t\t\t// If the user previously chose \"Don't ask again\" for this key,\n\t\t\t\t\t// onConfirm is called immediately without showing the modal.\n\t\t\t\t\twindow.showConfirmDialog = function(message, confirmKey, onConfirm, opts) {\n\t\t\t\t\t\tif (confirmKey && localStorage.getItem('ui.confirm.' + confirmKey) === 'skip') {\n\t\t\t\t\t\t\tonConfirm();\n\t\t\t\t\t\t\treturn;\n\t\t\t\t\t\t}\n\t\t\t\t\t\tpendingCallback = onConfirm;\n\t\t\t\t\t\tpendingConfirmKey = confirmKey;\n\t\t\t\t\t\tshowModal(message, confirmKey, opts);\n\t\t\t\t\t};\n\t\t\t\t})();\n\t\t\t</script><script>\n\t\t\t\tdocument.addEventListener('keydown', function(e) {\n\t\t\t\t\tif (e.key === '?') {\n\t\t\t\t\t\tvar tag = document.activeElement && document.activeElement.tagName;\n\t\t\t\t\t\tif (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;\n\t\t\t\t\t\tif (document.activeElement && document.activeElement.isContentEditable) return;\n\t\t\t\t\t\te.preventDefault();\n\t\t\t\t\t\ttoggleHelpOverlay();\n\t\t\t\t\t}\n\t\t\t\t});\n\t\t\t</script></body></html>")
+		var templ_7745c5c3_Var13 string
+		templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(assets.HelpJS)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/layout.templ`, Line: 73, Col: 30}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "\"></script><div id=\"error-toast-container\" class=\"fixed top-4 right-4 z-50 flex flex-col gap-2 w-80\"></div><script>\n\t\t\t\t// Theme toggle: cycles Light -> Dark -> System\n\t\t\t\tfunction cycleTheme() {\n\t\t\t\t\tvar current = localStorage.getItem('theme');\n\t\t\t\t\tvar next;\n\t\t\t\t\tif (current === 'light') {\n\t\t\t\t\t\tnext = 'dark';\n\t\t\t\t\t} else if (current === 'dark') {\n\t\t\t\t\t\tnext = 'system';\n\t\t\t\t\t} else {\n\t\t\t\t\t\tnext = 'light';\n\t\t\t\t\t}\n\t\t\t\t\tapplyTheme(next);\n\t\t\t\t}\n\t\t\t\tfunction applyTheme(pref) {\n\t\t\t\t\tif (pref === 'system') {\n\t\t\t\t\t\tlocalStorage.removeItem('theme');\n\t\t\t\t\t} else {\n\t\t\t\t\t\tlocalStorage.setItem('theme', pref);\n\t\t\t\t\t}\n\t\t\t\t\tvar isDark = pref === 'dark' || (pref === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);\n\t\t\t\t\tdocument.documentElement.classList.toggle('dark', isDark);\n\t\t\t\t}\n\t\t\t</script><script>\n\t\t\t\tdocument.body.addEventListener('htmx:responseError', function(evt) {\n\t\t\t\t\tshowToast('Request failed: ' + (evt.detail.xhr.status || 'network error'));\n\t\t\t\t});\n\t\t\t\tdocument.body.addEventListener('htmx:timeout', function() {\n\t\t\t\t\tshowToast('Request timed out. Please try again.');\n\t\t\t\t});\n\t\t\t\tfunction showToast(msg) {\n\t\t\t\t\tvar container = document.getElementById('error-toast-container');\n\t\t\t\t\tvar toast = document.createElement('div');\n\t\t\t\t\ttoast.className = 'flex items-center gap-3 rounded-lg px-4 py-3 text-sm shadow-lg bg-red-50 dark:bg-red-900/50 text-red-800 dark:text-red-200 border border-red-200 dark:border-red-800 transition-opacity duration-300';\n\t\t\t\t\tvar span = document.createElement('span');\n\t\t\t\t\tspan.textContent = msg;\n\t\t\t\t\tvar btn = document.createElement('button');\n\t\t\t\t\tbtn.className = 'ml-2 font-bold opacity-70 hover:opacity-100';\n\t\t\t\t\tbtn.textContent = '\\u00d7';\n\t\t\t\t\tbtn.onclick = function() { toast.remove(); };\n\t\t\t\t\ttoast.appendChild(span);\n\t\t\t\t\ttoast.appendChild(btn);\n\t\t\t\t\tcontainer.appendChild(toast);\n\t\t\t\t\tsetTimeout(function() {\n\t\t\t\t\t\ttoast.style.opacity = '0';\n\t\t\t\t\t\tsetTimeout(function() { toast.remove(); }, 300);\n\t\t\t\t\t}, 5000);\n\t\t\t\t}\n\t\t\t\tfunction showSuccessToast(msg) {\n\t\t\t\t\tvar container = document.getElementById('error-toast-container');\n\t\t\t\t\tvar toast = document.createElement('div');\n\t\t\t\t\ttoast.className = 'flex items-center gap-3 rounded-lg px-4 py-3 text-sm shadow-lg bg-green-50 dark:bg-green-900/50 text-green-800 dark:text-green-200 border border-green-200 dark:border-green-800 transition-opacity duration-300';\n\t\t\t\t\tvar span = document.createElement('span');\n\t\t\t\t\tspan.textContent = msg;\n\t\t\t\t\tvar btn = document.createElement('button');\n\t\t\t\t\tbtn.className = 'ml-2 font-bold opacity-70 hover:opacity-100';\n\t\t\t\t\tbtn.textContent = '\\u00d7';\n\t\t\t\t\tbtn.onclick = function() { toast.remove(); };\n\t\t\t\t\ttoast.appendChild(span);\n\t\t\t\t\ttoast.appendChild(btn);\n\t\t\t\t\tcontainer.appendChild(toast);\n\t\t\t\t\tsetTimeout(function() {\n\t\t\t\t\t\ttoast.style.opacity = '0';\n\t\t\t\t\t\tsetTimeout(function() { toast.remove(); }, 300);\n\t\t\t\t\t}, 5000);\n\t\t\t\t}\n\t\t\t\tfunction showWarningToast(msg) {\n\t\t\t\t\tvar container = document.getElementById('error-toast-container');\n\t\t\t\t\tvar toast = document.createElement('div');\n\t\t\t\t\ttoast.className = 'flex items-center gap-3 rounded-lg px-4 py-3 text-sm shadow-lg bg-amber-50 dark:bg-amber-900/50 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-800 transition-opacity duration-300';\n\t\t\t\t\tvar span = document.createElement('span');\n\t\t\t\t\tspan.textContent = msg;\n\t\t\t\t\tvar btn = document.createElement('button');\n\t\t\t\t\tbtn.className = 'ml-2 font-bold opacity-70 hover:opacity-100';\n\t\t\t\t\tbtn.textContent = '\\u00d7';\n\t\t\t\t\tbtn.onclick = function() { toast.remove(); };\n\t\t\t\t\ttoast.appendChild(span);\n\t\t\t\t\ttoast.appendChild(btn);\n\t\t\t\t\tcontainer.appendChild(toast);\n\t\t\t\t\tsetTimeout(function() {\n\t\t\t\t\t\ttoast.style.opacity = '0';\n\t\t\t\t\t\tsetTimeout(function() { toast.remove(); }, 300);\n\t\t\t\t\t}, 8000);\n\t\t\t\t}\n\t\t\t\t// showUndoToast displays a success toast with an Undo button and a\n\t\t\t\t// countdown indicator. The countdown mirrors the server-side undo\n\t\t\t\t// window (undoSeconds). Clicking Undo calls the undo endpoint.\n\t\t\t\tfunction showUndoToast(msg, undoID, undoSeconds, csrfToken) {\n\t\t\t\t\tvar container = document.getElementById('error-toast-container');\n\t\t\t\t\tvar toast = document.createElement('div');\n\t\t\t\t\ttoast.className = 'flex items-center gap-3 rounded-lg px-4 py-3 text-sm shadow-lg bg-green-50 dark:bg-green-900/50 text-green-800 dark:text-green-200 border border-green-200 dark:border-green-800 transition-opacity duration-300';\n\n\t\t\t\t\tvar msgSpan = document.createElement('span');\n\t\t\t\t\tmsgSpan.textContent = msg;\n\n\t\t\t\t\tvar countSpan = document.createElement('span');\n\t\t\t\t\tcountSpan.className = 'ml-1 tabular-nums text-green-600 dark:text-green-300';\n\t\t\t\t\tcountSpan.textContent = '(' + undoSeconds + 's)';\n\n\t\t\t\t\tvar undoBtn = document.createElement('button');\n\t\t\t\t\tundoBtn.className = 'ml-auto rounded border border-green-400 dark:border-green-600 px-2 py-0.5 text-xs font-semibold text-green-700 dark:text-green-300 hover:bg-green-100 dark:hover:bg-green-800 transition-colors';\n\t\t\t\t\tundoBtn.textContent = 'Undo';\n\t\t\t\t\tundoBtn.setAttribute('aria-label', 'Undo applied fix');\n\n\t\t\t\t\tvar closeBtn = document.createElement('button');\n\t\t\t\t\tcloseBtn.className = 'font-bold opacity-70 hover:opacity-100';\n\t\t\t\t\tcloseBtn.textContent = '\\u00d7';\n\t\t\t\t\tcloseBtn.setAttribute('aria-label', 'Close notification');\n\n\t\t\t\t\ttoast.appendChild(msgSpan);\n\t\t\t\t\ttoast.appendChild(countSpan);\n\t\t\t\t\ttoast.appendChild(undoBtn);\n\t\t\t\t\ttoast.appendChild(closeBtn);\n\t\t\t\t\tcontainer.appendChild(toast);\n\n\t\t\t\t\t// Countdown ticker updates every second until the window expires.\n\t\t\t\t\tvar remaining = undoSeconds;\n\t\t\t\t\tvar ticker = setInterval(function() {\n\t\t\t\t\t\tremaining--;\n\t\t\t\t\t\tif (remaining <= 0) {\n\t\t\t\t\t\t\tclearInterval(ticker);\n\t\t\t\t\t\t\tcountSpan.textContent = '';\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\tcountSpan.textContent = '(' + remaining + 's)';\n\t\t\t\t\t\t}\n\t\t\t\t\t}, 1000);\n\n\t\t\t\t\t// Auto-dismiss after the undo window elapses.\n\t\t\t\t\tvar dismissTimer = setTimeout(function() {\n\t\t\t\t\t\tclearInterval(ticker);\n\t\t\t\t\t\ttoast.style.opacity = '0';\n\t\t\t\t\t\tsetTimeout(function() { toast.remove(); }, 300);\n\t\t\t\t\t}, undoSeconds * 1000);\n\n\t\t\t\t\tfunction dismissNow() {\n\t\t\t\t\t\tclearInterval(ticker);\n\t\t\t\t\t\tclearTimeout(dismissTimer);\n\t\t\t\t\t\ttoast.style.opacity = '0';\n\t\t\t\t\t\tsetTimeout(function() { toast.remove(); }, 300);\n\t\t\t\t\t}\n\n\t\t\t\t\tcloseBtn.onclick = dismissNow;\n\n\t\t\t\t\tundoBtn.onclick = function() {\n\t\t\t\t\t\tundoBtn.disabled = true;\n\t\t\t\t\t\tundoBtn.textContent = 'Undoing...';\n\t\t\t\t\t\tvar bpEl = document.querySelector('meta[name=\"htmx-base-path\"]');\n\t\t\t\t\tvar bp = bpEl ? bpEl.content : '';\n\t\t\t\t\t\tfetch(bp + '/api/v1/notifications/undo/' + encodeURIComponent(undoID), {\n\t\t\t\t\t\t\tmethod: 'POST',\n\t\t\t\t\t\t\theaders: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},\n\t\t\t\t\t\t\tcredentials: 'same-origin'\n\t\t\t\t\t\t}).then(function(resp) {\n\t\t\t\t\t\t\tif (!resp.ok) {\n\t\t\t\t\t\t\t\treturn resp.json().then(function(d) {\n\t\t\t\t\t\t\t\t\tthrow new Error(d.error || 'HTTP ' + resp.status);\n\t\t\t\t\t\t\t\t});\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\treturn resp.json();\n\t\t\t\t\t\t}).then(function() {\n\t\t\t\t\t\t\tdismissNow();\n\t\t\t\t\t\t\tif (typeof showSuccessToast === 'function') showSuccessToast('Fix reverted');\n\t\t\t\t\t\t\tif (typeof reloadNotificationsTable === 'function') reloadNotificationsTable();\n\t\t\t\t\t\t}).catch(function(err) {\n\t\t\t\t\t\t\tdismissNow();\n\t\t\t\t\t\t\tif (typeof showToast === 'function') showToast('Undo failed: ' + (err.message || 'Unknown error'));\n\t\t\t\t\t\t});\n\t\t\t\t\t};\n\t\t\t\t}\n\t\t\t\tdocument.body.addEventListener('syncWarning', function(evt) {\n\t\t\t\t\t// HTMX wraps non-object HX-Trigger payloads (including arrays) as { value: ... }.\n\t\t\t\t\t// Unwrap when present; fall back to evt.detail for programmatic dispatches.\n\t\t\t\t\tvar detail = (evt && evt.detail && typeof evt.detail === 'object' && 'value' in evt.detail)\n\t\t\t\t\t\t? evt.detail.value\n\t\t\t\t\t\t: evt.detail;\n\t\t\t\t\tif (detail == null) {\n\t\t\t\t\t\treturn;\n\t\t\t\t\t}\n\t\t\t\t\tvar msgs = Array.isArray(detail) ? detail : [detail];\n\t\t\t\t\tmsgs.forEach(function(m) { showWarningToast(m); });\n\t\t\t\t});\n\t\t\t</script><script>\n\t\t\t\t// Confirmation modal interceptor for HTMX hx-confirm events.\n\t\t\t\t// Replaces the native browser confirm() with a styled modal.\n\t\t\t\t// Elements with data-confirm-key support \"Don't ask again\" via localStorage.\n\t\t\t\t//\n\t\t\t\t// Also exposes window.showConfirmDialog(message, confirmKey, onConfirm)\n\t\t\t\t// for programmatic use (e.g. when the message must be built dynamically\n\t\t\t\t// after an async fetch).\n\t\t\t\t(function() {\n\t\t\t\t\tvar modal = null;\n\t\t\t\t\tvar pendingEvent = null;\n\t\t\t\t\tvar pendingCallback = null;\n\t\t\t\t\tvar pendingConfirmKey = null;\n\n\t\t\t\t\tfunction getModal() {\n\t\t\t\t\t\tif (!modal) {\n\t\t\t\t\t\t\tmodal = {\n\t\t\t\t\t\t\t\tel: document.getElementById('confirm-modal'),\n\t\t\t\t\t\t\t\ttitle: document.getElementById('confirm-modal-title'),\n\t\t\t\t\t\t\t\tmessage: document.getElementById('confirm-modal-message'),\n\t\t\t\t\t\t\t\taccept: document.getElementById('confirm-modal-accept'),\n\t\t\t\t\t\t\t\tcancel: document.getElementById('confirm-modal-cancel'),\n\t\t\t\t\t\t\t\tremember: document.getElementById('confirm-modal-remember'),\n\t\t\t\t\t\t\t\trememberLabel: document.getElementById('confirm-modal-remember-label'),\n\t\t\t\t\t\t\t\tbackdrop: document.getElementById('confirm-backdrop')\n\t\t\t\t\t\t\t};\n\t\t\t\t\t\t}\n\t\t\t\t\t\treturn modal;\n\t\t\t\t\t}\n\n\t\t\t\t\tfunction showModal(message, confirmKey, opts) {\n\t\t\t\t\t\tvar m = getModal();\n\t\t\t\t\t\tif (opts && opts.html) {\n\t\t\t\t\t\t\tm.message.innerHTML = message;\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\tm.message.textContent = message;\n\t\t\t\t\t\t}\n\t\t\t\t\t\tm.remember.checked = false;\n\t\t\t\t\t\tif (confirmKey) {\n\t\t\t\t\t\t\tm.rememberLabel.classList.remove('hidden');\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\tm.rememberLabel.classList.add('hidden');\n\t\t\t\t\t\t}\n\t\t\t\t\t\tm.el.classList.remove('hidden');\n\t\t\t\t\t}\n\n\t\t\t\t\tfunction hideModal() {\n\t\t\t\t\t\tvar m = getModal();\n\t\t\t\t\t\tm.el.classList.add('hidden');\n\t\t\t\t\t\tpendingEvent = null;\n\t\t\t\t\t\tpendingCallback = null;\n\t\t\t\t\t\tpendingConfirmKey = null;\n\t\t\t\t\t}\n\n\t\t\t\t\tdocument.body.addEventListener('htmx:confirm', function(evt) {\n\t\t\t\t\t\tvar trigger = evt.detail.elt;\n\t\t\t\t\t\tvar question = evt.detail.question;\n\t\t\t\t\t\tif (!question) return;\n\n\t\t\t\t\t\tevt.preventDefault();\n\n\t\t\t\t\t\tvar confirmKey = trigger.getAttribute('data-confirm-key');\n\t\t\t\t\t\tif (confirmKey && localStorage.getItem('ui.confirm.' + confirmKey) === 'skip') {\n\t\t\t\t\t\t\tevt.detail.issueRequest(true);\n\t\t\t\t\t\t\treturn;\n\t\t\t\t\t\t}\n\n\t\t\t\t\t\tpendingEvent = evt;\n\t\t\t\t\t\tshowModal(question, confirmKey);\n\t\t\t\t\t});\n\n\t\t\t\t\tdocument.addEventListener('click', function(e) {\n\t\t\t\t\t\tif (e.target.id === 'confirm-modal-accept') {\n\t\t\t\t\t\t\tvar m = getModal();\n\t\t\t\t\t\t\tif (pendingEvent) {\n\t\t\t\t\t\t\t\tvar trigger = pendingEvent.detail.elt;\n\t\t\t\t\t\t\t\tvar confirmKey = trigger.getAttribute('data-confirm-key');\n\t\t\t\t\t\t\t\tif (confirmKey && m.remember.checked) {\n\t\t\t\t\t\t\t\t\tlocalStorage.setItem('ui.confirm.' + confirmKey, 'skip');\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t\tpendingEvent.detail.issueRequest(true);\n\t\t\t\t\t\t\t} else if (pendingCallback) {\n\t\t\t\t\t\t\t\tif (pendingConfirmKey && m.remember.checked) {\n\t\t\t\t\t\t\t\t\tlocalStorage.setItem('ui.confirm.' + pendingConfirmKey, 'skip');\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t\tpendingCallback();\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\thideModal();\n\t\t\t\t\t\t} else if (e.target.id === 'confirm-modal-cancel' || e.target.id === 'confirm-backdrop') {\n\t\t\t\t\t\t\thideModal();\n\t\t\t\t\t\t}\n\t\t\t\t\t});\n\n\t\t\t\t\tdocument.addEventListener('keydown', function(e) {\n\t\t\t\t\t\tif (e.key === 'Escape' && (pendingEvent || pendingCallback)) {\n\t\t\t\t\t\t\thideModal();\n\t\t\t\t\t\t}\n\t\t\t\t\t});\n\n\t\t\t\t\t// Global API for programmatic confirmation dialogs.\n\t\t\t\t\t// If the user previously chose \"Don't ask again\" for this key,\n\t\t\t\t\t// onConfirm is called immediately without showing the modal.\n\t\t\t\t\twindow.showConfirmDialog = function(message, confirmKey, onConfirm, opts) {\n\t\t\t\t\t\tif (confirmKey && localStorage.getItem('ui.confirm.' + confirmKey) === 'skip') {\n\t\t\t\t\t\t\tonConfirm();\n\t\t\t\t\t\t\treturn;\n\t\t\t\t\t\t}\n\t\t\t\t\t\tpendingCallback = onConfirm;\n\t\t\t\t\t\tpendingConfirmKey = confirmKey;\n\t\t\t\t\t\tshowModal(message, confirmKey, opts);\n\t\t\t\t\t};\n\t\t\t\t})();\n\t\t\t</script><script>\n\t\t\t\tdocument.addEventListener('keydown', function(e) {\n\t\t\t\t\tif (e.key === '?') {\n\t\t\t\t\t\tvar tag = document.activeElement && document.activeElement.tagName;\n\t\t\t\t\t\tif (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;\n\t\t\t\t\t\tif (document.activeElement && document.activeElement.isContentEditable) return;\n\t\t\t\t\t\te.preventDefault();\n\t\t\t\t\t\ttoggleHelpOverlay();\n\t\t\t\t\t}\n\t\t\t\t});\n\t\t\t</script></body></html>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -196,12 +278,12 @@ func themeInitScript() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var8 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var8 == nil {
-			templ_7745c5c3_Var8 = templ.NopComponent
+		templ_7745c5c3_Var14 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var14 == nil {
+			templ_7745c5c3_Var14 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<script>\n\t\t(function() {\n\t\t\tvar pref = localStorage.getItem('theme');\n\t\t\tif (pref === 'dark' || (pref !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches)) {\n\t\t\t\tdocument.documentElement.classList.add('dark');\n\t\t\t}\n\t\t})();\n\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "<script>\n\t\t(function() {\n\t\t\tvar pref = localStorage.getItem('theme');\n\t\t\tif (pref === 'dark' || (pref !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches)) {\n\t\t\t\tdocument.documentElement.classList.add('dark');\n\t\t\t}\n\t\t})();\n\t</script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -225,12 +307,12 @@ func themeToggleButton() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var9 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var9 == nil {
-			templ_7745c5c3_Var9 = templ.NopComponent
+		templ_7745c5c3_Var15 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var15 == nil {
+			templ_7745c5c3_Var15 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "<button type=\"button\" class=\"rounded-md p-2 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-700 dark:hover:text-gray-200\" onclick=\"cycleTheme()\" aria-label=\"Toggle theme\"><!-- Sun icon (shown in dark mode) --><svg class=\"hidden dark:block h-5 w-5\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1.5\" stroke=\"currentColor\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z\"></path></svg><!-- Moon icon (shown in light mode) --><svg class=\"block dark:hidden h-5 w-5\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1.5\" stroke=\"currentColor\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M21.752 15.002A9.718 9.718 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z\"></path></svg></button>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "<button type=\"button\" class=\"rounded-md p-2 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-700 dark:hover:text-gray-200\" onclick=\"cycleTheme()\" aria-label=\"Toggle theme\"><!-- Sun icon (shown in dark mode) --><svg class=\"hidden dark:block h-5 w-5\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1.5\" stroke=\"currentColor\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z\"></path></svg><!-- Moon icon (shown in light mode) --><svg class=\"block dark:hidden h-5 w-5\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1.5\" stroke=\"currentColor\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M21.752 15.002A9.718 9.718 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z\"></path></svg></button>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -238,7 +320,9 @@ func themeToggleButton() templ.Component {
 	})
 }
 
-func navbar() templ.Component {
+// navbar renders the top navigation bar. bp is the server base path (e.g.
+// "/stillwater") and may be empty when the app is deployed at the root.
+func navbar(bp string) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -254,12 +338,116 @@ func navbar() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var10 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var10 == nil {
-			templ_7745c5c3_Var10 = templ.NopComponent
+		templ_7745c5c3_Var16 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var16 == nil {
+			templ_7745c5c3_Var16 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "<nav class=\"bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm shadow\"><div class=\"mx-auto max-w-7xl px-4 sm:px-6 lg:px-8\"><div class=\"flex h-16 items-center justify-between\"><div class=\"flex items-center\"><a href=\"/\" class=\"flex items-center gap-2 text-xl font-bold text-blue-600 dark:text-blue-400\"><img src=\"/static/img/favicon.svg\" alt=\"\" class=\"h-7 w-7\" aria-hidden=\"true\"> Stillwater</a><div class=\"ml-10 hidden md:flex items-baseline space-x-4\"><a href=\"/\" class=\"rounded-md px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700\">Dashboard</a> <a href=\"/artists\" class=\"rounded-md px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700\">Artists</a> <a href=\"/reports/compliance\" class=\"rounded-md px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700\">Reports</a> <a href=\"/notifications\" class=\"relative rounded-md px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700\">Notifications <span id=\"notif-badge-desktop\" hx-get=\"/api/v1/notifications/badge\" hx-trigger=\"load, every 30s\" hx-swap=\"innerHTML\"></span></a> <a href=\"/settings\" class=\"rounded-md px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700\">Settings</a> <a href=\"/guide\" class=\"rounded-md px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700\">Guide</a></div></div><div class=\"hidden md:flex items-center gap-1\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "<nav class=\"bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm shadow\"><div class=\"mx-auto max-w-7xl px-4 sm:px-6 lg:px-8\"><div class=\"flex h-16 items-center justify-between\"><div class=\"flex items-center\"><a href=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var17 templ.SafeURL
+		templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(bp + "/"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/layout.templ`, Line: 424, Col: 38}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "\" class=\"flex items-center gap-2 text-xl font-bold text-blue-600 dark:text-blue-400\"><img src=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var18 string
+		templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(bp + "/static/img/favicon.svg")
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/layout.templ`, Line: 425, Col: 47}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "\" alt=\"\" class=\"h-7 w-7\" aria-hidden=\"true\"> Stillwater</a><div class=\"ml-10 hidden md:flex items-baseline space-x-4\"><a href=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var19 templ.SafeURL
+		templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(bp + "/"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/layout.templ`, Line: 429, Col: 39}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "\" class=\"rounded-md px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700\">Dashboard</a> <a href=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var20 templ.SafeURL
+		templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(bp + "/artists"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/layout.templ`, Line: 432, Col: 46}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "\" class=\"rounded-md px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700\">Artists</a> <a href=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var21 templ.SafeURL
+		templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(bp + "/reports/compliance"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/layout.templ`, Line: 435, Col: 57}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var21))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "\" class=\"rounded-md px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700\">Reports</a> <a href=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var22 templ.SafeURL
+		templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(bp + "/notifications"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/layout.templ`, Line: 438, Col: 52}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "\" class=\"relative rounded-md px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700\">Notifications <span id=\"notif-badge-desktop\" hx-get=\"/api/v1/notifications/badge\" hx-trigger=\"load, every 30s\" hx-swap=\"innerHTML\"></span></a> <a href=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var23 templ.SafeURL
+		templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(bp + "/settings"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/layout.templ`, Line: 442, Col: 47}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "\" class=\"rounded-md px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700\">Settings</a> <a href=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var24 templ.SafeURL
+		templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(bp + "/guide"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/layout.templ`, Line: 445, Col: 44}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "\" class=\"rounded-md px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700\">Guide</a></div></div><div class=\"hidden md:flex items-center gap-1\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -271,7 +459,20 @@ func navbar() templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "<button hx-post=\"/api/v1/auth/logout\" hx-redirect=\"/\" class=\"rounded-md px-3 py-2 text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200\">Logout</button></div><div class=\"flex items-center gap-1 md:hidden\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "<button hx-post=\"/api/v1/auth/logout\" hx-redirect=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var25 string
+		templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.JoinStringErrs(bp + "/")
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/layout.templ`, Line: 455, Col: 28}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var25))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "\" class=\"rounded-md px-3 py-2 text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200\">Logout</button></div><div class=\"flex items-center gap-1 md:hidden\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -279,7 +480,98 @@ func navbar() templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "<button type=\"button\" class=\"inline-flex items-center justify-center rounded-md p-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700\" aria-controls=\"mobile-menu\" aria-expanded=\"false\" onclick=\"var m=document.getElementById('mobile-menu');var open=m.classList.toggle('hidden');this.setAttribute('aria-expanded',!open);this.querySelector('.icon-open').classList.toggle('hidden');this.querySelector('.icon-close').classList.toggle('hidden')\"><span class=\"sr-only\">Open main menu</span> <svg class=\"icon-open h-6 w-6\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1.5\" stroke=\"currentColor\" aria-hidden=\"true\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5\"></path></svg> <svg class=\"icon-close hidden h-6 w-6\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1.5\" stroke=\"currentColor\" aria-hidden=\"true\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M6 18L18 6M6 6l12 12\"></path></svg></button></div></div></div><div class=\"hidden md:hidden\" id=\"mobile-menu\"><div class=\"space-y-1 px-2 pb-3 pt-2\"><a href=\"/\" class=\"block rounded-md px-3 py-3 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700\">Dashboard</a> <a href=\"/artists\" class=\"block rounded-md px-3 py-3 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700\">Artists</a> <a href=\"/reports/compliance\" class=\"block rounded-md px-3 py-3 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700\">Reports</a> <a href=\"/notifications\" class=\"relative block rounded-md px-3 py-3 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700\">Notifications <span id=\"notif-badge-mobile\"></span></a> <a href=\"/settings\" class=\"block rounded-md px-3 py-3 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700\">Settings</a> <a href=\"/guide\" class=\"block rounded-md px-3 py-3 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700\">Guide</a> <button type=\"button\" onclick=\"toggleHelpOverlay()\" class=\"block w-full rounded-md px-3 py-3 text-left text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700\">Help</button> <button hx-post=\"/api/v1/auth/logout\" hx-redirect=\"/\" class=\"block w-full rounded-md px-3 py-3 text-left text-base font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-700 dark:hover:text-gray-200\">Logout</button></div></div></nav>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "<button type=\"button\" class=\"inline-flex items-center justify-center rounded-md p-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700\" aria-controls=\"mobile-menu\" aria-expanded=\"false\" onclick=\"var m=document.getElementById('mobile-menu');var open=m.classList.toggle('hidden');this.setAttribute('aria-expanded',!open);this.querySelector('.icon-open').classList.toggle('hidden');this.querySelector('.icon-close').classList.toggle('hidden')\"><span class=\"sr-only\">Open main menu</span> <svg class=\"icon-open h-6 w-6\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1.5\" stroke=\"currentColor\" aria-hidden=\"true\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5\"></path></svg> <svg class=\"icon-close hidden h-6 w-6\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1.5\" stroke=\"currentColor\" aria-hidden=\"true\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M6 18L18 6M6 6l12 12\"></path></svg></button></div></div></div><div class=\"hidden md:hidden\" id=\"mobile-menu\"><div class=\"space-y-1 px-2 pb-3 pt-2\"><a href=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var26 templ.SafeURL
+		templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(bp + "/"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/layout.templ`, Line: 483, Col: 37}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var26))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "\" class=\"block rounded-md px-3 py-3 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700\">Dashboard</a> <a href=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var27 templ.SafeURL
+		templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(bp + "/artists"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/layout.templ`, Line: 486, Col: 44}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var27))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "\" class=\"block rounded-md px-3 py-3 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700\">Artists</a> <a href=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var28 templ.SafeURL
+		templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(bp + "/reports/compliance"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/layout.templ`, Line: 489, Col: 55}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var28))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "\" class=\"block rounded-md px-3 py-3 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700\">Reports</a> <a href=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var29 templ.SafeURL
+		templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(bp + "/notifications"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/layout.templ`, Line: 492, Col: 50}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var29))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "\" class=\"relative block rounded-md px-3 py-3 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700\">Notifications <span id=\"notif-badge-mobile\"></span></a> <a href=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var30 templ.SafeURL
+		templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(bp + "/settings"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/layout.templ`, Line: 496, Col: 45}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var30))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "\" class=\"block rounded-md px-3 py-3 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700\">Settings</a> <a href=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var31 templ.SafeURL
+		templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(bp + "/guide"))
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/layout.templ`, Line: 499, Col: 42}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var31))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 37, "\" class=\"block rounded-md px-3 py-3 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700\">Guide</a> <button type=\"button\" onclick=\"toggleHelpOverlay()\" class=\"block w-full rounded-md px-3 py-3 text-left text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700\">Help</button> <button hx-post=\"/api/v1/auth/logout\" hx-redirect=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var32 string
+		templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.JoinStringErrs(bp + "/")
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/layout.templ`, Line: 511, Col: 27}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var32))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "\" class=\"block w-full rounded-md px-3 py-3 text-left text-base font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-700 dark:hover:text-gray-200\">Logout</button></div></div></nav>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -303,12 +595,12 @@ func helpButton() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var11 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var11 == nil {
-			templ_7745c5c3_Var11 = templ.NopComponent
+		templ_7745c5c3_Var33 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var33 == nil {
+			templ_7745c5c3_Var33 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "<button type=\"button\" class=\"rounded-md p-2 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-700 dark:hover:text-gray-200\" onclick=\"toggleHelpOverlay()\" aria-label=\"Help\" title=\"Help (?)\"><svg class=\"h-5 w-5\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1.5\" stroke=\"currentColor\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z\"></path></svg></button>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 39, "<button type=\"button\" class=\"rounded-md p-2 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-700 dark:hover:text-gray-200\" onclick=\"toggleHelpOverlay()\" aria-label=\"Help\" title=\"Help (?)\"><svg class=\"h-5 w-5\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1.5\" stroke=\"currentColor\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z\"></path></svg></button>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
