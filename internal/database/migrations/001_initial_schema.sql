@@ -1,5 +1,10 @@
 -- +goose Up
--- Consolidated baseline schema.
+-- Unified baseline schema for Stillwater v1.0.0.
+-- Consolidates migrations 001 through 018.
+
+-- =============================================================================
+-- Authentication
+-- =============================================================================
 
 CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
@@ -20,6 +25,24 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE INDEX idx_sessions_user_id ON sessions(user_id);
 CREATE INDEX idx_sessions_expires_at ON sessions(expires_at);
 
+CREATE TABLE IF NOT EXISTS api_tokens (
+    id           TEXT PRIMARY KEY,
+    name         TEXT NOT NULL,
+    token_hash   TEXT NOT NULL UNIQUE,
+    scopes       TEXT NOT NULL DEFAULT 'read,write',
+    user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    last_used_at TEXT,
+    revoked_at   TEXT
+);
+
+CREATE INDEX idx_api_tokens_hash ON api_tokens(token_hash);
+CREATE INDEX idx_api_tokens_user ON api_tokens(user_id);
+
+-- =============================================================================
+-- Connections and Libraries
+-- =============================================================================
+
 CREATE TABLE IF NOT EXISTS connections (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -32,6 +55,7 @@ CREATE TABLE IF NOT EXISTS connections (
     feature_library_import INTEGER NOT NULL DEFAULT 1,
     feature_nfo_write INTEGER NOT NULL DEFAULT 1,
     feature_image_write INTEGER NOT NULL DEFAULT 1,
+    platform_user_id TEXT,
     last_checked_at TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -61,6 +85,10 @@ CREATE UNIQUE INDEX idx_libraries_connection_external
     ON libraries(connection_id, external_id)
     WHERE connection_id IS NOT NULL AND external_id <> '';
 
+-- =============================================================================
+-- Artists (core)
+-- =============================================================================
+
 CREATE TABLE IF NOT EXISTS artists (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -68,12 +96,6 @@ CREATE TABLE IF NOT EXISTS artists (
     type TEXT NOT NULL DEFAULT '',
     gender TEXT NOT NULL DEFAULT '',
     disambiguation TEXT NOT NULL DEFAULT '',
-    musicbrainz_id TEXT,
-    audiodb_id TEXT,
-    discogs_id TEXT,
-    wikidata_id TEXT,
-    deezer_id TEXT NOT NULL DEFAULT '',
-    spotify_id TEXT NOT NULL DEFAULT '',
     genres TEXT NOT NULL DEFAULT '[]',
     styles TEXT NOT NULL DEFAULT '[]',
     moods TEXT NOT NULL DEFAULT '[]',
@@ -86,41 +108,63 @@ CREATE TABLE IF NOT EXISTS artists (
     path TEXT NOT NULL,
     library_id TEXT REFERENCES libraries(id) DEFAULT NULL,
     nfo_exists INTEGER NOT NULL DEFAULT 0,
-    thumb_exists INTEGER NOT NULL DEFAULT 0,
-    fanart_exists INTEGER NOT NULL DEFAULT 0,
-    logo_exists INTEGER NOT NULL DEFAULT 0,
-    banner_exists INTEGER NOT NULL DEFAULT 0,
-    fanart_count INTEGER NOT NULL DEFAULT 0,
-    thumb_low_res INTEGER NOT NULL DEFAULT 0,
-    fanart_low_res INTEGER NOT NULL DEFAULT 0,
-    logo_low_res INTEGER NOT NULL DEFAULT 0,
-    banner_low_res INTEGER NOT NULL DEFAULT 0,
-    thumb_placeholder TEXT NOT NULL DEFAULT '',
-    fanart_placeholder TEXT NOT NULL DEFAULT '',
-    logo_placeholder TEXT NOT NULL DEFAULT '',
-    banner_placeholder TEXT NOT NULL DEFAULT '',
     health_score REAL NOT NULL DEFAULT 0.0,
     is_excluded INTEGER NOT NULL DEFAULT 0,
     exclusion_reason TEXT NOT NULL DEFAULT '',
     is_classical INTEGER NOT NULL DEFAULT 0,
     metadata_sources TEXT NOT NULL DEFAULT '{}',
-    audiodb_id_fetched_at TEXT,
-    discogs_id_fetched_at TEXT,
-    wikidata_id_fetched_at TEXT,
-    lastfm_id_fetched_at TEXT,
     last_scanned_at TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE INDEX idx_artists_name ON artists(name);
-CREATE INDEX idx_artists_musicbrainz_id ON artists(musicbrainz_id);
-CREATE INDEX idx_artists_audiodb_id ON artists(audiodb_id);
-CREATE INDEX idx_artists_discogs_id ON artists(discogs_id);
-CREATE INDEX idx_artists_wikidata_id ON artists(wikidata_id);
-CREATE INDEX idx_artists_deezer_id ON artists(deezer_id);
 CREATE INDEX idx_artists_path ON artists(path);
 CREATE INDEX idx_artists_library_id ON artists(library_id);
+
+-- =============================================================================
+-- Artist relationships (normalized)
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS artist_provider_ids (
+    artist_id  TEXT NOT NULL REFERENCES artists(id) ON DELETE CASCADE,
+    provider   TEXT NOT NULL,
+    provider_id TEXT NOT NULL DEFAULT '',
+    fetched_at TEXT,
+    PRIMARY KEY (artist_id, provider)
+);
+
+CREATE INDEX idx_provider_ids_lookup ON artist_provider_ids(provider, provider_id);
+
+CREATE TABLE IF NOT EXISTS artist_images (
+    id          TEXT NOT NULL PRIMARY KEY,
+    artist_id   TEXT NOT NULL REFERENCES artists(id) ON DELETE CASCADE,
+    image_type  TEXT NOT NULL,
+    slot_index  INTEGER NOT NULL DEFAULT 0,
+    exists_flag INTEGER NOT NULL DEFAULT 0,
+    low_res     INTEGER NOT NULL DEFAULT 0,
+    placeholder TEXT NOT NULL DEFAULT '',
+    width       INTEGER NOT NULL DEFAULT 0,
+    height      INTEGER NOT NULL DEFAULT 0,
+    phash       TEXT NOT NULL DEFAULT '',
+    file_format TEXT NOT NULL DEFAULT '',
+    source      TEXT NOT NULL DEFAULT '',
+    UNIQUE(artist_id, image_type, slot_index)
+);
+
+CREATE INDEX idx_artist_images_artist_id ON artist_images(artist_id);
+
+CREATE TABLE IF NOT EXISTS artist_platform_ids (
+    artist_id     TEXT NOT NULL REFERENCES artists(id) ON DELETE CASCADE,
+    connection_id TEXT NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
+    platform_artist_id TEXT NOT NULL,
+    created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    updated_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    PRIMARY KEY (artist_id, connection_id)
+);
+
+CREATE INDEX idx_artist_platform_ids_connection
+    ON artist_platform_ids(connection_id);
 
 CREATE TABLE IF NOT EXISTS artist_aliases (
     id TEXT PRIMARY KEY,
@@ -131,15 +175,6 @@ CREATE TABLE IF NOT EXISTS artist_aliases (
 );
 
 CREATE INDEX idx_artist_aliases_artist_id ON artist_aliases(artist_id);
-
-CREATE TABLE IF NOT EXISTS nfo_snapshots (
-    id TEXT PRIMARY KEY,
-    artist_id TEXT NOT NULL REFERENCES artists(id) ON DELETE CASCADE,
-    content TEXT NOT NULL,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
-CREATE INDEX idx_nfo_snapshots_artist_id ON nfo_snapshots(artist_id);
 
 CREATE TABLE IF NOT EXISTS band_members (
     id TEXT PRIMARY KEY,
@@ -158,6 +193,19 @@ CREATE TABLE IF NOT EXISTS band_members (
 
 CREATE INDEX idx_band_members_artist_id ON band_members(artist_id);
 CREATE INDEX idx_band_members_member_mbid ON band_members(member_mbid);
+
+CREATE TABLE IF NOT EXISTS nfo_snapshots (
+    id TEXT PRIMARY KEY,
+    artist_id TEXT NOT NULL REFERENCES artists(id) ON DELETE CASCADE,
+    content TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX idx_nfo_snapshots_artist_id ON nfo_snapshots(artist_id);
+
+-- =============================================================================
+-- Rule engine
+-- =============================================================================
 
 CREATE TABLE IF NOT EXISTS rules (
     id TEXT PRIMARY KEY,
@@ -192,6 +240,10 @@ CREATE INDEX idx_rule_violations_rule_id ON rule_violations(rule_id);
 CREATE INDEX idx_rule_violations_artist_id ON rule_violations(artist_id);
 CREATE INDEX idx_rule_violations_status ON rule_violations(status);
 
+-- =============================================================================
+-- Health tracking
+-- =============================================================================
+
 CREATE TABLE IF NOT EXISTS health_history (
     id TEXT PRIMARY KEY,
     total_artists INTEGER NOT NULL,
@@ -201,6 +253,10 @@ CREATE TABLE IF NOT EXISTS health_history (
 );
 
 CREATE INDEX idx_health_history_recorded_at ON health_history(recorded_at);
+
+-- =============================================================================
+-- Webhooks
+-- =============================================================================
 
 CREATE TABLE IF NOT EXISTS webhooks (
     id TEXT PRIMARY KEY,
@@ -212,6 +268,10 @@ CREATE TABLE IF NOT EXISTS webhooks (
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- =============================================================================
+-- Platform profiles
+-- =============================================================================
 
 CREATE TABLE IF NOT EXISTS platform_profiles (
     id TEXT PRIMARY KEY,
@@ -226,13 +286,9 @@ CREATE TABLE IF NOT EXISTS platform_profiles (
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
--- Seed built-in platform profiles (array-format image naming).
-INSERT OR IGNORE INTO platform_profiles (id, name, is_builtin, is_active, nfo_enabled, nfo_format, image_naming) VALUES
-    ('emby',     'Emby',     1, 0, 1, 'kodi', '{"thumb":["folder.jpg"],"fanart":["backdrop.jpg"],"logo":["logo.png"],"banner":["banner.jpg"]}'),
-    ('jellyfin', 'Jellyfin', 1, 0, 1, 'kodi', '{"thumb":["folder.jpg"],"fanart":["backdrop.jpg"],"logo":["logo.png"],"banner":["banner.jpg"]}'),
-    ('kodi',     'Kodi',     1, 1, 1, 'kodi', '{"thumb":["folder.jpg"],"fanart":["fanart.jpg"],"logo":["logo.png"],"banner":["banner.jpg"]}'),
-    ('plex',     'Plex',     1, 0, 0, 'kodi', '{"thumb":["artist.jpg"],"fanart":["fanart.jpg"],"logo":["logo.png"],"banner":["banner.jpg"]}'),
-    ('custom',   'Custom',   1, 0, 1, 'kodi', '{"thumb":["folder.jpg"],"fanart":["fanart.jpg"],"logo":["logo.png"],"banner":["banner.jpg"]}');
+-- =============================================================================
+-- Bulk jobs
+-- =============================================================================
 
 CREATE TABLE IF NOT EXISTS bulk_jobs (
     id TEXT PRIMARY KEY,
@@ -262,6 +318,10 @@ CREATE TABLE IF NOT EXISTS bulk_job_items (
 
 CREATE INDEX idx_bulk_job_items_job_id ON bulk_job_items(job_id);
 
+-- =============================================================================
+-- Scraper configuration
+-- =============================================================================
+
 CREATE TABLE IF NOT EXISTS scraper_config (
     id TEXT PRIMARY KEY,
     scope TEXT NOT NULL UNIQUE,
@@ -273,21 +333,19 @@ CREATE TABLE IF NOT EXISTS scraper_config (
 
 CREATE INDEX idx_scraper_config_scope ON scraper_config(scope);
 
-CREATE TABLE IF NOT EXISTS api_tokens (
-    id           TEXT PRIMARY KEY,
-    name         TEXT NOT NULL,
-    token_hash   TEXT NOT NULL UNIQUE,
-    scopes       TEXT NOT NULL DEFAULT 'read,write',
-    user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    created_at   TEXT NOT NULL DEFAULT (datetime('now')),
-    last_used_at TEXT,
-    revoked_at   TEXT
-);
+-- =============================================================================
+-- Seed data
+-- =============================================================================
 
-CREATE INDEX idx_api_tokens_hash ON api_tokens(token_hash);
-CREATE INDEX idx_api_tokens_user ON api_tokens(user_id);
+-- Built-in platform profiles.
+INSERT OR IGNORE INTO platform_profiles (id, name, is_builtin, is_active, nfo_enabled, nfo_format, image_naming) VALUES
+    ('emby',     'Emby',     1, 0, 1, 'kodi', '{"thumb":["folder.jpg"],"fanart":["backdrop.jpg"],"logo":["logo.png"],"banner":["banner.jpg"]}'),
+    ('jellyfin', 'Jellyfin', 1, 0, 1, 'kodi', '{"thumb":["folder.jpg"],"fanart":["backdrop.jpg"],"logo":["logo.png"],"banner":["banner.jpg"]}'),
+    ('kodi',     'Kodi',     1, 1, 1, 'kodi', '{"thumb":["folder.jpg"],"fanart":["fanart.jpg"],"logo":["logo.png"],"banner":["banner.jpg"]}'),
+    ('plex',     'Plex',     1, 0, 0, 'kodi', '{"thumb":["artist.jpg"],"fanart":["fanart.jpg"],"logo":["logo.png"],"banner":["banner.jpg"]}'),
+    ('custom',   'Custom',   1, 0, 1, 'kodi', '{"thumb":["folder.jpg"],"fanart":["fanart.jpg"],"logo":["logo.png"],"banner":["banner.jpg"]}');
 
--- Seed default provider priority settings.
+-- Default provider priority settings.
 INSERT OR IGNORE INTO settings (key, value) VALUES
     ('provider.priority.biography', '["musicbrainz","lastfm","audiodb","discogs","wikidata"]'),
     ('provider.priority.genres',    '["musicbrainz","lastfm","audiodb","discogs"]'),
@@ -300,9 +358,30 @@ INSERT OR IGNORE INTO settings (key, value) VALUES
     ('provider.priority.logo',      '["fanarttv","audiodb"]'),
     ('provider.priority.banner',    '["fanarttv","audiodb"]');
 
--- Seed extraneous images rule.
+-- Default rule: extraneous images.
 INSERT OR IGNORE INTO rules (id, name, description, category, enabled, config, automation_mode, created_at, updated_at)
 VALUES ('extraneous_images', 'Extraneous image files', 'Detects non-canonical image files that may cause display issues on media servers', 'image', 1, '{"severity":"warning"}', 'manual', datetime('now'), datetime('now'));
 
 -- +goose Down
--- Greenfield schema: no rollback needed.
+-- Greenfield schema: full teardown.
+DROP TABLE IF EXISTS bulk_job_items;
+DROP TABLE IF EXISTS bulk_jobs;
+DROP TABLE IF EXISTS rule_violations;
+DROP TABLE IF EXISTS rules;
+DROP TABLE IF EXISTS health_history;
+DROP TABLE IF EXISTS nfo_snapshots;
+DROP TABLE IF EXISTS band_members;
+DROP TABLE IF EXISTS artist_aliases;
+DROP TABLE IF EXISTS artist_images;
+DROP TABLE IF EXISTS artist_provider_ids;
+DROP TABLE IF EXISTS artist_platform_ids;
+DROP TABLE IF EXISTS artists;
+DROP TABLE IF EXISTS libraries;
+DROP TABLE IF EXISTS webhooks;
+DROP TABLE IF EXISTS platform_profiles;
+DROP TABLE IF EXISTS scraper_config;
+DROP TABLE IF EXISTS api_tokens;
+DROP TABLE IF EXISTS sessions;
+DROP TABLE IF EXISTS connections;
+DROP TABLE IF EXISTS settings;
+DROP TABLE IF EXISTS users;
