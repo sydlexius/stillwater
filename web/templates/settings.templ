@@ -2104,56 +2104,46 @@ templ settingsLibraryScript() {
 
 		function pollLibraryOp(libID, operation, btn, spinner, label) {
 			var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1");
-			var attempts = 0;
-			var maxAttempts = 150;
 			function resetUI() {
 				if (btn) btn.disabled = false;
 				if (spinner) spinner.classList.add('hidden');
 				if (label) label.textContent = operation === 'populate' ? 'Re-sync Artists' : 'Scan Library';
 			}
-			var poll = setInterval(function() {
-				attempts++;
-				if (attempts > maxAttempts) {
-					clearInterval(poll);
-					resetUI();
-					showToast("Operation timed out");
-					return;
-				}
-				fetch("/api/v1/libraries/" + libID + "/operation/status", {
-					headers: {"X-CSRF-Token": csrfToken}
-				})
-				.then(function(r) {
-					if (!r.ok) {
-						clearInterval(poll);
-						resetUI();
-						showToast("Status check failed (HTTP " + r.status + ")");
-						return null;
-					}
-					return r.json();
-				})
-				.then(function(data) {
-					if (!data) return;
+			pollAsyncStatus("/api/v1/libraries/" + libID + "/operation/status", {
+				onData: function(data) {
 					if (data.status === 'completed') {
-						clearInterval(poll);
 						resetUI();
 						showSuccessToast(data.message || 'Operation completed');
 						if (operation === 'populate') refreshSettingsLibraryList();
-					} else if (data.status === 'failed') {
-						clearInterval(poll);
+						return true;
+					}
+					if (data.status === 'failed') {
 						resetUI();
 						showToast(data.message || 'Operation failed');
-					} else if (data.status === 'idle') {
-						clearInterval(poll);
+						return true;
+					}
+					if (data.status === 'idle') {
 						resetUI();
 						showToast("Operation state lost (server may have restarted)");
+						return true;
 					}
-				})
-				.catch(function() {
-					clearInterval(poll);
+					return false;
+				},
+				onTimeout: function() {
+					resetUI();
+					showToast("Operation timed out");
+				},
+				onHTTPError: function(status) {
+					resetUI();
+					showToast("Status check failed (HTTP " + status + ")");
+				},
+				onNetworkError: function() {
 					resetUI();
 					showToast("Network error while checking operation status");
-				});
-			}, 2000);
+				}
+			}, {
+				headers: {"X-CSRF-Token": csrfToken}
+			});
 		}
 
 		function updateLibraryFSMode(id, mode) {
@@ -3792,47 +3782,36 @@ templ ruleToggleScript() {
 		}
 
 		function pollRuleStatus(btn, origText) {
-			var attempts = 0;
-			var maxAttempts = 150;
-			var poll = setInterval(function() {
-				if (++attempts > maxAttempts) {
-					clearInterval(poll);
+			pollAsyncStatus('/api/v1/rules/run-all/status', {
+				onData: function(s) {
+					if (s.status === 'running') return false;
+					if (s.status === 'completed') {
+						var msg = 'Evaluated ' + s.artists_processed + ' artists: ' +
+							s.violations_found + ' violations, ' +
+							s.fixes_succeeded + ' fixed';
+						showRuleToast(msg, false);
+					} else if (s.status === 'failed') {
+						var errMsg = s.error ? 'Rule evaluation failed: ' + s.error : 'Rule evaluation failed.';
+						showRuleToast(errMsg, true);
+					} else if (s.status === 'idle') {
+						showRuleToast('Rule evaluation state lost (server may have restarted).', true);
+					}
+					finishRunBtn(btn, origText);
+					return true;
+				},
+				onTimeout: function() {
 					showRuleToast('Rule evaluation polling timed out.', true);
 					finishRunBtn(btn, origText);
-					return;
+				},
+				onHTTPError: function() {
+					showRuleToast('Status check failed.', true);
+					finishRunBtn(btn, origText);
+				},
+				onNetworkError: function() {
+					showRuleToast('Lost connection while running rule.', true);
+					finishRunBtn(btn, origText);
 				}
-				fetch('/api/v1/rules/run-all/status', { credentials: 'same-origin' })
-					.then(function(r) {
-						if (!r.ok) {
-							clearInterval(poll);
-							showRuleToast('Status check failed.', true);
-							finishRunBtn(btn, origText);
-							return null;
-						}
-						return r.json();
-					})
-					.then(function(s) {
-						if (!s) return;
-						if (s.status === 'running') return; // still going
-						clearInterval(poll);
-						if (s.status === 'completed') {
-							var msg = 'Evaluated ' + s.artists_processed + ' artists: ' +
-								s.violations_found + ' violations, ' +
-								s.fixes_succeeded + ' fixed';
-							showRuleToast(msg, false);
-						} else if (s.status === 'failed') {
-							var errMsg = s.error ? 'Rule evaluation failed: ' + s.error : 'Rule evaluation failed.';
-							showRuleToast(errMsg, true);
-						} else if (s.status === 'idle') {
-							showRuleToast('Rule evaluation state lost (server may have restarted).', true);
-						}
-						finishRunBtn(btn, origText);
-					}).catch(function() {
-						clearInterval(poll);
-						showRuleToast('Lost connection while running rule.', true);
-						finishRunBtn(btn, origText);
-					});
-			}, 2000);
+			});
 		}
 
 		function finishRunBtn(btn, origText) {
