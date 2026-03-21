@@ -33,11 +33,25 @@ CREATE TABLE IF NOT EXISTS api_tokens (
     user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     created_at   TEXT NOT NULL DEFAULT (datetime('now')),
     last_used_at TEXT,
-    revoked_at   TEXT
+    revoked_at   TEXT,
+    status       TEXT NOT NULL DEFAULT 'active'
 );
 
 CREATE INDEX idx_api_tokens_hash ON api_tokens(token_hash);
 CREATE INDEX idx_api_tokens_user ON api_tokens(user_id);
+
+CREATE TABLE IF NOT EXISTS audit_log (
+    id         TEXT PRIMARY KEY,
+    action     TEXT NOT NULL,
+    token_id   TEXT REFERENCES api_tokens(id) ON DELETE SET NULL,
+    token_name TEXT NOT NULL,
+    user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    detail     TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX idx_audit_log_token_id ON audit_log(token_id);
+CREATE INDEX idx_audit_log_user_id ON audit_log(user_id);
 
 -- =============================================================================
 -- Connections and Libraries

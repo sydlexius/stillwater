@@ -4,7 +4,6 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
@@ -76,7 +75,6 @@ func (r *Router) handleCreateAPIToken(w http.ResponseWriter, req *http.Request) 
 
 // handleListAPITokens lists all tokens for the authenticated user.
 // GET /api/v1/auth/tokens
-// Pass ?include_archived=true to include archived tokens.
 func (r *Router) handleListAPITokens(w http.ResponseWriter, req *http.Request) {
 	userID := middleware.UserIDFromContext(req.Context())
 	if userID == "" {
@@ -84,14 +82,7 @@ func (r *Router) handleListAPITokens(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	var tokens []auth.APIToken
-	var err error
-	includeArchived, _ := strconv.ParseBool(req.URL.Query().Get("include_archived"))
-	if includeArchived {
-		tokens, err = r.authService.ListAPITokensAll(req.Context(), userID)
-	} else {
-		tokens, err = r.authService.ListAPITokens(req.Context(), userID)
-	}
+	tokens, err := r.authService.ListAPITokens(req.Context(), userID)
 	if err != nil {
 		r.logger.Error("listing api tokens", "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to list tokens"})
@@ -148,103 +139,7 @@ func (r *Router) handleRevokeAPIToken(w http.ResponseWriter, req *http.Request) 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "revoked"})
 }
 
-// handleArchiveAPIToken archives a revoked token, hiding it from the default list.
-// PATCH /api/v1/auth/tokens/{id}/archive
-func (r *Router) handleArchiveAPIToken(w http.ResponseWriter, req *http.Request) {
-	userID := middleware.UserIDFromContext(req.Context())
-	if userID == "" {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
-		return
-	}
-
-	tokenID, ok := RequirePathParam(w, req, "id")
-	if !ok {
-		return
-	}
-
-	// Look up token name for audit logging.
-	tok, err := r.authService.GetAPIToken(req.Context(), tokenID, userID)
-	if err != nil {
-		if errors.Is(err, auth.ErrTokenNotFound) {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
-		} else {
-			r.logger.Error("looking up api token for archive", "token_id", tokenID, "error", err)
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to archive token"})
-		}
-		return
-	}
-
-	if err := r.authService.ArchiveAPIToken(req.Context(), tokenID, userID); err != nil {
-		switch {
-		case errors.Is(err, auth.ErrTokenNotFound):
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
-		case errors.Is(err, auth.ErrTokenActive):
-			writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
-		case errors.Is(err, auth.ErrTokenNotRevoked):
-			writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
-		default:
-			r.logger.Error("archiving api token", slog.String("token_id", tokenID), slog.Any("error", err))
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to archive token"})
-		}
-		return
-	}
-
-	if logErr := r.authService.WriteAuditLog(req.Context(), "token_archived", tokenID, tok.Name, userID, ""); logErr != nil {
-		r.logger.Warn("failed to write audit log for token archive", "error", logErr)
-	}
-
-	writeJSON(w, http.StatusOK, map[string]string{"status": "archived"})
-}
-
-// handleUnarchiveAPIToken restores an archived token to revoked status.
-// PATCH /api/v1/auth/tokens/{id}/unarchive
-func (r *Router) handleUnarchiveAPIToken(w http.ResponseWriter, req *http.Request) {
-	userID := middleware.UserIDFromContext(req.Context())
-	if userID == "" {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
-		return
-	}
-
-	tokenID, ok := RequirePathParam(w, req, "id")
-	if !ok {
-		return
-	}
-
-	// Look up token name for audit logging.
-	tok, err := r.authService.GetAPIToken(req.Context(), tokenID, userID)
-	if err != nil {
-		if errors.Is(err, auth.ErrTokenNotFound) {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
-		} else {
-			r.logger.Error("looking up api token for unarchive", "token_id", tokenID, "error", err)
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to unarchive token"})
-		}
-		return
-	}
-
-	if err := r.authService.UnarchiveAPIToken(req.Context(), tokenID, userID); err != nil {
-		switch {
-		case errors.Is(err, auth.ErrTokenNotFound):
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
-		case errors.Is(err, auth.ErrTokenActive):
-			writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
-		case errors.Is(err, auth.ErrTokenNotArchived):
-			writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
-		default:
-			r.logger.Error("unarchiving api token", slog.String("token_id", tokenID), slog.Any("error", err))
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to unarchive token"})
-		}
-		return
-	}
-
-	if logErr := r.authService.WriteAuditLog(req.Context(), "token_unarchived", tokenID, tok.Name, userID, ""); logErr != nil {
-		r.logger.Warn("failed to write audit log for token unarchive", "error", logErr)
-	}
-
-	writeJSON(w, http.StatusOK, map[string]string{"status": "revoked"})
-}
-
-// handleDeleteAPIToken permanently deletes a revoked or archived token.
+// handleDeleteAPIToken permanently deletes a revoked token.
 // DELETE /api/v1/auth/tokens/{id}/permanent
 func (r *Router) handleDeleteAPIToken(w http.ResponseWriter, req *http.Request) {
 	userID := middleware.UserIDFromContext(req.Context())

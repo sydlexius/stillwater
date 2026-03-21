@@ -592,7 +592,7 @@ func ArtistDetailPage(assets AssetPaths, data ArtistDetailData) templ.Component 
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 47, "\" class=\"hidden absolute right-0 top-full z-40 mt-1 min-w-[12rem] rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 py-1 shadow-lg\" role=\"menu\"><button type=\"button\" role=\"menuitem\" class=\"context-menu-item\" hx-post=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 47, "\" class=\"hidden absolute right-0 top-full z-40 mt-1 min-w-[10rem] rounded-md bg-blue-700 py-1 shadow-lg\" role=\"menu\"><button type=\"button\" role=\"menuitem\" class=\"w-full px-4 py-2 text-left text-sm text-white hover:bg-blue-800 transition-colors\" hx-post=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -605,7 +605,7 @@ func ArtistDetailPage(assets AssetPaths, data ArtistDetailData) templ.Component 
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 48, "\" hx-target=\"#refresh-panel\" hx-swap=\"innerHTML\" hx-confirm=\"This will clear all provider IDs and let you re-link this artist. Continue?\">Re-identify Artist</button></div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 48, "\" hx-target=\"#refresh-panel\" hx-swap=\"innerHTML\" hx-confirm=\"This will clear all provider IDs and let you re-link this artist. Continue?\">Re-identify</button></div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}

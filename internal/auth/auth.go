@@ -27,9 +27,6 @@ var (
 
 	// ErrTokenActive is returned when trying to delete or archive an active token.
 	ErrTokenActive = errors.New("token is still active; revoke it first")
-
-	// ErrTokenNotArchived is returned when trying to unarchive a token that is not archived.
-	ErrTokenNotArchived = errors.New("token must be archived before this operation")
 )
 
 // APITokenPrefix identifies Stillwater API tokens.
@@ -59,9 +56,8 @@ type TokenStatus string
 
 // Token lifecycle states: Active -> Revoked -> Archived -> Deleted.
 const (
-	TokenStatusActive   TokenStatus = "active"
-	TokenStatusRevoked  TokenStatus = "revoked"
-	TokenStatusArchived TokenStatus = "archived"
+	TokenStatusActive  TokenStatus = "active"
+	TokenStatusRevoked TokenStatus = "revoked"
 )
 
 // APIToken represents an API token (without the secret hash).
@@ -265,29 +261,13 @@ func (s *Service) ValidateAPIToken(ctx context.Context, token string) (userID st
 	return userID, scopes, nil
 }
 
-// ListAPITokens returns all non-archived tokens for a user (never exposes the hash).
-// Use ListAPITokensAll to include archived tokens.
+// ListAPITokens returns all tokens for a user (never exposes the hash).
 func (s *Service) ListAPITokens(ctx context.Context, userID string) ([]APIToken, error) {
-	return s.listTokens(ctx, userID, false)
-}
-
-// ListAPITokensAll returns all tokens for a user, including archived ones.
-func (s *Service) ListAPITokensAll(ctx context.Context, userID string) ([]APIToken, error) {
-	return s.listTokens(ctx, userID, true)
-}
-
-// listTokens queries tokens for a user. When includeArchived is false, tokens
-// with status "archived" are excluded.
-func (s *Service) listTokens(ctx context.Context, userID string, includeArchived bool) ([]APIToken, error) {
-	query := `
+	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, name, scopes, user_id, status, created_at, last_used_at, revoked_at
-		FROM api_tokens WHERE user_id = ?`
-	if !includeArchived {
-		query += ` AND status != 'archived'`
-	}
-	query += ` ORDER BY created_at DESC`
-
-	rows, err := s.db.QueryContext(ctx, query, userID)
+		FROM api_tokens WHERE user_id = ?
+		ORDER BY created_at DESC
+	`, userID)
 	if err != nil {
 		return nil, fmt.Errorf("listing api tokens: %w", err)
 	}
@@ -324,86 +304,8 @@ func (s *Service) RevokeAPIToken(ctx context.Context, id, userID string) error {
 	return nil
 }
 
-// ArchiveAPIToken moves a revoked token to archived status.
-// Only revoked tokens can be archived. Active tokens return ErrTokenActive.
-func (s *Service) ArchiveAPIToken(ctx context.Context, id, userID string) error {
-	// First check the current status to return the right error.
-	var status string
-	err := s.db.QueryRowContext(ctx, `
-		SELECT status FROM api_tokens WHERE id = ? AND user_id = ?
-	`, id, userID).Scan(&status)
-	if errors.Is(err, sql.ErrNoRows) {
-		return ErrTokenNotFound
-	}
-	if err != nil {
-		return fmt.Errorf("checking token status: %w", err)
-	}
-
-	if status == string(TokenStatusActive) {
-		return ErrTokenActive
-	}
-	if status == string(TokenStatusArchived) {
-		return ErrTokenNotRevoked // already archived
-	}
-	if status != string(TokenStatusRevoked) {
-		return ErrTokenNotRevoked
-	}
-
-	result, err := s.db.ExecContext(ctx, `
-		UPDATE api_tokens SET status = 'archived' WHERE id = ? AND user_id = ? AND status = 'revoked'
-	`, id, userID)
-	if err != nil {
-		return fmt.Errorf("archiving api token: %w", err)
-	}
-	n, raErr := result.RowsAffected()
-	if raErr != nil {
-		return fmt.Errorf("checking rows affected: %w", raErr)
-	}
-	if n == 0 {
-		return ErrTokenNotFound
-	}
-	return nil
-}
-
-// UnarchiveAPIToken restores an archived token to revoked status.
-// Only archived tokens can be unarchived.
-func (s *Service) UnarchiveAPIToken(ctx context.Context, id, userID string) error {
-	var status string
-	err := s.db.QueryRowContext(ctx, `
-		SELECT status FROM api_tokens WHERE id = ? AND user_id = ?
-	`, id, userID).Scan(&status)
-	if errors.Is(err, sql.ErrNoRows) {
-		return ErrTokenNotFound
-	}
-	if err != nil {
-		return fmt.Errorf("checking token status: %w", err)
-	}
-
-	if status == string(TokenStatusActive) {
-		return ErrTokenActive
-	}
-	if status != string(TokenStatusArchived) {
-		return ErrTokenNotArchived
-	}
-
-	result, err := s.db.ExecContext(ctx, `
-		UPDATE api_tokens SET status = 'revoked' WHERE id = ? AND user_id = ? AND status = 'archived'
-	`, id, userID)
-	if err != nil {
-		return fmt.Errorf("unarchiving api token: %w", err)
-	}
-	n, raErr := result.RowsAffected()
-	if raErr != nil {
-		return fmt.Errorf("checking rows affected: %w", raErr)
-	}
-	if n == 0 {
-		return ErrTokenNotFound
-	}
-	return nil
-}
-
 // DeleteAPIToken permanently removes a token and anonymizes its audit log entries.
-// Only revoked or archived tokens can be deleted. Active tokens return ErrTokenActive.
+// Only revoked tokens can be deleted. Active tokens return ErrTokenActive.
 func (s *Service) DeleteAPIToken(ctx context.Context, id, userID string) error {
 	// Check current status.
 	var status, name string
