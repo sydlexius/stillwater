@@ -362,6 +362,12 @@ func (s *Service) GetViolationTrend(ctx context.Context, days int) ([]ViolationT
 	// Build a full list of date strings covering the range.
 	now := time.Now().UTC()
 	start := now.AddDate(0, 0, -(days - 1)).Truncate(24 * time.Hour)
+	// end is the start of the day after "now", so the range [start, end) covers all days.
+	end := now.Truncate(24*time.Hour).AddDate(0, 0, 1)
+
+	startStr := start.Format(time.RFC3339)
+	endStr := end.Format(time.RFC3339)
+
 	dateMap := make(map[string]*ViolationTrendPoint, days)
 	var dates []string
 	for i := 0; i < days; i++ {
@@ -370,13 +376,14 @@ func (s *Service) GetViolationTrend(ctx context.Context, days int) ([]ViolationT
 		dateMap[d] = &ViolationTrendPoint{Date: d}
 	}
 
-	// Query daily created counts.
+	// Query daily created counts. Use raw timestamp range for index friendliness;
+	// date() is only used in SELECT/GROUP BY for bucketing.
 	createdRows, err := s.db.QueryContext(ctx, `
 		SELECT date(created_at) AS day, COUNT(*) AS cnt
 		FROM rule_violations
-		WHERE date(created_at) >= ? AND date(created_at) <= ?
+		WHERE created_at >= ? AND created_at < ?
 		GROUP BY day
-	`, start.Format("2006-01-02"), now.Format("2006-01-02"))
+	`, startStr, endStr)
 	if err != nil {
 		return nil, fmt.Errorf("querying violation created trend: %w", err)
 	}
@@ -396,14 +403,14 @@ func (s *Service) GetViolationTrend(ctx context.Context, days int) ([]ViolationT
 		return nil, fmt.Errorf("iterating created trend rows: %w", err)
 	}
 
-	// Query daily resolved counts.
+	// Query daily resolved counts. Same raw timestamp range approach.
 	resolvedRows, err := s.db.QueryContext(ctx, `
 		SELECT date(resolved_at) AS day, COUNT(*) AS cnt
 		FROM rule_violations
 		WHERE resolved_at IS NOT NULL
-		  AND date(resolved_at) >= ? AND date(resolved_at) <= ?
+		  AND resolved_at >= ? AND resolved_at < ?
 		GROUP BY day
-	`, start.Format("2006-01-02"), now.Format("2006-01-02"))
+	`, startStr, endStr)
 	if err != nil {
 		return nil, fmt.Errorf("querying violation resolved trend: %w", err)
 	}

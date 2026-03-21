@@ -203,7 +203,8 @@ templ IndexPage(assets AssetPaths) {
 								}
 							}
 						});
-					});
+					})
+					.catch(function(err) { showToast('Failed to load health history', 'error'); });
 			})();
 
 			var violationsChart = null;
@@ -283,7 +284,8 @@ templ IndexPage(assets AssetPaths) {
 								}
 							}
 						});
-					});
+					})
+					.catch(function(err) { showToast('Failed to load violations trend', 'error'); });
 			}
 
 			loadViolationsTrend(30);

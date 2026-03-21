@@ -1212,7 +1212,8 @@ func TestGetViolationTrend_CountsCreated(t *testing.T) {
 	svc := NewService(db)
 	ctx := context.Background()
 
-	today := time.Now().UTC().Truncate(24 * time.Hour)
+	// Use a fixed time well within "today" to avoid flakiness at midnight boundaries.
+	today := time.Now().UTC().Truncate(24 * time.Hour).Add(12 * time.Hour)
 
 	// Insert two violations created today.
 	v1 := &RuleViolation{
@@ -1240,9 +1241,10 @@ func TestGetViolationTrend_CountsCreated(t *testing.T) {
 	}
 
 	// The last point should be today with created=2.
+	todayStr := today.Format("2006-01-02")
 	last := trend[len(trend)-1]
-	if last.Date != today.Format("2006-01-02") {
-		t.Errorf("last point date = %q, want %q", last.Date, today.Format("2006-01-02"))
+	if last.Date != todayStr {
+		t.Errorf("last point date = %q, want %q", last.Date, todayStr)
 	}
 	if last.Created != 2 {
 		t.Errorf("last point created = %d, want 2", last.Created)
@@ -1257,7 +1259,8 @@ func TestGetViolationTrend_CountsResolved(t *testing.T) {
 	svc := NewService(db)
 	ctx := context.Background()
 
-	today := time.Now().UTC().Truncate(24 * time.Hour)
+	// Use a fixed time well within "today" to avoid flakiness at midnight boundaries.
+	today := time.Now().UTC().Truncate(24 * time.Hour).Add(12 * time.Hour)
 	resolvedAt := today
 
 	v := &RuleViolation{

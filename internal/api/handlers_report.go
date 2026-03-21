@@ -320,10 +320,6 @@ func (r *Router) handleViolationTrend(w http.ResponseWriter, req *http.Request) 
 		return
 	}
 
-	if trend == nil {
-		trend = []rule.ViolationTrendPoint{}
-	}
-
 	writeJSON(w, http.StatusOK, map[string]any{"trend": trend})
 }
 

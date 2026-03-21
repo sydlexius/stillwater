@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/auth"
@@ -354,14 +355,31 @@ func TestHandleViolationTrend_PointShape(t *testing.T) {
 	if !ok {
 		t.Fatal("expected trend point to be an object")
 	}
-	if _, ok := pt["date"]; !ok {
+
+	// Validate date field exists and has YYYY-MM-DD format.
+	dateVal, ok := pt["date"]
+	if !ok {
 		t.Error("trend point missing 'date' field")
+	} else if dateStr, ok := dateVal.(string); !ok {
+		t.Errorf("trend point 'date' is %T, want string", dateVal)
+	} else if _, err := time.Parse("2006-01-02", dateStr); err != nil {
+		t.Errorf("trend point 'date' = %q, not valid YYYY-MM-DD: %v", dateStr, err)
 	}
-	if _, ok := pt["created"]; !ok {
+
+	// Validate created field exists and is a number.
+	createdVal, ok := pt["created"]
+	if !ok {
 		t.Error("trend point missing 'created' field")
+	} else if _, ok := createdVal.(float64); !ok {
+		t.Errorf("trend point 'created' is %T, want float64", createdVal)
 	}
-	if _, ok := pt["resolved"]; !ok {
+
+	// Validate resolved field exists and is a number.
+	resolvedVal, ok := pt["resolved"]
+	if !ok {
 		t.Error("trend point missing 'resolved' field")
+	} else if _, ok := resolvedVal.(float64); !ok {
+		t.Errorf("trend point 'resolved' is %T, want float64", resolvedVal)
 	}
 }
 
@@ -389,6 +407,33 @@ func TestHandleViolationTrend_InvalidDaysClamped(t *testing.T) {
 	}
 	if len(trend) != 30 {
 		t.Errorf("trend length = %d, want 30 (clamped from 0)", len(trend))
+	}
+}
+
+func TestHandleViolationTrend_UpperBoundClamped(t *testing.T) {
+	r, _ := testRouter(t)
+
+	// days=366 exceeds the 365 maximum and should be clamped to 30 (default).
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/violations/trend?days=366", nil)
+	w := httptest.NewRecorder()
+
+	r.handleViolationTrend(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	var resp map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+
+	trend, ok := resp["trend"].([]any)
+	if !ok {
+		t.Fatal("missing trend field")
+	}
+	if len(trend) != 30 {
+		t.Errorf("trend length = %d, want 30 (clamped from 366)", len(trend))
 	}
 }
 
