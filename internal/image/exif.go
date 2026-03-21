@@ -42,8 +42,12 @@ func (m *ExifMeta) Marshal() string {
 	}
 	if m.URL != "" {
 		// Escape pipe characters in URLs so they do not break the
-		// pipe-delimited serialization format.
-		parts = append(parts, "url="+strings.ReplaceAll(m.URL, "|", "%7C"))
+		// pipe-delimited serialization format. Escape existing percent
+		// signs first so that a literal "%7C" in the URL survives the
+		// round-trip as "%257C" -> decoded back to "%7C".
+		escaped := strings.ReplaceAll(m.URL, "%", "%25")
+		escaped = strings.ReplaceAll(escaped, "|", "%7C")
+		parts = append(parts, "url="+escaped)
 	}
 	if m.DHash != "" {
 		parts = append(parts, "dhash="+m.DHash)
@@ -110,8 +114,10 @@ func ParseExifMeta(s string) (ExifMeta, error) {
 			}
 			m.Fetched = t
 		case "url":
-			// Unescape pipe characters that were encoded during Marshal.
-			m.URL = strings.ReplaceAll(value, "%7C", "|")
+			// Reverse the two-pass escaping from Marshal: first restore
+			// pipe characters, then restore original percent signs.
+			unescaped := strings.ReplaceAll(value, "%7C", "|")
+			m.URL = strings.ReplaceAll(unescaped, "%25", "%")
 		case "dhash":
 			m.DHash = value
 		case "rule":
@@ -217,19 +223,19 @@ func injectJPEGDescription(data []byte, description string) ([]byte, error) {
 	app1Len := uint16(app1TotalLen) // #nosec G115 -- bounds checked above
 
 	var app1 bytes.Buffer
-	app1.Write([]byte{jpegMarkerPrefix, jpegAPP1})
+	_, _ = app1.Write([]byte{jpegMarkerPrefix, jpegAPP1})
 	_ = binary.Write(&app1, binary.BigEndian, app1Len)
-	app1.Write(exifHeader)
-	app1.Write(tiffData)
+	_, _ = app1.Write(exifHeader)
+	_, _ = app1.Write(tiffData)
 
 	// Strip existing APP1 segments and rebuild the JPEG.
 	stripped := stripAPP1(data)
 
 	// Insert our APP1 right after the SOI marker (first 2 bytes).
 	var result bytes.Buffer
-	result.Write(stripped[:2]) // SOI
-	result.Write(app1.Bytes()) // Our APP1
-	result.Write(stripped[2:]) // Rest of the JPEG
+	_, _ = result.Write(stripped[:2]) // SOI
+	_, _ = result.Write(app1.Bytes()) // Our APP1
+	_, _ = result.Write(stripped[2:]) // Rest of the JPEG
 	return result.Bytes(), nil
 }
 
@@ -375,13 +381,13 @@ func stripAPP1(data []byte) []byte {
 	}
 
 	var out bytes.Buffer
-	out.Write(data[:2]) // SOI
+	_, _ = out.Write(data[:2]) // SOI
 	pos := 2
 
 	for pos+1 < len(data) {
 		if data[pos] != jpegMarkerPrefix {
 			// Not a marker; copy the rest verbatim (we are past SOS).
-			out.Write(data[pos:])
+			_, _ = out.Write(data[pos:])
 			break
 		}
 
@@ -389,25 +395,25 @@ func stripAPP1(data []byte) []byte {
 
 		// SOS: copy everything from here to end (compressed image data).
 		if markerType == jpegSOS {
-			out.Write(data[pos:])
+			_, _ = out.Write(data[pos:])
 			break
 		}
 
 		// Standalone markers (no payload).
 		if markerType == 0x00 || (markerType >= 0xD0 && markerType <= 0xD9) {
-			out.Write(data[pos : pos+2])
+			_, _ = out.Write(data[pos : pos+2])
 			pos += 2
 			continue
 		}
 
 		// Read segment length.
 		if pos+4 > len(data) {
-			out.Write(data[pos:])
+			_, _ = out.Write(data[pos:])
 			break
 		}
 		segLen := int(binary.BigEndian.Uint16(data[pos+2 : pos+4]))
 		if segLen < 2 || pos+2+segLen > len(data) {
-			out.Write(data[pos:])
+			_, _ = out.Write(data[pos:])
 			break
 		}
 
@@ -417,7 +423,7 @@ func stripAPP1(data []byte) []byte {
 			continue
 		}
 
-		out.Write(data[pos : pos+2+segLen])
+		_, _ = out.Write(data[pos : pos+2+segLen])
 		pos += 2 + segLen
 	}
 
@@ -444,9 +450,9 @@ func injectPNGDescription(data []byte, description string) ([]byte, error) {
 
 	// Build the tEXt chunk payload: key + null separator + value.
 	var chunkData bytes.Buffer
-	chunkData.WriteString(pngDescriptionKey)
-	chunkData.WriteByte(0x00)
-	chunkData.WriteString(description)
+	_, _ = chunkData.WriteString(pngDescriptionKey)
+	_ = chunkData.WriteByte(0x00)
+	_, _ = chunkData.WriteString(description)
 	payload := chunkData.Bytes()
 
 	// Build the full chunk: length(4) + type(4) + data + CRC(4).
@@ -457,15 +463,15 @@ func injectPNGDescription(data []byte, description string) ([]byte, error) {
 	var chunk bytes.Buffer
 	_ = binary.Write(&chunk, binary.BigEndian, uint32(len(payload))) // #nosec G115 -- bounds checked above
 	chunkType := []byte("tEXt")
-	chunk.Write(chunkType)
-	chunk.Write(payload)
+	_, _ = chunk.Write(chunkType)
+	_, _ = chunk.Write(payload)
 	crcData := append(chunkType, payload...)
 	_ = binary.Write(&chunk, binary.BigEndian, crc32.ChecksumIEEE(crcData))
 
 	// Walk existing chunks. Insert our tEXt after IHDR, skip existing
 	// ImageDescription tEXt chunks.
 	var result bytes.Buffer
-	result.Write(pngSignature)
+	_, _ = result.Write(pngSignature)
 
 	pos := len(pngSignature)
 	insertedAfterIHDR := false
@@ -477,7 +483,7 @@ func injectPNGDescription(data []byte, description string) ([]byte, error) {
 
 		// Guard against malformed chunk lengths that would overflow int arithmetic.
 		if int64(chunkLen) > int64(len(data)) {
-			result.Write(data[pos:])
+			_, _ = result.Write(data[pos:])
 			break
 		}
 
@@ -485,7 +491,7 @@ func injectPNGDescription(data []byte, description string) ([]byte, error) {
 		totalSize := 12 + int(chunkLen)
 		if pos+totalSize > len(data) {
 			// Malformed chunk; copy the rest as-is.
-			result.Write(data[pos:])
+			_, _ = result.Write(data[pos:])
 			break
 		}
 
@@ -496,12 +502,12 @@ func injectPNGDescription(data []byte, description string) ([]byte, error) {
 		}
 
 		// Copy this chunk.
-		result.Write(data[pos : pos+totalSize])
+		_, _ = result.Write(data[pos : pos+totalSize])
 		pos += totalSize
 
 		// Insert our new tEXt chunk right after IHDR.
 		if cType == "IHDR" && !insertedAfterIHDR {
-			result.Write(chunk.Bytes())
+			_, _ = result.Write(chunk.Bytes())
 			insertedAfterIHDR = true
 		}
 	}

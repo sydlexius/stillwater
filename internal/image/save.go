@@ -39,6 +39,17 @@ func Save(dir string, imageType string, data []byte, fileNames []string, useSyml
 		format = FormatPNG
 	}
 
+	// Compute perceptual hash from the image data if not already set.
+	if meta != nil && meta.DHash == "" {
+		if hash, hashErr := PerceptualHash(bytes.NewReader(data)); hashErr == nil {
+			meta.DHash = HashHex(hash)
+		} else {
+			logger.Debug("could not compute perceptual hash; saving without dhash",
+				slog.String("image_type", imageType),
+				slog.String("error", hashErr.Error()))
+		}
+	}
+
 	// Inject provenance metadata if provided.
 	if meta != nil {
 		injected, injErr := InjectMeta(data, meta)

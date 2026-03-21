@@ -333,14 +333,14 @@ func (r *Router) handleApplyViolationCandidate(w http.ResponseWriter, req *http.
 	}
 
 	// Validate the URL+imageType against stored candidates (prevents SSRF with arbitrary URLs)
-	var matched bool
+	var matchedCandidate *rule.ImageCandidate
 	for _, c := range v.Candidates {
 		if c.URL == body.URL && c.ImageType == body.ImageType {
-			matched = true
+			matchedCandidate = &c
 			break
 		}
 	}
-	if !matched {
+	if matchedCandidate == nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "url does not match any stored candidate for this violation"})
 		return
 	}
@@ -352,11 +352,14 @@ func (r *Router) handleApplyViolationCandidate(w http.ResponseWriter, req *http.
 		return
 	}
 
-	// Download and save the chosen image using platform-aware naming
+	// Download and save the chosen image using platform-aware naming.
+	// Use the candidate's provider source and the violation's rule ID
+	// so provenance tracks where the image actually came from.
 	candidateMeta := &img.ExifMeta{
-		Source:  "user",
+		Source:  matchedCandidate.Source,
 		Fetched: time.Now().UTC(),
 		URL:     body.URL,
+		Rule:    v.RuleID,
 		Mode:    "manual",
 	}
 	naming, useSymlinks := r.getActiveNamingAndSymlinks(req.Context(), body.ImageType)

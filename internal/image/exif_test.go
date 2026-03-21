@@ -136,6 +136,48 @@ func TestExifMeta_URLWithPipe(t *testing.T) {
 	}
 }
 
+func TestExifMeta_URLWithLiteralPercent7C(t *testing.T) {
+	// A URL containing a literal "%7C" must survive the round-trip without
+	// being decoded into a pipe character.
+	meta := ExifMeta{Source: "test", URL: "https://example.com/img%7Calt.jpg"}
+	serialized := meta.Marshal()
+	parsed, err := ParseExifMeta(serialized)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if parsed.URL != meta.URL {
+		t.Errorf("URL = %q, want %q", parsed.URL, meta.URL)
+	}
+}
+
+func TestExifMeta_URLWithLiteralPercent25(t *testing.T) {
+	// A URL containing "%25" (an already-encoded percent sign) must survive
+	// the round-trip without being decoded into a bare "%".
+	meta := ExifMeta{Source: "test", URL: "https://example.com/img%25special.jpg"}
+	serialized := meta.Marshal()
+	parsed, err := ParseExifMeta(serialized)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if parsed.URL != meta.URL {
+		t.Errorf("URL = %q, want %q", parsed.URL, meta.URL)
+	}
+}
+
+func TestExifMeta_URLWithPipeAndPercent(t *testing.T) {
+	// A URL with both pipe and percent characters exercises both escape
+	// passes simultaneously.
+	meta := ExifMeta{Source: "test", URL: "https://example.com/a|b%20c"}
+	serialized := meta.Marshal()
+	parsed, err := ParseExifMeta(serialized)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if parsed.URL != meta.URL {
+		t.Errorf("URL = %q, want %q", parsed.URL, meta.URL)
+	}
+}
+
 func TestParseExifMeta_MalformedField(t *testing.T) {
 	// A field without "=" after a recognized prefix should return an error.
 	input := "stillwater:v1|badfield"

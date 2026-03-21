@@ -621,13 +621,8 @@ func applyImageMetadata(a *Artist, imgs []ArtistImage) {
 }
 
 // extractImageMetadata builds an ArtistImage slice from the Artist struct's
-// image fields, ready for persistence.
-// TODO(#496): Populate ArtistImage.Source from EXIF provenance metadata.
-// The Artist struct uses flat boolean flags (ThumbExists, FanartExists, etc.)
-// without per-image-type Source fields. Adding them requires threading source
-// through setArtistImageFlag, updateArtistImageFlag, and all callers. The
-// primary provenance mechanism is the EXIF metadata embedded in image files;
-// the DB column is belt-and-suspenders and can be populated in a follow-up.
+// image fields, ready for persistence. See the follow-up issue for populating
+// ArtistImage.Source from EXIF provenance metadata.
 func extractImageMetadata(a *Artist) []ArtistImage {
 	var imgs []ArtistImage
 

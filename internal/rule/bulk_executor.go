@@ -347,7 +347,7 @@ func (e *BulkExecutor) saveBestImage(ctx context.Context, a *artist.Artist, imag
 			Source:  c.Source,
 			Fetched: time.Now().UTC(),
 			URL:     c.URL,
-			Rule:    imageType,
+			Rule:    "",
 			Mode:    "auto",
 		}
 		if _, err := SaveImageFromURL(ctx, a, imageType, c.URL, naming, useSymlinks, meta, e.platformService, e.logger); err != nil {

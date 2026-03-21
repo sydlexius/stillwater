@@ -496,7 +496,23 @@ func (r *Router) handleImageCrop(w http.ResponseWriter, req *http.Request) {
 		imgData = cropped
 	}
 
-	cropMeta := &img.ExifMeta{Source: "user", Fetched: time.Now().UTC(), Mode: "user"}
+	// Preserve existing provenance metadata if present, updating the timestamp.
+	var cropMeta *img.ExifMeta
+	patterns := r.getActiveNamingConfig(req.Context(), body.Type)
+	if filePath, found := findExistingImage(r.imageDir(a), patterns); found {
+		if existing, readErr := img.ReadProvenance(filePath); readErr == nil && existing != nil {
+			cropMeta = existing
+		} else if readErr != nil {
+			r.logger.Debug("could not read existing provenance for crop, using fresh metadata",
+				slog.String("artist_id", artistID), slog.String("path", filePath), slog.String("error", readErr.Error()))
+		}
+	}
+	if cropMeta == nil {
+		cropMeta = &img.ExifMeta{Source: "user"}
+	}
+	cropMeta.Fetched = time.Now().UTC()
+	cropMeta.Mode = "user"
+
 	saved, err := r.processAndSaveImage(req.Context(), r.imageDir(a), body.Type, imgData, cropMeta)
 	if err != nil {
 		r.logger.Error("saving cropped image", "artist_id", artistID, "error", err)

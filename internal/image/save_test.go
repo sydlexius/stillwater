@@ -390,4 +390,7 @@ func TestSave_WithExifMeta(t *testing.T) {
 	if got.Mode != "auto" {
 		t.Errorf("Mode = %q, want %q", got.Mode, "auto")
 	}
+	if got.DHash == "" {
+		t.Error("DHash is empty; Save should compute perceptual hash when meta.DHash is unset")
+	}
 }
