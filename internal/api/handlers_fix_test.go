@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/rule"
 )
 
@@ -391,9 +393,121 @@ func TestHandleUndoFix_AlreadyUsed(t *testing.T) {
 	}
 }
 
+func TestHandleUndoFix_ConcurrentSameID(t *testing.T) {
+	// Two goroutines calling undo with the same ID concurrently: exactly one
+	// should get 200 and the other should get 410. The UndoStore.Pop is
+	// atomic (mutex-protected), so this verifies no double-revert.
+	stub := &stubPipeline{}
+	r, _ := testRouterWithStubPipeline(t, stub)
+
+	nr := &noopRevert{}
+	undoID := r.undoStore.Register("v-concurrent-undo", nr.fn)
+
+	var wg sync.WaitGroup
+	codes := make([]int, 2)
+
+	for i := range 2 {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/notifications/undo/"+undoID, nil)
+			req.SetPathValue("undoId", undoID)
+			w := httptest.NewRecorder()
+			r.handleUndoFix(w, req)
+			codes[idx] = w.Code
+		}(i)
+	}
+	wg.Wait()
+
+	got200 := 0
+	got410 := 0
+	for _, code := range codes {
+		switch code {
+		case http.StatusOK:
+			got200++
+		case http.StatusGone:
+			got410++
+		default:
+			t.Errorf("unexpected status code: %d", code)
+		}
+	}
+	if got200 != 1 {
+		t.Errorf("expected exactly 1 status 200, got %d", got200)
+	}
+	if got410 != 1 {
+		t.Errorf("expected exactly 1 status 410, got %d", got410)
+	}
+}
+
+func TestHandleFixViolation_NoUndo_PathlessArtist(t *testing.T) {
+	// A fix that succeeds for a pathless artist (no on-disk directory) should
+	// not return undo_id because there are no files to snapshot or revert.
+	stub := &stubPipeline{
+		fixViolationFn: func(_ context.Context, _ string) (*rule.FixResult, error) {
+			return &rule.FixResult{RuleID: "nfo_exists", Fixed: true, Message: "NFO created"}, nil
+		},
+	}
+	r, _ := testRouterWithStubPipeline(t, stub)
+
+	// Create a pathless artist (path is empty).
+	a := &artist.Artist{
+		Name:     "Pathless Artist",
+		SortName: "Pathless Artist",
+		Type:     "group",
+		Path:     "",
+		Genres:   []string{"Rock"},
+	}
+	if err := r.artistService.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating pathless artist: %v", err)
+	}
+
+	// Seed a violation for the pathless artist.
+	v := &rule.RuleViolation{
+		RuleID:     rule.RuleNFOExists,
+		ArtistID:   a.ID,
+		ArtistName: a.Name,
+		Severity:   "error",
+		Message:    "missing nfo",
+		Fixable:    true,
+		Status:     rule.ViolationStatusOpen,
+	}
+	if err := r.ruleService.UpsertViolation(context.Background(), v); err != nil {
+		t.Fatalf("seeding violation: %v", err)
+	}
+	violations, err := r.ruleService.ListViolationsFiltered(context.Background(), rule.ViolationListParams{Status: "active"})
+	if err != nil || len(violations) == 0 {
+		t.Fatalf("listing violations: %v (count=%d)", err, len(violations))
+	}
+	violationID := violations[0].ID
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/notifications/"+violationID+"/fix", nil)
+	req.SetPathValue("id", violationID)
+	w := httptest.NewRecorder()
+
+	r.handleFixViolation(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding: %v", err)
+	}
+	if resp["status"] != "fixed" {
+		t.Errorf("status = %v, want fixed", resp["status"])
+	}
+	if resp["undo_id"] != nil {
+		t.Errorf("undo_id = %v, want nil for pathless artist", resp["undo_id"])
+	}
+	if resp["undo_expires_in"] != nil {
+		t.Errorf("undo_expires_in = %v, want nil for pathless artist", resp["undo_expires_in"])
+	}
+}
+
 func TestHandleFixViolation_ReturnsUndoID(t *testing.T) {
-	// A fix that succeeds should return an undo_id in the response.
-	// We seed a violation so capturePreFixState can find it.
+	// A fix that succeeds for an artist with a path should return undo_id
+	// and undo_expires_in in the response.
 	stub := &stubPipeline{
 		fixViolationFn: func(_ context.Context, _ string) (*rule.FixResult, error) {
 			return &rule.FixResult{RuleID: "nfo_exists", Fixed: true, Message: "NFO created"}, nil
@@ -440,9 +554,12 @@ func TestHandleFixViolation_ReturnsUndoID(t *testing.T) {
 	if resp["status"] != "fixed" {
 		t.Errorf("status = %v, want fixed", resp["status"])
 	}
-	// Artist has no on-disk path in the test (path is empty), so no undo_id
-	// is expected. This test simply verifies the handler does not panic when
-	// capturePreFixState returns an empty slice for pathless artists.
-	// A separate integration test (not requiring a real filesystem) verifies
-	// the undo_id is populated for path-bearing artists.
+	if resp["undo_id"] == nil {
+		t.Error("expected undo_id to be present for path-bearing artist fix")
+	}
+	if resp["undo_expires_in"] == nil {
+		t.Error("expected undo_expires_in to be present for path-bearing artist fix")
+	} else if resp["undo_expires_in"] != float64(int(rule.UndoWindowDuration.Seconds())) {
+		t.Errorf("undo_expires_in = %v, want %v", resp["undo_expires_in"], rule.UndoWindowDuration.Seconds())
+	}
 }

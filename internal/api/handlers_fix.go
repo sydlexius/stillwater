@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"path/filepath"
@@ -43,7 +44,11 @@ func (r *Router) handleFixViolation(w http.ResponseWriter, req *http.Request) {
 	}
 
 	// Capture pre-fix state so the fix can be reverted within the undo window.
-	preFixSnaps := r.capturePreFixState(req.Context(), id)
+	// Short-circuit when undo is disabled (undoStore is nil).
+	var preFixRevert rule.RevertFunc
+	if r.undoStore != nil {
+		preFixRevert = r.capturePreFixState(req.Context(), id)
+	}
 
 	fr, err := r.pipeline.FixViolation(req.Context(), id)
 	if err != nil {
@@ -67,24 +72,24 @@ func (r *Router) handleFixViolation(w http.ResponseWriter, req *http.Request) {
 		"message": fr.Message,
 	}
 
-	// Register an undo entry when the fix succeeded and there are snapshots to revert.
-	if fr.Fixed && r.undoStore != nil && len(preFixSnaps) > 0 {
-		undoID := r.undoStore.Register(id, rule.MultiFileRevert(preFixSnaps))
+	// Register an undo entry when the fix succeeded and we have a revert function.
+	if fr.Fixed && r.undoStore != nil && preFixRevert != nil {
+		undoID := r.undoStore.Register(id, preFixRevert)
 		resp["undo_id"] = undoID
-		resp["undo_expires_in"] = 30
+		resp["undo_expires_in"] = int(rule.UndoWindowDuration.Seconds())
 	}
 
 	writeJSON(w, http.StatusOK, resp)
 }
 
 // capturePreFixState loads the violation and the associated artist, then
-// snapshots the files that the fix is expected to modify. Returns an empty
-// slice when no relevant files are found (e.g. for pure metadata fixes that
-// do not touch the filesystem).
+// builds a RevertFunc that can restore pre-fix state. Returns nil when no
+// relevant files are found (e.g. for pure metadata fixes that do not touch
+// the filesystem).
 //
 // Errors during snapshot capture are logged and silently ignored so that a
 // snapshot failure does not block the fix itself.
-func (r *Router) capturePreFixState(ctx context.Context, violationID string) []rule.FileSnapshot {
+func (r *Router) capturePreFixState(ctx context.Context, violationID string) rule.RevertFunc {
 	if r.ruleService == nil || r.artistService == nil {
 		return nil
 	}
@@ -101,7 +106,30 @@ func (r *Router) capturePreFixState(ctx context.Context, violationID string) []r
 		return nil
 	}
 
-	return captureFilesForRule(ctx, a, rv.RuleID, r)
+	// Directory rename is a special case: capture the old path now and
+	// resolve the new path at revert time by re-reading the artist record.
+	if rv.RuleID == rule.RuleDirectoryNameMismatch {
+		oldPath := a.Path
+		artistID := a.ID
+		return func(ctx context.Context) error {
+			// Re-read the artist to discover the post-fix path.
+			current, aErr := r.artistService.GetByID(ctx, artistID)
+			if aErr != nil {
+				return fmt.Errorf("undo directory rename: could not reload artist: %w", aErr)
+			}
+			if current.Path == oldPath {
+				// Path was not changed by the fix; nothing to revert.
+				return nil
+			}
+			return rule.DirectoryRenameRevert(oldPath, current.Path)(ctx)
+		}
+	}
+
+	snaps := captureFilesForRule(ctx, a, rv.RuleID, r)
+	if len(snaps) == 0 {
+		return nil
+	}
+	return rule.MultiFileRevert(snaps)
 }
 
 // captureFilesForRule resolves the file paths that a given rule's fixer is
@@ -130,8 +158,9 @@ func captureFilesForRule(ctx context.Context, a *artist.Artist, ruleID string, r
 		return captureImageFiles(ctx, a.Path, "banner", r)
 
 	default:
-		// Other rules (directory rename, extraneous images, etc.) either do not
-		// have a straightforward single-file undo, or undo is not supported.
+		// Other rules (extraneous images, etc.) either do not have a
+		// straightforward single-file undo, or undo is not supported.
+		// Directory rename is handled directly in capturePreFixState.
 		return nil
 	}
 }
@@ -164,7 +193,7 @@ func captureImageFiles(ctx context.Context, dir, imageType string, r *Router) []
 }
 
 // handleUndoFix reverts a recently applied fix using the registered undo entry.
-// POST /api/v1/notifications/{id}/undo
+// POST /api/v1/notifications/undo/{undoId}
 func (r *Router) handleUndoFix(w http.ResponseWriter, req *http.Request) {
 	undoID, ok := RequirePathParam(w, req, "undoId")
 	if !ok {
@@ -190,13 +219,25 @@ func (r *Router) handleUndoFix(w http.ResponseWriter, req *http.Request) {
 	}
 
 	// Reopen the violation so it appears as fixable again.
+	var reopenFailed bool
 	if r.ruleService != nil {
 		if reopenErr := r.ruleService.ReopenViolation(req.Context(), entry.ViolationID); reopenErr != nil {
-			r.logger.Warn("undo: failed to reopen violation after revert", "id", entry.ViolationID, "error", reopenErr)
+			r.logger.Error("undo: failed to reopen violation after successful revert",
+				"id", entry.ViolationID, "error", reopenErr)
+			reopenFailed = true
 		}
 	}
 
 	r.logger.Info("fix reverted", "undo_id", undoID, "violation_id", entry.ViolationID)
+
+	if reopenFailed {
+		// Files were restored but the violation status is inconsistent.
+		writeJSON(w, http.StatusOK, map[string]string{
+			"status":  "reverted",
+			"message": "fix reverted but violation could not be reopened; run rules to refresh",
+		})
+		return
+	}
 
 	writeJSON(w, http.StatusOK, map[string]string{
 		"status":  "reverted",

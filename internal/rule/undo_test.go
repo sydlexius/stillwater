@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -294,5 +295,52 @@ func TestDirectoryRenameRevert(t *testing.T) {
 	}
 	if _, err := os.Stat(newPath); !os.IsNotExist(err) {
 		t.Error("expected newPath to no longer exist after revert")
+	}
+}
+
+func TestDirectoryRenameRevert_NonexistentSource(t *testing.T) {
+	// When the source path (newPath) does not exist, the rename should fail
+	// and the error should be surfaced to the caller.
+	dir := t.TempDir()
+	oldPath := filepath.Join(dir, "old-name")
+	newPath := filepath.Join(dir, "does-not-exist")
+
+	revert := DirectoryRenameRevert(oldPath, newPath)
+	err := revert(context.Background())
+	if err == nil {
+		t.Fatal("expected error when source path does not exist")
+	}
+}
+
+func TestMultiFileRevert_UnwritablePath(t *testing.T) {
+	// When a snapshot points to an unwritable path, MultiFileRevert should
+	// aggregate errors from all failing reverts rather than stopping early.
+	// Use /proc as the base path because it is a virtual filesystem that
+	// cannot be written to even as root.
+	snaps := []FileSnapshot{
+		{
+			Path:    "/proc/self/file1.nfo",
+			Exists:  true,
+			Content: []byte("original content"),
+		},
+		{
+			Path:    "/proc/self/file2.jpg",
+			Exists:  true,
+			Content: []byte("image bytes"),
+		},
+	}
+
+	revert := MultiFileRevert(snaps)
+	err := revert(context.Background())
+	if err == nil {
+		t.Fatal("expected error when reverting to unwritable paths")
+	}
+	// errors.Join aggregates all errors; verify both file paths appear.
+	errMsg := err.Error()
+	if !strings.Contains(errMsg, "file1.nfo") {
+		t.Errorf("expected error to mention file1.nfo, got: %s", errMsg)
+	}
+	if !strings.Contains(errMsg, "file2.jpg") {
+		t.Errorf("expected error to mention file2.jpg, got: %s", errMsg)
 	}
 }

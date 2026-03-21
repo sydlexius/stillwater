@@ -12,6 +12,10 @@ var ErrNotFound = errors.New("rule not found")
 // ErrJobNotFound is returned when a bulk job record does not exist.
 var ErrJobNotFound = errors.New("bulk job not found")
 
+// ErrViolationNotFound is returned when a violation record does not exist
+// or is not in the expected state for the requested operation.
+var ErrViolationNotFound = errors.New("violation not found")
+
 // Automation modes for rules
 const (
 	AutomationModeAuto   = "auto"

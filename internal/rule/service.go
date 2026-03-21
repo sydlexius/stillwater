@@ -719,13 +719,20 @@ func (s *Service) DismissOrphanedViolations(ctx context.Context) (int, error) {
 // violation that was resolved by a fix that was subsequently reverted.
 func (s *Service) ReopenViolation(ctx context.Context, id string) error {
 	now := time.Now().UTC().Format(time.RFC3339)
-	_, err := s.db.ExecContext(ctx, `
+	res, err := s.db.ExecContext(ctx, `
 		UPDATE rule_violations
 		SET status = ?, resolved_at = NULL, updated_at = ?
 		WHERE id = ? AND status = ?
 	`, ViolationStatusOpen, now, id, ViolationStatusResolved)
 	if err != nil {
 		return fmt.Errorf("reopening violation: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("reopening violation (rows affected): %w", err)
+	}
+	if n == 0 {
+		return fmt.Errorf("%w: %s", ErrViolationNotFound, id)
 	}
 	return nil
 }

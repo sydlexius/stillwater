@@ -188,7 +188,7 @@ templ Layout(title string, assets AssetPaths) {
 						clearInterval(ticker);
 						toast.style.opacity = '0';
 						setTimeout(function() { toast.remove(); }, 300);
-					}, (undoSeconds + 1) * 1000);
+					}, undoSeconds * 1000);
 
 					function dismissNow() {
 						clearInterval(ticker);

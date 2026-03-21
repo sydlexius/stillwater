@@ -3612,9 +3612,10 @@ paths:
         Applies the recommended fix for a single violation. For open fixable
         violations, routes through the appropriate fixer (NFO generation,
         metadata fetch, image fetch, directory rename, etc.). Returns the
-        fix result with status and message. When the fix writes to the
-        filesystem, the response also includes an undo_id that can be passed
-        to POST /notifications/undo/{undoId} within 30 seconds to revert it.
+        fix result with status and message. When the fix modifies NFO files,
+        image files, or renames an artist directory, the response also
+        includes an undo_id that can be passed to
+        POST /notifications/undo/{undoId} within 30 seconds to revert it.
       operationId: fixViolation
       parameters:
         - name: id
@@ -3698,7 +3699,7 @@ paths:
                     type: string
                     description: Human-readable confirmation
         "410":
-          description: Undo window expired or token already used
+          description: Invalid, expired, or already-used undo token
           content:
             application/json:
               schema:
