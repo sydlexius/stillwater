@@ -229,13 +229,26 @@ func (r *Router) executeRefresh(req *http.Request, a *artist.Artist) (*provider.
 
 	rule.UpdateProviderFetchTimestamps(req.Context(), r.artistService, a.ID, result.AttemptedProviders, r.logger)
 
-	// Update members if provided
-	if result.Metadata != nil && len(result.Metadata.Members) > 0 {
-		members := convertProviderMembers(a.ID, result.Metadata.Members)
-		if err := r.artistService.UpsertMembers(req.Context(), a.ID, members); err != nil {
-			r.logger.Warn("upserting members after refresh",
-				"artist_id", a.ID,
-				"error", err)
+	// Update members if the provider attempted the "members" field.
+	// When the provider was queried but returned an empty list, we clear
+	// existing members (e.g., artist type changed from group to solo).
+	// When "members" was not attempted (provider down, not configured),
+	// leave existing members untouched.
+	if result.Metadata != nil {
+		membersAttempted := false
+		for _, f := range result.AttemptedFields {
+			if f == "members" {
+				membersAttempted = true
+				break
+			}
+		}
+		if membersAttempted {
+			members := convertProviderMembers(a.ID, result.Metadata.Members)
+			if err := r.artistService.UpsertMembers(req.Context(), a.ID, members); err != nil {
+				r.logger.Warn("upserting members after refresh",
+					"artist_id", a.ID,
+					"error", err)
+			}
 		}
 	}
 
