@@ -219,7 +219,7 @@ func run() error {
 		&rule.NFOFixer{SnapshotService: nfoSnapshotService},
 		rule.NewMetadataFixer(orchestrator, nfoSnapshotService, logger),
 		rule.NewImageFixer(orchestrator, platformService, logger),
-		rule.NewExtraneousImagesFixer(platformService, logger),
+		rule.NewExtraneousImagesFixer(platformService, libraryService, logger),
 		rule.NewLogoTrimFixer(platformService, logger),
 		rule.NewLogoPaddingFixer(platformService, logger),
 		rule.NewDirectoryRenameFixer(libraryService, logger),

@@ -746,7 +746,7 @@ func (e *Engine) makeExtraneousImagesChecker() Checker {
 		// When shared filesystem is detected, union expected files from all
 		// profiles to avoid flagging platform-written images.
 		if e.IsSharedFilesystem(context.Background(), a) && e.platformService != nil {
-			expected := e.expectedImageFilesAllProfiles(a.Path)
+			expected := expectedImageFilesAllProfiles(context.Background(), e.platformService, e.logger, a.Path)
 			return checkExtraneousAgainst(a, expected, cfg)
 		}
 
@@ -831,14 +831,15 @@ func checkExtraneousAgainst(a *artist.Artist, expected map[string]bool, cfg Rule
 // expectedImageFilesAllProfiles builds the expected image filename set by
 // unioning filenames from ALL platform profiles. Used when shared_filesystem
 // is detected so that files written by any connected platform are not flagged
-// as extraneous.
-func (e *Engine) expectedImageFilesAllProfiles(artistPath string) map[string]bool {
-	profiles, err := e.platformService.List(context.Background())
+// as extraneous. This is a package-level function so both the checker and the
+// fixer can share the same logic without duplicating it.
+func expectedImageFilesAllProfiles(ctx context.Context, svc *platform.Service, logger *slog.Logger, artistPath string) map[string]bool {
+	profiles, err := svc.List(ctx)
 	if err != nil {
-		e.logger.Warn("listing profiles for shared-filesystem expected files",
+		logger.Warn("listing profiles for shared-filesystem expected files",
 			slog.String("error", err.Error()))
 		// Fall back to active profile only.
-		active, _ := e.platformService.GetActive(context.Background())
+		active, _ := svc.GetActive(ctx)
 		return expectedImageFiles(active, artistPath)
 	}
 

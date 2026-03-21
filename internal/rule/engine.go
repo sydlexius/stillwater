@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"log/slog"
 	"math"
+	"sync"
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/library"
@@ -23,6 +24,9 @@ type Engine struct {
 	// sharedFSCache caches IsSharedFilesystem results by library ID during
 	// a single evaluation run to avoid N+1 DB queries when multiple artists
 	// share the same library. Cleared at the start of each Evaluate call.
+	// Guarded by sharedFSMu because Evaluate is called from concurrent HTTP
+	// handlers (net/http serves requests in separate goroutines).
+	sharedFSMu    sync.Mutex
 	sharedFSCache map[string]bool
 }
 
@@ -65,7 +69,9 @@ func NewEngine(service *Service, db *sql.DB, platformService *platform.Service, 
 func (e *Engine) Evaluate(ctx context.Context, a *artist.Artist) (*EvaluationResult, error) {
 	// Clear per-evaluation shared-filesystem cache so each top-level Evaluate
 	// call gets fresh data while avoiding N+1 queries within the same run.
+	e.sharedFSMu.Lock()
 	e.sharedFSCache = nil
+	e.sharedFSMu.Unlock()
 
 	// Classical artists in skip mode get a perfect score with no evaluation
 	if a.IsClassical && GetClassicalMode(ctx, e.db) == ClassicalModeSkip {
@@ -147,11 +153,14 @@ func (e *Engine) IsSharedFilesystem(ctx context.Context, a *artist.Artist) bool 
 	}
 
 	// Check the per-evaluation cache first.
+	e.sharedFSMu.Lock()
 	if e.sharedFSCache != nil {
 		if cached, ok := e.sharedFSCache[a.LibraryID]; ok {
+			e.sharedFSMu.Unlock()
 			return cached
 		}
 	}
+	e.sharedFSMu.Unlock()
 
 	lib, err := e.libraryService.GetByID(ctx, a.LibraryID)
 	if err != nil {
@@ -172,6 +181,8 @@ func (e *Engine) IsSharedFilesystem(ctx context.Context, a *artist.Artist) bool 
 // cacheSharedFS stores a shared-filesystem lookup result in the per-evaluation
 // cache, lazily initializing the map on first use.
 func (e *Engine) cacheSharedFS(libraryID string, shared bool) {
+	e.sharedFSMu.Lock()
+	defer e.sharedFSMu.Unlock()
 	if e.sharedFSCache == nil {
 		e.sharedFSCache = make(map[string]bool)
 	}

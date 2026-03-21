@@ -766,7 +766,7 @@ func TestWriteArtistNFO(t *testing.T) {
 }
 
 func TestExtraneousImagesFixer_CanFix(t *testing.T) {
-	f := NewExtraneousImagesFixer(nil, testLogger())
+	f := NewExtraneousImagesFixer(nil, nil, testLogger())
 	if !f.CanFix(&Violation{RuleID: RuleExtraneousImages}) {
 		t.Error("should handle extraneous_images")
 	}
@@ -793,7 +793,7 @@ func TestExtraneousImagesFixer_Fix_DeletesExtraneous(t *testing.T) {
 	}
 
 	a := &artist.Artist{Name: "Fixer Test", Path: dir}
-	f := NewExtraneousImagesFixer(nil, testLogger())
+	f := NewExtraneousImagesFixer(nil, nil, testLogger())
 
 	result, err := f.Fix(context.Background(), a, &Violation{RuleID: RuleExtraneousImages})
 	if err != nil {
@@ -829,7 +829,7 @@ func TestExtraneousImagesFixer_Fix_NoExtraneous(t *testing.T) {
 	}
 
 	a := &artist.Artist{Name: "Clean Artist", Path: dir}
-	f := NewExtraneousImagesFixer(nil, testLogger())
+	f := NewExtraneousImagesFixer(nil, nil, testLogger())
 
 	result, err := f.Fix(context.Background(), a, &Violation{RuleID: RuleExtraneousImages})
 	if err != nil {
@@ -842,7 +842,7 @@ func TestExtraneousImagesFixer_Fix_NoExtraneous(t *testing.T) {
 
 func TestExtraneousImagesFixer_Fix_EmptyPath(t *testing.T) {
 	a := &artist.Artist{Name: "No Path"}
-	f := NewExtraneousImagesFixer(nil, testLogger())
+	f := NewExtraneousImagesFixer(nil, nil, testLogger())
 
 	result, err := f.Fix(context.Background(), a, &Violation{RuleID: RuleExtraneousImages})
 	if err != nil {

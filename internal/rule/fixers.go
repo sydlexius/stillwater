@@ -645,13 +645,15 @@ func readFileDimensions(path string) (int, int, bool) {
 // ExtraneousImagesFixer deletes non-canonical image files from artist directories.
 type ExtraneousImagesFixer struct {
 	platformService *platform.Service
+	libraryService  *library.Service
 	logger          *slog.Logger
 }
 
 // NewExtraneousImagesFixer creates an ExtraneousImagesFixer.
-func NewExtraneousImagesFixer(platformService *platform.Service, logger *slog.Logger) *ExtraneousImagesFixer {
+func NewExtraneousImagesFixer(platformService *platform.Service, libraryService *library.Service, logger *slog.Logger) *ExtraneousImagesFixer {
 	return &ExtraneousImagesFixer{
 		platformService: platformService,
+		libraryService:  libraryService,
 		logger:          logger,
 	}
 }
@@ -662,6 +664,11 @@ func (f *ExtraneousImagesFixer) CanFix(v *Violation) bool {
 }
 
 // Fix deletes all extraneous image files from the artist directory.
+//
+// When the artist's library has shared_filesystem set, the expected set is
+// expanded to include image filenames from ALL platform profiles, matching the
+// same logic used by the checker. This prevents the fixer from deleting files
+// that were legitimately written by another connected platform.
 func (f *ExtraneousImagesFixer) Fix(ctx context.Context, a *artist.Artist, _ *Violation) (*FixResult, error) {
 	if a.Path == "" {
 		return &FixResult{
@@ -671,11 +678,29 @@ func (f *ExtraneousImagesFixer) Fix(ctx context.Context, a *artist.Artist, _ *Vi
 		}, nil
 	}
 
-	var profile *platform.Profile
-	if f.platformService != nil {
-		profile, _ = f.platformService.GetActive(ctx)
+	// When shared filesystem is detected, union expected files from all
+	// profiles so we do not delete images owned by another platform.
+	var expected map[string]bool
+	if f.libraryService != nil && a.LibraryID != "" && f.platformService != nil {
+		lib, err := f.libraryService.GetByID(ctx, a.LibraryID)
+		if err != nil {
+			// Fail closed: assume shared filesystem when the DB is unavailable
+			// to prevent deleting images that a platform actually owns.
+			f.logger.Warn("library lookup failed during extraneous-images fix; assuming shared filesystem",
+				slog.String("library_id", a.LibraryID),
+				slog.String("error", err.Error()))
+			expected = expectedImageFilesAllProfiles(ctx, f.platformService, f.logger, a.Path)
+		} else if lib.SharedFilesystem {
+			expected = expectedImageFilesAllProfiles(ctx, f.platformService, f.logger, a.Path)
+		}
 	}
-	expected := expectedImageFiles(profile, a.Path)
+	if expected == nil {
+		var profile *platform.Profile
+		if f.platformService != nil {
+			profile, _ = f.platformService.GetActive(ctx)
+		}
+		expected = expectedImageFiles(profile, a.Path)
+	}
 
 	entries, readErr := os.ReadDir(a.Path)
 	if readErr != nil {

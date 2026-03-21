@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 
@@ -109,7 +110,7 @@ func (r *Router) recheckSharedFilesystem(ctx context.Context) (int, error) {
 func (r *Router) buildSharedFilesystemStatus(ctx context.Context) (*SharedFilesystemStatus, error) {
 	sharedLibs, err := r.libraryService.ListSharedFilesystem(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("list shared-filesystem libraries: %w", err)
 	}
 
 	status := &SharedFilesystemStatus{
@@ -124,7 +125,7 @@ func (r *Router) buildSharedFilesystemStatus(ctx context.Context) (*SharedFilesy
 		// which specific library each flagged one conflicts with.
 		allLibs, allErr := r.libraryService.List(ctx)
 		if allErr != nil {
-			return nil, allErr
+			return nil, fmt.Errorf("list libraries for overlap detection: %w", allErr)
 		}
 		overlaps := library.DetectOverlaps(allLibs)
 

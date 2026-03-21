@@ -2566,6 +2566,7 @@ paths:
 
   /shared-filesystem/status:
     get:
+      operationId: getSharedFilesystemStatus
       tags: [SharedFilesystem]
       summary: Get shared-filesystem overlap status
       description: Returns information about libraries with shared-filesystem overlaps and dismiss state.
@@ -2578,6 +2579,7 @@ paths:
                 $ref: "#/components/schemas/SharedFilesystemStatus"
   /shared-filesystem/dismiss:
     post:
+      operationId: dismissSharedFilesystem
       tags: [SharedFilesystem]
       summary: Dismiss the shared-filesystem warning permanently
       responses:
@@ -2589,6 +2591,7 @@ paths:
                 $ref: "#/components/schemas/Status"
   /shared-filesystem/recheck:
     post:
+      operationId: recheckSharedFilesystem
       tags: [SharedFilesystem]
       summary: Re-evaluate shared-filesystem overlaps
       description: Scans all libraries for path overlaps and updates the shared_filesystem flag.
