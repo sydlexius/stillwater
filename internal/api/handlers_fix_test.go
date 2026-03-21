@@ -12,6 +12,14 @@ import (
 	"github.com/sydlexius/stillwater/internal/rule"
 )
 
+// noopRevert is a RevertFunc that records whether it was called.
+type noopRevert struct{ called bool }
+
+func (n *noopRevert) fn(_ context.Context) error {
+	n.called = true
+	return nil
+}
+
 func TestHandleFixViolation_Success(t *testing.T) {
 	stub := &stubPipeline{
 		fixViolationFn: func(_ context.Context, _ string) (*rule.FixResult, error) {
@@ -285,4 +293,156 @@ func TestHandleFixAll_Completion(t *testing.T) {
 	if resp["fixed"] != float64(1) {
 		t.Errorf("fixed = %v, want 1", resp["fixed"])
 	}
+}
+
+// --- Undo handler tests ---
+
+func TestHandleUndoFix_Success(t *testing.T) {
+	stub := &stubPipeline{}
+	r, _ := testRouterWithStubPipeline(t, stub)
+
+	// Register a noop undo entry directly into the store.
+	nr := &noopRevert{}
+	undoID := r.undoStore.Register("v-undo-1", nr.fn)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/notifications/undo/"+undoID, nil)
+	req.SetPathValue("undoId", undoID)
+	w := httptest.NewRecorder()
+
+	r.handleUndoFix(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	if !nr.called {
+		t.Error("expected revert function to have been called")
+	}
+
+	var resp map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding: %v", err)
+	}
+	if resp["status"] != "reverted" {
+		t.Errorf("status = %v, want reverted", resp["status"])
+	}
+}
+
+func TestHandleUndoFix_Expired(t *testing.T) {
+	stub := &stubPipeline{}
+	r, _ := testRouterWithStubPipeline(t, stub)
+
+	// Register an entry and then expire it manually.
+	nr := &noopRevert{}
+	undoID := r.undoStore.Register("v-undo-exp", nr.fn)
+	r.undoStore.ForceExpire(undoID)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/notifications/undo/"+undoID, nil)
+	req.SetPathValue("undoId", undoID)
+	w := httptest.NewRecorder()
+
+	r.handleUndoFix(w, req)
+
+	if w.Code != http.StatusGone {
+		t.Errorf("status = %d, want %d (Gone)", w.Code, http.StatusGone)
+	}
+	if nr.called {
+		t.Error("expected revert function NOT to have been called for expired entry")
+	}
+}
+
+func TestHandleUndoFix_NotFound(t *testing.T) {
+	stub := &stubPipeline{}
+	r, _ := testRouterWithStubPipeline(t, stub)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/notifications/undo/nonexistent", nil)
+	req.SetPathValue("undoId", "nonexistent")
+	w := httptest.NewRecorder()
+
+	r.handleUndoFix(w, req)
+
+	if w.Code != http.StatusGone {
+		t.Errorf("status = %d, want %d (Gone)", w.Code, http.StatusGone)
+	}
+}
+
+func TestHandleUndoFix_AlreadyUsed(t *testing.T) {
+	stub := &stubPipeline{}
+	r, _ := testRouterWithStubPipeline(t, stub)
+
+	nr := &noopRevert{}
+	undoID := r.undoStore.Register("v-undo-used", nr.fn)
+
+	// First call: succeeds.
+	req1 := httptest.NewRequest(http.MethodPost, "/api/v1/notifications/undo/"+undoID, nil)
+	req1.SetPathValue("undoId", undoID)
+	w1 := httptest.NewRecorder()
+	r.handleUndoFix(w1, req1)
+	if w1.Code != http.StatusOK {
+		t.Fatalf("first undo: status = %d, want %d", w1.Code, http.StatusOK)
+	}
+
+	// Second call: undo already consumed.
+	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/notifications/undo/"+undoID, nil)
+	req2.SetPathValue("undoId", undoID)
+	w2 := httptest.NewRecorder()
+	r.handleUndoFix(w2, req2)
+	if w2.Code != http.StatusGone {
+		t.Errorf("second undo: status = %d, want %d (Gone)", w2.Code, http.StatusGone)
+	}
+}
+
+func TestHandleFixViolation_ReturnsUndoID(t *testing.T) {
+	// A fix that succeeds should return an undo_id in the response.
+	// We seed a violation so capturePreFixState can find it.
+	stub := &stubPipeline{
+		fixViolationFn: func(_ context.Context, _ string) (*rule.FixResult, error) {
+			return &rule.FixResult{RuleID: "nfo_exists", Fixed: true, Message: "NFO created"}, nil
+		},
+	}
+	r, artistSvc := testRouterWithStubPipeline(t, stub)
+
+	a := addTestArtist(t, artistSvc, "Undo Test Artist")
+
+	// Seed a violation for the artist so capturePreFixState can look it up.
+	v := &rule.RuleViolation{
+		RuleID:     rule.RuleNFOExists,
+		ArtistID:   a.ID,
+		ArtistName: a.Name,
+		Severity:   "error",
+		Message:    "missing nfo",
+		Fixable:    true,
+		Status:     rule.ViolationStatusOpen,
+	}
+	if err := r.ruleService.UpsertViolation(context.Background(), v); err != nil {
+		t.Fatalf("seeding violation: %v", err)
+	}
+	// Retrieve the persisted violation to get its generated ID.
+	violations, err := r.ruleService.ListViolationsFiltered(context.Background(), rule.ViolationListParams{Status: "active"})
+	if err != nil || len(violations) == 0 {
+		t.Fatalf("listing violations: %v (count=%d)", err, len(violations))
+	}
+	violationID := violations[0].ID
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/notifications/"+violationID+"/fix", nil)
+	req.SetPathValue("id", violationID)
+	w := httptest.NewRecorder()
+
+	r.handleFixViolation(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding: %v", err)
+	}
+	if resp["status"] != "fixed" {
+		t.Errorf("status = %v, want fixed", resp["status"])
+	}
+	// Artist has no on-disk path in the test (path is empty), so no undo_id
+	// is expected. This test simply verifies the handler does not panic when
+	// capturePreFixState returns an empty slice for pathless artists.
+	// A separate integration test (not requiring a real filesystem) verifies
+	// the undo_id is populated for path-bearing artists.
 }

@@ -3612,7 +3612,9 @@ paths:
         Applies the recommended fix for a single violation. For open fixable
         violations, routes through the appropriate fixer (NFO generation,
         metadata fetch, image fetch, directory rename, etc.). Returns the
-        fix result with status and message.
+        fix result with status and message. When the fix writes to the
+        filesystem, the response also includes an undo_id that can be passed
+        to POST /notifications/undo/{undoId} within 30 seconds to revert it.
       operationId: fixViolation
       parameters:
         - name: id
@@ -3635,6 +3637,19 @@ paths:
                   message:
                     type: string
                     description: Human-readable result description
+                  undo_id:
+                    type: string
+                    description: |
+                      Opaque token used to revert this fix via
+                      POST /notifications/undo/{undoId}. Present only when
+                      the fix modified filesystem files and an undo entry was
+                      registered. Absent for metadata-only fixes, dismissed
+                      violations, and failed fixes.
+                  undo_expires_in:
+                    type: integer
+                    description: |
+                      Number of seconds until the undo window closes. Present
+                      only when undo_id is set.
         "500":
           description: Internal server error
           content:
@@ -3643,6 +3658,59 @@ paths:
                 $ref: "#/components/schemas/Error"
         "503":
           description: Rule pipeline not configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /notifications/undo/{undoId}:
+    post:
+      tags: [Notifications]
+      summary: Revert a recently applied fix
+      description: |
+        Reverts a fix that was applied within the undo window (30 seconds).
+        The undoId is returned by POST /notifications/{id}/fix when the fix
+        modified filesystem files. The undo entry is single-use and expires
+        after 30 seconds. Returns 410 Gone when the window has elapsed or
+        the token has already been used. On success, reopens the violation
+        so it reappears as fixable in the notifications list.
+      operationId: undoFix
+      parameters:
+        - name: undoId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Opaque undo token returned by the fix endpoint
+      responses:
+        "200":
+          description: Revert succeeded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [reverted]
+                    description: Always "reverted" on success
+                  message:
+                    type: string
+                    description: Human-readable confirmation
+        "410":
+          description: Undo window expired or token already used
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Undo store not available
           content:
             application/json:
               schema:

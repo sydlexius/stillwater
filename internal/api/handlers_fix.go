@@ -6,10 +6,12 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+	img "github.com/sydlexius/stillwater/internal/image"
 	"github.com/sydlexius/stillwater/internal/rule"
 )
 
@@ -25,6 +27,8 @@ type FixAllProgress struct {
 }
 
 // handleFixViolation applies the recommended fix for a single violation.
+// On success, registers an undo entry in the in-memory UndoStore and returns
+// its ID so the caller can present an Undo button to the user.
 // POST /api/v1/notifications/{id}/fix
 func (r *Router) handleFixViolation(w http.ResponseWriter, req *http.Request) {
 	id, ok := RequirePathParam(w, req, "id")
@@ -37,6 +41,9 @@ func (r *Router) handleFixViolation(w http.ResponseWriter, req *http.Request) {
 		writeError(w, req, http.StatusServiceUnavailable, "rule pipeline not configured")
 		return
 	}
+
+	// Capture pre-fix state so the fix can be reverted within the undo window.
+	preFixSnaps := r.capturePreFixState(req.Context(), id)
 
 	fr, err := r.pipeline.FixViolation(req.Context(), id)
 	if err != nil {
@@ -55,9 +62,145 @@ func (r *Router) handleFixViolation(w http.ResponseWriter, req *http.Request) {
 		status = "failed"
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{
+	resp := map[string]any{
 		"status":  status,
 		"message": fr.Message,
+	}
+
+	// Register an undo entry when the fix succeeded and there are snapshots to revert.
+	if fr.Fixed && r.undoStore != nil && len(preFixSnaps) > 0 {
+		undoID := r.undoStore.Register(id, rule.MultiFileRevert(preFixSnaps))
+		resp["undo_id"] = undoID
+		resp["undo_expires_in"] = 30
+	}
+
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// capturePreFixState loads the violation and the associated artist, then
+// snapshots the files that the fix is expected to modify. Returns an empty
+// slice when no relevant files are found (e.g. for pure metadata fixes that
+// do not touch the filesystem).
+//
+// Errors during snapshot capture are logged and silently ignored so that a
+// snapshot failure does not block the fix itself.
+func (r *Router) capturePreFixState(ctx context.Context, violationID string) []rule.FileSnapshot {
+	if r.ruleService == nil || r.artistService == nil {
+		return nil
+	}
+
+	rv, err := r.ruleService.GetViolationByID(ctx, violationID)
+	if err != nil {
+		r.logger.Debug("undo: could not load violation for pre-fix snapshot", "id", violationID, "error", err)
+		return nil
+	}
+
+	a, err := r.artistService.GetByID(ctx, rv.ArtistID)
+	if err != nil || a.Path == "" {
+		// Pathless artists have no on-disk files to snapshot.
+		return nil
+	}
+
+	return captureFilesForRule(ctx, a, rv.RuleID, r)
+}
+
+// captureFilesForRule resolves the file paths that a given rule's fixer is
+// expected to modify and captures their current on-disk content.
+func captureFilesForRule(ctx context.Context, a *artist.Artist, ruleID string, r *Router) []rule.FileSnapshot {
+	switch ruleID {
+	case rule.RuleNFOExists, rule.RuleNFOHasMBID, rule.RuleBioExists, rule.RuleMetadataQuality:
+		// NFO fixes write to artist.nfo.
+		snap, err := rule.CaptureFile(filepath.Join(a.Path, "artist.nfo"))
+		if err != nil {
+			r.logger.Debug("undo: could not snapshot artist.nfo", "artist", a.Name, "error", err)
+			return nil
+		}
+		return []rule.FileSnapshot{snap}
+
+	case rule.RuleThumbExists, rule.RuleThumbSquare, rule.RuleThumbMinRes:
+		return captureImageFiles(ctx, a.Path, "thumb", r)
+
+	case rule.RuleFanartExists, rule.RuleFanartMinRes, rule.RuleFanartAspect:
+		return captureImageFiles(ctx, a.Path, "fanart", r)
+
+	case rule.RuleLogoExists, rule.RuleLogoMinRes, rule.RuleLogoTrimmable, rule.RuleLogoPadding:
+		return captureImageFiles(ctx, a.Path, "logo", r)
+
+	case rule.RuleBannerExists, rule.RuleBannerMinRes:
+		return captureImageFiles(ctx, a.Path, "banner", r)
+
+	default:
+		// Other rules (directory rename, extraneous images, etc.) either do not
+		// have a straightforward single-file undo, or undo is not supported.
+		return nil
+	}
+}
+
+// captureImageFiles captures snapshots for all canonical filenames of imageType
+// in dir. Files that do not exist are captured with Exists=false so that undo
+// can remove them if they were created by the fix.
+func captureImageFiles(ctx context.Context, dir, imageType string, r *Router) []rule.FileSnapshot {
+	// Resolve canonical filenames, preferring the active platform profile.
+	var names []string
+	if r.platformService != nil {
+		if profile, err := r.platformService.GetActive(ctx); err == nil && profile != nil {
+			names = profile.ImageNaming.NamesForType(imageType)
+		}
+	}
+	if len(names) == 0 {
+		names = img.FileNamesForType(img.DefaultFileNames, imageType)
+	}
+
+	snaps := make([]rule.FileSnapshot, 0, len(names))
+	for _, name := range names {
+		snap, err := rule.CaptureFile(filepath.Join(dir, name))
+		if err != nil {
+			r.logger.Debug("undo: could not snapshot image file", "file", name, "error", err)
+			continue
+		}
+		snaps = append(snaps, snap)
+	}
+	return snaps
+}
+
+// handleUndoFix reverts a recently applied fix using the registered undo entry.
+// POST /api/v1/notifications/{id}/undo
+func (r *Router) handleUndoFix(w http.ResponseWriter, req *http.Request) {
+	undoID, ok := RequirePathParam(w, req, "undoId")
+	if !ok {
+		return
+	}
+
+	if r.undoStore == nil {
+		writeError(w, req, http.StatusServiceUnavailable, "undo not available")
+		return
+	}
+
+	entry, ok := r.undoStore.Pop(undoID)
+	if !ok {
+		// Either the undo ID was never registered, was already used, or expired.
+		writeError(w, req, http.StatusGone, "undo window expired or undo already applied")
+		return
+	}
+
+	if err := entry.Revert(req.Context()); err != nil {
+		r.logger.Error("undo fix failed", "undo_id", undoID, "violation_id", entry.ViolationID, "error", err)
+		writeError(w, req, http.StatusInternalServerError, "failed to revert fix")
+		return
+	}
+
+	// Reopen the violation so it appears as fixable again.
+	if r.ruleService != nil {
+		if reopenErr := r.ruleService.ReopenViolation(req.Context(), entry.ViolationID); reopenErr != nil {
+			r.logger.Warn("undo: failed to reopen violation after revert", "id", entry.ViolationID, "error", reopenErr)
+		}
+	}
+
+	r.logger.Info("fix reverted", "undo_id", undoID, "violation_id", entry.ViolationID)
+
+	writeJSON(w, http.StatusOK, map[string]string{
+		"status":  "reverted",
+		"message": "fix reverted successfully",
 	})
 }
 
