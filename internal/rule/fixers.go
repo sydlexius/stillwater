@@ -1017,9 +1017,28 @@ func (f *DirectoryRenameFixer) Fix(ctx context.Context, a *artist.Artist, v *Vio
 	}
 
 	// Decline to auto-fix when a platform connection shares the filesystem.
+	// Fail closed: if the library lookup errors, assume shared to prevent
+	// destructive renames when the DB is unavailable.
 	if f.libraryService != nil && a.LibraryID != "" {
 		lib, err := f.libraryService.GetByID(ctx, a.LibraryID)
-		if err == nil && lib.SharedFilesystem {
+		if err != nil {
+			f.logger.Warn("library lookup failed during directory rename; assuming shared filesystem",
+				slog.String("library_id", a.LibraryID),
+				slog.String("error", err.Error()))
+			return &FixResult{
+				RuleID:  v.RuleID,
+				Fixed:   false,
+				Message: fmt.Sprintf("skipped: could not verify library %q (assuming shared filesystem)", a.LibraryID),
+			}, nil
+		}
+		if lib == nil {
+			return &FixResult{
+				RuleID:  v.RuleID,
+				Fixed:   false,
+				Message: fmt.Sprintf("skipped: library %q not found", a.LibraryID),
+			}, nil
+		}
+		if lib.SharedFilesystem {
 			return &FixResult{
 				RuleID:  v.RuleID,
 				Fixed:   false,

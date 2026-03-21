@@ -19,6 +19,11 @@ type Engine struct {
 	libraryService  *library.Service
 	checkers        map[string]Checker
 	logger          *slog.Logger
+
+	// sharedFSCache caches IsSharedFilesystem results by library ID during
+	// a single evaluation run to avoid N+1 DB queries when multiple artists
+	// share the same library. Cleared at the start of each Evaluate call.
+	sharedFSCache map[string]bool
 }
 
 // NewEngine creates a rule evaluation engine with all built-in checkers registered.
@@ -58,6 +63,10 @@ func NewEngine(service *Service, db *sql.DB, platformService *platform.Service, 
 
 // Evaluate runs all enabled rules against an artist and returns the results.
 func (e *Engine) Evaluate(ctx context.Context, a *artist.Artist) (*EvaluationResult, error) {
+	// Clear per-evaluation shared-filesystem cache so each top-level Evaluate
+	// call gets fresh data while avoiding N+1 queries within the same run.
+	e.sharedFSCache = nil
+
 	// Classical artists in skip mode get a perfect score with no evaluation
 	if a.IsClassical && GetClassicalMode(ctx, e.db) == ClassicalModeSkip {
 		return &EvaluationResult{
@@ -125,17 +134,48 @@ func (e *Engine) EvaluateAll(ctx context.Context, artists []artist.Artist) ([]Ev
 }
 
 // IsSharedFilesystem reports whether the given artist's library has the
-// shared_filesystem flag set. Returns false if the library service is nil,
-// the artist has no library ID, or any error occurs during lookup.
+// shared_filesystem flag set. Returns false if the library service is nil
+// or the artist has no library ID. Returns true (fail closed) on DB errors
+// to prevent destructive operations when the database is unavailable.
+//
+// Results are cached per library ID for the duration of a single evaluation
+// run (cache is cleared at the start of each Evaluate call) to avoid N+1
+// DB queries when multiple checkers call this for the same artist.
 func (e *Engine) IsSharedFilesystem(ctx context.Context, a *artist.Artist) bool {
 	if e.libraryService == nil || a.LibraryID == "" {
 		return false
 	}
+
+	// Check the per-evaluation cache first.
+	if e.sharedFSCache != nil {
+		if cached, ok := e.sharedFSCache[a.LibraryID]; ok {
+			return cached
+		}
+	}
+
 	lib, err := e.libraryService.GetByID(ctx, a.LibraryID)
 	if err != nil {
-		return false
+		// Fail closed: assume shared filesystem when the DB is unavailable
+		// to prevent destructive operations (e.g. deleting "extraneous" images
+		// that a platform actually owns).
+		e.logger.Warn("library lookup failed; assuming shared filesystem",
+			slog.String("library_id", a.LibraryID),
+			slog.String("error", err.Error()))
+		e.cacheSharedFS(a.LibraryID, true)
+		return true
 	}
+
+	e.cacheSharedFS(a.LibraryID, lib.SharedFilesystem)
 	return lib.SharedFilesystem
+}
+
+// cacheSharedFS stores a shared-filesystem lookup result in the per-evaluation
+// cache, lazily initializing the map on first use.
+func (e *Engine) cacheSharedFS(libraryID string, shared bool) {
+	if e.sharedFSCache == nil {
+		e.sharedFSCache = make(map[string]bool)
+	}
+	e.sharedFSCache[libraryID] = shared
 }
 
 // calculateHealthScore returns the percentage of rules passed, rounded to 1 decimal.

@@ -22,8 +22,20 @@ func TestHandleSharedFilesystemStatus(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 
+	// Decode into a raw map first to verify JSON shape ([] not null).
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(w.Body.Bytes(), &raw); err != nil {
+		t.Fatalf("decoding raw response: %v", err)
+	}
+
+	// Libraries must be an empty JSON array, not null.
+	libsRaw := string(raw["libraries"])
+	if libsRaw != "[]" {
+		t.Errorf("expected libraries to be [], got %s", libsRaw)
+	}
+
 	var status SharedFilesystemStatus
-	if err := json.NewDecoder(w.Body).Decode(&status); err != nil {
+	if err := json.Unmarshal(w.Body.Bytes(), &status); err != nil {
 		t.Fatalf("decoding response: %v", err)
 	}
 
@@ -142,7 +154,12 @@ func TestHandleSharedFilesystemRecheck(t *testing.T) {
 	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
 		t.Fatalf("decoding response: %v", err)
 	}
-	if _, ok := result["overlaps_found"]; !ok {
-		t.Error("expected overlaps_found field in response")
+	val, ok := result["overlaps_found"]
+	if !ok {
+		t.Fatal("expected overlaps_found field in response")
+	}
+	// json.Unmarshal decodes numbers as float64; verify it is numeric.
+	if _, isNum := val.(float64); !isNum {
+		t.Errorf("expected overlaps_found to be a number, got %T", val)
 	}
 }

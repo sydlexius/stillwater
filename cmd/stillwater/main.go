@@ -390,29 +390,12 @@ func run() error {
 
 	// Evaluate shared-filesystem overlaps on startup.
 	{
-		libs, sfErr := libraryService.List(context.Background())
+		overlapCount, sfErr := library.RecheckOverlaps(ctx, libraryService, logger)
 		if sfErr != nil {
-			logger.Warn("listing libraries for shared-filesystem check", "error", sfErr)
-		} else {
-			overlaps := library.DetectOverlaps(libs)
-			overlapIDs := make(map[string]bool, len(overlaps))
-			for _, o := range overlaps {
-				overlapIDs[o.LibraryID] = true
-			}
-			for _, lib := range libs {
-				shouldBeShared := overlapIDs[lib.ID]
-				if lib.SharedFilesystem != shouldBeShared {
-					if setErr := libraryService.SetSharedFilesystem(context.Background(), lib.ID, shouldBeShared); setErr != nil {
-						logger.Warn("updating shared_filesystem flag on startup",
-							slog.String("library_id", lib.ID),
-							slog.String("error", setErr.Error()))
-					}
-				}
-			}
-			if len(overlaps) > 0 {
-				logger.Warn("shared-filesystem overlap detected on startup",
-					slog.Int("libraries_affected", len(overlaps)))
-			}
+			logger.Warn("shared-filesystem check on startup", "error", sfErr)
+		} else if overlapCount > 0 {
+			logger.Warn("shared-filesystem overlap detected on startup",
+				slog.Int("libraries_affected", overlapCount))
 		}
 	}
 

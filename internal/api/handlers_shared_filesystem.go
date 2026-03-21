@@ -2,6 +2,8 @@ package api
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"log/slog"
 	"net/http"
 
@@ -98,29 +100,7 @@ func (r *Router) handleSharedFilesystemRecheck(w http.ResponseWriter, req *http.
 // updates the shared_filesystem flag on each library. Returns the count
 // of libraries with overlaps detected.
 func (r *Router) recheckSharedFilesystem(ctx context.Context) (int, error) {
-	libs, err := r.libraryService.List(ctx)
-	if err != nil {
-		return 0, err
-	}
-
-	overlaps := library.DetectOverlaps(libs)
-	overlapIDs := make(map[string]bool, len(overlaps))
-	for _, o := range overlaps {
-		overlapIDs[o.LibraryID] = true
-	}
-
-	for _, lib := range libs {
-		shouldBeShared := overlapIDs[lib.ID]
-		if lib.SharedFilesystem != shouldBeShared {
-			if setErr := r.libraryService.SetSharedFilesystem(ctx, lib.ID, shouldBeShared); setErr != nil {
-				r.logger.Warn("failed to update shared_filesystem flag",
-					slog.String("library_id", lib.ID),
-					slog.String("error", setErr.Error()))
-			}
-		}
-	}
-
-	return len(overlaps), nil
+	return library.RecheckOverlaps(ctx, r.libraryService, r.logger)
 }
 
 // buildSharedFilesystemStatus assembles the current status by reading library
@@ -134,6 +114,7 @@ func (r *Router) buildSharedFilesystemStatus(ctx context.Context) (*SharedFilesy
 
 	status := &SharedFilesystemStatus{
 		HasOverlaps: len(sharedLibs) > 0,
+		Libraries:   []SharedFilesystemEntry{},
 	}
 
 	if len(sharedLibs) > 0 {
@@ -163,10 +144,15 @@ func (r *Router) buildSharedFilesystemStatus(ctx context.Context) (*SharedFilesy
 		}
 	}
 
-	// Check the dismiss preference
+	// Check the dismiss preference. sql.ErrNoRows means the setting has not
+	// been stored yet (not dismissed). Any other DB error is logged and treated
+	// as "not dismissed" (show the bar) as the safe default.
 	var dismissed string
 	err = r.db.QueryRowContext(ctx,
 		`SELECT value FROM settings WHERE key = 'shared_filesystem.dismissed'`).Scan(&dismissed)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		r.logger.Warn("reading shared_filesystem.dismissed setting", "error", err)
+	}
 	if err == nil && dismissed == "true" {
 		status.Dismissed = true
 	}

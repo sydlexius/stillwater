@@ -1,6 +1,8 @@
 package library
 
 import (
+	"context"
+	"log/slog"
 	"path/filepath"
 	"strings"
 )
@@ -138,6 +140,36 @@ func describeOverlap(lib Library) string {
 		return source + " library '" + lib.Name + "'"
 	}
 	return "library '" + lib.Name + "'"
+}
+
+// RecheckOverlaps lists all libraries, detects path overlaps, and updates each
+// library's shared_filesystem flag accordingly. Returns the number of libraries
+// with overlaps detected. This is the shared implementation used at startup and
+// by the API recheck endpoint.
+func RecheckOverlaps(ctx context.Context, svc *Service, logger *slog.Logger) (int, error) {
+	libs, err := svc.List(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	overlaps := DetectOverlaps(libs)
+	overlapIDs := make(map[string]bool, len(overlaps))
+	for _, o := range overlaps {
+		overlapIDs[o.LibraryID] = true
+	}
+
+	for _, lib := range libs {
+		shouldBeShared := overlapIDs[lib.ID]
+		if lib.SharedFilesystem != shouldBeShared {
+			if setErr := svc.SetSharedFilesystem(ctx, lib.ID, shouldBeShared); setErr != nil {
+				logger.Warn("failed to update shared_filesystem flag",
+					slog.String("library_id", lib.ID),
+					slog.String("error", setErr.Error()))
+			}
+		}
+	}
+
+	return len(overlaps), nil
 }
 
 // deduplicateResults removes duplicate OverlapResult entries based on LibraryID.

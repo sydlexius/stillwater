@@ -156,6 +156,75 @@ func TestDetectOverlaps(t *testing.T) {
 	})
 }
 
+func TestCleanPathEdgeCases(t *testing.T) {
+	// Use a temp directory as the base to avoid interference from real
+	// symlinks on the host filesystem (e.g. /music -> /mnt/d/.../music).
+	tmp := t.TempDir()
+
+	tests := []struct {
+		name string
+		a, b string
+		want bool
+	}{
+		{
+			name: "mixed case paths treated as equal",
+			a:    tmp + "/Music/Rock",
+			b:    tmp + "/music/rock",
+			want: true,
+		},
+		{
+			name: "mixed case prefix overlap",
+			a:    tmp + "/Music",
+			b:    tmp + "/music/Rock",
+			want: true,
+		},
+		{
+			name: "trailing slash stripped",
+			a:    tmp + "/music/",
+			b:    tmp + "/music",
+			want: true,
+		},
+		{
+			name: "both have trailing slashes",
+			a:    tmp + "/music/rock/",
+			b:    tmp + "/music/",
+			want: true,
+		},
+		{
+			name: "trailing slash does not create false overlap",
+			a:    tmp + "/music/",
+			b:    tmp + "/videos/",
+			want: false,
+		},
+		{
+			name: "double slashes cleaned",
+			a:    tmp + "/music//rock",
+			b:    tmp + "/music/rock",
+			want: true,
+		},
+		{
+			name: "dot segments cleaned",
+			a:    tmp + "/music/./rock",
+			b:    tmp + "/music/rock",
+			want: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Use cleanPath to normalize like DetectOverlaps does, then
+			// check pathsOverlap on the cleaned results.
+			ca := cleanPath(tt.a)
+			cb := cleanPath(tt.b)
+			got := pathsOverlap(ca, cb)
+			if got != tt.want {
+				t.Errorf("pathsOverlap(cleanPath(%q), cleanPath(%q)) = %v, want %v (cleaned: %q, %q)",
+					tt.a, tt.b, got, tt.want, ca, cb)
+			}
+		})
+	}
+}
+
 func TestIsPlatformSource(t *testing.T) {
 	tests := []struct {
 		source string

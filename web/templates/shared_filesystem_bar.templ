@@ -47,7 +47,10 @@ templ SharedFilesystemBarContent(data SharedFSBarData) {
 						<div class="text-sm text-amber-800 dark:text-amber-200">
 							<span class="font-medium">Shared filesystem detected:</span>
 							<span class="ml-1">
-								for _, lib := range data.Libraries {
+								for i, lib := range data.Libraries {
+									if i > 0 {
+										{ ", " }
+									}
 									<span class="font-medium">{ lib.Name }</span>
 									if lib.Path != "" {
 										<span class="text-amber-600 dark:text-amber-300">({ lib.Path })</span>
