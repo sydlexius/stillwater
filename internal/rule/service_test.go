@@ -1121,3 +1121,52 @@ func TestGetComplianceForArtists_ResolvedNotCounted(t *testing.T) {
 		t.Errorf("artist a1 with resolved violation: compliance = %q, want %q", result["a1"], artist.ComplianceCompliant)
 	}
 }
+
+func TestReopenViolation(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	// Create a resolved violation.
+	rv := &RuleViolation{
+		RuleID:     RuleNFOExists,
+		ArtistID:   "artist-reopen",
+		ArtistName: "Reopen Artist",
+		Severity:   "error",
+		Message:    "missing nfo",
+		Fixable:    true,
+		Status:     ViolationStatusResolved,
+	}
+	if err := svc.UpsertViolation(ctx, rv); err != nil {
+		t.Fatalf("UpsertViolation: %v", err)
+	}
+
+	// Mark it as resolved (UpsertViolation may not set resolved_at).
+	if err := svc.ResolveViolation(ctx, rv.ID); err != nil {
+		t.Fatalf("ResolveViolation: %v", err)
+	}
+
+	got, err := svc.GetViolationByID(ctx, rv.ID)
+	if err != nil {
+		t.Fatalf("GetViolationByID before reopen: %v", err)
+	}
+	if got.Status != ViolationStatusResolved {
+		t.Fatalf("status before reopen = %q, want %q", got.Status, ViolationStatusResolved)
+	}
+
+	// Reopen the violation.
+	if err := svc.ReopenViolation(ctx, rv.ID); err != nil {
+		t.Fatalf("ReopenViolation: %v", err)
+	}
+
+	got, err = svc.GetViolationByID(ctx, rv.ID)
+	if err != nil {
+		t.Fatalf("GetViolationByID after reopen: %v", err)
+	}
+	if got.Status != ViolationStatusOpen {
+		t.Errorf("status after reopen = %q, want %q", got.Status, ViolationStatusOpen)
+	}
+	if got.ResolvedAt != nil {
+		t.Error("expected ResolvedAt to be nil after reopen")
+	}
+}

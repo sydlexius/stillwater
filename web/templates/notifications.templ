@@ -832,8 +832,13 @@ templ candidateScript() {
 			return resp.json();
 		}).then(function(data) {
 			if (data.status === 'fixed' || data.status === 'dismissed') {
-				if (typeof showSuccessToast === 'function') showSuccessToast(data.message || 'Fix applied');
 				reloadNotificationsTable();
+				if (data.undo_id && typeof showUndoToast === 'function') {
+					var secs = data.undo_expires_in || 30;
+					showUndoToast(data.message || 'Fix applied', data.undo_id, secs, csrfToken);
+				} else if (typeof showSuccessToast === 'function') {
+					showSuccessToast(data.message || 'Fix applied');
+				}
 			} else {
 				if (typeof showToast === 'function') showToast('Fix failed: ' + (data.message || 'Unknown error'));
 				btn.disabled = false;

@@ -104,6 +104,7 @@ type Router struct {
 	ruleRunMu          sync.Mutex
 	fixAllProgress     *FixAllProgress
 	fixAllMu           sync.RWMutex
+	undoStore          *rule.UndoStore
 }
 
 // NewRouter creates a new Router with all routes configured.
@@ -146,6 +147,7 @@ func NewRouter(deps RouterDeps) *Router {
 		},
 		fileRemover: osRemover{},
 		libraryOps:  make(map[string]*LibraryOpResult),
+		undoStore:   rule.NewUndoStore(),
 	}
 }
 
@@ -156,6 +158,11 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	optAuthMw := middleware.OptionalAuth(r.authService)
 	csrf := middleware.NewCSRF()
 	loginRL := middleware.NewLoginRateLimiter(ctx)
+
+	// Start periodic expiry of stale undo entries so the store does not grow unbounded.
+	if r.undoStore != nil {
+		r.undoStore.StartCleanup(ctx)
+	}
 	mux := http.NewServeMux()
 	bp := r.basePath
 
@@ -293,6 +300,7 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("POST "+bp+"/api/v1/notifications/{id}/resolve", wrapAuth(r.handleResolveViolation, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/notifications/{id}/fix", wrapAuth(r.handleFixViolation, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/notifications/{id}/apply-candidate", wrapAuth(r.handleApplyViolationCandidate, authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/notifications/undo/{undoId}", wrapAuth(r.handleUndoFix, authMw))
 	mux.HandleFunc("DELETE "+bp+"/api/v1/notifications/resolved", wrapAuth(r.handleClearResolvedViolations, authMw))
 
 	// Bulk operation routes
