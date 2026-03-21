@@ -41,6 +41,10 @@ while [[ $# -gt 0 ]]; do
         echo "ERROR: --music-path requires a value"
         exit 1
       fi
+      if [[ "${2:-}" == --* ]]; then
+        echo "ERROR: --music-path value looks like a flag: $2"
+        exit 1
+      fi
       MUSIC_PATHS+=("$2")
       shift 2
       ;;
