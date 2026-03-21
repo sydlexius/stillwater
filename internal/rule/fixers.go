@@ -57,7 +57,7 @@ func (f *NFOFixer) CanFix(v *Violation) bool {
 // Fix creates an artist.nfo file in the artist's directory.
 // If the file already exists and was modified externally, returns without overwriting.
 func (f *NFOFixer) Fix(ctx context.Context, a *artist.Artist, _ *Violation) (*FixResult, error) {
-	if f.fsCheck != nil && f.fsCheck.IsShared(ctx, a) {
+	if f.fsCheck.IsShared(ctx, a) {
 		return &FixResult{
 			RuleID:  RuleNFOExists,
 			Fixed:   false,
@@ -300,7 +300,7 @@ func (f *ImageFixer) Fix(ctx context.Context, a *artist.Artist, v *Violation) (*
 		}, nil
 	}
 
-	if f.fsCheck != nil && f.fsCheck.IsShared(ctx, a) {
+	if f.fsCheck.IsShared(ctx, a) {
 		return &FixResult{
 			RuleID:  v.RuleID,
 			Fixed:   false,
@@ -704,7 +704,7 @@ func (f *ExtraneousImagesFixer) Fix(ctx context.Context, a *artist.Artist, _ *Vi
 	// When shared filesystem is detected, union expected files from all
 	// profiles so we do not delete images owned by another platform.
 	var expected map[string]bool
-	if f.fsCheck != nil && f.fsCheck.IsShared(ctx, a) {
+	if f.fsCheck.IsShared(ctx, a) {
 		if f.platformService == nil {
 			return &FixResult{
 				RuleID:  RuleExtraneousImages,
@@ -788,7 +788,7 @@ func (f *LogoTrimFixer) CanFix(v *Violation) bool {
 
 // Fix trims transparent padding from the logo and saves the result.
 func (f *LogoTrimFixer) Fix(ctx context.Context, a *artist.Artist, _ *Violation) (*FixResult, error) {
-	if f.fsCheck != nil && f.fsCheck.IsShared(ctx, a) {
+	if f.fsCheck.IsShared(ctx, a) {
 		return &FixResult{
 			RuleID:  RuleLogoTrimmable,
 			Fixed:   false,
@@ -911,7 +911,7 @@ func (f *LogoPaddingFixer) CanFix(v *Violation) bool {
 
 // Fix trims padding from the logo, keeping TrimMargin pixels around the content.
 func (f *LogoPaddingFixer) Fix(ctx context.Context, a *artist.Artist, v *Violation) (*FixResult, error) {
-	if f.fsCheck != nil && f.fsCheck.IsShared(ctx, a) {
+	if f.fsCheck.IsShared(ctx, a) {
 		return &FixResult{
 			RuleID:  RuleLogoPadding,
 			Fixed:   false,
@@ -1082,7 +1082,7 @@ func (f *DirectoryRenameFixer) Fix(ctx context.Context, a *artist.Artist, v *Vio
 	}
 
 	// Decline to auto-fix when a platform connection shares the filesystem.
-	if f.fsCheck != nil && f.fsCheck.IsShared(ctx, a) {
+	if f.fsCheck.IsShared(ctx, a) {
 		return &FixResult{
 			RuleID:  v.RuleID,
 			Fixed:   false,
@@ -1155,7 +1155,7 @@ func (f *BackdropSequencingFixer) CanFix(v *Violation) bool {
 
 // Fix renumbers fanart files to occupy contiguous indices.
 func (f *BackdropSequencingFixer) Fix(ctx context.Context, a *artist.Artist, _ *Violation) (*FixResult, error) {
-	if f.fsCheck != nil && f.fsCheck.IsShared(ctx, a) {
+	if f.fsCheck.IsShared(ctx, a) {
 		return &FixResult{
 			RuleID:  RuleBackdropSequencing,
 			Fixed:   false,
