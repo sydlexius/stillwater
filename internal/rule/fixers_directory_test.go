@@ -66,7 +66,7 @@ func TestDirectoryRenameFixer_Fix(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		a := &artist.Artist{Name: "Existing", Path: oldPath}
+		a := &artist.Artist{Name: "Existing", Path: oldPath, LibraryID: "lib-test"}
 		v := &Violation{
 			RuleID: RuleDirectoryNameMismatch,
 			Config: RuleConfig{ArticleMode: "prefix"},

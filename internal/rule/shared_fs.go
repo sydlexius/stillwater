@@ -39,7 +39,7 @@ func NewSharedFSCheck(libs LibraryQuerier, logger *slog.Logger) *SharedFSCheck {
 // when the system cannot confirm the filesystem is exclusively managed by
 // Stillwater.
 func (c *SharedFSCheck) IsShared(ctx context.Context, a *artist.Artist) bool {
-	if c == nil || c.libs == nil || a.LibraryID == "" {
+	if c == nil || c.libs == nil || a == nil || a.LibraryID == "" {
 		return true
 	}
 
