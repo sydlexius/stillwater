@@ -158,22 +158,27 @@ func ContextMenu(id string, compact bool) templ.Component {
 // can reuse the same toggle behavior.
 func ToggleContextMenu(id string) templ.ComponentScript {
 	return templ.ComponentScript{
-		Name: `__templ_ToggleContextMenu_2f79`,
-		Function: `function __templ_ToggleContextMenu_2f79(id){var panel = document.getElementById('ctx-panel-' + id);
+		Name: `__templ_ToggleContextMenu_031f`,
+		Function: `function __templ_ToggleContextMenu_031f(id){var panel = document.getElementById('ctx-panel-' + id);
+	if (!panel) return;
 	var btn = panel.previousElementSibling;
 	var isOpen = !panel.classList.contains('hidden');
 	// Close all other open menus first.
 	document.querySelectorAll('[data-context-menu] [role="menu"]:not(.hidden)').forEach(function(p) {
 		p.classList.add('hidden');
-		p.previousElementSibling.setAttribute('aria-expanded', 'false');
+		var prev = p.previousElementSibling;
+		if (prev) prev.setAttribute('aria-expanded', 'false');
 	});
 	if (!isOpen) {
 		panel.classList.remove('hidden');
-		btn.setAttribute('aria-expanded', 'true');
+		if (btn) btn.setAttribute('aria-expanded', 'true');
+		// Move focus to the first menu item for keyboard users.
+		var firstItem = panel.querySelector('[role="menuitem"]');
+		if (firstItem) firstItem.focus();
 	}
 }`,
-		Call:       templ.SafeScript(`__templ_ToggleContextMenu_2f79`, id),
-		CallInline: templ.SafeScriptInline(`__templ_ToggleContextMenu_2f79`, id),
+		Call:       templ.SafeScript(`__templ_ToggleContextMenu_031f`, id),
+		CallInline: templ.SafeScriptInline(`__templ_ToggleContextMenu_031f`, id),
 	}
 }
 
