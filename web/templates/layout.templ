@@ -2,7 +2,8 @@ package templates
 
 import "github.com/sydlexius/stillwater/web/components"
 
-// AssetPaths holds cache-busted URLs for static assets.
+// AssetPaths holds cache-busted URLs for static assets and server configuration
+// used by templates to construct correct URLs for sub-path deployments.
 type AssetPaths struct {
 	CSS        string
 	HTMX       string
@@ -13,6 +14,9 @@ type AssetPaths struct {
 	HelpJS     string
 	PollingJS  string
 	LoginBG    string
+	// BasePath is the server.base_path prefix (e.g. "/stillwater"). Empty string
+	// when the app is deployed at the root. Never has a trailing slash.
+	BasePath string
 }
 
 templ Layout(title string, assets AssetPaths) {
@@ -23,27 +27,39 @@ templ Layout(title string, assets AssetPaths) {
 			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 			<title>{ title } - Stillwater</title>
 			<link rel="stylesheet" href={ assets.CSS }/>
-			<link rel="icon" type="image/svg+xml" href="/static/img/favicon.svg"/>
-			<link rel="icon" type="image/png" sizes="32x32" href="/static/img/favicon-32x32.png"/>
-			<link rel="icon" type="image/png" sizes="16x16" href="/static/img/favicon-16x16.png"/>
-			<link rel="apple-touch-icon" sizes="180x180" href="/static/img/apple-touch-icon.png"/>
-			<link rel="manifest" href="/static/site.webmanifest"/>
+			<link rel="icon" type="image/svg+xml" href={ assets.BasePath + "/static/img/favicon.svg" }/>
+			<link rel="icon" type="image/png" sizes="32x32" href={ assets.BasePath + "/static/img/favicon-32x32.png" }/>
+			<link rel="icon" type="image/png" sizes="16x16" href={ assets.BasePath + "/static/img/favicon-16x16.png" }/>
+			<link rel="apple-touch-icon" sizes="180x180" href={ assets.BasePath + "/static/img/apple-touch-icon.png" }/>
+			<link rel="manifest" href={ assets.BasePath + "/static/site.webmanifest" }/>
 			@themeInitScript()
 			<script src={ assets.HTMX }></script>
+			// htmx-base-path provides the base path to JavaScript at runtime. The
+			// htmx:configRequest listener uses it to prefix every absolute HTMX
+			// request path so sub-path deployments work without modifying each
+			// individual hx-get / hx-post attribute.
+			<meta name="htmx-base-path" content={ assets.BasePath }/>
 			<script>
-				document.addEventListener('htmx:configRequest', function(evt) {
-					var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*\=\s*([^;]*).*$)|^.*$/, "$1");
-					if (csrfToken) {
-						evt.detail.headers['X-CSRF-Token'] = csrfToken;
-					}
-				});
+				(function() {
+					var el = document.querySelector('meta[name="htmx-base-path"]');
+					var bp = el ? el.content : '';
+					document.addEventListener('htmx:configRequest', function(evt) {
+						var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*\=\s*([^;]*).*$)|^.*$/, "$1");
+						if (csrfToken) {
+							evt.detail.headers['X-CSRF-Token'] = csrfToken;
+						}
+						if (bp && evt.detail.path.startsWith('/')) {
+							evt.detail.path = bp + evt.detail.path;
+						}
+					});
+				})();
 			</script>
 		</head>
 		<body class="h-full bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
 			<img src={ assets.LoginBG } alt="" class="fixed inset-0 -z-20 h-full w-full object-cover pointer-events-none select-none" aria-hidden="true"/>
 			<div class="fixed inset-0 -z-10 bg-black/15 dark:bg-black/45 pointer-events-none" aria-hidden="true"></div>
 			<div class="min-h-full">
-				@navbar()
+				@navbar(assets.BasePath)
 				@SharedFilesystemBar()
 				<main class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
 					{ children... }
@@ -203,7 +219,9 @@ templ Layout(title string, assets AssetPaths) {
 					undoBtn.onclick = function() {
 						undoBtn.disabled = true;
 						undoBtn.textContent = 'Undoing...';
-						fetch('/api/v1/notifications/undo/' + encodeURIComponent(undoID), {
+						var bpEl = document.querySelector('meta[name="htmx-base-path"]');
+						var bp = bpEl ? bpEl.content : '';
+						fetch(bp + '/api/v1/notifications/undo/' + encodeURIComponent(undoID), {
 							method: 'POST',
 							headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
 							credentials: 'same-origin'
@@ -396,33 +414,35 @@ templ themeToggleButton() {
 	</button>
 }
 
-templ navbar() {
+// navbar renders the top navigation bar. bp is the server base path (e.g.
+// "/stillwater") and may be empty when the app is deployed at the root.
+templ navbar(bp string) {
 	<nav class="bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm shadow">
 		<div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
 			<div class="flex h-16 items-center justify-between">
 				<div class="flex items-center">
-					<a href="/" class="flex items-center gap-2 text-xl font-bold text-blue-600 dark:text-blue-400">
-						<img src="/static/img/favicon.svg" alt="" class="h-7 w-7" aria-hidden="true"/>
+					<a href={ templ.SafeURL(bp + "/") } class="flex items-center gap-2 text-xl font-bold text-blue-600 dark:text-blue-400">
+						<img src={ bp + "/static/img/favicon.svg" } alt="" class="h-7 w-7" aria-hidden="true"/>
 						Stillwater
 					</a>
 					<div class="ml-10 hidden md:flex items-baseline space-x-4">
-						<a href="/" class="rounded-md px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
+						<a href={ templ.SafeURL(bp + "/") } class="rounded-md px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
 							Dashboard
 						</a>
-						<a href="/artists" class="rounded-md px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
+						<a href={ templ.SafeURL(bp + "/artists") } class="rounded-md px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
 							Artists
 						</a>
-						<a href="/reports/compliance" class="rounded-md px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
+						<a href={ templ.SafeURL(bp + "/reports/compliance") } class="rounded-md px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
 							Reports
 						</a>
-						<a href="/notifications" class="relative rounded-md px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
+						<a href={ templ.SafeURL(bp + "/notifications") } class="relative rounded-md px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
 							Notifications
 							<span id="notif-badge-desktop" hx-get="/api/v1/notifications/badge" hx-trigger="load, every 30s" hx-swap="innerHTML"></span>
 						</a>
-						<a href="/settings" class="rounded-md px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
+						<a href={ templ.SafeURL(bp + "/settings") } class="rounded-md px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
 							Settings
 						</a>
-						<a href="/guide" class="rounded-md px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
+						<a href={ templ.SafeURL(bp + "/guide") } class="rounded-md px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
 							Guide
 						</a>
 					</div>
@@ -432,7 +452,7 @@ templ navbar() {
 					@helpButton()
 					<button
 						hx-post="/api/v1/auth/logout"
-						hx-redirect="/"
+						hx-redirect={ bp + "/" }
 						class="rounded-md px-3 py-2 text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
 					>
 						Logout
@@ -460,23 +480,23 @@ templ navbar() {
 		</div>
 		<div class="hidden md:hidden" id="mobile-menu">
 			<div class="space-y-1 px-2 pb-3 pt-2">
-				<a href="/" class="block rounded-md px-3 py-3 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
+				<a href={ templ.SafeURL(bp + "/") } class="block rounded-md px-3 py-3 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
 					Dashboard
 				</a>
-				<a href="/artists" class="block rounded-md px-3 py-3 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
+				<a href={ templ.SafeURL(bp + "/artists") } class="block rounded-md px-3 py-3 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
 					Artists
 				</a>
-				<a href="/reports/compliance" class="block rounded-md px-3 py-3 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
+				<a href={ templ.SafeURL(bp + "/reports/compliance") } class="block rounded-md px-3 py-3 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
 					Reports
 				</a>
-				<a href="/notifications" class="relative block rounded-md px-3 py-3 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
+				<a href={ templ.SafeURL(bp + "/notifications") } class="relative block rounded-md px-3 py-3 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
 					Notifications
 					<span id="notif-badge-mobile"></span>
 				</a>
-				<a href="/settings" class="block rounded-md px-3 py-3 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
+				<a href={ templ.SafeURL(bp + "/settings") } class="block rounded-md px-3 py-3 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
 					Settings
 				</a>
-				<a href="/guide" class="block rounded-md px-3 py-3 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
+				<a href={ templ.SafeURL(bp + "/guide") } class="block rounded-md px-3 py-3 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
 					Guide
 				</a>
 				<button
@@ -488,7 +508,7 @@ templ navbar() {
 				</button>
 				<button
 					hx-post="/api/v1/auth/logout"
-					hx-redirect="/"
+					hx-redirect={ bp + "/" }
 					class="block w-full rounded-md px-3 py-3 text-left text-base font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-700 dark:hover:text-gray-200"
 				>
 					Logout

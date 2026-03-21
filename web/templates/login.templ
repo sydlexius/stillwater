@@ -8,13 +8,29 @@ templ LoginPage(assets AssetPaths) {
 			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 			<title>Login - Stillwater</title>
 			<link rel="stylesheet" href={ assets.CSS }/>
-			<link rel="icon" type="image/svg+xml" href="/static/img/favicon.svg"/>
-			<link rel="icon" type="image/png" sizes="32x32" href="/static/img/favicon-32x32.png"/>
-			<link rel="icon" type="image/png" sizes="16x16" href="/static/img/favicon-16x16.png"/>
-			<link rel="apple-touch-icon" sizes="180x180" href="/static/img/apple-touch-icon.png"/>
-			<link rel="manifest" href="/static/site.webmanifest"/>
+			<link rel="icon" type="image/svg+xml" href={ assets.BasePath + "/static/img/favicon.svg" }/>
+			<link rel="icon" type="image/png" sizes="32x32" href={ assets.BasePath + "/static/img/favicon-32x32.png" }/>
+			<link rel="icon" type="image/png" sizes="16x16" href={ assets.BasePath + "/static/img/favicon-16x16.png" }/>
+			<link rel="apple-touch-icon" sizes="180x180" href={ assets.BasePath + "/static/img/apple-touch-icon.png" }/>
+			<link rel="manifest" href={ assets.BasePath + "/static/site.webmanifest" }/>
 			@themeInitScript()
 			<script src={ assets.HTMX }></script>
+			// htmx-base-path provides the base path to JavaScript at runtime. The
+			// htmx:configRequest listener uses it to prefix every absolute HTMX
+			// request path so sub-path deployments work without modifying each
+			// individual hx-post attribute.
+			<meta name="htmx-base-path" content={ assets.BasePath }/>
+			<script>
+				(function() {
+					var el = document.querySelector('meta[name="htmx-base-path"]');
+					var bp = el ? el.content : '';
+					document.addEventListener('htmx:configRequest', function(evt) {
+						if (bp && evt.detail.path.startsWith('/')) {
+							evt.detail.path = bp + evt.detail.path;
+						}
+					});
+				})();
+			</script>
 		</head>
 		<body class="h-full overflow-hidden text-gray-900 dark:text-gray-100">
 			<!-- Blurred background image -->
@@ -26,14 +42,14 @@ templ LoginPage(assets AssetPaths) {
 				<div class="w-full max-w-md space-y-8 rounded-2xl bg-white/80 dark:bg-gray-900/80 backdrop-blur-md p-8 shadow-2xl ring-1 ring-white/20">
 					<div class="text-center">
 						<div class="flex justify-center">
-							<img src="/static/img/favicon.svg" alt="" class="h-12 w-12" aria-hidden="true"/>
+							<img src={ assets.BasePath + "/static/img/favicon.svg" } alt="" class="h-12 w-12" aria-hidden="true"/>
 						</div>
 						<h1 class="mt-3 text-3xl font-bold text-blue-600 dark:text-blue-400">Stillwater</h1>
 						<h2 class="mt-2 text-sm text-gray-600 dark:text-gray-400">Sign in to your account</h2>
 					</div>
 					<form
 						method="post"
-						action="/api/v1/auth/login"
+						action={ templ.SafeURL(assets.BasePath + "/api/v1/auth/login") }
 						hx-post="/api/v1/auth/login"
 						hx-swap="innerHTML"
 						hx-target="#login-result"
