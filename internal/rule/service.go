@@ -352,7 +352,7 @@ func (s *Service) GetHealthHistory(ctx context.Context, from, to time.Time) ([]H
 }
 
 // GetViolationTrend returns daily violation creation and resolution counts over a date range.
-// days is the number of past days to include; if 0, defaults to 30.
+// days is the number of past days to include; if <= 0, defaults to 30.
 // The result includes one entry per calendar day within the range, even if both counts are zero.
 func (s *Service) GetViolationTrend(ctx context.Context, days int) ([]ViolationTrendPoint, error) {
 	if days <= 0 {
