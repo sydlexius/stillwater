@@ -351,14 +351,14 @@ func (r *Router) handleApplyViolationCandidate(w http.ResponseWriter, req *http.
 		return
 	}
 
-	// Download and save the chosen image
+	// Download and save the chosen image using platform-aware naming
 	naming, useSymlinks := r.getActiveNamingAndSymlinks(req.Context(), body.ImageType)
-	if err := rule.ApplyImageCandidate(req.Context(), a, body.ImageType, body.URL, naming, useSymlinks, r.logger); err != nil {
+	if _, err := rule.SaveImageFromURL(req.Context(), a, body.ImageType, body.URL, naming, useSymlinks, r.platformService, r.logger); err != nil {
 		writeError(w, req, http.StatusInternalServerError, fmt.Sprintf("applying candidate: %v", err))
 		return
 	}
 
-	// Persist artist update (image flag set by ApplyImageCandidate)
+	// Persist artist update (image flag set by SaveImageFromURL)
 	if err := r.artistService.Update(req.Context(), a); err != nil {
 		writeError(w, req, http.StatusInternalServerError, fmt.Sprintf("updating artist after apply-candidate: %v", err))
 		return

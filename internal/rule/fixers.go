@@ -392,6 +392,7 @@ func (f *ImageFixer) Fix(ctx context.Context, a *artist.Artist, v *Violation) (*
 	}
 
 	// Try downloading candidates until one succeeds
+	useSymlinks := activeUseSymlinks(ctx, f.platformService)
 	for _, c := range candidates {
 		data, err := fetchImageURL(ctx, c.URL)
 		if err != nil {
@@ -420,21 +421,12 @@ func (f *ImageFixer) Fix(ctx context.Context, a *artist.Artist, v *Violation) (*
 			}
 		}
 
-		converted, _, err := img.ConvertFormat(bytes.NewReader(data))
-		if err != nil {
-			f.logger.Debug("image format conversion failed", "url", c.URL, "error", err)
-			continue
-		}
-
-		naming := existingImageFileNames(ctx, a.Path, imageType, f.platformService)
-		useSymlinks := activeUseSymlinks(ctx, f.platformService)
-		saved, err := img.Save(a.Path, imageType, converted, naming, useSymlinks, f.logger)
+		// Use the shared save pipeline: convert -> platform-aware naming -> save -> set flag
+		saved, err := SaveImageFromData(ctx, a, imageType, data, nil, useSymlinks, f.platformService, f.logger)
 		if err != nil {
 			f.logger.Debug("image save failed", "url", c.URL, "error", err)
 			continue
 		}
-
-		setImageFlag(a, imageType)
 
 		return &FixResult{
 			RuleID:  v.RuleID,
@@ -480,29 +472,53 @@ func setImageFlag(a *artist.Artist, imageType string) {
 	}
 }
 
-// ApplyImageCandidate downloads a candidate URL and saves it as an image in the
-// artist directory. The naming slice controls which filenames are written; pass
-// nil to fall back to DefaultFileNames. Used by the apply-candidate API handler.
-func ApplyImageCandidate(ctx context.Context, a *artist.Artist, imageType, rawURL string, naming []string, useSymlinks bool, logger *slog.Logger) error {
+// SaveImageFromURL downloads an image from rawURL and saves it to the artist's
+// directory using platform-aware naming. It handles the full pipeline:
+//
+//  1. fetchImageURL -- download the image bytes
+//  2. img.ConvertFormat -- normalize to JPG/PNG
+//  3. existingImageFileNames -- resolve platform-aware filenames
+//  4. img.Save -- atomic write to disk
+//  5. setImageFlag -- update the artist's in-memory image flag
+//
+// When naming is non-nil, it overrides the platform-aware resolution (used by
+// the apply-candidate API handler which resolves naming at the call site).
+// Returns the list of saved filenames on success.
+func SaveImageFromURL(ctx context.Context, a *artist.Artist, imageType, rawURL string, naming []string, useSymlinks bool, platformService *platform.Service, logger *slog.Logger) ([]string, error) {
 	data, err := fetchImageURL(ctx, rawURL)
 	if err != nil {
-		return fmt.Errorf("downloading image: %w", err)
+		return nil, fmt.Errorf("downloading image: %w", err)
 	}
 
+	return SaveImageFromData(ctx, a, imageType, data, naming, useSymlinks, platformService, logger)
+}
+
+// SaveImageFromData saves already-downloaded image bytes to the artist's
+// directory using platform-aware naming. This is the core of the image save
+// pipeline, separated from SaveImageFromURL so callers that need to inspect
+// the downloaded data (e.g. post-download dimension checks) can do so before
+// committing the save.
+//
+// When naming is non-nil, it overrides the platform-aware resolution.
+// Returns the list of saved filenames on success.
+func SaveImageFromData(ctx context.Context, a *artist.Artist, imageType string, data []byte, naming []string, useSymlinks bool, platformService *platform.Service, logger *slog.Logger) ([]string, error) {
 	converted, _, err := img.ConvertFormat(bytes.NewReader(data))
 	if err != nil {
-		return fmt.Errorf("converting image format: %w", err)
+		return nil, fmt.Errorf("converting image format: %w", err)
 	}
 
+	// Use platform-aware naming when no explicit naming is provided
 	if len(naming) == 0 {
-		naming = img.FileNamesForType(img.DefaultFileNames, imageType)
+		naming = existingImageFileNames(ctx, a.Path, imageType, platformService)
 	}
-	if _, err := img.Save(a.Path, imageType, converted, naming, useSymlinks, logger); err != nil {
-		return fmt.Errorf("saving image: %w", err)
+
+	saved, err := img.Save(a.Path, imageType, converted, naming, useSymlinks, logger)
+	if err != nil {
+		return nil, fmt.Errorf("saving image: %w", err)
 	}
 
 	setImageFlag(a, imageType)
-	return nil
+	return saved, nil
 }
 
 // writeArtistNFO writes the artist's current metadata to an artist.nfo file (best effort).
