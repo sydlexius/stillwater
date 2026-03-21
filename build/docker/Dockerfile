@@ -29,7 +29,11 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /bin/stillwater ./cmd/
 # Runtime stage
 FROM alpine:3.23
 
-RUN apk add --no-cache ca-certificates tzdata su-exec
+LABEL org.opencontainers.image.source="https://github.com/sydlexius/stillwater" \
+      org.opencontainers.image.description="Artist metadata and image manager for Emby, Jellyfin, and Kodi" \
+      org.opencontainers.image.licenses="GPL-3.0"
+
+RUN apk add --no-cache ca-certificates tzdata su-exec curl
 
 # Create app user
 RUN addgroup stillwater && \
@@ -46,6 +50,9 @@ RUN chmod +x /entrypoint.sh
 WORKDIR /app
 
 EXPOSE 1973
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD sh -c 'curl -f "http://localhost:1973${SW_BASE_PATH:-}/api/v1/health" || exit 1'
 
 VOLUME ["/data", "/music"]
 

@@ -10,6 +10,7 @@
 #   4. go build -- code compiles
 #   5. golangci-lint -- full linter suite from .golangci.yml
 #   6. govulncheck -- known vulnerabilities in dependencies
+#   7. hadolint -- Dockerfile best-practice linting
 #
 # Skip with: git commit --no-verify (use sparingly)
 
@@ -174,6 +175,25 @@ if [ -n "$STAGED_GO_ANY" ]; then
     fi
 else
     warn "govulncheck (no staged .go / go.mod / go.sum files)"
+fi
+
+# --------------------------------------------------------------------------
+# 7. hadolint -- Dockerfile best-practice linting
+# --------------------------------------------------------------------------
+STAGED_DOCKER=$(git diff --cached --name-only --diff-filter=ACM -- '*Dockerfile*' || true)
+if [ -n "$STAGED_DOCKER" ]; then
+    if ! command -v hadolint &>/dev/null; then
+        warn "hadolint (not installed, skipping)"
+    else
+        if ! HADOLINT_OUTPUT=$(echo "$STAGED_DOCKER" | xargs hadolint 2>&1); then
+            echo -e "${RED}${BOLD}FAIL${RESET} hadolint:"
+            echo "$HADOLINT_OUTPUT"
+            exit 1
+        fi
+        pass "hadolint"
+    fi
+else
+    warn "hadolint (no staged Dockerfile changes)"
 fi
 
 echo ""

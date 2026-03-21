@@ -1,4 +1,4 @@
-.PHONY: build run test test-race test-cover lint fmt clean docker-build docker-run dev templ tailwind migrate favicon hooks check-openapi
+.PHONY: build run test test-race test-cover lint fmt clean docker-build docker-run dev templ tailwind migrate favicon hooks check-openapi hadolint
 
 # Binary name
 BINARY=stillwater
@@ -47,6 +47,10 @@ test-cover:
 ## lint: Run golangci-lint
 lint:
 	golangci-lint run ./...
+
+## hadolint: Lint Dockerfile for best practices
+hadolint:
+	hadolint build/docker/Dockerfile
 
 ## fmt: Format all Go and Templ files
 fmt:
