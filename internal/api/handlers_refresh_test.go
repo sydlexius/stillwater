@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -530,8 +531,8 @@ func TestUpsertMembers_EmptySliceClearsExisting(t *testing.T) {
 }
 
 // TestUpsertMembers_NilSliceClearsExisting verifies that a nil slice also
-// clears members, since convertProviderMembers returns an empty (not nil)
-// slice for nil input.
+// clears members, ensuring UpsertMembers treats nil the same as an empty
+// slice when updating an artist's members.
 func TestUpsertMembers_NilSliceClearsExisting(t *testing.T) {
 	_, artistSvc := testRouter(t)
 	a := addTestArtist(t, artistSvc, "Nil Members Band")
@@ -633,7 +634,11 @@ func TestMembersAttemptedGuard(t *testing.T) {
 			}
 			if membersAttempted {
 				members := convertProviderMembers(artistID, result.Metadata.Members)
-				_ = svc.UpsertMembers(context.Background(), artistID, members)
+				if err := svc.UpsertMembers(context.Background(), artistID, members); err != nil {
+					// In production this is logged at Warn and execution continues,
+					// but in tests we want to fail fast on unexpected errors.
+					panic(fmt.Sprintf("UpsertMembers failed in test guard: %v", err))
+				}
 			}
 		}
 	}
