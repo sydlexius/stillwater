@@ -315,7 +315,7 @@ func TrimAlphaBounds(src io.Reader, threshold uint8) (content, original image.Re
 
 // contentBoundsFromImage scans a decoded image to find the bounding box of
 // "content" pixels. For PNG (isPNG=true), content has alpha above half-opaque.
-// For non-PNG, content is NOT near-white (RGB > 240) and NOT near-black (RGB < 15).
+// For non-PNG, content is any pixel that is not near-white (all RGB > 240).
 // If no content pixels are found, returns original bounds unchanged.
 func contentBoundsFromImage(decoded image.Image, isPNG bool) image.Rectangle {
 	bounds := decoded.Bounds()
@@ -359,8 +359,8 @@ func contentBoundsFromImage(decoded image.Image, isPNG bool) image.Rectangle {
 
 // ContentBounds returns the bounding box of "content" pixels in any image.
 // For PNG: non-content pixels have alpha below the threshold (same as TrimAlphaBounds).
-// For non-PNG (JPG etc.): non-content pixels are near-white (all RGB > 240)
-// or near-black (all RGB < 15), which detects whitespace borders.
+// For non-PNG (JPG etc.): non-content pixels are near-white (all RGB > 240),
+// which detects whitespace borders.
 // If no content pixels are found, content equals original.
 func ContentBounds(src io.Reader) (content, original image.Rectangle, err error) {
 	format, replay, detectErr := DetectFormat(src)
