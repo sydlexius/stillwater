@@ -2,19 +2,26 @@
 # smoke.sh -- API smoke test suite for Stillwater
 #
 # Usage:
-#   bash scripts/smoke.sh [--full] [--roundtrip]
+#   bash scripts/smoke.sh [--full] [--roundtrip] [--music-path PATH ...]
 #
 # Environment:
 #   SW_USER        -- admin username (default: admin)
 #   SW_PASS        -- admin password (default: admin)
 #   SW_BASE        -- base URL       (default: http://localhost:1973)
+#   SW_MUSIC_PATH  -- colon-separated music path(s) for roundtrip (optional)
 #   EMBY_URL       -- Emby server URL (used by --roundtrip)
 #   EMBY_API_KEY   -- Emby API key    (used by --roundtrip)
 #   JELLYFIN_URL   -- Jellyfin server URL (used by --roundtrip)
 #   JELLYFIN_API_KEY -- Jellyfin API key  (used by --roundtrip)
 #
-# --full      enables Tier 4 destructive/stateful checks (off by default)
-# --roundtrip enables Tier 5 NFO roundtrip checks (off by default)
+# --full        enables Tier 4 destructive/stateful checks (off by default)
+# --roundtrip   enables Tier 5 NFO roundtrip checks (off by default)
+# --music-path  music directory for roundtrip artist discovery (repeatable)
+#
+# Music path precedence (for roundtrip artist filtering):
+#   1. --music-path CLI arguments (highest)
+#   2. SW_MUSIC_PATH environment variable (colon-separated)
+#   3. Accept any artist with a filesystem path (current default fallback)
 
 set -euo pipefail
 
@@ -24,10 +31,50 @@ SW_BASE="${SW_BASE:-http://localhost:1973}"
 
 FULL=0
 ROUNDTRIP=0
-for arg in "$@"; do
-  [[ "$arg" == "--full" ]] && FULL=1
-  [[ "$arg" == "--roundtrip" ]] && ROUNDTRIP=1
+MUSIC_PATHS=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --full) FULL=1; shift ;;
+    --roundtrip) ROUNDTRIP=1; shift ;;
+    --music-path)
+      if [[ -z "${2:-}" ]]; then
+        echo "ERROR: --music-path requires a value"
+        exit 1
+      fi
+      MUSIC_PATHS+=("$2")
+      shift 2
+      ;;
+    *)
+      echo "ERROR: unknown argument: $1"
+      echo "Usage: bash scripts/smoke.sh [--full] [--roundtrip] [--music-path PATH ...]"
+      exit 1
+      ;;
+  esac
 done
+
+# If no --music-path CLI args, fall back to SW_MUSIC_PATH env var (colon-separated).
+if [[ ${#MUSIC_PATHS[@]} -eq 0 && -n "${SW_MUSIC_PATH:-}" ]]; then
+  IFS=':' read -ra MUSIC_PATHS <<< "$SW_MUSIC_PATH"
+fi
+
+# path_under_music_dirs checks whether a given path is under one of the
+# configured music directories. Returns 0 (true) if MUSIC_PATHS is empty
+# (no filtering) or if the path starts with any entry in MUSIC_PATHS.
+path_under_music_dirs() {
+  local candidate="$1"
+  if [[ ${#MUSIC_PATHS[@]} -eq 0 ]]; then
+    return 0  # no filter configured -- accept any path
+  fi
+  for mp in "${MUSIC_PATHS[@]}"; do
+    # Normalize: ensure music path ends with / for prefix matching so that
+    # /music does not match /music2, but does match /music/artist.
+    local normalized="${mp%/}/"
+    if [[ "$candidate/" == "$normalized"* || "$candidate" == "${mp%/}" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
 
 # IDs are discovered dynamically after login; initialized empty before discovery.
 ARTIST_ID=""
@@ -880,6 +927,9 @@ fi
 if [[ "$ROUNDTRIP" -eq 1 ]]; then
   echo "--- Tier 5: NFO Roundtrip (--roundtrip) ---"
   echo ""
+  if [[ ${#MUSIC_PATHS[@]} -gt 0 ]]; then
+    echo "  Music path filter: ${MUSIC_PATHS[*]}"
+  fi
 
   # -------------------------------------------------------------------------
   # Roundtrip discovery: find an artist with a filesystem path + platform IDs
@@ -898,7 +948,7 @@ if [[ "$ROUNDTRIP" -eq 1 ]]; then
       echo "[WARN] Roundtrip artist detail -- transport failure, falling back to artist scan"
     fi
     rt_path=$(echo "$rt_detail" | jq -r '.artist.path // empty' 2>/dev/null || true)
-    if [[ -n "$rt_path" ]]; then
+    if [[ -n "$rt_path" ]] && path_under_music_dirs "$rt_path"; then
       RT_ARTIST_ID="$ARTIST_ID"
       RT_ARTIST_PATH="$rt_path"
       RT_ARTIST_NAME=$(echo "$rt_detail" | jq -r '.artist.name // empty' 2>/dev/null || true)
@@ -915,7 +965,7 @@ if [[ "$ROUNDTRIP" -eq 1 ]]; then
     for candidate_id in $rt_ids; do
       candidate_detail=$(curl -s "${AUTH[@]}" "$SW_BASE/api/v1/artists/$candidate_id") || candidate_detail=""
       candidate_path=$(echo "$candidate_detail" | jq -r '.artist.path // empty' 2>/dev/null || true)
-      if [[ -n "$candidate_path" ]]; then
+      if [[ -n "$candidate_path" ]] && path_under_music_dirs "$candidate_path"; then
         RT_ARTIST_ID="$candidate_id"
         RT_ARTIST_PATH="$candidate_path"
         RT_ARTIST_NAME=$(echo "$candidate_detail" | jq -r '.artist.name // empty' 2>/dev/null || true)
