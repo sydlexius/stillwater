@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -83,7 +82,7 @@ func withUserCtx(req *http.Request, userID string) *http.Request {
 	return req.WithContext(ctx)
 }
 
-func TestTokenLifecycle_ActiveToRevokedToArchivedToDeleted(t *testing.T) {
+func TestTokenLifecycle_ActiveToRevokedToDeleted(t *testing.T) {
 	r, authSvc, userID := testRouterWithAuth(t)
 
 	// Step 1: Create a token.
@@ -120,53 +119,7 @@ func TestTokenLifecycle_ActiveToRevokedToArchivedToDeleted(t *testing.T) {
 		t.Fatalf("expected status revoked, got %s", tok.Status)
 	}
 
-	// Step 3: Archive the revoked token.
-	req = httptest.NewRequest(http.MethodPatch, "/api/v1/auth/tokens/"+tokenID+"/archive", nil)
-	req.SetPathValue("id", tokenID)
-	req = withUserCtx(req, userID)
-	w = httptest.NewRecorder()
-	r.handleArchiveAPIToken(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("archive: status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
-	}
-
-	tok, err = authSvc.GetAPIToken(context.Background(), tokenID, userID)
-	if err != nil {
-		t.Fatalf("getting token after archive: %v", err)
-	}
-	if tok.Status != auth.TokenStatusArchived {
-		t.Fatalf("expected status archived, got %s", tok.Status)
-	}
-
-	// Verify archived token is excluded from default list.
-	tokens, err := authSvc.ListAPITokens(context.Background(), userID)
-	if err != nil {
-		t.Fatalf("listing tokens: %v", err)
-	}
-	for _, listed := range tokens {
-		if listed.ID == tokenID {
-			t.Error("archived token should not appear in default list")
-		}
-	}
-
-	// Verify archived token IS included in the "all" list.
-	allTokens, err := authSvc.ListAPITokensAll(context.Background(), userID)
-	if err != nil {
-		t.Fatalf("listing all tokens: %v", err)
-	}
-	found := false
-	for _, listed := range allTokens {
-		if listed.ID == tokenID {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Error("archived token should appear in all-inclusive list")
-	}
-
-	// Step 4: Permanently delete the archived token.
+	// Step 3: Permanently delete the revoked token.
 	req = httptest.NewRequest(http.MethodDelete, "/api/v1/auth/tokens/"+tokenID+"/permanent", nil)
 	req.SetPathValue("id", tokenID)
 	req = withUserCtx(req, userID)
@@ -181,27 +134,6 @@ func TestTokenLifecycle_ActiveToRevokedToArchivedToDeleted(t *testing.T) {
 	_, err = authSvc.GetAPIToken(context.Background(), tokenID, userID)
 	if err == nil {
 		t.Error("expected error getting deleted token, got nil")
-	}
-}
-
-func TestArchiveActiveToken_Returns409(t *testing.T) {
-	r, authSvc, userID := testRouterWithAuth(t)
-
-	// Create an active token.
-	_, tokenID, err := authSvc.CreateAPIToken(context.Background(), userID, "active-token", "read")
-	if err != nil {
-		t.Fatalf("creating token: %v", err)
-	}
-
-	// Try to archive it without revoking first.
-	req := httptest.NewRequest(http.MethodPatch, "/api/v1/auth/tokens/"+tokenID+"/archive", nil)
-	req.SetPathValue("id", tokenID)
-	req = withUserCtx(req, userID)
-	w := httptest.NewRecorder()
-	r.handleArchiveAPIToken(w, req)
-
-	if w.Code != http.StatusConflict {
-		t.Fatalf("archive active: status = %d, want %d; body: %s", w.Code, http.StatusConflict, w.Body.String())
 	}
 }
 
@@ -223,65 +155,6 @@ func TestDeleteActiveToken_Returns409(t *testing.T) {
 
 	if w.Code != http.StatusConflict {
 		t.Fatalf("delete active: status = %d, want %d; body: %s", w.Code, http.StatusConflict, w.Body.String())
-	}
-}
-
-func TestUnarchive_RestoresToRevoked(t *testing.T) {
-	r, authSvc, userID := testRouterWithAuth(t)
-
-	// Create, revoke, and archive a token.
-	_, tokenID, err := authSvc.CreateAPIToken(context.Background(), userID, "unarchive-test", "read")
-	if err != nil {
-		t.Fatalf("creating token: %v", err)
-	}
-	if err := authSvc.RevokeAPIToken(context.Background(), tokenID, userID); err != nil {
-		t.Fatalf("revoking token: %v", err)
-	}
-	if err := authSvc.ArchiveAPIToken(context.Background(), tokenID, userID); err != nil {
-		t.Fatalf("archiving token: %v", err)
-	}
-
-	// Unarchive via handler.
-	req := httptest.NewRequest(http.MethodPatch, "/api/v1/auth/tokens/"+tokenID+"/unarchive", nil)
-	req.SetPathValue("id", tokenID)
-	req = withUserCtx(req, userID)
-	w := httptest.NewRecorder()
-	r.handleUnarchiveAPIToken(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("unarchive: status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
-	}
-
-	tok, err := authSvc.GetAPIToken(context.Background(), tokenID, userID)
-	if err != nil {
-		t.Fatalf("getting token after unarchive: %v", err)
-	}
-	if tok.Status != auth.TokenStatusRevoked {
-		t.Fatalf("expected status revoked after unarchive, got %s", tok.Status)
-	}
-}
-
-func TestUnarchiveNonArchivedToken_Returns409(t *testing.T) {
-	r, authSvc, userID := testRouterWithAuth(t)
-
-	// Create and revoke a token (but do not archive).
-	_, tokenID, err := authSvc.CreateAPIToken(context.Background(), userID, "unarchive-error-test", "read")
-	if err != nil {
-		t.Fatalf("creating token: %v", err)
-	}
-	if err := authSvc.RevokeAPIToken(context.Background(), tokenID, userID); err != nil {
-		t.Fatalf("revoking token: %v", err)
-	}
-
-	// Try to unarchive a revoked (non-archived) token.
-	req := httptest.NewRequest(http.MethodPatch, "/api/v1/auth/tokens/"+tokenID+"/unarchive", nil)
-	req.SetPathValue("id", tokenID)
-	req = withUserCtx(req, userID)
-	w := httptest.NewRecorder()
-	r.handleUnarchiveAPIToken(w, req)
-
-	if w.Code != http.StatusConflict {
-		t.Fatalf("unarchive non-archived: status = %d, want %d; body: %s", w.Code, http.StatusConflict, w.Body.String())
 	}
 }
 
@@ -362,62 +235,6 @@ func TestDeleteRevokedToken_AuditAnonymization(t *testing.T) {
 	}
 }
 
-func TestListAPITokens_IncludeArchived(t *testing.T) {
-	r, authSvc, userID := testRouterWithAuth(t)
-
-	// Create two tokens, revoke and archive one.
-	_, _, err := authSvc.CreateAPIToken(context.Background(), userID, "active-token", "read")
-	if err != nil {
-		t.Fatalf("creating active token: %v", err)
-	}
-
-	_, archivedID, err := authSvc.CreateAPIToken(context.Background(), userID, "archived-token", "read")
-	if err != nil {
-		t.Fatalf("creating archived token: %v", err)
-	}
-	if err := authSvc.RevokeAPIToken(context.Background(), archivedID, userID); err != nil {
-		t.Fatalf("revoking token: %v", err)
-	}
-	if err := authSvc.ArchiveAPIToken(context.Background(), archivedID, userID); err != nil {
-		t.Fatalf("archiving token: %v", err)
-	}
-
-	// Default list (no query param) should exclude archived.
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/tokens", nil)
-	req = withUserCtx(req, userID)
-	w := httptest.NewRecorder()
-	r.handleListAPITokens(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("list: status = %d, want %d", w.Code, http.StatusOK)
-	}
-
-	var tokens []auth.APIToken
-	if err := json.NewDecoder(w.Body).Decode(&tokens); err != nil {
-		t.Fatalf("decoding tokens: %v", err)
-	}
-	if len(tokens) != 1 {
-		t.Fatalf("expected 1 token in default list, got %d", len(tokens))
-	}
-
-	// With include_archived=true, should see both.
-	req = httptest.NewRequest(http.MethodGet, "/api/v1/auth/tokens?include_archived=true", nil)
-	req = withUserCtx(req, userID)
-	w = httptest.NewRecorder()
-	r.handleListAPITokens(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("list all: status = %d, want %d", w.Code, http.StatusOK)
-	}
-
-	if err := json.NewDecoder(w.Body).Decode(&tokens); err != nil {
-		t.Fatalf("decoding all tokens: %v", err)
-	}
-	if len(tokens) != 2 {
-		t.Fatalf("expected 2 tokens in all-inclusive list, got %d", len(tokens))
-	}
-}
-
 func TestRevokedToken_CannotAuthenticate(t *testing.T) {
 	_, authSvc, userID := testRouterWithAuth(t)
 
@@ -466,30 +283,8 @@ func TestCreateAPIToken_ReturnsStatusField(t *testing.T) {
 	}
 }
 
-// TestArchivedToken_CannotAuthenticate verifies that archived tokens are
-// rejected by ValidateAPIToken, same as revoked tokens.
-func TestArchivedToken_CannotAuthenticate(t *testing.T) {
-	_, authSvc, userID := testRouterWithAuth(t)
-
-	plaintext, tokenID, err := authSvc.CreateAPIToken(context.Background(), userID, "archived-auth-test", "read")
-	if err != nil {
-		t.Fatalf("creating token: %v", err)
-	}
-	if err := authSvc.RevokeAPIToken(context.Background(), tokenID, userID); err != nil {
-		t.Fatalf("revoking token: %v", err)
-	}
-	if err := authSvc.ArchiveAPIToken(context.Background(), tokenID, userID); err != nil {
-		t.Fatalf("archiving token: %v", err)
-	}
-
-	_, _, err = authSvc.ValidateAPIToken(context.Background(), plaintext)
-	if err == nil {
-		t.Error("expected archived token to be rejected, but ValidateAPIToken returned nil error")
-	}
-}
-
 // TestDeleteRevokedToken_DirectlyWithoutArchiving verifies that a revoked
-// (non-archived) token can be deleted directly without archiving first.
+// token can be permanently deleted.
 func TestDeleteRevokedToken_DirectlyWithoutArchiving(t *testing.T) {
 	router, authSvc, userID := testRouterWithAuth(t)
 
