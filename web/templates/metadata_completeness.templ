@@ -1,0 +1,60 @@
+package templates
+
+import (
+	"fmt"
+
+	"github.com/sydlexius/stillwater/internal/artist"
+)
+
+// MetadataCompletenessData holds the data for the completeness page section.
+type MetadataCompletenessData struct {
+	Report *artist.MetadataCompletenessReport
+}
+
+// MetadataCompletenessFragment renders the lowest-completeness table and
+// summary stats as an HTMX-loadable fragment. The chart itself is rendered
+// by the surrounding page via JavaScript (see index.templ).
+templ MetadataCompletenessFragment(report *artist.MetadataCompletenessReport) {
+	if report.TotalArtists == 0 {
+		<p class="text-sm text-gray-500 dark:text-gray-400 py-2">No artists found.</p>
+	} else {
+		<p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+			{ fmt.Sprintf("%.1f%% average field coverage across %d artists", report.OverallScore, report.TotalArtists) }
+		</p>
+		if len(report.LowestCompleteness) > 0 {
+			<h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Lowest Completeness</h3>
+			<div class="overflow-x-auto">
+				<table class="min-w-full text-sm">
+					<thead>
+						<tr class="border-b border-gray-200 dark:border-gray-700">
+							<th class="text-left py-1 pr-4 font-medium text-gray-500 dark:text-gray-400">Artist</th>
+							<th class="text-right py-1 font-medium text-gray-500 dark:text-gray-400">Health</th>
+						</tr>
+					</thead>
+					<tbody>
+						for _, a := range report.LowestCompleteness {
+							<tr class="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700">
+								<td class="py-1 pr-4">
+									<a
+										href={ templ.SafeURL("/artists/" + a.ID) }
+										class="text-blue-600 dark:text-blue-400 hover:underline truncate block max-w-xs"
+									>{ a.Name }</a>
+								</td>
+								<td class="py-1 text-right">
+									<span class={
+										"font-medium",
+										templ.KV("text-green-600 dark:text-green-400", a.HealthScore >= 80),
+										templ.KV("text-yellow-600 dark:text-yellow-400", a.HealthScore >= 50 && a.HealthScore < 80),
+										templ.KV("text-red-600 dark:text-red-400", a.HealthScore < 50),
+									}>
+										{ fmt.Sprintf("%.0f%%", a.HealthScore) }
+									</span>
+								</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			</div>
+		}
+	}
+}

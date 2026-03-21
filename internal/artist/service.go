@@ -9,23 +9,25 @@ import (
 
 // Service provides artist and band member data operations.
 type Service struct {
-	artists     Repository
-	providers   ProviderIDRepository
-	members     MemberRepository
-	aliases     AliasRepository
-	images      ImageRepository
-	platformIDs PlatformIDRepository
+	artists      Repository
+	providers    ProviderIDRepository
+	members      MemberRepository
+	aliases      AliasRepository
+	images       ImageRepository
+	platformIDs  PlatformIDRepository
+	completeness CompletenessRepository
 }
 
 // NewService creates an artist service backed by SQLite.
 func NewService(db *sql.DB) *Service {
 	return &Service{
-		artists:     newSQLiteArtistRepo(db),
-		providers:   newSQLiteProviderIDRepo(db),
-		members:     newSQLiteMemberRepo(db),
-		aliases:     newSQLiteAliasRepo(db),
-		images:      newSQLiteImageRepo(db),
-		platformIDs: newSQLitePlatformIDRepo(db),
+		artists:      newSQLiteArtistRepo(db),
+		providers:    newSQLiteProviderIDRepo(db),
+		members:      newSQLiteMemberRepo(db),
+		aliases:      newSQLiteAliasRepo(db),
+		images:       newSQLiteImageRepo(db),
+		platformIDs:  newSQLitePlatformIDRepo(db),
+		completeness: newSQLiteCompletenessRepo(db),
 	}
 }
 
@@ -38,14 +40,16 @@ func NewServiceWithRepos(
 	aliases AliasRepository,
 	images ImageRepository,
 	platformIDs PlatformIDRepository,
+	completeness CompletenessRepository,
 ) *Service {
 	return &Service{
-		artists:     artists,
-		providers:   providers,
-		members:     members,
-		aliases:     aliases,
-		images:      images,
-		platformIDs: platformIDs,
+		artists:      artists,
+		providers:    providers,
+		members:      members,
+		aliases:      aliases,
+		images:       images,
+		platformIDs:  platformIDs,
+		completeness: completeness,
 	}
 }
 

@@ -60,6 +60,21 @@ templ IndexPage(assets AssetPaths) {
 				</div>
 			</div>
 		</div>
+		<div class="sw-card rounded-lg bg-white dark:bg-gray-800 p-4 shadow sm:p-6">
+			<h2 class="text-lg font-semibold mb-1">Metadata Completeness</h2>
+			<div
+				id="completeness-summary"
+				hx-get="/api/v1/reports/metadata-completeness"
+				hx-trigger="load"
+				hx-swap="innerHTML"
+				class="text-sm text-gray-500 dark:text-gray-400"
+			>
+				<p>Loading...</p>
+			</div>
+			<div class="mt-4 relative h-[300px] sm:h-[360px]">
+				<canvas id="completeness-chart"></canvas>
+			</div>
+		</div>
 		<script src={ assets.ChartJS }></script>
 		<script>
 			function startRuleRun() {
@@ -289,6 +304,77 @@ templ IndexPage(assets AssetPaths) {
 			}
 
 			loadViolationsTrend(30);
+
+			(function() {
+				var isDark = document.documentElement.classList.contains('dark');
+				var textColor = isDark ? '#9ca3af' : '#6b7280';
+				var gridColor = isDark ? '#374151' : '#e5e7eb';
+
+				fetch('/api/v1/reports/metadata-completeness')
+					.then(function(res) {
+						if (!res.ok) {
+							showToast('Failed to load completeness data', 'error');
+							return null;
+						}
+						return res.json();
+					})
+					.then(function(data) {
+						if (!data || !data.field_coverage || data.field_coverage.length === 0) return;
+						var fields = data.field_coverage;
+						var labels = fields.map(function(f) { return f.field; });
+						var values = fields.map(function(f) { return f.percentage; });
+						var bgColors = values.map(function(v) {
+							if (v >= 80) return 'rgba(34, 197, 94, 0.75)';
+							if (v >= 50) return 'rgba(234, 179, 8, 0.75)';
+							return 'rgba(239, 68, 68, 0.75)';
+						});
+						var ctx = document.getElementById('completeness-chart');
+						if (!ctx) return;
+						new Chart(ctx, {
+							type: 'bar',
+							data: {
+								labels: labels,
+								datasets: [{
+									label: 'Coverage (%)',
+									data: values,
+									backgroundColor: bgColors,
+									borderRadius: 3
+								}]
+							},
+							options: {
+								indexAxis: 'y',
+								responsive: true,
+								maintainAspectRatio: false,
+								scales: {
+									x: {
+										min: 0,
+										max: 100,
+										ticks: {
+											color: textColor,
+											callback: function(v) { return v + '%'; }
+										},
+										grid: { color: gridColor }
+									},
+									y: {
+										ticks: { color: textColor }
+									}
+								},
+								plugins: {
+									legend: { display: false },
+									tooltip: {
+										callbacks: {
+											label: function(ctx) {
+												var f = fields[ctx.dataIndex];
+												return f.count + ' / ' + f.total + ' (' + f.percentage.toFixed(1) + '%)';
+											}
+										}
+									}
+								}
+							}
+						});
+					})
+					.catch(function() { showToast('Failed to load completeness data', 'error'); });
+			})();
 		</script>
 	}
 }

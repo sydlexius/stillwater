@@ -57,6 +57,53 @@ type ImageRepository interface {
 	DeleteByArtistID(ctx context.Context, artistID string) error
 }
 
+// CompletenessRepository computes aggregate metadata completeness metrics
+// across the artist catalog.
+type CompletenessRepository interface {
+	// GetCompletenessRows returns one row per non-excluded artist with the
+	// raw boolean flags needed to compute field coverage. When libraryID is
+	// non-empty only artists in that library are included.
+	GetCompletenessRows(ctx context.Context, libraryID string) ([]CompletenessRow, error)
+
+	// GetLowestCompleteness returns the bottom-N non-excluded artists sorted
+	// by health_score ascending. When libraryID is non-empty only artists in
+	// that library are included.
+	GetLowestCompleteness(ctx context.Context, libraryID string, limit int) ([]LowestCompletenessArtist, error)
+}
+
+// CompletenessRow holds the raw per-artist boolean flags for completeness
+// calculations. It is intentionally lightweight to avoid the overhead of
+// hydrating provider IDs or image metadata for every artist.
+type CompletenessRow struct {
+	ID          string
+	Name        string
+	Type        string // "group", "person", "orchestra", ""
+	LibraryID   string
+	Biography   string
+	Genres      string // raw JSON array stored in DB
+	Styles      string
+	Moods       string
+	YearsActive string
+	Born        string
+	Formed      string
+	Died        string
+	Disbanded   string
+	NFOExists   bool
+	HasMBID     bool
+	HasThumb    bool
+	HasFanart   bool
+	HasLogo     bool
+	HasBanner   bool
+}
+
+// LowestCompletenessArtist is a compact artist record for the lowest-completeness table.
+type LowestCompletenessArtist struct {
+	ID          string  `json:"id"`
+	Name        string  `json:"name"`
+	LibraryID   string  `json:"library_id"`
+	HealthScore float64 `json:"health_score"`
+}
+
 // PlatformIDRepository manages platform ID mappings between Stillwater
 // artists and their IDs on external connections (Emby, Jellyfin, Lidarr).
 type PlatformIDRepository interface {

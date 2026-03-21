@@ -410,6 +410,173 @@ func TestHandleViolationTrend_InvalidDaysClamped(t *testing.T) {
 	}
 }
 
+func TestHandleReportMetadataCompleteness_Empty(t *testing.T) {
+	r, _ := testRouter(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/reports/metadata-completeness", nil)
+	w := httptest.NewRecorder()
+
+	r.handleReportMetadataCompleteness(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	var resp map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+
+	if _, ok := resp["overall_score"]; !ok {
+		t.Error("response missing overall_score field")
+	}
+	if _, ok := resp["total_artists"]; !ok {
+		t.Error("response missing total_artists field")
+	}
+	if _, ok := resp["field_coverage"]; !ok {
+		t.Error("response missing field_coverage field")
+	}
+	if _, ok := resp["lowest_completeness"]; !ok {
+		t.Error("response missing lowest_completeness field")
+	}
+
+	total, ok := resp["total_artists"].(float64)
+	if !ok {
+		t.Fatal("total_artists is not a number")
+	}
+	if int(total) != 0 {
+		t.Errorf("total_artists = %d, want 0", int(total))
+	}
+}
+
+func TestHandleReportMetadataCompleteness_WithArtists(t *testing.T) {
+	r, artistSvc := testRouter(t)
+
+	// Add two artists: one with biography and NFO, one without.
+	a1 := addTestArtist(t, artistSvc, "Full Artist")
+	a1.Biography = "Some biography text"
+	a1.NFOExists = true
+	if err := artistSvc.Update(context.Background(), a1); err != nil {
+		t.Fatalf("updating artist: %v", err)
+	}
+	addTestArtist(t, artistSvc, "Empty Artist")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/reports/metadata-completeness", nil)
+	w := httptest.NewRecorder()
+
+	r.handleReportMetadataCompleteness(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	var resp map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+
+	total, ok := resp["total_artists"].(float64)
+	if !ok {
+		t.Fatal("total_artists is not a number")
+	}
+	if int(total) != 2 {
+		t.Errorf("total_artists = %d, want 2", int(total))
+	}
+
+	overallScore, ok := resp["overall_score"].(float64)
+	if !ok {
+		t.Fatal("overall_score is not a number")
+	}
+	if overallScore < 0 || overallScore > 100 {
+		t.Errorf("overall_score = %.1f, want between 0 and 100", overallScore)
+	}
+
+	fieldCoverage, ok := resp["field_coverage"].([]any)
+	if !ok {
+		t.Fatal("field_coverage is not an array")
+	}
+	if len(fieldCoverage) == 0 {
+		t.Error("field_coverage is empty, want at least one entry")
+	}
+
+	// Verify field coverage entry shape.
+	first, ok := fieldCoverage[0].(map[string]any)
+	if !ok {
+		t.Fatal("field_coverage[0] is not an object")
+	}
+	for _, key := range []string{"field", "count", "total", "percentage"} {
+		if _, ok := first[key]; !ok {
+			t.Errorf("field_coverage[0] missing key %q", key)
+		}
+	}
+
+	lowestCompleteness, ok := resp["lowest_completeness"].([]any)
+	if !ok {
+		t.Fatal("lowest_completeness is not an array")
+	}
+	if len(lowestCompleteness) == 0 {
+		t.Error("lowest_completeness is empty, want at least one entry")
+	}
+}
+
+func TestHandleReportMetadataCompleteness_ExcludedArtistsOmitted(t *testing.T) {
+	r, artistSvc := testRouter(t)
+
+	// Regular artist.
+	addTestArtist(t, artistSvc, "Normal Artist")
+
+	// Excluded artist -- should not appear in the completeness count.
+	excluded := addTestArtist(t, artistSvc, "Various Artists")
+	excluded.IsExcluded = true
+	excluded.ExclusionReason = "default exclusion list"
+	if err := artistSvc.Update(context.Background(), excluded); err != nil {
+		t.Fatalf("updating excluded artist: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/reports/metadata-completeness", nil)
+	w := httptest.NewRecorder()
+
+	r.handleReportMetadataCompleteness(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	var resp map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+
+	total, ok := resp["total_artists"].(float64)
+	if !ok {
+		t.Fatal("total_artists is not a number")
+	}
+	// Only the non-excluded artist should be counted.
+	if int(total) != 1 {
+		t.Errorf("total_artists = %d, want 1 (excluded artist should be omitted)", int(total))
+	}
+}
+
+func TestHandleReportMetadataCompleteness_HTMX(t *testing.T) {
+	r, artistSvc := testRouter(t)
+	addTestArtist(t, artistSvc, "HTMX Artist")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/reports/metadata-completeness", nil)
+	req.Header.Set("HX-Request", "true")
+	w := httptest.NewRecorder()
+
+	r.handleReportMetadataCompleteness(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	ct := w.Header().Get("Content-Type")
+	if ct != "text/html; charset=utf-8" {
+		t.Errorf("Content-Type = %q, want text/html", ct)
+	}
+}
+
 func TestHandleViolationTrend_UpperBoundClamped(t *testing.T) {
 	r, _ := testRouter(t)
 
