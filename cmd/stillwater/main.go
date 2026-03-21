@@ -221,6 +221,7 @@ func run() error {
 		rule.NewImageFixer(orchestrator, platformService, logger),
 		rule.NewExtraneousImagesFixer(platformService, logger),
 		rule.NewLogoTrimFixer(platformService, logger),
+		rule.NewLogoPaddingFixer(platformService, logger),
 		rule.NewDirectoryRenameFixer(logger),
 		rule.NewBackdropSequencingFixer(platformService, logger),
 	}

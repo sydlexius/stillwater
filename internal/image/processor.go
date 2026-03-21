@@ -313,6 +313,135 @@ func TrimAlphaBounds(src io.Reader, threshold uint8) (content, original image.Re
 	return content, bounds, nil
 }
 
+// contentBoundsFromImage scans a decoded image to find the bounding box of
+// "content" pixels. For PNG (isPNG=true), content has alpha above half-opaque.
+// For non-PNG, content is NOT near-white (RGB > 240) and NOT near-black (RGB < 15).
+// If no content pixels are found, returns original bounds unchanged.
+func contentBoundsFromImage(decoded image.Image, isPNG bool) image.Rectangle {
+	bounds := decoded.Bounds()
+	minX, minY := bounds.Max.X, bounds.Max.Y
+	maxX, maxY := bounds.Min.X-1, bounds.Min.Y-1
+
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			var isContent bool
+			if isPNG {
+				_, _, _, a := decoded.At(x, y).RGBA()
+				isContent = a > (128 << 8)
+			} else {
+				r, g, b, _ := decoded.At(x, y).RGBA()
+				r8, g8, b8 := r>>8, g>>8, b>>8
+				nearWhite := r8 > 240 && g8 > 240 && b8 > 240
+				nearBlack := r8 < 15 && g8 < 15 && b8 < 15
+				isContent = !nearWhite && !nearBlack
+			}
+			if isContent {
+				if x < minX {
+					minX = x
+				}
+				if x > maxX {
+					maxX = x
+				}
+				if y < minY {
+					minY = y
+				}
+				if y > maxY {
+					maxY = y
+				}
+			}
+		}
+	}
+
+	if maxX < minX || maxY < minY {
+		return bounds
+	}
+	return image.Rect(minX, minY, maxX+1, maxY+1)
+}
+
+// ContentBounds returns the bounding box of "content" pixels in any image.
+// For PNG: non-content pixels have alpha below the threshold (same as TrimAlphaBounds).
+// For non-PNG (JPG etc.): non-content pixels are near-white (all RGB > 240)
+// or near-black (all RGB < 15), which detects whitespace borders.
+// If no content pixels are found, content equals original.
+func ContentBounds(src io.Reader) (content, original image.Rectangle, err error) {
+	format, replay, detectErr := DetectFormat(src)
+	if detectErr != nil {
+		return image.Rectangle{}, image.Rectangle{}, fmt.Errorf("detecting format: %w", detectErr)
+	}
+
+	decoded, _, decodeErr := image.Decode(replay)
+	if decodeErr != nil {
+		return image.Rectangle{}, image.Rectangle{}, fmt.Errorf("decoding image: %w", decodeErr)
+	}
+
+	bounds := decoded.Bounds()
+	content = contentBoundsFromImage(decoded, format == FormatPNG)
+	return content, bounds, nil
+}
+
+// TrimWithMargin crops an image to its content bounds (determined by
+// contentBoundsFromImage) plus a configurable margin in pixels on each side.
+// The margin is clamped to the original image bounds.
+func TrimWithMargin(src io.Reader, margin int) ([]byte, string, error) {
+	format, replay, err := DetectFormat(src)
+	if err != nil {
+		return nil, "", fmt.Errorf("detecting format: %w", err)
+	}
+
+	decoded, _, err := image.Decode(replay)
+	if err != nil {
+		return nil, "", fmt.Errorf("decoding image: %w", err)
+	}
+
+	bounds := decoded.Bounds()
+	content := contentBoundsFromImage(decoded, format == FormatPNG)
+
+	// No content found -- return original unchanged.
+	if content == bounds {
+		data, encErr := encode(decoded, format, 0)
+		return data, format, encErr
+	}
+
+	// Expand content rect by margin, clamped to image bounds.
+	cropMinX := content.Min.X - margin
+	cropMinY := content.Min.Y - margin
+	cropMaxX := content.Max.X + margin
+	cropMaxY := content.Max.Y + margin
+	if cropMinX < bounds.Min.X {
+		cropMinX = bounds.Min.X
+	}
+	if cropMinY < bounds.Min.Y {
+		cropMinY = bounds.Min.Y
+	}
+	if cropMaxX > bounds.Max.X {
+		cropMaxX = bounds.Max.X
+	}
+	if cropMaxY > bounds.Max.Y {
+		cropMaxY = bounds.Max.Y
+	}
+
+	rect := image.Rect(cropMinX, cropMinY, cropMaxX, cropMaxY)
+	if rect == bounds {
+		data, encErr := encode(decoded, format, 0)
+		return data, format, encErr
+	}
+
+	type subImager interface {
+		SubImage(r image.Rectangle) image.Image
+	}
+	var cropped image.Image
+	if si, ok := decoded.(subImager); ok {
+		cropped = si.SubImage(rect)
+	} else {
+		dst := image.NewRGBA(image.Rect(0, 0, rect.Dx(), rect.Dy()))
+		draw.Copy(dst, image.Point{}, decoded, rect, draw.Src, nil)
+		cropped = dst
+	}
+
+	data, err := encode(cropped, format, 0)
+	return data, format, err
+}
+
 // TrimAlpha crops the transparent border from a PNG image by finding the
 // tightest bounding box that contains all pixels with alpha > threshold (0-255).
 // Non-PNG images are returned as-is. If no visible pixels are found, the

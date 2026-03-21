@@ -37,6 +37,7 @@ const (
 	RuleImageDuplicate        = "image_duplicate"
 	RuleMetadataQuality       = "metadata_quality"
 	RuleBackdropSequencing    = "backdrop_sequencing"
+	RuleLogoPadding           = "logo_padding"
 )
 
 // defaultRules defines the built-in rules seeded on first startup.
@@ -206,6 +207,15 @@ var defaultRules = []Rule{
 		Enabled:        false,
 		AutomationMode: AutomationModeManual,
 		Config:         RuleConfig{Severity: "warning"},
+	},
+	{
+		ID:             RuleLogoPadding,
+		Name:           "Logo excessive padding",
+		Description:    "Detects logo images where excessive transparent or whitespace padding surrounds the content. Uses area-based detection: if the padding area exceeds the configured threshold (default 15%) of the total image area, a violation is raised. Auto-fix trims to content bounds with a configurable margin.",
+		Category:       "image",
+		Enabled:        false,
+		AutomationMode: AutomationModeManual,
+		Config:         RuleConfig{ThresholdPercent: 15, TrimMargin: 2, Severity: "info"},
 	},
 }
 
