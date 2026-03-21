@@ -276,6 +276,122 @@ func TestSanitizeCSV(t *testing.T) {
 	}
 }
 
+func TestHandleViolationTrend_DefaultRange(t *testing.T) {
+	r, _ := testRouter(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/violations/trend", nil)
+	w := httptest.NewRecorder()
+
+	r.handleViolationTrend(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	var resp map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+
+	trend, ok := resp["trend"].([]any)
+	if !ok {
+		t.Fatal("missing or invalid trend field")
+	}
+	if len(trend) != 30 {
+		t.Errorf("trend length = %d, want 30 (default 30 days)", len(trend))
+	}
+}
+
+func TestHandleViolationTrend_CustomRange(t *testing.T) {
+	r, _ := testRouter(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/violations/trend?days=7", nil)
+	w := httptest.NewRecorder()
+
+	r.handleViolationTrend(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	var resp map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+
+	trend, ok := resp["trend"].([]any)
+	if !ok {
+		t.Fatal("missing or invalid trend field")
+	}
+	if len(trend) != 7 {
+		t.Errorf("trend length = %d, want 7", len(trend))
+	}
+}
+
+func TestHandleViolationTrend_PointShape(t *testing.T) {
+	r, _ := testRouter(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/violations/trend?days=1", nil)
+	w := httptest.NewRecorder()
+
+	r.handleViolationTrend(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	var resp map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+
+	trend, ok := resp["trend"].([]any)
+	if !ok || len(trend) == 0 {
+		t.Fatal("expected at least one trend point")
+	}
+
+	pt, ok := trend[0].(map[string]any)
+	if !ok {
+		t.Fatal("expected trend point to be an object")
+	}
+	if _, ok := pt["date"]; !ok {
+		t.Error("trend point missing 'date' field")
+	}
+	if _, ok := pt["created"]; !ok {
+		t.Error("trend point missing 'created' field")
+	}
+	if _, ok := pt["resolved"]; !ok {
+		t.Error("trend point missing 'resolved' field")
+	}
+}
+
+func TestHandleViolationTrend_InvalidDaysClamped(t *testing.T) {
+	r, _ := testRouter(t)
+
+	// days=0 should be clamped to default (30)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/violations/trend?days=0", nil)
+	w := httptest.NewRecorder()
+
+	r.handleViolationTrend(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	var resp map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+
+	trend, ok := resp["trend"].([]any)
+	if !ok {
+		t.Fatal("missing trend field")
+	}
+	if len(trend) != 30 {
+		t.Errorf("trend length = %d, want 30 (clamped from 0)", len(trend))
+	}
+}
+
 func TestBuildHealthSummary(t *testing.T) {
 	artists := []artist.Artist{
 		{Name: "A", NFOExists: true, ThumbExists: true, FanartExists: true, MusicBrainzID: "id1"},

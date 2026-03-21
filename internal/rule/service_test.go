@@ -1170,3 +1170,141 @@ func TestReopenViolation(t *testing.T) {
 		t.Error("expected ResolvedAt to be nil after reopen")
 	}
 }
+
+func TestGetViolationTrend_Empty(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+	trend, err := svc.GetViolationTrend(ctx, 7)
+	if err != nil {
+		t.Fatalf("GetViolationTrend: %v", err)
+	}
+	if len(trend) != 7 {
+		t.Errorf("expected 7 trend points, got %d", len(trend))
+	}
+	for _, p := range trend {
+		if p.Created != 0 {
+			t.Errorf("expected created=0 for empty db on %s, got %d", p.Date, p.Created)
+		}
+		if p.Resolved != 0 {
+			t.Errorf("expected resolved=0 for empty db on %s, got %d", p.Date, p.Resolved)
+		}
+	}
+}
+
+func TestGetViolationTrend_DefaultDays(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	// days=0 should default to 30
+	trend, err := svc.GetViolationTrend(ctx, 0)
+	if err != nil {
+		t.Fatalf("GetViolationTrend with 0 days: %v", err)
+	}
+	if len(trend) != 30 {
+		t.Errorf("expected 30 trend points for days=0, got %d", len(trend))
+	}
+}
+
+func TestGetViolationTrend_CountsCreated(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	today := time.Now().UTC().Truncate(24 * time.Hour)
+
+	// Insert two violations created today.
+	v1 := &RuleViolation{
+		RuleID: RuleNFOExists, ArtistID: "a1", ArtistName: "Artist 1",
+		Severity: "error", Message: "test1", Status: ViolationStatusOpen,
+		CreatedAt: today,
+	}
+	v2 := &RuleViolation{
+		RuleID: RuleThumbExists, ArtistID: "a2", ArtistName: "Artist 2",
+		Severity: "warning", Message: "test2", Status: ViolationStatusOpen,
+		CreatedAt: today,
+	}
+	for _, v := range []*RuleViolation{v1, v2} {
+		if err := svc.UpsertViolation(ctx, v); err != nil {
+			t.Fatalf("UpsertViolation: %v", err)
+		}
+	}
+
+	trend, err := svc.GetViolationTrend(ctx, 7)
+	if err != nil {
+		t.Fatalf("GetViolationTrend: %v", err)
+	}
+	if len(trend) != 7 {
+		t.Fatalf("expected 7 trend points, got %d", len(trend))
+	}
+
+	// The last point should be today with created=2.
+	last := trend[len(trend)-1]
+	if last.Date != today.Format("2006-01-02") {
+		t.Errorf("last point date = %q, want %q", last.Date, today.Format("2006-01-02"))
+	}
+	if last.Created != 2 {
+		t.Errorf("last point created = %d, want 2", last.Created)
+	}
+	if last.Resolved != 0 {
+		t.Errorf("last point resolved = %d, want 0", last.Resolved)
+	}
+}
+
+func TestGetViolationTrend_CountsResolved(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	today := time.Now().UTC().Truncate(24 * time.Hour)
+	resolvedAt := today
+
+	v := &RuleViolation{
+		RuleID: RuleNFOExists, ArtistID: "a1", ArtistName: "Artist 1",
+		Severity: "error", Message: "test", Status: ViolationStatusResolved,
+		CreatedAt:  today,
+		ResolvedAt: &resolvedAt,
+	}
+	if err := svc.UpsertViolation(ctx, v); err != nil {
+		t.Fatalf("UpsertViolation: %v", err)
+	}
+
+	trend, err := svc.GetViolationTrend(ctx, 7)
+	if err != nil {
+		t.Fatalf("GetViolationTrend: %v", err)
+	}
+	if len(trend) != 7 {
+		t.Fatalf("expected 7 trend points, got %d", len(trend))
+	}
+
+	last := trend[len(trend)-1]
+	if last.Created != 1 {
+		t.Errorf("last point created = %d, want 1", last.Created)
+	}
+	if last.Resolved != 1 {
+		t.Errorf("last point resolved = %d, want 1", last.Resolved)
+	}
+}
+
+func TestGetViolationTrend_DateOrder(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	trend, err := svc.GetViolationTrend(ctx, 14)
+	if err != nil {
+		t.Fatalf("GetViolationTrend: %v", err)
+	}
+	if len(trend) != 14 {
+		t.Fatalf("expected 14 trend points, got %d", len(trend))
+	}
+
+	// Verify dates are strictly ascending.
+	for i := 1; i < len(trend); i++ {
+		if trend[i].Date <= trend[i-1].Date {
+			t.Errorf("trend[%d].Date = %q is not after trend[%d].Date = %q",
+				i, trend[i].Date, i-1, trend[i-1].Date)
+		}
+	}
+}
