@@ -373,9 +373,9 @@ func (s *Service) GetViolationTrend(ctx context.Context, days int) ([]ViolationT
 	startStr := start.Format(time.RFC3339)
 	endStr := end.Format(time.RFC3339)
 
-	// Capacity is bounded by maxDays (365) above.
-	dateMap := make(map[string]*ViolationTrendPoint, days)
-	dates := make([]string, 0, days)
+	// Use the constant directly so CodeQL can verify the bound statically.
+	dateMap := make(map[string]*ViolationTrendPoint, maxDays)
+	dates := make([]string, 0, maxDays)
 	for i := range days {
 		d := start.AddDate(0, 0, i).Format("2006-01-02")
 		dates = append(dates, d)
@@ -437,7 +437,7 @@ func (s *Service) GetViolationTrend(ctx context.Context, days int) ([]ViolationT
 	}
 
 	// Assemble in date order.
-	result := make([]ViolationTrendPoint, 0, days)
+	result := make([]ViolationTrendPoint, 0, maxDays)
 	for _, d := range dates {
 		result = append(result, *dateMap[d])
 	}
