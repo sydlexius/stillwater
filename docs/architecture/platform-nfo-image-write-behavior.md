@@ -230,10 +230,16 @@ reliable than trying to disable platform savers via API:
    only happens on explicit FullRefresh operations. The lockdata protection
    covers this case.
 
-## Remaining Tests
+## Completed Tests
 
-- [ ] Jellyfin: Does `<lockdata>true</lockdata>` prevent rewrites?
-- [ ] Jellyfin: Does removing the NFO plugin entirely stop writes?
-- [ ] Lidarr: NFO creation behavior on fresh artist import (no existing directory)
-- [ ] Emby/Jellyfin: Full library scan behavior (vs per-artist refresh)
-- [ ] All platforms: Behavior when music directory is mounted read-only
+- [x] Emby: `<lockdata>true</lockdata>` in NFO prevents rewrites -- **YES**
+- [x] Jellyfin: `<lockdata>true</lockdata>` in NFO prevents rewrites -- **YES**
+- [x] Jellyfin: MetadataSavers=[] stops writes -- **NO** (Jellyfin ignores this)
+- [x] Emby: MetadataSavers=[] stops writes -- **YES**
+- [x] Jellyfin: Normal library scan rewrites NFOs -- **NO** (only FullRefresh does)
+- [x] Emby: Normal library scan rewrites NFOs -- stuck at 0% with fetchers, works without
+- [x] Lidarr: Fresh artist import -- creates sparse NFO (name, MBID, rating only), no images, no lockdata
+- [x] Lidarr: NFO creation timing -- happens on RescanFolders, not on add or RefreshArtist
+- [x] Emby: Image fetchers (TheAudioDb, FanArt) -- downloads missing images only
+- [x] Jellyfin: Image fetcher (TheAudioDB) -- downloads and can replace with ReplaceAllImages
+- [x] All platforms: EXIF preservation on existing images -- **YES** (normal operations)
