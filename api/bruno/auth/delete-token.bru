@@ -1,0 +1,21 @@
+meta {
+  name: Delete API Token (Revoke)
+  type: http
+  seq: 6
+}
+
+delete {
+  url: {{apiBase}}/auth/tokens/{{tokenId}}
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+}

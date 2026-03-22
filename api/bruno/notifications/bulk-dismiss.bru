@@ -1,0 +1,27 @@
+meta {
+  name: Bulk Dismiss Notifications
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{apiBase}}/notifications/bulk-dismiss
+  body: json
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+body:json {
+  {
+    "ids": ["{{notificationId}}"]
+  }
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+}

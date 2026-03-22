@@ -1,0 +1,21 @@
+meta {
+  name: Export Violations
+  type: http
+  seq: 9
+}
+
+get {
+  url: {{apiBase}}/notifications/export
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+}

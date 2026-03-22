@@ -1,0 +1,21 @@
+meta {
+  name: Fix Undo
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{apiBase}}/fix-undo/{{undoId}}
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+}

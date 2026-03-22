@@ -1,0 +1,29 @@
+meta {
+  name: Apply Image Candidate
+  type: http
+  seq: 10
+}
+
+post {
+  url: {{apiBase}}/notifications/{{notificationId}}/apply-candidate
+  body: json
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "url": "https://example.com/image.jpg",
+    "image_type": "thumb"
+  }
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+}

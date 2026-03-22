@@ -1,0 +1,21 @@
+meta {
+  name: Delete Resolved Notifications
+  type: http
+  seq: 11
+}
+
+delete {
+  url: {{apiBase}}/notifications/resolved
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+}

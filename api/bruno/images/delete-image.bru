@@ -1,0 +1,21 @@
+meta {
+  name: Delete Image
+  type: http
+  seq: 1
+}
+
+delete {
+  url: {{apiBase}}/artists/{{artistId}}/images/{{imageType}}
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+}

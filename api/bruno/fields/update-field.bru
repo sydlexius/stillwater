@@ -1,0 +1,28 @@
+meta {
+  name: Update Field
+  type: http
+  seq: 3
+}
+
+patch {
+  url: {{apiBase}}/artists/{{artistId}}/fields/{{fieldName}}
+  body: json
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "value": "test value"
+  }
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+}

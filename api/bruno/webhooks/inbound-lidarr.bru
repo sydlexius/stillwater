@@ -1,0 +1,29 @@
+meta {
+  name: Inbound Lidarr Webhook
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{apiBase}}/webhooks/inbound/lidarr
+  body: json
+  auth: none
+}
+
+
+body:json {
+  {
+    "eventType": "Test",
+    "artist": {
+      "id": 1,
+      "name": "Test Artist",
+      "path": "/music/Test Artist"
+    }
+  }
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+}

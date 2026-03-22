@@ -1,0 +1,21 @@
+meta {
+  name: Reidentify Artist
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{apiBase}}/artists/{{artistId}}/reidentify
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+}

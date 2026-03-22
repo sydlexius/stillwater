@@ -1,0 +1,21 @@
+meta {
+  name: Fix All
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{apiBase}}/notifications/fix-all
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+}

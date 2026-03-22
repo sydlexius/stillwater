@@ -1,0 +1,21 @@
+meta {
+  name: Delete API Token (Permanent)
+  type: http
+  seq: 7
+}
+
+delete {
+  url: {{apiBase}}/auth/tokens/{{tokenId}}/permanent
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+}

@@ -1,0 +1,28 @@
+meta {
+  name: Inbound Emby Webhook
+  type: http
+  seq: 8
+}
+
+post {
+  url: {{apiBase}}/webhooks/inbound/emby
+  body: json
+  auth: none
+}
+
+
+body:json {
+  {
+    "Event": "library.changed",
+    "Item": {
+      "Name": "Test Artist",
+      "Type": "MusicArtist"
+    }
+  }
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+}

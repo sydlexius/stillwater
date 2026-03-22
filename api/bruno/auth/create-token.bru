@@ -1,0 +1,29 @@
+meta {
+  name: Create API Token
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{apiBase}}/auth/tokens
+  body: json
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "test-token",
+    "scopes": ["read"]
+  }
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+}

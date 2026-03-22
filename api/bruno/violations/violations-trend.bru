@@ -1,0 +1,21 @@
+meta {
+  name: Violations Trend
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{apiBase}}/violations/trend
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+}

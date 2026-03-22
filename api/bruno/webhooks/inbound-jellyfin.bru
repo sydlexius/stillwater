@@ -1,0 +1,26 @@
+meta {
+  name: Inbound Jellyfin Webhook
+  type: http
+  seq: 9
+}
+
+post {
+  url: {{apiBase}}/webhooks/inbound/jellyfin
+  body: json
+  auth: none
+}
+
+
+body:json {
+  {
+    "NotificationType": "ItemAdded",
+    "Name": "Test Artist",
+    "ItemType": "MusicArtist"
+  }
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+}

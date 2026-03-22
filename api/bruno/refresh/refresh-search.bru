@@ -1,0 +1,28 @@
+meta {
+  name: Refresh Search
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{apiBase}}/artists/{{artistId}}/refresh/search
+  body: json
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "query": "artist name"
+  }
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+}
