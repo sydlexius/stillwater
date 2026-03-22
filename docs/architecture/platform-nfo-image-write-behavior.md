@@ -27,6 +27,7 @@ shared filesystems, informing the evidence-based shared filesystem detection des
 | MetadataSavers=[] stops writes | Yes | **No** | n/a |
 | SaveLocalMetadata=false stops writes | No | **No** | n/a |
 | Combined (both disabled) stops writes | Yes (MetadataSavers=[]) | **No (still writes!)** | n/a |
+| `<lockdata>true</lockdata>` in NFO stops writes | **Yes** | **Yes** | n/a (doesn't rewrite) |
 
 ### Image Write Behavior
 
@@ -70,6 +71,11 @@ shared filesystems, informing the evidence-based shared filesystem detection des
 - Changes encoding to UTF-8 with BOM
 - **Disabling MetadataSavers (setting to empty array) stops NFO writes**
 - SaveLocalMetadata=false alone does NOT stop writes
+- **`<lockdata>true</lockdata>` in the NFO: fully respected.** When Emby reads
+  the NFO and finds lockdata=true, it imports the lock into its internal DB
+  and refuses to overwrite the NFO on subsequent refreshes -- even with
+  ReplaceAllMetadata=true. All fields (formed, disbanded, biography, genre,
+  stillwater canary) are preserved. This is the most reliable protection.
 
 **Image behavior:**
 - With no image fetchers: does not touch images
@@ -117,11 +123,15 @@ shared filesystems, informing the evidence-based shared filesystem detection des
 - `LibraryOptions.EnableInternetProviders` -- boolean, controls fetcher activation
 - `LibraryOptions.TypeOptions[MusicArtist].ImageFetchers` -- array of provider names
 
-**Jellyfin-specific concern:** There appears to be no reliable API-configurable way
-to prevent Jellyfin from writing NFO files. Even with all visible settings disabled,
-it still writes. The only reliable prevention may be filesystem permissions (make
-the directory read-only to the Jellyfin process) or using the `<lockdata>true</lockdata>`
-element in existing NFOs. The lockdata approach needs separate testing.
+**lockdata behavior:**
+- `<lockdata>true</lockdata>` in the NFO is fully respected. Jellyfin reads it,
+  imports the lock, and refuses to overwrite the NFO on subsequent refreshes --
+  even with ReplaceAllMetadata=true and FullRefresh.
+- This is the ONLY reliable way to prevent Jellyfin from overwriting NFOs.
+  MetadataSavers=[] and SaveLocalMetadata=false do NOT work.
+- Jellyfin does NOT rewrite NFOs during normal library scans or Default refresh
+  mode -- only on explicit FullRefresh. The lockdata protection is most important
+  when a user manually triggers "Refresh Metadata" on an artist.
 
 ### Lidarr
 
@@ -154,50 +164,71 @@ albumMetadata, artistImages, albumImages all true)
 
 | Platform | NFO Saver | Image Fetcher | Verdict |
 |----------|-----------|---------------|---------|
-| Emby | **Block** (clobbers) | **Block** (writes to FS) | Disable MetadataSavers=[] and ImageFetchers=[] |
-| Jellyfin | **Block** (clobbers, cannot be reliably disabled via API) | **Block** (can replace + strip EXIF) | Warn user to disable via Jellyfin UI; API may be insufficient |
-| Lidarr | **Coexist** (doesn't rewrite existing) | **Warn** (adds missing, doesn't replace) | Lidarr is safe for existing data, but may add unwanted images |
+| Emby | **Coexist with lockdata** | **Warn** (adds missing) | Stillwater writes `<lockdata>true</lockdata>` to protect NFOs; warn about image fetchers |
+| Jellyfin | **Coexist with lockdata** | **Block** (can replace + strip EXIF) | Stillwater writes `<lockdata>true</lockdata>` to protect NFOs; block image fetchers with ReplaceAllImages capability |
+| Lidarr | **Coexist** (doesn't rewrite) | **Warn** (adds missing) | Safe for existing data; warn about unwanted image additions |
 
-### Blocking Messages
+### The lockdata Solution
 
-**Emby:**
-> "Emby's NFO saver is writing metadata to your music directory, which overwrites
-> Stillwater's metadata. Disable the NFO saver: [Emby Dashboard > Library > Music >
-> NFO](http://localhost:8096/web/#!/library.html)"
+**Both Emby and Jellyfin respect `<lockdata>true</lockdata>` in NFO files.**
+When either platform reads an NFO containing this element, it imports the lock
+into its internal database and refuses to overwrite the NFO on subsequent
+refreshes -- even with ReplaceAllMetadata=true on a FullRefresh.
+
+**Implication for Stillwater:** The NFO writer should always include
+`<lockdata>true</lockdata>` in every NFO it writes. This is simpler and more
+reliable than trying to disable platform savers via API:
+
+- Works on both Emby and Jellyfin
+- Requires no platform API calls to configure
+- Protects individual NFOs (not a library-wide setting)
+- Self-documenting (the lock is visible in the NFO)
+- Survives platform reinstalls/reconfigurations
+
+### Remaining Warnings
+
+**Emby with image fetchers:**
+> "Emby's image fetchers (TheAudioDb, FanArt) are enabled and may download
+> additional images to your music directory. Stillwater's NFOs are protected
+> by lockdata, but image conflicts may occur. Consider disabling image
+> fetchers: [Emby Library Settings](http://localhost:8096/web/#!/library.html)"
 >
-> API fix: Set `MetadataSavers: []` and `ImageFetchers: []` for MusicArtist type
+> API: Set `ImageFetchers: []` for MusicArtist type
 
-**Jellyfin:**
-> "Jellyfin writes NFO files to your music directory regardless of the NFO saver
-> setting. This overwrites Stillwater's metadata. You may need to disable the NFO
-> plugin entirely or set artist directories to read-only for the Jellyfin process."
+**Jellyfin with image fetchers:**
+> "Jellyfin's TheAudioDB image fetcher is enabled. With ReplaceAllImages,
+> Jellyfin can replace existing images and strip EXIF provenance data.
+> Disable image fetchers in Jellyfin's library settings."
 >
-> Note: No reliable API-only fix exists. This needs further investigation
-> (lockdata element, NFO plugin removal, filesystem permissions).
+> API: Set `ImageFetchers: []` for MusicArtist type
 
-**Lidarr:**
-> "Lidarr's Kodi metadata consumer is enabled and may download images to your music
-> directory. While Lidarr does not overwrite existing files, it may add images that
-> conflict with Stillwater's dedup rules. Consider disabling artist images in Lidarr's
-> metadata consumer settings."
+**Lidarr with artist images:**
+> "Lidarr's Kodi metadata consumer may download images to your music directory.
+> While Lidarr does not overwrite existing files, it may add images that conflict
+> with Stillwater's dedup rules. Consider disabling artist images."
 >
-> API fix: Set `artistImages: false` in metadata consumer ID 1
+> API: Set `artistImages: false` in metadata consumer ID 1
 
 ### Key Takeaways
 
-1. **mtime detection is the most reliable signal.** All three platforms change the
-   NFO mtime when they write, and Emby/Lidarr change image mtimes on download.
-2. **The `<stillwater>` NFO canary works for Emby but NOT reliably for Jellyfin.**
-   Jellyfin strips unknown elements when writing with savers disabled. Emby
-   preserves them in all tested scenarios.
-3. **EXIF provenance on images is preserved** by all three platforms during normal
+1. **`<lockdata>true</lockdata>` is the primary defense for NFOs.** Both Emby and
+   Jellyfin respect it. Stillwater should include it in every NFO it writes.
+2. **mtime detection remains the most reliable shared-FS signal.** All platforms
+   change file mtimes when they write.
+3. **The `<stillwater>` NFO canary is preserved by both platforms** when lockdata
+   is set (which it always will be when Stillwater writes). Without lockdata,
+   Jellyfin strips it.
+4. **EXIF provenance on images is preserved** by all platforms during normal
    operations. Only Jellyfin with ReplaceAllImages=true strips EXIF.
-4. **Lidarr is the safest coexistence partner.** It only writes on initial import,
+5. **Lidarr is the safest coexistence partner.** It only writes on initial import,
    doesn't rewrite existing files, and respects what's already on disk.
-5. **Jellyfin is the most problematic.** Its NFO writes cannot be reliably
-   disabled via API, and ReplaceAllImages mode is destructive.
-6. **Emby is controllable.** MetadataSavers=[] reliably stops NFO writes. Image
-   fetcher removal stops image downloads.
+6. **Image fetchers are the remaining risk.** Both Emby and Jellyfin can download
+   images when fetchers are enabled. Emby only adds missing; Jellyfin can
+   replace existing (with ReplaceAllImages). Image fetcher status should be
+   checked and warned about.
+7. **Neither platform rewrites NFOs during normal library scans.** Clobbering
+   only happens on explicit FullRefresh operations. The lockdata protection
+   covers this case.
 
 ## Remaining Tests
 
