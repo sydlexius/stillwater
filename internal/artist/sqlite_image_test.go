@@ -2,6 +2,7 @@ package artist
 
 import (
 	"context"
+	"strings"
 	"testing"
 )
 
@@ -143,6 +144,9 @@ func TestUpdateProvenance_NoRow(t *testing.T) {
 		"deadbeef", "user", "png", "2026-03-21T10:00:00Z")
 	if err == nil {
 		t.Fatal("UpdateImageProvenance on missing row should return an error")
+	}
+	if !strings.Contains(err.Error(), "no image row found") {
+		t.Errorf("expected 'no image row found' error, got: %v", err)
 	}
 
 	// Verify no rows were created (update only, not insert).

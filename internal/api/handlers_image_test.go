@@ -1694,24 +1694,15 @@ func TestSetArtistImageFlag_ClearsProvenance_OnDelete(t *testing.T) {
 	}
 
 	// Verify provenance was cleared in the database, not just on the struct.
+	// UpsertAll (via Update) deletes rows for image types that no longer exist,
+	// so the thumb row should be gone entirely.
 	imagesAfter, err := artistSvc.GetImagesForArtist(context.Background(), a.ID)
 	if err != nil {
 		t.Fatalf("GetImagesForArtist after clear: %v", err)
 	}
 	for _, im := range imagesAfter {
-		if im.ImageType == "thumb" && im.SlotIndex == 0 {
-			if im.PHash != "" {
-				t.Errorf("expected empty phash after clear, got %q", im.PHash)
-			}
-			if im.Source != "" {
-				t.Errorf("expected empty source after clear, got %q", im.Source)
-			}
-			if im.FileFormat != "" {
-				t.Errorf("expected empty file_format after clear, got %q", im.FileFormat)
-			}
-			if im.LastWrittenAt != "" {
-				t.Errorf("expected empty last_written_at after clear, got %q", im.LastWrittenAt)
-			}
+		if im.ImageType == "thumb" && im.SlotIndex == 0 && im.Exists {
+			t.Errorf("thumb row should not exist after clearing the flag")
 		}
 	}
 }

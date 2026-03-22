@@ -152,11 +152,10 @@ func (r *sqliteImageRepo) UpsertAll(ctx context.Context, artistID string, images
 		}
 	}
 
-	// Clear rows for slots that are no longer in the incoming set (e.g., an
-	// image type was removed). We reset display fields to zero and clear
-	// provenance rather than deleting the row, keeping the schema consistent.
-	// In practice, fetching existing rows and comparing is simpler and safer
-	// than a broad DELETE that could race with UpdateProvenance.
+	// Delete rows for slots that are no longer in the incoming set (e.g., an
+	// image type was removed). We fetch existing rows and compare against the
+	// incoming set, then delete stale rows individually rather than using a
+	// broad DELETE that could race with UpdateProvenance.
 	existing, err := tx.QueryContext(ctx,
 		`SELECT image_type, slot_index FROM artist_images WHERE artist_id = ?`, artistID)
 	if err != nil {

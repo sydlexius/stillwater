@@ -883,7 +883,16 @@ func (r *Router) recordImageProvenance(ctx context.Context, artistID, imageType,
 		lastWrittenAt = stat.ModTime().UTC().Format(time.RFC3339)
 	}
 
-	// Persist the provenance data to the artist_images row.
+	// Persist the provenance data to the artist_images row. Skip the update
+	// if we collected nothing useful to avoid overwriting good data with empty
+	// strings on transient read/stat failures.
+	if phash == "" && source == "" && fileFormat == "" && lastWrittenAt == "" {
+		r.logger.Warn("no provenance data collected, skipping update",
+			slog.String("artist_id", artistID),
+			slog.String("image_type", imageType),
+			slog.String("path", filePath))
+		return
+	}
 	if err := r.artistService.UpdateImageProvenance(ctx, artistID, imageType, 0, phash, source, fileFormat, lastWrittenAt); err != nil {
 		r.logger.Warn("recording image provenance",
 			slog.String("artist_id", artistID),
