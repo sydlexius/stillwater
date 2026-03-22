@@ -368,8 +368,8 @@ func (r *Router) handleUpdateConnection(w http.ResponseWriter, req *http.Request
 }
 
 // handleDeleteConnection removes a connection. Libraries are optionally deleted
-// via the deleteLibraries query parameter; the default clears the connection
-// reference without deleting libraries.
+// via the deleteLibraries query parameter (and their artists via deleteArtists);
+// the default clears the connection reference without deleting libraries.
 // DELETE /api/v1/connections/{id}
 func (r *Router) handleDeleteConnection(w http.ResponseWriter, req *http.Request) {
 	id, ok := RequirePathParam(w, req, "id")

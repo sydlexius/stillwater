@@ -3,9 +3,9 @@ package rule
 import "time"
 
 const (
-	// BulkModeYOLO auto-accepts the best match when confidence >= 0.70.
+	// BulkModeYOLO auto-accepts the best provider match without manual review.
 	BulkModeYOLO = "yolo"
-	// BulkModePromptNoMatch auto-accepts on match but skips when no match is found.
+	// BulkModePromptNoMatch auto-accepts on match but skips for manual review when no match is found.
 	BulkModePromptNoMatch = "prompt_no_match"
 	// BulkModeDisambiguate skips when multiple equally-scored matches exist.
 	BulkModeDisambiguate = "disambiguate"
@@ -25,7 +25,7 @@ const (
 	BulkStatusPending = "pending"
 	// BulkStatusRunning indicates the job is currently executing.
 	BulkStatusRunning = "running"
-	// BulkStatusCompleted indicates the job finished successfully.
+	// BulkStatusCompleted indicates the job finished execution (individual items may have failed).
 	BulkStatusCompleted = "completed"
 	// BulkStatusCanceled indicates the job was canceled by the user.
 	BulkStatusCanceled = "canceled"
@@ -38,7 +38,7 @@ const (
 	BulkItemPending = "pending"
 	// BulkItemFixed indicates the item was successfully resolved.
 	BulkItemFixed = "fixed"
-	// BulkItemSkipped indicates the item was skipped (no match or manual mode).
+	// BulkItemSkipped indicates the item was skipped and no changes were applied.
 	BulkItemSkipped = "skipped"
 	// BulkItemFailed indicates the item encountered an error during processing.
 	BulkItemFailed = "failed"
