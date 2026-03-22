@@ -221,7 +221,7 @@ templ Layout(title string, assets AssetPaths) {
 						undoBtn.textContent = 'Undoing...';
 						var bpEl = document.querySelector('meta[name="htmx-base-path"]');
 						var bp = bpEl ? bpEl.content : '';
-						fetch(bp + '/api/v1/notifications/undo/' + encodeURIComponent(undoID), {
+						fetch(bp + '/api/v1/fix-undo/' + encodeURIComponent(undoID), {
 							method: 'POST',
 							headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
 							credentials: 'same-origin'

@@ -304,7 +304,7 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("POST "+bp+"/api/v1/notifications/{id}/resolve", wrapAuth(r.handleResolveViolation, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/notifications/{id}/fix", wrapAuth(r.handleFixViolation, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/notifications/{id}/apply-candidate", wrapAuth(r.handleApplyViolationCandidate, authMw))
-	mux.HandleFunc("POST "+bp+"/api/v1/notifications/undo/{undoId}", wrapAuth(r.handleUndoFix, authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/fix-undo/{undoId}", wrapAuth(r.handleUndoFix, authMw))
 	mux.HandleFunc("DELETE "+bp+"/api/v1/notifications/resolved", wrapAuth(r.handleClearResolvedViolations, authMw))
 
 	// Bulk operation routes
