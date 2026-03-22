@@ -1368,7 +1368,7 @@ func (r *Router) checkSyncMtimeEvidence(ctx context.Context, lib *library.Librar
 	}
 
 	if setErr := r.libraryService.SetSharedFSStatus(ctx, lib.ID,
-		library.SharedFSSuspected, string(evidenceJSON), ""); setErr != nil {
+		library.SharedFSSuspected, string(evidenceJSON), lib.SharedFSPeerLibraryIDs); setErr != nil {
 		r.logger.Warn("mtime check: failed to update shared-FS status",
 			"library", lib.Name, "error", setErr)
 	}

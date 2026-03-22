@@ -192,6 +192,10 @@ func (r *Router) collectImageFetcherWarnings(ctx context.Context, sharedLibs []l
 		if connErr != nil {
 			r.logger.Warn("could not load connection for image fetcher check",
 				"connection_id", lib.ConnectionID, "error", connErr)
+			warnings = append(warnings, connection.ImageFetcherWarning{
+				RiskLevel: "warn",
+				Message:   "Could not load connection settings for a shared-filesystem library. Image fetcher status is unknown.",
+			})
 			continue
 		}
 

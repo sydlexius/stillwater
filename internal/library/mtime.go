@@ -87,7 +87,16 @@ func CheckArtistDirMtimes(artistDir string, lastWrittenAt time.Time) (bool, erro
 func CollectMtimeEvidence(artistDirs map[string]string, lastWrittenAts map[string]time.Time, logger *slog.Logger) []MtimeEvidence {
 	var evidence []MtimeEvidence
 
+	// Deduplicate directories: multiple artist IDs can point to the same
+	// path, and scanning the same directory twice would produce duplicate
+	// evidence entries.
+	seenDirs := make(map[string]bool, len(artistDirs))
+
 	for _, dir := range artistDirs {
+		if seenDirs[dir] {
+			continue
+		}
+		seenDirs[dir] = true
 		lwt, ok := lastWrittenAts[dir]
 		if !ok || lwt.IsZero() {
 			continue
