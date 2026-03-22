@@ -29,7 +29,22 @@ func TestDefault(t *testing.T) {
 	}
 }
 
+// clearSWEnv unsets all SW_* environment variables to prevent env overrides
+// from interfering with tests that assert YAML/default behavior.
+func clearSWEnv(t *testing.T) {
+	t.Helper()
+	for _, key := range []string{
+		"SW_PORT", "SW_BASE_PATH", "SW_DB_PATH", "SW_SESSION_SECRET",
+		"SW_ENCRYPTION_KEY", "SW_MUSIC_PATH", "SW_SCANNER_EXCLUSIONS",
+		"SW_BACKUP_PATH", "SW_BACKUP_RETENTION", "SW_BACKUP_INTERVAL",
+		"SW_BACKUP_ENABLED", "SW_LOG_LEVEL", "SW_LOG_FORMAT",
+	} {
+		t.Setenv(key, "")
+	}
+}
+
 func TestLoad_FromYAML(t *testing.T) {
+	clearSWEnv(t)
 	dir := t.TempDir()
 	yamlPath := filepath.Join(dir, "config.yaml")
 	err := os.WriteFile(yamlPath, []byte(`
@@ -94,6 +109,7 @@ database:
 }
 
 func TestLoad_MissingFileUsesDefaults(t *testing.T) {
+	clearSWEnv(t)
 	cfg, err := Load("/nonexistent/path/config.yaml")
 	if err != nil {
 		t.Fatalf("Load with missing file: %v", err)
@@ -104,6 +120,7 @@ func TestLoad_MissingFileUsesDefaults(t *testing.T) {
 }
 
 func TestLoad_EmptyPathUsesDefaults(t *testing.T) {
+	clearSWEnv(t)
 	cfg, err := Load("")
 	if err != nil {
 		t.Fatalf("Load with empty path: %v", err)
@@ -114,6 +131,7 @@ func TestLoad_EmptyPathUsesDefaults(t *testing.T) {
 }
 
 func TestValidate_InvalidPort(t *testing.T) {
+	clearSWEnv(t)
 	dir := t.TempDir()
 	yamlPath := filepath.Join(dir, "config.yaml")
 	err := os.WriteFile(yamlPath, []byte(`
@@ -133,6 +151,7 @@ database:
 }
 
 func TestValidate_EmptyDBPath(t *testing.T) {
+	clearSWEnv(t)
 	dir := t.TempDir()
 	yamlPath := filepath.Join(dir, "config.yaml")
 	err := os.WriteFile(yamlPath, []byte(`
@@ -152,6 +171,7 @@ database:
 }
 
 func TestValidate_BasePathTrailingSlash(t *testing.T) {
+	clearSWEnv(t)
 	dir := t.TempDir()
 	yamlPath := filepath.Join(dir, "config.yaml")
 	err := os.WriteFile(yamlPath, []byte(`

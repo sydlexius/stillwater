@@ -48,6 +48,16 @@ func TestExtractToken_CookieTakesPrecedence(t *testing.T) {
 	}
 }
 
+func TestExtractToken_HeaderOverQuery(t *testing.T) {
+	req := httptest.NewRequest("GET", "/?apikey=qp-token", nil)
+	req.Header.Set("Authorization", "Bearer header-token")
+
+	got := extractToken(req)
+	if got != "header-token" {
+		t.Errorf("extractToken(header over query) = %q, want header-token", got)
+	}
+}
+
 func TestExtractToken_Empty(t *testing.T) {
 	req := httptest.NewRequest("GET", "/", nil)
 	got := extractToken(req)
