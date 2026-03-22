@@ -1,0 +1,15 @@
+meta {
+  name: Export Violations
+  type: http
+  seq: 9
+}
+
+get {
+  url: {{apiBase}}/notifications/export
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}

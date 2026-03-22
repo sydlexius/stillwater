@@ -1,0 +1,15 @@
+meta {
+  name: List API Tokens
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{apiBase}}/auth/tokens
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}

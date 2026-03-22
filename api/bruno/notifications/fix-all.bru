@@ -1,0 +1,15 @@
+meta {
+  name: Fix All
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{apiBase}}/notifications/fix-all
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}

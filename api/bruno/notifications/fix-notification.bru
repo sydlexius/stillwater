@@ -1,0 +1,15 @@
+meta {
+  name: Fix Notification
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{apiBase}}/notifications/{{notificationId}}/fix
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}

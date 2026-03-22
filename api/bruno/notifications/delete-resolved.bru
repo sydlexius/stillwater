@@ -1,0 +1,15 @@
+meta {
+  name: Delete Resolved Notifications
+  type: http
+  seq: 11
+}
+
+delete {
+  url: {{apiBase}}/notifications/resolved
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}

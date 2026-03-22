@@ -1,0 +1,15 @@
+meta {
+  name: Refresh Artist
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{apiBase}}/artists/{{artistId}}/refresh
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}

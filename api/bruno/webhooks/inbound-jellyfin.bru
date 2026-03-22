@@ -1,0 +1,23 @@
+meta {
+  name: Inbound Jellyfin Webhook
+  type: http
+  seq: 9
+}
+
+post {
+  url: {{apiBase}}/webhooks/inbound/jellyfin
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "NotificationType": "ItemAdded",
+    "Name": "Test Artist",
+    "ItemType": "MusicArtist"
+  }
+}

@@ -1,0 +1,15 @@
+meta {
+  name: Fix All Status
+  type: http
+  seq: 8
+}
+
+get {
+  url: {{apiBase}}/notifications/fix-all/status
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}

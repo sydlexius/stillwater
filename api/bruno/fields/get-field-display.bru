@@ -1,0 +1,15 @@
+meta {
+  name: Get Field Display
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{apiBase}}/artists/{{artistId}}/fields/{{fieldName}}/display
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}

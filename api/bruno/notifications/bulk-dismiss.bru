@@ -1,0 +1,22 @@
+meta {
+  name: Bulk Dismiss Notifications
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{apiBase}}/notifications/bulk-dismiss
+  body: json
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "ids": ["{{notificationId}}"]
+  }
+}

@@ -1,0 +1,22 @@
+meta {
+  name: Refresh Link
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{apiBase}}/artists/{{artistId}}/refresh/link
+  body: json
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "musicbrainz_id": "00000000-0000-0000-0000-000000000000"
+  }
+}

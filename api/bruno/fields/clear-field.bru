@@ -1,0 +1,15 @@
+meta {
+  name: Clear Field
+  type: http
+  seq: 4
+}
+
+delete {
+  url: {{apiBase}}/artists/{{artistId}}/fields/{{fieldName}}
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}

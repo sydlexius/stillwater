@@ -1,0 +1,15 @@
+meta {
+  name: Delete Image
+  type: http
+  seq: 1
+}
+
+delete {
+  url: {{apiBase}}/artists/{{artistId}}/images/{{imageType}}
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}

@@ -1,0 +1,15 @@
+meta {
+  name: Get Field Edit Form
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{apiBase}}/artists/{{artistId}}/fields/{{fieldName}}/edit
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}

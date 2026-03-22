@@ -1,0 +1,25 @@
+meta {
+  name: Inbound Emby Webhook
+  type: http
+  seq: 8
+}
+
+post {
+  url: {{apiBase}}/webhooks/inbound/emby
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "Event": "library.changed",
+    "Item": {
+      "Name": "Test Artist",
+      "Type": "MusicArtist"
+    }
+  }
+}

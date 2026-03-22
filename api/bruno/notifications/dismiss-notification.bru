@@ -1,0 +1,15 @@
+meta {
+  name: Dismiss Notification
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{apiBase}}/notifications/{{notificationId}}/dismiss
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}

@@ -1,0 +1,15 @@
+meta {
+  name: Delete API Token (Revoke)
+  type: http
+  seq: 6
+}
+
+delete {
+  url: {{apiBase}}/auth/tokens/{{tokenId}}
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}

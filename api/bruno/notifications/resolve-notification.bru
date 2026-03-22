@@ -1,0 +1,15 @@
+meta {
+  name: Resolve Notification
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{apiBase}}/notifications/{{notificationId}}/resolve
+  body: none
+  auth: none
+}
+
+headers {
+  Cookie: session={{sessionToken}}
+}

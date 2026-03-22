@@ -1,0 +1,26 @@
+meta {
+  name: Inbound Lidarr Webhook
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{apiBase}}/webhooks/inbound/lidarr
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "eventType": "Test",
+    "artist": {
+      "id": 1,
+      "name": "Test Artist",
+      "path": "/music/Test Artist"
+    }
+  }
+}
