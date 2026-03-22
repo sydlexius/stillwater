@@ -488,15 +488,20 @@ func (f *ImageFixer) Fix(ctx context.Context, a *artist.Artist, v *Violation) (*
 			continue
 		}
 
-		// Record provenance from the saved file so artist_images.source is populated.
-		if f.provenance != nil && len(saved) > 0 && a.Path != "" {
-			recordSavedImageProvenance(ctx, f.provenance, a.ID, imageType, filepath.Join(a.Path, saved[0]), f.logger)
+		// Store the saved path so the pipeline can record provenance after
+		// Update() creates the artist_images row. Provenance cannot be recorded
+		// here because the pipeline calls Update() after Fix() returns.
+		savedPath := ""
+		if len(saved) > 0 && a.Path != "" {
+			savedPath = filepath.Join(a.Path, saved[0])
 		}
 
 		return &FixResult{
-			RuleID:  v.RuleID,
-			Fixed:   true,
-			Message: fmt.Sprintf("saved %s from %s (%v)", imageType, c.Source, saved),
+			RuleID:    v.RuleID,
+			Fixed:     true,
+			Message:   fmt.Sprintf("saved %s from %s (%v)", imageType, c.Source, saved),
+			SavedPath: savedPath,
+			ImageType: imageType,
 		}, nil
 	}
 
@@ -527,18 +532,19 @@ func ruleToImageType(ruleID string) string {
 // and records it in the database. Errors are logged as warnings; provenance
 // recording is supplementary and must not fail the image save operation.
 func recordSavedImageProvenance(ctx context.Context, pr provenanceRecorder, artistID, imageType, filePath string, logger *slog.Logger) {
-	d := img.CollectProvenance(filePath, logger)
+	log := logger.With(
+		slog.String("artist_id", artistID),
+		slog.String("image_type", imageType),
+		slog.String("path", filePath),
+	)
+
+	d := img.CollectProvenance(filePath, log)
 	if d.IsEmpty() {
-		logger.Warn("no provenance data collected from saved image, skipping update",
-			slog.String("artist_id", artistID),
-			slog.String("image_type", imageType),
-			slog.String("path", filePath))
+		log.Warn("no provenance data collected from saved image, skipping update")
 		return
 	}
 	if err := pr.UpdateImageProvenance(ctx, artistID, imageType, 0, d.PHash, d.Source, d.FileFormat, d.LastWrittenAt); err != nil {
-		logger.Warn("recording image provenance after save",
-			slog.String("artist_id", artistID),
-			slog.String("image_type", imageType),
+		log.Warn("recording image provenance after save",
 			slog.String("error", err.Error()))
 	}
 }

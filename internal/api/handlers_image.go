@@ -848,18 +848,19 @@ func (r *Router) updateArtistImageFlag(ctx context.Context, a *artist.Artist, im
 // timestamp in the artist_images table. Errors are logged as warnings -- this
 // is supplementary evidence collection and must not fail the image save.
 func (r *Router) recordImageProvenance(ctx context.Context, artistID, imageType, filePath string) {
-	d := img.CollectProvenance(filePath, r.logger)
+	log := r.logger.With(
+		slog.String("artist_id", artistID),
+		slog.String("image_type", imageType),
+		slog.String("path", filePath),
+	)
+
+	d := img.CollectProvenance(filePath, log)
 	if d.IsEmpty() {
-		r.logger.Warn("no provenance data collected, skipping update",
-			slog.String("artist_id", artistID),
-			slog.String("image_type", imageType),
-			slog.String("path", filePath))
+		log.Warn("no provenance data collected, skipping update")
 		return
 	}
 	if err := r.artistService.UpdateImageProvenance(ctx, artistID, imageType, 0, d.PHash, d.Source, d.FileFormat, d.LastWrittenAt); err != nil {
-		r.logger.Warn("recording image provenance",
-			slog.String("artist_id", artistID),
-			slog.String("image_type", imageType),
+		log.Warn("recording image provenance",
 			slog.String("error", err.Error()))
 	}
 }

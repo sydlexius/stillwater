@@ -38,9 +38,8 @@ func CollectProvenance(filePath string, logger *slog.Logger) ProvenanceData {
 	meta, err := ReadProvenance(filePath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			logger.Warn("image file not found for provenance collection",
-				slog.String("path", filePath),
-				slog.String("error", err.Error()))
+			// Return silently; callers log a single contextual warning
+			// when they see empty provenance data.
 			return d
 		}
 		logger.Warn("reading image provenance for evidence",

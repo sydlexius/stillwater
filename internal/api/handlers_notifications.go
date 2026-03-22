@@ -371,15 +371,17 @@ func (r *Router) handleApplyViolationCandidate(w http.ResponseWriter, req *http.
 		return
 	}
 
-	// Record provenance from the saved file so artist_images.source is populated.
-	if len(saved) > 0 && a.Path != "" {
-		r.recordImageProvenance(req.Context(), a.ID, body.ImageType, filepath.Join(a.Path, saved[0]))
-	}
-
-	// Persist artist update (image flag set by SaveImageFromURL)
+	// Persist artist update (image flag set by SaveImageFromURL) before recording
+	// provenance, because Update creates the artist_images row via UpsertAll and
+	// UpdateImageProvenance requires the row to exist.
 	if err := r.artistService.Update(req.Context(), a); err != nil {
 		writeError(w, req, http.StatusInternalServerError, fmt.Sprintf("updating artist after apply-candidate: %v", err))
 		return
+	}
+
+	// Record provenance from the saved file so artist_images.source is populated.
+	if len(saved) > 0 && a.Path != "" {
+		r.recordImageProvenance(req.Context(), a.ID, body.ImageType, filepath.Join(a.Path, saved[0]))
 	}
 
 	// Mark violation resolved

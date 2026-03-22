@@ -307,10 +307,19 @@ func (e *BulkExecutor) fetchImages(ctx context.Context, a *artist.Artist, mode s
 		return BulkItemFailed, fmt.Sprintf("image fetch failed: %v", err)
 	}
 
+	// Track saved file paths so provenance can be recorded after Update()
+	// creates the artist_images rows.
+	type savedImage struct {
+		imageType string
+		filePath  string
+	}
+	var savedImages []savedImage
+
 	fixed := 0
 	for imageType := range needed {
-		if e.saveBestImage(ctx, a, imageType, imgResult) {
+		if path := e.saveBestImage(ctx, a, imageType, imgResult); path != "" {
 			fixed++
+			savedImages = append(savedImages, savedImage{imageType, path})
 		}
 	}
 
@@ -322,10 +331,19 @@ func (e *BulkExecutor) fetchImages(ctx context.Context, a *artist.Artist, mode s
 		return BulkItemFailed, fmt.Sprintf("update failed: %v", err)
 	}
 
+	// Record provenance after Update() so the artist_images rows exist.
+	for _, si := range savedImages {
+		if e.artistService != nil {
+			recordSavedImageProvenance(ctx, e.artistService, a.ID, si.imageType, si.filePath, e.logger)
+		}
+	}
+
 	return BulkItemFixed, fmt.Sprintf("saved %d image(s)", fixed)
 }
 
-func (e *BulkExecutor) saveBestImage(ctx context.Context, a *artist.Artist, imageType string, result *provider.FetchResult) bool {
+// saveBestImage saves the best candidate image for the given type. Returns the
+// full file path of the saved image, or empty string if no candidate succeeded.
+func (e *BulkExecutor) saveBestImage(ctx context.Context, a *artist.Artist, imageType string, result *provider.FetchResult) string {
 	var candidates []provider.ImageResult
 	for _, im := range result.Images {
 		if string(im.Type) == imageType {
@@ -333,7 +351,7 @@ func (e *BulkExecutor) saveBestImage(ctx context.Context, a *artist.Artist, imag
 		}
 	}
 	if len(candidates) == 0 {
-		return false
+		return ""
 	}
 
 	sort.Slice(candidates, func(i, j int) bool {
@@ -359,15 +377,13 @@ func (e *BulkExecutor) saveBestImage(ctx context.Context, a *artist.Artist, imag
 			e.logger.Debug("image candidate failed", "url", c.URL, "error", err)
 			continue
 		}
-		// Record provenance from the saved file so artist_images.source is populated.
-		// Guard: artistService is nil in some test configurations.
-		if e.artistService != nil && len(saved) > 0 && a.Path != "" {
-			recordSavedImageProvenance(ctx, e.artistService, a.ID, imageType, filepath.Join(a.Path, saved[0]), e.logger)
+		if len(saved) > 0 && a.Path != "" {
+			return filepath.Join(a.Path, saved[0])
 		}
-		return true
+		return ""
 	}
 
-	return false
+	return ""
 }
 
 func (e *BulkExecutor) finishJob(ctx context.Context, job *BulkJob, status, errMsg string) {

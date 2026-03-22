@@ -35,6 +35,8 @@ type FixResult struct {
 	Dismissed  bool             `json:"dismissed,omitempty"` // true when violation was auto-dismissed (e.g. orphaned artist)
 	Message    string           `json:"message"`
 	Candidates []ImageCandidate `json:"candidates,omitempty"` // set when multiple candidates need user selection
+	SavedPath  string           `json:"-"`                    // set by image fixers for post-Update provenance recording
+	ImageType  string           `json:"-"`                    // image type for provenance recording (matches SavedPath)
 }
 
 // RunResult describes the outcome of running rules against multiple artists.
@@ -584,6 +586,10 @@ func (p *Pipeline) FixViolation(ctx context.Context, violationID string) (*FixRe
 	if fr.Fixed {
 		if err := p.artistService.Update(ctx, a); err != nil {
 			return nil, fmt.Errorf("updating artist after fix: %w", err)
+		}
+		// Record image provenance after Update() creates the artist_images row.
+		if fr.SavedPath != "" {
+			recordSavedImageProvenance(ctx, p.artistService, a.ID, fr.ImageType, fr.SavedPath, p.logger)
 		}
 		if err := p.ruleService.ResolveViolation(ctx, rv.ID); err != nil {
 			return nil, fmt.Errorf("resolving violation after fix: %w", err)
