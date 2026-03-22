@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -363,10 +364,16 @@ func (r *Router) handleApplyViolationCandidate(w http.ResponseWriter, req *http.
 		Mode:    "manual",
 	}
 	naming, useSymlinks := r.getActiveNamingAndSymlinks(req.Context(), body.ImageType)
-	if _, err := rule.SaveImageFromURL(req.Context(), a, body.ImageType, body.URL, naming, useSymlinks, candidateMeta, r.platformService, r.logger); err != nil {
+	saved, err := rule.SaveImageFromURL(req.Context(), a, body.ImageType, body.URL, naming, useSymlinks, candidateMeta, r.platformService, r.logger)
+	if err != nil {
 		r.logger.Error("applying image candidate", "artist_id", a.ID, "image_type", body.ImageType, "error", err)
 		writeError(w, req, http.StatusInternalServerError, "failed to apply image candidate")
 		return
+	}
+
+	// Record provenance from the saved file so artist_images.source is populated.
+	if len(saved) > 0 && a.Path != "" {
+		r.recordImageProvenance(req.Context(), a.ID, body.ImageType, filepath.Join(a.Path, saved[0]))
 	}
 
 	// Persist artist update (image flag set by SaveImageFromURL)

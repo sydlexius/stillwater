@@ -848,60 +848,15 @@ func (r *Router) updateArtistImageFlag(ctx context.Context, a *artist.Artist, im
 // timestamp in the artist_images table. Errors are logged as warnings -- this
 // is supplementary evidence collection and must not fail the image save.
 func (r *Router) recordImageProvenance(ctx context.Context, artistID, imageType, filePath string) {
-	var phash, source, fileFormat, lastWrittenAt string
-
-	// Read Stillwater provenance metadata (dhash and source) from the saved image.
-	meta, err := img.ReadProvenance(filePath)
-	if err != nil {
-		r.logger.Warn("reading image provenance for evidence",
-			slog.String("artist_id", artistID),
-			slog.String("image_type", imageType),
-			slog.String("path", filePath),
-			slog.String("error", err.Error()))
-	}
-	if meta != nil {
-		phash = meta.DHash
-		source = meta.Source
-	}
-
-	// Determine file format from extension.
-	ext := strings.ToLower(filepath.Ext(filePath))
-	switch ext {
-	case ".jpg", ".jpeg":
-		fileFormat = "jpeg"
-	case ".png":
-		fileFormat = "png"
-	default:
-		r.logger.Warn("unrecognized image file extension",
-			slog.String("artist_id", artistID),
-			slog.String("image_type", imageType),
-			slog.String("extension", ext),
-			slog.String("path", filePath))
-	}
-
-	// Read the file's mtime as the write timestamp.
-	stat, statErr := os.Stat(filePath)
-	if statErr != nil {
-		r.logger.Warn("stat image file for write timestamp",
-			slog.String("artist_id", artistID),
-			slog.String("image_type", imageType),
-			slog.String("path", filePath),
-			slog.String("error", statErr.Error()))
-	} else {
-		lastWrittenAt = stat.ModTime().UTC().Format(time.RFC3339)
-	}
-
-	// Persist the provenance data to the artist_images row. Skip the update
-	// if we collected nothing useful to avoid overwriting good data with empty
-	// strings on transient read/stat failures.
-	if phash == "" && source == "" && fileFormat == "" && lastWrittenAt == "" {
+	d := img.CollectProvenance(filePath, r.logger)
+	if d.IsEmpty() {
 		r.logger.Warn("no provenance data collected, skipping update",
 			slog.String("artist_id", artistID),
 			slog.String("image_type", imageType),
 			slog.String("path", filePath))
 		return
 	}
-	if err := r.artistService.UpdateImageProvenance(ctx, artistID, imageType, 0, phash, source, fileFormat, lastWrittenAt); err != nil {
+	if err := r.artistService.UpdateImageProvenance(ctx, artistID, imageType, 0, d.PHash, d.Source, d.FileFormat, d.LastWrittenAt); err != nil {
 		r.logger.Warn("recording image provenance",
 			slog.String("artist_id", artistID),
 			slog.String("image_type", imageType),

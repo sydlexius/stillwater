@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"sort"
 	"sync"
 	"time"
@@ -353,9 +354,15 @@ func (e *BulkExecutor) saveBestImage(ctx context.Context, a *artist.Artist, imag
 			Rule:    "",
 			Mode:    "auto",
 		}
-		if _, err := SaveImageFromURL(ctx, a, imageType, c.URL, naming, useSymlinks, meta, e.platformService, e.logger); err != nil {
+		saved, err := SaveImageFromURL(ctx, a, imageType, c.URL, naming, useSymlinks, meta, e.platformService, e.logger)
+		if err != nil {
 			e.logger.Debug("image candidate failed", "url", c.URL, "error", err)
 			continue
+		}
+		// Record provenance from the saved file so artist_images.source is populated.
+		// Guard: artistService is nil in some test configurations.
+		if e.artistService != nil && len(saved) > 0 && a.Path != "" {
+			recordSavedImageProvenance(ctx, e.artistService, a.ID, imageType, filepath.Join(a.Path, saved[0]), e.logger)
 		}
 		return true
 	}

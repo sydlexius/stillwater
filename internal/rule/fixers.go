@@ -246,13 +246,23 @@ func (f *MetadataFixer) fixJunkBio(ctx context.Context, a *artist.Artist) (*FixR
 	}, nil
 }
 
-// ImageFixer fetches missing or low-quality images from providers.
+// provenanceRecorder is an optional interface for recording image provenance
+// after a save. When set on ImageFixer, provenance data (phash, source,
+// file format, write timestamp) is read from the saved file and persisted
+// to the artist_images table.
+type provenanceRecorder interface {
+	UpdateImageProvenance(ctx context.Context, artistID, imageType string, slotIndex int, phash, source, fileFormat, lastWrittenAt string) error
+}
+
+// ImageFixer resolves image-related rule violations by fetching images from
+// configured metadata providers.
 type ImageFixer struct {
 	orchestrator    imageProvider
 	platformService *platform.Service
 	fsCheck         *SharedFSCheck
 	logger          *slog.Logger
-	imageCache      sync.Map // keyed by MBID; value: *imageCacheEntry
+	provenance      provenanceRecorder // optional; set via SetProvenanceRecorder
+	imageCache      sync.Map           // keyed by MBID; value: *imageCacheEntry
 }
 
 // NewImageFixer creates an ImageFixer.
@@ -263,6 +273,12 @@ func NewImageFixer(orchestrator imageProvider, platformService *platform.Service
 		fsCheck:         fsCheck,
 		logger:          logger,
 	}
+}
+
+// SetProvenanceRecorder sets an optional provenance recorder that persists
+// image provenance data (phash, source, format, mtime) after each image save.
+func (f *ImageFixer) SetProvenanceRecorder(pr provenanceRecorder) {
+	f.provenance = pr
 }
 
 // fetchImages returns provider images for the given MBID and provider IDs,
@@ -472,6 +488,11 @@ func (f *ImageFixer) Fix(ctx context.Context, a *artist.Artist, v *Violation) (*
 			continue
 		}
 
+		// Record provenance from the saved file so artist_images.source is populated.
+		if f.provenance != nil && len(saved) > 0 && a.Path != "" {
+			recordSavedImageProvenance(ctx, f.provenance, a.ID, imageType, filepath.Join(a.Path, saved[0]), f.logger)
+		}
+
 		return &FixResult{
 			RuleID:  v.RuleID,
 			Fixed:   true,
@@ -499,6 +520,26 @@ func ruleToImageType(ruleID string) string {
 		return "banner"
 	default:
 		return ""
+	}
+}
+
+// recordSavedImageProvenance collects provenance data from a saved image file
+// and records it in the database. Errors are logged as warnings; provenance
+// recording is supplementary and must not fail the image save operation.
+func recordSavedImageProvenance(ctx context.Context, pr provenanceRecorder, artistID, imageType, filePath string, logger *slog.Logger) {
+	d := img.CollectProvenance(filePath, logger)
+	if d.IsEmpty() {
+		logger.Warn("no provenance data collected from saved image, skipping update",
+			slog.String("artist_id", artistID),
+			slog.String("image_type", imageType),
+			slog.String("path", filePath))
+		return
+	}
+	if err := pr.UpdateImageProvenance(ctx, artistID, imageType, 0, d.PHash, d.Source, d.FileFormat, d.LastWrittenAt); err != nil {
+		logger.Warn("recording image provenance after save",
+			slog.String("artist_id", artistID),
+			slog.String("image_type", imageType),
+			slog.String("error", err.Error()))
 	}
 }
 

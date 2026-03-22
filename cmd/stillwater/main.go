@@ -225,10 +225,12 @@ func run() error {
 	expectedWrites := watcher.NewExpectedWrites()
 
 	// Initialize fix pipeline (depends on orchestrator and snapshot service)
+	imageFixer := rule.NewImageFixer(orchestrator, platformService, fsCheck, logger)
+	imageFixer.SetProvenanceRecorder(artistService)
 	fixers := []rule.Fixer{
 		rule.NewNFOFixer(nfoSnapshotService, fsCheck, expectedWrites),
 		rule.NewMetadataFixer(orchestrator, nfoSnapshotService, expectedWrites, logger),
-		rule.NewImageFixer(orchestrator, platformService, fsCheck, logger),
+		imageFixer,
 		rule.NewExtraneousImagesFixer(platformService, fsCheck, logger),
 		rule.NewLogoTrimFixer(platformService, fsCheck, logger),
 		rule.NewLogoPaddingFixer(platformService, fsCheck, logger),
