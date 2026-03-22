@@ -910,44 +910,71 @@ if [[ "$shared_fs_code" == "200" ]]; then
   fi
 
   # Verify libraries array is present (even if empty).
-  shared_fs_libs=$(echo "$shared_fs_body" | jq '.libraries | length' 2>/dev/null || echo "PARSE_ERROR")
-  if [[ "$shared_fs_libs" =~ ^[0-9]+$ ]]; then
+  # Guard: confirm field exists and is an array before checking length.
+  # jq 'null | length' returns 0, so a missing field would falsely pass a numeric check.
+  shared_fs_libs_ok=$(echo "$shared_fs_body" | jq 'has("libraries") and (.libraries | type) == "array"' 2>/dev/null || echo "false")
+  if [[ "$shared_fs_libs_ok" == "true" ]]; then
+    shared_fs_libs=$(echo "$shared_fs_body" | jq '.libraries | length')
     echo "[PASS]   shared-fs status libraries array present (count=$shared_fs_libs)"
     PASS=$((PASS + 1))
   else
-    echo "[FAIL]   shared-fs status -- libraries array missing"
+    echo "[FAIL]   shared-fs status -- libraries array missing or wrong type"
     FAIL=$((FAIL + 1))
-    FAILURES+=("shared-fs status -- libraries array missing")
+    FAILURES+=("shared-fs status -- libraries array missing or wrong type")
   fi
 
   # If overlaps exist, verify image_fetcher_warnings array is present.
   if [[ "$shared_fs_overlaps" == "true" ]]; then
-    shared_fs_warnings=$(echo "$shared_fs_body" | jq '.image_fetcher_warnings | length' 2>/dev/null || echo "PARSE_ERROR")
-    if [[ "$shared_fs_warnings" =~ ^[0-9]+$ ]]; then
+    # Guard: confirm field exists and is an array before checking length.
+    shared_fs_warnings_ok=$(echo "$shared_fs_body" | jq 'has("image_fetcher_warnings") and (.image_fetcher_warnings | type) == "array"' 2>/dev/null || echo "false")
+    if [[ "$shared_fs_warnings_ok" == "true" ]]; then
+      shared_fs_warnings=$(echo "$shared_fs_body" | jq '.image_fetcher_warnings | length')
       echo "[PASS]   shared-fs image_fetcher_warnings array present (count=$shared_fs_warnings)"
       PASS=$((PASS + 1))
     else
-      echo "[FAIL]   shared-fs image_fetcher_warnings -- array missing when overlaps detected"
+      echo "[FAIL]   shared-fs image_fetcher_warnings -- array missing or wrong type when overlaps detected"
       FAIL=$((FAIL + 1))
-      FAILURES+=("shared-fs image_fetcher_warnings -- array missing when overlaps detected")
+      FAILURES+=("shared-fs image_fetcher_warnings -- array missing or wrong type when overlaps detected")
     fi
 
     # Validate warning structure when warnings exist.
-    if [[ "$shared_fs_warnings" =~ ^[0-9]+$ && "$shared_fs_warnings" -gt 0 ]]; then
+    if [[ "$shared_fs_warnings_ok" == "true" && "$shared_fs_warnings" -gt 0 ]]; then
       first_warning_platform=$(echo "$shared_fs_body" | jq -r '.image_fetcher_warnings[0].platform' 2>/dev/null || echo "null")
       first_warning_risk=$(echo "$shared_fs_body" | jq -r '.image_fetcher_warnings[0].risk_level' 2>/dev/null || echo "null")
+      first_warning_message=$(echo "$shared_fs_body" | jq -r '.image_fetcher_warnings[0].message' 2>/dev/null || echo "null")
+      # Validate platform is present.
       if [[ "$first_warning_platform" != "null" && -n "$first_warning_platform" ]]; then
-        echo "[PASS]   image_fetcher_warnings[0] has platform=$first_warning_platform, risk_level=$first_warning_risk"
+        echo "[PASS]   image_fetcher_warnings[0] has platform=$first_warning_platform"
         PASS=$((PASS + 1))
       else
         echo "[FAIL]   image_fetcher_warnings[0] -- missing platform field"
         FAIL=$((FAIL + 1))
         FAILURES+=("image_fetcher_warnings[0] -- missing platform field")
       fi
+      # Validate risk_level is one of the expected values.
+      if [[ "$first_warning_risk" == "warn" || "$first_warning_risk" == "critical" ]]; then
+        echo "[PASS]   image_fetcher_warnings[0] has risk_level=$first_warning_risk"
+        PASS=$((PASS + 1))
+      else
+        echo "[FAIL]   image_fetcher_warnings[0] -- risk_level missing or unexpected ($first_warning_risk)"
+        FAIL=$((FAIL + 1))
+        FAILURES+=("image_fetcher_warnings[0] -- risk_level missing or unexpected ($first_warning_risk)")
+      fi
+      # Validate message is non-empty.
+      if [[ "$first_warning_message" != "null" && -n "$first_warning_message" ]]; then
+        echo "[PASS]   image_fetcher_warnings[0] has non-empty message"
+        PASS=$((PASS + 1))
+      else
+        echo "[FAIL]   image_fetcher_warnings[0] -- message field missing or empty"
+        FAIL=$((FAIL + 1))
+        FAILURES+=("image_fetcher_warnings[0] -- message field missing or empty")
+      fi
     fi
-  else
+  elif [[ "$shared_fs_overlaps" == "false" ]]; then
     echo "[SKIP]   shared-fs image_fetcher_warnings -- no overlaps detected"
   fi
+  # When shared_fs_overlaps is neither "true" nor "false" (e.g. PARSE_ERROR),
+  # the has_overlaps validation above already reported FAIL -- nothing more to print.
 fi
 
 # Clobber-check endpoint (NFO writer detection across all connections).
