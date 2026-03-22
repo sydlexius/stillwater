@@ -45,7 +45,6 @@ func (r *Router) handleSharedFilesystemStatus(w http.ResponseWriter, req *http.R
 	}
 
 	// For HTMX requests, render the notification bar partial.
-	// Skip image fetcher API calls since the bar does not display them.
 	if isHTMXRequest(req) {
 		data := templates.SharedFSBarData{
 			HasOverlaps: status.HasOverlaps,
@@ -56,6 +55,18 @@ func (r *Router) handleSharedFilesystemStatus(w http.ResponseWriter, req *http.R
 				Name: lib.LibraryName,
 				Path: lib.Path,
 			})
+		}
+		// Collect image fetcher warnings for shared libraries. Skip when the bar
+		// is dismissed because the template renders nothing and the network calls
+		// to Emby/Jellyfin would be wasted.
+		if len(sharedLibs) > 0 && !status.Dismissed {
+			for _, w := range r.collectImageFetcherWarnings(req.Context(), sharedLibs) {
+				data.ImageFetcherWarnings = append(data.ImageFetcherWarnings, templates.SharedFSBarWarning{
+					Platform:  w.Platform,
+					RiskLevel: w.RiskLevel,
+					Message:   w.Message,
+				})
+			}
 		}
 		renderTempl(w, req, templates.SharedFilesystemBarContent(data))
 		return
