@@ -35,8 +35,12 @@ func WriteBackArtistNFO(ctx context.Context, a *artist.Artist, ss *SnapshotServi
 	// Save a snapshot of the existing NFO before overwriting (best effort)
 	if ss != nil {
 		if existing, err := os.ReadFile(target); err == nil && len(existing) > 0 { //nolint:gosec // G304: path from trusted artist.Path
-			if _, snapErr := ss.Save(ctx, a.ID, string(existing)); snapErr != nil && logger != nil {
-				logger.Warn("NFO snapshot save failed (proceeding with write)",
+			if _, snapErr := ss.Save(ctx, a.ID, string(existing)); snapErr != nil {
+				log := logger
+				if log == nil {
+					log = slog.Default()
+				}
+				log.Warn("NFO snapshot save failed (proceeding with write)",
 					slog.String("artist_id", a.ID),
 					slog.String("error", snapErr.Error()),
 				)
