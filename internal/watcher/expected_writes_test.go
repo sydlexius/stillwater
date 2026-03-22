@@ -101,6 +101,34 @@ func TestExpectedWrites_Concurrent(t *testing.T) {
 	wg.Wait()
 }
 
+// TestExpectedWrites_NFOPattern verifies the Add/defer-Remove pattern used by
+// NFO write paths: a single path is registered, visible during the write, and
+// automatically cleared when the enclosing scope exits.
+func TestExpectedWrites_NFOPattern(t *testing.T) {
+	ew := NewExpectedWrites()
+	nfoPath := "/music/Radiohead/artist.nfo"
+
+	// Simulate the pattern used in handlers and fixers:
+	//   ew.Add(nfoPath); defer ew.Remove(nfoPath)
+	func() {
+		ew.Add(nfoPath)
+		defer ew.Remove(nfoPath)
+
+		if !ew.IsExpected(nfoPath) {
+			t.Error("NFO path not expected during write scope")
+		}
+		// A different artist's NFO should not match.
+		if ew.IsExpected("/music/Other/artist.nfo") {
+			t.Error("unrelated NFO path incorrectly reported as expected")
+		}
+	}()
+
+	// After the scope exits, the path should be cleared.
+	if ew.IsExpected(nfoPath) {
+		t.Error("NFO path still expected after deferred Remove")
+	}
+}
+
 func TestExpectedWrites_ConcurrentAddAllPrune(t *testing.T) {
 	ew := NewExpectedWrites()
 	var wg sync.WaitGroup

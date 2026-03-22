@@ -20,6 +20,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/nfo"
 	"github.com/sydlexius/stillwater/internal/platform"
 	"github.com/sydlexius/stillwater/internal/provider"
+	"github.com/sydlexius/stillwater/internal/watcher"
 )
 
 // imageProvider is the subset of provider.Orchestrator used by ImageFixer.
@@ -42,11 +43,12 @@ const (
 type NFOFixer struct {
 	SnapshotService *nfo.SnapshotService
 	fsCheck         *SharedFSCheck
+	expectedWrites  *watcher.ExpectedWrites
 }
 
 // NewNFOFixer creates an NFOFixer with an optional shared-filesystem guard.
-func NewNFOFixer(snapshotService *nfo.SnapshotService, fsCheck *SharedFSCheck) *NFOFixer {
-	return &NFOFixer{SnapshotService: snapshotService, fsCheck: fsCheck}
+func NewNFOFixer(snapshotService *nfo.SnapshotService, fsCheck *SharedFSCheck, expectedWrites *watcher.ExpectedWrites) *NFOFixer {
+	return &NFOFixer{SnapshotService: snapshotService, fsCheck: fsCheck, expectedWrites: expectedWrites}
 }
 
 // CanFix returns true for the nfo_exists rule.
@@ -84,6 +86,13 @@ func (f *NFOFixer) Fix(ctx context.Context, a *artist.Artist, _ *Violation) (*Fi
 		return nil, fmt.Errorf("generating nfo: %w", err)
 	}
 
+	// Register expected write so the filesystem watcher does not treat
+	// this fixer-created NFO as an external modification.
+	if f.expectedWrites != nil {
+		f.expectedWrites.Add(target)
+		defer f.expectedWrites.Remove(target)
+	}
+
 	if err := filesystem.WriteFileAtomic(target, buf.Bytes(), 0o644); err != nil {
 		return nil, fmt.Errorf("writing nfo: %w", err)
 	}
@@ -101,12 +110,13 @@ func (f *NFOFixer) Fix(ctx context.Context, a *artist.Artist, _ *Violation) (*Fi
 type MetadataFixer struct {
 	orchestrator    *provider.Orchestrator
 	snapshotService *nfo.SnapshotService
+	expectedWrites  *watcher.ExpectedWrites
 	logger          *slog.Logger
 }
 
 // NewMetadataFixer creates a MetadataFixer.
-func NewMetadataFixer(orchestrator *provider.Orchestrator, snapshotService *nfo.SnapshotService, logger *slog.Logger) *MetadataFixer {
-	return &MetadataFixer{orchestrator: orchestrator, snapshotService: snapshotService, logger: logger}
+func NewMetadataFixer(orchestrator *provider.Orchestrator, snapshotService *nfo.SnapshotService, expectedWrites *watcher.ExpectedWrites, logger *slog.Logger) *MetadataFixer {
+	return &MetadataFixer{orchestrator: orchestrator, snapshotService: snapshotService, expectedWrites: expectedWrites, logger: logger}
 }
 
 // CanFix returns true for nfo_has_mbid, bio_exists, and metadata_quality rules.
@@ -164,7 +174,7 @@ func (f *MetadataFixer) fixMBID(ctx context.Context, a *artist.Artist) (*FixResu
 	a.MusicBrainzID = best.MusicBrainzID
 
 	if a.NFOExists {
-		writeArtistNFO(ctx, a, f.snapshotService, f.logger)
+		writeArtistNFO(ctx, a, f.snapshotService, f.expectedWrites, f.logger)
 	}
 
 	return &FixResult{
@@ -191,7 +201,7 @@ func (f *MetadataFixer) fixBio(ctx context.Context, a *artist.Artist) (*FixResul
 	a.Biography = result.Metadata.Biography
 
 	if a.NFOExists {
-		writeArtistNFO(ctx, a, f.snapshotService, f.logger)
+		writeArtistNFO(ctx, a, f.snapshotService, f.expectedWrites, f.logger)
 	}
 
 	return &FixResult{
@@ -226,7 +236,7 @@ func (f *MetadataFixer) fixJunkBio(ctx context.Context, a *artist.Artist) (*FixR
 	a.Biography = result.Metadata.Biography
 
 	if a.NFOExists {
-		writeArtistNFO(ctx, a, f.snapshotService, f.logger)
+		writeArtistNFO(ctx, a, f.snapshotService, f.expectedWrites, f.logger)
 	}
 
 	return &FixResult{
@@ -557,9 +567,17 @@ func SaveImageFromData(ctx context.Context, a *artist.Artist, imageType string, 
 
 // writeArtistNFO writes the artist's current metadata to an artist.nfo file.
 // If a SnapshotService is provided, saves a snapshot of the existing NFO before overwriting.
+// When expectedWrites is non-nil, the NFO path is registered before writing so the
+// filesystem watcher can distinguish Stillwater's own writes from external ones.
 // Errors are logged rather than returned because callers are fixers that have already
 // committed their DB changes; failing the fixer would leave DB and filesystem out of sync.
-func writeArtistNFO(ctx context.Context, a *artist.Artist, ss *nfo.SnapshotService, logger *slog.Logger) {
+func writeArtistNFO(ctx context.Context, a *artist.Artist, ss *nfo.SnapshotService, ew *watcher.ExpectedWrites, logger *slog.Logger) {
+	if a.Path != "" && ew != nil {
+		nfoPath := filepath.Join(a.Path, "artist.nfo")
+		ew.Add(nfoPath)
+		defer ew.Remove(nfoPath)
+	}
+
 	if err := nfo.WriteBackArtistNFO(ctx, a, ss, logger); err != nil && logger != nil {
 		logger.Error("NFO write-back failed after fix",
 			slog.String("artist_id", a.ID),

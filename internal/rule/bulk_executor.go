@@ -14,6 +14,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/nfo"
 	"github.com/sydlexius/stillwater/internal/platform"
 	"github.com/sydlexius/stillwater/internal/provider"
+	"github.com/sydlexius/stillwater/internal/watcher"
 )
 
 // BulkExecutor runs bulk jobs asynchronously. Only one job runs at a time.
@@ -24,6 +25,7 @@ type BulkExecutor struct {
 	pipeline        PipelineRunner
 	snapshotService *nfo.SnapshotService
 	platformService *platform.Service
+	expectedWrites  *watcher.ExpectedWrites
 	logger          *slog.Logger
 	eventBus        *event.Bus
 
@@ -38,7 +40,7 @@ func (e *BulkExecutor) SetEventBus(bus *event.Bus) {
 }
 
 // NewBulkExecutor creates a BulkExecutor.
-func NewBulkExecutor(bulkService *BulkService, artistService *artist.Service, orchestrator *provider.Orchestrator, pipeline PipelineRunner, snapshotService *nfo.SnapshotService, platformService *platform.Service, logger *slog.Logger) *BulkExecutor {
+func NewBulkExecutor(bulkService *BulkService, artistService *artist.Service, orchestrator *provider.Orchestrator, pipeline PipelineRunner, snapshotService *nfo.SnapshotService, platformService *platform.Service, expectedWrites *watcher.ExpectedWrites, logger *slog.Logger) *BulkExecutor {
 	return &BulkExecutor{
 		bulkService:     bulkService,
 		artistService:   artistService,
@@ -46,6 +48,7 @@ func NewBulkExecutor(bulkService *BulkService, artistService *artist.Service, or
 		pipeline:        pipeline,
 		snapshotService: snapshotService,
 		platformService: platformService,
+		expectedWrites:  expectedWrites,
 		logger:          logger.With(slog.String("component", "bulk-executor")),
 	}
 }
@@ -256,7 +259,7 @@ func (e *BulkExecutor) fetchMetadata(ctx context.Context, a *artist.Artist, mode
 	UpdateProviderFetchTimestamps(ctx, e.artistService, a.ID, result.AttemptedProviders, e.logger)
 
 	if a.NFOExists {
-		writeArtistNFO(ctx, a, e.snapshotService, e.logger)
+		writeArtistNFO(ctx, a, e.snapshotService, e.expectedWrites, e.logger)
 	}
 
 	return BulkItemFixed, "metadata updated"
