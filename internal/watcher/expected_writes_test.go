@@ -129,18 +129,6 @@ func TestExpectedWrites_NFOPattern(t *testing.T) {
 	}
 }
 
-// TestExpectedWrites_NilSafe verifies that a nil ExpectedWrites pointer does
-// not cause panics when callers guard with "if ew != nil" checks. This mirrors
-// the guard pattern used throughout the codebase.
-func TestExpectedWrites_NilSafe(t *testing.T) {
-	var ew *ExpectedWrites
-	// Callers always guard with "if ew != nil", so a nil pointer should
-	// never reach the methods. This test documents that expectation.
-	if ew != nil {
-		t.Error("nil ExpectedWrites should not pass nil check")
-	}
-}
-
 func TestExpectedWrites_ConcurrentAddAllPrune(t *testing.T) {
 	ew := NewExpectedWrites()
 	var wg sync.WaitGroup

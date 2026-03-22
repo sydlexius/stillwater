@@ -218,10 +218,10 @@ func run() error {
 	// libraries whose directories are also managed by a platform connection).
 	fsCheck := rule.NewSharedFSCheck(libraryService, logger)
 
-	// Create expected-writes tracker. The watcher service, HTTP router, and
-	// rule fixers all use this to register paths that Stillwater is about to
-	// write, so the watcher can distinguish own writes from external ones.
-	// Must be created before any of those consumers are initialized.
+	// Create expected-writes tracker. The HTTP router and rule fixers register
+	// paths they are about to write. The watcher service maintains this set
+	// (pruning stale entries). External-write detection logic will consume
+	// it when that filtering is enabled. Must be created before consumers.
 	expectedWrites := watcher.NewExpectedWrites()
 
 	// Initialize fix pipeline (depends on orchestrator and snapshot service)
