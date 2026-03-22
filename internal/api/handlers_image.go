@@ -740,14 +740,18 @@ func (r *Router) probeImageDimensions(ctx context.Context, images []provider.Ima
 
 // setArtistImageFlag sets the image existence, low-resolution, and placeholder flags and persists them.
 // When exists is true the image file is probed for dimensions and a LQIP placeholder is generated.
+// After persisting, provenance metadata (phash, source, file format, mtime) is read from the
+// image file and recorded in the artist_images table.
 // When exists is false all flags and the placeholder are cleared.
 func (r *Router) setArtistImageFlag(ctx context.Context, a *artist.Artist, imageType string, exists bool) {
 	var lowRes bool
 	var placeholder string
+	var resolvedPath string // path to the image file on disk, used for provenance readback
 	if exists {
 		patterns := r.getActiveNamingConfig(ctx, imageType)
 		if filePath, found := findExistingImage(r.imageDir(a), patterns); found {
 			if f, openErr := os.Open(filePath); openErr == nil { //nolint:gosec // path from trusted naming patterns
+				resolvedPath = filePath
 				defer f.Close() //nolint:errcheck
 				w, h, dimErr := img.GetDimensions(f)
 				if dimErr != nil {
@@ -773,6 +777,12 @@ func (r *Router) setArtistImageFlag(ctx context.Context, a *artist.Artist, image
 						placeholder = ph
 					}
 				}
+			} else {
+				r.logger.Warn("opening image file",
+					slog.String("artist_id", a.ID),
+					slog.String("image_type", imageType),
+					slog.String("path", filePath),
+					slog.String("error", openErr.Error()))
 			}
 		}
 	}
@@ -809,12 +819,86 @@ func (r *Router) setArtistImageFlag(ctx context.Context, a *artist.Artist, image
 			slog.String("artist_id", a.ID),
 			slog.String("image_type", imageType),
 			slog.String("error", err.Error()))
+		return
+	}
+
+	// Record provenance evidence (phash, source, file format, write timestamp)
+	// from the saved image file. This is supplementary data -- failures here are
+	// logged as warnings but do not affect the image save operation.
+	if resolvedPath != "" {
+		r.recordImageProvenance(ctx, a.ID, imageType, resolvedPath)
 	}
 }
 
 // updateArtistImageFlag sets the image existence flag to true and persists it.
 func (r *Router) updateArtistImageFlag(ctx context.Context, a *artist.Artist, imageType string) {
 	r.setArtistImageFlag(ctx, a, imageType, true)
+}
+
+// recordImageProvenance reads Stillwater provenance metadata and file mtime from
+// the image at filePath, then records the phash, source, file format, and write
+// timestamp in the artist_images table. Errors are logged as warnings -- this
+// is supplementary evidence collection and must not fail the image save.
+func (r *Router) recordImageProvenance(ctx context.Context, artistID, imageType, filePath string) {
+	var phash, source, fileFormat, lastWrittenAt string
+
+	// Read Stillwater provenance metadata (dhash and source) from the saved image.
+	meta, err := img.ReadProvenance(filePath)
+	if err != nil {
+		r.logger.Warn("reading image provenance for evidence",
+			slog.String("artist_id", artistID),
+			slog.String("image_type", imageType),
+			slog.String("path", filePath),
+			slog.String("error", err.Error()))
+	}
+	if meta != nil {
+		phash = meta.DHash
+		source = meta.Source
+	}
+
+	// Determine file format from extension.
+	ext := strings.ToLower(filepath.Ext(filePath))
+	switch ext {
+	case ".jpg", ".jpeg":
+		fileFormat = "jpeg"
+	case ".png":
+		fileFormat = "png"
+	default:
+		r.logger.Warn("unrecognized image file extension",
+			slog.String("artist_id", artistID),
+			slog.String("image_type", imageType),
+			slog.String("extension", ext),
+			slog.String("path", filePath))
+	}
+
+	// Read the file's mtime as the write timestamp.
+	stat, statErr := os.Stat(filePath)
+	if statErr != nil {
+		r.logger.Warn("stat image file for write timestamp",
+			slog.String("artist_id", artistID),
+			slog.String("image_type", imageType),
+			slog.String("path", filePath),
+			slog.String("error", statErr.Error()))
+	} else {
+		lastWrittenAt = stat.ModTime().UTC().Format(time.RFC3339)
+	}
+
+	// Persist the provenance data to the artist_images row. Skip the update
+	// if we collected nothing useful to avoid overwriting good data with empty
+	// strings on transient read/stat failures.
+	if phash == "" && source == "" && fileFormat == "" && lastWrittenAt == "" {
+		r.logger.Warn("no provenance data collected, skipping update",
+			slog.String("artist_id", artistID),
+			slog.String("image_type", imageType),
+			slog.String("path", filePath))
+		return
+	}
+	if err := r.artistService.UpdateImageProvenance(ctx, artistID, imageType, 0, phash, source, fileFormat, lastWrittenAt); err != nil {
+		r.logger.Warn("recording image provenance",
+			slog.String("artist_id", artistID),
+			slog.String("image_type", imageType),
+			slog.String("error", err.Error()))
+	}
 }
 
 // handleServeImage serves a local artist image file from disk.

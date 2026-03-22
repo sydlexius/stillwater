@@ -215,6 +215,14 @@ func (s *Service) persistNormalized(ctx context.Context, a *Artist) error {
 	return s.images.UpsertAll(ctx, a.ID, extractImageMetadata(a))
 }
 
+// UpdateImageProvenance updates the provenance-related fields (phash, source,
+// file_format, last_written_at) on an existing image row without touching display
+// fields like exists_flag, low_res, or placeholder. This is called after an image
+// save to record evidence of what was written and when.
+func (s *Service) UpdateImageProvenance(ctx context.Context, artistID, imageType string, slotIndex int, phash, source, fileFormat, lastWrittenAt string) error {
+	return s.images.UpdateProvenance(ctx, artistID, imageType, slotIndex, phash, source, fileFormat, lastWrittenAt)
+}
+
 // IsEditableField reports whether the given field name can be updated via
 // the field-level API.
 func IsEditableField(field string) bool {
@@ -562,6 +570,16 @@ func extractProviderIDs(a *Artist) []ProviderID {
 	return ids
 }
 
+// GetImagesForArtist returns the raw ArtistImage rows for a given artist.
+// This is useful when callers need direct access to image metadata fields
+// (phash, source, last_written_at) rather than the summarized flags on Artist.
+func (s *Service) GetImagesForArtist(ctx context.Context, artistID string) ([]ArtistImage, error) {
+	if artistID == "" {
+		return nil, fmt.Errorf("artist ID is required")
+	}
+	return s.images.GetForArtist(ctx, artistID)
+}
+
 // hydrateImages loads image metadata from the normalized table and applies
 // it to the Artist struct fields.
 func (s *Service) hydrateImages(ctx context.Context, a *Artist) error {
@@ -625,8 +643,9 @@ func applyImageMetadata(a *Artist, imgs []ArtistImage) {
 }
 
 // extractImageMetadata builds an ArtistImage slice from the Artist struct's
-// image fields, ready for persistence. See the follow-up issue for populating
-// ArtistImage.Source from EXIF provenance metadata.
+// image fields, ready for persistence. Provenance fields (phash, source,
+// file_format, last_written_at) are populated separately via
+// UpdateImageProvenance after the image file is saved to disk.
 func extractImageMetadata(a *Artist) []ArtistImage {
 	var imgs []ArtistImage
 

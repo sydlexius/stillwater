@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+	img "github.com/sydlexius/stillwater/internal/image"
 	"github.com/sydlexius/stillwater/internal/platform"
 )
 
@@ -53,6 +54,36 @@ func writeJPEG(t *testing.T, path string, w, h int) {
 		t.Fatalf("encoding JPEG: %v", err)
 	}
 	if err := os.WriteFile(path, buf.Bytes(), 0o644); err != nil {
+		t.Fatalf("writing %s: %v", path, err)
+	}
+}
+
+// writeJPEGWithProvenance creates a JPEG file at path with the given dimensions
+// and injects Stillwater EXIF provenance metadata. This allows tests to verify
+// that setArtistImageFlag reads back provenance from saved image files.
+func writeJPEGWithProvenance(t *testing.T, path string, w, h int, meta *img.ExifMeta) {
+	t.Helper()
+	m := image.NewRGBA(image.Rect(0, 0, w, h))
+	for y := range h {
+		for x := range w {
+			m.Set(x, y, color.RGBA{R: 128, G: 128, B: 128, A: 255})
+		}
+	}
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, m, nil); err != nil {
+		t.Fatalf("encoding JPEG: %v", err)
+	}
+
+	data := buf.Bytes()
+	if meta != nil {
+		injected, err := img.InjectMeta(data, meta)
+		if err != nil {
+			t.Fatalf("injecting EXIF meta: %v", err)
+		}
+		data = injected
+	}
+
+	if err := os.WriteFile(path, data, 0o644); err != nil {
 		t.Fatalf("writing %s: %v", path, err)
 	}
 }
@@ -1519,5 +1550,159 @@ func TestHandleDeleteImage_ThumbRemoveFailure(t *testing.T) {
 	case <-deletedCh:
 		t.Error("platform delete was called despite local removal failure")
 	default:
+	}
+}
+
+func TestSetArtistImageFlag_RecordsProvenance(t *testing.T) {
+	r, artistSvc := testRouterWithPlatform(t)
+	dir := t.TempDir()
+	a := &artist.Artist{Name: "Provenance Test", SortName: "Provenance Test", Path: dir}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	// Write a JPEG with embedded Stillwater provenance metadata.
+	meta := &img.ExifMeta{
+		Source:  "fanarttv",
+		DHash:   "abcd1234abcd1234",
+		Fetched: time.Now().UTC(),
+		Mode:    "auto",
+	}
+	writeJPEGWithProvenance(t, filepath.Join(dir, "folder.jpg"), 800, 800, meta)
+
+	// Call setArtistImageFlag which should now read provenance and record it.
+	r.setArtistImageFlag(context.Background(), a, "thumb", true)
+
+	// Verify the image exists flag was set.
+	if !a.ThumbExists {
+		t.Fatal("ThumbExists should be true")
+	}
+
+	// Retrieve the image metadata from the database and verify provenance fields.
+	images, err := artistSvc.GetImagesForArtist(context.Background(), a.ID)
+	if err != nil {
+		t.Fatalf("GetImagesForArtist: %v", err)
+	}
+
+	var thumbImg *artist.ArtistImage
+	for i := range images {
+		if images[i].ImageType == "thumb" && images[i].SlotIndex == 0 {
+			thumbImg = &images[i]
+			break
+		}
+	}
+	if thumbImg == nil {
+		t.Fatal("no thumb image found in database")
+	}
+
+	if thumbImg.PHash != "abcd1234abcd1234" {
+		t.Errorf("PHash = %q, want %q", thumbImg.PHash, "abcd1234abcd1234")
+	}
+	if thumbImg.Source != "fanarttv" {
+		t.Errorf("Source = %q, want %q", thumbImg.Source, "fanarttv")
+	}
+	if thumbImg.FileFormat != "jpeg" {
+		t.Errorf("FileFormat = %q, want %q", thumbImg.FileFormat, "jpeg")
+	}
+	if thumbImg.LastWrittenAt == "" {
+		t.Error("LastWrittenAt should be populated with the file mtime")
+	}
+}
+
+func TestSetArtistImageFlag_NoProvenance_StillWorks(t *testing.T) {
+	r, artistSvc := testRouterWithPlatform(t)
+	dir := t.TempDir()
+	a := &artist.Artist{Name: "No Provenance", SortName: "No Provenance", Path: dir}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	// Write a plain JPEG without Stillwater provenance metadata.
+	writeJPEG(t, filepath.Join(dir, "folder.jpg"), 600, 600)
+
+	// setArtistImageFlag should still work -- provenance is supplementary.
+	r.setArtistImageFlag(context.Background(), a, "thumb", true)
+
+	if !a.ThumbExists {
+		t.Fatal("ThumbExists should be true even without provenance")
+	}
+
+	// Verify the image row exists but provenance fields are empty
+	// (ReadProvenance returns nil for images without the Stillwater tag).
+	images, err := artistSvc.GetImagesForArtist(context.Background(), a.ID)
+	if err != nil {
+		t.Fatalf("GetImagesForArtist: %v", err)
+	}
+
+	var thumbImg *artist.ArtistImage
+	for i := range images {
+		if images[i].ImageType == "thumb" && images[i].SlotIndex == 0 {
+			thumbImg = &images[i]
+			break
+		}
+	}
+	if thumbImg == nil {
+		t.Fatal("no thumb image found in database")
+	}
+
+	if thumbImg.PHash != "" {
+		t.Errorf("PHash should be empty for image without provenance, got %q", thumbImg.PHash)
+	}
+	if thumbImg.Source != "" {
+		t.Errorf("Source should be empty for image without provenance, got %q", thumbImg.Source)
+	}
+	// FileFormat should still be detected from extension.
+	if thumbImg.FileFormat != "jpeg" {
+		t.Errorf("FileFormat = %q, want %q (detected from extension)", thumbImg.FileFormat, "jpeg")
+	}
+	// LastWrittenAt should still be populated from file mtime.
+	if thumbImg.LastWrittenAt == "" {
+		t.Error("LastWrittenAt should be populated even without EXIF provenance")
+	}
+}
+
+func TestSetArtistImageFlag_ClearsProvenance_OnDelete(t *testing.T) {
+	r, artistSvc := testRouterWithPlatform(t)
+	dir := t.TempDir()
+	a := &artist.Artist{Name: "Delete Provenance", SortName: "Delete Provenance", Path: dir}
+	if err := artistSvc.Create(context.Background(), a); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+
+	// Write a JPEG with provenance and set the flag.
+	meta := &img.ExifMeta{Source: "user", DHash: "ffff0000ffff0000"}
+	writeJPEGWithProvenance(t, filepath.Join(dir, "folder.jpg"), 500, 500, meta)
+	r.setArtistImageFlag(context.Background(), a, "thumb", true)
+
+	// Verify provenance was recorded.
+	images, err := artistSvc.GetImagesForArtist(context.Background(), a.ID)
+	if err != nil {
+		t.Fatalf("GetImagesForArtist: %v", err)
+	}
+	if len(images) == 0 {
+		t.Fatal("expected at least one image after setting flag")
+	}
+
+	// Now remove the image file and clear the flag.
+	if err := os.Remove(filepath.Join(dir, "folder.jpg")); err != nil {
+		t.Fatalf("removing image: %v", err)
+	}
+	r.setArtistImageFlag(context.Background(), a, "thumb", false)
+
+	if a.ThumbExists {
+		t.Error("ThumbExists should be false after clearing")
+	}
+
+	// Verify provenance was cleared in the database, not just on the struct.
+	// UpsertAll (via Update) deletes rows for image types that no longer exist,
+	// so the thumb row should be gone entirely.
+	imagesAfter, err := artistSvc.GetImagesForArtist(context.Background(), a.ID)
+	if err != nil {
+		t.Fatalf("GetImagesForArtist after clear: %v", err)
+	}
+	for _, im := range imagesAfter {
+		if im.ImageType == "thumb" && im.SlotIndex == 0 && im.Exists {
+			t.Errorf("thumb row should not exist after clearing the flag")
+		}
 	}
 }
