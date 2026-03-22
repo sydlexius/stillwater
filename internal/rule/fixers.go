@@ -78,6 +78,7 @@ func (f *NFOFixer) Fix(ctx context.Context, a *artist.Artist, _ *Violation) (*Fi
 	}
 
 	nfoData := nfo.FromArtist(a)
+	nfoData.LockData = true
 	var buf bytes.Buffer
 	if err := nfo.Write(&buf, nfoData); err != nil {
 		return nil, fmt.Errorf("generating nfo: %w", err)
