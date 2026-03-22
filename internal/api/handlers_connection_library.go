@@ -1283,11 +1283,14 @@ func (r *Router) scanFromLidarr(ctx context.Context, client *lidarr.Client, lib 
 }
 
 // checkSyncMtimeEvidence performs Tier 2 shared-FS detection after a library
-// sync. It compares the filesystem mtime of image files in artist directories
-// against the newest last_written_at timestamp recorded by Stillwater. If any
-// file has been modified externally (mtime newer than Stillwater's last write
-// plus a 2-second tolerance), the library's shared-FS status is updated to
-// "suspected."
+// sync. It compares the filesystem mtime of image files in each artist's
+// directory against that artist's own newest last_written_at timestamp (not a
+// global library-wide MAX). If any file has been modified externally (mtime
+// newer than the artist's last write plus a 2-second tolerance), the library's
+// shared-FS status is updated to "suspected."
+//
+// Using per-artist baselines avoids false negatives where a recently-written
+// artist's timestamp masks an externally-modified older artist.
 //
 // This check is non-fatal: failures are logged at Debug/Warn level and do not
 // affect the sync outcome.
@@ -1300,28 +1303,21 @@ func (r *Router) checkSyncMtimeEvidence(ctx context.Context, lib *library.Librar
 		return
 	}
 
-	// Get the most recent last_written_at across all images in this library.
-	newestWriteStr, err := r.artistService.NewestWriteTimeForLibrary(ctx, lib.ID)
+	// Get per-artist newest write times for this library.
+	writeTimesByArtist, err := r.artistService.NewestWriteTimesByArtistForLibrary(ctx, lib.ID)
 	if err != nil {
-		r.logger.Warn("mtime check: failed to query newest write time",
+		r.logger.Warn("mtime check: failed to query per-artist write times",
 			"library", lib.Name, "library_id", lib.ID, "error", err)
 		return
 	}
-	if newestWriteStr == "" {
+	if len(writeTimesByArtist) == 0 {
 		// No writes recorded yet -- nothing to compare against.
 		r.logger.Debug("mtime check: no writes recorded for library, skipping",
 			"library", lib.Name, "library_id", lib.ID)
 		return
 	}
 
-	newestWrite := dbutil.ParseTime(newestWriteStr)
-	if newestWrite.IsZero() {
-		r.logger.Warn("mtime check: failed to parse newest write time",
-			"library", lib.Name, "raw", newestWriteStr)
-		return
-	}
-
-	// Get all artist paths for this library.
+	// Get all artist paths for this library (artistID -> directory path).
 	artistDirs, err := r.artistService.ListPathsByLibrary(ctx, lib.ID)
 	if err != nil {
 		r.logger.Warn("mtime check: failed to list artist paths",
@@ -1334,12 +1330,37 @@ func (r *Router) checkSyncMtimeEvidence(ctx context.Context, lib *library.Librar
 		return
 	}
 
-	// Build a per-directory lastWrittenAt map using the global newest write
-	// time. This is a conservative approach: any file newer than the newest
-	// Stillwater write across the entire library is suspicious.
+	// Build a per-directory lastWrittenAt map using each artist's own newest
+	// write time. This ensures that each artist's mtime comparison uses its
+	// own baseline, rather than a single global MAX that could mask
+	// modifications to artists with older write timestamps.
 	lastWrittenAts := make(map[string]time.Time, len(artistDirs))
-	for _, dir := range artistDirs {
-		lastWrittenAts[dir] = newestWrite
+	// dirToWriteTime maps directory path to the parsed time for use in
+	// evidence string formatting later.
+	dirToWriteTime := make(map[string]time.Time, len(artistDirs))
+	for artistID, dir := range artistDirs {
+		writeStr, ok := writeTimesByArtist[artistID]
+		if !ok || writeStr == "" {
+			continue
+		}
+		parsed := dbutil.ParseTime(writeStr)
+		if parsed.IsZero() {
+			r.logger.Warn("mtime check: failed to parse write time for artist",
+				"library", lib.Name, "artist_id", artistID, "raw", writeStr)
+			continue
+		}
+		// When multiple artists share a directory, keep the most recent
+		// write time as the baseline for mtime comparison.
+		if existing, ok := lastWrittenAts[dir]; !ok || parsed.After(existing) {
+			lastWrittenAts[dir] = parsed
+			dirToWriteTime[dir] = parsed
+		}
+	}
+
+	if len(lastWrittenAts) == 0 {
+		r.logger.Debug("mtime check: no parseable write times for library, skipping",
+			"library", lib.Name, "library_id", lib.ID)
+		return
 	}
 
 	evidence := library.CollectMtimeEvidence(artistDirs, lastWrittenAts, r.logger)
@@ -1353,11 +1374,13 @@ func (r *Router) checkSyncMtimeEvidence(ctx context.Context, lib *library.Librar
 		"library", lib.Name,
 		"evidence_count", len(evidence))
 
-	// Build evidence strings for the shared-FS status update.
+	// Build evidence strings for the shared-FS status update, referencing
+	// each artist's own baseline timestamp.
 	evidenceStrings := make([]string, len(evidence))
 	for i, e := range evidence {
+		artistWrite := dirToWriteTime[filepath.Dir(e.Path)]
 		evidenceStrings[i] = fmt.Sprintf("mtime: %s modified at %s (after last Stillwater write at %s)",
-			e.Path, e.FileMtime.Format(time.RFC3339), newestWrite.Format(time.RFC3339))
+			e.Path, e.FileMtime.Format(time.RFC3339), artistWrite.Format(time.RFC3339))
 	}
 
 	evidenceJSON, marshalErr := json.Marshal(evidenceStrings)

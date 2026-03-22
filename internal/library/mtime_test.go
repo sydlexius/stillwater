@@ -149,6 +149,12 @@ func TestCheckArtistDirMtimes_MultipleExtensions(t *testing.T) {
 }
 
 func TestCollectMtimeEvidence_MixedDirs(t *testing.T) {
+	// This test covers the interleaved-writes scenario that motivated the
+	// per-artist mtime baseline change (#598). With a global MAX approach,
+	// Artist B's future timestamp would be used for both directories, causing
+	// Artist A's external modification to be missed. With per-artist baselines,
+	// each directory uses its own lastWrittenAt and only Artist A is flagged.
+
 	// Create two artist directories.
 	dirA := t.TempDir()
 	dirB := t.TempDir()

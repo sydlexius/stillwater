@@ -580,11 +580,11 @@ func (s *Service) GetImagesForArtist(ctx context.Context, artistID string) ([]Ar
 	return s.images.GetForArtist(ctx, artistID)
 }
 
-// NewestWriteTimeForLibrary returns the most recent last_written_at timestamp
-// string across all images for artists in the given library. Returns an empty
-// string if no writes have been recorded.
-func (s *Service) NewestWriteTimeForLibrary(ctx context.Context, libraryID string) (string, error) {
-	return s.images.NewestWriteTime(ctx, libraryID)
+// NewestWriteTimesByArtistForLibrary returns a map of artist_id to their most
+// recent last_written_at timestamp string for all artists in the given library.
+// Only artists with at least one recorded write are included.
+func (s *Service) NewestWriteTimesByArtistForLibrary(ctx context.Context, libraryID string) (map[string]string, error) {
+	return s.images.NewestWriteTimesByArtist(ctx, libraryID)
 }
 
 // ListPathsByLibrary returns a map of artist ID to filesystem path for all

@@ -227,25 +227,35 @@ func (r *sqliteImageRepo) DeleteByArtistID(ctx context.Context, artistID string)
 	return nil
 }
 
-// NewestWriteTime returns the most recent last_written_at value across all
-// images for artists in the given library. Returns an empty string if no
-// writes have been recorded.
-func (r *sqliteImageRepo) NewestWriteTime(ctx context.Context, libraryID string) (string, error) {
-	var result sql.NullString
-	err := r.db.QueryRowContext(ctx, `
-		SELECT MAX(ai.last_written_at)
+// NewestWriteTimesByArtist returns a map of artist_id to their most recent
+// last_written_at timestamp string for all artists in the given library.
+// Only artists with at least one non-empty last_written_at are included.
+func (r *sqliteImageRepo) NewestWriteTimesByArtist(ctx context.Context, libraryID string) (map[string]string, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT a.id, MAX(ai.last_written_at)
 		FROM artist_images ai
 		JOIN artists a ON ai.artist_id = a.id
-		WHERE a.library_id = ? AND ai.last_written_at != ''`,
+		WHERE a.library_id = ? AND ai.last_written_at != ''
+		GROUP BY a.id`,
 		libraryID,
-	).Scan(&result)
+	)
 	if err != nil {
-		return "", fmt.Errorf("querying newest write time for library %s: %w", libraryID, err)
+		return nil, fmt.Errorf("querying newest write times by artist for library %s: %w", libraryID, err)
 	}
-	if !result.Valid {
-		return "", nil
+	defer rows.Close() //nolint:errcheck
+
+	result := make(map[string]string)
+	for rows.Next() {
+		var artistID, maxWriteTime string
+		if err := rows.Scan(&artistID, &maxWriteTime); err != nil {
+			return nil, fmt.Errorf("scanning newest write time row: %w", err)
+		}
+		result[artistID] = maxWriteTime
 	}
-	return result.String, nil
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating newest write time rows: %w", err)
+	}
+	return result, nil
 }
 
 func scanImageRows(rows *sql.Rows) ([]ArtistImage, error) {
