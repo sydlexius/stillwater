@@ -844,7 +844,7 @@ assert_status "GET /api/v1/notifications/badge" "200" "$notif_badge_code"
 # Fix-undo route (renamed from /notifications/undo/{undoId} to /fix-undo/{undoId})
 fix_undo_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
   -X POST "$SW_BASE/api/v1/fix-undo/nonexistent-undo-id") || fix_undo_code="000"
-assert_status_in "POST /api/v1/fix-undo/{undoId} (nonexistent)" "$fix_undo_code" 404 400 410
+assert_status "POST /api/v1/fix-undo/{undoId} (nonexistent)" "410" "$fix_undo_code"
 
 report_health_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
   "$SW_BASE/api/v1/reports/health") || report_health_code="000"
