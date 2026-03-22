@@ -163,7 +163,8 @@ CREATE TABLE IF NOT EXISTS artist_images (
     height      INTEGER NOT NULL DEFAULT 0,
     phash       TEXT NOT NULL DEFAULT '',
     file_format TEXT NOT NULL DEFAULT '',
-    source      TEXT NOT NULL DEFAULT '',
+    source         TEXT NOT NULL DEFAULT '',
+    last_written_at TEXT NOT NULL DEFAULT '',
     UNIQUE(artist_id, image_type, slot_index)
 );
 

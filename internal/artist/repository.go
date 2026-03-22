@@ -54,6 +54,7 @@ type ImageRepository interface {
 	GetForArtists(ctx context.Context, artistIDs []string) (map[string][]ArtistImage, error)
 	Upsert(ctx context.Context, img *ArtistImage) error
 	UpsertAll(ctx context.Context, artistID string, images []ArtistImage) error
+	UpdateProvenance(ctx context.Context, artistID, imageType string, slotIndex int, phash, source, fileFormat, lastWrittenAt string) error
 	DeleteByArtistID(ctx context.Context, artistID string) error
 }
 

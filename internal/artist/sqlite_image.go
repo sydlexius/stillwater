@@ -21,7 +21,7 @@ func newSQLiteImageRepo(db *sql.DB) *sqliteImageRepo {
 func (r *sqliteImageRepo) GetForArtist(ctx context.Context, artistID string) ([]ArtistImage, error) {
 	rows, err := r.db.QueryContext(ctx,
 		`SELECT id, artist_id, image_type, slot_index, exists_flag, low_res, placeholder,
-			width, height, phash, file_format, source
+			width, height, phash, file_format, source, last_written_at
 		FROM artist_images WHERE artist_id = ? ORDER BY image_type, slot_index`,
 		artistID)
 	if err != nil {
@@ -45,7 +45,7 @@ func (r *sqliteImageRepo) GetForArtists(ctx context.Context, artistIDs []string)
 	}
 
 	query := `SELECT id, artist_id, image_type, slot_index, exists_flag, low_res, placeholder, ` + //nolint:gosec // G202: placeholders are "?" literals
-		`width, height, phash, file_format, source ` +
+		`width, height, phash, file_format, source, last_written_at ` +
 		`FROM artist_images ` +
 		`WHERE artist_id IN (` + strings.Join(placeholders, ",") + `) ` +
 		`ORDER BY artist_id, image_type, slot_index`
@@ -63,6 +63,7 @@ func (r *sqliteImageRepo) GetForArtists(ctx context.Context, artistIDs []string)
 			&img.ID, &img.ArtistID, &img.ImageType, &img.SlotIndex,
 			&existsFlag, &lowRes, &img.Placeholder,
 			&img.Width, &img.Height, &img.PHash, &img.FileFormat, &img.Source,
+			&img.LastWrittenAt,
 		); err != nil {
 			return nil, fmt.Errorf("scanning image row: %w", err)
 		}
@@ -80,8 +81,8 @@ func (r *sqliteImageRepo) Upsert(ctx context.Context, img *ArtistImage) error {
 
 	_, err := r.db.ExecContext(ctx, `
 		INSERT INTO artist_images (id, artist_id, image_type, slot_index, exists_flag, low_res, placeholder,
-			width, height, phash, file_format, source)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			width, height, phash, file_format, source, last_written_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(artist_id, image_type, slot_index) DO UPDATE SET
 			id = excluded.id,
 			exists_flag = excluded.exists_flag,
@@ -91,10 +92,11 @@ func (r *sqliteImageRepo) Upsert(ctx context.Context, img *ArtistImage) error {
 			height = excluded.height,
 			phash = excluded.phash,
 			file_format = excluded.file_format,
-			source = excluded.source`,
+			source = excluded.source,
+			last_written_at = excluded.last_written_at`,
 		img.ID, img.ArtistID, img.ImageType, img.SlotIndex,
 		dbutil.BoolToInt(img.Exists), dbutil.BoolToInt(img.LowRes), img.Placeholder,
-		img.Width, img.Height, img.PHash, img.FileFormat, img.Source,
+		img.Width, img.Height, img.PHash, img.FileFormat, img.Source, img.LastWrittenAt,
 	)
 	if err != nil {
 		return fmt.Errorf("upserting image %s/%s: %w", img.ArtistID, img.ImageType, err)
@@ -109,34 +111,113 @@ func (r *sqliteImageRepo) UpsertAll(ctx context.Context, artistID string, images
 	}
 	defer tx.Rollback() //nolint:errcheck
 
-	if _, err := tx.ExecContext(ctx, `DELETE FROM artist_images WHERE artist_id = ?`, artistID); err != nil {
-		return fmt.Errorf("deleting old images: %w", err)
+	// Build a set of (image_type, slot_index) keys present in the incoming data
+	// so we can mark absent slots as not-existing afterward.
+	type slotKey struct {
+		imageType string
+		slotIndex int
 	}
+	incoming := make(map[slotKey]struct{}, len(images))
 
-	stmt, err := tx.PrepareContext(ctx, `
+	// Upsert each incoming image row. ON CONFLICT updates only display fields,
+	// leaving provenance columns (phash, source, file_format, last_written_at)
+	// untouched so that UpdateProvenance data survives.
+	upsertStmt, err := tx.PrepareContext(ctx, `
 		INSERT INTO artist_images (id, artist_id, image_type, slot_index, exists_flag, low_res, placeholder,
-			width, height, phash, file_format, source)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+			width, height, phash, file_format, source, last_written_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '', '', '', '')
+		ON CONFLICT(artist_id, image_type, slot_index) DO UPDATE SET
+			exists_flag = excluded.exists_flag,
+			low_res     = excluded.low_res,
+			placeholder = excluded.placeholder,
+			width       = excluded.width,
+			height      = excluded.height`)
 	if err != nil {
-		return fmt.Errorf("preparing insert: %w", err)
+		return fmt.Errorf("preparing upsert: %w", err)
 	}
-	defer stmt.Close() //nolint:errcheck
+	defer upsertStmt.Close() //nolint:errcheck
 
 	for _, img := range images {
 		id := img.ID
 		if id == "" {
 			id = uuid.New().String()
 		}
-		if _, err := stmt.ExecContext(ctx,
+		incoming[slotKey{img.ImageType, img.SlotIndex}] = struct{}{}
+		if _, err := upsertStmt.ExecContext(ctx,
 			id, artistID, img.ImageType, img.SlotIndex,
 			dbutil.BoolToInt(img.Exists), dbutil.BoolToInt(img.LowRes), img.Placeholder,
-			img.Width, img.Height, img.PHash, img.FileFormat, img.Source,
+			img.Width, img.Height,
 		); err != nil {
-			return fmt.Errorf("inserting image %s: %w", img.ImageType, err)
+			return fmt.Errorf("upserting image %s/%d: %w", img.ImageType, img.SlotIndex, err)
+		}
+	}
+
+	// Clear rows for slots that are no longer in the incoming set (e.g., an
+	// image type was removed). We reset display fields to zero and clear
+	// provenance rather than deleting the row, keeping the schema consistent.
+	// In practice, fetching existing rows and comparing is simpler and safer
+	// than a broad DELETE that could race with UpdateProvenance.
+	existing, err := tx.QueryContext(ctx,
+		`SELECT image_type, slot_index FROM artist_images WHERE artist_id = ?`, artistID)
+	if err != nil {
+		return fmt.Errorf("querying existing image slots: %w", err)
+	}
+	defer existing.Close() //nolint:errcheck
+	var toRemove []slotKey
+	for existing.Next() {
+		var k slotKey
+		if err := existing.Scan(&k.imageType, &k.slotIndex); err != nil {
+			return fmt.Errorf("scanning existing image slot: %w", err)
+		}
+		if _, ok := incoming[k]; !ok {
+			toRemove = append(toRemove, k)
+		}
+	}
+	if err := existing.Err(); err != nil {
+		return fmt.Errorf("iterating existing image slots: %w", err)
+	}
+
+	if len(toRemove) > 0 {
+		delStmt, err := tx.PrepareContext(ctx,
+			`DELETE FROM artist_images WHERE artist_id = ? AND image_type = ? AND slot_index = ?`)
+		if err != nil {
+			return fmt.Errorf("preparing delete for removed slots: %w", err)
+		}
+		defer delStmt.Close() //nolint:errcheck
+		for _, k := range toRemove {
+			if _, err := delStmt.ExecContext(ctx, artistID, k.imageType, k.slotIndex); err != nil {
+				return fmt.Errorf("deleting removed slot %s/%d: %w", k.imageType, k.slotIndex, err)
+			}
 		}
 	}
 
 	return tx.Commit()
+}
+
+// UpdateProvenance updates only the provenance-related fields (phash, source,
+// file_format, last_written_at) on an existing artist_images row, identified by
+// artist_id + image_type + slot_index. This is a targeted update that does not
+// touch display fields (exists_flag, low_res, placeholder, dimensions).
+// Returns an error if no matching row exists.
+func (r *sqliteImageRepo) UpdateProvenance(ctx context.Context, artistID, imageType string, slotIndex int, phash, source, fileFormat, lastWrittenAt string) error {
+	result, err := r.db.ExecContext(ctx, `
+		UPDATE artist_images
+		SET phash = ?, source = ?, file_format = ?, last_written_at = ?
+		WHERE artist_id = ? AND image_type = ? AND slot_index = ?`,
+		phash, source, fileFormat, lastWrittenAt,
+		artistID, imageType, slotIndex,
+	)
+	if err != nil {
+		return fmt.Errorf("updating image provenance %s/%s/%d: %w", artistID, imageType, slotIndex, err)
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("checking rows affected for provenance %s/%s/%d: %w", artistID, imageType, slotIndex, err)
+	}
+	if n == 0 {
+		return fmt.Errorf("no image row found for %s/%s/%d", artistID, imageType, slotIndex)
+	}
+	return nil
 }
 
 func (r *sqliteImageRepo) DeleteByArtistID(ctx context.Context, artistID string) error {
@@ -156,6 +237,7 @@ func scanImageRows(rows *sql.Rows) ([]ArtistImage, error) {
 			&img.ID, &img.ArtistID, &img.ImageType, &img.SlotIndex,
 			&existsFlag, &lowRes, &img.Placeholder,
 			&img.Width, &img.Height, &img.PHash, &img.FileFormat, &img.Source,
+			&img.LastWrittenAt,
 		); err != nil {
 			return nil, fmt.Errorf("scanning image: %w", err)
 		}
