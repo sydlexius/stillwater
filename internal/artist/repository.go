@@ -61,10 +61,10 @@ type ImageRepository interface {
 	UpdateProvenance(ctx context.Context, artistID, imageType string, slotIndex int, phash, source, fileFormat, lastWrittenAt string) error
 	DeleteByArtistID(ctx context.Context, artistID string) error
 
-	// NewestWriteTime returns the most recent last_written_at string across
-	// all images for artists in the given library. Returns an empty string
-	// if no writes have been recorded.
-	NewestWriteTime(ctx context.Context, libraryID string) (string, error)
+	// NewestWriteTimesByArtist returns a map of artist_id to their most recent
+	// last_written_at timestamp string for all artists in the given library.
+	// Only artists with at least one non-empty last_written_at are included.
+	NewestWriteTimesByArtist(ctx context.Context, libraryID string) (map[string]string, error)
 }
 
 // CompletenessRepository computes aggregate metadata completeness metrics
