@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/library"
@@ -131,11 +132,15 @@ func TestHandleSharedFilesystemStatusOverlapWith(t *testing.T) {
 		t.Fatal("expected overlaps to be detected")
 	}
 
+	gotByID := make(map[string]string, len(status.Libraries))
 	for _, entry := range status.Libraries {
-		if entry.OverlapWith == "" {
-			t.Errorf("library %q (id=%s) has empty OverlapWith; expected peer description",
-				entry.LibraryName, entry.LibraryID)
-		}
+		gotByID[entry.LibraryID] = entry.OverlapWith
+	}
+	if got := gotByID[manualLib.ID]; !strings.Contains(got, "Emby Music") {
+		t.Errorf("manual OverlapWith = %q, want peer name 'Emby Music'", got)
+	}
+	if got := gotByID[embyLib.ID]; !strings.Contains(got, "My Music") {
+		t.Errorf("emby OverlapWith = %q, want peer name 'My Music'", got)
 	}
 }
 
