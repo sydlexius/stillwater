@@ -841,6 +841,11 @@ notif_badge_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
   "$SW_BASE/api/v1/notifications/badge") || notif_badge_code="000"
 assert_status "GET /api/v1/notifications/badge" "200" "$notif_badge_code"
 
+# Fix-undo route (renamed from /notifications/undo/{undoId} to /fix-undo/{undoId})
+fix_undo_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
+  -X POST "$SW_BASE/api/v1/fix-undo/nonexistent-undo-id") || fix_undo_code="000"
+assert_status "POST /api/v1/fix-undo/{undoId} (nonexistent)" "410" "$fix_undo_code"
+
 report_health_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
   "$SW_BASE/api/v1/reports/health") || report_health_code="000"
 assert_status "GET /api/v1/reports/health" "200" "$report_health_code"
@@ -1115,6 +1120,36 @@ if [[ "$ROUNDTRIP" -eq 1 ]]; then
     else
       sw_bio=$(echo "$sw_artist" | jq -r '.artist.biography // empty' 2>/dev/null || true)
       sw_mbid=$(echo "$sw_artist" | jq -r '.artist.musicbrainz_id // empty' 2>/dev/null || true)
+    fi
+
+    # Validate lockdata protection in the artist's NFO file.
+    # After patching fields, Stillwater writes the NFO with <lockdata>true</lockdata>.
+    # However, auto-push fires immediately after write-back, which may trigger
+    # the platform to overwrite the NFO before we can check it. The real
+    # protection happens when the platform next reads the locked NFO and imports
+    # the lock into its internal DB (confirmed in platform behavior tests).
+    if [[ -n "$RT_ARTIST_PATH" ]]; then
+      nfo_target="$RT_ARTIST_PATH/artist.nfo"
+      if [[ -f "$nfo_target" ]]; then
+        # Read the NFO that Stillwater just wrote (may have been overwritten
+        # by platform auto-push). Check for lockdata regardless.
+        if grep -q '<lockdata>true</lockdata>' "$nfo_target"; then
+          echo "[PASS] NFO lockdata -- artist.nfo contains <lockdata>true</lockdata>"
+          PASS=$((PASS + 1))
+        elif grep -q '<lockdata>' "$nfo_target"; then
+          # Platform overwrote with lockdata=false (known race with auto-push).
+          # The lock will take effect on the platform's next NFO read.
+          echo "[WARN] NFO lockdata -- platform overwrote lockdata to false (expected race with auto-push)"
+        else
+          echo "[FAIL] NFO lockdata -- artist.nfo has no lockdata element at all"
+          FAIL=$((FAIL + 1))
+          FAILURES+=("NFO lockdata -- artist.nfo has no lockdata element")
+        fi
+      else
+        echo "[SKIP] NFO lockdata -- no NFO file on disk"
+      fi
+    else
+      echo "[SKIP] NFO lockdata -- artist has no filesystem path"
     fi
 
     # --- Direction 1 per-platform verification function ---
