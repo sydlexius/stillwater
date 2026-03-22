@@ -16,9 +16,10 @@ var ErrJobNotFound = errors.New("bulk job not found")
 // or is not in the expected state for the requested operation.
 var ErrViolationNotFound = errors.New("violation not found")
 
-// Automation modes for rules
 const (
-	AutomationModeAuto   = "auto"
+	// AutomationModeAuto indicates the rule runs automatically during evaluation.
+	AutomationModeAuto = "auto"
+	// AutomationModeManual indicates the rule requires manual triggering.
 	AutomationModeManual = "manual"
 )
 
@@ -90,12 +91,15 @@ type HealthSnapshot struct {
 	RecordedAt       time.Time `json:"recorded_at"`
 }
 
-// Violation status constants
 const (
-	ViolationStatusOpen          = "open"
-	ViolationStatusDismissed     = "dismissed"
-	ViolationStatusResolved      = "resolved"
-	ViolationStatusPendingChoice = "pending_choice" // multiple image candidates waiting for user selection
+	// ViolationStatusOpen indicates an unresolved rule violation.
+	ViolationStatusOpen = "open"
+	// ViolationStatusDismissed indicates a violation manually dismissed by the user.
+	ViolationStatusDismissed = "dismissed"
+	// ViolationStatusResolved indicates a violation that has been fixed.
+	ViolationStatusResolved = "resolved"
+	// ViolationStatusPendingChoice indicates multiple image candidates awaiting user selection.
+	ViolationStatusPendingChoice = "pending_choice"
 )
 
 // RuleViolation represents a persisted rule violation for the notifications view.

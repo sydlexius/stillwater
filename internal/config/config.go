@@ -23,48 +23,48 @@ type Config struct {
 
 // ServerConfig holds HTTP server settings.
 type ServerConfig struct {
-	Port     int    `yaml:"port"`
-	BasePath string `yaml:"base_path"`
+	Port     int    `yaml:"port"`      // SW_PORT
+	BasePath string `yaml:"base_path"` // SW_BASE_PATH
 }
 
 // DatabaseConfig holds SQLite settings.
 type DatabaseConfig struct {
-	Path string `yaml:"path"`
+	Path string `yaml:"path"` // SW_DB_PATH
 }
 
 // AuthConfig holds authentication settings.
 type AuthConfig struct {
-	SessionSecret string `yaml:"session_secret"` //nolint:gosec // G117: not a hardcoded secret, this is a config field
+	SessionSecret string `yaml:"session_secret"` //nolint:gosec // G117: not a hardcoded secret, this is a config field -- SW_SESSION_SECRET
 }
 
 // EncryptionConfig holds encryption key settings.
 type EncryptionConfig struct {
-	Key string `yaml:"key"`
+	Key string `yaml:"key"` // SW_ENCRYPTION_KEY
 }
 
 // MusicConfig holds music library path settings.
 type MusicConfig struct {
-	LibraryPath string `yaml:"library_path"`
+	LibraryPath string `yaml:"library_path"` // SW_MUSIC_PATH
 }
 
 // ScannerConfig holds scanner behavior settings.
 type ScannerConfig struct {
 	Depth      int      `yaml:"depth"`
-	Exclusions []string `yaml:"exclusions"`
+	Exclusions []string `yaml:"exclusions"` // SW_SCANNER_EXCLUSIONS (comma-separated)
 }
 
 // BackupConfig holds database backup settings.
 type BackupConfig struct {
-	Path           string `yaml:"path"`
-	RetentionCount int    `yaml:"retention_count"`
-	IntervalHours  int    `yaml:"interval_hours"`
-	Enabled        bool   `yaml:"enabled"`
+	Path           string `yaml:"path"`            // SW_BACKUP_PATH
+	RetentionCount int    `yaml:"retention_count"` // SW_BACKUP_RETENTION
+	IntervalHours  int    `yaml:"interval_hours"`  // SW_BACKUP_INTERVAL
+	Enabled        bool   `yaml:"enabled"`         // SW_BACKUP_ENABLED ("true" or "1")
 }
 
 // LoggingConfig holds logging settings.
 type LoggingConfig struct {
-	Level  string `yaml:"level"`
-	Format string `yaml:"format"`
+	Level  string `yaml:"level"`  // SW_LOG_LEVEL
+	Format string `yaml:"format"` // SW_LOG_FORMAT
 }
 
 // Default returns a Config with sensible defaults.

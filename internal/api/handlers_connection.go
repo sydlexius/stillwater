@@ -57,6 +57,8 @@ func toConnectionResponse(c connection.Connection) connectionResponse {
 	return resp
 }
 
+// handleListConnections returns all configured connections.
+// GET /api/v1/connections
 func (r *Router) handleListConnections(w http.ResponseWriter, req *http.Request) {
 	conns, err := r.connectionService.List(req.Context())
 	if err != nil {
@@ -72,6 +74,8 @@ func (r *Router) handleListConnections(w http.ResponseWriter, req *http.Request)
 	writeJSON(w, http.StatusOK, resp)
 }
 
+// handleGetConnection returns a single connection by ID.
+// GET /api/v1/connections/{id}
 func (r *Router) handleGetConnection(w http.ResponseWriter, req *http.Request) {
 	id, ok := RequirePathParam(w, req, "id")
 	if !ok {
@@ -162,6 +166,8 @@ func (r *Router) resolvePlatformUserID(ctx context.Context, connType, url, apiKe
 	return ""
 }
 
+// handleCreateConnection creates a new platform connection with test-before-save.
+// POST /api/v1/connections
 func (r *Router) handleCreateConnection(w http.ResponseWriter, req *http.Request) {
 	var body struct {
 		Name     string `json:"name"`
@@ -301,6 +307,8 @@ func (r *Router) handleCreateConnectionSuccess(w http.ResponseWriter, req *http.
 	writeJSON(w, status, toConnectionResponse(c))
 }
 
+// handleUpdateConnection updates an existing connection's configuration.
+// PUT /api/v1/connections/{id}
 func (r *Router) handleUpdateConnection(w http.ResponseWriter, req *http.Request) {
 	id, ok := RequirePathParam(w, req, "id")
 	if !ok {
@@ -359,6 +367,10 @@ func (r *Router) handleUpdateConnection(w http.ResponseWriter, req *http.Request
 	writeJSON(w, http.StatusOK, toConnectionResponse(*existing))
 }
 
+// handleDeleteConnection removes a connection. Libraries are optionally deleted
+// via the deleteLibraries query parameter; the default clears the connection
+// reference without deleting libraries.
+// DELETE /api/v1/connections/{id}
 func (r *Router) handleDeleteConnection(w http.ResponseWriter, req *http.Request) {
 	id, ok := RequirePathParam(w, req, "id")
 	if !ok {
@@ -406,6 +418,8 @@ func (r *Router) handleDeleteConnection(w http.ResponseWriter, req *http.Request
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
+// handleTestConnection tests connectivity to a platform and updates its status.
+// POST /api/v1/connections/{id}/test
 func (r *Router) handleTestConnection(w http.ResponseWriter, req *http.Request) {
 	id, ok := RequirePathParam(w, req, "id")
 	if !ok {
@@ -466,6 +480,8 @@ func (r *Router) handleTestConnection(w http.ResponseWriter, req *http.Request) 
 	writeJSON(w, http.StatusOK, map[string]string{"status": status, "message": msg})
 }
 
+// handleUpdateConnectionFeatures toggles feature flags on a connection.
+// PATCH /api/v1/connections/{id}/features
 func (r *Router) handleUpdateConnectionFeatures(w http.ResponseWriter, req *http.Request) {
 	id, ok := RequirePathParam(w, req, "id")
 	if !ok {

@@ -9,6 +9,8 @@ import (
 	"time"
 )
 
+// handleMaintenanceStatus returns the database maintenance status and metrics.
+// GET /api/v1/settings/maintenance/status
 func (r *Router) handleMaintenanceStatus(w http.ResponseWriter, req *http.Request) {
 	if r.maintenanceService == nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "maintenance service not available"})
@@ -30,6 +32,8 @@ func (r *Router) handleMaintenanceStatus(w http.ResponseWriter, req *http.Reques
 	writeJSON(w, http.StatusOK, status)
 }
 
+// handleMaintenanceOptimize runs a database PRAGMA optimize.
+// POST /api/v1/settings/maintenance/optimize
 func (r *Router) handleMaintenanceOptimize(w http.ResponseWriter, req *http.Request) {
 	if r.maintenanceService == nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "maintenance service not available"})
@@ -54,6 +58,8 @@ func (r *Router) handleMaintenanceOptimize(w http.ResponseWriter, req *http.Requ
 	writeJSON(w, http.StatusOK, map[string]string{"status": "optimized"})
 }
 
+// handleMaintenanceVacuum runs a full database VACUUM to reclaim space.
+// POST /api/v1/settings/maintenance/vacuum
 func (r *Router) handleMaintenanceVacuum(w http.ResponseWriter, req *http.Request) {
 	if r.maintenanceService == nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "maintenance service not available"})
@@ -78,6 +84,8 @@ func (r *Router) handleMaintenanceVacuum(w http.ResponseWriter, req *http.Reques
 	writeJSON(w, http.StatusOK, map[string]string{"status": "vacuumed"})
 }
 
+// handleMaintenanceSchedule configures automatic database maintenance.
+// PUT /api/v1/settings/maintenance/schedule
 func (r *Router) handleMaintenanceSchedule(w http.ResponseWriter, req *http.Request) {
 	var body struct {
 		Enabled       bool `json:"enabled"`

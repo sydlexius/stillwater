@@ -15,6 +15,8 @@ import (
 	img "github.com/sydlexius/stillwater/internal/image"
 )
 
+// handlePushMetadata pushes artist metadata to a specified platform connection.
+// POST /api/v1/artists/{id}/push
 func (r *Router) handlePushMetadata(w http.ResponseWriter, req *http.Request) {
 	artistID, ok := RequirePathParam(w, req, "id")
 	if !ok {

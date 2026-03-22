@@ -8,6 +8,8 @@ import (
 	"time"
 )
 
+// handleGetSettings returns all application settings as a key-value map.
+// GET /api/v1/settings
 func (r *Router) handleGetSettings(w http.ResponseWriter, req *http.Request) {
 	rows, err := r.db.QueryContext(req.Context(), `SELECT key, value FROM settings ORDER BY key`) //nolint:gosec // G701: static query, no user input
 	if err != nil {
@@ -35,6 +37,8 @@ func (r *Router) handleGetSettings(w http.ResponseWriter, req *http.Request) {
 	writeJSON(w, http.StatusOK, settings)
 }
 
+// handleUpdateSettings upserts one or more application settings.
+// PUT /api/v1/settings
 func (r *Router) handleUpdateSettings(w http.ResponseWriter, req *http.Request) {
 	var body map[string]string
 	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {

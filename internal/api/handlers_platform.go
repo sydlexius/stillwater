@@ -10,6 +10,8 @@ import (
 	"github.com/sydlexius/stillwater/web/templates"
 )
 
+// handleListPlatforms returns all platform naming profiles.
+// GET /api/v1/platforms
 func (r *Router) handleListPlatforms(w http.ResponseWriter, req *http.Request) {
 	profiles, err := r.platformService.List(req.Context())
 	if err != nil {
@@ -20,6 +22,8 @@ func (r *Router) handleListPlatforms(w http.ResponseWriter, req *http.Request) {
 	writeJSON(w, http.StatusOK, profiles)
 }
 
+// handleGetPlatform returns a single platform profile by ID.
+// GET /api/v1/platforms/{id}
 func (r *Router) handleGetPlatform(w http.ResponseWriter, req *http.Request) {
 	id, ok := RequirePathParam(w, req, "id")
 	if !ok {
@@ -33,6 +37,8 @@ func (r *Router) handleGetPlatform(w http.ResponseWriter, req *http.Request) {
 	writeJSON(w, http.StatusOK, profile)
 }
 
+// handleCreatePlatform creates a new platform naming profile.
+// POST /api/v1/platforms
 func (r *Router) handleCreatePlatform(w http.ResponseWriter, req *http.Request) {
 	var body struct {
 		Name        string               `json:"name"`
@@ -72,6 +78,8 @@ func (r *Router) handleCreatePlatform(w http.ResponseWriter, req *http.Request) 
 	writeJSON(w, http.StatusCreated, p)
 }
 
+// handleUpdatePlatform partially updates an existing platform profile.
+// PUT /api/v1/platforms/{id}
 func (r *Router) handleUpdatePlatform(w http.ResponseWriter, req *http.Request) {
 	id, ok := RequirePathParam(w, req, "id")
 	if !ok {
@@ -146,6 +154,8 @@ func (r *Router) handleUpdatePlatform(w http.ResponseWriter, req *http.Request) 
 	writeJSON(w, http.StatusOK, existing)
 }
 
+// handleDeletePlatform removes a platform profile by ID.
+// DELETE /api/v1/platforms/{id}
 func (r *Router) handleDeletePlatform(w http.ResponseWriter, req *http.Request) {
 	id, ok := RequirePathParam(w, req, "id")
 	if !ok {
@@ -158,6 +168,8 @@ func (r *Router) handleDeletePlatform(w http.ResponseWriter, req *http.Request) 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
+// handleSetActivePlatform sets a platform profile as the active one.
+// POST /api/v1/platforms/{id}/activate
 func (r *Router) handleSetActivePlatform(w http.ResponseWriter, req *http.Request) {
 	id, ok := RequirePathParam(w, req, "id")
 	if !ok {

@@ -10,6 +10,8 @@ import (
 	"github.com/sydlexius/stillwater/internal/webhook"
 )
 
+// handleListWebhooks returns all configured outbound webhooks.
+// GET /api/v1/webhooks
 func (r *Router) handleListWebhooks(w http.ResponseWriter, req *http.Request) {
 	webhooks, err := r.webhookService.List(req.Context())
 	if err != nil {
@@ -23,6 +25,8 @@ func (r *Router) handleListWebhooks(w http.ResponseWriter, req *http.Request) {
 	writeJSON(w, http.StatusOK, webhooks)
 }
 
+// handleGetWebhook returns a single webhook by ID.
+// GET /api/v1/webhooks/{id}
 func (r *Router) handleGetWebhook(w http.ResponseWriter, req *http.Request) {
 	id, ok := RequirePathParam(w, req, "id")
 	if !ok {
@@ -36,6 +40,8 @@ func (r *Router) handleGetWebhook(w http.ResponseWriter, req *http.Request) {
 	writeJSON(w, http.StatusOK, wh)
 }
 
+// handleCreateWebhook registers a new outbound webhook.
+// POST /api/v1/webhooks
 func (r *Router) handleCreateWebhook(w http.ResponseWriter, req *http.Request) {
 	var body struct {
 		Name    string   `json:"name"`
@@ -74,6 +80,8 @@ func (r *Router) handleCreateWebhook(w http.ResponseWriter, req *http.Request) {
 	writeJSON(w, http.StatusCreated, wh)
 }
 
+// handleUpdateWebhook partially updates an existing webhook's configuration.
+// PUT /api/v1/webhooks/{id}
 func (r *Router) handleUpdateWebhook(w http.ResponseWriter, req *http.Request) {
 	id, ok := RequirePathParam(w, req, "id")
 	if !ok {
@@ -120,6 +128,8 @@ func (r *Router) handleUpdateWebhook(w http.ResponseWriter, req *http.Request) {
 	writeJSON(w, http.StatusOK, existing)
 }
 
+// handleDeleteWebhook removes a webhook by ID.
+// DELETE /api/v1/webhooks/{id}
 func (r *Router) handleDeleteWebhook(w http.ResponseWriter, req *http.Request) {
 	id, ok := RequirePathParam(w, req, "id")
 	if !ok {
@@ -132,6 +142,8 @@ func (r *Router) handleDeleteWebhook(w http.ResponseWriter, req *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
+// handleTestWebhook sends a test event to the specified webhook.
+// POST /api/v1/webhooks/{id}/test
 func (r *Router) handleTestWebhook(w http.ResponseWriter, req *http.Request) {
 	id, ok := RequirePathParam(w, req, "id")
 	if !ok {
