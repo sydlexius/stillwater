@@ -320,6 +320,7 @@ func TestCheckImageFetchersEnabled_NoFetchers(t *testing.T) {
 				"Name":"Music","CollectionType":"music","ItemId":"lib-001",
 				"LibraryOptions":{
 					"SaveLocalMetadata":false,"MetadataSavers":[],
+					"EnableInternetProviders":true,
 					"TypeOptions":[
 						{"Type":"MusicArtist","ImageFetchers":[],"MetadataFetchers":["TheAudioDb"]}
 					]

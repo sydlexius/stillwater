@@ -37,7 +37,7 @@ type SharedFilesystemEntry struct {
 // For API requests, returns JSON.
 // GET /api/v1/shared-filesystem/status
 func (r *Router) handleSharedFilesystemStatus(w http.ResponseWriter, req *http.Request) {
-	status, err := r.buildSharedFilesystemStatus(req.Context())
+	status, sharedLibs, err := r.buildSharedFilesystemStatus(req.Context())
 	if err != nil {
 		r.logger.Error("checking shared filesystem status", "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
@@ -45,6 +45,7 @@ func (r *Router) handleSharedFilesystemStatus(w http.ResponseWriter, req *http.R
 	}
 
 	// For HTMX requests, render the notification bar partial.
+	// Skip image fetcher API calls since the bar does not display them.
 	if isHTMXRequest(req) {
 		data := templates.SharedFSBarData{
 			HasOverlaps: status.HasOverlaps,
@@ -58,6 +59,11 @@ func (r *Router) handleSharedFilesystemStatus(w http.ResponseWriter, req *http.R
 		}
 		renderTempl(w, req, templates.SharedFilesystemBarContent(data))
 		return
+	}
+
+	// Collect image fetcher warnings for JSON API consumers.
+	if len(sharedLibs) > 0 {
+		status.ImageFetcherWarnings = r.collectImageFetcherWarnings(req.Context(), sharedLibs)
 	}
 
 	writeJSON(w, http.StatusOK, status)
@@ -116,10 +122,10 @@ func (r *Router) recheckSharedFilesystem(ctx context.Context) (int, error) {
 // buildSharedFilesystemStatus assembles the current status by reading library
 // shared_fs_status columns and the dismiss preference. Peer library names are
 // resolved from SharedFSPeerLibraryIDs when available.
-func (r *Router) buildSharedFilesystemStatus(ctx context.Context) (*SharedFilesystemStatus, error) {
+func (r *Router) buildSharedFilesystemStatus(ctx context.Context) (*SharedFilesystemStatus, []library.Library, error) {
 	sharedLibs, err := r.libraryService.ListSharedFS(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("list shared-filesystem libraries: %w", err)
+		return nil, nil, fmt.Errorf("list shared-filesystem libraries: %w", err)
 	}
 
 	status := &SharedFilesystemStatus{
@@ -131,7 +137,7 @@ func (r *Router) buildSharedFilesystemStatus(ctx context.Context) (*SharedFilesy
 		// Build a lookup of all libraries so we can resolve peer library names.
 		allLibs, allErr := r.libraryService.List(ctx)
 		if allErr != nil {
-			return nil, fmt.Errorf("list libraries for peer resolution: %w", allErr)
+			return nil, nil, fmt.Errorf("list libraries for peer resolution: %w", allErr)
 		}
 		libNames := make(map[string]string, len(allLibs))
 		for _, lib := range allLibs {
@@ -151,13 +157,6 @@ func (r *Router) buildSharedFilesystemStatus(ctx context.Context) (*SharedFilesy
 		}
 	}
 
-	// When overlaps are detected, check for image fetcher warnings on
-	// connected platforms. This is non-fatal: if a platform query fails,
-	// we log and skip that platform's warnings.
-	if len(sharedLibs) > 0 {
-		status.ImageFetcherWarnings = r.collectImageFetcherWarnings(ctx, sharedLibs)
-	}
-
 	// Check the dismiss preference. sql.ErrNoRows means the setting has not
 	// been stored yet (not dismissed). Any other DB error is logged and treated
 	// as "not dismissed" (show the bar) as the safe default.
@@ -171,7 +170,7 @@ func (r *Router) buildSharedFilesystemStatus(ctx context.Context) (*SharedFilesy
 		status.Dismissed = true
 	}
 
-	return status, nil
+	return status, sharedLibs, nil
 }
 
 // collectImageFetcherWarnings queries connected Emby/Jellyfin platforms for
@@ -179,16 +178,12 @@ func (r *Router) buildSharedFilesystemStatus(ctx context.Context) (*SharedFilesy
 // Each shared library with a connection is checked. Failures are logged and
 // skipped so this never prevents the status endpoint from responding.
 func (r *Router) collectImageFetcherWarnings(ctx context.Context, sharedLibs []library.Library) []connection.ImageFetcherWarning {
-	// Collect unique connection IDs from the shared libraries to avoid
-	// querying the same platform connection more than once.
+	// Deduplicate connections so we only query each platform once.
 	checked := make(map[string]bool)
 	var warnings []connection.ImageFetcherWarning
 
 	for _, lib := range sharedLibs {
-		if lib.ConnectionID == "" {
-			continue
-		}
-		if checked[lib.ConnectionID] {
+		if lib.ConnectionID == "" || checked[lib.ConnectionID] {
 			continue
 		}
 		checked[lib.ConnectionID] = true
@@ -200,17 +195,18 @@ func (r *Router) collectImageFetcherWarnings(ctx context.Context, sharedLibs []l
 			continue
 		}
 
+		var w []connection.ImageFetcherWarning
 		switch conn.Type {
 		case connection.TypeEmby:
-			w := r.checkEmbyImageFetchers(ctx, conn)
-			warnings = append(warnings, w...)
+			w = r.checkEmbyImageFetchers(ctx, conn)
 		case connection.TypeJellyfin:
-			w := r.checkJellyfinImageFetchers(ctx, conn)
-			warnings = append(warnings, w...)
+			w = r.checkJellyfinImageFetchers(ctx, conn)
 		default:
 			r.logger.Debug("image fetcher check not implemented for connection type",
-				"connection_id", lib.ConnectionID, "type", conn.Type)
+				"connection_id", conn.ID, "type", conn.Type)
+			continue
 		}
+		warnings = append(warnings, w...)
 	}
 
 	return warnings
@@ -222,7 +218,11 @@ func (r *Router) checkEmbyImageFetchers(ctx context.Context, conn *connection.Co
 	statuses, err := client.CheckImageFetchersEnabled(ctx)
 	if err != nil {
 		r.logger.Warn("checking emby image fetchers", "connection", conn.Name, "error", err)
-		return nil
+		return []connection.ImageFetcherWarning{{
+			Platform:  "emby",
+			RiskLevel: "warn",
+			Message:   fmt.Sprintf("Could not check Emby image fetcher settings for connection '%s'. Verify the connection is reachable.", conn.Name),
+		}}
 	}
 
 	var warnings []connection.ImageFetcherWarning
@@ -248,7 +248,11 @@ func (r *Router) checkJellyfinImageFetchers(ctx context.Context, conn *connectio
 	statuses, err := client.CheckImageFetchersEnabled(ctx)
 	if err != nil {
 		r.logger.Warn("checking jellyfin image fetchers", "connection", conn.Name, "error", err)
-		return nil
+		return []connection.ImageFetcherWarning{{
+			Platform:  "jellyfin",
+			RiskLevel: "warn",
+			Message:   fmt.Sprintf("Could not check Jellyfin image fetcher settings for connection '%s'. Verify the connection is reachable.", conn.Name),
+		}}
 	}
 
 	var warnings []connection.ImageFetcherWarning

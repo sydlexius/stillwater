@@ -329,7 +329,10 @@ func (r *sqliteArtistRepo) ListPathsByLibrary(ctx context.Context, libraryID str
 		}
 		result[id] = path
 	}
-	return result, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating artist paths for library %s: %w", libraryID, err)
+	}
+	return result, nil
 }
 
 func (r *sqliteArtistRepo) Search(ctx context.Context, query string) ([]Artist, error) {

@@ -87,8 +87,8 @@ type ImageFetcherStatus struct {
 }
 
 // CheckImageFetchersEnabled returns the image fetcher status for music libraries.
-// Returns nil if no image fetchers are enabled. On error, logs a warning and
-// returns nil (non-fatal).
+// Returns nil if no image fetchers are enabled. Returns a non-nil error if the
+// music library settings cannot be retrieved.
 func (c *Client) CheckImageFetchersEnabled(ctx context.Context) ([]ImageFetcherStatus, error) {
 	libs, err := c.GetMusicLibraries(ctx)
 	if err != nil {

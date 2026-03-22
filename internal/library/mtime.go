@@ -35,8 +35,8 @@ type MtimeEvidence struct {
 // is newer than lastWrittenAt (plus a 2-second tolerance for FAT32). Returns
 // true if any externally-modified image is found.
 //
-// If the directory does not exist or is inaccessible, returns false with no
-// error -- the caller should treat this as "no evidence."
+// If the directory does not exist, returns false with no error. Other
+// filesystem errors (permission denied, I/O errors) are returned to the caller.
 func CheckArtistDirMtimes(artistDir string, lastWrittenAt time.Time) (bool, error) {
 	if lastWrittenAt.IsZero() {
 		return false, nil
@@ -79,8 +79,8 @@ func CheckArtistDirMtimes(artistDir string, lastWrittenAt time.Time) (bool, erro
 // list of evidence items suitable for storing in the library's shared-FS
 // evidence field.
 //
-// artistDirs maps artist names to filesystem paths. lastWrittenAts maps
-// artist paths to the newest last_written_at timestamp for that artist.
+// artistDirs maps artist IDs (or any unique key) to filesystem paths.
+// lastWrittenAts maps artist paths to the newest last_written_at timestamp.
 //
 // This function is designed to be called once after a library sync, not
 // inside the per-artist loop.

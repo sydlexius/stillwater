@@ -18,7 +18,7 @@ type Repository interface {
 	Delete(ctx context.Context, id string) error
 	Search(ctx context.Context, query string) ([]Artist, error)
 
-	// ListPathsByLibrary returns a map of artist name to filesystem path for
+	// ListPathsByLibrary returns a map of artist ID to filesystem path for
 	// all artists in the given library that have a non-empty path.
 	ListPathsByLibrary(ctx context.Context, libraryID string) (map[string]string, error)
 }
@@ -61,9 +61,9 @@ type ImageRepository interface {
 	UpdateProvenance(ctx context.Context, artistID, imageType string, slotIndex int, phash, source, fileFormat, lastWrittenAt string) error
 	DeleteByArtistID(ctx context.Context, artistID string) error
 
-	// NewestWriteTime returns the most recent last_written_at timestamp across
-	// all images for artists in the given library. Returns zero time if no
-	// writes have been recorded.
+	// NewestWriteTime returns the most recent last_written_at string across
+	// all images for artists in the given library. Returns an empty string
+	// if no writes have been recorded.
 	NewestWriteTime(ctx context.Context, libraryID string) (string, error)
 }
 

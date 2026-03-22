@@ -587,7 +587,7 @@ func (s *Service) NewestWriteTimeForLibrary(ctx context.Context, libraryID strin
 	return s.images.NewestWriteTime(ctx, libraryID)
 }
 
-// ListPathsByLibrary returns a map of artist name to filesystem path for all
+// ListPathsByLibrary returns a map of artist ID to filesystem path for all
 // artists in the given library that have a non-empty path.
 func (s *Service) ListPathsByLibrary(ctx context.Context, libraryID string) (map[string]string, error) {
 	return s.artists.ListPathsByLibrary(ctx, libraryID)
