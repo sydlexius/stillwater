@@ -1349,8 +1349,12 @@ func (r *Router) checkSyncMtimeEvidence(ctx context.Context, lib *library.Librar
 				"library", lib.Name, "artist_id", artistID, "raw", writeStr)
 			continue
 		}
-		lastWrittenAts[dir] = parsed
-		dirToWriteTime[dir] = parsed
+		// When multiple artists share a directory, keep the most recent
+		// write time as the baseline for mtime comparison.
+		if existing, ok := lastWrittenAts[dir]; !ok || parsed.After(existing) {
+			lastWrittenAts[dir] = parsed
+			dirToWriteTime[dir] = parsed
+		}
 	}
 
 	if len(lastWrittenAts) == 0 {
