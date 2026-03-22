@@ -45,6 +45,11 @@ func WriteBackArtistNFO(ctx context.Context, a *artist.Artist, ss *SnapshotServi
 	}
 
 	nfoData := FromArtist(a)
+
+	// Always lock the NFO to prevent Emby/Jellyfin from overwriting it
+	// on subsequent metadata refreshes.
+	nfoData.LockData = true
+
 	var buf bytes.Buffer
 	if err := Write(&buf, nfoData); err != nil {
 		return fmt.Errorf("serializing nfo: %w", err)

@@ -1,7 +1,7 @@
 # Evidence-Based Shared Filesystem Detection
 
 **Date:** 2026-03-22
-**Status:** Draft
+**Status:** Draft (updated 2026-03-22 with lockdata findings)
 **Related issues:** #584 (shared-filesystem conflicts), #495 (shared-FS guard), #496 (EXIF provenance)
 
 ## Problem
@@ -102,11 +102,18 @@ filesystem write via atomic write pattern.
 - After writing the NFO, record the file's mtime in the DB (new column on
   `nfo_snapshots` or `artists` table) for Tier 2 mtime comparison.
 
-**Spike dependency:** The platform saver investigation (Section 4) must determine
-whether Emby/Jellyfin/Lidarr preserve or strip the `<stillwater>` element when
-they rewrite an NFO. If platforms strip it, the NFO provenance marker is useful
-only for Stillwater's own round-trips. Mtime comparison (Tier 2) remains the
-primary detection mechanism regardless.
+**Spike result (lockdata):** The platform saver investigation (Section 4) is
+complete. Both Emby and Jellyfin respect `<lockdata>true</lockdata>` in NFO
+files. When present, the platform imports the lock into its internal DB and
+refuses to overwrite the NFO on subsequent refreshes, even with
+ReplaceAllMetadata=true. Stillwater now always writes
+`<lockdata>true</lockdata>` in every NFO via `WriteBackArtistNFO()`. This is
+the primary defense against platform NFO clobbering.
+
+The `<stillwater>` provenance element is preserved by both Emby and Jellyfin
+when lockdata is set (which it always will be). Without lockdata, Jellyfin
+strips it. Since lockdata is always present in Stillwater-written NFOs, the
+provenance marker is reliable for round-trip detection.
 
 ### On library onboarding (cold path)
 
@@ -240,21 +247,30 @@ manually migrated via `ALTER TABLE`. No goose migration file is needed.
 
 ## Section 3: Rule Blocking Mechanism
 
-When external writes are detected AND the platform's metadata savers are confirmed
-active, file-mutating rules cannot be enabled.
+When external writes are detected AND the platform's image fetchers are confirmed
+active, image-mutating rules cannot be enabled.
+
+**Update (lockdata discovery):** NFO rules no longer need blocking. Every NFO
+Stillwater writes includes `<lockdata>true</lockdata>`, which both Emby and
+Jellyfin respect. Platforms will not overwrite locked NFOs even on full refresh.
+Only image-fetcher rules need blocking/warning, since platforms with active image
+fetchers can download or replace images in shared directories.
 
 ### Affected rules
 
-Any rule whose fixer mutates the filesystem:
+Rules whose fixers write or delete image files:
 
-- NFO writes (create/overwrite artist.nfo)
 - Image saves (download and save images)
 - Image deletes (extraneous images)
-- Directory renames
 - Logo trimming/padding
 - Backdrop sequencing
 
-Metadata-only rules (DB updates, health score recalculation) are unaffected.
+**Not affected (protected by lockdata):**
+
+- NFO writes (create/overwrite artist.nfo) -- lockdata prevents platform overwrites
+- Directory renames -- not image-related
+
+Metadata-only rules (DB updates, health score recalculation) are also unaffected.
 
 ### Implementation changes required
 
@@ -269,27 +285,31 @@ Metadata-only rules (DB updates, health score recalculation) are unaffected.
 
 ### Blocking behavior
 
-- Rules remain visible in the UI but the enable toggle is grayed out
-- Inline explanation: "Cannot enable: Emby is configured to save artwork to
-  media folders. [Disable this in Emby settings](http://emby:8096/web/...)"
+- Image rules remain visible in the UI but the enable toggle is grayed out
+- Inline explanation: "Cannot enable: Emby's image fetchers (TheAudioDb,
+  FanArt) are active and may conflict with image management.
+  [Disable image fetchers in Emby settings](http://emby:8096/web/...)"
 - API returns `blocked_reason` on the rule object
-- If a rule was already enabled when shared FS is detected, the fixer skips
-  execution (existing `SharedFSCheck` safety net) with the diagnostic message
+- If an image rule was already enabled when shared FS is detected, the fixer
+  skips execution (existing `SharedFSCheck` safety net) with the diagnostic
+  message
+- NFO rules are never blocked -- lockdata protection is always active
 
 ### Unblocking flow
 
-1. User disables metadata savers in the platform UI (following the link)
+1. User disables image fetchers in the platform UI (following the link)
 2. User clicks "Recheck" in Stillwater
-3. Stillwater queries platform API for saver settings
-4. If savers are off, clear the block, rules become toggleable
+3. Stillwater queries platform API for image fetcher settings
+4. If fetchers are off, clear the block, image rules become toggleable
 5. Optional: run probe file check to verify platform actually stopped writing
 
-## Section 4: Platform Saver Settings Investigation (Spike)
+## Section 4: Platform Saver Settings Investigation (Spike) -- COMPLETE
 
-**This spike must run before implementing Section 3.** It determines what settings
-each platform exposes, which ones cause conflicts, and what instructions to show.
-**The probe file fallback (Section 2) also depends on this spike** to identify the
-correct platform API endpoints for checking file visibility.
+**This spike is complete.** Full findings are documented in
+`docs/architecture/platform-nfo-image-write-behavior.md`. Key discovery:
+`<lockdata>true</lockdata>` in NFO files is respected by both Emby and Jellyfin,
+eliminating the need for NFO rule blocking. Only image fetcher settings matter
+for rule blocking (Section 3).
 
 ### Questions to answer per platform
 
@@ -394,7 +414,8 @@ offering a one-click "disable Emby's metadata savers" action.
 
 ### Schema changes
 
-New columns added directly to `001_initial_schema.sql`:
+New columns added directly to `001_initial_schema.sql` (no goose migration
+files needed -- dev-only convention):
 
 - `libraries.shared_fs_status TEXT NOT NULL DEFAULT 'unknown'`
 - `libraries.shared_fs_evidence TEXT NOT NULL DEFAULT ''`
@@ -405,19 +426,31 @@ The old `shared_filesystem INTEGER` column is left in place (SQLite does not
 support DROP COLUMN in all versions). Code ignores it; the `Library` struct no
 longer maps it. The UAT database has been manually migrated via ALTER TABLE.
 
+The `artist_images.last_written_at` column has been added to
+`001_initial_schema.sql` and the `ArtistImage` struct as part of the evidence
+collection implementation.
+
 ### Code migration
 
-- `library.Library` struct: replace `SharedFilesystem bool` with
+**Done:**
+- [x] `artist.ArtistImage`: added `LastWrittenAt string` field
+- [x] `sqlite_image.go`: Upsert/UpsertAll/queries updated for `last_written_at`
+- [x] New `UpdateProvenance()` method for targeted phash/source/last_written_at writes
+- [x] `setArtistImageFlag`: calls `ReadProvenance()` after save, records evidence
+- [x] `001_initial_schema.sql`: `last_written_at` column added
+- [x] NFO writer: `<lockdata>true</lockdata>` always written via `WriteBackArtistNFO()`
+- [x] NFO parser: `LockData bool` field on `ArtistNFO`, handles Kodi/Emby boolean formats
+
+**Remaining:**
+- [ ] `library.Library` struct: replace `SharedFilesystem bool` with
   `SharedFSStatus string`, `SharedFSEvidence string`,
   `SharedFSPeerLibraryIDs string`
-- `library.Service.scanLibrary()`: scan new columns
-- `library.Service.SetSharedFilesystem()`: rename to `SetSharedFSStatus()`
-- `rule.SharedFSCheck.IsShared()`: compare `SharedFSStatus == "detected"`
-- `artist.ArtistImage`: add `LastWrittenAt string` field, update Upsert
-- Remove `library.DetectOverlaps()`, `RecheckOverlaps()`, and path helpers
-- Remove `RecheckOverlaps()` call in `cmd/stillwater/main.go`
-- Update `001_initial_schema.sql` to include new columns for fresh installs
-- Add `<stillwater>` element to NFO writer, add explicit field to `ArtistNFO`
+- [ ] `library.Service.scanLibrary()`: scan new columns
+- [ ] `library.Service.SetSharedFilesystem()`: rename to `SetSharedFSStatus()`
+- [ ] `rule.SharedFSCheck.IsShared()`: compare `SharedFSStatus == "detected"`
+- [ ] Remove `library.DetectOverlaps()`, `RecheckOverlaps()`, and path helpers
+- [ ] Remove `RecheckOverlaps()` call in `cmd/stillwater/main.go`
+- [ ] Add `<stillwater>` provenance element to NFO writer (separate from lockdata)
 
 ### Backfill
 

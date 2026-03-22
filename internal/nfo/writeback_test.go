@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -160,6 +161,40 @@ func TestWriteBackArtistNFO_NoExistingFile(t *testing.T) {
 	}
 	if parsed.Name != "Fresh Artist" {
 		t.Errorf("Name = %q, want %q", parsed.Name, "Fresh Artist")
+	}
+}
+
+func TestWriteBackArtistNFO_SetsLockData(t *testing.T) {
+	dir := t.TempDir()
+	a := &artist.Artist{
+		ID:       "art-lock",
+		Name:     "Locked Artist",
+		SortName: "Locked Artist",
+		Path:     dir,
+	}
+
+	if err := WriteBackArtistNFO(context.Background(), a, nil, nil); err != nil {
+		t.Fatalf("WriteBackArtistNFO: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(dir, "artist.nfo"))
+	if err != nil {
+		t.Fatalf("reading nfo: %v", err)
+	}
+
+	parsed, err := Parse(bytes.NewReader(data))
+	if err != nil {
+		t.Fatalf("parsing nfo: %v", err)
+	}
+
+	if !parsed.LockData {
+		t.Error("WriteBackArtistNFO should always set LockData=true")
+	}
+
+	// Also verify the raw XML contains the element
+	output := string(data)
+	if !strings.Contains(output, "<lockdata>true</lockdata>") {
+		t.Errorf("raw NFO output should contain <lockdata>true</lockdata>, got:\n%s", output)
 	}
 }
 
