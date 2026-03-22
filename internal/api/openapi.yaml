@@ -234,6 +234,7 @@ components:
             $ref: '#/components/schemas/ImageFetcherWarning'
     ImageFetcherWarning:
       type: object
+      required: [risk_level, message]
       properties:
         platform:
           type: string

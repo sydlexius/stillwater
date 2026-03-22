@@ -38,7 +38,7 @@ type MtimeEvidence struct {
 // If the directory does not exist, returns false with no error. Other
 // filesystem errors (permission denied, I/O errors) are returned to the caller.
 func CheckArtistDirMtimes(artistDir string, lastWrittenAt time.Time) (bool, error) {
-	if lastWrittenAt.IsZero() {
+	if artistDir == "" || lastWrittenAt.IsZero() {
 		return false, nil
 	}
 

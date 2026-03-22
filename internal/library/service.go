@@ -339,14 +339,25 @@ func (s *Service) SetSharedFSStatus(ctx context.Context, id, status, evidence, p
 		return fmt.Errorf("invalid shared_fs_status %q", status)
 	}
 	now := time.Now().UTC()
-	result, err := s.db.ExecContext(ctx, `
-		UPDATE libraries SET shared_fs_status = ?, shared_fs_evidence = ?, shared_fs_peer_library_ids = ?, updated_at = ? WHERE id = ?
-	`, status, evidence, peerIDs, now.Format(time.RFC3339), id)
+
+	// When setting to "suspected", guard against downgrading a library that
+	// was concurrently promoted to "confirmed" by another request. The WHERE
+	// clause ensures the UPDATE is a no-op if the current status is already
+	// stronger.
+	query := `UPDATE libraries SET shared_fs_status = ?, shared_fs_evidence = ?, shared_fs_peer_library_ids = ?, updated_at = ? WHERE id = ?`
+	if status == SharedFSSuspected {
+		query = `UPDATE libraries SET shared_fs_status = ?, shared_fs_evidence = ?, shared_fs_peer_library_ids = ?, updated_at = ? WHERE id = ? AND shared_fs_status != 'confirmed'`
+	}
+
+	result, err := s.db.ExecContext(ctx, query,
+		status, evidence, peerIDs, now.Format(time.RFC3339), id)
 	if err != nil {
 		return fmt.Errorf("setting shared_fs_status: %w", err)
 	}
+	// RowsAffected may be 0 if the library was not found OR if the downgrade
+	// guard prevented the update. Only report "not found" when not guarded.
 	rows, _ := result.RowsAffected()
-	if rows == 0 {
+	if rows == 0 && status != SharedFSSuspected {
 		return fmt.Errorf("library not found: %s", id)
 	}
 	return nil
