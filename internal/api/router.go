@@ -55,6 +55,7 @@ type RouterDeps struct {
 	MaintenanceService *maintenance.Service
 	SettingsIOService  *settingsio.Service
 	ProbeCache         *watcher.ProbeCache
+	ExpectedWrites     *watcher.ExpectedWrites
 	EventBus           *event.Bus
 	DB                 *sql.DB
 	Logger             *slog.Logger
@@ -90,6 +91,7 @@ type Router struct {
 	maintenanceService *maintenance.Service
 	settingsIOService  *settingsio.Service
 	probeCache         *watcher.ProbeCache
+	expectedWrites     *watcher.ExpectedWrites
 	eventBus           *event.Bus
 	logger             *slog.Logger
 	basePath           string
@@ -135,6 +137,7 @@ func NewRouter(deps RouterDeps) *Router {
 		maintenanceService: deps.MaintenanceService,
 		settingsIOService:  deps.SettingsIOService,
 		probeCache:         deps.ProbeCache,
+		expectedWrites:     deps.ExpectedWrites,
 		eventBus:           deps.EventBus,
 		db:                 deps.DB,
 		logger:             deps.Logger,

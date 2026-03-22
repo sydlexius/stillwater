@@ -656,3 +656,150 @@ func TestUpdate_DefaultsEmptySource(t *testing.T) {
 		t.Errorf("Source = %q, want %q", lib.Source, SourceManual)
 	}
 }
+
+func TestIsSharedFS(t *testing.T) {
+	tests := []struct {
+		status string
+		want   bool
+	}{
+		{"", false},
+		{SharedFSNone, false},
+		{SharedFSSuspected, true},
+		{SharedFSConfirmed, true},
+		{"invalid", false},
+	}
+	for _, tt := range tests {
+		lib := Library{SharedFSStatus: tt.status}
+		if got := lib.IsSharedFS(); got != tt.want {
+			t.Errorf("IsSharedFS(%q) = %v, want %v", tt.status, got, tt.want)
+		}
+	}
+}
+
+func TestSetSharedFSStatus_RoundTrip(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	dir := t.TempDir()
+	lib := &Library{Name: "SharedFS Test", Path: dir, Type: TypeRegular}
+	if err := svc.Create(ctx, lib); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// Set status and read back
+	if err := svc.SetSharedFSStatus(ctx, lib.ID, SharedFSSuspected, `["mtime mismatch"]`, "peer-1,peer-2"); err != nil {
+		t.Fatalf("SetSharedFSStatus: %v", err)
+	}
+
+	got, err := svc.GetByID(ctx, lib.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if got.SharedFSStatus != SharedFSSuspected {
+		t.Errorf("SharedFSStatus = %q, want %q", got.SharedFSStatus, SharedFSSuspected)
+	}
+	if got.SharedFSEvidence != `["mtime mismatch"]` {
+		t.Errorf("SharedFSEvidence = %q, want %q", got.SharedFSEvidence, `["mtime mismatch"]`)
+	}
+	if got.SharedFSPeerLibraryIDs != "peer-1,peer-2" {
+		t.Errorf("SharedFSPeerLibraryIDs = %q, want %q", got.SharedFSPeerLibraryIDs, "peer-1,peer-2")
+	}
+
+	// Clear status
+	if err := svc.SetSharedFSStatus(ctx, lib.ID, "", "", ""); err != nil {
+		t.Fatalf("clear SetSharedFSStatus: %v", err)
+	}
+	got, err = svc.GetByID(ctx, lib.ID)
+	if err != nil {
+		t.Fatalf("GetByID after clear: %v", err)
+	}
+	if got.SharedFSStatus != "" {
+		t.Errorf("SharedFSStatus after clear = %q, want empty", got.SharedFSStatus)
+	}
+	if got.SharedFSEvidence != "" {
+		t.Errorf("SharedFSEvidence after clear = %q, want empty", got.SharedFSEvidence)
+	}
+	if got.SharedFSPeerLibraryIDs != "" {
+		t.Errorf("SharedFSPeerLibraryIDs after clear = %q, want empty", got.SharedFSPeerLibraryIDs)
+	}
+}
+
+func TestSetSharedFSStatus_InvalidStatus(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	dir := t.TempDir()
+	lib := &Library{Name: "Validation Test", Path: dir, Type: TypeRegular}
+	if err := svc.Create(ctx, lib); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	err := svc.SetSharedFSStatus(ctx, lib.ID, "typo", "", "")
+	if err == nil {
+		t.Fatal("expected error for invalid status")
+	}
+}
+
+func TestSetSharedFSStatus_NotFound(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+
+	err := svc.SetSharedFSStatus(context.Background(), "nonexistent", SharedFSNone, "", "")
+	if err == nil {
+		t.Fatal("expected error for nonexistent library")
+	}
+}
+
+func TestListSharedFS(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	base := t.TempDir()
+	for i, name := range []string{"None", "Suspected", "Confirmed", "Empty"} {
+		dir := filepath.Join(base, fmt.Sprintf("dir%d", i))
+		if err := os.Mkdir(dir, 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		lib := &Library{Name: name, Path: dir, Type: TypeRegular}
+		if err := svc.Create(ctx, lib); err != nil {
+			t.Fatalf("Create %s: %v", name, err)
+		}
+		var status string
+		switch name {
+		case "None":
+			status = SharedFSNone
+		case "Suspected":
+			status = SharedFSSuspected
+		case "Confirmed":
+			status = SharedFSConfirmed
+		case "Empty":
+			status = ""
+		}
+		if status != "" {
+			if err := svc.SetSharedFSStatus(ctx, lib.ID, status, "", ""); err != nil {
+				t.Fatalf("SetSharedFSStatus %s: %v", name, err)
+			}
+		}
+	}
+
+	libs, err := svc.ListSharedFS(ctx)
+	if err != nil {
+		t.Fatalf("ListSharedFS: %v", err)
+	}
+	if len(libs) != 2 {
+		t.Fatalf("ListSharedFS count = %d, want 2 (suspected + confirmed)", len(libs))
+	}
+	names := map[string]bool{}
+	for _, lib := range libs {
+		names[lib.Name] = true
+	}
+	if !names["Suspected"] {
+		t.Error("ListSharedFS missing 'Suspected' library")
+	}
+	if !names["Confirmed"] {
+		t.Error("ListSharedFS missing 'Confirmed' library")
+	}
+}

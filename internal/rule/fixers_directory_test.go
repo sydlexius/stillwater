@@ -111,7 +111,7 @@ func TestDirectoryRenameFixer_SharedFilesystem(t *testing.T) {
 	libSvc := library.NewService(db)
 	ctx := context.Background()
 
-	// Create a library with shared_filesystem = true.
+	// Create a library with shared_fs_status = suspected.
 	dir := t.TempDir()
 	lib := &library.Library{
 		Name:   "Shared Music",
@@ -122,8 +122,8 @@ func TestDirectoryRenameFixer_SharedFilesystem(t *testing.T) {
 	if err := libSvc.Create(ctx, lib); err != nil {
 		t.Fatalf("creating library: %v", err)
 	}
-	if err := libSvc.SetSharedFilesystem(ctx, lib.ID, true); err != nil {
-		t.Fatalf("setting shared_filesystem: %v", err)
+	if err := libSvc.SetSharedFSStatus(ctx, lib.ID, library.SharedFSSuspected, "", ""); err != nil {
+		t.Fatalf("setting shared_fs_status: %v", err)
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))

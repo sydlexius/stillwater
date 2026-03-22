@@ -270,7 +270,7 @@ func run() error {
 		event.LidarrArtistAdd, event.LidarrDownload,
 		event.EmbyArtistUpdate, event.EmbyLibraryScan,
 		event.JellyfinArtistUpdate, event.JellyfinLibraryScan,
-		event.FSDirCreated, event.FSDirRemoved,
+		event.FSDirCreated, event.FSDirRemoved, event.FSUnexpectedWrite,
 	} {
 		eventBus.Subscribe(eventType, webhookDispatcher.HandleEvent)
 	}
@@ -294,6 +294,12 @@ func run() error {
 			probeCache.ProbeAll(context.Background(), probLibs, logger)
 		}
 	}
+
+	// Create expected-writes tracker for shared-filesystem detection.
+	// Both the watcher service and the HTTP router use this to track
+	// paths that Stillwater is about to write, so it must be created
+	// before either is initialized.
+	expectedWrites := watcher.NewExpectedWrites()
 
 	// Set up HTTP router
 	router := api.NewRouter(api.RouterDeps{
@@ -322,6 +328,7 @@ func run() error {
 		MaintenanceService: maintenanceService,
 		SettingsIOService:  settingsIOService,
 		ProbeCache:         probeCache,
+		ExpectedWrites:     expectedWrites,
 		EventBus:           eventBus,
 		DB:                 db,
 		Logger:             logger,
@@ -392,24 +399,13 @@ func run() error {
 		}
 	}
 
-	// Evaluate shared-filesystem overlaps on startup.
-	{
-		overlapCount, sfErr := library.RecheckOverlaps(ctx, libraryService, logger)
-		if sfErr != nil {
-			logger.Warn("shared-filesystem check on startup", "error", sfErr)
-		} else if overlapCount > 0 {
-			logger.Warn("shared-filesystem overlap detected on startup",
-				slog.Int("libraries_affected", overlapCount))
-		}
-	}
-
 	// Start filesystem watcher for libraries with fs_watch enabled
 	{
 		scanFn := func(ctx context.Context) error {
 			_, err := scannerService.Run(ctx)
 			return err
 		}
-		watcherService := watcher.NewService(scanFn, libraryService, eventBus, logger, probeCache)
+		watcherService := watcher.NewService(scanFn, libraryService, eventBus, logger, probeCache, expectedWrites)
 		go watcherService.Start(ctx)
 	}
 

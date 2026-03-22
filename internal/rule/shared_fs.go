@@ -51,5 +51,5 @@ func (c *SharedFSCheck) IsShared(ctx context.Context, a *artist.Artist) bool {
 		return true
 	}
 
-	return lib.SharedFilesystem
+	return lib.IsSharedFS()
 }

@@ -25,6 +25,7 @@ const (
 	JellyfinLibraryScan  Type = "jellyfin.library.scan"
 	FSDirCreated         Type = "fs.dir.created"
 	FSDirRemoved         Type = "fs.dir.removed"
+	FSUnexpectedWrite    Type = "fs.unexpected.write"
 )
 
 // Event represents something that happened in the system.

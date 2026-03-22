@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
 
@@ -216,5 +217,46 @@ func TestWriteBackArtistNFO_EmptyPath(t *testing.T) {
 	}
 	if got := err.Error(); got != "write artist nfo: artist path is empty" {
 		t.Errorf("error = %q, want %q", got, "write artist nfo: artist path is empty")
+	}
+}
+
+func TestWriteBackArtistNFO_IncludesStillwater(t *testing.T) {
+	dir := t.TempDir()
+	a := &artist.Artist{
+		ID:   "test-id",
+		Name: "Test Artist",
+		Path: dir,
+	}
+
+	if err := WriteBackArtistNFO(context.Background(), a, nil, nil); err != nil {
+		t.Fatalf("WriteBackArtistNFO: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(dir, "artist.nfo"))
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+
+	content := string(data)
+	if !strings.Contains(content, "<stillwater") {
+		t.Error("NFO does not contain <stillwater element")
+	}
+	if !strings.Contains(content, `version="1"`) {
+		t.Error("NFO does not contain version attribute")
+	}
+	if !strings.Contains(content, "written=") {
+		t.Error("NFO does not contain written attribute")
+	}
+
+	// Parse back and validate the written timestamp is valid RFC 3339.
+	parsed, err := Parse(bytes.NewReader(data))
+	if err != nil {
+		t.Fatalf("Parse written NFO: %v", err)
+	}
+	if parsed.Stillwater == nil {
+		t.Fatal("Stillwater is nil after round-trip")
+	}
+	if _, err := time.Parse(time.RFC3339, parsed.Stillwater.Written); err != nil {
+		t.Errorf("Written is not valid RFC 3339: %v", err)
 	}
 }

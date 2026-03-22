@@ -24,7 +24,7 @@ import (
 // to satisfy the fail-closed nil-receiver guard on IsShared.
 func nonSharedFSCheck() *SharedFSCheck {
 	return NewSharedFSCheck(&stubLibQuerier{
-		lib: &library.Library{SharedFilesystem: false},
+		lib: &library.Library{SharedFSStatus: library.SharedFSNone},
 	}, testLogger())
 }
 

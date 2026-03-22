@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/library"
@@ -74,7 +75,7 @@ func TestHandleSharedFilesystemDismiss(t *testing.T) {
 }
 
 func TestHandleSharedFilesystemStatusOverlapWith(t *testing.T) {
-	// Verify that OverlapWith is populated when overlapping libraries exist.
+	// Verify that OverlapWith is populated when peer library IDs are set.
 	r, libSvc, _ := testRouterWithLibrary(t)
 	ctx := context.Background()
 
@@ -84,8 +85,7 @@ func TestHandleSharedFilesystemStatusOverlapWith(t *testing.T) {
 		t.Fatalf("creating music dir: %v", err)
 	}
 
-	// Create a manual library and an Emby library at the same path so they
-	// trigger overlap detection.
+	// Create two libraries and set shared-filesystem status with peer IDs.
 	manualLib := &library.Library{
 		Name:   "My Music",
 		Path:   musicPath,
@@ -105,12 +105,13 @@ func TestHandleSharedFilesystemStatusOverlapWith(t *testing.T) {
 		t.Fatalf("creating emby library: %v", err)
 	}
 
-	// Run a recheck so shared_filesystem flags are set.
-	recheckReq := httptest.NewRequest(http.MethodPost, "/api/v1/shared-filesystem/recheck", nil)
-	recheckW := httptest.NewRecorder()
-	r.handleSharedFilesystemRecheck(recheckW, recheckReq)
-	if recheckW.Code != http.StatusOK {
-		t.Fatalf("recheck: expected 200, got %d: %s", recheckW.Code, recheckW.Body.String())
+	// Set shared-filesystem status with peer library IDs so the status
+	// endpoint has data to return.
+	if err := libSvc.SetSharedFSStatus(ctx, manualLib.ID, library.SharedFSSuspected, "", embyLib.ID); err != nil {
+		t.Fatalf("setting shared_fs_status on manual: %v", err)
+	}
+	if err := libSvc.SetSharedFSStatus(ctx, embyLib.ID, library.SharedFSSuspected, "", manualLib.ID); err != nil {
+		t.Fatalf("setting shared_fs_status on emby: %v", err)
 	}
 
 	// Fetch status and verify OverlapWith is populated.
@@ -131,11 +132,15 @@ func TestHandleSharedFilesystemStatusOverlapWith(t *testing.T) {
 		t.Fatal("expected overlaps to be detected")
 	}
 
+	gotByID := make(map[string]string, len(status.Libraries))
 	for _, entry := range status.Libraries {
-		if entry.OverlapWith == "" {
-			t.Errorf("library %q (id=%s) has empty OverlapWith; expected overlap description",
-				entry.LibraryName, entry.LibraryID)
-		}
+		gotByID[entry.LibraryID] = entry.OverlapWith
+	}
+	if got := gotByID[manualLib.ID]; !strings.Contains(got, "Emby Music") {
+		t.Errorf("manual OverlapWith = %q, want peer name 'Emby Music'", got)
+	}
+	if got := gotByID[embyLib.ID]; !strings.Contains(got, "My Music") {
+		t.Errorf("emby OverlapWith = %q, want peer name 'My Music'", got)
 	}
 }
 
@@ -154,12 +159,12 @@ func TestHandleSharedFilesystemRecheck(t *testing.T) {
 	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
 		t.Fatalf("decoding response: %v", err)
 	}
-	val, ok := result["overlaps_found"]
+	val, ok := result["shared_libraries"]
 	if !ok {
-		t.Fatal("expected overlaps_found field in response")
+		t.Fatal("expected shared_libraries field in response")
 	}
 	// json.Unmarshal decodes numbers as float64; verify it is numeric.
 	if _, isNum := val.(float64); !isNum {
-		t.Errorf("expected overlaps_found to be a number, got %T", val)
+		t.Errorf("expected shared_libraries to be a number, got %T", val)
 	}
 }

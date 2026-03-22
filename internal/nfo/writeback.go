@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/filesystem"
@@ -53,6 +54,12 @@ func WriteBackArtistNFO(ctx context.Context, a *artist.Artist, ss *SnapshotServi
 	// Always lock the NFO to prevent Emby/Jellyfin from overwriting it
 	// on subsequent metadata refreshes.
 	nfoData.LockData = true
+
+	// Stamp provenance so external overwrites can be detected.
+	nfoData.Stillwater = &StillwaterMeta{
+		Version: StillwaterVersion,
+		Written: time.Now().UTC().Format(time.RFC3339),
+	}
 
 	var buf bytes.Buffer
 	if err := Write(&buf, nfoData); err != nil {

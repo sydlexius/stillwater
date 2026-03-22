@@ -24,24 +24,33 @@ const (
 	FSModeBoth  = 3 // watch + poll
 )
 
+// SharedFS status constants. An empty string means unknown (not yet evaluated).
+const (
+	SharedFSNone      = "none"      // no shared filesystem detected
+	SharedFSSuspected = "suspected" // evidence suggests shared filesystem
+	SharedFSConfirmed = "confirmed" // confirmed shared filesystem
+)
+
 // ValidPollIntervals lists the allowed poll interval values in seconds.
 var ValidPollIntervals = []int{60, 300, 900, 1800}
 
 // Library represents a music library directory with an associated type.
 type Library struct {
-	ID                string    `json:"id"`
-	Name              string    `json:"name"`
-	Path              string    `json:"path"`
-	Type              string    `json:"type"`                          // "regular" or "classical"
-	Source            string    `json:"source"`                        // "manual", "emby", "jellyfin", "lidarr"
-	ConnectionID      string    `json:"connection_id"`                 // FK to connections.id (empty for manual)
-	ExternalID        string    `json:"external_id"`                   // Platform-specific library ID
-	FSWatch           int       `json:"fs_watch"`                      // Bitfield: 0=off, 1=watch, 2=poll, 3=both
-	FSPollInterval    int       `json:"fs_poll_interval"`              // Poll interval in seconds
-	SharedFilesystem  bool      `json:"shared_filesystem"`             // True when a platform connection writes to the same path
-	FSNotifySupported bool      `json:"fs_notify_supported,omitempty"` // Runtime-only, not stored in DB
-	CreatedAt         time.Time `json:"created_at"`
-	UpdatedAt         time.Time `json:"updated_at"`
+	ID                     string    `json:"id"`
+	Name                   string    `json:"name"`
+	Path                   string    `json:"path"`
+	Type                   string    `json:"type"`                          // "regular" or "classical"
+	Source                 string    `json:"source"`                        // "manual", "emby", "jellyfin", "lidarr"
+	ConnectionID           string    `json:"connection_id"`                 // FK to connections.id (empty for manual)
+	ExternalID             string    `json:"external_id"`                   // Platform-specific library ID
+	FSWatch                int       `json:"fs_watch"`                      // Bitfield: 0=off, 1=watch, 2=poll, 3=both
+	FSPollInterval         int       `json:"fs_poll_interval"`              // Poll interval in seconds
+	SharedFSStatus         string    `json:"shared_fs_status"`              // "none", "suspected", "confirmed", "" (empty = unknown)
+	SharedFSEvidence       string    `json:"shared_fs_evidence"`            // JSON array of evidence strings
+	SharedFSPeerLibraryIDs string    `json:"shared_fs_peer_library_ids"`    // Comma-separated library IDs
+	FSNotifySupported      bool      `json:"fs_notify_supported,omitempty"` // Runtime-only, not stored in DB
+	CreatedAt              time.Time `json:"created_at"`
+	UpdatedAt              time.Time `json:"updated_at"`
 }
 
 // FSWatchEnabled reports whether fsnotify watching is enabled.
@@ -55,6 +64,11 @@ func (lib Library) FSPollEnabled() bool { return lib.FSWatch&FSModePoll != 0 }
 // (image save, NFO write) are unavailable.
 func (lib Library) IsPathless() bool {
 	return lib.Path == ""
+}
+
+// IsSharedFS reports whether the library has a suspected or confirmed shared filesystem.
+func (lib Library) IsSharedFS() bool {
+	return lib.SharedFSStatus == SharedFSSuspected || lib.SharedFSStatus == SharedFSConfirmed
 }
 
 // SourceDisplayName returns a human-readable name for the library source.

@@ -21,13 +21,14 @@ type LibraryLister interface {
 // Service watches library root directories for subdirectory creation and
 // removal, triggering scans and publishing events in response.
 type Service struct {
-	scanFn        func(ctx context.Context) error
-	libraries     LibraryLister
-	eventBus      *event.Bus
-	logger        *slog.Logger
-	debounce      time.Duration
-	refreshPeriod time.Duration
-	probeCache    *ProbeCache
+	scanFn         func(ctx context.Context) error
+	libraries      LibraryLister
+	eventBus       *event.Bus
+	logger         *slog.Logger
+	debounce       time.Duration
+	refreshPeriod  time.Duration
+	probeCache     *ProbeCache
+	expectedWrites *ExpectedWrites
 
 	mu        sync.Mutex
 	watcher   *fsnotify.Watcher
@@ -41,20 +42,22 @@ type Service struct {
 }
 
 // NewService creates a new filesystem watcher service.
-func NewService(scanFn func(ctx context.Context) error, libraries LibraryLister, eventBus *event.Bus, logger *slog.Logger, probeCache *ProbeCache) *Service {
+// expectedWrites is optional; if nil, the watcher works without expected-write filtering.
+func NewService(scanFn func(ctx context.Context) error, libraries LibraryLister, eventBus *event.Bus, logger *slog.Logger, probeCache *ProbeCache, expectedWrites *ExpectedWrites) *Service {
 	return &Service{
-		scanFn:        scanFn,
-		libraries:     libraries,
-		eventBus:      eventBus,
-		logger:        logger.With("component", "fs-watcher"),
-		debounce:      1 * time.Second,
-		refreshPeriod: 5 * time.Minute,
-		probeCache:    probeCache,
-		watching:      make(map[string]bool),
-		knownDirs:     make(map[string]map[string]struct{}),
-		pollSnapshots: make(map[string]map[string]struct{}),
-		lastPollTime:  make(map[string]time.Time),
-		pollIntervals: make(map[string]int),
+		scanFn:         scanFn,
+		libraries:      libraries,
+		eventBus:       eventBus,
+		logger:         logger.With("component", "fs-watcher"),
+		debounce:       1 * time.Second,
+		refreshPeriod:  5 * time.Minute,
+		probeCache:     probeCache,
+		expectedWrites: expectedWrites,
+		watching:       make(map[string]bool),
+		knownDirs:      make(map[string]map[string]struct{}),
+		pollSnapshots:  make(map[string]map[string]struct{}),
+		lastPollTime:   make(map[string]time.Time),
+		pollIntervals:  make(map[string]int),
 	}
 }
 
@@ -151,6 +154,12 @@ func (s *Service) Start(ctx context.Context) {
 				s.refreshWatchPaths(ctx)
 			}
 			s.refreshPollPaths(ctx)
+			// Prune stale expected-write entries (crashed writes that never cleared).
+			if s.expectedWrites != nil {
+				if pruned := s.expectedWrites.Prune(5 * time.Minute); pruned > 0 {
+					s.logger.Warn("pruned stale expected-write entries", "count", pruned)
+				}
+			}
 		}
 	}
 }
@@ -510,6 +519,31 @@ func (s *Service) pollDirectories() bool {
 	}
 
 	return changed
+}
+
+// ExpectedWrites returns the expected-writes tracker, or nil if the service
+// was created without one.
+func (s *Service) ExpectedWrites() *ExpectedWrites {
+	return s.expectedWrites
+}
+
+// PublishUnexpectedWrite emits an event indicating a file was modified by
+// an external process. This is used for shared-filesystem evidence collection.
+// Currently scaffolding: the watcher monitors directory-level events only.
+// This method will be called when Tier 2 mtime comparison detects external
+// file modifications during library sync.
+func (s *Service) PublishUnexpectedWrite(path, libraryRoot string) {
+	s.eventBus.Publish(event.Event{
+		Type: event.FSUnexpectedWrite,
+		Data: map[string]any{
+			"path":         path,
+			"library_root": libraryRoot,
+		},
+	})
+	s.logger.Info("unexpected file write detected",
+		"path", path,
+		"library_root", libraryRoot,
+	)
 }
 
 // readDirSnapshot reads directory entries and returns a set of subdirectory names.
