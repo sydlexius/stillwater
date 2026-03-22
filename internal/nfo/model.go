@@ -27,6 +27,7 @@ type ArtistNFO struct {
 	Biography           string       `xml:"biography,omitempty"`
 	Thumbs              []Thumb      `xml:"thumb,omitempty"`
 	Fanart              *Fanart      `xml:"fanart,omitempty"`
+	LockData            bool         `xml:"lockdata,omitempty"`
 	ExtraElements       []RawElement `xml:"-"`
 }
 

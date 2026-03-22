@@ -16,7 +16,7 @@ var knownElements = map[string]bool{
 	"deezerartistid": true, "spotifyartistid": true,
 	"genre": true, "style": true, "mood": true, "yearsactive": true,
 	"born": true, "formed": true, "died": true, "disbanded": true,
-	"biography": true, "thumb": true, "fanart": true,
+	"biography": true, "thumb": true, "fanart": true, "lockdata": true,
 }
 
 // htmlEntityReplacer handles common HTML entities that are not valid XML.
@@ -204,6 +204,12 @@ func parseKnownElement(decoder *xml.Decoder, nfo *ArtistNFO, name string, start 
 			return err
 		}
 		nfo.Fanart = fanart
+	case "lockdata":
+		var s string
+		if err := decodeCharData(decoder, &s); err != nil {
+			return err
+		}
+		nfo.LockData = parseBoolString(s)
 	}
 	return nil
 }
@@ -336,6 +342,12 @@ func Write(w io.Writer, nfo *ArtistNFO) error {
 	writeElement(w, "disbanded", nfo.Disbanded)
 	writeElement(w, "biography", nfo.Biography)
 
+	// Write lockdata element to protect NFO from platform overwrites.
+	// Only written when true; omitted entirely when false.
+	if nfo.LockData {
+		fmt.Fprintf(w, "  <lockdata>true</lockdata>\n") //nolint:errcheck
+	}
+
 	for _, thumb := range nfo.Thumbs {
 		writeThumb(w, thumb)
 	}
@@ -393,6 +405,18 @@ func writeThumbInline(w io.Writer, t Thumb) {
 	var buf bytes.Buffer
 	xml.EscapeText(&buf, []byte(t.Value))         //nolint:errcheck
 	fmt.Fprintf(w, ">%s</thumb>\n", buf.String()) //nolint:errcheck
+}
+
+// parseBoolString interprets a string as a boolean value.
+// Handles the formats used by Kodi, Emby, and Jellyfin:
+// "true", "1", "yes" (case-insensitive) are true; everything else is false.
+func parseBoolString(s string) bool {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "true", "1", "yes":
+		return true
+	default:
+		return false
+	}
 }
 
 // stripBOM removes a UTF-8 BOM (EF BB BF) from the beginning of the data.

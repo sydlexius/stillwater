@@ -346,6 +346,161 @@ func TestWrite_PreservesCustomElements(t *testing.T) {
 	}
 }
 
+func TestWrite_LockDataTrue(t *testing.T) {
+	nfo := &ArtistNFO{
+		Name:     "Locked Artist",
+		LockData: true,
+	}
+
+	var buf bytes.Buffer
+	if err := Write(&buf, nfo); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "<lockdata>true</lockdata>") {
+		t.Errorf("output should contain <lockdata>true</lockdata>, got:\n%s", output)
+	}
+}
+
+func TestWrite_LockDataFalse(t *testing.T) {
+	nfo := &ArtistNFO{
+		Name:     "Unlocked Artist",
+		LockData: false,
+	}
+
+	var buf bytes.Buffer
+	if err := Write(&buf, nfo); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+
+	output := buf.String()
+	if strings.Contains(output, "lockdata") {
+		t.Errorf("output should NOT contain lockdata when false, got:\n%s", output)
+	}
+}
+
+func TestParse_LockDataTrue(t *testing.T) {
+	input := `<?xml version="1.0" encoding="UTF-8"?>
+<artist>
+  <name>Locked Artist</name>
+  <lockdata>true</lockdata>
+</artist>`
+
+	nfo, err := Parse(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if !nfo.LockData {
+		t.Error("LockData should be true after parsing <lockdata>true</lockdata>")
+	}
+}
+
+func TestParse_LockDataFalse(t *testing.T) {
+	input := `<?xml version="1.0" encoding="UTF-8"?>
+<artist>
+  <name>Unlocked Artist</name>
+  <lockdata>false</lockdata>
+</artist>`
+
+	nfo, err := Parse(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if nfo.LockData {
+		t.Error("LockData should be false after parsing <lockdata>false</lockdata>")
+	}
+}
+
+func TestParse_LockDataVariants(t *testing.T) {
+	// Kodi/Emby/Jellyfin may use different boolean representations.
+	tests := []struct {
+		name  string
+		value string
+		want  bool
+	}{
+		{"true lowercase", "true", true},
+		{"True mixed case", "True", true},
+		{"TRUE uppercase", "TRUE", true},
+		{"1 numeric", "1", true},
+		{"yes", "yes", true},
+		{"false", "false", false},
+		{"0", "0", false},
+		{"no", "no", false},
+		{"empty", "", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			input := `<?xml version="1.0" encoding="UTF-8"?>
+<artist>
+  <name>Test</name>
+  <lockdata>` + tt.value + `</lockdata>
+</artist>`
+
+			nfo, err := Parse(strings.NewReader(input))
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			if nfo.LockData != tt.want {
+				t.Errorf("LockData for %q = %v, want %v", tt.value, nfo.LockData, tt.want)
+			}
+		})
+	}
+}
+
+func TestParse_LockDataAbsent(t *testing.T) {
+	input := `<?xml version="1.0" encoding="UTF-8"?>
+<artist>
+  <name>No Lock</name>
+</artist>`
+
+	nfo, err := Parse(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if nfo.LockData {
+		t.Error("LockData should default to false when element is absent")
+	}
+}
+
+func TestWrite_RoundTripLockData(t *testing.T) {
+	// Parse an NFO with lockdata=true, write it, parse again, verify preserved.
+	input := `<?xml version="1.0" encoding="UTF-8"?>
+<artist>
+  <name>Round Trip Lock</name>
+  <musicbrainzartistid>abc-123</musicbrainzartistid>
+  <lockdata>true</lockdata>
+</artist>`
+
+	nfo1, err := Parse(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if !nfo1.LockData {
+		t.Fatal("first parse: LockData should be true")
+	}
+
+	var buf bytes.Buffer
+	if err := Write(&buf, nfo1); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+
+	nfo2, err := Parse(&buf)
+	if err != nil {
+		t.Fatalf("Parse round-trip: %v", err)
+	}
+	if !nfo2.LockData {
+		t.Error("round-trip: LockData should still be true after write and re-parse")
+	}
+	if nfo2.Name != "Round Trip Lock" {
+		t.Errorf("round-trip: Name = %q, want %q", nfo2.Name, "Round Trip Lock")
+	}
+	if nfo2.MusicBrainzArtistID != "abc-123" {
+		t.Errorf("round-trip: MBID = %q, want %q", nfo2.MusicBrainzArtistID, "abc-123")
+	}
+}
+
 func TestStripBOM(t *testing.T) {
 	tests := []struct {
 		name string

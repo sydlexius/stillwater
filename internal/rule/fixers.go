@@ -78,6 +78,7 @@ func (f *NFOFixer) Fix(ctx context.Context, a *artist.Artist, _ *Violation) (*Fi
 	}
 
 	nfoData := nfo.FromArtist(a)
+	nfoData.LockData = true
 	var buf bytes.Buffer
 	if err := nfo.Write(&buf, nfoData); err != nil {
 		return nil, fmt.Errorf("generating nfo: %w", err)
@@ -554,10 +555,18 @@ func SaveImageFromData(ctx context.Context, a *artist.Artist, imageType string, 
 	return saved, nil
 }
 
-// writeArtistNFO writes the artist's current metadata to an artist.nfo file (best effort).
+// writeArtistNFO writes the artist's current metadata to an artist.nfo file.
 // If a SnapshotService is provided, saves a snapshot of the existing NFO before overwriting.
+// Errors are logged rather than returned because callers are fixers that have already
+// committed their DB changes; failing the fixer would leave DB and filesystem out of sync.
 func writeArtistNFO(ctx context.Context, a *artist.Artist, ss *nfo.SnapshotService, logger *slog.Logger) {
-	_ = nfo.WriteBackArtistNFO(ctx, a, ss, logger)
+	if err := nfo.WriteBackArtistNFO(ctx, a, ss, logger); err != nil && logger != nil {
+		logger.Error("NFO write-back failed after fix",
+			slog.String("artist_id", a.ID),
+			slog.String("artist_name", a.Name),
+			slog.String("error", err.Error()),
+		)
+	}
 }
 
 // existingImageFileNames returns the subset of canonical filenames for imageType
