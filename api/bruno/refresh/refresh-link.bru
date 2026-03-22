@@ -17,6 +17,12 @@ headers {
 
 body:json {
   {
-    "musicbrainz_id": "00000000-0000-0000-0000-000000000000"
+    "mbid": "00000000-0000-0000-0000-000000000000"
   }
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
 }

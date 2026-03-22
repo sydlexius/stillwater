@@ -20,3 +20,9 @@ body:json {
     "query": "artist name"
   }
 }
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+}

@@ -20,3 +20,9 @@ body:json {
     "value": "test value"
   }
 }
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+}

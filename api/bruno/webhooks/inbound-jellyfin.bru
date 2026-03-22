@@ -10,9 +10,6 @@ post {
   auth: none
 }
 
-headers {
-  Content-Type: application/json
-}
 
 body:json {
   {
@@ -20,4 +17,10 @@ body:json {
     "Name": "Test Artist",
     "ItemType": "MusicArtist"
   }
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
 }

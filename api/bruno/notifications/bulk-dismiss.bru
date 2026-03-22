@@ -12,11 +12,16 @@ post {
 
 headers {
   Cookie: session={{sessionToken}}
-  Content-Type: application/json
 }
 
 body:json {
   {
     "ids": ["{{notificationId}}"]
   }
+}
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
 }

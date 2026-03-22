@@ -21,3 +21,9 @@ body:json {
     "image_type": "thumb"
   }
 }
+
+tests {
+  test("should return 200", function() {
+    expect(res.status).to.equal(200);
+  });
+}
