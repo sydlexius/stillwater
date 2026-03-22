@@ -2,35 +2,46 @@ package rule
 
 import "time"
 
-// Bulk operation modes control how matches are resolved.
 const (
-	BulkModeYOLO          = "yolo"            // Auto-accept best match (confidence >= 0.70)
-	BulkModePromptNoMatch = "prompt_no_match" // Auto-accept if match, skip on no-match
-	BulkModeDisambiguate  = "disambiguate"    // Skip when multiple equally-scored matches
-	BulkModeManual        = "manual"          // Skip all, mark for manual review
+	// BulkModeYOLO auto-accepts the best provider match without manual review.
+	BulkModeYOLO = "yolo"
+	// BulkModePromptNoMatch auto-accepts on match but skips for manual review when no match is found.
+	BulkModePromptNoMatch = "prompt_no_match"
+	// BulkModeDisambiguate skips when multiple equally-scored matches exist.
+	BulkModeDisambiguate = "disambiguate"
+	// BulkModeManual skips all matches and marks them for manual review.
+	BulkModeManual = "manual"
 )
 
-// Bulk job types.
 const (
+	// BulkTypeFetchMetadata is a bulk job that fetches metadata from providers.
 	BulkTypeFetchMetadata = "fetch_metadata"
-	BulkTypeFetchImages   = "fetch_images"
+	// BulkTypeFetchImages is a bulk job that fetches missing images from providers.
+	BulkTypeFetchImages = "fetch_images"
 )
 
-// Bulk job statuses.
 const (
-	BulkStatusPending   = "pending"
-	BulkStatusRunning   = "running"
+	// BulkStatusPending indicates the job is queued but not yet started.
+	BulkStatusPending = "pending"
+	// BulkStatusRunning indicates the job is currently executing.
+	BulkStatusRunning = "running"
+	// BulkStatusCompleted indicates the job finished execution (individual items may have failed).
 	BulkStatusCompleted = "completed"
-	BulkStatusCanceled  = "canceled"
-	BulkStatusFailed    = "failed"
+	// BulkStatusCanceled indicates the job was canceled by the user.
+	BulkStatusCanceled = "canceled"
+	// BulkStatusFailed indicates the job terminated due to an error.
+	BulkStatusFailed = "failed"
 )
 
-// Bulk job item statuses.
 const (
+	// BulkItemPending indicates the item has not been processed yet.
 	BulkItemPending = "pending"
-	BulkItemFixed   = "fixed"
+	// BulkItemFixed indicates the item was successfully resolved.
+	BulkItemFixed = "fixed"
+	// BulkItemSkipped indicates the item was skipped and no changes were applied.
 	BulkItemSkipped = "skipped"
-	BulkItemFailed  = "failed"
+	// BulkItemFailed indicates the item encountered an error during processing.
+	BulkItemFailed = "failed"
 )
 
 // BulkJob represents a background bulk operation.

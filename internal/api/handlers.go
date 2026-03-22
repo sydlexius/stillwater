@@ -16,6 +16,8 @@ import (
 	"github.com/sydlexius/stillwater/web/templates"
 )
 
+// handleHealth returns a simple health check response with version info.
+// GET /api/v1/health
 func (r *Router) handleHealth(w http.ResponseWriter, req *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{
 		"status":  "ok",
@@ -43,6 +45,8 @@ func (r *Router) assets() templates.AssetPaths {
 	}
 }
 
+// handleLogin authenticates a user and sets a session cookie.
+// POST /api/v1/auth/login
 func (r *Router) handleLogin(w http.ResponseWriter, req *http.Request) {
 	var body struct {
 		Username string `json:"username"`
@@ -79,6 +83,8 @@ func (r *Router) handleLogin(w http.ResponseWriter, req *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
+// handleLogout destroys the current session and clears the session cookie.
+// POST /api/v1/auth/logout
 func (r *Router) handleLogout(w http.ResponseWriter, req *http.Request) {
 	if cookie, err := req.Cookie("session"); err == nil {
 		if logoutErr := r.authService.Logout(req.Context(), cookie.Value); logoutErr != nil {
@@ -98,6 +104,8 @@ func (r *Router) handleLogout(w http.ResponseWriter, req *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
+// handleMe returns the currently authenticated user's identity.
+// GET /api/v1/auth/me
 func (r *Router) handleMe(w http.ResponseWriter, req *http.Request) {
 	userID := middleware.UserIDFromContext(req.Context())
 	if userID == "" {
@@ -107,6 +115,8 @@ func (r *Router) handleMe(w http.ResponseWriter, req *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"user_id": userID})
 }
 
+// handleSetup creates the initial admin user during first-time setup.
+// POST /api/v1/auth/setup
 func (r *Router) handleSetup(w http.ResponseWriter, req *http.Request) {
 	hasUsers, err := r.authService.HasUsers(req.Context())
 	if err != nil {
@@ -159,6 +169,9 @@ func (r *Router) handleSetup(w http.ResponseWriter, req *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]string{"status": "admin account created"})
 }
 
+// handleIndex serves the main web application page, redirecting to setup or
+// login if needed.
+// GET /
 func (r *Router) handleIndex(w http.ResponseWriter, req *http.Request) {
 	// Check if setup is needed
 	hasUsers, err := r.authService.HasUsers(req.Context())
@@ -195,6 +208,8 @@ func (r *Router) handleIndex(w http.ResponseWriter, req *http.Request) {
 	renderTempl(w, req, templates.IndexPage(r.assets()))
 }
 
+// handleOnboardingPage serves the first-time setup wizard page.
+// GET /setup/wizard
 func (r *Router) handleOnboardingPage(w http.ResponseWriter, req *http.Request) {
 	// Require auth
 	userID := middleware.UserIDFromContext(req.Context())

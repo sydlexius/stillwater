@@ -12,6 +12,8 @@ import (
 	"github.com/sydlexius/stillwater/internal/backup"
 )
 
+// handleBackupCreate triggers a new database backup.
+// POST /api/v1/settings/backup
 func (r *Router) handleBackupCreate(w http.ResponseWriter, req *http.Request) {
 	info, err := r.backupService.Backup(req.Context())
 	if err != nil {
@@ -36,6 +38,8 @@ func (r *Router) handleBackupCreate(w http.ResponseWriter, req *http.Request) {
 	json.NewEncoder(w).Encode(info) //nolint:errcheck
 }
 
+// handleBackupHistory returns a list of all available backup files.
+// GET /api/v1/settings/backup/history
 func (r *Router) handleBackupHistory(w http.ResponseWriter, req *http.Request) {
 	backups, err := r.backupService.ListBackups()
 	if err != nil {
@@ -56,6 +60,8 @@ func (r *Router) handleBackupHistory(w http.ResponseWriter, req *http.Request) {
 	json.NewEncoder(w).Encode(backups) //nolint:errcheck
 }
 
+// handleBackupDelete removes a backup file by filename.
+// DELETE /api/v1/settings/backup/{filename}
 func (r *Router) handleBackupDelete(w http.ResponseWriter, req *http.Request) {
 	filename, ok := RequirePathParam(w, req, "filename")
 	if !ok {
@@ -90,6 +96,8 @@ func (r *Router) handleBackupDelete(w http.ResponseWriter, req *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
+// handleBackupDownload serves a backup file for download.
+// GET /api/v1/settings/backup/{filename}
 func (r *Router) handleBackupDownload(w http.ResponseWriter, req *http.Request) {
 	filename, ok := RequirePathParam(w, req, "filename")
 	if !ok {
