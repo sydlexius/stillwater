@@ -1,0 +1,57 @@
+package middleware
+
+import "testing"
+
+func TestScrubQuery_RedactsSensitiveParams(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"apikey=secret123&page=1", "apikey=REDACTED&page=1"},
+		{"api_key=abc&name=test", "api_key=REDACTED&name=test"},
+		{"password=hunter2&user=admin", "password=REDACTED&user=admin"},
+		{"token=tok123&format=json", "token=REDACTED&format=json"},
+		{"secret=s3cr3t", "secret=REDACTED"},
+		{"authorization=bearer123", "authorization=REDACTED"},
+	}
+
+	for _, tt := range tests {
+		got := scrubQuery(tt.input)
+		if got != tt.want {
+			t.Errorf("scrubQuery(%q) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}
+
+func TestScrubQuery_PreservesSafeParams(t *testing.T) {
+	input := "page=1&page_size=50&sort=name"
+	got := scrubQuery(input)
+	if got != input {
+		t.Errorf("scrubQuery(%q) = %q, want unchanged", input, got)
+	}
+}
+
+func TestScrubQuery_Empty(t *testing.T) {
+	got := scrubQuery("")
+	if got != "" {
+		t.Errorf("scrubQuery(\"\") = %q, want empty", got)
+	}
+}
+
+func TestScrubQuery_BareKeyNoEquals(t *testing.T) {
+	// A bare key with no = sign should pass through unchanged (len(kv) == 1).
+	// This verifies the function does not panic or misredact.
+	got := scrubQuery("apikey&page=1")
+	want := "apikey&page=1"
+	if got != want {
+		t.Errorf("scrubQuery(bare key) = %q, want %q", got, want)
+	}
+}
+
+func TestScrubQuery_CaseInsensitive(t *testing.T) {
+	got := scrubQuery("API_KEY=secret&APIKEY=val")
+	want := "API_KEY=REDACTED&APIKEY=REDACTED"
+	if got != want {
+		t.Errorf("scrubQuery(uppercase) = %q, want %q", got, want)
+	}
+}
