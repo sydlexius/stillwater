@@ -1128,9 +1128,6 @@ if [[ "$ROUNDTRIP" -eq 1 ]]; then
     # the platform to overwrite the NFO before we can check it. The real
     # protection happens when the platform next reads the locked NFO and imports
     # the lock into its internal DB (confirmed in platform behavior tests).
-    # This check re-writes the NFO by patching a field with auto-push disabled
-    # (using a no-op biography re-set) so we can read it before any platform
-    # interference.
     if [[ -n "$RT_ARTIST_PATH" ]]; then
       nfo_target="$RT_ARTIST_PATH/artist.nfo"
       if [[ -f "$nfo_target" ]]; then
