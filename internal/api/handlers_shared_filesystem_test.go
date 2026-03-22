@@ -154,12 +154,12 @@ func TestHandleSharedFilesystemRecheck(t *testing.T) {
 	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
 		t.Fatalf("decoding response: %v", err)
 	}
-	val, ok := result["overlaps_found"]
+	val, ok := result["shared_libraries"]
 	if !ok {
-		t.Fatal("expected overlaps_found field in response")
+		t.Fatal("expected shared_libraries field in response")
 	}
 	// json.Unmarshal decodes numbers as float64; verify it is numeric.
 	if _, isNum := val.(float64); !isNum {
-		t.Errorf("expected overlaps_found to be a number, got %T", val)
+		t.Errorf("expected shared_libraries to be a number, got %T", val)
 	}
 }

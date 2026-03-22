@@ -717,6 +717,12 @@ func TestSetSharedFSStatus_RoundTrip(t *testing.T) {
 	if got.SharedFSStatus != "" {
 		t.Errorf("SharedFSStatus after clear = %q, want empty", got.SharedFSStatus)
 	}
+	if got.SharedFSEvidence != "" {
+		t.Errorf("SharedFSEvidence after clear = %q, want empty", got.SharedFSEvidence)
+	}
+	if got.SharedFSPeerLibraryIDs != "" {
+		t.Errorf("SharedFSPeerLibraryIDs after clear = %q, want empty", got.SharedFSPeerLibraryIDs)
+	}
 }
 
 func TestSetSharedFSStatus_InvalidStatus(t *testing.T) {

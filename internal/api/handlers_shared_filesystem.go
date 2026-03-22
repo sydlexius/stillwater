@@ -92,7 +92,7 @@ func (r *Router) handleSharedFilesystemRecheck(w http.ResponseWriter, req *http.
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"overlaps_found": count,
+		"shared_libraries": count,
 	})
 }
 

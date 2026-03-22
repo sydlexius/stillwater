@@ -407,8 +407,10 @@ func TestExpectedPaths(t *testing.T) {
 			dir:       "/music/Artist",
 			fileNames: []string{"folder.jpg"},
 			want: []string{
+				"/music/Artist/folder.jpeg",
 				"/music/Artist/folder.jpg",
 				"/music/Artist/folder.png",
+				"/music/Artist/folder.webp",
 			},
 		},
 		{
@@ -416,10 +418,14 @@ func TestExpectedPaths(t *testing.T) {
 			dir:       "/music/Artist",
 			fileNames: []string{"folder.jpg", "artist.jpg"},
 			want: []string{
+				"/music/Artist/folder.jpeg",
 				"/music/Artist/folder.jpg",
 				"/music/Artist/folder.png",
+				"/music/Artist/folder.webp",
+				"/music/Artist/artist.jpeg",
 				"/music/Artist/artist.jpg",
 				"/music/Artist/artist.png",
+				"/music/Artist/artist.webp",
 			},
 		},
 		{
@@ -427,8 +433,10 @@ func TestExpectedPaths(t *testing.T) {
 			dir:       "/music/Artist",
 			fileNames: []string{"logo.png"},
 			want: []string{
+				"/music/Artist/logo.jpeg",
 				"/music/Artist/logo.jpg",
 				"/music/Artist/logo.png",
+				"/music/Artist/logo.webp",
 			},
 		},
 		{
@@ -436,8 +444,10 @@ func TestExpectedPaths(t *testing.T) {
 			dir:       "/music/Artist",
 			fileNames: []string{"fanart1"},
 			want: []string{
+				"/music/Artist/fanart1.jpeg",
 				"/music/Artist/fanart1.jpg",
 				"/music/Artist/fanart1.png",
+				"/music/Artist/fanart1.webp",
 			},
 		},
 		{

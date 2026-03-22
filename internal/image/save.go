@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/sydlexius/stillwater/internal/filesystem"
@@ -127,12 +128,25 @@ func Save(dir string, imageType string, data []byte, fileNames []string, useSyml
 	return saved, nil
 }
 
-// ExpectedPaths returns full file paths that an image save operation might write
-// for the given directory and filename list. Since the actual extension depends on
-// the image format (which may not be known until save time), both .jpg and .png
-// variants are included for each configured filename.
+// ExpectedPaths returns full file paths that an image save operation might
+// touch for the given directory and filename list. This includes the write
+// target itself and all conflicting format variants that CleanupConflictingFormats
+// may delete. The set is derived from conflictingExtensions so it stays in sync.
 func ExpectedPaths(dir string, fileNames []string) []string {
-	exts := []string{".jpg", ".png"}
+	// Collect the deduplicated set of all image extensions from the cleanup map.
+	seen := make(map[string]struct{})
+	for ext, conflicts := range conflictingExtensions {
+		seen[ext] = struct{}{}
+		for _, c := range conflicts {
+			seen[c] = struct{}{}
+		}
+	}
+	exts := make([]string, 0, len(seen))
+	for ext := range seen {
+		exts = append(exts, ext)
+	}
+	// Sort for deterministic output.
+	sort.Strings(exts)
 	paths := make([]string, 0, len(fileNames)*len(exts))
 	for _, name := range fileNames {
 		baseName := strings.TrimSuffix(name, filepath.Ext(name))

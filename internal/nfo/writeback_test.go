@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
 
@@ -245,5 +246,17 @@ func TestWriteBackArtistNFO_IncludesStillwater(t *testing.T) {
 	}
 	if !strings.Contains(content, "written=") {
 		t.Error("NFO does not contain written attribute")
+	}
+
+	// Parse back and validate the written timestamp is valid RFC 3339.
+	parsed, err := Parse(bytes.NewReader(data))
+	if err != nil {
+		t.Fatalf("Parse written NFO: %v", err)
+	}
+	if parsed.Stillwater == nil {
+		t.Fatal("Stillwater is nil after round-trip")
+	}
+	if _, err := time.Parse(time.RFC3339, parsed.Stillwater.Written); err != nil {
+		t.Errorf("Written is not valid RFC 3339: %v", err)
 	}
 }

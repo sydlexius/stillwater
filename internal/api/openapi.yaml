@@ -205,7 +205,7 @@ components:
           description: JSON array of evidence strings describing how the shared-filesystem status was determined
         shared_fs_peer_library_ids:
           type: string
-          description: Comma-separated IDs of libraries that share the same filesystem path
+          description: Comma-separated IDs of peer libraries associated with the shared-filesystem evidence
         fs_notify_supported:
           type: boolean
         created_at:
@@ -241,9 +241,9 @@ components:
     SharedFilesystemRecheckResult:
       type: object
       properties:
-        overlaps_found:
+        shared_libraries:
           type: integer
-          description: Number of libraries with shared-filesystem overlaps detected
+          description: Current count of libraries whose shared-filesystem status is set by evidence
     LibraryOpResult:
       type: object
       properties:
@@ -2600,8 +2600,8 @@ paths:
     post:
       operationId: recheckSharedFilesystem
       tags: [SharedFilesystem]
-      summary: Re-evaluate shared-filesystem overlaps
-      description: Returns the current count of libraries with shared-filesystem status set by evidence.
+      summary: Get current shared-filesystem status count
+      description: Returns the current count of libraries whose shared-filesystem status is set by evidence.
       responses:
         "200":
           description: Recheck result
