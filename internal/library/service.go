@@ -339,15 +339,38 @@ func (s *Service) SetSharedFSStatus(ctx context.Context, id, status, evidence, p
 		return fmt.Errorf("invalid shared_fs_status %q", status)
 	}
 	now := time.Now().UTC()
-	result, err := s.db.ExecContext(ctx, `
-		UPDATE libraries SET shared_fs_status = ?, shared_fs_evidence = ?, shared_fs_peer_library_ids = ?, updated_at = ? WHERE id = ?
-	`, status, evidence, peerIDs, now.Format(time.RFC3339), id)
+
+	// When setting to "suspected", guard against downgrading a library that
+	// was concurrently promoted to "confirmed" by another request. The WHERE
+	// clause ensures the UPDATE is a no-op if the current status is already
+	// stronger.
+	query := `UPDATE libraries SET shared_fs_status = ?, shared_fs_evidence = ?, shared_fs_peer_library_ids = ?, updated_at = ? WHERE id = ?`
+	if status == SharedFSSuspected {
+		query = `UPDATE libraries SET shared_fs_status = ?, shared_fs_evidence = ?, shared_fs_peer_library_ids = ?, updated_at = ? WHERE id = ? AND shared_fs_status != 'confirmed'`
+	}
+
+	result, err := s.db.ExecContext(ctx, query,
+		status, evidence, peerIDs, now.Format(time.RFC3339), id)
 	if err != nil {
 		return fmt.Errorf("setting shared_fs_status: %w", err)
 	}
 	rows, _ := result.RowsAffected()
 	if rows == 0 {
-		return fmt.Errorf("library not found: %s", id)
+		if status != SharedFSSuspected {
+			return fmt.Errorf("library not found: %s", id)
+		}
+		// Guarded update: rows=0 means either "already confirmed" (expected)
+		// or "library not found" (bug). Distinguish with an existence check.
+		var exists int
+		existErr := s.db.QueryRowContext(ctx,
+			`SELECT 1 FROM libraries WHERE id = ?`, id).Scan(&exists)
+		if errors.Is(existErr, sql.ErrNoRows) {
+			return fmt.Errorf("library not found: %s", id)
+		}
+		if existErr != nil {
+			return fmt.Errorf("checking library existence after guarded shared_fs update: %w", existErr)
+		}
+		// Library exists but is already confirmed; no-op is correct.
 	}
 	return nil
 }

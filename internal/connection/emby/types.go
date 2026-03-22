@@ -9,8 +9,16 @@ type SystemInfo struct {
 
 // LibraryOptions contains per-library configuration from Emby.
 type LibraryOptions struct {
-	SaveLocalMetadata bool     `json:"SaveLocalMetadata"`
-	MetadataSavers    []string `json:"MetadataSavers"`
+	SaveLocalMetadata bool         `json:"SaveLocalMetadata"`
+	MetadataSavers    []string     `json:"MetadataSavers"`
+	TypeOptions       []TypeOption `json:"TypeOptions"`
+}
+
+// TypeOption contains per-content-type settings (e.g., MusicArtist).
+type TypeOption struct {
+	Type             string   `json:"Type"`
+	ImageFetchers    []string `json:"ImageFetchers"`
+	MetadataFetchers []string `json:"MetadataFetchers"`
 }
 
 // VirtualFolder represents a library folder from GET /Library/VirtualFolders.

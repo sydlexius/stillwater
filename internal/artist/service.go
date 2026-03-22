@@ -580,6 +580,19 @@ func (s *Service) GetImagesForArtist(ctx context.Context, artistID string) ([]Ar
 	return s.images.GetForArtist(ctx, artistID)
 }
 
+// NewestWriteTimeForLibrary returns the most recent last_written_at timestamp
+// string across all images for artists in the given library. Returns an empty
+// string if no writes have been recorded.
+func (s *Service) NewestWriteTimeForLibrary(ctx context.Context, libraryID string) (string, error) {
+	return s.images.NewestWriteTime(ctx, libraryID)
+}
+
+// ListPathsByLibrary returns a map of artist ID to filesystem path for all
+// artists in the given library that have a non-empty path.
+func (s *Service) ListPathsByLibrary(ctx context.Context, libraryID string) (map[string]string, error) {
+	return s.artists.ListPathsByLibrary(ctx, libraryID)
+}
+
 // hydrateImages loads image metadata from the normalized table and applies
 // it to the Artist struct fields.
 func (s *Service) hydrateImages(ctx context.Context, a *Artist) error {

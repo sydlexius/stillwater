@@ -227,6 +227,34 @@ components:
         dismissed:
           type: boolean
           description: True when the user has permanently dismissed the warning
+        image_fetcher_warnings:
+          type: array
+          description: Platform image fetcher warnings. Present when shared-filesystem overlaps exist and either image fetchers are enabled or the fetcher check could not be completed (degraded warning).
+          items:
+            $ref: '#/components/schemas/ImageFetcherWarning'
+    ImageFetcherWarning:
+      type: object
+      required: [risk_level, message]
+      properties:
+        platform:
+          type: string
+          description: Platform type, either "emby" or "jellyfin"
+          enum: ["emby", "jellyfin"]
+        library_name:
+          type: string
+          description: Name of the platform library with image fetchers enabled
+        fetcher_names:
+          type: array
+          items:
+            type: string
+          description: Names of enabled image fetchers (e.g., "TheAudioDb", "FanArt")
+        risk_level:
+          type: string
+          description: Risk level of the image fetcher conflict. "warn" for Emby (adds missing images only), "critical" for Jellyfin (can replace existing images and strip EXIF data).
+          enum: ["warn", "critical"]
+        message:
+          type: string
+          description: Human-readable warning message describing the risk and recommended action
     SharedFilesystemEntry:
       type: object
       properties:

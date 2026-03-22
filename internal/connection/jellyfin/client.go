@@ -78,6 +78,50 @@ func (c *Client) CheckNFOWriterEnabled(ctx context.Context) (bool, string, error
 	return false, "", nil
 }
 
+// ImageFetcherStatus describes the image fetcher configuration for a music library.
+type ImageFetcherStatus struct {
+	LibraryName  string
+	LibraryID    string
+	FetcherNames []string // e.g., ["TheAudioDb", "FanArt"]
+	RiskLevel    string   // "critical" for Jellyfin (can replace existing images and strip EXIF)
+}
+
+// CheckImageFetchersEnabled returns the image fetcher status for Jellyfin music
+// libraries. Returns nil if no image fetchers are enabled. Returns a non-nil
+// error if the music library settings cannot be retrieved. Libraries with
+// EnableInternetProviders=false are skipped.
+func (c *Client) CheckImageFetchersEnabled(ctx context.Context) ([]ImageFetcherStatus, error) {
+	libs, err := c.GetMusicLibraries(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("checking jellyfin image fetcher settings: %w", err)
+	}
+
+	var results []ImageFetcherStatus
+	for _, lib := range libs {
+		// If internet providers are globally disabled for this library,
+		// image fetchers are inactive regardless of TypeOptions.
+		if !lib.LibraryOptions.EnableInternetProviders {
+			continue
+		}
+		for _, opt := range lib.LibraryOptions.TypeOptions {
+			if !strings.EqualFold(opt.Type, "MusicArtist") {
+				continue
+			}
+			if len(opt.ImageFetchers) > 0 {
+				// Jellyfin can replace existing images and strip EXIF
+				// provenance data, so the risk level is always "critical".
+				results = append(results, ImageFetcherStatus{
+					LibraryName:  lib.Name,
+					LibraryID:    lib.ItemID,
+					FetcherNames: opt.ImageFetchers,
+					RiskLevel:    "critical",
+				})
+			}
+		}
+	}
+	return results, nil
+}
+
 // GetArtists returns album artists from a specific library with pagination.
 func (c *Client) GetArtists(ctx context.Context, libraryID string, startIndex, limit int) (*ItemsResponse, error) {
 	path := fmt.Sprintf("/Artists/AlbumArtists?ParentId=%s&StartIndex=%d&Limit=%d&Recursive=true&Fields=Path,ProviderIds,ImageTags,BackdropImageTags,Overview,Genres,Tags,SortName,PremiereDate,EndDate", libraryID, startIndex, limit)

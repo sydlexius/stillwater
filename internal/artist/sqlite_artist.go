@@ -308,6 +308,33 @@ func (r *sqliteArtistRepo) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
+// ListPathsByLibrary returns a map of artist ID to filesystem path for all
+// artists in the given library that have a non-empty path. Uses artist ID
+// as the key (not name) to avoid collisions when multiple artists share
+// the same name.
+func (r *sqliteArtistRepo) ListPathsByLibrary(ctx context.Context, libraryID string) (map[string]string, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT id, path FROM artists WHERE library_id = ? AND path != ''`,
+		libraryID)
+	if err != nil {
+		return nil, fmt.Errorf("listing artist paths for library %s: %w", libraryID, err)
+	}
+	defer rows.Close() //nolint:errcheck
+
+	result := make(map[string]string)
+	for rows.Next() {
+		var id, path string
+		if err := rows.Scan(&id, &path); err != nil {
+			return nil, fmt.Errorf("scanning artist path: %w", err)
+		}
+		result[id] = path
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating artist paths for library %s: %w", libraryID, err)
+	}
+	return result, nil
+}
+
 func (r *sqliteArtistRepo) Search(ctx context.Context, query string) ([]Artist, error) {
 	pattern := "%" + query + "%"
 	rows, err := r.db.QueryContext(ctx,
