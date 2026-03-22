@@ -99,8 +99,8 @@ func TestBulkExecutor_SaveBestImage_PlatformNaming(t *testing.T) {
 	}
 
 	saved := executor.saveBestImage(ctx, a, "fanart", fetchResult)
-	if !saved {
-		t.Fatal("saveBestImage returned false; expected the image to be saved successfully")
+	if saved == "" {
+		t.Fatal("saveBestImage returned empty path; expected the image to be saved successfully")
 	}
 
 	// The platform profile specifies "backdrop.jpg" as the primary fanart name.
