@@ -759,7 +759,7 @@ func TestWriteArtistNFO(t *testing.T) {
 		MusicBrainzID: "test-mbid",
 	}
 
-	writeArtistNFO(context.Background(), a, nil, nil)
+	writeArtistNFO(context.Background(), a, nil, nil, nil)
 
 	data, err := os.ReadFile(filepath.Join(dir, "artist.nfo"))
 	if err != nil {

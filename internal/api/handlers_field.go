@@ -469,6 +469,14 @@ func (r *Router) writeBackNFO(ctx context.Context, a *artist.Artist) {
 		)
 		return
 	}
+
+	// Register expected write so the filesystem watcher does not treat
+	// this write-back as an external modification.
+	if r.expectedWrites != nil {
+		r.expectedWrites.Add(nfoPath)
+		defer r.expectedWrites.Remove(nfoPath)
+	}
+
 	if err := nfo.WriteBackArtistNFO(ctx, a, r.nfoSnapshotService, r.logger); err != nil {
 		r.logger.Error("NFO write-back failed",
 			slog.String("artist_id", a.ID),

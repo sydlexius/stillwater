@@ -174,6 +174,13 @@ func (r *Router) handleNFOSnapshotRestore(w http.ResponseWriter, req *http.Reque
 		}
 	}
 
+	// Register expected write so the filesystem watcher does not treat
+	// this restore as an external modification.
+	if r.expectedWrites != nil {
+		r.expectedWrites.Add(currentPath)
+		defer r.expectedWrites.Remove(currentPath)
+	}
+
 	// Write the snapshot content to disk
 	if err := filesystem.WriteFileAtomic(currentPath, []byte(snap.Content), 0o644); err != nil {
 		r.logger.Error("restoring nfo snapshot", "artist_id", artistID, "error", err)

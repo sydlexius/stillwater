@@ -218,10 +218,16 @@ func run() error {
 	// libraries whose directories are also managed by a platform connection).
 	fsCheck := rule.NewSharedFSCheck(libraryService, logger)
 
+	// Create expected-writes tracker. The watcher service, HTTP router, and
+	// rule fixers all use this to register paths that Stillwater is about to
+	// write, so the watcher can distinguish own writes from external ones.
+	// Must be created before any of those consumers are initialized.
+	expectedWrites := watcher.NewExpectedWrites()
+
 	// Initialize fix pipeline (depends on orchestrator and snapshot service)
 	fixers := []rule.Fixer{
-		rule.NewNFOFixer(nfoSnapshotService, fsCheck),
-		rule.NewMetadataFixer(orchestrator, nfoSnapshotService, logger),
+		rule.NewNFOFixer(nfoSnapshotService, fsCheck, expectedWrites),
+		rule.NewMetadataFixer(orchestrator, nfoSnapshotService, expectedWrites, logger),
 		rule.NewImageFixer(orchestrator, platformService, fsCheck, logger),
 		rule.NewExtraneousImagesFixer(platformService, fsCheck, logger),
 		rule.NewLogoTrimFixer(platformService, fsCheck, logger),
@@ -233,7 +239,7 @@ func run() error {
 
 	// Initialize bulk operations
 	bulkService := rule.NewBulkService(db)
-	bulkExecutor := rule.NewBulkExecutor(bulkService, artistService, orchestrator, pipeline, nfoSnapshotService, platformService, logger)
+	bulkExecutor := rule.NewBulkExecutor(bulkService, artistService, orchestrator, pipeline, nfoSnapshotService, platformService, expectedWrites, logger)
 
 	// Initialize event bus
 	eventBus := event.NewBus(logger, 256)
@@ -294,12 +300,6 @@ func run() error {
 			probeCache.ProbeAll(context.Background(), probLibs, logger)
 		}
 	}
-
-	// Create expected-writes tracker for shared-filesystem detection.
-	// Both the watcher service and the HTTP router use this to track
-	// paths that Stillwater is about to write, so it must be created
-	// before either is initialized.
-	expectedWrites := watcher.NewExpectedWrites()
 
 	// Set up HTTP router
 	router := api.NewRouter(api.RouterDeps{
