@@ -364,8 +364,11 @@ func (s *Service) SetSharedFSStatus(ctx context.Context, id, status, evidence, p
 		var exists int
 		existErr := s.db.QueryRowContext(ctx,
 			`SELECT 1 FROM libraries WHERE id = ?`, id).Scan(&exists)
-		if existErr != nil {
+		if errors.Is(existErr, sql.ErrNoRows) {
 			return fmt.Errorf("library not found: %s", id)
+		}
+		if existErr != nil {
+			return fmt.Errorf("checking library existence after guarded shared_fs update: %w", existErr)
 		}
 		// Library exists but is already confirmed; no-op is correct.
 	}
