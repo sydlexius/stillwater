@@ -11,6 +11,8 @@ import (
 // This test catches such conflicts at CI time instead of at startup.
 func TestRouterRegistration(t *testing.T) {
 	r := testRouterForOnboarding(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	defer func() {
 		if v := recover(); v != nil {
@@ -18,5 +20,5 @@ func TestRouterRegistration(t *testing.T) {
 		}
 	}()
 
-	_ = r.Handler(context.Background())
+	_ = r.Handler(ctx)
 }
