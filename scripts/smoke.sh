@@ -890,6 +890,71 @@ tokens_list_code=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
   "$SW_BASE/api/v1/auth/tokens") || tokens_list_code="000"
 assert_status "GET /api/v1/auth/tokens (list)" "200" "$tokens_list_code"
 
+# -- Shared-filesystem detection endpoints --
+
+shared_fs_resp=$(curl -s -w "\n%{http_code}" "${AUTH[@]}" \
+  "$SW_BASE/api/v1/shared-filesystem/status") || shared_fs_resp=$'\n000'
+shared_fs_body=$(echo "$shared_fs_resp" | sed '$d')
+shared_fs_code=$(echo "$shared_fs_resp" | tail -n 1)
+assert_status "GET /api/v1/shared-filesystem/status" "200" "$shared_fs_code"
+if [[ "$shared_fs_code" == "200" ]]; then
+  # Verify the response has the expected shape (has_overlaps boolean field).
+  shared_fs_overlaps=$(echo "$shared_fs_body" | jq -r '.has_overlaps' 2>/dev/null || echo "PARSE_ERROR")
+  if [[ "$shared_fs_overlaps" == "true" || "$shared_fs_overlaps" == "false" ]]; then
+    echo "[PASS]   shared-fs status has_overlaps=$shared_fs_overlaps"
+    PASS=$((PASS + 1))
+  else
+    echo "[FAIL]   shared-fs status -- has_overlaps field missing or invalid ($shared_fs_overlaps)"
+    FAIL=$((FAIL + 1))
+    FAILURES+=("shared-fs status -- has_overlaps field missing or invalid")
+  fi
+
+  # Verify libraries array is present (even if empty).
+  shared_fs_libs=$(echo "$shared_fs_body" | jq '.libraries | length' 2>/dev/null || echo "PARSE_ERROR")
+  if [[ "$shared_fs_libs" =~ ^[0-9]+$ ]]; then
+    echo "[PASS]   shared-fs status libraries array present (count=$shared_fs_libs)"
+    PASS=$((PASS + 1))
+  else
+    echo "[FAIL]   shared-fs status -- libraries array missing"
+    FAIL=$((FAIL + 1))
+    FAILURES+=("shared-fs status -- libraries array missing")
+  fi
+
+  # If overlaps exist, verify image_fetcher_warnings array is present.
+  if [[ "$shared_fs_overlaps" == "true" ]]; then
+    shared_fs_warnings=$(echo "$shared_fs_body" | jq '.image_fetcher_warnings | length' 2>/dev/null || echo "PARSE_ERROR")
+    if [[ "$shared_fs_warnings" =~ ^[0-9]+$ ]]; then
+      echo "[PASS]   shared-fs image_fetcher_warnings array present (count=$shared_fs_warnings)"
+      PASS=$((PASS + 1))
+    else
+      echo "[FAIL]   shared-fs image_fetcher_warnings -- array missing when overlaps detected"
+      FAIL=$((FAIL + 1))
+      FAILURES+=("shared-fs image_fetcher_warnings -- array missing when overlaps detected")
+    fi
+
+    # Validate warning structure when warnings exist.
+    if [[ "$shared_fs_warnings" =~ ^[0-9]+$ && "$shared_fs_warnings" -gt 0 ]]; then
+      first_warning_platform=$(echo "$shared_fs_body" | jq -r '.image_fetcher_warnings[0].platform' 2>/dev/null || echo "null")
+      first_warning_risk=$(echo "$shared_fs_body" | jq -r '.image_fetcher_warnings[0].risk_level' 2>/dev/null || echo "null")
+      if [[ "$first_warning_platform" != "null" && -n "$first_warning_platform" ]]; then
+        echo "[PASS]   image_fetcher_warnings[0] has platform=$first_warning_platform, risk_level=$first_warning_risk"
+        PASS=$((PASS + 1))
+      else
+        echo "[FAIL]   image_fetcher_warnings[0] -- missing platform field"
+        FAIL=$((FAIL + 1))
+        FAILURES+=("image_fetcher_warnings[0] -- missing platform field")
+      fi
+    fi
+  else
+    echo "[SKIP]   shared-fs image_fetcher_warnings -- no overlaps detected"
+  fi
+fi
+
+# Clobber-check endpoint (NFO writer detection across all connections).
+clobber_code_t3=$(curl -s -o /dev/null -w "%{http_code}" "${AUTH[@]}" \
+  "$SW_BASE/api/v1/connections/clobber-check") || clobber_code_t3="000"
+assert_status "GET /api/v1/connections/clobber-check" "200" "$clobber_code_t3"
+
 echo ""
 
 # ---------------------------------------------------------------------------
