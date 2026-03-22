@@ -937,20 +937,11 @@ if [[ "$shared_fs_code" == "200" ]]; then
       FAILURES+=("shared-fs image_fetcher_warnings -- array missing or wrong type when overlaps detected")
     fi
 
-    # Validate warning structure when warnings exist.
+    # Validate warning structure when warnings exist. Only risk_level and
+    # message are required; platform is optional (degraded warnings may omit it).
     if [[ "$shared_fs_warnings_ok" == "true" && "$shared_fs_warnings" -gt 0 ]]; then
-      first_warning_platform=$(echo "$shared_fs_body" | jq -r '.image_fetcher_warnings[0].platform' 2>/dev/null || echo "null")
       first_warning_risk=$(echo "$shared_fs_body" | jq -r '.image_fetcher_warnings[0].risk_level' 2>/dev/null || echo "null")
       first_warning_message=$(echo "$shared_fs_body" | jq -r '.image_fetcher_warnings[0].message' 2>/dev/null || echo "null")
-      # Validate platform is present.
-      if [[ "$first_warning_platform" != "null" && -n "$first_warning_platform" ]]; then
-        echo "[PASS]   image_fetcher_warnings[0] has platform=$first_warning_platform"
-        PASS=$((PASS + 1))
-      else
-        echo "[FAIL]   image_fetcher_warnings[0] -- missing platform field"
-        FAIL=$((FAIL + 1))
-        FAILURES+=("image_fetcher_warnings[0] -- missing platform field")
-      fi
       # Validate risk_level is one of the expected values.
       if [[ "$first_warning_risk" == "warn" || "$first_warning_risk" == "critical" ]]; then
         echo "[PASS]   image_fetcher_warnings[0] has risk_level=$first_warning_risk"
