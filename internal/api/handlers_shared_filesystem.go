@@ -8,15 +8,20 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/sydlexius/stillwater/internal/connection"
+	"github.com/sydlexius/stillwater/internal/connection/emby"
+	"github.com/sydlexius/stillwater/internal/connection/jellyfin"
+	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/web/templates"
 )
 
 // SharedFilesystemStatus holds the current shared-filesystem detection state
 // returned by the status endpoint and consumed by the notification bar template.
 type SharedFilesystemStatus struct {
-	HasOverlaps bool                    `json:"has_overlaps"`
-	Libraries   []SharedFilesystemEntry `json:"libraries"`
-	Dismissed   bool                    `json:"dismissed"` // user chose "don't show again"
+	HasOverlaps          bool                             `json:"has_overlaps"`
+	Libraries            []SharedFilesystemEntry          `json:"libraries"`
+	Dismissed            bool                             `json:"dismissed"`                        // user chose "don't show again"
+	ImageFetcherWarnings []connection.ImageFetcherWarning `json:"image_fetcher_warnings,omitempty"` // platform image fetcher conflicts
 }
 
 // SharedFilesystemEntry describes one library with a shared-filesystem overlap.
@@ -146,6 +151,13 @@ func (r *Router) buildSharedFilesystemStatus(ctx context.Context) (*SharedFilesy
 		}
 	}
 
+	// When overlaps are detected, check for image fetcher warnings on
+	// connected platforms. This is non-fatal: if a platform query fails,
+	// we log and skip that platform's warnings.
+	if len(sharedLibs) > 0 {
+		status.ImageFetcherWarnings = r.collectImageFetcherWarnings(ctx, sharedLibs)
+	}
+
 	// Check the dismiss preference. sql.ErrNoRows means the setting has not
 	// been stored yet (not dismissed). Any other DB error is logged and treated
 	// as "not dismissed" (show the bar) as the safe default.
@@ -160,6 +172,100 @@ func (r *Router) buildSharedFilesystemStatus(ctx context.Context) (*SharedFilesy
 	}
 
 	return status, nil
+}
+
+// collectImageFetcherWarnings queries connected Emby/Jellyfin platforms for
+// image fetcher settings that may conflict with Stillwater's image management.
+// Each shared library with a connection is checked. Failures are logged and
+// skipped so this never prevents the status endpoint from responding.
+func (r *Router) collectImageFetcherWarnings(ctx context.Context, sharedLibs []library.Library) []connection.ImageFetcherWarning {
+	// Collect unique connection IDs from the shared libraries to avoid
+	// querying the same platform connection more than once.
+	checked := make(map[string]bool)
+	var warnings []connection.ImageFetcherWarning
+
+	for _, lib := range sharedLibs {
+		if lib.ConnectionID == "" {
+			continue
+		}
+		if checked[lib.ConnectionID] {
+			continue
+		}
+		checked[lib.ConnectionID] = true
+
+		conn, connErr := r.connectionService.GetByID(ctx, lib.ConnectionID)
+		if connErr != nil {
+			r.logger.Warn("could not load connection for image fetcher check",
+				"connection_id", lib.ConnectionID, "error", connErr)
+			continue
+		}
+
+		switch conn.Type {
+		case connection.TypeEmby:
+			w := r.checkEmbyImageFetchers(ctx, conn)
+			warnings = append(warnings, w...)
+		case connection.TypeJellyfin:
+			w := r.checkJellyfinImageFetchers(ctx, conn)
+			warnings = append(warnings, w...)
+		default:
+			r.logger.Debug("image fetcher check not implemented for connection type",
+				"connection_id", lib.ConnectionID, "type", conn.Type)
+		}
+	}
+
+	return warnings
+}
+
+// checkEmbyImageFetchers queries an Emby connection for image fetcher settings.
+func (r *Router) checkEmbyImageFetchers(ctx context.Context, conn *connection.Connection) []connection.ImageFetcherWarning {
+	client := emby.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger)
+	statuses, err := client.CheckImageFetchersEnabled(ctx)
+	if err != nil {
+		r.logger.Warn("checking emby image fetchers", "connection", conn.Name, "error", err)
+		return nil
+	}
+
+	var warnings []connection.ImageFetcherWarning
+	for _, s := range statuses {
+		msg := fmt.Sprintf(
+			"Emby's image fetchers (%s) are enabled for library '%s' and may download additional images to your music directory. Stillwater's NFOs are protected by lockdata, but image conflicts may occur.",
+			strings.Join(s.FetcherNames, ", "), s.LibraryName,
+		)
+		warnings = append(warnings, connection.ImageFetcherWarning{
+			Platform:     "emby",
+			LibraryName:  s.LibraryName,
+			FetcherNames: s.FetcherNames,
+			RiskLevel:    s.RiskLevel,
+			Message:      msg,
+		})
+	}
+	return warnings
+}
+
+// checkJellyfinImageFetchers queries a Jellyfin connection for image fetcher settings.
+func (r *Router) checkJellyfinImageFetchers(ctx context.Context, conn *connection.Connection) []connection.ImageFetcherWarning {
+	client := jellyfin.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger)
+	statuses, err := client.CheckImageFetchersEnabled(ctx)
+	if err != nil {
+		r.logger.Warn("checking jellyfin image fetchers", "connection", conn.Name, "error", err)
+		return nil
+	}
+
+	var warnings []connection.ImageFetcherWarning
+	for _, s := range statuses {
+		msg := fmt.Sprintf(
+			"Jellyfin's image fetchers (%s) are enabled for library '%s'. Jellyfin can replace existing images and strip EXIF provenance data. Disable image fetchers in Jellyfin's library settings.",
+			strings.Join(s.FetcherNames, ", "), s.LibraryName,
+		)
+		warnings = append(warnings, connection.ImageFetcherWarning{
+			Platform:     "jellyfin",
+			LibraryName:  s.LibraryName,
+			FetcherNames: s.FetcherNames,
+			RiskLevel:    s.RiskLevel,
+			Message:      msg,
+		})
+	}
+	return warnings
 }
 
 // resolvePeerDescription converts a comma-separated list of library IDs into

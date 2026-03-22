@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -19,6 +20,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/connection/emby"
 	"github.com/sydlexius/stillwater/internal/connection/jellyfin"
 	"github.com/sydlexius/stillwater/internal/connection/lidarr"
+	"github.com/sydlexius/stillwater/internal/dbutil"
 	img "github.com/sydlexius/stillwater/internal/image"
 	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/web/templates"
@@ -343,7 +345,7 @@ func (r *Router) runPopulate(ctx context.Context, conn *connection.Connection, l
 	defer func() {
 		if v := recover(); v != nil {
 			r.logger.Error("panic in populate goroutine",
-				slog.String("library", lib.Name),
+				slog.String("library", lib.Name), slog.String("library_id", lib.ID),
 				slog.Any("panic", v),
 				slog.String("stack", string(debug.Stack())))
 			r.libraryOpsMu.Lock()
@@ -374,6 +376,13 @@ func (r *Router) runPopulate(ctx context.Context, conn *connection.Connection, l
 
 	default:
 		popErr = fmt.Errorf("unsupported connection type: %s", conn.Type)
+	}
+
+	// After a successful sync, check for external file modifications (Tier 2
+	// shared-FS evidence). This runs outside the per-artist loop to avoid
+	// repeated database updates during sync.
+	if popErr == nil && !lib.IsPathless() {
+		r.checkSyncMtimeEvidence(ctx, lib)
 	}
 
 	r.libraryOpsMu.Lock()
@@ -456,7 +465,7 @@ func (r *Router) runLibraryScan(ctx context.Context, conn *connection.Connection
 	defer func() {
 		if v := recover(); v != nil {
 			r.logger.Error("panic in library scan goroutine",
-				slog.String("library", lib.Name),
+				slog.String("library", lib.Name), slog.String("library_id", lib.ID),
 				slog.Any("panic", v),
 				slog.String("stack", string(debug.Stack())))
 			r.libraryOpsMu.Lock()
@@ -1271,4 +1280,96 @@ func (r *Router) scanFromLidarr(ctx context.Context, client *lidarr.Client, lib 
 		}
 	}
 	return updated, nil
+}
+
+// checkSyncMtimeEvidence performs Tier 2 shared-FS detection after a library
+// sync. It compares the filesystem mtime of image files in artist directories
+// against the newest last_written_at timestamp recorded by Stillwater. If any
+// file has been modified externally (mtime newer than Stillwater's last write
+// plus a 2-second tolerance), the library's shared-FS status is updated to
+// "suspected."
+//
+// This check is non-fatal: failures are logged at Debug/Warn level and do not
+// affect the sync outcome.
+func (r *Router) checkSyncMtimeEvidence(ctx context.Context, lib *library.Library) {
+	// Skip if the library already has confirmed shared-FS status; do not
+	// downgrade from confirmed to suspected.
+	if lib.SharedFSStatus == library.SharedFSConfirmed {
+		r.logger.Debug("skipping mtime check: library already confirmed as shared-FS",
+			"library", lib.Name, "library_id", lib.ID)
+		return
+	}
+
+	// Get the most recent last_written_at across all images in this library.
+	newestWriteStr, err := r.artistService.NewestWriteTimeForLibrary(ctx, lib.ID)
+	if err != nil {
+		r.logger.Warn("mtime check: failed to query newest write time",
+			"library", lib.Name, "library_id", lib.ID, "error", err)
+		return
+	}
+	if newestWriteStr == "" {
+		// No writes recorded yet -- nothing to compare against.
+		r.logger.Debug("mtime check: no writes recorded for library, skipping",
+			"library", lib.Name, "library_id", lib.ID)
+		return
+	}
+
+	newestWrite := dbutil.ParseTime(newestWriteStr)
+	if newestWrite.IsZero() {
+		r.logger.Warn("mtime check: failed to parse newest write time",
+			"library", lib.Name, "raw", newestWriteStr)
+		return
+	}
+
+	// Get all artist paths for this library.
+	artistDirs, err := r.artistService.ListPathsByLibrary(ctx, lib.ID)
+	if err != nil {
+		r.logger.Warn("mtime check: failed to list artist paths",
+			"library", lib.Name, "library_id", lib.ID, "error", err)
+		return
+	}
+	if len(artistDirs) == 0 {
+		r.logger.Debug("mtime check: no artist paths for library, skipping",
+			"library", lib.Name, "library_id", lib.ID)
+		return
+	}
+
+	// Build a per-directory lastWrittenAt map using the global newest write
+	// time. This is a conservative approach: any file newer than the newest
+	// Stillwater write across the entire library is suspicious.
+	lastWrittenAts := make(map[string]time.Time, len(artistDirs))
+	for _, dir := range artistDirs {
+		lastWrittenAts[dir] = newestWrite
+	}
+
+	evidence := library.CollectMtimeEvidence(artistDirs, lastWrittenAts, r.logger)
+	if len(evidence) == 0 {
+		r.logger.Debug("mtime check: no external modifications detected",
+			"library", lib.Name, "dirs_checked", len(artistDirs))
+		return
+	}
+
+	r.logger.Debug("mtime check: external modifications detected",
+		"library", lib.Name,
+		"evidence_count", len(evidence))
+
+	// Build evidence strings for the shared-FS status update.
+	evidenceStrings := make([]string, len(evidence))
+	for i, e := range evidence {
+		evidenceStrings[i] = fmt.Sprintf("mtime: %s modified at %s (after last Stillwater write at %s)",
+			e.Path, e.FileMtime.Format(time.RFC3339), newestWrite.Format(time.RFC3339))
+	}
+
+	evidenceJSON, marshalErr := json.Marshal(evidenceStrings)
+	if marshalErr != nil {
+		r.logger.Warn("mtime check: failed to marshal evidence",
+			"library", lib.Name, "error", marshalErr)
+		return
+	}
+
+	if setErr := r.libraryService.SetSharedFSStatus(ctx, lib.ID,
+		library.SharedFSSuspected, string(evidenceJSON), ""); setErr != nil {
+		r.logger.Warn("mtime check: failed to update shared-FS status",
+			"library", lib.Name, "error", setErr)
+	}
 }

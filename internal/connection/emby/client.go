@@ -78,6 +78,42 @@ func (c *Client) CheckNFOWriterEnabled(ctx context.Context) (bool, string, error
 	return false, "", nil
 }
 
+// ImageFetcherStatus describes the image fetcher configuration for a music library.
+type ImageFetcherStatus struct {
+	LibraryName  string
+	LibraryID    string
+	FetcherNames []string // e.g., ["TheAudioDb", "FanArt"]
+	RiskLevel    string   // "warn" for Emby (adds missing images only)
+}
+
+// CheckImageFetchersEnabled returns the image fetcher status for music libraries.
+// Returns nil if no image fetchers are enabled. On error, logs a warning and
+// returns nil (non-fatal).
+func (c *Client) CheckImageFetchersEnabled(ctx context.Context) ([]ImageFetcherStatus, error) {
+	libs, err := c.GetMusicLibraries(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("checking emby image fetcher settings: %w", err)
+	}
+
+	var results []ImageFetcherStatus
+	for _, lib := range libs {
+		for _, opt := range lib.LibraryOptions.TypeOptions {
+			if !strings.EqualFold(opt.Type, "MusicArtist") {
+				continue
+			}
+			if len(opt.ImageFetchers) > 0 {
+				results = append(results, ImageFetcherStatus{
+					LibraryName:  lib.Name,
+					LibraryID:    lib.ItemID,
+					FetcherNames: opt.ImageFetchers,
+					RiskLevel:    "warn",
+				})
+			}
+		}
+	}
+	return results, nil
+}
+
 // GetArtists returns album artists from a specific library (by parent ID) with pagination.
 func (c *Client) GetArtists(ctx context.Context, libraryID string, startIndex, limit int) (*ItemsResponse, error) {
 	path := fmt.Sprintf("/Artists/AlbumArtists?ParentId=%s&StartIndex=%d&Limit=%d&Recursive=true&Fields=Path,ProviderIds,ImageTags,BackdropImageTags,Overview,Genres,Tags,SortName,PremiereDate,EndDate", libraryID, startIndex, limit)

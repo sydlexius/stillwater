@@ -262,6 +262,154 @@ func TestCheckNFOWriterEnabled_ServerError(t *testing.T) {
 	}
 }
 
+func TestCheckImageFetchersEnabled_WithFetchers(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[
+			{
+				"Name":"Music","CollectionType":"music","ItemId":"lib-001",
+				"LibraryOptions":{
+					"SaveLocalMetadata":false,"MetadataSavers":[],
+					"EnableInternetProviders":true,
+					"TypeOptions":[
+						{"Type":"MusicArtist","ImageFetchers":["TheAudioDb","FanArt"],"MetadataFetchers":["TheAudioDb"]}
+					]
+				}
+			},
+			{
+				"Name":"Movies","CollectionType":"movies","ItemId":"lib-002",
+				"LibraryOptions":{
+					"SaveLocalMetadata":false,"MetadataSavers":[],
+					"TypeOptions":[
+						{"Type":"Movie","ImageFetchers":["TheMovieDb"],"MetadataFetchers":[]}
+					]
+				}
+			}
+		]`))
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "key", "", srv.Client(), testLogger())
+	statuses, err := c.CheckImageFetchersEnabled(context.Background())
+	if err != nil {
+		t.Fatalf("CheckImageFetchersEnabled failed: %v", err)
+	}
+	if len(statuses) != 1 {
+		t.Fatalf("got %d statuses, want 1 (only MusicArtist in music library)", len(statuses))
+	}
+	s := statuses[0]
+	if s.LibraryName != "Music" {
+		t.Errorf("LibraryName = %q, want Music", s.LibraryName)
+	}
+	if s.LibraryID != "lib-001" {
+		t.Errorf("LibraryID = %q, want lib-001", s.LibraryID)
+	}
+	if len(s.FetcherNames) != 2 || s.FetcherNames[0] != "TheAudioDb" || s.FetcherNames[1] != "FanArt" {
+		t.Errorf("FetcherNames = %v, want [TheAudioDb FanArt]", s.FetcherNames)
+	}
+	if s.RiskLevel != "critical" {
+		t.Errorf("RiskLevel = %q, want critical", s.RiskLevel)
+	}
+}
+
+func TestCheckImageFetchersEnabled_NoFetchers(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[
+			{
+				"Name":"Music","CollectionType":"music","ItemId":"lib-001",
+				"LibraryOptions":{
+					"SaveLocalMetadata":false,"MetadataSavers":[],
+					"TypeOptions":[
+						{"Type":"MusicArtist","ImageFetchers":[],"MetadataFetchers":["TheAudioDb"]}
+					]
+				}
+			}
+		]`))
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "key", "", srv.Client(), testLogger())
+	statuses, err := c.CheckImageFetchersEnabled(context.Background())
+	if err != nil {
+		t.Fatalf("CheckImageFetchersEnabled failed: %v", err)
+	}
+	if len(statuses) != 0 {
+		t.Errorf("got %d statuses, want 0 (no image fetchers enabled)", len(statuses))
+	}
+}
+
+func TestCheckImageFetchersEnabled_NonMusicIgnored(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[
+			{
+				"Name":"Movies","CollectionType":"movies","ItemId":"lib-002",
+				"LibraryOptions":{
+					"SaveLocalMetadata":false,"MetadataSavers":[],
+					"TypeOptions":[
+						{"Type":"Movie","ImageFetchers":["TheMovieDb"],"MetadataFetchers":[]}
+					]
+				}
+			}
+		]`))
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "key", "", srv.Client(), testLogger())
+	statuses, err := c.CheckImageFetchersEnabled(context.Background())
+	if err != nil {
+		t.Fatalf("CheckImageFetchersEnabled failed: %v", err)
+	}
+	if len(statuses) != 0 {
+		t.Errorf("got %d statuses, want 0 (non-music libraries ignored)", len(statuses))
+	}
+}
+
+func TestCheckImageFetchersEnabled_ServerError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "key", "", srv.Client(), testLogger())
+	statuses, err := c.CheckImageFetchersEnabled(context.Background())
+	if err == nil {
+		t.Fatal("expected error on server error, got nil")
+	}
+	if statuses != nil {
+		t.Errorf("expected nil statuses on error, got %v", statuses)
+	}
+}
+
+func TestCheckImageFetchersEnabled_InternetProvidersDisabled(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[
+			{
+				"Name":"Music","CollectionType":"music","ItemId":"lib-001",
+				"LibraryOptions":{
+					"SaveLocalMetadata":false,"MetadataSavers":[],
+					"EnableInternetProviders":false,
+					"TypeOptions":[
+						{"Type":"MusicArtist","ImageFetchers":["TheAudioDb"],"MetadataFetchers":[]}
+					]
+				}
+			}
+		]`))
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "key", "", srv.Client(), testLogger())
+	statuses, err := c.CheckImageFetchersEnabled(context.Background())
+	if err != nil {
+		t.Fatalf("CheckImageFetchersEnabled failed: %v", err)
+	}
+	if len(statuses) != 0 {
+		t.Errorf("got %d statuses, want 0 (internet providers disabled)", len(statuses))
+	}
+}
+
 func TestGetArtistDetail_Success(t *testing.T) {
 	var reqCount int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

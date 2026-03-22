@@ -25,3 +25,13 @@ type ArtistPlatformState struct {
 type ArtistStateGetter interface {
 	GetArtistDetail(ctx context.Context, platformArtistID string) (*ArtistPlatformState, error)
 }
+
+// ImageFetcherWarning describes a platform image fetcher configuration that
+// may conflict with Stillwater's image management.
+type ImageFetcherWarning struct {
+	Platform     string   `json:"platform"` // "emby" or "jellyfin"
+	LibraryName  string   `json:"library_name"`
+	FetcherNames []string `json:"fetcher_names"`
+	RiskLevel    string   `json:"risk_level"` // "warn" or "critical"
+	Message      string   `json:"message"`
+}

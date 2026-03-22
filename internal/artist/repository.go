@@ -17,6 +17,10 @@ type Repository interface {
 	ClearField(ctx context.Context, id, field string) error
 	Delete(ctx context.Context, id string) error
 	Search(ctx context.Context, query string) ([]Artist, error)
+
+	// ListPathsByLibrary returns a map of artist name to filesystem path for
+	// all artists in the given library that have a non-empty path.
+	ListPathsByLibrary(ctx context.Context, libraryID string) (map[string]string, error)
 }
 
 // ProviderIDRepository handles provider-specific ID lookups and persistence.
@@ -56,6 +60,11 @@ type ImageRepository interface {
 	UpsertAll(ctx context.Context, artistID string, images []ArtistImage) error
 	UpdateProvenance(ctx context.Context, artistID, imageType string, slotIndex int, phash, source, fileFormat, lastWrittenAt string) error
 	DeleteByArtistID(ctx context.Context, artistID string) error
+
+	// NewestWriteTime returns the most recent last_written_at timestamp across
+	// all images for artists in the given library. Returns zero time if no
+	// writes have been recorded.
+	NewestWriteTime(ctx context.Context, libraryID string) (string, error)
 }
 
 // CompletenessRepository computes aggregate metadata completeness metrics

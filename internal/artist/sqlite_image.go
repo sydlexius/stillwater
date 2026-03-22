@@ -227,6 +227,27 @@ func (r *sqliteImageRepo) DeleteByArtistID(ctx context.Context, artistID string)
 	return nil
 }
 
+// NewestWriteTime returns the most recent last_written_at value across all
+// images for artists in the given library. Returns an empty string if no
+// writes have been recorded.
+func (r *sqliteImageRepo) NewestWriteTime(ctx context.Context, libraryID string) (string, error) {
+	var result sql.NullString
+	err := r.db.QueryRowContext(ctx, `
+		SELECT MAX(ai.last_written_at)
+		FROM artist_images ai
+		JOIN artists a ON ai.artist_id = a.id
+		WHERE a.library_id = ? AND ai.last_written_at != ''`,
+		libraryID,
+	).Scan(&result)
+	if err != nil {
+		return "", fmt.Errorf("querying newest write time for library %s: %w", libraryID, err)
+	}
+	if !result.Valid {
+		return "", nil
+	}
+	return result.String, nil
+}
+
 func scanImageRows(rows *sql.Rows) ([]ArtistImage, error) {
 	var images []ArtistImage
 	for rows.Next() {
