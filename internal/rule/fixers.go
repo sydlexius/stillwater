@@ -246,10 +246,10 @@ func (f *MetadataFixer) fixJunkBio(ctx context.Context, a *artist.Artist) (*FixR
 	}, nil
 }
 
-// provenanceRecorder is an optional interface for recording image provenance
-// after a save. When set on ImageFixer, provenance data (phash, source,
-// file format, write timestamp) is read from the saved file and persisted
-// to the artist_images table.
+// provenanceRecorder records image provenance data (phash, source, file format,
+// write timestamp) in the artist_images table after an image is saved to disk.
+// Used by the fix pipeline and bulk executor after persisting the artist so
+// that the artist_images row exists before UpdateImageProvenance is called.
 type provenanceRecorder interface {
 	UpdateImageProvenance(ctx context.Context, artistID, imageType string, slotIndex int, phash, source, fileFormat, lastWrittenAt string) error
 }
@@ -261,8 +261,7 @@ type ImageFixer struct {
 	platformService *platform.Service
 	fsCheck         *SharedFSCheck
 	logger          *slog.Logger
-	provenance      provenanceRecorder // optional; set via SetProvenanceRecorder
-	imageCache      sync.Map           // keyed by MBID; value: *imageCacheEntry
+	imageCache      sync.Map // keyed by MBID; value: *imageCacheEntry
 }
 
 // NewImageFixer creates an ImageFixer.
@@ -273,12 +272,6 @@ func NewImageFixer(orchestrator imageProvider, platformService *platform.Service
 		fsCheck:         fsCheck,
 		logger:          logger,
 	}
-}
-
-// SetProvenanceRecorder sets an optional provenance recorder that persists
-// image provenance data (phash, source, format, mtime) after each image save.
-func (f *ImageFixer) SetProvenanceRecorder(pr provenanceRecorder) {
-	f.provenance = pr
 }
 
 // fetchImages returns provider images for the given MBID and provider IDs,
