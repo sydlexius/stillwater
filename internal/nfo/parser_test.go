@@ -501,6 +501,126 @@ func TestWrite_RoundTripLockData(t *testing.T) {
 	}
 }
 
+func TestParse_StillwaterElement(t *testing.T) {
+	input := `<?xml version="1.0" encoding="UTF-8"?>
+<artist>
+  <name>Test</name>
+  <lockdata>true</lockdata>
+  <stillwater version="1" written="2026-03-22T12:00:00Z" />
+</artist>`
+	nfo, err := Parse(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if nfo.Stillwater == nil {
+		t.Fatal("Stillwater is nil, want non-nil")
+	}
+	if nfo.Stillwater.Version != "1" {
+		t.Errorf("Version = %q, want %q", nfo.Stillwater.Version, "1")
+	}
+	if nfo.Stillwater.Written != "2026-03-22T12:00:00Z" {
+		t.Errorf("Written = %q, want %q", nfo.Stillwater.Written, "2026-03-22T12:00:00Z")
+	}
+}
+
+func TestStillwaterRoundTrip(t *testing.T) {
+	original := &ArtistNFO{
+		Name:     "Test Artist",
+		LockData: true,
+		Stillwater: &StillwaterMeta{
+			Version: "1",
+			Written: "2026-03-22T12:00:00Z",
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := Write(&buf, original); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+
+	parsed, err := Parse(strings.NewReader(buf.String()))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+
+	if parsed.Stillwater == nil {
+		t.Fatal("round-trip: Stillwater is nil")
+	}
+	if parsed.Stillwater.Version != original.Stillwater.Version {
+		t.Errorf("round-trip: Version = %q, want %q", parsed.Stillwater.Version, original.Stillwater.Version)
+	}
+	if parsed.Stillwater.Written != original.Stillwater.Written {
+		t.Errorf("round-trip: Written = %q, want %q", parsed.Stillwater.Written, original.Stillwater.Written)
+	}
+}
+
+func TestParse_StillwaterNotInExtraElements(t *testing.T) {
+	input := `<?xml version="1.0" encoding="UTF-8"?>
+<artist>
+  <name>Test</name>
+  <stillwater version="1" written="2026-03-22T12:00:00Z" />
+  <customelement>value</customelement>
+</artist>`
+	nfo, err := Parse(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(nfo.ExtraElements) != 1 {
+		t.Errorf("ExtraElements count = %d, want 1", len(nfo.ExtraElements))
+	}
+	if nfo.ExtraElements[0].Name != "customelement" {
+		t.Errorf("ExtraElements[0].Name = %q, want %q", nfo.ExtraElements[0].Name, "customelement")
+	}
+}
+
+func TestParse_StillwaterMissingAttributes(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		version string
+		written string
+	}{
+		{
+			name: "no attributes",
+			input: `<?xml version="1.0" encoding="UTF-8"?>
+<artist><name>Test</name><stillwater /></artist>`,
+			version: "",
+			written: "",
+		},
+		{
+			name: "version only",
+			input: `<?xml version="1.0" encoding="UTF-8"?>
+<artist><name>Test</name><stillwater version="1" /></artist>`,
+			version: "1",
+			written: "",
+		},
+		{
+			name: "written only",
+			input: `<?xml version="1.0" encoding="UTF-8"?>
+<artist><name>Test</name><stillwater written="2026-03-22T12:00:00Z" /></artist>`,
+			version: "",
+			written: "2026-03-22T12:00:00Z",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			nfo, err := Parse(strings.NewReader(tt.input))
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			if nfo.Stillwater == nil {
+				t.Fatal("Stillwater is nil, want non-nil")
+			}
+			if nfo.Stillwater.Version != tt.version {
+				t.Errorf("Version = %q, want %q", nfo.Stillwater.Version, tt.version)
+			}
+			if nfo.Stillwater.Written != tt.written {
+				t.Errorf("Written = %q, want %q", nfo.Stillwater.Written, tt.written)
+			}
+		})
+	}
+}
+
 func TestStripBOM(t *testing.T) {
 	tests := []struct {
 		name string

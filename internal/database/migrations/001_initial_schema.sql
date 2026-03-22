@@ -91,7 +91,9 @@ CREATE TABLE IF NOT EXISTS libraries (
     external_id TEXT NOT NULL DEFAULT '',
     fs_watch INTEGER NOT NULL DEFAULT 0,
     fs_poll_interval INTEGER NOT NULL DEFAULT 60,
-    shared_filesystem INTEGER NOT NULL DEFAULT 0,
+    shared_fs_status TEXT NOT NULL DEFAULT '',
+    shared_fs_evidence TEXT NOT NULL DEFAULT '',
+    shared_fs_peer_library_ids TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );

@@ -553,6 +553,14 @@ func (r *Router) processAndSaveImage(ctx context.Context, dir string, imageType 
 
 	naming, useSymlinks := r.getActiveNamingAndSymlinks(ctx, imageType)
 
+	// Register expected write paths so the filesystem watcher can
+	// distinguish Stillwater's own writes from external ones.
+	if r.expectedWrites != nil {
+		expectedPaths := img.ExpectedPaths(dir, naming)
+		r.expectedWrites.AddAll(expectedPaths)
+		defer r.expectedWrites.RemoveAll(expectedPaths)
+	}
+
 	saved, err := img.Save(dir, imageType, converted, naming, useSymlinks, meta, r.logger)
 	if err != nil {
 		return nil, fmt.Errorf("saving: %w", err)
@@ -1632,6 +1640,14 @@ func (r *Router) processAndAppendFanart(ctx context.Context, dir string, data []
 	}
 	nextIndex := img.NextFanartIndex(maxIdx, kodi)
 	nextName := img.FanartFilename(primary, nextIndex, kodi)
+
+	// Register expected write paths so the filesystem watcher can
+	// distinguish Stillwater's own writes from external ones.
+	if r.expectedWrites != nil {
+		expectedPaths := img.ExpectedPaths(dir, []string{nextName})
+		r.expectedWrites.AddAll(expectedPaths)
+		defer r.expectedWrites.RemoveAll(expectedPaths)
+	}
 
 	saved, err := img.Save(dir, "fanart", converted, []string{nextName}, false, meta, r.logger)
 	if err != nil {

@@ -218,3 +218,32 @@ func TestWriteBackArtistNFO_EmptyPath(t *testing.T) {
 		t.Errorf("error = %q, want %q", got, "write artist nfo: artist path is empty")
 	}
 }
+
+func TestWriteBackArtistNFO_IncludesStillwater(t *testing.T) {
+	dir := t.TempDir()
+	a := &artist.Artist{
+		ID:   "test-id",
+		Name: "Test Artist",
+		Path: dir,
+	}
+
+	if err := WriteBackArtistNFO(context.Background(), a, nil, nil); err != nil {
+		t.Fatalf("WriteBackArtistNFO: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(dir, "artist.nfo"))
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+
+	content := string(data)
+	if !strings.Contains(content, "<stillwater") {
+		t.Error("NFO does not contain <stillwater element")
+	}
+	if !strings.Contains(content, `version="1"`) {
+		t.Error("NFO does not contain version attribute")
+	}
+	if !strings.Contains(content, "written=") {
+		t.Error("NFO does not contain written attribute")
+	}
+}

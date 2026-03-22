@@ -196,9 +196,16 @@ components:
           type: integer
         fs_poll_interval:
           type: integer
-        shared_filesystem:
-          type: boolean
-          description: True when a platform connection writes to the same filesystem path
+        shared_fs_status:
+          type: string
+          description: Shared-filesystem detection status. Empty string means unknown (not yet evaluated).
+          enum: ["", "none", "suspected", "confirmed"]
+        shared_fs_evidence:
+          type: string
+          description: JSON array of evidence strings describing how the shared-filesystem status was determined
+        shared_fs_peer_library_ids:
+          type: string
+          description: Comma-separated IDs of libraries that share the same filesystem path
         fs_notify_supported:
           type: boolean
         created_at:
@@ -2594,7 +2601,7 @@ paths:
       operationId: recheckSharedFilesystem
       tags: [SharedFilesystem]
       summary: Re-evaluate shared-filesystem overlaps
-      description: Scans all libraries for path overlaps and updates the shared_filesystem flag.
+      description: Returns the current count of libraries with shared-filesystem status set by evidence.
       responses:
         "200":
           description: Recheck result

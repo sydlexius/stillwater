@@ -11,7 +11,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/dbutil"
 )
 
-const libraryColumns = `id, name, path, type, source, connection_id, external_id, fs_watch, fs_poll_interval, shared_filesystem, created_at, updated_at`
+const libraryColumns = `id, name, path, type, source, connection_id, external_id, fs_watch, fs_poll_interval, shared_fs_status, shared_fs_evidence, shared_fs_peer_library_ids, created_at, updated_at`
 
 // Service provides library data operations.
 type Service struct {
@@ -59,12 +59,13 @@ func (s *Service) Create(ctx context.Context, lib *Library) error {
 	lib.UpdatedAt = now
 
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO libraries (id, name, path, type, source, connection_id, external_id, fs_watch, fs_poll_interval, shared_filesystem, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO libraries (id, name, path, type, source, connection_id, external_id, fs_watch, fs_poll_interval, shared_fs_status, shared_fs_evidence, shared_fs_peer_library_ids, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		lib.ID, lib.Name, lib.Path, lib.Type,
 		lib.Source, dbutil.NullableString(lib.ConnectionID), lib.ExternalID,
-		lib.FSWatch, lib.FSPollInterval, dbutil.BoolToInt(lib.SharedFilesystem),
+		lib.FSWatch, lib.FSPollInterval,
+		lib.SharedFSStatus, lib.SharedFSEvidence, lib.SharedFSPeerLibraryIDs,
 		now.Format(time.RFC3339), now.Format(time.RFC3339),
 	)
 	if err != nil {
@@ -169,12 +170,13 @@ func (s *Service) Update(ctx context.Context, lib *Library) error {
 	lib.UpdatedAt = time.Now().UTC()
 
 	result, err := s.db.ExecContext(ctx, `
-		UPDATE libraries SET name = ?, path = ?, type = ?, source = ?, connection_id = ?, external_id = ?, fs_watch = ?, fs_poll_interval = ?, shared_filesystem = ?, updated_at = ?
+		UPDATE libraries SET name = ?, path = ?, type = ?, source = ?, connection_id = ?, external_id = ?, fs_watch = ?, fs_poll_interval = ?, shared_fs_status = ?, shared_fs_evidence = ?, shared_fs_peer_library_ids = ?, updated_at = ?
 		WHERE id = ?
 	`,
 		lib.Name, lib.Path, lib.Type,
 		lib.Source, dbutil.NullableString(lib.ConnectionID), lib.ExternalID,
-		lib.FSWatch, lib.FSPollInterval, dbutil.BoolToInt(lib.SharedFilesystem),
+		lib.FSWatch, lib.FSPollInterval,
+		lib.SharedFSStatus, lib.SharedFSEvidence, lib.SharedFSPeerLibraryIDs,
 		lib.UpdatedAt.Format(time.RFC3339),
 		lib.ID,
 	)
@@ -307,13 +309,13 @@ func (s *Service) CountArtistsByConnectionID(ctx context.Context, connectionID s
 func scanLibrary(row interface{ Scan(...any) error }) (*Library, error) {
 	var lib Library
 	var connectionID sql.NullString
-	var sharedFS int
 	var createdAt, updatedAt string
 
 	err := row.Scan(
 		&lib.ID, &lib.Name, &lib.Path, &lib.Type,
 		&lib.Source, &connectionID, &lib.ExternalID,
-		&lib.FSWatch, &lib.FSPollInterval, &sharedFS,
+		&lib.FSWatch, &lib.FSPollInterval,
+		&lib.SharedFSStatus, &lib.SharedFSEvidence, &lib.SharedFSPeerLibraryIDs,
 		&createdAt, &updatedAt,
 	)
 	if err != nil {
@@ -323,21 +325,25 @@ func scanLibrary(row interface{ Scan(...any) error }) (*Library, error) {
 	if connectionID.Valid {
 		lib.ConnectionID = connectionID.String
 	}
-	lib.SharedFilesystem = sharedFS == 1
 	lib.CreatedAt = dbutil.ParseTime(createdAt)
 	lib.UpdatedAt = dbutil.ParseTime(updatedAt)
 
 	return &lib, nil
 }
 
-// SetSharedFilesystem sets the shared_filesystem flag on a library.
-func (s *Service) SetSharedFilesystem(ctx context.Context, id string, shared bool) error {
+// SetSharedFSStatus updates the shared-filesystem status, evidence, and peer
+// library IDs on a library. The status must be one of the SharedFS* constants
+// or an empty string (to clear / reset to unknown).
+func (s *Service) SetSharedFSStatus(ctx context.Context, id, status, evidence, peerIDs string) error {
+	if !isValidSharedFSStatus(status) {
+		return fmt.Errorf("invalid shared_fs_status %q", status)
+	}
 	now := time.Now().UTC()
 	result, err := s.db.ExecContext(ctx, `
-		UPDATE libraries SET shared_filesystem = ?, updated_at = ? WHERE id = ?
-	`, dbutil.BoolToInt(shared), now.Format(time.RFC3339), id)
+		UPDATE libraries SET shared_fs_status = ?, shared_fs_evidence = ?, shared_fs_peer_library_ids = ?, updated_at = ? WHERE id = ?
+	`, status, evidence, peerIDs, now.Format(time.RFC3339), id)
 	if err != nil {
-		return fmt.Errorf("setting shared_filesystem: %w", err)
+		return fmt.Errorf("setting shared_fs_status: %w", err)
 	}
 	rows, _ := result.RowsAffected()
 	if rows == 0 {
@@ -346,10 +352,11 @@ func (s *Service) SetSharedFilesystem(ctx context.Context, id string, shared boo
 	return nil
 }
 
-// ListSharedFilesystem returns all libraries that have the shared_filesystem flag set.
-func (s *Service) ListSharedFilesystem(ctx context.Context) ([]Library, error) {
+// ListSharedFS returns all libraries with a suspected or confirmed shared-filesystem status.
+func (s *Service) ListSharedFS(ctx context.Context) ([]Library, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT `+libraryColumns+` FROM libraries WHERE shared_filesystem = 1 ORDER BY name`)
+		`SELECT `+libraryColumns+` FROM libraries WHERE shared_fs_status IN (?, ?) ORDER BY name`,
+		SharedFSSuspected, SharedFSConfirmed)
 	if err != nil {
 		return nil, fmt.Errorf("listing shared-filesystem libraries: %w", err)
 	}
@@ -364,6 +371,16 @@ func (s *Service) ListSharedFilesystem(ctx context.Context) ([]Library, error) {
 		libs = append(libs, *lib)
 	}
 	return libs, rows.Err()
+}
+
+// isValidSharedFSStatus reports whether s is an allowed shared-filesystem status.
+func isValidSharedFSStatus(s string) bool {
+	switch s {
+	case "", SharedFSNone, SharedFSSuspected, SharedFSConfirmed:
+		return true
+	default:
+		return false
+	}
 }
 
 // isValidSource reports whether s is one of the allowed library source values.

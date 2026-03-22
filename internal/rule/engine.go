@@ -139,10 +139,11 @@ func (e *Engine) EvaluateAll(ctx context.Context, artists []artist.Artist) ([]Ev
 	return results, nil
 }
 
-// IsSharedFilesystem reports whether the given artist's library has the
-// shared_filesystem flag set. Returns false if the library service is nil
-// or the artist has no library ID. Returns true (fail closed) on DB errors
-// to prevent destructive operations when the database is unavailable.
+// IsSharedFilesystem reports whether the given artist's library has a
+// suspected or confirmed shared-filesystem status. Returns false if the
+// library service is nil or the artist has no library ID. Returns true
+// (fail closed) on DB errors to prevent destructive operations when the
+// database is unavailable.
 //
 // Results are cached per library ID for the duration of a single evaluation
 // run (cache is cleared at the start of each Evaluate call) to avoid N+1
@@ -174,8 +175,9 @@ func (e *Engine) IsSharedFilesystem(ctx context.Context, a *artist.Artist) bool 
 		return true
 	}
 
-	e.cacheSharedFS(a.LibraryID, lib.SharedFilesystem)
-	return lib.SharedFilesystem
+	shared := lib.IsSharedFS()
+	e.cacheSharedFS(a.LibraryID, shared)
+	return shared
 }
 
 // cacheSharedFS stores a shared-filesystem lookup result in the per-evaluation

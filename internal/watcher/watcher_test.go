@@ -49,7 +49,7 @@ func newTestService(t *testing.T, scanCount *atomic.Int32, libs *mockLibraryList
 		return nil
 	}
 
-	svc := NewService(scanFn, libs, bus, logger, probeCache)
+	svc := NewService(scanFn, libs, bus, logger, probeCache, nil)
 	svc.SetDebounce(50 * time.Millisecond)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -300,7 +300,7 @@ func TestPollDetectsNewDirectory(t *testing.T) {
 		return nil
 	}
 
-	svc := NewService(scanFn, libs, bus, logger, NewProbeCache())
+	svc := NewService(scanFn, libs, bus, logger, NewProbeCache(), nil)
 	svc.SetDebounce(50 * time.Millisecond)
 
 	ctx := context.Background()
@@ -354,7 +354,7 @@ func TestPollDetectsRemovedDirectory(t *testing.T) {
 		return nil
 	}
 
-	svc := NewService(scanFn, libs, bus, logger, NewProbeCache())
+	svc := NewService(scanFn, libs, bus, logger, NewProbeCache(), nil)
 	ctx := context.Background()
 	svc.initPollSnapshots(ctx)
 
@@ -401,7 +401,7 @@ func TestPollIntervalRespected(t *testing.T) {
 		return nil
 	}
 
-	svc := NewService(scanFn, libs, bus, logger, NewProbeCache())
+	svc := NewService(scanFn, libs, bus, logger, NewProbeCache(), nil)
 	ctx := context.Background()
 	svc.initPollSnapshots(ctx)
 

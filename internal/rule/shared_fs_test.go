@@ -28,7 +28,7 @@ func TestSharedFSCheck_IsShared(t *testing.T) {
 
 	t.Run("shared library returns true", func(t *testing.T) {
 		check := NewSharedFSCheck(&stubLibQuerier{
-			lib: &library.Library{SharedFilesystem: true},
+			lib: &library.Library{SharedFSStatus: library.SharedFSSuspected},
 		}, logger)
 		a := &artist.Artist{LibraryID: "lib-1"}
 		if !check.IsShared(context.Background(), a) {
@@ -36,9 +36,19 @@ func TestSharedFSCheck_IsShared(t *testing.T) {
 		}
 	})
 
+	t.Run("confirmed library returns true", func(t *testing.T) {
+		check := NewSharedFSCheck(&stubLibQuerier{
+			lib: &library.Library{SharedFSStatus: library.SharedFSConfirmed},
+		}, logger)
+		a := &artist.Artist{LibraryID: "lib-1"}
+		if !check.IsShared(context.Background(), a) {
+			t.Error("IsShared = false, want true for confirmed library")
+		}
+	})
+
 	t.Run("non-shared library returns false", func(t *testing.T) {
 		check := NewSharedFSCheck(&stubLibQuerier{
-			lib: &library.Library{SharedFilesystem: false},
+			lib: &library.Library{SharedFSStatus: library.SharedFSNone},
 		}, logger)
 		a := &artist.Artist{LibraryID: "lib-1"}
 		if check.IsShared(context.Background(), a) {
@@ -48,7 +58,7 @@ func TestSharedFSCheck_IsShared(t *testing.T) {
 
 	t.Run("empty library ID returns true (fail-closed)", func(t *testing.T) {
 		check := NewSharedFSCheck(&stubLibQuerier{
-			lib: &library.Library{SharedFilesystem: false},
+			lib: &library.Library{SharedFSStatus: library.SharedFSNone},
 		}, logger)
 		a := &artist.Artist{LibraryID: ""}
 		if !check.IsShared(context.Background(), a) {
@@ -86,7 +96,7 @@ func TestSharedFSCheck_IsShared(t *testing.T) {
 func TestNFOFixer_SharedFS_Skips(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	check := NewSharedFSCheck(&stubLibQuerier{
-		lib: &library.Library{SharedFilesystem: true},
+		lib: &library.Library{SharedFSStatus: library.SharedFSSuspected},
 	}, logger)
 	fixer := NewNFOFixer(nil, check)
 	a := &artist.Artist{Name: "Test", Path: t.TempDir(), LibraryID: "lib-1"}
@@ -106,7 +116,7 @@ func TestNFOFixer_SharedFS_Skips(t *testing.T) {
 func TestImageFixer_SharedFS_Skips(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	check := NewSharedFSCheck(&stubLibQuerier{
-		lib: &library.Library{SharedFilesystem: true},
+		lib: &library.Library{SharedFSStatus: library.SharedFSSuspected},
 	}, logger)
 	fixer := NewImageFixer(nil, nil, check, logger)
 	a := &artist.Artist{Name: "Test", Path: t.TempDir(), LibraryID: "lib-1", MusicBrainzID: "mbid-1"}
@@ -126,7 +136,7 @@ func TestImageFixer_SharedFS_Skips(t *testing.T) {
 func TestLogoTrimFixer_SharedFS_Skips(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	check := NewSharedFSCheck(&stubLibQuerier{
-		lib: &library.Library{SharedFilesystem: true},
+		lib: &library.Library{SharedFSStatus: library.SharedFSSuspected},
 	}, logger)
 	fixer := NewLogoTrimFixer(nil, check, logger)
 	a := &artist.Artist{Name: "Test", Path: t.TempDir(), LibraryID: "lib-1"}
@@ -146,7 +156,7 @@ func TestLogoTrimFixer_SharedFS_Skips(t *testing.T) {
 func TestLogoPaddingFixer_SharedFS_Skips(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	check := NewSharedFSCheck(&stubLibQuerier{
-		lib: &library.Library{SharedFilesystem: true},
+		lib: &library.Library{SharedFSStatus: library.SharedFSSuspected},
 	}, logger)
 	fixer := NewLogoPaddingFixer(nil, check, logger)
 	a := &artist.Artist{Name: "Test", Path: t.TempDir(), LibraryID: "lib-1"}
@@ -166,7 +176,7 @@ func TestLogoPaddingFixer_SharedFS_Skips(t *testing.T) {
 func TestBackdropSequencingFixer_SharedFS_Skips(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	check := NewSharedFSCheck(&stubLibQuerier{
-		lib: &library.Library{SharedFilesystem: true},
+		lib: &library.Library{SharedFSStatus: library.SharedFSSuspected},
 	}, logger)
 	fixer := NewBackdropSequencingFixer(nil, check, logger)
 	a := &artist.Artist{Name: "Test", Path: t.TempDir(), LibraryID: "lib-1"}
@@ -186,7 +196,7 @@ func TestBackdropSequencingFixer_SharedFS_Skips(t *testing.T) {
 func TestExtraneousImagesFixer_SharedFS_WidensExpected(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	check := NewSharedFSCheck(&stubLibQuerier{
-		lib: &library.Library{SharedFilesystem: true},
+		lib: &library.Library{SharedFSStatus: library.SharedFSSuspected},
 	}, logger)
 
 	t.Run("nil platformService blocks on shared filesystem", func(t *testing.T) {
@@ -221,7 +231,7 @@ func TestExtraneousImagesFixer_SharedFS_WidensExpected(t *testing.T) {
 		// When the library is NOT shared, the fixer should use single-profile
 		// defaults regardless of platformService availability.
 		nonSharedCheck := NewSharedFSCheck(&stubLibQuerier{
-			lib: &library.Library{SharedFilesystem: false},
+			lib: &library.Library{SharedFSStatus: library.SharedFSNone},
 		}, logger)
 		fixer := NewExtraneousImagesFixer(nil, nonSharedCheck, logger)
 		dir := t.TempDir()
@@ -243,7 +253,7 @@ func TestExtraneousImagesFixer_SharedFS_WidensExpected(t *testing.T) {
 func TestDirectoryRenameFixer_SharedFS_Blocks(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	check := NewSharedFSCheck(&stubLibQuerier{
-		lib: &library.Library{SharedFilesystem: true},
+		lib: &library.Library{SharedFSStatus: library.SharedFSSuspected},
 	}, logger)
 	fixer := NewDirectoryRenameFixer(check, logger)
 	a := &artist.Artist{Name: "New Name", Path: t.TempDir(), LibraryID: "lib-1"}
@@ -263,7 +273,7 @@ func TestDirectoryRenameFixer_SharedFS_Blocks(t *testing.T) {
 func TestDirectoryRenameFixer_NonSharedFS_Proceeds(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	check := NewSharedFSCheck(&stubLibQuerier{
-		lib: &library.Library{SharedFilesystem: false},
+		lib: &library.Library{SharedFSStatus: library.SharedFSNone},
 	}, logger)
 	fixer := NewDirectoryRenameFixer(check, logger)
 

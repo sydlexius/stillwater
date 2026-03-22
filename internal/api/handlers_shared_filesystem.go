@@ -5,10 +5,9 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
+	"strings"
 
-	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/web/templates"
 )
 
@@ -81,9 +80,9 @@ func (r *Router) handleSharedFilesystemDismiss(w http.ResponseWriter, req *http.
 	writeJSON(w, http.StatusOK, map[string]string{"status": "dismissed"})
 }
 
-// handleSharedFilesystemRecheck forces a re-evaluation of shared-filesystem
-// overlaps across all libraries and updates the flags. Useful when library
-// paths or connections have changed.
+// handleSharedFilesystemRecheck returns the current count of libraries with
+// a shared-filesystem status. With the evidence-based model, status is set
+// by external evidence (fsnotify, mtime, provenance), not path comparison.
 // POST /api/v1/shared-filesystem/recheck
 func (r *Router) handleSharedFilesystemRecheck(w http.ResponseWriter, req *http.Request) {
 	count, err := r.recheckSharedFilesystem(req.Context())
@@ -97,18 +96,23 @@ func (r *Router) handleSharedFilesystemRecheck(w http.ResponseWriter, req *http.
 	})
 }
 
-// recheckSharedFilesystem re-evaluates all library paths for overlaps and
-// updates the shared_filesystem flag on each library. Returns the count
-// of libraries with overlaps detected.
+// recheckSharedFilesystem returns the current count of libraries with a
+// shared-filesystem status. With the evidence-based model, status is set
+// externally (fsnotify, mtime checks, NFO provenance), so this is now a
+// read-only query rather than a path-comparison recheck.
 func (r *Router) recheckSharedFilesystem(ctx context.Context) (int, error) {
-	return library.RecheckOverlaps(ctx, r.libraryService, r.logger)
+	libs, err := r.libraryService.ListSharedFS(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("listing shared-filesystem libraries: %w", err)
+	}
+	return len(libs), nil
 }
 
 // buildSharedFilesystemStatus assembles the current status by reading library
-// flags and the dismiss preference. It calls DetectOverlaps on the full library
-// list so that the OverlapWith field is populated for each entry.
+// shared_fs_status columns and the dismiss preference. Peer library names are
+// resolved from SharedFSPeerLibraryIDs when available.
 func (r *Router) buildSharedFilesystemStatus(ctx context.Context) (*SharedFilesystemStatus, error) {
-	sharedLibs, err := r.libraryService.ListSharedFilesystem(ctx)
+	sharedLibs, err := r.libraryService.ListSharedFS(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list shared-filesystem libraries: %w", err)
 	}
@@ -119,28 +123,25 @@ func (r *Router) buildSharedFilesystemStatus(ctx context.Context) (*SharedFilesy
 	}
 
 	if len(sharedLibs) > 0 {
-		// Run overlap detection on the full library list to obtain the
-		// OverlapWith descriptions. ListSharedFilesystem only returns flagged
-		// libraries; we need all libraries so that DetectOverlaps can identify
-		// which specific library each flagged one conflicts with.
+		// Build a lookup of all libraries so we can resolve peer library names.
 		allLibs, allErr := r.libraryService.List(ctx)
 		if allErr != nil {
-			return nil, fmt.Errorf("list libraries for overlap detection: %w", allErr)
+			return nil, fmt.Errorf("list libraries for peer resolution: %w", allErr)
 		}
-		overlaps := library.DetectOverlaps(allLibs)
-
-		// Build a lookup from library ID to its OverlapWith description.
-		overlapDesc := make(map[string]string, len(overlaps))
-		for _, o := range overlaps {
-			overlapDesc[o.LibraryID] = o.OverlapWith
+		libNames := make(map[string]string, len(allLibs))
+		for _, lib := range allLibs {
+			libNames[lib.ID] = lib.Name
 		}
 
 		for _, lib := range sharedLibs {
+			// Resolve peer library IDs to a human-readable description.
+			overlapWith := resolvePeerDescription(lib.SharedFSPeerLibraryIDs, libNames)
+
 			status.Libraries = append(status.Libraries, SharedFilesystemEntry{
 				LibraryID:   lib.ID,
 				LibraryName: lib.Name,
 				Path:        lib.Path,
-				OverlapWith: overlapDesc[lib.ID],
+				OverlapWith: overlapWith,
 			})
 		}
 	}
@@ -161,16 +162,24 @@ func (r *Router) buildSharedFilesystemStatus(ctx context.Context) (*SharedFilesy
 	return status, nil
 }
 
-// recheckSharedFilesystemBackground runs a shared-filesystem recheck in a
-// background goroutine so that library/connection mutations do not block on
-// the overlap scan. Uses context.WithoutCancel to preserve request-scoped
-// values (e.g. auth) while decoupling from the request lifecycle.
-func (r *Router) recheckSharedFilesystemBackground(reqCtx context.Context) {
-	bgCtx := context.WithoutCancel(reqCtx)
-	go func() {
-		if _, err := r.recheckSharedFilesystem(bgCtx); err != nil {
-			r.logger.Warn("background shared-filesystem recheck failed",
-				slog.String("error", err.Error()))
+// resolvePeerDescription converts a comma-separated list of library IDs into
+// a human-readable description like "library 'Music A', library 'Music B'".
+func resolvePeerDescription(peerIDs string, libNames map[string]string) string {
+	if peerIDs == "" {
+		return ""
+	}
+	parts := strings.Split(peerIDs, ",")
+	var descriptions []string
+	for _, id := range parts {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
 		}
-	}()
+		if name, ok := libNames[id]; ok {
+			descriptions = append(descriptions, "library '"+name+"'")
+		} else {
+			descriptions = append(descriptions, "unknown library (deleted?)")
+		}
+	}
+	return strings.Join(descriptions, ", ")
 }

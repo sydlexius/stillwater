@@ -17,6 +17,7 @@ var knownElements = map[string]bool{
 	"genre": true, "style": true, "mood": true, "yearsactive": true,
 	"born": true, "formed": true, "died": true, "disbanded": true,
 	"biography": true, "thumb": true, "fanart": true, "lockdata": true,
+	"stillwater": true,
 }
 
 // htmlEntityReplacer handles common HTML entities that are not valid XML.
@@ -210,6 +211,20 @@ func parseKnownElement(decoder *xml.Decoder, nfo *ArtistNFO, name string, start 
 			return err
 		}
 		nfo.LockData = parseBoolString(s)
+	case "stillwater":
+		nfo.Stillwater = &StillwaterMeta{}
+		for _, attr := range start.Attr {
+			switch attr.Name.Local {
+			case "version":
+				nfo.Stillwater.Version = attr.Value
+			case "written":
+				nfo.Stillwater.Written = attr.Value
+			}
+		}
+		// Consume the end element (or self-closing element content).
+		if err := decoder.Skip(); err != nil {
+			return fmt.Errorf("skipping stillwater element content: %w", err)
+		}
 	}
 	return nil
 }
@@ -346,6 +361,12 @@ func Write(w io.Writer, nfo *ArtistNFO) error {
 	// Only written when true; omitted entirely when false.
 	if nfo.LockData {
 		fmt.Fprintf(w, "  <lockdata>true</lockdata>\n") //nolint:errcheck
+	}
+
+	// Write Stillwater provenance element to identify the NFO writer.
+	if nfo.Stillwater != nil {
+		fmt.Fprintf(w, "  <stillwater version=%q written=%q />\n", //nolint:errcheck,gosec // G705: values are internal (version string, RFC3339 timestamp)
+			nfo.Stillwater.Version, nfo.Stillwater.Written)
 	}
 
 	for _, thumb := range nfo.Thumbs {

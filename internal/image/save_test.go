@@ -394,3 +394,70 @@ func TestSave_WithExifMeta(t *testing.T) {
 		t.Error("DHash is empty; Save should compute perceptual hash when meta.DHash is unset")
 	}
 }
+
+func TestExpectedPaths(t *testing.T) {
+	tests := []struct {
+		name      string
+		dir       string
+		fileNames []string
+		want      []string
+	}{
+		{
+			name:      "single filename",
+			dir:       "/music/Artist",
+			fileNames: []string{"folder.jpg"},
+			want: []string{
+				"/music/Artist/folder.jpg",
+				"/music/Artist/folder.png",
+			},
+		},
+		{
+			name:      "multiple filenames",
+			dir:       "/music/Artist",
+			fileNames: []string{"folder.jpg", "artist.jpg"},
+			want: []string{
+				"/music/Artist/folder.jpg",
+				"/music/Artist/folder.png",
+				"/music/Artist/artist.jpg",
+				"/music/Artist/artist.png",
+			},
+		},
+		{
+			name:      "png input extension",
+			dir:       "/music/Artist",
+			fileNames: []string{"logo.png"},
+			want: []string{
+				"/music/Artist/logo.jpg",
+				"/music/Artist/logo.png",
+			},
+		},
+		{
+			name:      "no extension",
+			dir:       "/music/Artist",
+			fileNames: []string{"fanart1"},
+			want: []string{
+				"/music/Artist/fanart1.jpg",
+				"/music/Artist/fanart1.png",
+			},
+		},
+		{
+			name:      "empty filenames",
+			dir:       "/music/Artist",
+			fileNames: []string{},
+			want:      []string{},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ExpectedPaths(tt.dir, tt.fileNames)
+			if len(got) != len(tt.want) {
+				t.Fatalf("ExpectedPaths returned %d paths, want %d: %v", len(got), len(tt.want), got)
+			}
+			for i, g := range got {
+				if g != tt.want[i] {
+					t.Errorf("ExpectedPaths[%d] = %q, want %q", i, g, tt.want[i])
+				}
+			}
+		})
+	}
+}

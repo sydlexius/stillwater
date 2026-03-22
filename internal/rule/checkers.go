@@ -728,7 +728,7 @@ func expectedImageFiles(profile *platform.Profile, artistPath string) map[string
 // platform profile: for each image type, all configured names plus their alternate
 // extension variants are considered expected.
 //
-// When the artist's library has shared_filesystem set, the expected set is expanded
+// When the artist's library has a shared-filesystem status, the expected set is expanded
 // to include filenames from ALL platform profiles so that files written by a
 // connected platform (Emby, Jellyfin, Kodi) are not flagged as extraneous.
 //
@@ -829,8 +829,8 @@ func checkExtraneousAgainst(a *artist.Artist, expected map[string]bool, cfg Rule
 }
 
 // expectedImageFilesAllProfiles builds the expected image filename set by
-// unioning filenames from ALL platform profiles. Used when shared_filesystem
-// is detected so that files written by any connected platform are not flagged
+// unioning filenames from ALL platform profiles. Used when a shared-filesystem
+// status is detected so that files written by any connected platform are not flagged
 // as extraneous. This is a package-level function so both the checker and the
 // fixer can share the same logic without duplicating it.
 func expectedImageFilesAllProfiles(ctx context.Context, svc *platform.Service, logger *slog.Logger, artistPath string) map[string]bool {
