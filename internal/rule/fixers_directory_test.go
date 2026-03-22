@@ -16,7 +16,7 @@ import (
 
 func TestDirectoryRenameFixer_Fix(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	fixer := NewDirectoryRenameFixer(nil, logger)
+	fixer := NewDirectoryRenameFixer(nonSharedFSCheck(), logger)
 
 	t.Run("successful rename", func(t *testing.T) {
 		tmp := t.TempDir()
@@ -28,7 +28,7 @@ func TestDirectoryRenameFixer_Fix(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		a := &artist.Artist{Name: "New Name", Path: oldPath}
+		a := &artist.Artist{Name: "New Name", Path: oldPath, LibraryID: "lib-test"}
 		v := &Violation{
 			RuleID: RuleDirectoryNameMismatch,
 			Config: RuleConfig{ArticleMode: "prefix"},
@@ -66,7 +66,7 @@ func TestDirectoryRenameFixer_Fix(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		a := &artist.Artist{Name: "Existing", Path: oldPath}
+		a := &artist.Artist{Name: "Existing", Path: oldPath, LibraryID: "lib-test"}
 		v := &Violation{
 			RuleID: RuleDirectoryNameMismatch,
 			Config: RuleConfig{ArticleMode: "prefix"},
@@ -127,7 +127,8 @@ func TestDirectoryRenameFixer_SharedFilesystem(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	fixer := NewDirectoryRenameFixer(libSvc, logger)
+	fsCheck := NewSharedFSCheck(libSvc, logger)
+	fixer := NewDirectoryRenameFixer(fsCheck, logger)
 
 	oldPath := filepath.Join(dir, "Old Name")
 	if err := os.MkdirAll(oldPath, 0o755); err != nil {

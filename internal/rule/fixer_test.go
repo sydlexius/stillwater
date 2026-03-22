@@ -14,9 +14,19 @@ import (
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/nfo"
 	"github.com/sydlexius/stillwater/internal/provider"
 )
+
+// nonSharedFSCheck returns a SharedFSCheck that always reports the library as
+// non-shared. Tests that do not exercise shared-filesystem behavior use this
+// to satisfy the fail-closed nil-receiver guard on IsShared.
+func nonSharedFSCheck() *SharedFSCheck {
+	return NewSharedFSCheck(&stubLibQuerier{
+		lib: &library.Library{SharedFilesystem: false},
+	}, testLogger())
+}
 
 // makeTestJPEG encodes a solid-color JPEG of the given dimensions.
 func makeTestJPEG(t *testing.T, w, h int) []byte {
@@ -64,9 +74,10 @@ func TestNFOFixer_Fix(t *testing.T) {
 		SortName:      "Test Artist",
 		Path:          dir,
 		MusicBrainzID: "abc-123",
+		LibraryID:     "lib-test",
 	}
 
-	f := &NFOFixer{}
+	f := &NFOFixer{fsCheck: nonSharedFSCheck()}
 	fr, err := f.Fix(context.Background(), a, &Violation{RuleID: RuleNFOExists})
 	if err != nil {
 		t.Fatalf("Fix: %v", err)
@@ -510,11 +521,12 @@ func TestImageFixer_Fix_ResolutionGate(t *testing.T) {
 		},
 	}
 
-	f := NewImageFixer(mock, nil, testLogger())
+	f := NewImageFixer(mock, nil, nonSharedFSCheck(), testLogger())
 	a := &artist.Artist{
 		Name:          "Gate Test",
 		MusicBrainzID: "mbid-gate",
 		Path:          t.TempDir(),
+		LibraryID:     "lib-test",
 	}
 	v := &Violation{
 		RuleID: RuleThumbMinRes,
@@ -542,11 +554,12 @@ func TestImageFixer_FetchImages_Cached(t *testing.T) {
 		},
 	}
 
-	f := NewImageFixer(mock, nil, testLogger())
+	f := NewImageFixer(mock, nil, nonSharedFSCheck(), testLogger())
 	a := &artist.Artist{
 		Name:          "Cache Test",
 		MusicBrainzID: "mbid-cache",
 		Path:          t.TempDir(),
+		LibraryID:     "lib-test",
 	}
 
 	// First call: thumb_min_res -- one candidate passes, SelectBestCandidate=false
@@ -607,7 +620,7 @@ func TestImageFixer_Fix_PostDownloadDimensionGate(t *testing.T) {
 		t.Fatalf("writing existing thumb: %v", err)
 	}
 
-	f := NewImageFixer(mock, nil, testLogger())
+	f := NewImageFixer(mock, nil, nonSharedFSCheck(), testLogger())
 	a := &artist.Artist{
 		Name:          "Adie",
 		MusicBrainzID: "mbid-adie",
@@ -662,7 +675,7 @@ func TestImageFixer_Fix_ThumbSquare_ResolutionGate(t *testing.T) {
 		t.Fatalf("writing existing thumb: %v", err)
 	}
 
-	f := NewImageFixer(mock, nil, testLogger())
+	f := NewImageFixer(mock, nil, nonSharedFSCheck(), testLogger())
 	a := &artist.Artist{
 		Name:          "Adie",
 		MusicBrainzID: "mbid-adie-sq",
@@ -766,7 +779,7 @@ func TestWriteArtistNFO(t *testing.T) {
 }
 
 func TestExtraneousImagesFixer_CanFix(t *testing.T) {
-	f := NewExtraneousImagesFixer(nil, nil, testLogger())
+	f := NewExtraneousImagesFixer(nil, nonSharedFSCheck(), testLogger())
 	if !f.CanFix(&Violation{RuleID: RuleExtraneousImages}) {
 		t.Error("should handle extraneous_images")
 	}
@@ -792,8 +805,8 @@ func TestExtraneousImagesFixer_Fix_DeletesExtraneous(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	a := &artist.Artist{Name: "Fixer Test", Path: dir}
-	f := NewExtraneousImagesFixer(nil, nil, testLogger())
+	a := &artist.Artist{Name: "Fixer Test", Path: dir, LibraryID: "lib-test"}
+	f := NewExtraneousImagesFixer(nil, nonSharedFSCheck(), testLogger())
 
 	result, err := f.Fix(context.Background(), a, &Violation{RuleID: RuleExtraneousImages})
 	if err != nil {
@@ -828,8 +841,8 @@ func TestExtraneousImagesFixer_Fix_NoExtraneous(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	a := &artist.Artist{Name: "Clean Artist", Path: dir}
-	f := NewExtraneousImagesFixer(nil, nil, testLogger())
+	a := &artist.Artist{Name: "Clean Artist", Path: dir, LibraryID: "lib-test"}
+	f := NewExtraneousImagesFixer(nil, nonSharedFSCheck(), testLogger())
 
 	result, err := f.Fix(context.Background(), a, &Violation{RuleID: RuleExtraneousImages})
 	if err != nil {
@@ -841,8 +854,8 @@ func TestExtraneousImagesFixer_Fix_NoExtraneous(t *testing.T) {
 }
 
 func TestExtraneousImagesFixer_Fix_EmptyPath(t *testing.T) {
-	a := &artist.Artist{Name: "No Path"}
-	f := NewExtraneousImagesFixer(nil, nil, testLogger())
+	a := &artist.Artist{Name: "No Path", LibraryID: "lib-test"}
+	f := NewExtraneousImagesFixer(nil, nonSharedFSCheck(), testLogger())
 
 	result, err := f.Fix(context.Background(), a, &Violation{RuleID: RuleExtraneousImages})
 	if err != nil {
@@ -857,7 +870,7 @@ func TestExtraneousImagesFixer_Fix_EmptyPath(t *testing.T) {
 }
 
 func TestLogoTrimFixer_CanFix(t *testing.T) {
-	f := NewLogoTrimFixer(nil, testLogger())
+	f := NewLogoTrimFixer(nil, nonSharedFSCheck(), testLogger())
 	if !f.CanFix(&Violation{RuleID: RuleLogoTrimmable}) {
 		t.Error("should handle logo_trimmable")
 	}
@@ -876,8 +889,8 @@ func TestLogoTrimFixer_Fix_TrimsPadding(t *testing.T) {
 		t.Fatalf("reading original logo: %v", err)
 	}
 
-	a := &artist.Artist{Name: "Trim Test", Path: dir, LogoExists: true}
-	f := NewLogoTrimFixer(nil, testLogger())
+	a := &artist.Artist{Name: "Trim Test", Path: dir, LogoExists: true, LibraryID: "lib-test"}
+	f := NewLogoTrimFixer(nil, nonSharedFSCheck(), testLogger())
 
 	fr, err := f.Fix(context.Background(), a, &Violation{RuleID: RuleLogoTrimmable})
 	if err != nil {
@@ -912,8 +925,8 @@ func TestLogoTrimFixer_Fix_TrimsPadding(t *testing.T) {
 }
 
 func TestLogoTrimFixer_Fix_EmptyPath(t *testing.T) {
-	a := &artist.Artist{Name: "No Path"}
-	f := NewLogoTrimFixer(nil, testLogger())
+	a := &artist.Artist{Name: "No Path", LibraryID: "lib-test"}
+	f := NewLogoTrimFixer(nil, nonSharedFSCheck(), testLogger())
 
 	fr, err := f.Fix(context.Background(), a, &Violation{RuleID: RuleLogoTrimmable})
 	if err != nil {
@@ -929,8 +942,8 @@ func TestLogoTrimFixer_Fix_EmptyPath(t *testing.T) {
 
 func TestLogoTrimFixer_Fix_NoLogoOnDisk(t *testing.T) {
 	dir := t.TempDir()
-	a := &artist.Artist{Name: "No Logo", Path: dir, LogoExists: true}
-	f := NewLogoTrimFixer(nil, testLogger())
+	a := &artist.Artist{Name: "No Logo", Path: dir, LogoExists: true, LibraryID: "lib-test"}
+	f := NewLogoTrimFixer(nil, nonSharedFSCheck(), testLogger())
 
 	fr, err := f.Fix(context.Background(), a, &Violation{RuleID: RuleLogoTrimmable})
 	if err != nil {
@@ -949,8 +962,8 @@ func TestLogoTrimFixer_Fix_CaseInsensitiveLookup(t *testing.T) {
 	// Create file as Logo.PNG (mixed case) with padding.
 	createTestPNGWithPadding(t, filepath.Join(dir, "Logo.PNG"), 200, 100, 20, 20, 15, 15)
 
-	a := &artist.Artist{Name: "Case Test", Path: dir, LogoExists: true}
-	f := NewLogoTrimFixer(nil, testLogger())
+	a := &artist.Artist{Name: "Case Test", Path: dir, LogoExists: true, LibraryID: "lib-test"}
+	f := NewLogoTrimFixer(nil, nonSharedFSCheck(), testLogger())
 
 	fr, err := f.Fix(context.Background(), a, &Violation{RuleID: RuleLogoTrimmable})
 	if err != nil {
@@ -962,7 +975,7 @@ func TestLogoTrimFixer_Fix_CaseInsensitiveLookup(t *testing.T) {
 }
 
 func TestLogoPaddingFixer_CanFix(t *testing.T) {
-	f := NewLogoPaddingFixer(nil, testLogger())
+	f := NewLogoPaddingFixer(nil, nonSharedFSCheck(), testLogger())
 	if !f.CanFix(&Violation{RuleID: RuleLogoPadding}) {
 		t.Error("should handle logo_padding")
 	}
@@ -981,8 +994,8 @@ func TestLogoPaddingFixer_Fix_TrimsPadding(t *testing.T) {
 		t.Fatalf("reading original logo: %v", err)
 	}
 
-	a := &artist.Artist{Name: "Padding Test", Path: dir, LogoExists: true}
-	f := NewLogoPaddingFixer(nil, testLogger())
+	a := &artist.Artist{Name: "Padding Test", Path: dir, LogoExists: true, LibraryID: "lib-test"}
+	f := NewLogoPaddingFixer(nil, nonSharedFSCheck(), testLogger())
 
 	// Set TrimMargin to 5 via violation config.
 	v := &Violation{RuleID: RuleLogoPadding, Config: RuleConfig{TrimMargin: 5}}
@@ -1020,8 +1033,8 @@ func TestLogoPaddingFixer_Fix_TrimsPadding(t *testing.T) {
 }
 
 func TestLogoPaddingFixer_Fix_EmptyPath(t *testing.T) {
-	a := &artist.Artist{Name: "No Path"}
-	f := NewLogoPaddingFixer(nil, testLogger())
+	a := &artist.Artist{Name: "No Path", LibraryID: "lib-test"}
+	f := NewLogoPaddingFixer(nil, nonSharedFSCheck(), testLogger())
 
 	fr, err := f.Fix(context.Background(), a, &Violation{RuleID: RuleLogoPadding})
 	if err != nil {
@@ -1037,8 +1050,8 @@ func TestLogoPaddingFixer_Fix_EmptyPath(t *testing.T) {
 
 func TestLogoPaddingFixer_Fix_NoLogoOnDisk(t *testing.T) {
 	dir := t.TempDir()
-	a := &artist.Artist{Name: "No Logo", Path: dir, LogoExists: true}
-	f := NewLogoPaddingFixer(nil, testLogger())
+	a := &artist.Artist{Name: "No Logo", Path: dir, LogoExists: true, LibraryID: "lib-test"}
+	f := NewLogoPaddingFixer(nil, nonSharedFSCheck(), testLogger())
 
 	fr, err := f.Fix(context.Background(), a, &Violation{RuleID: RuleLogoPadding})
 	if err != nil {
@@ -1056,8 +1069,8 @@ func TestLogoPaddingFixer_Fix_NegativeMargin(t *testing.T) {
 	dir := t.TempDir()
 	createTestPNGWithPadding(t, filepath.Join(dir, "logo.png"), 200, 100, 30, 30, 30, 30)
 
-	a := &artist.Artist{Name: "Neg Margin", Path: dir, LogoExists: true}
-	f := NewLogoPaddingFixer(nil, testLogger())
+	a := &artist.Artist{Name: "Neg Margin", Path: dir, LogoExists: true, LibraryID: "lib-test"}
+	f := NewLogoPaddingFixer(nil, nonSharedFSCheck(), testLogger())
 
 	// Negative margin should be clamped to 0 (trim to exact content bounds).
 	v := &Violation{RuleID: RuleLogoPadding, Config: RuleConfig{TrimMargin: -5}}
@@ -1355,11 +1368,12 @@ func TestImageFixer_Fix_DiscoveryOnly_SingleCandidate(t *testing.T) {
 		},
 	}
 
-	f := NewImageFixer(mock, nil, testLogger())
+	f := NewImageFixer(mock, nil, nonSharedFSCheck(), testLogger())
 	a := &artist.Artist{
 		Name:          "Discovery Single",
 		MusicBrainzID: "mbid-disc-single",
 		Path:          t.TempDir(),
+		LibraryID:     "lib-test",
 	}
 	v := &Violation{
 		RuleID: RuleThumbExists,
@@ -1400,11 +1414,12 @@ func TestImageFixer_Fix_DiscoveryOnly_SelectBestCandidate(t *testing.T) {
 		},
 	}
 
-	f := NewImageFixer(mock, nil, testLogger())
+	f := NewImageFixer(mock, nil, nonSharedFSCheck(), testLogger())
 	a := &artist.Artist{
 		Name:          "Discovery Best",
 		MusicBrainzID: "mbid-disc-best",
 		Path:          t.TempDir(),
+		LibraryID:     "lib-test",
 	}
 	v := &Violation{
 		RuleID: RuleFanartExists,
