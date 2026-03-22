@@ -625,7 +625,8 @@ func applyImageMetadata(a *Artist, imgs []ArtistImage) {
 }
 
 // extractImageMetadata builds an ArtistImage slice from the Artist struct's
-// image fields, ready for persistence.
+// image fields, ready for persistence. See the follow-up issue for populating
+// ArtistImage.Source from EXIF provenance metadata.
 func extractImageMetadata(a *Artist) []ArtistImage {
 	var imgs []ArtistImage
 

@@ -18,7 +18,7 @@ import (
 // filename is written as a real file. Subsequent filenames are created as
 // relative symlinks pointing to the primary file. If symlink creation fails,
 // it falls back to a regular atomic write.
-func Save(dir string, imageType string, data []byte, fileNames []string, useSymlinks bool, logger *slog.Logger) ([]string, error) {
+func Save(dir string, imageType string, data []byte, fileNames []string, useSymlinks bool, meta *ExifMeta, logger *slog.Logger) ([]string, error) {
 	if len(fileNames) == 0 {
 		return nil, fmt.Errorf("no filenames configured for image type %q", imageType)
 	}
@@ -37,6 +37,31 @@ func Save(dir string, imageType string, data []byte, fileNames []string, useSyml
 		}
 		data = converted
 		format = FormatPNG
+	}
+
+	// Compute perceptual hash from the image data if not already set.
+	if meta != nil && meta.DHash == "" {
+		if hash, hashErr := PerceptualHash(bytes.NewReader(data)); hashErr == nil {
+			meta.DHash = HashHex(hash)
+		} else {
+			logger.Debug("could not compute perceptual hash; saving without dhash",
+				slog.String("image_type", imageType),
+				slog.String("error", hashErr.Error()))
+		}
+	}
+
+	// Inject provenance metadata if provided.
+	if meta != nil {
+		injected, injErr := InjectMeta(data, meta)
+		if injErr != nil {
+			logger.Warn("failed to inject EXIF metadata; saving without provenance",
+				slog.String("image_type", imageType),
+				slog.String("dir", dir),
+				slog.String("source", meta.Source),
+				slog.String("error", injErr.Error()))
+		} else {
+			data = injected
+		}
 	}
 
 	// Determine the output extension based on the actual format

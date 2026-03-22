@@ -445,8 +445,17 @@ func (f *ImageFixer) Fix(ctx context.Context, a *artist.Artist, v *Violation) (*
 			}
 		}
 
+		// Build provenance metadata for the saved image.
+		saveMeta := &img.ExifMeta{
+			Source:  c.Source,
+			Fetched: time.Now().UTC(),
+			URL:     c.URL,
+			Rule:    v.RuleID,
+			Mode:    "auto",
+		}
+
 		// Use the shared save pipeline: convert -> platform-aware naming -> save -> set flag
-		saved, err := SaveImageFromData(ctx, a, imageType, data, nil, useSymlinks, f.platformService, f.logger)
+		saved, err := SaveImageFromData(ctx, a, imageType, data, nil, useSymlinks, saveMeta, f.platformService, f.logger)
 		if err != nil {
 			f.logger.Debug("image save failed", "url", c.URL, "error", err)
 			continue
@@ -508,13 +517,13 @@ func setImageFlag(a *artist.Artist, imageType string) {
 // When naming is non-nil, it overrides the platform-aware resolution (used by
 // the apply-candidate API handler which resolves naming at the call site).
 // Returns the list of saved filenames on success.
-func SaveImageFromURL(ctx context.Context, a *artist.Artist, imageType, rawURL string, naming []string, useSymlinks bool, platformService *platform.Service, logger *slog.Logger) ([]string, error) {
+func SaveImageFromURL(ctx context.Context, a *artist.Artist, imageType, rawURL string, naming []string, useSymlinks bool, meta *img.ExifMeta, platformService *platform.Service, logger *slog.Logger) ([]string, error) {
 	data, err := fetchImageURL(ctx, rawURL)
 	if err != nil {
 		return nil, fmt.Errorf("downloading image: %w", err)
 	}
 
-	return SaveImageFromData(ctx, a, imageType, data, naming, useSymlinks, platformService, logger)
+	return SaveImageFromData(ctx, a, imageType, data, naming, useSymlinks, meta, platformService, logger)
 }
 
 // SaveImageFromData saves already-downloaded image bytes to the artist's
@@ -525,7 +534,7 @@ func SaveImageFromURL(ctx context.Context, a *artist.Artist, imageType, rawURL s
 //
 // When naming is non-empty, it overrides the platform-aware resolution.
 // Returns the list of saved filenames on success.
-func SaveImageFromData(ctx context.Context, a *artist.Artist, imageType string, data []byte, naming []string, useSymlinks bool, platformService *platform.Service, logger *slog.Logger) ([]string, error) {
+func SaveImageFromData(ctx context.Context, a *artist.Artist, imageType string, data []byte, naming []string, useSymlinks bool, meta *img.ExifMeta, platformService *platform.Service, logger *slog.Logger) ([]string, error) {
 	converted, _, err := img.ConvertFormat(bytes.NewReader(data))
 	if err != nil {
 		return nil, fmt.Errorf("converting image format: %w", err)
@@ -536,7 +545,7 @@ func SaveImageFromData(ctx context.Context, a *artist.Artist, imageType string, 
 		naming = existingImageFileNames(ctx, a.Path, imageType, platformService)
 	}
 
-	saved, err := img.Save(a.Path, imageType, converted, naming, useSymlinks, logger)
+	saved, err := img.Save(a.Path, imageType, converted, naming, useSymlinks, meta, logger)
 	if err != nil {
 		return nil, fmt.Errorf("saving image: %w", err)
 	}
@@ -846,9 +855,29 @@ func (f *LogoTrimFixer) Fix(ctx context.Context, a *artist.Artist, _ *Violation)
 
 	newW, newH, newErr := img.GetDimensions(bytes.NewReader(trimmed))
 
+	// Preserve existing provenance metadata, updating only the rule field.
+	var saveMeta *img.ExifMeta
+	existing, readErr := img.ReadProvenance(logoPath)
+	if readErr != nil {
+		f.logger.Debug("could not read existing provenance; creating fresh metadata",
+			slog.String("path", logoPath),
+			slog.String("error", readErr.Error()))
+	}
+	if readErr == nil && existing != nil {
+		saveMeta = existing
+		saveMeta.Rule = RuleLogoTrimmable
+	} else {
+		saveMeta = &img.ExifMeta{Rule: RuleLogoTrimmable}
+	}
+	saveMeta.Fetched = time.Now().UTC()
+	// Recompute dhash from trimmed data.
+	if hash, hashErr := img.PerceptualHash(bytes.NewReader(trimmed)); hashErr == nil {
+		saveMeta.DHash = img.HashHex(hash)
+	}
+
 	naming := []string{filepath.Base(logoPath)}
 	useSymlinks := activeUseSymlinks(ctx, f.platformService)
-	savedNames, err := img.Save(a.Path, "logo", trimmed, naming, useSymlinks, f.logger)
+	savedNames, err := img.Save(a.Path, "logo", trimmed, naming, useSymlinks, saveMeta, f.logger)
 	if err != nil {
 		return nil, fmt.Errorf("saving trimmed logo: %w", err)
 	}
@@ -984,9 +1013,29 @@ func (f *LogoPaddingFixer) Fix(ctx context.Context, a *artist.Artist, v *Violati
 		}, nil
 	}
 
+	// Preserve existing provenance metadata, updating only the rule field.
+	var padMeta *img.ExifMeta
+	existingPad, readPadErr := img.ReadProvenance(logoPath)
+	if readPadErr != nil {
+		f.logger.Debug("could not read existing provenance; creating fresh metadata",
+			slog.String("path", logoPath),
+			slog.String("error", readPadErr.Error()))
+	}
+	if readPadErr == nil && existingPad != nil {
+		padMeta = existingPad
+		padMeta.Rule = RuleLogoPadding
+	} else {
+		padMeta = &img.ExifMeta{Rule: RuleLogoPadding}
+	}
+	padMeta.Fetched = time.Now().UTC()
+	// Recompute dhash from trimmed data.
+	if hash, hashErr := img.PerceptualHash(bytes.NewReader(trimmed)); hashErr == nil {
+		padMeta.DHash = img.HashHex(hash)
+	}
+
 	naming := []string{filepath.Base(logoPath)}
 	useSymlinks := activeUseSymlinks(ctx, f.platformService)
-	savedNames, err := img.Save(a.Path, "logo", trimmed, naming, useSymlinks, f.logger)
+	savedNames, err := img.Save(a.Path, "logo", trimmed, naming, useSymlinks, padMeta, f.logger)
 	if err != nil {
 		return nil, fmt.Errorf("saving trimmed logo: %w", err)
 	}
