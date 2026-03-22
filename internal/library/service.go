@@ -354,11 +354,20 @@ func (s *Service) SetSharedFSStatus(ctx context.Context, id, status, evidence, p
 	if err != nil {
 		return fmt.Errorf("setting shared_fs_status: %w", err)
 	}
-	// RowsAffected may be 0 if the library was not found OR if the downgrade
-	// guard prevented the update. Only report "not found" when not guarded.
 	rows, _ := result.RowsAffected()
-	if rows == 0 && status != SharedFSSuspected {
-		return fmt.Errorf("library not found: %s", id)
+	if rows == 0 {
+		if status != SharedFSSuspected {
+			return fmt.Errorf("library not found: %s", id)
+		}
+		// Guarded update: rows=0 means either "already confirmed" (expected)
+		// or "library not found" (bug). Distinguish with an existence check.
+		var exists int
+		existErr := s.db.QueryRowContext(ctx,
+			`SELECT 1 FROM libraries WHERE id = ?`, id).Scan(&exists)
+		if existErr != nil {
+			return fmt.Errorf("library not found: %s", id)
+		}
+		// Library exists but is already confirmed; no-op is correct.
 	}
 	return nil
 }

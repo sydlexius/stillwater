@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 )
@@ -87,16 +88,21 @@ func CheckArtistDirMtimes(artistDir string, lastWrittenAt time.Time) (bool, erro
 func CollectMtimeEvidence(artistDirs map[string]string, lastWrittenAts map[string]time.Time, logger *slog.Logger) []MtimeEvidence {
 	var evidence []MtimeEvidence
 
-	// Deduplicate directories: multiple artist IDs can point to the same
-	// path, and scanning the same directory twice would produce duplicate
-	// evidence entries.
+	// Deduplicate and sort directories for deterministic evidence ordering.
+	// Multiple artist IDs can point to the same path; sorting ensures
+	// identical filesystem state produces identical stored JSON across runs.
 	seenDirs := make(map[string]bool, len(artistDirs))
-
+	dirs := make([]string, 0, len(artistDirs))
 	for _, dir := range artistDirs {
 		if seenDirs[dir] {
 			continue
 		}
 		seenDirs[dir] = true
+		dirs = append(dirs, dir)
+	}
+	sort.Strings(dirs)
+
+	for _, dir := range dirs {
 		lwt, ok := lastWrittenAts[dir]
 		if !ok || lwt.IsZero() {
 			continue
