@@ -107,7 +107,9 @@ func TestHasScope_NoAuth(t *testing.T) {
 
 // TestRequireScope verifies the scope middleware returns 403 on missing scope.
 func TestRequireScope_Forbidden(t *testing.T) {
+	called := false
 	handler := RequireScope("write")(func(w http.ResponseWriter, r *http.Request) {
+		called = true
 		w.WriteHeader(http.StatusOK)
 	})
 
@@ -121,6 +123,12 @@ func TestRequireScope_Forbidden(t *testing.T) {
 
 	if rec.Code != http.StatusForbidden {
 		t.Errorf("RequireScope status = %d, want 403", rec.Code)
+	}
+	if called {
+		t.Error("next handler should not be called on forbidden scope")
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
+		t.Errorf("Content-Type = %q, want application/json", ct)
 	}
 }
 

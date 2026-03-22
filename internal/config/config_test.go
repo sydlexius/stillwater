@@ -80,6 +80,7 @@ logging:
 }
 
 func TestLoad_EnvOverridesYAML(t *testing.T) {
+	clearSWEnv(t)
 	dir := t.TempDir()
 	yamlPath := filepath.Join(dir, "config.yaml")
 	err := os.WriteFile(yamlPath, []byte(`
@@ -195,6 +196,7 @@ database:
 }
 
 func TestLoadFromEnv_ScannerExclusions(t *testing.T) {
+	clearSWEnv(t)
 	t.Setenv("SW_SCANNER_EXCLUSIONS", "Various Artists, Soundtrack, OST")
 
 	cfg, err := Load("")
