@@ -10,15 +10,23 @@ import templruntime "github.com/a-h/templ/runtime"
 
 // SharedFSBarData holds data for the shared-filesystem notification bar.
 type SharedFSBarData struct {
-	HasOverlaps bool
-	Libraries   []SharedFSBarLib
-	Dismissed   bool
+	HasOverlaps          bool
+	Libraries            []SharedFSBarLib
+	Dismissed            bool
+	ImageFetcherWarnings []SharedFSBarWarning
 }
 
 // SharedFSBarLib represents a library entry for the notification bar.
 type SharedFSBarLib struct {
 	Name string
 	Path string
+}
+
+// SharedFSBarWarning represents an image fetcher warning from a connected platform.
+type SharedFSBarWarning struct {
+	Platform  string // "emby" or "jellyfin"
+	RiskLevel string // "warn" or "critical"
+	Message   string
 }
 
 // SharedFilesystemBar renders a persistent warning bar when shared-filesystem
@@ -88,7 +96,7 @@ func SharedFilesystemBarContent(data SharedFSBarData) templ.Component {
 					var templ_7745c5c3_Var3 string
 					templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(", ")
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/shared_filesystem_bar.templ`, Line: 52, Col: 16}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/shared_filesystem_bar.templ`, Line: 60, Col: 16}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 					if templ_7745c5c3_Err != nil {
@@ -102,7 +110,7 @@ func SharedFilesystemBarContent(data SharedFSBarData) templ.Component {
 				var templ_7745c5c3_Var4 string
 				templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(lib.Name)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/shared_filesystem_bar.templ`, Line: 54, Col: 45}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/shared_filesystem_bar.templ`, Line: 62, Col: 45}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 				if templ_7745c5c3_Err != nil {
@@ -120,7 +128,7 @@ func SharedFilesystemBarContent(data SharedFSBarData) templ.Component {
 					var templ_7745c5c3_Var5 string
 					templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(lib.Path)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/shared_filesystem_bar.templ`, Line: 56, Col: 70}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/shared_filesystem_bar.templ`, Line: 64, Col: 70}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 					if templ_7745c5c3_Err != nil {
@@ -132,7 +140,60 @@ func SharedFilesystemBarContent(data SharedFSBarData) templ.Component {
 					}
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "</span> <span class=\"ml-1\">A platform connection may write to the same directories Stillwater manages. <a href=\"https://github.com/sydlexius/stillwater/wiki/Shared-Filesystem\" target=\"_blank\" rel=\"noopener noreferrer\" class=\"underline font-medium hover:text-amber-900 dark:hover:text-amber-100\">Learn more</a></span></div></div><div class=\"flex items-center gap-2 flex-shrink-0\"><button type=\"button\" class=\"text-xs text-amber-600 dark:text-amber-400 hover:text-amber-800 dark:hover:text-amber-200 underline\" hx-post=\"/api/v1/shared-filesystem/dismiss\" hx-swap=\"outerHTML\" hx-target=\"#shared-fs-warning\" aria-label=\"Dismiss warning permanently\">Don't show again</button> <button type=\"button\" class=\"text-amber-500 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-200\" onclick=\"this.closest('#shared-fs-warning').remove(); sessionStorage.setItem('shared_fs_dismissed', 'true')\" aria-label=\"Dismiss warning for this session\"><svg class=\"h-4 w-4\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"2\" stroke=\"currentColor\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M6 18L18 6M6 6l12 12\"></path></svg></button></div></div></div></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "</span> <span class=\"ml-1\">A platform connection may write to the same directories Stillwater manages. <a href=\"https://github.com/sydlexius/stillwater/wiki/Shared-Filesystem\" target=\"_blank\" rel=\"noopener noreferrer\" class=\"underline font-medium hover:text-amber-900 dark:hover:text-amber-100\">Learn more</a></span> ")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			if len(data.ImageFetcherWarnings) > 0 {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "<div class=\"mt-2 space-y-1\" role=\"list\" aria-label=\"Image fetcher warnings\">")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				for _, w := range data.ImageFetcherWarnings {
+					if w.RiskLevel == "critical" {
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "<div class=\"text-xs text-red-700 dark:text-red-300\" role=\"listitem\"><span class=\"font-semibold\">Action needed:</span> <span class=\"ml-1\">")
+						if templ_7745c5c3_Err != nil {
+							return templ_7745c5c3_Err
+						}
+						var templ_7745c5c3_Var6 string
+						templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(w.Message)
+						if templ_7745c5c3_Err != nil {
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/shared_filesystem_bar.templ`, Line: 85, Col: 42}
+						}
+						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
+						if templ_7745c5c3_Err != nil {
+							return templ_7745c5c3_Err
+						}
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "</span></div>")
+						if templ_7745c5c3_Err != nil {
+							return templ_7745c5c3_Err
+						}
+					} else {
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "<div class=\"text-xs text-amber-700 dark:text-amber-300\" role=\"listitem\"><span class=\"font-semibold\">Note:</span> <span class=\"ml-1\">")
+						if templ_7745c5c3_Err != nil {
+							return templ_7745c5c3_Err
+						}
+						var templ_7745c5c3_Var7 string
+						templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(w.Message)
+						if templ_7745c5c3_Err != nil {
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/shared_filesystem_bar.templ`, Line: 90, Col: 42}
+						}
+						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
+						if templ_7745c5c3_Err != nil {
+							return templ_7745c5c3_Err
+						}
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "</span></div>")
+						if templ_7745c5c3_Err != nil {
+							return templ_7745c5c3_Err
+						}
+					}
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "</div>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "</div></div><div class=\"flex items-center gap-2 flex-shrink-0\"><button type=\"button\" class=\"text-xs text-amber-600 dark:text-amber-400 hover:text-amber-800 dark:hover:text-amber-200 underline\" hx-post=\"/api/v1/shared-filesystem/dismiss\" hx-swap=\"outerHTML\" hx-target=\"#shared-fs-warning\" aria-label=\"Dismiss warning permanently\">Don't show again</button> <button type=\"button\" class=\"text-amber-500 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-200\" onclick=\"this.closest('#shared-fs-warning').remove(); sessionStorage.setItem('shared_fs_dismissed', 'true')\" aria-label=\"Dismiss warning for this session\"><svg class=\"h-4 w-4\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"2\" stroke=\"currentColor\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M6 18L18 6M6 6l12 12\"></path></svg></button></div></div></div></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

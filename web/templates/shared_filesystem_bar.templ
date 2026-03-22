@@ -2,15 +2,23 @@ package templates
 
 // SharedFSBarData holds data for the shared-filesystem notification bar.
 type SharedFSBarData struct {
-	HasOverlaps bool
-	Libraries   []SharedFSBarLib
-	Dismissed   bool
+	HasOverlaps          bool
+	Libraries            []SharedFSBarLib
+	Dismissed            bool
+	ImageFetcherWarnings []SharedFSBarWarning
 }
 
 // SharedFSBarLib represents a library entry for the notification bar.
 type SharedFSBarLib struct {
 	Name string
 	Path string
+}
+
+// SharedFSBarWarning represents an image fetcher warning from a connected platform.
+type SharedFSBarWarning struct {
+	Platform  string // "emby" or "jellyfin"
+	RiskLevel string // "warn" or "critical"
+	Message   string
 }
 
 // SharedFilesystemBar renders a persistent warning bar when shared-filesystem
@@ -68,6 +76,23 @@ templ SharedFilesystemBarContent(data SharedFSBarData) {
 									Learn more
 								</a>
 							</span>
+							if len(data.ImageFetcherWarnings) > 0 {
+								<div class="mt-2 space-y-1" role="list" aria-label="Image fetcher warnings">
+									for _, w := range data.ImageFetcherWarnings {
+										if w.RiskLevel == "critical" {
+											<div class="text-xs text-red-700 dark:text-red-300" role="listitem">
+												<span class="font-semibold">Action needed:</span>
+												<span class="ml-1">{ w.Message }</span>
+											</div>
+										} else {
+											<div class="text-xs text-amber-700 dark:text-amber-300" role="listitem">
+												<span class="font-semibold">Note:</span>
+												<span class="ml-1">{ w.Message }</span>
+											</div>
+										}
+									}
+								</div>
+							}
 						</div>
 					</div>
 					<div class="flex items-center gap-2 flex-shrink-0">
