@@ -56,8 +56,10 @@ func (r *Router) handleSharedFilesystemStatus(w http.ResponseWriter, req *http.R
 				Path: lib.Path,
 			})
 		}
-		// Collect image fetcher warnings for shared libraries.
-		if len(sharedLibs) > 0 {
+		// Collect image fetcher warnings for shared libraries. Skip when the bar
+		// is dismissed because the template renders nothing and the network calls
+		// to Emby/Jellyfin would be wasted.
+		if len(sharedLibs) > 0 && !status.Dismissed {
 			for _, w := range r.collectImageFetcherWarnings(req.Context(), sharedLibs) {
 				data.ImageFetcherWarnings = append(data.ImageFetcherWarnings, templates.SharedFSBarWarning{
 					Platform:  w.Platform,
