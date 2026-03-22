@@ -3687,7 +3687,7 @@ paths:
         fix result with status and message. When the fix modifies NFO files,
         image files, or renames an artist directory, the response may include
         an undo_id that can be passed to
-        POST /notifications/undo/{undoId} within 30 seconds to revert it.
+        POST /fix-undo/{undoId} within 30 seconds to revert it.
         Metadata-only fixes, dismissed violations, and failed fixes do not
         produce an undo_id.
       operationId: fixViolation
@@ -3716,7 +3716,7 @@ paths:
                     type: string
                     description: |
                       Opaque token used to revert this fix via
-                      POST /notifications/undo/{undoId}. Present only when
+                      POST /fix-undo/{undoId}. Present only when
                       the fix modified filesystem files and an undo entry was
                       registered. Absent for metadata-only fixes, dismissed
                       violations, and failed fixes.
@@ -3738,7 +3738,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
-  /notifications/undo/{undoId}:
+  /fix-undo/{undoId}:
     post:
       tags: [Notifications]
       summary: Revert a recently applied fix

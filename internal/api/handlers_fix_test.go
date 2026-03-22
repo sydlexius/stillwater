@@ -307,7 +307,7 @@ func TestHandleUndoFix_Success(t *testing.T) {
 	nr := &noopRevert{}
 	undoID := r.undoStore.Register("v-undo-1", nr.fn)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/notifications/undo/"+undoID, nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/fix-undo/"+undoID, nil)
 	req.SetPathValue("undoId", undoID)
 	w := httptest.NewRecorder()
 
@@ -338,7 +338,7 @@ func TestHandleUndoFix_Expired(t *testing.T) {
 	undoID := r.undoStore.Register("v-undo-exp", nr.fn)
 	r.undoStore.ForceExpire(undoID)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/notifications/undo/"+undoID, nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/fix-undo/"+undoID, nil)
 	req.SetPathValue("undoId", undoID)
 	w := httptest.NewRecorder()
 
@@ -356,7 +356,7 @@ func TestHandleUndoFix_NotFound(t *testing.T) {
 	stub := &stubPipeline{}
 	r, _ := testRouterWithStubPipeline(t, stub)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/notifications/undo/nonexistent", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/fix-undo/nonexistent", nil)
 	req.SetPathValue("undoId", "nonexistent")
 	w := httptest.NewRecorder()
 
@@ -375,7 +375,7 @@ func TestHandleUndoFix_AlreadyUsed(t *testing.T) {
 	undoID := r.undoStore.Register("v-undo-used", nr.fn)
 
 	// First call: succeeds.
-	req1 := httptest.NewRequest(http.MethodPost, "/api/v1/notifications/undo/"+undoID, nil)
+	req1 := httptest.NewRequest(http.MethodPost, "/api/v1/fix-undo/"+undoID, nil)
 	req1.SetPathValue("undoId", undoID)
 	w1 := httptest.NewRecorder()
 	r.handleUndoFix(w1, req1)
@@ -384,7 +384,7 @@ func TestHandleUndoFix_AlreadyUsed(t *testing.T) {
 	}
 
 	// Second call: undo already consumed.
-	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/notifications/undo/"+undoID, nil)
+	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/fix-undo/"+undoID, nil)
 	req2.SetPathValue("undoId", undoID)
 	w2 := httptest.NewRecorder()
 	r.handleUndoFix(w2, req2)
@@ -410,7 +410,7 @@ func TestHandleUndoFix_ConcurrentSameID(t *testing.T) {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
-			req := httptest.NewRequest(http.MethodPost, "/api/v1/notifications/undo/"+undoID, nil)
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/fix-undo/"+undoID, nil)
 			req.SetPathValue("undoId", undoID)
 			w := httptest.NewRecorder()
 			r.handleUndoFix(w, req)

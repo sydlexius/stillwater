@@ -219,7 +219,7 @@ func captureImageFiles(ctx context.Context, dir, imageType string, r *Router) []
 }
 
 // handleUndoFix reverts a recently applied fix using the registered undo entry.
-// POST /api/v1/notifications/undo/{undoId}
+// POST /api/v1/fix-undo/{undoId}
 func (r *Router) handleUndoFix(w http.ResponseWriter, req *http.Request) {
 	undoID, ok := RequirePathParam(w, req, "undoId")
 	if !ok {
