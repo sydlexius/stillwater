@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/publish"
 )
 
 // Fixer attempts to automatically resolve a rule violation.
@@ -66,6 +67,7 @@ type Pipeline struct {
 	artistService *artist.Service
 	ruleService   *Service
 	fixers        []Fixer
+	publisher     *publish.Publisher
 	logger        *slog.Logger
 
 	ruleCacheMu sync.RWMutex
@@ -73,12 +75,13 @@ type Pipeline struct {
 }
 
 // NewPipeline creates a new fix pipeline.
-func NewPipeline(engine *Engine, artistService *artist.Service, ruleService *Service, fixers []Fixer, logger *slog.Logger) *Pipeline {
+func NewPipeline(engine *Engine, artistService *artist.Service, ruleService *Service, fixers []Fixer, publisher *publish.Publisher, logger *slog.Logger) *Pipeline {
 	return &Pipeline{
 		engine:        engine,
 		artistService: artistService,
 		ruleService:   ruleService,
 		fixers:        fixers,
+		publisher:     publisher,
 		logger:        logger.With(slog.String("component", "fix-pipeline")),
 	}
 }
@@ -116,6 +119,8 @@ func (p *Pipeline) RunRule(ctx context.Context, ruleID string) (*RunResult, erro
 			}
 
 			result.ArtistsProcessed++
+			var perRuleMetadata bool
+			var perRuleImages []string
 
 			eval, err := p.engine.Evaluate(ctx, a)
 			if err != nil {
@@ -205,6 +210,11 @@ func (p *Pipeline) RunRule(ctx context.Context, ruleID string) (*RunResult, erro
 				if fr.Fixed {
 					result.FixesSucceeded++
 					status = ViolationStatusResolved
+					if fr.ImageType != "" {
+						perRuleImages = append(perRuleImages, fr.ImageType)
+					} else {
+						perRuleMetadata = true
+					}
 				} else if len(fr.Candidates) > 0 {
 					status = ViolationStatusPendingChoice
 				}
@@ -228,8 +238,9 @@ func (p *Pipeline) RunRule(ctx context.Context, ruleID string) (*RunResult, erro
 				}
 			}
 
-			// Re-evaluate and persist health score
+			// Re-evaluate and persist health score, then publish changes.
 			p.updateHealthScore(ctx, a)
+			p.publishAccumulated(ctx, a, perRuleMetadata, perRuleImages)
 		}
 
 		if len(page) < pageSize {
@@ -251,6 +262,9 @@ func (p *Pipeline) RunForArtist(ctx context.Context, a *artist.Artist) (*RunResu
 	}
 
 	result.ArtistsProcessed = 1
+
+	var metadataFixed bool
+	var fixedImageTypes []string
 
 	eval, err := p.engine.Evaluate(ctx, a)
 	if err != nil {
@@ -344,6 +358,11 @@ func (p *Pipeline) RunForArtist(ctx context.Context, a *artist.Artist) (*RunResu
 		if fr.Fixed {
 			result.FixesSucceeded++
 			status = ViolationStatusResolved
+			if fr.ImageType != "" {
+				fixedImageTypes = append(fixedImageTypes, fr.ImageType)
+			} else {
+				metadataFixed = true
+			}
 		} else if len(fr.Candidates) > 0 {
 			status = ViolationStatusPendingChoice
 		}
@@ -368,6 +387,7 @@ func (p *Pipeline) RunForArtist(ctx context.Context, a *artist.Artist) (*RunResu
 	}
 
 	p.updateHealthScore(ctx, a)
+	p.publishAccumulated(ctx, a, metadataFixed, fixedImageTypes)
 	return result, nil
 }
 
@@ -401,6 +421,8 @@ func (p *Pipeline) RunAll(ctx context.Context) (*RunResult, error) {
 			}
 
 			result.ArtistsProcessed++
+			var perArtistMetadata bool
+			var perArtistImages []string
 
 			eval, err := p.engine.Evaluate(ctx, a)
 			if err != nil {
@@ -495,6 +517,11 @@ func (p *Pipeline) RunAll(ctx context.Context) (*RunResult, error) {
 				if fr.Fixed {
 					result.FixesSucceeded++
 					status = ViolationStatusResolved
+					if fr.ImageType != "" {
+						perArtistImages = append(perArtistImages, fr.ImageType)
+					} else {
+						perArtistMetadata = true
+					}
 				} else if len(fr.Candidates) > 0 {
 					status = ViolationStatusPendingChoice
 				}
@@ -518,8 +545,9 @@ func (p *Pipeline) RunAll(ctx context.Context) (*RunResult, error) {
 				}
 			}
 
-			// Re-evaluate and persist health score
+			// Re-evaluate and persist health score, then publish changes.
 			p.updateHealthScore(ctx, a)
+			p.publishAccumulated(ctx, a, perArtistMetadata, perArtistImages)
 		}
 
 		if len(page) < pageSize {
@@ -599,6 +627,7 @@ func (p *Pipeline) FixViolation(ctx context.Context, violationID string) (*FixRe
 			return nil, fmt.Errorf("resolving violation after fix: %w", err)
 		}
 		p.updateHealthScore(ctx, a)
+		p.publishAfterFix(ctx, a, fr)
 	}
 
 	return fr, nil
@@ -677,6 +706,34 @@ func (p *Pipeline) attemptFix(ctx context.Context, a *artist.Artist, v *Violatio
 		RuleID:  v.RuleID,
 		Fixed:   false,
 		Message: "no fixer available",
+	}
+}
+
+// publishAfterFix publishes metadata or image changes to platforms after a
+// single fix succeeds. Used by FixViolation for individual fixes.
+func (p *Pipeline) publishAfterFix(ctx context.Context, a *artist.Artist, fr *FixResult) {
+	if p.publisher == nil || !fr.Fixed {
+		return
+	}
+	if fr.ImageType != "" {
+		p.publisher.SyncImageToPlatforms(ctx, a, fr.ImageType)
+	} else {
+		p.publisher.PublishMetadata(ctx, a)
+	}
+}
+
+// publishAccumulated publishes metadata and/or image changes to platforms
+// after processing all violations for an artist. Used by RunForArtist and
+// RunAll to batch publishing per-artist rather than per-violation.
+func (p *Pipeline) publishAccumulated(ctx context.Context, a *artist.Artist, metadataFixed bool, imageTypes []string) {
+	if p.publisher == nil {
+		return
+	}
+	if metadataFixed {
+		p.publisher.PublishMetadata(ctx, a)
+	}
+	for _, it := range imageTypes {
+		p.publisher.SyncImageToPlatforms(ctx, a, it)
 	}
 }
 

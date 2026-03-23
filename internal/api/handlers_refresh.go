@@ -185,7 +185,7 @@ func (r *Router) handleRefreshLink(w http.ResponseWriter, req *http.Request) {
 				// The NFO written by executeRefresh still has the old
 				// name because the name update happens after the
 				// refresh completes.
-				r.publisher.WriteBackNFO(req.Context(), a)
+				r.publisher.PublishMetadata(req.Context(), a)
 			}
 		}
 	}
@@ -231,7 +231,7 @@ func (r *Router) executeRefresh(req *http.Request, a *artist.Artist) (*provider.
 		return nil, err
 	}
 
-	r.publisher.WriteBackNFO(req.Context(), a)
+	r.publisher.PublishMetadata(req.Context(), a)
 
 	rule.UpdateProviderFetchTimestamps(req.Context(), r.artistService, a.ID, result.AttemptedProviders, r.logger)
 

@@ -4,6 +4,7 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -387,6 +388,15 @@ func (r *Router) handleApplyViolationCandidate(w http.ResponseWriter, req *http.
 	// Record provenance from the saved file so artist_images.source is populated.
 	if len(saved) > 0 && a.Path != "" {
 		r.recordImageProvenance(req.Context(), a.ID, body.ImageType, filepath.Join(a.Path, saved[0]))
+	}
+
+	// Sync the saved image to connected platforms. Log warnings but do not
+	// fail the response -- the local save already succeeded.
+	if warnings := r.publisher.SyncImageToPlatforms(req.Context(), a, body.ImageType); len(warnings) > 0 {
+		r.logger.Warn("platform sync warnings after apply-candidate",
+			slog.String("artist", a.Name),
+			slog.String("image_type", body.ImageType),
+			slog.Any("warnings", warnings))
 	}
 
 	// Mark violation resolved

@@ -227,10 +227,21 @@ func run() error {
 	// it when that filtering is enabled. Must be created before consumers.
 	expectedWrites := watcher.NewExpectedWrites()
 
+	// Create the publisher before the pipeline so it can be injected.
+	publisher := publish.New(publish.Deps{
+		ArtistService:      artistService,
+		ConnectionService:  connectionService,
+		NFOSnapshotService: nfoSnapshotService,
+		PlatformService:    platformService,
+		ExpectedWrites:     expectedWrites,
+		ImageCacheDir:      filepath.Join(filepath.Dir(cfg.Database.Path), "cache", "images"),
+		Logger:             logger,
+	})
+
 	// Initialize fix pipeline (depends on orchestrator and snapshot service)
 	fixers := []rule.Fixer{
 		rule.NewNFOFixer(nfoSnapshotService, fsCheck, expectedWrites),
-		rule.NewMetadataFixer(orchestrator, nfoSnapshotService, expectedWrites, logger),
+		rule.NewMetadataFixer(orchestrator, logger),
 		rule.NewImageFixer(orchestrator, platformService, fsCheck, logger),
 		rule.NewExtraneousImagesFixer(platformService, fsCheck, logger),
 		rule.NewLogoTrimFixer(platformService, fsCheck, logger),
@@ -238,11 +249,11 @@ func run() error {
 		rule.NewDirectoryRenameFixer(fsCheck, logger),
 		rule.NewBackdropSequencingFixer(platformService, fsCheck, logger),
 	}
-	pipeline := rule.NewPipeline(ruleEngine, artistService, ruleService, fixers, logger)
+	pipeline := rule.NewPipeline(ruleEngine, artistService, ruleService, fixers, publisher, logger)
 
 	// Initialize bulk operations
 	bulkService := rule.NewBulkService(db)
-	bulkExecutor := rule.NewBulkExecutor(bulkService, artistService, orchestrator, pipeline, nfoSnapshotService, platformService, expectedWrites, logger)
+	bulkExecutor := rule.NewBulkExecutor(bulkService, artistService, orchestrator, pipeline, nfoSnapshotService, platformService, expectedWrites, publisher, logger)
 
 	// Initialize event bus
 	eventBus := event.NewBus(logger, 256)
@@ -305,16 +316,6 @@ func run() error {
 	}
 
 	// Set up HTTP router
-	publisher := publish.New(publish.Deps{
-		ArtistService:      artistService,
-		ConnectionService:  connectionService,
-		NFOSnapshotService: nfoSnapshotService,
-		PlatformService:    platformService,
-		ExpectedWrites:     expectedWrites,
-		ImageCacheDir:      filepath.Join(filepath.Dir(cfg.Database.Path), "cache", "images"),
-		Logger:             logger,
-	})
-
 	router := api.NewRouter(api.RouterDeps{
 		AuthService:        authService,
 		ArtistService:      artistService,
