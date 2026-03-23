@@ -52,8 +52,6 @@ func NewHistoryServiceWithRepo(repo HistoryRepository) *HistoryService {
 // Record stores a single field-level metadata change. The source argument
 // should be one of the defined source values: "manual", "provider:<name>",
 // "rule:<rule_id>", "scan", or "import".
-// This method is defined for use by Phase 2 integration hooks and is not
-// wired into any existing code path yet.
 func (h *HistoryService) Record(ctx context.Context, artistID, field, oldValue, newValue, source string) error {
 	if artistID == "" {
 		return fmt.Errorf("artist_id is required")

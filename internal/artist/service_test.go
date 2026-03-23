@@ -1268,3 +1268,141 @@ func TestMigration018_OrphanCleanupAndBackfill(t *testing.T) {
 		t.Errorf("fs platform ID = %q, want %q", fsPlatformID, "emby-deftones-001")
 	}
 }
+
+// --- History wiring tests ---
+
+// setupServiceWithHistory creates a Service with a HistoryService attached.
+func setupServiceWithHistory(t *testing.T) (*Service, *HistoryService) {
+	t.Helper()
+	db := setupTestDB(t)
+	svc := NewService(db)
+	hsvc := NewHistoryService(db)
+	svc.SetHistoryService(hsvc)
+	return svc, hsvc
+}
+
+func TestUpdateRecordsHistory(t *testing.T) {
+	svc, hsvc := setupServiceWithHistory(t)
+	ctx := context.Background()
+
+	a := testArtist("Foo Fighters", "/music/Foo Fighters")
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// Mutate several fields and call Update.
+	a.Biography = "Updated biography."
+	a.Genres = []string{"Hard Rock"}
+	a.Type = "group"
+	if err := svc.Update(ctx, a); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+
+	changes, total, err := hsvc.List(ctx, a.ID, 50, 0)
+	if err != nil {
+		t.Fatalf("List history: %v", err)
+	}
+
+	// biography and genres changed; type stayed the same.
+	if total != 2 {
+		t.Fatalf("expected exactly 2 history entries, got %d", total)
+	}
+
+	fieldsSeen := map[string]bool{}
+	for _, c := range changes {
+		fieldsSeen[c.Field] = true
+		if c.ArtistID != a.ID {
+			t.Errorf("change.ArtistID = %q, want %q", c.ArtistID, a.ID)
+		}
+		if c.Source != "manual" {
+			t.Errorf("change.Source = %q, want %q", c.Source, "manual")
+		}
+	}
+	if !fieldsSeen["biography"] {
+		t.Error("expected history entry for biography")
+	}
+	if !fieldsSeen["genres"] {
+		t.Error("expected history entry for genres")
+	}
+	if fieldsSeen["type"] {
+		t.Error("did not expect history entry for unchanged field type")
+	}
+}
+
+func TestUpdateFieldRecordsHistory(t *testing.T) {
+	svc, hsvc := setupServiceWithHistory(t)
+	ctx := context.Background()
+
+	a := testArtist("Soundgarden", "/music/Soundgarden")
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	if err := svc.UpdateField(ctx, a.ID, "biography", "New biography text"); err != nil {
+		t.Fatalf("UpdateField: %v", err)
+	}
+
+	changes, total, err := hsvc.List(ctx, a.ID, 50, 0)
+	if err != nil {
+		t.Fatalf("List history: %v", err)
+	}
+
+	if total != 1 {
+		t.Fatalf("expected 1 history entry, got %d", total)
+	}
+	c := changes[0]
+	if c.Field != "biography" {
+		t.Errorf("Field = %q, want %q", c.Field, "biography")
+	}
+	if c.OldValue != "A test artist." {
+		t.Errorf("OldValue = %q, want %q", c.OldValue, "A test artist.")
+	}
+	if c.NewValue != "New biography text" {
+		t.Errorf("NewValue = %q, want %q", c.NewValue, "New biography text")
+	}
+}
+
+func TestClearFieldRecordsHistory(t *testing.T) {
+	svc, hsvc := setupServiceWithHistory(t)
+	ctx := context.Background()
+
+	a := testArtist("Alice in Chains", "/music/Alice in Chains")
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// Clear biography (non-empty) -- should produce a history entry.
+	if err := svc.ClearField(ctx, a.ID, "biography"); err != nil {
+		t.Fatalf("ClearField: %v", err)
+	}
+
+	changes, total, err := hsvc.List(ctx, a.ID, 50, 0)
+	if err != nil {
+		t.Fatalf("List history: %v", err)
+	}
+	if total != 1 {
+		t.Fatalf("expected 1 history entry, got %d", total)
+	}
+	c := changes[0]
+	if c.Field != "biography" {
+		t.Errorf("Field = %q, want %q", c.Field, "biography")
+	}
+	if c.OldValue != "A test artist." {
+		t.Errorf("OldValue = %q, want %q", c.OldValue, "A test artist.")
+	}
+	if c.NewValue != "" {
+		t.Errorf("NewValue = %q, want empty string", c.NewValue)
+	}
+
+	// Clear biography again (already empty) -- should NOT produce a new entry.
+	if err := svc.ClearField(ctx, a.ID, "biography"); err != nil {
+		t.Fatalf("ClearField (second): %v", err)
+	}
+	_, total2, err := hsvc.List(ctx, a.ID, 50, 0)
+	if err != nil {
+		t.Fatalf("List history (second): %v", err)
+	}
+	if total2 != 1 {
+		t.Errorf("expected still 1 history entry after clearing empty field, got %d", total2)
+	}
+}
