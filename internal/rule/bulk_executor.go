@@ -15,6 +15,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/nfo"
 	"github.com/sydlexius/stillwater/internal/platform"
 	"github.com/sydlexius/stillwater/internal/provider"
+	"github.com/sydlexius/stillwater/internal/publish"
 	"github.com/sydlexius/stillwater/internal/watcher"
 )
 
@@ -27,6 +28,7 @@ type BulkExecutor struct {
 	snapshotService *nfo.SnapshotService
 	platformService *platform.Service
 	expectedWrites  *watcher.ExpectedWrites
+	publisher       *publish.Publisher
 	logger          *slog.Logger
 	eventBus        *event.Bus
 
@@ -41,7 +43,7 @@ func (e *BulkExecutor) SetEventBus(bus *event.Bus) {
 }
 
 // NewBulkExecutor creates a BulkExecutor.
-func NewBulkExecutor(bulkService *BulkService, artistService *artist.Service, orchestrator *provider.Orchestrator, pipeline PipelineRunner, snapshotService *nfo.SnapshotService, platformService *platform.Service, expectedWrites *watcher.ExpectedWrites, logger *slog.Logger) *BulkExecutor {
+func NewBulkExecutor(bulkService *BulkService, artistService *artist.Service, orchestrator *provider.Orchestrator, pipeline PipelineRunner, snapshotService *nfo.SnapshotService, platformService *platform.Service, expectedWrites *watcher.ExpectedWrites, publisher *publish.Publisher, logger *slog.Logger) *BulkExecutor {
 	return &BulkExecutor{
 		bulkService:     bulkService,
 		artistService:   artistService,
@@ -50,6 +52,7 @@ func NewBulkExecutor(bulkService *BulkService, artistService *artist.Service, or
 		snapshotService: snapshotService,
 		platformService: platformService,
 		expectedWrites:  expectedWrites,
+		publisher:       publisher,
 		logger:          logger.With(slog.String("component", "bulk-executor")),
 	}
 }
@@ -230,9 +233,7 @@ func (e *BulkExecutor) fetchMetadata(ctx context.Context, a *artist.Artist, mode
 
 	UpdateProviderFetchTimestamps(ctx, e.artistService, a.ID, result.AttemptedProviders, e.logger)
 
-	if a.NFOExists {
-		writeArtistNFO(ctx, a, e.snapshotService, e.expectedWrites, e.logger)
-	}
+	e.publisher.PublishMetadata(ctx, a)
 
 	return BulkItemFixed, "metadata updated"
 }
@@ -302,11 +303,13 @@ func (e *BulkExecutor) fetchImages(ctx context.Context, a *artist.Artist, mode s
 		return BulkItemFailed, fmt.Sprintf("update failed: %v", err)
 	}
 
-	// Record provenance after Update() so the artist_images rows exist.
+	// Record provenance after Update() so the artist_images rows exist,
+	// then sync each saved image to connected platforms.
 	for _, si := range savedImages {
 		if e.artistService != nil {
 			recordSavedImageProvenance(ctx, e.artistService, a.ID, si.imageType, si.filePath, e.logger)
 		}
+		e.publisher.SyncImageToPlatforms(ctx, a, si.imageType)
 	}
 
 	return BulkItemFixed, fmt.Sprintf("saved %d image(s)", fixed)

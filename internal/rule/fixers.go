@@ -108,15 +108,15 @@ func (f *NFOFixer) Fix(ctx context.Context, a *artist.Artist, _ *Violation) (*Fi
 
 // MetadataFixer populates missing metadata (MBID, biography) from providers.
 type MetadataFixer struct {
-	orchestrator    *provider.Orchestrator
-	snapshotService *nfo.SnapshotService
-	expectedWrites  *watcher.ExpectedWrites
-	logger          *slog.Logger
+	orchestrator *provider.Orchestrator
+	logger       *slog.Logger
 }
 
-// NewMetadataFixer creates a MetadataFixer.
-func NewMetadataFixer(orchestrator *provider.Orchestrator, snapshotService *nfo.SnapshotService, expectedWrites *watcher.ExpectedWrites, logger *slog.Logger) *MetadataFixer {
-	return &MetadataFixer{orchestrator: orchestrator, snapshotService: snapshotService, expectedWrites: expectedWrites, logger: logger}
+// NewMetadataFixer creates a MetadataFixer. NFO write-back and platform push
+// are handled by the Pipeline's publisher after all fixes complete, so the
+// fixer no longer needs snapshot or expected-writes dependencies.
+func NewMetadataFixer(orchestrator *provider.Orchestrator, logger *slog.Logger) *MetadataFixer {
+	return &MetadataFixer{orchestrator: orchestrator, logger: logger}
 }
 
 // CanFix returns true for nfo_has_mbid, bio_exists, and metadata_quality rules.
@@ -173,10 +173,6 @@ func (f *MetadataFixer) fixMBID(ctx context.Context, a *artist.Artist) (*FixResu
 
 	a.MusicBrainzID = best.MusicBrainzID
 
-	if a.NFOExists {
-		writeArtistNFO(ctx, a, f.snapshotService, f.expectedWrites, f.logger)
-	}
-
 	return &FixResult{
 		RuleID:  RuleNFOHasMBID,
 		Fixed:   true,
@@ -199,10 +195,6 @@ func (f *MetadataFixer) fixBio(ctx context.Context, a *artist.Artist) (*FixResul
 	}
 
 	a.Biography = result.Metadata.Biography
-
-	if a.NFOExists {
-		writeArtistNFO(ctx, a, f.snapshotService, f.expectedWrites, f.logger)
-	}
 
 	return &FixResult{
 		RuleID:  RuleBioExists,
@@ -234,10 +226,6 @@ func (f *MetadataFixer) fixJunkBio(ctx context.Context, a *artist.Artist) (*FixR
 	}
 
 	a.Biography = result.Metadata.Biography
-
-	if a.NFOExists {
-		writeArtistNFO(ctx, a, f.snapshotService, f.expectedWrites, f.logger)
-	}
 
 	return &FixResult{
 		RuleID:  RuleMetadataQuality,
@@ -603,28 +591,6 @@ func SaveImageFromData(ctx context.Context, a *artist.Artist, imageType string, 
 
 	setImageFlag(a, imageType)
 	return saved, nil
-}
-
-// writeArtistNFO writes the artist's current metadata to an artist.nfo file.
-// If a SnapshotService is provided, saves a snapshot of the existing NFO before overwriting.
-// When expectedWrites is non-nil, the NFO path is registered before writing so the
-// filesystem watcher can distinguish Stillwater's own writes from external ones.
-// Errors are logged rather than returned because callers are fixers that have already
-// committed their DB changes; failing the fixer would leave DB and filesystem out of sync.
-func writeArtistNFO(ctx context.Context, a *artist.Artist, ss *nfo.SnapshotService, ew *watcher.ExpectedWrites, logger *slog.Logger) {
-	if a.Path != "" && ew != nil {
-		nfoPath := filepath.Join(a.Path, "artist.nfo")
-		ew.Add(nfoPath)
-		defer ew.Remove(nfoPath)
-	}
-
-	if err := nfo.WriteBackArtistNFO(ctx, a, ss, logger); err != nil && logger != nil {
-		logger.Error("NFO write-back failed after fix",
-			slog.String("artist_id", a.ID),
-			slog.String("artist_name", a.Name),
-			slog.String("error", err.Error()),
-		)
-	}
 }
 
 // existingImageFileNames returns the subset of canonical filenames for imageType

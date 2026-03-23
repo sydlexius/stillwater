@@ -269,7 +269,7 @@ func TestPipeline_PendingChoiceViolation(t *testing.T) {
 	}
 
 	engine := NewEngine(ruleSvc, db, nil, nil, testLogger())
-	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{fixer}, testLogger())
+	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{fixer}, nil, testLogger())
 
 	result, err := pipeline.RunAll(ctx)
 	if err != nil {
@@ -346,7 +346,7 @@ func TestPipeline_RunAll(t *testing.T) {
 
 	engine := NewEngine(ruleSvc, db, nil, nil, testLogger())
 	fixer := &mockFixer{canFix: true}
-	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{fixer}, testLogger())
+	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{fixer}, nil, testLogger())
 
 	result, err := pipeline.RunAll(ctx)
 	if err != nil {
@@ -385,7 +385,7 @@ func TestPipeline_RunRule(t *testing.T) {
 
 	engine := NewEngine(ruleSvc, db, nil, nil, testLogger())
 	fixer := &mockFixer{canFix: true}
-	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{fixer}, testLogger())
+	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{fixer}, nil, testLogger())
 
 	result, err := pipeline.RunRule(ctx, RuleNFOExists)
 	if err != nil {
@@ -426,7 +426,7 @@ func TestPipeline_SkipsExcludedArtists(t *testing.T) {
 
 	engine := NewEngine(ruleSvc, db, nil, nil, testLogger())
 	fixer := &mockFixer{canFix: true}
-	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{fixer}, testLogger())
+	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{fixer}, nil, testLogger())
 
 	result, err := pipeline.RunAll(ctx)
 	if err != nil {
@@ -460,7 +460,7 @@ func TestPipeline_NoFixerAvailable(t *testing.T) {
 	engine := NewEngine(ruleSvc, db, nil, nil, testLogger())
 	// Register a fixer that can't fix anything
 	fixer := &mockFixer{canFix: false}
-	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{fixer}, testLogger())
+	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{fixer}, nil, testLogger())
 
 	result, err := pipeline.RunAll(ctx)
 	if err != nil {
@@ -747,34 +747,6 @@ func TestExistingImageFileNames_FallsBackToPrimary(t *testing.T) {
 	// primary for thumb is folder.jpg
 	if got[0] != "folder.jpg" {
 		t.Errorf("primary fallback = %q; want folder.jpg", got[0])
-	}
-}
-
-func TestWriteArtistNFO(t *testing.T) {
-	dir := t.TempDir()
-	a := &artist.Artist{
-		Name:          "WriteTest",
-		SortName:      "WriteTest",
-		Path:          dir,
-		MusicBrainzID: "test-mbid",
-	}
-
-	writeArtistNFO(context.Background(), a, nil, nil, nil)
-
-	data, err := os.ReadFile(filepath.Join(dir, "artist.nfo"))
-	if err != nil {
-		t.Fatalf("reading nfo: %v", err)
-	}
-	if len(data) == 0 {
-		t.Fatal("nfo file is empty")
-	}
-
-	parsed, err := nfo.Parse(bytes.NewReader(data))
-	if err != nil {
-		t.Fatalf("parsing nfo: %v", err)
-	}
-	if parsed.MusicBrainzArtistID != "test-mbid" {
-		t.Errorf("MBID = %q, want 'test-mbid'", parsed.MusicBrainzArtistID)
 	}
 }
 
@@ -1120,7 +1092,7 @@ func TestPipeline_ManualMode_DiscoversCandidates(t *testing.T) {
 	fixer := &mockCandidateFixer{canFix: true}
 
 	engine := NewEngine(ruleSvc, db, nil, nil, testLogger())
-	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{fixer}, testLogger())
+	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{fixer}, nil, testLogger())
 
 	result, err := pipeline.RunRule(ctx, RuleNFOExists)
 	if err != nil {
@@ -1211,7 +1183,7 @@ func TestPipeline_RunAll_RespectsManualMode(t *testing.T) {
 	}
 
 	engine := NewEngine(ruleSvc, db, nil, nil, testLogger())
-	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{fixer}, testLogger())
+	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{fixer}, nil, testLogger())
 
 	_, err = pipeline.RunAll(ctx)
 	if err != nil {
@@ -1322,7 +1294,7 @@ func TestPipeline_ManualMode_SkipsSideEffectFixer(t *testing.T) {
 	seFixer := &mockSideEffectFixer{canFix: true}
 
 	engine := NewEngine(ruleSvc, db, nil, nil, testLogger())
-	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{seFixer}, testLogger())
+	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{seFixer}, nil, testLogger())
 
 	result, err := pipeline.RunRule(ctx, RuleLogoTrimmable)
 	if err != nil {
@@ -1475,7 +1447,7 @@ func TestPipeline_ManualMode_SetsDiscoveryOnly(t *testing.T) {
 	captureFixer := &discoveryCaptureFixer{}
 
 	engine := NewEngine(ruleSvc, db, nil, nil, testLogger())
-	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{captureFixer}, testLogger())
+	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{captureFixer}, nil, testLogger())
 
 	_, err = pipeline.RunRule(ctx, RuleThumbExists)
 	if err != nil {
@@ -1548,7 +1520,7 @@ func TestPipeline_ManualMode_FixableGuard_NoFixer(t *testing.T) {
 
 	// No fixers registered at all.
 	engine := NewEngine(ruleSvc, db, nil, nil, testLogger())
-	pipeline := NewPipeline(engine, artistSvc, ruleSvc, nil, testLogger())
+	pipeline := NewPipeline(engine, artistSvc, ruleSvc, nil, nil, testLogger())
 
 	_, err = pipeline.RunRule(ctx, RuleNFOExists)
 	if err != nil {
@@ -1608,7 +1580,7 @@ func TestPipeline_FixViolation_Success(t *testing.T) {
 
 	fixer := &mockFixer{canFix: true}
 	engine := NewEngine(ruleSvc, db, nil, nil, testLogger())
-	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{fixer}, testLogger())
+	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{fixer}, nil, testLogger())
 
 	fr, err := pipeline.FixViolation(ctx, rv.ID)
 	if err != nil {
@@ -1661,7 +1633,7 @@ func TestPipeline_FixViolation_NotFixable(t *testing.T) {
 	}
 
 	engine := NewEngine(ruleSvc, db, nil, nil, testLogger())
-	pipeline := NewPipeline(engine, artistSvc, ruleSvc, nil, testLogger())
+	pipeline := NewPipeline(engine, artistSvc, ruleSvc, nil, nil, testLogger())
 
 	fr, err := pipeline.FixViolation(ctx, rv.ID)
 	if err != nil {
@@ -1711,7 +1683,7 @@ func TestPipeline_FixViolation_AlreadyResolved(t *testing.T) {
 	}
 
 	engine := NewEngine(ruleSvc, db, nil, nil, testLogger())
-	pipeline := NewPipeline(engine, artistSvc, ruleSvc, nil, testLogger())
+	pipeline := NewPipeline(engine, artistSvc, ruleSvc, nil, nil, testLogger())
 
 	fr, err := pipeline.FixViolation(ctx, rv.ID)
 	if err != nil {
@@ -1732,7 +1704,7 @@ func TestPipeline_FixViolation_NotFound(t *testing.T) {
 	ctx := context.Background()
 
 	engine := NewEngine(ruleSvc, db, nil, nil, testLogger())
-	pipeline := NewPipeline(engine, artistSvc, ruleSvc, nil, testLogger())
+	pipeline := NewPipeline(engine, artistSvc, ruleSvc, nil, nil, testLogger())
 
 	_, err := pipeline.FixViolation(ctx, "nonexistent-id")
 	if err == nil {
@@ -1777,7 +1749,7 @@ func TestPipeline_FixViolation_PendingChoice(t *testing.T) {
 
 	engine := NewEngine(ruleSvc, db, nil, nil, testLogger())
 	fixer := &mockFixer{canFix: true}
-	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{fixer}, testLogger())
+	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{fixer}, nil, testLogger())
 
 	fr, err := pipeline.FixViolation(ctx, rv.ID)
 	if err != nil {
@@ -1819,7 +1791,7 @@ func TestPipeline_FixViolation_OrphanedArtist(t *testing.T) {
 	}
 
 	engine := NewEngine(ruleSvc, db, nil, nil, testLogger())
-	pipeline := NewPipeline(engine, artistSvc, ruleSvc, nil, testLogger())
+	pipeline := NewPipeline(engine, artistSvc, ruleSvc, nil, nil, testLogger())
 
 	fr, err := pipeline.FixViolation(ctx, rv.ID)
 	if err != nil {
