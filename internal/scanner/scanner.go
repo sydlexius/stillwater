@@ -421,35 +421,8 @@ func (s *Service) populateFromNFO(dirPath string, a *artist.Artist) bool {
 		return false
 	}
 
-	converted := nfo.ToArtist(parsed)
-
-	// Merge NFO fields into artist (NFO data takes precedence for metadata)
-	if converted.Name != "" {
-		a.Name = converted.Name
-	}
-	if converted.SortName != "" {
-		a.SortName = converted.SortName
-	}
-	a.Type = converted.Type
-	a.Gender = converted.Gender
-	a.Disambiguation = converted.Disambiguation
-	if converted.MusicBrainzID != "" {
-		a.MusicBrainzID = converted.MusicBrainzID
-	}
-	if converted.AudioDBID != "" {
-		a.AudioDBID = converted.AudioDBID
-	}
-	a.Genres = converted.Genres
-	a.Styles = converted.Styles
-	a.Moods = converted.Moods
-	a.YearsActive = converted.YearsActive
-	a.Born = converted.Born
-	a.Formed = converted.Formed
-	a.Died = converted.Died
-	a.Disbanded = converted.Disbanded
-	if converted.Biography != "" {
-		a.Biography = converted.Biography
-	}
+	u := nfo.ToMetadataUpdate(parsed)
+	artist.ApplyMetadata(a, u, artist.NFOImport, artist.MergeOptions{})
 	return parsed.LockData
 }
 

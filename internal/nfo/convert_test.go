@@ -202,3 +202,52 @@ func TestApplyNFOToArtist(t *testing.T) {
 		t.Error("FanartExists should be preserved as true")
 	}
 }
+
+func TestToMetadataUpdate(t *testing.T) {
+	n := &ArtistNFO{
+		Name:                "Nirvana",
+		SortName:            "Nirvana",
+		Type:                "group",
+		Gender:              "male",
+		Disambiguation:      "American rock band",
+		MusicBrainzArtistID: "mbid-123",
+		AudioDBArtistID:     "audiodb-456",
+		DiscogsArtistID:     "discogs-789",
+		WikidataID:          "Q11649",
+		DeezerArtistID:      "412",
+		SpotifyArtistID:     "spotify-xyz",
+		Biography:           "A band.",
+		Genres:              []string{"Rock"},
+		Styles:              []string{"Grunge"},
+		Moods:               []string{"Aggressive"},
+		YearsActive:         "1987-1994",
+		Born:                "",
+		Formed:              "1987",
+		Died:                "",
+		Disbanded:           "1994",
+	}
+
+	u := ToMetadataUpdate(n)
+
+	if u.Name != "Nirvana" {
+		t.Errorf("Name = %q, want %q", u.Name, "Nirvana")
+	}
+	if u.MusicBrainzID != "mbid-123" {
+		t.Errorf("MusicBrainzID = %q, want %q", u.MusicBrainzID, "mbid-123")
+	}
+	if u.DiscogsID != "discogs-789" {
+		t.Errorf("DiscogsID = %q, want %q", u.DiscogsID, "discogs-789")
+	}
+	if u.SpotifyID != "spotify-xyz" {
+		t.Errorf("SpotifyID = %q, want %q", u.SpotifyID, "spotify-xyz")
+	}
+	if len(u.Genres) != 1 || u.Genres[0] != "Rock" {
+		t.Errorf("Genres = %v, want [Rock]", u.Genres)
+	}
+	if u.Formed != "1987" {
+		t.Errorf("Formed = %q, want %q", u.Formed, "1987")
+	}
+	if u.Disbanded != "1994" {
+		t.Errorf("Disbanded = %q, want %q", u.Disbanded, "1994")
+	}
+}
