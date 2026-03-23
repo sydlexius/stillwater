@@ -1,0 +1,230 @@
+package templates
+
+import (
+	"fmt"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/sydlexius/stillwater/internal/artist"
+)
+
+// HistoryTabData holds data for the history tab on the artist detail page.
+type HistoryTabData struct {
+	ArtistID string
+	Changes  []artist.MetadataChange
+	Total    int
+	Limit    int
+	Offset   int
+}
+
+// ArtistHistoryTab renders the history timeline tab content.
+// This component is loaded lazily via HTMX when the tab is selected.
+templ ArtistHistoryTab(data HistoryTabData) {
+	<div id="history-tab-content" class="space-y-4">
+		if len(data.Changes) == 0 && data.Offset == 0 {
+			<p class="text-sm text-gray-500 dark:text-gray-400 italic py-4 text-center">No metadata changes have been recorded yet.</p>
+		} else {
+			<div class="space-y-2" id="history-change-list">
+				for _, c := range data.Changes {
+					@historyChangeRow(c)
+				}
+			</div>
+			if data.Offset+len(data.Changes) < data.Total {
+				<div id="history-load-more-wrapper">
+					<div id="history-load-more" class="flex justify-center mt-4">
+						<button
+							type="button"
+							aria-label="Load more history entries"
+							class="px-4 py-2 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
+							hx-get={ fmt.Sprintf("/artists/%s/history/tab?limit=%d&offset=%d", data.ArtistID, data.Limit, data.Offset+len(data.Changes)) }
+							hx-target="#history-load-more-wrapper"
+							hx-swap="outerHTML"
+						>
+							Load more
+						</button>
+					</div>
+				</div>
+			}
+			if data.Total > 0 {
+				<p id="history-showing-counter" class="text-xs text-gray-400 dark:text-gray-500 text-right">
+					Showing { strconv.Itoa(min(data.Offset+len(data.Changes), data.Total)) } of { strconv.Itoa(data.Total) } changes
+				</p>
+			}
+		}
+	</div>
+}
+
+// ArtistHistoryMoreRows renders additional history rows for HTMX load-more.
+// The entire response replaces #history-load-more-wrapper via outerHTML: new rows
+// come first, followed by an updated load-more button (or nothing if exhausted).
+// This avoids the OOB swap conflict that arises when the same element is both
+// the swap target and an OOB source.
+// An hx-swap-oob paragraph updates the "Showing X of Y" counter in the outer tab.
+templ ArtistHistoryMoreRows(data HistoryTabData) {
+	<div id="history-load-more-wrapper">
+		for _, c := range data.Changes {
+			@historyChangeRow(c)
+		}
+		if data.Offset+len(data.Changes) < data.Total {
+			<div id="history-load-more" class="flex justify-center mt-4">
+				<button
+					type="button"
+					aria-label="Load more history entries"
+					class="px-4 py-2 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
+					hx-get={ fmt.Sprintf("/artists/%s/history/tab?limit=%d&offset=%d", data.ArtistID, data.Limit, data.Offset+len(data.Changes)) }
+					hx-target="#history-load-more-wrapper"
+					hx-swap="outerHTML"
+				>
+					Load more
+				</button>
+			</div>
+		}
+	</div>
+	if data.Total > 0 {
+		<p id="history-showing-counter" hx-swap-oob="true" class="text-xs text-gray-400 dark:text-gray-500 text-right">
+			Showing { strconv.Itoa(min(data.Offset+len(data.Changes), data.Total)) } of { strconv.Itoa(data.Total) } changes
+		</p>
+	}
+}
+
+// historyChangeRow renders a single metadata change entry in the timeline.
+templ historyChangeRow(c artist.MetadataChange) {
+	<div class="border-l-2 border-gray-300 dark:border-gray-600 pl-4 py-2">
+		<div class="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+			<time datetime={ c.CreatedAt.Format(time.RFC3339) } title={ c.CreatedAt.Format("2006-01-02 15:04:05 UTC") }>
+				{ historyTimeAgo(c.CreatedAt) }
+			</time>
+			<span class="inline-block px-2 py-0.5 rounded-full text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
+				{ historySourceLabel(c.Source) }
+			</span>
+		</div>
+		<div class="mt-1 text-sm">
+			<span class="font-medium text-gray-800 dark:text-gray-200">{ historyFieldLabel(c.Field) }</span>
+			<span class="mx-1 text-gray-400">--</span>
+			if c.OldValue == "" && c.NewValue != "" {
+				<span class="text-green-600 dark:text-green-400">Set to: { historyTruncate(c.NewValue, 120) }</span>
+			} else if c.OldValue != "" && c.NewValue == "" {
+				<span class="text-red-500 dark:text-red-400">Cleared</span>
+			} else if c.OldValue != "" && c.NewValue != "" {
+				<span class="line-through text-red-500 dark:text-red-400 mr-1">{ historyTruncate(c.OldValue, 60) }</span>
+				<span class="text-green-600 dark:text-green-400">{ historyTruncate(c.NewValue, 60) }</span>
+			} else {
+				<span class="text-gray-400 italic">No value recorded</span>
+			}
+		</div>
+	</div>
+}
+
+// historyTimeAgo returns a human-readable relative time string.
+func historyTimeAgo(t time.Time) string {
+	dur := time.Since(t)
+	switch {
+	case dur < time.Minute:
+		return "just now"
+	case dur < time.Hour:
+		m := int(dur.Minutes())
+		if m == 1 {
+			return "1 minute ago"
+		}
+		return strconv.Itoa(m) + " minutes ago"
+	case dur < 24*time.Hour:
+		h := int(dur.Hours())
+		if h == 1 {
+			return "1 hour ago"
+		}
+		return strconv.Itoa(h) + " hours ago"
+	case dur < 7*24*time.Hour:
+		d := int(dur.Hours() / 24)
+		if d == 1 {
+			return "1 day ago"
+		}
+		return strconv.Itoa(d) + " days ago"
+	default:
+		return t.Format("Jan 2, 2006")
+	}
+}
+
+// historySourceLabel converts a source string to a human-readable label.
+func historySourceLabel(source string) string {
+	switch {
+	case source == "manual":
+		return "Manual"
+	case source == "scan":
+		return "Scan"
+	case source == "import":
+		return "Import"
+	case strings.HasPrefix(source, "provider:"):
+		name := strings.TrimPrefix(source, "provider:")
+		if name == "" {
+			return "Provider"
+		}
+		return "Provider: " + name
+	case strings.HasPrefix(source, "rule:"):
+		ruleID := strings.TrimPrefix(source, "rule:")
+		if ruleID == "" {
+			return "Rule"
+		}
+		return "Rule: " + ruleID
+	default:
+		return source
+	}
+}
+
+// historyFieldLabels maps database field names to human-readable labels.
+// It is a package-level variable to avoid allocating a new map on each call.
+var historyFieldLabels = map[string]string{
+	"biography":      "Biography",
+	"genres":         "Genres",
+	"styles":         "Styles",
+	"moods":          "Moods",
+	"formed":         "Formed",
+	"born":           "Born",
+	"disbanded":      "Disbanded",
+	"died":           "Died",
+	"years_active":   "Years Active",
+	"type":           "Type",
+	"gender":         "Gender",
+	"sort_name":      "Sort Name",
+	"name":           "Name",
+	"thumb":          "Thumbnail",
+	"fanart":         "Fanart",
+	"logo":           "Logo",
+	"banner":         "Banner",
+	"musicbrainz_id": "MusicBrainz ID",
+	"audiodb_id":     "AudioDB ID",
+	"discogs_id":     "Discogs ID",
+	"wikidata_id":    "Wikidata ID",
+	"deezer_id":      "Deezer ID",
+	"spotify_id":     "Spotify ID",
+	"members":        "Band Members",
+}
+
+// historyFieldLabel converts a database field name to a human-readable label.
+func historyFieldLabel(field string) string {
+	if label, ok := historyFieldLabels[field]; ok {
+		return label
+	}
+	// Convert snake_case to Title Case as fallback.
+	parts := strings.Split(field, "_")
+	for i, p := range parts {
+		if len(p) > 0 {
+			parts[i] = strings.ToUpper(p[:1]) + p[1:]
+		}
+	}
+	return strings.Join(parts, " ")
+}
+
+// historyTruncate trims a string to at most maxLen visible characters, adding
+// an ellipsis if truncation occurs. Uses rune-based length to handle multi-byte
+// Unicode correctly.
+func historyTruncate(s string, maxLen int) string {
+	// Normalize newlines for display.
+	s = strings.ReplaceAll(s, "\n", " ")
+	s = strings.ReplaceAll(s, "\r", "")
+	runes := []rune(s)
+	if len(runes) <= maxLen {
+		return s
+	}
+	return string(runes[:maxLen]) + "..."
+}

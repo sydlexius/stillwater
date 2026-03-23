@@ -151,6 +151,7 @@ func run() error {
 	// Initialize services
 	authService := auth.NewService(db)
 	artistService := artist.NewService(db)
+	historyService := artist.NewHistoryService(db)
 	platformService := platform.NewService(db)
 	connectionService := connection.NewService(db, encryptor)
 
@@ -305,6 +306,7 @@ func run() error {
 	router := api.NewRouter(api.RouterDeps{
 		AuthService:        authService,
 		ArtistService:      artistService,
+		HistoryService:     historyService,
 		ScannerService:     scannerService,
 		PlatformService:    platformService,
 		ProviderSettings:   providerSettings,

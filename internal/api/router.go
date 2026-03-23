@@ -32,6 +32,7 @@ import (
 type RouterDeps struct {
 	AuthService        *auth.Service
 	ArtistService      *artist.Service
+	HistoryService     *artist.HistoryService
 	ScannerService     *scanner.Service
 	PlatformService    *platform.Service
 	ProviderSettings   *provider.SettingsService
@@ -68,6 +69,7 @@ type RouterDeps struct {
 type Router struct {
 	authService        *auth.Service
 	artistService      *artist.Service
+	historyService     *artist.HistoryService
 	scannerService     *scanner.Service
 	platformService    *platform.Service
 	providerSettings   *provider.SettingsService
@@ -114,6 +116,7 @@ func NewRouter(deps RouterDeps) *Router {
 	return &Router{
 		authService:        deps.AuthService,
 		artistService:      deps.ArtistService,
+		historyService:     deps.HistoryService,
 		scannerService:     deps.ScannerService,
 		platformService:    deps.PlatformService,
 		providerSettings:   deps.ProviderSettings,
@@ -330,6 +333,10 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("GET "+bp+"/api/v1/reports/compliance", wrapAuth(r.handleReportCompliance, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/reports/compliance/export", wrapAuth(r.handleReportComplianceExport, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/reports/metadata-completeness", wrapAuth(r.handleReportMetadataCompleteness, authMw))
+
+	// History routes
+	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/history", wrapAuth(r.handleListArtistHistory, authMw))
+	mux.HandleFunc("GET "+bp+"/artists/{id}/history/tab", wrapOptionalAuth(r.handleArtistHistoryTab, optAuthMw))
 
 	// NFO snapshot routes
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/nfo/diff", wrapAuth(r.handleNFODiff, authMw))
