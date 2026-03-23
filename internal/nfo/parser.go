@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"unicode"
 )
 
 // knownElements lists XML element names handled by the structured ArtistNFO fields.
@@ -101,6 +102,14 @@ func parseTokens(decoder *xml.Decoder, nfo *ArtistNFO) error {
 			name := t.Name.Local
 			if knownElements[name] {
 				if err := parseKnownElement(decoder, nfo, name, t); err != nil {
+					return err
+				}
+			} else if !isValidXMLName(t.Name) {
+				// The lenient decoder accepted an element with an invalid XML
+				// name (e.g., a namespace-qualified name whose local part starts
+				// with a digit like <A:0>). Re-serializing it would produce
+				// output that fails strict XML parsing. Skip the entire subtree.
+				if err := decoder.Skip(); err != nil {
 					return err
 				}
 			} else {
@@ -438,6 +447,46 @@ func parseBoolString(s string) bool {
 	default:
 		return false
 	}
+}
+
+// isValidXMLName reports whether an xml.Name can be safely re-serialized by
+// the standard library's xml.Encoder. The XML spec requires that element names
+// begin with a letter or underscore; subsequent characters may also include
+// digits, hyphens, and periods. Only the local name is validated here; the
+// Space field in encoding/xml holds the namespace URI, not an XML Name.
+func isValidXMLName(name xml.Name) bool {
+	return isValidXMLNameString(name.Local)
+}
+
+// isValidXMLNameString checks whether s is a valid XML Name production.
+// It implements a simplified check based on the XML 1.0 NameStartChar and
+// NameChar rules, covering the ASCII range plus common Unicode letters and
+// digits. This is intentionally conservative: names that might technically be
+// valid per the full Unicode-aware XML spec but would trip up Go's encoder are
+// still rejected.
+func isValidXMLNameString(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i, r := range s {
+		if i == 0 {
+			// NameStartChar: letter, underscore, or colon (colon is technically
+			// allowed in XML names but reserved for namespace use; we accept it
+			// here since the encoder handles it).
+			if !unicode.IsLetter(r) && r != '_' && r != ':' {
+				return false
+			}
+		} else {
+			// NameChar: NameStartChar plus digit, hyphen, period, middle dot,
+			// and combining characters.
+			if !unicode.IsLetter(r) && !unicode.IsDigit(r) &&
+				r != '_' && r != ':' && r != '-' && r != '.' &&
+				r != '\u00B7' && !unicode.Is(unicode.Mn, r) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // stripBOM removes a UTF-8 BOM (EF BB BF) from the beginning of the data.
