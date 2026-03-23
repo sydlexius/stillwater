@@ -19,8 +19,7 @@ coverage.html
 # IDE / tools
 .idea/
 .vscode/
-.claude/*
-!.claude/commands/
+.claude/settings.local.json
 .playwright-mcp/
 *.swp
 *.swo
