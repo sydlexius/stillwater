@@ -337,6 +337,72 @@ func TestOrchestratorMBIDNoRetryWithoutNameLookup(t *testing.T) {
 	}
 }
 
+// TestFetchFieldFromProviders_ErrNotFoundSuppressed verifies that a provider
+// returning ErrNotFound yields a result with no Error (treated as "no data"),
+// while other errors are still surfaced.
+func TestFetchFieldFromProviders_ErrNotFoundSuppressed(t *testing.T) {
+	registry, settings := setupOrchestratorTest(t)
+
+	// AudioDB returns ErrNotFound (artist not in their database).
+	registry.Register(&mockProvider{
+		name:    NameAudioDB,
+		authReq: false,
+		getArtFn: func(_ context.Context, id string) (*ArtistMetadata, error) {
+			return nil, &ErrNotFound{Provider: NameAudioDB, ID: id}
+		},
+	})
+
+	// Last.fm returns a real error (e.g. timeout).
+	// Requires an API key to pass availability check.
+	if err := settings.SetAPIKey(context.Background(), NameLastFM, "dummy-key"); err != nil {
+		t.Fatalf("SetAPIKey: %v", err)
+	}
+	registry.Register(&mockProvider{
+		name:    NameLastFM,
+		authReq: true,
+		getArtFn: func(_ context.Context, id string) (*ArtistMetadata, error) {
+			return nil, fmt.Errorf("connection timeout")
+		},
+	})
+
+	if err := settings.SetPriority(context.Background(), "styles", []ProviderName{NameAudioDB, NameLastFM}); err != nil {
+		t.Fatalf("SetPriority: %v", err)
+	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	orch := NewOrchestrator(registry, settings, logger)
+
+	results, err := orch.FetchFieldFromProviders(context.Background(), "mbid-1234", "Test Artist", "styles", nil)
+	if err != nil {
+		t.Fatalf("FetchFieldFromProviders: %v", err)
+	}
+
+	if len(results) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(results))
+	}
+
+	// AudioDB: ErrNotFound should be suppressed (no error, no data).
+	audioDB := results[0]
+	if audioDB.Provider != NameAudioDB {
+		t.Fatalf("expected first result to be AudioDB, got %s", audioDB.Provider)
+	}
+	if audioDB.Error != "" {
+		t.Errorf("AudioDB ErrNotFound should be suppressed, got Error=%q", audioDB.Error)
+	}
+	if audioDB.HasData {
+		t.Errorf("AudioDB should have HasData=false")
+	}
+
+	// Last.fm: real error should be surfaced.
+	lastFM := results[1]
+	if lastFM.Provider != NameLastFM {
+		t.Fatalf("expected second result to be Last.fm, got %s", lastFM.Provider)
+	}
+	if lastFM.Error == "" {
+		t.Errorf("Last.fm real error should be surfaced, got empty Error")
+	}
+}
+
 func findSource(sources []FieldSource, field string) *FieldSource {
 	for _, s := range sources {
 		if s.Field == field {
