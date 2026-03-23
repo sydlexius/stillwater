@@ -18,7 +18,7 @@ func TestNormalizeDateForPlatform(t *testing.T) {
 		{"named month with location", "October 14, 1946 in Abingdon, England", "1946-10-14"},
 		{"year with location", "2006 in Cardiff, CA", "2006-01-01"},
 		{"month year", "January 2006", "2006-01-01"},
-		{"unparseable", "not a date", ""},
+		{"unparsable", "not a date", ""},
 		{"year in text", "some text 1987 more text", "1987-01-01"},
 		{"whitespace padded", "   1991   ", "1991-01-01"},
 		{"short month name", "Oct 14, 1946", "1946-10-14"},
