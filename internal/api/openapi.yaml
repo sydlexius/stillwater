@@ -821,10 +821,29 @@ paths:
             application/json:
               schema:
                 type: object
+                properties:
+                  id:
+                    type: string
+                  locked:
+                    type: boolean
+                  lock_source:
+                    type: string
+                    enum: [user, imported]
+                  locked_at:
+                    type: string
+                    format: date-time
         "404":
           description: Artist not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "409":
           description: Artist is already locked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     delete:
       tags: [Artists]
       summary: Unlock an artist
@@ -843,10 +862,29 @@ paths:
             application/json:
               schema:
                 type: object
+                properties:
+                  id:
+                    type: string
+                  locked:
+                    type: boolean
+                  lock_source:
+                    type: string
+                  locked_at:
+                    type: string
+                    format: date-time
+                    nullable: true
         "404":
           description: Artist not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "409":
           description: Artist is not locked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /artists/{id}:
     get:

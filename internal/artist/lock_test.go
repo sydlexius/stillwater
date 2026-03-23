@@ -3,6 +3,7 @@ package artist
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -118,6 +119,25 @@ func TestUnlockNotLocked(t *testing.T) {
 	err := svc.Unlock(ctx, a.ID)
 	if !errors.Is(err, ErrNotLocked) {
 		t.Errorf("expected ErrNotLocked, got %v", err)
+	}
+}
+
+func TestLockInvalidSource(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	a := testArtist("Slipknot", "/music/Slipknot")
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	err := svc.Lock(ctx, a.ID, "invalid-source")
+	if err == nil {
+		t.Fatal("expected error for invalid lock source")
+	}
+	if got := err.Error(); !strings.Contains(got, "invalid lock source") {
+		t.Errorf("expected invalid lock source error, got %q", got)
 	}
 }
 

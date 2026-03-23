@@ -386,13 +386,18 @@ func (r *sqliteArtistRepo) SetLock(ctx context.Context, id string, locked bool, 
 	if err != nil {
 		return fmt.Errorf("setting artist lock: %w", err)
 	}
-	n, _ := result.RowsAffected()
+	n, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("reading lock transition rows affected: %w", err)
+	}
 	if n == 0 {
 		// Distinguish "not found" from "already in target state".
 		var exists int
-		_ = r.db.QueryRowContext(ctx, `SELECT 1 FROM artists WHERE id = ?`, id).Scan(&exists)
-		if exists == 0 {
-			return fmt.Errorf("%w: %s", ErrNotFound, id)
+		if err := r.db.QueryRowContext(ctx, `SELECT 1 FROM artists WHERE id = ?`, id).Scan(&exists); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return fmt.Errorf("%w: %s", ErrNotFound, id)
+			}
+			return fmt.Errorf("checking artist existence for lock transition: %w", err)
 		}
 		if locked {
 			return ErrAlreadyLocked
