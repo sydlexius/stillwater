@@ -179,6 +179,10 @@ func TestRenameDirAtomic_EXDEVFallback_EmptyDir(t *testing.T) {
 // tree causes copyFile to fail, which works even when running as root
 // (unlike chmod-based approaches).
 func TestRenameDirAtomic_FallbackCopyFailure(t *testing.T) {
+	if !ProbeSymlinkSupport(t.TempDir()) {
+		t.Skip("symlinks not supported")
+	}
+
 	orig := renameFunc
 	t.Cleanup(func() { renameFunc = orig })
 
@@ -234,6 +238,10 @@ func TestRenameDirAtomic_FallbackCopyFailure(t *testing.T) {
 // dst already exists and the copy fails, the function does NOT remove dst
 // (to avoid destroying pre-existing data).
 func TestRenameDirAtomic_FallbackCopyFailure_ExistingDst(t *testing.T) {
+	if !ProbeSymlinkSupport(t.TempDir()) {
+		t.Skip("symlinks not supported")
+	}
+
 	orig := renameFunc
 	t.Cleanup(func() { renameFunc = orig })
 
