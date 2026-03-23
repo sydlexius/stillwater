@@ -166,9 +166,18 @@ func TestQueryPlans(t *testing.T) {
 			t.Logf("Query plan for %s:\n%s", name, plan)
 
 			// Check for full table scans on the primary table.
-			// SCAN TABLE without USING INDEX indicates a full scan.
-			if strings.Contains(plan, "SCAN TABLE") && !strings.Contains(plan, "USING INDEX") &&
-				!strings.Contains(plan, "USING COVERING INDEX") {
+			// SQLite may emit "SCAN <name>" or "SCAN TABLE <name>"; check each line
+			// individually to avoid masking per-step issues in multi-step plans.
+			hasUnindexedScan := false
+			for _, line := range strings.Split(plan, "\n") {
+				if strings.Contains(line, "SCAN ") &&
+					!strings.Contains(line, "USING INDEX") &&
+					!strings.Contains(line, "USING COVERING INDEX") {
+					hasUnindexedScan = true
+					break
+				}
+			}
+			if hasUnindexedScan {
 				msg := fmt.Sprintf("SCAN (no index): %s", name)
 				findings = append(findings, msg)
 				scanIssues++
@@ -197,7 +206,7 @@ func TestQueryPlans(t *testing.T) {
 // for documentation purposes. Set SW_QUERY_PLAN_REPORT=1 to enable verbose
 // output that can be captured for performance analysis reports.
 func TestQueryPlanSummary(t *testing.T) {
-	if os.Getenv("SW_QUERY_PLAN_REPORT") == "" {
+	if os.Getenv("SW_QUERY_PLAN_REPORT") != "1" {
 		t.Skip("set SW_QUERY_PLAN_REPORT=1 to generate verbose query plan report")
 	}
 

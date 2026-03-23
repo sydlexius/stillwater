@@ -94,7 +94,8 @@ run_attack() {
     # Check success rate (requires python3 for JSON parsing)
     if command -v python3 &>/dev/null; then
         success_rate=$(vegeta report -type=json < "${output}.bin" | python3 -c "import sys,json; print(json.load(sys.stdin).get('success', 0))")
-        if [ "$(echo "${success_rate} < 0.95" | bc -l 2>/dev/null || echo 0)" -eq 1 ]; then
+        below_threshold=$(python3 -c "print(1 if float('${success_rate}') < 0.95 else 0)" 2>/dev/null || echo 1)
+        if [ "${below_threshold}" -eq 1 ]; then
             echo "WARNING: Success rate ${success_rate} is below 95% threshold"
             LOAD_TEST_FAILED=1
         fi

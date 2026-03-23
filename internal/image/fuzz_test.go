@@ -26,6 +26,9 @@ func FuzzPerceptualHash(f *testing.F) {
 	f.Add(encodePNG(f, solidImage(1, 1, color.White)))
 	f.Add(encodePNG(f, solidImage(9, 8, color.Gray{Y: 128})))
 
+	// Partially transparent PNG to exercise alpha-channel handling.
+	f.Add(encodePNG(f, solidImage(4, 4, color.RGBA{R: 255, G: 0, B: 0, A: 128})))
+
 	// Seed with empty and garbage data
 	f.Add([]byte{})
 	f.Add([]byte("not an image"))
@@ -42,6 +45,8 @@ func FuzzPerceptualHash(f *testing.F) {
 func FuzzPerceptualHashDeterminism(f *testing.F) {
 	f.Add(encodePNG(f, solidImage(50, 50, color.RGBA{R: 100, G: 150, B: 200, A: 255})))
 	f.Add(encodeJPEG(f, solidImage(80, 60, color.RGBA{R: 30, G: 60, B: 90, A: 255})))
+	// Partially transparent PNG to exercise alpha-channel handling.
+	f.Add(encodePNG(f, solidImage(4, 4, color.RGBA{R: 255, G: 0, B: 0, A: 128})))
 
 	f.Fuzz(func(t *testing.T, data []byte) {
 		h1, err1 := PerceptualHash(bytes.NewReader(data))

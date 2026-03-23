@@ -5,8 +5,13 @@ import (
 	"net/http"
 	"net/http/pprof"
 	"os"
+	"sync"
 	"time"
 )
+
+// pprofOnce guards registerPprof so that Handler() can be called multiple
+// times (e.g. in tests) without attempting to bind the pprof port twice.
+var pprofOnce sync.Once
 
 // pprofEnabled returns true when the SW_PPROF environment variable is set
 // to "1" or "true". This controls whether Go's built-in profiling endpoints

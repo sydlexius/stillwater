@@ -60,11 +60,11 @@ func FuzzParseWriteRoundTrip(f *testing.F) {
 			return
 		}
 
-		// Write must not panic
+		// Write must not panic. bytes.Buffer writes never fail on I/O, so
+		// any error here is a real serialization bug and should fail the test.
 		var buf bytes.Buffer
 		if err := Write(&buf, nfo1); err != nil {
-			// Write failure on valid parse output is unexpected but not a panic.
-			return
+			t.Fatalf("write of parsed NFO failed: %v", err)
 		}
 
 		// Re-parse the written output must not panic

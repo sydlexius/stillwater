@@ -68,17 +68,17 @@ To capture CPU and memory profiles during a load test:
 3. In a third terminal, capture profiles:
    ```bash
    # CPU profile (30 seconds)
-   go tool pprof -http=:8080 http://localhost:1973/debug/pprof/profile?seconds=30
+   go tool pprof -http=:8080 http://localhost:6060/debug/pprof/profile?seconds=30
 
    # Heap profile (snapshot)
-   go tool pprof -http=:8080 http://localhost:1973/debug/pprof/heap
+   go tool pprof -http=:8080 http://localhost:6060/debug/pprof/heap
 
    # Goroutine dump
-   go tool pprof -http=:8080 http://localhost:1973/debug/pprof/goroutine
+   go tool pprof -http=:8080 http://localhost:6060/debug/pprof/goroutine
    ```
 
 ## Output
 
 Results are written to `tests/load/results/` (gitignored). Each run produces:
 - A text report with latency percentiles, throughput, and error rates
-- An optional JSON report for further analysis
+- A binary Vegeta result file (`.bin`) for later re-reporting (including JSON via `vegeta report -type=json`)
