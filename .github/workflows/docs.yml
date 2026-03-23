@@ -37,6 +37,6 @@ jobs:
           files: '**/*.md'
 
       - name: Lint markdown
-        uses: DavidAnson/markdownlint-cli2-action@05f32210e84442804257b2a6f20b273450ec8265 # v19
+        uses: DavidAnson/markdownlint-cli2-action@07035fd053f7be764496c0f8d8f9f41f98305101 # v22.0.0
         with:
           globs: '**/*.md'
