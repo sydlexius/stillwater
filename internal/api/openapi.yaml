@@ -458,6 +458,36 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/FanartSyncSlotConnection"
+    MetadataChange:
+      type: object
+      description: A single field-level metadata change recorded for an artist.
+      properties:
+        id:
+          type: string
+          description: Unique change record ID (UUID).
+        artist_id:
+          type: string
+          description: ID of the artist this change belongs to.
+        field:
+          type: string
+          description: The metadata field that changed (e.g. "biography", "genres", "thumb").
+        old_value:
+          type: string
+          description: The previous value. Empty string when the field was previously unset.
+        new_value:
+          type: string
+          description: The new value. Empty string when the field was cleared.
+        source:
+          type: string
+          description: >
+            Origin of the change. One of "manual", "scan", "import",
+            "provider:<name>" (e.g. "provider:musicbrainz"), or
+            "rule:<rule_id>" (e.g. "rule:missing_mbid").
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the change was recorded (UTC, RFC 3339).
+      required: [id, artist_id, field, old_value, new_value, source, created_at]
     Artist:
       type: object
       description: A music artist or group with full metadata.
@@ -1185,6 +1215,66 @@ paths:
                 $ref: "#/components/schemas/Error"
         "500":
           description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /artists/{id}/history:
+    get:
+      tags: [History]
+      summary: List artist metadata change history
+      operationId: listArtistHistory
+      description: >
+        Returns paginated metadata change records for an artist, ordered by
+        most recent first. Records are written by integration hooks in Phase 2;
+        the table exists from Phase 1 onwards.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Artist ID.
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: Maximum number of records to return (1-200, default 50).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: offset
+          in: query
+          description: Number of records to skip for pagination.
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: Paginated list of metadata changes.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  changes:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/MetadataChange"
+                  total:
+                    type: integer
+                    description: Total number of change records for this artist across all pages.
+                  limit:
+                    type: integer
+                    description: The limit value used for this request.
+                  offset:
+                    type: integer
+                    description: The offset value used for this request.
+                required: [changes, total, limit, offset]
+        "404":
+          description: Artist not found.
           content:
             application/json:
               schema:

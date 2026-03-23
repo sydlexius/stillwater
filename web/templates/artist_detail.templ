@@ -272,6 +272,8 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 					</section>
 					// Members -- always show section so fetch is accessible
 					@MembersSection(data.Artist.ID, data.Members, data.FieldProviders["members"])
+					// History section -- lazily loaded via HTMX
+					@ArtistHistorySection(data.Artist.ID)
 				</div>
 				<div class="space-y-6">
 					<section id={ "artist-details-" + data.Artist.ID } class="sw-card rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
@@ -356,6 +358,38 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 			</div>
 		</div>
 	}
+}
+
+// ArtistHistorySection renders a collapsible history card that loads its
+// content lazily via HTMX when the section is first expanded.
+templ ArtistHistorySection(artistID string) {
+	<section id={ "artist-history-" + artistID } class="sw-card rounded-lg bg-white dark:bg-gray-800 shadow">
+		<button
+			type="button"
+			class="w-full flex items-center justify-between px-6 py-4 text-left"
+			aria-expanded="false"
+			aria-controls={ "artist-history-body-" + artistID }
+			onclick="
+				var btn = this;
+				var body = document.getElementById(btn.getAttribute('aria-controls'));
+				var expanded = btn.getAttribute('aria-expanded') === 'true';
+				btn.setAttribute('aria-expanded', String(!expanded));
+				body.classList.toggle('hidden', expanded);
+			"
+			hx-get={ "/artists/" + artistID + "/history/tab" }
+			hx-target={ "#artist-history-body-" + artistID }
+			hx-swap="innerHTML"
+			hx-trigger="click once"
+		>
+			<h2 class="text-lg font-semibold">History</h2>
+			<svg class="h-5 w-5 text-gray-400 dark:text-gray-500 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+			</svg>
+		</button>
+		<div id={ "artist-history-body-" + artistID } class="hidden px-6 pb-6">
+			<p class="text-sm text-gray-400 italic">Loading...</p>
+		</div>
+	</section>
 }
 
 templ providerID(name, value string, fetchedAt *time.Time) {
