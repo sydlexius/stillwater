@@ -27,7 +27,7 @@ export SW_API_KEY="sw_your_api_key_here"
 bash tests/load/run.sh smoke
 ```
 
-### Read-heavy load test (artist listing and detail pages)
+### Read-heavy load test (artist listing endpoints)
 
 ```bash
 bash tests/load/run.sh read

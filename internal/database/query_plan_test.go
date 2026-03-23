@@ -5,8 +5,10 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestQueryPlans runs EXPLAIN QUERY PLAN on the most performance-critical
@@ -17,9 +19,12 @@ import (
 // migrations. It does not insert data -- EXPLAIN QUERY PLAN analyzes the
 // query plan statically based on available indexes.
 func TestQueryPlans(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
 	// Create a temporary database with full schema
 	tmpDir := t.TempDir()
-	dbPath := tmpDir + "/test_query_plans.db"
+	dbPath := filepath.Join(tmpDir, "test_query_plans.db")
 
 	db, err := Open(dbPath)
 	if err != nil {
@@ -162,7 +167,7 @@ func TestQueryPlans(t *testing.T) {
 
 	for name, tc := range criticalQueries {
 		t.Run(name, func(t *testing.T) {
-			plan := explainQueryPlan(t, db, tc.query, tc.args...)
+			plan := explainQueryPlan(t, ctx, db, tc.query, tc.args...)
 			t.Logf("Query plan for %s:\n%s", name, plan)
 
 			// Check for full table scans on the primary table.
@@ -210,8 +215,11 @@ func TestQueryPlanSummary(t *testing.T) {
 		t.Skip("set SW_QUERY_PLAN_REPORT=1 to generate verbose query plan report")
 	}
 
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
 	tmpDir := t.TempDir()
-	dbPath := tmpDir + "/test_query_report.db"
+	dbPath := filepath.Join(tmpDir, "test_query_report.db")
 
 	db, err := Open(dbPath)
 	if err != nil {
@@ -225,7 +233,7 @@ func TestQueryPlanSummary(t *testing.T) {
 
 	// List all indexes in the database
 	t.Log("=== Database Indexes ===")
-	rows, err := db.Query("SELECT name, tbl_name FROM sqlite_master WHERE type = 'index' AND name NOT LIKE 'sqlite_%' ORDER BY tbl_name, name")
+	rows, err := db.QueryContext(ctx, "SELECT name, tbl_name FROM sqlite_master WHERE type = 'index' AND name NOT LIKE 'sqlite_%' ORDER BY tbl_name, name")
 	if err != nil {
 		t.Fatalf("listing indexes: %v", err)
 	}
@@ -250,7 +258,7 @@ func TestQueryPlanSummary(t *testing.T) {
 
 	for _, table := range tables {
 		var createSQL string
-		err := db.QueryRow("SELECT sql FROM sqlite_master WHERE type='table' AND name=?", table).Scan(&createSQL)
+		err := db.QueryRowContext(ctx, "SELECT sql FROM sqlite_master WHERE type='table' AND name=?", table).Scan(&createSQL)
 		if err != nil {
 			t.Logf("  %s: could not read schema: %v", table, err)
 			continue
@@ -258,7 +266,7 @@ func TestQueryPlanSummary(t *testing.T) {
 
 		// Count indexes for this table
 		var indexCount int
-		err = db.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND tbl_name=? AND name NOT LIKE 'sqlite_%'",
+		err = db.QueryRowContext(ctx, "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND tbl_name=? AND name NOT LIKE 'sqlite_%'",
 			table).Scan(&indexCount)
 		if err != nil {
 			t.Logf("  %s: could not count indexes: %v", table, err)
@@ -270,10 +278,10 @@ func TestQueryPlanSummary(t *testing.T) {
 }
 
 // explainQueryPlan runs EXPLAIN QUERY PLAN and returns the output as a string.
-func explainQueryPlan(t *testing.T, db *sql.DB, query string, args ...any) string {
+func explainQueryPlan(t *testing.T, ctx context.Context, db *sql.DB, query string, args ...any) string {
 	t.Helper()
 
-	rows, err := db.QueryContext(context.Background(), "EXPLAIN QUERY PLAN "+query, args...)
+	rows, err := db.QueryContext(ctx, "EXPLAIN QUERY PLAN "+query, args...)
 	if err != nil {
 		t.Fatalf("EXPLAIN QUERY PLAN failed: %v\nQuery: %s", err, query)
 	}
