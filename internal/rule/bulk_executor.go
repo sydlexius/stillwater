@@ -111,7 +111,7 @@ func (e *BulkExecutor) run(ctx context.Context, job *BulkJob) {
 				e.logger.Warn("skipping unknown artist in bulk job", "id", id, "error", err)
 				continue
 			}
-			if !a.IsExcluded {
+			if !a.IsExcluded && !a.Locked {
 				artists = append(artists, *a)
 			}
 		}
@@ -133,7 +133,7 @@ func (e *BulkExecutor) run(ctx context.Context, job *BulkJob) {
 				break
 			}
 			for _, a := range page {
-				if !a.IsExcluded {
+				if !a.IsExcluded && !a.Locked {
 					artists = append(artists, a)
 				}
 			}

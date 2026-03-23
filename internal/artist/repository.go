@@ -17,6 +17,7 @@ type Repository interface {
 	ClearField(ctx context.Context, id, field string) error
 	Delete(ctx context.Context, id string) error
 	Search(ctx context.Context, query string) ([]Artist, error)
+	SetLock(ctx context.Context, id string, locked bool, source string) error
 
 	// ListPathsByLibrary returns a map of artist ID to filesystem path for
 	// all artists in the given library that have a non-empty path.

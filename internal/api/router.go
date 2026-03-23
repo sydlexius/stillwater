@@ -188,8 +188,11 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("DELETE "+bp+"/api/v1/auth/tokens/{id}", wrapAuth(r.handleRevokeAPIToken, authMw))
 	mux.HandleFunc("DELETE "+bp+"/api/v1/auth/tokens/{id}/permanent", wrapAuth(r.handleDeleteAPIToken, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/artists", wrapAuth(r.handleListArtists, authMw))
+	mux.HandleFunc("GET "+bp+"/api/v1/artists/locked", wrapAuth(r.handleListLockedArtists, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}", wrapAuth(r.handleGetArtist, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/duplicates", wrapAuth(r.handleDuplicates, authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/lock", wrapAuth(r.handleLockArtist, authMw))
+	mux.HandleFunc("DELETE "+bp+"/api/v1/artists/{id}/lock", wrapAuth(r.handleUnlockArtist, authMw))
 	// Alias routes
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/aliases", wrapAuth(r.handleListAliases, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/aliases", wrapAuth(r.handleAddAlias, authMw))

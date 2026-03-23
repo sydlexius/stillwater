@@ -373,8 +373,9 @@ func (s *Service) processDirectory(ctx context.Context, dirPath, name, libraryID
 				existing.ExclusionReason = ""
 			}
 
-			// Re-parse NFO for updated metadata
-			if detected.NFOExists {
+			// Re-parse NFO for updated metadata. Skip for locked artists
+			// to avoid overwriting user-curated metadata.
+			if detected.NFOExists && !existing.Locked {
 				s.populateFromNFO(dirPath, existing)
 			}
 
@@ -441,6 +442,15 @@ func (s *Service) populateFromNFO(dirPath string, a *artist.Artist) {
 	a.Disbanded = converted.Disbanded
 	if converted.Biography != "" {
 		a.Biography = converted.Biography
+	}
+
+	// Import lockdata from NFO for new or unlocked artists. An existing
+	// lock (user or imported) is never overwritten by a rescan.
+	if parsed.LockData && !a.Locked {
+		a.Locked = true
+		a.LockSource = "imported"
+		now := time.Now().UTC()
+		a.LockedAt = &now
 	}
 }
 

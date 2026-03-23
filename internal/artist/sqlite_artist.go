@@ -68,15 +68,18 @@ func (r *sqliteArtistRepo) Create(ctx context.Context, a *Artist) error {
 			genres, styles, moods,
 			years_active, born, formed, died, disbanded, biography,
 			path, library_id, nfo_exists,
-			health_score, is_excluded, exclusion_reason, is_classical, metadata_sources,
+			health_score, is_excluded, exclusion_reason, is_classical,
+			locked, lock_source, locked_at,
+			metadata_sources,
 			last_scanned_at, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		a.ID, a.Name, a.SortName, a.Type, a.Gender, a.Disambiguation,
 		MarshalStringSlice(a.Genres), MarshalStringSlice(a.Styles), MarshalStringSlice(a.Moods),
 		a.YearsActive, a.Born, a.Formed, a.Died, a.Disbanded, a.Biography,
 		a.Path, dbutil.NullableString(a.LibraryID), dbutil.BoolToInt(a.NFOExists),
 		a.HealthScore, dbutil.BoolToInt(a.IsExcluded), a.ExclusionReason, dbutil.BoolToInt(a.IsClassical),
+		dbutil.BoolToInt(a.Locked), a.LockSource, dbutil.FormatNullableTime(a.LockedAt),
 		MarshalStringMap(a.MetadataSources),
 		dbutil.FormatNullableTime(a.LastScannedAt),
 		now.Format(time.RFC3339), now.Format(time.RFC3339),
@@ -232,6 +235,7 @@ func (r *sqliteArtistRepo) Update(ctx context.Context, a *Artist) error {
 			years_active = ?, born = ?, formed = ?, died = ?, disbanded = ?, biography = ?,
 			path = ?, library_id = ?, nfo_exists = ?,
 			health_score = ?, is_excluded = ?, exclusion_reason = ?, is_classical = ?,
+			locked = ?, lock_source = ?, locked_at = ?,
 			metadata_sources = ?,
 			last_scanned_at = ?, updated_at = ?
 		WHERE id = ?
@@ -241,6 +245,7 @@ func (r *sqliteArtistRepo) Update(ctx context.Context, a *Artist) error {
 		a.YearsActive, a.Born, a.Formed, a.Died, a.Disbanded, a.Biography,
 		a.Path, dbutil.NullableString(a.LibraryID), dbutil.BoolToInt(a.NFOExists),
 		a.HealthScore, dbutil.BoolToInt(a.IsExcluded), a.ExclusionReason, dbutil.BoolToInt(a.IsClassical),
+		dbutil.BoolToInt(a.Locked), a.LockSource, dbutil.FormatNullableTime(a.LockedAt),
 		MarshalStringMap(a.MetadataSources),
 		dbutil.FormatNullableTime(a.LastScannedAt),
 		a.UpdatedAt.Format(time.RFC3339),
@@ -353,4 +358,46 @@ func (r *sqliteArtistRepo) Search(ctx context.Context, query string) ([]Artist, 
 		artists = append(artists, *a)
 	}
 	return artists, rows.Err()
+}
+
+// ErrAlreadyLocked is returned when trying to lock an already-locked artist.
+var ErrAlreadyLocked = errors.New("artist is already locked")
+
+// ErrNotLocked is returned when trying to unlock an artist that is not locked.
+var ErrNotLocked = errors.New("artist is not locked")
+
+func (r *sqliteArtistRepo) SetLock(ctx context.Context, id string, locked bool, source string) error {
+	var lockedAt any
+	if locked {
+		lockedAt = time.Now().UTC().Format(time.RFC3339)
+	}
+
+	// Use a WHERE precondition on locked state to prevent TOCTOU races.
+	// If the artist is already in the target state, 0 rows are affected.
+	wantPrior := 1 // default: must be locked to unlock
+	if locked {
+		wantPrior = 0 // must be unlocked to lock
+	}
+
+	result, err := r.db.ExecContext(ctx, `
+		UPDATE artists SET locked = ?, lock_source = ?, locked_at = ?, updated_at = ?
+		WHERE id = ? AND locked = ?
+	`, dbutil.BoolToInt(locked), source, lockedAt, time.Now().UTC().Format(time.RFC3339), id, wantPrior)
+	if err != nil {
+		return fmt.Errorf("setting artist lock: %w", err)
+	}
+	n, _ := result.RowsAffected()
+	if n == 0 {
+		// Distinguish "not found" from "already in target state".
+		var exists int
+		_ = r.db.QueryRowContext(ctx, `SELECT 1 FROM artists WHERE id = ?`, id).Scan(&exists)
+		if exists == 0 {
+			return fmt.Errorf("%w: %s", ErrNotFound, id)
+		}
+		if locked {
+			return ErrAlreadyLocked
+		}
+		return ErrNotLocked
+	}
+	return nil
 }

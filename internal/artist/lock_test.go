@@ -1,0 +1,230 @@
+package artist
+
+import (
+	"context"
+	"errors"
+	"testing"
+)
+
+func TestLockAndUnlock(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	a := testArtist("Radiohead", "/music/Radiohead")
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// Initially unlocked.
+	got, err := svc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if got.Locked {
+		t.Error("expected artist to start unlocked")
+	}
+	if got.LockSource != "" {
+		t.Errorf("expected empty lock_source, got %q", got.LockSource)
+	}
+	if got.LockedAt != nil {
+		t.Error("expected nil locked_at")
+	}
+
+	// Lock the artist.
+	if err := svc.Lock(ctx, a.ID, "user"); err != nil {
+		t.Fatalf("Lock: %v", err)
+	}
+
+	got, err = svc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetByID after lock: %v", err)
+	}
+	if !got.Locked {
+		t.Error("expected artist to be locked")
+	}
+	if got.LockSource != "user" {
+		t.Errorf("lock_source = %q, want %q", got.LockSource, "user")
+	}
+	if got.LockedAt == nil {
+		t.Error("expected non-nil locked_at")
+	}
+
+	// Unlock the artist.
+	if err := svc.Unlock(ctx, a.ID); err != nil {
+		t.Fatalf("Unlock: %v", err)
+	}
+
+	got, err = svc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetByID after unlock: %v", err)
+	}
+	if got.Locked {
+		t.Error("expected artist to be unlocked")
+	}
+	if got.LockSource != "" {
+		t.Errorf("expected empty lock_source after unlock, got %q", got.LockSource)
+	}
+	if got.LockedAt != nil {
+		t.Error("expected nil locked_at after unlock")
+	}
+}
+
+func TestLockNotFound(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	err := svc.Lock(ctx, "nonexistent-id", "user")
+	if err == nil {
+		t.Fatal("expected error for nonexistent artist")
+	}
+	if !errors.Is(err, ErrNotFound) {
+		t.Errorf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestLockAlreadyLocked(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	a := testArtist("Deftones", "/music/Deftones")
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := svc.Lock(ctx, a.ID, "user"); err != nil {
+		t.Fatalf("Lock: %v", err)
+	}
+
+	// Locking again should return ErrAlreadyLocked.
+	err := svc.Lock(ctx, a.ID, "user")
+	if !errors.Is(err, ErrAlreadyLocked) {
+		t.Errorf("expected ErrAlreadyLocked, got %v", err)
+	}
+}
+
+func TestUnlockNotLocked(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	a := testArtist("Korn", "/music/Korn")
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// Unlocking a non-locked artist should return ErrNotLocked.
+	err := svc.Unlock(ctx, a.ID)
+	if !errors.Is(err, ErrNotLocked) {
+		t.Errorf("expected ErrNotLocked, got %v", err)
+	}
+}
+
+func TestLockImportedSource(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	a := testArtist("Tool", "/music/Tool")
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	if err := svc.Lock(ctx, a.ID, "imported"); err != nil {
+		t.Fatalf("Lock: %v", err)
+	}
+
+	got, err := svc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if got.LockSource != "imported" {
+		t.Errorf("lock_source = %q, want %q", got.LockSource, "imported")
+	}
+}
+
+func TestListFilterLocked(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	// Create two artists, lock one.
+	a1 := testArtist("Locked Band", "/music/Locked")
+	a2 := testArtist("Free Band", "/music/Free")
+	if err := svc.Create(ctx, a1); err != nil {
+		t.Fatalf("Create a1: %v", err)
+	}
+	if err := svc.Create(ctx, a2); err != nil {
+		t.Fatalf("Create a2: %v", err)
+	}
+	if err := svc.Lock(ctx, a1.ID, "user"); err != nil {
+		t.Fatalf("Lock a1: %v", err)
+	}
+
+	// Filter=locked should return only the locked artist.
+	locked, total, err := svc.List(ctx, ListParams{
+		Page: 1, PageSize: 50, Filter: "locked",
+	})
+	if err != nil {
+		t.Fatalf("List locked: %v", err)
+	}
+	if total != 1 {
+		t.Errorf("total = %d, want 1", total)
+	}
+	if len(locked) != 1 || locked[0].ID != a1.ID {
+		t.Errorf("expected only locked artist, got %d results", len(locked))
+	}
+
+	// Filter=not_locked should return only the unlocked artist.
+	unlocked, total, err := svc.List(ctx, ListParams{
+		Page: 1, PageSize: 50, Filter: "not_locked",
+	})
+	if err != nil {
+		t.Fatalf("List not_locked: %v", err)
+	}
+	if total != 1 {
+		t.Errorf("total = %d, want 1", total)
+	}
+	if len(unlocked) != 1 || unlocked[0].ID != a2.ID {
+		t.Errorf("expected only unlocked artist, got %d results", len(unlocked))
+	}
+}
+
+func TestLockPreservedOnUpdate(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	a := testArtist("Muse", "/music/Muse")
+	if err := svc.Create(ctx, a); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// Lock the artist.
+	if err := svc.Lock(ctx, a.ID, "user"); err != nil {
+		t.Fatalf("Lock: %v", err)
+	}
+
+	// Update the artist (simulating a metadata update).
+	got, err := svc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	got.Biography = "Updated biography"
+	if err := svc.Update(ctx, got); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+
+	// Lock should still be set after update.
+	after, err := svc.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetByID after update: %v", err)
+	}
+	if !after.Locked {
+		t.Error("expected lock to be preserved after Update")
+	}
+	if after.LockSource != "user" {
+		t.Errorf("lock_source = %q, want %q", after.LockSource, "user")
+	}
+}

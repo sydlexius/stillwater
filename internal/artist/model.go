@@ -54,6 +54,9 @@ type Artist struct {
 	IsExcluded          bool              `json:"is_excluded"`
 	ExclusionReason     string            `json:"exclusion_reason,omitempty"`
 	IsClassical         bool              `json:"is_classical"`
+	Locked              bool              `json:"locked"`
+	LockSource          string            `json:"lock_source,omitempty"`
+	LockedAt            *time.Time        `json:"locked_at,omitempty"`
 	AudioDBIDFetchedAt  *time.Time        `json:"audiodb_id_fetched_at,omitempty"`
 	DiscogsIDFetchedAt  *time.Time        `json:"discogs_id_fetched_at,omitempty"`
 	WikidataIDFetchedAt *time.Time        `json:"wikidata_id_fetched_at,omitempty"`
