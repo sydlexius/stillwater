@@ -470,7 +470,7 @@ components:
           type: string
         type:
           type: string
-          description: Artist type, e.g. "Person" or "Group".
+          description: Artist type, e.g. "person" or "group".
         gender:
           type: string
         disambiguation:
@@ -488,15 +488,21 @@ components:
         spotify_id:
           type: string
         genres:
-          type: array
+          type:
+            - array
+            - "null"
           items:
             type: string
         styles:
-          type: array
+          type:
+            - array
+            - "null"
           items:
             type: string
         moods:
-          type: array
+          type:
+            - array
+            - "null"
           items:
             type: string
         years_active:
@@ -567,27 +573,22 @@ components:
         locked_at:
           type: string
           format: date-time
-          nullable: true
           description: Timestamp when the lock was applied. Omitted when not locked.
         audiodb_id_fetched_at:
           type: string
           format: date-time
-          nullable: true
           description: When the AudioDB ID was last fetched. Omitted when never fetched.
         discogs_id_fetched_at:
           type: string
           format: date-time
-          nullable: true
           description: When the Discogs ID was last fetched. Omitted when never fetched.
         wikidata_id_fetched_at:
           type: string
           format: date-time
-          nullable: true
           description: When the Wikidata ID was last fetched. Omitted when never fetched.
         lastfm_fetched_at:
           type: string
           format: date-time
-          nullable: true
           description: When Last.fm metadata was last fetched. Omitted when never fetched.
         metadata_sources:
           type: object
@@ -597,7 +598,6 @@ components:
         last_scanned_at:
           type: string
           format: date-time
-          nullable: true
           description: When the artist directory was last scanned. Omitted when never scanned.
         created_at:
           type: string
@@ -659,7 +659,9 @@ components:
           type: string
           description: MusicBrainz ID for this member. Omitted when not set.
         instruments:
-          type: array
+          type:
+            - array
+            - "null"
           items:
             type: string
         vocal_type:
@@ -996,7 +998,10 @@ paths:
                         $ref: "#/components/schemas/Artist"
                     reason:
                       type: string
-                      description: Why these artists are considered duplicates (e.g. "same_mbid", "alias_match").
+                      description: >-
+                        Human-readable explanation of why these artists are considered
+                        duplicates (e.g. "shared MusicBrainz ID: abc123",
+                        "shared alias: The Beatles").
 
   /artists/locked:
     get:
