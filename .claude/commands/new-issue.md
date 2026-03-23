@@ -74,7 +74,7 @@ gh issue edit <number> --milestone "<title>"
 ## Step 6 -- Cleanup
 
 ```bash
-rm /tmp/gh-issue-body.md
+rm -f /tmp/gh-issue-body.md
 ```
 
 Report the issue number and URL.

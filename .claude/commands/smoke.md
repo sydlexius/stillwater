@@ -29,24 +29,34 @@ Then re-run `/smoke`."
 
 ## Step 2 -- Load credentials and run
 
-Export environment variables from the UAT env file, then run the smoke script.
-Pass through any flags from $ARGUMENTS (--full, --roundtrip).
+Export environment variables from the UAT env file (stored in Claude Code's project
+memory directory), then run the smoke script. Pass through any flags from $ARGUMENTS
+(--full, --roundtrip).
+
+Locate the env file. The path is derived from the project directory by Claude Code
+(dashes replace path separators):
 
 ```bash
-export $(grep -v '^#' ~/.claude/projects/-root-Dev-stillwater/memory/.env.uat | xargs)
+env_file=$(ls ~/.claude/projects/*/memory/.env.uat 2>/dev/null | head -1)
+```
+
+If `$env_file` is empty, stop: "UAT credentials not found. Create `.env.uat` in your
+Claude Code project memory directory with SW_USER, SW_PASS, SW_BASE, STILLWATER_API_KEY."
+
+Load and run:
+
+```bash
+export $(grep -v '^#' "$env_file" | xargs)
 bash scripts/smoke.sh $ARGUMENTS
 ```
 
-If `scripts/smoke.sh` is not found (running from a worktree), fall back:
+If `scripts/smoke.sh` is not found (running from a worktree), find the main repo
+and fall back:
 
 ```bash
-export $(grep -v '^#' ~/.claude/projects/-root-Dev-stillwater/memory/.env.uat | xargs)
-bash /root/Dev/stillwater/scripts/smoke.sh $ARGUMENTS
+main_repo=$(git worktree list | head -1 | awk '{print $1}')
+bash "$main_repo/scripts/smoke.sh" $ARGUMENTS
 ```
-
-If the env file is missing, stop: "UAT credentials not found at
-`~/.claude/projects/-root-Dev-stillwater/memory/.env.uat`. Create it with
-SW_USER, SW_PASS, SW_BASE, STILLWATER_API_KEY."
 
 ---
 

@@ -44,7 +44,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "file=$(echo \"$TOOL_INPUT\" | jq -r '.file_path // empty' 2>/dev/null); if [ -n \"$file\" ]; then if echo \"$file\" | grep -qE 'migrations/0[0-9][2-9]|migrations/[1-9][0-9]'; then echo 'BLOCKED: Do not create new migration files. Modify 001_initial_schema.sql directly (pre-release).' >&2; exit 2; fi; if echo \"$file\" | grep -qE 'encryption\\.key|\\.env\\.uat'; then echo \"BLOCKED: $file contains secrets. Edit manually.\" >&2; exit 2; fi; fi"
+            "command": "file=$(echo \"$TOOL_INPUT\" | jq -r '.file_path // empty' 2>/dev/null); if [ -n \"$file\" ]; then if echo \"$file\" | grep -qE 'migrations/[0-9]+_' && ! echo \"$file\" | grep -qE 'migrations/001_'; then echo 'BLOCKED: Do not create new migration files. Modify 001_initial_schema.sql directly (pre-release).' >&2; exit 2; fi; if echo \"$file\" | grep -qE 'encryption\\.key|\\.env\\.uat'; then echo \"BLOCKED: $file contains secrets. Edit manually.\" >&2; exit 2; fi; fi"
           }
         ]
       },
