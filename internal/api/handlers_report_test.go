@@ -17,6 +17,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/encryption"
 	"github.com/sydlexius/stillwater/internal/nfo"
 	"github.com/sydlexius/stillwater/internal/provider"
+	"github.com/sydlexius/stillwater/internal/publish"
 	"github.com/sydlexius/stillwater/internal/rule"
 )
 
@@ -51,6 +52,13 @@ func testRouter(t *testing.T) (*Router, *artist.Service) {
 	nfoSnapSvc := nfo.NewSnapshotService(db)
 	providerSettings := provider.NewSettingsService(db, nil)
 
+	pub := publish.New(publish.Deps{
+		ArtistService:      artistSvc,
+		ConnectionService:  connSvc,
+		NFOSnapshotService: nfoSnapSvc,
+		Logger:             logger,
+	})
+
 	r := NewRouter(RouterDeps{
 		AuthService:        authSvc,
 		ArtistService:      artistSvc,
@@ -62,6 +70,7 @@ func testRouter(t *testing.T) (*Router, *artist.Service) {
 		DB:                 db,
 		Logger:             logger,
 		StaticDir:          "../../web/static",
+		Publisher:          pub,
 	})
 
 	return r, artistSvc

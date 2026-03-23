@@ -8,11 +8,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/connection/emby"
 	"github.com/sydlexius/stillwater/internal/connection/jellyfin"
 	img "github.com/sydlexius/stillwater/internal/image"
+	"github.com/sydlexius/stillwater/internal/publish"
 )
 
 // handlePushMetadata pushes artist metadata to a specified platform connection.
@@ -66,9 +66,9 @@ func (r *Router) handlePushMetadata(w http.ResponseWriter, req *http.Request) {
 		body.PlatformArtistID = stored
 	}
 
-	data := buildArtistPushData(a)
+	data := publish.BuildArtistPushData(a)
 
-	pusher, ok := newMetadataPusher(conn, r.logger)
+	pusher, ok := publish.NewMetadataPusher(conn, r.logger)
 	if !ok {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "connection type does not support metadata push"})
 		return
@@ -202,7 +202,7 @@ func (r *Router) handlePushImages(w http.ResponseWriter, req *http.Request) {
 		}
 
 		patterns := r.getActiveNamingConfig(req.Context(), imgType)
-		filePath, found := findExistingImage(r.imageDir(a), patterns)
+		filePath, found := img.FindExistingImage(r.imageDir(a), patterns)
 		if !found {
 			continue
 		}
@@ -317,54 +317,4 @@ func (r *Router) handleDeletePushImage(w http.ResponseWriter, req *http.Request)
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
-}
-
-// buildArtistPushData constructs an ArtistPushData from an artist record.
-// Shared by handlePushMetadata (synchronous) and asyncPushMetadataToConnections
-// (fire-and-forget). Update this function when adding new push fields.
-//
-// Date fields are filtered by artist type to prevent cross-contamination from
-// providers that do not distinguish persons from groups. Groups get Formed and
-// Disbanded; persons get Born and Died. Unknown types get all four fields so the
-// push code's Born > Formed fallback chain still works.
-func buildArtistPushData(a *artist.Artist) connection.ArtistPushData {
-	data := connection.ArtistPushData{
-		Name:           a.Name,
-		SortName:       a.SortName,
-		Biography:      a.Biography,
-		Genres:         a.Genres,
-		Styles:         a.Styles,
-		Moods:          a.Moods,
-		Disambiguation: a.Disambiguation,
-		YearsActive:    a.YearsActive,
-		MusicBrainzID:  a.MusicBrainzID,
-	}
-	switch a.Type {
-	case "group", "orchestra", "choir":
-		data.Formed = a.Formed
-		data.Disbanded = a.Disbanded
-	case "solo":
-		data.Born = a.Born
-		data.Died = a.Died
-	default:
-		data.Born = a.Born
-		data.Formed = a.Formed
-		data.Died = a.Died
-		data.Disbanded = a.Disbanded
-	}
-	return data
-}
-
-// newMetadataPusher constructs a MetadataPusher for the given connection type.
-// Returns (nil, false) for connection types that do not support metadata push
-// (e.g. Lidarr). Shared by handlePushMetadata and asyncPushMetadataToConnections.
-func newMetadataPusher(conn *connection.Connection, logger *slog.Logger) (connection.MetadataPusher, bool) {
-	switch conn.Type {
-	case connection.TypeEmby:
-		return emby.New(conn.URL, conn.APIKey, conn.PlatformUserID, logger), true
-	case connection.TypeJellyfin:
-		return jellyfin.New(conn.URL, conn.APIKey, conn.PlatformUserID, logger), true
-	default:
-		return nil, false
-	}
 }

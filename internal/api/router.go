@@ -21,6 +21,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/nfo"
 	"github.com/sydlexius/stillwater/internal/platform"
 	"github.com/sydlexius/stillwater/internal/provider"
+	"github.com/sydlexius/stillwater/internal/publish"
 	"github.com/sydlexius/stillwater/internal/rule"
 	"github.com/sydlexius/stillwater/internal/scanner"
 	"github.com/sydlexius/stillwater/internal/scraper"
@@ -64,6 +65,7 @@ type RouterDeps struct {
 	BasePath           string
 	StaticDir          string
 	ImageCacheDir      string
+	Publisher          *publish.Publisher
 }
 
 // Router sets up all HTTP routes for the application.
@@ -96,6 +98,7 @@ type Router struct {
 	probeCache         *watcher.ProbeCache
 	expectedWrites     *watcher.ExpectedWrites
 	eventBus           *event.Bus
+	publisher          *publish.Publisher
 	logger             *slog.Logger
 	basePath           string
 	imageCacheDir      string
@@ -147,6 +150,7 @@ func NewRouter(deps RouterDeps) *Router {
 		logger:             deps.Logger,
 		basePath:           deps.BasePath,
 		imageCacheDir:      deps.ImageCacheDir,
+		publisher:          deps.Publisher,
 		staticAssets:       NewStaticAssets(deps.StaticDir, deps.Logger),
 		ssrfClient: &http.Client{
 			Timeout:   fetchTimeout,

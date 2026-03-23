@@ -22,6 +22,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/artist"
 	img "github.com/sydlexius/stillwater/internal/image"
 	"github.com/sydlexius/stillwater/internal/platform"
+	"github.com/sydlexius/stillwater/internal/publish"
 )
 
 // testRouterWithPlatform returns a Router that includes a platform service,
@@ -29,8 +30,27 @@ import (
 func testRouterWithPlatform(t *testing.T) (*Router, *artist.Service) {
 	t.Helper()
 	r, artistSvc := testRouter(t)
-	r.platformService = platform.NewService(r.db)
+	platSvc := platform.NewService(r.db)
+	r.platformService = platSvc
+	// Rebuild publisher with the platform service so image sync tests work.
+	r.publisher = publish.New(publish.Deps{
+		ArtistService:      r.artistService,
+		ConnectionService:  r.connectionService,
+		NFOSnapshotService: r.nfoSnapshotService,
+		PlatformService:    platSvc,
+		ExpectedWrites:     r.expectedWrites,
+		ImageCacheDir:      r.imageCacheDir,
+		Logger:             r.logger,
+	})
 	return r, artistSvc
+}
+
+// setImageCacheDir sets both the Router's and Publisher's image cache dir.
+func setImageCacheDir(r *Router, dir string) {
+	r.imageCacheDir = dir
+	if r.publisher != nil {
+		r.publisher.SetImageCacheDir(dir)
+	}
 }
 
 // failingRemover is a FileRemover stub that always returns an error.
@@ -191,7 +211,7 @@ func TestRequireArtistPath_Pathless(t *testing.T) {
 func TestRequireImageDir_WithCacheDir(t *testing.T) {
 	r, _ := testRouterWithPlatform(t)
 	cacheDir := t.TempDir()
-	r.imageCacheDir = cacheDir
+	setImageCacheDir(r, cacheDir)
 
 	// Pathless artist with cache configured should pass.
 	a := &artist.Artist{ID: "abc123", Name: "Cached Artist", SortName: "Cached Artist", Path: ""}
@@ -220,7 +240,7 @@ func TestRequireImageDir_WithCacheDir(t *testing.T) {
 func TestRequireImageDir_RejectsNoCacheNoPath(t *testing.T) {
 	r, _ := testRouterWithPlatform(t)
 	// No cache dir, no artist path.
-	r.imageCacheDir = ""
+	setImageCacheDir(r, "")
 
 	a := &artist.Artist{ID: "abc123", Name: "No Path Artist", SortName: "No Path Artist", Path: ""}
 
@@ -383,7 +403,7 @@ func TestHandleImageUpload_SyncsToPlatform(t *testing.T) {
 	defer srv.Close()
 
 	r, artistSvc := testRouterWithPlatform(t)
-	r.imageCacheDir = t.TempDir()
+	setImageCacheDir(r, t.TempDir())
 	addTestConnectionWithURL(t, r, "conn-emby", "Emby", "emby", srv.URL)
 
 	// Platform artist: no local path, images stored in cache dir.
@@ -462,7 +482,7 @@ func TestHandleDeleteImage_SyncsToPlatform(t *testing.T) {
 
 	r, artistSvc := testRouterWithPlatform(t)
 	cacheDir := t.TempDir()
-	r.imageCacheDir = cacheDir
+	setImageCacheDir(r, cacheDir)
 	addTestConnectionWithURL(t, r, "conn-emby", "Emby", "emby", srv.URL)
 
 	// Platform artist: no local path, images stored in cache dir.
@@ -576,7 +596,7 @@ func TestHandleImageUpload_SyncWarnings_PlatformFailure(t *testing.T) {
 	defer srv.Close()
 
 	r, artistSvc := testRouterWithPlatform(t)
-	r.imageCacheDir = t.TempDir()
+	setImageCacheDir(r, t.TempDir())
 	addTestConnectionWithURL(t, r, "conn-emby", "Emby", "emby", srv.URL)
 
 	a := &artist.Artist{Name: "Platform Artist", SortName: "Platform Artist", Path: ""}
@@ -639,7 +659,7 @@ func TestHandleDeleteImage_SyncWarnings_PlatformFailure(t *testing.T) {
 
 	r, artistSvc := testRouterWithPlatform(t)
 	cacheDir := t.TempDir()
-	r.imageCacheDir = cacheDir
+	setImageCacheDir(r, cacheDir)
 	addTestConnectionWithURL(t, r, "conn-emby", "Emby", "emby", srv.URL)
 
 	a := &artist.Artist{
@@ -721,7 +741,7 @@ func TestSyncImageToPlatforms_GetByIDError(t *testing.T) {
 		t.Fatalf("re-enabling FK: %v", err)
 	}
 
-	warnings := r.syncImageToPlatforms(context.Background(), a, "thumb")
+	warnings := r.publisher.SyncImageToPlatforms(context.Background(), a, "thumb")
 
 	if len(warnings) == 0 {
 		t.Fatal("expected warning for orphaned connection, got none")
@@ -733,7 +753,7 @@ func TestSyncImageToPlatforms_GetByIDError(t *testing.T) {
 
 func TestHandleImageUpload_SyncWarnings_UnsupportedConnType(t *testing.T) {
 	r, artistSvc := testRouterWithPlatform(t)
-	r.imageCacheDir = t.TempDir()
+	setImageCacheDir(r, t.TempDir())
 
 	// A connection whose type is not handled by the image sync switch.
 	addTestConnection(t, r, "conn-lidarr", "Lidarr", "lidarr")
@@ -812,7 +832,7 @@ func TestDeleteImageFromPlatforms_GetByIDError(t *testing.T) {
 func TestHandleDeleteImage_SyncWarnings_UnsupportedConnType(t *testing.T) {
 	r, artistSvc := testRouterWithPlatform(t)
 	cacheDir := t.TempDir()
-	r.imageCacheDir = cacheDir
+	setImageCacheDir(r, cacheDir)
 
 	addTestConnection(t, r, "conn-lidarr", "Lidarr", "lidarr")
 
@@ -1056,7 +1076,7 @@ func TestHandleImageCrop_SyncWarnings_PlatformFailure(t *testing.T) {
 	defer srv.Close()
 
 	r, artistSvc := testRouterWithPlatform(t)
-	r.imageCacheDir = t.TempDir()
+	setImageCacheDir(r, t.TempDir())
 	addTestConnectionWithURL(t, r, "conn-emby", "Emby", "emby", srv.URL)
 
 	a := &artist.Artist{Name: "Platform Crop Artist", SortName: "Platform Crop Artist", Path: ""}

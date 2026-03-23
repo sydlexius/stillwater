@@ -369,7 +369,7 @@ func (r *Router) handleFanartSlotAssign(w http.ResponseWriter, req *http.Request
 	// Sync all fanart to connected platforms.
 	syncCtx, cancel := context.WithTimeout(req.Context(), 30*time.Second)
 	defer cancel()
-	syncWarnings := r.syncAllFanartToPlatforms(syncCtx, a)
+	syncWarnings := r.publisher.SyncAllFanartToPlatforms(syncCtx, a)
 
 	r.logger.Info("assigned platform backdrop to fanart slot",
 		slog.String("artist_id", artistID),
@@ -477,7 +477,7 @@ func (r *Router) handleFanartSlotDelete(w http.ResponseWriter, req *http.Request
 	if renumberWarning == "" {
 		syncCtx, cancel := context.WithTimeout(req.Context(), 30*time.Second)
 		defer cancel()
-		syncWarnings = r.syncAllFanartToPlatforms(syncCtx, a)
+		syncWarnings = r.publisher.SyncAllFanartToPlatforms(syncCtx, a)
 	} else {
 		renumberWarning += ", platform sync skipped"
 		syncWarnings = append(syncWarnings, renumberWarning)
@@ -658,7 +658,7 @@ func (r *Router) handleFanartReorder(w http.ResponseWriter, req *http.Request) {
 	// Sync reordered fanart to connected platforms.
 	syncCtx, cancel := context.WithTimeout(req.Context(), 30*time.Second)
 	defer cancel()
-	syncWarnings := r.syncAllFanartToPlatforms(syncCtx, a)
+	syncWarnings := r.publisher.SyncAllFanartToPlatforms(syncCtx, a)
 
 	r.logger.Info("reordered fanart",
 		slog.String("artist_id", artistID),

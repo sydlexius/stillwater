@@ -43,6 +43,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/provider/spotify"
 	"github.com/sydlexius/stillwater/internal/provider/wikidata"
 	"github.com/sydlexius/stillwater/internal/provider/wikipedia"
+	"github.com/sydlexius/stillwater/internal/publish"
 	"github.com/sydlexius/stillwater/internal/rule"
 	"github.com/sydlexius/stillwater/internal/scanner"
 	"github.com/sydlexius/stillwater/internal/scraper"
@@ -304,6 +305,16 @@ func run() error {
 	}
 
 	// Set up HTTP router
+	publisher := publish.New(publish.Deps{
+		ArtistService:      artistService,
+		ConnectionService:  connectionService,
+		NFOSnapshotService: nfoSnapshotService,
+		PlatformService:    platformService,
+		ExpectedWrites:     expectedWrites,
+		ImageCacheDir:      filepath.Join(filepath.Dir(cfg.Database.Path), "cache", "images"),
+		Logger:             logger,
+	})
+
 	router := api.NewRouter(api.RouterDeps{
 		AuthService:        authService,
 		ArtistService:      artistService,
@@ -338,6 +349,7 @@ func run() error {
 		BasePath:           cfg.Server.BasePath,
 		StaticDir:          "web/static",
 		ImageCacheDir:      filepath.Join(filepath.Dir(cfg.Database.Path), "cache", "images"),
+		Publisher:          publisher,
 	})
 
 	// Graceful shutdown

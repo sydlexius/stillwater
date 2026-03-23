@@ -160,7 +160,7 @@ func (r *Router) handleNFOSnapshotRestore(w http.ResponseWriter, req *http.Reque
 			writeError(w, req, http.StatusInternalServerError, "failed to restore NFO")
 			return
 		}
-		r.asyncPushMetadataToConnections(req.Context(), a)
+		r.publisher.PushMetadataAsync(req.Context(), a)
 		writeJSON(w, http.StatusOK, map[string]string{"status": "restored"})
 		return
 	}

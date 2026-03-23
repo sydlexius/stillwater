@@ -181,7 +181,7 @@ func TestWriteBackNFO_CreatesSnapshot(t *testing.T) {
 		t.Fatalf("re-fetching artist: %v", err)
 	}
 
-	r.writeBackNFO(context.Background(), a)
+	r.publisher.WriteBackNFO(context.Background(), a)
 
 	// Verify a snapshot was saved
 	snapshots, err := r.nfoSnapshotService.List(context.Background(), a.ID)
@@ -323,7 +323,7 @@ func TestWriteBackNFO_StatNotExist(t *testing.T) {
 	}
 
 	// Do NOT seed an artist.nfo on disk -- file is missing
-	r.writeBackNFO(context.Background(), a)
+	r.publisher.WriteBackNFO(context.Background(), a)
 
 	// Verify no NFO was created (the NotExist branch should return early)
 	if _, err := os.Stat(filepath.Join(dir, "artist.nfo")); err == nil {
