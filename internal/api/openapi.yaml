@@ -458,6 +458,238 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/FanartSyncSlotConnection"
+    Artist:
+      type: object
+      description: A music artist or group with full metadata.
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        sort_name:
+          type: string
+        type:
+          type: string
+          description: Artist type, e.g. "Person" or "Group".
+        gender:
+          type: string
+        disambiguation:
+          type: string
+        musicbrainz_id:
+          type: string
+        audiodb_id:
+          type: string
+        discogs_id:
+          type: string
+        wikidata_id:
+          type: string
+        deezer_id:
+          type: string
+        spotify_id:
+          type: string
+        genres:
+          type: array
+          items:
+            type: string
+        styles:
+          type: array
+          items:
+            type: string
+        moods:
+          type: array
+          items:
+            type: string
+        years_active:
+          type: string
+        born:
+          type: string
+        formed:
+          type: string
+        died:
+          type: string
+        disbanded:
+          type: string
+        biography:
+          type: string
+        path:
+          type: string
+          description: Filesystem path to the artist directory. Empty for pathless (platform-only) artists.
+        library_id:
+          type: string
+        nfo_exists:
+          type: boolean
+        thumb_exists:
+          type: boolean
+        fanart_exists:
+          type: boolean
+        fanart_count:
+          type: integer
+        logo_exists:
+          type: boolean
+        banner_exists:
+          type: boolean
+        thumb_low_res:
+          type: boolean
+        fanart_low_res:
+          type: boolean
+        logo_low_res:
+          type: boolean
+        banner_low_res:
+          type: boolean
+        thumb_placeholder:
+          type: string
+          description: Base64-encoded placeholder for the thumb image. Omitted when not set.
+        fanart_placeholder:
+          type: string
+          description: Base64-encoded placeholder for the fanart image. Omitted when not set.
+        logo_placeholder:
+          type: string
+          description: Base64-encoded placeholder for the logo image. Omitted when not set.
+        banner_placeholder:
+          type: string
+          description: Base64-encoded placeholder for the banner image. Omitted when not set.
+        health_score:
+          type: number
+          format: double
+        is_excluded:
+          type: boolean
+        exclusion_reason:
+          type: string
+          description: Reason the artist is excluded from rules and metadata operations. Omitted when not excluded.
+        is_classical:
+          type: boolean
+        locked:
+          type: boolean
+          description: When true, automated operations will not modify this artist.
+        lock_source:
+          type: string
+          description: Source that applied the lock (e.g. "user"). Omitted when not locked.
+        locked_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Timestamp when the lock was applied. Omitted when not locked.
+        audiodb_id_fetched_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the AudioDB ID was last fetched. Omitted when never fetched.
+        discogs_id_fetched_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the Discogs ID was last fetched. Omitted when never fetched.
+        wikidata_id_fetched_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the Wikidata ID was last fetched. Omitted when never fetched.
+        lastfm_fetched_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: When Last.fm metadata was last fetched. Omitted when never fetched.
+        metadata_sources:
+          type: object
+          additionalProperties:
+            type: string
+          description: Map of field name to provider name indicating which provider supplied each field. Omitted when empty.
+        last_scanned_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the artist directory was last scanned. Omitted when never scanned.
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - name
+        - sort_name
+        - type
+        - gender
+        - disambiguation
+        - musicbrainz_id
+        - audiodb_id
+        - discogs_id
+        - wikidata_id
+        - deezer_id
+        - spotify_id
+        - genres
+        - styles
+        - moods
+        - years_active
+        - born
+        - formed
+        - died
+        - disbanded
+        - biography
+        - path
+        - library_id
+        - nfo_exists
+        - thumb_exists
+        - fanart_exists
+        - fanart_count
+        - logo_exists
+        - banner_exists
+        - thumb_low_res
+        - fanart_low_res
+        - logo_low_res
+        - banner_low_res
+        - health_score
+        - is_excluded
+        - is_classical
+        - locked
+        - created_at
+        - updated_at
+    BandMember:
+      type: object
+      description: A member of a band or group.
+      properties:
+        id:
+          type: string
+        artist_id:
+          type: string
+        member_name:
+          type: string
+        member_mbid:
+          type: string
+          description: MusicBrainz ID for this member. Omitted when not set.
+        instruments:
+          type: array
+          items:
+            type: string
+        vocal_type:
+          type: string
+          description: Vocal range or type (e.g. "tenor"). Omitted when not set.
+        date_joined:
+          type: string
+          description: Year or date the member joined the group. Omitted when unknown.
+        date_left:
+          type: string
+          description: Year or date the member left the group. Omitted for current members.
+        is_original_member:
+          type: boolean
+        sort_order:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - artist_id
+        - member_name
+        - instruments
+        - is_original_member
+        - sort_order
+        - created_at
+        - updated_at
 
 paths:
   /health:
@@ -735,7 +967,7 @@ paths:
                   artists:
                     type: array
                     items:
-                      type: object
+                      $ref: "#/components/schemas/Artist"
                   total:
                     type: integer
                   page:
@@ -757,6 +989,14 @@ paths:
                 type: array
                 items:
                   type: object
+                  properties:
+                    artists:
+                      type: array
+                      items:
+                        $ref: "#/components/schemas/Artist"
+                    reason:
+                      type: string
+                      description: Why these artists are considered duplicates (e.g. "same_mbid", "alias_match").
 
   /artists/locked:
     get:
@@ -794,7 +1034,7 @@ paths:
                   artists:
                     type: array
                     items:
-                      type: object
+                      $ref: "#/components/schemas/Artist"
                   total:
                     type: integer
                   page:
@@ -820,8 +1060,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                description: Full Artist object as returned by GET /artists/{id}
+                $ref: "#/components/schemas/Artist"
         "404":
           description: Artist not found
           content:
@@ -851,8 +1090,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                description: Full Artist object as returned by GET /artists/{id}
+                $ref: "#/components/schemas/Artist"
         "404":
           description: Artist not found
           content:
@@ -886,11 +1124,11 @@ paths:
                 type: object
                 properties:
                   artist:
-                    type: object
+                    $ref: "#/components/schemas/Artist"
                   members:
                     type: array
                     items:
-                      type: object
+                      $ref: "#/components/schemas/BandMember"
         "404":
           description: Artist not found
           content:
