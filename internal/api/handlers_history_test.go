@@ -186,7 +186,10 @@ func TestHandleListArtistHistory_Pagination(t *testing.T) {
 		t.Fatalf("decoding response: %v", err)
 	}
 
-	changes, _ := resp["changes"].([]any)
+	changes, ok := resp["changes"].([]any)
+	if !ok {
+		t.Fatal("changes is not []any")
+	}
 	if len(changes) != 3 {
 		t.Errorf("first page len(changes) = %d, want 3", len(changes))
 	}
@@ -214,7 +217,10 @@ func TestHandleListArtistHistory_Pagination(t *testing.T) {
 	if err := json.NewDecoder(w2.Body).Decode(&resp2); err != nil {
 		t.Fatalf("decoding response2: %v", err)
 	}
-	changes2, _ := resp2["changes"].([]any)
+	changes2, ok2 := resp2["changes"].([]any)
+	if !ok2 {
+		t.Fatal("changes2 is not []any")
+	}
 	if len(changes2) != 2 {
 		t.Errorf("second page len(changes) = %d, want 2", len(changes2))
 	}
@@ -240,7 +246,10 @@ func TestHandleListArtistHistory_ResponseShape(t *testing.T) {
 		t.Fatalf("decoding response: %v", err)
 	}
 
-	changes, _ := resp["changes"].([]any)
+	changes, ok := resp["changes"].([]any)
+	if !ok {
+		t.Fatal("changes is not []any")
+	}
 	if len(changes) == 0 {
 		t.Fatal("expected at least one change")
 	}

@@ -55,7 +55,7 @@ func (r *sqliteHistoryRepo) List(ctx context.Context, artistID string, limit, of
 		SELECT id, artist_id, field, old_value, new_value, source, created_at
 		FROM metadata_changes
 		WHERE artist_id = ?
-		ORDER BY created_at DESC
+		ORDER BY created_at DESC, id DESC
 		LIMIT ? OFFSET ?`
 
 	rows, err := r.db.QueryContext(ctx, q, artistID, limit, offset)

@@ -35,6 +35,7 @@ templ ArtistHistoryTab(data HistoryTabData) {
 					<div id="history-load-more" class="flex justify-center mt-4">
 						<button
 							type="button"
+							aria-label="Load more history entries"
 							class="px-4 py-2 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
 							hx-get={ fmt.Sprintf("/artists/%s/history/tab?limit=%d&offset=%d", data.ArtistID, data.Limit, data.Offset+len(data.Changes)) }
 							hx-target="#history-load-more-wrapper"
@@ -46,7 +47,7 @@ templ ArtistHistoryTab(data HistoryTabData) {
 				</div>
 			}
 			if data.Total > 0 {
-				<p class="text-xs text-gray-400 dark:text-gray-500 text-right">
+				<p id="history-showing-counter" class="text-xs text-gray-400 dark:text-gray-500 text-right">
 					Showing { strconv.Itoa(min(data.Offset+len(data.Changes), data.Total)) } of { strconv.Itoa(data.Total) } changes
 				</p>
 			}
@@ -55,10 +56,11 @@ templ ArtistHistoryTab(data HistoryTabData) {
 }
 
 // ArtistHistoryMoreRows renders additional history rows for HTMX load-more.
-// The entire response replaces #history-load-more via outerHTML: new rows come
-// first, followed by an updated load-more button (or nothing if exhausted).
+// The entire response replaces #history-load-more-wrapper via outerHTML: new rows
+// come first, followed by an updated load-more button (or nothing if exhausted).
 // This avoids the OOB swap conflict that arises when the same element is both
 // the swap target and an OOB source.
+// An hx-swap-oob paragraph updates the "Showing X of Y" counter in the outer tab.
 templ ArtistHistoryMoreRows(data HistoryTabData) {
 	<div id="history-load-more-wrapper">
 		for _, c := range data.Changes {
@@ -68,6 +70,7 @@ templ ArtistHistoryMoreRows(data HistoryTabData) {
 			<div id="history-load-more" class="flex justify-center mt-4">
 				<button
 					type="button"
+					aria-label="Load more history entries"
 					class="px-4 py-2 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
 					hx-get={ fmt.Sprintf("/artists/%s/history/tab?limit=%d&offset=%d", data.ArtistID, data.Limit, data.Offset+len(data.Changes)) }
 					hx-target="#history-load-more-wrapper"
@@ -78,6 +81,11 @@ templ ArtistHistoryMoreRows(data HistoryTabData) {
 			</div>
 		}
 	</div>
+	if data.Total > 0 {
+		<p id="history-showing-counter" hx-swap-oob="true" class="text-xs text-gray-400 dark:text-gray-500 text-right">
+			Showing { strconv.Itoa(min(data.Offset+len(data.Changes), data.Total)) } of { strconv.Itoa(data.Total) } changes
+		</p>
+	}
 }
 
 // historyChangeRow renders a single metadata change entry in the timeline.
@@ -163,35 +171,38 @@ func historySourceLabel(source string) string {
 	}
 }
 
+// historyFieldLabels maps database field names to human-readable labels.
+// It is a package-level variable to avoid allocating a new map on each call.
+var historyFieldLabels = map[string]string{
+	"biography":      "Biography",
+	"genres":         "Genres",
+	"styles":         "Styles",
+	"moods":          "Moods",
+	"formed":         "Formed",
+	"born":           "Born",
+	"disbanded":      "Disbanded",
+	"died":           "Died",
+	"years_active":   "Years Active",
+	"type":           "Type",
+	"gender":         "Gender",
+	"sort_name":      "Sort Name",
+	"name":           "Name",
+	"thumb":          "Thumbnail",
+	"fanart":         "Fanart",
+	"logo":           "Logo",
+	"banner":         "Banner",
+	"musicbrainz_id": "MusicBrainz ID",
+	"audiodb_id":     "AudioDB ID",
+	"discogs_id":     "Discogs ID",
+	"wikidata_id":    "Wikidata ID",
+	"deezer_id":      "Deezer ID",
+	"spotify_id":     "Spotify ID",
+	"members":        "Band Members",
+}
+
 // historyFieldLabel converts a database field name to a human-readable label.
 func historyFieldLabel(field string) string {
-	labels := map[string]string{
-		"biography":      "Biography",
-		"genres":         "Genres",
-		"styles":         "Styles",
-		"moods":          "Moods",
-		"formed":         "Formed",
-		"born":           "Born",
-		"disbanded":      "Disbanded",
-		"died":           "Died",
-		"years_active":   "Years Active",
-		"type":           "Type",
-		"gender":         "Gender",
-		"sort_name":      "Sort Name",
-		"name":           "Name",
-		"thumb":          "Thumbnail",
-		"fanart":         "Fanart",
-		"logo":           "Logo",
-		"banner":         "Banner",
-		"musicbrainz_id": "MusicBrainz ID",
-		"audiodb_id":     "AudioDB ID",
-		"discogs_id":     "Discogs ID",
-		"wikidata_id":    "Wikidata ID",
-		"deezer_id":      "Deezer ID",
-		"spotify_id":     "Spotify ID",
-		"members":        "Band Members",
-	}
-	if label, ok := labels[field]; ok {
+	if label, ok := historyFieldLabels[field]; ok {
 		return label
 	}
 	// Convert snake_case to Title Case as fallback.

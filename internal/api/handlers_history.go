@@ -35,6 +35,18 @@ func (r *Router) handleListArtistHistory(w http.ResponseWriter, req *http.Reques
 	limit := intQuery(req, "limit", 50)
 	offset := intQuery(req, "offset", 0)
 
+	// Clamp limit and offset here so the response echoes the effective values
+	// that were actually applied, matching the clamping in HistoryService.List.
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 200 {
+		limit = 200
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
 	changes, total, err := r.historyService.List(req.Context(), artistID, limit, offset)
 	if err != nil {
 		r.logger.Error("listing artist history", "artist_id", artistID, "error", err)
@@ -58,9 +70,8 @@ func (r *Router) handleListArtistHistory(w http.ResponseWriter, req *http.Reques
 // handleArtistHistoryTab renders the history tab HTML fragment for HTMX.
 // GET /artists/{id}/history/tab
 func (r *Router) handleArtistHistoryTab(w http.ResponseWriter, req *http.Request) {
-	artistID := req.PathValue("id")
-	if artistID == "" {
-		http.Error(w, "missing artist id", http.StatusBadRequest)
+	artistID, ok := RequirePathParam(w, req, "id")
+	if !ok {
 		return
 	}
 
