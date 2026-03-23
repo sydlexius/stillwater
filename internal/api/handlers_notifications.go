@@ -353,6 +353,11 @@ func (r *Router) handleApplyViolationCandidate(w http.ResponseWriter, req *http.
 		return
 	}
 
+	if a.Locked {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "artist is locked"})
+		return
+	}
+
 	// Download and save the chosen image using platform-aware naming.
 	// Use the candidate's provider source and the violation's rule ID
 	// so provenance tracks where the image actually came from.

@@ -319,6 +319,27 @@ func (s *Service) Search(ctx context.Context, query string) ([]Artist, error) {
 	return artists, nil
 }
 
+// validLockSources enumerates the allowed values for lock_source.
+var validLockSources = map[string]bool{
+	"user":     true,
+	"imported": true,
+}
+
+// Lock sets the metadata lock on an artist with the given source ("user" or "imported").
+// When locked, automated operations (rule fixers, metadata fetchers, image operations)
+// skip the artist. Manual edits remain allowed.
+func (s *Service) Lock(ctx context.Context, id, source string) error {
+	if !validLockSources[source] {
+		return fmt.Errorf("invalid lock source %q: must be \"user\" or \"imported\"", source)
+	}
+	return s.artists.SetLock(ctx, id, true, source)
+}
+
+// Unlock removes the metadata lock from an artist.
+func (s *Service) Unlock(ctx context.Context, id string) error {
+	return s.artists.SetLock(ctx, id, false, "")
+}
+
 // ListMembersByArtistID returns all band members for an artist, ordered by sort_order.
 func (s *Service) ListMembersByArtistID(ctx context.Context, artistID string) ([]BandMember, error) {
 	return s.members.ListByArtistID(ctx, artistID)

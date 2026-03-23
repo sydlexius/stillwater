@@ -13,7 +13,9 @@ const artistColumns = `id, name, sort_name, type, gender, disambiguation,
 	genres, styles, moods,
 	years_active, born, formed, died, disbanded, biography,
 	path, library_id, nfo_exists,
-	health_score, is_excluded, exclusion_reason, is_classical, metadata_sources,
+	health_score, is_excluded, exclusion_reason, is_classical,
+	locked, lock_source, locked_at,
+	metadata_sources,
 	last_scanned_at, created_at, updated_at`
 
 // prefixedArtistColumns returns artistColumns with each column prefixed by the given table alias.
@@ -38,6 +40,8 @@ type scannedArtist struct {
 	nfo             int
 	isExcluded      int
 	isClassical     int
+	locked          int
+	lockedAt        sql.NullString
 	createdAt       string
 	updatedAt       string
 }
@@ -50,6 +54,7 @@ func (s *scannedArtist) scanPtrs() []any {
 		&s.a.YearsActive, &s.a.Born, &s.a.Formed, &s.a.Died, &s.a.Disbanded, &s.a.Biography,
 		&s.a.Path, &s.libraryID, &s.nfo,
 		&s.a.HealthScore, &s.isExcluded, &s.a.ExclusionReason, &s.isClassical,
+		&s.locked, &s.a.LockSource, &s.lockedAt,
 		&s.metadataSources,
 		&s.lastScannedAt,
 		&s.createdAt, &s.updatedAt,
@@ -67,6 +72,11 @@ func (s *scannedArtist) apply() {
 	s.a.NFOExists = s.nfo == 1
 	s.a.IsExcluded = s.isExcluded == 1
 	s.a.IsClassical = s.isClassical == 1
+	s.a.Locked = s.locked == 1
+	if s.lockedAt.Valid {
+		t := dbutil.ParseTime(s.lockedAt.String)
+		s.a.LockedAt = &t
+	}
 	s.a.MetadataSources = UnmarshalStringMap(s.metadataSources)
 	if s.lastScannedAt.Valid {
 		t := dbutil.ParseTime(s.lastScannedAt.String)
@@ -195,6 +205,10 @@ func buildWhereClause(params ListParams) (string, []any) {
 		conditions = append(conditions, "is_excluded = 1")
 	case "not_excluded":
 		conditions = append(conditions, "is_excluded = 0")
+	case "locked":
+		conditions = append(conditions, "locked = 1")
+	case "not_locked":
+		conditions = append(conditions, "locked = 0")
 	case "compliant":
 		conditions = append(conditions, "health_score >= 100")
 	case "non_compliant":

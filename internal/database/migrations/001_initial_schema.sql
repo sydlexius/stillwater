@@ -129,6 +129,9 @@ CREATE TABLE IF NOT EXISTS artists (
     is_excluded INTEGER NOT NULL DEFAULT 0,
     exclusion_reason TEXT NOT NULL DEFAULT '',
     is_classical INTEGER NOT NULL DEFAULT 0,
+    locked INTEGER NOT NULL DEFAULT 0,
+    lock_source TEXT NOT NULL DEFAULT '' CHECK (lock_source IN ('', 'user', 'imported')),
+    locked_at TEXT CHECK (locked = 0 OR (locked = 1 AND locked_at IS NOT NULL)),
     metadata_sources TEXT NOT NULL DEFAULT '{}',
     last_scanned_at TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -138,6 +141,7 @@ CREATE TABLE IF NOT EXISTS artists (
 CREATE INDEX idx_artists_name ON artists(name);
 CREATE INDEX idx_artists_path ON artists(path);
 CREATE INDEX idx_artists_library_id ON artists(library_id);
+CREATE INDEX idx_artists_locked ON artists(locked);
 
 -- =============================================================================
 -- Artist relationships (normalized)

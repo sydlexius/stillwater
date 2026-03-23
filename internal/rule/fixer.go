@@ -111,7 +111,7 @@ func (p *Pipeline) RunRule(ctx context.Context, ruleID string) (*RunResult, erro
 			}
 
 			a := &page[i]
-			if a.IsExcluded {
+			if a.IsExcluded || a.Locked {
 				continue
 			}
 
@@ -246,7 +246,7 @@ func (p *Pipeline) RunRule(ctx context.Context, ruleID string) (*RunResult, erro
 func (p *Pipeline) RunForArtist(ctx context.Context, a *artist.Artist) (*RunResult, error) {
 	result := &RunResult{}
 
-	if a.IsExcluded {
+	if a.IsExcluded || a.Locked {
 		return result, nil
 	}
 
@@ -396,7 +396,7 @@ func (p *Pipeline) RunAll(ctx context.Context) (*RunResult, error) {
 			}
 
 			a := &page[i]
-			if a.IsExcluded {
+			if a.IsExcluded || a.Locked {
 				continue
 			}
 
@@ -565,6 +565,10 @@ func (p *Pipeline) FixViolation(ctx context.Context, violationID string) (*FixRe
 			return &FixResult{RuleID: rv.RuleID, Dismissed: true, Message: "artist deleted; violation dismissed"}, nil
 		}
 		return nil, fmt.Errorf("loading artist %s: %w", rv.ArtistID, err)
+	}
+
+	if a.Locked {
+		return &FixResult{RuleID: rv.RuleID, Fixed: false, Message: "artist is locked"}, nil
 	}
 
 	r, err := p.getCachedRule(ctx, rv.RuleID)

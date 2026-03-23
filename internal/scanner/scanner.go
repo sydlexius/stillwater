@@ -294,7 +294,13 @@ func (s *Service) processDirectory(ctx context.Context, dirPath, name, libraryID
 
 		// Parse NFO if it exists for metadata
 		if detected.NFOExists {
-			s.populateFromNFO(dirPath, a)
+			if s.populateFromNFO(dirPath, a) {
+				// Import lockdata from NFO only for newly discovered artists.
+				a.Locked = true
+				a.LockSource = "imported"
+				now := time.Now().UTC()
+				a.LockedAt = &now
+			}
 		}
 
 		now := time.Now().UTC()
@@ -373,8 +379,9 @@ func (s *Service) processDirectory(ctx context.Context, dirPath, name, libraryID
 				existing.ExclusionReason = ""
 			}
 
-			// Re-parse NFO for updated metadata
-			if detected.NFOExists {
+			// Re-parse NFO for updated metadata. Skip for locked artists
+			// to avoid overwriting user-curated metadata.
+			if detected.NFOExists && !existing.Locked {
 				s.populateFromNFO(dirPath, existing)
 			}
 
@@ -398,19 +405,20 @@ func (s *Service) processDirectory(ctx context.Context, dirPath, name, libraryID
 }
 
 // populateFromNFO parses the artist.nfo file and merges metadata into the artist.
-func (s *Service) populateFromNFO(dirPath string, a *artist.Artist) {
+// Returns true if the parsed NFO contains <lockdata>true</lockdata>.
+func (s *Service) populateFromNFO(dirPath string, a *artist.Artist) bool {
 	nfoPath := filepath.Join(dirPath, "artist.nfo")
 	f, err := os.Open(nfoPath) //nolint:gosec // G304: path is constructed from trusted library root
 	if err != nil {
 		s.logger.Warn("failed to open artist.nfo", "path", nfoPath, "error", err)
-		return
+		return false
 	}
 	defer f.Close() //nolint:errcheck
 
 	parsed, err := nfo.Parse(f)
 	if err != nil {
 		s.logger.Warn("failed to parse artist.nfo", "path", nfoPath, "error", err)
-		return
+		return false
 	}
 
 	converted := nfo.ToArtist(parsed)
@@ -442,6 +450,7 @@ func (s *Service) populateFromNFO(dirPath string, a *artist.Artist) {
 	if converted.Biography != "" {
 		a.Biography = converted.Biography
 	}
+	return parsed.LockData
 }
 
 // recordHealthSnapshot computes the library-wide health score and records it.

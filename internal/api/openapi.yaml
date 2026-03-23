@@ -758,6 +758,114 @@ paths:
                 items:
                   type: object
 
+  /artists/locked:
+    get:
+      tags: [Artists]
+      summary: List locked artists
+      operationId: listLockedArtists
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: sort
+          in: query
+          schema:
+            type: string
+        - name: order
+          in: query
+          schema:
+            type: string
+            enum: [asc, desc]
+      responses:
+        "200":
+          description: Paginated list of locked artists
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  artists:
+                    type: array
+                    items:
+                      type: object
+                  total:
+                    type: integer
+                  page:
+                    type: integer
+                  page_size:
+                    type: integer
+
+  /artists/{id}/lock:
+    post:
+      tags: [Artists]
+      summary: Lock an artist
+      description: Prevents automated operations (rule fixers, metadata fetchers, image operations) from modifying this artist. Manual edits remain allowed.
+      operationId: lockArtist
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Full Artist object with lock state updated
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Full Artist object as returned by GET /artists/{id}
+        "404":
+          description: Artist not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Artist is already locked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      tags: [Artists]
+      summary: Unlock an artist
+      description: Removes the metadata lock, allowing automated operations to modify this artist again.
+      operationId: unlockArtist
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Full Artist object with lock state cleared
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Full Artist object as returned by GET /artists/{id}
+        "404":
+          description: Artist not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Artist is not locked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   /artists/{id}:
     get:
       tags: [Artists]
