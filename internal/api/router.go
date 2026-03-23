@@ -414,7 +414,7 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	// SW_PPROF=true. Using a separate listener ensures pprof is never reachable
 	// via the public-facing port even if accidentally enabled in a container.
 	if pprofEnabled() {
-		pprofOnce.Do(func() { registerPprof(r.logger) })
+		pprofOnce.Do(func() { registerPprof(ctx, r.logger) })
 	} else if v := os.Getenv("SW_PPROF"); v != "" {
 		r.logger.Warn("SW_PPROF is set but not recognized; use '1' or 'true' to enable", "value", v)
 	}
