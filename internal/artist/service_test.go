@@ -1387,6 +1387,9 @@ func TestClearFieldRecordsHistory(t *testing.T) {
 	if c.OldValue != "A test artist." {
 		t.Errorf("OldValue = %q, want %q", c.OldValue, "A test artist.")
 	}
+	if c.NewValue != "" {
+		t.Errorf("NewValue = %q, want empty string", c.NewValue)
+	}
 
 	// Clear biography again (already empty) -- should NOT produce a new entry.
 	if err := svc.ClearField(ctx, a.ID, "biography"); err != nil {
