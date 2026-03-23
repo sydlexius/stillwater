@@ -54,8 +54,10 @@ jobs:
         run: |
           AUTHOR=$(gh pr view "$PR_NUMBER" --repo "$REPO" \
             --json author --jq '.author.login')
-          if [ "$AUTHOR" != "dependabot[bot]" ]; then
-            echo "::warning::PR #$PR_NUMBER author is '$AUTHOR', not dependabot[bot]. Skipping."
+          # gh CLI may return "dependabot[bot]" or "app/dependabot" depending
+          # on the CLI version. Accept both formats.
+          if [ "$AUTHOR" != "dependabot[bot]" ] && [ "$AUTHOR" != "app/dependabot" ]; then
+            echo "::warning::PR #$PR_NUMBER author is '$AUTHOR', not dependabot. Skipping."
             exit 0
           fi
           echo "verified=true" >> "$GITHUB_OUTPUT"
