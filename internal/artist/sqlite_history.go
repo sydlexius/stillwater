@@ -81,6 +81,8 @@ func (r *sqliteHistoryRepo) List(ctx context.Context, artistID string, limit, of
 					"raw_value", createdAtStr,
 					"error", err,
 				)
+				// Use current time as fallback so clients never see a zero-value timestamp.
+				t = time.Now()
 			}
 		}
 		c.CreatedAt = t.UTC()
