@@ -1,0 +1,91 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(go:*)",
+      "Bash(gofmt:*)",
+      "Bash(golangci-lint:*)",
+      "Bash(templ:*)",
+      "Bash(make:*)",
+      "Bash(npm install:*)",
+      "Bash(npx tailwindcss:*)",
+      "Bash(git:*)",
+      "Bash(gh:*)",
+      "Bash(docker:*)",
+      "Bash(jq:*)",
+      "Bash(curl:*)",
+      "Bash(sqlite3:*)",
+      "Bash(pre-commit:*)",
+      "Bash(shellcheck:*)",
+      "Bash(typos:*)",
+      "Bash(./setupdocker.sh:*)",
+      "Bash(./stillwater:*)",
+      "Bash(SW_LOG_LEVEL=debug:*)",
+      "Bash(bash scripts/:*)",
+      "Bash(~/.claude/scripts/:*)",
+      "Skill(prep-pr)",
+      "Skill(check-openapi)",
+      "Skill(handle-review)",
+      "Skill(post-merge-cleanup)",
+      "Skill(smoke)",
+      "Skill(new-issue)",
+      "Skill(review-stack)",
+      "Skill(push-release)",
+      "Skill(commit-commands:commit)",
+      "Skill(commit-commands:commit-push-pr)",
+      "Skill(pr-review-toolkit:review-pr)",
+      "Skill(claude-md-management:revise-claude-md)",
+      "Skill(update-config)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "file=$(echo \"$TOOL_INPUT\" | jq -r '.file_path // empty' 2>/dev/null); if [ -n \"$file\" ]; then if echo \"$file\" | grep -qE 'migrations/[0-9]+_' && ! echo \"$file\" | grep -qE 'migrations/001_'; then echo 'BLOCKED: Do not create new migration files. Modify 001_initial_schema.sql directly (pre-release).' >&2; exit 2; fi; if echo \"$file\" | grep -qE 'encryption\\.key|\\.env\\.uat'; then echo \"BLOCKED: $file contains secrets. Edit manually.\" >&2; exit 2; fi; fi"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "file=$(echo \"$TOOL_INPUT\" | jq -r '.file_path // empty' 2>/dev/null); if [ -n \"$file\" ] && echo \"$file\" | grep -qE 'encryption\\.key|\\.env\\.uat'; then echo \"BLOCKED: $file contains secrets. Edit manually.\" >&2; exit 2; fi"
+          }
+        ]
+      },
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if echo \"$TOOL_INPUT\" | jq -e '.run_in_background == true' >/dev/null 2>&1; then echo 'BLOCKED: Never use run_in_background for agents. They stall on permission prompts. Use superpowers:dispatching-parallel-agents instead.' >&2; exit 2; fi"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "file=$(echo \"$TOOL_INPUT\" | jq -r '.file_path // empty' 2>/dev/null); if [ -n \"$file\" ] && [ -f \"$file\" ]; then case \"$file\" in *.go) gofmt -w \"$file\" 2>/dev/null && echo \"gofmt: $file\" ;; *.templ) PATH=\"$HOME/go/bin:/usr/local/go/bin:$PATH\" templ fmt \"$file\" 2>/dev/null && echo \"templ fmt: $file\" ;; esac; fi"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if echo \"$TOOL_INPUT\" | grep -q 'gh pr merge'; then echo 'PR merged. Run /post-merge-cleanup to update main, clean worktrees, and delete plan files.'; fi"
+          }
+        ]
+      }
+    ]
+  }
+}
