@@ -215,8 +215,14 @@ func (r *Router) executeRefresh(req *http.Request, a *artist.Artist) (*provider.
 		return nil, fmt.Errorf("fetch metadata returned nil result for %s", a.ID)
 	}
 
-	// Apply fetched metadata to the artist
-	applyRefreshResult(a, result)
+	// Apply fetched metadata to the artist using the shared merge helper.
+	if u := artist.FetchResultToUpdate(result); u != nil {
+		artist.ApplyMetadata(a, u, artist.OverwriteAttempted, artist.MergeOptions{
+			AttemptedFields:   result.AttemptedFields,
+			FilterDatesByType: true,
+			Sources:           result.Sources,
+		})
+	}
 
 	if err := r.artistService.Update(req.Context(), a); err != nil {
 		r.logger.Error("saving refreshed metadata failed",
@@ -253,108 +259,6 @@ func (r *Router) executeRefresh(req *http.Request, a *artist.Artist) (*provider.
 	}
 
 	return result, nil
-}
-
-// applyRefreshResult overwrites artist metadata fields from a FetchResult.
-// Only fields that were attempted (at least one provider was successfully queried)
-// are overwritten -- including clearing fields that providers returned empty.
-// Fields that were not attempted (e.g., provider was down) are left untouched.
-// After applying provider data, type-inappropriate date fields are cleared
-// unconditionally via filterDatesByArtistType (regardless of AttemptedFields).
-func applyRefreshResult(a *artist.Artist, result *provider.FetchResult) {
-	if result.Metadata == nil {
-		return
-	}
-	m := result.Metadata
-
-	attempted := make(map[string]bool, len(result.AttemptedFields))
-	for _, f := range result.AttemptedFields {
-		attempted[f] = true
-	}
-
-	// Overwrite attempted metadata fields (even if empty = clear).
-	if attempted["biography"] {
-		a.Biography = m.Biography
-	}
-	if attempted["genres"] {
-		a.Genres = m.Genres
-	}
-	if attempted["styles"] {
-		a.Styles = m.Styles
-	}
-	if attempted["moods"] {
-		a.Moods = m.Moods
-	}
-	if attempted["formed"] {
-		a.Formed = m.Formed
-	}
-	if attempted["born"] {
-		a.Born = m.Born
-	}
-	if attempted["died"] {
-		a.Died = m.Died
-	}
-	if attempted["disbanded"] {
-		a.Disbanded = m.Disbanded
-	}
-
-	// Type and gender: only overwrite with non-empty values (clearing these
-	// would lose classification data that no other field can recover).
-	if m.Type != "" {
-		a.Type = m.Type
-	}
-	if m.Gender != "" {
-		a.Gender = m.Gender
-	}
-	if m.YearsActive != "" {
-		a.YearsActive = m.YearsActive
-	}
-
-	// Provider IDs: only fill empty slots, never overwrite or clear.
-	if m.MusicBrainzID != "" && a.MusicBrainzID == "" {
-		a.MusicBrainzID = m.MusicBrainzID
-	}
-	if m.AudioDBID != "" && a.AudioDBID == "" {
-		a.AudioDBID = m.AudioDBID
-	}
-	if m.DiscogsID != "" && a.DiscogsID == "" {
-		a.DiscogsID = m.DiscogsID
-	}
-	if m.WikidataID != "" && a.WikidataID == "" {
-		a.WikidataID = m.WikidataID
-	}
-	if m.DeezerID != "" && a.DeezerID == "" {
-		a.DeezerID = m.DeezerID
-	}
-	if m.SpotifyID != "" && a.SpotifyID == "" {
-		a.SpotifyID = m.SpotifyID
-	}
-
-	// Type-aware date filtering: clear semantically inappropriate date fields.
-	filterDatesByArtistType(a)
-
-	// Update metadata sources.
-	if a.MetadataSources == nil {
-		a.MetadataSources = make(map[string]string)
-	}
-	for _, src := range result.Sources {
-		a.MetadataSources[src.Field] = string(src.Provider)
-	}
-}
-
-// filterDatesByArtistType clears date fields that are semantically wrong for
-// the artist's type. Solo/person artists should not have formed/disbanded;
-// group/orchestra/choir artists should not have born/died.
-func filterDatesByArtistType(a *artist.Artist) {
-	switch a.Type {
-	case "solo", "person", "character":
-		a.Formed = ""
-		a.Disbanded = ""
-	case "group", "orchestra", "choir":
-		a.Born = ""
-		a.Died = ""
-	}
-	// Unknown or empty type: no filtering.
 }
 
 // convertProviderMembers converts provider MemberInfo to artist BandMember models.

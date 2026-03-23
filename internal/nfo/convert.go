@@ -30,29 +30,40 @@ func ToArtist(n *ArtistNFO) *artist.Artist {
 	}
 }
 
+// ToMetadataUpdate converts an ArtistNFO into a MetadataUpdate suitable for
+// passing to artist.ApplyMetadata. All NFO metadata fields are mapped; the
+// caller chooses the MergeStrategy.
+func ToMetadataUpdate(n *ArtistNFO) *artist.MetadataUpdate {
+	return &artist.MetadataUpdate{
+		Name:           n.Name,
+		SortName:       n.SortName,
+		Type:           n.Type,
+		Gender:         n.Gender,
+		Disambiguation: n.Disambiguation,
+		MusicBrainzID:  n.MusicBrainzArtistID,
+		AudioDBID:      n.AudioDBArtistID,
+		DiscogsID:      n.DiscogsArtistID,
+		WikidataID:     n.WikidataID,
+		DeezerID:       n.DeezerArtistID,
+		SpotifyID:      n.SpotifyArtistID,
+		Biography:      n.Biography,
+		Genres:         n.Genres,
+		Styles:         n.Styles,
+		Moods:          n.Moods,
+		YearsActive:    n.YearsActive,
+		Born:           n.Born,
+		Formed:         n.Formed,
+		Died:           n.Died,
+		Disbanded:      n.Disbanded,
+	}
+}
+
 // ApplyNFOToArtist maps ArtistNFO fields onto an existing Artist,
 // preserving non-NFO fields (ID, Path, LibraryID, image flags, timestamps, etc.).
+// Uses SnapshotRestore strategy (unconditional overwrite of all metadata fields).
 func ApplyNFOToArtist(n *ArtistNFO, a *artist.Artist) {
-	a.Name = n.Name
-	a.SortName = n.SortName
-	a.Type = n.Type
-	a.Gender = n.Gender
-	a.Disambiguation = n.Disambiguation
-	a.MusicBrainzID = n.MusicBrainzArtistID
-	a.AudioDBID = n.AudioDBArtistID
-	a.DiscogsID = n.DiscogsArtistID
-	a.WikidataID = n.WikidataID
-	a.DeezerID = n.DeezerArtistID
-	a.SpotifyID = n.SpotifyArtistID
-	a.Genres = n.Genres
-	a.Styles = n.Styles
-	a.Moods = n.Moods
-	a.YearsActive = n.YearsActive
-	a.Born = n.Born
-	a.Formed = n.Formed
-	a.Died = n.Died
-	a.Disbanded = n.Disbanded
-	a.Biography = n.Biography
+	u := ToMetadataUpdate(n)
+	artist.ApplyMetadata(a, u, artist.SnapshotRestore, artist.MergeOptions{})
 }
 
 // FromArtist converts a domain Artist model to an ArtistNFO.

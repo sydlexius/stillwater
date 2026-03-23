@@ -209,46 +209,17 @@ func (e *BulkExecutor) fetchMetadata(ctx context.Context, a *artist.Artist, mode
 		return BulkItemFailed, fmt.Sprintf("fetch failed: %v", err)
 	}
 
-	if result.Metadata == nil {
+	u := artist.FetchResultToUpdate(result)
+	if u == nil {
 		return BulkItemSkipped, "no metadata returned"
 	}
 
-	changed := false
-
-	if a.MusicBrainzID == "" && result.Metadata.MusicBrainzID != "" {
-		if mode == BulkModeManual {
-			return BulkItemSkipped, "manual mode: skipped MBID assignment"
-		}
-		a.MusicBrainzID = result.Metadata.MusicBrainzID
-		changed = true
+	// In manual mode, do not assign MBID through the merge helper.
+	if mode == BulkModeManual && a.MusicBrainzID == "" && u.MusicBrainzID != "" {
+		return BulkItemSkipped, "manual mode: skipped MBID assignment"
 	}
 
-	if a.Biography == "" && result.Metadata.Biography != "" {
-		a.Biography = result.Metadata.Biography
-		changed = true
-	}
-
-	if a.AudioDBID == "" && result.Metadata.AudioDBID != "" {
-		a.AudioDBID = result.Metadata.AudioDBID
-		changed = true
-	}
-	if a.DiscogsID == "" && result.Metadata.DiscogsID != "" {
-		a.DiscogsID = result.Metadata.DiscogsID
-		changed = true
-	}
-	if a.WikidataID == "" && result.Metadata.WikidataID != "" {
-		a.WikidataID = result.Metadata.WikidataID
-		changed = true
-	}
-	if a.DeezerID == "" && result.Metadata.DeezerID != "" {
-		a.DeezerID = result.Metadata.DeezerID
-		changed = true
-	}
-	if len(a.Genres) == 0 && len(result.Metadata.Genres) > 0 {
-		a.Genres = result.Metadata.Genres
-		changed = true
-	}
-
+	changed := artist.ApplyMetadata(a, u, artist.FillEmpty, artist.MergeOptions{})
 	if !changed {
 		return BulkItemSkipped, "no new metadata to apply"
 	}
