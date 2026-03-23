@@ -627,20 +627,23 @@ func TestParse_InvalidXMLNameSkipped(t *testing.T) {
 	// lenient decoder but produce invalid XML when re-serialized. The parser
 	// must silently drop them so the round-trip stays intact.
 	tests := []struct {
-		name  string
-		input string
+		name      string
+		input     string
+		mayReject bool // true if the lenient parser may reject the input itself
 	}{
 		{
 			name:  "namespace with digit local name",
 			input: "<artist><name>Test</name><A:0></A:0></artist>",
 		},
 		{
-			name:  "digit-only element name",
-			input: "<artist><name>Test</name><123>value</123></artist>",
+			name:      "digit-only element name",
+			input:     "<artist><name>Test</name><123>value</123></artist>",
+			mayReject: true, // not well-formed XML
 		},
 		{
-			name:  "namespace with digit local name no content",
-			input: "<artist><A:0></artist>",
+			name:      "namespace with digit local name no content",
+			input:     "<artist><A:0></artist>",
+			mayReject: true, // unclosed element
 		},
 	}
 
@@ -648,9 +651,10 @@ func TestParse_InvalidXMLNameSkipped(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			nfo1, err := Parse(strings.NewReader(tt.input))
 			if err != nil {
-				// If the lenient parser itself rejects this input, that is also
-				// acceptable -- the key property is "no panic, no broken round-trip".
-				t.Skipf("parser rejected input (acceptable): %v", err)
+				if tt.mayReject {
+					t.Skipf("parser rejected malformed input (acceptable): %v", err)
+				}
+				t.Fatalf("Parse failed on well-formed input: %v", err)
 			}
 
 			// Invalid-name elements must not appear in ExtraElements.

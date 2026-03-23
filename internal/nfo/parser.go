@@ -452,16 +452,10 @@ func parseBoolString(s string) bool {
 // isValidXMLName reports whether an xml.Name can be safely re-serialized by
 // the standard library's xml.Encoder. The XML spec requires that element names
 // begin with a letter or underscore; subsequent characters may also include
-// digits, hyphens, and periods. Both the local name and the namespace (Space)
-// are checked when present.
+// digits, hyphens, and periods. Only the local name is validated here; the
+// Space field in encoding/xml holds the namespace URI, not an XML Name.
 func isValidXMLName(name xml.Name) bool {
-	if !isValidXMLNameString(name.Local) {
-		return false
-	}
-	if name.Space != "" && !isValidXMLNameString(name.Space) {
-		return false
-	}
-	return true
+	return isValidXMLNameString(name.Local)
 }
 
 // isValidXMLNameString checks whether s is a valid XML Name production.
