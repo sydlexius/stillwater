@@ -1,7 +1,10 @@
 package api
 
 import (
+	"context"
+	"errors"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/pprof"
 	"os"
@@ -28,13 +31,16 @@ func pprofEnabled() bool {
 // never reachable via the public-facing port even if accidentally enabled
 // in a container.
 //
+// When the provided context is canceled, the server is shut down gracefully
+// with a 5-second deadline, allowing in-flight profile captures to finish.
+//
 // Usage (with the server running and SW_PPROF=1):
 //
 //	go tool pprof http://localhost:6060/debug/pprof/profile?seconds=30
 //	go tool pprof http://localhost:6060/debug/pprof/heap
 //	go tool pprof http://localhost:6060/debug/pprof/goroutine
 //	go tool pprof http://localhost:6060/debug/pprof/allocs
-func registerPprof(logger *slog.Logger) {
+func registerPprof(ctx context.Context, logger *slog.Logger) {
 	pprofMux := http.NewServeMux()
 	pprofMux.HandleFunc("/debug/pprof/", pprof.Index)
 	pprofMux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
@@ -42,16 +48,42 @@ func registerPprof(logger *slog.Logger) {
 	pprofMux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
 	pprofMux.HandleFunc("/debug/pprof/trace", pprof.Trace)
 
+	addr := "127.0.0.1:6060"
+	srv := &http.Server{
+		Handler:      pprofMux,
+		ReadTimeout:  60 * time.Second,
+		WriteTimeout: 120 * time.Second, // profile endpoints can take up to 60s
+	}
+
+	// Bind synchronously so port conflicts are reported immediately during
+	// startup rather than asynchronously in a goroutine.
+	var lc net.ListenConfig
+	ln, err := lc.Listen(ctx, "tcp", addr)
+	if err != nil {
+		logger.Error("pprof listener failed to bind", "addr", addr, "error", err)
+		return
+	}
+	logger.Warn("pprof endpoints enabled", "addr", addr)
+
+	// Shutdown goroutine: waits for context cancellation, then drains
+	// in-flight requests with a 5-second deadline. Uses context.WithoutCancel
+	// to derive a non-canceled context for the shutdown deadline rather than
+	// context.Background, preserving request-scoped values (gosec G118).
 	go func() {
-		addr := "127.0.0.1:6060"
-		logger.Warn("pprof endpoints enabled", "addr", addr)
-		srv := &http.Server{
-			Addr:         addr,
-			Handler:      pprofMux,
-			ReadTimeout:  60 * time.Second,
-			WriteTimeout: 120 * time.Second, // profile endpoints can take up to 60s
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			logger.Error("pprof shutdown error", "error", err)
+		} else {
+			logger.Info("pprof listener stopped")
 		}
-		if err := srv.ListenAndServe(); err != nil {
+	}()
+
+	// Serve blocks until the server is shut down. ErrServerClosed is the
+	// expected result of a graceful Shutdown call -- not an error.
+	go func() {
+		if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			logger.Error("pprof listener failed", "error", err)
 		}
 	}()
