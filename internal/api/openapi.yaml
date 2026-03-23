@@ -816,22 +816,12 @@ paths:
             type: string
       responses:
         "200":
-          description: Artist locked successfully
+          description: Full Artist object with lock state updated
           content:
             application/json:
               schema:
                 type: object
-                properties:
-                  id:
-                    type: string
-                  locked:
-                    type: boolean
-                  lock_source:
-                    type: string
-                    enum: [user, imported]
-                  locked_at:
-                    type: string
-                    format: date-time
+                description: Full Artist object as returned by GET /artists/{id}
         "404":
           description: Artist not found
           content:
@@ -857,22 +847,12 @@ paths:
             type: string
       responses:
         "200":
-          description: Artist unlocked successfully
+          description: Full Artist object with lock state cleared
           content:
             application/json:
               schema:
                 type: object
-                properties:
-                  id:
-                    type: string
-                  locked:
-                    type: boolean
-                  lock_source:
-                    type: string
-                  locked_at:
-                    type: string
-                    format: date-time
-                    nullable: true
+                description: Full Artist object as returned by GET /artists/{id}
         "404":
           description: Artist not found
           content:
