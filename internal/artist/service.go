@@ -4,8 +4,42 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"strings"
 )
+
+// ctxKey is the type for context value keys used by the artist package.
+type ctxKey string
+
+// sourceKey carries the history source through context so callers (e.g.
+// refresh handlers) can tag changes with "provider:musicbrainz" etc. without
+// changing method signatures.
+const sourceKey ctxKey = "history_source"
+
+// ContextWithSource returns a child context that carries the given history
+// source string. When the Service records metadata changes, it reads this
+// value to populate the MetadataChange.Source field.
+func ContextWithSource(ctx context.Context, source string) context.Context {
+	return context.WithValue(ctx, sourceKey, source)
+}
+
+// sourceFromContext extracts the history source from ctx, defaulting to
+// "manual" when no source has been set.
+func sourceFromContext(ctx context.Context) string {
+	if v, ok := ctx.Value(sourceKey).(string); ok && v != "" {
+		return v
+	}
+	return "manual"
+}
+
+// trackableFields lists the metadata fields that are tracked by the history
+// system when Update() is called. These correspond to the editable fields
+// exposed by the field-level API.
+var trackableFields = []string{
+	"biography", "genres", "styles", "moods",
+	"formed", "born", "disbanded", "died",
+	"years_active", "type", "gender",
+}
 
 // Service provides artist and band member data operations.
 type Service struct {
@@ -16,6 +50,17 @@ type Service struct {
 	images       ImageRepository
 	platformIDs  PlatformIDRepository
 	completeness CompletenessRepository
+	history      *HistoryService
+}
+
+// SetHistoryService attaches a HistoryService to the artist Service so that
+// metadata mutations automatically record change history. This is a setter
+// rather than a constructor parameter to avoid breaking existing NewService
+// and NewServiceWithRepos call sites.
+//
+// Must be called before the HTTP server starts accepting requests.
+func (s *Service) SetHistoryService(h *HistoryService) {
+	s.history = h
 }
 
 // NewService creates an artist service backed by SQLite.
@@ -199,10 +244,45 @@ func (s *Service) List(ctx context.Context, params ListParams) ([]Artist, int, e
 // we cannot rollback the artist update (the old data is already overwritten).
 // In practice this is acceptable because the normalized tables use
 // delete-then-insert which is idempotent, and the next Update call will retry.
+//
+// When a HistoryService is attached, Update diffs every trackable field
+// between the old and new artist values and records a MetadataChange for
+// each field that changed. History recording is best-effort: failures are
+// logged but do not cause the update to fail.
 func (s *Service) Update(ctx context.Context, a *Artist) error {
+	// Snapshot the old state before writing, so we can diff after the update.
+	var old *Artist
+	if s.history != nil {
+		var err error
+		old, err = s.artists.GetByID(ctx, a.ID)
+		if err != nil {
+			// Artist may not exist yet (first insert via Update), or DB error.
+			// Either way, skip history recording rather than blocking the update.
+			slog.Warn("history: could not fetch old artist for diff",
+				"artist_id", a.ID, "error", err)
+			old = nil
+		}
+	}
+
 	if err := s.artists.Update(ctx, a); err != nil {
 		return err
 	}
+
+	// Record field-level changes after the successful update.
+	if s.history != nil && old != nil {
+		source := sourceFromContext(ctx)
+		for _, field := range trackableFields {
+			oldVal := FieldValueFromArtist(old, field)
+			newVal := FieldValueFromArtist(a, field)
+			if oldVal != newVal {
+				if err := s.history.Record(ctx, a.ID, field, oldVal, newVal, source); err != nil {
+					slog.Warn("history: failed to record change",
+						"artist_id", a.ID, "field", field, "error", err)
+				}
+			}
+		}
+	}
+
 	return s.persistNormalized(ctx, a)
 }
 
@@ -233,13 +313,92 @@ func IsEditableField(field string) bool {
 // UpdateField updates a single metadata field on an artist record.
 // For slice fields (genres, styles, moods), the value is a comma-separated
 // string that gets marshaled to a JSON array for storage.
+//
+// When a HistoryService is attached, the old value is read before the update
+// and a MetadataChange is recorded if the value changed. History recording is
+// best-effort and will not cause the update to fail.
 func (s *Service) UpdateField(ctx context.Context, id, field, value string) error {
-	return s.artists.UpdateField(ctx, id, field, value)
+	// Capture old value before the mutation so we can record the diff.
+	var oldValue string
+	if s.history != nil {
+		a, err := s.artists.GetByID(ctx, id)
+		if err != nil {
+			slog.Warn("history: could not fetch artist for UpdateField diff",
+				"artist_id", id, "field", field, "error", err)
+		} else {
+			oldValue = FieldValueFromArtist(a, field)
+		}
+	}
+
+	if err := s.artists.UpdateField(ctx, id, field, value); err != nil {
+		return err
+	}
+
+	// Record the change by comparing normalized representations. Re-fetch
+	// after the mutation so both old and new use FieldValueFromArtist, avoiding
+	// format mismatches for slice fields (e.g. "Rock, Alternative" vs "Rock,Alternative").
+	if s.history != nil {
+		newA, err := s.artists.GetByID(ctx, id)
+		if err != nil {
+			slog.Warn("history: could not fetch artist after UpdateField",
+				"artist_id", id, "field", field, "error", err)
+		} else {
+			newValue := FieldValueFromArtist(newA, field)
+			if oldValue != newValue {
+				source := sourceFromContext(ctx)
+				if err := s.history.Record(ctx, id, field, oldValue, newValue, source); err != nil {
+					slog.Warn("history: failed to record UpdateField change",
+						"artist_id", id, "field", field, "error", err)
+				}
+			}
+		}
+	}
+
+	return nil
 }
 
 // ClearField sets a single metadata field to its zero value.
+//
+// When a HistoryService is attached, the old value is read before clearing
+// and a MetadataChange is recorded if the field was non-empty. History
+// recording is best-effort and will not cause the clear to fail.
 func (s *Service) ClearField(ctx context.Context, id, field string) error {
-	return s.artists.ClearField(ctx, id, field)
+	// Capture old value before clearing so we can record the diff.
+	var oldValue string
+	if s.history != nil {
+		a, err := s.artists.GetByID(ctx, id)
+		if err != nil {
+			slog.Warn("history: could not fetch artist for ClearField diff",
+				"artist_id", id, "field", field, "error", err)
+		} else {
+			oldValue = FieldValueFromArtist(a, field)
+		}
+	}
+
+	if err := s.artists.ClearField(ctx, id, field); err != nil {
+		return err
+	}
+
+	// Record the change only if the field was non-empty before clearing.
+	// Use FieldValueFromArtist on the post-clear state for consistent representation.
+	if s.history != nil && oldValue != "" {
+		newA, err := s.artists.GetByID(ctx, id)
+		if err != nil {
+			slog.Warn("history: could not fetch artist after ClearField",
+				"artist_id", id, "field", field, "error", err)
+		} else {
+			newValue := FieldValueFromArtist(newA, field)
+			if oldValue != newValue {
+				source := sourceFromContext(ctx)
+				if err := s.history.Record(ctx, id, field, oldValue, newValue, source); err != nil {
+					slog.Warn("history: failed to record ClearField change",
+						"artist_id", id, "field", field, "error", err)
+				}
+			}
+		}
+	}
+
+	return nil
 }
 
 // FieldValueFromArtist extracts a single field's value from an Artist struct.

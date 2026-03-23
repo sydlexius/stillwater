@@ -152,6 +152,7 @@ func run() error {
 	authService := auth.NewService(db)
 	artistService := artist.NewService(db)
 	historyService := artist.NewHistoryService(db)
+	artistService.SetHistoryService(historyService)
 	platformService := platform.NewService(db)
 	connectionService := connection.NewService(db, encryptor)
 

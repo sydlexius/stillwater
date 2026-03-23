@@ -225,6 +225,19 @@ CREATE TABLE IF NOT EXISTS nfo_snapshots (
 
 CREATE INDEX idx_nfo_snapshots_artist_id ON nfo_snapshots(artist_id);
 
+-- Tracks individual field-level metadata changes for each artist.
+CREATE TABLE IF NOT EXISTS metadata_changes (
+    id         TEXT PRIMARY KEY,
+    artist_id  TEXT NOT NULL REFERENCES artists(id) ON DELETE CASCADE,
+    field      TEXT NOT NULL,
+    old_value  TEXT NOT NULL DEFAULT '',
+    new_value  TEXT NOT NULL DEFAULT '',
+    source     TEXT NOT NULL DEFAULT 'manual',
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+
+CREATE INDEX idx_metadata_changes_artist ON metadata_changes(artist_id, created_at DESC);
+
 -- =============================================================================
 -- Rule engine
 -- =============================================================================
@@ -391,6 +404,7 @@ DROP TABLE IF EXISTS bulk_jobs;
 DROP TABLE IF EXISTS rule_violations;
 DROP TABLE IF EXISTS rules;
 DROP TABLE IF EXISTS health_history;
+DROP TABLE IF EXISTS metadata_changes;
 DROP TABLE IF EXISTS nfo_snapshots;
 DROP TABLE IF EXISTS band_members;
 DROP TABLE IF EXISTS artist_aliases;
