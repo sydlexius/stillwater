@@ -108,7 +108,11 @@ func ApplyMetadata(a *Artist, u *MetadataUpdate, strategy MergeStrategy, opts Me
 			a.MetadataSources = make(map[string]string)
 		}
 		for _, src := range opts.Sources {
-			a.MetadataSources[src.Field] = string(src.Provider)
+			val := string(src.Provider)
+			if a.MetadataSources[src.Field] != val {
+				a.MetadataSources[src.Field] = val
+				changed = true
+			}
 		}
 	}
 
@@ -354,7 +358,8 @@ func fillEmptySlice(dst *[]string, val []string) bool {
 	return true
 }
 
-// slicesEqual returns true if two string slices contain the same elements.
+// slicesEqual returns true if two string slices have the same length and
+// identical elements in the same order.
 func slicesEqual(a, b []string) bool {
 	if len(a) != len(b) {
 		return false
