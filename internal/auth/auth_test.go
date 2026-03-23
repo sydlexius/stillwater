@@ -59,7 +59,7 @@ func TestPrehashPassword(t *testing.T) {
 		{"simple password", "hello"},
 		{"empty password", ""},
 		{"long password that exceeds bcrypt 72 byte limit", strings.Repeat("a", 200)},
-		{"unicode password", "p@ssw0rd-with-unicode"},
+		{"unicode password", "p\u00e4ssw\u00f8rd-\u5bc6\u78bc"},
 	}
 
 	for _, tt := range tests {
@@ -1109,8 +1109,8 @@ func TestFullTokenLifecycle(t *testing.T) {
 // --- Sentinel error tests ---
 
 func TestSentinelErrors(t *testing.T) {
-	// Verify sentinel errors have distinct messages.
-	errors := []struct {
+	// Verify sentinel errors have distinct, non-empty messages.
+	sentinels := []struct {
 		name string
 		err  error
 	}{
@@ -1119,14 +1119,20 @@ func TestSentinelErrors(t *testing.T) {
 		{"ErrTokenActive", ErrTokenActive},
 	}
 
-	for _, e := range errors {
+	seen := map[string]string{}
+	for _, e := range sentinels {
 		t.Run(e.name, func(t *testing.T) {
 			if e.err == nil {
 				t.Error("sentinel error should not be nil")
 			}
-			if e.err.Error() == "" {
+			msg := e.err.Error()
+			if msg == "" {
 				t.Error("sentinel error message should not be empty")
 			}
+			if prev, ok := seen[msg]; ok {
+				t.Errorf("duplicate message %q: used by both %s and %s", msg, prev, e.name)
+			}
+			seen[msg] = e.name
 		})
 	}
 }

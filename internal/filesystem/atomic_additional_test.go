@@ -92,8 +92,8 @@ func TestCopyFile_SourceNotExist(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for nonexistent source")
 	}
-	if !os.IsNotExist(err) {
-		t.Errorf("expected IsNotExist error, got: %v", err)
+	if !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("expected ErrNotExist, got: %v", err)
 	}
 }
 
@@ -109,6 +109,9 @@ func TestCopyFile_DestDirNotExist(t *testing.T) {
 	err := copyFile(src, dst)
 	if err == nil {
 		t.Fatal("expected error when dest directory does not exist")
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("expected ErrNotExist, got: %v", err)
 	}
 }
 
@@ -248,11 +251,15 @@ func TestWriteReaderAtomic_ErrorReader(t *testing.T) {
 	target := filepath.Join(dir, "error_reader.txt")
 
 	// Create a reader that always returns an error.
-	errReader := &failingReader{err: errors.New("read failure")}
+	readErr := errors.New("read failure")
+	errReader := &failingReader{err: readErr}
 
 	err := WriteReaderAtomic(target, errReader, 0o644)
 	if err == nil {
 		t.Fatal("expected error from failing reader")
+	}
+	if !errors.Is(err, readErr) {
+		t.Errorf("expected wrapped read error, got: %v", err)
 	}
 	if !bytes.Contains([]byte(err.Error()), []byte("reading source data")) {
 		t.Errorf("error = %q, want to contain 'reading source data'", err.Error())
@@ -392,6 +399,9 @@ func TestCopyDirRecursive_SourceNotExist(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for nonexistent source")
 	}
+	if !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("expected ErrNotExist, got: %v", err)
+	}
 }
 
 // --- RenameDirAtomic additional tests ---
@@ -404,6 +414,9 @@ func TestRenameDirAtomic_SourceNotExist(t *testing.T) {
 	err := RenameDirAtomic(src, dst)
 	if err == nil {
 		t.Fatal("expected error for nonexistent source")
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("expected ErrNotExist, got: %v", err)
 	}
 }
 
@@ -549,6 +562,16 @@ func TestProbeSymlinkSupport_CleanupAfterProbe(t *testing.T) {
 	}
 }
 
+// nonSeekReader wraps an io.Reader to hide any io.Seeker interface,
+// ensuring tests exercise the non-seekable code path.
+type nonSeekReader struct {
+	r io.Reader
+}
+
+func (n *nonSeekReader) Read(p []byte) (int, error) {
+	return n.r.Read(p)
+}
+
 // Verify that WriteReaderAtomic works with an io.Reader that does not
 // implement io.Seeker (ensuring it does not require seekability).
 func TestWriteReaderAtomic_NonSeekableReader(t *testing.T) {
@@ -556,15 +579,10 @@ func TestWriteReaderAtomic_NonSeekableReader(t *testing.T) {
 	target := filepath.Join(dir, "pipe.txt")
 
 	data := []byte("piped data content")
-	pr, pw := io.Pipe()
+	r := &nonSeekReader{r: bytes.NewReader(data)}
 
-	go func() {
-		_, _ = pw.Write(data)
-		pw.Close()
-	}()
-
-	if err := WriteReaderAtomic(target, pr, 0o644); err != nil {
-		t.Fatalf("WriteReaderAtomic with pipe: %v", err)
+	if err := WriteReaderAtomic(target, r, 0o644); err != nil {
+		t.Fatalf("WriteReaderAtomic with non-seekable reader: %v", err)
 	}
 
 	got, err := os.ReadFile(target)
