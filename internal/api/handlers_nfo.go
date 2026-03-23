@@ -188,7 +188,12 @@ func (r *Router) handleNFOSnapshotRestore(w http.ResponseWriter, req *http.Reque
 		return
 	}
 
-	// Update artist flags and push metadata to connected platforms.
+	// Parse the restored snapshot and apply its fields to the artist struct
+	// so that PushMetadataAsync sends the restored values, not the pre-restore
+	// state. This mirrors the pathless branch logic above.
+	if snapNFO, parseErr := nfo.Parse(strings.NewReader(snap.Content)); parseErr == nil {
+		nfo.ApplyNFOToArtist(snapNFO, a)
+	}
 	a.NFOExists = true
 	if err := r.artistService.Update(req.Context(), a); err != nil {
 		r.logger.Warn("updating artist after nfo restore", "artist_id", artistID, "error", err)
