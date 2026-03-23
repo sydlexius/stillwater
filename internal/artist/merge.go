@@ -1,6 +1,8 @@
 package artist
 
 import (
+	"slices"
+
 	"github.com/sydlexius/stillwater/internal/provider"
 )
 
@@ -342,7 +344,7 @@ func fillEmpty(dst *string, val string) bool {
 
 // setSlice unconditionally replaces *dst with val. Returns true if changed.
 func setSlice(dst *[]string, val []string) bool {
-	if slicesEqual(*dst, val) {
+	if slices.Equal(*dst, val) {
 		return false
 	}
 	*dst = val
@@ -355,19 +357,5 @@ func fillEmptySlice(dst *[]string, val []string) bool {
 		return false
 	}
 	*dst = val
-	return true
-}
-
-// slicesEqual returns true if two string slices have the same length and
-// identical elements in the same order.
-func slicesEqual(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
 	return true
 }
