@@ -621,6 +621,63 @@ func TestParse_StillwaterMissingAttributes(t *testing.T) {
 	}
 }
 
+func TestParse_InvalidXMLNameSkipped(t *testing.T) {
+	// Regression test for #627: elements with namespace-qualified names where
+	// the local part starts with a digit (e.g., <A:0>) are accepted by the
+	// lenient decoder but produce invalid XML when re-serialized. The parser
+	// must silently drop them so the round-trip stays intact.
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{
+			name:  "namespace with digit local name",
+			input: "<artist><name>Test</name><A:0></A:0></artist>",
+		},
+		{
+			name:  "digit-only element name",
+			input: "<artist><name>Test</name><123>value</123></artist>",
+		},
+		{
+			name:  "namespace with digit local name no content",
+			input: "<artist><A:0></artist>",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			nfo1, err := Parse(strings.NewReader(tt.input))
+			if err != nil {
+				// If the lenient parser itself rejects this input, that is also
+				// acceptable -- the key property is "no panic, no broken round-trip".
+				t.Skipf("parser rejected input (acceptable): %v", err)
+			}
+
+			// Invalid-name elements must not appear in ExtraElements.
+			for _, extra := range nfo1.ExtraElements {
+				if extra.Name == "0" || extra.Name == "123" {
+					t.Errorf("ExtraElements contains invalid-name element %q", extra.Name)
+				}
+			}
+
+			// Write and re-parse must succeed (round-trip).
+			var buf bytes.Buffer
+			if err := Write(&buf, nfo1); err != nil {
+				t.Fatalf("Write failed: %v", err)
+			}
+
+			nfo2, err := Parse(bytes.NewReader(buf.Bytes()))
+			if err != nil {
+				t.Fatalf("re-parse failed (round-trip broken): %v", err)
+			}
+
+			if nfo1.Name != nfo2.Name {
+				t.Errorf("name mismatch after round-trip: %q vs %q", nfo1.Name, nfo2.Name)
+			}
+		})
+	}
+}
+
 func TestStripBOM(t *testing.T) {
 	tests := []struct {
 		name string
