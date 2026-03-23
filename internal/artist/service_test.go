@@ -1304,8 +1304,8 @@ func TestUpdateRecordsHistory(t *testing.T) {
 	}
 
 	// biography and genres changed; type stayed the same.
-	if total < 2 {
-		t.Errorf("expected at least 2 history entries, got %d", total)
+	if total != 2 {
+		t.Fatalf("expected exactly 2 history entries, got %d", total)
 	}
 
 	fieldsSeen := map[string]bool{}
@@ -1323,6 +1323,9 @@ func TestUpdateRecordsHistory(t *testing.T) {
 	}
 	if !fieldsSeen["genres"] {
 		t.Error("expected history entry for genres")
+	}
+	if fieldsSeen["type"] {
+		t.Error("did not expect history entry for unchanged field type")
 	}
 }
 
