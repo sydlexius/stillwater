@@ -827,23 +827,23 @@ func RefreshOOBFragments(data RefreshOOBData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = providerID("MusicBrainz", data.Artist.MusicBrainzID, nil).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = FieldDisplay(&data.Artist, "musicbrainz_id", data.FieldProviders["musicbrainz_id"]).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = providerID("AudioDB", data.Artist.AudioDBID, data.Artist.AudioDBIDFetchedAt).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = FieldDisplay(&data.Artist, "audiodb_id", data.FieldProviders["audiodb_id"]).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = providerID("Discogs", data.Artist.DiscogsID, data.Artist.DiscogsIDFetchedAt).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = FieldDisplay(&data.Artist, "discogs_id", data.FieldProviders["discogs_id"]).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = providerID("Wikidata", data.Artist.WikidataID, data.Artist.WikidataIDFetchedAt).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = FieldDisplay(&data.Artist, "wikidata_id", data.FieldProviders["wikidata_id"]).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = providerID("Deezer", data.Artist.DeezerID, nil).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = FieldDisplay(&data.Artist, "deezer_id", data.FieldProviders["deezer_id"]).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

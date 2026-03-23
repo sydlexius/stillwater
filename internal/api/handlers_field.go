@@ -96,7 +96,21 @@ func (r *Router) handleFieldUpdate(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	if err := r.artistService.UpdateField(req.Context(), artistID, field, value); err != nil {
+	if err := artist.ValidateFieldUpdate(field, value); err != nil {
+		r.logger.Warn("field validation failed",
+			slog.String("field", field),
+			slog.String("artist_id", artistID),
+			slog.String("error", err.Error()))
+		writeError(w, req, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if artist.IsProviderIDField(field) {
+		if err := r.artistService.UpdateProviderField(req.Context(), artistID, field, value); err != nil {
+			writeError(w, req, http.StatusInternalServerError, "failed to update field")
+			return
+		}
+	} else if err := r.artistService.UpdateField(req.Context(), artistID, field, value); err != nil {
 		writeError(w, req, http.StatusInternalServerError, "failed to update field")
 		return
 	}
@@ -135,7 +149,12 @@ func (r *Router) handleFieldClear(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	if err := r.artistService.ClearField(req.Context(), artistID, field); err != nil {
+	if artist.IsProviderIDField(field) {
+		if err := r.artistService.ClearProviderField(req.Context(), artistID, field); err != nil {
+			writeError(w, req, http.StatusInternalServerError, "failed to clear field")
+			return
+		}
+	} else if err := r.artistService.ClearField(req.Context(), artistID, field); err != nil {
 		writeError(w, req, http.StatusInternalServerError, "failed to clear field")
 		return
 	}

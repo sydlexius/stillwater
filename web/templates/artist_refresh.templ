@@ -206,11 +206,11 @@ templ RefreshOOBFragments(data RefreshOOBData) {
 	<section id={ "artist-providers-" + data.Artist.ID } hx-swap-oob="outerHTML" class="sw-card rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
 		<h2 class="text-lg font-semibold mb-3">Provider IDs</h2>
 		<dl class="space-y-2 text-sm">
-			@providerID("MusicBrainz", data.Artist.MusicBrainzID, nil)
-			@providerID("AudioDB", data.Artist.AudioDBID, data.Artist.AudioDBIDFetchedAt)
-			@providerID("Discogs", data.Artist.DiscogsID, data.Artist.DiscogsIDFetchedAt)
-			@providerID("Wikidata", data.Artist.WikidataID, data.Artist.WikidataIDFetchedAt)
-			@providerID("Deezer", data.Artist.DeezerID, nil)
+			@FieldDisplay(&data.Artist, "musicbrainz_id", data.FieldProviders["musicbrainz_id"])
+			@FieldDisplay(&data.Artist, "audiodb_id", data.FieldProviders["audiodb_id"])
+			@FieldDisplay(&data.Artist, "discogs_id", data.FieldProviders["discogs_id"])
+			@FieldDisplay(&data.Artist, "wikidata_id", data.FieldProviders["wikidata_id"])
+			@FieldDisplay(&data.Artist, "deezer_id", data.FieldProviders["deezer_id"])
 		</dl>
 	</section>
 }

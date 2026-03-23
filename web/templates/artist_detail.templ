@@ -6,8 +6,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
-
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/web/components"
@@ -279,6 +277,9 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 					<section id={ "artist-details-" + data.Artist.ID } class="sw-card rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
 						<h2 class="text-lg font-semibold mb-3">Details</h2>
 						<dl class="space-y-2 text-sm">
+							@FieldDisplay(&data.Artist, "name", data.FieldProviders["name"])
+							@FieldDisplay(&data.Artist, "sort_name", data.FieldProviders["sort_name"])
+							@FieldDisplay(&data.Artist, "disambiguation", data.FieldProviders["disambiguation"])
 							@FieldDisplay(&data.Artist, "type", data.FieldProviders["type"])
 							@FieldDisplay(&data.Artist, "gender", data.FieldProviders["gender"])
 							@FieldDisplay(&data.Artist, "formed", data.FieldProviders["formed"])
@@ -303,11 +304,11 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 					<section id={ "artist-providers-" + data.Artist.ID } class="sw-card rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
 						<h2 class="text-lg font-semibold mb-3">Provider IDs</h2>
 						<dl class="space-y-2 text-sm">
-							@providerID("MusicBrainz", data.Artist.MusicBrainzID, nil)
-							@providerID("AudioDB", data.Artist.AudioDBID, data.Artist.AudioDBIDFetchedAt)
-							@providerID("Discogs", data.Artist.DiscogsID, data.Artist.DiscogsIDFetchedAt)
-							@providerID("Wikidata", data.Artist.WikidataID, data.Artist.WikidataIDFetchedAt)
-							@providerID("Deezer", data.Artist.DeezerID, nil)
+							@FieldDisplay(&data.Artist, "musicbrainz_id", data.FieldProviders["musicbrainz_id"])
+							@FieldDisplay(&data.Artist, "audiodb_id", data.FieldProviders["audiodb_id"])
+							@FieldDisplay(&data.Artist, "discogs_id", data.FieldProviders["discogs_id"])
+							@FieldDisplay(&data.Artist, "wikidata_id", data.FieldProviders["wikidata_id"])
+							@FieldDisplay(&data.Artist, "deezer_id", data.FieldProviders["deezer_id"])
 						</dl>
 					</section>
 					<section class="sw-card rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
@@ -390,19 +391,6 @@ templ ArtistHistorySection(artistID string) {
 			<p class="text-sm text-gray-400 italic">Loading...</p>
 		</div>
 	</section>
-}
-
-templ providerID(name, value string, fetchedAt *time.Time) {
-	<div>
-		<dt class="text-gray-500 dark:text-gray-400">{ name }</dt>
-		if value != "" {
-			<dd class="font-medium font-mono text-xs break-all">{ value }</dd>
-		} else if fetchedAt != nil {
-			<dd class="text-gray-400 italic">Not found</dd>
-		} else {
-			<dd class="text-gray-400 italic">Not set</dd>
-		}
-	</div>
 }
 
 // ImagePreviewCard renders an image preview card for the artist detail page.
