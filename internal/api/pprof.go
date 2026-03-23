@@ -32,7 +32,9 @@ func pprofEnabled() bool {
 // in a container.
 //
 // When the provided context is canceled, the server is shut down gracefully
-// with a 5-second deadline, allowing in-flight profile captures to finish.
+// with a deadline matching the server's WriteTimeout, allowing in-flight
+// profile captures to finish. If graceful shutdown times out, the listener
+// is forcibly closed.
 //
 // Usage (with the server running and SW_PPROF=1):
 //
@@ -66,15 +68,21 @@ func registerPprof(ctx context.Context, logger *slog.Logger) {
 	logger.Warn("pprof endpoints enabled", "addr", addr)
 
 	// Shutdown goroutine: waits for context cancellation, then drains
-	// in-flight requests with a 5-second deadline. Uses context.WithoutCancel
-	// to derive a non-canceled context for the shutdown deadline rather than
+	// in-flight requests. The deadline matches WriteTimeout so in-flight
+	// profile captures have time to finish. Uses context.WithoutCancel to
+	// derive a non-canceled context for the shutdown deadline rather than
 	// context.Background, preserving request-scoped values (gosec G118).
 	go func() {
 		<-ctx.Done()
-		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), srv.WriteTimeout)
 		defer cancel()
 		if err := srv.Shutdown(shutdownCtx); err != nil {
 			logger.Error("pprof shutdown error", "error", err)
+			// Graceful shutdown timed out; forcibly close the listener so
+			// the port is released and the Serve goroutine can exit.
+			if closeErr := srv.Close(); closeErr != nil {
+				logger.Error("pprof forced close failed", "error", closeErr)
+			}
 		} else {
 			logger.Info("pprof listener stopped")
 		}
@@ -84,7 +92,7 @@ func registerPprof(ctx context.Context, logger *slog.Logger) {
 	// expected result of a graceful Shutdown call -- not an error.
 	go func() {
 		if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			logger.Error("pprof listener failed", "error", err)
+			logger.Error("pprof listener failed", "addr", ln.Addr(), "error", err)
 		}
 	}()
 }
