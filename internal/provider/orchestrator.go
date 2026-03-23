@@ -445,7 +445,12 @@ func (o *Orchestrator) FetchFieldFromProviders(ctx context.Context, mbid, name, 
 			Provider: provName,
 		}
 		if pr.err != nil {
-			fpr.Error = pr.err.Error()
+			var notFound *ErrNotFound
+			if !errors.As(pr.err, &notFound) {
+				// Real errors (timeouts, auth failures, etc.) are surfaced.
+				// ErrNotFound just means the provider has no data for this artist.
+				fpr.Error = pr.err.Error()
+			}
 		} else if pr.meta != nil {
 			extractFieldForComparison(&fpr, field, pr.meta)
 		}
