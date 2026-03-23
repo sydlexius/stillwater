@@ -48,6 +48,10 @@ package-lock.json
 docs/plans/
 docs/superpowers/
 
+# Load test results (binary reports, target files)
+tests/load/results/*.bin
+tests/load/results/*.txt
+
 # Temp
 *.tmp
 *.log
