@@ -228,6 +228,33 @@ func TestHandleFieldClear_MusicBrainzID(t *testing.T) {
 	}
 }
 
+// TestHandleFieldClear_Name_Rejected verifies that clearing the name field
+// returns 400, enforcing the non-empty invariant.
+func TestHandleFieldClear_Name_Rejected(t *testing.T) {
+	r, artistSvc := testRouter(t)
+	a := addTestArtist(t, artistSvc, "The Beatles")
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/artists/"+a.ID+"/fields/name", nil)
+	req.SetPathValue("id", a.ID)
+	req.SetPathValue("field", "name")
+	w := httptest.NewRecorder()
+
+	r.handleFieldClear(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want %d; body: %s", w.Code, http.StatusBadRequest, w.Body.String())
+	}
+
+	// Verify name was not cleared.
+	got, err := artistSvc.GetByID(context.Background(), a.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if got.Name != "The Beatles" {
+		t.Errorf("Name = %q after rejected clear, want %q", got.Name, "The Beatles")
+	}
+}
+
 // TestHandleFieldUpdate_ProviderIDFields_AllEditable verifies that all five
 // provider ID fields are accepted by IsEditableField and the handler routes them
 // correctly without returning 400 "unknown field".

@@ -5251,8 +5251,9 @@ paths:
         years_active, type, gender, name, sort_name, disambiguation,
         musicbrainz_id, audiodb_id, discogs_id, wikidata_id, deezer_id.
 
-        Validation rules: name must not be empty; musicbrainz_id must be a
-        valid UUID when non-empty.
+        Validation rules: name must be non-empty (rejects empty or
+        whitespace-only strings); musicbrainz_id must be a valid UUID when
+        non-empty (an empty string clears the stored ID).
       operationId: updateField
       parameters:
         - name: id
@@ -5335,6 +5336,12 @@ paths:
             text/html:
               schema:
                 type: string
+        "400":
+          description: Unknown field or field cannot be cleared (e.g. name must remain non-empty)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /artists/{id}/fields/{field}/providers:
     get:

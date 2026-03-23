@@ -3,6 +3,7 @@ package templates
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -117,17 +118,18 @@ func providerIDURL(field, value string) string {
 	if value == "" {
 		return ""
 	}
+	escaped := url.PathEscape(value)
 	switch field {
 	case "musicbrainz_id":
-		return "https://musicbrainz.org/artist/" + value
+		return "https://musicbrainz.org/artist/" + escaped
 	case "audiodb_id":
-		return "https://www.theaudiodb.com/artist/" + value
+		return "https://www.theaudiodb.com/artist/" + escaped
 	case "discogs_id":
-		return "https://www.discogs.com/artist/" + value
+		return "https://www.discogs.com/artist/" + escaped
 	case "wikidata_id":
-		return "https://www.wikidata.org/wiki/" + value
+		return "https://www.wikidata.org/wiki/" + escaped
 	case "deezer_id":
-		return "https://www.deezer.com/artist/" + value
+		return "https://www.deezer.com/artist/" + escaped
 	default:
 		return ""
 	}

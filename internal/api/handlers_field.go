@@ -149,6 +149,11 @@ func (r *Router) handleFieldClear(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	if field == "name" {
+		writeError(w, req, http.StatusBadRequest, "name field cannot be cleared")
+		return
+	}
+
 	if artist.IsProviderIDField(field) {
 		if err := r.artistService.ClearProviderField(req.Context(), artistID, field); err != nil {
 			writeError(w, req, http.StatusInternalServerError, "failed to clear field")
