@@ -30,7 +30,7 @@ var namedMonthLayouts = []string{
 // returns the original string for values already in ISO 8601 format, pads
 // partial dates (yyyy or yyyy-MM), parses named-month formats, and falls
 // back to extracting the first 4-digit year. Returns "" for completely
-// unparseable input.
+// unparsable input.
 func NormalizeDateForPlatform(s string) string {
 	s = strings.TrimSpace(s)
 	if s == "" {

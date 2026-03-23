@@ -62,7 +62,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "if echo \"$TOOL_INPUT\" | jq -e '.run_in_background == true' >/dev/null 2>&1; then echo 'BLOCKED: Never use run_in_background for agents. They stall on permission prompts. Use superpowers:dispatching-parallel-agents instead.' >&2; exit 2; fi"
+            "command": "if [ -n \"$TOOL_INPUT\" ] && echo \"$TOOL_INPUT\" | jq -e '.run_in_background == true' >/dev/null 2>&1; then echo 'BLOCKED: Never use run_in_background for agents. They stall on permission prompts. Use superpowers:dispatching-parallel-agents instead.' >&2; exit 2; fi"
           }
         ]
       }
