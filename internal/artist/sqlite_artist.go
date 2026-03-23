@@ -12,19 +12,33 @@ import (
 	"github.com/sydlexius/stillwater/internal/dbutil"
 )
 
-// fieldColumnMap maps API field names to database column names.
+// fieldColumnMap maps API field names to database column names for fields
+// stored directly in the artists table.
 var fieldColumnMap = map[string]string{
-	"biography":    "biography",
-	"genres":       "genres",
-	"styles":       "styles",
-	"moods":        "moods",
-	"formed":       "formed",
-	"born":         "born",
-	"disbanded":    "disbanded",
-	"died":         "died",
-	"years_active": "years_active",
-	"type":         "type",
-	"gender":       "gender",
+	"biography":      "biography",
+	"genres":         "genres",
+	"styles":         "styles",
+	"moods":          "moods",
+	"formed":         "formed",
+	"born":           "born",
+	"disbanded":      "disbanded",
+	"died":           "died",
+	"years_active":   "years_active",
+	"type":           "type",
+	"gender":         "gender",
+	"name":           "name",
+	"sort_name":      "sort_name",
+	"disambiguation": "disambiguation",
+}
+
+// providerFieldMap maps API field names that correspond to provider IDs stored
+// in the artist_provider_ids normalized table.
+var providerFieldMap = map[string]string{
+	"musicbrainz_id": "musicbrainz",
+	"audiodb_id":     "audiodb",
+	"discogs_id":     "discogs",
+	"wikidata_id":    "wikidata",
+	"deezer_id":      "deezer",
 }
 
 // sliceFields are fields that store JSON arrays in the database.

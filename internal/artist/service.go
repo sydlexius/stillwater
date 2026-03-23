@@ -304,9 +304,20 @@ func (s *Service) UpdateImageProvenance(ctx context.Context, artistID, imageType
 }
 
 // IsEditableField reports whether the given field name can be updated via
-// the field-level API.
+// the field-level API. This includes both direct-column fields (in
+// fieldColumnMap) and provider-ID fields (in providerFieldMap).
 func IsEditableField(field string) bool {
-	_, ok := fieldColumnMap[field]
+	if _, ok := fieldColumnMap[field]; ok {
+		return true
+	}
+	_, ok := providerFieldMap[field]
+	return ok
+}
+
+// IsProviderIDField reports whether the given field name maps to the
+// artist_provider_ids normalized table rather than a direct artists column.
+func IsProviderIDField(field string) bool {
+	_, ok := providerFieldMap[field]
 	return ok
 }
 
@@ -405,6 +416,97 @@ func (s *Service) ClearField(ctx context.Context, id, field string) error {
 	return nil
 }
 
+// UpdateProviderField sets a single provider ID field (musicbrainz_id,
+// audiodb_id, discogs_id, wikidata_id, or deezer_id) on the artist.
+// It re-fetches the artist, applies the field update, and calls Update so
+// that all provider IDs in the normalized table are written consistently.
+func (s *Service) UpdateProviderField(ctx context.Context, id, field, value string) error {
+	providerName, ok := providerFieldMap[field]
+	if !ok {
+		return fmt.Errorf("unknown provider field: %s", field)
+	}
+
+	a, err := s.GetByID(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	// Apply the field update to the in-memory struct.
+	applyProviderFieldToArtist(a, providerName, value)
+
+	return s.Update(ctx, a)
+}
+
+// ClearProviderField removes a single provider ID field by setting it to
+// empty string. It re-fetches the artist and calls Update so that the
+// normalized artist_provider_ids table is kept consistent.
+func (s *Service) ClearProviderField(ctx context.Context, id, field string) error {
+	return s.UpdateProviderField(ctx, id, field, "")
+}
+
+// applyProviderFieldToArtist applies a single provider ID value to the
+// appropriate field of the Artist struct. The providerName argument must be
+// the canonical provider key (e.g. "musicbrainz", "audiodb"), not the API
+// field name.
+func applyProviderFieldToArtist(a *Artist, providerName, value string) {
+	switch providerName {
+	case "musicbrainz":
+		a.MusicBrainzID = value
+	case "audiodb":
+		a.AudioDBID = value
+	case "discogs":
+		a.DiscogsID = value
+	case "wikidata":
+		a.WikidataID = value
+	case "deezer":
+		a.DeezerID = value
+	}
+}
+
+// ValidateFieldUpdate returns a non-nil error when the field value is
+// invalid. Validation rules:
+//   - "name" must not be empty or whitespace-only.
+//   - "musicbrainz_id" must be a valid UUID (or empty, which clears the ID).
+//
+// All other fields are accepted as-is (free-form text).
+func ValidateFieldUpdate(field, value string) error {
+	switch field {
+	case "name":
+		if strings.TrimSpace(value) == "" {
+			return fmt.Errorf("name cannot be empty")
+		}
+	case "musicbrainz_id":
+		if value != "" && !isValidMBID(value) {
+			return fmt.Errorf("invalid MusicBrainz ID format (expected UUID)")
+		}
+	}
+	return nil
+}
+
+// isValidMBID reports whether s is a syntactically valid UUID, as used by
+// MusicBrainz for all entity identifiers.
+func isValidMBID(s string) bool {
+	// A MusicBrainz UUID has the form xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx.
+	// We validate the format by checking length and character set rather than
+	// importing an external UUID package, keeping this pure-stdlib.
+	if len(s) != 36 {
+		return false
+	}
+	for i, c := range s {
+		switch i {
+		case 8, 13, 18, 23:
+			if c != '-' {
+				return false
+			}
+		default:
+			if (c < '0' || c > '9') && (c < 'a' || c > 'f') && (c < 'A' || c > 'F') {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 // FieldValueFromArtist extracts a single field's value from an Artist struct.
 // For string fields returns the value directly; for slice fields returns
 // the comma-joined representation.
@@ -432,6 +534,22 @@ func FieldValueFromArtist(a *Artist, field string) string {
 		return a.Type
 	case "gender":
 		return a.Gender
+	case "name":
+		return a.Name
+	case "sort_name":
+		return a.SortName
+	case "disambiguation":
+		return a.Disambiguation
+	case "musicbrainz_id":
+		return a.MusicBrainzID
+	case "audiodb_id":
+		return a.AudioDBID
+	case "discogs_id":
+		return a.DiscogsID
+	case "wikidata_id":
+		return a.WikidataID
+	case "deezer_id":
+		return a.DeezerID
 	default:
 		return ""
 	}

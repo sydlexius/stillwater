@@ -3,6 +3,7 @@ package templates
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -90,8 +91,47 @@ func fieldLabel(field string) string {
 		return "Gender"
 	case "members":
 		return "Members"
+	case "name":
+		return "Name"
+	case "sort_name":
+		return "Sort Name"
+	case "disambiguation":
+		return "Disambiguation"
+	case "musicbrainz_id":
+		return "MusicBrainz ID"
+	case "audiodb_id":
+		return "AudioDB ID"
+	case "discogs_id":
+		return "Discogs ID"
+	case "wikidata_id":
+		return "Wikidata ID"
+	case "deezer_id":
+		return "Deezer ID"
 	default:
 		return field
+	}
+}
+
+// providerIDURL returns the canonical external URL for a provider ID field.
+// Returns an empty string when no URL pattern exists for the given field.
+func providerIDURL(field, value string) string {
+	if value == "" {
+		return ""
+	}
+	escaped := url.PathEscape(value)
+	switch field {
+	case "musicbrainz_id":
+		return "https://musicbrainz.org/artist/" + escaped
+	case "audiodb_id":
+		return "https://www.theaudiodb.com/artist/" + escaped
+	case "discogs_id":
+		return "https://www.discogs.com/artist/" + escaped
+	case "wikidata_id":
+		return "https://www.wikidata.org/wiki/" + escaped
+	case "deezer_id":
+		return "https://www.deezer.com/artist/" + escaped
+	default:
+		return ""
 	}
 }
 

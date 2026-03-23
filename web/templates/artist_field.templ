@@ -21,8 +21,11 @@ templ FieldDisplay(a *artist.Artist, field string, providers []string) {
 			@tagFieldDisplay(a, "styles", "Styles", a.Styles, "bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200", providers)
 		case "moods":
 			@tagFieldDisplay(a, "moods", "Moods", a.Moods, "bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200", providers)
-		case "formed", "born", "disbanded", "died", "years_active", "type", "gender":
+		case "formed", "born", "disbanded", "died", "years_active", "type", "gender",
+			"name", "sort_name", "disambiguation":
 			@detailFieldDisplay(a, field, fieldLabel(field), artist.FieldValueFromArtist(a, field), providers)
+		case "musicbrainz_id", "audiodb_id", "discogs_id", "wikidata_id", "deezer_id":
+			@providerIDFieldDisplay(a, field, fieldLabel(field), artist.FieldValueFromArtist(a, field), providers)
 	}
 }
 
@@ -37,7 +40,9 @@ templ FieldEdit(a *artist.Artist, field string) {
 			@tagFieldEdit(a, "styles", "Styles", a.Styles)
 		case "moods":
 			@tagFieldEdit(a, "moods", "Moods", a.Moods)
-		case "formed", "born", "disbanded", "died", "years_active", "type", "gender":
+		case "formed", "born", "disbanded", "died", "years_active", "type", "gender",
+			"name", "sort_name", "disambiguation",
+			"musicbrainz_id", "audiodb_id", "discogs_id", "wikidata_id", "deezer_id":
 			@detailFieldEdit(a, field, fieldLabel(field), artist.FieldValueFromArtist(a, field))
 	}
 }
@@ -302,15 +307,17 @@ templ detailFieldEdit(a *artist.Artist, field, label, value string) {
 					type="text"
 					name="value"
 					value={ value }
+					aria-label={ label }
 					class="flex-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
 				/>
-				<button type="submit" class="p-1 text-green-600 hover:text-green-700 transition-colors" title="Save">
+				<button type="submit" class="p-1 text-green-600 hover:text-green-700 transition-colors" title="Save" aria-label={ "Save " + label }>
 					@components.IconCheck("h-4 w-4")
 				</button>
 				<button
 					type="button"
 					class="p-1 text-gray-400 hover:text-gray-600 transition-colors"
 					title="Cancel"
+					aria-label={ "Cancel editing " + label }
 					hx-get={ "/api/v1/artists/" + a.ID + "/fields/" + field + "/display" }
 					hx-target={ "#field-" + field + "-" + a.ID }
 					hx-swap="outerHTML"
@@ -319,6 +326,84 @@ templ detailFieldEdit(a *artist.Artist, field, label, value string) {
 				</button>
 			</form>
 		</dd>
+	</div>
+}
+
+// --- Provider ID fields ---
+
+// providerIDFieldDisplay renders a provider ID field (musicbrainz_id, audiodb_id,
+// etc.) with its value shown as a clickable external link when a URL is available.
+// The edit/clear/fetch actions are the same as for other detail fields.
+templ providerIDFieldDisplay(a *artist.Artist, field, label, value string, providers []string) {
+	<div id={ "field-" + field + "-" + a.ID }>
+		<dt class="text-gray-500 dark:text-gray-400 flex items-center gap-1">
+			{ label }
+			@components.ContextMenu("df-"+field+"-"+a.ID, true) {
+				<button
+					type="button"
+					role="menuitem"
+					class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+					hx-get={ "/api/v1/artists/" + a.ID + "/fields/" + field + "/edit" }
+					hx-target={ "#field-" + field + "-" + a.ID }
+					hx-swap="outerHTML"
+				>
+					@components.IconPencilSquare("h-4 w-4 text-gray-400")
+					Edit { label }
+				</button>
+				if value != "" {
+					<button
+						type="button"
+						role="menuitem"
+						class="flex w-full items-center gap-2 px-3 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
+						hx-delete={ "/api/v1/artists/" + a.ID + "/fields/" + field }
+						hx-target={ "#field-" + field + "-" + a.ID }
+						hx-swap="outerHTML"
+						hx-confirm={ "Clear " + label + "?" }
+						data-confirm-key="field-delete"
+					>
+						@components.IconTrash("h-4 w-4")
+						Clear { label }
+					</button>
+				}
+				if len(providers) > 0 {
+					<div class="my-1 border-t border-gray-200 dark:border-gray-700"></div>
+					<button
+						type="button"
+						role="menuitem"
+						class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+						hx-get={ "/api/v1/artists/" + a.ID + "/fields/" + field + "/providers" }
+						hx-target="#field-provider-modal-body"
+						hx-swap="innerHTML"
+						hx-indicator={ "#field-spinner-" + field + "-" + a.ID }
+					>
+						@components.IconArrowDownTray("h-4 w-4 text-gray-400")
+						Fetch from providers
+					</button>
+				}
+			}
+			<span id={ "field-spinner-" + field + "-" + a.ID } class="htmx-indicator">
+				<svg class="h-3 w-3 animate-spin text-gray-400" fill="none" viewBox="0 0 24 24">
+					<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+					<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+				</svg>
+			</span>
+		</dt>
+		if value != "" {
+			if url := providerIDURL(field, value); url != "" {
+				<dd class="font-medium font-mono text-xs break-all">
+					<a
+						href={ templ.SafeURL(url) }
+						target="_blank"
+						rel="noopener noreferrer"
+						class="text-blue-600 dark:text-blue-400 hover:underline"
+					>{ value }</a>
+				</dd>
+			} else {
+				<dd class="font-medium font-mono text-xs break-all">{ value }</dd>
+			}
+		} else {
+			<dd class="text-gray-400 italic text-xs">Not set</dd>
+		}
 	</div>
 }
 

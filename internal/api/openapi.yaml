@@ -5245,6 +5245,15 @@ paths:
     patch:
       tags: [Artists]
       summary: Update a single metadata field
+      description: |
+        Updates one metadata field on the artist. Supported fields:
+        biography, genres, styles, moods, formed, born, disbanded, died,
+        years_active, type, gender, name, sort_name, disambiguation,
+        musicbrainz_id, audiodb_id, discogs_id, wikidata_id, deezer_id.
+
+        Validation rules: name must be non-empty (rejects empty or
+        whitespace-only strings); musicbrainz_id must be a valid UUID when
+        non-empty (an empty string clears the stored ID).
       operationId: updateField
       parameters:
         - name: id
@@ -5292,7 +5301,7 @@ paths:
               schema:
                 type: string
         "400":
-          description: Non-editable field
+          description: Unknown field, invalid value, or validation failure (e.g. empty name or malformed MBID)
           content:
             application/json:
               schema:
@@ -5327,6 +5336,12 @@ paths:
             text/html:
               schema:
                 type: string
+        "400":
+          description: Unknown field or field cannot be cleared (e.g. name must remain non-empty)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /artists/{id}/fields/{field}/providers:
     get:
