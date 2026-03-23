@@ -319,7 +319,10 @@ func IsEditableField(field string) bool {
 // best-effort and will not cause the update to fail.
 func (s *Service) UpdateField(ctx context.Context, id, field, value string) error {
 	// Capture old value before the mutation so we can record the diff.
+	// Track whether the read succeeded so we don't fabricate history from
+	// an unknown old state if GetByID fails transiently.
 	var oldValue string
+	oldKnown := false
 	if s.history != nil {
 		a, err := s.artists.GetByID(ctx, id)
 		if err != nil {
@@ -327,6 +330,7 @@ func (s *Service) UpdateField(ctx context.Context, id, field, value string) erro
 				"artist_id", id, "field", field, "error", err)
 		} else {
 			oldValue = FieldValueFromArtist(a, field)
+			oldKnown = true
 		}
 	}
 
@@ -337,7 +341,7 @@ func (s *Service) UpdateField(ctx context.Context, id, field, value string) erro
 	// Record the change by comparing normalized representations. Re-fetch
 	// after the mutation so both old and new use FieldValueFromArtist, avoiding
 	// format mismatches for slice fields (e.g. "Rock, Alternative" vs "Rock,Alternative").
-	if s.history != nil {
+	if s.history != nil && oldKnown {
 		newA, err := s.artists.GetByID(ctx, id)
 		if err != nil {
 			slog.Warn("history: could not fetch artist after UpdateField",
