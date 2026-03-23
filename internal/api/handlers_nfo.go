@@ -197,10 +197,11 @@ func (r *Router) handleNFOSnapshotRestore(w http.ResponseWriter, req *http.Reque
 	a.NFOExists = true
 	if err := r.artistService.Update(req.Context(), a); err != nil {
 		r.logger.Warn("updating artist after nfo restore", "artist_id", artistID, "error", err)
+	} else {
+		// Push to platforms only when the DB update succeeded. The NFO was
+		// already restored to disk above, so WriteBackNFO is not needed.
+		r.publisher.PushMetadataAsync(req.Context(), a)
 	}
-	// Push to platforms only -- the NFO was already restored to disk above,
-	// so WriteBackNFO is not needed.
-	r.publisher.PushMetadataAsync(req.Context(), a)
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "restored"})
 }
