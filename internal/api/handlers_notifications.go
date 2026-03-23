@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
@@ -390,9 +391,12 @@ func (r *Router) handleApplyViolationCandidate(w http.ResponseWriter, req *http.
 		r.recordImageProvenance(req.Context(), a.ID, body.ImageType, filepath.Join(a.Path, saved[0]))
 	}
 
-	// Sync the saved image to connected platforms. Log warnings but do not
-	// fail the response -- the local save already succeeded.
-	if warnings := r.publisher.SyncImageToPlatforms(req.Context(), a, body.ImageType); len(warnings) > 0 {
+	// Sync the saved image to connected platforms with a bounded timeout,
+	// consistent with other image handlers. Log warnings but do not fail
+	// the response -- the local save already succeeded.
+	syncCtx, syncCancel := context.WithTimeout(req.Context(), 30*time.Second)
+	defer syncCancel()
+	if warnings := r.publisher.SyncImageToPlatforms(syncCtx, a, body.ImageType); len(warnings) > 0 {
 		r.logger.Warn("platform sync warnings after apply-candidate",
 			slog.String("artist", a.Name),
 			slog.String("image_type", body.ImageType),

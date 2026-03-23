@@ -732,7 +732,12 @@ func (p *Pipeline) publishAccumulated(ctx context.Context, a *artist.Artist, met
 	if metadataFixed {
 		p.publisher.PublishMetadata(ctx, a)
 	}
+	seen := make(map[string]bool, len(imageTypes))
 	for _, it := range imageTypes {
+		if seen[it] {
+			continue
+		}
+		seen[it] = true
 		p.publisher.SyncImageToPlatforms(ctx, a, it)
 	}
 }
