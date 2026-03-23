@@ -182,7 +182,7 @@ func (r *Router) handleImageUpload(w http.ResponseWriter, req *http.Request) {
 
 	syncCtx, cancel := context.WithTimeout(req.Context(), 30*time.Second)
 	defer cancel()
-	warnings := r.syncImageToPlatforms(syncCtx, a, imageType)
+	warnings := r.publisher.SyncImageToPlatforms(syncCtx, a, imageType)
 
 	resp := map[string]any{
 		"status":        "ok",
@@ -261,7 +261,7 @@ func (r *Router) handleImageFetch(w http.ResponseWriter, req *http.Request) {
 
 		syncCtx, cancel := context.WithTimeout(req.Context(), 30*time.Second)
 		defer cancel()
-		syncWarnings := r.syncAllFanartToPlatforms(syncCtx, a)
+		syncWarnings := r.publisher.SyncAllFanartToPlatforms(syncCtx, a)
 
 		if isHTMXRequest(req) {
 			setSyncWarningTrigger(w, syncWarnings)
@@ -294,7 +294,7 @@ func (r *Router) handleImageFetch(w http.ResponseWriter, req *http.Request) {
 
 	syncCtx, cancel := context.WithTimeout(req.Context(), 30*time.Second)
 	defer cancel()
-	warnings := r.syncImageToPlatforms(syncCtx, a, imageType)
+	warnings := r.publisher.SyncImageToPlatforms(syncCtx, a, imageType)
 
 	if isHTMXRequest(req) {
 		setSyncWarningTrigger(w, warnings)
@@ -499,7 +499,7 @@ func (r *Router) handleImageCrop(w http.ResponseWriter, req *http.Request) {
 	// Preserve existing provenance metadata if present, updating the timestamp.
 	var cropMeta *img.ExifMeta
 	patterns := r.getActiveNamingConfig(req.Context(), body.Type)
-	if filePath, found := findExistingImage(r.imageDir(a), patterns); found {
+	if filePath, found := img.FindExistingImage(r.imageDir(a), patterns); found {
 		if existing, readErr := img.ReadProvenance(filePath); readErr == nil && existing != nil {
 			cropMeta = existing
 		} else if readErr != nil {
@@ -525,7 +525,7 @@ func (r *Router) handleImageCrop(w http.ResponseWriter, req *http.Request) {
 
 	syncCtx, cancel := context.WithTimeout(req.Context(), 30*time.Second)
 	defer cancel()
-	warnings := r.syncImageToPlatforms(syncCtx, a, body.Type)
+	warnings := r.publisher.SyncImageToPlatforms(syncCtx, a, body.Type)
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status":        "ok",
@@ -757,7 +757,7 @@ func (r *Router) setArtistImageFlag(ctx context.Context, a *artist.Artist, image
 	var resolvedPath string // path to the image file on disk, used for provenance readback
 	if exists {
 		patterns := r.getActiveNamingConfig(ctx, imageType)
-		if filePath, found := findExistingImage(r.imageDir(a), patterns); found {
+		if filePath, found := img.FindExistingImage(r.imageDir(a), patterns); found {
 			if f, openErr := os.Open(filePath); openErr == nil { //nolint:gosec // path from trusted naming patterns
 				resolvedPath = filePath
 				defer f.Close() //nolint:errcheck
@@ -892,7 +892,7 @@ func (r *Router) handleServeImage(w http.ResponseWriter, req *http.Request) {
 	}
 
 	patterns := r.getActiveNamingConfig(req.Context(), imageType)
-	filePath, found := findExistingImage(dir, patterns)
+	filePath, found := img.FindExistingImage(dir, patterns)
 	if !found {
 		http.NotFound(w, req)
 		return
@@ -933,7 +933,7 @@ func (r *Router) handleImageInfo(w http.ResponseWriter, req *http.Request) {
 	}
 
 	patterns := r.getActiveNamingConfig(req.Context(), imageType)
-	filePath, found := findExistingImage(dir, patterns)
+	filePath, found := img.FindExistingImage(dir, patterns)
 	if !found {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "image not found"})
 		return
@@ -1061,7 +1061,7 @@ func (r *Router) handleDeleteImage(w http.ResponseWriter, req *http.Request) {
 	patterns := r.getActiveNamingConfig(req.Context(), imageType)
 	deleted, deleteFailed := deleteImageFiles(r.fileRemover, r.imageDir(a), patterns, r.logger)
 
-	if _, found := findExistingImage(r.imageDir(a), patterns); !found {
+	if _, found := img.FindExistingImage(r.imageDir(a), patterns); !found {
 		r.clearArtistImageFlag(req.Context(), a, imageType)
 	}
 	warnings := make([]string, 0)
@@ -1090,177 +1090,6 @@ func (r *Router) handleDeleteImage(w http.ResponseWriter, req *http.Request) {
 // clearArtistImageFlag sets the image existence flag to false and persists it.
 func (r *Router) clearArtistImageFlag(ctx context.Context, a *artist.Artist, imageType string) {
 	r.setArtistImageFlag(ctx, a, imageType, false)
-}
-
-// syncImageToPlatforms uploads the just-saved image to every platform connection
-// that has a stored artist ID mapping. Errors are logged and returned as warning
-// strings so the caller can surface them to the client. The local operation
-// already succeeded, so failures here are non-fatal.
-func (r *Router) syncImageToPlatforms(ctx context.Context, a *artist.Artist, imageType string) []string {
-	warnings := make([]string, 0)
-
-	platformIDs, err := r.artistService.GetPlatformIDs(ctx, a.ID)
-	if err != nil {
-		r.logger.Error("getting platform IDs for image sync", "artist_id", a.ID, "type", imageType, "error", err)
-		warnings = append(warnings, "platform sync skipped: failed to load platform mappings")
-		return warnings
-	}
-	if len(platformIDs) == 0 {
-		return warnings
-	}
-
-	dir := r.imageDir(a)
-	if dir == "" {
-		r.logger.Warn("skipping platform image sync: artist has no image directory", "artist", a.Name, "type", imageType)
-		warnings = append(warnings, "platform sync skipped: artist has no image directory configured")
-		return warnings
-	}
-	patterns := r.getActiveNamingConfig(ctx, imageType)
-	filePath, found := findExistingImage(dir, patterns)
-	if !found {
-		warnings = append(warnings, "platform sync skipped: no local image found to upload")
-		return warnings
-	}
-
-	data, err := os.ReadFile(filePath) //nolint:gosec // path from trusted naming patterns
-	if err != nil {
-		r.logger.Error("reading image for platform sync", "artist", a.Name, "type", imageType, "path", filePath, "error", err)
-		warnings = append(warnings, "platform sync skipped: failed to read image for upload")
-		return warnings
-	}
-
-	ct := "image/jpeg"
-	if strings.EqualFold(filepath.Ext(filePath), ".png") {
-		ct = "image/png"
-	}
-
-	for _, pid := range platformIDs {
-		conn, connErr := r.connectionService.GetByID(ctx, pid.ConnectionID)
-		if connErr != nil {
-			r.logger.Error("getting connection for image sync", "connection_id", pid.ConnectionID, "error", connErr)
-			warnings = append(warnings, truncateWarning(fmt.Sprintf("connection %s: failed to load", pid.ConnectionID)))
-			continue
-		}
-		if !conn.Enabled {
-			r.logger.Debug("skipping disabled connection for image sync", "connection", conn.Name, "type", imageType)
-			continue
-		}
-
-		var uploader connection.ImageUploader
-		switch conn.Type {
-		case connection.TypeEmby:
-			uploader = emby.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger)
-		case connection.TypeJellyfin:
-			uploader = jellyfin.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger)
-		default:
-			r.logger.Warn("unsupported connection type for image sync", "type", conn.Type)
-			warnings = append(warnings, truncateWarning(fmt.Sprintf("%s: unsupported connection type %q", conn.Name, conn.Type)))
-			continue
-		}
-
-		if uploadErr := uploader.UploadImage(ctx, pid.PlatformArtistID, imageType, data, ct); uploadErr != nil {
-			r.logger.Error("syncing image to platform", "artist", a.Name, "connection", conn.Name, "type", imageType, "error", uploadErr)
-			warnings = append(warnings, truncateWarning(fmt.Sprintf("%s (%s): image upload failed", conn.Name, conn.Type)))
-		}
-	}
-	return warnings
-}
-
-// syncAllFanartToPlatforms uploads all local fanart files to every connected
-// platform at their respective indices. Unlike syncImageToPlatforms which only
-// syncs the primary image, this discovers all fanart files and uploads each one
-// at the correct backdrop index. Errors are logged and returned as warnings.
-func (r *Router) syncAllFanartToPlatforms(ctx context.Context, a *artist.Artist) []string {
-	warnings := make([]string, 0)
-
-	platformIDs, err := r.artistService.GetPlatformIDs(ctx, a.ID)
-	if err != nil {
-		r.logger.Error("getting platform IDs for fanart sync",
-			slog.String("artist_id", a.ID),
-			slog.String("error", err.Error()))
-		warnings = append(warnings, "platform sync skipped: failed to load platform mappings")
-		return warnings
-	}
-	if len(platformIDs) == 0 {
-		return warnings
-	}
-
-	dir := r.imageDir(a)
-	if dir == "" {
-		r.logger.Warn("skipping platform fanart sync: artist has no image directory",
-			slog.String("artist", a.Name))
-		warnings = append(warnings, "platform sync skipped: artist has no image directory configured")
-		return warnings
-	}
-
-	primary := r.getActiveFanartPrimary(ctx)
-	fanartPaths, discoverErr := img.DiscoverFanart(dir, primary)
-	if discoverErr != nil {
-		r.logger.Error("discovering fanart for platform sync",
-			slog.String("artist_id", a.ID),
-			slog.String("error", discoverErr.Error()))
-		warnings = append(warnings, "platform sync skipped: failed to read fanart directory")
-		return warnings
-	}
-	if len(fanartPaths) == 0 {
-		return warnings
-	}
-
-	for _, pid := range platformIDs {
-		conn, connErr := r.connectionService.GetByID(ctx, pid.ConnectionID)
-		if connErr != nil {
-			r.logger.Error("getting connection for fanart sync",
-				slog.String("connection_id", pid.ConnectionID),
-				slog.String("error", connErr.Error()))
-			warnings = append(warnings, truncateWarning(fmt.Sprintf("connection %s: failed to load", pid.ConnectionID)))
-			continue
-		}
-		if !conn.Enabled || conn.Status != "ok" {
-			r.logger.Debug("skipping connection for fanart sync",
-				slog.String("connection", conn.Name),
-				slog.String("status", conn.Status))
-			continue
-		}
-
-		var uploader connection.IndexedImageUploader
-		switch conn.Type {
-		case connection.TypeEmby:
-			uploader = emby.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger)
-		case connection.TypeJellyfin:
-			uploader = jellyfin.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger)
-		default:
-			r.logger.Warn("unsupported connection type for fanart sync",
-				slog.String("type", conn.Type))
-			warnings = append(warnings, truncateWarning(fmt.Sprintf("%s: unsupported connection type %q", conn.Name, conn.Type)))
-			continue
-		}
-
-		for i, fp := range fanartPaths {
-			data, readErr := os.ReadFile(fp) //nolint:gosec // path from trusted fanart discovery
-			if readErr != nil {
-				r.logger.Error("reading fanart for platform sync",
-					slog.String("path", fp),
-					slog.String("error", readErr.Error()))
-				warnings = append(warnings, truncateWarning(fmt.Sprintf("%s: failed to read fanart %d", conn.Name, i)))
-				continue
-			}
-
-			ct := "image/jpeg"
-			if strings.EqualFold(filepath.Ext(fp), ".png") {
-				ct = "image/png"
-			}
-
-			if uploadErr := uploader.UploadImageAtIndex(ctx, pid.PlatformArtistID, "fanart", i, data, ct); uploadErr != nil {
-				r.logger.Error("syncing fanart to platform",
-					slog.String("artist", a.Name),
-					slog.String("connection", conn.Name),
-					slog.Int("index", i),
-					slog.String("error", uploadErr.Error()))
-				warnings = append(warnings, truncateWarning(fmt.Sprintf("%s (%s): fanart %d upload failed", conn.Name, conn.Type, i)))
-			}
-		}
-	}
-	return warnings
 }
 
 // deleteImageFromPlatforms removes the image from every platform connection that
@@ -1358,31 +1187,6 @@ func truncateWarning(msg string) string {
 	return msg
 }
 
-// findExistingImage searches for the first matching image file in a directory.
-// For each configured pattern it first checks the exact filename, then probes
-// alternate supported extensions (.jpg, .png) to handle cases where the saved
-// format differs from the configured name (e.g. a PNG crop saved over folder.jpg).
-func findExistingImage(dir string, patterns []string) (string, bool) {
-	for _, pattern := range patterns {
-		p := filepath.Join(dir, pattern)
-		if _, err := os.Stat(p); err == nil { //nolint:gosec // path from trusted naming patterns
-			return p, true
-		}
-		// Check alternate extensions in case the format changed after save.
-		base := strings.TrimSuffix(pattern, filepath.Ext(pattern))
-		for _, ext := range []string{".jpg", ".jpeg", ".png"} {
-			if ext == filepath.Ext(pattern) {
-				continue
-			}
-			alt := filepath.Join(dir, base+ext)
-			if _, err := os.Stat(alt); err == nil { //nolint:gosec // path from trusted naming patterns
-				return alt, true
-			}
-		}
-	}
-	return "", false
-}
-
 // deleteImageFiles removes all matching image files from a directory and returns deleted filenames
 // and whether any removal failed. For each pattern, it also probes alternate extensions
 // (.jpg, .jpeg, .png) to catch cases where the saved format differs from the configured name.
@@ -1475,7 +1279,7 @@ func (r *Router) handleLogoTrim(w http.ResponseWriter, req *http.Request) {
 	}
 
 	patterns := r.getActiveNamingConfig(req.Context(), "logo")
-	filePath, found := findExistingImage(r.imageDir(a), patterns)
+	filePath, found := img.FindExistingImage(r.imageDir(a), patterns)
 	if !found {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "logo not found"})
 		return
@@ -1523,7 +1327,7 @@ func (r *Router) handleLogoTrim(w http.ResponseWriter, req *http.Request) {
 
 	syncCtx, cancel := context.WithTimeout(req.Context(), 30*time.Second)
 	defer cancel()
-	warnings := r.syncImageToPlatforms(syncCtx, a, "logo")
+	warnings := r.publisher.SyncImageToPlatforms(syncCtx, a, "logo")
 
 	if isHTMXRequest(req) {
 		setSyncWarningTrigger(w, warnings)
@@ -1859,7 +1663,7 @@ func (r *Router) handleFanartBatchDelete(w http.ResponseWriter, req *http.Reques
 	if !renumberWarning {
 		syncCtx, cancel := context.WithTimeout(req.Context(), 30*time.Second)
 		defer cancel()
-		syncWarnings = r.syncAllFanartToPlatforms(syncCtx, a)
+		syncWarnings = r.publisher.SyncAllFanartToPlatforms(syncCtx, a)
 	}
 
 	warnings := make([]string, 0)
@@ -1966,7 +1770,7 @@ func (r *Router) handleFanartBatchFetch(w http.ResponseWriter, req *http.Request
 	if len(allSaved) > 0 {
 		syncCtx, cancel := context.WithTimeout(req.Context(), 30*time.Second)
 		defer cancel()
-		syncWarnings = r.syncAllFanartToPlatforms(syncCtx, a)
+		syncWarnings = r.publisher.SyncAllFanartToPlatforms(syncCtx, a)
 	}
 
 	if isHTMXRequest(req) {

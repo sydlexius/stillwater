@@ -16,6 +16,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/platform"
+	"github.com/sydlexius/stillwater/internal/publish"
 )
 
 // addTestConnectionWithURL creates a connection with a custom URL for handler tests
@@ -595,7 +596,7 @@ func TestBuildArtistPushData_TypeAwareDates(t *testing.T) {
 				Died:      "2016",
 				Disbanded: "2010",
 			}
-			data := buildArtistPushData(a)
+			data := publish.BuildArtistPushData(a)
 			if data.Born != tt.wantBorn {
 				t.Errorf("Born = %q, want %q", data.Born, tt.wantBorn)
 			}

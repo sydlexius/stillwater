@@ -922,7 +922,7 @@ func (r *Router) downloadPlatformImages(ctx context.Context, dl imageDownloader,
 		}
 
 		patterns := r.getActiveNamingConfig(ctx, stillwaterType)
-		if _, found := findExistingImage(dir, patterns); found {
+		if _, found := img.FindExistingImage(dir, patterns); found {
 			r.logger.Debug("skipping existing image", "artist", a.Name, "type", stillwaterType)
 			continue
 		}
