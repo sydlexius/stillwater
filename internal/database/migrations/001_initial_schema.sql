@@ -274,6 +274,8 @@ CREATE TABLE IF NOT EXISTS rule_violations (
 CREATE INDEX idx_rule_violations_rule_id ON rule_violations(rule_id);
 CREATE INDEX idx_rule_violations_artist_id ON rule_violations(artist_id);
 CREATE INDEX idx_rule_violations_status ON rule_violations(status);
+CREATE INDEX idx_rule_violations_created_at ON rule_violations(created_at);
+CREATE INDEX idx_rule_violations_resolved_at ON rule_violations(resolved_at);
 
 -- =============================================================================
 -- Health tracking

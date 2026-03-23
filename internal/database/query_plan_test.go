@@ -145,6 +145,79 @@ func TestQueryPlans(t *testing.T) {
 			query: "SELECT id, name FROM artists WHERE locked = 1",
 			args:  nil,
 		},
+
+		// --- Alias search and duplicate detection (sqlite_alias.go) ---
+
+		"search_with_aliases": {
+			query: `SELECT id FROM artists WHERE id IN (
+				SELECT artists.id FROM artists
+				LEFT JOIN artist_aliases ON artists.id = artist_aliases.artist_id
+				WHERE LOWER(artists.name) LIKE ? OR LOWER(artist_aliases.alias) LIKE ?
+			) ORDER BY name`,
+			args: []any{"%test%", "%test%"},
+		},
+		"find_mbid_duplicates": {
+			query: `SELECT a.id, p.provider_id FROM artists a
+				JOIN artist_provider_ids p ON p.artist_id = a.id AND p.provider = 'musicbrainz'
+				WHERE a.is_excluded = 0
+				AND p.provider_id IN (
+					SELECT provider_id FROM artist_provider_ids
+					WHERE provider = 'musicbrainz'
+					GROUP BY provider_id HAVING COUNT(*) > 1
+				) ORDER BY p.provider_id, a.name`,
+			args: nil,
+		},
+		"find_alias_duplicates": {
+			query: `SELECT artists.id, aa.alias FROM artists
+				JOIN artist_aliases aa ON artists.id = aa.artist_id
+				WHERE LOWER(aa.alias) IN (
+					SELECT LOWER(alias) FROM artist_aliases
+					GROUP BY LOWER(alias) HAVING COUNT(DISTINCT artist_id) > 1
+				) ORDER BY LOWER(aa.alias), artists.name`,
+			args: nil,
+		},
+
+		// --- Violation trend and severity queries (rule/service.go) ---
+
+		"violation_trend_created": {
+			query: `SELECT date(created_at) AS day, COUNT(*) AS cnt
+				FROM rule_violations
+				WHERE created_at >= ? AND created_at < ?
+				GROUP BY day`,
+			args: []any{"2024-01-01T00:00:00Z", "2024-02-01T00:00:00Z"},
+		},
+		"violation_trend_resolved": {
+			query: `SELECT date(resolved_at) AS day, COUNT(*) AS cnt
+				FROM rule_violations
+				WHERE resolved_at IS NOT NULL
+				  AND resolved_at >= ? AND resolved_at < ?
+				GROUP BY day`,
+			args: []any{"2024-01-01T00:00:00Z", "2024-02-01T00:00:00Z"},
+		},
+		"violation_count_by_severity": {
+			query: `SELECT severity, COUNT(*) FROM rule_violations
+				WHERE status IN (?, ?)
+				GROUP BY severity`,
+			args: []any{"open", "pending_choice"},
+		},
+
+		// --- Image write tracking (sqlite_image.go) ---
+
+		"newest_write_times_by_artist": {
+			query: `SELECT a.id, MAX(ai.last_written_at)
+				FROM artist_images ai
+				JOIN artists a ON ai.artist_id = a.id
+				WHERE a.library_id = ? AND ai.last_written_at != ''
+				GROUP BY a.id`,
+			args: []any{"lib-1"},
+		},
+
+		// --- Violation cleanup (rule/service.go) ---
+
+		"cleanup_old_violations": {
+			query: `DELETE FROM rule_violations WHERE status = ? AND resolved_at < ?`,
+			args:  []any{"resolved", "2024-01-01T00:00:00Z"},
+		},
 	}
 
 	// mustIndex lists queries that must use an index -- a full table scan on
@@ -159,6 +232,9 @@ func TestQueryPlans(t *testing.T) {
 		"rule_violations_by_artist": true,
 		"band_members_by_artist":    true,
 		"aliases_by_artist":         true,
+		"violation_trend_created":   true,
+		"violation_trend_resolved":  true,
+		"cleanup_old_violations":    true,
 	}
 
 	// Collect results for summary output
