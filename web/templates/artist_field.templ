@@ -307,15 +307,17 @@ templ detailFieldEdit(a *artist.Artist, field, label, value string) {
 					type="text"
 					name="value"
 					value={ value }
+					aria-label={ label }
 					class="flex-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
 				/>
-				<button type="submit" class="p-1 text-green-600 hover:text-green-700 transition-colors" title="Save">
+				<button type="submit" class="p-1 text-green-600 hover:text-green-700 transition-colors" title="Save" aria-label={ "Save " + label }>
 					@components.IconCheck("h-4 w-4")
 				</button>
 				<button
 					type="button"
 					class="p-1 text-gray-400 hover:text-gray-600 transition-colors"
 					title="Cancel"
+					aria-label={ "Cancel editing " + label }
 					hx-get={ "/api/v1/artists/" + a.ID + "/fields/" + field + "/display" }
 					hx-target={ "#field-" + field + "-" + a.ID }
 					hx-swap="outerHTML"
