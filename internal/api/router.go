@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"log/slog"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 
@@ -408,6 +409,15 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("GET "+bp+"/setup/wizard", wrapOptionalAuth(r.handleOnboardingPage, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/notifications", wrapAuth(r.handleNotificationsPage, authMw))
 	mux.HandleFunc("GET "+bp+"/notifications/table", wrapAuth(r.handleNotificationsTable, authMw))
+
+	// Start the pprof listener on a dedicated localhost port when SW_PPROF=1 or
+	// SW_PPROF=true. Using a separate listener ensures pprof is never reachable
+	// via the public-facing port even if accidentally enabled in a container.
+	if pprofEnabled() {
+		pprofOnce.Do(func() { registerPprof(r.logger) })
+	} else if v := os.Getenv("SW_PPROF"); v != "" {
+		r.logger.Warn("SW_PPROF is set but not recognized; use '1' or 'true' to enable", "value", v)
+	}
 
 	// Apply middleware chain: security headers > logging > CSRF
 	// Login and setup are exempt from CSRF (registered with rate limiter above)
