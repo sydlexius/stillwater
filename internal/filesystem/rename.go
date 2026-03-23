@@ -6,12 +6,17 @@ import (
 	"path/filepath"
 )
 
+// renameFunc is the function used by RenameDirAtomic for the initial rename
+// attempt. It defaults to os.Rename and can be overridden in tests to
+// simulate cross-device (EXDEV) errors.
+var renameFunc = os.Rename
+
 // RenameDirAtomic renames src to dst using os.Rename. If that fails (e.g.
 // cross-device move), it falls back to a recursive copy followed by removal
 // of the source directory. The caller must ensure dst does not already exist;
 // if dst exists the behavior is platform-dependent.
 func RenameDirAtomic(src, dst string) error {
-	if err := os.Rename(src, dst); err == nil {
+	if err := renameFunc(src, dst); err == nil {
 		return nil
 	}
 
