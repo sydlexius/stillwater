@@ -3053,7 +3053,7 @@ paths:
       summary: Link artist to MusicBrainz ID and refresh
       operationId: bulkIdentifyLink
       description: >
-        Links an artist to a MusicBrainz ID and triggers a full metadata refresh.
+        Links an artist to a MusicBrainz ID and attempts a full metadata refresh.
         If the artist exists in the bulk-identify review queue, it is removed.
       requestBody:
         required: true
