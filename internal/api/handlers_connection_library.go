@@ -1024,7 +1024,9 @@ func (r *Router) downloadPlatformImages(ctx context.Context, dl imageDownloader,
 		}
 	}
 
-	r.enforceCacheLimitIfNeeded(ctx, a)
+	if result.Images > 0 {
+		r.enforceCacheLimitIfNeeded(ctx, a)
+	}
 }
 
 // compactFanartIfNeeded renumbers fanart files when the primary slot is missing

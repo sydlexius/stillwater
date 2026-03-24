@@ -1769,7 +1769,9 @@ func (r *Router) handleFanartBatchFetch(w http.ResponseWriter, req *http.Request
 		allSaved = append(allSaved, saved...)
 	}
 
-	r.enforceCacheLimitIfNeeded(req.Context(), a)
+	if len(allSaved) > 0 {
+		r.enforceCacheLimitIfNeeded(req.Context(), a)
+	}
 	r.updateArtistFanartCount(req.Context(), a)
 
 	// Sync all fanart to connected platforms (synchronous with timeout).

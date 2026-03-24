@@ -703,7 +703,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 						</p>
 					</div>
 					<div class="px-6 py-4 space-y-4">
-						<div id="cache-stats" class="text-sm text-gray-600 dark:text-gray-400">Loading...</div>
+						<div id="cache-stats" role="status" aria-live="polite" aria-atomic="true" class="text-sm text-gray-600 dark:text-gray-400">Loading...</div>
 						<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 							<div>
 								<label for="cache-max-size" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Maximum size</label>
@@ -713,6 +713,9 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 									class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
 									onchange="saveCacheMaxSize(this.value)"
 								>
+									if data.CacheMaxSizeMB != "" && data.CacheMaxSizeMB != "0" && data.CacheMaxSizeMB != "256" && data.CacheMaxSizeMB != "512" && data.CacheMaxSizeMB != "1024" && data.CacheMaxSizeMB != "2048" {
+										<option value={ data.CacheMaxSizeMB } selected>{ data.CacheMaxSizeMB + " MB (custom)" }</option>
+									}
 									<option value="0" selected?={ data.CacheMaxSizeMB == "0" }>Unlimited</option>
 									<option value="256" selected?={ data.CacheMaxSizeMB == "256" }>256 MB</option>
 									<option value="512" selected?={ data.CacheMaxSizeMB == "512" }>512 MB</option>
@@ -728,7 +731,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 								>
 									Clear Cache
 								</button>
-								<span id="cache-status"></span>
+								<span id="cache-status" role="status" aria-live="polite" aria-atomic="true"></span>
 							</div>
 						</div>
 					</div>

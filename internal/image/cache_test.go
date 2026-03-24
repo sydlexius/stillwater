@@ -2,9 +2,11 @@ package image
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 )
@@ -161,5 +163,44 @@ func TestEnforceCacheLimit_CleansEmptyDirs(t *testing.T) {
 	// The a1 subdirectory should be removed since it is now empty.
 	if _, err := os.Stat(filepath.Join(dir, "a1")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatal("empty artist directory should be removed after eviction")
+	}
+}
+
+func TestEnforceCacheLimit_ConcurrentCallers(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create 10 files across 5 artist dirs, 1000 bytes each = 10000 total.
+	for i := 0; i < 10; i++ {
+		artistDir := fmt.Sprintf("a%d", i/2)
+		file := fmt.Sprintf("file%d.jpg", i%2)
+		writeTestFile(t, filepath.Join(dir, artistDir, file), 1000)
+	}
+
+	limit := int64(5000) // Should evict roughly half.
+	var wg sync.WaitGroup
+	errs := make([]error, 2)
+
+	for g := 0; g < 2; g++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			errs[idx] = EnforceCacheLimit(dir, limit, testLogger(t))
+		}(g)
+	}
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("goroutine %d returned error: %v", i, err)
+		}
+	}
+
+	// Verify total size is within limit.
+	totalSize, _, _, err := CacheStats(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if totalSize > limit {
+		t.Fatalf("expected total <= %d, got %d", limit, totalSize)
 	}
 }
