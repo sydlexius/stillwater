@@ -3005,6 +3005,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "503":
+          description: Artist service not configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     get:
       tags: [Bulk Operations]
       summary: Get bulk identification progress
@@ -3044,7 +3050,7 @@ paths:
   /artists/bulk-identify/link:
     post:
       tags: [Bulk Operations]
-      summary: Link artist from review queue
+      summary: Link artist to MusicBrainz ID and refresh
       operationId: bulkIdentifyLink
       description: >
         Links an artist to a MusicBrainz ID and triggers a full metadata refresh.
@@ -3094,6 +3100,12 @@ paths:
                 $ref: "#/components/schemas/Error"
         "500":
           description: Failed to update artist or refresh metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Artist service not configured
           content:
             application/json:
               schema:

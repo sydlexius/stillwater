@@ -446,25 +446,26 @@ func (r *Router) identifyArtist(ctx context.Context, a *artist.Artist, connIdx *
 
 	// Tier 2: Album comparison (only if artist has local album subdirectories).
 	localAlbums := artist.ListLocalAlbums(a.Path)
-	if len(localAlbums) > 0 {
+	hasAlbums := len(localAlbums) > 0
+	if hasAlbums {
 		searchName := filepath.Base(a.Path)
 		results, err := r.orchestrator.SearchForLinking(ctx, searchName, []provider.ProviderName{provider.NameMusicBrainz})
 		if err != nil {
 			r.logger.Warn("bulk-identify: Tier 2 search failed",
 				"artist", a.Name, "error", err)
-			// Fall through to Tier 3 on search failure.
+			// Fall through to Tier 3 on search failure only.
 		} else if len(results) > 0 {
 			scored := r.enrichAndScoreTier2(ctx, results, localAlbums)
 			tier2Result := r.evaluateTier2(ctx, a, scored)
-			// evaluateTier2 returns outcomeUnmatched when all candidates < 30%;
-			// in that case fall through to Tier 3 instead of returning.
-			if tier2Result.Outcome != outcomeUnmatched {
-				return tier2Result
-			}
+			// If Tier 2 ran album comparison and found no match (< 30%),
+			// do NOT fall through to Tier 3. The album evidence is more
+			// reliable than a name-only search, so respect its verdict.
+			return tier2Result
 		}
 	}
 
-	// Tier 3: Name-only search.
+	// Tier 3: Name-only search (only for artists without album subdirectories,
+	// or when Tier 2 search failed due to an error).
 	results, err := r.orchestrator.SearchForLinking(ctx, a.Name, []provider.ProviderName{provider.NameMusicBrainz})
 	if err != nil {
 		r.logger.Warn("bulk-identify: Tier 3 search failed",
@@ -485,15 +486,23 @@ func (r *Router) identifyArtist(ctx context.Context, a *artist.Artist, connIdx *
 		return identifyResult{Outcome: outcomeAutoLinked}
 	}
 
-	// Multiple results or low score: review queue.
-	scored := make([]ScoredCandidate, len(results))
-	for i, res := range results {
+	// Multiple results or low score: queue only candidates with confidence >= 0.3
+	// to avoid flooding the review queue with low-confidence noise.
+	var reviewable []ScoredCandidate
+	for _, res := range results {
 		confidence := float64(res.Score) / 200.0 // name-only tops at 0.5
-		scored[i] = ScoredCandidate{
+		if confidence < 0.3 {
+			continue
+		}
+		reviewable = append(reviewable, ScoredCandidate{
 			ArtistSearchResult: res,
 			Confidence:         confidence,
 			Reason:             "name match",
-		}
+		})
+	}
+
+	if len(reviewable) == 0 {
+		return identifyResult{Outcome: outcomeUnmatched}
 	}
 
 	return identifyResult{
@@ -503,7 +512,7 @@ func (r *Router) identifyArtist(ctx context.Context, a *artist.Artist, connIdx *
 			ArtistName: a.Name,
 			ArtistPath: a.Path,
 			Tier:       "name",
-			Candidates: scored,
+			Candidates: reviewable,
 		},
 	}
 }

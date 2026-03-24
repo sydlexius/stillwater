@@ -325,6 +325,9 @@ func TestBulkIdentify_Tier1_ConnectionMatch(t *testing.T) {
 	if updated.MusicBrainzID != "83d91898-7763-47d7-b03b-b92132375c47" {
 		t.Errorf("MusicBrainzID = %q, want %q", updated.MusicBrainzID, "83d91898-7763-47d7-b03b-b92132375c47")
 	}
+	if updated.DiscogsID != "123456" {
+		t.Errorf("DiscogsID = %q, want %q", updated.DiscogsID, "123456")
+	}
 
 	// Verify progress counters.
 	r.identifyMu.RLock()
