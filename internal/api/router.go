@@ -15,6 +15,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/backup"
 	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/event"
+	img "github.com/sydlexius/stillwater/internal/image"
 	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/logging"
 	"github.com/sydlexius/stillwater/internal/maintenance"
@@ -263,6 +264,9 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("POST "+bp+"/api/v1/settings/maintenance/optimize", wrapAuth(r.handleMaintenanceOptimize, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/settings/maintenance/vacuum", wrapAuth(r.handleMaintenanceVacuum, authMw))
 	mux.HandleFunc("PUT "+bp+"/api/v1/settings/maintenance/schedule", wrapAuth(r.handleMaintenanceSchedule, authMw))
+	// Cache routes
+	mux.HandleFunc("GET "+bp+"/api/v1/settings/cache/stats", wrapAuth(r.handleCacheStats, authMw))
+	mux.HandleFunc("DELETE "+bp+"/api/v1/settings/cache", wrapAuth(r.handleCacheClear, authMw))
 	// Settings export/import routes
 	mux.HandleFunc("POST "+bp+"/api/v1/settings/export", wrapAuth(r.handleSettingsExport, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/settings/import", wrapAuth(r.handleSettingsImport, authMw))
@@ -488,5 +492,21 @@ func wrapAuth(fn http.HandlerFunc, authMw func(http.Handler) http.Handler) http.
 func wrapOptionalAuth(fn http.HandlerFunc, mw func(http.Handler) http.Handler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		mw(fn).ServeHTTP(w, r)
+	}
+}
+
+// enforceCacheLimitIfNeeded checks whether the artist uses the image cache
+// (pathless) and if so, enforces the configured cache size limit. Errors are
+// logged but do not fail the calling operation.
+func (r *Router) enforceCacheLimitIfNeeded(ctx context.Context, a *artist.Artist) {
+	if a.Path != "" || r.imageCacheDir == "" {
+		return
+	}
+	maxMB := r.getIntSetting(ctx, "cache.image.max_size_mb", 0)
+	if maxMB <= 0 {
+		return
+	}
+	if err := img.EnforceCacheLimit(r.imageCacheDir, int64(maxMB)*1024*1024, r.logger); err != nil {
+		r.logger.Warn("image cache eviction failed", "error", err)
 	}
 }

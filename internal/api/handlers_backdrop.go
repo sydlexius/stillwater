@@ -363,6 +363,7 @@ func (r *Router) handleFanartSlotAssign(w http.ResponseWriter, req *http.Request
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to save image"})
 		return
 	}
+	r.enforceCacheLimitIfNeeded(req.Context(), a)
 
 	r.updateArtistFanartCount(req.Context(), a)
 

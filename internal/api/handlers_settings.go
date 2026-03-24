@@ -61,6 +61,13 @@ func (r *Router) handleUpdateSettings(w http.ResponseWriter, req *http.Request) 
 			return
 		}
 	}
+	if v, ok := body["cache.image.max_size_mb"]; ok {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 0 {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "cache.image.max_size_mb must be zero or a positive integer"})
+			return
+		}
+	}
 
 	now := time.Now().UTC().Format(time.RFC3339)
 	for k, v := range body {

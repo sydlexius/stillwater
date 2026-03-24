@@ -181,7 +181,7 @@ func TestHandleRunArtistRules_HTMX_NoViolations(t *testing.T) {
 
 func TestHandleRunArtistRules_HTMX_ViolationsFound(t *testing.T) {
 	// Enable only RuleBioExists so the test does not depend on filesystem state or
-	// pathless-library handling (which may change as the degraded-mode concept is retired).
+	// pathless-library handling.
 	// A fresh artist with no biography always violates this DB-only rule.
 	r, artistSvc, ruleSvc := testRouterWithPipelineFull(t)
 

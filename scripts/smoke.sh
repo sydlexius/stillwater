@@ -938,7 +938,7 @@ if [[ "$shared_fs_code" == "200" ]]; then
     fi
 
     # Validate warning structure when warnings exist. Only risk_level and
-    # message are required; platform is optional (degraded warnings may omit it).
+    # message are required; platform is optional (pathless-library warnings may omit it).
     if [[ "$shared_fs_warnings_ok" == "true" && "$shared_fs_warnings" -gt 0 ]]; then
       first_warning_risk=$(echo "$shared_fs_body" | jq -r '.image_fetcher_warnings[0].risk_level' 2>/dev/null || echo "null")
       first_warning_message=$(echo "$shared_fs_body" | jq -r '.image_fetcher_warnings[0].message' 2>/dev/null || echo "null")
