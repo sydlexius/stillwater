@@ -203,8 +203,15 @@ func (r *Router) handleRefreshLink(w http.ResponseWriter, req *http.Request) {
 }
 
 // executeRefresh runs the orchestrator's FetchMetadata and applies results to the artist.
+// It is a thin wrapper around executeRefreshCtx that extracts the context from the request.
 func (r *Router) executeRefresh(req *http.Request, a *artist.Artist) (*provider.FetchResult, error) {
-	result, err := r.orchestrator.FetchMetadata(req.Context(), a.MusicBrainzID, a.Name, a.ProviderIDMap())
+	return r.executeRefreshCtx(req.Context(), a)
+}
+
+// executeRefreshCtx runs the orchestrator's FetchMetadata and applies results to the artist.
+// It accepts a bare context so it can be called from both HTTP handlers and background goroutines.
+func (r *Router) executeRefreshCtx(ctx context.Context, a *artist.Artist) (*provider.FetchResult, error) {
+	result, err := r.orchestrator.FetchMetadata(ctx, a.MusicBrainzID, a.Name, a.ProviderIDMap())
 	if err != nil {
 		r.logger.Error("metadata refresh failed",
 			"artist_id", a.ID,
@@ -224,16 +231,21 @@ func (r *Router) executeRefresh(req *http.Request, a *artist.Artist) (*provider.
 		})
 	}
 
-	if err := r.artistService.Update(req.Context(), a); err != nil {
+	// Shield write phase from cancellation to prevent half-applied metadata.
+	// FetchMetadata above is cancelable, but once we have the data, the
+	// Update/Publish/Upsert sequence must run to completion.
+	writeCtx := context.WithoutCancel(ctx)
+
+	if err := r.artistService.Update(writeCtx, a); err != nil {
 		r.logger.Error("saving refreshed metadata failed",
 			"artist_id", a.ID,
 			"error", err)
 		return nil, err
 	}
 
-	r.publisher.PublishMetadata(req.Context(), a)
+	r.publisher.PublishMetadata(writeCtx, a)
 
-	rule.UpdateProviderFetchTimestamps(req.Context(), r.artistService, a.ID, result.AttemptedProviders, r.logger)
+	rule.UpdateProviderFetchTimestamps(writeCtx, r.artistService, a.ID, result.AttemptedProviders, r.logger)
 
 	// Update members if the provider attempted the "members" field.
 	// When the provider was queried but returned an empty list, we clear
@@ -250,7 +262,7 @@ func (r *Router) executeRefresh(req *http.Request, a *artist.Artist) (*provider.
 		}
 		if membersAttempted {
 			members := convertProviderMembers(a.ID, result.Metadata.Members)
-			if err := r.artistService.UpsertMembers(req.Context(), a.ID, members); err != nil {
+			if err := r.artistService.UpsertMembers(writeCtx, a.ID, members); err != nil {
 				r.logger.Warn("upserting members after refresh",
 					"artist_id", a.ID,
 					"error", err)

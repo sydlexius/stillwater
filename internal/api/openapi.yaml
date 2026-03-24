@@ -109,6 +109,116 @@ components:
         updated_at:
           type: string
           format: date-time
+    IdentifyProgress:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [idle, running, completed, canceled]
+        total:
+          type: integer
+          description: Total number of unidentified artists to process.
+        processed:
+          type: integer
+          description: Number of artists processed so far.
+        auto_linked:
+          type: integer
+          description: Artists automatically linked via connection or high-confidence match.
+        queued:
+          type: integer
+          description: Artists added to the review queue for manual linking.
+        unmatched:
+          type: integer
+          description: Artists with no matching candidates found.
+        failed:
+          type: integer
+          description: Artists that failed during processing.
+        current_name:
+          type: string
+          description: Name of the artist currently being processed.
+        review_queue:
+          type: array
+          description: Artists requiring manual review and linking.
+          items:
+            $ref: "#/components/schemas/IdentifyCandidate"
+    IdentifyCandidate:
+      type: object
+      properties:
+        artist_id:
+          type: string
+        artist_name:
+          type: string
+        artist_path:
+          type: string
+        tier:
+          type: string
+          enum: [connection, album, name]
+          description: The pipeline tier that produced this candidate.
+        candidates:
+          type: array
+          items:
+            $ref: "#/components/schemas/ScoredCandidate"
+    ScoredCandidate:
+      type: object
+      properties:
+        provider_id:
+          type: string
+        name:
+          type: string
+        sort_name:
+          type: string
+        type:
+          type: string
+        disambiguation:
+          type: string
+        country:
+          type: string
+        score:
+          type: integer
+        musicbrainz_id:
+          type: string
+        source:
+          type: string
+        album_comparison:
+          $ref: "#/components/schemas/AlbumComparison"
+        confidence:
+          type: number
+          format: double
+          description: Confidence score from 0.0 to 1.0.
+        reason:
+          type: string
+          description: Human-readable reason for the confidence score.
+    AlbumComparison:
+      type: object
+      properties:
+        matches:
+          type: array
+          items:
+            type: object
+            properties:
+              local_name:
+                type: string
+              remote_name:
+                type: string
+              matched:
+                type: boolean
+        local_only:
+          type: array
+          items:
+            type: string
+        remote_only:
+          type: array
+          items:
+            type: string
+        match_count:
+          type: integer
+        local_count:
+          type: integer
+        remote_count:
+          type: integer
+        match_percent:
+          type: integer
+          description: Percentage of local albums matched (0-100).
     HealthSummary:
       type: object
       properties:
@@ -2823,6 +2933,183 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Status"
+
+  /artists/bulk-identify:
+    post:
+      tags: [Bulk Operations]
+      summary: Start bulk artist identification
+      operationId: startBulkIdentify
+      description: >
+        Processes unidentified artists (missing MusicBrainz ID) through a 3-tier
+        pipeline: connection-based matching, album comparison, and name-only search.
+        Returns 409 if a job is already running.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                library_id:
+                  type: string
+                  description: Optional library ID to scope the identification to a single library.
+      responses:
+        "202":
+          description: Job started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [running]
+                  total:
+                    type: integer
+                    description: Number of unidentified artists to process.
+        "200":
+          description: No unidentified artists found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [completed]
+                  message:
+                    type: string
+                  total:
+                    type: integer
+        "400":
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Job already running
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [running]
+                  message:
+                    type: string
+        "500":
+          description: Failed to list artists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Artist service not configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    get:
+      tags: [Bulk Operations]
+      summary: Get bulk identification progress
+      operationId: getBulkIdentifyProgress
+      responses:
+        "200":
+          description: Current progress
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdentifyProgress"
+    delete:
+      tags: [Bulk Operations]
+      summary: Cancel bulk identification
+      operationId: cancelBulkIdentify
+      responses:
+        "200":
+          description: Cancellation status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [idle, canceling, completed, canceled]
+                    description: >
+                      Current job status. "canceling" when a running job has been
+                      asked to stop; "completed" or "canceled" if the job already
+                      finished; "idle" if no job exists.
+                  message:
+                    type: string
+                required:
+                  - status
+                  - message
+
+  /artists/bulk-identify/link:
+    post:
+      tags: [Bulk Operations]
+      summary: Link artist to MusicBrainz ID and refresh
+      operationId: bulkIdentifyLink
+      description: >
+        Links an artist to a MusicBrainz ID and attempts a full metadata refresh.
+        If the artist exists in the bulk-identify review queue, it is removed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [artist_id, mbid]
+              properties:
+                artist_id:
+                  type: string
+                mbid:
+                  type: string
+                  description: MusicBrainz artist ID to link.
+                discogs_id:
+                  type: string
+                  description: Optional Discogs artist ID.
+      responses:
+        "200":
+          description: Artist linked and refreshed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [linked]
+                  artist_id:
+                    type: string
+                  mbid:
+                    type: string
+        "400":
+          description: Invalid request body or missing required fields
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Artist not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Failed to update artist or refresh metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Artist service not configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /reports/health:
     get:

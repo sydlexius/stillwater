@@ -113,6 +113,8 @@ type Router struct {
 	ruleRunMu          sync.Mutex
 	fixAllProgress     *FixAllProgress
 	fixAllMu           sync.RWMutex
+	identifyProgress   *IdentifyProgress
+	identifyMu         sync.RWMutex
 	undoStore          *rule.UndoStore
 }
 
@@ -331,6 +333,12 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("GET "+bp+"/api/v1/bulk/jobs", wrapAuth(r.handleBulkJobList, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/bulk/jobs/{id}", wrapAuth(r.handleBulkJobStatus, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/bulk/jobs/{id}/cancel", wrapAuth(r.handleBulkJobCancel, authMw))
+
+	// Bulk identify routes
+	mux.HandleFunc("POST "+bp+"/api/v1/artists/bulk-identify", wrapAuth(r.handleBulkIdentify, authMw))
+	mux.HandleFunc("GET "+bp+"/api/v1/artists/bulk-identify", wrapAuth(r.handleBulkIdentifyProgress, authMw))
+	mux.HandleFunc("DELETE "+bp+"/api/v1/artists/bulk-identify", wrapAuth(r.handleBulkIdentifyCancel, authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/artists/bulk-identify/link", wrapAuth(r.handleBulkIdentifyLink, authMw))
 
 	// Violation trend
 	mux.HandleFunc("GET "+bp+"/api/v1/violations/trend", wrapAuth(r.handleViolationTrend, authMw))
