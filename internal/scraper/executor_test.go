@@ -75,7 +75,10 @@ func setupExecutorTest(t *testing.T) (*provider.Registry, *provider.SettingsServ
 		t.Fatalf("SeedDefaults: %v", err)
 	}
 
-	enc, _, _ := encryption.NewEncryptor("")
+	enc, _, err := encryption.NewEncryptor("")
+	if err != nil {
+		t.Fatalf("NewEncryptor: %v", err)
+	}
 	settings := provider.NewSettingsService(db, enc)
 	registry := provider.NewRegistry()
 

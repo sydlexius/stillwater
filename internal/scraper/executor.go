@@ -265,6 +265,10 @@ func (e *Executor) getProviderResult(
 		id = artistName
 	}
 
+	// queryID tracks the identifier actually passed to the most recent
+	// GetArtist call. It may differ from id after a name-based retry.
+	queryID := id
+
 	if id != "" {
 		meta, err := p.GetArtist(ctx, id)
 		// If we used an MBID (not a provider-specific ID) and the provider
@@ -277,6 +281,7 @@ func (e *Executor) getProviderResult(
 					e.logger.Debug("retrying with artist name after MBID not-found",
 						slog.String("provider", string(name)),
 						slog.String("name", artistName))
+					queryID = artistName
 					meta, err = p.GetArtist(ctx, artistName)
 				}
 			}
@@ -290,7 +295,7 @@ func (e *Executor) getProviderResult(
 			if errors.As(err, &notFound) {
 				e.logger.Debug("provider has no data for artist",
 					slog.String("provider", string(name)),
-					slog.String("id", id))
+					slog.String("id", queryID))
 			} else {
 				e.logger.Debug("provider GetArtist failed",
 					slog.String("provider", string(name)),

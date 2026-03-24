@@ -132,9 +132,15 @@ func (o *Orchestrator) FetchMetadata(ctx context.Context, mbid, name string, pro
 	// populated from earlier per-provider enrichment).
 	extractProviderIDsFromURLs(result.Metadata)
 
-	// Record which providers were actually queried so callers can update
-	// per-provider fetch timestamps on the artist record.
-	for provName := range cache {
+	// Record which providers were successfully queried so callers can update
+	// per-provider fetch timestamps on the artist record. Providers with
+	// transient errors (timeouts, 5xx) are excluded to avoid hiding outages
+	// behind misleading "attempted" markers -- consistent with the executor
+	// path which already applies this filter.
+	for provName, pr := range cache {
+		if pr.err != nil {
+			continue
+		}
 		result.AttemptedProviders = append(result.AttemptedProviders, provName)
 	}
 
@@ -261,6 +267,10 @@ func (o *Orchestrator) getProviderResult(ctx context.Context, name ProviderName,
 		id = artistName
 	}
 
+	// queryID tracks the identifier actually passed to the most recent
+	// GetArtist call. It may differ from id after a name-based retry.
+	queryID := id
+
 	if id != "" {
 		meta, err := p.GetArtist(ctx, id)
 		// If we used an MBID (not a provider-specific ID) and the provider
@@ -273,6 +283,7 @@ func (o *Orchestrator) getProviderResult(ctx context.Context, name ProviderName,
 					o.logger.Debug("retrying with artist name after MBID not-found",
 						slog.String("provider", string(name)),
 						slog.String("name", artistName))
+					queryID = artistName
 					meta, err = p.GetArtist(ctx, artistName)
 				}
 			}
@@ -286,7 +297,7 @@ func (o *Orchestrator) getProviderResult(ctx context.Context, name ProviderName,
 			if errors.As(err, &notFound) {
 				o.logger.Debug("provider has no data for artist",
 					slog.String("provider", string(name)),
-					slog.String("id", id))
+					slog.String("id", queryID))
 			} else {
 				o.logger.Debug("provider GetArtist failed",
 					slog.String("provider", string(name)),
