@@ -20,11 +20,12 @@ type Executor struct {
 
 // FieldResult records the outcome of scraping a single field.
 type FieldResult struct {
-	Field       FieldName             `json:"field"`
-	Provider    provider.ProviderName `json:"provider"`
-	WasFallback bool                  `json:"was_fallback"`
-	Queried     bool                  `json:"queried"`
-	Err         error                 `json:"-"`
+	Field        FieldName               `json:"field"`
+	Provider     provider.ProviderName   `json:"provider"`
+	Contributors []provider.ProviderName `json:"-"` // providers that contributed images for this field
+	WasFallback  bool                    `json:"was_fallback"`
+	Queried      bool                    `json:"queried"`
+	Err          error                   `json:"-"`
 }
 
 // NewExecutor creates a new scraper executor.
@@ -96,14 +97,12 @@ func (e *Executor) ScrapeAll(ctx context.Context, mbid, name, scope string, prov
 				Provider: fr.Provider,
 			})
 
-			// For image fields, multiple providers may have contributed
-			// images. Mark all such providers as selected so their
-			// mergeable fields (IDs, URLs, aliases) are applied.
+			// For image fields, mark all providers that actually
+			// contributed images for this specific field as selected
+			// so their mergeable fields (IDs, URLs, aliases) are applied.
 			if CategoryFor(fr.Field) == CategoryImages {
-				for provName, pr := range cache {
-					if pr.err == nil && len(pr.images) > 0 {
-						selectedProviders[provName] = true
-					}
+				for _, provName := range fr.Contributors {
+					selectedProviders[provName] = true
 				}
 			}
 		}
@@ -153,9 +152,11 @@ func (e *Executor) scrapeField(
 	isImage := CategoryFor(field.Field) == CategoryImages
 
 	// For image fields, track the first provider that contributed images
-	// so we can report it in the FieldResult.
+	// so we can report it in the FieldResult, and all contributing
+	// providers so ScrapeAll can mark them as selected.
 	var firstImageProvider provider.ProviderName
 	var firstImageWasFallback bool
+	var contributors []provider.ProviderName
 
 	// Try primary provider first (if configured)
 	if available[field.Primary] {
@@ -167,6 +168,7 @@ func (e *Executor) scrapeField(
 				if !isImage {
 					return FieldResult{Field: field.Field, Provider: field.Primary, Queried: true}
 				}
+				contributors = append(contributors, field.Primary)
 				if firstImageProvider == "" {
 					firstImageProvider = field.Primary
 				}
@@ -196,6 +198,7 @@ func (e *Executor) scrapeField(
 					Queried:     true,
 				}
 			}
+			contributors = append(contributors, provName)
 			if firstImageProvider == "" {
 				firstImageProvider = provName
 				firstImageWasFallback = true
@@ -203,13 +206,15 @@ func (e *Executor) scrapeField(
 		}
 	}
 
-	// For image fields, return the first contributing provider as the source.
+	// For image fields, return the first contributing provider as the source
+	// and all contributors so ScrapeAll can mark them as selected.
 	if isImage && firstImageProvider != "" {
 		return FieldResult{
-			Field:       field.Field,
-			Provider:    firstImageProvider,
-			WasFallback: firstImageWasFallback,
-			Queried:     true,
+			Field:        field.Field,
+			Provider:     firstImageProvider,
+			Contributors: contributors,
+			WasFallback:  firstImageWasFallback,
+			Queried:      true,
 		}
 	}
 
