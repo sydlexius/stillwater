@@ -1238,3 +1238,118 @@ func TestApplyFieldImageDoesNotBlockOnWrongType(t *testing.T) {
 		t.Error("expected at least 1 thumb image from AudioDB, got 0")
 	}
 }
+
+// TestOrchestratorErrNotFoundMarksFieldAttempted verifies that when a provider
+// returns ErrNotFound (artist not in that provider's database), the field is
+// still counted as "attempted" in AttemptedFields. This enables refresh-overwrite
+// semantics: "provider was reached and said not found" clears stale data.
+func TestOrchestratorErrNotFoundMarksFieldAttempted(t *testing.T) {
+	registry, settings := setupOrchestratorTest(t)
+
+	registry.Register(&mockProvider{
+		name:    NameAudioDB,
+		authReq: false,
+		getArtFn: func(_ context.Context, id string) (*ArtistMetadata, error) {
+			return nil, &ErrNotFound{Provider: NameAudioDB, ID: id}
+		},
+	})
+
+	if err := settings.SetPriority(context.Background(), "biography", []ProviderName{NameAudioDB}); err != nil {
+		t.Fatalf("SetPriority: %v", err)
+	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	orch := NewOrchestrator(registry, settings, logger)
+
+	result, err := orch.FetchMetadata(context.Background(), "mbid-1234", "Test Artist", nil)
+	if err != nil {
+		t.Fatalf("FetchMetadata: %v", err)
+	}
+
+	if !containsString(result.AttemptedFields, "biography") {
+		t.Errorf("expected 'biography' in AttemptedFields after ErrNotFound, got %v", result.AttemptedFields)
+	}
+
+	found := false
+	for _, p := range result.AttemptedProviders {
+		if p == NameAudioDB {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected AudioDB in AttemptedProviders after ErrNotFound, got %v", result.AttemptedProviders)
+	}
+
+	if result.Metadata.Biography != "" {
+		t.Errorf("expected empty biography, got %q", result.Metadata.Biography)
+	}
+}
+
+// TestOrchestratorNetworkErrorDoesNotMarkFieldAttempted verifies that a real
+// network error (timeout, connection refused) does NOT mark the field as
+// attempted.
+func TestOrchestratorNetworkErrorDoesNotMarkFieldAttempted(t *testing.T) {
+	registry, settings := setupOrchestratorTest(t)
+
+	registry.Register(&mockProvider{
+		name:    NameAudioDB,
+		authReq: false,
+		getArtFn: func(_ context.Context, _ string) (*ArtistMetadata, error) {
+			return nil, fmt.Errorf("connection timeout")
+		},
+	})
+
+	if err := settings.SetPriority(context.Background(), "biography", []ProviderName{NameAudioDB}); err != nil {
+		t.Fatalf("SetPriority: %v", err)
+	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	orch := NewOrchestrator(registry, settings, logger)
+
+	result, err := orch.FetchMetadata(context.Background(), "mbid-1234", "Test Artist", nil)
+	if err != nil {
+		t.Fatalf("FetchMetadata: %v", err)
+	}
+
+	if containsString(result.AttemptedFields, "biography") {
+		t.Errorf("expected 'biography' NOT in AttemptedFields after network error, got %v", result.AttemptedFields)
+	}
+}
+
+// TestOrchestratorErrNotFoundCountsAsAttemptedProvider verifies that a provider
+// returning ErrNotFound is still included in AttemptedProviders.
+func TestOrchestratorErrNotFoundCountsAsAttemptedProvider(t *testing.T) {
+	registry, settings := setupOrchestratorTest(t)
+
+	registry.Register(&mockProvider{
+		name:    NameAudioDB,
+		authReq: false,
+		getArtFn: func(_ context.Context, id string) (*ArtistMetadata, error) {
+			return nil, &ErrNotFound{Provider: NameAudioDB, ID: id}
+		},
+	})
+
+	if err := settings.SetPriority(context.Background(), "biography", []ProviderName{NameAudioDB}); err != nil {
+		t.Fatalf("SetPriority: %v", err)
+	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	orch := NewOrchestrator(registry, settings, logger)
+
+	result, err := orch.FetchMetadata(context.Background(), "mbid-1234", "Test Artist", nil)
+	if err != nil {
+		t.Fatalf("FetchMetadata: %v", err)
+	}
+
+	found := false
+	for _, p := range result.AttemptedProviders {
+		if p == NameAudioDB {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected AudioDB in AttemptedProviders after ErrNotFound, got %v", result.AttemptedProviders)
+	}
+}
