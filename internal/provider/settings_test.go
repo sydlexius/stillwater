@@ -913,3 +913,74 @@ func TestAnyWebSearchEnabled(t *testing.T) {
 		t.Error("expected true when duckduckgo enabled")
 	}
 }
+
+func TestNameSimilarityThresholdDefault(t *testing.T) {
+	db := setupTestDB(t)
+	enc := setupTestEncryptor(t)
+	svc := NewSettingsService(db, enc)
+	ctx := context.Background()
+
+	// When no setting is stored, should return the default.
+	threshold, err := svc.GetNameSimilarityThreshold(ctx)
+	if err != nil {
+		t.Fatalf("GetNameSimilarityThreshold: %v", err)
+	}
+	if threshold != DefaultNameSimilarityThreshold {
+		t.Errorf("expected default %d, got %d", DefaultNameSimilarityThreshold, threshold)
+	}
+}
+
+func TestNameSimilarityThresholdRoundTrip(t *testing.T) {
+	db := setupTestDB(t)
+	enc := setupTestEncryptor(t)
+	svc := NewSettingsService(db, enc)
+	ctx := context.Background()
+
+	// Set a custom threshold.
+	if err := svc.SetNameSimilarityThreshold(ctx, 80); err != nil {
+		t.Fatalf("SetNameSimilarityThreshold: %v", err)
+	}
+	threshold, err := svc.GetNameSimilarityThreshold(ctx)
+	if err != nil {
+		t.Fatalf("GetNameSimilarityThreshold: %v", err)
+	}
+	if threshold != 80 {
+		t.Errorf("expected 80, got %d", threshold)
+	}
+
+	// Update to 0 (disables validation).
+	if err := svc.SetNameSimilarityThreshold(ctx, 0); err != nil {
+		t.Fatalf("SetNameSimilarityThreshold: %v", err)
+	}
+	threshold, err = svc.GetNameSimilarityThreshold(ctx)
+	if err != nil {
+		t.Fatalf("GetNameSimilarityThreshold: %v", err)
+	}
+	if threshold != 0 {
+		t.Errorf("expected 0, got %d", threshold)
+	}
+}
+
+func TestNameSimilarityThresholdValidation(t *testing.T) {
+	db := setupTestDB(t)
+	enc := setupTestEncryptor(t)
+	svc := NewSettingsService(db, enc)
+	ctx := context.Background()
+
+	// Values outside 0-100 should be rejected.
+	if err := svc.SetNameSimilarityThreshold(ctx, -1); err == nil {
+		t.Error("expected error for negative threshold")
+	}
+	if err := svc.SetNameSimilarityThreshold(ctx, 101); err == nil {
+		t.Error("expected error for threshold > 100")
+	}
+
+	// The stored value should still be the default since the invalid sets failed.
+	threshold, err := svc.GetNameSimilarityThreshold(ctx)
+	if err != nil {
+		t.Fatalf("GetNameSimilarityThreshold: %v", err)
+	}
+	if threshold != DefaultNameSimilarityThreshold {
+		t.Errorf("expected default %d after invalid sets, got %d", DefaultNameSimilarityThreshold, threshold)
+	}
+}

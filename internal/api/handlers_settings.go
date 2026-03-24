@@ -68,6 +68,14 @@ func (r *Router) handleUpdateSettings(w http.ResponseWriter, req *http.Request) 
 			return
 		}
 	}
+	if v, ok := body["provider.name_similarity_threshold"]; ok {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 0 || n > 100 {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "provider.name_similarity_threshold must be between 0 and 100"})
+			return
+		}
+		_ = n // validated, will be stored as string by the generic upsert below
+	}
 
 	now := time.Now().UTC().Format(time.RFC3339)
 	for k, v := range body {

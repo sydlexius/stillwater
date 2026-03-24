@@ -1,0 +1,16 @@
+{
+  "artist": {
+    "name": "Kim Kardashian",
+    "mbid": "",
+    "url": "https://www.last.fm/music/Kim+Kardashian",
+    "bio": {
+      "content": "Kim Kardashian is not a musician."
+    },
+    "tags": {
+      "tag": []
+    },
+    "similar": {
+      "artist": []
+    }
+  }
+}

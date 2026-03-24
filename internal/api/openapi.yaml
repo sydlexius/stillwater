@@ -3122,6 +3122,22 @@ paths:
       tags: [Settings]
       summary: Update settings
       operationId: updateSettings
+      description: >
+        Update one or more settings as key-value string pairs.
+        Known keys include:
+        auto_fetch_images (true/false),
+        badge_enabled (true/false),
+        badge_severity_error (true/false),
+        badge_severity_warning (true/false),
+        badge_severity_info (true/false),
+        rule_schedule_hours (integer as string),
+        backup_retention (integer as string),
+        backup_max_age_days (integer as string),
+        symlink_supported (true/false),
+        image.cache_max_size_mb (integer as string),
+        provider.name_similarity_threshold (0-100 integer as string;
+        minimum similarity score for provider name matching,
+        set to 0 to disable validation, default 60).
       requestBody:
         required: true
         content:

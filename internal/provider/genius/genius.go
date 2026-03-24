@@ -11,7 +11,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode"
 
 	"github.com/sydlexius/stillwater/internal/provider"
 )
@@ -88,7 +87,7 @@ func (a *Adapter) SearchArtist(ctx context.Context, name string) ([]provider.Art
 		results = append(results, provider.ArtistSearchResult{
 			ProviderID: strconv.Itoa(art.ID),
 			Name:       art.Name,
-			Score:      nameSimilarity(name, art.Name),
+			Score:      provider.NameSimilarity(name, art.Name),
 			Source:     string(provider.NameGenius),
 		})
 	}
@@ -171,12 +170,13 @@ func (a *Adapter) getArtistByName(ctx context.Context, name string) (*provider.A
 			best = r
 		}
 	}
-	if best.Score < minNameSimilarity {
+	threshold := a.getNameSimilarityThreshold(ctx)
+	if threshold > 0 && best.Score < threshold {
 		a.logger.Warn("rejecting search result: name similarity too low",
 			slog.String("search_term", name),
 			slog.String("result_name", best.Name),
 			slog.Int("similarity", best.Score),
-			slog.Int("threshold", minNameSimilarity),
+			slog.Int("threshold", threshold),
 		)
 		return nil, &provider.ErrNotFound{Provider: provider.NameGenius, ID: name}
 	}
@@ -264,99 +264,16 @@ func isNumeric(s string) bool {
 	return true
 }
 
-// minNameSimilarity is the threshold (0-100) below which a search result is
-// considered a mismatch. Genius search returns song hits, not artist hits, so
-// the primary_artist of the top result can be completely unrelated to the
-// search term (e.g., searching "Adele" can return Kim Kardashian).
-const minNameSimilarity = 60
-
-// nameSimilarity returns a 0-100 score indicating how similar two artist names
-// are. The comparison is case-insensitive and strips common prefixes like "The".
-func nameSimilarity(a, b string) int {
-	// Fast path: case-insensitive exact match before normalization.
-	// Handles punctuation-heavy names like "!!!" that normalize to empty.
-	// Guard: whitespace-only ("   ") must not match empty ("") via TrimSpace.
-	ta, tb := strings.TrimSpace(a), strings.TrimSpace(b)
-	if strings.EqualFold(ta, tb) && (ta != "" || (a == "" && b == "")) {
-		return 100
+// getNameSimilarityThreshold reads the configurable threshold from settings.
+// Falls back to the default (60) if the setting is missing or unreadable.
+func (a *Adapter) getNameSimilarityThreshold(ctx context.Context) int {
+	threshold, err := a.settings.GetNameSimilarityThreshold(ctx)
+	if err != nil {
+		a.logger.Warn("reading name similarity threshold, using default",
+			slog.Int("default", provider.DefaultNameSimilarityThreshold),
+			slog.String("error", err.Error()),
+		)
+		return provider.DefaultNameSimilarityThreshold
 	}
-	a = normalizeName(a)
-	b = normalizeName(b)
-	if a == "" || b == "" {
-		return 0
-	}
-	if a == b {
-		return 100
-	}
-	ra, rb := []rune(a), []rune(b)
-	maxLen := len(ra)
-	if len(rb) > maxLen {
-		maxLen = len(rb)
-	}
-	dist := levenshteinRunes(ra, rb)
-	if dist >= maxLen {
-		return 0
-	}
-	return 100 - (dist*100)/maxLen
-}
-
-// normalizeName lowercases, strips "the " prefix, and removes punctuation and
-// symbols (keeping letters, digits, and spaces) for comparison purposes.
-func normalizeName(s string) string {
-	s = strings.ToLower(strings.TrimSpace(s))
-	var b strings.Builder
-	for _, r := range s {
-		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == ' ' {
-			b.WriteRune(r)
-		}
-	}
-	s = strings.TrimSpace(b.String())
-	// Strip leading "the " only when the cleaned remainder is a distinct name,
-	// not another article (e.g., "The The" is a real band, not "The" + article).
-	if after, found := strings.CutPrefix(s, "the "); found {
-		after = strings.TrimSpace(after)
-		if after != "" && after != "the" {
-			s = after
-		}
-	}
-	return s
-}
-
-// levenshteinRunes computes the Levenshtein edit distance between two rune
-// slices. Operating on runes ensures multi-byte Unicode characters (accented
-// letters, CJK, Cyrillic) are counted as single characters.
-func levenshteinRunes(a, b []rune) int {
-	if len(a) == 0 {
-		return len(b)
-	}
-	if len(b) == 0 {
-		return len(a)
-	}
-	// Use a single-row DP approach with reused row buffers.
-	prev := make([]int, len(b)+1)
-	curr := make([]int, len(b)+1)
-	for j := range prev {
-		prev[j] = j
-	}
-	for i := 1; i <= len(a); i++ {
-		curr[0] = i
-		for j := 1; j <= len(b); j++ {
-			cost := 1
-			if a[i-1] == b[j-1] {
-				cost = 0
-			}
-			ins := curr[j-1] + 1
-			del := prev[j] + 1
-			sub := prev[j-1] + cost
-			curr[j] = ins
-			if del < curr[j] {
-				curr[j] = del
-			}
-			if sub < curr[j] {
-				curr[j] = sub
-			}
-		}
-		prev, curr = curr, prev
-	}
-	return prev[len(b)]
+	return threshold
 }

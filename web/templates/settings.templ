@@ -2,6 +2,7 @@ package templates
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/sydlexius/stillwater/internal/auth"
@@ -50,8 +51,9 @@ type SettingsData struct {
 	APITokens            []auth.APIToken
 	BackupRetention      int
 	BackupMaxAgeDays     int
-	SymlinkSupported     bool
-	CacheMaxSizeMB       string
+	SymlinkSupported        bool
+	CacheMaxSizeMB          string
+	NameSimilarityThreshold int
 }
 
 // settingsTab defines a tab in the settings page navigation.
@@ -795,6 +797,46 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 						</div>
 					</div>
 				}
+				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
+					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+						<h2 class="text-lg font-semibold">Advanced</h2>
+						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+							Fine-tune provider matching behavior.
+						</p>
+					</div>
+					<div class="px-6 py-4 space-y-4">
+						<div>
+							<label for="name_similarity_threshold" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+								Name Similarity Threshold
+							</label>
+							<p class="text-xs text-gray-500 dark:text-gray-400 mb-2">
+								Minimum similarity score (0-100) required when matching artist names from search results.
+								Set to 0 to disable name validation and accept any result. Default is 60.
+							</p>
+							<div class="flex items-center gap-3">
+								<input
+									type="number"
+									id="name_similarity_threshold"
+									name="name_similarity_threshold"
+									min="0"
+									max="100"
+									value={ strconv.Itoa(data.NameSimilarityThreshold) }
+									aria-label="Name similarity threshold (0-100)"
+									class="w-24 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+								/>
+								<span class="text-sm text-gray-500 dark:text-gray-400">%</span>
+								<button
+									type="button"
+									class="text-sm px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+									onclick={ saveNameSimilarityThreshold() }
+								>
+									Save
+								</button>
+								<span id="name-similarity-status" class="text-sm text-green-600 dark:text-green-400 hidden">Saved</span>
+							</div>
+						</div>
+					</div>
+				</div>
 			</div>
 			<!-- Connections tab -->
 			<div
@@ -3001,6 +3043,41 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 			</form>
 		</div>
 	}
+}
+
+script saveNameSimilarityThreshold() {
+	var input = document.getElementById("name_similarity_threshold");
+	var val = parseInt(input.value, 10);
+	if (isNaN(val) || val < 0 || val > 100) {
+		var el = document.getElementById("name-similarity-status");
+		el.textContent = "Value must be 0-100";
+		el.className = "text-sm text-red-500";
+		el.classList.remove("hidden");
+		return;
+	}
+	var csrfToken = document.cookie.replace(
+		/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1"
+	);
+	fetch("/api/v1/settings", {
+		method: "PUT",
+		headers: {
+			"Content-Type": "application/json",
+			"X-CSRF-Token": csrfToken
+		},
+		body: JSON.stringify({ "provider.name_similarity_threshold": String(val) })
+	}).then(function(r) {
+		if (!r.ok) throw new Error("failed");
+		var el = document.getElementById("name-similarity-status");
+		el.textContent = "Saved";
+		el.className = "text-sm text-green-600 dark:text-green-400";
+		el.classList.remove("hidden");
+		setTimeout(function() { el.classList.add("hidden"); }, 2000);
+	}).catch(function() {
+		var el = document.getElementById("name-similarity-status");
+		el.textContent = "Failed to save";
+		el.className = "text-sm text-red-500";
+		el.classList.remove("hidden");
+	});
 }
 
 script toggleKeyInput(providerName string) {

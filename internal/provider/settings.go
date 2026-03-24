@@ -614,3 +614,45 @@ func (s *SettingsService) GetMirrorConfig(ctx context.Context, name ProviderName
 	}
 	return &MirrorConfig{BaseURL: baseURL, RateLimit: rateLimit}, nil
 }
+
+// nameSimilarityThresholdKey is the settings table key for the name similarity threshold.
+const nameSimilarityThresholdKey = "provider.name_similarity_threshold"
+
+// GetNameSimilarityThreshold returns the configured name similarity threshold (0-100).
+// Returns DefaultNameSimilarityThreshold if no custom value is stored.
+// A value of 0 disables name validation (accepts any result).
+func (s *SettingsService) GetNameSimilarityThreshold(ctx context.Context) (int, error) {
+	var value string
+	err := s.db.QueryRowContext(ctx, "SELECT value FROM settings WHERE key = ?", nameSimilarityThresholdKey).Scan(&value)
+	if err == sql.ErrNoRows {
+		return DefaultNameSimilarityThreshold, nil
+	}
+	if err != nil {
+		return DefaultNameSimilarityThreshold, fmt.Errorf("reading name similarity threshold: %w", err)
+	}
+	n, err := strconv.Atoi(value)
+	if err != nil {
+		// Corrupt stored value; fall back to default silently.
+		return DefaultNameSimilarityThreshold, nil //nolint:nilerr // intentional fallback for corrupt DB value
+	}
+	if n < 0 || n > 100 {
+		return DefaultNameSimilarityThreshold, nil
+	}
+	return n, nil
+}
+
+// SetNameSimilarityThreshold stores the name similarity threshold (0-100).
+func (s *SettingsService) SetNameSimilarityThreshold(ctx context.Context, threshold int) error {
+	if threshold < 0 || threshold > 100 {
+		return fmt.Errorf("name similarity threshold must be between 0 and 100, got %d", threshold)
+	}
+	value := strconv.Itoa(threshold)
+	_, err := s.db.ExecContext(ctx,
+		"INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = datetime('now')",
+		nameSimilarityThresholdKey, value, value,
+	)
+	if err != nil {
+		return fmt.Errorf("storing name similarity threshold: %w", err)
+	}
+	return nil
+}

@@ -368,12 +368,14 @@ func TestSearchArtistScoresReflectSimilarity(t *testing.T) {
 	if kimScore == -1 {
 		t.Fatal("expected Kim Kardashian in search results")
 	}
-	if kimScore >= minNameSimilarity {
+	if kimScore >= provider.DefaultNameSimilarityThreshold {
 		t.Errorf("expected score below %d for Kim Kardashian vs Adele, got %d",
-			minNameSimilarity, kimScore)
+			provider.DefaultNameSimilarityThreshold, kimScore)
 	}
 }
 
+// TestNameSimilarity tests the shared provider.NameSimilarity function via the
+// Genius package to ensure the extraction did not change behavior.
 func TestNameSimilarity(t *testing.T) {
 	tests := []struct {
 		a, b string
@@ -401,14 +403,15 @@ func TestNameSimilarity(t *testing.T) {
 		{"abcde", "aXXXX", 0, 59},  // below threshold (rejected)
 	}
 	for _, tt := range tests {
-		score := nameSimilarity(tt.a, tt.b)
+		score := provider.NameSimilarity(tt.a, tt.b)
 		if score < tt.min || score > tt.max {
-			t.Errorf("nameSimilarity(%q, %q) = %d, want [%d, %d]",
+			t.Errorf("NameSimilarity(%q, %q) = %d, want [%d, %d]",
 				tt.a, tt.b, score, tt.min, tt.max)
 		}
 	}
 }
 
+// TestNormalizeName tests the shared provider.NormalizeName function.
 func TestNormalizeName(t *testing.T) {
 	tests := []struct {
 		input string
@@ -424,12 +427,13 @@ func TestNormalizeName(t *testing.T) {
 		{"Guns N' Roses", "guns n roses"},
 	}
 	for _, tt := range tests {
-		if got := normalizeName(tt.input); got != tt.want {
-			t.Errorf("normalizeName(%q) = %q, want %q", tt.input, got, tt.want)
+		if got := provider.NormalizeName(tt.input); got != tt.want {
+			t.Errorf("NormalizeName(%q) = %q, want %q", tt.input, got, tt.want)
 		}
 	}
 }
 
+// TestLevenshteinRunes tests the shared provider.LevenshteinRunes function.
 func TestLevenshteinRunes(t *testing.T) {
 	tests := []struct {
 		a, b string
@@ -444,8 +448,8 @@ func TestLevenshteinRunes(t *testing.T) {
 		{"mot\u00f6rhead", "motorhead", 1}, // single rune difference, not 2 bytes
 	}
 	for _, tt := range tests {
-		if got := levenshteinRunes([]rune(tt.a), []rune(tt.b)); got != tt.want {
-			t.Errorf("levenshteinRunes(%q, %q) = %d, want %d", tt.a, tt.b, got, tt.want)
+		if got := provider.LevenshteinRunes([]rune(tt.a), []rune(tt.b)); got != tt.want {
+			t.Errorf("LevenshteinRunes(%q, %q) = %d, want %d", tt.a, tt.b, got, tt.want)
 		}
 	}
 }

@@ -90,7 +90,7 @@ func (a *Adapter) SearchArtist(ctx context.Context, name string) ([]provider.Art
 			ProviderID:    art.Name,
 			Name:          art.Name,
 			MusicBrainzID: art.MBID,
-			Score:         100,
+			Score:         provider.NameSimilarity(name, art.Name),
 			Source:        string(provider.NameLastFM),
 		})
 	}
@@ -136,6 +136,23 @@ func (a *Adapter) GetArtist(ctx context.Context, id string) (*provider.ArtistMet
 
 	if resp.Artist.Name == "" {
 		return nil, &provider.ErrNotFound{Provider: provider.NameLastFM, ID: id}
+	}
+
+	// For name-based lookups, validate that the returned artist name is
+	// sufficiently similar to the search term. Last.fm can return unrelated
+	// artists when the exact name is not found (e.g., auto-corrected results).
+	if !provider.IsUUID(id) {
+		threshold := a.getNameSimilarityThreshold(ctx)
+		score := provider.NameSimilarity(id, resp.Artist.Name)
+		if threshold > 0 && score < threshold {
+			a.logger.Warn("rejecting result: name similarity too low",
+				slog.String("search_term", id),
+				slog.String("result_name", resp.Artist.Name),
+				slog.Int("similarity", score),
+				slog.Int("threshold", threshold),
+			)
+			return nil, &provider.ErrNotFound{Provider: provider.NameLastFM, ID: id}
+		}
 	}
 
 	return mapArtist(&resp.Artist), nil
@@ -234,6 +251,20 @@ func mapArtist(info *ArtistInfo) *provider.ArtistMetadata {
 	}
 
 	return meta
+}
+
+// getNameSimilarityThreshold reads the configurable threshold from settings.
+// Falls back to the default (60) if the setting is missing or unreadable.
+func (a *Adapter) getNameSimilarityThreshold(ctx context.Context) int {
+	threshold, err := a.settings.GetNameSimilarityThreshold(ctx)
+	if err != nil {
+		a.logger.Warn("reading name similarity threshold, using default",
+			slog.Int("default", provider.DefaultNameSimilarityThreshold),
+			slog.String("error", err.Error()),
+		)
+		return provider.DefaultNameSimilarityThreshold
+	}
+	return threshold
 }
 
 // cleanBio removes the Last.fm attribution link appended to bios.

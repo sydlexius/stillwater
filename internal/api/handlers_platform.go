@@ -7,6 +7,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/filesystem"
 	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/platform"
+	"github.com/sydlexius/stillwater/internal/provider"
 	"github.com/sydlexius/stillwater/web/templates"
 )
 
@@ -265,27 +266,28 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 	}
 
 	data := templates.SettingsData{
-		ActiveTab:            tab,
-		Libraries:            libs,
-		Profiles:             profiles,
-		ActiveProfile:        active,
-		ProviderKeys:         providerKeys,
-		Priorities:           priorities,
-		Connections:          conns,
-		Webhooks:             webhooks,
-		WebSearchProviders:   webSearchProviders,
-		AutoFetchImages:      r.getBoolSetting(req.Context(), "auto_fetch_images", false),
-		SymlinkSupported:     symlinkSupported,
-		Rules:                rules,
-		BadgeEnabled:         r.getBoolSetting(req.Context(), "notif_badge_enabled", true),
-		BadgeSeverityError:   r.getBoolSetting(req.Context(), "notif_badge_severity_error", true),
-		BadgeSeverityWarning: r.getBoolSetting(req.Context(), "notif_badge_severity_warning", true),
-		BadgeSeverityInfo:    r.getBoolSetting(req.Context(), "notif_badge_severity_info", false),
-		APITokens:            apiTokens,
-		RuleScheduleHours:    r.getIntSetting(req.Context(), "rule_schedule.interval_hours", 0),
-		BackupRetention:      r.getIntSetting(req.Context(), "backup_retention_count", r.backupService.Retention()),
-		BackupMaxAgeDays:     r.getIntSetting(req.Context(), "backup_max_age_days", r.backupService.MaxAgeDays()),
-		CacheMaxSizeMB:       r.getStringSetting(req.Context(), "cache.image.max_size_mb", "0"),
+		ActiveTab:               tab,
+		Libraries:               libs,
+		Profiles:                profiles,
+		ActiveProfile:           active,
+		ProviderKeys:            providerKeys,
+		Priorities:              priorities,
+		Connections:             conns,
+		Webhooks:                webhooks,
+		WebSearchProviders:      webSearchProviders,
+		AutoFetchImages:         r.getBoolSetting(req.Context(), "auto_fetch_images", false),
+		SymlinkSupported:        symlinkSupported,
+		Rules:                   rules,
+		BadgeEnabled:            r.getBoolSetting(req.Context(), "notif_badge_enabled", true),
+		BadgeSeverityError:      r.getBoolSetting(req.Context(), "notif_badge_severity_error", true),
+		BadgeSeverityWarning:    r.getBoolSetting(req.Context(), "notif_badge_severity_warning", true),
+		BadgeSeverityInfo:       r.getBoolSetting(req.Context(), "notif_badge_severity_info", false),
+		APITokens:               apiTokens,
+		RuleScheduleHours:       r.getIntSetting(req.Context(), "rule_schedule.interval_hours", 0),
+		BackupRetention:         r.getIntSetting(req.Context(), "backup_retention_count", r.backupService.Retention()),
+		BackupMaxAgeDays:        r.getIntSetting(req.Context(), "backup_max_age_days", r.backupService.MaxAgeDays()),
+		CacheMaxSizeMB:          r.getStringSetting(req.Context(), "cache.image.max_size_mb", "0"),
+		NameSimilarityThreshold: r.getIntSetting(req.Context(), "provider.name_similarity_threshold", provider.DefaultNameSimilarityThreshold),
 	}
 	renderTempl(w, req, templates.SettingsPage(r.assets(), data))
 }
