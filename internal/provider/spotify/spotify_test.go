@@ -232,18 +232,28 @@ func TestGetImages(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetImages: %v", err)
 	}
-	if len(images) == 0 {
-		t.Fatal("expected at least one image")
+	// Spotify returns all available image sizes as candidates.
+	// The test fixture has 3 images: 640x640, 320x320, 160x160.
+	if len(images) != 3 {
+		t.Fatalf("expected 3 images, got %d", len(images))
 	}
-	if images[0].Type != provider.ImageThumb {
-		t.Errorf("expected thumb type, got %q", images[0].Type)
+	for _, img := range images {
+		if img.Type != provider.ImageThumb {
+			t.Errorf("expected thumb type, got %q", img.Type)
+		}
+		if img.Source != string(provider.NameSpotify) {
+			t.Errorf("expected source %q, got %q", provider.NameSpotify, img.Source)
+		}
 	}
-	if images[0].Source != string(provider.NameSpotify) {
-		t.Errorf("expected source %q, got %q", provider.NameSpotify, images[0].Source)
+	// Verify all expected sizes are present (order is not guaranteed).
+	widths := make(map[int]bool)
+	for _, img := range images {
+		widths[img.Width] = true
 	}
-	// Should pick the largest (640x640)
-	if images[0].Width != 640 {
-		t.Errorf("expected width 640, got %d", images[0].Width)
+	for _, w := range []int{640, 320, 160} {
+		if !widths[w] {
+			t.Errorf("expected image with width %d, not found in results", w)
+		}
 	}
 }
 

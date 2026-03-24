@@ -974,3 +974,267 @@ func TestEnrichProviderIDsEmptyStringValues(t *testing.T) {
 		t.Errorf("expected non-empty Spotify entry to be preserved as 'existing-id', got %q", providerIDs[NameSpotify])
 	}
 }
+
+func TestIsImageFieldName(t *testing.T) {
+	imageFields := []string{"thumb", "fanart", "logo", "banner"}
+	for _, f := range imageFields {
+		if !isImageFieldName(f) {
+			t.Errorf("isImageFieldName(%q) = false, want true", f)
+		}
+	}
+	textFields := []string{"biography", "genres", "styles", "moods", "members", "formed", "born"}
+	for _, f := range textFields {
+		if isImageFieldName(f) {
+			t.Errorf("isImageFieldName(%q) = true, want false", f)
+		}
+	}
+}
+
+// TestApplyFieldImageTypeFilter verifies that applyField returns true only
+// when the provider has images of the requested type, not just any images.
+func TestApplyFieldImageTypeFilter(t *testing.T) {
+	result := &FetchResult{
+		Metadata: &ArtistMetadata{URLs: make(map[string]string)},
+	}
+	// Provider has fanart images but no thumb images.
+	pr := &providerResult{
+		meta: &ArtistMetadata{Name: "Test"},
+		images: []ImageResult{
+			{URL: "http://example.com/fanart1.jpg", Type: ImageFanart, Source: "test"},
+			{URL: "http://example.com/fanart2.jpg", Type: ImageFanart, Source: "test"},
+		},
+	}
+
+	// applyField for "thumb" should return false because there are no thumb images.
+	if applyField(result, "thumb", pr, NameAudioDB) {
+		t.Error("applyField(thumb) returned true, but provider has no thumb images")
+	}
+	if len(result.Images) != 0 {
+		t.Errorf("expected 0 images after thumb miss, got %d", len(result.Images))
+	}
+
+	// applyField for "fanart" should return true and add both images.
+	if !applyField(result, "fanart", pr, NameAudioDB) {
+		t.Error("applyField(fanart) returned false, but provider has fanart images")
+	}
+	if len(result.Images) != 2 {
+		t.Errorf("expected 2 fanart images, got %d", len(result.Images))
+	}
+}
+
+// TestFetchMetadataAggregatesImagesFromMultipleProviders verifies that the
+// FetchMetadata priority loop collects image candidates from all enabled
+// providers rather than stopping at the first provider with matching images.
+func TestFetchMetadataAggregatesImagesFromMultipleProviders(t *testing.T) {
+	registry, settings := setupOrchestratorTest(t)
+
+	// Register two providers that both return fanart images.
+	registry.Register(&mockProvider{
+		name: NameMusicBrainz,
+		getArtFn: func(_ context.Context, _ string) (*ArtistMetadata, error) {
+			return &ArtistMetadata{Name: "a-ha"}, nil
+		},
+		getImgFn: func(_ context.Context, _ string) ([]ImageResult, error) {
+			return []ImageResult{
+				{URL: "http://audiodb.com/fanart1.jpg", Type: ImageFanart, Source: "musicbrainz"},
+			}, nil
+		},
+	})
+	registry.Register(&mockProvider{
+		name: NameAudioDB,
+		getArtFn: func(_ context.Context, _ string) (*ArtistMetadata, error) {
+			return &ArtistMetadata{Name: "a-ha"}, nil
+		},
+		getImgFn: func(_ context.Context, _ string) ([]ImageResult, error) {
+			return []ImageResult{
+				{URL: "http://audiodb.com/fanart2.jpg", Type: ImageFanart, Source: "audiodb"},
+				{URL: "http://audiodb.com/fanart3.jpg", Type: ImageFanart, Source: "audiodb"},
+			}, nil
+		},
+	})
+
+	// Set fanart priority: MusicBrainz first, then AudioDB.
+	if err := settings.SetPriority(context.Background(), "fanart", []ProviderName{NameMusicBrainz, NameAudioDB}); err != nil {
+		t.Fatalf("SetPriority: %v", err)
+	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	orch := NewOrchestrator(registry, settings, logger)
+
+	result, err := orch.FetchMetadata(context.Background(), "mbid-aha", "a-ha", nil)
+	if err != nil {
+		t.Fatalf("FetchMetadata: %v", err)
+	}
+
+	// All 3 fanart images from both providers should be present.
+	fanartCount := 0
+	for _, img := range result.Images {
+		if img.Type == ImageFanart {
+			fanartCount++
+		}
+	}
+	if fanartCount != 3 {
+		t.Errorf("expected 3 fanart images from two providers, got %d", fanartCount)
+	}
+}
+
+// TestFetchMetadataTextFieldStopsAtFirstMatch verifies that text fields
+// (e.g., biography) still stop at the first provider with data.
+func TestFetchMetadataTextFieldStopsAtFirstMatch(t *testing.T) {
+	registry, settings := setupOrchestratorTest(t)
+
+	firstCalled := false
+
+	registry.Register(&mockProvider{
+		name: NameMusicBrainz,
+		getArtFn: func(_ context.Context, _ string) (*ArtistMetadata, error) {
+			firstCalled = true
+			return &ArtistMetadata{
+				Name:      "Test",
+				Biography: "This is a sufficiently long biography from the first provider to pass quality checks.",
+			}, nil
+		},
+	})
+	registry.Register(&mockProvider{
+		name: NameAudioDB,
+		getArtFn: func(_ context.Context, _ string) (*ArtistMetadata, error) {
+			return &ArtistMetadata{
+				Name:      "Test",
+				Biography: "This is a different biography from the second provider.",
+			}, nil
+		},
+	})
+
+	if err := settings.SetPriority(context.Background(), "biography", []ProviderName{NameMusicBrainz, NameAudioDB}); err != nil {
+		t.Fatalf("SetPriority: %v", err)
+	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	orch := NewOrchestrator(registry, settings, logger)
+
+	result, err := orch.FetchMetadata(context.Background(), "mbid-test", "Test", nil)
+	if err != nil {
+		t.Fatalf("FetchMetadata: %v", err)
+	}
+
+	// Biography should come from first provider (MusicBrainz won).
+	if !firstCalled {
+		t.Error("expected first provider to be called")
+	}
+	// The second provider's GetArtist may have been called (due to caching/other fields),
+	// but the biography should still come from the first provider.
+	if result.Metadata.Biography != "This is a sufficiently long biography from the first provider to pass quality checks." {
+		t.Errorf("expected biography from first provider, got: %q", result.Metadata.Biography)
+	}
+}
+
+// TestFetchImagesCollectsFromAllProviders verifies that the standalone
+// FetchImages method returns candidates from every available provider.
+func TestFetchImagesCollectsFromAllProviders(t *testing.T) {
+	registry, settings := setupOrchestratorTest(t)
+
+	registry.Register(&mockProvider{
+		name: NameMusicBrainz,
+		getImgFn: func(_ context.Context, _ string) ([]ImageResult, error) {
+			return []ImageResult{
+				{URL: "http://mb.com/thumb.jpg", Type: ImageThumb, Source: "musicbrainz"},
+			}, nil
+		},
+	})
+	registry.Register(&mockProvider{
+		name: NameAudioDB,
+		getImgFn: func(_ context.Context, _ string) ([]ImageResult, error) {
+			return []ImageResult{
+				{URL: "http://audiodb.com/thumb.jpg", Type: ImageThumb, Source: "audiodb"},
+				{URL: "http://audiodb.com/fanart.jpg", Type: ImageFanart, Source: "audiodb"},
+			}, nil
+		},
+	})
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	orch := NewOrchestrator(registry, settings, logger)
+
+	result, err := orch.FetchImages(context.Background(), "mbid-test", nil)
+	if err != nil {
+		t.Fatalf("FetchImages: %v", err)
+	}
+
+	// Should have 3 total images: 1 thumb from MB, 1 thumb + 1 fanart from AudioDB.
+	if len(result.Images) != 3 {
+		t.Errorf("expected 3 images total, got %d", len(result.Images))
+	}
+
+	thumbCount := 0
+	fanartCount := 0
+	for _, img := range result.Images {
+		switch img.Type {
+		case ImageThumb:
+			thumbCount++
+		case ImageFanart:
+			fanartCount++
+		}
+	}
+	if thumbCount != 2 {
+		t.Errorf("expected 2 thumb images from two providers, got %d", thumbCount)
+	}
+	if fanartCount != 1 {
+		t.Errorf("expected 1 fanart image, got %d", fanartCount)
+	}
+}
+
+// TestApplyFieldImageDoesNotBlockOnWrongType verifies that a provider
+// with images of one type does not block collection of a different type
+// from subsequent providers.
+func TestApplyFieldImageDoesNotBlockOnWrongType(t *testing.T) {
+	registry, settings := setupOrchestratorTest(t)
+
+	// Provider 1 has fanart but no thumb. Provider 2 has thumb.
+	registry.Register(&mockProvider{
+		name: NameMusicBrainz,
+		getArtFn: func(_ context.Context, _ string) (*ArtistMetadata, error) {
+			return &ArtistMetadata{Name: "Test"}, nil
+		},
+		getImgFn: func(_ context.Context, _ string) ([]ImageResult, error) {
+			return []ImageResult{
+				{URL: "http://mb.com/fanart.jpg", Type: ImageFanart, Source: "musicbrainz"},
+			}, nil
+		},
+	})
+	registry.Register(&mockProvider{
+		name: NameAudioDB,
+		getArtFn: func(_ context.Context, _ string) (*ArtistMetadata, error) {
+			return &ArtistMetadata{Name: "Test"}, nil
+		},
+		getImgFn: func(_ context.Context, _ string) ([]ImageResult, error) {
+			return []ImageResult{
+				{URL: "http://audiodb.com/thumb.jpg", Type: ImageThumb, Source: "audiodb"},
+			}, nil
+		},
+	})
+
+	// Set thumb priority: MusicBrainz first, then AudioDB.
+	if err := settings.SetPriority(context.Background(), "thumb", []ProviderName{NameMusicBrainz, NameAudioDB}); err != nil {
+		t.Fatalf("SetPriority: %v", err)
+	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	orch := NewOrchestrator(registry, settings, logger)
+
+	result, err := orch.FetchMetadata(context.Background(), "mbid-test", "Test", nil)
+	if err != nil {
+		t.Fatalf("FetchMetadata: %v", err)
+	}
+
+	// AudioDB thumb should be present. Before the fix, MusicBrainz having
+	// fanart images would cause applyField to return true for "thumb",
+	// blocking AudioDB from contributing its actual thumb image.
+	thumbCount := 0
+	for _, img := range result.Images {
+		if img.Type == ImageThumb {
+			thumbCount++
+		}
+	}
+	if thumbCount < 1 {
+		t.Error("expected at least 1 thumb image from AudioDB, got 0")
+	}
+}

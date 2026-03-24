@@ -95,6 +95,7 @@ func (o *Orchestrator) FetchMetadata(ctx context.Context, mbid, name string, pro
 
 	for _, pri := range priorities {
 		queried := false
+		isImageField := isImageFieldName(pri.Field)
 		for _, provName := range pri.EnabledProviders() {
 			if !available[provName] {
 				continue
@@ -113,7 +114,13 @@ func (o *Orchestrator) FetchMetadata(ctx context.Context, mbid, name string, pro
 
 			queried = true
 			if applyField(result, pri.Field, pr, provName) {
-				break
+				// For image fields, continue collecting candidates from
+				// all providers instead of stopping at the first match.
+				// Text fields use first-match-wins since the priority
+				// order determines the preferred source.
+				if !isImageField {
+					break
+				}
 			}
 		}
 		if queried {
@@ -342,15 +349,26 @@ func applyField(result *FetchResult, field string, pr *providerResult, source Pr
 			return true
 		}
 	case "thumb", "fanart", "logo", "banner":
-		// For image fields, collect from provider images
+		// For image fields, collect all matching candidates from this provider.
+		// Unlike text fields, images aggregate across providers so users can
+		// choose from multiple candidates. Individual images carry their own
+		// .Source for per-image provenance.
 		imgType := fieldToImageType(field)
+		found := false
 		for _, img := range pr.images {
 			if img.Type == imgType {
 				result.Images = append(result.Images, img)
+				found = true
 			}
 		}
-		if len(pr.images) > 0 {
-			result.Sources = append(result.Sources, FieldSource{Field: field, Provider: source})
+		if found {
+			// Only record the first (highest-priority) provider as the
+			// field source. MetadataSources is map[field]provider (last
+			// write wins), so appending multiple providers would record
+			// the lowest-priority one instead of the preferred one.
+			if !hasFieldSource(result.Sources, field) {
+				result.Sources = append(result.Sources, FieldSource{Field: field, Provider: source})
+			}
 			return true
 		}
 	}
@@ -548,6 +566,33 @@ func (o *Orchestrator) SearchForLinking(ctx context.Context, name string, provid
 	}
 
 	return allResults, nil
+}
+
+// isImageFieldName returns true for metadata fields that represent image slots.
+// Image fields aggregate candidates from all providers (unlike text fields
+// which use first-match-wins).
+//
+// NOTE: This list must stay in sync with the image cases in applyField and
+// fieldToImageType in this file. Only fields that appear as priority field
+// names need to be listed here.
+func isImageFieldName(field string) bool {
+	switch field {
+	case "thumb", "fanart", "logo", "banner":
+		return true
+	default:
+		return false
+	}
+}
+
+// hasFieldSource returns true if the Sources slice already contains an entry
+// for the given field name.
+func hasFieldSource(sources []FieldSource, field string) bool {
+	for _, s := range sources {
+		if s.Field == field {
+			return true
+		}
+	}
+	return false
 }
 
 func fieldToImageType(field string) ImageType {

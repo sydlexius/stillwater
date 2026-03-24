@@ -20,11 +20,12 @@ type Executor struct {
 
 // FieldResult records the outcome of scraping a single field.
 type FieldResult struct {
-	Field       FieldName             `json:"field"`
-	Provider    provider.ProviderName `json:"provider"`
-	WasFallback bool                  `json:"was_fallback"`
-	Queried     bool                  `json:"queried"`
-	Err         error                 `json:"-"`
+	Field        FieldName               `json:"field"`
+	Provider     provider.ProviderName   `json:"provider"`
+	Contributors []provider.ProviderName `json:"-"` // providers that contributed images for this field
+	WasFallback  bool                    `json:"was_fallback"`
+	Queried      bool                    `json:"queried"`
+	Err          error                   `json:"-"`
 }
 
 // NewExecutor creates a new scraper executor.
@@ -95,6 +96,15 @@ func (e *Executor) ScrapeAll(ctx context.Context, mbid, name, scope string, prov
 				Field:    string(fr.Field),
 				Provider: fr.Provider,
 			})
+
+			// For image fields, mark all providers that actually
+			// contributed images for this specific field as selected
+			// so their mergeable fields (IDs, URLs, aliases) are applied.
+			if CategoryFor(fr.Field) == CategoryImages {
+				for _, provName := range fr.Contributors {
+					selectedProviders[provName] = true
+				}
+			}
 		}
 	}
 
@@ -123,6 +133,10 @@ func (e *Executor) ScrapeAll(ctx context.Context, mbid, name, scope string, prov
 // Matched field data is written into the merged result. Queried is set to true if at
 // least one provider was successfully reached (no error), even if none returned data
 // for this field.
+//
+// For image fields, all providers in the chain are queried and their results are
+// aggregated so users can choose from multiple candidates. For text fields, the
+// first provider that returns data wins (priority order determines preference).
 func (e *Executor) scrapeField(
 	ctx context.Context,
 	mbid, name string,
@@ -135,6 +149,14 @@ func (e *Executor) scrapeField(
 	result *provider.FetchResult,
 ) FieldResult {
 	queried := false
+	isImage := CategoryFor(field.Field) == CategoryImages
+
+	// For image fields, track the first provider that contributed images
+	// so we can report it in the FieldResult, and all contributing
+	// providers so ScrapeAll can mark them as selected.
+	var firstImageProvider provider.ProviderName
+	var firstImageWasFallback bool
+	var contributors []provider.ProviderName
 
 	// Try primary provider first (if configured)
 	if available[field.Primary] {
@@ -143,7 +165,13 @@ func (e *Executor) scrapeField(
 			provider.EnrichProviderIDs(pr.meta, providerIDs)
 			queried = true
 			if applyFieldValue(field.Field, pr, result) {
-				return FieldResult{Field: field.Field, Provider: field.Primary, Queried: true}
+				if !isImage {
+					return FieldResult{Field: field.Field, Provider: field.Primary, Queried: true}
+				}
+				contributors = append(contributors, field.Primary)
+				if firstImageProvider == "" {
+					firstImageProvider = field.Primary
+				}
 			}
 		}
 	}
@@ -162,12 +190,31 @@ func (e *Executor) scrapeField(
 		provider.EnrichProviderIDs(pr.meta, providerIDs)
 		queried = true
 		if applyFieldValue(field.Field, pr, result) {
-			return FieldResult{
-				Field:       field.Field,
-				Provider:    provName,
-				WasFallback: true,
-				Queried:     true,
+			if !isImage {
+				return FieldResult{
+					Field:       field.Field,
+					Provider:    provName,
+					WasFallback: true,
+					Queried:     true,
+				}
 			}
+			contributors = append(contributors, provName)
+			if firstImageProvider == "" {
+				firstImageProvider = provName
+				firstImageWasFallback = true
+			}
+		}
+	}
+
+	// For image fields, return the first contributing provider as the source
+	// and all contributors so ScrapeAll can mark them as selected.
+	if isImage && firstImageProvider != "" {
+		return FieldResult{
+			Field:        field.Field,
+			Provider:     firstImageProvider,
+			Contributors: contributors,
+			WasFallback:  firstImageWasFallback,
+			Queried:      true,
 		}
 	}
 

@@ -394,30 +394,27 @@ func isBase62(r rune) bool {
 }
 
 // imagesFromArtist converts Spotify artist images to ImageResult values.
-// Spotify only provides artist profile photos, mapped to ImageThumb.
-// Prefers the largest image available.
+// Spotify provides artist profile photos at multiple resolutions, all mapped
+// to ImageThumb. Returns all available sizes so the caller can present them
+// as candidates (sorted largest-first by the image search handler).
 func imagesFromArtist(artist *spotifyArtist) []provider.ImageResult {
 	if len(artist.Images) == 0 {
 		return nil
 	}
 
 	source := string(provider.NameSpotify)
-
-	// Find the largest image
-	best := artist.Images[0]
-	for _, img := range artist.Images[1:] {
-		if img.Width > best.Width {
-			best = img
+	results := make([]provider.ImageResult, 0, len(artist.Images))
+	for _, img := range artist.Images {
+		if img.URL == "" {
+			continue
 		}
-	}
-
-	return []provider.ImageResult{
-		{
-			URL:    best.URL,
+		results = append(results, provider.ImageResult{
+			URL:    img.URL,
 			Type:   provider.ImageThumb,
-			Width:  best.Width,
-			Height: best.Height,
+			Width:  img.Width,
+			Height: img.Height,
 			Source: source,
-		},
+		})
 	}
+	return results
 }
