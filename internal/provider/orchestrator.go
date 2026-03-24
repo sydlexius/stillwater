@@ -351,7 +351,8 @@ func applyField(result *FetchResult, field string, pr *providerResult, source Pr
 	case "thumb", "fanart", "logo", "banner":
 		// For image fields, collect all matching candidates from this provider.
 		// Unlike text fields, images aggregate across providers so users can
-		// choose from multiple candidates.
+		// choose from multiple candidates. Individual images carry their own
+		// .Source for per-image provenance.
 		imgType := fieldToImageType(field)
 		found := false
 		for _, img := range pr.images {
@@ -361,7 +362,13 @@ func applyField(result *FetchResult, field string, pr *providerResult, source Pr
 			}
 		}
 		if found {
-			result.Sources = append(result.Sources, FieldSource{Field: field, Provider: source})
+			// Only record the first (highest-priority) provider as the
+			// field source. MetadataSources is map[field]provider (last
+			// write wins), so appending multiple providers would record
+			// the lowest-priority one instead of the preferred one.
+			if !hasFieldSource(result.Sources, field) {
+				result.Sources = append(result.Sources, FieldSource{Field: field, Provider: source})
+			}
 			return true
 		}
 	}
@@ -575,6 +582,17 @@ func isImageFieldName(field string) bool {
 	default:
 		return false
 	}
+}
+
+// hasFieldSource returns true if the Sources slice already contains an entry
+// for the given field name.
+func hasFieldSource(sources []FieldSource, field string) bool {
+	for _, s := range sources {
+		if s.Field == field {
+			return true
+		}
+	}
+	return false
 }
 
 func fieldToImageType(field string) ImageType {

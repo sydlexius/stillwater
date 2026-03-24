@@ -91,14 +91,20 @@ func (e *Executor) ScrapeAll(ctx context.Context, mbid, name, scope string, prov
 
 		if fr.Provider != "" {
 			selectedProviders[fr.Provider] = true
-			// For image fields, Sources were already appended inline
-			// inside scrapeField (one entry per contributing provider).
-			// Only append here for non-image (text) fields.
-			if CategoryFor(fr.Field) != CategoryImages {
-				result.Sources = append(result.Sources, provider.FieldSource{
-					Field:    string(fr.Field),
-					Provider: fr.Provider,
-				})
+			result.Sources = append(result.Sources, provider.FieldSource{
+				Field:    string(fr.Field),
+				Provider: fr.Provider,
+			})
+
+			// For image fields, multiple providers may have contributed
+			// images. Mark all such providers as selected so their
+			// mergeable fields (IDs, URLs, aliases) are applied.
+			if CategoryFor(fr.Field) == CategoryImages {
+				for provName, pr := range cache {
+					if pr.err == nil && len(pr.images) > 0 {
+						selectedProviders[provName] = true
+					}
+				}
 			}
 		}
 	}
@@ -161,12 +167,6 @@ func (e *Executor) scrapeField(
 				if !isImage {
 					return FieldResult{Field: field.Field, Provider: field.Primary, Queried: true}
 				}
-				// Track every contributing image provider in Sources
-				// inline so ScrapeAll does not need to re-derive them.
-				result.Sources = append(result.Sources, provider.FieldSource{
-					Field:    string(field.Field),
-					Provider: field.Primary,
-				})
 				if firstImageProvider == "" {
 					firstImageProvider = field.Primary
 				}
@@ -196,12 +196,6 @@ func (e *Executor) scrapeField(
 					Queried:     true,
 				}
 			}
-			// Track every contributing image provider in Sources
-			// inline so ScrapeAll does not need to re-derive them.
-			result.Sources = append(result.Sources, provider.FieldSource{
-				Field:    string(field.Field),
-				Provider: provName,
-			})
 			if firstImageProvider == "" {
 				firstImageProvider = provName
 				firstImageWasFallback = true

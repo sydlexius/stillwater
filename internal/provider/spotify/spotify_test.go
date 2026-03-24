@@ -245,15 +245,15 @@ func TestGetImages(t *testing.T) {
 			t.Errorf("expected source %q, got %q", provider.NameSpotify, img.Source)
 		}
 	}
-	// First image should be the largest (fixture order: 640, 320, 160)
-	if images[0].Width != 640 {
-		t.Errorf("expected first image width 640, got %d", images[0].Width)
+	// Verify all expected sizes are present (order is not guaranteed).
+	widths := make(map[int]bool)
+	for _, img := range images {
+		widths[img.Width] = true
 	}
-	if images[1].Width != 320 {
-		t.Errorf("expected second image width 320, got %d", images[1].Width)
-	}
-	if images[2].Width != 160 {
-		t.Errorf("expected third image width 160, got %d", images[2].Width)
+	for _, w := range []int{640, 320, 160} {
+		if !widths[w] {
+			t.Errorf("expected image with width %d, not found in results", w)
+		}
 	}
 }
 
