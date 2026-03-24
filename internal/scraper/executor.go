@@ -91,10 +91,15 @@ func (e *Executor) ScrapeAll(ctx context.Context, mbid, name, scope string, prov
 
 		if fr.Provider != "" {
 			selectedProviders[fr.Provider] = true
-			result.Sources = append(result.Sources, provider.FieldSource{
-				Field:    string(fr.Field),
-				Provider: fr.Provider,
-			})
+			// For image fields, Sources were already appended inline
+			// inside scrapeField (one entry per contributing provider).
+			// Only append here for non-image (text) fields.
+			if CategoryFor(fr.Field) != CategoryImages {
+				result.Sources = append(result.Sources, provider.FieldSource{
+					Field:    string(fr.Field),
+					Provider: fr.Provider,
+				})
+			}
 		}
 	}
 
@@ -123,6 +128,10 @@ func (e *Executor) ScrapeAll(ctx context.Context, mbid, name, scope string, prov
 // Matched field data is written into the merged result. Queried is set to true if at
 // least one provider was successfully reached (no error), even if none returned data
 // for this field.
+//
+// For image fields, all providers in the chain are queried and their results are
+// aggregated so users can choose from multiple candidates. For text fields, the
+// first provider that returns data wins (priority order determines preference).
 func (e *Executor) scrapeField(
 	ctx context.Context,
 	mbid, name string,
@@ -135,6 +144,12 @@ func (e *Executor) scrapeField(
 	result *provider.FetchResult,
 ) FieldResult {
 	queried := false
+	isImage := CategoryFor(field.Field) == CategoryImages
+
+	// For image fields, track the first provider that contributed images
+	// so we can report it in the FieldResult.
+	var firstImageProvider provider.ProviderName
+	var firstImageWasFallback bool
 
 	// Try primary provider first (if configured)
 	if available[field.Primary] {
@@ -143,7 +158,18 @@ func (e *Executor) scrapeField(
 			provider.EnrichProviderIDs(pr.meta, providerIDs)
 			queried = true
 			if applyFieldValue(field.Field, pr, result) {
-				return FieldResult{Field: field.Field, Provider: field.Primary, Queried: true}
+				if !isImage {
+					return FieldResult{Field: field.Field, Provider: field.Primary, Queried: true}
+				}
+				// Track every contributing image provider in Sources
+				// inline so ScrapeAll does not need to re-derive them.
+				result.Sources = append(result.Sources, provider.FieldSource{
+					Field:    string(field.Field),
+					Provider: field.Primary,
+				})
+				if firstImageProvider == "" {
+					firstImageProvider = field.Primary
+				}
 			}
 		}
 	}
@@ -162,12 +188,34 @@ func (e *Executor) scrapeField(
 		provider.EnrichProviderIDs(pr.meta, providerIDs)
 		queried = true
 		if applyFieldValue(field.Field, pr, result) {
-			return FieldResult{
-				Field:       field.Field,
-				Provider:    provName,
-				WasFallback: true,
-				Queried:     true,
+			if !isImage {
+				return FieldResult{
+					Field:       field.Field,
+					Provider:    provName,
+					WasFallback: true,
+					Queried:     true,
+				}
 			}
+			// Track every contributing image provider in Sources
+			// inline so ScrapeAll does not need to re-derive them.
+			result.Sources = append(result.Sources, provider.FieldSource{
+				Field:    string(field.Field),
+				Provider: provName,
+			})
+			if firstImageProvider == "" {
+				firstImageProvider = provName
+				firstImageWasFallback = true
+			}
+		}
+	}
+
+	// For image fields, return the first contributing provider as the source.
+	if isImage && firstImageProvider != "" {
+		return FieldResult{
+			Field:       field.Field,
+			Provider:    firstImageProvider,
+			WasFallback: firstImageWasFallback,
+			Queried:     true,
 		}
 	}
 
