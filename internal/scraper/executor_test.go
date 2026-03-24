@@ -46,6 +46,7 @@ func setupExecutorTest(t *testing.T) (*provider.Registry, *provider.SettingsServ
 	if err != nil {
 		t.Fatal(err)
 	}
+	db.SetMaxOpenConns(1)
 	t.Cleanup(func() { db.Close() })
 
 	// Create both tables needed by the executor: scraper_config and settings.
