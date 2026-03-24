@@ -74,7 +74,11 @@ func TestClassify(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.tag, func(t *testing.T) {
+		name := tt.tag
+		if name == "" {
+			name = "<empty>"
+		}
+		t.Run(name, func(t *testing.T) {
 			got := Classify(tt.tag)
 			if got != tt.want {
 				t.Errorf("Classify(%q) = %d, want %d", tt.tag, got, tt.want)

@@ -285,16 +285,16 @@ func (a *Adapter) doRequest(ctx context.Context, reqURL, token string) ([]byte, 
 	return io.ReadAll(io.LimitReader(resp.Body, 512*1024))
 }
 
-// getArtistReleases fetches the releases list for an artist from Discogs.
-func (a *Adapter) getArtistReleases(ctx context.Context, artistID, token string) ([]ArtistRelease, error) {
+// getArtistReleases fetches a single page of releases for an artist from Discogs.
+func (a *Adapter) getArtistReleases(ctx context.Context, artistID, token string, page int) (*ArtistReleasesResponse, error) {
 	if err := a.limiter.Wait(ctx, provider.NameDiscogs); err != nil {
 		return nil, &provider.ErrProviderUnavailable{
 			Provider: provider.NameDiscogs,
 			Cause:    fmt.Errorf("rate limiter: %w", err),
 		}
 	}
-	reqURL := fmt.Sprintf("%s/artists/%s/releases?sort=year&sort_order=desc&per_page=50",
-		a.baseURL, url.PathEscape(artistID))
+	reqURL := fmt.Sprintf("%s/artists/%s/releases?sort=year&sort_order=desc&per_page=50&page=%d",
+		a.baseURL, url.PathEscape(artistID), page)
 	body, err := a.doRequest(ctx, reqURL, token)
 	if err != nil {
 		return nil, err
@@ -303,7 +303,7 @@ func (a *Adapter) getArtistReleases(ctx context.Context, artistID, token string)
 	if err := json.Unmarshal(body, &resp); err != nil {
 		return nil, fmt.Errorf("parsing artist releases: %w", err)
 	}
-	return resp.Releases, nil
+	return &resp, nil
 }
 
 // getMasterRelease fetches genre/style info from a master release.
@@ -328,21 +328,42 @@ func (a *Adapter) getMasterRelease(ctx context.Context, masterID int, token stri
 
 // aggregateStyles fetches styles from an artist's master releases.
 // Only considers "Main" role releases. Caps at 10 masters to limit API calls.
+// Paginates through up to 5 pages (250 releases) to find enough masters.
 func (a *Adapter) aggregateStyles(ctx context.Context, artistID, token string) ([]string, error) {
-	releases, err := a.getArtistReleases(ctx, artistID, token)
-	if err != nil {
-		return nil, fmt.Errorf("fetching artist releases: %w", err)
-	}
+	const (
+		maxMasters = 10
+		maxPages   = 5
+	)
 
-	// Filter to Main role master releases and cap at 10.
-	const maxMasters = 10
 	var masterIDs []int
-	for _, rel := range releases {
-		if rel.Role == "Main" && rel.Type == "master" {
-			masterIDs = append(masterIDs, rel.ID)
+	seen := make(map[int]bool) // deduplicate master IDs across pages
+
+	for page := 1; page <= maxPages && len(masterIDs) < maxMasters; page++ {
+		resp, err := a.getArtistReleases(ctx, artistID, token, page)
+		if err != nil {
+			return nil, fmt.Errorf("fetching artist releases page %d: %w", page, err)
+		}
+		if len(resp.Releases) == 0 {
+			break
+		}
+
+		for _, rel := range resp.Releases {
 			if len(masterIDs) >= maxMasters {
 				break
 			}
+			if rel.Type != "master" || !strings.EqualFold(rel.Role, "Main") {
+				continue
+			}
+			if seen[rel.ID] {
+				continue
+			}
+			seen[rel.ID] = true
+			masterIDs = append(masterIDs, rel.ID)
+		}
+
+		// Stop if this was the last page.
+		if page >= resp.Pagination.Pages {
+			break
 		}
 	}
 

@@ -307,37 +307,47 @@ func (a *Adapter) mapArtist(mb *MBArtist) *provider.ArtistMetadata {
 		}
 	}
 
-	// Genres from the genres array
+	// Genres from the structured genres array.
 	for _, g := range mb.Genres {
 		if g.Name != "" {
 			meta.Genres = append(meta.Genres, g.Name)
 		}
 	}
-	// Fall back to tags if no genres
-	if len(meta.Genres) == 0 {
-		for _, t := range mb.Tags {
-			if t.Name != "" && t.Count > 0 {
-				meta.Genres = append(meta.Genres, t.Name)
+
+	hasStructuredGenres := len(meta.Genres) > 0
+
+	if hasStructuredGenres {
+		// Structured genres exist. Classify all genres + tags together to
+		// extract style-level entries, then deduplicate against the genre list.
+		var allTagNames []string
+		for _, g := range mb.Genres {
+			if g.Name != "" {
+				allTagNames = append(allTagNames, g.Name)
 			}
 		}
-	}
-
-	// Classify genre and tag entries for style-level entries.
-	// MusicBrainz genres and tags may contain sub-genre descriptors
-	// (e.g., "art rock", "post-rock") that belong in styles, not genres.
-	var allTagNames []string
-	for _, g := range mb.Genres {
-		if g.Name != "" {
-			allTagNames = append(allTagNames, g.Name)
+		for _, t := range mb.Tags {
+			if t.Name != "" && t.Count > 0 {
+				allTagNames = append(allTagNames, t.Name)
+			}
 		}
-	}
-	for _, t := range mb.Tags {
-		if t.Name != "" && t.Count > 0 {
-			allTagNames = append(allTagNames, t.Name)
+		_, extractedStyles, _ := tagclass.ClassifyTags(allTagNames)
+		meta.Styles = deduplicateStyles(extractedStyles, meta.Genres)
+	} else if len(mb.Tags) > 0 {
+		// No structured genres -- classify tags into genres/styles/moods
+		// instead of dumping everything into genres. Without this split,
+		// deduplicateStyles would remove all styles because they were
+		// already placed in the genres bucket.
+		var tagNames []string
+		for _, t := range mb.Tags {
+			if t.Name != "" && t.Count > 0 {
+				tagNames = append(tagNames, t.Name)
+			}
 		}
+		fallbackGenres, fallbackStyles, fallbackMoods := tagclass.ClassifyTags(tagNames)
+		meta.Genres = fallbackGenres
+		meta.Styles = append(meta.Styles, fallbackStyles...)
+		meta.Moods = append(meta.Moods, fallbackMoods...)
 	}
-	_, extractedStyles, _ := tagclass.ClassifyTags(allTagNames)
-	meta.Styles = deduplicateStyles(extractedStyles, meta.Genres)
 
 	// Aliases
 	for _, alias := range mb.Aliases {

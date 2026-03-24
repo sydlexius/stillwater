@@ -408,6 +408,60 @@ func TestGetArtistStyleExtraction(t *testing.T) {
 	}
 }
 
+func TestGetArtistTagOnlyFallback(t *testing.T) {
+	// When an artist has no structured genres (genres array is empty),
+	// tags should be classified into genres/styles/moods instead of being
+	// dumped wholesale into genres (which would make styles always empty).
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.HasPrefix(r.URL.Path, "/artist/") {
+			_, _ = w.Write(loadFixture(t, "artist_tagonly.json"))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+	a := newTestAdapter(t, srv.URL)
+
+	meta, err := a.GetArtist(context.Background(), "tag-only-artist-id")
+	if err != nil {
+		t.Fatalf("GetArtist: %v", err)
+	}
+
+	// Tags: rock(genre), shoegaze(style), dream pop(style),
+	//       melancholic(mood), seen live(ignore)
+	// Genres should contain only genre-classified tags.
+	if len(meta.Genres) != 1 {
+		t.Fatalf("expected 1 genre, got %d: %v", len(meta.Genres), meta.Genres)
+	}
+	if meta.Genres[0] != "rock" {
+		t.Errorf("expected genre 'rock', got %q", meta.Genres[0])
+	}
+
+	// Styles should contain style-classified tags, not be empty.
+	if len(meta.Styles) != 2 {
+		t.Fatalf("expected 2 styles, got %d: %v", len(meta.Styles), meta.Styles)
+	}
+	styleSet := make(map[string]bool, len(meta.Styles))
+	for _, s := range meta.Styles {
+		styleSet[s] = true
+	}
+	if !styleSet["shoegaze"] {
+		t.Errorf("expected 'shoegaze' in styles, got %v", meta.Styles)
+	}
+	if !styleSet["dream pop"] {
+		t.Errorf("expected 'dream pop' in styles, got %v", meta.Styles)
+	}
+
+	// Moods should contain mood-classified tags.
+	if len(meta.Moods) != 1 {
+		t.Fatalf("expected 1 mood, got %d: %v", len(meta.Moods), meta.Moods)
+	}
+	if meta.Moods[0] != "melancholic" {
+		t.Errorf("expected mood 'melancholic', got %q", meta.Moods[0])
+	}
+}
+
 func TestDeduplicateStyles(t *testing.T) {
 	tests := []struct {
 		name   string

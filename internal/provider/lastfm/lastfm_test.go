@@ -324,6 +324,13 @@ func TestGetArtistTagClassification(t *testing.T) {
 	// Genres: electronic, experimental (unknown tags default to genre)
 	if len(meta.Genres) != 2 {
 		t.Errorf("expected 2 genres, got %d: %v", len(meta.Genres), meta.Genres)
+	} else {
+		if meta.Genres[0] != "electronic" {
+			t.Errorf("expected first genre 'electronic', got %q", meta.Genres[0])
+		}
+		if meta.Genres[1] != "experimental" {
+			t.Errorf("expected second genre 'experimental', got %q", meta.Genres[1])
+		}
 	}
 
 	// Styles: trip-hop
