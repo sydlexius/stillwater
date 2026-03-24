@@ -3055,10 +3055,15 @@ script saveNameSimilarityThreshold() {
 		el.classList.remove("hidden");
 		return;
 	}
+	var basePath = "";
+	var meta = document.querySelector('meta[name="htmx-base-path"]');
+	if (meta && meta.content) {
+		basePath = meta.content;
+	}
 	var csrfToken = document.cookie.replace(
 		/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1"
 	);
-	fetch("/api/v1/settings", {
+	fetch(basePath + "/api/v1/settings", {
 		method: "PUT",
 		headers: {
 			"Content-Type": "application/json",

@@ -246,18 +246,28 @@ func TestGetArtistByNameThresholdZeroDisablesValidation(t *testing.T) {
 
 func TestGetArtistByMBIDSkipsValidation(t *testing.T) {
 	limiter, settings := setupTest(t)
-	srv := newTestServer(t)
+	// Use the mismatch fixture so the server returns "Kim Kardashian".
+	// If MBID lookups incorrectly applied name validation, this would fail.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		method := r.URL.Query().Get("method")
+		if method == "artist.getinfo" {
+			_, _ = w.Write(loadFixture(t, "artist_mismatch.json"))
+			return
+		}
+		w.WriteHeader(http.StatusBadRequest)
+	}))
 	defer srv.Close()
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	a := NewWithBaseURL(limiter, settings, logger, srv.URL)
 
-	// MBID-based lookup should not validate name similarity.
+	// MBID-based lookup should skip name validation entirely.
 	meta, err := a.GetArtist(context.Background(), "a74b1b7f-71a5-4011-9441-d0b5e4122711")
 	if err != nil {
-		t.Fatalf("GetArtist: %v", err)
+		t.Fatalf("expected MBID lookup to skip name validation, got error: %v", err)
 	}
-	if meta.Name != "Radiohead" {
-		t.Errorf("expected Radiohead, got %s", meta.Name)
+	if meta.Name != "Kim Kardashian" {
+		t.Errorf("expected Kim Kardashian (mismatched result accepted via MBID), got %s", meta.Name)
 	}
 }
 

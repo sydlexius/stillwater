@@ -64,12 +64,24 @@ func TestHandleUpdateSettings_Threshold_Invalid(t *testing.T) {
 }
 
 func TestHandleUpdateSettings_Threshold_Valid(t *testing.T) {
-	r, _ := testRouter(t)
-	body := `{"provider.name_similarity_threshold": "75"}`
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/settings", strings.NewReader(body))
-	w := httptest.NewRecorder()
-	r.handleUpdateSettings(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	tests := []struct {
+		name  string
+		value string
+	}{
+		{"mid-range", "75"},
+		{"lower bound", "0"},
+		{"upper bound", "100"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r, _ := testRouter(t)
+			body := `{"provider.name_similarity_threshold": "` + tt.value + `"}`
+			req := httptest.NewRequest(http.MethodPut, "/api/v1/settings", strings.NewReader(body))
+			w := httptest.NewRecorder()
+			r.handleUpdateSettings(w, req)
+			if w.Code != http.StatusOK {
+				t.Fatalf("expected 200 for %s (%s), got %d: %s", tt.name, tt.value, w.Code, w.Body.String())
+			}
+		})
 	}
 }
