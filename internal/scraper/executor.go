@@ -282,10 +282,21 @@ func (e *Executor) getProviderResult(
 			}
 		}
 		if err != nil {
-			e.logger.Debug("provider GetArtist failed",
-				slog.String("provider", string(name)),
-				slog.String("error", err.Error()))
-			pr.err = err
+			// ErrNotFound means the provider was reached and definitively said
+			// "no data". Treat this as a successful query (no error) so the
+			// field is marked as attempted and stale data can be cleared.
+			// Transient failures (timeouts, 5xx) remain as real errors.
+			var notFound *provider.ErrNotFound
+			if errors.As(err, &notFound) {
+				e.logger.Debug("provider has no data for artist",
+					slog.String("provider", string(name)),
+					slog.String("id", id))
+			} else {
+				e.logger.Debug("provider GetArtist failed",
+					slog.String("provider", string(name)),
+					slog.String("error", err.Error()))
+				pr.err = err
+			}
 		} else {
 			pr.meta = meta
 		}
@@ -299,9 +310,16 @@ func (e *Executor) getProviderResult(
 	if imgID != "" {
 		images, err := p.GetImages(ctx, imgID)
 		if err != nil {
-			e.logger.Debug("provider GetImages failed",
-				slog.String("provider", string(name)),
-				slog.String("error", err.Error()))
+			var notFound *provider.ErrNotFound
+			if errors.As(err, &notFound) {
+				e.logger.Debug("provider has no images for artist",
+					slog.String("provider", string(name)),
+					slog.String("id", imgID))
+			} else {
+				e.logger.Debug("provider GetImages failed",
+					slog.String("provider", string(name)),
+					slog.String("error", err.Error()))
+			}
 		} else {
 			pr.images = images
 		}

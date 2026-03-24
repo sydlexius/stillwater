@@ -165,6 +165,13 @@ func (o *Orchestrator) FetchImages(ctx context.Context, mbid string, providerIDs
 		}
 		images, err := p.GetImages(ctx, id)
 		if err != nil {
+			var notFound *ErrNotFound
+			if errors.As(err, &notFound) {
+				o.logger.Debug("provider has no images for artist",
+					slog.String("provider", string(p.Name())),
+					slog.String("id", id))
+				continue
+			}
 			o.logger.Warn("provider image fetch failed",
 				slog.String("provider", string(p.Name())),
 				slog.String("error", err.Error()))
@@ -271,10 +278,21 @@ func (o *Orchestrator) getProviderResult(ctx context.Context, name ProviderName,
 			}
 		}
 		if err != nil {
-			o.logger.Debug("provider GetArtist failed",
-				slog.String("provider", string(name)),
-				slog.String("error", err.Error()))
-			pr.err = err
+			// ErrNotFound means the provider was reached and definitively said
+			// "no data". Treat this as a successful query (no error) so the
+			// field is marked as attempted and stale data can be cleared.
+			// Transient failures (timeouts, 5xx) remain as real errors.
+			var notFound *ErrNotFound
+			if errors.As(err, &notFound) {
+				o.logger.Debug("provider has no data for artist",
+					slog.String("provider", string(name)),
+					slog.String("id", id))
+			} else {
+				o.logger.Debug("provider GetArtist failed",
+					slog.String("provider", string(name)),
+					slog.String("error", err.Error()))
+				pr.err = err
+			}
 		} else {
 			pr.meta = meta
 		}
@@ -288,9 +306,16 @@ func (o *Orchestrator) getProviderResult(ctx context.Context, name ProviderName,
 	if imgID != "" {
 		images, err := p.GetImages(ctx, imgID)
 		if err != nil {
-			o.logger.Debug("provider GetImages failed",
-				slog.String("provider", string(name)),
-				slog.String("error", err.Error()))
+			var notFound *ErrNotFound
+			if errors.As(err, &notFound) {
+				o.logger.Debug("provider has no images for artist",
+					slog.String("provider", string(name)),
+					slog.String("id", imgID))
+			} else {
+				o.logger.Debug("provider GetImages failed",
+					slog.String("provider", string(name)),
+					slog.String("error", err.Error()))
+			}
 		} else {
 			pr.images = images
 		}
@@ -463,12 +488,9 @@ func (o *Orchestrator) FetchFieldFromProviders(ctx context.Context, mbid, name, 
 			Provider: provName,
 		}
 		if pr.err != nil {
-			var notFound *ErrNotFound
-			if !errors.As(pr.err, &notFound) {
-				// Real errors (timeouts, auth failures, etc.) are surfaced.
-				// ErrNotFound just means the provider has no data for this artist.
-				fpr.Error = pr.err.Error()
-			}
+			// Only real errors reach pr.err; ErrNotFound is handled in
+			// getProviderResult and does not set pr.err.
+			fpr.Error = pr.err.Error()
 		} else if pr.meta != nil {
 			extractFieldForComparison(&fpr, field, pr.meta)
 		}
