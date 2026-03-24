@@ -231,16 +231,21 @@ func (r *Router) executeRefreshCtx(ctx context.Context, a *artist.Artist) (*prov
 		})
 	}
 
-	if err := r.artistService.Update(ctx, a); err != nil {
+	// Shield write phase from cancellation to prevent half-applied metadata.
+	// FetchMetadata above is cancelable, but once we have the data, the
+	// Update/Publish/Upsert sequence must run to completion.
+	writeCtx := context.WithoutCancel(ctx)
+
+	if err := r.artistService.Update(writeCtx, a); err != nil {
 		r.logger.Error("saving refreshed metadata failed",
 			"artist_id", a.ID,
 			"error", err)
 		return nil, err
 	}
 
-	r.publisher.PublishMetadata(ctx, a)
+	r.publisher.PublishMetadata(writeCtx, a)
 
-	rule.UpdateProviderFetchTimestamps(ctx, r.artistService, a.ID, result.AttemptedProviders, r.logger)
+	rule.UpdateProviderFetchTimestamps(writeCtx, r.artistService, a.ID, result.AttemptedProviders, r.logger)
 
 	// Update members if the provider attempted the "members" field.
 	// When the provider was queried but returned an empty list, we clear
@@ -257,7 +262,7 @@ func (r *Router) executeRefreshCtx(ctx context.Context, a *artist.Artist) (*prov
 		}
 		if membersAttempted {
 			members := convertProviderMembers(a.ID, result.Metadata.Members)
-			if err := r.artistService.UpsertMembers(ctx, a.ID, members); err != nil {
+			if err := r.artistService.UpsertMembers(writeCtx, a.ID, members); err != nil {
 				r.logger.Warn("upserting members after refresh",
 					"artist_id", a.ID,
 					"error", err)

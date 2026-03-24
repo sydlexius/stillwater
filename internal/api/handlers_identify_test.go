@@ -297,19 +297,24 @@ func TestBulkIdentify_Tier1_ConnectionMatch(t *testing.T) {
 
 	// Poll until completed (max 10s).
 	deadline := time.Now().Add(10 * time.Second)
+	var finalStatus string
 	for time.Now().Before(deadline) {
 		r.identifyMu.RLock()
 		p := r.identifyProgress
 		r.identifyMu.RUnlock()
 		if p != nil {
 			p.mu.RLock()
-			done := p.Status == "completed" || p.Status == "canceled"
+			finalStatus = p.Status
+			done := finalStatus == "completed" || finalStatus == "canceled"
 			p.mu.RUnlock()
 			if done {
 				break
 			}
 		}
 		time.Sleep(50 * time.Millisecond)
+	}
+	if finalStatus == "running" {
+		t.Fatal("bulk identify did not reach terminal state before deadline")
 	}
 
 	// Verify the artist was auto-linked via Tier 1.
@@ -365,19 +370,24 @@ func TestBulkIdentify_LockedArtistSkipped(t *testing.T) {
 
 	// Poll until completed.
 	deadline := time.Now().Add(10 * time.Second)
+	var finalStatus string
 	for time.Now().Before(deadline) {
 		r.identifyMu.RLock()
 		p := r.identifyProgress
 		r.identifyMu.RUnlock()
 		if p != nil {
 			p.mu.RLock()
-			done := p.Status == "completed" || p.Status == "canceled"
+			finalStatus = p.Status
+			done := finalStatus == "completed" || finalStatus == "canceled"
 			p.mu.RUnlock()
 			if done {
 				break
 			}
 		}
 		time.Sleep(50 * time.Millisecond)
+	}
+	if finalStatus == "running" {
+		t.Fatal("bulk identify did not reach terminal state before deadline")
 	}
 
 	// Verify the locked artist was NOT modified.

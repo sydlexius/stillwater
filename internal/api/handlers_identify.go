@@ -182,7 +182,15 @@ func (r *Router) handleBulkIdentify(w http.ResponseWriter, req *http.Request) {
 	progress.Total = len(allArtists)
 	progress.mu.Unlock()
 
-	r.runBulkIdentify(req.Context(), allArtists, progress)
+	// Create cancellable context before launching the goroutine so cancelFn
+	// is always set when status is "running" (prevents nil panic in cancel handler).
+	// The cancel function is stored on progress.cancelFn and called by both the
+	// background goroutine (defer) and the cancel handler.
+	bgCtx := context.WithoutCancel(req.Context())
+	cancelCtx, cancel := context.WithCancel(bgCtx) //nolint:gosec // cancel stored in progress.cancelFn, deferred in goroutine
+	progress.cancelFn = cancel
+
+	r.runBulkIdentify(cancelCtx, allArtists, progress)
 
 	writeJSON(w, http.StatusAccepted, map[string]any{
 		"status": "running",
@@ -203,12 +211,11 @@ func (r *Router) handleBulkIdentifyProgress(w http.ResponseWriter, _ *http.Reque
 	}
 
 	progress.mu.RLock()
-	// Return empty array instead of null when no candidates are queued,
-	// matching the OpenAPI schema (non-nullable array).
-	rq := progress.ReviewQueue
-	if rq == nil {
-		rq = []IdentifyCandidate{}
-	}
+	// Deep-copy the review queue under the lock to prevent a data race:
+	// the background goroutine may append to ReviewQueue after the lock is
+	// released but before JSON encoding reads the slice contents.
+	rq := make([]IdentifyCandidate, len(progress.ReviewQueue))
+	copy(rq, progress.ReviewQueue)
 	resp := map[string]any{
 		"status":       progress.Status,
 		"total":        progress.Total,
@@ -243,11 +250,12 @@ func (r *Router) handleBulkIdentifyCancel(w http.ResponseWriter, _ *http.Request
 	progress.mu.RLock()
 	cancel := progress.cancelFn
 	running := progress.Status == "running"
+	actualStatus := progress.Status
 	progress.mu.RUnlock()
 
 	if !running {
 		writeJSON(w, http.StatusOK, map[string]any{
-			"status":  "completed",
+			"status":  actualStatus,
 			"message": "bulk identify already finished",
 		})
 		return
@@ -288,7 +296,12 @@ func (r *Router) handleBulkIdentifyLink(w http.ResponseWriter, req *http.Request
 
 	a, err := r.artistService.GetByID(req.Context(), body.ArtistID)
 	if err != nil {
-		writeError(w, req, http.StatusNotFound, "artist not found")
+		if errors.Is(err, artist.ErrNotFound) {
+			writeError(w, req, http.StatusNotFound, "artist not found")
+		} else {
+			r.logger.Error("bulk-identify link: failed to get artist", "artist_id", body.ArtistID, "error", err)
+			writeError(w, req, http.StatusInternalServerError, "failed to retrieve artist")
+		}
 		return
 	}
 
@@ -297,22 +310,11 @@ func (r *Router) handleBulkIdentifyLink(w http.ResponseWriter, req *http.Request
 		a.DiscogsID = body.DiscogsID
 	}
 
-	if err := r.artistService.Update(req.Context(), a); err != nil {
+	if err := r.autoLinkAndRefresh(req.Context(), a); err != nil {
 		r.logger.Error("bulk-identify link: updating artist", "artist_id", a.ID, "error", err)
 		writeError(w, req, http.StatusInternalServerError, "failed to update artist")
 		return
 	}
-
-	// Run full metadata refresh with the newly linked MBID.
-	if r.orchestrator != nil {
-		if _, refreshErr := r.executeRefreshCtx(req.Context(), a); refreshErr != nil {
-			r.logger.Warn("bulk-identify link: refresh failed after linking",
-				"artist_id", a.ID, "error", refreshErr)
-		}
-	}
-
-	// Evaluate health after linking.
-	rule.EvaluateAndPersistHealth(req.Context(), r.ruleEngine, r.artistService, a, r.logger)
 
 	// Remove from review queue if progress is still in memory.
 	r.identifyMu.RLock()
@@ -337,17 +339,14 @@ func (r *Router) handleBulkIdentifyLink(w http.ResponseWriter, req *http.Request
 }
 
 // runBulkIdentify processes unidentified artists through the 3-tier pipeline
-// in a background goroutine. The caller must set r.identifyProgress before calling.
-func (r *Router) runBulkIdentify(reqCtx context.Context, artists []artist.Artist, progress *IdentifyProgress) {
+// in a background goroutine. The caller must set r.identifyProgress and cancelFn
+// before calling. The ctx passed in is already cancellable and detached from the
+// request lifecycle.
+func (r *Router) runBulkIdentify(ctx context.Context, artists []artist.Artist, progress *IdentifyProgress) {
 	go func() {
-		// Detach from request lifecycle but preserve request-scoped values.
-		ctx, cancel := context.WithCancel(context.WithoutCancel(reqCtx))
-
-		progress.mu.Lock()
-		progress.cancelFn = cancel
-		progress.mu.Unlock()
-
-		defer cancel()
+		// Ensure the cancellable context is cleaned up when the goroutine exits,
+		// regardless of whether it completed normally or was canceled.
+		defer progress.cancelFn()
 
 		// Build connection index for Tier 1.
 		connIdx := r.buildConnectionIndex(ctx)
@@ -408,27 +407,29 @@ func (r *Router) identifyArtist(ctx context.Context, a *artist.Artist, connIdx *
 	}
 
 	// Tier 1: Connection-based matching.
+	// Only auto-link when all connection entries for this name agree on the
+	// same MBID. If multiple entries exist with different MBIDs, skip auto-link
+	// and fall through to Tier 2 for disambiguation.
 	if connIdx != nil {
 		entries := connIdx.lookup(a.Name)
-		for _, entry := range entries {
-			if entry.MusicBrainzID != "" {
-				a.MusicBrainzID = entry.MusicBrainzID
-				if entry.DiscogsID != "" {
-					a.DiscogsID = entry.DiscogsID
+		if len(entries) > 0 {
+			mbid := entries[0].MusicBrainzID
+			unanimous := mbid != ""
+			discogsID := entries[0].DiscogsID
+			for _, entry := range entries[1:] {
+				if entry.MusicBrainzID != mbid {
+					unanimous = false
+					break
 				}
-				if err := r.artistService.Update(ctx, a); err != nil {
-					r.logger.Warn("bulk-identify: Tier 1 update failed",
-						"artist", a.Name, "error", err)
+			}
+			if unanimous {
+				a.MusicBrainzID = mbid
+				if discogsID != "" {
+					a.DiscogsID = discogsID
+				}
+				if err := r.autoLinkAndRefresh(ctx, a); err != nil {
 					return identifyResult{Outcome: outcomeFailed}
 				}
-				if r.orchestrator != nil {
-					if _, err := r.executeRefreshCtx(ctx, a); err != nil {
-						r.logger.Warn("bulk-identify: Tier 1 refresh failed",
-							"artist", a.Name, "error", err)
-						// Still count as auto-linked since MBID was set.
-					}
-				}
-				rule.EvaluateAndPersistHealth(ctx, r.ruleEngine, r.artistService, a, r.logger)
 				return identifyResult{Outcome: outcomeAutoLinked}
 			}
 		}
@@ -474,18 +475,9 @@ func (r *Router) identifyArtist(ctx context.Context, a *artist.Artist, connIdx *
 	// Single high-confidence result: auto-link.
 	if len(results) == 1 && results[0].Score >= 90 {
 		a.MusicBrainzID = results[0].MusicBrainzID
-		if err := r.artistService.Update(ctx, a); err != nil {
-			r.logger.Warn("bulk-identify: Tier 3 update failed",
-				"artist", a.Name, "error", err)
+		if err := r.autoLinkAndRefresh(ctx, a); err != nil {
 			return identifyResult{Outcome: outcomeFailed}
 		}
-		if r.orchestrator != nil {
-			if _, refreshErr := r.executeRefreshCtx(ctx, a); refreshErr != nil {
-				r.logger.Warn("bulk-identify: Tier 3 refresh failed",
-					"artist", a.Name, "error", refreshErr)
-			}
-		}
-		rule.EvaluateAndPersistHealth(ctx, r.ruleEngine, r.artistService, a, r.logger)
 		return identifyResult{Outcome: outcomeAutoLinked}
 	}
 
@@ -577,18 +569,9 @@ func (r *Router) evaluateTier2(ctx context.Context, a *artist.Artist, scored []S
 	// Exactly 1 candidate with >= 70%: auto-link.
 	if len(above70) == 1 {
 		a.MusicBrainzID = above70[0].MusicBrainzID
-		if err := r.artistService.Update(ctx, a); err != nil {
-			r.logger.Warn("bulk-identify: Tier 2 auto-link update failed",
-				"artist", a.Name, "error", err)
+		if err := r.autoLinkAndRefresh(ctx, a); err != nil {
 			return identifyResult{Outcome: outcomeFailed}
 		}
-		if r.orchestrator != nil {
-			if _, refreshErr := r.executeRefreshCtx(ctx, a); refreshErr != nil {
-				r.logger.Warn("bulk-identify: Tier 2 auto-link refresh failed",
-					"artist", a.Name, "error", refreshErr)
-			}
-		}
-		rule.EvaluateAndPersistHealth(ctx, r.ruleEngine, r.artistService, a, r.logger)
 		return identifyResult{Outcome: outcomeAutoLinked}
 	}
 
@@ -608,6 +591,24 @@ func (r *Router) evaluateTier2(ctx context.Context, a *artist.Artist, scored []S
 
 	// All < 30%: fall through (caller will try Tier 3).
 	return identifyResult{Outcome: outcomeUnmatched}
+}
+
+// autoLinkAndRefresh sets the MBID on the artist, persists it, runs a full
+// metadata refresh, and evaluates health. Returns an error only if the
+// initial Update fails (refresh failures are logged but not fatal).
+func (r *Router) autoLinkAndRefresh(ctx context.Context, a *artist.Artist) error {
+	if err := r.artistService.Update(ctx, a); err != nil {
+		r.logger.Warn("bulk-identify: update failed", "artist", a.Name, "error", err)
+		return err
+	}
+	if r.orchestrator != nil {
+		if _, err := r.executeRefreshCtx(ctx, a); err != nil {
+			r.logger.Warn("bulk-identify: refresh failed after linking",
+				"artist", a.Name, "error", err)
+		}
+	}
+	rule.EvaluateAndPersistHealth(ctx, r.ruleEngine, r.artistService, a, r.logger)
+	return nil
 }
 
 // buildConnectionIndex builds an in-memory index of artists from connection

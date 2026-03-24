@@ -3018,10 +3018,13 @@ paths:
                 properties:
                   status:
                     type: string
-                    example: canceled
+                    enum: [idle, canceling, completed, canceled]
+                    description: >
+                      Current job status. "canceling" when a running job has been
+                      asked to stop; "completed" or "canceled" if the job already
+                      finished; "idle" if no job exists.
                   message:
                     type: string
-                    example: bulk identification canceled
                 required:
                   - status
                   - message
@@ -3032,8 +3035,8 @@ paths:
       summary: Link artist from review queue
       operationId: bulkIdentifyLink
       description: >
-        Links an artist to a MusicBrainz ID selected from the review queue,
-        triggers a full metadata refresh, and removes the artist from the queue.
+        Links an artist to a MusicBrainz ID and triggers a full metadata refresh.
+        If the artist exists in the bulk-identify review queue, it is removed.
       requestBody:
         required: true
         content:
