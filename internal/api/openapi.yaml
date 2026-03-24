@@ -229,7 +229,7 @@ components:
           description: True when the user has permanently dismissed the warning
         image_fetcher_warnings:
           type: array
-          description: Platform image fetcher warnings. Present when shared-filesystem overlaps exist and either image fetchers are enabled or the fetcher check could not be completed (degraded warning).
+          description: Platform image fetcher warnings. Present when shared-filesystem overlaps exist and either image fetchers are enabled or the fetcher check could not be completed.
           items:
             $ref: '#/components/schemas/ImageFetcherWarning'
     ImageFetcherWarning:
@@ -722,6 +722,31 @@ components:
         - sort_order
         - created_at
         - updated_at
+    CacheStats:
+      type: object
+      required: [size_bytes, file_count, artist_count]
+      properties:
+        size_bytes:
+          type: integer
+          format: int64
+          description: Total size of the image cache in bytes.
+        file_count:
+          type: integer
+          description: Number of files in the image cache.
+        artist_count:
+          type: integer
+          description: Number of unique artist directories in the cache.
+    CacheClearResult:
+      type: object
+      required: [files_deleted, bytes_freed]
+      properties:
+        files_deleted:
+          type: integer
+          description: Number of files removed from the cache.
+        bytes_freed:
+          type: integer
+          format: int64
+          description: Total bytes freed by the clear operation.
 
 paths:
   /health:
@@ -5168,6 +5193,33 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+
+  /settings/cache/stats:
+    get:
+      tags: [Settings]
+      summary: Get image cache statistics
+      description: Returns the current size, file count, and artist count for the pathless-artist image cache.
+      operationId: getCacheStats
+      responses:
+        "200":
+          description: Cache statistics.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CacheStats"
+  /settings/cache:
+    delete:
+      tags: [Settings]
+      summary: Clear the image cache
+      description: Deletes all files in the pathless-artist image cache and resets image existence flags. Uses best-effort deletion.
+      operationId: clearCache
+      responses:
+        "200":
+          description: Summary of the clear operation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CacheClearResult"
 
   # --- Artist field editing ---
 

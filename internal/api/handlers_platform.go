@@ -285,6 +285,7 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 		RuleScheduleHours:    r.getIntSetting(req.Context(), "rule_schedule.interval_hours", 0),
 		BackupRetention:      r.getIntSetting(req.Context(), "backup_retention_count", r.backupService.Retention()),
 		BackupMaxAgeDays:     r.getIntSetting(req.Context(), "backup_max_age_days", r.backupService.MaxAgeDays()),
+		CacheMaxSizeMB:       r.getStringSetting(req.Context(), "cache.image.max_size_mb", "0"),
 	}
 	renderTempl(w, req, templates.SettingsPage(r.assets(), data))
 }

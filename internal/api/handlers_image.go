@@ -152,6 +152,7 @@ func (r *Router) handleImageUpload(w http.ResponseWriter, req *http.Request) {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to save image"})
 			return
 		}
+		r.enforceCacheLimitIfNeeded(req.Context(), a)
 		r.updateArtistFanartCount(req.Context(), a)
 		// Skip platform sync for fanart appends: platforms only support a single
 		// backdrop image, and the primary (fanart.jpg) was already synced when
@@ -174,6 +175,7 @@ func (r *Router) handleImageUpload(w http.ResponseWriter, req *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to save image"})
 		return
 	}
+	r.enforceCacheLimitIfNeeded(req.Context(), a)
 
 	r.updateArtistImageFlag(req.Context(), a, imageType)
 	if imageType == "fanart" {
@@ -257,6 +259,7 @@ func (r *Router) handleImageFetch(w http.ResponseWriter, req *http.Request) {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to save image"})
 			return
 		}
+		r.enforceCacheLimitIfNeeded(req.Context(), a)
 		r.updateArtistFanartCount(req.Context(), a)
 
 		syncCtx, cancel := context.WithTimeout(req.Context(), 30*time.Second)
@@ -285,6 +288,7 @@ func (r *Router) handleImageFetch(w http.ResponseWriter, req *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to save image"})
 		return
 	}
+	r.enforceCacheLimitIfNeeded(req.Context(), a)
 
 	r.updateArtistImageFlag(req.Context(), a, imageType)
 	// Sync fanart count after initial save
@@ -520,6 +524,7 @@ func (r *Router) handleImageCrop(w http.ResponseWriter, req *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to save image"})
 		return
 	}
+	r.enforceCacheLimitIfNeeded(req.Context(), a)
 
 	r.updateArtistImageFlag(req.Context(), a, body.Type)
 
@@ -1322,6 +1327,7 @@ func (r *Router) handleLogoTrim(w http.ResponseWriter, req *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to save trimmed logo"})
 		return
 	}
+	r.enforceCacheLimitIfNeeded(req.Context(), a)
 
 	r.updateArtistImageFlag(req.Context(), a, "logo")
 
@@ -1763,6 +1769,7 @@ func (r *Router) handleFanartBatchFetch(w http.ResponseWriter, req *http.Request
 		allSaved = append(allSaved, saved...)
 	}
 
+	r.enforceCacheLimitIfNeeded(req.Context(), a)
 	r.updateArtistFanartCount(req.Context(), a)
 
 	// Sync all fanart to connected platforms (synchronous with timeout).

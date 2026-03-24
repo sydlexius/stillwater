@@ -51,6 +51,7 @@ type SettingsData struct {
 	BackupRetention      int
 	BackupMaxAgeDays     int
 	SymlinkSupported     bool
+	CacheMaxSizeMB       string
 }
 
 // settingsTab defines a tab in the settings page navigation.
@@ -693,6 +694,46 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 					</div>
 				</div>
 				@loggingScript()
+				<!-- Image Cache Configuration -->
+				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
+					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+						<h2 class="text-lg font-semibold">Image Cache</h2>
+						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+							Manage cached images for artists without filesystem paths.
+						</p>
+					</div>
+					<div class="px-6 py-4 space-y-4">
+						<div id="cache-stats" class="text-sm text-gray-600 dark:text-gray-400">Loading...</div>
+						<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+							<div>
+								<label for="cache-max-size" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Maximum size</label>
+								<select
+									id="cache-max-size"
+									aria-label="Maximum cache size"
+									class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+									onchange="saveCacheMaxSize(this.value)"
+								>
+									<option value="0" selected?={ data.CacheMaxSizeMB == "0" }>Unlimited</option>
+									<option value="256" selected?={ data.CacheMaxSizeMB == "256" }>256 MB</option>
+									<option value="512" selected?={ data.CacheMaxSizeMB == "512" }>512 MB</option>
+									<option value="1024" selected?={ data.CacheMaxSizeMB == "1024" }>1 GB</option>
+									<option value="2048" selected?={ data.CacheMaxSizeMB == "2048" }>2 GB</option>
+								</select>
+							</div>
+							<div class="flex items-end gap-3">
+								<button
+									type="button"
+									class="text-sm px-3 py-2 rounded border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+									onclick="clearCache()"
+								>
+									Clear Cache
+								</button>
+								<span id="cache-status"></span>
+							</div>
+						</div>
+					</div>
+				</div>
+				@cacheScript()
 			</div>
 			<!-- Providers tab -->
 			<div
@@ -1592,6 +1633,84 @@ templ loggingScript() {
 	</script>
 }
 
+templ cacheScript() {
+	<script>
+		function loadCacheStats() {
+			fetch('/api/v1/settings/cache/stats')
+				.then(function(r) { if (!r.ok) throw new Error('failed'); return r.json(); })
+				.then(function(data) {
+					var mb = (data.size_bytes / (1024 * 1024)).toFixed(1);
+					var el = document.getElementById('cache-stats');
+					el.textContent = mb + ' MB used (' + data.file_count + ' files, ' + data.artist_count + ' artists)';
+					el.className = 'text-sm text-gray-600 dark:text-gray-400';
+				})
+				.catch(function() {
+					var el = document.getElementById('cache-stats');
+					el.textContent = 'Failed to load cache stats';
+					el.className = 'text-sm text-red-500';
+				});
+		}
+
+		function saveCacheMaxSize(value) {
+			var csrfToken = document.cookie.replace(
+				/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1"
+			);
+			fetch('/api/v1/settings', {
+				method: 'PUT',
+				headers: {
+					'Content-Type': 'application/json',
+					'X-CSRF-Token': csrfToken
+				},
+				body: JSON.stringify({ 'cache.image.max_size_mb': value })
+			}).then(function(r) {
+				if (!r.ok) throw new Error('failed');
+				var el = document.getElementById('cache-status');
+				el.textContent = 'Saved';
+				el.className = 'text-sm text-green-600 dark:text-green-400';
+				setTimeout(function() { el.textContent = ''; }, 2000);
+				loadCacheStats();
+			}).catch(function() {
+				var el = document.getElementById('cache-status');
+				el.textContent = 'Failed to save';
+				el.className = 'text-sm text-red-500';
+			});
+		}
+
+		function clearCache() {
+			if (!confirm('Clear all cached images? Pathless artists will lose their local image copies.')) return;
+			var csrfToken = document.cookie.replace(
+				/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1"
+			);
+			fetch('/api/v1/settings/cache', {
+				method: 'DELETE',
+				headers: { 'X-CSRF-Token': csrfToken }
+			})
+				.then(function(r) { if (!r.ok) throw new Error('failed'); return r.json(); })
+				.then(function(data) {
+					var mb = (data.bytes_freed / (1024 * 1024)).toFixed(1);
+					var el = document.getElementById('cache-status');
+					el.textContent = 'Cleared ' + data.files_deleted + ' files (' + mb + ' MB)';
+					el.className = 'text-sm text-green-600 dark:text-green-400';
+					setTimeout(function() { el.textContent = ''; }, 3000);
+					loadCacheStats();
+				})
+				.catch(function() {
+					var el = document.getElementById('cache-status');
+					el.textContent = 'Failed to clear cache';
+					el.className = 'text-sm text-red-500';
+				});
+		}
+
+		// Load cache stats when the General tab is visible on page load.
+		(function() {
+			var panel = document.querySelector('[data-tab-panel="general"]');
+			if (panel && !panel.classList.contains('hidden')) {
+				loadCacheStats();
+			}
+		})();
+	</script>
+}
+
 templ maintenanceScript() {
 	<script>
 		function updateMaintSchedule(sel) {
@@ -1943,6 +2062,10 @@ templ settingsTabScript() {
 			el.classList.remove('text-gray-600', 'dark:text-gray-400');
 			el.classList.add('bg-white', 'dark:bg-gray-700', 'text-blue-600', 'dark:text-blue-300', 'shadow-sm');
 			history.replaceState(null, '', '/settings?tab=' + encodeURIComponent(tabId));
+			// Refresh cache stats when switching to the General tab.
+			if (tabId === 'general' && typeof loadCacheStats === 'function') {
+				loadCacheStats();
+			}
 		}
 	</script>
 }
