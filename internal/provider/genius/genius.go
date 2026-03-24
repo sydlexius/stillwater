@@ -170,7 +170,10 @@ func (a *Adapter) getArtistByName(ctx context.Context, name string) (*provider.A
 			best = r
 		}
 	}
-	threshold := a.getNameSimilarityThreshold(ctx)
+	threshold, err := a.getNameSimilarityThreshold(ctx)
+	if err != nil {
+		return nil, err
+	}
 	if threshold > 0 && best.Score < threshold {
 		a.logger.Warn("rejecting search result: name similarity too low",
 			slog.String("search_term", name),
@@ -265,15 +268,19 @@ func isNumeric(s string) bool {
 }
 
 // getNameSimilarityThreshold reads the configurable threshold from settings.
-// Falls back to the default (60) if the setting is missing or unreadable.
-func (a *Adapter) getNameSimilarityThreshold(ctx context.Context) int {
+// Returns an error if the context is canceled. Falls back to the default (60)
+// if the setting is missing or unreadable for non-context reasons.
+func (a *Adapter) getNameSimilarityThreshold(ctx context.Context) (int, error) {
 	threshold, err := a.settings.GetNameSimilarityThreshold(ctx)
 	if err != nil {
+		if ctx.Err() != nil {
+			return 0, ctx.Err()
+		}
 		a.logger.Warn("reading name similarity threshold, using default",
 			slog.Int("default", provider.DefaultNameSimilarityThreshold),
 			slog.String("error", err.Error()),
 		)
-		return provider.DefaultNameSimilarityThreshold
+		return provider.DefaultNameSimilarityThreshold, nil
 	}
-	return threshold
+	return threshold, nil
 }

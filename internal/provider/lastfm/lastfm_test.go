@@ -214,20 +214,33 @@ func TestGetArtistByNameRejectsMismatch(t *testing.T) {
 	}
 }
 
-func TestGetArtistByNameAcceptsCorrectMatch(t *testing.T) {
+func TestGetArtistByNameThresholdZeroDisablesValidation(t *testing.T) {
 	limiter, settings := setupTest(t)
-	srv := newTestServer(t)
+	// Set threshold to 0, which disables name similarity validation.
+	if err := settings.SetNameSimilarityThreshold(context.Background(), 0); err != nil {
+		t.Fatalf("setting threshold: %v", err)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		method := r.URL.Query().Get("method")
+		if method == "artist.getinfo" {
+			// Return a completely different artist for a name-based lookup.
+			_, _ = w.Write(loadFixture(t, "artist_mismatch.json"))
+			return
+		}
+		w.WriteHeader(http.StatusBadRequest)
+	}))
 	defer srv.Close()
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	a := NewWithBaseURL(limiter, settings, logger, srv.URL)
 
-	// Name-based lookup for "Radiohead" should succeed since the API returns "Radiohead".
-	meta, err := a.GetArtist(context.Background(), "Radiohead")
+	// With threshold=0, even a completely mismatched name should be accepted.
+	meta, err := a.GetArtist(context.Background(), "Adele")
 	if err != nil {
-		t.Fatalf("GetArtist: %v", err)
+		t.Fatalf("expected success with threshold=0, got: %v", err)
 	}
-	if meta.Name != "Radiohead" {
-		t.Errorf("expected Radiohead, got %s", meta.Name)
+	if meta.Name != "Kim Kardashian" {
+		t.Errorf("expected Kim Kardashian (the mismatched result), got %s", meta.Name)
 	}
 }
 

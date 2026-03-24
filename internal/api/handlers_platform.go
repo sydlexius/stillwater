@@ -7,7 +7,6 @@ import (
 	"github.com/sydlexius/stillwater/internal/filesystem"
 	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/platform"
-	"github.com/sydlexius/stillwater/internal/provider"
 	"github.com/sydlexius/stillwater/web/templates"
 )
 
@@ -287,7 +286,7 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 		BackupRetention:         r.getIntSetting(req.Context(), "backup_retention_count", r.backupService.Retention()),
 		BackupMaxAgeDays:        r.getIntSetting(req.Context(), "backup_max_age_days", r.backupService.MaxAgeDays()),
 		CacheMaxSizeMB:          r.getStringSetting(req.Context(), "cache.image.max_size_mb", "0"),
-		NameSimilarityThreshold: r.getIntSetting(req.Context(), "provider.name_similarity_threshold", provider.DefaultNameSimilarityThreshold),
+		NameSimilarityThreshold: r.getNameSimilarityThreshold(req.Context()),
 	}
 	renderTempl(w, req, templates.SettingsPage(r.assets(), data))
 }

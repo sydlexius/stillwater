@@ -142,7 +142,10 @@ func (a *Adapter) GetArtist(ctx context.Context, id string) (*provider.ArtistMet
 	// sufficiently similar to the search term. Last.fm can return unrelated
 	// artists when the exact name is not found (e.g., auto-corrected results).
 	if !provider.IsUUID(id) {
-		threshold := a.getNameSimilarityThreshold(ctx)
+		threshold, err := a.getNameSimilarityThreshold(ctx)
+		if err != nil {
+			return nil, err
+		}
 		score := provider.NameSimilarity(id, resp.Artist.Name)
 		if threshold > 0 && score < threshold {
 			a.logger.Warn("rejecting result: name similarity too low",
@@ -254,17 +257,21 @@ func mapArtist(info *ArtistInfo) *provider.ArtistMetadata {
 }
 
 // getNameSimilarityThreshold reads the configurable threshold from settings.
-// Falls back to the default (60) if the setting is missing or unreadable.
-func (a *Adapter) getNameSimilarityThreshold(ctx context.Context) int {
+// Returns an error if the context is canceled. Falls back to the default (60)
+// if the setting is missing or unreadable for non-context reasons.
+func (a *Adapter) getNameSimilarityThreshold(ctx context.Context) (int, error) {
 	threshold, err := a.settings.GetNameSimilarityThreshold(ctx)
 	if err != nil {
+		if ctx.Err() != nil {
+			return 0, ctx.Err()
+		}
 		a.logger.Warn("reading name similarity threshold, using default",
 			slog.Int("default", provider.DefaultNameSimilarityThreshold),
 			slog.String("error", err.Error()),
 		)
-		return provider.DefaultNameSimilarityThreshold
+		return provider.DefaultNameSimilarityThreshold, nil
 	}
-	return threshold
+	return threshold, nil
 }
 
 // cleanBio removes the Last.fm attribution link appended to bios.
