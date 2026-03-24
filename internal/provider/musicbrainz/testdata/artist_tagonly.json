@@ -1,0 +1,24 @@
+{
+  "id": "tag-only-artist-id",
+  "type": "Person",
+  "name": "Tag Only Artist",
+  "sort-name": "Tag Only Artist",
+  "country": "US",
+  "disambiguation": "",
+  "gender": "male",
+  "life-span": {
+    "begin": "1980",
+    "end": null,
+    "ended": false
+  },
+  "aliases": [],
+  "genres": [],
+  "tags": [
+    {"name": "rock", "count": 10},
+    {"name": "shoegaze", "count": 8},
+    {"name": "dream pop", "count": 5},
+    {"name": "melancholic", "count": 3},
+    {"name": "seen live", "count": 2}
+  ],
+  "relations": []
+}

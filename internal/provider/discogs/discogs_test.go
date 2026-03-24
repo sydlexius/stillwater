@@ -56,9 +56,17 @@ func newTestServer(t *testing.T) *httptest.Server {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case strings.HasPrefix(r.URL.Path, "/database/search"):
-			w.Write(loadFixture(t, "search_radiohead.json"))
+			_, _ = w.Write(loadFixture(t, "search_radiohead.json"))
+		case strings.HasPrefix(r.URL.Path, "/masters/5001"):
+			_, _ = w.Write(loadFixture(t, "master_5001.json"))
+		case strings.HasPrefix(r.URL.Path, "/masters/5002"):
+			_, _ = w.Write(loadFixture(t, "master_5002.json"))
+		case strings.HasPrefix(r.URL.Path, "/masters/5003"):
+			_, _ = w.Write(loadFixture(t, "master_5003.json"))
+		case strings.HasSuffix(r.URL.Path, "/releases"):
+			_, _ = w.Write(loadFixture(t, "artist_releases.json"))
 		case strings.HasPrefix(r.URL.Path, "/artists/"):
-			w.Write(loadFixture(t, "artist_radiohead.json"))
+			_, _ = w.Write(loadFixture(t, "artist_radiohead.json"))
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -230,6 +238,67 @@ func TestSupportsNameLookup(t *testing.T) {
 
 	if !a.SupportsNameLookup() {
 		t.Error("Discogs adapter should support name lookup")
+	}
+}
+
+func TestGetArtistWithStyles(t *testing.T) {
+	limiter, settings := setupTest(t)
+	srv := newTestServer(t)
+	defer srv.Close()
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	a := NewWithBaseURL(limiter, settings, logger, srv.URL)
+
+	meta, err := a.GetArtist(context.Background(), "3840")
+	if err != nil {
+		t.Fatalf("GetArtist: %v", err)
+	}
+
+	// The test fixtures have 3 master releases with overlapping styles:
+	// master_5001: Alternative Rock, Art Rock, Experimental
+	// master_5002: Art Rock, Experimental, IDM
+	// master_5003: Alternative Rock, Art Rock, Indie Rock
+	// Expected counts: Art Rock(3), Alternative Rock(2), Experimental(2), IDM(1), Indie Rock(1)
+	if len(meta.Styles) == 0 {
+		t.Fatal("expected styles from release aggregation, got none")
+	}
+	// Art Rock should appear first (highest count = 3).
+	if meta.Styles[0] != "Art Rock" {
+		t.Errorf("expected first style 'Art Rock', got %q", meta.Styles[0])
+	}
+	// Should have 5 distinct styles total.
+	if len(meta.Styles) != 5 {
+		t.Errorf("expected 5 styles, got %d: %v", len(meta.Styles), meta.Styles)
+	}
+}
+
+func TestTopStyles(t *testing.T) {
+	counts := map[string]int{
+		"Art Rock":         3,
+		"Alternative Rock": 2,
+		"Experimental":     2,
+		"IDM":              1,
+		"Indie Rock":       1,
+	}
+	got := topStyles(counts, 3)
+	if len(got) != 3 {
+		t.Fatalf("expected 3 styles, got %d: %v", len(got), got)
+	}
+	if got[0] != "Art Rock" {
+		t.Errorf("expected first 'Art Rock', got %q", got[0])
+	}
+	// Second and third should be the tied-at-2 entries in alphabetical order.
+	if got[1] != "Alternative Rock" {
+		t.Errorf("expected second 'Alternative Rock', got %q", got[1])
+	}
+	if got[2] != "Experimental" {
+		t.Errorf("expected third 'Experimental', got %q", got[2])
+	}
+}
+
+func TestTopStylesEmpty(t *testing.T) {
+	got := topStyles(nil, 10)
+	if got != nil {
+		t.Errorf("expected nil for empty counts, got %v", got)
 	}
 }
 

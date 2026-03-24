@@ -1,0 +1,29 @@
+{
+  "artist": {
+    "name": "Bjork",
+    "mbid": "87c5dedd-371d-4571-9e1f-e8de0ef7f5d0",
+    "url": "https://www.last.fm/music/Bjork",
+    "stats": {
+      "listeners": "3000000",
+      "playcount": "200000000"
+    },
+    "bio": {
+      "summary": "Bjork is an Icelandic singer-songwriter.",
+      "content": "Bjork Gudmundsdottir is an Icelandic singer-songwriter and actress."
+    },
+    "tags": {
+      "tag": [
+        {"name": "electronic", "url": "https://www.last.fm/tag/electronic"},
+        {"name": "trip-hop", "url": "https://www.last.fm/tag/trip-hop"},
+        {"name": "ethereal", "url": "https://www.last.fm/tag/ethereal"},
+        {"name": "experimental", "url": "https://www.last.fm/tag/experimental"},
+        {"name": "seen live", "url": "https://www.last.fm/tag/seen+live"}
+      ]
+    },
+    "similar": {
+      "artist": [
+        {"name": "Massive Attack", "url": "https://www.last.fm/music/Massive+Attack"}
+      ]
+    }
+  }
+}

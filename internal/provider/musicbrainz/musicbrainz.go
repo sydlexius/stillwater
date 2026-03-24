@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/provider"
+	"github.com/sydlexius/stillwater/internal/provider/tagclass"
 	"github.com/sydlexius/stillwater/internal/version"
 )
 
@@ -306,19 +307,46 @@ func (a *Adapter) mapArtist(mb *MBArtist) *provider.ArtistMetadata {
 		}
 	}
 
-	// Genres from the genres array
+	// Genres from the structured genres array.
 	for _, g := range mb.Genres {
 		if g.Name != "" {
 			meta.Genres = append(meta.Genres, g.Name)
 		}
 	}
-	// Fall back to tags if no genres
-	if len(meta.Genres) == 0 {
-		for _, t := range mb.Tags {
-			if t.Name != "" && t.Count > 0 {
-				meta.Genres = append(meta.Genres, t.Name)
+
+	hasStructuredGenres := len(meta.Genres) > 0
+
+	if hasStructuredGenres {
+		// Structured genres exist. Classify all genres + tags together to
+		// extract style-level entries, then deduplicate against the genre list.
+		var allTagNames []string
+		for _, g := range mb.Genres {
+			if g.Name != "" {
+				allTagNames = append(allTagNames, g.Name)
 			}
 		}
+		for _, t := range mb.Tags {
+			if t.Name != "" && t.Count > 0 {
+				allTagNames = append(allTagNames, t.Name)
+			}
+		}
+		_, extractedStyles, _ := tagclass.ClassifyTags(allTagNames)
+		meta.Styles = deduplicateStyles(extractedStyles, meta.Genres)
+	} else if len(mb.Tags) > 0 {
+		// No structured genres -- classify tags into genres/styles/moods
+		// instead of dumping everything into genres. Without this split,
+		// deduplicateStyles would remove all styles because they were
+		// already placed in the genres bucket.
+		var tagNames []string
+		for _, t := range mb.Tags {
+			if t.Name != "" && t.Count > 0 {
+				tagNames = append(tagNames, t.Name)
+			}
+		}
+		fallbackGenres, fallbackStyles, fallbackMoods := tagclass.ClassifyTags(tagNames)
+		meta.Genres = fallbackGenres
+		meta.Styles = append(meta.Styles, fallbackStyles...)
+		meta.Moods = append(meta.Moods, fallbackMoods...)
 	}
 
 	// Aliases
@@ -401,6 +429,29 @@ func mapURLType(relType, resourceURL string) string {
 	default:
 		return relType
 	}
+}
+
+// deduplicateStyles removes any style that is already present in the genres
+// list. Comparison is case-insensitive to avoid duplicates like
+// "art rock" in both genres and styles.
+func deduplicateStyles(styles, genres []string) []string {
+	if len(styles) == 0 {
+		return nil
+	}
+	genreSet := make(map[string]bool, len(genres))
+	for _, g := range genres {
+		genreSet[strings.ToLower(g)] = true
+	}
+	var result []string
+	for _, s := range styles {
+		if !genreSet[strings.ToLower(s)] {
+			result = append(result, s)
+		}
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
 }
 
 func userAgent() string {

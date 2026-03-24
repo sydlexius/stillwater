@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/provider"
+	"github.com/sydlexius/stillwater/internal/provider/tagclass"
 )
 
 const defaultBaseURL = "https://ws.audioscrobbler.com/2.0"
@@ -237,11 +238,15 @@ func mapArtist(info *ArtistInfo) *provider.ArtistMetadata {
 		Biography:     cleanBio(info.Bio.Content),
 	}
 
+	// Classify Last.fm tags into genres, styles, and moods instead of
+	// dumping everything into the genres bucket.
+	var tagNames []string
 	for _, tag := range info.Tags.Tag {
 		if tag.Name != "" {
-			meta.Genres = append(meta.Genres, tag.Name)
+			tagNames = append(tagNames, tag.Name)
 		}
 	}
+	meta.Genres, meta.Styles, meta.Moods = tagclass.ClassifyTags(tagNames)
 
 	for _, similar := range info.Similar.Artist {
 		if similar.Name != "" {
