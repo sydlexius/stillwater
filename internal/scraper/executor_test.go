@@ -39,7 +39,7 @@ func (m *mockProvider) GetImages(ctx context.Context, id string) ([]provider.Ima
 	return nil, nil
 }
 
-func setupExecutorTest(t *testing.T) (*provider.Registry, *provider.SettingsService, *Service) {
+func setupExecutorTest(t *testing.T) (*provider.Registry, *provider.SettingsService, *Service, *slog.Logger) {
 	t.Helper()
 
 	db, err := sql.Open("sqlite", ":memory:")
@@ -83,7 +83,7 @@ func setupExecutorTest(t *testing.T) (*provider.Registry, *provider.SettingsServ
 	settings := provider.NewSettingsService(db, enc)
 	registry := provider.NewRegistry()
 
-	return registry, settings, svc
+	return registry, settings, svc, logger
 }
 
 // TestExecutorErrNotFoundMarksFieldAttempted verifies that when all providers
@@ -92,7 +92,7 @@ func setupExecutorTest(t *testing.T) (*provider.Registry, *provider.SettingsServ
 // means stale data should be cleared, unlike "provider unreachable" which
 // preserves existing data.
 func TestExecutorErrNotFoundMarksFieldAttempted(t *testing.T) {
-	registry, settings, svc := setupExecutorTest(t)
+	registry, settings, svc, logger := setupExecutorTest(t)
 
 	// Register AudioDB which returns ErrNotFound (no data for this artist).
 	registry.Register(&mockProvider{
@@ -119,7 +119,6 @@ func TestExecutorErrNotFoundMarksFieldAttempted(t *testing.T) {
 		t.Fatalf("SaveConfig: %v", err)
 	}
 
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	exec := NewExecutor(svc, registry, settings, logger)
 
 	result, err := exec.ScrapeAll(ctx, "mbid-1234", "Test Artist", ScopeGlobal, nil)
@@ -155,7 +154,7 @@ func TestExecutorErrNotFoundMarksFieldAttempted(t *testing.T) {
 // TestExecutorNetworkErrorDoesNotMarkFieldAttempted verifies that a real
 // network error (not ErrNotFound) does NOT mark the field as attempted.
 func TestExecutorNetworkErrorDoesNotMarkFieldAttempted(t *testing.T) {
-	registry, settings, svc := setupExecutorTest(t)
+	registry, settings, svc, logger := setupExecutorTest(t)
 
 	// Register AudioDB which returns a network error.
 	registry.Register(&mockProvider{
@@ -180,7 +179,6 @@ func TestExecutorNetworkErrorDoesNotMarkFieldAttempted(t *testing.T) {
 		t.Fatalf("SaveConfig: %v", err)
 	}
 
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	exec := NewExecutor(svc, registry, settings, logger)
 
 	result, err := exec.ScrapeAll(ctx, "mbid-1234", "Test Artist", ScopeGlobal, nil)
