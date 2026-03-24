@@ -298,6 +298,49 @@ func TestSearchArtistScoresReflectSimilarity(t *testing.T) {
 	}
 }
 
+func TestGetArtistTagClassification(t *testing.T) {
+	limiter, settings := setupTest(t)
+	// Use a custom server that returns the Bjork fixture with mixed tags:
+	// electronic (genre), trip-hop (style), ethereal (mood),
+	// experimental (genre), seen live (ignore).
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		method := r.URL.Query().Get("method")
+		if method == "artist.getinfo" {
+			_, _ = w.Write(loadFixture(t, "artist_bjork.json"))
+			return
+		}
+		w.WriteHeader(http.StatusBadRequest)
+	}))
+	defer srv.Close()
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	a := NewWithBaseURL(limiter, settings, logger, srv.URL)
+
+	meta, err := a.GetArtist(context.Background(), "87c5dedd-371d-4571-9e1f-e8de0ef7f5d0")
+	if err != nil {
+		t.Fatalf("GetArtist: %v", err)
+	}
+
+	// Genres: electronic, experimental (unknown tags default to genre)
+	if len(meta.Genres) != 2 {
+		t.Errorf("expected 2 genres, got %d: %v", len(meta.Genres), meta.Genres)
+	}
+
+	// Styles: trip-hop
+	if len(meta.Styles) != 1 {
+		t.Errorf("expected 1 style, got %d: %v", len(meta.Styles), meta.Styles)
+	} else if meta.Styles[0] != "trip-hop" {
+		t.Errorf("expected style 'trip-hop', got %q", meta.Styles[0])
+	}
+
+	// Moods: ethereal
+	if len(meta.Moods) != 1 {
+		t.Errorf("expected 1 mood, got %d: %v", len(meta.Moods), meta.Moods)
+	} else if meta.Moods[0] != "ethereal" {
+		t.Errorf("expected mood 'ethereal', got %q", meta.Moods[0])
+	}
+}
+
 func TestSearchArtistExactMatchScore(t *testing.T) {
 	limiter, settings := setupTest(t)
 	srv := newTestServer(t) // returns Radiohead

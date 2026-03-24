@@ -363,6 +363,76 @@ func TestMirrorableSearchArtist(t *testing.T) {
 	}
 }
 
+func TestGetArtistStyleExtraction(t *testing.T) {
+	// Use a custom server that returns the Portishead fixture.
+	// Portishead has genres: [electronic, trip hop]
+	// and tags: [downtempo, dark, post-punk, experimental]
+	// Expected: styles extracted from tag classification minus genres.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.HasPrefix(r.URL.Path, "/artist/") {
+			_, _ = w.Write(loadFixture(t, "artist_portishead.json"))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+	a := newTestAdapter(t, srv.URL)
+
+	meta, err := a.GetArtist(context.Background(), "8f6bd1e4-fbe1-4f50-aa9b-94c450ec0f11")
+	if err != nil {
+		t.Fatalf("GetArtist: %v", err)
+	}
+
+	// Genres should come from the genres array: electronic, trip hop
+	if len(meta.Genres) != 2 {
+		t.Fatalf("expected 2 genres, got %d: %v", len(meta.Genres), meta.Genres)
+	}
+
+	// Styles should be tag-classified styles minus those already in genres.
+	// "trip hop" is in genres, so it should not appear in styles.
+	// "downtempo" and "post-punk" are style-classified tags not in genres.
+	if len(meta.Styles) != 2 {
+		t.Fatalf("expected 2 styles, got %d: %v", len(meta.Styles), meta.Styles)
+	}
+	// Check that the deduplicated styles contain downtempo and post-punk.
+	styleSet := make(map[string]bool, len(meta.Styles))
+	for _, s := range meta.Styles {
+		styleSet[s] = true
+	}
+	if !styleSet["downtempo"] {
+		t.Errorf("expected 'downtempo' in styles, got %v", meta.Styles)
+	}
+	if !styleSet["post-punk"] {
+		t.Errorf("expected 'post-punk' in styles, got %v", meta.Styles)
+	}
+}
+
+func TestDeduplicateStyles(t *testing.T) {
+	tests := []struct {
+		name   string
+		styles []string
+		genres []string
+		want   int
+	}{
+		{"no overlap", []string{"shoegaze", "dream pop"}, []string{"rock"}, 2},
+		{"full overlap", []string{"rock"}, []string{"rock"}, 0},
+		{"partial overlap", []string{"art rock", "shoegaze"}, []string{"art rock", "electronic"}, 1},
+		{"case insensitive", []string{"Art Rock"}, []string{"art rock"}, 0},
+		{"empty styles", nil, []string{"rock"}, 0},
+		{"empty genres", []string{"shoegaze"}, nil, 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := deduplicateStyles(tt.styles, tt.genres)
+			if len(got) != tt.want {
+				t.Errorf("deduplicateStyles(%v, %v) returned %d items, want %d: %v",
+					tt.styles, tt.genres, len(got), tt.want, got)
+			}
+		})
+	}
+}
+
 func TestNormalizeHyphens(t *testing.T) {
 	cases := []struct {
 		input string

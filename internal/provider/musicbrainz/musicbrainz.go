@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/provider"
+	"github.com/sydlexius/stillwater/internal/provider/tagclass"
 	"github.com/sydlexius/stillwater/internal/version"
 )
 
@@ -321,6 +322,23 @@ func (a *Adapter) mapArtist(mb *MBArtist) *provider.ArtistMetadata {
 		}
 	}
 
+	// Classify genre and tag entries for style-level entries.
+	// MusicBrainz genres and tags may contain sub-genre descriptors
+	// (e.g., "art rock", "post-rock") that belong in styles, not genres.
+	var allTagNames []string
+	for _, g := range mb.Genres {
+		if g.Name != "" {
+			allTagNames = append(allTagNames, g.Name)
+		}
+	}
+	for _, t := range mb.Tags {
+		if t.Name != "" && t.Count > 0 {
+			allTagNames = append(allTagNames, t.Name)
+		}
+	}
+	_, extractedStyles, _ := tagclass.ClassifyTags(allTagNames)
+	meta.Styles = deduplicateStyles(extractedStyles, meta.Genres)
+
 	// Aliases
 	for _, alias := range mb.Aliases {
 		if alias.Name != "" && alias.Name != mb.Name {
@@ -401,6 +419,29 @@ func mapURLType(relType, resourceURL string) string {
 	default:
 		return relType
 	}
+}
+
+// deduplicateStyles removes any style that is already present in the genres
+// list. Comparison is case-insensitive to avoid duplicates like
+// "art rock" in both genres and styles.
+func deduplicateStyles(styles, genres []string) []string {
+	if len(styles) == 0 {
+		return nil
+	}
+	genreSet := make(map[string]bool, len(genres))
+	for _, g := range genres {
+		genreSet[strings.ToLower(g)] = true
+	}
+	var result []string
+	for _, s := range styles {
+		if !genreSet[strings.ToLower(s)] {
+			result = append(result, s)
+		}
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
 }
 
 func userAgent() string {

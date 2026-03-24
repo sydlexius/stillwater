@@ -1,0 +1,26 @@
+{
+  "id": "8f6bd1e4-fbe1-4f50-aa9b-94c450ec0f11",
+  "type": "Group",
+  "name": "Portishead",
+  "sort-name": "Portishead",
+  "country": "GB",
+  "disambiguation": "",
+  "gender": null,
+  "life-span": {
+    "begin": "1991",
+    "end": null,
+    "ended": false
+  },
+  "aliases": [],
+  "genres": [
+    {"id": "genre-010", "name": "electronic", "count": 12},
+    {"id": "genre-011", "name": "trip hop", "count": 10}
+  ],
+  "tags": [
+    {"name": "downtempo", "count": 8},
+    {"name": "dark", "count": 5},
+    {"name": "post-punk", "count": 3},
+    {"name": "experimental", "count": 2}
+  ],
+  "relations": []
+}

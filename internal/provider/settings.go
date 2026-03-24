@@ -305,8 +305,8 @@ func DefaultPriorities() []FieldPriority {
 	return []FieldPriority{
 		{Field: "biography", Providers: []ProviderName{NameWikipedia, NameLastFM, NameAudioDB, NameDiscogs, NameWikidata, NameGenius}},
 		{Field: "genres", Providers: []ProviderName{NameMusicBrainz, NameLastFM, NameAudioDB, NameDiscogs, NameSpotify}},
-		{Field: "styles", Providers: []ProviderName{NameAudioDB, NameDiscogs}},
-		{Field: "moods", Providers: []ProviderName{NameAudioDB}},
+		{Field: "styles", Providers: []ProviderName{NameDiscogs, NameAudioDB, NameLastFM, NameMusicBrainz}},
+		{Field: "moods", Providers: []ProviderName{NameAudioDB, NameLastFM}},
 		{Field: "members", Providers: []ProviderName{NameMusicBrainz, NameWikidata}},
 		{Field: "formed", Providers: []ProviderName{NameMusicBrainz, NameWikidata, NameAudioDB}},
 		{Field: "thumb", Providers: []ProviderName{NameFanartTV, NameAudioDB, NameDeezer, NameSpotify}},

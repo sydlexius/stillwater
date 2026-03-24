@@ -166,7 +166,7 @@ func DefaultConfig() *ScraperConfig {
 		Fields: []FieldConfig{
 			{Field: FieldBiography, Primary: provider.NameLastFM, Enabled: true, Category: CategoryMetadata},
 			{Field: FieldGenres, Primary: provider.NameMusicBrainz, Enabled: true, Category: CategoryMetadata},
-			{Field: FieldStyles, Primary: provider.NameAudioDB, Enabled: true, Category: CategoryMetadata},
+			{Field: FieldStyles, Primary: provider.NameDiscogs, Enabled: true, Category: CategoryMetadata},
 			{Field: FieldMoods, Primary: provider.NameAudioDB, Enabled: true, Category: CategoryMetadata},
 			{Field: FieldMembers, Primary: provider.NameMusicBrainz, Enabled: true, Category: CategoryMetadata},
 			{Field: FieldFormed, Primary: provider.NameMusicBrainz, Enabled: true, Category: CategoryMetadata},
@@ -210,7 +210,7 @@ func ProviderCapabilities() []ProviderCapability {
 			DisplayName:  provider.NameMusicBrainz.DisplayName(),
 			RequiresAuth: false,
 			MetadataFields: []FieldName{
-				FieldGenres, FieldMembers,
+				FieldGenres, FieldStyles, FieldMembers,
 				FieldFormed, FieldBorn, FieldDied, FieldDisbanded,
 			},
 		},
@@ -239,7 +239,7 @@ func ProviderCapabilities() []ProviderCapability {
 			Provider:       provider.NameLastFM,
 			DisplayName:    provider.NameLastFM.DisplayName(),
 			RequiresAuth:   true,
-			MetadataFields: []FieldName{FieldBiography, FieldGenres},
+			MetadataFields: []FieldName{FieldBiography, FieldGenres, FieldStyles, FieldMoods},
 		},
 		{
 			Provider:       provider.NameSpotify,

@@ -54,3 +54,26 @@ type Image struct {
 	Width  int    `json:"width"`
 	Height int    `json:"height"`
 }
+
+// ArtistReleasesResponse is the response from the artist releases endpoint.
+type ArtistReleasesResponse struct {
+	Pagination Pagination      `json:"pagination"`
+	Releases   []ArtistRelease `json:"releases"`
+}
+
+// ArtistRelease represents a single release in an artist's discography.
+type ArtistRelease struct {
+	ID    int    `json:"id"`
+	Title string `json:"title"`
+	Type  string `json:"type"` // "master" or "release"
+	Role  string `json:"role"` // "Main", "Appearance", "TrackAppearance", etc.
+	Year  int    `json:"year"`
+}
+
+// MasterRelease is the response from the master release endpoint.
+type MasterRelease struct {
+	ID     int      `json:"id"`
+	Title  string   `json:"title"`
+	Genres []string `json:"genres"`
+	Styles []string `json:"styles"`
+}

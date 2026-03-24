@@ -1,0 +1,15 @@
+{
+  "pagination": {
+    "page": 1,
+    "pages": 1,
+    "per_page": 50,
+    "items": 5
+  },
+  "releases": [
+    {"id": 5001, "title": "OK Computer", "type": "master", "role": "Main", "year": 1997},
+    {"id": 5002, "title": "Kid A", "type": "master", "role": "Main", "year": 2000},
+    {"id": 5003, "title": "In Rainbows", "type": "master", "role": "Main", "year": 2007},
+    {"id": 9001, "title": "Various Artists Compilation", "type": "release", "role": "Appearance", "year": 2005},
+    {"id": 9002, "title": "Some Single", "type": "release", "role": "Main", "year": 2003}
+  ]
+}

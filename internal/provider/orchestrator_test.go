@@ -365,8 +365,14 @@ func TestFetchFieldFromProviders_ErrNotFoundSuppressed(t *testing.T) {
 		},
 	})
 
+	// Set priorities to only AudioDB and LastFM. Also disable any providers
+	// that may have been appended from defaults (e.g. MusicBrainz, Discogs)
+	// to keep this test focused on ErrNotFound suppression.
 	if err := settings.SetPriority(context.Background(), "styles", []ProviderName{NameAudioDB, NameLastFM}); err != nil {
 		t.Fatalf("SetPriority: %v", err)
+	}
+	if err := settings.SetDisabledProviders(context.Background(), "styles", []ProviderName{NameDiscogs, NameMusicBrainz}); err != nil {
+		t.Fatalf("SetDisabledProviders: %v", err)
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))

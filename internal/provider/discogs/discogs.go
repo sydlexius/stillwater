@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -142,7 +143,18 @@ func (a *Adapter) getArtistByID(ctx context.Context, id string) (*provider.Artis
 		return nil, fmt.Errorf("parsing artist response: %w", err)
 	}
 
-	return mapArtist(&detail), nil
+	meta := mapArtist(&detail)
+
+	// Fetch styles from releases (secondary API calls).
+	styles, err := a.aggregateStyles(ctx, id, token)
+	if err != nil {
+		a.logger.Warn("failed to fetch Discogs styles from releases",
+			slog.String("artist_id", id), slog.String("error", err.Error()))
+	} else {
+		meta.Styles = styles
+	}
+
+	return meta, nil
 }
 
 // getArtistByName searches Discogs by artist name and fetches metadata for the
@@ -271,6 +283,119 @@ func (a *Adapter) doRequest(ctx context.Context, reqURL, token string) ([]byte, 
 	}
 
 	return io.ReadAll(io.LimitReader(resp.Body, 512*1024))
+}
+
+// getArtistReleases fetches the releases list for an artist from Discogs.
+func (a *Adapter) getArtistReleases(ctx context.Context, artistID, token string) ([]ArtistRelease, error) {
+	if err := a.limiter.Wait(ctx, provider.NameDiscogs); err != nil {
+		return nil, &provider.ErrProviderUnavailable{
+			Provider: provider.NameDiscogs,
+			Cause:    fmt.Errorf("rate limiter: %w", err),
+		}
+	}
+	reqURL := fmt.Sprintf("%s/artists/%s/releases?sort=year&sort_order=desc&per_page=50",
+		a.baseURL, url.PathEscape(artistID))
+	body, err := a.doRequest(ctx, reqURL, token)
+	if err != nil {
+		return nil, err
+	}
+	var resp ArtistReleasesResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, fmt.Errorf("parsing artist releases: %w", err)
+	}
+	return resp.Releases, nil
+}
+
+// getMasterRelease fetches genre/style info from a master release.
+func (a *Adapter) getMasterRelease(ctx context.Context, masterID int, token string) (*MasterRelease, error) {
+	if err := a.limiter.Wait(ctx, provider.NameDiscogs); err != nil {
+		return nil, &provider.ErrProviderUnavailable{
+			Provider: provider.NameDiscogs,
+			Cause:    fmt.Errorf("rate limiter: %w", err),
+		}
+	}
+	reqURL := fmt.Sprintf("%s/masters/%d", a.baseURL, masterID)
+	body, err := a.doRequest(ctx, reqURL, token)
+	if err != nil {
+		return nil, err
+	}
+	var master MasterRelease
+	if err := json.Unmarshal(body, &master); err != nil {
+		return nil, fmt.Errorf("parsing master release: %w", err)
+	}
+	return &master, nil
+}
+
+// aggregateStyles fetches styles from an artist's master releases.
+// Only considers "Main" role releases. Caps at 10 masters to limit API calls.
+func (a *Adapter) aggregateStyles(ctx context.Context, artistID, token string) ([]string, error) {
+	releases, err := a.getArtistReleases(ctx, artistID, token)
+	if err != nil {
+		return nil, fmt.Errorf("fetching artist releases: %w", err)
+	}
+
+	// Filter to Main role master releases and cap at 10.
+	const maxMasters = 10
+	var masterIDs []int
+	for _, rel := range releases {
+		if rel.Role == "Main" && rel.Type == "master" {
+			masterIDs = append(masterIDs, rel.ID)
+			if len(masterIDs) >= maxMasters {
+				break
+			}
+		}
+	}
+
+	if len(masterIDs) == 0 {
+		return nil, nil
+	}
+
+	// Aggregate style counts across all selected masters.
+	counts := make(map[string]int)
+	for _, id := range masterIDs {
+		master, err := a.getMasterRelease(ctx, id, token)
+		if err != nil {
+			a.logger.Warn("failed to fetch master release for styles",
+				slog.Int("master_id", id), slog.String("error", err.Error()))
+			continue
+		}
+		for _, style := range master.Styles {
+			counts[style]++
+		}
+	}
+
+	return topStyles(counts, 10), nil
+}
+
+// topStyles returns the top N styles sorted by frequency (descending),
+// then alphabetically for ties.
+func topStyles(counts map[string]int, n int) []string {
+	if len(counts) == 0 {
+		return nil
+	}
+	type entry struct {
+		name  string
+		count int
+	}
+	entries := make([]entry, 0, len(counts))
+	for name, count := range counts {
+		entries = append(entries, entry{name, count})
+	}
+	// Sort by count descending, then name ascending for stability.
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].count != entries[j].count {
+			return entries[i].count > entries[j].count
+		}
+		return entries[i].name < entries[j].name
+	})
+	result := make([]string, 0, n)
+	for i, e := range entries {
+		if i >= n {
+			break
+		}
+		result = append(result, e.name)
+	}
+	return result
 }
 
 func mapArtist(d *ArtistDetail) *provider.ArtistMetadata {
