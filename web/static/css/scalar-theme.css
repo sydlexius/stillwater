@@ -1,0 +1,252 @@
+/* Scalar API Reference -- Stillwater Theme
+ *
+ * Maps Scalar CSS custom properties to the Stillwater design token palette.
+ * Supports both dark and light modes. Dark is the default (set in config).
+ *
+ * Token source: docs/superpowers/plans/2026-03-23-ui-foundation.md (Task 1)
+ *
+ * Dark palette:
+ *   Backgrounds   slate-900 #0f172a  slate-800 #1e293b  deep #0c1222
+ *   Text          slate-200 #e2e8f0  slate-400 #94a3b8  slate-500 #64748b
+ *
+ * Light palette:
+ *   Backgrounds   #f8f9fa  #ffffff  slate-100 #f1f5f9
+ *   Text          slate-800 #1e293b  slate-500 #64748b  slate-400 #94a3b8
+ *
+ * Shared:
+ *   Accent        blue-500 #3b82f6  blue-400 #60a5fa  blue-600 #2563eb
+ *   Severity      red #f87171/#dc2626  amber #fbbf24/#d97706
+ *                 indigo #818cf8/#7c3aed  green #4ade80/#16a34a
+ */
+
+/* ==========================================================================
+   1. Shared variables (both modes)
+   ========================================================================== */
+
+.light-mode,
+.dark-mode {
+  --scalar-font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI',
+    Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  --scalar-font-code: 'JetBrains Mono', 'Fira Code', 'Cascadia Code',
+    ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+
+  /* Radius -- from --sw-radius-* tokens */
+  --scalar-radius: 6px;
+  --scalar-radius-lg: 10px;
+  --scalar-radius-xl: 14px;
+
+  /* Accent -- consistent across modes */
+  --scalar-color-accent: #3b82f6;
+
+  /* Buttons */
+  --scalar-button-1: #3b82f6;
+  --scalar-button-1-color: #ffffff;
+  --scalar-button-1-hover: #2563eb;
+}
+
+/* ==========================================================================
+   2. Dark mode
+   ========================================================================== */
+
+.dark-mode {
+  --scalar-color-1: #e2e8f0;
+  --scalar-color-2: #94a3b8;
+  --scalar-color-3: #64748b;
+
+  --scalar-background-1: #0f172a;
+  --scalar-background-2: #1e293b;
+  --scalar-background-3: #0c1222;
+  --scalar-background-accent: rgba(59, 130, 246, 0.08);
+
+  --scalar-border-color: rgba(255, 255, 255, 0.06);
+
+  --scalar-shadow-1: 0 4px 24px rgba(0, 0, 0, 0.4);
+  --scalar-shadow-2: 0 1px 4px rgba(0, 0, 0, 0.25);
+
+  --scalar-scrollbar-color: rgba(148, 163, 184, 0.15);
+  --scalar-scrollbar-color-active: rgba(148, 163, 184, 0.3);
+
+  /* HTTP method colours -- dark-friendly (400-level for contrast on slate) */
+  --scalar-color-green: #4ade80;
+  --scalar-color-red: #f87171;
+  --scalar-color-blue: #3b82f6;
+  --scalar-color-orange: #fbbf24;
+  --scalar-color-purple: #818cf8;
+  --scalar-color-yellow: #fbbf24;
+}
+
+/* ==========================================================================
+   3. Light mode
+   ========================================================================== */
+
+.light-mode {
+  --scalar-color-1: #1e293b;
+  --scalar-color-2: #64748b;
+  --scalar-color-3: #94a3b8;
+
+  --scalar-background-1: #f8f9fa;
+  --scalar-background-2: #ffffff;
+  --scalar-background-3: #f1f5f9;
+  --scalar-background-accent: rgba(59, 130, 246, 0.06);
+
+  --scalar-border-color: rgba(0, 0, 0, 0.08);
+
+  --scalar-shadow-1: 0 4px 24px rgba(0, 0, 0, 0.08);
+  --scalar-shadow-2: 0 1px 4px rgba(0, 0, 0, 0.05);
+
+  --scalar-scrollbar-color: rgba(0, 0, 0, 0.12);
+  --scalar-scrollbar-color-active: rgba(0, 0, 0, 0.2);
+
+  /* HTTP method colours -- deeper (600-level for contrast on white) */
+  --scalar-color-green: #16a34a;
+  --scalar-color-red: #dc2626;
+  --scalar-color-blue: #2563eb;
+  --scalar-color-orange: #d97706;
+  --scalar-color-purple: #7c3aed;
+  --scalar-color-yellow: #d97706;
+}
+
+/* ==========================================================================
+   4. Sidebar -- dark mode
+   ========================================================================== */
+
+.dark-mode .sidebar {
+  --scalar-sidebar-background-1: rgba(15, 23, 42, 0.88);
+  --scalar-sidebar-item-hover-color: #cbd5e1;
+  --scalar-sidebar-item-hover-background: rgba(255, 255, 255, 0.04);
+  --scalar-sidebar-item-active-background: rgba(59, 130, 246, 0.15);
+  --scalar-sidebar-border-color: rgba(255, 255, 255, 0.06);
+  --scalar-sidebar-color-1: #e2e8f0;
+  --scalar-sidebar-color-2: #94a3b8;
+  --scalar-sidebar-color-active: #60a5fa;
+  --scalar-sidebar-search-background: rgba(30, 41, 59, 0.65);
+  --scalar-sidebar-search-border-color: rgba(255, 255, 255, 0.1);
+  --scalar-sidebar-search-color: #94a3b8;
+}
+
+/* ==========================================================================
+   5. Sidebar -- light mode
+   ========================================================================== */
+
+.light-mode .sidebar {
+  --scalar-sidebar-background-1: rgba(255, 255, 255, 0.88);
+  --scalar-sidebar-item-hover-color: #1e293b;
+  --scalar-sidebar-item-hover-background: rgba(0, 0, 0, 0.04);
+  --scalar-sidebar-item-active-background: rgba(59, 130, 246, 0.1);
+  --scalar-sidebar-border-color: rgba(0, 0, 0, 0.08);
+  --scalar-sidebar-color-1: #1e293b;
+  --scalar-sidebar-color-2: #64748b;
+  --scalar-sidebar-color-active: #2563eb;
+  --scalar-sidebar-search-background: rgba(0, 0, 0, 0.04);
+  --scalar-sidebar-search-border-color: rgba(0, 0, 0, 0.08);
+  --scalar-sidebar-search-color: #64748b;
+}
+
+/* ==========================================================================
+   6. Page foundation
+   ========================================================================== */
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Subtle ambient glow -- visible on dark backgrounds, invisible on light */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  height: 320px;
+  background: radial-gradient(
+    ellipse 80% 50% at 50% -20%,
+    rgba(59, 130, 246, 0.05) 0%,
+    transparent 100%
+  );
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ==========================================================================
+   7. Sidebar glass treatment
+   ========================================================================== */
+
+.sidebar {
+  backdrop-filter: blur(24px) saturate(150%);
+  -webkit-backdrop-filter: blur(24px) saturate(150%);
+}
+
+/* ==========================================================================
+   8. Inline code
+   ========================================================================== */
+
+.dark-mode :not(pre) > code {
+  background-color: rgba(59, 130, 246, 0.1);
+  color: #93c5fd;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+
+.light-mode :not(pre) > code {
+  background-color: rgba(59, 130, 246, 0.08);
+  color: #2563eb;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+
+/* ==========================================================================
+   9. Scrollbar
+   ========================================================================== */
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  border-radius: 3px;
+}
+
+* {
+  scrollbar-width: thin;
+}
+
+/* ==========================================================================
+   10. Selection
+   ========================================================================== */
+
+.dark-mode ::selection {
+  background-color: rgba(59, 130, 246, 0.3);
+  color: #ffffff;
+}
+
+.light-mode ::selection {
+  background-color: rgba(59, 130, 246, 0.2);
+}
+
+/* ==========================================================================
+   11. Focus ring (a11y)
+   ========================================================================== */
+
+:focus-visible {
+  outline: 2px solid rgba(59, 130, 246, 0.5);
+  outline-offset: 2px;
+}
+
+/* ==========================================================================
+   12. Reduced motion
+   ========================================================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
