@@ -820,6 +820,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 									name="name_similarity_threshold"
 									min="0"
 									max="100"
+									step="1"
 									value={ strconv.Itoa(data.NameSimilarityThreshold) }
 									aria-label="Name similarity threshold (0-100)"
 									class="w-24 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
@@ -3047,10 +3048,11 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 
 script saveNameSimilarityThreshold() {
 	var input = document.getElementById("name_similarity_threshold");
-	var val = parseInt(input.value, 10);
-	if (isNaN(val) || val < 0 || val > 100) {
+	var raw = input.value.trim();
+	var val = Number(raw);
+	if (raw === "" || !Number.isInteger(val) || val < 0 || val > 100) {
 		var el = document.getElementById("name-similarity-status");
-		el.textContent = "Value must be 0-100";
+		el.textContent = "Value must be an integer from 0-100";
 		el.className = "text-sm text-red-500";
 		el.classList.remove("hidden");
 		return;
