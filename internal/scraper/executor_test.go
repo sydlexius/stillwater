@@ -195,4 +195,12 @@ func TestExecutorNetworkErrorDoesNotMarkFieldAttempted(t *testing.T) {
 			break
 		}
 	}
+
+	// AudioDB should NOT be in AttemptedProviders after a network error.
+	for _, p := range result.AttemptedProviders {
+		if p == provider.NameAudioDB {
+			t.Errorf("expected AudioDB NOT in AttemptedProviders after network error, got %v", result.AttemptedProviders)
+			break
+		}
+	}
 }
