@@ -2981,6 +2981,12 @@ paths:
                     type: string
                   total:
                     type: integer
+        "400":
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "409":
           description: Job already running
           content:
@@ -2993,6 +2999,12 @@ paths:
                     enum: [running]
                   message:
                     type: string
+        "500":
+          description: Failed to list artists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     get:
       tags: [Bulk Operations]
       summary: Get bulk identification progress
@@ -3069,13 +3081,19 @@ paths:
                   mbid:
                     type: string
         "400":
-          description: Missing required fields
+          description: Invalid request body or missing required fields
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
         "404":
           description: Artist not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Failed to update artist or refresh metadata
           content:
             application/json:
               schema:

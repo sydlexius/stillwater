@@ -102,8 +102,17 @@ func (r *Router) handleBulkIdentify(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	// Create progress and its cancellable context together so that cancelFn
+	// is always non-nil when Status is "running". This prevents a race where
+	// a concurrent DELETE observes Status=="running" but cancelFn==nil.
+	bgCtx := context.WithoutCancel(req.Context())
+	cancelCtx, cancel := context.WithCancel(bgCtx) //nolint:gosec // cancel stored in progress.cancelFn, deferred in goroutine
+	progress := &IdentifyProgress{
+		Status:   "running",
+		cancelFn: cancel,
+	}
+
 	// Atomic check-and-set: reject if already running, otherwise claim the slot.
-	progress := &IdentifyProgress{Status: "running"}
 	r.identifyMu.Lock()
 	if r.identifyProgress != nil {
 		r.identifyProgress.mu.RLock()
@@ -111,6 +120,7 @@ func (r *Router) handleBulkIdentify(w http.ResponseWriter, req *http.Request) {
 		r.identifyProgress.mu.RUnlock()
 		if running {
 			r.identifyMu.Unlock()
+			cancel() // clean up the unused context
 			writeJSON(w, http.StatusConflict, map[string]any{
 				"status":  "running",
 				"message": "bulk identify already in progress",
@@ -121,8 +131,10 @@ func (r *Router) handleBulkIdentify(w http.ResponseWriter, req *http.Request) {
 	r.identifyProgress = progress
 	r.identifyMu.Unlock()
 
-	// releaseProgress clears the slot if this request still owns it.
+	// releaseProgress clears the slot if this request still owns it,
+	// and cancels the context to free resources.
 	releaseProgress := func() {
+		cancel()
 		r.identifyMu.Lock()
 		if r.identifyProgress == progress {
 			r.identifyProgress = nil
@@ -181,14 +193,6 @@ func (r *Router) handleBulkIdentify(w http.ResponseWriter, req *http.Request) {
 	progress.mu.Lock()
 	progress.Total = len(allArtists)
 	progress.mu.Unlock()
-
-	// Create cancellable context before launching the goroutine so cancelFn
-	// is always set when status is "running" (prevents nil panic in cancel handler).
-	// The cancel function is stored on progress.cancelFn and called by both the
-	// background goroutine (defer) and the cancel handler.
-	bgCtx := context.WithoutCancel(req.Context())
-	cancelCtx, cancel := context.WithCancel(bgCtx) //nolint:gosec // cancel stored in progress.cancelFn, deferred in goroutine
-	progress.cancelFn = cancel
 
 	r.runBulkIdentify(cancelCtx, allArtists, progress)
 
@@ -507,6 +511,12 @@ func (r *Router) identifyArtist(ctx context.Context, a *artist.Artist, connIdx *
 // enrichAndScoreTier2 enriches search results with album comparison data and
 // computes confidence scores for Tier 2 candidates.
 func (r *Router) enrichAndScoreTier2(ctx context.Context, results []provider.ArtistSearchResult, localAlbums []string) []ScoredCandidate {
+	// If providerRegistry is nil, skip release group enrichment and return
+	// candidates with scores derived from search results only.
+	if r.providerRegistry == nil {
+		return convertToScoredCandidates(results)
+	}
+
 	// Reuse the existing album-enrichment logic (same as disambiguation).
 	mbProvider := r.providerRegistry.Get(provider.NameMusicBrainz)
 	if mbProvider == nil {

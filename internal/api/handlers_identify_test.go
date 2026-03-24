@@ -465,17 +465,29 @@ func TestBulkIdentifyLink(t *testing.T) {
 }
 
 func TestBulkIdentifyLink_MissingFields(t *testing.T) {
-	r, _, _ := testRouterWithIdentify(t)
+	tests := []struct {
+		name string
+		body string
+	}{
+		{name: "missing_mbid", body: `{"artist_id":"some-id"}`},
+		{name: "missing_artist_id", body: `{"mbid":"some-mbid"}`},
+		{name: "both_empty", body: `{"artist_id":"","mbid":""}`},
+	}
 
-	body := strings.NewReader(`{"artist_id":"some-id"}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/bulk-identify/link", body)
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r, _, _ := testRouterWithIdentify(t)
 
-	r.handleBulkIdentifyLink(w, req)
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/bulk-identify/link", strings.NewReader(tt.body))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
 
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusBadRequest, w.Body.String())
+			r.handleBulkIdentifyLink(w, req)
+
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusBadRequest, w.Body.String())
+			}
+		})
 	}
 }
 
