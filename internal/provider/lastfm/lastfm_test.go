@@ -26,7 +26,10 @@ func setupTest(t *testing.T) (*provider.RateLimiterMap, *provider.SettingsServic
 	if err != nil {
 		t.Fatalf("creating settings table: %v", err)
 	}
-	enc, _, _ := encryption.NewEncryptor("")
+	enc, _, err := encryption.NewEncryptor("")
+	if err != nil {
+		t.Fatalf("creating encryptor: %v", err)
+	}
 	limiter := provider.NewRateLimiterMap()
 	settings := provider.NewSettingsService(db, enc)
 	if err := settings.SetAPIKey(context.Background(), provider.NameLastFM, "test-key"); err != nil {
@@ -179,5 +182,138 @@ func TestCleanBio(t *testing.T) {
 	}
 	if cleaned != "Radiohead are great." {
 		t.Errorf("unexpected cleaned bio: %s", cleaned)
+	}
+}
+
+func TestGetArtistByNameRejectsMismatch(t *testing.T) {
+	limiter, settings := setupTest(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		method := r.URL.Query().Get("method")
+		if method == "artist.getinfo" {
+			// Return a completely different artist for a name-based lookup.
+			_, _ = w.Write(loadFixture(t, "artist_mismatch.json"))
+			return
+		}
+		w.WriteHeader(http.StatusBadRequest)
+	}))
+	defer srv.Close()
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	a := NewWithBaseURL(limiter, settings, logger, srv.URL)
+
+	// Searching "Adele" should reject "Kim Kardashian" due to low similarity.
+	_, err := a.GetArtist(context.Background(), "Adele")
+	if err == nil {
+		t.Fatal("expected error when result name does not match search term")
+	}
+	nf, ok := err.(*provider.ErrNotFound)
+	if !ok {
+		t.Errorf("expected ErrNotFound, got %T: %v", err, err)
+	} else if nf.ID != "Adele" {
+		t.Errorf("expected ErrNotFound.ID to be %q, got %q", "Adele", nf.ID)
+	}
+}
+
+func TestGetArtistByNameThresholdZeroDisablesValidation(t *testing.T) {
+	limiter, settings := setupTest(t)
+	// Set threshold to 0, which disables name similarity validation.
+	if err := settings.SetNameSimilarityThreshold(context.Background(), 0); err != nil {
+		t.Fatalf("setting threshold: %v", err)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		method := r.URL.Query().Get("method")
+		if method == "artist.getinfo" {
+			// Return a completely different artist for a name-based lookup.
+			_, _ = w.Write(loadFixture(t, "artist_mismatch.json"))
+			return
+		}
+		w.WriteHeader(http.StatusBadRequest)
+	}))
+	defer srv.Close()
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	a := NewWithBaseURL(limiter, settings, logger, srv.URL)
+
+	// With threshold=0, even a completely mismatched name should be accepted.
+	meta, err := a.GetArtist(context.Background(), "Adele")
+	if err != nil {
+		t.Fatalf("expected success with threshold=0, got: %v", err)
+	}
+	if meta.Name != "Kim Kardashian" {
+		t.Errorf("expected Kim Kardashian (the mismatched result), got %s", meta.Name)
+	}
+}
+
+func TestGetArtistByMBIDSkipsValidation(t *testing.T) {
+	limiter, settings := setupTest(t)
+	// Use the mismatch fixture so the server returns "Kim Kardashian".
+	// If MBID lookups incorrectly applied name validation, this would fail.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		method := r.URL.Query().Get("method")
+		if method == "artist.getinfo" {
+			_, _ = w.Write(loadFixture(t, "artist_mismatch.json"))
+			return
+		}
+		w.WriteHeader(http.StatusBadRequest)
+	}))
+	defer srv.Close()
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	a := NewWithBaseURL(limiter, settings, logger, srv.URL)
+
+	// MBID-based lookup should skip name validation entirely.
+	meta, err := a.GetArtist(context.Background(), "a74b1b7f-71a5-4011-9441-d0b5e4122711")
+	if err != nil {
+		t.Fatalf("expected MBID lookup to skip name validation, got error: %v", err)
+	}
+	if meta.Name != "Kim Kardashian" {
+		t.Errorf("expected Kim Kardashian (mismatched result accepted via MBID), got %s", meta.Name)
+	}
+}
+
+func TestSearchArtistScoresReflectSimilarity(t *testing.T) {
+	limiter, settings := setupTest(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(loadFixture(t, "search_adele.json"))
+	}))
+	defer srv.Close()
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	a := NewWithBaseURL(limiter, settings, logger, srv.URL)
+
+	results, err := a.SearchArtist(context.Background(), "Adele")
+	if err != nil {
+		t.Fatalf("SearchArtist: %v", err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(results))
+	}
+	// Exact match "Adele" should score 100.
+	if results[0].Score != 100 {
+		t.Errorf("expected score 100 for exact match, got %d", results[0].Score)
+	}
+	// "Adele Adkins" should score less than 100 but above 0.
+	if results[1].Score >= 100 || results[1].Score <= 0 {
+		t.Errorf("expected partial score for 'Adele Adkins', got %d", results[1].Score)
+	}
+}
+
+func TestSearchArtistExactMatchScore(t *testing.T) {
+	limiter, settings := setupTest(t)
+	srv := newTestServer(t) // returns Radiohead
+	defer srv.Close()
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	a := NewWithBaseURL(limiter, settings, logger, srv.URL)
+
+	results, err := a.SearchArtist(context.Background(), "Radiohead")
+	if err != nil {
+		t.Fatalf("SearchArtist: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	// Exact name match should score 100.
+	if results[0].Score != 100 {
+		t.Errorf("expected score 100 for exact match, got %d", results[0].Score)
 	}
 }

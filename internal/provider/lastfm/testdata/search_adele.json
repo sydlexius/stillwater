@@ -1,0 +1,21 @@
+{
+  "results": {
+    "opensearch:totalResults": "2",
+    "artistmatches": {
+      "artist": [
+        {
+          "name": "Adele",
+          "listeners": "8000000",
+          "mbid": "1f9df192-a621-4f54-8850-2c5373b7eac9",
+          "url": "https://www.last.fm/music/Adele"
+        },
+        {
+          "name": "Adele Adkins",
+          "listeners": "50000",
+          "mbid": "",
+          "url": "https://www.last.fm/music/Adele+Adkins"
+        }
+      ]
+    }
+  }
+}

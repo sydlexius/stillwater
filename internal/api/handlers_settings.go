@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+
+	"github.com/sydlexius/stillwater/internal/provider"
 )
 
 // handleGetSettings returns all application settings as a key-value map.
@@ -68,6 +70,14 @@ func (r *Router) handleUpdateSettings(w http.ResponseWriter, req *http.Request) 
 			return
 		}
 	}
+	if v, ok := body["provider.name_similarity_threshold"]; ok {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 0 || n > 100 {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "provider.name_similarity_threshold must be between 0 and 100"})
+			return
+		}
+		_ = n // validated, will be stored as string by the generic upsert below
+	}
 
 	now := time.Now().UTC().Format(time.RFC3339)
 	for k, v := range body {
@@ -121,6 +131,20 @@ func (r *Router) getIntSetting(ctx context.Context, key string, fallback int) in
 		return fallback
 	}
 	return n
+}
+
+// getNameSimilarityThreshold reads the name similarity threshold via the
+// provider SettingsService, which applies clamping for corrupt values.
+// Falls back to the default if the service returns an error.
+func (r *Router) getNameSimilarityThreshold(ctx context.Context) int {
+	threshold, err := r.providerSettings.GetNameSimilarityThreshold(ctx)
+	if err != nil {
+		r.logger.Warn("reading name similarity threshold, using default",
+			"error", err,
+		)
+		return provider.DefaultNameSimilarityThreshold
+	}
+	return threshold
 }
 
 // getStringSetting reads a string setting from the key-value table.
