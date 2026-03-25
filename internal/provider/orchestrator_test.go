@@ -1368,7 +1368,8 @@ func TestFetchImagesQueriesAllProviders(t *testing.T) {
 
 	// Provider A returns all four image types.
 	registry.Register(&mockProvider{
-		name: NameFanartTV,
+		name:    NameFanartTV,
+		authReq: true,
 		getImgFn: func(_ context.Context, _ string) ([]ImageResult, error) {
 			return []ImageResult{
 				{Type: ImageThumb, URL: "http://example.com/thumb.jpg"},
