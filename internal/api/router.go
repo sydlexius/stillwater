@@ -50,6 +50,7 @@ type RouterDeps struct {
 	BulkService        *rule.BulkService
 	BulkExecutor       *rule.BulkExecutor
 	NFOSnapshotService *nfo.SnapshotService
+	NFOSettingsService *nfo.NFOSettingsService
 	ConnectionService  *connection.Service
 	ScraperService     *scraper.Service
 	LibraryService     *library.Service
@@ -89,6 +90,7 @@ type Router struct {
 	bulkService        *rule.BulkService
 	bulkExecutor       *rule.BulkExecutor
 	nfoSnapshotService *nfo.SnapshotService
+	nfoSettingsService *nfo.NFOSettingsService
 	connectionService  *connection.Service
 	scraperService     *scraper.Service
 	libraryService     *library.Service
@@ -140,6 +142,7 @@ func NewRouter(deps RouterDeps) *Router {
 		bulkService:        deps.BulkService,
 		bulkExecutor:       deps.BulkExecutor,
 		nfoSnapshotService: deps.NFOSnapshotService,
+		nfoSettingsService: deps.NFOSettingsService,
 		connectionService:  deps.ConnectionService,
 		scraperService:     deps.ScraperService,
 		libraryService:     deps.LibraryService,
@@ -275,6 +278,9 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	// Settings export/import routes
 	mux.HandleFunc("POST "+bp+"/api/v1/settings/export", wrapAuth(r.handleSettingsExport, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/settings/import", wrapAuth(r.handleSettingsImport, authMw))
+	// NFO output settings routes
+	mux.HandleFunc("GET "+bp+"/api/v1/settings/nfo-output", wrapAuth(r.handleGetNFOOutput, authMw))
+	mux.HandleFunc("PUT "+bp+"/api/v1/settings/nfo-output", wrapAuth(r.handleUpdateNFOOutput, authMw))
 	// Shared-filesystem detection routes
 	mux.HandleFunc("GET "+bp+"/api/v1/shared-filesystem/status", wrapAuth(r.handleSharedFilesystemStatus, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/shared-filesystem/dismiss", wrapAuth(r.handleSharedFilesystemDismiss, authMw))

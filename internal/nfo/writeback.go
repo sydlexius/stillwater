@@ -13,17 +13,27 @@ import (
 	"github.com/sydlexius/stillwater/internal/filesystem"
 )
 
-// WriteBackArtistNFO writes the artist's current metadata to an artist.nfo file.
-// If ss is non-nil and an existing NFO file is present, a snapshot of the old
-// content is saved before overwriting (best effort -- snapshot failure does not
-// prevent the write). The write uses the atomic tmp/bak/rename pattern via
-// filesystem.WriteFileAtomic.
+// WriteBackArtistNFO writes the artist's current metadata to an artist.nfo file
+// using the default (Kodi-compatible) field mapping. If ss is non-nil and an
+// existing NFO file is present, a snapshot of the old content is saved before
+// overwriting (best effort -- snapshot failure does not prevent the write). The
+// write uses the atomic tmp/bak/rename pattern via filesystem.WriteFileAtomic.
 //
 // The returned error is non-nil only when the NFO file itself could not be
 // written. Snapshot errors are logged at Warn level when a logger is provided
 // but never prevent the write. When logger is nil, snapshot errors are
 // swallowed silently.
 func WriteBackArtistNFO(ctx context.Context, a *artist.Artist, ss *SnapshotService, logger *slog.Logger) error {
+	return WriteBackArtistNFOWithFieldMap(ctx, a, ss, logger, DefaultFieldMap())
+}
+
+// WriteBackArtistNFOWithFieldMap writes the artist's current metadata to an
+// artist.nfo file, applying the given NFOFieldMap to determine how genres,
+// styles, and moods are mapped to NFO XML elements. This enables
+// platform-specific output (e.g., writing moods as <style> for Emby/Jellyfin).
+//
+// Behavior is identical to WriteBackArtistNFO except for the field mapping.
+func WriteBackArtistNFOWithFieldMap(ctx context.Context, a *artist.Artist, ss *SnapshotService, logger *slog.Logger, fm NFOFieldMap) error {
 	if a == nil {
 		return fmt.Errorf("write artist nfo: artist is nil")
 	}
@@ -49,7 +59,7 @@ func WriteBackArtistNFO(ctx context.Context, a *artist.Artist, ss *SnapshotServi
 		}
 	}
 
-	nfoData := FromArtist(a)
+	nfoData := FromArtistWithFieldMap(a, fm)
 
 	// Always lock the NFO to prevent Emby/Jellyfin from overwriting it
 	// on subsequent metadata refreshes.

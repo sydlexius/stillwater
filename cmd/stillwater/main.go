@@ -218,8 +218,9 @@ func run() error {
 	scraperExecutor := scraper.NewExecutor(scraperService, providerRegistry, providerSettings, logger)
 	orchestrator.SetExecutor(scraperExecutor)
 
-	// Initialize NFO snapshot service
+	// Initialize NFO snapshot and settings services
 	nfoSnapshotService := nfo.NewSnapshotService(db)
+	nfoSettingsService := nfo.NewNFOSettingsService(db, logger)
 
 	// Initialize shared-filesystem check (used by fixers to skip writes on
 	// libraries whose directories are also managed by a platform connection).
@@ -236,6 +237,7 @@ func run() error {
 		ArtistService:      artistService,
 		ConnectionService:  connectionService,
 		NFOSnapshotService: nfoSnapshotService,
+		NFOSettingsService: nfoSettingsService,
 		PlatformService:    platformService,
 		ExpectedWrites:     expectedWrites,
 		ImageCacheDir:      filepath.Join(filepath.Dir(cfg.Database.Path), "cache", "images"),
@@ -244,7 +246,7 @@ func run() error {
 
 	// Initialize fix pipeline (depends on orchestrator and snapshot service)
 	fixers := []rule.Fixer{
-		rule.NewNFOFixer(nfoSnapshotService, fsCheck, expectedWrites),
+		rule.NewNFOFixer(nfoSnapshotService, nfoSettingsService, fsCheck, expectedWrites),
 		rule.NewMetadataFixer(orchestrator, logger),
 		rule.NewImageFixer(orchestrator, platformService, fsCheck, logger),
 		rule.NewExtraneousImagesFixer(platformService, fsCheck, logger),
@@ -338,6 +340,7 @@ func run() error {
 		BulkService:        bulkService,
 		BulkExecutor:       bulkExecutor,
 		NFOSnapshotService: nfoSnapshotService,
+		NFOSettingsService: nfoSettingsService,
 		ConnectionService:  connectionService,
 		ScraperService:     scraperService,
 		LibraryService:     libraryService,

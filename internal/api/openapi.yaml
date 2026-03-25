@@ -42,6 +42,43 @@ components:
             type: string
           description: Validation error details. Present when validation fails, containing one or more error messages.
       required: [error]
+    NFOFieldMap:
+      type: object
+      description: Configures how genre, style, and mood categories map to NFO XML elements for platform compatibility.
+      properties:
+        default_behavior:
+          type: boolean
+          description: When true, writes each category to its native element (Kodi-compatible passthrough). Ignores moods_as_styles and genre_sources, but advanced_remap still takes higher precedence when non-null.
+        moods_as_styles:
+          type: boolean
+          description: When true, mood values are additionally written as style elements for Emby/Jellyfin Tag visibility.
+        genre_sources:
+          type: array
+          items:
+            type: string
+            enum: [genres, styles, moods]
+          description: Which source categories feed the genre XML element.
+        advanced_remap:
+          type: object
+          nullable: true
+          description: Full source-to-element mapping matrix. Overrides all other settings when non-null.
+          properties:
+            genre:
+              type: array
+              items:
+                type: string
+                enum: [genres, styles, moods]
+            style:
+              type: array
+              items:
+                type: string
+                enum: [genres, styles, moods]
+            mood:
+              type: array
+              items:
+                type: string
+                enum: [genres, styles, moods]
+          additionalProperties: false
     Status:
       type: object
       properties:
@@ -5491,6 +5528,68 @@ paths:
                 $ref: "#/components/schemas/Error"
         "413":
           description: File exceeds 10MB limit
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /settings/nfo-output:
+    get:
+      tags: [Settings]
+      summary: Get NFO output field mapping
+      description: Returns the current NFO field mapping configuration that controls how genre, style, and mood data is written to NFO XML elements for Emby, Jellyfin, and Kodi compatibility.
+      operationId: getNFOOutput
+      responses:
+        "200":
+          description: Current NFO field mapping.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NFOFieldMap"
+        "500":
+          description: Internal server error reading NFO output settings.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: NFO settings service not available.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    put:
+      tags: [Settings]
+      summary: Update NFO output field mapping
+      description: Updates the NFO field mapping configuration. Controls how genre, style, and mood source categories map to NFO XML elements.
+      operationId: updateNFOOutput
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NFOFieldMap"
+      responses:
+        "200":
+          description: Updated NFO field mapping.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NFOFieldMap"
+        "400":
+          description: Validation error (invalid genre_sources or advanced_remap values).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Internal server error writing NFO output settings.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: NFO settings service not available.
           content:
             application/json:
               schema:
