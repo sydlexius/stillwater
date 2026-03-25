@@ -170,13 +170,9 @@ func (a *Adapter) getArtistByName(ctx context.Context, name string) (*provider.A
 	if len(results) == 0 {
 		return nil, &provider.ErrNotFound{Provider: provider.NameGenius, ID: name}
 	}
-	// Pick the highest-scoring result, not the first in API order.
+	// SearchArtist returns results sorted descending by score,
+	// so the first entry is the best match.
 	best := results[0]
-	for _, r := range results[1:] {
-		if r.Score > best.Score {
-			best = r
-		}
-	}
 	threshold, err := a.getNameSimilarityThreshold(ctx)
 	if err != nil {
 		return nil, err

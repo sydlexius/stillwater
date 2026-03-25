@@ -115,11 +115,11 @@ func TestSearchArtistFuzzyMatch(t *testing.T) {
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(results))
 	}
-	if results[0].Score <= 0 {
-		t.Errorf("expected score > 0 for fuzzy match, got %d", results[0].Score)
-	}
-	if results[0].Score >= 100 {
-		t.Errorf("expected score < 100 for non-exact match, got %d", results[0].Score)
+	// "radiohed" vs "Radiohead": normalized distance=1, maxLen=9,
+	// expected score = 100 - (1*100)/9 = 88. Bracket to catch both
+	// hardcoding (100) and zero-score bugs.
+	if results[0].Score < 80 || results[0].Score > 95 {
+		t.Errorf("expected score in [80, 95] for fuzzy match, got %d", results[0].Score)
 	}
 }
 
