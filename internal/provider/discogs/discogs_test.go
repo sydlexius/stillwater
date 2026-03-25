@@ -93,6 +93,35 @@ func TestSearchArtist(t *testing.T) {
 	if results[0].ProviderID != "3840" {
 		t.Errorf("expected provider ID 3840, got %s", results[0].ProviderID)
 	}
+	// Score should be computed via NameSimilarity, not hard-coded to 100.
+	// "Radiohead" vs "Radiohead" is an exact match = 100.
+	if results[0].Score != 100 {
+		t.Errorf("expected score 100 for exact match, got %d", results[0].Score)
+	}
+}
+
+func TestSearchArtistFuzzyMatch(t *testing.T) {
+	limiter, settings := setupTest(t)
+	srv := newTestServer(t)
+	defer srv.Close()
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	a := NewWithBaseURL(limiter, settings, logger, srv.URL)
+
+	// Search for a misspelled name to prove scores are computed via
+	// NameSimilarity rather than hard-coded to 100.
+	results, err := a.SearchArtist(context.Background(), "Radiohed")
+	if err != nil {
+		t.Fatalf("SearchArtist: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	// "radiohed" vs "Radiohead": normalized distance=1, maxLen=9,
+	// expected score = 100 - (1*100)/9 = 88. Bracket to catch both
+	// hardcoding (100) and zero-score bugs.
+	if results[0].Score < 80 || results[0].Score > 95 {
+		t.Errorf("expected score in [80, 95] for fuzzy match, got %d", results[0].Score)
+	}
 }
 
 func TestGetArtist(t *testing.T) {

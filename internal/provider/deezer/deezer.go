@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -83,10 +84,15 @@ func (a *Adapter) SearchArtist(ctx context.Context, name string) ([]provider.Art
 		results = append(results, provider.ArtistSearchResult{
 			ProviderID: strconv.Itoa(r.ID),
 			Name:       r.Name,
-			Score:      100,
+			Score:      provider.NameSimilarity(name, r.Name),
 			Source:     string(provider.NameDeezer),
 		})
 	}
+
+	// Sort by score descending so the best match appears first.
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].Score > results[j].Score
+	})
 
 	a.logger.Debug("artist search completed",
 		slog.String("query", name),
