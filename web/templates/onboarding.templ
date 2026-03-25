@@ -17,6 +17,7 @@ type OnboardingData struct {
 	WebSearchProviders []provider.WebSearchProviderStatus
 	Connections        []connection.Connection
 	CurrentStep        int
+	UnidentifiedCount  int
 }
 
 // findConnectionByType returns the first connection matching the given type, or nil.
@@ -37,28 +38,36 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 			<title>Welcome - Stillwater</title>
 			<link rel="stylesheet" href={ assets.CSS }/>
-			<link rel="icon" type="image/svg+xml" href="/static/img/favicon.svg"/>
-			<link rel="icon" type="image/png" sizes="32x32" href="/static/img/favicon-32x32.png"/>
-			<link rel="icon" type="image/png" sizes="16x16" href="/static/img/favicon-16x16.png"/>
-			<link rel="apple-touch-icon" sizes="180x180" href="/static/img/apple-touch-icon.png"/>
-			<link rel="manifest" href="/static/site.webmanifest"/>
+			<link rel="icon" type="image/svg+xml" href={ assets.BasePath + "/static/img/favicon.svg" }/>
+			<link rel="icon" type="image/png" sizes="32x32" href={ assets.BasePath + "/static/img/favicon-32x32.png" }/>
+			<link rel="icon" type="image/png" sizes="16x16" href={ assets.BasePath + "/static/img/favicon-16x16.png" }/>
+			<link rel="apple-touch-icon" sizes="180x180" href={ assets.BasePath + "/static/img/apple-touch-icon.png" }/>
+			<link rel="manifest" href={ assets.BasePath + "/static/site.webmanifest" }/>
+			<meta name="htmx-base-path" content={ assets.BasePath }/>
 			@themeInitScript()
 			<script src={ assets.HTMX }></script>
 			<script>
-				document.addEventListener('htmx:configRequest', function(evt) {
-					var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*\=\s*([^;]*).*$)|^.*$/, "$1");
-					if (csrfToken) {
-						evt.detail.headers['X-CSRF-Token'] = csrfToken;
-					}
-				});
+				(function() {
+					var bpMeta = document.querySelector('meta[name="htmx-base-path"]');
+					var bp = bpMeta ? bpMeta.content : '';
+					document.addEventListener('htmx:configRequest', function(evt) {
+						var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*\=\s*([^;]*).*$)|^.*$/, "$1");
+						if (csrfToken) {
+							evt.detail.headers['X-CSRF-Token'] = csrfToken;
+						}
+						if (bp && evt.detail.path.startsWith('/')) {
+							evt.detail.path = bp + evt.detail.path;
+						}
+					});
+				})();
 			</script>
 		</head>
-		<body class="h-full bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100" data-current-step={ strconv.Itoa(data.CurrentStep) }>
+		<body class="h-full bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100" data-current-step={ strconv.Itoa(data.CurrentStep) } data-unidentified-count={ strconv.Itoa(data.UnidentifiedCount) }>
 			<div class="flex min-h-full items-start justify-center px-4 py-8 sm:py-12">
 				<div class="w-full max-w-2xl space-y-6">
 					<div class="text-center">
 						<div class="flex justify-center">
-							<img src="/static/img/favicon.svg" alt="" class="h-12 w-12" aria-hidden="true"/>
+							<img src={ assets.BasePath + "/static/img/favicon.svg" } alt="" class="h-12 w-12" aria-hidden="true"/>
 						</div>
 						<h1 class="mt-3 text-3xl font-bold text-blue-600 dark:text-blue-400">Welcome to Stillwater</h1>
 						<p class="mt-2 text-sm text-gray-500 dark:text-gray-400">
@@ -85,6 +94,11 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 						<div class="flex items-center gap-2">
 							<div id="step-dot-4" class="h-8 w-8 rounded-full bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 flex items-center justify-center text-sm font-medium">4</div>
 							<span id="step-label-4" class="text-sm text-gray-500 dark:text-gray-400 hidden sm:inline">Connections</span>
+						</div>
+						<div id="step-line-4" class="h-0.5 w-8 bg-gray-300 dark:bg-gray-600 mx-2 sm:w-8"></div>
+						<div class="flex items-center gap-2">
+							<div id="step-dot-5" class="h-8 w-8 rounded-full bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 flex items-center justify-center text-sm font-medium">5</div>
+							<span id="step-label-5" class="text-sm text-gray-500 dark:text-gray-400 hidden sm:inline">Discovery</span>
 						</div>
 					</div>
 					<!-- Step 0: Introduction -->
@@ -278,6 +292,148 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 							class="mt-4"
 						></div>
 					</div>
+					<!-- Step 5: Artist Discovery -->
+					<div id="wizard-step-5" class={ "rounded-lg bg-white dark:bg-gray-800 shadow p-6", templ.KV("hidden", data.CurrentStep != 5) }>
+						<!-- Phase 1: Opt-in -->
+						<div id="discovery-opt-in">
+							<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">Artist Discovery</h2>
+							<p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+								Stillwater can search your configured providers to identify artists in your library and fetch metadata automatically.
+							</p>
+							if data.UnidentifiedCount < 0 {
+								<div class="rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 p-4 mb-5">
+									<div class="flex items-center gap-3">
+										<div class="flex-shrink-0">
+											<svg class="w-8 h-8 text-amber-600 dark:text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+												<path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"></path>
+											</svg>
+										</div>
+										<div>
+											<p class="text-sm font-medium text-amber-800 dark:text-amber-200">Could not check artist identification status</p>
+											<p class="text-xs text-amber-700 dark:text-amber-300/70 mt-0.5">
+												You can still start discovery -- it will determine the count automatically.
+											</p>
+										</div>
+									</div>
+								</div>
+								<button
+									type="button"
+									id="discovery-start-btn"
+									class="w-full text-sm px-4 py-2.5 rounded-md bg-green-600 text-white hover:bg-green-700 transition-colors font-medium"
+									onclick="startDiscovery()"
+								>
+									Start Discovery
+								</button>
+								<p class="text-xs text-gray-500 dark:text-gray-400 mt-3 text-center">
+									You can skip this and identify artists individually later from the Artists page.
+								</p>
+							} else if data.UnidentifiedCount > 0 {
+								<div class="rounded-lg border border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/20 p-4 mb-5">
+									<div class="flex items-center gap-3">
+										<div class="flex-shrink-0">
+											<svg class="w-8 h-8 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+												<path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"></path>
+											</svg>
+										</div>
+										<div>
+											<p class="text-sm font-medium text-blue-800 dark:text-blue-200">{ strconv.Itoa(data.UnidentifiedCount) + " artists need identification" }</p>
+											<p class="text-xs text-blue-700 dark:text-blue-300/70 mt-0.5">
+												These artists have no MusicBrainz ID linked. Discovery will search providers and auto-link high-confidence matches.
+											</p>
+										</div>
+									</div>
+								</div>
+								<div class="space-y-2 mb-5 text-xs text-gray-600 dark:text-gray-400">
+									<div class="flex items-start gap-2">
+										<svg class="w-4 h-4 text-green-600 dark:text-green-400 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+											<polyline points="20 6 9 17 4 12"></polyline>
+										</svg>
+										<span>Matches artists against your Emby/Jellyfin/Lidarr libraries first</span>
+									</div>
+									<div class="flex items-start gap-2">
+										<svg class="w-4 h-4 text-green-600 dark:text-green-400 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+											<polyline points="20 6 9 17 4 12"></polyline>
+										</svg>
+										<span>Compares local album folders against MusicBrainz discographies</span>
+									</div>
+									<div class="flex items-start gap-2">
+										<svg class="w-4 h-4 text-green-600 dark:text-green-400 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+											<polyline points="20 6 9 17 4 12"></polyline>
+										</svg>
+										<span>Queues uncertain matches for your review</span>
+									</div>
+								</div>
+								<button
+									type="button"
+									id="discovery-start-btn"
+									class="w-full text-sm px-4 py-2.5 rounded-md bg-green-600 text-white hover:bg-green-700 transition-colors font-medium"
+									onclick="startDiscovery()"
+								>
+									Start Discovery
+								</button>
+								<p class="text-xs text-gray-500 dark:text-gray-400 mt-3 text-center">
+									You can skip this and identify artists individually later from the Artists page.
+								</p>
+							} else {
+								<div class="flex flex-col items-center py-6">
+									<svg class="w-12 h-12 text-green-600 dark:text-green-400 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+										<path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+									</svg>
+									<p class="text-sm font-medium text-gray-900 dark:text-gray-100">All artists are already identified</p>
+									<p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Nothing to discover. You're all set!</p>
+								</div>
+							}
+						</div>
+						<!-- Phase 2: Progress -->
+						<div id="discovery-progress" class="hidden">
+							<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">Artist Discovery</h2>
+							<p class="text-sm text-gray-500 dark:text-gray-400 mb-4">Identifying artists in your library...</p>
+							<div class="mb-4">
+								<div class="flex justify-between text-xs text-gray-600 dark:text-gray-400 mb-1.5">
+									<span>Processing: <span id="discovery-current-name" class="text-gray-900 dark:text-gray-200 font-medium"></span></span>
+									<span><span id="discovery-processed">0</span> / <span id="discovery-total">0</span></span>
+								</div>
+								<div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5">
+									<div id="discovery-bar" class="bg-blue-600 h-2.5 rounded-full transition-all" style="width: 0%"></div>
+								</div>
+							</div>
+							<div class="grid grid-cols-3 gap-3 mb-4">
+								<div class="rounded-lg bg-gray-100 dark:bg-gray-700/50 p-3 text-center">
+									<div id="discovery-auto-linked" class="text-lg font-bold text-green-600 dark:text-green-400">0</div>
+									<div class="text-xs text-gray-500 dark:text-gray-400">Auto-linked</div>
+								</div>
+								<div class="rounded-lg bg-gray-100 dark:bg-gray-700/50 p-3 text-center">
+									<div id="discovery-queued" class="text-lg font-bold text-amber-600 dark:text-amber-400">0</div>
+									<div class="text-xs text-gray-500 dark:text-gray-400">Need review</div>
+								</div>
+								<div class="rounded-lg bg-gray-100 dark:bg-gray-700/50 p-3 text-center">
+									<div id="discovery-unmatched" class="text-lg font-bold text-gray-500 dark:text-gray-400">0</div>
+									<div class="text-xs text-gray-500 dark:text-gray-400">No match</div>
+								</div>
+							</div>
+							<button
+								type="button"
+								id="discovery-cancel-btn"
+								class="w-full text-sm px-4 py-2 rounded-md border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+								onclick="cancelDiscovery()"
+							>
+								Cancel
+							</button>
+							<p class="text-xs text-gray-500 dark:text-gray-400 mt-3 text-center">
+								Already-linked artists are saved immediately. You can cancel at any time without losing progress.
+							</p>
+						</div>
+						<!-- Phase 3: Review -->
+						<div id="discovery-review" class="hidden">
+							<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">Artist Discovery</h2>
+							<p id="discovery-review-summary" class="text-sm text-gray-500 dark:text-gray-400 mb-1"></p>
+							<div id="discovery-review-badges" class="flex gap-3 text-xs mb-4 mt-3"></div>
+							<div id="discovery-review-list" class="space-y-1.5 max-h-80 overflow-y-auto pr-1"></div>
+							<p class="text-xs text-gray-500 dark:text-gray-400 mt-3">
+								Click an artist to see candidates. Pick the correct match or skip. Unreviewed artists can be identified later from the Artists page.
+							</p>
+						</div>
+					</div>
 					<!-- Navigation -->
 					<div class="flex items-center justify-between">
 						<button
@@ -324,10 +480,35 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 			<script>
 				var parsedStep = parseInt(document.body.dataset.currentStep, 10);
 				var currentStep = isNaN(parsedStep) ? 0 : parsedStep;
-				var totalSteps = 4;
+				var totalSteps = 5;
+				var discoveryPhase = 'idle'; // idle, running, review
+				var discoveryPollTimer = null;
+				var discoveryReviewQueue = [];
+				var discoveryPollFailures = 0;
+				var bpEl = document.querySelector('meta[name="htmx-base-path"]');
+				var basePath = bpEl ? bpEl.content : '';
 
 				function getCsrfToken() {
 					return document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*\=\s*([^;]*).*$)|^.*$/, "$1");
+				}
+
+				function removeFromReviewQueue(artistId) {
+					for (var i = 0; i < discoveryReviewQueue.length; i++) {
+						if (discoveryReviewQueue[i].artist_id === artistId) {
+							discoveryReviewQueue.splice(i, 1);
+							break;
+						}
+					}
+					var summaryEl = document.getElementById('discovery-review-summary');
+					if (summaryEl) {
+						var current = summaryEl.textContent;
+						var prefix = current.indexOf('Discovery canceled.') === 0 ? 'Discovery canceled. ' : 'Discovery complete. ';
+						summaryEl.textContent = prefix + String(discoveryReviewQueue.length) + ' artists need your review.';
+					}
+					var amberSpan = document.querySelector('#discovery-review-badges span:nth-child(2)');
+					if (amberSpan) {
+						amberSpan.textContent = String(discoveryReviewQueue.length) + ' need review';
+					}
 				}
 
 				function goToStep(step) {
@@ -375,20 +556,30 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 					nextBtn.textContent = step === 0 ? 'Get Started' : 'Next';
 					document.getElementById('finish-btn').classList.toggle('hidden', step < totalSteps);
 
-					fetch('/api/v1/settings', {
+					// Step 5 (discovery) hides Back during progress/review phases.
+					if (step === 5 && (discoveryPhase === 'running' || discoveryPhase === 'review')) {
+						document.getElementById('back-btn').classList.add('hidden');
+					}
+
+					fetch(basePath + '/api/v1/settings', {
 						method: 'PUT',
 						headers: {'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken()},
 						body: JSON.stringify({"onboarding.step": String(step)})
+					}).catch(function(err) {
+						console.warn('Failed to persist onboarding step:', err);
 					});
 				}
 
 				function finishWizard() {
-					fetch('/api/v1/settings', {
+					fetch(basePath + '/api/v1/settings', {
 						method: 'PUT',
 						headers: {'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken()},
 						body: JSON.stringify({"onboarding.completed": "true"})
-					}).then(function() {
-						window.location.href = '/';
+					}).then(function(resp) {
+						if (!resp.ok) throw new Error('HTTP ' + resp.status);
+						window.location.href = basePath + '/';
+					}).catch(function() {
+						alert('Failed to complete setup. Please try again.');
 					});
 				}
 
@@ -410,10 +601,12 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 				}
 
 				function refreshLibraryList() {
-					fetch('/api/v1/libraries', {
+					fetch(basePath + '/api/v1/libraries', {
 						headers: {'X-CSRF-Token': getCsrfToken()}
-					}).then(function(res) { return res.json(); })
-					.then(function(libs) {
+					}).then(function(res) {
+						if (!res.ok) throw new Error('HTTP ' + res.status);
+						return res.json();
+					}).then(function(libs) {
 						var list = document.getElementById('ob-library-list');
 						if (!libs || libs.length === 0) {
 							list.innerHTML = '<p id="ob-no-libraries" class="text-sm text-gray-400 dark:text-gray-500 italic">No libraries configured yet.</p>';
@@ -432,17 +625,20 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 								+ connectionBadge
 								+ '</div>'
 								+ '</div>'
-								+ '<button type="button" class="text-xs text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300" onclick="deleteLibrary(\'' + lib.id + '\')">'
+								+ '<button type="button" class="text-xs text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300" onclick="deleteLibrary(\'' + escapeJsString(lib.id) + '\')">'
 								+ 'Remove'
 								+ '</button>'
 								+ '</div>';
 						});
 						list.innerHTML = html;
+					}).catch(function() {
+						var list = document.getElementById('ob-library-list');
+						if (list) list.textContent = 'Failed to load libraries. Please refresh the page.';
 					});
 				}
 
 				function deleteLibrary(id) {
-					fetch('/api/v1/libraries/' + id, {
+					fetch(basePath + '/api/v1/libraries/' + id, {
 						method: 'DELETE',
 						headers: {'X-CSRF-Token': getCsrfToken()}
 					}).then(function(res) {
@@ -451,6 +647,8 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 						} else {
 							return res.json().then(function(data) { alert(data.error || 'Failed to delete library'); });
 						}
+					}).catch(function() {
+						alert('Network error removing library. Please try again.');
 					});
 				}
 
@@ -460,11 +658,450 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 					return div.innerHTML;
 				}
 
+				function escapeJsString(s) {
+					return String(s)
+						.replace(/\\/g, '\\\\')
+						.replace(/'/g, "\\'")
+						.replace(/&/g, '&amp;')
+						.replace(/"/g, '&quot;')
+						.replace(/</g, '&lt;')
+						.replace(/>/g, '&gt;')
+						.replace(/\r?\n/g, '\\n');
+				}
+
 				function discoverLibraries(connID, connType) {
 					htmx.ajax('GET', '/api/v1/connections/' + connID + '/libraries', {
 						target: '#ob-discover-' + connType,
 						swap: 'innerHTML'
 					});
+				}
+
+				function showDiscoveryProgress() {
+					discoveryPhase = 'running';
+					var optIn = document.getElementById('discovery-opt-in');
+					var progress = document.getElementById('discovery-progress');
+					var review = document.getElementById('discovery-review');
+					if (optIn) optIn.classList.add('hidden');
+					if (progress) progress.classList.remove('hidden');
+					if (review) review.classList.add('hidden');
+					document.getElementById('back-btn').classList.add('hidden');
+				}
+
+				function startDiscovery() {
+					// Disable button immediately to prevent double-click spawning duplicate polls.
+					var startBtn = document.getElementById('discovery-start-btn');
+					if (startBtn) { startBtn.disabled = true; startBtn.textContent = 'Starting...'; }
+					fetch(basePath + '/api/v1/artists/bulk-identify', {
+						method: 'POST',
+						credentials: 'same-origin',
+						headers: {'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken()},
+						body: JSON.stringify({})
+					}).then(function(resp) {
+						if (resp.status === 409) {
+							showDiscoveryProgress();
+							pollDiscoveryStatus();
+							return;
+						}
+						if (!resp.ok) {
+							return resp.text().then(function(text) {
+								if (startBtn) { startBtn.disabled = false; startBtn.textContent = 'Start Discovery'; }
+								var msg = 'Failed to start discovery (HTTP ' + resp.status + ')';
+								try { var d = JSON.parse(text); if (d.error) msg = d.error; } catch(e) { /* non-JSON */ }
+								alert(msg);
+							});
+						}
+						return resp.json().then(function(data) {
+							if (data.status === 'running') {
+								showDiscoveryProgress();
+								var totalEl = document.getElementById('discovery-total');
+								if (totalEl) totalEl.textContent = String(data.total);
+								pollDiscoveryStatus();
+							} else if (data.total === 0) {
+								var optIn = document.getElementById('discovery-opt-in');
+								if (optIn) {
+									optIn.innerHTML = '';
+									var wrapper = document.createElement('div');
+									wrapper.className = 'flex flex-col items-center py-6';
+									var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+									svg.setAttribute('class', 'w-12 h-12 text-green-600 dark:text-green-400 mb-3');
+									svg.setAttribute('fill', 'none');
+									svg.setAttribute('viewBox', '0 0 24 24');
+									svg.setAttribute('stroke', 'currentColor');
+									svg.setAttribute('stroke-width', '1.5');
+									var path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+									path.setAttribute('stroke-linecap', 'round');
+									path.setAttribute('stroke-linejoin', 'round');
+									path.setAttribute('d', 'M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z');
+									svg.appendChild(path);
+									wrapper.appendChild(svg);
+									var p1 = document.createElement('p');
+									p1.className = 'text-sm font-medium text-gray-900 dark:text-gray-100';
+									p1.textContent = 'All artists are already identified';
+									wrapper.appendChild(p1);
+									var p2 = document.createElement('p');
+									p2.className = 'text-xs text-gray-500 dark:text-gray-400 mt-1';
+									p2.textContent = 'Nothing to discover. You are all set!';
+									wrapper.appendChild(p2);
+									optIn.appendChild(wrapper);
+								}
+							}
+						});
+					}).catch(function() {
+						if (startBtn) { startBtn.disabled = false; startBtn.textContent = 'Start Discovery'; }
+						alert('Network error starting discovery. Please try again.');
+					});
+				}
+
+				function pollDiscoveryStatus() {
+					fetch(basePath + '/api/v1/artists/bulk-identify', {
+						credentials: 'same-origin'
+					}).then(function(resp) {
+						if (!resp.ok) {
+							discoveryPollFailures++;
+							if (discoveryPollFailures >= 10) {
+								document.getElementById('discovery-current-name').textContent = '';
+								var desc = document.querySelector('#discovery-progress > p:first-of-type');
+								if (desc) desc.textContent = 'Lost connection to the discovery job. Please refresh the page.';
+								document.getElementById('discovery-cancel-btn').classList.add('hidden');
+								return;
+							}
+							discoveryPollTimer = setTimeout(pollDiscoveryStatus, 2000);
+							return;
+						}
+						return resp.json();
+					}).then(function(data) {
+						if (!data) return;
+						discoveryPollFailures = 0;
+
+						var processed = data.processed || 0;
+						var total = data.total || 0;
+
+						var processedEl = document.getElementById('discovery-processed');
+						var totalEl = document.getElementById('discovery-total');
+						var autoLinkedEl = document.getElementById('discovery-auto-linked');
+						var queuedEl = document.getElementById('discovery-queued');
+						var unmatchedEl = document.getElementById('discovery-unmatched');
+						var currentNameEl = document.getElementById('discovery-current-name');
+
+						if (processedEl) processedEl.textContent = String(processed);
+						if (totalEl) totalEl.textContent = String(total);
+						if (autoLinkedEl) autoLinkedEl.textContent = String(data.auto_linked || 0);
+						if (queuedEl) queuedEl.textContent = String(data.queued || 0);
+						if (unmatchedEl) unmatchedEl.textContent = String(data.unmatched || 0);
+						if (currentNameEl) currentNameEl.textContent = data.current_name || '';
+
+						var barWidth = total > 0 ? Math.round((processed / total) * 100) : 0;
+						var barEl = document.getElementById('discovery-bar');
+						if (barEl) barEl.style.width = barWidth + '%';
+
+						if (data.status === 'running') {
+							discoveryPollTimer = setTimeout(pollDiscoveryStatus, 1000);
+						} else {
+							discoveryReviewQueue = data.review_queue || [];
+							showDiscoveryComplete(data, data.status === 'canceled');
+						}
+					}).catch(function() {
+						discoveryPollFailures++;
+						if (discoveryPollFailures >= 10) {
+							document.getElementById('discovery-current-name').textContent = '';
+							var desc = document.querySelector('#discovery-progress > p:first-of-type');
+							if (desc) desc.textContent = 'Lost connection to the discovery job. Please refresh the page.';
+							document.getElementById('discovery-cancel-btn').classList.add('hidden');
+							return;
+						}
+						discoveryPollTimer = setTimeout(pollDiscoveryStatus, 2000);
+					});
+				}
+
+				function cancelDiscovery() {
+					var cancelBtn = document.getElementById('discovery-cancel-btn');
+					if (cancelBtn) { cancelBtn.disabled = true; cancelBtn.textContent = 'Cancelling...'; }
+					fetch(basePath + '/api/v1/artists/bulk-identify', {
+						method: 'DELETE',
+						credentials: 'same-origin',
+						headers: {'X-CSRF-Token': getCsrfToken()}
+					}).then(function(resp) {
+						if (!resp.ok) {
+							if (cancelBtn) { cancelBtn.disabled = false; cancelBtn.textContent = 'Cancel'; }
+							alert('Failed to cancel discovery. The job may still be running.');
+						}
+						// Success: polling will detect canceled status
+					}).catch(function() {
+						if (cancelBtn) { cancelBtn.disabled = false; cancelBtn.textContent = 'Cancel'; }
+						alert('Network error cancelling discovery. Please try again.');
+					});
+				}
+
+				function showDiscoveryComplete(data, wasCanceled) {
+					if (discoveryReviewQueue.length > 0) {
+						showDiscoveryReview(data, wasCanceled);
+						return;
+					}
+					// No items to review -- show completion in the progress panel.
+					var cancelBtn = document.getElementById('discovery-cancel-btn');
+					if (cancelBtn) cancelBtn.classList.add('hidden');
+
+					var statusText = wasCanceled ? 'Discovery canceled.' : 'Discovery complete.';
+					var summaryText = String(data.auto_linked || 0) + ' artists linked'
+						+ (wasCanceled ? ' before cancellation.' : ' automatically.');
+
+					var progressEl = document.getElementById('discovery-progress');
+					if (progressEl) {
+						var heading = progressEl.querySelector('h2');
+						if (heading) {
+							var sibling = heading.nextElementSibling;
+							if (sibling && sibling.tagName === 'P') {
+								sibling.textContent = statusText;
+							}
+						}
+						var paras = progressEl.querySelectorAll('p');
+						var lastP = paras.length > 0 ? paras[paras.length - 1] : null;
+						if (lastP) {
+							lastP.textContent = summaryText;
+						}
+					}
+					discoveryPhase = 'review';
+				}
+
+				function showDiscoveryReview(data, wasCanceled) {
+					discoveryPhase = 'review';
+
+					var progressEl = document.getElementById('discovery-progress');
+					var reviewEl = document.getElementById('discovery-review');
+					if (progressEl) progressEl.classList.add('hidden');
+					if (reviewEl) reviewEl.classList.remove('hidden');
+					document.getElementById('back-btn').classList.add('hidden');
+
+					var prefix = wasCanceled ? 'Discovery canceled. ' : 'Discovery complete. ';
+					var summaryEl = document.getElementById('discovery-review-summary');
+					if (summaryEl) {
+						summaryEl.textContent = prefix + String(discoveryReviewQueue.length) + ' artists need your review.';
+					}
+
+					var badgesEl = document.getElementById('discovery-review-badges');
+					if (badgesEl) {
+						badgesEl.textContent = '';
+						var greenSpan = document.createElement('span');
+						greenSpan.className = 'inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium bg-green-100 dark:bg-green-900/30 border border-green-300 dark:border-green-700/30 text-green-700 dark:text-green-400';
+						greenSpan.textContent = String(data.auto_linked || 0) + ' auto-linked';
+						badgesEl.appendChild(greenSpan);
+
+						var amberSpan = document.createElement('span');
+						amberSpan.className = 'inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium bg-amber-100 dark:bg-amber-900/30 border border-amber-300 dark:border-amber-700/30 text-amber-700 dark:text-amber-400';
+						amberSpan.textContent = String(discoveryReviewQueue.length) + ' need review';
+						badgesEl.appendChild(amberSpan);
+
+						var graySpan = document.createElement('span');
+						graySpan.className = 'inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium bg-gray-100 dark:bg-gray-700/50 border border-gray-300 dark:border-gray-600/30 text-gray-600 dark:text-gray-400';
+						graySpan.textContent = String(data.unmatched || 0) + ' no match';
+						badgesEl.appendChild(graySpan);
+					}
+
+					buildReviewAccordion();
+				}
+
+				function buildReviewAccordion() {
+					var list = document.getElementById('discovery-review-list');
+					if (!list) return;
+					list.textContent = '';
+
+					for (var i = 0; i < discoveryReviewQueue.length; i++) {
+						var item = discoveryReviewQueue[i];
+
+						// Compute initials: first letter of each word, max 2, uppercased
+						var words = item.artist_name.trim().split(/\s+/);
+						var initials = '';
+						for (var w = 0; w < words.length && w < 2; w++) {
+							initials += words[w].charAt(0).toUpperCase();
+						}
+
+						var tierLabel = item.tier === 'album' ? 'album match' : 'name match';
+						var candidateCount = item.candidates ? item.candidates.length : 0;
+
+						var row = document.createElement('div');
+						row.id = 'review-row-' + item.artist_id;
+						row.className = 'rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden';
+
+						// Header button
+						var headerBtn = document.createElement('button');
+						headerBtn.type = 'button';
+						headerBtn.className = 'w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors';
+						headerBtn.setAttribute('aria-expanded', 'false');
+						headerBtn.setAttribute('aria-controls', 'review-content-' + item.artist_id);
+						headerBtn.onclick = function(b) { return function() { toggleReviewRow(b); }; }(headerBtn);
+						headerBtn.innerHTML = '<div class="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-xs font-medium text-gray-600 dark:text-gray-300 shrink-0">'
+							+ escapeHtml(initials)
+							+ '</div>'
+							+ '<div class="flex-1 min-w-0">'
+							+ '<span class="text-sm font-medium text-gray-900 dark:text-gray-100 truncate block">' + escapeHtml(item.artist_name) + '</span>'
+							+ '<span class="text-xs text-gray-500 dark:text-gray-400">' + String(candidateCount) + ' candidate' + (candidateCount !== 1 ? 's' : '') + ' / ' + escapeHtml(tierLabel) + '</span>'
+							+ '</div>'
+							+ '<svg class="w-4 h-4 text-gray-400 shrink-0 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>';
+
+						// Expandable content (hidden by default)
+						var content = document.createElement('div');
+						content.className = 'hidden border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/30 p-3';
+						content.id = 'review-content-' + item.artist_id;
+						content.innerHTML = buildCandidateCards(item);
+
+						row.appendChild(headerBtn);
+						row.appendChild(content);
+						list.appendChild(row);
+					}
+				}
+
+				function toggleReviewRow(btn) {
+					var content = btn.nextElementSibling;
+					if (content) content.classList.toggle('hidden');
+					var svg = btn.querySelector('svg');
+					if (svg) svg.classList.toggle('rotate-180');
+					var expanded = btn.getAttribute('aria-expanded') === 'true';
+					btn.setAttribute('aria-expanded', String(!expanded));
+				}
+
+				function buildCandidateCards(item) {
+					var html = '<div class="space-y-2">';
+					var candidates = item.candidates || [];
+
+					for (var c = 0; c < candidates.length; c++) {
+						var cand = candidates[c];
+						html += '<button type="button" onclick="linkCandidate(\'' + escapeJsString(item.artist_id) + '\', \'' + escapeJsString(cand.musicbrainz_id) + '\', this)"'
+							+ ' class="w-full text-left rounded border border-gray-200 dark:border-gray-600 p-3 hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:border-blue-300 dark:hover:border-blue-700 transition-colors">';
+
+						html += '<div class="flex items-center justify-between">'
+							+ '<div class="flex-1 min-w-0">'
+							+ '<div class="font-medium text-sm text-gray-900 dark:text-gray-100">' + escapeHtml(cand.name) + '</div>';
+
+						// Type, country, disambiguation line
+						var meta = '';
+						if (cand.type) meta += escapeHtml(cand.type);
+						if (cand.country) meta += (meta ? ' from ' : '') + escapeHtml(cand.country);
+						if (cand.disambiguation) meta += (meta ? ' ' : '') + '<span class="italic">(' + escapeHtml(cand.disambiguation) + ')</span>';
+						if (meta) html += '<div class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">' + meta + '</div>';
+
+						// MBID in monospace
+						if (cand.musicbrainz_id) {
+							html += '<div class="text-[10px] text-gray-400 font-mono mt-0.5 truncate">' + escapeHtml(cand.musicbrainz_id) + '</div>';
+						}
+
+						// Album match badge
+						if (cand.album_comparison && cand.album_comparison.local_count > 0) {
+							var pct = cand.album_comparison.match_percent || 0;
+							var badgeClasses;
+							if (pct >= 60) {
+								badgeClasses = 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 border-green-300 dark:border-green-700/30';
+							} else if (pct >= 30) {
+								badgeClasses = 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border-amber-300 dark:border-amber-700/30';
+							} else {
+								badgeClasses = 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 border-red-300 dark:border-red-700/30';
+							}
+							html += '<div class="mt-1.5 flex items-center gap-2">'
+								+ '<span class="inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ' + badgeClasses + '">'
+								+ String(cand.album_comparison.match_count || 0) + '/' + String(cand.album_comparison.local_count) + ' albums'
+								+ '</span>'
+								+ '</div>';
+						}
+
+						html += '</div>'; // close flex-1
+
+						// Score on the right
+						if (cand.score > 0) {
+							html += '<div class="flex items-center gap-2 ml-3 shrink-0">'
+								+ '<span class="text-xs text-gray-500">' + String(cand.score) + '</span>'
+								+ '</div>';
+						}
+
+						html += '</div>'; // close flex justify-between
+						html += '</button>';
+					}
+
+					// Skip button
+					html += '<button type="button" onclick="skipReviewArtist(\'' + escapeJsString(item.artist_id) + '\')"'
+						+ ' class="w-full text-center rounded border border-dashed border-gray-300 dark:border-gray-600 px-3 py-2 text-xs text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors">'
+						+ 'Skip this artist'
+						+ '</button>';
+
+					html += '</div>';
+					return html;
+				}
+
+				function linkCandidate(artistId, mbid, btn) {
+					// Disable all candidate buttons in this row to prevent concurrent link requests.
+					var row = btn.closest('[id^="review-row-"]');
+					if (row && row.dataset.linking === '1') return;
+					if (row) row.dataset.linking = '1';
+					var rowButtons = row ? row.querySelectorAll('button') : [btn];
+					for (var i = 0; i < rowButtons.length; i++) {
+						rowButtons[i].disabled = true;
+						rowButtons[i].style.opacity = '0.5';
+					}
+
+					fetch(basePath + '/api/v1/artists/bulk-identify/link', {
+						method: 'POST',
+						credentials: 'same-origin',
+						headers: {
+							'Content-Type': 'application/json',
+							'X-CSRF-Token': getCsrfToken()
+						},
+						body: JSON.stringify({artist_id: artistId, mbid: mbid})
+					}).then(function(resp) {
+						if (!resp.ok) {
+							return resp.text().then(function(text) {
+								var msg = 'Failed to link artist (HTTP ' + resp.status + ')';
+								try { var d = JSON.parse(text); if (d.error) msg = d.error; } catch(e) { /* non-JSON */ }
+								throw new Error(msg);
+							});
+						}
+						return resp.json();
+					}).then(function() {
+						// Find the artist name before removing from queue
+						var artistName = artistId;
+						for (var i = 0; i < discoveryReviewQueue.length; i++) {
+							if (discoveryReviewQueue[i].artist_id === artistId) {
+								artistName = discoveryReviewQueue[i].artist_name;
+								break;
+							}
+						}
+						removeFromReviewQueue(artistId);
+
+						var row = document.getElementById('review-row-' + artistId);
+						if (row) {
+							row.className = 'rounded-lg border border-green-200 dark:border-green-800/40 bg-green-50 dark:bg-green-900/10 overflow-hidden';
+							row.innerHTML = '<div class="flex items-center gap-3 px-3 py-2">'
+								+ '<div class="w-8 h-8 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center shrink-0">'
+								+ '<svg class="w-4 h-4 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>'
+								+ '</div>'
+								+ '<div class="flex-1 min-w-0">'
+								+ '<span class="text-sm font-medium text-gray-900 dark:text-gray-100">' + escapeHtml(artistName) + '</span>'
+								+ '<span class="text-xs text-green-600 dark:text-green-400 ml-2">Linked successfully</span>'
+								+ '</div>'
+								+ '</div>';
+						}
+					}).catch(function(err) {
+						if (row) delete row.dataset.linking;
+						for (var i = 0; i < rowButtons.length; i++) {
+							rowButtons[i].disabled = false;
+							rowButtons[i].style.opacity = '1';
+						}
+						alert(err.message || 'Failed to link artist');
+					});
+				}
+
+				function skipReviewArtist(artistId) {
+					var row = document.getElementById('review-row-' + artistId);
+					if (!row) return;
+					removeFromReviewQueue(artistId);
+					row.classList.add('opacity-50');
+					// Hide the expandable content (second child of the row)
+					var children = row.children;
+					if (children.length > 1) {
+						children[1].classList.add('hidden');
+					}
+					// Collapse the chevron and reset aria-expanded
+					var headerBtn = row.querySelector('button');
+					if (headerBtn) headerBtn.setAttribute('aria-expanded', 'false');
+					var svg = row.querySelector('button svg');
+					if (svg) svg.classList.remove('rotate-180');
 				}
 
 				function onConnectionSaved(connType, xhr) {
@@ -504,11 +1141,13 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 					var resultEl = document.getElementById('ob-conn-test-result-' + connType);
 					var dot = document.getElementById('ob-conn-dot-' + connType);
 					if (testBtn) { testBtn.disabled = true; testBtn.textContent = 'Testing...'; }
-					fetch('/api/v1/connections/' + connID + '/test', {
+					fetch(basePath + '/api/v1/connections/' + connID + '/test', {
 						method: 'POST',
 						headers: {'X-CSRF-Token': getCsrfToken()}
-					}).then(function(res) { return res.json(); })
-					.then(function(data) {
+					}).then(function(res) {
+						if (!res.ok) throw new Error('HTTP ' + res.status);
+						return res.json();
+					}).then(function(data) {
 						if (testBtn) { testBtn.disabled = false; testBtn.textContent = 'Test'; }
 						if (data.status === 'ok') {
 							if (resultEl) { resultEl.className = 'text-xs mt-1 text-green-600 dark:text-green-400'; resultEl.textContent = 'Connection successful'; }

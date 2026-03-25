@@ -76,6 +76,10 @@ func TestHandleOnboardingPage_DefaultStep(t *testing.T) {
 	if !strings.Contains(body, `data-current-step="0"`) {
 		t.Error("expected data-current-step=\"0\" in response body")
 	}
+	// Empty database should report 0 unidentified artists.
+	if !strings.Contains(body, `data-unidentified-count="0"`) {
+		t.Error("expected data-unidentified-count=\"0\" for empty database")
+	}
 }
 
 func TestHandleOnboardingPage_StoredSteps(t *testing.T) {
@@ -90,6 +94,7 @@ func TestHandleOnboardingPage_StoredSteps(t *testing.T) {
 		{"step 2", "2", "2"},
 		{"step 3", "3", "3"},
 		{"step 4", "4", "4"},
+		{"step 5", "5", "5"},
 	}
 
 	for _, tt := range tests {
@@ -181,5 +186,59 @@ func TestHandleOnboardingPage_NoAuth(t *testing.T) {
 
 	if w.Code != http.StatusSeeOther {
 		t.Fatalf("status = %d, want %d (redirect); body: %s", w.Code, http.StatusSeeOther, w.Body.String())
+	}
+}
+
+func TestHandleOnboardingPage_UnidentifiedCount(t *testing.T) {
+	r := testRouterForOnboarding(t)
+	ctx := context.Background()
+
+	// Insert artist WITH a MusicBrainz ID (identified).
+	_, err := r.db.ExecContext(ctx,
+		`INSERT INTO artists (id, name, sort_name, path) VALUES ('a1', 'Pink Floyd', 'Pink Floyd', '/music/Pink Floyd')`)
+	if err != nil {
+		t.Fatalf("inserting artist a1: %v", err)
+	}
+	_, err = r.db.ExecContext(ctx,
+		`INSERT INTO artist_provider_ids (artist_id, provider, provider_id) VALUES ('a1', 'musicbrainz', 'mb-1234')`)
+	if err != nil {
+		t.Fatalf("inserting provider ID for a1: %v", err)
+	}
+
+	// Insert artist WITHOUT a MusicBrainz ID (unidentified).
+	_, err = r.db.ExecContext(ctx,
+		`INSERT INTO artists (id, name, sort_name, path) VALUES ('a2', 'Unknown Band', 'Unknown Band', '/music/Unknown Band')`)
+	if err != nil {
+		t.Fatalf("inserting artist a2: %v", err)
+	}
+
+	// Insert excluded artist WITHOUT a MusicBrainz ID (should NOT count).
+	_, err = r.db.ExecContext(ctx,
+		`INSERT INTO artists (id, name, sort_name, path, is_excluded) VALUES ('a3', 'Various Artists', 'Various Artists', '/music/Various Artists', 1)`)
+	if err != nil {
+		t.Fatalf("inserting artist a3: %v", err)
+	}
+
+	// Insert locked artist WITHOUT a MusicBrainz ID (should NOT count --
+	// bulk-identify skips locked artists).
+	_, err = r.db.ExecContext(ctx,
+		`INSERT INTO artists (id, name, sort_name, path, locked, locked_at) VALUES ('a4', 'Locked Artist', 'Locked Artist', '/music/Locked Artist', 1, '2026-01-01T00:00:00Z')`)
+	if err != nil {
+		t.Fatalf("inserting artist a4: %v", err)
+	}
+
+	req := onboardingRequest()
+	w := httptest.NewRecorder()
+
+	r.handleOnboardingPage(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	body := w.Body.String()
+	// Only the non-excluded artist without MBID should be counted.
+	if !strings.Contains(body, `data-unidentified-count="1"`) {
+		t.Errorf("expected data-unidentified-count=\"1\" in response body, got body:\n%s", body)
 	}
 }

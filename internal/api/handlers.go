@@ -260,6 +260,8 @@ func (r *Router) handleOnboardingPage(w http.ResponseWriter, req *http.Request) 
 			currentStep = 3
 		case "4":
 			currentStep = 4
+		case "5":
+			currentStep = 5
 		}
 	}
 
@@ -281,6 +283,18 @@ func (r *Router) handleOnboardingPage(w http.ResponseWriter, req *http.Request) 
 		r.logger.Error("listing web search providers for onboarding", "error", err)
 	}
 
+	unidentifiedCount := -1
+	err = r.db.QueryRowContext(req.Context(), //nolint:gosec // G701: query is a string literal
+		`SELECT COUNT(*) FROM artists WHERE is_excluded = 0 AND locked = 0
+		 AND NOT EXISTS (
+		    SELECT 1 FROM artist_provider_ids
+		    WHERE artist_id = artists.id AND provider = 'musicbrainz'
+		 )`).Scan(&unidentifiedCount)
+	if err != nil {
+		r.logger.Error("counting unidentified artists for onboarding", "error", err)
+		unidentifiedCount = -1
+	}
+
 	data := templates.OnboardingData{
 		Libraries:          libs,
 		Profiles:           profiles,
@@ -288,6 +302,7 @@ func (r *Router) handleOnboardingPage(w http.ResponseWriter, req *http.Request) 
 		WebSearchProviders: webSearchProviders,
 		Connections:        conns,
 		CurrentStep:        currentStep,
+		UnidentifiedCount:  unidentifiedCount,
 	}
 	renderTempl(w, req, templates.OnboardingPage(r.assets(), data))
 }
