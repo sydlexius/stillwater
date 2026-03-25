@@ -48,7 +48,7 @@ components:
       properties:
         default_behavior:
           type: boolean
-          description: When true, writes each category to its native element (Kodi-compatible passthrough). Ignores other settings.
+          description: When true, writes each category to its native element (Kodi-compatible passthrough). Ignores moods_as_styles and genre_sources, but advanced_remap still takes higher precedence when non-null.
         moods_as_styles:
           type: boolean
           description: When true, mood values are additionally written as style elements for Emby/Jellyfin Tag visibility.
@@ -61,12 +61,24 @@ components:
         advanced_remap:
           type: object
           nullable: true
-          description: Full source-to-element mapping matrix. Keys are NFO element names (genre, style, mood); values are arrays of source categories. Overrides all other settings when non-null.
-          additionalProperties:
-            type: array
-            items:
-              type: string
-              enum: [genres, styles, moods]
+          description: Full source-to-element mapping matrix. Overrides all other settings when non-null.
+          properties:
+            genre:
+              type: array
+              items:
+                type: string
+                enum: [genres, styles, moods]
+            style:
+              type: array
+              items:
+                type: string
+                enum: [genres, styles, moods]
+            mood:
+              type: array
+              items:
+                type: string
+                enum: [genres, styles, moods]
+          additionalProperties: false
     Status:
       type: object
       properties:

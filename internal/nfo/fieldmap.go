@@ -6,10 +6,10 @@ import "strings"
 // This enables platform-specific compatibility: Emby, Jellyfin, and Kodi each
 // interpret <genre>, <style>, and <mood> elements differently.
 //
-// Three tiers of configuration:
-//   - Tier 1 (DefaultBehavior=true): passthrough, Kodi-compatible
-//   - Tier 2 (MoodsAsStyles=true): additionally writes moods as <style> elements
-//   - Tier 3 (AdvancedRemap non-nil): full matrix override
+// Three tiers of configuration, evaluated in precedence order:
+//   - Tier 3 (AdvancedRemap non-nil): overrides everything, full source-to-element matrix
+//   - Tier 1 (DefaultBehavior=true, AdvancedRemap nil): passthrough, ignores MoodsAsStyles and GenreSources
+//   - Tier 2 (DefaultBehavior=false, AdvancedRemap nil): uses MoodsAsStyles and GenreSources
 type NFOFieldMap struct {
 	// DefaultBehavior when true writes each category to its native element
 	// (genres to <genre>, styles to <style>, moods to <mood>). This is the
@@ -50,8 +50,8 @@ func DefaultFieldMap() NFOFieldMap {
 //  2. If DefaultBehavior is true: passthrough (genres/styles/moods unchanged)
 //  3. Otherwise: apply GenreSources and MoodsAsStyles settings
 //
-// All outputs are deduplicated case-insensitively, preserving the first
-// occurrence of each value.
+// Outputs are deduplicated case-insensitively when fields are merged
+// (Tier 2 and Tier 3). Tier 1 passthrough returns unmodified copies.
 func ApplyFieldMap(fm NFOFieldMap, genres, styles, moods []string) (nfoGenres, nfoStyles, nfoMoods []string) {
 	// Tier 3: Advanced remap overrides everything when configured.
 	if fm.AdvancedRemap != nil {

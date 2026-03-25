@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strconv"
 )
 
 // Settings table keys for NFO output configuration.
@@ -48,9 +49,23 @@ func (s *NFOSettingsService) GetFieldMap(ctx context.Context) (NFOFieldMap, erro
 
 		switch k {
 		case SettingDefaultBehavior:
-			fm.DefaultBehavior = v == "true" || v == "1"
+			parsed, parseErr := strconv.ParseBool(v)
+			if parseErr != nil {
+				s.logger.Warn("corrupt nfo.output.default_behavior value, using default",
+					slog.String("raw_value", v),
+					slog.String("error", parseErr.Error()))
+			} else {
+				fm.DefaultBehavior = parsed
+			}
 		case SettingMoodsAsStyles:
-			fm.MoodsAsStyles = v == "true" || v == "1"
+			parsed, parseErr := strconv.ParseBool(v)
+			if parseErr != nil {
+				s.logger.Warn("corrupt nfo.output.moods_as_styles value, using default",
+					slog.String("raw_value", v),
+					slog.String("error", parseErr.Error()))
+			} else {
+				fm.MoodsAsStyles = parsed
+			}
 		case SettingGenreSources:
 			var sources []string
 			if unmarshalErr := json.Unmarshal([]byte(v), &sources); unmarshalErr != nil {

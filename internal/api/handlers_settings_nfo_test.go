@@ -172,3 +172,18 @@ func TestHandleGetNFOOutput_NilService(t *testing.T) {
 		t.Fatalf("expected 503, got %d: %s", w.Code, w.Body.String())
 	}
 }
+
+func TestHandleUpdateNFOOutput_NilService(t *testing.T) {
+	r, _ := testRouter(t)
+	// Explicitly leave nfoSettingsService nil
+	r.nfoSettingsService = nil
+
+	body := `{"default_behavior":true,"genre_sources":["genres"]}`
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/settings/nfo-output", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	r.handleUpdateNFOOutput(w, req)
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503, got %d: %s", w.Code, w.Body.String())
+	}
+}
