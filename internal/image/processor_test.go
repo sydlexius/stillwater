@@ -363,10 +363,10 @@ func TestProbeRemoteImage(t *testing.T) {
 
 func TestProbeRemoteImage_UserAgent(t *testing.T) {
 	data := makeJPEG(t, 64, 64)
-	var gotUA string
+	gotUACh := make(chan string, 1)
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotUA = r.Header.Get("User-Agent")
+		gotUACh <- r.Header.Get("User-Agent")
 		w.Header().Set("Content-Type", "image/jpeg")
 		w.Header().Set("Content-Length", strconv.Itoa(len(data)))
 		_, _ = w.Write(data)
@@ -377,6 +377,7 @@ func TestProbeRemoteImage_UserAgent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ProbeRemoteImage: %v", err)
 	}
+	gotUA := <-gotUACh
 	if !strings.Contains(gotUA, "Stillwater") {
 		t.Errorf("User-Agent = %q, want string containing 'Stillwater'", gotUA)
 	}
