@@ -102,6 +102,7 @@ func TestSearchArtist(t *testing.T) {
 	if r.MusicBrainzID != "a74b1b7f-71a5-4011-9441-d0b5e4122711" {
 		t.Errorf("unexpected MBID: %s", r.MusicBrainzID)
 	}
+	// Score is max(apiScore=100, nameSimilarity=100) for exact match.
 	if r.Score != 100 {
 		t.Errorf("expected score 100, got %d", r.Score)
 	}
@@ -113,6 +114,23 @@ func TestSearchArtist(t *testing.T) {
 	}
 	if r.Source != string(provider.NameMusicBrainz) {
 		t.Errorf("expected source musicbrainz, got %s", r.Source)
+	}
+
+	// Second result ("Radiohead Tribute") has API score 45; name similarity
+	// should be higher than 45 (partial match), so the final score uses
+	// the name similarity value via max(apiScore, nameSimilarity).
+	r2 := results[1]
+	if r2.Score <= 45 {
+		t.Errorf("expected score > 45 (name similarity should exceed API score), got %d", r2.Score)
+	}
+	if r2.Score >= 100 {
+		t.Errorf("expected score < 100 for partial match, got %d", r2.Score)
+	}
+
+	// Results should be sorted by score descending.
+	if results[0].Score < results[1].Score {
+		t.Errorf("results not sorted by score descending: first=%d, second=%d",
+			results[0].Score, results[1].Score)
 	}
 }
 

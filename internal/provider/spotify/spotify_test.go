@@ -133,6 +133,11 @@ func TestSearchArtist(t *testing.T) {
 	if results[0].Source != string(provider.NameSpotify) {
 		t.Errorf("expected source %q, got %q", provider.NameSpotify, results[0].Source)
 	}
+	// Score should be computed via NameSimilarity, not hard-coded to 100.
+	// "radiohead" vs "Radiohead" is a case-insensitive exact match = 100.
+	if results[0].Score != 100 {
+		t.Errorf("expected score 100 for exact match, got %d", results[0].Score)
+	}
 }
 
 func TestSearchArtistEmpty(t *testing.T) {

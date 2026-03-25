@@ -84,10 +84,16 @@ func (a *Adapter) SearchArtist(ctx context.Context, name string) ([]provider.Art
 		results = append(results, provider.ArtistSearchResult{
 			ProviderID: strconv.Itoa(r.ID),
 			Name:       r.Title,
-			Score:      100,
+			Score:      provider.NameSimilarity(name, r.Title),
 			Source:     string(provider.NameDiscogs),
 		})
 	}
+
+	// Sort by score descending so the best match appears first.
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].Score > results[j].Score
+	})
+
 	return results, nil
 }
 

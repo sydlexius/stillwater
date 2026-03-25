@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -75,6 +76,14 @@ func (a *Adapter) SearchArtist(ctx context.Context, name string) ([]provider.Art
 
 	results := make([]provider.ArtistSearchResult, 0, len(resp.Artists))
 	for _, a := range resp.Artists {
+		// Use the higher of the API's native score and our name similarity
+		// score. The API score reflects relevance factors beyond name matching
+		// (popularity, tag matches), while name similarity catches cases where
+		// the API underscores an exact or near-exact name match.
+		score := a.Score
+		if ns := provider.NameSimilarity(name, a.Name); ns > score {
+			score = ns
+		}
 		results = append(results, provider.ArtistSearchResult{
 			ProviderID:     a.ID,
 			Name:           a.Name,
@@ -82,11 +91,17 @@ func (a *Adapter) SearchArtist(ctx context.Context, name string) ([]provider.Art
 			Type:           a.Type,
 			Disambiguation: a.Disambiguation,
 			Country:        a.Country,
-			Score:          a.Score,
+			Score:          score,
 			MusicBrainzID:  a.ID,
 			Source:         string(provider.NameMusicBrainz),
 		})
 	}
+
+	// Sort by score descending so the best match appears first.
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].Score > results[j].Score
+	})
+
 	return results, nil
 }
 

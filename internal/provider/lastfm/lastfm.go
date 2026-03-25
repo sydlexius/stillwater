@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 
@@ -95,6 +96,12 @@ func (a *Adapter) SearchArtist(ctx context.Context, name string) ([]provider.Art
 			Source:        string(provider.NameLastFM),
 		})
 	}
+
+	// Sort by score descending so the best match appears first.
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].Score > results[j].Score
+	})
+
 	return results, nil
 }
 

@@ -93,6 +93,11 @@ func TestSearchArtist(t *testing.T) {
 	if results[0].ProviderID != "3840" {
 		t.Errorf("expected provider ID 3840, got %s", results[0].ProviderID)
 	}
+	// Score should be computed via NameSimilarity, not hard-coded to 100.
+	// "Radiohead" vs "Radiohead" is an exact match = 100.
+	if results[0].Score != 100 {
+		t.Errorf("expected score 100 for exact match, got %d", results[0].Score)
+	}
 }
 
 func TestGetArtist(t *testing.T) {

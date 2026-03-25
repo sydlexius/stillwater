@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -91,10 +92,15 @@ func (a *Adapter) SearchArtist(ctx context.Context, name string) ([]provider.Art
 		results = append(results, provider.ArtistSearchResult{
 			ProviderID: item.ID,
 			Name:       item.Name,
-			Score:      100,
+			Score:      provider.NameSimilarity(name, item.Name),
 			Source:     string(provider.NameSpotify),
 		})
 	}
+
+	// Sort by score descending so the best match appears first.
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].Score > results[j].Score
+	})
 
 	a.logger.Debug("artist search completed",
 		slog.String("query", name),
