@@ -1361,31 +1361,39 @@ func TestOrchestratorErrNotFoundCountsAsAttemptedProvider(t *testing.T) {
 }
 
 // TestOrchestratorSkipsProviderWhenAllFieldsFilled verifies that a provider
-// is not called when all the fields it could contribute to have already been
-// filled by higher-priority providers. This avoids unnecessary API calls.
+// is not called when all the text fields it could contribute to have already
+// been filled by higher-priority providers. The key is that AudioDB appears
+// as the FIRST (sole) provider in a priority entry so that the only reason
+// it would be skipped is the filled-fields optimization, not the inner-loop
+// break on first match.
+//
+// Priority layout:
+//
+//	biography: [MusicBrainz]   -- MusicBrainz fills it (AudioDB not listed)
+//	genres:    [MusicBrainz]   -- MusicBrainz fills it (AudioDB not listed)
+//	formed:    [AudioDB]       -- AudioDB is first, but formed is already
+//	                              filled by MusicBrainz via an earlier entry
+//
+// Because formed is the ONLY text field AudioDB appears in and it is already
+// filled, the skip logic prevents the AudioDB API call entirely.
 func TestOrchestratorSkipsProviderWhenAllFieldsFilled(t *testing.T) {
 	registry, settings := setupOrchestratorTest(t)
 
-	// Set priorities so MusicBrainz is the only provider for genres and
-	// AudioDB is second for genres. We also add AudioDB to biography so it
-	// appears in multiple fields.
-	//
-	// biography: [MusicBrainz, AudioDB]
-	// genres:    [MusicBrainz, AudioDB]
-	// formed:    [MusicBrainz, AudioDB]
-	//
-	// MusicBrainz fills all three fields, so AudioDB should never be called.
-	if err := settings.SetPriority(context.Background(), "biography", []ProviderName{NameMusicBrainz, NameAudioDB}); err != nil {
+	// biography and genres use only MusicBrainz.
+	if err := settings.SetPriority(context.Background(), "biography", []ProviderName{NameMusicBrainz}); err != nil {
 		t.Fatalf("SetPriority biography: %v", err)
 	}
-	if err := settings.SetPriority(context.Background(), "genres", []ProviderName{NameMusicBrainz, NameAudioDB}); err != nil {
+	if err := settings.SetPriority(context.Background(), "genres", []ProviderName{NameMusicBrainz}); err != nil {
 		t.Fatalf("SetPriority genres: %v", err)
 	}
+	// formed uses MusicBrainz first (fills it), then AudioDB as sole fallback.
+	// AudioDB is the first provider encountered in the formed priority that
+	// has not been cached yet, so the skip-logic check fires.
 	if err := settings.SetPriority(context.Background(), "formed", []ProviderName{NameMusicBrainz, NameAudioDB}); err != nil {
 		t.Fatalf("SetPriority formed: %v", err)
 	}
-	// Disable AudioDB from all other default fields so it only appears in the ones above.
-	for _, field := range []string{"styles", "moods", "thumb", "fanart", "logo", "banner"} {
+	// Disable AudioDB from all other default fields so it only appears in formed.
+	for _, field := range []string{"biography", "genres", "styles", "moods", "thumb", "fanart", "logo", "banner"} {
 		if err := settings.SetDisabledProviders(context.Background(), field, []ProviderName{NameAudioDB}); err != nil {
 			t.Fatalf("SetDisabledProviders %s: %v", field, err)
 		}
@@ -1408,10 +1416,8 @@ func TestOrchestratorSkipsProviderWhenAllFieldsFilled(t *testing.T) {
 		getArtFn: func(_ context.Context, _ string) (*ArtistMetadata, error) {
 			audioDBCalls++
 			return &ArtistMetadata{
-				Name:      "Radiohead",
-				Biography: "AudioDB biography with enough content to pass quality checks.",
-				Genres:    []string{"alternative rock"},
-				Formed:    "1985",
+				Name:   "Radiohead",
+				Formed: "1985",
 			}, nil
 		},
 		getImgFn: func(_ context.Context, _ string) ([]ImageResult, error) {
@@ -1439,10 +1445,12 @@ func TestOrchestratorSkipsProviderWhenAllFieldsFilled(t *testing.T) {
 		t.Error("expected formed to be filled")
 	}
 
-	// AudioDB should NOT have been called because all its fields were
-	// already filled by MusicBrainz.
+	// AudioDB should NOT have been called. Its only text field (formed)
+	// was already filled by MusicBrainz, so the skip logic prevents the
+	// API call. Without the skip logic, AudioDB would be called because
+	// it appears as a fallback provider in the formed priority entry.
 	if audioDBCalls != 0 {
-		t.Errorf("expected 0 AudioDB API calls (all fields filled by MusicBrainz), got %d", audioDBCalls)
+		t.Errorf("expected 0 AudioDB API calls (all text fields filled by MusicBrainz), got %d", audioDBCalls)
 	}
 }
 
@@ -1504,9 +1512,10 @@ func TestOrchestratorDoesNotSkipProviderWithUnfilledField(t *testing.T) {
 	}
 }
 
-// TestFetchImagesSkipsProvidersWhenAllTypesCovered verifies that FetchImages
-// stops querying providers once all four image types have candidates.
-func TestFetchImagesSkipsProvidersWhenAllTypesCovered(t *testing.T) {
+// TestFetchImagesQueriesAllProviders verifies that FetchImages queries every
+// available provider so callers (image search UI, ImageFixer) receive the
+// full set of candidates for quality sorting and user selection.
+func TestFetchImagesQueriesAllProviders(t *testing.T) {
 	registry, settings := setupOrchestratorTest(t)
 
 	// Provider A returns all four image types.
@@ -1525,7 +1534,8 @@ func TestFetchImagesSkipsProvidersWhenAllTypesCovered(t *testing.T) {
 		t.Fatalf("SetAPIKey FanartTV: %v", err)
 	}
 
-	// Provider B should NOT be called because all types are covered.
+	// Provider B should still be called even though all types are covered,
+	// because FetchImages always queries all providers.
 	audioDBCalled := false
 	registry.Register(&mockProvider{
 		name: NameAudioDB,
@@ -1545,59 +1555,12 @@ func TestFetchImagesSkipsProvidersWhenAllTypesCovered(t *testing.T) {
 		t.Fatalf("FetchImages: %v", err)
 	}
 
-	if len(result.Images) != 4 {
-		t.Errorf("expected 4 images, got %d", len(result.Images))
+	// All 5 images (4 from FanartTV + 1 from AudioDB) should be collected.
+	if len(result.Images) != 5 {
+		t.Errorf("expected 5 images (all providers queried), got %d", len(result.Images))
 	}
-	if audioDBCalled {
-		t.Error("AudioDB should not have been called -- all image types already covered by FanartTV")
-	}
-}
-
-// TestFetchImagesContinuesWhenTypesIncomplete verifies that FetchImages
-// continues to query providers when not all image types are covered yet.
-func TestFetchImagesContinuesWhenTypesIncomplete(t *testing.T) {
-	registry, settings := setupOrchestratorTest(t)
-
-	// Provider A returns only thumb and fanart.
-	registry.Register(&mockProvider{
-		name: NameFanartTV,
-		getImgFn: func(_ context.Context, _ string) ([]ImageResult, error) {
-			return []ImageResult{
-				{Type: ImageThumb, URL: "http://example.com/thumb.jpg"},
-				{Type: ImageFanart, URL: "http://example.com/fanart.jpg"},
-			}, nil
-		},
-	})
-	if err := settings.SetAPIKey(context.Background(), NameFanartTV, "test-key"); err != nil {
-		t.Fatalf("SetAPIKey FanartTV: %v", err)
-	}
-
-	// Provider B should be called because logo and banner are still missing.
-	audioDBCalled := false
-	registry.Register(&mockProvider{
-		name: NameAudioDB,
-		getImgFn: func(_ context.Context, _ string) ([]ImageResult, error) {
-			audioDBCalled = true
-			return []ImageResult{
-				{Type: ImageLogo, URL: "http://example.com/logo.png"},
-				{Type: ImageBanner, URL: "http://example.com/banner.jpg"},
-			}, nil
-		},
-	})
-
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	orch := NewOrchestrator(registry, settings, logger)
-
-	result, err := orch.FetchImages(context.Background(), "mbid-test", nil)
-	if err != nil {
-		t.Fatalf("FetchImages: %v", err)
-	}
-
 	if !audioDBCalled {
-		t.Error("AudioDB should have been called -- logo and banner were missing")
-	}
-	if len(result.Images) != 4 {
-		t.Errorf("expected 4 images, got %d", len(result.Images))
+		t.Error("AudioDB should have been called -- FetchImages queries all providers")
 	}
 }
 
@@ -1657,25 +1620,5 @@ func TestProviderHasUnfilledField(t *testing.T) {
 	// Provider with empty fields -- should return true.
 	if !providerHasUnfilledField([]string{}, filled) {
 		t.Error("expected true for empty fields")
-	}
-}
-
-// TestAllImageTypesCovered verifies the image type coverage check.
-func TestAllImageTypesCovered(t *testing.T) {
-	covered := map[ImageType]bool{}
-	if allImageTypesCovered(covered) {
-		t.Error("expected false for empty covered map")
-	}
-
-	covered[ImageThumb] = true
-	covered[ImageFanart] = true
-	covered[ImageLogo] = true
-	if allImageTypesCovered(covered) {
-		t.Error("expected false when banner is missing")
-	}
-
-	covered[ImageBanner] = true
-	if !allImageTypesCovered(covered) {
-		t.Error("expected true when all four types are covered")
 	}
 }
