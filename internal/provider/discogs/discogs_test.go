@@ -100,6 +100,30 @@ func TestSearchArtist(t *testing.T) {
 	}
 }
 
+func TestSearchArtistFuzzyMatch(t *testing.T) {
+	limiter, settings := setupTest(t)
+	srv := newTestServer(t)
+	defer srv.Close()
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	a := NewWithBaseURL(limiter, settings, logger, srv.URL)
+
+	// Search for a misspelled name to prove scores are computed via
+	// NameSimilarity rather than hard-coded to 100.
+	results, err := a.SearchArtist(context.Background(), "Radiohed")
+	if err != nil {
+		t.Fatalf("SearchArtist: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].Score <= 0 {
+		t.Errorf("expected score > 0 for fuzzy match, got %d", results[0].Score)
+	}
+	if results[0].Score >= 100 {
+		t.Errorf("expected score < 100 for non-exact match, got %d", results[0].Score)
+	}
+}
+
 func TestGetArtist(t *testing.T) {
 	limiter, settings := setupTest(t)
 	srv := newTestServer(t)
