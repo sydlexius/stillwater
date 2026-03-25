@@ -159,7 +159,8 @@ func MergeAndDeduplicate(existing, incoming []string) []string {
 	result := make([]string, 0, len(existing)+len(incoming))
 
 	add := func(tag string) {
-		if strings.TrimSpace(tag) == "" {
+		tag = strings.TrimSpace(tag)
+		if tag == "" {
 			return
 		}
 		c := Canonical(tag)

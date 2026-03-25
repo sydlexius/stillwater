@@ -142,6 +142,22 @@ func TestMergeAndDeduplicate_EmptySlices(t *testing.T) {
 	}
 }
 
+func TestMergeAndDeduplicate_TrimsWhitespace(t *testing.T) {
+	// Padded unknown tags must be trimmed before storage; padded known tags
+	// must canonicalize correctly and not store the padded form.
+	incoming := []string{"  Grunge  ", "  hip hop  ", "\t  Jazz\t  "}
+	got := MergeAndDeduplicate(nil, incoming)
+	want := []string{"Grunge", "Hip-Hop", "Jazz"}
+	if len(got) != len(want) {
+		t.Fatalf("expected %d tags, got %d: %v", len(want), len(got), got)
+	}
+	for i, w := range want {
+		if got[i] != w {
+			t.Errorf("position %d: got %q, want %q", i, got[i], w)
+		}
+	}
+}
+
 func TestMergeAndDeduplicate_CrossProviderDedup(t *testing.T) {
 	// Simulate two providers returning the same genre under different spellings.
 	// Provider A returns "Hip-Hop", Provider B returns "hip hop" and "Rap".
