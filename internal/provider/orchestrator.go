@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+
+	"github.com/sydlexius/stillwater/internal/provider/tagdict"
 )
 
 // FieldSource records which provider supplied a given field.
@@ -115,11 +117,11 @@ func (o *Orchestrator) FetchMetadata(ctx context.Context, mbid, name string, pro
 
 			queried = true
 			if applyField(result, pri.Field, pr, provName) {
-				// For image fields, continue collecting candidates from
-				// all providers instead of stopping at the first match.
-				// Text fields use first-match-wins since the priority
-				// order determines the preferred source.
-				if !isImageField {
+				// For image fields and aggregated tag fields (genres/styles/moods),
+				// continue collecting candidates from all providers instead of
+				// stopping at the first match. Text fields use first-match-wins
+				// since the priority order determines the preferred source.
+				if !isImageField && !isAggregatedField(pri.Field) {
 					break
 				}
 			}
@@ -359,22 +361,31 @@ func applyField(result *FetchResult, field string, pr *providerResult, source Pr
 			return true
 		}
 	case "genres":
-		if len(meta.Genres) > 0 && len(result.Metadata.Genres) == 0 {
-			result.Metadata.Genres = meta.Genres
-			result.Sources = append(result.Sources, FieldSource{Field: field, Provider: source})
-			return true
+		if len(meta.Genres) > 0 {
+			before := len(result.Metadata.Genres)
+			result.Metadata.Genres = tagdict.MergeAndDeduplicate(result.Metadata.Genres, meta.Genres)
+			if len(result.Metadata.Genres) > before {
+				result.Sources = append(result.Sources, FieldSource{Field: field, Provider: source})
+			}
+			return len(result.Metadata.Genres) > before
 		}
 	case "styles":
-		if len(meta.Styles) > 0 && len(result.Metadata.Styles) == 0 {
-			result.Metadata.Styles = meta.Styles
-			result.Sources = append(result.Sources, FieldSource{Field: field, Provider: source})
-			return true
+		if len(meta.Styles) > 0 {
+			before := len(result.Metadata.Styles)
+			result.Metadata.Styles = tagdict.MergeAndDeduplicate(result.Metadata.Styles, meta.Styles)
+			if len(result.Metadata.Styles) > before {
+				result.Sources = append(result.Sources, FieldSource{Field: field, Provider: source})
+			}
+			return len(result.Metadata.Styles) > before
 		}
 	case "moods":
-		if len(meta.Moods) > 0 && len(result.Metadata.Moods) == 0 {
-			result.Metadata.Moods = meta.Moods
-			result.Sources = append(result.Sources, FieldSource{Field: field, Provider: source})
-			return true
+		if len(meta.Moods) > 0 {
+			before := len(result.Metadata.Moods)
+			result.Metadata.Moods = tagdict.MergeAndDeduplicate(result.Metadata.Moods, meta.Moods)
+			if len(result.Metadata.Moods) > before {
+				result.Sources = append(result.Sources, FieldSource{Field: field, Provider: source})
+			}
+			return len(result.Metadata.Moods) > before
 		}
 	case "members":
 		if len(meta.Members) > 0 && len(result.Metadata.Members) == 0 {
@@ -622,6 +633,14 @@ func isImageFieldName(field string) bool {
 	default:
 		return false
 	}
+}
+
+// isAggregatedField returns true for metadata fields that accumulate values
+// from all providers rather than stopping at the first match. Tag fields
+// (genres, styles, moods) are aggregated and deduplicated across providers
+// so that each provider's unique tags contribute to the final result.
+func isAggregatedField(field string) bool {
+	return field == "genres" || field == "styles" || field == "moods"
 }
 
 // hasFieldSource returns true if the Sources slice already contains an entry
