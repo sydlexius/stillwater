@@ -93,34 +93,11 @@ func (o *Orchestrator) FetchMetadata(ctx context.Context, mbid, name string, pro
 	var mu sync.Mutex
 	cache := make(map[ProviderName]*providerResult)
 
-	// Build a reverse map of provider -> unfilled fields so we can skip
-	// calling a provider when all the fields it could contribute to have
-	// already been filled by higher-priority providers.
-	providerFields := buildProviderFieldMap(priorities, available)
-	filledFields := make(map[string]bool)
-
 	for _, pri := range priorities {
 		queried := false
 		isImageField := isImageFieldName(pri.Field)
 		for _, provName := range pri.EnabledProviders() {
 			if !available[provName] {
-				continue
-			}
-
-			// If this provider is not yet cached, check whether it can
-			// contribute to any unfilled text field. If every text field
-			// this provider appears in has already been filled, skip the
-			// API call entirely. Image fields are excluded from this
-			// check because they aggregate candidates from all providers
-			// (a provider should not be skipped just because its text
-			// fields are filled when an image field still needs it).
-			// Cached providers are free to consult.
-			mu.Lock()
-			_, cached := cache[provName]
-			mu.Unlock()
-			if !cached && !isImageField && !providerHasUnfilledField(providerFields[provName], filledFields) {
-				o.logger.Debug("skipping provider, all its text fields are filled",
-					slog.String("provider", string(provName)))
 				continue
 			}
 
@@ -143,7 +120,6 @@ func (o *Orchestrator) FetchMetadata(ctx context.Context, mbid, name string, pro
 				// Text fields use first-match-wins since the priority
 				// order determines the preferred source.
 				if !isImageField {
-					filledFields[pri.Field] = true
 					break
 				}
 			}
@@ -674,41 +650,6 @@ func fieldToImageType(field string) ImageType {
 func containsString(slice []string, s string) bool {
 	for _, v := range slice {
 		if v == s {
-			return true
-		}
-	}
-	return false
-}
-
-// buildProviderFieldMap creates a reverse mapping from provider name to the
-// set of fields that provider appears in across all priority entries. Only
-// providers present in the available set are included. Image fields are
-// excluded because they always aggregate candidates from all providers.
-func buildProviderFieldMap(priorities []FieldPriority, available map[ProviderName]bool) map[ProviderName][]string {
-	m := make(map[ProviderName][]string)
-	for _, pri := range priorities {
-		if isImageFieldName(pri.Field) {
-			continue
-		}
-		for _, provName := range pri.EnabledProviders() {
-			if available[provName] {
-				m[provName] = append(m[provName], pri.Field)
-			}
-		}
-	}
-	return m
-}
-
-// providerHasUnfilledField returns true if at least one field in the
-// provider's field list has not yet been filled. When fields is nil or empty
-// (e.g. for an image-only provider not in the reverse map), it returns true
-// to avoid incorrectly skipping providers that contribute image data.
-func providerHasUnfilledField(fields []string, filled map[string]bool) bool {
-	if len(fields) == 0 {
-		return true
-	}
-	for _, f := range fields {
-		if !filled[f] {
 			return true
 		}
 	}
