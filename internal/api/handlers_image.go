@@ -664,7 +664,14 @@ func ssrfSafeTransport() *http.Transport {
 func (r *Router) fetchImageFromURL(rawURL string) ([]byte, error) {
 	client := r.ssrfClient
 
-	resp, err := client.Get(rawURL) //nolint:gosec,noctx // G107: URL is validated by caller; background fetch is acceptable
+	req, err := http.NewRequest(http.MethodGet, rawURL, nil) //nolint:gosec,noctx // G107/G704: URL is validated by caller; background fetch is acceptable
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+	// Wikimedia Commons blocks requests without a proper User-Agent.
+	req.Header.Set("User-Agent", "Stillwater/1.0 (https://github.com/sydlexius/stillwater)")
+
+	resp, err := client.Do(req) //nolint:gosec // G107/G704: URL is validated by caller
 	if err != nil {
 		return nil, fmt.Errorf("fetching: %w", err)
 	}
