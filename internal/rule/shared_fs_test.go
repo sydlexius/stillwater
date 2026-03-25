@@ -98,7 +98,7 @@ func TestNFOFixer_SharedFS_Skips(t *testing.T) {
 	check := NewSharedFSCheck(&stubLibQuerier{
 		lib: &library.Library{SharedFSStatus: library.SharedFSSuspected},
 	}, logger)
-	fixer := NewNFOFixer(nil, check, nil)
+	fixer := NewNFOFixer(nil, nil, check, nil)
 	a := &artist.Artist{Name: "Test", Path: t.TempDir(), LibraryID: "lib-1"}
 	v := &Violation{RuleID: RuleNFOExists}
 	result, err := fixer.Fix(context.Background(), a, v)

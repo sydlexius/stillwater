@@ -260,3 +260,75 @@ func TestWriteBackArtistNFO_IncludesStillwater(t *testing.T) {
 		t.Errorf("Written is not valid RFC 3339: %v", err)
 	}
 }
+
+func TestWriteBackArtistNFOWithFieldMap_MoodsAsStyles(t *testing.T) {
+	dir := t.TempDir()
+	a := &artist.Artist{
+		ID:       "art-fm",
+		Name:     "Field Map Artist",
+		SortName: "Field Map Artist",
+		Path:     dir,
+		Genres:   []string{"Rock"},
+		Styles:   []string{"Alternative"},
+		Moods:    []string{"Energetic", "Uplifting"},
+	}
+
+	fm := NFOFieldMap{
+		DefaultBehavior: false,
+		MoodsAsStyles:   true,
+		GenreSources:    []string{"genres"},
+	}
+
+	if err := WriteBackArtistNFOWithFieldMap(context.Background(), a, nil, nil, fm); err != nil {
+		t.Fatalf("WriteBackArtistNFOWithFieldMap: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(dir, "artist.nfo"))
+	if err != nil {
+		t.Fatalf("reading nfo: %v", err)
+	}
+
+	parsed, err := Parse(bytes.NewReader(data))
+	if err != nil {
+		t.Fatalf("parsing nfo: %v", err)
+	}
+
+	// Moods should appear as <style> elements (merged with original styles).
+	// With MoodsAsStyles=true, the style output should contain both the
+	// original styles and the mood values.
+	styleSet := make(map[string]bool, len(parsed.Styles))
+	for _, s := range parsed.Styles {
+		styleSet[s] = true
+	}
+	if !styleSet["Alternative"] {
+		t.Error("expected original style 'Alternative' in <style> elements")
+	}
+	if !styleSet["Energetic"] {
+		t.Error("expected mood 'Energetic' to appear as <style> element")
+	}
+	if !styleSet["Uplifting"] {
+		t.Error("expected mood 'Uplifting' to appear as <style> element")
+	}
+
+	// Moods should still be written as <mood> elements for Kodi.
+	moodSet := make(map[string]bool, len(parsed.Moods))
+	for _, m := range parsed.Moods {
+		moodSet[m] = true
+	}
+	if !moodSet["Energetic"] {
+		t.Error("expected 'Energetic' in <mood> elements")
+	}
+	if !moodSet["Uplifting"] {
+		t.Error("expected 'Uplifting' in <mood> elements")
+	}
+
+	// LockData should always be set.
+	if !parsed.LockData {
+		t.Error("LockData should be true")
+	}
+
+	// Stillwater meta should be present.
+	if parsed.Stillwater == nil {
+		t.Error("Stillwater meta should be set")
+	}
+}

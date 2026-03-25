@@ -66,13 +66,23 @@ func ApplyNFOToArtist(n *ArtistNFO, a *artist.Artist) {
 	artist.ApplyMetadata(a, u, artist.SnapshotRestore, artist.MergeOptions{})
 }
 
-// FromArtist converts a domain Artist model to an ArtistNFO.
-// Maps all provider IDs (MusicBrainz, AudioDB, Discogs, Wikidata, Deezer, Spotify)
-// into their NFO XML element equivalents. Unknown ID elements are safely ignored
-// by media platforms.
+// FromArtist converts a domain Artist model to an ArtistNFO using the default
+// (Kodi-compatible) field mapping. Maps all provider IDs (MusicBrainz, AudioDB,
+// Discogs, Wikidata, Deezer, Spotify) into their NFO XML element equivalents.
+// Unknown ID elements are safely ignored by media platforms.
 func FromArtist(a *artist.Artist) *ArtistNFO {
+	return FromArtistWithFieldMap(a, DefaultFieldMap())
+}
+
+// FromArtistWithFieldMap converts a domain Artist model to an ArtistNFO,
+// applying the given NFOFieldMap to determine how genres, styles, and moods
+// are mapped to NFO XML elements. This enables platform-specific output
+// (e.g., writing moods as <style> for Emby/Jellyfin visibility).
+func FromArtistWithFieldMap(a *artist.Artist, fm NFOFieldMap) *ArtistNFO {
 	var fanart *Fanart
 	// Fanart is not stored on the Artist model; callers can set it directly.
+
+	nfoGenres, nfoStyles, nfoMoods := ApplyFieldMap(fm, a.Genres, a.Styles, a.Moods)
 
 	return &ArtistNFO{
 		Name:                a.Name,
@@ -86,9 +96,9 @@ func FromArtist(a *artist.Artist) *ArtistNFO {
 		WikidataID:          a.WikidataID,
 		DeezerArtistID:      a.DeezerID,
 		SpotifyArtistID:     a.SpotifyID,
-		Genres:              a.Genres,
-		Styles:              a.Styles,
-		Moods:               a.Moods,
+		Genres:              nfoGenres,
+		Styles:              nfoStyles,
+		Moods:               nfoMoods,
 		YearsActive:         a.YearsActive,
 		Born:                a.Born,
 		Formed:              a.Formed,

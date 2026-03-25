@@ -35,6 +35,7 @@ type Deps struct {
 	ArtistService      artistPlatformLister
 	ConnectionService  connectionGetter
 	NFOSnapshotService *nfo.SnapshotService
+	NFOSettingsService *nfo.NFOSettingsService
 	PlatformService    namingConfigProvider
 	ExpectedWrites     expectedWritesTracker
 	ImageCacheDir      string
@@ -49,6 +50,7 @@ type Publisher struct {
 	artistService      artistPlatformLister
 	connectionService  connectionGetter
 	nfoSnapshotService *nfo.SnapshotService
+	nfoSettingsService *nfo.NFOSettingsService
 	platformService    namingConfigProvider
 	expectedWrites     expectedWritesTracker
 	imageCacheDir      string
@@ -80,6 +82,7 @@ func New(d Deps) *Publisher {
 		artistService:      d.ArtistService,
 		connectionService:  d.ConnectionService,
 		nfoSnapshotService: d.NFOSnapshotService,
+		nfoSettingsService: d.NFOSettingsService,
 		platformService:    d.PlatformService,
 		expectedWrites:     d.ExpectedWrites,
 		imageCacheDir:      d.ImageCacheDir,
@@ -130,7 +133,21 @@ func (p *Publisher) WriteBackNFO(ctx context.Context, a *artist.Artist) {
 		defer p.expectedWrites.Remove(nfoPath)
 	}
 
-	if err := nfo.WriteBackArtistNFO(ctx, a, p.nfoSnapshotService, p.logger); err != nil {
+	// Read the current NFO field map to apply platform-specific element mapping.
+	fm := nfo.DefaultFieldMap()
+	if p.nfoSettingsService != nil {
+		var fmErr error
+		fm, fmErr = p.nfoSettingsService.GetFieldMap(ctx)
+		if fmErr != nil {
+			p.logger.Warn("reading NFO field map, using default",
+				slog.String("artist_id", a.ID),
+				slog.String("error", fmErr.Error()),
+			)
+			fm = nfo.DefaultFieldMap()
+		}
+	}
+
+	if err := nfo.WriteBackArtistNFOWithFieldMap(ctx, a, p.nfoSnapshotService, p.logger, fm); err != nil {
 		p.logger.Error("NFO write-back failed",
 			slog.String("artist_id", a.ID),
 			slog.String("artist_name", a.Name),

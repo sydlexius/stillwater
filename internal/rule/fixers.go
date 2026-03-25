@@ -41,14 +41,22 @@ const (
 
 // NFOFixer creates missing artist.nfo files from the artist's current metadata.
 type NFOFixer struct {
-	SnapshotService *nfo.SnapshotService
-	fsCheck         *SharedFSCheck
-	expectedWrites  *watcher.ExpectedWrites
+	SnapshotService    *nfo.SnapshotService
+	nfoSettingsService *nfo.NFOSettingsService
+	fsCheck            *SharedFSCheck
+	expectedWrites     *watcher.ExpectedWrites
 }
 
 // NewNFOFixer creates an NFOFixer with an optional shared-filesystem guard.
-func NewNFOFixer(snapshotService *nfo.SnapshotService, fsCheck *SharedFSCheck, expectedWrites *watcher.ExpectedWrites) *NFOFixer {
-	return &NFOFixer{SnapshotService: snapshotService, fsCheck: fsCheck, expectedWrites: expectedWrites}
+// The nfoSettings parameter is used to read the current field map for
+// platform-specific NFO element mapping; if nil, the default mapping is used.
+func NewNFOFixer(snapshotService *nfo.SnapshotService, nfoSettings *nfo.NFOSettingsService, fsCheck *SharedFSCheck, expectedWrites *watcher.ExpectedWrites) *NFOFixer {
+	return &NFOFixer{
+		SnapshotService:    snapshotService,
+		nfoSettingsService: nfoSettings,
+		fsCheck:            fsCheck,
+		expectedWrites:     expectedWrites,
+	}
 }
 
 // CanFix returns true for the nfo_exists rule.
@@ -79,7 +87,18 @@ func (f *NFOFixer) Fix(ctx context.Context, a *artist.Artist, _ *Violation) (*Fi
 		}, nil
 	}
 
-	nfoData := nfo.FromArtist(a)
+	// Read the current NFO field map for platform-specific element mapping.
+	fm := nfo.DefaultFieldMap()
+	if f.nfoSettingsService != nil {
+		loaded, loadErr := f.nfoSettingsService.GetFieldMap(ctx)
+		if loadErr != nil {
+			slog.Default().Warn("reading NFO field map for fixer, using default",
+				slog.String("error", loadErr.Error()))
+		} else {
+			fm = loaded
+		}
+	}
+	nfoData := nfo.FromArtistWithFieldMap(a, fm)
 	nfoData.LockData = true
 	var buf bytes.Buffer
 	if err := nfo.Write(&buf, nfoData); err != nil {
