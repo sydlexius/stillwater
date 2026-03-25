@@ -497,6 +497,151 @@ func findSource(sources []FieldSource, field string) *FieldSource {
 	return nil
 }
 
+// TestOrchestratorGetImagesTimeoutDoesNotMarkImageFieldAttempted verifies that
+// when GetArtist succeeds but GetImages returns a transient error (e.g. timeout),
+// the image fields are NOT added to AttemptedFields. This prevents callers from
+// clearing existing image data due to a transient provider outage.
+func TestOrchestratorGetImagesTimeoutDoesNotMarkImageFieldAttempted(t *testing.T) {
+	registry, settings := setupOrchestratorTest(t)
+
+	// MusicBrainz GetArtist succeeds; GetImages times out.
+	registry.Register(&mockProvider{
+		name: NameMusicBrainz,
+		getArtFn: func(_ context.Context, _ string) (*ArtistMetadata, error) {
+			return &ArtistMetadata{Name: "Test Artist"}, nil
+		},
+		getImgFn: func(_ context.Context, _ string) ([]ImageResult, error) {
+			return nil, fmt.Errorf("context deadline exceeded")
+		},
+	})
+
+	// Set priority so that thumb/fanart only use MusicBrainz.
+	if err := settings.SetPriority(context.Background(), "thumb", []ProviderName{NameMusicBrainz}); err != nil {
+		t.Fatalf("SetPriority thumb: %v", err)
+	}
+	if err := settings.SetPriority(context.Background(), "fanart", []ProviderName{NameMusicBrainz}); err != nil {
+		t.Fatalf("SetPriority fanart: %v", err)
+	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	orch := NewOrchestrator(registry, settings, logger)
+
+	result, err := orch.FetchMetadata(context.Background(), "mbid-1234", "Test Artist", nil)
+	if err != nil {
+		t.Fatalf("FetchMetadata: %v", err)
+	}
+
+	// Image fields must NOT be in AttemptedFields when GetImages failed transiently.
+	for _, f := range result.AttemptedFields {
+		if f == "thumb" || f == "fanart" || f == "logo" || f == "banner" {
+			t.Errorf("image field %q should NOT be in AttemptedFields after GetImages timeout, got %v", f, result.AttemptedFields)
+		}
+	}
+
+	// MusicBrainz should be in AttemptedProviders because GetArtist succeeded.
+	found := false
+	for _, p := range result.AttemptedProviders {
+		if p == NameMusicBrainz {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected MusicBrainz in AttemptedProviders (GetArtist succeeded), got %v", result.AttemptedProviders)
+	}
+}
+
+// TestOrchestratorGetImagesErrNotFoundMarksImageFieldAttempted verifies that
+// when GetImages returns ErrNotFound, the image field IS added to AttemptedFields.
+// ErrNotFound is a definitive "no images exist" response that should allow
+// stale image data to be cleared on refresh.
+func TestOrchestratorGetImagesErrNotFoundMarksImageFieldAttempted(t *testing.T) {
+	registry, settings := setupOrchestratorTest(t)
+
+	// MusicBrainz GetArtist succeeds; GetImages returns ErrNotFound.
+	registry.Register(&mockProvider{
+		name: NameMusicBrainz,
+		getArtFn: func(_ context.Context, _ string) (*ArtistMetadata, error) {
+			return &ArtistMetadata{Name: "Test Artist"}, nil
+		},
+		getImgFn: func(_ context.Context, id string) ([]ImageResult, error) {
+			return nil, &ErrNotFound{Provider: NameMusicBrainz, ID: id}
+		},
+	})
+
+	if err := settings.SetPriority(context.Background(), "thumb", []ProviderName{NameMusicBrainz}); err != nil {
+		t.Fatalf("SetPriority thumb: %v", err)
+	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	orch := NewOrchestrator(registry, settings, logger)
+
+	result, err := orch.FetchMetadata(context.Background(), "mbid-1234", "Test Artist", nil)
+	if err != nil {
+		t.Fatalf("FetchMetadata: %v", err)
+	}
+
+	// "thumb" MUST be in AttemptedFields because GetImages returned ErrNotFound.
+	found := false
+	for _, f := range result.AttemptedFields {
+		if f == "thumb" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected 'thumb' in AttemptedFields after ErrNotFound from GetImages, got %v", result.AttemptedFields)
+	}
+}
+
+// TestOrchestratorGetImagesDataMarksImageFieldAttempted verifies that when
+// GetImages returns actual image data, the image field IS added to AttemptedFields.
+func TestOrchestratorGetImagesDataMarksImageFieldAttempted(t *testing.T) {
+	registry, settings := setupOrchestratorTest(t)
+
+	// MusicBrainz GetArtist succeeds; GetImages returns image data.
+	registry.Register(&mockProvider{
+		name: NameMusicBrainz,
+		getArtFn: func(_ context.Context, _ string) (*ArtistMetadata, error) {
+			return &ArtistMetadata{Name: "Test Artist"}, nil
+		},
+		getImgFn: func(_ context.Context, _ string) ([]ImageResult, error) {
+			return []ImageResult{
+				{Type: ImageThumb, URL: "https://example.com/thumb.jpg"},
+			}, nil
+		},
+	})
+
+	if err := settings.SetPriority(context.Background(), "thumb", []ProviderName{NameMusicBrainz}); err != nil {
+		t.Fatalf("SetPriority thumb: %v", err)
+	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	orch := NewOrchestrator(registry, settings, logger)
+
+	result, err := orch.FetchMetadata(context.Background(), "mbid-1234", "Test Artist", nil)
+	if err != nil {
+		t.Fatalf("FetchMetadata: %v", err)
+	}
+
+	// "thumb" MUST be in AttemptedFields because GetImages returned data.
+	found := false
+	for _, f := range result.AttemptedFields {
+		if f == "thumb" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected 'thumb' in AttemptedFields after GetImages returned data, got %v", result.AttemptedFields)
+	}
+
+	// Image data should also be present in the result.
+	if len(result.Images) == 0 {
+		t.Errorf("expected images in result when GetImages returned data")
+	}
+}
+
 func TestOrchestratorProviderIDPrecedence(t *testing.T) {
 	registry, settings := setupOrchestratorTest(t)
 

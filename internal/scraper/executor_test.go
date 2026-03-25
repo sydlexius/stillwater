@@ -151,6 +151,240 @@ func TestExecutorErrNotFoundMarksFieldAttempted(t *testing.T) {
 	}
 }
 
+// TestExecutorGetImagesTimeoutDoesNotMarkImageFieldAttempted verifies that when
+// GetArtist succeeds but GetImages returns a transient error (e.g. timeout),
+// the image field is NOT added to AttemptedFields. This prevents callers from
+// clearing existing image data due to a transient provider outage.
+func TestExecutorGetImagesTimeoutDoesNotMarkImageFieldAttempted(t *testing.T) {
+	registry, settings, svc, logger := setupExecutorTest(t)
+
+	// Register AudioDB: GetArtist succeeds, GetImages times out.
+	registry.Register(&mockProvider{
+		name:    provider.NameAudioDB,
+		authReq: false,
+		getArtFn: func(_ context.Context, _ string) (*provider.ArtistMetadata, error) {
+			return &provider.ArtistMetadata{Name: "Test Artist"}, nil
+		},
+		getImgFn: func(_ context.Context, _ string) ([]provider.ImageResult, error) {
+			return nil, fmt.Errorf("context deadline exceeded")
+		},
+	})
+
+	ctx := context.Background()
+	cfg := &ScraperConfig{
+		Scope: ScopeGlobal,
+		Fields: []FieldConfig{
+			{Field: FieldThumb, Primary: provider.NameAudioDB, Enabled: true, Category: CategoryImages},
+		},
+		FallbackChains: []FallbackChain{
+			{Category: CategoryImages, Providers: []provider.ProviderName{provider.NameAudioDB}},
+		},
+	}
+	if err := svc.SaveConfig(ctx, ScopeGlobal, cfg, nil); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+
+	exec := NewExecutor(svc, registry, settings, logger)
+
+	result, err := exec.ScrapeAll(ctx, "mbid-1234", "Test Artist", ScopeGlobal, nil)
+	if err != nil {
+		t.Fatalf("ScrapeAll: %v", err)
+	}
+
+	// "thumb" must NOT be in AttemptedFields when GetImages failed transiently.
+	for _, f := range result.AttemptedFields {
+		if f == string(FieldThumb) {
+			t.Errorf("expected 'thumb' NOT in AttemptedFields after GetImages timeout, got %v", result.AttemptedFields)
+			break
+		}
+	}
+}
+
+// TestExecutorGetImagesErrNotFoundMarksImageFieldAttempted verifies that when
+// GetImages returns ErrNotFound, the image field IS added to AttemptedFields.
+func TestExecutorGetImagesErrNotFoundMarksImageFieldAttempted(t *testing.T) {
+	registry, settings, svc, logger := setupExecutorTest(t)
+
+	// Register AudioDB: GetArtist succeeds, GetImages returns ErrNotFound.
+	registry.Register(&mockProvider{
+		name:    provider.NameAudioDB,
+		authReq: false,
+		getArtFn: func(_ context.Context, _ string) (*provider.ArtistMetadata, error) {
+			return &provider.ArtistMetadata{Name: "Test Artist"}, nil
+		},
+		getImgFn: func(_ context.Context, id string) ([]provider.ImageResult, error) {
+			return nil, &provider.ErrNotFound{Provider: provider.NameAudioDB, ID: id}
+		},
+	})
+
+	ctx := context.Background()
+	cfg := &ScraperConfig{
+		Scope: ScopeGlobal,
+		Fields: []FieldConfig{
+			{Field: FieldThumb, Primary: provider.NameAudioDB, Enabled: true, Category: CategoryImages},
+		},
+		FallbackChains: []FallbackChain{
+			{Category: CategoryImages, Providers: []provider.ProviderName{provider.NameAudioDB}},
+		},
+	}
+	if err := svc.SaveConfig(ctx, ScopeGlobal, cfg, nil); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+
+	exec := NewExecutor(svc, registry, settings, logger)
+
+	result, err := exec.ScrapeAll(ctx, "mbid-1234", "Test Artist", ScopeGlobal, nil)
+	if err != nil {
+		t.Fatalf("ScrapeAll: %v", err)
+	}
+
+	// "thumb" MUST be in AttemptedFields because GetImages returned ErrNotFound.
+	found := false
+	for _, f := range result.AttemptedFields {
+		if f == string(FieldThumb) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected 'thumb' in AttemptedFields after ErrNotFound from GetImages, got %v", result.AttemptedFields)
+	}
+}
+
+// TestExecutorGetImagesDataMarksImageFieldAttempted verifies that when GetImages
+// returns actual image data, the image field IS added to AttemptedFields.
+func TestExecutorGetImagesDataMarksImageFieldAttempted(t *testing.T) {
+	registry, settings, svc, logger := setupExecutorTest(t)
+
+	// Register AudioDB: GetArtist succeeds, GetImages returns image data.
+	registry.Register(&mockProvider{
+		name:    provider.NameAudioDB,
+		authReq: false,
+		getArtFn: func(_ context.Context, _ string) (*provider.ArtistMetadata, error) {
+			return &provider.ArtistMetadata{Name: "Test Artist"}, nil
+		},
+		getImgFn: func(_ context.Context, _ string) ([]provider.ImageResult, error) {
+			return []provider.ImageResult{
+				{Type: provider.ImageThumb, URL: "https://example.com/thumb.jpg"},
+			}, nil
+		},
+	})
+
+	ctx := context.Background()
+	cfg := &ScraperConfig{
+		Scope: ScopeGlobal,
+		Fields: []FieldConfig{
+			{Field: FieldThumb, Primary: provider.NameAudioDB, Enabled: true, Category: CategoryImages},
+		},
+		FallbackChains: []FallbackChain{
+			{Category: CategoryImages, Providers: []provider.ProviderName{provider.NameAudioDB}},
+		},
+	}
+	if err := svc.SaveConfig(ctx, ScopeGlobal, cfg, nil); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+
+	exec := NewExecutor(svc, registry, settings, logger)
+
+	result, err := exec.ScrapeAll(ctx, "mbid-1234", "Test Artist", ScopeGlobal, nil)
+	if err != nil {
+		t.Fatalf("ScrapeAll: %v", err)
+	}
+
+	// "thumb" MUST be in AttemptedFields because GetImages returned data.
+	found := false
+	for _, f := range result.AttemptedFields {
+		if f == string(FieldThumb) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected 'thumb' in AttemptedFields after GetImages returned data, got %v", result.AttemptedFields)
+	}
+
+	// Image data should also be present in the result.
+	if len(result.Images) == 0 {
+		t.Errorf("expected images in result when GetImages returned data")
+	}
+}
+
+// TestExecutorFallbackChainImageTimeout verifies that when the primary provider's
+// GetImages times out but the fallback provider's GetImages returns image data,
+// the image field IS in AttemptedFields and the fallback provider's image data
+// is used. This covers the real-world scenario where one image provider is down
+// (e.g. Fanart.tv) but a secondary provider (e.g. AudioDB) returns thumbnails.
+func TestExecutorFallbackChainImageTimeout(t *testing.T) {
+	registry, settings, svc, logger := setupExecutorTest(t)
+
+	// Primary provider: GetArtist succeeds, GetImages times out.
+	registry.Register(&mockProvider{
+		name:    provider.NameFanartTV,
+		authReq: false,
+		getArtFn: func(_ context.Context, _ string) (*provider.ArtistMetadata, error) {
+			return &provider.ArtistMetadata{Name: "Test Artist"}, nil
+		},
+		getImgFn: func(_ context.Context, _ string) ([]provider.ImageResult, error) {
+			return nil, fmt.Errorf("context deadline exceeded")
+		},
+	})
+
+	// Fallback provider: GetArtist succeeds, GetImages returns image data.
+	registry.Register(&mockProvider{
+		name:    provider.NameAudioDB,
+		authReq: false,
+		getArtFn: func(_ context.Context, _ string) (*provider.ArtistMetadata, error) {
+			return &provider.ArtistMetadata{Name: "Test Artist"}, nil
+		},
+		getImgFn: func(_ context.Context, _ string) ([]provider.ImageResult, error) {
+			return []provider.ImageResult{
+				{Type: provider.ImageThumb, URL: "https://example.com/audiodb-thumb.jpg"},
+			}, nil
+		},
+	})
+
+	ctx := context.Background()
+	cfg := &ScraperConfig{
+		Scope: ScopeGlobal,
+		Fields: []FieldConfig{
+			{Field: FieldThumb, Primary: provider.NameFanartTV, Enabled: true, Category: CategoryImages},
+		},
+		FallbackChains: []FallbackChain{
+			{Category: CategoryImages, Providers: []provider.ProviderName{provider.NameFanartTV, provider.NameAudioDB}},
+		},
+	}
+	if err := svc.SaveConfig(ctx, ScopeGlobal, cfg, nil); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+
+	exec := NewExecutor(svc, registry, settings, logger)
+
+	result, err := exec.ScrapeAll(ctx, "mbid-1234", "Test Artist", ScopeGlobal, nil)
+	if err != nil {
+		t.Fatalf("ScrapeAll: %v", err)
+	}
+
+	// "thumb" must be in AttemptedFields because the fallback succeeded.
+	found := false
+	for _, f := range result.AttemptedFields {
+		if f == string(FieldThumb) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected 'thumb' in AttemptedFields when fallback GetImages succeeded, got %v", result.AttemptedFields)
+	}
+
+	// Image data from the fallback provider must be present.
+	if len(result.Images) == 0 {
+		t.Errorf("expected images in result when fallback GetImages returned data")
+	}
+	if len(result.Images) > 0 && result.Images[0].URL != "https://example.com/audiodb-thumb.jpg" {
+		t.Errorf("expected fallback provider image URL, got %q", result.Images[0].URL)
+	}
+}
+
 // TestExecutorNetworkErrorDoesNotMarkFieldAttempted verifies that a real
 // network error (not ErrNotFound) does NOT mark the field as attempted.
 func TestExecutorNetworkErrorDoesNotMarkFieldAttempted(t *testing.T) {

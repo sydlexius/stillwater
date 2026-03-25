@@ -163,7 +163,13 @@ func (e *Executor) scrapeField(
 		pr := e.getProviderResult(ctx, field.Primary, mbid, name, providerIDs, cache, mu)
 		if pr.err == nil {
 			provider.EnrichProviderIDs(pr.meta, providerIDs)
-			queried = true
+			// For image fields, only mark as queried when GetImages succeeded
+			// or returned ErrNotFound. A transient image fetch failure (timeout,
+			// 5xx) must not mark the field as attempted, so that existing image
+			// data is preserved rather than cleared.
+			if !isImage || pr.imageErr == nil {
+				queried = true
+			}
 			if applyFieldValue(field.Field, pr, result) {
 				if !isImage {
 					return FieldResult{Field: field.Field, Provider: field.Primary, Queried: true}
@@ -188,7 +194,13 @@ func (e *Executor) scrapeField(
 		}
 
 		provider.EnrichProviderIDs(pr.meta, providerIDs)
-		queried = true
+		// For image fields, only mark as queried when GetImages succeeded
+		// or returned ErrNotFound. A transient image fetch failure (timeout,
+		// 5xx) must not mark the field as attempted, so that existing image
+		// data is preserved rather than cleared.
+		if !isImage || pr.imageErr == nil {
+			queried = true
+		}
 		if applyFieldValue(field.Field, pr, result) {
 			if !isImage {
 				return FieldResult{
@@ -223,9 +235,10 @@ func (e *Executor) scrapeField(
 
 // providerResult caches a single provider's API response.
 type providerResult struct {
-	meta   *provider.ArtistMetadata
-	images []provider.ImageResult
-	err    error
+	meta     *provider.ArtistMetadata
+	images   []provider.ImageResult
+	err      error
+	imageErr error // non-nil when GetImages returned a transient error (not ErrNotFound)
 }
 
 // getProviderResult fetches and caches results from a single provider.
@@ -320,10 +333,17 @@ func (e *Executor) getProviderResult(
 				e.logger.Debug("provider has no images for artist",
 					slog.String("provider", string(name)),
 					slog.String("id", imgID))
+				// ErrNotFound means the provider was reached and definitively said
+				// "no images". Leave imageErr nil so image fields are marked as
+				// attempted and stale image data can be cleared.
 			} else {
-				e.logger.Debug("provider GetImages failed",
+				e.logger.Warn("provider GetImages failed, preserving existing image data",
 					slog.String("provider", string(name)),
 					slog.String("error", err.Error()))
+				// Transient failure: store in imageErr so image fields are NOT
+				// marked as attempted. This prevents clearing existing image data
+				// when the provider was merely unreachable.
+				pr.imageErr = err
 			}
 		} else {
 			pr.images = images
