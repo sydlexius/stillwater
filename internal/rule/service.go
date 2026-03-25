@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -235,6 +236,10 @@ type Service struct {
 	// recorded per throttle window across concurrent handler goroutines.
 	snapshotMu     sync.Mutex
 	lastSnapshotAt time.Time
+
+	// listCallCount tracks the number of times List has been called.
+	// Accessed atomically; used by tests to verify cache hit behavior.
+	listCallCount int64
 }
 
 // NewService creates a rule service.
@@ -270,6 +275,7 @@ func (s *Service) SeedDefaults(ctx context.Context) error {
 
 // List returns all rules.
 func (s *Service) List(ctx context.Context) ([]Rule, error) {
+	atomic.AddInt64(&s.listCallCount, 1)
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, name, description, category, enabled, automation_mode, config, created_at, updated_at
 		FROM rules ORDER BY category, name
@@ -336,15 +342,21 @@ func (s *Service) RecordHealthSnapshot(ctx context.Context, totalArtists, compli
 	s.snapshotMu.Unlock()
 
 	id := uuid.New().String()
+	// Use millisecond precision so that back-to-back inserts within the same
+	// second produce distinct recorded_at values, making "latest" unambiguous.
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO health_history (id, total_artists, compliant_artists, score, recorded_at)
 		VALUES (?, ?, ?, ?, ?)
 	`, id, totalArtists, compliantArtists, score,
-		now.UTC().Format(time.RFC3339))
+		now.UTC().Format("2006-01-02T15:04:05.000Z07:00"))
 	if err != nil {
-		// Reset the timestamp so the next call can retry after the DB error.
+		// Only reset lastSnapshotAt if this goroutine's slot is still current.
+		// Without the equality check, a racing goroutine that already claimed a
+		// newer slot could have its throttle cleared by our error path.
 		s.snapshotMu.Lock()
-		s.lastSnapshotAt = time.Time{}
+		if s.lastSnapshotAt.Equal(now) {
+			s.lastSnapshotAt = time.Time{}
+		}
 		s.snapshotMu.Unlock()
 		return fmt.Errorf("recording health snapshot: %w", err)
 	}

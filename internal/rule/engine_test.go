@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -347,7 +348,10 @@ func TestEvaluateAll_RuleListCachedAcrossArtists(t *testing.T) {
 
 	// Disable image rules that need disk access.
 	for _, id := range []string{RuleThumbSquare, RuleThumbMinRes} {
-		r, _ := svc.GetByID(ctx, id)
+		r, err := svc.GetByID(ctx, id)
+		if err != nil {
+			t.Fatalf("getting rule %s: %v", id, err)
+		}
 		r.Enabled = false
 		if err := svc.Update(ctx, r); err != nil {
 			t.Fatalf("disabling rule %s: %v", id, err)
@@ -362,6 +366,9 @@ func TestEvaluateAll_RuleListCachedAcrossArtists(t *testing.T) {
 		t.Error("expected nil ruleList before first evaluation")
 	}
 	engine.ruleCacheMu.RUnlock()
+
+	// Reset the list call counter so only calls from this test are counted.
+	atomic.StoreInt64(&svc.listCallCount, 0)
 
 	artists := []artist.Artist{
 		{ID: "c1", Name: "Artist One", Path: t.TempDir()},
@@ -390,6 +397,12 @@ func TestEvaluateAll_RuleListCachedAcrossArtists(t *testing.T) {
 		t.Error("expected ruleFetchedAt to be non-zero after EvaluateAll")
 	}
 
+	// service.List must have been called exactly once for all three artists,
+	// proving the N+1 DB query pattern is eliminated by the cache.
+	if n := atomic.LoadInt64(&svc.listCallCount); n != 1 {
+		t.Errorf("service.List called %d times for %d artists; want 1 (cache should prevent N+1)", n, len(artists))
+	}
+
 	// A second EvaluateAll within the TTL window must reuse the same cache
 	// entry (fetchedAt must not advance, confirming no DB round-trip occurred).
 	results2, err := engine.EvaluateAll(ctx, artists)
@@ -406,6 +419,12 @@ func TestEvaluateAll_RuleListCachedAcrossArtists(t *testing.T) {
 
 	if secondCachedAt != cachedAt {
 		t.Error("ruleFetchedAt changed on second EvaluateAll within TTL; expected cache hit (no DB round-trip)")
+	}
+
+	// service.List must still be exactly 1 after the second EvaluateAll,
+	// confirming the entire second batch was served entirely from cache.
+	if n := atomic.LoadInt64(&svc.listCallCount); n != 1 {
+		t.Errorf("service.List called %d times after second EvaluateAll within TTL; want 1", n)
 	}
 }
 
@@ -482,7 +501,10 @@ func TestCachedRules_ConcurrentAccess(t *testing.T) {
 
 	// Disable image rules that need disk access.
 	for _, id := range []string{RuleThumbSquare, RuleThumbMinRes} {
-		r, _ := svc.GetByID(ctx, id)
+		r, err := svc.GetByID(ctx, id)
+		if err != nil {
+			t.Fatalf("getting rule %s: %v", id, err)
+		}
 		r.Enabled = false
 		if err := svc.Update(ctx, r); err != nil {
 			t.Fatalf("disabling rule %s: %v", id, err)

@@ -738,10 +738,8 @@ func createTestPNG(t *testing.T, path string, w, h int) {
 	createTestPNGWithPadding(t, path, w, h, 0, 0, 0, 0)
 }
 
-// newTestEngine returns an Engine with nil deps suitable for checker unit tests
-// that do not require database access or platform/library services.
-// A discard logger is used so that debug logging added to checkers does not panic
-// when the logger field is accessed.
+// newTestEngine returns a minimal Engine suitable for unit-testing individual
+// checkers. Uses the default logger for debug output during test runs.
 func newTestEngine() *Engine {
 	return &Engine{logger: slog.Default()}
 }
@@ -1118,11 +1116,11 @@ func TestLogoBoundsCache_HitAfterFirstEval(t *testing.T) {
 	}
 }
 
-// TestLogoBoundsCache_MtimeInvalidation verifies that the cache correctly serves
-// a stale result when the logo file is replaced but the mtime is identical (same
-// second), and serves a fresh result when the mtime actually changes.
-// The cache uses (filePath, modTime) as the key; a changed mtime produces a
-// different key, causing a miss and a fresh re-decode.
+// TestLogoBoundsCache_MtimeInvalidation verifies that changing the logo file's
+// mtime causes a cache miss and a fresh re-decode. The cache uses
+// (filePath, modTime) as the key; replacing the file and advancing its mtime
+// produces a different key, so the checker re-decodes the updated content and
+// returns the correct result for the new file.
 func TestLogoBoundsCache_MtimeInvalidation(t *testing.T) {
 	dir := t.TempDir()
 	logoPath := filepath.Join(dir, "logo.png")

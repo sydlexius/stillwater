@@ -110,11 +110,11 @@ func NewEngine(service *Service, db *sql.DB, platformService *platform.Service, 
 // This eliminates the N+1 DB query pattern when EvaluateAll iterates over many
 // artists: the list is fetched at most once per TTL window across all callers.
 func (e *Engine) cachedRules(ctx context.Context) ([]Rule, error) {
-	now := time.Now()
-
 	// Fast path: read lock to check freshness.
+	// time.Since is evaluated inside the lock to avoid stale timestamps when
+	// lock contention causes a delay between capturing now and acquiring the lock.
 	e.ruleCacheMu.RLock()
-	if e.ruleList != nil && now.Sub(e.ruleFetchedAt) < ruleCacheTTL {
+	if !e.ruleFetchedAt.IsZero() && time.Since(e.ruleFetchedAt) < ruleCacheTTL {
 		rules := e.ruleList
 		e.ruleCacheMu.RUnlock()
 		return rules, nil
@@ -126,7 +126,7 @@ func (e *Engine) cachedRules(ctx context.Context) ([]Rule, error) {
 	e.ruleCacheMu.Lock()
 	defer e.ruleCacheMu.Unlock()
 
-	if e.ruleList != nil && now.Sub(e.ruleFetchedAt) < ruleCacheTTL {
+	if !e.ruleFetchedAt.IsZero() && time.Since(e.ruleFetchedAt) < ruleCacheTTL {
 		return e.ruleList, nil
 	}
 
@@ -134,8 +134,14 @@ func (e *Engine) cachedRules(ctx context.Context) ([]Rule, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Normalize nil to empty slice so an empty rules table caches correctly.
+	// Without this, a nil return would fail the !IsZero() freshness check on
+	// the next call and trigger an unnecessary DB round-trip every time.
+	if rules == nil {
+		rules = []Rule{}
+	}
 	e.ruleList = rules
-	e.ruleFetchedAt = now
+	e.ruleFetchedAt = time.Now()
 	return rules, nil
 }
 
