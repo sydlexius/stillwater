@@ -6,7 +6,7 @@ package tagdict
 import "strings"
 
 // canonical maps normalized tag variants to their preferred spelling.
-// Keys must be lowercase with all whitespace/punctuation normalized.
+// Keys must be lowercase with whitespace collapsed.
 // Seeded from AllMusic's taxonomy (most curated source), supplemented
 // by MusicBrainz genre list and Last.fm top tags.
 var canonical = map[string]string{
@@ -159,7 +159,7 @@ func MergeAndDeduplicate(existing, incoming []string) []string {
 	result := make([]string, 0, len(existing)+len(incoming))
 
 	add := func(tag string) {
-		if tag == "" {
+		if strings.TrimSpace(tag) == "" {
 			return
 		}
 		c := Canonical(tag)

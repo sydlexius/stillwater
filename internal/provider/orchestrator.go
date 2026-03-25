@@ -364,7 +364,7 @@ func applyField(result *FetchResult, field string, pr *providerResult, source Pr
 		if len(meta.Genres) > 0 {
 			before := len(result.Metadata.Genres)
 			result.Metadata.Genres = tagdict.MergeAndDeduplicate(result.Metadata.Genres, meta.Genres)
-			if len(result.Metadata.Genres) > before {
+			if len(result.Metadata.Genres) > before && !hasFieldSource(result.Sources, field) {
 				result.Sources = append(result.Sources, FieldSource{Field: field, Provider: source})
 			}
 			return len(result.Metadata.Genres) > before
@@ -373,7 +373,7 @@ func applyField(result *FetchResult, field string, pr *providerResult, source Pr
 		if len(meta.Styles) > 0 {
 			before := len(result.Metadata.Styles)
 			result.Metadata.Styles = tagdict.MergeAndDeduplicate(result.Metadata.Styles, meta.Styles)
-			if len(result.Metadata.Styles) > before {
+			if len(result.Metadata.Styles) > before && !hasFieldSource(result.Sources, field) {
 				result.Sources = append(result.Sources, FieldSource{Field: field, Provider: source})
 			}
 			return len(result.Metadata.Styles) > before
@@ -382,7 +382,7 @@ func applyField(result *FetchResult, field string, pr *providerResult, source Pr
 		if len(meta.Moods) > 0 {
 			before := len(result.Metadata.Moods)
 			result.Metadata.Moods = tagdict.MergeAndDeduplicate(result.Metadata.Moods, meta.Moods)
-			if len(result.Metadata.Moods) > before {
+			if len(result.Metadata.Moods) > before && !hasFieldSource(result.Sources, field) {
 				result.Sources = append(result.Sources, FieldSource{Field: field, Provider: source})
 			}
 			return len(result.Metadata.Moods) > before

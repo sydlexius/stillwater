@@ -137,9 +137,9 @@ func TestOrchestratorFallback(t *testing.T) {
 	}
 }
 
-// TestOrchestratorTagAggregation verifies that genres, styles, and moods are
-// accumulated across all providers with canonical spelling normalization and
-// deduplication, rather than stopping at the first provider with data.
+// TestOrchestratorTagAggregation verifies that genres and moods are accumulated
+// across all providers with canonical spelling normalization and deduplication,
+// rather than stopping at the first provider with data.
 func TestOrchestratorTagAggregation(t *testing.T) {
 	registry, settings := setupOrchestratorTest(t)
 
