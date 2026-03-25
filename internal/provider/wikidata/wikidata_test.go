@@ -30,8 +30,8 @@ func newTestServer(t *testing.T) *httptest.Server {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		// Check for the "not found" MBID
-		if contains(query, "not-found-mbid") {
+		// Check for the "not found" MBID (valid UUID format that returns no results)
+		if contains(query, "00000000-0000-0000-0000-000000000000") {
 			_, _ = w.Write([]byte(`{"results":{"bindings":[]}}`))
 			return
 		}
@@ -73,7 +73,7 @@ func newImageTestServers(t *testing.T, sparqlFixture string) (sparqlSrv, commons
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		if contains(query, "not-found-mbid") {
+		if contains(query, "00000000-0000-0000-0000-000000000000") {
 			_, _ = w.Write([]byte(`{"results":{"bindings":[]}}`))
 			return
 		}
@@ -133,7 +133,7 @@ func TestGetArtistNotFound(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	a := NewWithEndpoint(limiter, logger, srv.URL)
 
-	_, err := a.GetArtist(context.Background(), "not-found-mbid")
+	_, err := a.GetArtist(context.Background(), "00000000-0000-0000-0000-000000000000")
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -208,7 +208,7 @@ func TestGetImagesP18Only(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	a := NewWithEndpoints(limiter, logger, sparqlSrv.URL, commonsSrv.URL)
 
-	images, err := a.GetImages(context.Background(), "test-mbid")
+	images, err := a.GetImages(context.Background(), "11111111-1111-1111-1111-111111111111")
 	if err != nil {
 		t.Fatalf("GetImages: %v", err)
 	}
@@ -232,7 +232,7 @@ func TestGetImagesP154Only(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	a := NewWithEndpoints(limiter, logger, sparqlSrv.URL, commonsSrv.URL)
 
-	images, err := a.GetImages(context.Background(), "test-mbid")
+	images, err := a.GetImages(context.Background(), "22222222-2222-2222-2222-222222222222")
 	if err != nil {
 		t.Fatalf("GetImages: %v", err)
 	}
@@ -256,7 +256,7 @@ func TestGetImagesNoProperties(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	a := NewWithEndpoints(limiter, logger, sparqlSrv.URL, commonsSrv.URL)
 
-	_, err := a.GetImages(context.Background(), "test-mbid")
+	_, err := a.GetImages(context.Background(), "33333333-3333-3333-3333-333333333333")
 	if err == nil {
 		t.Fatal("expected error for artist with no image properties")
 	}
@@ -274,7 +274,7 @@ func TestGetImagesNotFoundMBID(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	a := NewWithEndpoints(limiter, logger, sparqlSrv.URL, commonsSrv.URL)
 
-	_, err := a.GetImages(context.Background(), "not-found-mbid")
+	_, err := a.GetImages(context.Background(), "00000000-0000-0000-0000-000000000000")
 	if err == nil {
 		t.Fatal("expected error for unknown MBID")
 	}
@@ -289,7 +289,8 @@ func TestExtractCommonsFilename(t *testing.T) {
 		want  string
 	}{
 		{"http://commons.wikimedia.org/wiki/Special:FilePath/Radiohead_2016.jpg", "Radiohead_2016.jpg"},
-		{"http://commons.wikimedia.org/wiki/Special:FilePath/Band%20Logo.png", "Band%20Logo.png"},
+		{"http://commons.wikimedia.org/wiki/Special:FilePath/Band%20Logo.png", "Band Logo.png"},
+		{"http://commons.wikimedia.org/wiki/Special:FilePath/File:SomeImage.jpg", "SomeImage.jpg"},
 		{"Standalone.jpg", "Standalone.jpg"},
 	}
 	for _, tt := range tests {

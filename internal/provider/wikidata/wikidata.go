@@ -64,6 +64,11 @@ func (a *Adapter) SearchArtist(_ context.Context, _ string) ([]provider.ArtistSe
 
 // GetArtist fetches metadata for an artist from Wikidata by their MusicBrainz ID.
 func (a *Adapter) GetArtist(ctx context.Context, mbid string) (*provider.ArtistMetadata, error) {
+	// Validate MBID format before interpolating into SPARQL query to prevent injection.
+	if !provider.IsUUID(mbid) {
+		return nil, &provider.ErrNotFound{Provider: provider.NameWikidata, ID: mbid}
+	}
+
 	if err := a.limiter.Wait(ctx, provider.NameWikidata); err != nil {
 		return nil, &provider.ErrProviderUnavailable{
 			Provider: provider.NameWikidata,
@@ -88,6 +93,11 @@ func (a *Adapter) GetArtist(ctx context.Context, mbid string) (*provider.ArtistM
 // P18 (image/photo) and P154 (logo). The SPARQL query returns Commons filenames
 // which are then resolved to direct URLs via the Wikimedia Commons API.
 func (a *Adapter) GetImages(ctx context.Context, mbid string) ([]provider.ImageResult, error) {
+	// Validate MBID format before interpolating into SPARQL query to prevent injection.
+	if !provider.IsUUID(mbid) {
+		return nil, &provider.ErrNotFound{Provider: provider.NameWikidata, ID: mbid}
+	}
+
 	if err := a.limiter.Wait(ctx, provider.NameWikidata); err != nil {
 		return nil, &provider.ErrProviderUnavailable{
 			Provider: provider.NameWikidata,
@@ -107,6 +117,8 @@ func (a *Adapter) GetImages(ctx context.Context, mbid string) ([]provider.ImageR
 
 	// Collect unique filenames from P18 (image) and P154 (logo) properties.
 	// The SPARQL response may contain multiple rows if both properties exist.
+	// Dedupe by (imageType, filename) so the same Commons file can appear as
+	// both a thumb (P18) and a logo (P154) without the second being dropped.
 	type imageEntry struct {
 		filename string
 		imgType  provider.ImageType
@@ -117,15 +129,17 @@ func (a *Adapter) GetImages(ctx context.Context, mbid string) ([]provider.ImageR
 	for _, b := range bindings {
 		if b.Image.Value != "" {
 			fn := extractCommonsFilename(b.Image.Value)
-			if fn != "" && !seen[fn] {
-				seen[fn] = true
+			key := string(provider.ImageThumb) + ":" + fn
+			if fn != "" && !seen[key] {
+				seen[key] = true
 				entries = append(entries, imageEntry{filename: fn, imgType: provider.ImageThumb})
 			}
 		}
 		if b.Logo.Value != "" {
 			fn := extractCommonsFilename(b.Logo.Value)
-			if fn != "" && !seen[fn] {
-				seen[fn] = true
+			key := string(provider.ImageLogo) + ":" + fn
+			if fn != "" && !seen[key] {
+				seen[key] = true
 				entries = append(entries, imageEntry{filename: fn, imgType: provider.ImageLogo})
 			}
 		}
@@ -136,7 +150,10 @@ func (a *Adapter) GetImages(ctx context.Context, mbid string) ([]provider.ImageR
 	}
 
 	// Resolve each filename to a direct URL via the Commons API.
+	// Track whether any resolution attempt returned an error so we can
+	// distinguish "no images found" from "all resolutions failed."
 	var results []provider.ImageResult
+	var hadResolveErrors bool
 	for _, e := range entries {
 		if err := a.limiter.Wait(ctx, provider.NameWikidata); err != nil {
 			return nil, &provider.ErrProviderUnavailable{
@@ -147,6 +164,7 @@ func (a *Adapter) GetImages(ctx context.Context, mbid string) ([]provider.ImageR
 
 		info, err := a.resolveCommonsURL(ctx, e.filename)
 		if err != nil {
+			hadResolveErrors = true
 			a.logger.Warn("failed to resolve commons image",
 				slog.String("filename", e.filename),
 				slog.String("error", err.Error()),
@@ -167,6 +185,13 @@ func (a *Adapter) GetImages(ctx context.Context, mbid string) ([]provider.ImageR
 	}
 
 	if len(results) == 0 {
+		// If resolution errors occurred, the failure is transient, not "not found."
+		if hadResolveErrors {
+			return nil, &provider.ErrProviderUnavailable{
+				Provider: provider.NameWikidata,
+				Cause:    fmt.Errorf("all commons image resolutions failed"),
+			}
+		}
 		return nil, &provider.ErrNotFound{Provider: provider.NameWikidata, ID: mbid}
 	}
 
@@ -308,12 +333,21 @@ SELECT ?image ?logo WHERE {
 //
 //	http://commons.wikimedia.org/wiki/Special:FilePath/Radiohead.jpg
 //
-// This function extracts "Radiohead.jpg" from such a URI.
+// This function extracts "Radiohead.jpg" from such a URI. The path tail is
+// URL-decoded to prevent double percent-encoding when passed to url.Values.
+// Any leading "File:" prefix is stripped since the Commons API adds it itself.
 func extractCommonsFilename(uri string) string {
+	name := uri
 	if idx := strings.LastIndex(uri, "/"); idx >= 0 {
-		return uri[idx+1:]
+		name = uri[idx+1:]
 	}
-	return uri
+	// URL-decode percent-encoded characters (e.g. "Band%20Logo.png" -> "Band Logo.png").
+	if decoded, err := url.PathUnescape(name); err == nil {
+		name = decoded
+	}
+	// Strip "File:" prefix if present; the Commons API prepends it in the titles parameter.
+	name = strings.TrimPrefix(name, "File:")
+	return name
 }
 
 // resolveCommonsURL fetches image metadata (direct URL, dimensions) from the
