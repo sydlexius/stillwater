@@ -34,6 +34,8 @@ func ProbeRemoteImage(ctx context.Context, rawURL string) (*RemoteImageInfo, err
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
+	// Wikimedia Commons blocks requests without a proper User-Agent.
+	req.Header.Set("User-Agent", "Stillwater/1.0 (https://github.com/sydlexius/stillwater)")
 
 	resp, err := client.Do(req) //nolint:gosec // URL comes from trusted provider API
 	if err != nil {
