@@ -100,6 +100,7 @@ func (o *Orchestrator) FetchMetadata(ctx context.Context, mbid, name string, pro
 			if !available[provName] {
 				continue
 			}
+
 			pr := o.getProviderResult(ctx, provName, mbid, name, providerIDs, cache, &mu)
 			if pr.err != nil {
 				continue
@@ -147,7 +148,10 @@ func (o *Orchestrator) FetchMetadata(ctx context.Context, mbid, name string, pro
 	return result, nil
 }
 
-// FetchImages queries all configured, image-capable providers and merges results by priority.
+// FetchImages queries all configured, image-capable providers and collects
+// every image candidate they return. All providers are always queried so that
+// callers (image search UI, ImageFixer quality sorting) receive the full set
+// of candidates to choose from.
 // providerIDs supplies provider-specific IDs for providers that do not accept MBIDs
 // (e.g. Deezer uses its own numeric ID). Providers without an entry in providerIDs
 // receive the MBID. Providers with an empty entry are skipped.

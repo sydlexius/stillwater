@@ -1359,3 +1359,56 @@ func TestOrchestratorErrNotFoundCountsAsAttemptedProvider(t *testing.T) {
 		t.Errorf("expected AudioDB in AttemptedProviders after ErrNotFound, got %v", result.AttemptedProviders)
 	}
 }
+
+// TestFetchImagesQueriesAllProviders verifies that FetchImages queries every
+// available provider so callers (image search UI, ImageFixer) receive the
+// full set of candidates for quality sorting and user selection.
+func TestFetchImagesQueriesAllProviders(t *testing.T) {
+	registry, settings := setupOrchestratorTest(t)
+
+	// Provider A returns all four image types.
+	registry.Register(&mockProvider{
+		name:    NameFanartTV,
+		authReq: true,
+		getImgFn: func(_ context.Context, _ string) ([]ImageResult, error) {
+			return []ImageResult{
+				{Type: ImageThumb, URL: "http://example.com/thumb.jpg"},
+				{Type: ImageFanart, URL: "http://example.com/fanart.jpg"},
+				{Type: ImageLogo, URL: "http://example.com/logo.png"},
+				{Type: ImageBanner, URL: "http://example.com/banner.jpg"},
+			}, nil
+		},
+	})
+	if err := settings.SetAPIKey(context.Background(), NameFanartTV, "test-key"); err != nil {
+		t.Fatalf("SetAPIKey FanartTV: %v", err)
+	}
+
+	// Provider B should still be called even though all types are covered,
+	// because FetchImages always queries all providers.
+	audioDBCalled := false
+	registry.Register(&mockProvider{
+		name: NameAudioDB,
+		getImgFn: func(_ context.Context, _ string) ([]ImageResult, error) {
+			audioDBCalled = true
+			return []ImageResult{
+				{Type: ImageThumb, URL: "http://example.com/thumb2.jpg"},
+			}, nil
+		},
+	})
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	orch := NewOrchestrator(registry, settings, logger)
+
+	result, err := orch.FetchImages(context.Background(), "mbid-test", nil)
+	if err != nil {
+		t.Fatalf("FetchImages: %v", err)
+	}
+
+	// All 5 images (4 from FanartTV + 1 from AudioDB) should be collected.
+	if len(result.Images) != 5 {
+		t.Errorf("expected 5 images (all providers queried), got %d", len(result.Images))
+	}
+	if !audioDBCalled {
+		t.Error("AudioDB should have been called -- FetchImages queries all providers")
+	}
+}
