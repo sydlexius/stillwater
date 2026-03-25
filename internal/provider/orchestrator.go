@@ -93,6 +93,12 @@ func (o *Orchestrator) FetchMetadata(ctx context.Context, mbid, name string, pro
 	var mu sync.Mutex
 	cache := make(map[ProviderName]*providerResult)
 
+	// Build a reverse map of provider -> unfilled fields so we can skip
+	// calling a provider when all the fields it could contribute to have
+	// already been filled by higher-priority providers.
+	providerFields := buildProviderFieldMap(priorities, available)
+	filledFields := make(map[string]bool)
+
 	for _, pri := range priorities {
 		queried := false
 		isImageField := isImageFieldName(pri.Field)
@@ -100,6 +106,20 @@ func (o *Orchestrator) FetchMetadata(ctx context.Context, mbid, name string, pro
 			if !available[provName] {
 				continue
 			}
+
+			// If this provider is not yet cached, check whether it can
+			// contribute to any unfilled field. If every field this
+			// provider appears in has already been filled, skip the API
+			// call entirely. Cached providers are free to consult.
+			mu.Lock()
+			_, cached := cache[provName]
+			mu.Unlock()
+			if !cached && !providerHasUnfilledField(providerFields[provName], filledFields) {
+				o.logger.Debug("skipping provider, all its fields are filled",
+					slog.String("provider", string(provName)))
+				continue
+			}
+
 			pr := o.getProviderResult(ctx, provName, mbid, name, providerIDs, cache, &mu)
 			if pr.err != nil {
 				continue
@@ -119,6 +139,7 @@ func (o *Orchestrator) FetchMetadata(ctx context.Context, mbid, name string, pro
 				// Text fields use first-match-wins since the priority
 				// order determines the preferred source.
 				if !isImageField {
+					filledFields[pri.Field] = true
 					break
 				}
 			}
@@ -161,7 +182,19 @@ func (o *Orchestrator) FetchImages(ctx context.Context, mbid string, providerIDs
 		return nil, err
 	}
 
+	// Track which image types have at least one candidate so we can skip
+	// remaining providers once all types are covered.
+	coveredTypes := make(map[ImageType]bool)
+
 	for _, p := range providers {
+		// If all standard image types already have candidates, skip
+		// remaining providers to avoid unnecessary API calls.
+		if allImageTypesCovered(coveredTypes) {
+			o.logger.Debug("all image types covered, skipping remaining providers",
+				slog.String("next_provider", string(p.Name())))
+			break
+		}
+
 		id := mbid
 		if pid, ok := providerIDs[p.Name()]; ok {
 			if pid == "" {
@@ -184,10 +217,19 @@ func (o *Orchestrator) FetchImages(ctx context.Context, mbid string, providerIDs
 			result.Errors = append(result.Errors, fmt.Sprintf("%s: %s", p.Name(), err.Error()))
 			continue
 		}
+		for _, img := range images {
+			coveredTypes[img.Type] = true
+		}
 		result.Images = append(result.Images, images...)
 	}
 
 	return result, nil
+}
+
+// allImageTypesCovered returns true when all four standard image types
+// (thumb, fanart, logo, banner) have at least one candidate.
+func allImageTypesCovered(covered map[ImageType]bool) bool {
+	return covered[ImageThumb] && covered[ImageFanart] && covered[ImageLogo] && covered[ImageBanner]
 }
 
 // Search queries all configured providers that support search and merges results.
@@ -646,6 +688,41 @@ func fieldToImageType(field string) ImageType {
 func containsString(slice []string, s string) bool {
 	for _, v := range slice {
 		if v == s {
+			return true
+		}
+	}
+	return false
+}
+
+// buildProviderFieldMap creates a reverse mapping from provider name to the
+// set of fields that provider appears in across all priority entries. Only
+// providers present in the available set are included. Image fields are
+// excluded because they always aggregate candidates from all providers.
+func buildProviderFieldMap(priorities []FieldPriority, available map[ProviderName]bool) map[ProviderName][]string {
+	m := make(map[ProviderName][]string)
+	for _, pri := range priorities {
+		if isImageFieldName(pri.Field) {
+			continue
+		}
+		for _, provName := range pri.EnabledProviders() {
+			if available[provName] {
+				m[provName] = append(m[provName], pri.Field)
+			}
+		}
+	}
+	return m
+}
+
+// providerHasUnfilledField returns true if at least one field in the
+// provider's field list has not yet been filled. When fields is nil or empty
+// (e.g. for an image-only provider not in the reverse map), it returns true
+// to avoid incorrectly skipping providers that contribute image data.
+func providerHasUnfilledField(fields []string, filled map[string]bool) bool {
+	if len(fields) == 0 {
+		return true
+	}
+	for _, f := range fields {
+		if !filled[f] {
 			return true
 		}
 	}

@@ -1359,3 +1359,323 @@ func TestOrchestratorErrNotFoundCountsAsAttemptedProvider(t *testing.T) {
 		t.Errorf("expected AudioDB in AttemptedProviders after ErrNotFound, got %v", result.AttemptedProviders)
 	}
 }
+
+// TestOrchestratorSkipsProviderWhenAllFieldsFilled verifies that a provider
+// is not called when all the fields it could contribute to have already been
+// filled by higher-priority providers. This avoids unnecessary API calls.
+func TestOrchestratorSkipsProviderWhenAllFieldsFilled(t *testing.T) {
+	registry, settings := setupOrchestratorTest(t)
+
+	// Set priorities so MusicBrainz is the only provider for genres and
+	// AudioDB is second for genres. We also add AudioDB to biography so it
+	// appears in multiple fields.
+	//
+	// biography: [MusicBrainz, AudioDB]
+	// genres:    [MusicBrainz, AudioDB]
+	// formed:    [MusicBrainz, AudioDB]
+	//
+	// MusicBrainz fills all three fields, so AudioDB should never be called.
+	if err := settings.SetPriority(context.Background(), "biography", []ProviderName{NameMusicBrainz, NameAudioDB}); err != nil {
+		t.Fatalf("SetPriority biography: %v", err)
+	}
+	if err := settings.SetPriority(context.Background(), "genres", []ProviderName{NameMusicBrainz, NameAudioDB}); err != nil {
+		t.Fatalf("SetPriority genres: %v", err)
+	}
+	if err := settings.SetPriority(context.Background(), "formed", []ProviderName{NameMusicBrainz, NameAudioDB}); err != nil {
+		t.Fatalf("SetPriority formed: %v", err)
+	}
+	// Disable AudioDB from all other default fields so it only appears in the ones above.
+	for _, field := range []string{"styles", "moods", "thumb", "fanart", "logo", "banner"} {
+		if err := settings.SetDisabledProviders(context.Background(), field, []ProviderName{NameAudioDB}); err != nil {
+			t.Fatalf("SetDisabledProviders %s: %v", field, err)
+		}
+	}
+
+	audioDBCalls := 0
+	registry.Register(&mockProvider{
+		name: NameMusicBrainz,
+		getArtFn: func(_ context.Context, _ string) (*ArtistMetadata, error) {
+			return &ArtistMetadata{
+				Name:      "Radiohead",
+				Biography: "MusicBrainz biography with enough content to pass the quality gate checks.",
+				Genres:    []string{"rock"},
+				Formed:    "1985",
+			}, nil
+		},
+	})
+	registry.Register(&mockProvider{
+		name: NameAudioDB,
+		getArtFn: func(_ context.Context, _ string) (*ArtistMetadata, error) {
+			audioDBCalls++
+			return &ArtistMetadata{
+				Name:      "Radiohead",
+				Biography: "AudioDB biography with enough content to pass quality checks.",
+				Genres:    []string{"alternative rock"},
+				Formed:    "1985",
+			}, nil
+		},
+		getImgFn: func(_ context.Context, _ string) ([]ImageResult, error) {
+			audioDBCalls++
+			return nil, nil
+		},
+	})
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	orch := NewOrchestrator(registry, settings, logger)
+
+	result, err := orch.FetchMetadata(context.Background(), "mbid-123", "Radiohead", nil)
+	if err != nil {
+		t.Fatalf("FetchMetadata: %v", err)
+	}
+
+	// MusicBrainz should fill all three fields.
+	if result.Metadata.Biography == "" {
+		t.Error("expected biography to be filled")
+	}
+	if len(result.Metadata.Genres) == 0 {
+		t.Error("expected genres to be filled")
+	}
+	if result.Metadata.Formed == "" {
+		t.Error("expected formed to be filled")
+	}
+
+	// AudioDB should NOT have been called because all its fields were
+	// already filled by MusicBrainz.
+	if audioDBCalls != 0 {
+		t.Errorf("expected 0 AudioDB API calls (all fields filled by MusicBrainz), got %d", audioDBCalls)
+	}
+}
+
+// TestOrchestratorDoesNotSkipProviderWithUnfilledField verifies that a provider
+// IS called when at least one of its fields is still unfilled.
+func TestOrchestratorDoesNotSkipProviderWithUnfilledField(t *testing.T) {
+	registry, settings := setupOrchestratorTest(t)
+
+	// biography: [MusicBrainz, AudioDB]  -- MusicBrainz fills it
+	// formed:    [AudioDB]               -- only AudioDB can fill it
+	if err := settings.SetPriority(context.Background(), "biography", []ProviderName{NameMusicBrainz, NameAudioDB}); err != nil {
+		t.Fatalf("SetPriority biography: %v", err)
+	}
+	if err := settings.SetPriority(context.Background(), "formed", []ProviderName{NameAudioDB}); err != nil {
+		t.Fatalf("SetPriority formed: %v", err)
+	}
+	// Disable AudioDB from fields we do not use in this test.
+	for _, field := range []string{"genres", "styles", "moods", "thumb", "fanart", "logo", "banner"} {
+		if err := settings.SetDisabledProviders(context.Background(), field, []ProviderName{NameAudioDB}); err != nil {
+			t.Fatalf("SetDisabledProviders %s: %v", field, err)
+		}
+	}
+
+	audioDBCalled := false
+	registry.Register(&mockProvider{
+		name: NameMusicBrainz,
+		getArtFn: func(_ context.Context, _ string) (*ArtistMetadata, error) {
+			return &ArtistMetadata{
+				Name:      "Radiohead",
+				Biography: "MusicBrainz biography with enough content to pass quality checks.",
+			}, nil
+		},
+	})
+	registry.Register(&mockProvider{
+		name: NameAudioDB,
+		getArtFn: func(_ context.Context, _ string) (*ArtistMetadata, error) {
+			audioDBCalled = true
+			return &ArtistMetadata{
+				Name:   "Radiohead",
+				Formed: "1985",
+			}, nil
+		},
+	})
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	orch := NewOrchestrator(registry, settings, logger)
+
+	result, err := orch.FetchMetadata(context.Background(), "mbid-123", "Radiohead", nil)
+	if err != nil {
+		t.Fatalf("FetchMetadata: %v", err)
+	}
+
+	// AudioDB should be called because formed is still unfilled.
+	if !audioDBCalled {
+		t.Error("expected AudioDB to be called (formed field is unfilled)")
+	}
+	if result.Metadata.Formed != "1985" {
+		t.Errorf("expected formed=1985, got %s", result.Metadata.Formed)
+	}
+}
+
+// TestFetchImagesSkipsProvidersWhenAllTypesCovered verifies that FetchImages
+// stops querying providers once all four image types have candidates.
+func TestFetchImagesSkipsProvidersWhenAllTypesCovered(t *testing.T) {
+	registry, settings := setupOrchestratorTest(t)
+
+	// Provider A returns all four image types.
+	registry.Register(&mockProvider{
+		name: NameFanartTV,
+		getImgFn: func(_ context.Context, _ string) ([]ImageResult, error) {
+			return []ImageResult{
+				{Type: ImageThumb, URL: "http://example.com/thumb.jpg"},
+				{Type: ImageFanart, URL: "http://example.com/fanart.jpg"},
+				{Type: ImageLogo, URL: "http://example.com/logo.png"},
+				{Type: ImageBanner, URL: "http://example.com/banner.jpg"},
+			}, nil
+		},
+	})
+	if err := settings.SetAPIKey(context.Background(), NameFanartTV, "test-key"); err != nil {
+		t.Fatalf("SetAPIKey FanartTV: %v", err)
+	}
+
+	// Provider B should NOT be called because all types are covered.
+	audioDBCalled := false
+	registry.Register(&mockProvider{
+		name: NameAudioDB,
+		getImgFn: func(_ context.Context, _ string) ([]ImageResult, error) {
+			audioDBCalled = true
+			return []ImageResult{
+				{Type: ImageThumb, URL: "http://example.com/thumb2.jpg"},
+			}, nil
+		},
+	})
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	orch := NewOrchestrator(registry, settings, logger)
+
+	result, err := orch.FetchImages(context.Background(), "mbid-test", nil)
+	if err != nil {
+		t.Fatalf("FetchImages: %v", err)
+	}
+
+	if len(result.Images) != 4 {
+		t.Errorf("expected 4 images, got %d", len(result.Images))
+	}
+	if audioDBCalled {
+		t.Error("AudioDB should not have been called -- all image types already covered by FanartTV")
+	}
+}
+
+// TestFetchImagesContinuesWhenTypesIncomplete verifies that FetchImages
+// continues to query providers when not all image types are covered yet.
+func TestFetchImagesContinuesWhenTypesIncomplete(t *testing.T) {
+	registry, settings := setupOrchestratorTest(t)
+
+	// Provider A returns only thumb and fanart.
+	registry.Register(&mockProvider{
+		name: NameFanartTV,
+		getImgFn: func(_ context.Context, _ string) ([]ImageResult, error) {
+			return []ImageResult{
+				{Type: ImageThumb, URL: "http://example.com/thumb.jpg"},
+				{Type: ImageFanart, URL: "http://example.com/fanart.jpg"},
+			}, nil
+		},
+	})
+	if err := settings.SetAPIKey(context.Background(), NameFanartTV, "test-key"); err != nil {
+		t.Fatalf("SetAPIKey FanartTV: %v", err)
+	}
+
+	// Provider B should be called because logo and banner are still missing.
+	audioDBCalled := false
+	registry.Register(&mockProvider{
+		name: NameAudioDB,
+		getImgFn: func(_ context.Context, _ string) ([]ImageResult, error) {
+			audioDBCalled = true
+			return []ImageResult{
+				{Type: ImageLogo, URL: "http://example.com/logo.png"},
+				{Type: ImageBanner, URL: "http://example.com/banner.jpg"},
+			}, nil
+		},
+	})
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	orch := NewOrchestrator(registry, settings, logger)
+
+	result, err := orch.FetchImages(context.Background(), "mbid-test", nil)
+	if err != nil {
+		t.Fatalf("FetchImages: %v", err)
+	}
+
+	if !audioDBCalled {
+		t.Error("AudioDB should have been called -- logo and banner were missing")
+	}
+	if len(result.Images) != 4 {
+		t.Errorf("expected 4 images, got %d", len(result.Images))
+	}
+}
+
+// TestBuildProviderFieldMap verifies the reverse mapping construction.
+func TestBuildProviderFieldMap(t *testing.T) {
+	priorities := []FieldPriority{
+		{Field: "biography", Providers: []ProviderName{NameMusicBrainz, NameAudioDB}},
+		{Field: "genres", Providers: []ProviderName{NameMusicBrainz, NameLastFM}},
+		{Field: "thumb", Providers: []ProviderName{NameFanartTV, NameAudioDB}},
+	}
+	available := map[ProviderName]bool{
+		NameMusicBrainz: true,
+		NameAudioDB:     true,
+		NameLastFM:      true,
+		NameFanartTV:    true,
+	}
+
+	m := buildProviderFieldMap(priorities, available)
+
+	// MusicBrainz should have biography and genres (not thumb -- image field excluded).
+	mbFields := m[NameMusicBrainz]
+	if len(mbFields) != 2 || mbFields[0] != "biography" || mbFields[1] != "genres" {
+		t.Errorf("MusicBrainz fields = %v, want [biography genres]", mbFields)
+	}
+
+	// AudioDB should have only biography (thumb is an image field, excluded).
+	adbFields := m[NameAudioDB]
+	if len(adbFields) != 1 || adbFields[0] != "biography" {
+		t.Errorf("AudioDB fields = %v, want [biography]", adbFields)
+	}
+
+	// FanartTV should not be in the map (only appears in image field).
+	if _, ok := m[NameFanartTV]; ok {
+		t.Error("FanartTV should not be in provider field map (image-only)")
+	}
+}
+
+// TestProviderHasUnfilledField verifies the unfilled field check.
+func TestProviderHasUnfilledField(t *testing.T) {
+	filled := map[string]bool{"biography": true, "genres": true}
+
+	// Provider with fields [biography, genres] -- all filled.
+	if providerHasUnfilledField([]string{"biography", "genres"}, filled) {
+		t.Error("expected false when all fields are filled")
+	}
+
+	// Provider with fields [biography, formed] -- formed is unfilled.
+	if !providerHasUnfilledField([]string{"biography", "formed"}, filled) {
+		t.Error("expected true when formed is unfilled")
+	}
+
+	// Provider with nil fields (image-only) -- should return true.
+	if !providerHasUnfilledField(nil, filled) {
+		t.Error("expected true for nil fields (image-only provider)")
+	}
+
+	// Provider with empty fields -- should return true.
+	if !providerHasUnfilledField([]string{}, filled) {
+		t.Error("expected true for empty fields")
+	}
+}
+
+// TestAllImageTypesCovered verifies the image type coverage check.
+func TestAllImageTypesCovered(t *testing.T) {
+	covered := map[ImageType]bool{}
+	if allImageTypesCovered(covered) {
+		t.Error("expected false for empty covered map")
+	}
+
+	covered[ImageThumb] = true
+	covered[ImageFanart] = true
+	covered[ImageLogo] = true
+	if allImageTypesCovered(covered) {
+		t.Error("expected false when banner is missing")
+	}
+
+	covered[ImageBanner] = true
+	if !allImageTypesCovered(covered) {
+		t.Error("expected true when all four types are covered")
+	}
+}
