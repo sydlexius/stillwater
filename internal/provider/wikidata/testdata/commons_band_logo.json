@@ -1,0 +1,17 @@
+{
+  "query": {
+    "pages": {
+      "22222": {
+        "pageid": 22222,
+        "title": "File:Band_logo.png",
+        "imageinfo": [
+          {
+            "url": "https://upload.wikimedia.org/wikipedia/commons/d/d1/Band_logo.png",
+            "width": 500,
+            "height": 200
+          }
+        ]
+      }
+    }
+  }
+}

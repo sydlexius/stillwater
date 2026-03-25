@@ -1,0 +1,17 @@
+{
+  "query": {
+    "pages": {
+      "12345": {
+        "pageid": 12345,
+        "title": "File:Radiohead_2016.jpg",
+        "imageinfo": [
+          {
+            "url": "https://upload.wikimedia.org/wikipedia/commons/a/a3/Radiohead_2016.jpg",
+            "width": 1200,
+            "height": 800
+          }
+        ]
+      }
+    }
+  }
+}
