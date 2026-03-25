@@ -189,7 +189,7 @@ func (a *Adapter) GetImages(ctx context.Context, mbid string) ([]provider.ImageR
 		if hadResolveErrors {
 			return nil, &provider.ErrProviderUnavailable{
 				Provider: provider.NameWikidata,
-				Cause:    fmt.Errorf("all commons image resolutions failed"),
+				Cause:    fmt.Errorf("commons image resolution failed for all candidates"),
 			}
 		}
 		return nil, &provider.ErrNotFound{Provider: provider.NameWikidata, ID: mbid}

@@ -36,7 +36,7 @@ func newTestServer(t *testing.T) *httptest.Server {
 			return
 		}
 		// Check for the "not found" MBID (valid UUID format that returns no results)
-		if contains(query, "00000000-0000-0000-0000-000000000000") {
+		if strings.Contains(query, "00000000-0000-0000-0000-000000000000") {
 			_, _ = w.Write([]byte(`{"results":{"bindings":[]}}`))
 			return
 		}
@@ -88,7 +88,7 @@ func newImageTestServers(t *testing.T, sparqlFixture string) (sparqlSrv, commons
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		if contains(query, "00000000-0000-0000-0000-000000000000") {
+		if strings.Contains(query, "00000000-0000-0000-0000-000000000000") {
 			_, _ = w.Write([]byte(`{"results":{"bindings":[]}}`))
 			return
 		}
@@ -96,19 +96,6 @@ func newImageTestServers(t *testing.T, sparqlFixture string) (sparqlSrv, commons
 	}))
 
 	return sparqlSrv, commonsSrv
-}
-
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && searchSubstr(s, substr)
-}
-
-func searchSubstr(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }
 
 func TestGetArtist(t *testing.T) {
@@ -345,5 +332,67 @@ func TestExtractYear(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("extractYear(%q) = %q, want %q", tt.input, got, tt.want)
 		}
+	}
+}
+
+func TestGetArtistInvalidMBID(t *testing.T) {
+	limiter := provider.NewRateLimiterMap()
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	a := NewWithEndpoint(limiter, logger, "http://localhost")
+
+	_, err := a.GetArtist(context.Background(), "not-a-uuid")
+	if err == nil {
+		t.Fatal("expected error for invalid MBID")
+	}
+	if _, ok := err.(*provider.ErrNotFound); !ok {
+		t.Errorf("expected ErrNotFound, got %T: %v", err, err)
+	}
+}
+
+func TestGetImagesInvalidMBID(t *testing.T) {
+	limiter := provider.NewRateLimiterMap()
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	a := NewWithEndpoints(limiter, logger, "http://localhost", "http://localhost")
+
+	_, err := a.GetImages(context.Background(), "not-a-uuid")
+	if err == nil {
+		t.Fatal("expected error for invalid MBID")
+	}
+	if _, ok := err.(*provider.ErrNotFound); !ok {
+		t.Errorf("expected ErrNotFound, got %T: %v", err, err)
+	}
+}
+
+func TestGetImagesCommonsResolutionFailure(t *testing.T) {
+	// SPARQL returns valid image filenames but the Commons endpoint returns
+	// HTTP 500 for all requests. GetImages should return ErrProviderUnavailable.
+	sparqlData := loadFixture(t, "images_p18_only.json")
+
+	commonsSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer commonsSrv.Close()
+
+	sparqlSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/sparql-results+json")
+		query := r.URL.Query().Get("query")
+		if query == "" {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		_, _ = w.Write(sparqlData)
+	}))
+	defer sparqlSrv.Close()
+
+	limiter := provider.NewRateLimiterMap()
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	a := NewWithEndpoints(limiter, logger, sparqlSrv.URL, commonsSrv.URL)
+
+	_, err := a.GetImages(context.Background(), "11111111-1111-1111-1111-111111111111")
+	if err == nil {
+		t.Fatal("expected error when all commons resolutions fail")
+	}
+	if _, ok := err.(*provider.ErrProviderUnavailable); !ok {
+		t.Errorf("expected ErrProviderUnavailable, got %T: %v", err, err)
 	}
 }
