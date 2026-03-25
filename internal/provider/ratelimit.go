@@ -19,6 +19,7 @@ var defaultRateLimits = map[ProviderName]rate.Limit{
 	NameDeezer:      5,
 	NameGenius:      5,
 	NameWikipedia:   5,
+	NameAllMusic:    1,
 	NameSpotify:     5,
 }
 

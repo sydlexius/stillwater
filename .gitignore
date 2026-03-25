@@ -20,6 +20,8 @@ coverage.html
 .idea/
 .vscode/
 .claude/settings.local.json
+.claude/worktrees/
+.superpowers/
 .playwright-mcp/
 *.swp
 *.swo

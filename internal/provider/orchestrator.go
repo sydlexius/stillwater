@@ -429,6 +429,9 @@ func applyField(result *FetchResult, field string, pr *providerResult, source Pr
 	if meta.DeezerID != "" && result.Metadata.DeezerID == "" {
 		result.Metadata.DeezerID = meta.DeezerID
 	}
+	if meta.AllMusicID != "" && result.Metadata.AllMusicID == "" {
+		result.Metadata.AllMusicID = meta.AllMusicID
+	}
 	if meta.SpotifyID != "" && result.Metadata.SpotifyID == "" {
 		result.Metadata.SpotifyID = meta.SpotifyID
 	}
@@ -672,10 +675,11 @@ func EnrichProviderIDs(meta *ArtistMetadata, providerIDs map[ProviderName]string
 	// Temporarily extract IDs from this provider's URLs into a scratch
 	// metadata struct, then copy any newly discovered IDs into providerIDs.
 	scratch := &ArtistMetadata{
-		URLs:      meta.URLs,
-		DiscogsID: meta.DiscogsID,
-		DeezerID:  meta.DeezerID,
-		SpotifyID: meta.SpotifyID,
+		URLs:       meta.URLs,
+		DiscogsID:  meta.DiscogsID,
+		DeezerID:   meta.DeezerID,
+		AllMusicID: meta.AllMusicID,
+		SpotifyID:  meta.SpotifyID,
 	}
 	extractProviderIDsFromURLs(scratch)
 
@@ -691,6 +695,11 @@ func EnrichProviderIDs(meta *ArtistMetadata, providerIDs map[ProviderName]string
 	if scratch.DeezerID != "" {
 		if current := providerIDs[NameDeezer]; current == "" {
 			providerIDs[NameDeezer] = scratch.DeezerID
+		}
+	}
+	if scratch.AllMusicID != "" {
+		if current := providerIDs[NameAllMusic]; current == "" {
+			providerIDs[NameAllMusic] = scratch.AllMusicID
 		}
 	}
 	if scratch.SpotifyID != "" {
@@ -709,6 +718,7 @@ func EnrichProviderIDs(meta *ArtistMetadata, providerIDs map[ProviderName]string
 //	discogs:  "https://www.discogs.com/artist/24941-a-ha"  -> "24941"
 //	wikidata: "https://www.wikidata.org/wiki/Q44190"       -> "Q44190"
 //	deezer:   "https://www.deezer.com/artist/3106"         -> "3106"
+//	allmusic: "https://www.allmusic.com/artist/mn0000505828" -> "mn0000505828"
 func extractProviderIDsFromURLs(meta *ArtistMetadata) {
 	if meta == nil {
 		return
@@ -762,6 +772,29 @@ func extractProviderIDsFromURLs(meta *ArtistMetadata) {
 		}
 	}
 
+	if meta.AllMusicID == "" {
+		if u, ok := meta.URLs["allmusic"]; ok && u != "" {
+			// AllMusic artist URLs: https://www.allmusic.com/artist/mn0000505828
+			// or https://www.allmusic.com/artist/dolly-parton-mn0000205560
+			// The ID is always the "mn" followed by digits at the end.
+			if idx := strings.LastIndex(u, "/"); idx >= 0 {
+				segment := u[idx+1:]
+				// Strip any query params or fragments
+				if qIdx := strings.IndexAny(segment, "?#"); qIdx >= 0 {
+					segment = segment[:qIdx]
+				}
+				// The mn-ID may be the entire segment or suffixed after a slug.
+				// Look for "mn" followed by digits.
+				if mnIdx := strings.LastIndex(segment, "mn"); mnIdx >= 0 {
+					candidate := segment[mnIdx:]
+					if isAllMusicID(candidate) {
+						meta.AllMusicID = candidate
+					}
+				}
+			}
+		}
+	}
+
 	if meta.SpotifyID == "" {
 		if u, ok := meta.URLs["spotify"]; ok && u != "" {
 			// Spotify artist URLs: https://open.spotify.com/artist/{id}
@@ -779,6 +812,19 @@ func extractProviderIDsFromURLs(meta *ArtistMetadata) {
 			}
 		}
 	}
+}
+
+// isAllMusicID reports whether s matches the AllMusic artist ID format: "mn" followed by 10 digits.
+func isAllMusicID(s string) bool {
+	if len(s) != 12 || s[0] != 'm' || s[1] != 'n' {
+		return false
+	}
+	for _, c := range s[2:] {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // BuildProviderIDMap constructs a provider-specific ID map from individual ID

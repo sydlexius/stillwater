@@ -984,3 +984,81 @@ func TestNameSimilarityThresholdValidation(t *testing.T) {
 		t.Errorf("expected default %d after invalid sets, got %d", DefaultNameSimilarityThreshold, threshold)
 	}
 }
+
+func TestWebScraperEnabledRoundTrip(t *testing.T) {
+	db := setupTestDB(t)
+	enc := setupTestEncryptor(t)
+	svc := NewSettingsService(db, enc)
+	ctx := context.Background()
+
+	// Initially disabled.
+	enabled, err := svc.IsWebScraperEnabled(ctx, NameAllMusic)
+	if err != nil {
+		t.Fatalf("IsWebScraperEnabled: %v", err)
+	}
+	if enabled {
+		t.Error("expected disabled by default")
+	}
+
+	// Enable.
+	if err := svc.SetWebScraperEnabled(ctx, NameAllMusic, true); err != nil {
+		t.Fatalf("SetWebScraperEnabled(true): %v", err)
+	}
+	enabled, err = svc.IsWebScraperEnabled(ctx, NameAllMusic)
+	if err != nil {
+		t.Fatalf("IsWebScraperEnabled after enable: %v", err)
+	}
+	if !enabled {
+		t.Error("expected enabled after set")
+	}
+
+	// Disable again.
+	if err := svc.SetWebScraperEnabled(ctx, NameAllMusic, false); err != nil {
+		t.Fatalf("SetWebScraperEnabled(false): %v", err)
+	}
+	enabled, err = svc.IsWebScraperEnabled(ctx, NameAllMusic)
+	if err != nil {
+		t.Fatalf("IsWebScraperEnabled after disable: %v", err)
+	}
+	if enabled {
+		t.Error("expected disabled after set false")
+	}
+}
+
+func TestListWebScraperStatuses(t *testing.T) {
+	db := setupTestDB(t)
+	enc := setupTestEncryptor(t)
+	svc := NewSettingsService(db, enc)
+	ctx := context.Background()
+
+	statuses, err := svc.ListWebScraperStatuses(ctx)
+	if err != nil {
+		t.Fatalf("ListWebScraperStatuses: %v", err)
+	}
+	if len(statuses) != len(AllWebScraperProviderNames()) {
+		t.Fatalf("expected %d statuses, got %d", len(AllWebScraperProviderNames()), len(statuses))
+	}
+
+	am := statuses[0]
+	if am.Name != NameAllMusic {
+		t.Errorf("expected allmusic, got %s", am.Name)
+	}
+	if am.DisplayName != "AllMusic" {
+		t.Errorf("expected display name AllMusic, got %s", am.DisplayName)
+	}
+	if am.Enabled {
+		t.Error("expected disabled by default")
+	}
+
+	// Enable and re-check.
+	if err := svc.SetWebScraperEnabled(ctx, NameAllMusic, true); err != nil {
+		t.Fatalf("SetWebScraperEnabled: %v", err)
+	}
+	statuses, err = svc.ListWebScraperStatuses(ctx)
+	if err != nil {
+		t.Fatalf("ListWebScraperStatuses after enable: %v", err)
+	}
+	if !statuses[0].Enabled {
+		t.Error("expected enabled after set")
+	}
+}
