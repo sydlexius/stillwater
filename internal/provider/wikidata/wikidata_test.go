@@ -23,6 +23,11 @@ func loadFixture(t *testing.T, name string) []byte {
 
 func newTestServer(t *testing.T) *httptest.Server {
 	t.Helper()
+
+	// Pre-load fixture in the test goroutine so t.Fatalf is not called from
+	// the httptest handler goroutine (which causes undefined behavior).
+	artistData := loadFixture(t, "artist_radiohead.json")
+
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/sparql-results+json")
 		query := r.URL.Query().Get("query")
@@ -35,7 +40,7 @@ func newTestServer(t *testing.T) *httptest.Server {
 			_, _ = w.Write([]byte(`{"results":{"bindings":[]}}`))
 			return
 		}
-		_, _ = w.Write(loadFixture(t, "artist_radiohead.json"))
+		_, _ = w.Write(artistData)
 	}))
 }
 
@@ -43,8 +48,18 @@ func newTestServer(t *testing.T) *httptest.Server {
 // testing GetImages. The sparqlFixture determines which SPARQL response is
 // returned. The Commons server routes requests based on the filename in the
 // "titles" query parameter.
+//
+// All fixtures are pre-loaded in the calling (test) goroutine so that
+// t.Fatalf is never invoked from an httptest handler goroutine.
 func newImageTestServers(t *testing.T, sparqlFixture string) (sparqlSrv, commonsSrv *httptest.Server) {
 	t.Helper()
+
+	// Pre-load every fixture the handlers will need.
+	sparqlData := loadFixture(t, sparqlFixture)
+	radioheadPhoto := loadFixture(t, "commons_radiohead_photo.json")
+	radioheadLogo := loadFixture(t, "commons_radiohead_logo.json")
+	artistPhoto := loadFixture(t, "commons_artist_photo.json")
+	bandLogo := loadFixture(t, "commons_band_logo.json")
 
 	commonsSrv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -53,13 +68,13 @@ func newImageTestServers(t *testing.T, sparqlFixture string) (sparqlSrv, commons
 		// Route based on the requested filename.
 		switch {
 		case strings.Contains(titles, "Radiohead_2016.jpg"):
-			_, _ = w.Write(loadFixture(t, "commons_radiohead_photo.json"))
+			_, _ = w.Write(radioheadPhoto)
 		case strings.Contains(titles, "Radiohead_logo.png"):
-			_, _ = w.Write(loadFixture(t, "commons_radiohead_logo.json"))
+			_, _ = w.Write(radioheadLogo)
 		case strings.Contains(titles, "Artist_photo.jpg"):
-			_, _ = w.Write(loadFixture(t, "commons_artist_photo.json"))
+			_, _ = w.Write(artistPhoto)
 		case strings.Contains(titles, "Band_logo.png"):
-			_, _ = w.Write(loadFixture(t, "commons_band_logo.json"))
+			_, _ = w.Write(bandLogo)
 		default:
 			// Return a "not found" Commons response (page ID -1).
 			_, _ = w.Write([]byte(`{"query":{"pages":{"-1":{"title":"File:Unknown","missing":""}}}}`))
@@ -77,7 +92,7 @@ func newImageTestServers(t *testing.T, sparqlFixture string) (sparqlSrv, commons
 			_, _ = w.Write([]byte(`{"results":{"bindings":[]}}`))
 			return
 		}
-		_, _ = w.Write(loadFixture(t, sparqlFixture))
+		_, _ = w.Write(sparqlData)
 	}))
 
 	return sparqlSrv, commonsSrv
