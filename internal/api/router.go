@@ -41,6 +41,7 @@ type RouterDeps struct {
 	ProviderSettings   *provider.SettingsService
 	ProviderRegistry   *provider.Registry
 	WebSearchRegistry  *provider.WebSearchRegistry
+	WebScraperRegistry *provider.WebScraperRegistry
 	RateLimiters       *provider.RateLimiterMap
 	Orchestrator       *provider.Orchestrator
 	RuleService        *rule.Service
@@ -79,6 +80,7 @@ type Router struct {
 	providerSettings   *provider.SettingsService
 	providerRegistry   *provider.Registry
 	webSearchRegistry  *provider.WebSearchRegistry
+	webScraperRegistry *provider.WebScraperRegistry
 	rateLimiters       *provider.RateLimiterMap
 	orchestrator       *provider.Orchestrator
 	ruleService        *rule.Service
@@ -129,6 +131,7 @@ func NewRouter(deps RouterDeps) *Router {
 		providerSettings:   deps.ProviderSettings,
 		providerRegistry:   deps.ProviderRegistry,
 		webSearchRegistry:  deps.WebSearchRegistry,
+		webScraperRegistry: deps.WebScraperRegistry,
 		rateLimiters:       deps.RateLimiters,
 		orchestrator:       deps.Orchestrator,
 		ruleService:        deps.RuleService,

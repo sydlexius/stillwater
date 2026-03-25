@@ -552,6 +552,7 @@ func TestExtractProviderIDsFromURLs(t *testing.T) {
 		wantDiscogsID  string
 		wantWikidataID string
 		wantDeezerID   string
+		wantAllMusicID string
 		wantSpotifyID  string
 	}{
 		{
@@ -603,16 +604,32 @@ func TestExtractProviderIDsFromURLs(t *testing.T) {
 			urls: map[string]string{"spotify": "https://open.spotify.com/artist/tooshort"},
 		},
 		{
-			name: "all four providers",
+			name:           "plain allmusic artist URL",
+			urls:           map[string]string{"allmusic": "https://www.allmusic.com/artist/mn0000505828"},
+			wantAllMusicID: "mn0000505828",
+		},
+		{
+			name:           "slugged allmusic artist URL",
+			urls:           map[string]string{"allmusic": "https://www.allmusic.com/artist/dolly-parton-mn0000205560"},
+			wantAllMusicID: "mn0000205560",
+		},
+		{
+			name: "allmusic URL with mn in slug but no valid ID",
+			urls: map[string]string{"allmusic": "https://www.allmusic.com/artist/amnesia-band"},
+		},
+		{
+			name: "all providers",
 			urls: map[string]string{
 				"discogs":  "https://www.discogs.com/artist/24941-a-ha",
 				"wikidata": "https://www.wikidata.org/wiki/Q44190",
 				"deezer":   "https://www.deezer.com/artist/3106",
+				"allmusic": "https://www.allmusic.com/artist/mn0000505828",
 				"spotify":  "https://open.spotify.com/artist/4Z8W4fKeB5YxbusRsdQVPb",
 			},
 			wantDiscogsID:  "24941",
 			wantWikidataID: "Q44190",
 			wantDeezerID:   "3106",
+			wantAllMusicID: "mn0000505828",
 			wantSpotifyID:  "4Z8W4fKeB5YxbusRsdQVPb",
 		},
 	}
@@ -630,6 +647,9 @@ func TestExtractProviderIDsFromURLs(t *testing.T) {
 			if meta.DeezerID != tt.wantDeezerID {
 				t.Errorf("DeezerID: got %q, want %q", meta.DeezerID, tt.wantDeezerID)
 			}
+			if meta.AllMusicID != tt.wantAllMusicID {
+				t.Errorf("AllMusicID: got %q, want %q", meta.AllMusicID, tt.wantAllMusicID)
+			}
 			if meta.SpotifyID != tt.wantSpotifyID {
 				t.Errorf("SpotifyID: got %q, want %q", meta.SpotifyID, tt.wantSpotifyID)
 			}
@@ -641,11 +661,13 @@ func TestExtractProviderIDsFromURLs(t *testing.T) {
 			DiscogsID:  "existing",
 			WikidataID: "Q999",
 			DeezerID:   "111",
+			AllMusicID: "mn0000000001",
 			SpotifyID:  "0OdUWJ0sBjDrqHygGUXeCF",
 			URLs: map[string]string{
 				"discogs":  "https://www.discogs.com/artist/24941",
 				"wikidata": "https://www.wikidata.org/wiki/Q44190",
 				"deezer":   "https://www.deezer.com/artist/3106",
+				"allmusic": "https://www.allmusic.com/artist/mn0000505828",
 				"spotify":  "https://open.spotify.com/artist/4Z8W4fKeB5YxbusRsdQVPb",
 			},
 		}
@@ -658,6 +680,9 @@ func TestExtractProviderIDsFromURLs(t *testing.T) {
 		}
 		if meta.DeezerID != "111" {
 			t.Errorf("DeezerID was overwritten: got %q", meta.DeezerID)
+		}
+		if meta.AllMusicID != "mn0000000001" {
+			t.Errorf("AllMusicID was overwritten: got %q", meta.AllMusicID)
 		}
 		if meta.SpotifyID != "0OdUWJ0sBjDrqHygGUXeCF" {
 			t.Errorf("SpotifyID was overwritten: got %q", meta.SpotifyID)
@@ -1410,5 +1435,27 @@ func TestFetchImagesQueriesAllProviders(t *testing.T) {
 	}
 	if !audioDBCalled {
 		t.Error("AudioDB should have been called -- FetchImages queries all providers")
+	}
+}
+
+func TestIsAllMusicID(t *testing.T) {
+	tests := []struct {
+		input string
+		want  bool
+	}{
+		{"mn0000505828", true},   // valid: mn + 10 digits
+		{"mn00005", false},       // too short
+		{"mn00005058281", false}, // too long
+		{"ab0000505828", false},  // wrong prefix
+		{"mn000050582a", false},  // non-digit after mn
+		{"", false},              // empty string
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			if got := isAllMusicID(tt.input); got != tt.want {
+				t.Errorf("isAllMusicID(%q) = %v, want %v", tt.input, got, tt.want)
+			}
+		})
 	}
 }

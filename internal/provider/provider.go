@@ -105,6 +105,7 @@ const (
 	NameDeezer      ProviderName = "deezer"
 	NameGenius      ProviderName = "genius"
 	NameWikipedia   ProviderName = "wikipedia"
+	NameAllMusic    ProviderName = "allmusic"
 	NameSpotify     ProviderName = "spotify"
 )
 
@@ -159,6 +160,20 @@ func AllWebSearchProviderNames() []ProviderName {
 	return []ProviderName{NameDuckDuckGo}
 }
 
+// WebMetadataScraper is the interface for web scrapers that extract metadata
+// from provider web pages. Unlike Provider (which uses structured APIs),
+// web scrapers parse HTML pages and are expected to break when sites change.
+type WebMetadataScraper interface {
+	Name() ProviderName
+	RequiresAuth() bool
+	ScrapeArtist(ctx context.Context, id string) (*ArtistMetadata, error)
+}
+
+// AllWebScraperProviderNames returns all known web scraper provider names in display order.
+func AllWebScraperProviderNames() []ProviderName {
+	return []ProviderName{NameAllMusic}
+}
+
 // ImageType classifies the kind of artist image.
 type ImageType string
 
@@ -194,6 +209,7 @@ type ArtistMetadata struct {
 	DiscogsID      string            `json:"discogs_id,omitempty"`
 	WikidataID     string            `json:"wikidata_id,omitempty"`
 	DeezerID       string            `json:"deezer_id,omitempty"`
+	AllMusicID     string            `json:"allmusic_id,omitempty"`
 	SpotifyID      string            `json:"spotify_id,omitempty"`
 	Name           string            `json:"name"`
 	SortName       string            `json:"sort_name,omitempty"`

@@ -81,3 +81,43 @@ func (r *WebSearchRegistry) All() []WebImageProvider {
 	}
 	return result
 }
+
+// WebScraperRegistry holds registered web metadata scraper adapters.
+type WebScraperRegistry struct {
+	mu       sync.RWMutex
+	scrapers map[ProviderName]WebMetadataScraper
+}
+
+// NewWebScraperRegistry creates an empty web scraper registry.
+func NewWebScraperRegistry() *WebScraperRegistry {
+	return &WebScraperRegistry{
+		scrapers: make(map[ProviderName]WebMetadataScraper),
+	}
+}
+
+// Register adds a web scraper to the registry.
+func (r *WebScraperRegistry) Register(s WebMetadataScraper) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.scrapers[s.Name()] = s
+}
+
+// Get returns a web scraper by name, or nil if not registered.
+func (r *WebScraperRegistry) Get(name ProviderName) WebMetadataScraper {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.scrapers[name]
+}
+
+// All returns all registered web scrapers in a stable order.
+func (r *WebScraperRegistry) All() []WebMetadataScraper {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var result []WebMetadataScraper
+	for _, name := range AllWebScraperProviderNames() {
+		if s, ok := r.scrapers[name]; ok {
+			result = append(result, s)
+		}
+	}
+	return result
+}
