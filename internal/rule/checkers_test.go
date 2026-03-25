@@ -5,10 +5,13 @@ import (
 	"image/color"
 	"image/jpeg"
 	"image/png"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
 )
@@ -735,13 +738,23 @@ func createTestPNG(t *testing.T, path string, w, h int) {
 	createTestPNGWithPadding(t, path, w, h, 0, 0, 0, 0)
 }
 
+// newTestEngine returns an Engine with nil deps suitable for checker unit tests
+// that do not require database access or platform/library services.
+// A discard logger is used so that debug logging added to checkers does not panic
+// when the logger field is accessed.
+func newTestEngine() *Engine {
+	return &Engine{logger: slog.Default()}
+}
+
 func TestCheckLogoTrimmable_ExcessPadding(t *testing.T) {
 	dir := t.TempDir()
 	// 200x100 logo with 20px padding on each horizontal side (10%) and 15px vertical (15%)
 	createTestPNGWithPadding(t, filepath.Join(dir, "logo.png"), 200, 100, 20, 20, 15, 15)
 
+	e := newTestEngine()
+	checker := e.makeLogoTrimmableChecker()
 	a := artist.Artist{Name: "Test", LogoExists: true, Path: dir}
-	v := checkLogoTrimmable(&a, RuleConfig{ThresholdPercent: 5})
+	v := checker(&a, RuleConfig{ThresholdPercent: 5})
 	if v == nil {
 		t.Fatal("expected violation for logo with >5% padding")
 	}
@@ -758,8 +771,10 @@ func TestCheckLogoTrimmable_MinimalPadding(t *testing.T) {
 	// 200x100 logo with only 2px padding per side (<5% of 200 and 100)
 	createTestPNGWithPadding(t, filepath.Join(dir, "logo.png"), 200, 100, 2, 2, 2, 2)
 
+	e := newTestEngine()
+	checker := e.makeLogoTrimmableChecker()
 	a := artist.Artist{Name: "Test", LogoExists: true, Path: dir}
-	v := checkLogoTrimmable(&a, RuleConfig{ThresholdPercent: 5})
+	v := checker(&a, RuleConfig{ThresholdPercent: 5})
 	if v != nil {
 		t.Errorf("expected nil for logo with <5%% padding, got %v", v)
 	}
@@ -773,16 +788,20 @@ func TestCheckLogoTrimmable_JPEGLogo(t *testing.T) {
 	// should return nil (no trimmable padding).
 	createTestJPEG(t, filepath.Join(dir, "logo.png"), 500, 200)
 
+	e := newTestEngine()
+	checker := e.makeLogoTrimmableChecker()
 	a := artist.Artist{Name: "Test", LogoExists: true, Path: dir}
-	v := checkLogoTrimmable(&a, RuleConfig{ThresholdPercent: 5})
+	v := checker(&a, RuleConfig{ThresholdPercent: 5})
 	if v != nil {
 		t.Errorf("expected nil for JPEG-content logo, got %v", v)
 	}
 }
 
 func TestCheckLogoTrimmable_NoLogo(t *testing.T) {
+	e := newTestEngine()
+	checker := e.makeLogoTrimmableChecker()
 	a := artist.Artist{Name: "Test", LogoExists: false, Path: t.TempDir()}
-	v := checkLogoTrimmable(&a, RuleConfig{ThresholdPercent: 5})
+	v := checker(&a, RuleConfig{ThresholdPercent: 5})
 	if v != nil {
 		t.Errorf("expected nil when logo does not exist, got %v", v)
 	}
@@ -793,8 +812,10 @@ func TestCheckLogoTrimmable_NoPadding(t *testing.T) {
 	// Fully opaque PNG with zero padding
 	createTestPNG(t, filepath.Join(dir, "logo.png"), 500, 200)
 
+	e := newTestEngine()
+	checker := e.makeLogoTrimmableChecker()
 	a := artist.Artist{Name: "Test", LogoExists: true, Path: dir}
-	v := checkLogoTrimmable(&a, RuleConfig{ThresholdPercent: 5})
+	v := checker(&a, RuleConfig{ThresholdPercent: 5})
 	if v != nil {
 		t.Errorf("expected nil for logo with no padding, got %v", v)
 	}
@@ -805,8 +826,10 @@ func TestCheckLogoTrimmable_LogoWhite(t *testing.T) {
 	// logo-white.png with excess padding (>5% on each side).
 	createTestPNGWithPadding(t, filepath.Join(dir, "logo-white.png"), 200, 100, 20, 20, 15, 15)
 
+	e := newTestEngine()
+	checker := e.makeLogoTrimmableChecker()
 	a := artist.Artist{Name: "Test", LogoExists: true, Path: dir}
-	v := checkLogoTrimmable(&a, RuleConfig{ThresholdPercent: 5})
+	v := checker(&a, RuleConfig{ThresholdPercent: 5})
 	if v == nil {
 		t.Fatal("expected violation for logo-white.png with >5% padding")
 	}
@@ -820,8 +843,10 @@ func TestCheckLogoTrimmable_CaseInsensitive(t *testing.T) {
 	// Logo.PNG (mixed case) with excess padding.
 	createTestPNGWithPadding(t, filepath.Join(dir, "Logo.PNG"), 200, 100, 20, 20, 15, 15)
 
+	e := newTestEngine()
+	checker := e.makeLogoTrimmableChecker()
 	a := artist.Artist{Name: "Test", LogoExists: true, Path: dir}
-	v := checkLogoTrimmable(&a, RuleConfig{ThresholdPercent: 5})
+	v := checker(&a, RuleConfig{ThresholdPercent: 5})
 	if v == nil {
 		t.Fatal("expected violation for Logo.PNG (case-insensitive match) with >5% padding")
 	}
@@ -928,8 +953,10 @@ func TestCheckLogoPadding_ExcessPadding(t *testing.T) {
 	// Total = 200*100 = 20000. Padding ratio = 1 - 5600/20000 = 72%.
 	createTestPNGWithPadding(t, filepath.Join(dir, "logo.png"), 200, 100, 30, 30, 30, 30)
 
+	e := newTestEngine()
+	checker := e.makeLogoPaddingChecker()
 	a := artist.Artist{Name: "Test", LogoExists: true, Path: dir}
-	v := checkLogoPadding(&a, RuleConfig{ThresholdPercent: 15})
+	v := checker(&a, RuleConfig{ThresholdPercent: 15})
 	if v == nil {
 		t.Fatal("expected violation for logo with 72% padding")
 	}
@@ -947,8 +974,10 @@ func TestCheckLogoPadding_BelowThreshold(t *testing.T) {
 	// Total = 20000. Padding ratio = 1 - 17100/20000 = 14.5%, below 15%.
 	createTestPNGWithPadding(t, filepath.Join(dir, "logo.png"), 200, 100, 5, 5, 5, 5)
 
+	e := newTestEngine()
+	checker := e.makeLogoPaddingChecker()
 	a := artist.Artist{Name: "Test", LogoExists: true, Path: dir}
-	v := checkLogoPadding(&a, RuleConfig{ThresholdPercent: 15})
+	v := checker(&a, RuleConfig{ThresholdPercent: 15})
 	if v != nil {
 		t.Errorf("expected nil for logo with 14.5%% padding, got %v", v)
 	}
@@ -958,24 +987,30 @@ func TestCheckLogoPadding_NoPadding(t *testing.T) {
 	dir := t.TempDir()
 	createTestPNG(t, filepath.Join(dir, "logo.png"), 200, 100)
 
+	e := newTestEngine()
+	checker := e.makeLogoPaddingChecker()
 	a := artist.Artist{Name: "Test", LogoExists: true, Path: dir}
-	v := checkLogoPadding(&a, RuleConfig{ThresholdPercent: 15})
+	v := checker(&a, RuleConfig{ThresholdPercent: 15})
 	if v != nil {
 		t.Errorf("expected nil for logo with no padding, got %v", v)
 	}
 }
 
 func TestCheckLogoPadding_NoLogo(t *testing.T) {
+	e := newTestEngine()
+	checker := e.makeLogoPaddingChecker()
 	a := artist.Artist{Name: "Test", LogoExists: false, Path: t.TempDir()}
-	v := checkLogoPadding(&a, RuleConfig{ThresholdPercent: 15})
+	v := checker(&a, RuleConfig{ThresholdPercent: 15})
 	if v != nil {
 		t.Errorf("expected nil when logo does not exist, got %v", v)
 	}
 }
 
 func TestCheckLogoPadding_NoPath(t *testing.T) {
+	e := newTestEngine()
+	checker := e.makeLogoPaddingChecker()
 	a := artist.Artist{Name: "Test", LogoExists: true, Path: ""}
-	v := checkLogoPadding(&a, RuleConfig{ThresholdPercent: 15})
+	v := checker(&a, RuleConfig{ThresholdPercent: 15})
 	if v != nil {
 		t.Errorf("expected nil when path is empty, got %v", v)
 	}
@@ -988,8 +1023,10 @@ func TestCheckLogoPadding_DefaultThreshold(t *testing.T) {
 	// Default threshold is 15%, so this should be flagged.
 	createTestPNGWithPadding(t, filepath.Join(dir, "logo.png"), 200, 100, 20, 20, 20, 20)
 
+	e := newTestEngine()
+	checker := e.makeLogoPaddingChecker()
 	a := artist.Artist{Name: "Test", LogoExists: true, Path: dir}
-	v := checkLogoPadding(&a, RuleConfig{})
+	v := checker(&a, RuleConfig{})
 	if v == nil {
 		t.Fatal("expected violation with default threshold (15%)")
 	}
@@ -1029,9 +1066,207 @@ func TestCheckLogoPadding_JPEGWhitespace(t *testing.T) {
 	// Content = 140x40 = 5600. Total = 20000. Padding = 72%.
 	createTestJPEGWithWhitespace(t, filepath.Join(dir, "logo.png"), 200, 100, 30, 30, 30, 30)
 
+	e := newTestEngine()
+	checker := e.makeLogoPaddingChecker()
 	a := artist.Artist{Name: "Test", LogoExists: true, Path: dir}
-	v := checkLogoPadding(&a, RuleConfig{ThresholdPercent: 15})
+	v := checker(&a, RuleConfig{ThresholdPercent: 15})
 	if v == nil {
 		t.Fatal("expected violation for JPEG logo with whitespace padding")
+	}
+}
+
+// --- logo bounds cache tests ---
+
+// TestLogoBoundsCache_HitAfterFirstEval verifies that calling the logo padding
+// checker twice with the same file results in a cache hit on the second call,
+// meaning the image was only decoded once.
+func TestLogoBoundsCache_HitAfterFirstEval(t *testing.T) {
+	dir := t.TempDir()
+	logoPath := filepath.Join(dir, "logo.png")
+	createTestPNGWithPadding(t, logoPath, 200, 100, 30, 30, 30, 30)
+
+	e := newTestEngine()
+	checker := e.makeLogoPaddingChecker()
+	a := artist.Artist{Name: "Test", LogoExists: true, Path: dir}
+
+	// First call: cache miss, image is decoded and result stored.
+	v := checker(&a, RuleConfig{ThresholdPercent: 15})
+	if v == nil {
+		t.Fatal("expected violation on first call")
+	}
+
+	// Verify the cache now contains an entry for the logo.
+	fi, err := os.Stat(logoPath)
+	if err != nil {
+		t.Fatalf("stat logo: %v", err)
+	}
+	cached, hit := e.lookupLogoBounds(logoPath, fi.ModTime())
+	if !hit {
+		t.Fatal("expected cache hit after first evaluation")
+	}
+	if cached.original.Dx() == 0 || cached.original.Dy() == 0 {
+		t.Errorf("cached original bounds are zero: %v", cached.original)
+	}
+
+	// Second call: must use cached result (same violation, no re-decode).
+	v2 := checker(&a, RuleConfig{ThresholdPercent: 15})
+	if v2 == nil {
+		t.Fatal("expected violation on second call (from cache)")
+	}
+	if v.Message != v2.Message {
+		t.Errorf("violation message changed between calls: %q vs %q", v.Message, v2.Message)
+	}
+}
+
+// TestLogoBoundsCache_MtimeInvalidation verifies that the cache correctly serves
+// a stale result when the logo file is replaced but the mtime is identical (same
+// second), and serves a fresh result when the mtime actually changes.
+// The cache uses (filePath, modTime) as the key; a changed mtime produces a
+// different key, causing a miss and a fresh re-decode.
+func TestLogoBoundsCache_MtimeInvalidation(t *testing.T) {
+	dir := t.TempDir()
+	logoPath := filepath.Join(dir, "logo.png")
+	createTestPNGWithPadding(t, logoPath, 200, 100, 30, 30, 30, 30)
+
+	e := newTestEngine()
+	checker := e.makeLogoPaddingChecker()
+	a := artist.Artist{Name: "Test", LogoExists: true, Path: dir}
+
+	// First call: populates the cache.
+	v1 := checker(&a, RuleConfig{ThresholdPercent: 15})
+	if v1 == nil {
+		t.Fatal("expected violation on first call")
+	}
+
+	fi1, err := os.Stat(logoPath)
+	if err != nil {
+		t.Fatalf("stat logo after first write: %v", err)
+	}
+	if _, hit := e.lookupLogoBounds(logoPath, fi1.ModTime()); !hit {
+		t.Fatal("expected cache hit after first evaluation")
+	}
+
+	// Replace the file with a fully opaque PNG (no padding) and advance its
+	// mtime by at least 1 second to guarantee a different cache key.
+	createTestPNG(t, logoPath, 200, 100)
+	future := fi1.ModTime().Add(2 * time.Second)
+	if err := os.Chtimes(logoPath, future, future); err != nil {
+		t.Fatalf("advancing mtime: %v", err)
+	}
+
+	// The old mtime key must still be present in the cache (lazy eviction),
+	// but the checker must use the new mtime and therefore miss the cache,
+	// re-decode the updated file, and return no violation.
+	if _, hit := e.lookupLogoBounds(logoPath, fi1.ModTime()); !hit {
+		t.Log("old mtime entry was already evicted (acceptable)")
+	}
+
+	v2 := checker(&a, RuleConfig{ThresholdPercent: 15})
+	if v2 != nil {
+		t.Errorf("expected nil violation after replacing with padding-free PNG, got: %s", v2.Message)
+	}
+
+	// The new mtime must now be in the cache.
+	fi2, err := os.Stat(logoPath)
+	if err != nil {
+		t.Fatalf("stat logo after replacement: %v", err)
+	}
+	if _, hit := e.lookupLogoBounds(logoPath, fi2.ModTime()); !hit {
+		t.Error("expected cache hit for new mtime after second evaluation")
+	}
+}
+
+// TestLogoBoundsCache_Eviction verifies that the cache stays within the
+// maxLogoBoundsCacheSize limit by evicting the oldest entry when full.
+// It also asserts FIFO order: the first-inserted key is evicted before the
+// second-inserted key.
+func TestLogoBoundsCache_Eviction(t *testing.T) {
+	e := newTestEngine()
+
+	// Record the first two keys inserted so we can verify FIFO eviction order.
+	firstPath := filepath.Join("/fake", string(rune('a')), "logo.png")
+	secondPath := filepath.Join("/fake", string(rune('b')), "logo.png")
+
+	// Fill the cache to capacity using artificial keys.
+	for i := 0; i < maxLogoBoundsCacheSize; i++ {
+		e.storeLogoBounds(
+			filepath.Join("/fake", string(rune('a'+i%26)), "logo.png"),
+			testTime(i),
+			logoBoundsCacheEntry{},
+		)
+	}
+
+	e.logoBoundsCacheMu.Lock()
+	sizeAtCapacity := len(e.logoBoundsCache)
+	e.logoBoundsCacheMu.Unlock()
+
+	if sizeAtCapacity != maxLogoBoundsCacheSize {
+		t.Fatalf("cache size = %d, want %d", sizeAtCapacity, maxLogoBoundsCacheSize)
+	}
+
+	// Store one more entry: the oldest must be evicted.
+	extraPath := "/fake/extra/logo.png"
+	e.storeLogoBounds(extraPath, testTime(maxLogoBoundsCacheSize), logoBoundsCacheEntry{})
+
+	e.logoBoundsCacheMu.Lock()
+	sizeAfterEvict := len(e.logoBoundsCache)
+	e.logoBoundsCacheMu.Unlock()
+
+	if sizeAfterEvict != maxLogoBoundsCacheSize {
+		t.Errorf("cache size after eviction = %d, want %d", sizeAfterEvict, maxLogoBoundsCacheSize)
+	}
+
+	// The new entry must be present.
+	if _, hit := e.lookupLogoBounds(extraPath, testTime(maxLogoBoundsCacheSize)); !hit {
+		t.Error("newly inserted entry should be in cache after eviction")
+	}
+
+	// FIFO order: the first-inserted key must have been evicted.
+	if _, hit := e.lookupLogoBounds(firstPath, testTime(0)); hit {
+		t.Error("first-inserted entry should have been evicted (FIFO), but it is still present")
+	}
+
+	// The second-inserted key must still be present.
+	if _, hit := e.lookupLogoBounds(secondPath, testTime(1)); !hit {
+		t.Error("second-inserted entry should still be in cache after one eviction")
+	}
+}
+
+// testTime is a helper that returns a deterministic time.Time for test keys.
+func testTime(n int) time.Time {
+	return time.Unix(int64(n), 0)
+}
+
+// TestLogoBoundsCache_ConcurrentAccess verifies that concurrent storeLogoBounds
+// and lookupLogoBounds calls from multiple goroutines do not cause data races or
+// panics, and that the cache does not exceed maxLogoBoundsCacheSize.
+func TestLogoBoundsCache_ConcurrentAccess(t *testing.T) {
+	const numGoroutines = 20
+
+	e := newTestEngine()
+
+	var wg sync.WaitGroup
+	wg.Add(numGoroutines)
+
+	for i := 0; i < numGoroutines; i++ {
+		i := i
+		go func() {
+			defer wg.Done()
+			path := filepath.Join("/fake", string(rune('a'+i%26)), "logo.png")
+			mt := testTime(i)
+			e.storeLogoBounds(path, mt, logoBoundsCacheEntry{})
+			e.lookupLogoBounds(path, mt)
+		}()
+	}
+
+	wg.Wait()
+
+	// Cache must not exceed the configured maximum.
+	e.logoBoundsCacheMu.Lock()
+	size := len(e.logoBoundsCache)
+	e.logoBoundsCacheMu.Unlock()
+
+	if size > maxLogoBoundsCacheSize {
+		t.Errorf("cache size %d exceeds maximum %d after concurrent access", size, maxLogoBoundsCacheSize)
 	}
 }

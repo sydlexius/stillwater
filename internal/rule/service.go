@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -219,9 +220,21 @@ var defaultRules = []Rule{
 	},
 }
 
+// snapshotThrottleTTL is the minimum interval between health snapshot writes.
+// Concurrent GET /api/v1/reports/health requests under load all call
+// RecordHealthSnapshot; the throttle prevents them from queuing on SQLite's
+// single-writer lock and flooding the health_history table with near-identical
+// rows.
+const snapshotThrottleTTL = 60 * time.Second
+
 // Service provides rule data operations.
 type Service struct {
 	db *sql.DB
+
+	// snapshotMu guards lastSnapshotAt to ensure at most one snapshot is
+	// recorded per throttle window across concurrent handler goroutines.
+	snapshotMu     sync.Mutex
+	lastSnapshotAt time.Time
 }
 
 // NewService creates a rule service.
@@ -306,15 +319,33 @@ func (s *Service) Update(ctx context.Context, r *Rule) error {
 	return nil
 }
 
-// RecordHealthSnapshot inserts a row into the health_history table.
+// RecordHealthSnapshot inserts a row into the health_history table, subject to
+// a per-service rate limit of one write per snapshotThrottleTTL window.
+// Concurrent requests that arrive within the throttle window are silently
+// skipped to avoid queuing writes on SQLite's single-writer lock and to
+// prevent near-duplicate rows in the history table.
 func (s *Service) RecordHealthSnapshot(ctx context.Context, totalArtists, compliantArtists int, score float64) error {
+	now := time.Now()
+
+	s.snapshotMu.Lock()
+	if !s.lastSnapshotAt.IsZero() && now.Sub(s.lastSnapshotAt) < snapshotThrottleTTL {
+		s.snapshotMu.Unlock()
+		return nil
+	}
+	s.lastSnapshotAt = now
+	s.snapshotMu.Unlock()
+
 	id := uuid.New().String()
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO health_history (id, total_artists, compliant_artists, score, recorded_at)
 		VALUES (?, ?, ?, ?, ?)
 	`, id, totalArtists, compliantArtists, score,
-		time.Now().UTC().Format(time.RFC3339))
+		now.UTC().Format(time.RFC3339))
 	if err != nil {
+		// Reset the timestamp so the next call can retry after the DB error.
+		s.snapshotMu.Lock()
+		s.lastSnapshotAt = time.Time{}
+		s.snapshotMu.Unlock()
 		return fmt.Errorf("recording health snapshot: %w", err)
 	}
 	return nil
