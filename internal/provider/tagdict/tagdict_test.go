@@ -160,6 +160,21 @@ func TestMergeAndDeduplicate_TrimsWhitespace(t *testing.T) {
 	}
 }
 
+func TestMergeAndDeduplicate_FiltersEmptyStrings(t *testing.T) {
+	// Empty and whitespace-only strings embedded in a mixed slice are dropped.
+	incoming := []string{"Rock", "", "  ", "Jazz"}
+	got := MergeAndDeduplicate(nil, incoming)
+	want := []string{"Rock", "Jazz"}
+	if len(got) != len(want) {
+		t.Fatalf("expected %d tags, got %d: %v", len(want), len(got), got)
+	}
+	for i, w := range want {
+		if got[i] != w {
+			t.Errorf("position %d: got %q, want %q", i, got[i], w)
+		}
+	}
+}
+
 func TestMergeAndDeduplicate_CrossProviderDedup(t *testing.T) {
 	// Simulate two providers returning the same genre under different spellings.
 	// Provider A returns "Hip-Hop", Provider B returns "hip hop" and "Rap".
