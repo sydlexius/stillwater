@@ -115,11 +115,13 @@ func (o *Orchestrator) FetchMetadata(ctx context.Context, mbid, name string, pro
 			// called, avoiding a wasted MBID-based request that always 404s.
 			EnrichProviderIDs(pr.meta, providerIDs)
 
-			// For image fields, only mark as queried when GetImages succeeded
-			// or returned ErrNotFound. A transient image fetch failure (timeout,
-			// 5xx) must not mark the field as attempted, so that existing image
-			// data is preserved rather than cleared.
-			if isImageField && pr.imageErr != nil {
+			// For image fields, only mark as queried when GetImages was actually
+			// invoked and either succeeded or returned ErrNotFound. Skip when
+			// GetImages was never called (no MBID and no provider-specific ID)
+			// or when it returned a transient error (timeout, 5xx). Transient
+			// failures must not mark the field as attempted so that existing
+			// image data is preserved rather than cleared.
+			if isImageField && (!pr.imagesAttempted || pr.imageErr != nil) {
 				continue
 			}
 
@@ -245,10 +247,11 @@ func (o *Orchestrator) availableProviders(ctx context.Context) ([]Provider, erro
 }
 
 type providerResult struct {
-	meta     *ArtistMetadata
-	images   []ImageResult
-	err      error
-	imageErr error // non-nil when GetImages returned a transient error (not ErrNotFound)
+	meta            *ArtistMetadata
+	images          []ImageResult
+	err             error
+	imageErr        error // non-nil when GetImages returned a transient error (not ErrNotFound)
+	imagesAttempted bool  // true only when GetImages was actually invoked (success or ErrNotFound)
 }
 
 func (o *Orchestrator) getProviderResult(ctx context.Context, name ProviderName, mbid string, artistName string, providerIDs map[ProviderName]string, cache map[ProviderName]*providerResult, mu *sync.Mutex) *providerResult {
@@ -331,6 +334,11 @@ func (o *Orchestrator) getProviderResult(ctx context.Context, name ProviderName,
 	}
 	if imgID != "" {
 		images, err := p.GetImages(ctx, imgID)
+		// Mark that GetImages was actually invoked regardless of outcome.
+		// This distinguishes "GetImages was called and returned ErrNotFound"
+		// (imagesAttempted=true, imageErr=nil) from "GetImages was never called
+		// because no ID was available" (imagesAttempted=false).
+		pr.imagesAttempted = true
 		if err != nil {
 			var notFound *ErrNotFound
 			if errors.As(err, &notFound) {
@@ -537,9 +545,15 @@ func (o *Orchestrator) FetchFieldFromProviders(ctx context.Context, mbid, name, 
 			// getProviderResult and does not set pr.err.
 			fpr.Error = pr.err.Error()
 		} else if isImageFieldName(field) && pr.imageErr != nil {
-			// Transient GetImages failure (timeout, 5xx): surface the error
-			// so the comparison UI shows "error" rather than silent "no data".
-			fpr.Error = pr.imageErr.Error()
+			// Transient GetImages failure (timeout, 5xx): log the raw error
+			// server-side and return a generic message to the client. Provider
+			// errors may contain API keys (e.g. Fanart.tv URLs) or raw HTTP
+			// internals that must not be exposed in JSON responses.
+			o.logger.Warn("provider image fetch failed for comparison",
+				slog.String("provider", string(provName)),
+				slog.String("field", field),
+				slog.String("error", pr.imageErr.Error()))
+			fpr.Error = "image fetch failed"
 		} else if pr.meta != nil {
 			extractFieldForComparison(&fpr, field, pr.meta)
 		}

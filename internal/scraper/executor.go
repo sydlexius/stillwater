@@ -163,11 +163,13 @@ func (e *Executor) scrapeField(
 		pr := e.getProviderResult(ctx, field.Primary, mbid, name, providerIDs, cache, mu)
 		if pr.err == nil {
 			provider.EnrichProviderIDs(pr.meta, providerIDs)
-			// For image fields, only mark as queried when GetImages succeeded
-			// or returned ErrNotFound. A transient image fetch failure (timeout,
-			// 5xx) must not mark the field as attempted, so that existing image
-			// data is preserved rather than cleared.
-			if !isImage || pr.imageErr == nil {
+			// For image fields, only mark as queried when GetImages was actually
+			// invoked and either succeeded or returned ErrNotFound. Skip when
+			// GetImages was never called (no MBID and no provider-specific ID)
+			// or when it returned a transient error (timeout, 5xx). Transient
+			// failures must not mark the field as attempted so that existing
+			// image data is preserved rather than cleared.
+			if !isImage || (pr.imagesAttempted && pr.imageErr == nil) {
 				queried = true
 			}
 			if applyFieldValue(field.Field, pr, result) {
@@ -194,11 +196,13 @@ func (e *Executor) scrapeField(
 		}
 
 		provider.EnrichProviderIDs(pr.meta, providerIDs)
-		// For image fields, only mark as queried when GetImages succeeded
-		// or returned ErrNotFound. A transient image fetch failure (timeout,
-		// 5xx) must not mark the field as attempted, so that existing image
-		// data is preserved rather than cleared.
-		if !isImage || pr.imageErr == nil {
+		// For image fields, only mark as queried when GetImages was actually
+		// invoked and either succeeded or returned ErrNotFound. Skip when
+		// GetImages was never called (no MBID and no provider-specific ID)
+		// or when it returned a transient error (timeout, 5xx). Transient
+		// failures must not mark the field as attempted so that existing
+		// image data is preserved rather than cleared.
+		if !isImage || (pr.imagesAttempted && pr.imageErr == nil) {
 			queried = true
 		}
 		if applyFieldValue(field.Field, pr, result) {
@@ -235,10 +239,11 @@ func (e *Executor) scrapeField(
 
 // providerResult caches a single provider's API response.
 type providerResult struct {
-	meta     *provider.ArtistMetadata
-	images   []provider.ImageResult
-	err      error
-	imageErr error // non-nil when GetImages returned a transient error (not ErrNotFound)
+	meta            *provider.ArtistMetadata
+	images          []provider.ImageResult
+	err             error
+	imageErr        error // non-nil when GetImages returned a transient error (not ErrNotFound)
+	imagesAttempted bool  // true only when GetImages was actually invoked (success or ErrNotFound)
 }
 
 // getProviderResult fetches and caches results from a single provider.
@@ -327,6 +332,11 @@ func (e *Executor) getProviderResult(
 	}
 	if imgID != "" {
 		images, err := p.GetImages(ctx, imgID)
+		// Mark that GetImages was actually invoked regardless of outcome.
+		// This distinguishes "GetImages was called and returned ErrNotFound"
+		// (imagesAttempted=true, imageErr=nil) from "GetImages was never called
+		// because no ID was available" (imagesAttempted=false).
+		pr.imagesAttempted = true
 		if err != nil {
 			var notFound *provider.ErrNotFound
 			if errors.As(err, &notFound) {

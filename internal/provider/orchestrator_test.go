@@ -642,6 +642,60 @@ func TestOrchestratorGetImagesDataMarksImageFieldAttempted(t *testing.T) {
 	}
 }
 
+// TestOrchestratorGetImagesNotCalledDoesNotMarkImageFieldAttempted verifies
+// that when a provider has no MBID and no provider-specific ID (so GetImages
+// is never invoked), image fields are NOT added to AttemptedFields. Without
+// this guard, imageErr==nil would incorrectly mark image fields as attempted,
+// potentially clearing existing image data even though no fetch was made.
+func TestOrchestratorGetImagesNotCalledDoesNotMarkImageFieldAttempted(t *testing.T) {
+	registry, settings := setupOrchestratorTest(t)
+
+	// Register AudioDB: GetArtist can succeed via name, but GetImages requires
+	// a provider-specific numeric ID that is not available here.
+	var getImagesCalled bool
+	registry.Register(&mockProvider{
+		name: NameAudioDB,
+		getArtFn: func(_ context.Context, _ string) (*ArtistMetadata, error) {
+			return &ArtistMetadata{Name: "Test Artist"}, nil
+		},
+		getImgFn: func(_ context.Context, _ string) ([]ImageResult, error) {
+			getImagesCalled = true
+			return []ImageResult{{Type: ImageThumb, URL: "https://example.com/thumb.jpg"}}, nil
+		},
+	})
+
+	// Set thumb priority to AudioDB.
+	if err := settings.SetPriority(context.Background(), "thumb", []ProviderName{NameAudioDB}); err != nil {
+		t.Fatalf("SetPriority thumb: %v", err)
+	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	orch := NewOrchestrator(registry, settings, logger)
+
+	// Pass empty MBID and providerIDs with an empty AudioDB entry.
+	// GetImages requires a numeric ID; without one it must not be called.
+	providerIDs := map[ProviderName]string{
+		NameAudioDB: "", // empty: no provider-specific ID known
+	}
+	result, err := orch.FetchMetadata(context.Background(), "", "Test Artist", providerIDs)
+	if err != nil {
+		t.Fatalf("FetchMetadata: %v", err)
+	}
+
+	// GetImages must not have been called when no ID was available.
+	if getImagesCalled {
+		t.Error("GetImages should not have been called when no MBID and no provider-specific ID is available")
+	}
+
+	// "thumb" must NOT be in AttemptedFields because GetImages was never called.
+	for _, f := range result.AttemptedFields {
+		if f == "thumb" {
+			t.Errorf("image field 'thumb' should NOT be in AttemptedFields when GetImages was never called, got %v", result.AttemptedFields)
+			break
+		}
+	}
+}
+
 func TestOrchestratorProviderIDPrecedence(t *testing.T) {
 	registry, settings := setupOrchestratorTest(t)
 
