@@ -34,6 +34,7 @@ var canonical = map[string]string{
 	"rap":              "Rap",
 	"trap":             "Trap",
 	"r&b":              "R&B",
+	"r & b":            "R&B",
 	"rnb":              "R&B",
 	"rhythm and blues": "R&B",
 
@@ -138,8 +139,10 @@ var canonical = map[string]string{
 }
 
 // normalizeKey returns a lowercase, whitespace-collapsed form of tag for map lookup.
+// Underscores are treated as word separators so "synth_pop" matches "synth pop".
 func normalizeKey(tag string) string {
-	return strings.Join(strings.Fields(strings.ToLower(tag)), " ")
+	tag = strings.ReplaceAll(strings.ToLower(tag), "_", " ")
+	return strings.Join(strings.Fields(tag), " ")
 }
 
 // Canonical returns the preferred spelling for a tag. If no canonical form is
