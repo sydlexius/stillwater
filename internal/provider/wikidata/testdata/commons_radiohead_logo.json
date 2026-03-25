@@ -1,0 +1,17 @@
+{
+  "query": {
+    "pages": {
+      "67890": {
+        "pageid": 67890,
+        "title": "File:Radiohead_logo.png",
+        "imageinfo": [
+          {
+            "url": "https://upload.wikimedia.org/wikipedia/commons/b/b1/Radiohead_logo.png",
+            "width": 400,
+            "height": 150
+          }
+        ]
+      }
+    }
+  }
+}

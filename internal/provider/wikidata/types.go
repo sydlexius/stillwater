@@ -20,10 +20,38 @@ type SPARQLBinding struct {
 	Dissolved SPARQLValue `json:"dissolved"`
 	Country   SPARQLValue `json:"countryLabel"`
 	Genre     SPARQLValue `json:"genreLabel"`
+	Image     SPARQLValue `json:"image"`
+	Logo      SPARQLValue `json:"logo"`
 }
 
 // SPARQLValue represents a single SPARQL value.
 type SPARQLValue struct {
 	Type  string `json:"type"`
 	Value string `json:"value"`
+}
+
+// Wikimedia Commons API response types.
+
+// CommonsResponse is the top-level response from the Wikimedia Commons API.
+type CommonsResponse struct {
+	Query CommonsQuery `json:"query"`
+}
+
+// CommonsQuery wraps the pages map.
+type CommonsQuery struct {
+	Pages map[string]CommonsPage `json:"pages"`
+}
+
+// CommonsPage represents a single page in the Commons API response.
+type CommonsPage struct {
+	PageID    int                `json:"pageid"`
+	Title     string             `json:"title"`
+	ImageInfo []CommonsImageInfo `json:"imageinfo"`
+}
+
+// CommonsImageInfo holds the resolved URL and dimensions for a Commons file.
+type CommonsImageInfo struct {
+	URL    string `json:"url"`
+	Width  int    `json:"width"`
+	Height int    `json:"height"`
 }

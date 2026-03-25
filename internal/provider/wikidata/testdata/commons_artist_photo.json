@@ -1,0 +1,17 @@
+{
+  "query": {
+    "pages": {
+      "11111": {
+        "pageid": 11111,
+        "title": "File:Artist_photo.jpg",
+        "imageinfo": [
+          {
+            "url": "https://upload.wikimedia.org/wikipedia/commons/c/c1/Artist_photo.jpg",
+            "width": 800,
+            "height": 600
+          }
+        ]
+      }
+    }
+  }
+}
