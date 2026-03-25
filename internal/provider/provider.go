@@ -150,6 +150,8 @@ func (n ProviderName) DisplayName() string {
 		return "Wikipedia"
 	case NameSpotify:
 		return "Spotify"
+	case NameAllMusic:
+		return "AllMusic"
 	default:
 		return string(n)
 	}

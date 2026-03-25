@@ -1,6 +1,7 @@
 package allmusic
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -68,7 +69,10 @@ func (a *Adapter) ScrapeArtist(ctx context.Context, id string) (*provider.Artist
 	}
 
 	if err := a.limiter.Wait(ctx, provider.NameAllMusic); err != nil {
-		return nil, fmt.Errorf("rate limiter: %w", err)
+		return nil, &provider.ErrProviderUnavailable{
+			Provider: provider.NameAllMusic,
+			Cause:    fmt.Errorf("rate limiter: %w", err),
+		}
 	}
 
 	reqURL := a.baseURL + "/artist/" + url.PathEscape(id)
@@ -101,15 +105,16 @@ func (a *Adapter) ScrapeArtist(ctx context.Context, id string) (*provider.Artist
 		}
 	}
 
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("reading response: %w", err)
 	}
 
-	if int64(len(body)) == maxResponseBytes {
+	if int64(len(body)) > maxResponseBytes {
 		a.logger.Warn("AllMusic response truncated at size limit",
 			slog.String("id", id),
 			slog.Int64("max_bytes", maxResponseBytes))
+		body = body[:maxResponseBytes]
 	}
 
 	genres, styles, err := parseArtistPage(body)
@@ -136,7 +141,7 @@ func (a *Adapter) ScrapeArtist(ctx context.Context, id string) (*provider.Artist
 // parseArtistPage parses AllMusic artist HTML and extracts genres and styles.
 // Returns ErrScraperBroken if the expected HTML structure is not found at all.
 func parseArtistPage(body []byte) (genres, styles []string, err error) {
-	doc, err := html.Parse(strings.NewReader(string(body)))
+	doc, err := html.Parse(bytes.NewReader(body))
 	if err != nil {
 		return nil, nil, fmt.Errorf("parsing HTML: %w", err)
 	}
@@ -146,12 +151,12 @@ func parseArtistPage(body []byte) (genres, styles []string, err error) {
 
 	// If neither section is found, the page structure has likely changed.
 	// Return the sentinel error so callers can detect and report it.
+	// We do not check for other page content (e.g. h1) because AllMusic
+	// could change their markup to remove genre/style divs while keeping
+	// other elements, which would cause the scraper to silently return
+	// empty data instead of signaling that an update is needed.
 	if genres == nil && styles == nil {
-		// Check if the page has any real content (not just an empty shell).
-		// An empty page or error page also won't have these sections.
-		if !hasArtistContent(doc) {
-			return nil, nil, ErrScraperBroken
-		}
+		return nil, nil, ErrScraperBroken
 	}
 
 	// Normalize nil slices to empty slices for consistent JSON output.
@@ -179,7 +184,10 @@ func extractSection(doc *html.Node, className string) []string {
 		return nil
 	}
 
-	var values []string
+	// Return an empty (non-nil) slice when the section exists but has
+	// no anchor elements. This distinguishes "section present, no data"
+	// from "section not found" (nil), which triggers ErrScraperBroken.
+	values := []string{}
 	collectAnchorText(container, &values)
 	return values
 }
@@ -239,24 +247,4 @@ func extractText(n *html.Node) string {
 		sb.WriteString(extractText(c))
 	}
 	return sb.String()
-}
-
-// hasArtistContent checks whether the parsed document has enough structure
-// to be a real artist page (e.g. contains an h1 or artist-related elements).
-// A completely empty or error page triggers ErrScraperBroken.
-func hasArtistContent(doc *html.Node) bool {
-	return findElement(doc, "h1") != nil
-}
-
-// findElement performs a depth-first search for an element with the given tag name.
-func findElement(n *html.Node, tag string) *html.Node {
-	if n.Type == html.ElementNode && n.Data == tag {
-		return n
-	}
-	for c := n.FirstChild; c != nil; c = c.NextSibling {
-		if found := findElement(c, tag); found != nil {
-			return found
-		}
-	}
-	return nil
 }

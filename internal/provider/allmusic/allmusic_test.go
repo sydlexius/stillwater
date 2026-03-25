@@ -313,7 +313,7 @@ func TestRateLimiterIsCalled(t *testing.T) {
 
 	a := NewWithBaseURL(limiter, newTestLogger(), srv.URL)
 
-	// First call should succeed (rate limiter allows it)
+	// First call should succeed (rate limiter allows it).
 	_, err := a.ScrapeArtist(context.Background(), "mn0000205560")
 	if err != nil {
 		t.Fatalf("first ScrapeArtist: %v", err)
@@ -322,14 +322,25 @@ func TestRateLimiterIsCalled(t *testing.T) {
 		t.Errorf("expected 1 HTTP call, got %d", callCount.Load())
 	}
 
-	// Second call should also succeed (verifies limiter.Wait was called,
-	// not that it blocked -- the rate limit is 1/sec so back-to-back calls
-	// may introduce a brief wait)
-	_, err = a.ScrapeArtist(context.Background(), "mn0000205560")
-	if err != nil {
-		t.Fatalf("second ScrapeArtist: %v", err)
+	// Prove the limiter is actually consulted: use a pre-canceled context.
+	// The rate limiter's Wait call will return immediately with a context
+	// error, and no HTTP request should be made.
+	canceledCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	// Exhaust the limiter's initial token by making a call that will
+	// succeed (the first call above already did this, but ensure the
+	// burst token is consumed).
+	_, _ = a.ScrapeArtist(context.Background(), "mn0000205560")
+
+	// Now with a canceled context, the limiter.Wait should fail before
+	// any HTTP call is made.
+	httpCountBefore := callCount.Load()
+	_, err = a.ScrapeArtist(canceledCtx, "mn0000205560")
+	if err == nil {
+		t.Fatal("expected error with canceled context")
 	}
-	if callCount.Load() != 2 {
-		t.Errorf("expected 2 HTTP calls, got %d", callCount.Load())
+	if callCount.Load() != httpCountBefore {
+		t.Error("HTTP request was made despite canceled context; rate limiter was bypassed")
 	}
 }
