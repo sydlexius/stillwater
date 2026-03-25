@@ -113,9 +113,16 @@ func TestOrchestratorFallback(t *testing.T) {
 		t.Errorf("expected biography from Last.fm, got: %s", result.Metadata.Biography)
 	}
 
-	// Genres should come from MusicBrainz (first in priority)
-	if len(result.Metadata.Genres) != 1 || result.Metadata.Genres[0] != "rock" {
-		t.Errorf("expected genres from MusicBrainz, got: %v", result.Metadata.Genres)
+	// Genres should be accumulated from both providers (MusicBrainz first, then Last.fm).
+	// With tag aggregation, both "rock" (MusicBrainz) and "alternative" (Last.fm) are present.
+	if len(result.Metadata.Genres) != 2 {
+		t.Errorf("expected 2 genres (aggregated), got: %v", result.Metadata.Genres)
+	}
+	if result.Metadata.Genres[0] != "rock" {
+		t.Errorf("expected rock first (MusicBrainz priority), got: %s", result.Metadata.Genres[0])
+	}
+	if result.Metadata.Genres[1] != "alternative" {
+		t.Errorf("expected alternative second (Last.fm), got: %s", result.Metadata.Genres[1])
 	}
 
 	// Check sources recorded correctly
@@ -123,9 +130,81 @@ func TestOrchestratorFallback(t *testing.T) {
 	if bioSource == nil || bioSource.Provider != NameLastFM {
 		t.Errorf("expected biography source from lastfm, got: %v", bioSource)
 	}
+	// First genres source should be MusicBrainz (highest priority provider)
 	genreSource := findSource(result.Sources, "genres")
 	if genreSource == nil || genreSource.Provider != NameMusicBrainz {
 		t.Errorf("expected genres source from musicbrainz, got: %v", genreSource)
+	}
+}
+
+// TestOrchestratorTagAggregation verifies that genres and moods are accumulated
+// across all providers with canonical spelling normalization and deduplication,
+// rather than stopping at the first provider with data.
+func TestOrchestratorTagAggregation(t *testing.T) {
+	registry, settings := setupOrchestratorTest(t)
+
+	if err := settings.SetAPIKey(context.Background(), NameLastFM, "test-key"); err != nil {
+		t.Fatalf("SetAPIKey: %v", err)
+	}
+
+	// MusicBrainz returns "rock" and "hip hop" (should canonicalize to "Hip-Hop").
+	registry.Register(&mockProvider{
+		name: NameMusicBrainz,
+		getArtFn: func(_ context.Context, _ string) (*ArtistMetadata, error) {
+			return &ArtistMetadata{
+				Name:   "TestArtist",
+				Genres: []string{"Rock", "hip hop"},
+				Moods:  []string{"Energetic"},
+			}, nil
+		},
+	})
+	// Last.fm returns "Hip-Hop" (duplicate after canonicalization) and a new genre "Electronic".
+	registry.Register(&mockProvider{
+		name: NameLastFM,
+		getArtFn: func(_ context.Context, _ string) (*ArtistMetadata, error) {
+			return &ArtistMetadata{
+				Name:   "TestArtist",
+				Genres: []string{"Hip-Hop", "Electronic"},
+				Moods:  []string{"energetic", "Chill"},
+			}, nil
+		},
+	})
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	orch := NewOrchestrator(registry, settings, logger)
+
+	result, err := orch.FetchMetadata(context.Background(), "mbid-agg", "TestArtist", nil)
+	if err != nil {
+		t.Fatalf("FetchMetadata: %v", err)
+	}
+
+	// "hip hop" from MusicBrainz canonicalizes to "Hip-Hop".
+	// "Hip-Hop" from Last.fm is a duplicate and must be deduplicated.
+	// "Electronic" from Last.fm is new and must be appended.
+	// Expected: Rock, Hip-Hop, Electronic (3 entries, not 4)
+	if len(result.Metadata.Genres) != 3 {
+		t.Fatalf("expected 3 genres after dedup, got %d: %v", len(result.Metadata.Genres), result.Metadata.Genres)
+	}
+	if result.Metadata.Genres[0] != "Rock" {
+		t.Errorf("expected Rock first, got %q", result.Metadata.Genres[0])
+	}
+	if result.Metadata.Genres[1] != "Hip-Hop" {
+		t.Errorf("expected Hip-Hop second (canonicalized from hip hop), got %q", result.Metadata.Genres[1])
+	}
+	if result.Metadata.Genres[2] != "Electronic" {
+		t.Errorf("expected Electronic third, got %q", result.Metadata.Genres[2])
+	}
+
+	// Moods: "Energetic" from MusicBrainz, "energetic" from Last.fm (dup), "Chill" from Last.fm (new).
+	// Expected: Energetic, Chill (2 entries)
+	if len(result.Metadata.Moods) != 2 {
+		t.Fatalf("expected 2 moods after dedup, got %d: %v", len(result.Metadata.Moods), result.Metadata.Moods)
+	}
+	if result.Metadata.Moods[0] != "Energetic" {
+		t.Errorf("expected Energetic first, got %q", result.Metadata.Moods[0])
+	}
+	if result.Metadata.Moods[1] != "Chill" {
+		t.Errorf("expected Chill second, got %q", result.Metadata.Moods[1])
 	}
 }
 
