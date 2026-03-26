@@ -342,13 +342,11 @@ func (s *Service) RecordHealthSnapshot(ctx context.Context, totalArtists, compli
 	s.snapshotMu.Unlock()
 
 	id := uuid.New().String()
-	// Use millisecond precision so that back-to-back inserts within the same
-	// second produce distinct recorded_at values, making "latest" unambiguous.
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO health_history (id, total_artists, compliant_artists, score, recorded_at)
 		VALUES (?, ?, ?, ?, ?)
 	`, id, totalArtists, compliantArtists, score,
-		now.UTC().Format("2006-01-02T15:04:05.000Z07:00"))
+		now.UTC().Format(time.RFC3339))
 	if err != nil {
 		// Only reset lastSnapshotAt if this goroutine's slot is still current.
 		// Without the equality check, a racing goroutine that already claimed a

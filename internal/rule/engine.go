@@ -134,9 +134,9 @@ func (e *Engine) cachedRules(ctx context.Context) ([]Rule, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Normalize nil to empty slice so an empty rules table caches correctly.
-	// Without this, a nil return would fail the !IsZero() freshness check on
-	// the next call and trigger an unnecessary DB round-trip every time.
+	// Normalize nil to an empty slice so callers always receive a non-nil
+	// slice. This does not affect cache freshness, which is based solely
+	// on ruleFetchedAt and ruleCacheTTL.
 	if rules == nil {
 		rules = []Rule{}
 	}

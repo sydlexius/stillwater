@@ -1319,7 +1319,7 @@ func TestGetViolationTrend_DateOrder(t *testing.T) {
 	}
 }
 
-// TestRecordHealthSnapshot_Throttle verifies that concurrent or repeated calls
+// TestRecordHealthSnapshot_Throttle verifies that repeated calls
 // to RecordHealthSnapshot within the throttle window write exactly one row.
 func TestRecordHealthSnapshot_Throttle(t *testing.T) {
 	db := setupTestDB(t)

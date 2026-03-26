@@ -1114,6 +1114,15 @@ func TestLogoBoundsCache_HitAfterFirstEval(t *testing.T) {
 	if v.Message != v2.Message {
 		t.Errorf("violation message changed between calls: %q vs %q", v.Message, v2.Message)
 	}
+
+	// Prove the cache was hit: the entry count must still be 1. If the second
+	// call re-decoded the image and stored a new entry the count would grow.
+	e.logoBoundsCacheMu.Lock()
+	cacheLen := len(e.logoBoundsCache)
+	e.logoBoundsCacheMu.Unlock()
+	if cacheLen != 1 {
+		t.Errorf("logoBoundsCache len = %d after second call, want 1 (no new entry on cache hit)", cacheLen)
+	}
 }
 
 // TestLogoBoundsCache_MtimeInvalidation verifies that changing the logo file's
