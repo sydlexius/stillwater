@@ -124,10 +124,11 @@ func (s *Service) UpdateHealthScore(ctx context.Context, id string, score float6
 	return s.artists.UpdateHealthScore(ctx, id, score)
 }
 
-// ListZeroHealthIDs returns IDs of non-excluded artists with health_score = 0,
-// used by the bootstrap process to identify artists needing re-evaluation.
-func (s *Service) ListZeroHealthIDs(ctx context.Context) ([]string, error) {
-	return s.artists.ListZeroHealthIDs(ctx)
+// ListUnevaluatedIDs returns IDs of non-excluded artists that have never been evaluated
+// (health_evaluated_at IS NULL), used by the bootstrap process to identify artists
+// needing initial health score calculation.
+func (s *Service) ListUnevaluatedIDs(ctx context.Context) ([]string, error) {
+	return s.artists.ListUnevaluatedIDs(ctx)
 }
 
 // GetByID retrieves an artist by primary key, including provider IDs and image metadata.

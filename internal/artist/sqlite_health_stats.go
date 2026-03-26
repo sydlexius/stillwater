@@ -38,10 +38,10 @@ func (r *sqliteArtistRepo) UpdateHealthScore(ctx context.Context, id string, sco
 	return nil
 }
 
-// ListZeroHealthIDs returns the IDs of non-excluded artists that have never
+// ListUnevaluatedIDs returns the IDs of non-excluded artists that have never
 // been evaluated (health_evaluated_at IS NULL). This is used by the bootstrap
 // process to identify artists needing initial health score calculation.
-func (r *sqliteArtistRepo) ListZeroHealthIDs(ctx context.Context) ([]string, error) {
+func (r *sqliteArtistRepo) ListUnevaluatedIDs(ctx context.Context) ([]string, error) {
 	rows, err := r.db.QueryContext(ctx,
 		`SELECT id FROM artists WHERE is_excluded = 0 AND health_evaluated_at IS NULL`)
 	if err != nil {

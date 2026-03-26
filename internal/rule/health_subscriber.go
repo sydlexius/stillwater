@@ -127,7 +127,7 @@ func (h *HealthSubscriber) Bootstrap(ctx context.Context) {
 		return
 	}
 
-	ids, err := h.artistService.ListZeroHealthIDs(ctx)
+	ids, err := h.artistService.ListUnevaluatedIDs(ctx)
 	if err != nil {
 		h.logger.Error("bootstrapping health scores: listing zero-score artists", "error", err)
 		return

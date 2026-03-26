@@ -178,7 +178,7 @@ func TestHealthStats_LibraryFilter(t *testing.T) {
 	}
 }
 
-func TestListZeroHealthIDs(t *testing.T) {
+func TestListUnevaluatedIDs(t *testing.T) {
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
@@ -236,9 +236,9 @@ func TestListZeroHealthIDs(t *testing.T) {
 		t.Fatalf("creating excluded never-evaluated artist: %v", err)
 	}
 
-	ids, err := svc.ListZeroHealthIDs(ctx)
+	ids, err := svc.ListUnevaluatedIDs(ctx)
 	if err != nil {
-		t.Fatalf("ListZeroHealthIDs: %v", err)
+		t.Fatalf("ListUnevaluatedIDs: %v", err)
 	}
 
 	if len(ids) != 1 {

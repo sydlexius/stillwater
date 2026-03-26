@@ -31,8 +31,9 @@ type Repository interface {
 	// When libraryID is non-empty, only artists in that library are included.
 	HealthStats(ctx context.Context, libraryID string) (HealthStatsResult, error)
 
-	// ListZeroHealthIDs returns IDs of non-excluded artists with health_score = 0.
-	ListZeroHealthIDs(ctx context.Context) ([]string, error)
+	// ListUnevaluatedIDs returns IDs of non-excluded artists that have never been evaluated
+	// (health_evaluated_at IS NULL).
+	ListUnevaluatedIDs(ctx context.Context) ([]string, error)
 }
 
 // ProviderIDRepository handles provider-specific ID lookups and persistence.

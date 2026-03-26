@@ -225,9 +225,9 @@ func TestHealthSubscriber_Bootstrap(t *testing.T) {
 	sub.Bootstrap(context.Background())
 
 	// Verify that the zero-score artists were evaluated
-	ids, err := svc.ListZeroHealthIDs(context.Background())
+	ids, err := svc.ListUnevaluatedIDs(context.Background())
 	if err != nil {
-		t.Fatalf("ListZeroHealthIDs: %v", err)
+		t.Fatalf("ListUnevaluatedIDs: %v", err)
 	}
 
 	// After bootstrap, zero-score artists should have been re-evaluated.
