@@ -27,7 +27,10 @@ func (r *sqliteArtistRepo) UpdateHealthScore(ctx context.Context, id string, sco
 	if err != nil {
 		return fmt.Errorf("updating health score: %w", err)
 	}
-	n, _ := result.RowsAffected()
+	n, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("checking rows affected: %w", err)
+	}
 	if n == 0 {
 		return fmt.Errorf("%w: %s", ErrNotFound, id)
 	}
@@ -52,7 +55,10 @@ func (r *sqliteArtistRepo) ListZeroHealthIDs(ctx context.Context) ([]string, err
 		}
 		ids = append(ids, id)
 	}
-	return ids, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating zero-health artists: %w", err)
+	}
+	return ids, nil
 }
 
 // HealthStats returns aggregate health metrics for non-excluded artists.
