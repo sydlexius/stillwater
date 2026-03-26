@@ -347,10 +347,21 @@ func run() error {
 	var ruleScheduleMinutes int
 	{
 		ruleScheduleMinutes = getDBIntSetting(db, "rule_schedule.interval_minutes", 0)
-		// Migrate legacy hours setting
+		// Migrate legacy hours setting: if minutes key is absent, read hours and
+		// persist the converted value so the legacy key can be ignored going forward.
 		if ruleScheduleMinutes == 0 {
 			if legacyHours := getDBIntSetting(db, "rule_schedule.interval_hours", 0); legacyHours > 0 {
 				ruleScheduleMinutes = legacyHours * 60
+				// Persist migrated value and remove legacy key.
+				_, _ = db.ExecContext(context.Background(),
+					`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+					 ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+					"rule_schedule.interval_minutes", fmt.Sprintf("%d", ruleScheduleMinutes),
+					time.Now().UTC().Format(time.RFC3339))
+				_, _ = db.ExecContext(context.Background(),
+					`DELETE FROM settings WHERE key = ?`, "rule_schedule.interval_hours")
+				logger.Info("migrated rule schedule from hours to minutes",
+					"minutes", ruleScheduleMinutes)
 			}
 		}
 		if ruleScheduleMinutes >= 5 {

@@ -101,6 +101,12 @@ func (r *Router) handleUpdateSettings(w http.ResponseWriter, req *http.Request) 
 		}
 	}
 
+	// Clear legacy hours key when minutes is explicitly set, so the UI and
+	// startup code don't mix the two representations.
+	if _, ok := body["rule_schedule.interval_minutes"]; ok {
+		_, _ = r.db.ExecContext(req.Context(), `DELETE FROM settings WHERE key = ?`, "rule_schedule.interval_hours")
+	}
+
 	// Apply backup settings to the service immediately
 	if v, ok := body["backup_retention_count"]; ok {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
@@ -154,6 +160,18 @@ func (r *Router) getNameSimilarityThreshold(ctx context.Context) int {
 		return provider.DefaultNameSimilarityThreshold
 	}
 	return threshold
+}
+
+// ruleScheduleMinutes returns the configured schedule interval in minutes,
+// applying a legacy fallback from interval_hours when the minutes key is absent.
+func (r *Router) ruleScheduleMinutes(ctx context.Context) int {
+	if mins := r.getIntSetting(ctx, "rule_schedule.interval_minutes", 0); mins != 0 {
+		return mins
+	}
+	if legacyHours := r.getIntSetting(ctx, "rule_schedule.interval_hours", 0); legacyHours > 0 {
+		return legacyHours * 60
+	}
+	return 0
 }
 
 // getStringSetting reads a string setting from the key-value table.

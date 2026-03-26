@@ -9,7 +9,8 @@ import (
 	"github.com/sydlexius/stillwater/internal/artist"
 )
 
-// SchedulerStatus is the JSON response for GET /api/v1/rules/status.
+// SchedulerStatus holds scheduler state fields. The handler adds
+// scheduler_enabled before writing the JSON response.
 type SchedulerStatus struct {
 	LastEvaluationAt *time.Time `json:"last_evaluation_at"`
 	IntervalMinutes  int        `json:"interval_minutes"`
@@ -25,10 +26,11 @@ type Scheduler struct {
 	artistService *artist.Service
 	logger        *slog.Logger
 
-	interval  time.Duration
-	resetCh   chan struct{}
-	mu        sync.RWMutex
-	lastRunAt time.Time
+	interval   time.Duration
+	resetCh    chan struct{}
+	mu         sync.RWMutex
+	lastRunAt  time.Time
+	nextTickAt time.Time
 }
 
 // NewScheduler creates a rule scheduler. The artistService may be nil if
@@ -50,7 +52,12 @@ func (s *Scheduler) Start(ctx context.Context, interval time.Duration) {
 		s.logger.Error("rule scheduler not started: non-positive interval", "interval", interval.String())
 		return
 	}
+	// Store interval under the mutex so Status() can read it safely.
+	s.mu.Lock()
 	s.interval = interval
+	s.nextTickAt = time.Now().Add(interval)
+	s.mu.Unlock()
+
 	s.logger.Info("rule scheduler started", "interval", interval.String())
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -61,8 +68,14 @@ func (s *Scheduler) Start(ctx context.Context, interval time.Duration) {
 			return
 		case <-ticker.C:
 			s.runEnabledRules(ctx)
+			s.mu.Lock()
+			s.nextTickAt = time.Now().Add(s.interval)
+			s.mu.Unlock()
 		case <-s.resetCh:
 			ticker.Reset(s.interval)
+			s.mu.Lock()
+			s.nextTickAt = time.Now().Add(s.interval)
+			s.mu.Unlock()
 			s.logger.Info("rule scheduler timer reset")
 		}
 	}
@@ -82,15 +95,18 @@ func (s *Scheduler) Reset() {
 func (s *Scheduler) Status() SchedulerStatus {
 	s.mu.RLock()
 	lastRun := s.lastRunAt
+	nextTick := s.nextTickAt
+	intervalMins := int(s.interval.Minutes())
 	s.mu.RUnlock()
 
 	status := SchedulerStatus{
-		IntervalMinutes: int(s.interval.Minutes()),
+		IntervalMinutes: intervalMins,
 	}
 	if !lastRun.IsZero() {
 		status.LastEvaluationAt = &lastRun
-		next := lastRun.Add(s.interval)
-		status.NextEvaluationAt = &next
+	}
+	if !nextTick.IsZero() {
+		status.NextEvaluationAt = &nextTick
 	}
 	return status
 }
