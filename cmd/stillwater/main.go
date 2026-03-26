@@ -164,6 +164,7 @@ func run() error {
 		return fmt.Errorf("seeding default rules: %w", err)
 	}
 	ruleEngine := rule.NewEngine(ruleService, db, platformService, libraryService, logger)
+	ruleEngine.SetFSCache(rule.NewFSCache(0, 0, logger))
 
 	// Initialize scanner (depends on rule engine for health scoring)
 	scannerService := scanner.NewService(artistService, ruleEngine, ruleService, logger, cfg.Music.LibraryPath, cfg.Scanner.Exclusions)
@@ -304,6 +305,19 @@ func run() error {
 	// Wire event bus into scanner and bulk executor
 	scannerService.SetEventBus(eventBus)
 	bulkExecutor.SetEventBus(eventBus)
+
+	// Subscribe to filesystem events so the rule engine's FSCache is
+	// invalidated when directories are created or removed. The "path" field
+	// in the event data identifies the affected directory.
+	if fsCache := ruleEngine.FSCache(); fsCache != nil {
+		for _, eventType := range []event.Type{event.FSDirCreated, event.FSDirRemoved, event.FSUnexpectedWrite} {
+			eventBus.Subscribe(eventType, func(ev event.Event) {
+				if p, ok := ev.Data["path"].(string); ok && p != "" {
+					fsCache.InvalidatePath(p)
+				}
+			})
+		}
+	}
 
 	logger.Info("starting stillwater",
 		slog.String("version", version.Version),

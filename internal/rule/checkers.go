@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"time"
 	"unicode"
 
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -75,70 +74,78 @@ func checkThumbExists(a *artist.Artist, _ RuleConfig) *Violation {
 	}
 }
 
-func checkThumbSquare(a *artist.Artist, cfg RuleConfig) *Violation {
-	if !a.ThumbExists {
-		return nil // thumb_exists rule handles this case
-	}
+// makeThumbSquareChecker returns a Checker closure that uses the Engine's
+// cached directory listing to find and measure the thumbnail image.
+func (e *Engine) makeThumbSquareChecker() Checker {
+	return func(a *artist.Artist, cfg RuleConfig) *Violation {
+		if !a.ThumbExists {
+			return nil // thumb_exists rule handles this case
+		}
 
-	w, h, err := getThumbDimensions(a.Path)
-	if err != nil {
-		return nil // cannot read image; skip check
-	}
+		w, h, err := e.getImageDimensionsCached(a.Path, thumbPatterns)
+		if err != nil {
+			return nil // cannot read image; skip check
+		}
 
-	ratio := cfg.AspectRatio
-	if ratio == 0 {
-		ratio = 1.0
-	}
-	tolerance := cfg.Tolerance
-	if tolerance == 0 {
-		tolerance = 0.1
-	}
+		ratio := cfg.AspectRatio
+		if ratio == 0 {
+			ratio = 1.0
+		}
+		tolerance := cfg.Tolerance
+		if tolerance == 0 {
+			tolerance = 0.1
+		}
 
-	if image.ValidateAspectRatio(w, h, ratio, tolerance) {
-		return nil
-	}
+		if image.ValidateAspectRatio(w, h, ratio, tolerance) {
+			return nil
+		}
 
-	actual := float64(w) / float64(h)
-	return &Violation{
-		RuleID:   RuleThumbSquare,
-		RuleName: "Thumbnail is square",
-		Category: "image",
-		Severity: effectiveSeverity(cfg),
-		Message:  fmt.Sprintf("artist %q thumbnail aspect ratio %.2f does not match expected %.2f", a.Name, actual, ratio),
-		Fixable:  true,
+		actual := float64(w) / float64(h)
+		return &Violation{
+			RuleID:   RuleThumbSquare,
+			RuleName: "Thumbnail is square",
+			Category: "image",
+			Severity: effectiveSeverity(cfg),
+			Message:  fmt.Sprintf("artist %q thumbnail aspect ratio %.2f does not match expected %.2f", a.Name, actual, ratio),
+			Fixable:  true,
+		}
 	}
 }
 
-func checkThumbMinRes(a *artist.Artist, cfg RuleConfig) *Violation {
-	if !a.ThumbExists {
-		return nil // thumb_exists rule handles this case
-	}
+// makeThumbMinResChecker returns a Checker closure that uses the Engine's
+// cached directory listing to find and measure the thumbnail image.
+func (e *Engine) makeThumbMinResChecker() Checker {
+	return func(a *artist.Artist, cfg RuleConfig) *Violation {
+		if !a.ThumbExists {
+			return nil // thumb_exists rule handles this case
+		}
 
-	w, h, err := getThumbDimensions(a.Path)
-	if err != nil {
-		return nil // cannot read image; skip check
-	}
+		w, h, err := e.getImageDimensionsCached(a.Path, thumbPatterns)
+		if err != nil {
+			return nil // cannot read image; skip check
+		}
 
-	minW := cfg.MinWidth
-	if minW == 0 {
-		minW = 500
-	}
-	minH := cfg.MinHeight
-	if minH == 0 {
-		minH = 500
-	}
+		minW := cfg.MinWidth
+		if minW == 0 {
+			minW = 500
+		}
+		minH := cfg.MinHeight
+		if minH == 0 {
+			minH = 500
+		}
 
-	if w >= minW && h >= minH {
-		return nil
-	}
+		if w >= minW && h >= minH {
+			return nil
+		}
 
-	return &Violation{
-		RuleID:   RuleThumbMinRes,
-		RuleName: "Thumbnail minimum resolution",
-		Category: "image",
-		Severity: effectiveSeverity(cfg),
-		Message:  fmt.Sprintf("artist %q thumbnail is %dx%d, minimum required is %dx%d", a.Name, w, h, minW, minH),
-		Fixable:  true,
+		return &Violation{
+			RuleID:   RuleThumbMinRes,
+			RuleName: "Thumbnail minimum resolution",
+			Category: "image",
+			Severity: effectiveSeverity(cfg),
+			Message:  fmt.Sprintf("artist %q thumbnail is %dx%d, minimum required is %dx%d", a.Name, w, h, minW, minH),
+			Fixable:  true,
+		}
 	}
 }
 
@@ -195,125 +202,98 @@ func checkBioExists(a *artist.Artist, cfg RuleConfig) *Violation {
 	}
 }
 
-// getImageDimensions finds the first matching file in the directory and returns its dimensions.
-func getImageDimensions(dirPath string, patterns []string) (int, int, error) {
-	entries, err := os.ReadDir(dirPath)
-	if err != nil {
-		return 0, 0, fmt.Errorf("reading directory: %w", err)
-	}
-
-	lowerToActual := make(map[string]string, len(entries))
-	for _, e := range entries {
-		if !e.IsDir() {
-			lowerToActual[strings.ToLower(e.Name())] = e.Name()
+// makeFanartMinResChecker returns a Checker closure that uses the Engine's
+// cached directory listing to find and measure the fanart image.
+func (e *Engine) makeFanartMinResChecker() Checker {
+	return func(a *artist.Artist, cfg RuleConfig) *Violation {
+		if !a.FanartExists {
+			return nil // fanart_exists handles missing fanart
+		}
+		w, h, err := e.getImageDimensionsCached(a.Path, fanartPatterns)
+		if err != nil {
+			return nil
+		}
+		minW, minH := cfg.MinWidth, cfg.MinHeight
+		if minW == 0 {
+			minW = 1920
+		}
+		if minH == 0 {
+			minH = 1080
+		}
+		if w >= minW && h >= minH {
+			return nil
+		}
+		return &Violation{
+			RuleID:   RuleFanartMinRes,
+			RuleName: "Fanart minimum resolution",
+			Category: "image",
+			Severity: effectiveSeverity(cfg),
+			Message:  fmt.Sprintf("artist %q fanart is %dx%d, minimum required is %dx%d", a.Name, w, h, minW, minH),
+			Fixable:  true,
 		}
 	}
+}
 
-	for _, pattern := range patterns {
-		if actual, ok := lowerToActual[strings.ToLower(pattern)]; ok {
-			p := filepath.Join(dirPath, actual)
-			f, err := os.Open(p) //nolint:gosec // G304: path from trusted library root
-			if err != nil {
-				continue
-			}
-			w, h, err := image.GetDimensions(f)
-			f.Close() //nolint:errcheck
-			if err != nil {
-				continue
-			}
-			return w, h, nil
+// makeFanartAspectChecker returns a Checker closure that uses the Engine's
+// cached directory listing to find and measure the fanart image.
+func (e *Engine) makeFanartAspectChecker() Checker {
+	return func(a *artist.Artist, cfg RuleConfig) *Violation {
+		if !a.FanartExists {
+			return nil
+		}
+		w, h, err := e.getImageDimensionsCached(a.Path, fanartPatterns)
+		if err != nil {
+			return nil
+		}
+		ratio := cfg.AspectRatio
+		if ratio == 0 {
+			ratio = 16.0 / 9.0
+		}
+		tol := cfg.Tolerance
+		if tol == 0 {
+			tol = 0.1
+		}
+		if image.ValidateAspectRatio(w, h, ratio, tol) {
+			return nil
+		}
+		actual := float64(w) / float64(h)
+		return &Violation{
+			RuleID:   RuleFanartAspect,
+			RuleName: "Fanart aspect ratio",
+			Category: "image",
+			Severity: effectiveSeverity(cfg),
+			Message:  fmt.Sprintf("artist %q fanart aspect ratio %.3f, expected %.3f", a.Name, actual, ratio),
+			Fixable:  true,
 		}
 	}
-
-	return 0, 0, fmt.Errorf("no matching image in %s", dirPath)
 }
 
-// getThumbDimensions finds and reads the dimensions of the thumbnail image
-// in the given artist directory.
-func getThumbDimensions(dirPath string) (int, int, error) {
-	return getImageDimensions(dirPath, thumbPatterns)
-}
-
-func checkFanartMinRes(a *artist.Artist, cfg RuleConfig) *Violation {
-	if !a.FanartExists {
-		return nil // fanart_exists handles missing fanart
-	}
-	w, h, err := getImageDimensions(a.Path, fanartPatterns)
-	if err != nil {
-		return nil
-	}
-	minW, minH := cfg.MinWidth, cfg.MinHeight
-	if minW == 0 {
-		minW = 1920
-	}
-	if minH == 0 {
-		minH = 1080
-	}
-	if w >= minW && h >= minH {
-		return nil
-	}
-	return &Violation{
-		RuleID:   RuleFanartMinRes,
-		RuleName: "Fanart minimum resolution",
-		Category: "image",
-		Severity: effectiveSeverity(cfg),
-		Message:  fmt.Sprintf("artist %q fanart is %dx%d, minimum required is %dx%d", a.Name, w, h, minW, minH),
-		Fixable:  true,
-	}
-}
-
-func checkFanartAspect(a *artist.Artist, cfg RuleConfig) *Violation {
-	if !a.FanartExists {
-		return nil
-	}
-	w, h, err := getImageDimensions(a.Path, fanartPatterns)
-	if err != nil {
-		return nil
-	}
-	ratio := cfg.AspectRatio
-	if ratio == 0 {
-		ratio = 16.0 / 9.0
-	}
-	tol := cfg.Tolerance
-	if tol == 0 {
-		tol = 0.1
-	}
-	if image.ValidateAspectRatio(w, h, ratio, tol) {
-		return nil
-	}
-	actual := float64(w) / float64(h)
-	return &Violation{
-		RuleID:   RuleFanartAspect,
-		RuleName: "Fanart aspect ratio",
-		Category: "image",
-		Severity: effectiveSeverity(cfg),
-		Message:  fmt.Sprintf("artist %q fanart aspect ratio %.3f, expected %.3f", a.Name, actual, ratio),
-		Fixable:  true,
-	}
-}
-
-func checkLogoMinRes(a *artist.Artist, cfg RuleConfig) *Violation {
-	if !a.LogoExists {
-		return nil
-	}
-	w, _, err := getImageDimensions(a.Path, logoPatterns)
-	if err != nil {
-		return nil
-	}
-	minW := cfg.MinWidth
-	if minW == 0 {
-		minW = 400
-	}
-	if w >= minW {
-		return nil
-	}
-	return &Violation{
-		RuleID:   RuleLogoMinRes,
-		RuleName: "Logo minimum width",
-		Category: "image",
-		Severity: effectiveSeverity(cfg),
-		Message:  fmt.Sprintf("artist %q logo is %dpx wide, minimum is %dpx", a.Name, w, minW),
-		Fixable:  true,
+// makeLogoMinResChecker returns a Checker closure that uses the Engine's
+// cached directory listing to find and measure the logo image.
+func (e *Engine) makeLogoMinResChecker() Checker {
+	return func(a *artist.Artist, cfg RuleConfig) *Violation {
+		if !a.LogoExists {
+			return nil
+		}
+		w, _, err := e.getImageDimensionsCached(a.Path, logoPatterns)
+		if err != nil {
+			return nil
+		}
+		minW := cfg.MinWidth
+		if minW == 0 {
+			minW = 400
+		}
+		if w >= minW {
+			return nil
+		}
+		return &Violation{
+			RuleID:   RuleLogoMinRes,
+			RuleName: "Logo minimum width",
+			Category: "image",
+			Severity: effectiveSeverity(cfg),
+			Message:  fmt.Sprintf("artist %q logo is %dpx wide, minimum is %dpx", a.Name, w, minW),
+			Fixable:  true,
+		}
 	}
 }
 
@@ -331,31 +311,35 @@ func checkBannerExists(a *artist.Artist, _ RuleConfig) *Violation {
 	}
 }
 
-func checkBannerMinRes(a *artist.Artist, cfg RuleConfig) *Violation {
-	if !a.BannerExists {
-		return nil
-	}
-	w, h, err := getImageDimensions(a.Path, bannerPatterns)
-	if err != nil {
-		return nil
-	}
-	minW, minH := cfg.MinWidth, cfg.MinHeight
-	if minW == 0 {
-		minW = 1000
-	}
-	if minH == 0 {
-		minH = 185
-	}
-	if w >= minW && h >= minH {
-		return nil
-	}
-	return &Violation{
-		RuleID:   RuleBannerMinRes,
-		RuleName: "Banner minimum resolution",
-		Category: "image",
-		Severity: effectiveSeverity(cfg),
-		Message:  fmt.Sprintf("artist %q banner is %dx%d, minimum required is %dx%d", a.Name, w, h, minW, minH),
-		Fixable:  true,
+// makeBannerMinResChecker returns a Checker closure that uses the Engine's
+// cached directory listing to find and measure the banner image.
+func (e *Engine) makeBannerMinResChecker() Checker {
+	return func(a *artist.Artist, cfg RuleConfig) *Violation {
+		if !a.BannerExists {
+			return nil
+		}
+		w, h, err := e.getImageDimensionsCached(a.Path, bannerPatterns)
+		if err != nil {
+			return nil
+		}
+		minW, minH := cfg.MinWidth, cfg.MinHeight
+		if minW == 0 {
+			minW = 1000
+		}
+		if minH == 0 {
+			minH = 185
+		}
+		if w >= minW && h >= minH {
+			return nil
+		}
+		return &Violation{
+			RuleID:   RuleBannerMinRes,
+			RuleName: "Banner minimum resolution",
+			Category: "image",
+			Severity: effectiveSeverity(cfg),
+			Message:  fmt.Sprintf("artist %q banner is %dx%d, minimum required is %dx%d", a.Name, w, h, minW, minH),
+			Fixable:  true,
+		}
 	}
 }
 
@@ -455,7 +439,7 @@ func (e *Engine) makeLogoTrimmableChecker() Checker {
 
 		// Find the logo file on disk using case-insensitive matching; only PNG
 		// files have an alpha channel.
-		entries, readErr := os.ReadDir(a.Path)
+		entries, readErr := e.readDirCached(a.Path)
 		if readErr != nil {
 			e.logger.Debug("logo trimmable check skipped: cannot read artist directory",
 				slog.String("artist", a.Name),
@@ -463,12 +447,7 @@ func (e *Engine) makeLogoTrimmableChecker() Checker {
 				slog.String("error", readErr.Error()))
 			return nil
 		}
-		lowerToActual := make(map[string]string, len(entries))
-		for _, de := range entries {
-			if !de.IsDir() {
-				lowerToActual[strings.ToLower(de.Name())] = de.Name()
-			}
-		}
+		lowerToActual := buildLowerToActual(entries)
 
 		var logoPath string
 		for _, pattern := range logoPatterns {
@@ -529,7 +508,7 @@ func (e *Engine) makeLogoTrimmableChecker() Checker {
 // using TrimAlphaBounds, with results cached by (filePath, modTime). Returns
 // ok=false if the file cannot be stat'd or decoded.
 func (e *Engine) getLogoBoundsAlpha(logoPath string) (content, original goimage.Rectangle, ok bool) {
-	modTime, err := fileModTime(logoPath)
+	modTime, err := e.fileModTimeCached(logoPath)
 	if err != nil {
 		e.logger.Debug("logo bounds skipped: cannot stat file",
 			slog.String("path", logoPath),
@@ -566,7 +545,7 @@ func (e *Engine) getLogoBoundsAlpha(logoPath string) (content, original goimage.
 // format using ContentBounds, with results cached by (filePath, modTime).
 // Returns ok=false if the file cannot be stat'd or decoded.
 func (e *Engine) getLogoBoundsContent(logoPath string) (content, original goimage.Rectangle, ok bool) {
-	modTime, err := fileModTime(logoPath)
+	modTime, err := e.fileModTimeCached(logoPath)
 	if err != nil {
 		e.logger.Debug("logo bounds skipped: cannot stat file",
 			slog.String("path", logoPath),
@@ -599,15 +578,6 @@ func (e *Engine) getLogoBoundsContent(logoPath string) (content, original goimag
 	return c, orig, true
 }
 
-// fileModTime returns the modification time of a file.
-func fileModTime(path string) (time.Time, error) {
-	fi, err := os.Stat(path)
-	if err != nil {
-		return time.Time{}, err
-	}
-	return fi.ModTime(), nil
-}
-
 // makeLogoPaddingChecker returns a Checker closure that detects logos where
 // total padding (transparent or whitespace) exceeds a configurable threshold.
 // Unlike makeLogoTrimmableChecker which checks per-edge padding, this rule
@@ -621,7 +591,7 @@ func (e *Engine) makeLogoPaddingChecker() Checker {
 			return nil
 		}
 
-		entries, readErr := os.ReadDir(a.Path)
+		entries, readErr := e.readDirCached(a.Path)
 		if readErr != nil {
 			e.logger.Debug("logo padding check skipped: cannot read artist directory",
 				slog.String("artist", a.Name),
@@ -629,12 +599,7 @@ func (e *Engine) makeLogoPaddingChecker() Checker {
 				slog.String("error", readErr.Error()))
 			return nil
 		}
-		lowerToActual := make(map[string]string, len(entries))
-		for _, de := range entries {
-			if !de.IsDir() {
-				lowerToActual[strings.ToLower(de.Name())] = de.Name()
-			}
-		}
+		lowerToActual := buildLowerToActual(entries)
 
 		var logoPath string
 		for _, pattern := range logoPatterns {
@@ -839,7 +804,7 @@ func (e *Engine) makeExtraneousImagesChecker() Checker {
 		// profiles to avoid flagging platform-written images.
 		if e.IsSharedFilesystem(context.Background(), a) && e.platformService != nil {
 			expected := expectedImageFilesAllProfiles(context.Background(), e.platformService, e.logger, a.Path)
-			return checkExtraneousAgainst(a, expected, cfg)
+			return e.checkExtraneousAgainst(a, expected, cfg)
 		}
 
 		var profile *platform.Profile
@@ -848,17 +813,17 @@ func (e *Engine) makeExtraneousImagesChecker() Checker {
 		}
 		expected := expectedImageFiles(profile, a.Path)
 
-		entries, readErr := os.ReadDir(a.Path)
+		entries, readErr := e.readDirCached(a.Path)
 		if readErr != nil {
 			return nil
 		}
 
 		var extraneous []string
 		for _, entry := range entries {
-			if entry.IsDir() {
+			if entry.IsDir {
 				continue
 			}
-			name := entry.Name()
+			name := entry.Name
 			ext := strings.ToLower(filepath.Ext(name))
 			if !imageExtensions[ext] {
 				continue
@@ -885,18 +850,19 @@ func (e *Engine) makeExtraneousImagesChecker() Checker {
 
 // checkExtraneousAgainst is the core logic for the extraneous images checker,
 // extracted so both the normal and shared-filesystem paths can reuse it.
-func checkExtraneousAgainst(a *artist.Artist, expected map[string]bool, cfg RuleConfig) *Violation {
-	entries, readErr := os.ReadDir(a.Path)
+// It uses the Engine's cached directory listing to avoid redundant I/O.
+func (e *Engine) checkExtraneousAgainst(a *artist.Artist, expected map[string]bool, cfg RuleConfig) *Violation {
+	entries, readErr := e.readDirCached(a.Path)
 	if readErr != nil {
 		return nil
 	}
 
 	var extraneous []string
 	for _, entry := range entries {
-		if entry.IsDir() {
+		if entry.IsDir {
 			continue
 		}
-		name := entry.Name()
+		name := entry.Name
 		ext := strings.ToLower(filepath.Ext(name))
 		if !imageExtensions[ext] {
 			continue

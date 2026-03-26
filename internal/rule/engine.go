@@ -46,6 +46,12 @@ type Engine struct {
 	checkers        map[string]Checker
 	logger          *slog.Logger
 
+	// fsCache caches filesystem metadata (directory listings and stat results)
+	// to reduce I/O during rule evaluation. When nil, checkers fall back to
+	// direct os.ReadDir and os.Stat calls (backward compatible). Initialized
+	// by SetFSCache after construction.
+	fsCache *FSCache
+
 	// sharedFSCache caches IsSharedFilesystem results by library ID during
 	// a single evaluation run to avoid N+1 DB queries when multiple artists
 	// share the same library. Cleared at the start of each Evaluate call.
@@ -82,21 +88,24 @@ func NewEngine(service *Service, db *sql.DB, platformService *platform.Service, 
 			RuleNFOExists:             checkNFOExists,
 			RuleNFOHasMBID:            checkNFOHasMBID,
 			RuleThumbExists:           checkThumbExists,
-			RuleThumbSquare:           checkThumbSquare,
-			RuleThumbMinRes:           checkThumbMinRes,
 			RuleFanartExists:          checkFanartExists,
 			RuleLogoExists:            checkLogoExists,
 			RuleBioExists:             checkBioExists,
-			RuleFanartMinRes:          checkFanartMinRes,
-			RuleFanartAspect:          checkFanartAspect,
-			RuleLogoMinRes:            checkLogoMinRes,
 			RuleBannerExists:          checkBannerExists,
-			RuleBannerMinRes:          checkBannerMinRes,
 			RuleArtistIDMismatch:      checkArtistIDMismatch,
 			RuleDirectoryNameMismatch: checkDirectoryNameMismatch,
 			RuleMetadataQuality:       checkMetadataQuality,
 		},
 	}
+	// Register checkers that need the Engine's FSCache for cached filesystem
+	// access. These use the e.makeXxxChecker() pattern so they capture the
+	// Engine pointer and can call readDirCached / getImageDimensionsCached.
+	e.checkers[RuleThumbSquare] = e.makeThumbSquareChecker()
+	e.checkers[RuleThumbMinRes] = e.makeThumbMinResChecker()
+	e.checkers[RuleFanartMinRes] = e.makeFanartMinResChecker()
+	e.checkers[RuleFanartAspect] = e.makeFanartAspectChecker()
+	e.checkers[RuleLogoMinRes] = e.makeLogoMinResChecker()
+	e.checkers[RuleBannerMinRes] = e.makeBannerMinResChecker()
 	e.checkers[RuleExtraneousImages] = e.makeExtraneousImagesChecker()
 	e.checkers[RuleImageDuplicate] = e.makeImageDuplicateChecker()
 	e.checkers[RuleBackdropSequencing] = e.makeBackdropSequencingChecker()
@@ -143,6 +152,22 @@ func (e *Engine) cachedRules(ctx context.Context) ([]Rule, error) {
 	e.ruleList = rules
 	e.ruleFetchedAt = time.Now()
 	return rules, nil
+}
+
+// SetFSCache attaches a filesystem metadata cache to the engine. When set,
+// rule checkers use cached directory listings and stat results instead of
+// hitting the filesystem on every evaluation. Pass nil to disable caching
+// (all checkers fall back to direct OS calls).
+func (e *Engine) SetFSCache(cache *FSCache) {
+	e.fsCache = cache
+}
+
+// FSCache returns the engine's filesystem metadata cache, or nil if none
+// is configured. This accessor allows external components (e.g., the watcher
+// event handler) to invalidate specific paths when filesystem changes are
+// detected.
+func (e *Engine) FSCache() *FSCache {
+	return e.fsCache
 }
 
 // InvalidateRuleCache drops the cached rule list so the next Evaluate call
