@@ -394,6 +394,12 @@ func (r *Router) handleRunAllRules(w http.ResponseWriter, req *http.Request) {
 		r.ruleRun.FixesSucceeded = result.FixesSucceeded
 		r.ruleRun.ViolationsFound = violationsFound
 		r.ruleRunMu.Unlock()
+
+		// Reset scheduler timer so the next tick starts a full interval from now,
+		// preventing a redundant scheduled evaluation shortly after a manual run.
+		if r.ruleScheduler != nil {
+			r.ruleScheduler.Reset()
+		}
 	}()
 
 	r.ruleRunMu.Lock()
@@ -414,6 +420,27 @@ func (r *Router) handleRunAllRulesStatus(w http.ResponseWriter, req *http.Reques
 	status := *r.ruleRun // value copy
 	r.ruleRunMu.Unlock()
 	writeJSON(w, http.StatusOK, &status)
+}
+
+// handleRulesStatus returns the current state of the rule evaluation scheduler.
+// GET /api/v1/rules/status
+func (r *Router) handleRulesStatus(w http.ResponseWriter, req *http.Request) {
+	if r.ruleScheduler == nil {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"last_evaluation_at": nil,
+			"interval_minutes":   0,
+			"next_evaluation_at": nil,
+			"scheduler_enabled":  false,
+		})
+		return
+	}
+	status := r.ruleScheduler.Status()
+	writeJSON(w, http.StatusOK, map[string]any{
+		"last_evaluation_at": status.LastEvaluationAt,
+		"interval_minutes":   status.IntervalMinutes,
+		"next_evaluation_at": status.NextEvaluationAt,
+		"scheduler_enabled":  true,
+	})
 }
 
 // handleGetClassicalMode returns the current classical music evaluation mode.

@@ -282,7 +282,7 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 		BadgeSeverityWarning:    r.getBoolSetting(req.Context(), "notif_badge_severity_warning", true),
 		BadgeSeverityInfo:       r.getBoolSetting(req.Context(), "notif_badge_severity_info", false),
 		APITokens:               apiTokens,
-		RuleScheduleHours:       r.getIntSetting(req.Context(), "rule_schedule.interval_hours", 0),
+		RuleScheduleMinutes:     r.getIntSetting(req.Context(), "rule_schedule.interval_minutes", 0),
 		BackupRetention:         r.getIntSetting(req.Context(), "backup_retention_count", r.backupService.Retention()),
 		BackupMaxAgeDays:        r.getIntSetting(req.Context(), "backup_max_age_days", r.backupService.MaxAgeDays()),
 		CacheMaxSizeMB:          r.getStringSetting(req.Context(), "cache.image.max_size_mb", "0"),

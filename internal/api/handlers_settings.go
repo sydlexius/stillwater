@@ -78,6 +78,15 @@ func (r *Router) handleUpdateSettings(w http.ResponseWriter, req *http.Request) 
 		}
 		_ = n // validated, will be stored as string by the generic upsert below
 	}
+	if v, ok := body["rule_schedule.interval_minutes"]; ok {
+		n, err := strconv.Atoi(v)
+		if err != nil || (n != 0 && n < 5) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{
+				"error": "rule_schedule.interval_minutes must be 0 (disabled) or >= 5",
+			})
+			return
+		}
+	}
 
 	now := time.Now().UTC().Format(time.RFC3339)
 	for k, v := range body {

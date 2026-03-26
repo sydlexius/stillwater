@@ -341,6 +341,26 @@ func run() error {
 		}
 	}
 
+	// Create rule scheduler before the router so it can be passed as a dependency.
+	// Start() is called later, after the router is fully initialized.
+	var ruleScheduler *rule.Scheduler
+	var ruleScheduleMinutes int
+	{
+		ruleScheduleMinutes = getDBIntSetting(db, "rule_schedule.interval_minutes", 0)
+		// Migrate legacy hours setting
+		if ruleScheduleMinutes == 0 {
+			if legacyHours := getDBIntSetting(db, "rule_schedule.interval_hours", 0); legacyHours > 0 {
+				ruleScheduleMinutes = legacyHours * 60
+			}
+		}
+		if ruleScheduleMinutes >= 5 {
+			ruleScheduler = rule.NewScheduler(pipeline, ruleService, artistService, logger)
+		} else if ruleScheduleMinutes > 0 && ruleScheduleMinutes < 5 {
+			logger.Warn("rule scheduler interval too short (minimum 5 minutes); scheduler not started",
+				"minutes", ruleScheduleMinutes)
+		}
+	}
+
 	// Set up HTTP router
 	router := api.NewRouter(api.RouterDeps{
 		AuthService:        authService,
@@ -379,6 +399,7 @@ func run() error {
 		StaticDir:          "web/static",
 		ImageCacheDir:      filepath.Join(filepath.Dir(cfg.Database.Path), "cache", "images"),
 		Publisher:          publisher,
+		RuleScheduler:      ruleScheduler,
 	})
 
 	// Graceful shutdown
@@ -447,19 +468,9 @@ func run() error {
 		}
 	}()
 
-	// Start rule evaluation scheduler (opt-in via settings)
-	{
-		ruleScheduleHours := getDBIntSetting(db, "rule_schedule.interval_hours", 0)
-		switch ruleScheduleHours {
-		case 0:
-			// scheduler disabled
-		case 6, 12, 24, 48:
-			ruleScheduler := rule.NewScheduler(pipeline, ruleService, logger)
-			go ruleScheduler.Start(ctx, time.Duration(ruleScheduleHours)*time.Hour)
-		default:
-			logger.Warn("invalid rule scheduler interval; scheduler not started",
-				"hours", ruleScheduleHours)
-		}
+	// Start rule evaluation scheduler (created earlier, before the router)
+	if ruleScheduler != nil {
+		go ruleScheduler.Start(ctx, time.Duration(ruleScheduleMinutes)*time.Minute)
 	}
 
 	// Start filesystem watcher for libraries with fs_watch enabled
