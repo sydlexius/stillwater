@@ -145,4 +145,5 @@ jobs:
           rm dockle.tar.gz
 
       - name: Run Dockle
+        # CIS-DI-0001: container runs as root but drops privileges via su-exec at runtime
         run: dockle --exit-code 1 --exit-level warn --accept-key CIS-DI-0001 stillwater:dockle
