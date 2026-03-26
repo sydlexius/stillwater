@@ -5,6 +5,8 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -327,5 +329,230 @@ func TestEngine_WithRealDB(t *testing.T) {
 	}
 	if len(engine.checkers) != len(rules) {
 		t.Errorf("checkers (%d) != rules (%d): every seeded rule should have a checker", len(engine.checkers), len(rules))
+	}
+}
+
+// TestEvaluateAll_RuleListCachedAcrossArtists verifies that EvaluateAll
+// populates the in-memory rule list cache on the first artist evaluation and
+// reuses it for subsequent artists without hitting the database again.
+// The test asserts that service.List is called at most once for a batch of
+// multiple artists, confirming the N+1 DB query pattern is eliminated.
+func TestEvaluateAll_RuleListCachedAcrossArtists(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("SeedDefaults: %v", err)
+	}
+
+	// Disable image rules that need disk access.
+	for _, id := range []string{RuleThumbSquare, RuleThumbMinRes} {
+		r, err := svc.GetByID(ctx, id)
+		if err != nil {
+			t.Fatalf("getting rule %s: %v", id, err)
+		}
+		r.Enabled = false
+		if err := svc.Update(ctx, r); err != nil {
+			t.Fatalf("disabling rule %s: %v", id, err)
+		}
+	}
+
+	engine := NewEngine(svc, db, nil, nil, testLogger())
+
+	// Confirm the cache is empty before any evaluation.
+	engine.ruleCacheMu.RLock()
+	if engine.ruleList != nil {
+		t.Error("expected nil ruleList before first evaluation")
+	}
+	engine.ruleCacheMu.RUnlock()
+
+	// Reset the list call counter so only calls from this test are counted.
+	atomic.StoreInt64(&svc.listCallCount, 0)
+
+	artists := []artist.Artist{
+		{ID: "c1", Name: "Artist One", Path: t.TempDir()},
+		{ID: "c2", Name: "Artist Two", Path: t.TempDir()},
+		{ID: "c3", Name: "Artist Three", Path: t.TempDir()},
+	}
+
+	results, err := engine.EvaluateAll(ctx, artists)
+	if err != nil {
+		t.Fatalf("EvaluateAll: %v", err)
+	}
+	if len(results) != len(artists) {
+		t.Fatalf("expected %d results, got %d", len(artists), len(results))
+	}
+
+	// After EvaluateAll, the cache must be populated.
+	engine.ruleCacheMu.RLock()
+	cachedList := engine.ruleList
+	cachedAt := engine.ruleFetchedAt
+	engine.ruleCacheMu.RUnlock()
+
+	if len(cachedList) == 0 {
+		t.Error("expected ruleList to be populated after EvaluateAll")
+	}
+	if cachedAt.IsZero() {
+		t.Error("expected ruleFetchedAt to be non-zero after EvaluateAll")
+	}
+
+	// service.List must have been called exactly once for all three artists,
+	// proving the N+1 DB query pattern is eliminated by the cache.
+	if n := atomic.LoadInt64(&svc.listCallCount); n != 1 {
+		t.Errorf("service.List called %d times for %d artists; want 1 (cache should prevent N+1)", n, len(artists))
+	}
+
+	// A second EvaluateAll within the TTL window must reuse the same cache
+	// entry (fetchedAt must not advance, confirming no DB round-trip occurred).
+	results2, err := engine.EvaluateAll(ctx, artists)
+	if err != nil {
+		t.Fatalf("second EvaluateAll: %v", err)
+	}
+	if len(results2) != len(artists) {
+		t.Fatalf("second EvaluateAll: expected %d results, got %d", len(artists), len(results2))
+	}
+
+	engine.ruleCacheMu.RLock()
+	secondCachedAt := engine.ruleFetchedAt
+	engine.ruleCacheMu.RUnlock()
+
+	if secondCachedAt != cachedAt {
+		t.Error("ruleFetchedAt changed on second EvaluateAll within TTL; expected cache hit (no DB round-trip)")
+	}
+
+	// service.List must still be exactly 1 after the second EvaluateAll,
+	// confirming the entire second batch was served entirely from cache.
+	if n := atomic.LoadInt64(&svc.listCallCount); n != 1 {
+		t.Errorf("service.List called %d times after second EvaluateAll within TTL; want 1", n)
+	}
+}
+
+// TestEngine_InvalidateRuleCache verifies that InvalidateRuleCache clears the
+// cached rule list and that the next evaluation re-fetches from the database.
+func TestEngine_InvalidateRuleCache(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("SeedDefaults: %v", err)
+	}
+
+	engine := NewEngine(svc, db, nil, nil, testLogger())
+
+	a := &artist.Artist{ID: "inv-1", Name: "Invalidate Test", Path: t.TempDir()}
+
+	// Populate the cache via a first evaluation.
+	if _, err := engine.Evaluate(ctx, a); err != nil {
+		t.Fatalf("first Evaluate: %v", err)
+	}
+
+	engine.ruleCacheMu.RLock()
+	beforeInvalidate := engine.ruleFetchedAt
+	engine.ruleCacheMu.RUnlock()
+
+	if beforeInvalidate.IsZero() {
+		t.Fatal("expected cache to be populated after first Evaluate")
+	}
+
+	// Invalidate the cache.
+	engine.InvalidateRuleCache()
+
+	engine.ruleCacheMu.RLock()
+	afterInvalidate := engine.ruleList
+	afterTime := engine.ruleFetchedAt
+	engine.ruleCacheMu.RUnlock()
+
+	if afterInvalidate != nil {
+		t.Error("expected ruleList to be nil after InvalidateRuleCache")
+	}
+	if !afterTime.IsZero() {
+		t.Error("expected ruleFetchedAt to be zero after InvalidateRuleCache")
+	}
+
+	// A subsequent evaluation must re-populate the cache.
+	if _, err := engine.Evaluate(ctx, a); err != nil {
+		t.Fatalf("second Evaluate after invalidation: %v", err)
+	}
+
+	engine.ruleCacheMu.RLock()
+	afterReeval := engine.ruleList
+	engine.ruleCacheMu.RUnlock()
+
+	if len(afterReeval) == 0 {
+		t.Error("expected ruleList to be repopulated after evaluation following invalidation")
+	}
+}
+
+// TestCachedRules_ConcurrentAccess verifies that concurrent Evaluate calls
+// from multiple goroutines do not cause data races or panics. All goroutines
+// must receive a valid (non-empty) result.
+func TestCachedRules_ConcurrentAccess(t *testing.T) {
+	const numGoroutines = 20
+
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("SeedDefaults: %v", err)
+	}
+
+	// Disable image rules that need disk access.
+	for _, id := range []string{RuleThumbSquare, RuleThumbMinRes} {
+		r, err := svc.GetByID(ctx, id)
+		if err != nil {
+			t.Fatalf("getting rule %s: %v", id, err)
+		}
+		r.Enabled = false
+		if err := svc.Update(ctx, r); err != nil {
+			t.Fatalf("disabling rule %s: %v", id, err)
+		}
+	}
+
+	engine := NewEngine(svc, db, nil, nil, testLogger())
+
+	artistDir := filepath.Join(t.TempDir(), "ConcurrentArtist")
+	if err := os.MkdirAll(artistDir, 0o755); err != nil {
+		t.Fatalf("creating artist dir: %v", err)
+	}
+
+	a := &artist.Artist{
+		ID:   "concurrent-1",
+		Name: "ConcurrentArtist",
+		Path: artistDir,
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(numGoroutines)
+
+	errs := make([]error, numGoroutines)
+	results := make([]*EvaluationResult, numGoroutines)
+
+	for i := 0; i < numGoroutines; i++ {
+		i := i
+		go func() {
+			defer wg.Done()
+			r, err := engine.Evaluate(ctx, a)
+			errs[i] = err
+			results[i] = r
+		}()
+	}
+
+	wg.Wait()
+
+	for i := 0; i < numGoroutines; i++ {
+		if errs[i] != nil {
+			t.Errorf("goroutine %d: Evaluate returned error: %v", i, errs[i])
+			continue
+		}
+		if results[i] == nil {
+			t.Errorf("goroutine %d: Evaluate returned nil result", i)
+			continue
+		}
+		if results[i].RulesTotal == 0 {
+			t.Errorf("goroutine %d: RulesTotal = 0, expected enabled rules to be evaluated", i)
+		}
 	}
 }

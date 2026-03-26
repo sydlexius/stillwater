@@ -186,11 +186,14 @@ func TestGetHealthHistory(t *testing.T) {
 	svc := NewService(db)
 	ctx := context.Background()
 
-	// Insert multiple snapshots
+	// Insert multiple snapshots using separate service instances to avoid the
+	// per-service throttle window, which would silently skip the second call.
+	svc2 := NewService(db)
+
 	if err := svc.RecordHealthSnapshot(ctx, 100, 50, 50.0); err != nil {
 		t.Fatalf("recording snapshot 1: %v", err)
 	}
-	if err := svc.RecordHealthSnapshot(ctx, 100, 75, 75.0); err != nil {
+	if err := svc2.RecordHealthSnapshot(ctx, 100, 75, 75.0); err != nil {
 		t.Fatalf("recording snapshot 2: %v", err)
 	}
 
@@ -227,10 +230,14 @@ func TestGetLatestHealthSnapshot(t *testing.T) {
 	svc := NewService(db)
 	ctx := context.Background()
 
+	// Use a separate service instance for the second insert to bypass the
+	// per-service snapshot throttle, which would skip the second call.
+	svc2 := NewService(db)
+
 	if err := svc.RecordHealthSnapshot(ctx, 100, 50, 50.0); err != nil {
 		t.Fatalf("recording snapshot 1: %v", err)
 	}
-	if err := svc.RecordHealthSnapshot(ctx, 100, 80, 80.0); err != nil {
+	if err := svc2.RecordHealthSnapshot(ctx, 100, 80, 80.0); err != nil {
 		t.Fatalf("recording snapshot 2: %v", err)
 	}
 
@@ -1309,5 +1316,69 @@ func TestGetViolationTrend_DateOrder(t *testing.T) {
 			t.Errorf("trend[%d].Date = %q is not after trend[%d].Date = %q",
 				i, trend[i].Date, i-1, trend[i-1].Date)
 		}
+	}
+}
+
+// TestRecordHealthSnapshot_Throttle verifies that repeated calls
+// to RecordHealthSnapshot within the throttle window write exactly one row.
+func TestRecordHealthSnapshot_Throttle(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	// First call must succeed and insert a row.
+	if err := svc.RecordHealthSnapshot(ctx, 100, 75, 75.0); err != nil {
+		t.Fatalf("first RecordHealthSnapshot: %v", err)
+	}
+
+	var count int
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM health_history").Scan(&count); err != nil {
+		t.Fatalf("counting rows after first call: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("after first call: health_history count = %d, want 1", count)
+	}
+
+	// Second call within the throttle window must be silently skipped.
+	if err := svc.RecordHealthSnapshot(ctx, 100, 80, 80.0); err != nil {
+		t.Fatalf("second RecordHealthSnapshot: %v", err)
+	}
+
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM health_history").Scan(&count); err != nil {
+		t.Fatalf("counting rows after second call: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("after second call within throttle window: health_history count = %d, want 1 (throttled)", count)
+	}
+}
+
+// TestRecordHealthSnapshot_ThrottleExpiry verifies that a snapshot IS written
+// once the throttle window has elapsed, by manipulating lastSnapshotAt directly.
+func TestRecordHealthSnapshot_ThrottleExpiry(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	// Record first snapshot.
+	if err := svc.RecordHealthSnapshot(ctx, 100, 50, 50.0); err != nil {
+		t.Fatalf("first RecordHealthSnapshot: %v", err)
+	}
+
+	// Backdate lastSnapshotAt to simulate the throttle window having expired.
+	svc.snapshotMu.Lock()
+	svc.lastSnapshotAt = time.Now().Add(-(snapshotThrottleTTL + time.Second))
+	svc.snapshotMu.Unlock()
+
+	// Call again -- should succeed now that the window has elapsed.
+	if err := svc.RecordHealthSnapshot(ctx, 100, 80, 80.0); err != nil {
+		t.Fatalf("post-expiry RecordHealthSnapshot: %v", err)
+	}
+
+	var count int
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM health_history").Scan(&count); err != nil {
+		t.Fatalf("counting rows: %v", err)
+	}
+	if count != 2 {
+		t.Errorf("health_history count = %d, want 2 after throttle expiry", count)
 	}
 }

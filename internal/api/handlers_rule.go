@@ -90,6 +90,12 @@ func (r *Router) handleUpdateRule(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	// Invalidate the engine's rule list cache so the next evaluation reflects
+	// the updated rule immediately rather than waiting for the TTL to expire.
+	if r.ruleEngine != nil {
+		r.ruleEngine.InvalidateRuleCache()
+	}
+
 	writeJSON(w, http.StatusOK, existing)
 }
 

@@ -3,11 +3,13 @@ package rule
 import (
 	"context"
 	"fmt"
+	goimage "image"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -441,158 +443,248 @@ func nameSimilarity(a, b string) float64 {
 	return 1.0 - float64(dist)/float64(maxLen)
 }
 
-func checkLogoTrimmable(a *artist.Artist, cfg RuleConfig) *Violation {
-	if !a.LogoExists || a.Path == "" {
-		return nil
-	}
+// makeLogoTrimmableChecker returns a Checker closure that detects logos with
+// per-edge transparent padding exceeding a threshold. Results of the
+// underlying TrimAlphaBounds image decode are cached by (filePath, modTime)
+// on the Engine to avoid re-decoding the same PNG on every evaluation.
+func (e *Engine) makeLogoTrimmableChecker() Checker {
+	return func(a *artist.Artist, cfg RuleConfig) *Violation {
+		if !a.LogoExists || a.Path == "" {
+			return nil
+		}
 
-	// Find the logo file on disk using case-insensitive matching; only PNG
-	// files have an alpha channel.
-	entries, readErr := os.ReadDir(a.Path)
-	if readErr != nil {
-		return nil
-	}
-	lowerToActual := make(map[string]string, len(entries))
-	for _, e := range entries {
-		if !e.IsDir() {
-			lowerToActual[strings.ToLower(e.Name())] = e.Name()
+		// Find the logo file on disk using case-insensitive matching; only PNG
+		// files have an alpha channel.
+		entries, readErr := os.ReadDir(a.Path)
+		if readErr != nil {
+			e.logger.Debug("logo trimmable check skipped: cannot read artist directory",
+				slog.String("artist", a.Name),
+				slog.String("path", a.Path),
+				slog.String("error", readErr.Error()))
+			return nil
+		}
+		lowerToActual := make(map[string]string, len(entries))
+		for _, de := range entries {
+			if !de.IsDir() {
+				lowerToActual[strings.ToLower(de.Name())] = de.Name()
+			}
+		}
+
+		var logoPath string
+		for _, pattern := range logoPatterns {
+			if actual, ok := lowerToActual[strings.ToLower(pattern)]; ok {
+				if strings.ToLower(filepath.Ext(actual)) == ".png" {
+					logoPath = filepath.Join(a.Path, actual)
+					break
+				}
+			}
+		}
+		if logoPath == "" {
+			return nil
+		}
+
+		content, original, ok := e.getLogoBoundsAlpha(logoPath)
+		if !ok || original.Dx() == 0 || original.Dy() == 0 {
+			return nil
+		}
+
+		// If content equals original, there is no padding to trim.
+		if content == original {
+			return nil
+		}
+
+		threshold := cfg.ThresholdPercent
+		if threshold <= 0 {
+			threshold = 5
+		}
+		if threshold > 100 {
+			threshold = 100
+		}
+		threshFrac := threshold / 100.0
+
+		leftFrac := float64(content.Min.X-original.Min.X) / float64(original.Dx())
+		rightFrac := float64(original.Max.X-content.Max.X) / float64(original.Dx())
+		topFrac := float64(content.Min.Y-original.Min.Y) / float64(original.Dy())
+		bottomFrac := float64(original.Max.Y-content.Max.Y) / float64(original.Dy())
+
+		if leftFrac <= threshFrac && rightFrac <= threshFrac && topFrac <= threshFrac && bottomFrac <= threshFrac {
+			return nil
+		}
+
+		return &Violation{
+			RuleID:   RuleLogoTrimmable,
+			RuleName: "Logo transparent padding",
+			Category: "image",
+			Severity: effectiveSeverity(cfg),
+			Message: fmt.Sprintf(
+				"artist %q logo has excess transparent padding (left %.1f%%, right %.1f%%, top %.1f%%, bottom %.1f%%)",
+				a.Name, leftFrac*100, rightFrac*100, topFrac*100, bottomFrac*100,
+			),
+			Fixable: true,
 		}
 	}
+}
 
-	var logoPath string
-	for _, pattern := range logoPatterns {
-		if actual, ok := lowerToActual[strings.ToLower(pattern)]; ok {
-			if strings.ToLower(filepath.Ext(actual)) == ".png" {
+// getLogoBoundsAlpha returns the content and original bounds for a PNG logo
+// using TrimAlphaBounds, with results cached by (filePath, modTime). Returns
+// ok=false if the file cannot be stat'd or decoded.
+func (e *Engine) getLogoBoundsAlpha(logoPath string) (content, original goimage.Rectangle, ok bool) {
+	modTime, err := fileModTime(logoPath)
+	if err != nil {
+		e.logger.Debug("logo bounds skipped: cannot stat file",
+			slog.String("path", logoPath),
+			slog.String("error", err.Error()))
+		return goimage.Rectangle{}, goimage.Rectangle{}, false
+	}
+
+	if cached, hit := e.lookupLogoBounds(logoPath, modTime); hit {
+		return cached.content, cached.original, true
+	}
+
+	f, err := os.Open(logoPath) //nolint:gosec // G304: path from trusted library root
+	if err != nil {
+		e.logger.Debug("logo bounds skipped: cannot open file",
+			slog.String("path", logoPath),
+			slog.String("error", err.Error()))
+		return goimage.Rectangle{}, goimage.Rectangle{}, false
+	}
+	defer f.Close() //nolint:errcheck
+
+	c, orig, decErr := image.TrimAlphaBounds(f, 128)
+	if decErr != nil {
+		e.logger.Debug("logo bounds skipped: decode/trim failed",
+			slog.String("path", logoPath),
+			slog.String("error", decErr.Error()))
+		return goimage.Rectangle{}, goimage.Rectangle{}, false
+	}
+
+	e.storeLogoBounds(logoPath, modTime, logoBoundsCacheEntry{content: c, original: orig})
+	return c, orig, true
+}
+
+// getLogoBoundsContent returns the content and original bounds for any logo
+// format using ContentBounds, with results cached by (filePath, modTime).
+// Returns ok=false if the file cannot be stat'd or decoded.
+func (e *Engine) getLogoBoundsContent(logoPath string) (content, original goimage.Rectangle, ok bool) {
+	modTime, err := fileModTime(logoPath)
+	if err != nil {
+		e.logger.Debug("logo bounds skipped: cannot stat file",
+			slog.String("path", logoPath),
+			slog.String("error", err.Error()))
+		return goimage.Rectangle{}, goimage.Rectangle{}, false
+	}
+
+	if cached, hit := e.lookupLogoBounds(logoPath, modTime); hit {
+		return cached.content, cached.original, true
+	}
+
+	f, err := os.Open(logoPath) //nolint:gosec // G304: path from trusted library root
+	if err != nil {
+		e.logger.Debug("logo bounds skipped: cannot open file",
+			slog.String("path", logoPath),
+			slog.String("error", err.Error()))
+		return goimage.Rectangle{}, goimage.Rectangle{}, false
+	}
+	defer f.Close() //nolint:errcheck
+
+	c, orig, decErr := image.ContentBounds(f)
+	if decErr != nil {
+		e.logger.Debug("logo bounds skipped: decode/trim failed",
+			slog.String("path", logoPath),
+			slog.String("error", decErr.Error()))
+		return goimage.Rectangle{}, goimage.Rectangle{}, false
+	}
+
+	e.storeLogoBounds(logoPath, modTime, logoBoundsCacheEntry{content: c, original: orig})
+	return c, orig, true
+}
+
+// fileModTime returns the modification time of a file.
+func fileModTime(path string) (time.Time, error) {
+	fi, err := os.Stat(path)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return fi.ModTime(), nil
+}
+
+// makeLogoPaddingChecker returns a Checker closure that detects logos where
+// total padding (transparent or whitespace) exceeds a configurable threshold.
+// Unlike makeLogoTrimmableChecker which checks per-edge padding, this rule
+// uses an area-based ratio and supports both PNG alpha and non-PNG whitespace.
+// Results of the underlying ContentBounds image decode are cached by
+// (filePath, modTime) on the Engine to avoid re-decoding the same file on
+// every evaluation.
+func (e *Engine) makeLogoPaddingChecker() Checker {
+	return func(a *artist.Artist, cfg RuleConfig) *Violation {
+		if !a.LogoExists || a.Path == "" {
+			return nil
+		}
+
+		entries, readErr := os.ReadDir(a.Path)
+		if readErr != nil {
+			e.logger.Debug("logo padding check skipped: cannot read artist directory",
+				slog.String("artist", a.Name),
+				slog.String("path", a.Path),
+				slog.String("error", readErr.Error()))
+			return nil
+		}
+		lowerToActual := make(map[string]string, len(entries))
+		for _, de := range entries {
+			if !de.IsDir() {
+				lowerToActual[strings.ToLower(de.Name())] = de.Name()
+			}
+		}
+
+		var logoPath string
+		for _, pattern := range logoPatterns {
+			if actual, ok := lowerToActual[strings.ToLower(pattern)]; ok {
 				logoPath = filepath.Join(a.Path, actual)
 				break
 			}
 		}
-	}
-	if logoPath == "" {
-		return nil
-	}
-
-	f, err := os.Open(logoPath) //nolint:gosec // G304: path from trusted library root
-	if err != nil {
-		return nil
-	}
-	defer f.Close() //nolint:errcheck
-
-	content, original, err := image.TrimAlphaBounds(f, 128)
-	if err != nil || original.Dx() == 0 || original.Dy() == 0 {
-		return nil
-	}
-
-	// If content equals original, there is no padding to trim.
-	if content == original {
-		return nil
-	}
-
-	threshold := cfg.ThresholdPercent
-	if threshold <= 0 {
-		threshold = 5
-	}
-	if threshold > 100 {
-		threshold = 100
-	}
-	threshFrac := threshold / 100.0
-
-	leftFrac := float64(content.Min.X-original.Min.X) / float64(original.Dx())
-	rightFrac := float64(original.Max.X-content.Max.X) / float64(original.Dx())
-	topFrac := float64(content.Min.Y-original.Min.Y) / float64(original.Dy())
-	bottomFrac := float64(original.Max.Y-content.Max.Y) / float64(original.Dy())
-
-	if leftFrac <= threshFrac && rightFrac <= threshFrac && topFrac <= threshFrac && bottomFrac <= threshFrac {
-		return nil
-	}
-
-	return &Violation{
-		RuleID:   RuleLogoTrimmable,
-		RuleName: "Logo transparent padding",
-		Category: "image",
-		Severity: effectiveSeverity(cfg),
-		Message: fmt.Sprintf(
-			"artist %q logo has excess transparent padding (left %.1f%%, right %.1f%%, top %.1f%%, bottom %.1f%%)",
-			a.Name, leftFrac*100, rightFrac*100, topFrac*100, bottomFrac*100,
-		),
-		Fixable: true,
-	}
-}
-
-// checkLogoPadding detects logos where total padding (transparent or whitespace)
-// exceeds a configurable threshold of the image area. Unlike checkLogoTrimmable
-// which checks per-edge padding, this rule uses an area-based ratio and supports
-// both PNG alpha transparency and non-PNG whitespace borders.
-func checkLogoPadding(a *artist.Artist, cfg RuleConfig) *Violation {
-	if !a.LogoExists || a.Path == "" {
-		return nil
-	}
-
-	entries, readErr := os.ReadDir(a.Path)
-	if readErr != nil {
-		return nil
-	}
-	lowerToActual := make(map[string]string, len(entries))
-	for _, e := range entries {
-		if !e.IsDir() {
-			lowerToActual[strings.ToLower(e.Name())] = e.Name()
+		if logoPath == "" {
+			return nil
 		}
-	}
 
-	var logoPath string
-	for _, pattern := range logoPatterns {
-		if actual, ok := lowerToActual[strings.ToLower(pattern)]; ok {
-			logoPath = filepath.Join(a.Path, actual)
-			break
+		content, original, ok := e.getLogoBoundsContent(logoPath)
+		if !ok || original.Dx() == 0 || original.Dy() == 0 {
+			return nil
 		}
-	}
-	if logoPath == "" {
-		return nil
-	}
 
-	f, err := os.Open(logoPath) //nolint:gosec // G304: path from trusted library root
-	if err != nil {
-		return nil
-	}
-	defer f.Close() //nolint:errcheck
+		// If content fills the entire image, there is no padding.
+		if content == original {
+			return nil
+		}
 
-	content, original, err := image.ContentBounds(f)
-	if err != nil || original.Dx() == 0 || original.Dy() == 0 {
-		return nil
-	}
+		totalArea := float64(original.Dx() * original.Dy())
+		contentArea := float64(content.Dx() * content.Dy())
+		paddingRatio := 1.0 - (contentArea / totalArea)
 
-	// If content fills the entire image, there is no padding.
-	if content == original {
-		return nil
-	}
+		threshold := cfg.ThresholdPercent
+		if threshold <= 0 {
+			threshold = 15
+		}
+		if threshold > 100 {
+			threshold = 100
+		}
+		threshFrac := threshold / 100.0
 
-	totalArea := float64(original.Dx() * original.Dy())
-	contentArea := float64(content.Dx() * content.Dy())
-	paddingRatio := 1.0 - (contentArea / totalArea)
+		if paddingRatio <= threshFrac {
+			return nil
+		}
 
-	threshold := cfg.ThresholdPercent
-	if threshold <= 0 {
-		threshold = 15
-	}
-	if threshold > 100 {
-		threshold = 100
-	}
-	threshFrac := threshold / 100.0
-
-	if paddingRatio <= threshFrac {
-		return nil
-	}
-
-	return &Violation{
-		RuleID:   RuleLogoPadding,
-		RuleName: "Logo excessive padding",
-		Category: "image",
-		Severity: effectiveSeverity(cfg),
-		Message: fmt.Sprintf(
-			"artist %q logo has %.1f%% padding (threshold %.0f%%)",
-			a.Name, paddingRatio*100, threshold,
-		),
-		Fixable: true,
+		return &Violation{
+			RuleID:   RuleLogoPadding,
+			RuleName: "Logo excessive padding",
+			Category: "image",
+			Severity: effectiveSeverity(cfg),
+			Message: fmt.Sprintf(
+				"artist %q logo has %.1f%% padding (threshold %.0f%%)",
+				a.Name, paddingRatio*100, threshold,
+			),
+			Fixable: true,
+		}
 	}
 }
 

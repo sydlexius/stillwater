@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -219,9 +221,25 @@ var defaultRules = []Rule{
 	},
 }
 
+// snapshotThrottleTTL is the minimum interval between health snapshot writes.
+// Concurrent GET /api/v1/reports/health requests under load all call
+// RecordHealthSnapshot; the throttle prevents them from queuing on SQLite's
+// single-writer lock and flooding the health_history table with near-identical
+// rows.
+const snapshotThrottleTTL = 60 * time.Second
+
 // Service provides rule data operations.
 type Service struct {
 	db *sql.DB
+
+	// snapshotMu guards lastSnapshotAt to ensure at most one snapshot is
+	// recorded per throttle window across concurrent handler goroutines.
+	snapshotMu     sync.Mutex
+	lastSnapshotAt time.Time
+
+	// listCallCount tracks the number of times List has been called.
+	// Accessed atomically; used by tests to verify cache hit behavior.
+	listCallCount int64
 }
 
 // NewService creates a rule service.
@@ -257,6 +275,7 @@ func (s *Service) SeedDefaults(ctx context.Context) error {
 
 // List returns all rules.
 func (s *Service) List(ctx context.Context) ([]Rule, error) {
+	atomic.AddInt64(&s.listCallCount, 1)
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, name, description, category, enabled, automation_mode, config, created_at, updated_at
 		FROM rules ORDER BY category, name
@@ -306,15 +325,37 @@ func (s *Service) Update(ctx context.Context, r *Rule) error {
 	return nil
 }
 
-// RecordHealthSnapshot inserts a row into the health_history table.
+// RecordHealthSnapshot inserts a row into the health_history table, subject to
+// a per-service rate limit of one write per snapshotThrottleTTL window.
+// Concurrent requests that arrive within the throttle window are silently
+// skipped to avoid queuing writes on SQLite's single-writer lock and to
+// prevent near-duplicate rows in the history table.
 func (s *Service) RecordHealthSnapshot(ctx context.Context, totalArtists, compliantArtists int, score float64) error {
+	now := time.Now()
+
+	s.snapshotMu.Lock()
+	if !s.lastSnapshotAt.IsZero() && now.Sub(s.lastSnapshotAt) < snapshotThrottleTTL {
+		s.snapshotMu.Unlock()
+		return nil
+	}
+	s.lastSnapshotAt = now
+	s.snapshotMu.Unlock()
+
 	id := uuid.New().String()
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO health_history (id, total_artists, compliant_artists, score, recorded_at)
 		VALUES (?, ?, ?, ?, ?)
 	`, id, totalArtists, compliantArtists, score,
-		time.Now().UTC().Format(time.RFC3339))
+		now.UTC().Format(time.RFC3339))
 	if err != nil {
+		// Only reset lastSnapshotAt if this goroutine's slot is still current.
+		// Without the equality check, a racing goroutine that already claimed a
+		// newer slot could have its throttle cleared by our error path.
+		s.snapshotMu.Lock()
+		if s.lastSnapshotAt.Equal(now) {
+			s.lastSnapshotAt = time.Time{}
+		}
+		s.snapshotMu.Unlock()
 		return fmt.Errorf("recording health snapshot: %w", err)
 	}
 	return nil
