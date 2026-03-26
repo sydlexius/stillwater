@@ -511,14 +511,17 @@ func TestScan_HealthScoreIntegration(t *testing.T) {
 		deadline := time.After(5 * time.Second)
 		ticker := time.NewTicker(100 * time.Millisecond)
 		defer ticker.Stop()
+		var lastErr error
 		for {
 			found := false
 			select {
 			case <-deadline:
-				t.Fatal("timed out waiting for health score update after scan")
+				t.Fatalf("timed out waiting for health score update after scan (last error: %v)", lastErr)
 			case <-ticker.C:
 				a, err := artistSvc.GetByPath(ctx, filepath.Join(libDir, "Radiohead"))
-				if err == nil && a != nil && a.HealthScore > 0 {
+				if err != nil {
+					lastErr = err
+				} else if a != nil && a.HealthScore > 0 {
 					found = true
 				}
 			}

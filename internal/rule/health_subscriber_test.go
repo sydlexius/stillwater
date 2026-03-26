@@ -20,15 +20,19 @@ func pollHealthScore(t *testing.T, svc *artist.Service, artistID string, conditi
 	deadline := time.After(5 * time.Second)
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
+	var lastErr error
+	var lastScore float64
 	for {
 		select {
 		case <-deadline:
-			t.Fatalf("timed out waiting for health score condition on artist %s", artistID)
+			t.Fatalf("timed out waiting for health score condition on artist %s (last score: %v, last error: %v)", artistID, lastScore, lastErr)
 		case <-ticker.C:
 			a, err := svc.GetByID(context.Background(), artistID)
 			if err != nil {
+				lastErr = err
 				continue // DB might not be ready yet
 			}
+			lastScore = a.HealthScore
 			if condition(a.HealthScore) {
 				return
 			}
@@ -43,14 +47,16 @@ func pollPendingQueue(t *testing.T, sub *HealthSubscriber) {
 	deadline := time.After(5 * time.Second)
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
+	var lastCount int
 	for {
 		select {
 		case <-deadline:
-			t.Fatal("timed out waiting for pending queue to drain")
+			t.Fatalf("timed out waiting for pending queue to drain (last count: %d)", lastCount)
 		case <-ticker.C:
 			sub.mu.Lock()
 			n := len(sub.pending)
 			sub.mu.Unlock()
+			lastCount = n
 			if n == 0 {
 				return
 			}
