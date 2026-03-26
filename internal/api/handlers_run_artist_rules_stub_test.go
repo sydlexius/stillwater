@@ -24,6 +24,7 @@ import (
 // preconfigured results without requiring a real Engine or Service.
 type stubPipeline struct {
 	runForArtistFn func(ctx context.Context, a *artist.Artist) (*rule.RunResult, error)
+	runRuleFn      func(ctx context.Context, ruleID string) (*rule.RunResult, error)
 	fixViolationFn func(ctx context.Context, violationID string) (*rule.FixResult, error)
 }
 
@@ -34,7 +35,10 @@ func (s *stubPipeline) RunForArtist(ctx context.Context, a *artist.Artist) (*rul
 	return &rule.RunResult{}, nil
 }
 
-func (s *stubPipeline) RunRule(_ context.Context, _ string) (*rule.RunResult, error) {
+func (s *stubPipeline) RunRule(ctx context.Context, ruleID string) (*rule.RunResult, error) {
+	if s.runRuleFn != nil {
+		return s.runRuleFn(ctx, ruleID)
+	}
 	return &rule.RunResult{}, nil
 }
 

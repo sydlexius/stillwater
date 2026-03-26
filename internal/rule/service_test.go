@@ -1352,6 +1352,132 @@ func TestRecordHealthSnapshot_Throttle(t *testing.T) {
 	}
 }
 
+// TestGetViolationsForArtists_Empty verifies that an empty artistIDs slice
+// returns an empty map without issuing a database query.
+func TestGetViolationsForArtists_Empty(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	result, err := svc.GetViolationsForArtists(ctx, nil)
+	if err != nil {
+		t.Fatalf("GetViolationsForArtists(nil): %v", err)
+	}
+	if len(result) != 0 {
+		t.Errorf("expected empty map, got %d entries", len(result))
+	}
+
+	result2, err := svc.GetViolationsForArtists(ctx, []string{})
+	if err != nil {
+		t.Fatalf("GetViolationsForArtists([]): %v", err)
+	}
+	if len(result2) != 0 {
+		t.Errorf("expected empty map for empty slice, got %d entries", len(result2))
+	}
+}
+
+// TestGetViolationsForArtists_ReturnsOpenAndPending verifies that open and
+// pending_choice violations are returned while resolved/dismissed are excluded.
+func TestGetViolationsForArtists_ReturnsOpenAndPending(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	// Seed rules so the JOIN in GetViolationsForArtists has rule rows.
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("SeedDefaults: %v", err)
+	}
+
+	artistA := "artist-a"
+	artistB := "artist-b"
+
+	// Insert: two open violations for artistA, one pending for artistA,
+	// one resolved and one dismissed that must NOT appear.
+	violations := []*RuleViolation{
+		{RuleID: RuleNFOExists, ArtistID: artistA, ArtistName: "Artist A", Severity: "error", Message: "no nfo", Fixable: true, Status: ViolationStatusOpen},
+		{RuleID: RuleThumbExists, ArtistID: artistA, ArtistName: "Artist A", Severity: "warning", Message: "no thumb", Fixable: true, Status: ViolationStatusOpen},
+		{RuleID: RuleFanartExists, ArtistID: artistA, ArtistName: "Artist A", Severity: "warning", Message: "no fanart", Fixable: false, Status: ViolationStatusResolved},
+		{RuleID: RuleLogoExists, ArtistID: artistA, ArtistName: "Artist A", Severity: "info", Message: "no logo", Fixable: false, Status: ViolationStatusDismissed},
+		{RuleID: RuleNFOHasMBID, ArtistID: artistB, ArtistName: "Artist B", Severity: "error", Message: "no mbid", Fixable: false, Status: ViolationStatusOpen},
+	}
+	for _, v := range violations {
+		if err := svc.UpsertViolation(ctx, v); err != nil {
+			t.Fatalf("UpsertViolation %s/%s: %v", v.ArtistID, v.RuleID, err)
+		}
+	}
+
+	result, err := svc.GetViolationsForArtists(ctx, []string{artistA, artistB})
+	if err != nil {
+		t.Fatalf("GetViolationsForArtists: %v", err)
+	}
+
+	// artistA should have exactly 2 open violations (resolved + dismissed excluded).
+	aViolations, ok := result[artistA]
+	if !ok {
+		t.Fatalf("missing violations for artistA")
+	}
+	if len(aViolations) != 2 {
+		t.Errorf("artistA violation count = %d, want 2 (open only)", len(aViolations))
+	}
+
+	// artistB should have exactly 1 open violation.
+	bViolations, ok := result[artistB]
+	if !ok {
+		t.Fatalf("missing violations for artistB")
+	}
+	if len(bViolations) != 1 {
+		t.Errorf("artistB violation count = %d, want 1", len(bViolations))
+	}
+
+	// Verify Violation fields are populated from the JOIN.
+	if bViolations[0].RuleID != RuleNFOHasMBID {
+		t.Errorf("bViolations[0].RuleID = %q, want %q", bViolations[0].RuleID, RuleNFOHasMBID)
+	}
+	if bViolations[0].RuleName == "" {
+		t.Error("bViolations[0].RuleName should be populated from rules JOIN")
+	}
+	if bViolations[0].Category == "" {
+		t.Error("bViolations[0].Category should be populated from rules JOIN")
+	}
+	if bViolations[0].Severity != "error" {
+		t.Errorf("bViolations[0].Severity = %q, want error", bViolations[0].Severity)
+	}
+}
+
+// TestGetViolationsForArtists_UnknownArtist verifies that artists with no
+// violations are simply absent from the result map (no nil slice entries).
+func TestGetViolationsForArtists_UnknownArtist(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("SeedDefaults: %v", err)
+	}
+
+	// Insert a violation for artistA only.
+	v := &RuleViolation{
+		RuleID: RuleNFOExists, ArtistID: "artist-a", ArtistName: "Artist A",
+		Severity: "error", Message: "no nfo", Fixable: true, Status: ViolationStatusOpen,
+	}
+	if err := svc.UpsertViolation(ctx, v); err != nil {
+		t.Fatalf("UpsertViolation: %v", err)
+	}
+
+	// Query for both artistA and a completely unknown artist.
+	result, err := svc.GetViolationsForArtists(ctx, []string{"artist-a", "unknown-artist"})
+	if err != nil {
+		t.Fatalf("GetViolationsForArtists: %v", err)
+	}
+
+	if _, ok := result["unknown-artist"]; ok {
+		t.Error("unknown-artist should not appear in result map")
+	}
+	if len(result["artist-a"]) != 1 {
+		t.Errorf("artist-a violation count = %d, want 1", len(result["artist-a"]))
+	}
+}
+
 // TestRecordHealthSnapshot_ThrottleExpiry verifies that a snapshot IS written
 // once the throttle window has elapsed, by manipulating lastSnapshotAt directly.
 func TestRecordHealthSnapshot_ThrottleExpiry(t *testing.T) {

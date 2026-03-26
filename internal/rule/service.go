@@ -1000,6 +1000,56 @@ func (s *Service) GetComplianceForArtists(ctx context.Context, artistIDs []strin
 	return result, nil
 }
 
+// GetViolationsForArtists batch-loads open violations for the given artist IDs,
+// returning a map keyed by artist ID. Each value is a slice of Violation structs
+// derived from the rule_violations table (joined with rules for name and category).
+// If artistIDs is empty, an empty map is returned without querying the database.
+func (s *Service) GetViolationsForArtists(ctx context.Context, artistIDs []string) (map[string][]Violation, error) {
+	result := make(map[string][]Violation, len(artistIDs))
+	if len(artistIDs) == 0 {
+		return result, nil
+	}
+
+	// Build parameterised IN clause for the artist IDs.
+	placeholders := make([]string, len(artistIDs))
+	args := make([]any, 0, len(artistIDs)+2)
+	args = append(args, ViolationStatusOpen, ViolationStatusPendingChoice)
+	for i, id := range artistIDs {
+		placeholders[i] = "?"
+		args = append(args, id)
+	}
+
+	//nolint:gosec // G202: only "?" placeholders concatenated, no user input
+	query := `SELECT rv.artist_id, rv.rule_id, r.name, r.category, rv.severity, rv.message, rv.fixable
+	FROM rule_violations rv
+	JOIN rules r ON r.id = rv.rule_id
+	WHERE rv.status IN (?, ?)
+	  AND rv.artist_id IN (` + strings.Join(placeholders, ",") + `)
+	ORDER BY rv.artist_id, rv.rule_id`
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("querying violations for artists: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck
+
+	for rows.Next() {
+		var artistID string
+		var fixable int
+		var v Violation
+		if err := rows.Scan(&artistID, &v.RuleID, &v.RuleName, &v.Category, &v.Severity, &v.Message, &fixable); err != nil {
+			return nil, fmt.Errorf("scanning violation for artist: %w", err)
+		}
+		v.Fixable = fixable == 1
+		result[artistID] = append(result[artistID], v)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating violations for artists: %w", err)
+	}
+
+	return result, nil
+}
+
 func scanHealthSnapshot(row interface{ Scan(...any) error }) (*HealthSnapshot, error) {
 	var snap HealthSnapshot
 	var recordedAt string
