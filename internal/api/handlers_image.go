@@ -1393,6 +1393,12 @@ func (r *Router) handleLogoTrim(w http.ResponseWriter, req *http.Request) {
 	r.enforceCacheLimitIfNeeded(req.Context(), a)
 
 	r.updateArtistImageFlag(req.Context(), a, "logo")
+	if r.eventBus != nil {
+		r.eventBus.Publish(event.Event{
+			Type: event.ArtistUpdated,
+			Data: map[string]any{"artist_id": a.ID},
+		})
+	}
 	r.InvalidateHealthCache()
 
 	syncCtx, cancel := context.WithTimeout(req.Context(), 30*time.Second)
@@ -1726,6 +1732,12 @@ func (r *Router) handleFanartBatchDelete(w http.ResponseWriter, req *http.Reques
 	}
 
 	r.updateArtistFanartCount(req.Context(), a)
+	if r.eventBus != nil {
+		r.eventBus.Publish(event.Event{
+			Type: event.ArtistUpdated,
+			Data: map[string]any{"artist_id": a.ID},
+		})
+	}
 	r.InvalidateHealthCache()
 
 	// Only sync to platforms if renumbering succeeded -- pushing misindexed
@@ -1838,6 +1850,12 @@ func (r *Router) handleFanartBatchFetch(w http.ResponseWriter, req *http.Request
 		r.enforceCacheLimitIfNeeded(req.Context(), a)
 	}
 	r.updateArtistFanartCount(req.Context(), a)
+	if r.eventBus != nil {
+		r.eventBus.Publish(event.Event{
+			Type: event.ArtistUpdated,
+			Data: map[string]any{"artist_id": a.ID},
+		})
+	}
 	r.InvalidateHealthCache()
 
 	// Sync all fanart to connected platforms (synchronous with timeout).
