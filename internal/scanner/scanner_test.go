@@ -506,8 +506,30 @@ func TestScan_HealthScoreIntegration(t *testing.T) {
 	}
 	waitForScan(t, svc, 5*time.Second)
 
-	// Wait for debounce + processing (2s debounce + margin)
-	time.Sleep(3 * time.Second)
+	// Poll until health score is updated (replaces time.Sleep for debounce window)
+	{
+		deadline := time.After(5 * time.Second)
+		ticker := time.NewTicker(100 * time.Millisecond)
+		defer ticker.Stop()
+		var lastErr error
+		for {
+			found := false
+			select {
+			case <-deadline:
+				t.Fatalf("timed out waiting for health score update after scan (last error: %v)", lastErr)
+			case <-ticker.C:
+				a, err := artistSvc.GetByPath(ctx, filepath.Join(libDir, "Radiohead"))
+				if err != nil {
+					lastErr = err
+				} else if a != nil && a.HealthScore > 0 {
+					found = true
+				}
+			}
+			if found {
+				break
+			}
+		}
+	}
 
 	a, err := artistSvc.GetByPath(ctx, filepath.Join(libDir, "Radiohead"))
 	if err != nil {
