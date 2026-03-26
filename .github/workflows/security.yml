@@ -3,7 +3,7 @@
 # Jobs:
 #   govulncheck  - Go dependency vulnerability scan (push/PR/weekly)
 #   hadolint     - Dockerfile best-practice linting (push/PR)
-#   trivy        - Container image CVE scan, SARIF upload (weekly/manual)
+#   trivy        - Container image CVE scan (MEDIUM+), license scan, SARIF upload (weekly/manual)
 #   sbom         - SBOM generation (Syft) + vulnerability scan (Grype) on releases
 #   dockle       - CIS benchmark check for container images (weekly/manual)
 
@@ -79,13 +79,22 @@ jobs:
           image-ref: stillwater:scan
           format: sarif
           output: trivy-results.sarif
-          severity: CRITICAL,HIGH
+          severity: CRITICAL,HIGH,MEDIUM
 
       - name: Upload Trivy results to GitHub Security
         uses: github/codeql-action/upload-sarif@480db559a14342288b67e54bd959dd52dc3ee68f # v3
         if: always()
         with:
           sarif_file: trivy-results.sarif
+
+      - name: Run Trivy license scanner
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
+        with:
+          image-ref: stillwater:scan
+          scanners: license
+          exit-code: '1'
+          format: table
+          severity: CRITICAL,HIGH
 
   sbom:
     name: SBOM and Vulnerability Scan
@@ -137,4 +146,5 @@ jobs:
           rm dockle.tar.gz
 
       - name: Run Dockle
-        run: dockle --exit-code 1 --exit-level warn stillwater:dockle
+        # CIS-DI-0001: container runs as root but drops privileges via su-exec at runtime
+        run: dockle --exit-code 1 --exit-level warn --accept-key CIS-DI-0001 stillwater:dockle
