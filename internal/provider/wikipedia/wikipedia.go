@@ -10,42 +10,54 @@ import (
 	"net/url"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/sydlexius/stillwater/internal/provider"
 )
 
 const (
-	defaultWikiEndpoint     = "https://en.wikipedia.org/api/rest_v1"
-	defaultWikidataEndpoint = "https://query.wikidata.org/sparql"
-	userAgent               = "Stillwater/1.0 (https://github.com/sydlexius/stillwater)"
+	defaultActionEndpoint      = "https://en.wikipedia.org/w/api.php"
+	defaultWikidataEndpoint    = "https://query.wikidata.org/sparql"
+	defaultWikidataAPIEndpoint = "https://www.wikidata.org/w/api.php"
+	userAgent                  = "Stillwater/1.0 (https://github.com/sydlexius/stillwater)"
 )
 
 // Adapter implements the provider.Provider interface for Wikipedia.
-// It fetches artist biographies from Wikipedia article extracts.
+// It fetches artist biographies from Wikipedia article extracts and
+// structured metadata (members, genres, years active, origin) from
+// infobox templates parsed out of article wikitext.
 //
-// The ID must be a MusicBrainz UUID. It is resolved to a Wikipedia article
-// title via a Wikidata SPARQL query, then the article extract is fetched.
+// The ID can be a MusicBrainz UUID, a Wikidata Q-ID, or a Wikipedia
+// article title. UUIDs are resolved via Wikidata SPARQL, Q-IDs via
+// the Wikidata entity API sitelinks.
 type Adapter struct {
-	client           *http.Client
-	limiter          *provider.RateLimiterMap
-	logger           *slog.Logger
-	wikiEndpoint     string
-	wikidataEndpoint string
+	client              *http.Client
+	limiter             *provider.RateLimiterMap
+	logger              *slog.Logger
+	actionEndpoint      string // MediaWiki Action API (extracts + wikitext)
+	wikidataEndpoint    string // SPARQL (MBID resolution)
+	wikidataAPIEndpoint string // Wikidata entity API (Q-ID sitelink resolution)
 }
 
 // New creates a Wikipedia adapter with default endpoints.
 func New(limiter *provider.RateLimiterMap, logger *slog.Logger) *Adapter {
-	return NewWithEndpoints(limiter, logger, defaultWikiEndpoint, defaultWikidataEndpoint)
+	return NewWithEndpoints(limiter, logger,
+		defaultActionEndpoint, defaultWikidataEndpoint, defaultWikidataAPIEndpoint)
 }
 
 // NewWithEndpoints creates a Wikipedia adapter with custom endpoints (for testing).
-func NewWithEndpoints(limiter *provider.RateLimiterMap, logger *slog.Logger, wikiEndpoint, wikidataEndpoint string) *Adapter {
+func NewWithEndpoints(
+	limiter *provider.RateLimiterMap,
+	logger *slog.Logger,
+	actionEndpoint, wikidataEndpoint, wikidataAPIEndpoint string,
+) *Adapter {
 	return &Adapter{
-		client:           &http.Client{Timeout: 15 * time.Second},
-		limiter:          limiter,
-		logger:           logger.With(slog.String("provider", "wikipedia")),
-		wikiEndpoint:     wikiEndpoint,
-		wikidataEndpoint: wikidataEndpoint,
+		client:              &http.Client{Timeout: 15 * time.Second},
+		limiter:             limiter,
+		logger:              logger.With(slog.String("provider", "wikipedia")),
+		actionEndpoint:      actionEndpoint,
+		wikidataEndpoint:    wikidataEndpoint,
+		wikidataAPIEndpoint: wikidataAPIEndpoint,
 	}
 }
 
@@ -66,37 +78,100 @@ func (a *Adapter) SearchArtist(_ context.Context, _ string) ([]provider.ArtistSe
 	return nil, nil
 }
 
-// GetArtist fetches biography metadata from Wikipedia.
-// The id must be a MusicBrainz UUID; it is resolved to a Wikipedia article
-// title via a Wikidata SPARQL query.
+// GetArtist fetches metadata from Wikipedia for the given ID.
+// The ID can be:
+//   - A MusicBrainz UUID: resolved to article title via Wikidata SPARQL
+//   - A Wikidata Q-ID (e.g. "Q44190"): resolved via Wikidata sitelinks
+//   - A Wikipedia article title: used directly
+//
+// Returns biography text from the full article extract and structured
+// metadata (members, genres, years active, origin) from infobox parsing.
 func (a *Adapter) GetArtist(ctx context.Context, id string) (*provider.ArtistMetadata, error) {
-	if !provider.IsUUID(id) {
-		return nil, &provider.ErrNotFound{Provider: provider.NameWikipedia, ID: id}
-	}
-
-	if err := a.limiter.Wait(ctx, provider.NameWikipedia); err != nil {
-		return nil, &provider.ErrProviderUnavailable{
-			Provider: provider.NameWikipedia,
-			Cause:    fmt.Errorf("rate limiter: %w", err),
-		}
-	}
-
-	title, err := a.resolveFromMBID(ctx, id)
+	title, err := a.resolveToTitle(ctx, id)
 	if err != nil {
 		return nil, err
 	}
 
-	// Second rate limit wait before the Wikipedia REST API call. The SPARQL
-	// endpoint (Wikidata) and the REST API (Wikipedia) are separate services
-	// with independent rate limit policies.
+	// Fetch the full article extract for biography text.
 	if err := a.limiter.Wait(ctx, provider.NameWikipedia); err != nil {
 		return nil, &provider.ErrProviderUnavailable{
 			Provider: provider.NameWikipedia,
 			Cause:    fmt.Errorf("rate limiter: %w", err),
 		}
 	}
+	name, extract, err := a.fetchExtract(ctx, title)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(extract) == "" {
+		return nil, &provider.ErrNotFound{Provider: provider.NameWikipedia, ID: id}
+	}
+	if name == "" {
+		name = strings.ReplaceAll(title, "_", " ")
+	}
 
-	return a.fetchSummary(ctx, title)
+	meta := &provider.ArtistMetadata{
+		ProviderID: title,
+		Name:       name,
+		Biography:  strings.TrimSpace(extract),
+		URLs: map[string]string{
+			"wikipedia": "https://en.wikipedia.org/wiki/" + url.PathEscape(title),
+		},
+	}
+
+	// Fetch wikitext for infobox parsing. This is best-effort: if it fails,
+	// we still return the biography. However, context cancellation is
+	// propagated because it signals the caller wants to stop entirely.
+	if err := a.limiter.Wait(ctx, provider.NameWikipedia); err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		a.logger.Warn("rate limiter wait failed for wikitext fetch",
+			slog.String("title", title), slog.Any("error", err))
+		return meta, nil
+	}
+	wikitext, err := a.fetchWikitext(ctx, title)
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		a.logger.Warn("wikitext fetch failed, returning biography only",
+			slog.String("title", title), slog.Any("error", err))
+		return meta, nil
+	}
+
+	infobox := parseInfobox(wikitext)
+	if infobox == nil {
+		a.logger.Debug("no recognized infobox found in wikitext",
+			slog.String("title", title))
+		return meta, nil
+	}
+
+	if infobox.YearsActive != "" {
+		meta.YearsActive = infobox.YearsActive
+	}
+	if infobox.Origin != "" {
+		meta.Country = infobox.Origin
+	}
+	if len(infobox.Genres) > 0 {
+		meta.Genres = infobox.Genres
+	}
+
+	// Combine current and past members into the Members slice.
+	for _, name := range infobox.Members {
+		meta.Members = append(meta.Members, provider.MemberInfo{
+			Name:     name,
+			IsActive: true,
+		})
+	}
+	for _, name := range infobox.PastMembers {
+		meta.Members = append(meta.Members, provider.MemberInfo{
+			Name:     name,
+			IsActive: false,
+		})
+	}
+
+	return meta, nil
 }
 
 // GetImages returns nil; Wikipedia is not used for artist images.
@@ -104,10 +179,10 @@ func (a *Adapter) GetImages(_ context.Context, _ string) ([]provider.ImageResult
 	return nil, nil
 }
 
-// TestConnection verifies connectivity to both the Wikipedia REST API and the
+// TestConnection verifies connectivity to both the Wikipedia Action API and the
 // Wikidata SPARQL endpoint, since GetArtist depends on both services.
 func (a *Adapter) TestConnection(ctx context.Context) error {
-	// Probe 1: Wikipedia REST API
+	// Probe 1: Wikipedia Action API
 	if err := a.limiter.Wait(ctx, provider.NameWikipedia); err != nil {
 		return &provider.ErrProviderUnavailable{
 			Provider: provider.NameWikipedia,
@@ -115,16 +190,23 @@ func (a *Adapter) TestConnection(ctx context.Context) error {
 		}
 	}
 
-	wikiReq, err := http.NewRequestWithContext(ctx, http.MethodGet, a.wikiEndpoint+"/page/summary/Wikipedia", nil)
+	params := url.Values{
+		"action": {"query"},
+		"meta":   {"siteinfo"},
+		"siprop": {"general"},
+		"format": {"json"},
+	}
+	wikiReq, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		a.actionEndpoint+"?"+params.Encode(), nil)
 	if err != nil {
 		return err
 	}
 	wikiReq.Header.Set("User-Agent", userAgent)
-	wikiResp, err := a.client.Do(wikiReq) //nolint:gosec // URL constructed from trusted Wikipedia endpoint
+	wikiResp, err := a.client.Do(wikiReq) //nolint:gosec // URL constructed from trusted endpoint
 	if err != nil {
 		return &provider.ErrProviderUnavailable{
 			Provider: provider.NameWikipedia,
-			Cause:    fmt.Errorf("wikipedia REST API: %w", err),
+			Cause:    fmt.Errorf("wikipedia Action API: %w", err),
 		}
 	}
 	defer wikiResp.Body.Close() //nolint:errcheck
@@ -132,7 +214,7 @@ func (a *Adapter) TestConnection(ctx context.Context) error {
 	if wikiResp.StatusCode != http.StatusOK {
 		return &provider.ErrProviderUnavailable{
 			Provider: provider.NameWikipedia,
-			Cause:    fmt.Errorf("wikipedia REST API HTTP %d", wikiResp.StatusCode),
+			Cause:    fmt.Errorf("wikipedia Action API HTTP %d", wikiResp.StatusCode),
 		}
 	}
 
@@ -174,10 +256,49 @@ func (a *Adapter) TestConnection(ctx context.Context) error {
 	return nil
 }
 
+// resolveToTitle determines the ID type and resolves it to a Wikipedia article title.
+func (a *Adapter) resolveToTitle(ctx context.Context, id string) (string, error) {
+	switch {
+	case provider.IsUUID(id):
+		if err := a.limiter.Wait(ctx, provider.NameWikipedia); err != nil {
+			return "", &provider.ErrProviderUnavailable{
+				Provider: provider.NameWikipedia,
+				Cause:    fmt.Errorf("rate limiter: %w", err),
+			}
+		}
+		return a.resolveFromMBID(ctx, id)
+
+	case isQID(id):
+		if err := a.limiter.Wait(ctx, provider.NameWikipedia); err != nil {
+			return "", &provider.ErrProviderUnavailable{
+				Provider: provider.NameWikipedia,
+				Cause:    fmt.Errorf("rate limiter: %w", err),
+			}
+		}
+		return a.resolveFromQID(ctx, id)
+
+	default:
+		// Treat as a Wikipedia article title directly.
+		return id, nil
+	}
+}
+
+// isQID returns true if id looks like a Wikidata Q-ID (e.g. "Q44190").
+func isQID(id string) bool {
+	if len(id) < 2 || (id[0] != 'Q' && id[0] != 'q') {
+		return false
+	}
+	for _, r := range id[1:] {
+		if !unicode.IsDigit(r) {
+			return false
+		}
+	}
+	return true
+}
+
 // resolveFromMBID uses a Wikidata SPARQL query to find the English Wikipedia
 // article title for an artist identified by MusicBrainz ID.
 func (a *Adapter) resolveFromMBID(ctx context.Context, mbid string) (string, error) {
-	// SPARQL query: find the English Wikipedia sitelink for this MBID.
 	query := fmt.Sprintf(`SELECT ?article WHERE {
   ?item wdt:P434 "%s" .
   ?article schema:about ?item ;
@@ -239,18 +360,222 @@ func (a *Adapter) resolveFromMBID(ctx context.Context, mbid string) (string, err
 		return "", &provider.ErrNotFound{Provider: provider.NameWikipedia, ID: mbid}
 	}
 
-	// Extract article title from the full URL and URL-decode it.
-	// e.g. "https://en.wikipedia.org/wiki/Noise_Ratchet" -> "Noise_Ratchet"
-	// URL-decoding prevents double-encoding when fetchSummary re-encodes the
-	// title for the REST API path (e.g. "AC%2FDC" -> "AC/DC" -> re-encoded).
-	articleURL := sparql.Results.Bindings[0].Article.Value
+	return extractArticleTitle(sparql.Results.Bindings[0].Article.Value, mbid, a.logger)
+}
+
+// resolveFromQID uses the Wikidata entity API to resolve a Q-ID to a
+// Wikipedia article title via sitelinks.
+func (a *Adapter) resolveFromQID(ctx context.Context, qid string) (string, error) {
+	params := url.Values{
+		"action":     {"wbgetentities"},
+		"ids":        {strings.ToUpper(qid)},
+		"props":      {"sitelinks"},
+		"sitefilter": {"enwiki"},
+		"format":     {"json"},
+	}
+	reqURL := a.wikidataAPIEndpoint + "?" + params.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	if err != nil {
+		return "", &provider.ErrProviderUnavailable{
+			Provider: provider.NameWikipedia,
+			Cause:    fmt.Errorf("creating Wikidata API request: %w", err),
+		}
+	}
+	req.Header.Set("User-Agent", userAgent)
+
+	a.logger.Debug("resolving Q-ID to Wikipedia title via Wikidata sitelinks", slog.String("qid", qid))
+
+	resp, err := a.client.Do(req) //nolint:gosec // URL constructed from trusted Wikidata endpoint
+	if err != nil {
+		return "", &provider.ErrProviderUnavailable{
+			Provider: provider.NameWikipedia,
+			Cause:    err,
+		}
+	}
+	defer resp.Body.Close() //nolint:errcheck
+
+	if resp.StatusCode != http.StatusOK {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		return "", &provider.ErrProviderUnavailable{
+			Provider: provider.NameWikipedia,
+			Cause:    fmt.Errorf("wikidata API HTTP %d", resp.StatusCode),
+		}
+	}
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 256*1024))
+	if err != nil {
+		return "", &provider.ErrProviderUnavailable{
+			Provider: provider.NameWikipedia,
+			Cause:    fmt.Errorf("reading Wikidata API response: %w", err),
+		}
+	}
+
+	var wbResp wbEntityResponse
+	if err := json.Unmarshal(body, &wbResp); err != nil {
+		return "", &provider.ErrProviderUnavailable{
+			Provider: provider.NameWikipedia,
+			Cause:    fmt.Errorf("parsing Wikidata API response: %w", err),
+		}
+	}
+
+	upperQID := strings.ToUpper(qid)
+	entity, ok := wbResp.Entities[upperQID]
+	if !ok {
+		return "", &provider.ErrNotFound{Provider: provider.NameWikipedia, ID: qid}
+	}
+
+	enwiki, ok := entity.Sitelinks["enwiki"]
+	if !ok || enwiki.Title == "" {
+		return "", &provider.ErrNotFound{Provider: provider.NameWikipedia, ID: qid}
+	}
+
+	return enwiki.Title, nil
+}
+
+// fetchExtract fetches the full article text from the MediaWiki Action API.
+// Returns the article display name and plain-text extract.
+func (a *Adapter) fetchExtract(ctx context.Context, title string) (string, string, error) {
+	params := url.Values{
+		"action":      {"query"},
+		"titles":      {title},
+		"prop":        {"extracts"},
+		"explaintext": {"true"},
+		"exintro":     {"true"},
+		"format":      {"json"},
+	}
+	reqURL := a.actionEndpoint + "?" + params.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	if err != nil {
+		return "", "", &provider.ErrProviderUnavailable{
+			Provider: provider.NameWikipedia,
+			Cause:    fmt.Errorf("creating extract request: %w", err),
+		}
+	}
+	req.Header.Set("User-Agent", userAgent)
+
+	a.logger.Debug("fetching Wikipedia extract", slog.String("title", title))
+
+	resp, err := a.client.Do(req) //nolint:gosec // URL constructed from trusted Wikipedia endpoint
+	if err != nil {
+		return "", "", &provider.ErrProviderUnavailable{
+			Provider: provider.NameWikipedia,
+			Cause:    err,
+		}
+	}
+	defer resp.Body.Close() //nolint:errcheck
+
+	if resp.StatusCode == http.StatusNotFound {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		return "", "", &provider.ErrNotFound{Provider: provider.NameWikipedia, ID: title}
+	}
+	if resp.StatusCode != http.StatusOK {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		return "", "", &provider.ErrProviderUnavailable{
+			Provider: provider.NameWikipedia,
+			Cause:    fmt.Errorf("extract HTTP %d", resp.StatusCode),
+		}
+	}
+
+	// Full article extracts can be large (200KB+ for well-known artists).
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1*1024*1024))
+	if err != nil {
+		return "", "", &provider.ErrProviderUnavailable{
+			Provider: provider.NameWikipedia,
+			Cause:    fmt.Errorf("reading extract response: %w", err),
+		}
+	}
+
+	var extResp extractResponse
+	if err := json.Unmarshal(body, &extResp); err != nil {
+		return "", "", &provider.ErrProviderUnavailable{
+			Provider: provider.NameWikipedia,
+			Cause:    fmt.Errorf("parsing extract response: %w", err),
+		}
+	}
+
+	// The pages map uses page IDs as keys. Extract the first (and only) page.
+	for pageID, page := range extResp.Query.Pages {
+		if pageID == "-1" {
+			return "", "", &provider.ErrNotFound{Provider: provider.NameWikipedia, ID: title}
+		}
+		name := strings.ReplaceAll(page.Title, "_", " ")
+		return name, page.Extract, nil
+	}
+
+	return "", "", &provider.ErrNotFound{Provider: provider.NameWikipedia, ID: title}
+}
+
+// fetchWikitext fetches the raw wikitext of article section 0 (lead section
+// containing the infobox) from the MediaWiki Action API.
+func (a *Adapter) fetchWikitext(ctx context.Context, title string) (string, error) {
+	params := url.Values{
+		"action":  {"parse"},
+		"page":    {title},
+		"prop":    {"wikitext"},
+		"section": {"0"},
+		"format":  {"json"},
+	}
+	reqURL := a.actionEndpoint + "?" + params.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	if err != nil {
+		return "", &provider.ErrProviderUnavailable{
+			Provider: provider.NameWikipedia,
+			Cause:    fmt.Errorf("creating wikitext request: %w", err),
+		}
+	}
+	req.Header.Set("User-Agent", userAgent)
+
+	a.logger.Debug("fetching Wikipedia wikitext", slog.String("title", title))
+
+	resp, err := a.client.Do(req) //nolint:gosec // URL constructed from trusted Wikipedia endpoint
+	if err != nil {
+		return "", &provider.ErrProviderUnavailable{
+			Provider: provider.NameWikipedia,
+			Cause:    err,
+		}
+	}
+	defer resp.Body.Close() //nolint:errcheck
+
+	if resp.StatusCode != http.StatusOK {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		return "", &provider.ErrProviderUnavailable{
+			Provider: provider.NameWikipedia,
+			Cause:    fmt.Errorf("wikitext HTTP %d", resp.StatusCode),
+		}
+	}
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 512*1024))
+	if err != nil {
+		return "", &provider.ErrProviderUnavailable{
+			Provider: provider.NameWikipedia,
+			Cause:    fmt.Errorf("reading wikitext response: %w", err),
+		}
+	}
+
+	var parseResp parseResponse
+	if err := json.Unmarshal(body, &parseResp); err != nil {
+		return "", &provider.ErrProviderUnavailable{
+			Provider: provider.NameWikipedia,
+			Cause:    fmt.Errorf("parsing wikitext response: %w", err),
+		}
+	}
+
+	return parseResp.Parse.Wikitext.Text, nil
+}
+
+// extractArticleTitle extracts and URL-decodes the article title from a full
+// Wikipedia URL returned by Wikidata SPARQL.
+func extractArticleTitle(articleURL, id string, logger *slog.Logger) (string, error) {
 	const wikiPrefix = "/wiki/"
 	if idx := strings.LastIndex(articleURL, wikiPrefix); idx >= 0 {
 		raw := articleURL[idx+len(wikiPrefix):]
 		decoded, err := url.PathUnescape(raw)
 		if err != nil {
-			a.logger.Warn("failed to unescape article title from Wikidata URL",
-				slog.String("mbid", mbid),
+			logger.Warn("failed to unescape article title from Wikidata URL",
+				slog.String("id", id),
 				slog.String("url", articleURL),
 				slog.Any("error", err))
 			return "", &provider.ErrProviderUnavailable{
@@ -261,115 +586,11 @@ func (a *Adapter) resolveFromMBID(ctx context.Context, mbid string) (string, err
 		return decoded, nil
 	}
 
-	// The SPARQL query returned a result but the article URL is not in the
-	// expected format. Log and return an error so operators can diagnose.
-	a.logger.Warn("unexpected article URL format from Wikidata",
-		slog.String("mbid", mbid),
+	logger.Warn("unexpected article URL format from Wikidata",
+		slog.String("id", id),
 		slog.String("url", articleURL))
 	return "", &provider.ErrProviderUnavailable{
 		Provider: provider.NameWikipedia,
 		Cause:    fmt.Errorf("unexpected Wikidata article URL format: %s", articleURL),
 	}
-}
-
-// fetchSummary fetches the article summary (extract) from the Wikipedia REST API.
-func (a *Adapter) fetchSummary(ctx context.Context, title string) (*provider.ArtistMetadata, error) {
-	// URL-encode the title for the REST API path.
-	encodedTitle := url.PathEscape(title)
-	reqURL := a.wikiEndpoint + "/page/summary/" + encodedTitle
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
-	if err != nil {
-		return nil, &provider.ErrProviderUnavailable{
-			Provider: provider.NameWikipedia,
-			Cause:    fmt.Errorf("creating summary request: %w", err),
-		}
-	}
-	req.Header.Set("User-Agent", userAgent)
-
-	a.logger.Debug("fetching Wikipedia summary", slog.String("title", title))
-
-	resp, err := a.client.Do(req) //nolint:gosec // URL constructed from trusted Wikipedia endpoint
-	if err != nil {
-		return nil, &provider.ErrProviderUnavailable{
-			Provider: provider.NameWikipedia,
-			Cause:    err,
-		}
-	}
-	defer resp.Body.Close() //nolint:errcheck
-
-	if resp.StatusCode == http.StatusNotFound {
-		_, _ = io.Copy(io.Discard, resp.Body)
-		return nil, &provider.ErrNotFound{Provider: provider.NameWikipedia, ID: title}
-	}
-	if resp.StatusCode != http.StatusOK {
-		_, _ = io.Copy(io.Discard, resp.Body)
-		return nil, &provider.ErrProviderUnavailable{
-			Provider: provider.NameWikipedia,
-			Cause:    fmt.Errorf("summary HTTP %d", resp.StatusCode),
-		}
-	}
-
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 512*1024))
-	if err != nil {
-		return nil, &provider.ErrProviderUnavailable{
-			Provider: provider.NameWikipedia,
-			Cause:    fmt.Errorf("reading summary response: %w", err),
-		}
-	}
-
-	var summary summaryResponse
-	if err := json.Unmarshal(body, &summary); err != nil {
-		return nil, &provider.ErrProviderUnavailable{
-			Provider: provider.NameWikipedia,
-			Cause:    fmt.Errorf("parsing summary response: %w", err),
-		}
-	}
-
-	if strings.TrimSpace(summary.Extract) == "" {
-		return nil, &provider.ErrNotFound{Provider: provider.NameWikipedia, ID: title}
-	}
-
-	// Use the display title (cleaned up) as the name.
-	// DisplayName ("displaytitle") can contain HTML markup from Wikipedia
-	// (e.g. <i>italics</i>); strip tags to get plain text.
-	name := stripHTMLTags(summary.DisplayName)
-	if name == "" {
-		name = summary.Title
-	}
-	if name == "" {
-		return nil, &provider.ErrNotFound{Provider: provider.NameWikipedia, ID: title}
-	}
-	// Strip underscores that Wikipedia uses as word separators.
-	name = strings.ReplaceAll(name, "_", " ")
-
-	return &provider.ArtistMetadata{
-		ProviderID: title,
-		Name:       name,
-		Biography:  strings.TrimSpace(summary.Extract),
-		URLs: map[string]string{
-			"wikipedia": "https://en.wikipedia.org/wiki/" + url.PathEscape(title),
-		},
-	}, nil
-}
-
-// stripHTMLTags removes HTML tags from s, returning plain text.
-// Wikipedia's "displaytitle" field can contain markup like <i>Name</i>.
-func stripHTMLTags(s string) string {
-	var b strings.Builder
-	inTag := false
-	for _, r := range s {
-		if r == '<' {
-			inTag = true
-			continue
-		}
-		if r == '>' {
-			inTag = false
-			continue
-		}
-		if !inTag {
-			b.WriteRune(r)
-		}
-	}
-	return strings.TrimSpace(b.String())
 }

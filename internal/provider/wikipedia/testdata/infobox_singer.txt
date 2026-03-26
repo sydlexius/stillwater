@@ -1,0 +1,6 @@
+{{Infobox singer
+| name         = Adele
+| birth_place  = [[Tottenham]], London, England
+| genre        = {{hlist|[[Pop music|Pop]]|[[soul music|soul]]|[[rhythm and blues|R&B]]}}
+| years_active = 2006{{ndash}}present
+}}

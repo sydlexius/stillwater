@@ -1,0 +1,17 @@
+{{Infobox musical artist
+| name            = Pink Floyd
+| origin          = [[London]], England
+| genre            = {{flatlist|
+* [[Progressive rock]]
+* [[psychedelic rock]]
+* [[art rock]]
+}}
+| years_active    = 1965{{ndash}}1995, 2005, 2012{{ndash}}2014
+| current_members =
+* [[David Gilmour]]
+* [[Nick Mason]]
+| past_members    =
+* [[Syd Barrett]]<ref>Barrett left in 1968.</ref>
+* [[Roger Waters]]
+* [[Richard Wright (musician)|Richard Wright]]
+}}

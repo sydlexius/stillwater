@@ -1,0 +1,7 @@
+{{Infobox musical artist
+| name            = ABBA
+| origin          = [[Stockholm]], Sweden
+| genre           = [[Pop music|Pop]], [[euro disco]], [[synth-pop]]
+| years_active    = 1972{{ndash}}1982, 2018{{ndash}}2022
+| current_members = [[Agnetha Faltskog]]<br />[[Bjorn Ulvaeus]]<br />[[Benny Andersson]]<br />[[Anni-Frid Lyngstad]]
+}}

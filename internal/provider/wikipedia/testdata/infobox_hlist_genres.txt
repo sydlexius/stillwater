@@ -1,0 +1,10 @@
+{{Infobox musical artist
+| name         = Daft Punk
+| origin       = [[Paris]], France
+| genre        = {{hlist|[[Electronic music|Electronic]]|[[house music|house]]|[[French house]]|[[synth-pop]]|[[disco]]}}
+| years_active = 1993{{ndash}}2021
+| current_members =
+* [[Thomas Bangalter]]
+* [[Guy-Manuel de Homem-Christo]]
+| past_members    =
+}}

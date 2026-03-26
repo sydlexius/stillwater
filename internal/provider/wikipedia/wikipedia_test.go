@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/provider"
@@ -15,6 +16,539 @@ import (
 
 func silentLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+}
+
+// newTestAdapter creates an adapter with all three endpoints pointing to mock servers.
+// Pass "" for any endpoint to use a dummy URL (for tests that don't hit that endpoint).
+func newTestAdapter(t *testing.T, actionURL, sparqlURL, wikidataAPIURL string) *Adapter {
+	t.Helper()
+	if actionURL == "" {
+		actionURL = "http://unused-action"
+	}
+	if sparqlURL == "" {
+		sparqlURL = "http://unused-sparql"
+	}
+	if wikidataAPIURL == "" {
+		wikidataAPIURL = "http://unused-wdapi"
+	}
+	return NewWithEndpoints(provider.NewRateLimiterMap(), silentLogger(),
+		actionURL, sparqlURL, wikidataAPIURL)
+}
+
+// --- SPARQL mock helpers ---
+
+func sparqlServerReturning(t *testing.T, articleURL string) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := sparqlResponse{}
+		if articleURL != "" {
+			resp.Results.Bindings = append(resp.Results.Bindings, struct {
+				Article struct {
+					Value string `json:"value"`
+				} `json:"article"`
+			}{
+				Article: struct {
+					Value string `json:"value"`
+				}{Value: articleURL},
+			})
+		}
+		w.Header().Set("Content-Type", "application/sparql-results+json")
+		json.NewEncoder(w).Encode(resp) //nolint:errcheck
+	}))
+}
+
+// --- Action API mock helpers ---
+
+func actionExtractServer(t *testing.T, title, extract string) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		action := r.URL.Query().Get("action")
+		switch action {
+		case "query":
+			resp := extractResponse{}
+			resp.Query.Pages = map[string]extractPage{
+				"12345": {PageID: 12345, Title: title, Extract: extract},
+			}
+			json.NewEncoder(w).Encode(resp) //nolint:errcheck
+		case "parse":
+			// Return empty wikitext (no infobox).
+			resp := parseResponse{}
+			resp.Parse.Title = title
+			resp.Parse.PageID = 12345
+			json.NewEncoder(w).Encode(resp) //nolint:errcheck
+		default:
+			w.WriteHeader(http.StatusBadRequest)
+		}
+	}))
+}
+
+func actionExtractAndWikitextServer(t *testing.T, title, extract, wikitext string) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		action := r.URL.Query().Get("action")
+		switch action {
+		case "query":
+			meta := r.URL.Query().Get("meta")
+			if meta == "siteinfo" {
+				// TestConnection probe.
+				json.NewEncoder(w).Encode(map[string]any{"query": map[string]any{"general": map[string]any{}}}) //nolint:errcheck
+				return
+			}
+			resp := extractResponse{}
+			resp.Query.Pages = map[string]extractPage{
+				"12345": {PageID: 12345, Title: title, Extract: extract},
+			}
+			json.NewEncoder(w).Encode(resp) //nolint:errcheck
+		case "parse":
+			resp := parseResponse{}
+			resp.Parse.Title = title
+			resp.Parse.PageID = 12345
+			resp.Parse.Wikitext.Text = wikitext
+			json.NewEncoder(w).Encode(resp) //nolint:errcheck
+		default:
+			w.WriteHeader(http.StatusBadRequest)
+		}
+	}))
+}
+
+// --- Wikidata entity API mock ---
+
+func wikidataEntityServer(t *testing.T, qid, articleTitle string) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := wbEntityResponse{
+			Entities: map[string]wbEntity{
+				qid: {
+					Sitelinks: map[string]wbSitelink{
+						"enwiki": {Title: articleTitle},
+					},
+				},
+			},
+		}
+		json.NewEncoder(w).Encode(resp) //nolint:errcheck
+	}))
+}
+
+// --- Tests ---
+
+func TestGetArtist_ValidMBID(t *testing.T) {
+	sparqlSrv := sparqlServerReturning(t, "https://en.wikipedia.org/wiki/Radiohead")
+	defer sparqlSrv.Close()
+
+	actionSrv := actionExtractServer(t, "Radiohead",
+		"Radiohead are an English rock band formed in Abingdon, Oxfordshire, in 1985.")
+	defer actionSrv.Close()
+
+	adapter := newTestAdapter(t, actionSrv.URL, sparqlSrv.URL, "")
+
+	meta, err := adapter.GetArtist(context.Background(), "a74b1b7f-71a5-4011-9441-d0b5e4122711")
+	if err != nil {
+		t.Fatalf("GetArtist: %v", err)
+	}
+	if meta.Name != "Radiohead" {
+		t.Errorf("Name = %q, want Radiohead", meta.Name)
+	}
+	if meta.Biography != "Radiohead are an English rock band formed in Abingdon, Oxfordshire, in 1985." {
+		t.Errorf("Biography = %q, want Radiohead bio", meta.Biography)
+	}
+	if meta.URLs["wikipedia"] == "" {
+		t.Error("expected wikipedia URL in metadata")
+	}
+}
+
+func TestGetArtist_NonMBID(t *testing.T) {
+	// Non-UUID, non-QID string is treated as article title.
+	// With no action server, it should fail.
+	adapter := newTestAdapter(t, "", "", "")
+
+	_, err := adapter.GetArtist(context.Background(), "Radiohead")
+	// "Radiohead" is treated as an article title, but the action server is unreachable.
+	if err == nil {
+		t.Fatal("expected error for unreachable action server")
+	}
+}
+
+func TestGetArtist_NotFoundInWikidata(t *testing.T) {
+	// SPARQL returns empty bindings.
+	sparqlSrv := sparqlServerReturning(t, "")
+	defer sparqlSrv.Close()
+
+	adapter := newTestAdapter(t, "", sparqlSrv.URL, "")
+
+	_, err := adapter.GetArtist(context.Background(), "a74b1b7f-71a5-4011-9441-d0b5e4122711")
+	if err == nil {
+		t.Fatal("expected error when MBID not found in Wikidata")
+	}
+	var notFound *provider.ErrNotFound
+	if !isErrNotFound(err, &notFound) {
+		t.Errorf("expected ErrNotFound, got %T: %v", err, err)
+	}
+}
+
+func TestGetArtist_WikidataServerError(t *testing.T) {
+	sparqlSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer sparqlSrv.Close()
+
+	adapter := newTestAdapter(t, "", sparqlSrv.URL, "")
+
+	_, err := adapter.GetArtist(context.Background(), "a74b1b7f-71a5-4011-9441-d0b5e4122711")
+	if err == nil {
+		t.Fatal("expected error on Wikidata server error")
+	}
+	var unavail *provider.ErrProviderUnavailable
+	if !isErrUnavailable(err, &unavail) {
+		t.Errorf("expected ErrProviderUnavailable, got %T: %v", err, err)
+	}
+}
+
+func TestGetArtist_ExtractNotFound(t *testing.T) {
+	sparqlSrv := sparqlServerReturning(t, "https://en.wikipedia.org/wiki/Test_Artist")
+	defer sparqlSrv.Close()
+
+	// Action API returns page ID -1 (not found).
+	actionSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := extractResponse{}
+		resp.Query.Pages = map[string]extractPage{
+			"-1": {},
+		}
+		json.NewEncoder(w).Encode(resp) //nolint:errcheck
+	}))
+	defer actionSrv.Close()
+
+	adapter := newTestAdapter(t, actionSrv.URL, sparqlSrv.URL, "")
+
+	_, err := adapter.GetArtist(context.Background(), "a74b1b7f-71a5-4011-9441-d0b5e4122711")
+	if err == nil {
+		t.Fatal("expected error when Wikipedia article not found")
+	}
+	var notFound *provider.ErrNotFound
+	if !isErrNotFound(err, &notFound) {
+		t.Errorf("expected ErrNotFound, got %T: %v", err, err)
+	}
+}
+
+func TestGetArtist_EmptyExtract(t *testing.T) {
+	sparqlSrv := sparqlServerReturning(t, "https://en.wikipedia.org/wiki/Empty_Article")
+	defer sparqlSrv.Close()
+
+	actionSrv := actionExtractServer(t, "Empty Article", "")
+	defer actionSrv.Close()
+
+	adapter := newTestAdapter(t, actionSrv.URL, sparqlSrv.URL, "")
+
+	_, err := adapter.GetArtist(context.Background(), "a74b1b7f-71a5-4011-9441-d0b5e4122711")
+	if err == nil {
+		t.Fatal("expected error when extract is empty")
+	}
+	var notFound *provider.ErrNotFound
+	if !isErrNotFound(err, &notFound) {
+		t.Errorf("expected ErrNotFound, got %T: %v", err, err)
+	}
+}
+
+func TestGetArtist_UnexpectedArticleURL(t *testing.T) {
+	// SPARQL returns a URL without /wiki/ prefix.
+	sparqlSrv := sparqlServerReturning(t, "https://www.wikidata.org/entity/Q44190")
+	defer sparqlSrv.Close()
+
+	adapter := newTestAdapter(t, "", sparqlSrv.URL, "")
+
+	_, err := adapter.GetArtist(context.Background(), "a74b1b7f-71a5-4011-9441-d0b5e4122711")
+	if err == nil {
+		t.Fatal("expected error for unexpected article URL format")
+	}
+	var unavail *provider.ErrProviderUnavailable
+	if !isErrUnavailable(err, &unavail) {
+		t.Errorf("expected ErrProviderUnavailable for unexpected URL, got %T: %v", err, err)
+	}
+}
+
+func TestGetArtist_PercentEncodedTitle(t *testing.T) {
+	sparqlSrv := sparqlServerReturning(t, "https://en.wikipedia.org/wiki/AC%2FDC")
+	defer sparqlSrv.Close()
+
+	actionSrv := actionExtractServer(t, "AC/DC",
+		"AC/DC are an Australian rock band formed in Sydney in 1973.")
+	defer actionSrv.Close()
+
+	adapter := newTestAdapter(t, actionSrv.URL, sparqlSrv.URL, "")
+
+	meta, err := adapter.GetArtist(context.Background(), "a74b1b7f-71a5-4011-9441-d0b5e4122711")
+	if err != nil {
+		t.Fatalf("GetArtist: %v", err)
+	}
+	if meta.ProviderID != "AC/DC" {
+		t.Errorf("ProviderID = %q, want %q", meta.ProviderID, "AC/DC")
+	}
+	if meta.Name != "AC/DC" {
+		t.Errorf("Name = %q, want %q", meta.Name, "AC/DC")
+	}
+}
+
+func TestGetArtist_WithInfobox(t *testing.T) {
+	sparqlSrv := sparqlServerReturning(t, "https://en.wikipedia.org/wiki/Radiohead")
+	defer sparqlSrv.Close()
+
+	wikitext := loadFixture(t, "infobox_band.txt")
+	actionSrv := actionExtractAndWikitextServer(t, "Radiohead",
+		"Radiohead are an English rock band.", wikitext)
+	defer actionSrv.Close()
+
+	adapter := newTestAdapter(t, actionSrv.URL, sparqlSrv.URL, "")
+
+	meta, err := adapter.GetArtist(context.Background(), "a74b1b7f-71a5-4011-9441-d0b5e4122711")
+	if err != nil {
+		t.Fatalf("GetArtist: %v", err)
+	}
+
+	if meta.Country != "Abingdon, Oxfordshire, England" {
+		t.Errorf("Country = %q, want %q", meta.Country, "Abingdon, Oxfordshire, England")
+	}
+
+	if len(meta.Genres) < 3 {
+		t.Errorf("expected at least 3 genres, got %d: %v", len(meta.Genres), meta.Genres)
+	}
+
+	// Should have 5 active members.
+	activeCount := 0
+	for _, m := range meta.Members {
+		if m.IsActive {
+			activeCount++
+		}
+	}
+	if activeCount != 5 {
+		t.Errorf("expected 5 active members, got %d", activeCount)
+	}
+
+	if meta.YearsActive == "" {
+		t.Error("expected non-empty YearsActive")
+	}
+}
+
+func TestGetArtist_WithPastMembers(t *testing.T) {
+	sparqlSrv := sparqlServerReturning(t, "https://en.wikipedia.org/wiki/Pink_Floyd")
+	defer sparqlSrv.Close()
+
+	wikitext := loadFixture(t, "infobox_with_past_members.txt")
+	actionSrv := actionExtractAndWikitextServer(t, "Pink Floyd",
+		"Pink Floyd were an English rock band.", wikitext)
+	defer actionSrv.Close()
+
+	adapter := newTestAdapter(t, actionSrv.URL, sparqlSrv.URL, "")
+
+	meta, err := adapter.GetArtist(context.Background(), "a74b1b7f-71a5-4011-9441-d0b5e4122711")
+	if err != nil {
+		t.Fatalf("GetArtist: %v", err)
+	}
+
+	activeCount := 0
+	pastCount := 0
+	for _, m := range meta.Members {
+		if m.IsActive {
+			activeCount++
+		} else {
+			pastCount++
+		}
+	}
+	if activeCount != 2 {
+		t.Errorf("expected 2 active members, got %d", activeCount)
+	}
+	if pastCount != 3 {
+		t.Errorf("expected 3 past members, got %d", pastCount)
+	}
+}
+
+func TestGetArtist_NoInfobox(t *testing.T) {
+	sparqlSrv := sparqlServerReturning(t, "https://en.wikipedia.org/wiki/Some_Artist")
+	defer sparqlSrv.Close()
+
+	// Action server returns extract but no infobox in wikitext.
+	actionSrv := actionExtractAndWikitextServer(t, "Some Artist",
+		"Some Artist is a musician.", "This article has no infobox, just text.")
+	defer actionSrv.Close()
+
+	adapter := newTestAdapter(t, actionSrv.URL, sparqlSrv.URL, "")
+
+	meta, err := adapter.GetArtist(context.Background(), "a74b1b7f-71a5-4011-9441-d0b5e4122711")
+	if err != nil {
+		t.Fatalf("GetArtist: %v", err)
+	}
+
+	// Biography should still be populated.
+	if meta.Biography == "" {
+		t.Error("expected non-empty Biography even without infobox")
+	}
+	// Infobox fields should be empty.
+	if len(meta.Genres) != 0 {
+		t.Errorf("expected no genres without infobox, got %v", meta.Genres)
+	}
+	if len(meta.Members) != 0 {
+		t.Errorf("expected no members without infobox, got %v", meta.Members)
+	}
+}
+
+func TestGetArtist_WikitextFetchFailure(t *testing.T) {
+	sparqlSrv := sparqlServerReturning(t, "https://en.wikipedia.org/wiki/Some_Artist")
+	defer sparqlSrv.Close()
+
+	// Action server returns extract but 500 for wikitext parse.
+	actionSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		action := r.URL.Query().Get("action")
+		switch action {
+		case "query":
+			resp := extractResponse{}
+			resp.Query.Pages = map[string]extractPage{
+				"1": {PageID: 1, Title: "Some Artist", Extract: "Some Artist is a musician."},
+			}
+			json.NewEncoder(w).Encode(resp) //nolint:errcheck
+		case "parse":
+			w.WriteHeader(http.StatusInternalServerError)
+		default:
+			w.WriteHeader(http.StatusBadRequest)
+		}
+	}))
+	defer actionSrv.Close()
+
+	adapter := newTestAdapter(t, actionSrv.URL, sparqlSrv.URL, "")
+
+	meta, err := adapter.GetArtist(context.Background(), "a74b1b7f-71a5-4011-9441-d0b5e4122711")
+	if err != nil {
+		t.Fatalf("GetArtist should succeed even if wikitext fails: %v", err)
+	}
+	if meta.Biography != "Some Artist is a musician." {
+		t.Errorf("Biography = %q, want %q", meta.Biography, "Some Artist is a musician.")
+	}
+}
+
+func TestGetArtist_QID(t *testing.T) {
+	wdSrv := wikidataEntityServer(t, "Q44190", "Radiohead")
+	defer wdSrv.Close()
+
+	actionSrv := actionExtractServer(t, "Radiohead",
+		"Radiohead are an English rock band.")
+	defer actionSrv.Close()
+
+	adapter := newTestAdapter(t, actionSrv.URL, "", wdSrv.URL)
+
+	meta, err := adapter.GetArtist(context.Background(), "Q44190")
+	if err != nil {
+		t.Fatalf("GetArtist with Q-ID: %v", err)
+	}
+	if meta.Name != "Radiohead" {
+		t.Errorf("Name = %q, want Radiohead", meta.Name)
+	}
+}
+
+func TestGetArtist_QID_NotFound(t *testing.T) {
+	// Wikidata entity API returns an entity without enwiki sitelink.
+	wdSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := wbEntityResponse{
+			Entities: map[string]wbEntity{
+				"Q99999": {
+					Sitelinks: map[string]wbSitelink{},
+				},
+			},
+		}
+		json.NewEncoder(w).Encode(resp) //nolint:errcheck
+	}))
+	defer wdSrv.Close()
+
+	adapter := newTestAdapter(t, "", "", wdSrv.URL)
+
+	_, err := adapter.GetArtist(context.Background(), "Q99999")
+	if err == nil {
+		t.Fatal("expected error for Q-ID without enwiki sitelink")
+	}
+	var notFound *provider.ErrNotFound
+	if !isErrNotFound(err, &notFound) {
+		t.Errorf("expected ErrNotFound, got %T: %v", err, err)
+	}
+}
+
+func TestGetArtist_ArticleTitle(t *testing.T) {
+	actionSrv := actionExtractServer(t, "Radiohead",
+		"Radiohead are an English rock band.")
+	defer actionSrv.Close()
+
+	adapter := newTestAdapter(t, actionSrv.URL, "", "")
+
+	meta, err := adapter.GetArtist(context.Background(), "Radiohead")
+	if err != nil {
+		t.Fatalf("GetArtist with article title: %v", err)
+	}
+	if meta.Name != "Radiohead" {
+		t.Errorf("Name = %q, want Radiohead", meta.Name)
+	}
+	if meta.ProviderID != "Radiohead" {
+		t.Errorf("ProviderID = %q, want Radiohead", meta.ProviderID)
+	}
+}
+
+func TestTestConnection(t *testing.T) {
+	actionSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{"query": map[string]any{"general": map[string]any{}}}) //nolint:errcheck
+	}))
+	defer actionSrv.Close()
+
+	sparqlSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer sparqlSrv.Close()
+
+	adapter := newTestAdapter(t, actionSrv.URL, sparqlSrv.URL, "")
+
+	if err := adapter.TestConnection(context.Background()); err != nil {
+		t.Errorf("TestConnection: %v", err)
+	}
+}
+
+func TestName(t *testing.T) {
+	adapter := New(provider.NewRateLimiterMap(), silentLogger())
+	if adapter.Name() != provider.NameWikipedia {
+		t.Errorf("Name() = %q, want %q", adapter.Name(), provider.NameWikipedia)
+	}
+}
+
+func TestRequiresAuth(t *testing.T) {
+	adapter := New(provider.NewRateLimiterMap(), silentLogger())
+	if adapter.RequiresAuth() {
+		t.Error("RequiresAuth() should be false")
+	}
+}
+
+func TestSupportsNameLookup(t *testing.T) {
+	adapter := New(provider.NewRateLimiterMap(), silentLogger())
+	if adapter.SupportsNameLookup() {
+		t.Error("SupportsNameLookup() should be false")
+	}
+}
+
+func TestIsQID(t *testing.T) {
+	tests := []struct {
+		name string
+		id   string
+		want bool
+	}{
+		{"valid Q-ID", "Q44190", true},
+		{"lowercase q", "q44190", true},
+		{"single digit", "Q1", true},
+		{"empty string", "", false},
+		{"just Q", "Q", false},
+		{"Q with letters", "Q44abc", false},
+		{"UUID", "a74b1b7f-71a5-4011-9441-d0b5e4122711", false},
+		{"plain text", "Radiohead", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isQID(tt.id)
+			if got != tt.want {
+				t.Errorf("isQID(%q) = %v, want %v", tt.id, got, tt.want)
+			}
+		})
+	}
 }
 
 func TestIsUUID(t *testing.T) {
@@ -47,101 +581,39 @@ func TestIsUUID(t *testing.T) {
 	}
 }
 
-func TestGetArtist_ValidMBID(t *testing.T) {
-	// Mock Wikidata SPARQL endpoint
-	sparqlServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		resp := sparqlResponse{}
-		resp.Results.Bindings = append(resp.Results.Bindings, struct {
-			Article struct {
-				Value string `json:"value"`
-			} `json:"article"`
-		}{
-			Article: struct {
-				Value string `json:"value"`
-			}{Value: "https://en.wikipedia.org/wiki/Radiohead"},
-		})
-		w.Header().Set("Content-Type", "application/sparql-results+json")
-		json.NewEncoder(w).Encode(resp) //nolint:errcheck
-	}))
-	defer sparqlServer.Close()
+func TestGetArtist_TitleWithUnderscore(t *testing.T) {
+	actionSrv := actionExtractServer(t, "Some_Band",
+		"Some Band is a band.")
+	defer actionSrv.Close()
 
-	// Mock Wikipedia REST API
-	wikiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		resp := summaryResponse{
-			Title:       "Radiohead",
-			DisplayName: "Radiohead",
-			Extract:     "Radiohead are an English rock band formed in Abingdon, Oxfordshire, in 1985.",
-		}
-		json.NewEncoder(w).Encode(resp) //nolint:errcheck
-	}))
-	defer wikiServer.Close()
+	adapter := newTestAdapter(t, actionSrv.URL, "", "")
 
-	limiter := provider.NewRateLimiterMap()
-	adapter := NewWithEndpoints(limiter, silentLogger(), wikiServer.URL, sparqlServer.URL)
-
-	meta, err := adapter.GetArtist(context.Background(), "a74b1b7f-71a5-4011-9441-d0b5e4122711")
+	meta, err := adapter.GetArtist(context.Background(), "Some_Band")
 	if err != nil {
 		t.Fatalf("GetArtist: %v", err)
 	}
-	if meta.Name != "Radiohead" {
-		t.Errorf("Name = %q, want Radiohead", meta.Name)
-	}
-	if meta.Biography != "Radiohead are an English rock band formed in Abingdon, Oxfordshire, in 1985." {
-		t.Errorf("Biography = %q, want Radiohead bio", meta.Biography)
-	}
-	if meta.URLs["wikipedia"] == "" {
-		t.Error("expected wikipedia URL in metadata")
+	// Underscores in titles should be replaced with spaces.
+	if strings.Contains(meta.Name, "_") {
+		t.Errorf("Name = %q, should not contain underscores", meta.Name)
 	}
 }
 
-func TestGetArtist_NonMBID(t *testing.T) {
-	limiter := provider.NewRateLimiterMap()
-	adapter := NewWithEndpoints(limiter, silentLogger(), "http://unused", "http://unused")
-
-	_, err := adapter.GetArtist(context.Background(), "Radiohead")
-	if err == nil {
-		t.Fatal("expected error for non-MBID input")
-	}
-	var notFound *provider.ErrNotFound
-	if !isErrNotFound(err, &notFound) {
-		t.Errorf("expected ErrNotFound, got %T: %v", err, err)
-	}
-}
-
-func TestGetArtist_NotFoundInWikidata(t *testing.T) {
-	// SPARQL returns empty bindings
-	sparqlServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		resp := sparqlResponse{}
-		w.Header().Set("Content-Type", "application/sparql-results+json")
-		json.NewEncoder(w).Encode(resp) //nolint:errcheck
-	}))
-	defer sparqlServer.Close()
-
-	limiter := provider.NewRateLimiterMap()
-	adapter := NewWithEndpoints(limiter, silentLogger(), "http://unused", sparqlServer.URL)
-
-	_, err := adapter.GetArtist(context.Background(), "a74b1b7f-71a5-4011-9441-d0b5e4122711")
-	if err == nil {
-		t.Fatal("expected error when MBID not found in Wikidata")
-	}
-	var notFound *provider.ErrNotFound
-	if !isErrNotFound(err, &notFound) {
-		t.Errorf("expected ErrNotFound, got %T: %v", err, err)
-	}
-}
-
-func TestGetArtist_WikidataServerError(t *testing.T) {
-	sparqlServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func TestTestConnection_ActionAPIFailure(t *testing.T) {
+	actionSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
-	defer sparqlServer.Close()
+	defer actionSrv.Close()
 
-	limiter := provider.NewRateLimiterMap()
-	adapter := NewWithEndpoints(limiter, silentLogger(), "http://unused", sparqlServer.URL)
+	sparqlSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer sparqlSrv.Close()
 
-	_, err := adapter.GetArtist(context.Background(), "a74b1b7f-71a5-4011-9441-d0b5e4122711")
+	adapter := newTestAdapter(t, actionSrv.URL, sparqlSrv.URL, "")
+
+	err := adapter.TestConnection(context.Background())
 	if err == nil {
-		t.Fatal("expected error on Wikidata server error")
+		t.Fatal("expected error when Action API returns 500")
 	}
 	var unavail *provider.ErrProviderUnavailable
 	if !isErrUnavailable(err, &unavail) {
@@ -149,282 +621,90 @@ func TestGetArtist_WikidataServerError(t *testing.T) {
 	}
 }
 
-func TestGetArtist_SummaryNotFound(t *testing.T) {
-	// SPARQL succeeds
-	sparqlServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		resp := sparqlResponse{}
-		resp.Results.Bindings = append(resp.Results.Bindings, struct {
-			Article struct {
-				Value string `json:"value"`
-			} `json:"article"`
-		}{
-			Article: struct {
-				Value string `json:"value"`
-			}{Value: "https://en.wikipedia.org/wiki/Test_Artist"},
-		})
-		w.Header().Set("Content-Type", "application/sparql-results+json")
-		json.NewEncoder(w).Encode(resp) //nolint:errcheck
+func TestTestConnection_SPARQLFailure(t *testing.T) {
+	actionSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{"query": map[string]any{"general": map[string]any{}}}) //nolint:errcheck
 	}))
-	defer sparqlServer.Close()
+	defer actionSrv.Close()
 
-	// Wikipedia returns 404
-	wikiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusNotFound)
+	sparqlSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
 	}))
-	defer wikiServer.Close()
+	defer sparqlSrv.Close()
 
-	limiter := provider.NewRateLimiterMap()
-	adapter := NewWithEndpoints(limiter, silentLogger(), wikiServer.URL, sparqlServer.URL)
+	adapter := newTestAdapter(t, actionSrv.URL, sparqlSrv.URL, "")
 
-	_, err := adapter.GetArtist(context.Background(), "a74b1b7f-71a5-4011-9441-d0b5e4122711")
+	err := adapter.TestConnection(context.Background())
 	if err == nil {
-		t.Fatal("expected error when Wikipedia article not found")
+		t.Fatal("expected error when SPARQL returns 500")
 	}
-	var notFound *provider.ErrNotFound
-	if !isErrNotFound(err, &notFound) {
-		t.Errorf("expected ErrNotFound, got %T: %v", err, err)
-	}
-}
-
-func TestGetArtist_EmptyExtract(t *testing.T) {
-	sparqlServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		resp := sparqlResponse{}
-		resp.Results.Bindings = append(resp.Results.Bindings, struct {
-			Article struct {
-				Value string `json:"value"`
-			} `json:"article"`
-		}{
-			Article: struct {
-				Value string `json:"value"`
-			}{Value: "https://en.wikipedia.org/wiki/Empty_Article"},
-		})
-		w.Header().Set("Content-Type", "application/sparql-results+json")
-		json.NewEncoder(w).Encode(resp) //nolint:errcheck
-	}))
-	defer sparqlServer.Close()
-
-	// Wikipedia returns a valid response but with an empty extract
-	wikiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		resp := summaryResponse{
-			Title:   "Empty Article",
-			Extract: "",
-		}
-		json.NewEncoder(w).Encode(resp) //nolint:errcheck
-	}))
-	defer wikiServer.Close()
-
-	limiter := provider.NewRateLimiterMap()
-	adapter := NewWithEndpoints(limiter, silentLogger(), wikiServer.URL, sparqlServer.URL)
-
-	_, err := adapter.GetArtist(context.Background(), "a74b1b7f-71a5-4011-9441-d0b5e4122711")
-	if err == nil {
-		t.Fatal("expected error when extract is empty")
-	}
-	var notFound *provider.ErrNotFound
-	if !isErrNotFound(err, &notFound) {
-		t.Errorf("expected ErrNotFound, got %T: %v", err, err)
-	}
-}
-
-func TestGetArtist_UnexpectedArticleURL(t *testing.T) {
-	// SPARQL returns a URL without /wiki/ prefix
-	sparqlServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		resp := sparqlResponse{}
-		resp.Results.Bindings = append(resp.Results.Bindings, struct {
-			Article struct {
-				Value string `json:"value"`
-			} `json:"article"`
-		}{
-			Article: struct {
-				Value string `json:"value"`
-			}{Value: "https://www.wikidata.org/entity/Q44190"},
-		})
-		w.Header().Set("Content-Type", "application/sparql-results+json")
-		json.NewEncoder(w).Encode(resp) //nolint:errcheck
-	}))
-	defer sparqlServer.Close()
-
-	limiter := provider.NewRateLimiterMap()
-	adapter := NewWithEndpoints(limiter, silentLogger(), "http://unused", sparqlServer.URL)
-
-	_, err := adapter.GetArtist(context.Background(), "a74b1b7f-71a5-4011-9441-d0b5e4122711")
-	if err == nil {
-		t.Fatal("expected error for unexpected article URL format")
-	}
-	// Should be ErrProviderUnavailable (not ErrNotFound) since the data exists
-	// but the URL format is unexpected.
 	var unavail *provider.ErrProviderUnavailable
 	if !isErrUnavailable(err, &unavail) {
-		t.Errorf("expected ErrProviderUnavailable for unexpected URL, got %T: %v", err, err)
+		t.Errorf("expected ErrProviderUnavailable, got %T: %v", err, err)
 	}
 }
 
-func TestGetArtist_DisplayNameFallback(t *testing.T) {
-	sparqlServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		resp := sparqlResponse{}
-		resp.Results.Bindings = append(resp.Results.Bindings, struct {
-			Article struct {
-				Value string `json:"value"`
-			} `json:"article"`
-		}{
-			Article: struct {
-				Value string `json:"value"`
-			}{Value: "https://en.wikipedia.org/wiki/Some_Band"},
-		})
-		w.Header().Set("Content-Type", "application/sparql-results+json")
+func TestGetArtist_QID_ServerError(t *testing.T) {
+	wdSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer wdSrv.Close()
+
+	adapter := newTestAdapter(t, "", "", wdSrv.URL)
+
+	_, err := adapter.GetArtist(context.Background(), "Q44190")
+	if err == nil {
+		t.Fatal("expected error when Wikidata API returns 500")
+	}
+	var unavail *provider.ErrProviderUnavailable
+	if !isErrUnavailable(err, &unavail) {
+		t.Errorf("expected ErrProviderUnavailable, got %T: %v", err, err)
+	}
+}
+
+func TestGetArtist_EmptyPagesMap(t *testing.T) {
+	sparqlSrv := sparqlServerReturning(t, "https://en.wikipedia.org/wiki/Ghost_Article")
+	defer sparqlSrv.Close()
+
+	actionSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Empty pages map.
+		resp := extractResponse{}
+		resp.Query.Pages = map[string]extractPage{}
 		json.NewEncoder(w).Encode(resp) //nolint:errcheck
 	}))
-	defer sparqlServer.Close()
+	defer actionSrv.Close()
 
-	// Return summary with no DisplayName; should fall back to Title
-	wikiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		resp := summaryResponse{
-			Title:       "Some_Band",
-			DisplayName: "",
-			Extract:     "Some Band is a fictional music group used for testing purposes in this codebase.",
-		}
-		json.NewEncoder(w).Encode(resp) //nolint:errcheck
-	}))
-	defer wikiServer.Close()
+	adapter := newTestAdapter(t, actionSrv.URL, sparqlSrv.URL, "")
 
-	limiter := provider.NewRateLimiterMap()
-	adapter := NewWithEndpoints(limiter, silentLogger(), wikiServer.URL, sparqlServer.URL)
+	_, err := adapter.GetArtist(context.Background(), "a74b1b7f-71a5-4011-9441-d0b5e4122711")
+	if err == nil {
+		t.Fatal("expected error for empty pages map")
+	}
+	var notFound *provider.ErrNotFound
+	if !isErrNotFound(err, &notFound) {
+		t.Errorf("expected ErrNotFound, got %T: %v", err, err)
+	}
+}
 
-	meta, err := adapter.GetArtist(context.Background(), "a74b1b7f-71a5-4011-9441-d0b5e4122711")
+func TestSearchArtist_ReturnsNil(t *testing.T) {
+	adapter := New(provider.NewRateLimiterMap(), silentLogger())
+	results, err := adapter.SearchArtist(context.Background(), "Radiohead")
 	if err != nil {
-		t.Fatalf("GetArtist: %v", err)
+		t.Errorf("SearchArtist: unexpected error %v", err)
 	}
-	// Title "Some_Band" should have underscores replaced with spaces
-	if meta.Name != "Some Band" {
-		t.Errorf("Name = %q, want %q", meta.Name, "Some Band")
+	if results != nil {
+		t.Errorf("SearchArtist: expected nil, got %v", results)
 	}
 }
 
-func TestGetArtist_PercentEncodedTitle(t *testing.T) {
-	// SPARQL returns a percent-encoded article URL (e.g. AC%2FDC)
-	sparqlServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		resp := sparqlResponse{}
-		resp.Results.Bindings = append(resp.Results.Bindings, struct {
-			Article struct {
-				Value string `json:"value"`
-			} `json:"article"`
-		}{
-			Article: struct {
-				Value string `json:"value"`
-			}{Value: "https://en.wikipedia.org/wiki/AC%2FDC"},
-		})
-		w.Header().Set("Content-Type", "application/sparql-results+json")
-		json.NewEncoder(w).Encode(resp) //nolint:errcheck
-	}))
-	defer sparqlServer.Close()
-
-	wikiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		resp := summaryResponse{
-			Title:       "AC/DC",
-			DisplayName: "AC/DC",
-			Extract:     "AC/DC are an Australian rock band formed in Sydney in 1973 by Scottish-born brothers Malcolm and Angus Young.",
-		}
-		json.NewEncoder(w).Encode(resp) //nolint:errcheck
-	}))
-	defer wikiServer.Close()
-
-	limiter := provider.NewRateLimiterMap()
-	adapter := NewWithEndpoints(limiter, silentLogger(), wikiServer.URL, sparqlServer.URL)
-
-	meta, err := adapter.GetArtist(context.Background(), "a74b1b7f-71a5-4011-9441-d0b5e4122711")
+func TestGetImages_ReturnsNil(t *testing.T) {
+	adapter := New(provider.NewRateLimiterMap(), silentLogger())
+	results, err := adapter.GetImages(context.Background(), "a74b1b7f-71a5-4011-9441-d0b5e4122711")
 	if err != nil {
-		t.Fatalf("GetArtist: %v", err)
+		t.Errorf("GetImages: unexpected error %v", err)
 	}
-	// Title should be URL-decoded: "AC/DC" not "AC%2FDC"
-	if meta.ProviderID != "AC/DC" {
-		t.Errorf("ProviderID = %q, want %q", meta.ProviderID, "AC/DC")
-	}
-	if meta.Name != "AC/DC" {
-		t.Errorf("Name = %q, want %q", meta.Name, "AC/DC")
-	}
-}
-
-func TestGetArtist_HTMLDisplayName(t *testing.T) {
-	sparqlServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		resp := sparqlResponse{}
-		resp.Results.Bindings = append(resp.Results.Bindings, struct {
-			Article struct {
-				Value string `json:"value"`
-			} `json:"article"`
-		}{
-			Article: struct {
-				Value string `json:"value"`
-			}{Value: "https://en.wikipedia.org/wiki/The_Beatles"},
-		})
-		w.Header().Set("Content-Type", "application/sparql-results+json")
-		json.NewEncoder(w).Encode(resp) //nolint:errcheck
-	}))
-	defer sparqlServer.Close()
-
-	// Return summary with HTML markup in DisplayName
-	wikiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		resp := summaryResponse{
-			Title:       "The_Beatles",
-			DisplayName: "<i>The</i> Beatles",
-			Extract:     "The Beatles were an English rock band formed in Liverpool in 1960, comprising John Lennon, Paul McCartney, George Harrison, and Ringo Starr.",
-		}
-		json.NewEncoder(w).Encode(resp) //nolint:errcheck
-	}))
-	defer wikiServer.Close()
-
-	limiter := provider.NewRateLimiterMap()
-	adapter := NewWithEndpoints(limiter, silentLogger(), wikiServer.URL, sparqlServer.URL)
-
-	meta, err := adapter.GetArtist(context.Background(), "a74b1b7f-71a5-4011-9441-d0b5e4122711")
-	if err != nil {
-		t.Fatalf("GetArtist: %v", err)
-	}
-	// HTML tags should be stripped from DisplayName
-	if meta.Name != "The Beatles" {
-		t.Errorf("Name = %q, want %q (HTML should be stripped)", meta.Name, "The Beatles")
-	}
-}
-
-func TestTestConnection(t *testing.T) {
-	wikiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer wikiServer.Close()
-
-	sparqlServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer sparqlServer.Close()
-
-	limiter := provider.NewRateLimiterMap()
-	adapter := NewWithEndpoints(limiter, silentLogger(), wikiServer.URL, sparqlServer.URL)
-
-	if err := adapter.TestConnection(context.Background()); err != nil {
-		t.Errorf("TestConnection: %v", err)
-	}
-}
-
-func TestName(t *testing.T) {
-	limiter := provider.NewRateLimiterMap()
-	adapter := New(limiter, silentLogger())
-	if adapter.Name() != provider.NameWikipedia {
-		t.Errorf("Name() = %q, want %q", adapter.Name(), provider.NameWikipedia)
-	}
-}
-
-func TestRequiresAuth(t *testing.T) {
-	limiter := provider.NewRateLimiterMap()
-	adapter := New(limiter, silentLogger())
-	if adapter.RequiresAuth() {
-		t.Error("RequiresAuth() should be false")
-	}
-}
-
-func TestSupportsNameLookup(t *testing.T) {
-	limiter := provider.NewRateLimiterMap()
-	adapter := New(limiter, silentLogger())
-	if adapter.SupportsNameLookup() {
-		t.Error("SupportsNameLookup() should be false")
+	if results != nil {
+		t.Errorf("GetImages: expected nil, got %v", results)
 	}
 }
 
