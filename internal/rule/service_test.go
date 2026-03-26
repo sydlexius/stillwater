@@ -1393,12 +1393,15 @@ func TestGetViolationsForArtists_ReturnsOpenAndPending(t *testing.T) {
 
 	// Insert: two open violations for artistA, one pending for artistA,
 	// one resolved and one dismissed that must NOT appear.
+	// artistB gets one open violation and one pending_choice violation.
 	violations := []*RuleViolation{
 		{RuleID: RuleNFOExists, ArtistID: artistA, ArtistName: "Artist A", Severity: "error", Message: "no nfo", Fixable: true, Status: ViolationStatusOpen},
 		{RuleID: RuleThumbExists, ArtistID: artistA, ArtistName: "Artist A", Severity: "warning", Message: "no thumb", Fixable: true, Status: ViolationStatusOpen},
 		{RuleID: RuleFanartExists, ArtistID: artistA, ArtistName: "Artist A", Severity: "warning", Message: "no fanart", Fixable: false, Status: ViolationStatusResolved},
 		{RuleID: RuleLogoExists, ArtistID: artistA, ArtistName: "Artist A", Severity: "info", Message: "no logo", Fixable: false, Status: ViolationStatusDismissed},
 		{RuleID: RuleNFOHasMBID, ArtistID: artistB, ArtistName: "Artist B", Severity: "error", Message: "no mbid", Fixable: false, Status: ViolationStatusOpen},
+		// pending_choice violation: must appear in results alongside open violations.
+		{RuleID: RuleBannerExists, ArtistID: artistB, ArtistName: "Artist B", Severity: "warning", Message: "no banner", Fixable: false, Status: ViolationStatusPendingChoice},
 	}
 	for _, v := range violations {
 		if err := svc.UpsertViolation(ctx, v); err != nil {
@@ -1411,7 +1414,7 @@ func TestGetViolationsForArtists_ReturnsOpenAndPending(t *testing.T) {
 		t.Fatalf("GetViolationsForArtists: %v", err)
 	}
 
-	// artistA should have exactly 2 open violations (resolved + dismissed excluded).
+	// artistA should have exactly 2 active violations (resolved + dismissed excluded).
 	aViolations, ok := result[artistA]
 	if !ok {
 		t.Fatalf("missing violations for artistA")
@@ -1420,27 +1423,44 @@ func TestGetViolationsForArtists_ReturnsOpenAndPending(t *testing.T) {
 		t.Errorf("artistA violation count = %d, want 2 (open only)", len(aViolations))
 	}
 
-	// artistB should have exactly 1 open violation.
+	// artistB should have 2 active violations: 1 open + 1 pending_choice.
 	bViolations, ok := result[artistB]
 	if !ok {
 		t.Fatalf("missing violations for artistB")
 	}
-	if len(bViolations) != 1 {
-		t.Errorf("artistB violation count = %d, want 1", len(bViolations))
+	if len(bViolations) != 2 {
+		t.Errorf("artistB violation count = %d, want 2 (open + pending_choice)", len(bViolations))
 	}
 
-	// Verify Violation fields are populated from the JOIN.
-	if bViolations[0].RuleID != RuleNFOHasMBID {
-		t.Errorf("bViolations[0].RuleID = %q, want %q", bViolations[0].RuleID, RuleNFOHasMBID)
+	// Query orders by rule_id; "banner_exists" < "nfo_has_mbid" so pending_choice
+	// comes first. Verify both entries have JOIN fields populated.
+	foundNFOHasMBID := false
+	foundBannerPending := false
+	for _, v := range bViolations {
+		if v.RuleName == "" {
+			t.Errorf("bViolations RuleID=%q has empty RuleName; JOIN may be broken", v.RuleID)
+		}
+		if v.Category == "" {
+			t.Errorf("bViolations RuleID=%q has empty Category; JOIN may be broken", v.RuleID)
+		}
+		switch v.RuleID {
+		case RuleNFOHasMBID:
+			foundNFOHasMBID = true
+			if v.Severity != "error" {
+				t.Errorf("nfo_has_mbid severity = %q, want error", v.Severity)
+			}
+		case RuleBannerExists:
+			foundBannerPending = true
+			if v.Severity != "warning" {
+				t.Errorf("banner_exists severity = %q, want warning", v.Severity)
+			}
+		}
 	}
-	if bViolations[0].RuleName == "" {
-		t.Error("bViolations[0].RuleName should be populated from rules JOIN")
+	if !foundNFOHasMBID {
+		t.Error("expected nfo_has_mbid (open) violation for artistB; not found")
 	}
-	if bViolations[0].Category == "" {
-		t.Error("bViolations[0].Category should be populated from rules JOIN")
-	}
-	if bViolations[0].Severity != "error" {
-		t.Errorf("bViolations[0].Severity = %q, want error", bViolations[0].Severity)
+	if !foundBannerPending {
+		t.Error("expected banner_exists (pending_choice) violation for artistB; not found")
 	}
 }
 

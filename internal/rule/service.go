@@ -1000,22 +1000,51 @@ func (s *Service) GetComplianceForArtists(ctx context.Context, artistIDs []strin
 	return result, nil
 }
 
-// GetViolationsForArtists batch-loads open violations for the given artist IDs,
-// returning a map keyed by artist ID. Each value is a slice of Violation structs
-// derived from the rule_violations table (joined with rules for name and category).
-// If artistIDs is empty, an empty map is returned without querying the database.
+// GetViolationsForArtists batch-loads active violations (open and pending_choice)
+// for the given artist IDs, returning a map keyed by artist ID. Each value is a
+// slice of Violation structs derived from the rule_violations table (joined with
+// rules for name and category). If artistIDs is empty, an empty map is returned
+// without querying the database.
+//
+// Artist IDs are processed in chunks of 500 to stay within SQLite's default
+// host-parameter limit of 999.
 func (s *Service) GetViolationsForArtists(ctx context.Context, artistIDs []string) (map[string][]Violation, error) {
-	result := make(map[string][]Violation, len(artistIDs))
 	if len(artistIDs) == 0 {
-		return result, nil
+		return map[string][]Violation{}, nil
 	}
 
-	// Build parameterised IN clause for the artist IDs.
-	placeholders := make([]string, len(artistIDs))
-	args := make([]any, 0, len(artistIDs)+2)
+	result := make(map[string][]Violation, len(artistIDs))
+	const chunkSize = 500
+
+	for i := 0; i < len(artistIDs); i += chunkSize {
+		end := i + chunkSize
+		if end > len(artistIDs) {
+			end = len(artistIDs)
+		}
+		// queryChunk is an inline function so that defer rows.Close() fires once
+		// per chunk rather than at function return, keeping resource lifetimes
+		// short and satisfying the sqlclosecheck linter.
+		if err := s.queryViolationChunk(ctx, artistIDs[i:end], result); err != nil {
+			return nil, err
+		}
+	}
+
+	return result, nil
+}
+
+// queryViolationChunk executes a single IN-clause query for a chunk of artist IDs
+// and merges the results into dest. It is called by GetViolationsForArtists to keep
+// each rows.Close() in a deferred position.
+func (s *Service) queryViolationChunk(ctx context.Context, chunk []string, dest map[string][]Violation) error {
+	// Build parameterised IN clause for this chunk of artist IDs.
+	// Status constants are passed as the first two bind parameters so that
+	// the total parameter count per batch is chunkSize+2 (≤502), well under
+	// SQLite's 999-parameter limit.
+	placeholders := make([]string, len(chunk))
+	args := make([]any, 0, len(chunk)+2)
 	args = append(args, ViolationStatusOpen, ViolationStatusPendingChoice)
-	for i, id := range artistIDs {
-		placeholders[i] = "?"
+	for j, id := range chunk {
+		placeholders[j] = "?"
 		args = append(args, id)
 	}
 
@@ -1029,7 +1058,7 @@ func (s *Service) GetViolationsForArtists(ctx context.Context, artistIDs []strin
 
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, fmt.Errorf("querying violations for artists: %w", err)
+		return fmt.Errorf("querying violations for artists: %w", err)
 	}
 	defer rows.Close() //nolint:errcheck
 
@@ -1038,16 +1067,15 @@ func (s *Service) GetViolationsForArtists(ctx context.Context, artistIDs []strin
 		var fixable int
 		var v Violation
 		if err := rows.Scan(&artistID, &v.RuleID, &v.RuleName, &v.Category, &v.Severity, &v.Message, &fixable); err != nil {
-			return nil, fmt.Errorf("scanning violation for artist: %w", err)
+			return fmt.Errorf("scanning violation for artist: %w", err)
 		}
 		v.Fixable = fixable == 1
-		result[artistID] = append(result[artistID], v)
+		dest[artistID] = append(dest[artistID], v)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterating violations for artists: %w", err)
+		return fmt.Errorf("iterating violations for artists: %w", err)
 	}
-
-	return result, nil
+	return nil
 }
 
 func scanHealthSnapshot(row interface{ Scan(...any) error }) (*HealthSnapshot, error) {

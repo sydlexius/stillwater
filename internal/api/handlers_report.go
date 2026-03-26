@@ -245,8 +245,9 @@ func (r *Router) handleViolationTrend(w http.ResponseWriter, req *http.Request) 
 }
 
 // handleReportCompliance returns a paginated compliance report.
-// Reads stored health scores from the artists table and open violations from
-// rule_violations rather than calling EvaluateAll on every request.
+// Reads stored health scores from the artists table and active violations
+// (open and pending_choice) from rule_violations rather than calling
+// EvaluateAll on every request.
 // GET /api/v1/reports/compliance
 func (r *Router) handleReportCompliance(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
