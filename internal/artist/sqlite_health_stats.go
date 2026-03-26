@@ -29,7 +29,7 @@ func (r *sqliteArtistRepo) UpdateHealthScore(ctx context.Context, id string, sco
 	}
 	n, _ := result.RowsAffected()
 	if n == 0 {
-		return fmt.Errorf("artist not found: %s", id)
+		return fmt.Errorf("%w: %s", ErrNotFound, id)
 	}
 	return nil
 }

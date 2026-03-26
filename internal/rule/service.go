@@ -378,7 +378,7 @@ func (s *Service) TopViolationSummaries(ctx context.Context, limit int) ([]Viola
 
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT rv.rule_id, r.name, COUNT(*) AS cnt,
-		       COALESCE(json_extract(r.config, '$.severity'), 'warning') AS severity
+		       COALESCE(MAX(rv.severity), 'warning') AS severity
 		FROM rule_violations rv
 		JOIN rules r ON r.id = rv.rule_id
 		JOIN artists a ON a.id = rv.artist_id AND a.is_excluded = 0
