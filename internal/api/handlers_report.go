@@ -16,6 +16,12 @@ import (
 	"github.com/sydlexius/stillwater/web/templates"
 )
 
+// healthCacheTTL is how long a computed health summary is considered fresh.
+// During this window, subsequent requests receive the cached result without
+// re-running EvaluateAll, which is the most expensive operation in the
+// reports pipeline.
+const healthCacheTTL = 30 * time.Second
+
 // healthSummary is the JSON response for the dashboard health endpoint.
 type healthSummary struct {
 	Score            float64            `json:"score"`
@@ -51,11 +57,84 @@ type librarySummary struct {
 
 // handleReportHealth returns the current library health summary.
 // Evaluates all artists against active rules and records a health snapshot.
+//
+// Results are cached for healthCacheTTL (30 seconds). Concurrent requests
+// are coalesced via singleflight so only one goroutine runs the expensive
+// EvaluateAll call at a time. The cache is invalidated when artists or rules
+// are mutated (see InvalidateHealthCache).
+//
 // GET /api/v1/reports/health
 func (r *Router) handleReportHealth(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
 
-	// Get all non-excluded artists
+	// Fast path: check the cache under a read lock. Multiple concurrent
+	// readers can check simultaneously without blocking each other.
+	r.healthCacheMu.RLock()
+	if r.healthResult != nil && time.Since(r.healthCachedAt) < healthCacheTTL {
+		cached := *r.healthResult
+		r.healthCacheMu.RUnlock()
+		r.renderHealthResponse(w, req, cached)
+		return
+	}
+	r.healthCacheMu.RUnlock()
+
+	// Cache is stale or empty. Use singleflight to ensure only one goroutine
+	// runs the expensive computation. All other concurrent callers block here
+	// and receive the same result when the first caller finishes.
+	//
+	// Detach from the winning request's lifecycle: if the first caller's HTTP
+	// connection drops, its context cancels. Without WithoutCancel, that would
+	// abort the computation for all coalesced callers waiting on the same
+	// singleflight key. The detached context preserves request-scoped values
+	// (logging, tracing) while preventing one client's cancellation from
+	// failing everyone else.
+	sfCtx, sfCancel := context.WithTimeout(context.WithoutCancel(ctx), 60*time.Second)
+	defer sfCancel()
+	val, err, _ := r.healthFlight.Do("health", func() (any, error) {
+		// Double-check: another goroutine may have refreshed the cache
+		// between the RUnlock above and this singleflight invocation.
+		r.healthCacheMu.RLock()
+		if r.healthResult != nil && time.Since(r.healthCachedAt) < healthCacheTTL {
+			cached := *r.healthResult
+			r.healthCacheMu.RUnlock()
+			return cached, nil
+		}
+		r.healthCacheMu.RUnlock()
+
+		summary, compErr := r.computeHealthSummary(sfCtx)
+		if compErr != nil {
+			return nil, compErr
+		}
+
+		// Store the result in the cache under a write lock.
+		r.healthCacheMu.Lock()
+		r.healthResult = &summary
+		r.healthCachedAt = time.Now()
+		r.healthCacheMu.Unlock()
+
+		// Record a health snapshot once per computation (not per cache hit)
+		// so the history table stays accurate without being flooded.
+		if err := r.ruleService.RecordHealthSnapshot(sfCtx, summary.TotalArtists, summary.CompliantArtists, summary.Score); err != nil {
+			r.logger.Warn("recording health snapshot", "error", err)
+		}
+
+		return summary, nil
+	})
+
+	if err != nil {
+		r.logger.Error("computing health summary", "error", err)
+		writeError(w, req, http.StatusInternalServerError, "failed to generate health report")
+		return
+	}
+
+	summary := val.(healthSummary)
+	r.renderHealthResponse(w, req, summary)
+}
+
+// computeHealthSummary fetches all non-excluded artists, evaluates them
+// against active rules, and builds the aggregate health summary. This is
+// the expensive part that the cache and singleflight protect.
+func (r *Router) computeHealthSummary(ctx context.Context) (healthSummary, error) {
 	params := artist.ListParams{
 		Page:     1,
 		PageSize: 200,
@@ -67,9 +146,7 @@ func (r *Router) handleReportHealth(w http.ResponseWriter, req *http.Request) {
 
 	allArtists, total, err := r.artistService.List(ctx, params)
 	if err != nil {
-		r.logger.Error("listing artists for health report", "error", err)
-		writeError(w, req, http.StatusInternalServerError, "failed to generate health report")
-		return
+		return healthSummary{}, fmt.Errorf("listing artists: %w", err)
 	}
 
 	// Fetch remaining pages if total > 200
@@ -77,28 +154,25 @@ func (r *Router) handleReportHealth(w http.ResponseWriter, req *http.Request) {
 		params.Page++
 		more, _, err := r.artistService.List(ctx, params)
 		if err != nil {
-			r.logger.Error("listing artists for health report (page)", "page", params.Page, "error", err)
-			writeError(w, req, http.StatusInternalServerError, "failed to generate health report")
-			return
+			return healthSummary{}, fmt.Errorf("listing artists page %d: %w", params.Page, err)
 		}
 		allArtists = append(allArtists, more...)
 	}
 
-	// Evaluate all artists to compute violations
 	results, err := r.ruleEngine.EvaluateAll(ctx, allArtists)
 	if err != nil {
-		r.logger.Error("evaluating artists for health report", "error", err)
-		writeError(w, req, http.StatusInternalServerError, "failed to evaluate artists")
-		return
+		return healthSummary{}, fmt.Errorf("evaluating artists: %w", err)
 	}
 
-	summary := buildHealthSummary(allArtists, results)
+	return buildHealthSummary(allArtists, results), nil
+}
 
-	// Record a health snapshot
-	if err := r.ruleService.RecordHealthSnapshot(ctx, summary.TotalArtists, summary.CompliantArtists, summary.Score); err != nil {
-		r.logger.Warn("recording health snapshot", "error", err)
-	}
-
+// renderHealthResponse writes the health summary as either an HTMX HTML
+// fragment or a JSON response, depending on the request headers. This is
+// separated from the computation so that each concurrent caller renders
+// its own response from the shared data (the singleflight only computes
+// the data, it does not render).
+func (r *Router) renderHealthResponse(w http.ResponseWriter, req *http.Request, summary healthSummary) {
 	if isHTMXRequest(req) {
 		data := templates.HealthSummaryData{
 			Score:            summary.Score,
@@ -115,6 +189,17 @@ func (r *Router) handleReportHealth(w http.ResponseWriter, req *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, summary)
+}
+
+// InvalidateHealthCache clears the cached health summary so the next
+// request triggers a fresh computation. Call this after any mutation that
+// could change artist data or rule configuration (e.g. field updates,
+// rule changes, scanner imports).
+func (r *Router) InvalidateHealthCache() {
+	r.healthCacheMu.Lock()
+	r.healthResult = nil
+	r.healthCachedAt = time.Time{}
+	r.healthCacheMu.Unlock()
 }
 
 // handleReportHealthHistory returns health history data for charting.

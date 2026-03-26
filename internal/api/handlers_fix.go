@@ -97,6 +97,9 @@ func (r *Router) handleFixViolation(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
+	// Fixing a violation changes the artist's health score.
+	r.InvalidateHealthCache()
+
 	writeJSON(w, http.StatusOK, resp)
 }
 
@@ -263,6 +266,9 @@ func (r *Router) handleUndoFix(w http.ResponseWriter, req *http.Request) {
 	}
 
 	r.logger.Info("fix reverted", "violation_id", entry.ViolationID)
+
+	// Undoing a fix restores pre-fix state, changing health scores.
+	r.InvalidateHealthCache()
 
 	if reopenFailed {
 		// Files were restored but the violation status is inconsistent.
@@ -496,5 +502,9 @@ func (r *Router) runFixAll(reqCtx context.Context, violations []rule.RuleViolati
 		progress.mu.Lock()
 		progress.Status = "completed"
 		progress.mu.Unlock()
+
+		// Invalidate the health cache after bulk fixes complete so the next
+		// dashboard poll reflects the updated health scores.
+		r.InvalidateHealthCache()
 	}()
 }
