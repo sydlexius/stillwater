@@ -13,6 +13,51 @@ import (
 	"github.com/sydlexius/stillwater/internal/event"
 )
 
+// pollHealthScore polls the database every 100ms until the condition is met,
+// or the timeout (5s) is reached.
+func pollHealthScore(t *testing.T, svc *artist.Service, artistID string, condition func(float64) bool) {
+	t.Helper()
+	deadline := time.After(5 * time.Second)
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-deadline:
+			t.Fatalf("timed out waiting for health score condition on artist %s", artistID)
+		case <-ticker.C:
+			a, err := svc.GetByID(context.Background(), artistID)
+			if err != nil {
+				continue // DB might not be ready yet
+			}
+			if condition(a.HealthScore) {
+				return
+			}
+		}
+	}
+}
+
+// pollPendingQueue polls the health subscriber's pending queue every 100ms until it's empty,
+// or the timeout (5s) is reached.
+func pollPendingQueue(t *testing.T, sub *HealthSubscriber) {
+	t.Helper()
+	deadline := time.After(5 * time.Second)
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-deadline:
+			t.Fatal("timed out waiting for pending queue to drain")
+		case <-ticker.C:
+			sub.mu.Lock()
+			n := len(sub.pending)
+			sub.mu.Unlock()
+			if n == 0 {
+				return
+			}
+		}
+	}
+}
+
 func setupSubscriberTestDB(t *testing.T) *sql.DB {
 	t.Helper()
 	db, err := database.Open(":memory:")
@@ -60,8 +105,8 @@ func TestHealthSubscriber_SingleEvent(t *testing.T) {
 		Data: map[string]any{"artist_id": a.ID},
 	})
 
-	// Wait for the debounce window + processing time
-	time.Sleep(3 * time.Second)
+	// Wait for the debounce window + processing time using poll instead of sleep
+	pollHealthScore(t, svc, a.ID, func(score float64) bool { return score != 0.0 })
 
 	// Verify the artist's health score was updated. The artist has no NFO,
 	// no thumb, no fanart, etc., so it fails several rules but passes others
@@ -121,8 +166,8 @@ func TestHealthSubscriber_DebounceCoalesces(t *testing.T) {
 		t.Errorf("pending count = %d, want 1 (events should coalesce)", pendingCount)
 	}
 
-	// Wait for processing
-	time.Sleep(3 * time.Second)
+	// Wait for processing using poll instead of sleep
+	pollPendingQueue(t, sub)
 
 	// Verify it was processed
 	sub.mu.Lock()
