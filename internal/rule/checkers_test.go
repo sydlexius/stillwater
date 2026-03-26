@@ -170,12 +170,15 @@ func TestCheckBioExists(t *testing.T) {
 }
 
 func TestCheckThumbSquare(t *testing.T) {
+	e := &Engine{logger: slog.Default()}
+	checker := e.makeThumbSquareChecker()
+
 	// Create a temp dir with a square image
 	dir := t.TempDir()
 	createTestJPEG(t, filepath.Join(dir, "folder.jpg"), 500, 500)
 
 	a := artist.Artist{Name: "Test", ThumbExists: true, Path: dir}
-	v := checkThumbSquare(&a, RuleConfig{AspectRatio: 1.0, Tolerance: 0.1})
+	v := checker(&a, RuleConfig{AspectRatio: 1.0, Tolerance: 0.1})
 	if v != nil {
 		t.Errorf("expected nil for square thumbnail, got %v", v)
 	}
@@ -185,28 +188,34 @@ func TestCheckThumbSquare(t *testing.T) {
 	createTestJPEG(t, filepath.Join(dir2, "folder.jpg"), 800, 400)
 
 	a2 := artist.Artist{Name: "Test2", ThumbExists: true, Path: dir2}
-	v2 := checkThumbSquare(&a2, RuleConfig{AspectRatio: 1.0, Tolerance: 0.1})
+	v2 := checker(&a2, RuleConfig{AspectRatio: 1.0, Tolerance: 0.1})
 	if v2 == nil {
 		t.Error("expected violation for non-square thumbnail")
 	}
 }
 
 func TestCheckThumbSquare_NoThumb(t *testing.T) {
+	e := &Engine{logger: slog.Default()}
+	checker := e.makeThumbSquareChecker()
+
 	// When thumb does not exist, checker should return nil (thumb_exists handles it)
 	a := artist.Artist{Name: "Test", ThumbExists: false}
-	v := checkThumbSquare(&a, RuleConfig{AspectRatio: 1.0, Tolerance: 0.1})
+	v := checker(&a, RuleConfig{AspectRatio: 1.0, Tolerance: 0.1})
 	if v != nil {
 		t.Errorf("expected nil when ThumbExists is false, got %v", v)
 	}
 }
 
 func TestCheckThumbMinRes(t *testing.T) {
+	e := &Engine{logger: slog.Default()}
+	checker := e.makeThumbMinResChecker()
+
 	// Create a high-res image
 	dir := t.TempDir()
 	createTestJPEG(t, filepath.Join(dir, "folder.jpg"), 1000, 1000)
 
 	a := artist.Artist{Name: "Test", ThumbExists: true, Path: dir}
-	v := checkThumbMinRes(&a, RuleConfig{MinWidth: 500, MinHeight: 500})
+	v := checker(&a, RuleConfig{MinWidth: 500, MinHeight: 500})
 	if v != nil {
 		t.Errorf("expected nil for high-res thumbnail, got %v", v)
 	}
@@ -216,19 +225,22 @@ func TestCheckThumbMinRes(t *testing.T) {
 	createTestJPEG(t, filepath.Join(dir2, "folder.jpg"), 200, 200)
 
 	a2 := artist.Artist{Name: "Test2", ThumbExists: true, Path: dir2}
-	v2 := checkThumbMinRes(&a2, RuleConfig{MinWidth: 500, MinHeight: 500})
+	v2 := checker(&a2, RuleConfig{MinWidth: 500, MinHeight: 500})
 	if v2 == nil {
 		t.Error("expected violation for low-res thumbnail")
 	}
 }
 
 func TestCheckThumbMinRes_DefaultValues(t *testing.T) {
+	e := &Engine{logger: slog.Default()}
+	checker := e.makeThumbMinResChecker()
+
 	dir := t.TempDir()
 	createTestJPEG(t, filepath.Join(dir, "folder.jpg"), 600, 600)
 
 	a := artist.Artist{Name: "Test", ThumbExists: true, Path: dir}
 	// Zero config should default to 500x500
-	v := checkThumbMinRes(&a, RuleConfig{})
+	v := checker(&a, RuleConfig{})
 	if v != nil {
 		t.Errorf("expected nil for 600x600 with default min 500, got %v", v)
 	}
@@ -256,9 +268,12 @@ func createTestJPEG(t *testing.T, path string, width, height int) {
 }
 
 func TestCheckFanartMinRes(t *testing.T) {
+	e := &Engine{logger: slog.Default()}
+	checker := e.makeFanartMinResChecker()
+
 	// Missing fanart: skip check
 	a := artist.Artist{Name: "Test", FanartExists: false}
-	if v := checkFanartMinRes(&a, RuleConfig{}); v != nil {
+	if v := checker(&a, RuleConfig{}); v != nil {
 		t.Errorf("expected nil when FanartExists is false, got %v", v)
 	}
 
@@ -266,7 +281,7 @@ func TestCheckFanartMinRes(t *testing.T) {
 	dir := t.TempDir()
 	createTestJPEG(t, filepath.Join(dir, "fanart.jpg"), 1920, 1080)
 	a = artist.Artist{Name: "Test", FanartExists: true, Path: dir}
-	if v := checkFanartMinRes(&a, RuleConfig{MinWidth: 1920, MinHeight: 1080}); v != nil {
+	if v := checker(&a, RuleConfig{MinWidth: 1920, MinHeight: 1080}); v != nil {
 		t.Errorf("expected nil for 1920x1080 fanart, got %v", v)
 	}
 
@@ -274,7 +289,7 @@ func TestCheckFanartMinRes(t *testing.T) {
 	dir2 := t.TempDir()
 	createTestJPEG(t, filepath.Join(dir2, "fanart.jpg"), 800, 450)
 	a2 := artist.Artist{Name: "Test2", FanartExists: true, Path: dir2}
-	v := checkFanartMinRes(&a2, RuleConfig{MinWidth: 1920, MinHeight: 1080})
+	v := checker(&a2, RuleConfig{MinWidth: 1920, MinHeight: 1080})
 	if v == nil {
 		t.Error("expected violation for low-res fanart")
 	}
@@ -286,15 +301,18 @@ func TestCheckFanartMinRes(t *testing.T) {
 	dir3 := t.TempDir()
 	createTestJPEG(t, filepath.Join(dir3, "fanart.jpg"), 2000, 1200)
 	a3 := artist.Artist{Name: "Test3", FanartExists: true, Path: dir3}
-	if v := checkFanartMinRes(&a3, RuleConfig{}); v != nil {
+	if v := checker(&a3, RuleConfig{}); v != nil {
 		t.Errorf("expected nil for 2000x1200 with default 1920x1080, got %v", v)
 	}
 }
 
 func TestCheckFanartAspect(t *testing.T) {
+	e := &Engine{logger: slog.Default()}
+	checker := e.makeFanartAspectChecker()
+
 	// Missing fanart: skip
 	a := artist.Artist{Name: "Test", FanartExists: false}
-	if v := checkFanartAspect(&a, RuleConfig{}); v != nil {
+	if v := checker(&a, RuleConfig{}); v != nil {
 		t.Errorf("expected nil when FanartExists is false, got %v", v)
 	}
 
@@ -302,7 +320,7 @@ func TestCheckFanartAspect(t *testing.T) {
 	dir := t.TempDir()
 	createTestJPEG(t, filepath.Join(dir, "fanart.jpg"), 1920, 1080)
 	a = artist.Artist{Name: "Test", FanartExists: true, Path: dir}
-	if v := checkFanartAspect(&a, RuleConfig{AspectRatio: 16.0 / 9.0, Tolerance: 0.1}); v != nil {
+	if v := checker(&a, RuleConfig{AspectRatio: 16.0 / 9.0, Tolerance: 0.1}); v != nil {
 		t.Errorf("expected nil for 16:9 fanart, got %v", v)
 	}
 
@@ -310,7 +328,7 @@ func TestCheckFanartAspect(t *testing.T) {
 	dir2 := t.TempDir()
 	createTestJPEG(t, filepath.Join(dir2, "fanart.jpg"), 1000, 1000)
 	a2 := artist.Artist{Name: "Test2", FanartExists: true, Path: dir2}
-	v := checkFanartAspect(&a2, RuleConfig{AspectRatio: 16.0 / 9.0, Tolerance: 0.1})
+	v := checker(&a2, RuleConfig{AspectRatio: 16.0 / 9.0, Tolerance: 0.1})
 	if v == nil {
 		t.Error("expected violation for square fanart with 16:9 check")
 	}
@@ -320,9 +338,12 @@ func TestCheckFanartAspect(t *testing.T) {
 }
 
 func TestCheckLogoMinRes(t *testing.T) {
+	e := &Engine{logger: slog.Default()}
+	checker := e.makeLogoMinResChecker()
+
 	// Missing logo: skip
 	a := artist.Artist{Name: "Test", LogoExists: false}
-	if v := checkLogoMinRes(&a, RuleConfig{}); v != nil {
+	if v := checker(&a, RuleConfig{}); v != nil {
 		t.Errorf("expected nil when LogoExists is false, got %v", v)
 	}
 
@@ -330,7 +351,7 @@ func TestCheckLogoMinRes(t *testing.T) {
 	dir := t.TempDir()
 	createTestJPEG(t, filepath.Join(dir, "logo.png"), 500, 200)
 	a = artist.Artist{Name: "Test", LogoExists: true, Path: dir}
-	if v := checkLogoMinRes(&a, RuleConfig{MinWidth: 400}); v != nil {
+	if v := checker(&a, RuleConfig{MinWidth: 400}); v != nil {
 		t.Errorf("expected nil for 500px logo, got %v", v)
 	}
 
@@ -338,7 +359,7 @@ func TestCheckLogoMinRes(t *testing.T) {
 	dir2 := t.TempDir()
 	createTestJPEG(t, filepath.Join(dir2, "logo.png"), 200, 100)
 	a2 := artist.Artist{Name: "Test2", LogoExists: true, Path: dir2}
-	v := checkLogoMinRes(&a2, RuleConfig{MinWidth: 400})
+	v := checker(&a2, RuleConfig{MinWidth: 400})
 	if v == nil {
 		t.Error("expected violation for 200px logo with 400px minimum")
 	}
@@ -350,7 +371,7 @@ func TestCheckLogoMinRes(t *testing.T) {
 	dir3 := t.TempDir()
 	createTestJPEG(t, filepath.Join(dir3, "logo.png"), 500, 200)
 	a3 := artist.Artist{Name: "Test3", LogoExists: true, Path: dir3}
-	if v := checkLogoMinRes(&a3, RuleConfig{}); v != nil {
+	if v := checker(&a3, RuleConfig{}); v != nil {
 		t.Errorf("expected nil for 500px with default 400px minimum, got %v", v)
 	}
 }
@@ -375,9 +396,12 @@ func TestCheckBannerExists(t *testing.T) {
 }
 
 func TestCheckBannerMinRes(t *testing.T) {
+	e := &Engine{logger: slog.Default()}
+	checker := e.makeBannerMinResChecker()
+
 	// Missing banner: skip
 	a := artist.Artist{Name: "Test", BannerExists: false}
-	if v := checkBannerMinRes(&a, RuleConfig{}); v != nil {
+	if v := checker(&a, RuleConfig{}); v != nil {
 		t.Errorf("expected nil when BannerExists is false, got %v", v)
 	}
 
@@ -385,7 +409,7 @@ func TestCheckBannerMinRes(t *testing.T) {
 	dir := t.TempDir()
 	createTestJPEG(t, filepath.Join(dir, "banner.jpg"), 1000, 185)
 	a = artist.Artist{Name: "Test", BannerExists: true, Path: dir}
-	if v := checkBannerMinRes(&a, RuleConfig{MinWidth: 1000, MinHeight: 185}); v != nil {
+	if v := checker(&a, RuleConfig{MinWidth: 1000, MinHeight: 185}); v != nil {
 		t.Errorf("expected nil for 1000x185 banner, got %v", v)
 	}
 
@@ -393,7 +417,7 @@ func TestCheckBannerMinRes(t *testing.T) {
 	dir2 := t.TempDir()
 	createTestJPEG(t, filepath.Join(dir2, "banner.jpg"), 500, 100)
 	a2 := artist.Artist{Name: "Test2", BannerExists: true, Path: dir2}
-	v := checkBannerMinRes(&a2, RuleConfig{MinWidth: 1000, MinHeight: 185})
+	v := checker(&a2, RuleConfig{MinWidth: 1000, MinHeight: 185})
 	if v == nil {
 		t.Error("expected violation for small banner")
 	}
@@ -405,7 +429,7 @@ func TestCheckBannerMinRes(t *testing.T) {
 	dir3 := t.TempDir()
 	createTestJPEG(t, filepath.Join(dir3, "banner.jpg"), 1200, 200)
 	a3 := artist.Artist{Name: "Test3", BannerExists: true, Path: dir3}
-	if v := checkBannerMinRes(&a3, RuleConfig{}); v != nil {
+	if v := checker(&a3, RuleConfig{}); v != nil {
 		t.Errorf("expected nil for 1200x200 with default 1000x185, got %v", v)
 	}
 }
@@ -540,9 +564,11 @@ func TestCheckExtraneousImages_EmptyPath(t *testing.T) {
 	}
 }
 
-func TestGetImageDimensions_NoMatch(t *testing.T) {
+func TestGetImageDimensionsCached_NoMatch(t *testing.T) {
 	dir := t.TempDir()
-	_, _, err := getImageDimensions(dir, []string{"fanart.jpg", "fanart.png"})
+	// Use an Engine with no FSCache (nil) to exercise the fallback path.
+	engine := &Engine{logger: slog.Default()}
+	_, _, err := engine.getImageDimensionsCached(dir, []string{"fanart.jpg", "fanart.png"})
 	if err == nil {
 		t.Error("expected error when no matching images exist")
 	}
