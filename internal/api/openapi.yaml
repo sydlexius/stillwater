@@ -2797,6 +2797,33 @@ paths:
               schema:
                 $ref: "#/components/schemas/RuleRunStatus"
 
+  /rules/status:
+    get:
+      tags: [Rules]
+      summary: Get rule scheduler status
+      description: Returns the current state of the rule evaluation scheduler.
+      operationId: getRulesStatus
+      responses:
+        "200":
+          description: Scheduler status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  last_evaluation_at:
+                    type: string
+                    format: date-time
+                    nullable: true
+                  interval_minutes:
+                    type: integer
+                  next_evaluation_at:
+                    type: string
+                    format: date-time
+                    nullable: true
+                  scheduler_enabled:
+                    type: boolean
+
   /rules/classical-mode:
     get:
       tags: [Rules]
@@ -3454,7 +3481,7 @@ paths:
         notif_badge_severity_error (true/false),
         notif_badge_severity_warning (true/false),
         notif_badge_severity_info (true/false),
-        rule_schedule.interval_hours (integer as string),
+        rule_schedule.interval_minutes (integer as string; 0 to disable, or >= 5),
         backup_retention_count (positive integer as string),
         backup_max_age_days (integer as string),
         cache.image.max_size_mb (integer as string),

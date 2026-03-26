@@ -49,6 +49,7 @@ type RouterDeps struct {
 	Pipeline           rule.PipelineRunner
 	BulkService        *rule.BulkService
 	BulkExecutor       *rule.BulkExecutor
+	RuleScheduler      *rule.Scheduler
 	NFOSnapshotService *nfo.SnapshotService
 	NFOSettingsService *nfo.NFOSettingsService
 	ConnectionService  *connection.Service
@@ -89,6 +90,7 @@ type Router struct {
 	pipeline           rule.PipelineRunner
 	bulkService        *rule.BulkService
 	bulkExecutor       *rule.BulkExecutor
+	ruleScheduler      *rule.Scheduler
 	nfoSnapshotService *nfo.SnapshotService
 	nfoSettingsService *nfo.NFOSettingsService
 	connectionService  *connection.Service
@@ -141,6 +143,7 @@ func NewRouter(deps RouterDeps) *Router {
 		pipeline:           deps.Pipeline,
 		bulkService:        deps.BulkService,
 		bulkExecutor:       deps.BulkExecutor,
+		ruleScheduler:      deps.RuleScheduler,
 		nfoSnapshotService: deps.NFOSnapshotService,
 		nfoSettingsService: deps.NFOSettingsService,
 		connectionService:  deps.ConnectionService,
@@ -316,6 +319,7 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("POST "+bp+"/api/v1/rules/{id}/run", wrapAuth(r.handleRunRule, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/rules/run-all", wrapAuth(r.handleRunAllRules, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/rules/run-all/status", wrapAuth(r.handleRunAllRulesStatus, authMw))
+	mux.HandleFunc("GET "+bp+"/api/v1/rules/status", wrapAuth(r.handleRulesStatus, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/rules/classical-mode", wrapAuth(r.handleGetClassicalMode, authMw))
 	mux.HandleFunc("PUT "+bp+"/api/v1/rules/classical-mode", wrapAuth(r.handleSetClassicalMode, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/health", wrapAuth(r.handleEvaluateArtist, authMw))
