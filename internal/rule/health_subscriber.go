@@ -119,17 +119,18 @@ func (h *HealthSubscriber) Stop() {
 	h.wg.Wait()
 }
 
-// Bootstrap re-evaluates health scores for artists that have a zero score,
-// which typically means they were created before the event-based health
-// system was active. Runs in batches to avoid starving other work.
+// Bootstrap re-evaluates health scores for artists that have never been
+// evaluated (health_evaluated_at IS NULL), which typically means they were
+// created before the event-based health system was active. Runs in batches
+// to avoid starving other work.
 func (h *HealthSubscriber) Bootstrap(ctx context.Context) {
 	if h.engine == nil {
 		return
 	}
 
-	ids, err := h.artistService.ListZeroHealthIDs(ctx)
+	ids, err := h.artistService.ListUnevaluatedIDs(ctx)
 	if err != nil {
-		h.logger.Error("bootstrapping health scores: listing zero-score artists", "error", err)
+		h.logger.Error("bootstrapping health scores: listing unevaluated artists", "error", err)
 		return
 	}
 

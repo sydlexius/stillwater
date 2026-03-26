@@ -178,52 +178,73 @@ func TestHealthStats_LibraryFilter(t *testing.T) {
 	}
 }
 
-func TestListZeroHealthIDs(t *testing.T) {
+func TestListUnevaluatedIDs(t *testing.T) {
 	db := setupTestDB(t)
 	svc := NewService(db)
 	ctx := context.Background()
 
-	zero := &Artist{
-		Name:        "Zero Score",
-		SortName:    "Zero Score",
-		Path:        "/music/zero",
+	// Never evaluated: health_evaluated_at IS NULL -- should be returned.
+	neverEvaluated := &Artist{
+		Name:        "Never Evaluated",
+		SortName:    "Never Evaluated",
+		Path:        "/music/never-evaluated",
 		HealthScore: 0.0,
 	}
-	if err := svc.Create(ctx, zero); err != nil {
-		t.Fatalf("creating zero-score artist: %v", err)
+	if err := svc.Create(ctx, neverEvaluated); err != nil {
+		t.Fatalf("creating never-evaluated artist: %v", err)
 	}
 
-	nonZero := &Artist{
-		Name:        "NonZero Score",
-		SortName:    "NonZero Score",
-		Path:        "/music/nonzero",
+	// Evaluated with score 0: has health_evaluated_at set -- should NOT be returned.
+	evaluatedZero := &Artist{
+		Name:        "Evaluated Zero",
+		SortName:    "Evaluated Zero",
+		Path:        "/music/evaluated-zero",
+		HealthScore: 0.0,
+	}
+	if err := svc.Create(ctx, evaluatedZero); err != nil {
+		t.Fatalf("creating evaluated-zero artist: %v", err)
+	}
+	// Simulate evaluation by calling UpdateHealthScore (sets health_evaluated_at).
+	if err := svc.UpdateHealthScore(ctx, evaluatedZero.ID, 0.0); err != nil {
+		t.Fatalf("UpdateHealthScore for evaluated-zero: %v", err)
+	}
+
+	// Evaluated with non-zero score -- should NOT be returned.
+	evaluatedNonZero := &Artist{
+		Name:        "Evaluated NonZero",
+		SortName:    "Evaluated NonZero",
+		Path:        "/music/evaluated-nonzero",
 		HealthScore: 75.0,
 	}
-	if err := svc.Create(ctx, nonZero); err != nil {
-		t.Fatalf("creating non-zero artist: %v", err)
+	if err := svc.Create(ctx, evaluatedNonZero); err != nil {
+		t.Fatalf("creating evaluated-nonzero artist: %v", err)
+	}
+	if err := svc.UpdateHealthScore(ctx, evaluatedNonZero.ID, 75.0); err != nil {
+		t.Fatalf("UpdateHealthScore for evaluated-nonzero: %v", err)
 	}
 
-	excluded := &Artist{
-		Name:            "Excluded Zero",
-		SortName:        "Excluded Zero",
-		Path:            "/music/excluded-zero",
+	// Excluded and never evaluated -- should NOT be returned (excluded).
+	excludedNeverEvaluated := &Artist{
+		Name:            "Excluded Never Evaluated",
+		SortName:        "Excluded Never Evaluated",
+		Path:            "/music/excluded-never",
 		HealthScore:     0.0,
 		IsExcluded:      true,
 		ExclusionReason: "test",
 	}
-	if err := svc.Create(ctx, excluded); err != nil {
-		t.Fatalf("creating excluded zero artist: %v", err)
+	if err := svc.Create(ctx, excludedNeverEvaluated); err != nil {
+		t.Fatalf("creating excluded never-evaluated artist: %v", err)
 	}
 
-	ids, err := svc.ListZeroHealthIDs(ctx)
+	ids, err := svc.ListUnevaluatedIDs(ctx)
 	if err != nil {
-		t.Fatalf("ListZeroHealthIDs: %v", err)
+		t.Fatalf("ListUnevaluatedIDs: %v", err)
 	}
 
 	if len(ids) != 1 {
-		t.Fatalf("len(ids) = %d, want 1 (only non-excluded zero-score)", len(ids))
+		t.Fatalf("len(ids) = %d, want 1 (only non-excluded never-evaluated)", len(ids))
 	}
-	if ids[0] != zero.ID {
-		t.Errorf("id = %q, want %q", ids[0], zero.ID)
+	if ids[0] != neverEvaluated.ID {
+		t.Errorf("id = %q, want %q", ids[0], neverEvaluated.ID)
 	}
 }

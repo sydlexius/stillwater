@@ -19,11 +19,12 @@ type HealthStatsResult struct {
 	MissingMBID      int     `json:"missing_mbid"`
 }
 
-// UpdateHealthScore sets only the health_score column for the given artist.
+// UpdateHealthScore sets the health_score and health_evaluated_at columns for the given artist.
 func (r *sqliteArtistRepo) UpdateHealthScore(ctx context.Context, id string, score float64) error {
+	now := time.Now().UTC().Format(time.RFC3339)
 	result, err := r.db.ExecContext(ctx,
-		`UPDATE artists SET health_score = ?, updated_at = ? WHERE id = ?`,
-		score, time.Now().UTC().Format(time.RFC3339), id)
+		`UPDATE artists SET health_score = ?, health_evaluated_at = ?, updated_at = ? WHERE id = ?`,
+		score, now, now, id)
 	if err != nil {
 		return fmt.Errorf("updating health score: %w", err)
 	}
@@ -37,13 +38,14 @@ func (r *sqliteArtistRepo) UpdateHealthScore(ctx context.Context, id string, sco
 	return nil
 }
 
-// ListZeroHealthIDs returns the IDs of non-excluded artists whose health_score
-// is exactly 0.0, indicating they need re-evaluation (bootstrap).
-func (r *sqliteArtistRepo) ListZeroHealthIDs(ctx context.Context) ([]string, error) {
+// ListUnevaluatedIDs returns the IDs of non-excluded artists that have never
+// been evaluated (health_evaluated_at IS NULL). This is used by the bootstrap
+// process to identify artists needing initial health score calculation.
+func (r *sqliteArtistRepo) ListUnevaluatedIDs(ctx context.Context) ([]string, error) {
 	rows, err := r.db.QueryContext(ctx,
-		`SELECT id FROM artists WHERE is_excluded = 0 AND health_score = 0.0`)
+		`SELECT id FROM artists WHERE is_excluded = 0 AND health_evaluated_at IS NULL`)
 	if err != nil {
-		return nil, fmt.Errorf("querying zero-health artists: %w", err)
+		return nil, fmt.Errorf("querying unevaluated artists: %w", err)
 	}
 	defer rows.Close() //nolint:errcheck
 
@@ -51,12 +53,12 @@ func (r *sqliteArtistRepo) ListZeroHealthIDs(ctx context.Context) ([]string, err
 	for rows.Next() {
 		var id string
 		if err := rows.Scan(&id); err != nil {
-			return nil, fmt.Errorf("scanning zero-health artist id: %w", err)
+			return nil, fmt.Errorf("scanning unevaluated artist id: %w", err)
 		}
 		ids = append(ids, id)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterating zero-health artists: %w", err)
+		return nil, fmt.Errorf("iterating unevaluated artists: %w", err)
 	}
 	return ids, nil
 }

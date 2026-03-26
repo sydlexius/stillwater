@@ -126,6 +126,7 @@ CREATE TABLE IF NOT EXISTS artists (
     library_id TEXT REFERENCES libraries(id) DEFAULT NULL,
     nfo_exists INTEGER NOT NULL DEFAULT 0,
     health_score REAL NOT NULL DEFAULT 0.0,
+    health_evaluated_at TEXT DEFAULT NULL,
     is_excluded INTEGER NOT NULL DEFAULT 0,
     exclusion_reason TEXT NOT NULL DEFAULT '',
     is_classical INTEGER NOT NULL DEFAULT 0,

@@ -13,7 +13,7 @@ const artistColumns = `id, name, sort_name, type, gender, disambiguation,
 	genres, styles, moods,
 	years_active, born, formed, died, disbanded, biography,
 	path, library_id, nfo_exists,
-	health_score, is_excluded, exclusion_reason, is_classical,
+	health_score, health_evaluated_at, is_excluded, exclusion_reason, is_classical,
 	locked, lock_source, locked_at,
 	metadata_sources,
 	last_scanned_at, created_at, updated_at`
@@ -30,20 +30,21 @@ func prefixedArtistColumns(table string) string {
 
 // scannedArtist holds intermediate scan targets for the artist columns.
 type scannedArtist struct {
-	a               Artist
-	genres          string
-	styles          string
-	moods           string
-	libraryID       sql.NullString
-	metadataSources string
-	lastScannedAt   sql.NullString
-	nfo             int
-	isExcluded      int
-	isClassical     int
-	locked          int
-	lockedAt        sql.NullString
-	createdAt       string
-	updatedAt       string
+	a                 Artist
+	genres            string
+	styles            string
+	moods             string
+	libraryID         sql.NullString
+	metadataSources   string
+	healthEvaluatedAt sql.NullString
+	lastScannedAt     sql.NullString
+	nfo               int
+	isExcluded        int
+	isClassical       int
+	locked            int
+	lockedAt          sql.NullString
+	createdAt         string
+	updatedAt         string
 }
 
 // scanPtrs returns the ordered slice of pointers matching artistColumns.
@@ -53,7 +54,7 @@ func (s *scannedArtist) scanPtrs() []any {
 		&s.genres, &s.styles, &s.moods,
 		&s.a.YearsActive, &s.a.Born, &s.a.Formed, &s.a.Died, &s.a.Disbanded, &s.a.Biography,
 		&s.a.Path, &s.libraryID, &s.nfo,
-		&s.a.HealthScore, &s.isExcluded, &s.a.ExclusionReason, &s.isClassical,
+		&s.a.HealthScore, &s.healthEvaluatedAt, &s.isExcluded, &s.a.ExclusionReason, &s.isClassical,
 		&s.locked, &s.a.LockSource, &s.lockedAt,
 		&s.metadataSources,
 		&s.lastScannedAt,
@@ -70,6 +71,10 @@ func (s *scannedArtist) apply() {
 	s.a.Styles = UnmarshalStringSlice(s.styles)
 	s.a.Moods = UnmarshalStringSlice(s.moods)
 	s.a.NFOExists = s.nfo == 1
+	if s.healthEvaluatedAt.Valid {
+		t := dbutil.ParseTime(s.healthEvaluatedAt.String)
+		s.a.HealthEvaluatedAt = &t
+	}
 	s.a.IsExcluded = s.isExcluded == 1
 	s.a.IsClassical = s.isClassical == 1
 	s.a.Locked = s.locked == 1
