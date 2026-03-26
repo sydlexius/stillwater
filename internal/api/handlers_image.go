@@ -155,6 +155,12 @@ func (r *Router) handleImageUpload(w http.ResponseWriter, req *http.Request) {
 		}
 		r.enforceCacheLimitIfNeeded(req.Context(), a)
 		r.updateArtistFanartCount(req.Context(), a)
+		if r.eventBus != nil {
+			r.eventBus.Publish(event.Event{
+				Type: event.ArtistUpdated,
+				Data: map[string]any{"artist_id": a.ID},
+			})
+		}
 		r.InvalidateHealthCache()
 		// Skip platform sync for fanart appends: platforms only support a single
 		// backdrop image, and the primary (fanart.jpg) was already synced when
@@ -184,20 +190,19 @@ func (r *Router) handleImageUpload(w http.ResponseWriter, req *http.Request) {
 		r.updateArtistFanartCount(req.Context(), a)
 	}
 
-	// Invalidate the health cache immediately after the image is saved and
-	// DB flags updated, before platform sync (which can take up to 30s).
-	r.InvalidateHealthCache()
-
-	syncCtx, cancel := context.WithTimeout(req.Context(), 30*time.Second)
-	defer cancel()
-	warnings := r.publisher.SyncImageToPlatforms(syncCtx, a, imageType)
-
+	// Publish event and invalidate cache before platform sync (which can
+	// take up to 30s) so health scores update within the 5-second target.
 	if r.eventBus != nil {
 		r.eventBus.Publish(event.Event{
 			Type: event.ArtistUpdated,
 			Data: map[string]any{"artist_id": a.ID},
 		})
 	}
+	r.InvalidateHealthCache()
+
+	syncCtx, cancel := context.WithTimeout(req.Context(), 30*time.Second)
+	defer cancel()
+	warnings := r.publisher.SyncImageToPlatforms(syncCtx, a, imageType)
 
 	resp := map[string]any{
 		"status":        "ok",

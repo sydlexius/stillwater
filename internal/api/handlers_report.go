@@ -77,6 +77,7 @@ func (r *Router) handleReportHealth(w http.ResponseWriter, req *http.Request) {
 		MissingThumb:     stats.MissingThumb,
 		MissingFanart:    stats.MissingFanart,
 		MissingMBID:      stats.MissingMBID,
+		TopViolations:    make([]violationSummary, 0, len(topViolations)),
 	}
 
 	for _, v := range topViolations {
@@ -170,7 +171,7 @@ func (r *Router) handleReportHealthByLibrary(w http.ResponseWriter, req *http.Re
 		return
 	}
 
-	var summaries []librarySummary
+	summaries := make([]librarySummary, 0, len(libs))
 	for _, lib := range libs {
 		stats, err := r.artistService.GetHealthStats(ctx, lib.ID)
 		if err != nil {

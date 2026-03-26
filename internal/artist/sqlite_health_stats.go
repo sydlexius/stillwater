@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"math"
+	"time"
 )
 
 // HealthStatsResult holds aggregate health metrics for the dashboard endpoint.
@@ -15,6 +17,21 @@ type HealthStatsResult struct {
 	MissingThumb     int     `json:"missing_thumb"`
 	MissingFanart    int     `json:"missing_fanart"`
 	MissingMBID      int     `json:"missing_mbid"`
+}
+
+// UpdateHealthScore sets only the health_score column for the given artist.
+func (r *sqliteArtistRepo) UpdateHealthScore(ctx context.Context, id string, score float64) error {
+	result, err := r.db.ExecContext(ctx,
+		`UPDATE artists SET health_score = ?, updated_at = ? WHERE id = ?`,
+		score, time.Now().UTC().Format(time.RFC3339), id)
+	if err != nil {
+		return fmt.Errorf("updating health score: %w", err)
+	}
+	n, _ := result.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("artist not found: %s", id)
+	}
+	return nil
 }
 
 // ListZeroHealthIDs returns the IDs of non-excluded artists whose health_score
@@ -92,8 +109,7 @@ WHERE a.is_excluded = 0`
 	hs.MissingMBID = int(missingMBID.Int64)
 
 	if score.Valid {
-		// Round to 1 decimal place
-		hs.Score = float64(int(score.Float64*10)) / 10
+		hs.Score = math.Round(score.Float64*10) / 10
 	} else {
 		hs.Score = 100.0
 	}

@@ -118,6 +118,12 @@ func (s *Service) GetHealthStats(ctx context.Context, libraryID string) (HealthS
 	return s.artists.HealthStats(ctx, libraryID)
 }
 
+// UpdateHealthScore sets only the health_score column for the given artist,
+// avoiding a full row overwrite that could clobber concurrent mutations.
+func (s *Service) UpdateHealthScore(ctx context.Context, id string, score float64) error {
+	return s.artists.UpdateHealthScore(ctx, id, score)
+}
+
 // ListZeroHealthIDs returns IDs of non-excluded artists with health_score = 0,
 // used by the bootstrap process to identify artists needing re-evaluation.
 func (s *Service) ListZeroHealthIDs(ctx context.Context) ([]string, error) {

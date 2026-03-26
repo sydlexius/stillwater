@@ -63,18 +63,18 @@ func TestHealthSubscriber_SingleEvent(t *testing.T) {
 	// Wait for the debounce window + processing time
 	time.Sleep(3 * time.Second)
 
-	// Verify the artist's health score was updated (non-zero after evaluation)
+	// Verify the artist's health score was updated. The artist has no NFO,
+	// no thumb, no fanart, etc., so it fails several rules but passes others
+	// (e.g. rules with nil checkers for missing filesystem paths count as
+	// passed). The resulting score should be non-zero (some rules pass).
 	updated, err := svc.GetByID(context.Background(), a.ID)
 	if err != nil {
 		t.Fatalf("getting artist after evaluation: %v", err)
 	}
 
-	// The artist has no NFO, no thumb, no fanart, etc., so it will have
-	// some violations. The score should be > 0 if any rules are not applicable,
-	// or 0 if all enabled rules fail. Either way, the subscriber ran.
-	// We just verify the score was re-evaluated (it should differ from the
-	// initial 0.0 or the subscriber at least attempted evaluation).
-	t.Logf("health score after evaluation: %.1f", updated.HealthScore)
+	if updated.HealthScore == 0.0 {
+		t.Errorf("HealthScore = 0.0 after subscriber evaluation, want non-zero (subscriber should have persisted a score)")
+	}
 }
 
 func TestHealthSubscriber_DebounceCoalesces(t *testing.T) {

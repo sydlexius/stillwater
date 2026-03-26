@@ -384,7 +384,7 @@ func (s *Service) TopViolationSummaries(ctx context.Context, limit int) ([]Viola
 		JOIN artists a ON a.id = rv.artist_id AND a.is_excluded = 0
 		WHERE rv.status IN ('open', 'pending_choice')
 		GROUP BY rv.rule_id
-		ORDER BY cnt DESC
+		ORDER BY cnt DESC, rv.rule_id ASC
 		LIMIT ?
 	`, limit)
 	if err != nil {

@@ -37,7 +37,7 @@ type HealthSubscriber struct {
 	logger        *slog.Logger
 
 	mu      sync.Mutex
-	pending map[string]time.Time // artist ID -> earliest evaluation time
+	pending map[string]time.Time // artist ID -> next scheduled evaluation time (reset on each new event)
 
 	done chan struct{}
 	wg   sync.WaitGroup
@@ -196,8 +196,7 @@ func (h *HealthSubscriber) evaluateArtist(ctx context.Context, artistID string) 
 		return
 	}
 
-	a.HealthScore = result.HealthScore
-	if err := h.artistService.Update(ctx, a); err != nil {
+	if err := h.artistService.UpdateHealthScore(ctx, artistID, result.HealthScore); err != nil {
 		h.logger.Warn("health subscriber: persisting health score", "artist_id", artistID, "artist", a.Name, "error", err)
 	}
 }

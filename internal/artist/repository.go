@@ -23,6 +23,10 @@ type Repository interface {
 	// all artists in the given library that have a non-empty path.
 	ListPathsByLibrary(ctx context.Context, libraryID string) (map[string]string, error)
 
+	// UpdateHealthScore sets only the health_score column for the given artist,
+	// avoiding a full row overwrite that could clobber concurrent mutations.
+	UpdateHealthScore(ctx context.Context, id string, score float64) error
+
 	// HealthStats returns aggregate health metrics for non-excluded artists.
 	// When libraryID is non-empty, only artists in that library are included.
 	HealthStats(ctx context.Context, libraryID string) (HealthStatsResult, error)
