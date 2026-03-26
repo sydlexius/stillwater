@@ -33,7 +33,8 @@ LABEL org.opencontainers.image.source="https://github.com/sydlexius/stillwater" 
       org.opencontainers.image.description="Artist metadata and image manager for Emby, Jellyfin, and Kodi" \
       org.opencontainers.image.licenses="GPL-3.0"
 
-RUN apk add --no-cache ca-certificates tzdata su-exec curl
+RUN apk upgrade --no-cache zlib && \
+    apk add --no-cache ca-certificates tzdata su-exec curl
 
 # Create app user
 RUN addgroup stillwater && \
