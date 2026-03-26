@@ -112,6 +112,18 @@ func (s *Service) Create(ctx context.Context, a *Artist) error {
 	return nil
 }
 
+// GetHealthStats returns aggregate health metrics for non-excluded artists.
+// When libraryID is non-empty, only artists in that library are included.
+func (s *Service) GetHealthStats(ctx context.Context, libraryID string) (HealthStatsResult, error) {
+	return s.artists.HealthStats(ctx, libraryID)
+}
+
+// ListZeroHealthIDs returns IDs of non-excluded artists with health_score = 0,
+// used by the bootstrap process to identify artists needing re-evaluation.
+func (s *Service) ListZeroHealthIDs(ctx context.Context) ([]string, error) {
+	return s.artists.ListZeroHealthIDs(ctx)
+}
+
 // GetByID retrieves an artist by primary key, including provider IDs and image metadata.
 func (s *Service) GetByID(ctx context.Context, id string) (*Artist, error) {
 	a, err := s.artists.GetByID(ctx, id)

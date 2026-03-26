@@ -319,6 +319,12 @@ func run() error {
 		}
 	}
 
+	// Health subscriber: re-evaluates per-artist health scores on mutations.
+	// Subscription is registered now; Start/Bootstrap are called after the
+	// shutdown context is created (below).
+	healthSub := rule.NewHealthSubscriber(ruleEngine, artistService, logger)
+	eventBus.Subscribe(event.ArtistUpdated, healthSub.HandleEvent)
+
 	logger.Info("starting stillwater",
 		slog.String("version", version.Version),
 		slog.String("commit", version.Commit),
@@ -378,6 +384,25 @@ func run() error {
 	// Graceful shutdown
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	// Start health subscriber background goroutine
+	go healthSub.Start(ctx)
+	defer healthSub.Stop()
+
+	// Bootstrap stale health scores (zero-score artists) in the background
+	// after a short delay to avoid competing with startup I/O.
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Error("health bootstrap panicked", "panic", r)
+			}
+		}()
+		select {
+		case <-time.After(5 * time.Second):
+			healthSub.Bootstrap(ctx)
+		case <-ctx.Done():
+		}
+	}()
 
 	// Create HTTP server
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)

@@ -23,6 +23,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/connection/emby"
 	"github.com/sydlexius/stillwater/internal/connection/jellyfin"
+	"github.com/sydlexius/stillwater/internal/event"
 	img "github.com/sydlexius/stillwater/internal/image"
 	"github.com/sydlexius/stillwater/internal/provider"
 	"github.com/sydlexius/stillwater/web/templates"
@@ -191,6 +192,13 @@ func (r *Router) handleImageUpload(w http.ResponseWriter, req *http.Request) {
 	defer cancel()
 	warnings := r.publisher.SyncImageToPlatforms(syncCtx, a, imageType)
 
+	if r.eventBus != nil {
+		r.eventBus.Publish(event.Event{
+			Type: event.ArtistUpdated,
+			Data: map[string]any{"artist_id": a.ID},
+		})
+	}
+
 	resp := map[string]any{
 		"status":        "ok",
 		"saved":         saved,
@@ -268,6 +276,13 @@ func (r *Router) handleImageFetch(w http.ResponseWriter, req *http.Request) {
 		r.updateArtistFanartCount(req.Context(), a)
 		r.InvalidateHealthCache()
 
+		if r.eventBus != nil {
+			r.eventBus.Publish(event.Event{
+				Type: event.ArtistUpdated,
+				Data: map[string]any{"artist_id": a.ID},
+			})
+		}
+
 		syncCtx, cancel := context.WithTimeout(req.Context(), 30*time.Second)
 		defer cancel()
 		syncWarnings := r.publisher.SyncAllFanartToPlatforms(syncCtx, a)
@@ -302,8 +317,12 @@ func (r *Router) handleImageFetch(w http.ResponseWriter, req *http.Request) {
 		r.updateArtistFanartCount(req.Context(), a)
 	}
 
-	// Invalidate the health report cache because fetching an image may
-	// resolve a "missing thumb/fanart/logo" violation.
+	if r.eventBus != nil {
+		r.eventBus.Publish(event.Event{
+			Type: event.ArtistUpdated,
+			Data: map[string]any{"artist_id": a.ID},
+		})
+	}
 	r.InvalidateHealthCache()
 
 	syncCtx, cancel := context.WithTimeout(req.Context(), 30*time.Second)
@@ -538,8 +557,12 @@ func (r *Router) handleImageCrop(w http.ResponseWriter, req *http.Request) {
 
 	r.updateArtistImageFlag(req.Context(), a, body.Type)
 
-	// Invalidate the health report cache because saving a cropped image may
-	// resolve a "missing thumb/fanart/logo" violation.
+	if r.eventBus != nil {
+		r.eventBus.Publish(event.Event{
+			Type: event.ArtistUpdated,
+			Data: map[string]any{"artist_id": a.ID},
+		})
+	}
 	r.InvalidateHealthCache()
 
 	syncCtx, cancel := context.WithTimeout(req.Context(), 30*time.Second)
@@ -1062,8 +1085,12 @@ func (r *Router) handleDeleteImage(w http.ResponseWriter, req *http.Request) {
 			removeFailed = true
 		}
 		r.updateArtistFanartCount(req.Context(), a)
-		// Invalidate the health report cache because deleting an image may
-		// introduce a "missing fanart" violation.
+		if r.eventBus != nil {
+			r.eventBus.Publish(event.Event{
+				Type: event.ArtistUpdated,
+				Data: map[string]any{"artist_id": a.ID},
+			})
+		}
 		r.InvalidateHealthCache()
 		fanartWarnings := make([]string, 0)
 		if removeFailed {
@@ -1093,8 +1120,12 @@ func (r *Router) handleDeleteImage(w http.ResponseWriter, req *http.Request) {
 	if _, found := img.FindExistingImage(r.imageDir(a), patterns); !found {
 		r.clearArtistImageFlag(req.Context(), a, imageType)
 	}
-	// Invalidate the health report cache because deleting an image may
-	// introduce a "missing thumb/logo" violation.
+	if r.eventBus != nil {
+		r.eventBus.Publish(event.Event{
+			Type: event.ArtistUpdated,
+			Data: map[string]any{"artist_id": a.ID},
+		})
+	}
 	r.InvalidateHealthCache()
 	warnings := make([]string, 0)
 	if deleteFailed {

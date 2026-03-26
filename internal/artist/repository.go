@@ -22,6 +22,13 @@ type Repository interface {
 	// ListPathsByLibrary returns a map of artist ID to filesystem path for
 	// all artists in the given library that have a non-empty path.
 	ListPathsByLibrary(ctx context.Context, libraryID string) (map[string]string, error)
+
+	// HealthStats returns aggregate health metrics for non-excluded artists.
+	// When libraryID is non-empty, only artists in that library are included.
+	HealthStats(ctx context.Context, libraryID string) (HealthStatsResult, error)
+
+	// ListZeroHealthIDs returns IDs of non-excluded artists with health_score = 0.
+	ListZeroHealthIDs(ctx context.Context) ([]string, error)
 }
 
 // ProviderIDRepository handles provider-specific ID lookups and persistence.

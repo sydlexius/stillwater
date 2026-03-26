@@ -12,9 +12,9 @@ import (
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/event"
 	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/provider"
-	"github.com/sydlexius/stillwater/internal/rule"
 )
 
 // IdentifyProgress tracks the state of a bulk-identify operation.
@@ -626,7 +626,12 @@ func (r *Router) autoLinkAndRefresh(ctx context.Context, a *artist.Artist) error
 				"artist", a.Name, "error", err)
 		}
 	}
-	rule.EvaluateAndPersistHealth(ctx, r.ruleEngine, r.artistService, a, r.logger)
+	if r.eventBus != nil {
+		r.eventBus.Publish(event.Event{
+			Type: event.ArtistUpdated,
+			Data: map[string]any{"artist_id": a.ID},
+		})
+	}
 	return nil
 }
 

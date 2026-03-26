@@ -17,6 +17,7 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/database"
+	"github.com/sydlexius/stillwater/internal/event"
 	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/rule"
 )
@@ -483,13 +484,30 @@ func TestScan_HealthScoreIntegration(t *testing.T) {
 	}
 	ruleEng := rule.NewEngine(ruleSvc, db, nil, nil, logger)
 
+	// Wire event bus and health subscriber so ArtistUpdated events
+	// trigger health score re-evaluation (scanner publishes events
+	// instead of calling EvaluateAndPersistHealth synchronously).
+	bus := event.NewBus(logger, 64)
+	go bus.Start()
+	t.Cleanup(bus.Stop)
+
+	healthSub := rule.NewHealthSubscriber(ruleEng, artistSvc, logger)
+	bus.Subscribe(event.ArtistUpdated, healthSub.HandleEvent)
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	go healthSub.Start(ctx)
+	t.Cleanup(healthSub.Stop)
+
 	svc := NewService(artistSvc, ruleEng, ruleSvc, logger, libDir, nil)
-	ctx := context.Background()
+	svc.SetEventBus(bus)
 
 	if _, err := svc.Run(ctx); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	waitForScan(t, svc, 5*time.Second)
+
+	// Wait for debounce + processing (2s debounce + margin)
+	time.Sleep(3 * time.Second)
 
 	a, err := artistSvc.GetByPath(ctx, filepath.Join(libDir, "Radiohead"))
 	if err != nil {

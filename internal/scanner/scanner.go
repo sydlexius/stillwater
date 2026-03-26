@@ -310,7 +310,12 @@ func (s *Service) processDirectory(ctx context.Context, dirPath, name, libraryID
 			return fmt.Errorf("creating artist: %w", err)
 		}
 
-		rule.EvaluateAndPersistHealth(ctx, s.ruleEngine, s.artistService, a, s.logger)
+		if s.eventBus != nil {
+			s.eventBus.Publish(event.Event{
+				Type: event.ArtistUpdated,
+				Data: map[string]any{"artist_id": a.ID},
+			})
+		}
 
 		s.mu.Lock()
 		result.NewArtists++
@@ -392,7 +397,12 @@ func (s *Service) processDirectory(ctx context.Context, dirPath, name, libraryID
 				return fmt.Errorf("updating artist: %w", err)
 			}
 
-			rule.EvaluateAndPersistHealth(ctx, s.ruleEngine, s.artistService, existing, s.logger)
+			if s.eventBus != nil {
+				s.eventBus.Publish(event.Event{
+					Type: event.ArtistUpdated,
+					Data: map[string]any{"artist_id": existing.ID},
+				})
+			}
 
 			s.mu.Lock()
 			result.UpdatedArtists++
