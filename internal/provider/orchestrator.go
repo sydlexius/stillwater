@@ -251,7 +251,7 @@ type providerResult struct {
 	images          []ImageResult
 	err             error
 	imageErr        error // non-nil when GetImages returned a transient error (not ErrNotFound)
-	imagesAttempted bool  // true only when GetImages was actually invoked (success or ErrNotFound)
+	imagesAttempted bool  // true whenever GetImages was actually invoked, regardless of outcome
 }
 
 func (o *Orchestrator) getProviderResult(ctx context.Context, name ProviderName, mbid string, artistName string, providerIDs map[ProviderName]string, cache map[ProviderName]*providerResult, mu *sync.Mutex) *providerResult {

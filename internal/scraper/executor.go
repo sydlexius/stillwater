@@ -243,7 +243,7 @@ type providerResult struct {
 	images          []provider.ImageResult
 	err             error
 	imageErr        error // non-nil when GetImages returned a transient error (not ErrNotFound)
-	imagesAttempted bool  // true only when GetImages was actually invoked (success or ErrNotFound)
+	imagesAttempted bool  // true whenever GetImages was actually invoked, regardless of outcome
 }
 
 // getProviderResult fetches and caches results from a single provider.
