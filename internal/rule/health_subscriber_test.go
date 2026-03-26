@@ -205,7 +205,8 @@ func TestHealthSubscriber_Bootstrap(t *testing.T) {
 		}
 	}
 
-	// Create one with non-zero score (should be skipped)
+	// Create one with non-zero score (should be skipped by bootstrap because
+	// health_evaluated_at is set, meaning it has already been evaluated).
 	skip := &artist.Artist{
 		Name:        "Already Scored",
 		SortName:    "Already Scored",
@@ -214,6 +215,10 @@ func TestHealthSubscriber_Bootstrap(t *testing.T) {
 	}
 	if err := svc.Create(context.Background(), skip); err != nil {
 		t.Fatalf("creating scored artist: %v", err)
+	}
+	// Mark as evaluated so bootstrap skips it.
+	if err := svc.UpdateHealthScore(context.Background(), skip.ID, 85.0); err != nil {
+		t.Fatalf("marking scored artist as evaluated: %v", err)
 	}
 
 	sub := NewHealthSubscriber(engine, svc, logger)

@@ -51,6 +51,7 @@ type Artist struct {
 	LogoPlaceholder     string            `json:"logo_placeholder,omitempty"`
 	BannerPlaceholder   string            `json:"banner_placeholder,omitempty"`
 	HealthScore         float64           `json:"health_score"`
+	HealthEvaluatedAt   *time.Time        `json:"health_evaluated_at,omitempty"`
 	IsExcluded          bool              `json:"is_excluded"`
 	ExclusionReason     string            `json:"exclusion_reason,omitempty"`
 	IsClassical         bool              `json:"is_classical"`

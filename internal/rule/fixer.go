@@ -750,6 +750,8 @@ func (p *Pipeline) updateHealthScore(ctx context.Context, a *artist.Artist) {
 		return
 	}
 	a.HealthScore = eval.HealthScore
+	now := time.Now().UTC()
+	a.HealthEvaluatedAt = &now
 	if err := p.artistService.Update(ctx, a); err != nil {
 		p.logger.Warn("persisting health score", "artist", a.Name, "error", err)
 	}

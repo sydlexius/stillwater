@@ -248,7 +248,7 @@ func (r *sqliteArtistRepo) Update(ctx context.Context, a *Artist) error {
 			genres = ?, styles = ?, moods = ?,
 			years_active = ?, born = ?, formed = ?, died = ?, disbanded = ?, biography = ?,
 			path = ?, library_id = ?, nfo_exists = ?,
-			health_score = ?, is_excluded = ?, exclusion_reason = ?, is_classical = ?,
+			health_score = ?, health_evaluated_at = ?, is_excluded = ?, exclusion_reason = ?, is_classical = ?,
 			locked = ?, lock_source = ?, locked_at = ?,
 			metadata_sources = ?,
 			last_scanned_at = ?, updated_at = ?
@@ -258,7 +258,7 @@ func (r *sqliteArtistRepo) Update(ctx context.Context, a *Artist) error {
 		MarshalStringSlice(a.Genres), MarshalStringSlice(a.Styles), MarshalStringSlice(a.Moods),
 		a.YearsActive, a.Born, a.Formed, a.Died, a.Disbanded, a.Biography,
 		a.Path, dbutil.NullableString(a.LibraryID), dbutil.BoolToInt(a.NFOExists),
-		a.HealthScore, dbutil.BoolToInt(a.IsExcluded), a.ExclusionReason, dbutil.BoolToInt(a.IsClassical),
+		a.HealthScore, dbutil.FormatNullableTime(a.HealthEvaluatedAt), dbutil.BoolToInt(a.IsExcluded), a.ExclusionReason, dbutil.BoolToInt(a.IsClassical),
 		dbutil.BoolToInt(a.Locked), a.LockSource, dbutil.FormatNullableTime(a.LockedAt),
 		MarshalStringMap(a.MetadataSources),
 		dbutil.FormatNullableTime(a.LastScannedAt),
