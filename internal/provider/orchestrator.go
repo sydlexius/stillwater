@@ -5,11 +5,30 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"strings"
 	"sync"
 
 	"github.com/sydlexius/stillwater/internal/provider/tagdict"
 )
+
+// sensitiveParamRe matches URL query parameters whose names indicate sensitive
+// values (API keys, tokens, passwords). The value runs until the next ampersand,
+// whitespace, quote, or end of string.
+var sensitiveParamRe = regexp.MustCompile(`(?i)(api_?key|token|secret|password|authorization)=([^&\s"']+)`)
+
+// ScrubError removes sensitive query parameter values (API keys, tokens, passwords)
+// from error strings before they are written to logs. Provider errors may contain
+// full request URLs with credentials in query parameters (e.g. Fanart.tv includes
+// api_key in every request URL).
+func ScrubError(err error) string {
+	return scrubSensitiveParams(err.Error())
+}
+
+// scrubSensitiveParams redacts values of sensitive query parameters in s.
+func scrubSensitiveParams(s string) string {
+	return sensitiveParamRe.ReplaceAllString(s, "${1}=REDACTED")
+}
 
 // FieldSource records which provider supplied a given field.
 type FieldSource struct {
@@ -196,8 +215,8 @@ func (o *Orchestrator) FetchImages(ctx context.Context, mbid string, providerIDs
 			}
 			o.logger.Warn("provider image fetch failed",
 				slog.String("provider", string(p.Name())),
-				slog.String("error", err.Error()))
-			result.Errors = append(result.Errors, fmt.Sprintf("%s: %s", p.Name(), err.Error()))
+				slog.String("error", ScrubError(err)))
+			result.Errors = append(result.Errors, fmt.Sprintf("%s: image fetch failed", p.Name()))
 			continue
 		}
 		result.Images = append(result.Images, images...)
@@ -220,7 +239,7 @@ func (o *Orchestrator) Search(ctx context.Context, name string) ([]ArtistSearchR
 		if err != nil {
 			o.logger.Warn("provider search failed",
 				slog.String("provider", string(p.Name())),
-				slog.String("error", err.Error()))
+				slog.String("error", ScrubError(err)))
 			continue
 		}
 		allResults = append(allResults, results...)
@@ -351,7 +370,7 @@ func (o *Orchestrator) getProviderResult(ctx context.Context, name ProviderName,
 			} else {
 				o.logger.Warn("provider GetImages failed, preserving existing image data",
 					slog.String("provider", string(name)),
-					slog.String("error", err.Error()))
+					slog.String("error", ScrubError(err)))
 				// Transient failure: store in imageErr so image fields are NOT
 				// marked as attempted. This prevents clearing existing image data
 				// when the provider was merely unreachable.
@@ -543,16 +562,16 @@ func (o *Orchestrator) FetchFieldFromProviders(ctx context.Context, mbid, name, 
 		if pr.err != nil {
 			// Only real errors reach pr.err; ErrNotFound is handled in
 			// getProviderResult and does not set pr.err.
-			fpr.Error = pr.err.Error()
+			fpr.Error = "metadata fetch failed"
 		} else if isImageFieldName(field) && pr.imageErr != nil {
-			// Transient GetImages failure (timeout, 5xx): log the raw error
+			// Transient GetImages failure (timeout, 5xx): log the scrubbed error
 			// server-side and return a generic message to the client. Provider
 			// errors may contain API keys (e.g. Fanart.tv URLs) or raw HTTP
-			// internals that must not be exposed in JSON responses.
+			// internals that must not be exposed in JSON responses or logs.
 			o.logger.Warn("provider image fetch failed for comparison",
 				slog.String("provider", string(provName)),
 				slog.String("field", field),
-				slog.String("error", pr.imageErr.Error()))
+				slog.String("error", ScrubError(pr.imageErr)))
 			fpr.Error = "image fetch failed"
 		} else if pr.meta != nil {
 			extractFieldForComparison(&fpr, field, pr.meta)
@@ -644,7 +663,7 @@ func (o *Orchestrator) SearchForLinking(ctx context.Context, name string, provid
 		if err != nil {
 			o.logger.Warn("provider search failed",
 				slog.String("provider", string(provName)),
-				slog.String("error", err.Error()))
+				slog.String("error", ScrubError(err)))
 			continue
 		}
 		allResults = append(allResults, results...)

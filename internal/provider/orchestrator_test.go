@@ -1737,3 +1737,51 @@ func TestIsAllMusicID(t *testing.T) {
 		})
 	}
 }
+
+func TestScrubSensitiveParams(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "api_key in fanart.tv URL",
+			input: "Get \"https://webservice.fanart.tv/v3/music/abc?api_key=SECRET123\": context deadline exceeded",
+			want:  "Get \"https://webservice.fanart.tv/v3/music/abc?api_key=REDACTED\": context deadline exceeded",
+		},
+		{
+			name:  "apikey without underscore",
+			input: "Get \"https://example.com/api?apikey=MYSECRET&format=json\": connection refused",
+			want:  "Get \"https://example.com/api?apikey=REDACTED&format=json\": connection refused",
+		},
+		{
+			name:  "token parameter",
+			input: "request failed: https://api.example.com/data?token=ABC123XYZ",
+			want:  "request failed: https://api.example.com/data?token=REDACTED",
+		},
+		{
+			name:  "multiple sensitive params",
+			input: "url?api_key=SECRET&format=json&token=ABC",
+			want:  "url?api_key=REDACTED&format=json&token=REDACTED",
+		},
+		{
+			name:  "no sensitive params",
+			input: "connection refused",
+			want:  "connection refused",
+		},
+		{
+			name:  "non-sensitive query params left intact",
+			input: "https://example.com/api?id=123&format=json: timeout",
+			want:  "https://example.com/api?id=123&format=json: timeout",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := scrubSensitiveParams(tt.input)
+			if got != tt.want {
+				t.Errorf("scrubSensitiveParams(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}

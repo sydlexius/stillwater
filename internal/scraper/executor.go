@@ -349,7 +349,7 @@ func (e *Executor) getProviderResult(
 			} else {
 				e.logger.Warn("provider GetImages failed, preserving existing image data",
 					slog.String("provider", string(name)),
-					slog.String("error", err.Error()))
+					slog.String("error", provider.ScrubError(err)))
 				// Transient failure: store in imageErr so image fields are NOT
 				// marked as attempted. This prevents clearing existing image data
 				// when the provider was merely unreachable.
