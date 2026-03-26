@@ -245,6 +245,9 @@ func (r *Router) handleViolationTrend(w http.ResponseWriter, req *http.Request) 
 }
 
 // handleReportCompliance returns a paginated compliance report.
+// Reads stored health scores from the artists table and active violations
+// (open and pending_choice) from rule_violations rather than calling
+// EvaluateAll on every request.
 // GET /api/v1/reports/compliance
 func (r *Router) handleReportCompliance(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
@@ -257,20 +260,29 @@ func (r *Router) handleReportCompliance(w http.ResponseWriter, req *http.Request
 		return
 	}
 
-	// Evaluate each artist
-	results, err := r.ruleEngine.EvaluateAll(ctx, artists)
+	// Collect artist IDs for the batch violation lookup.
+	ids := make([]string, len(artists))
+	for i, a := range artists {
+		ids[i] = a.ID
+	}
+
+	violations, err := r.ruleService.GetViolationsForArtists(ctx, ids)
 	if err != nil {
-		r.logger.Error("evaluating artists for compliance", "error", err)
-		writeError(w, req, http.StatusInternalServerError, "failed to evaluate artists")
+		r.logger.Error("loading violations for compliance report", "error", err)
+		writeError(w, req, http.StatusInternalServerError, "failed to load violations")
 		return
 	}
 
 	rows := make([]templates.ComplianceRow, len(artists))
-	for i := range artists {
+	for i, a := range artists {
+		vs := violations[a.ID]
+		if vs == nil {
+			vs = make([]rule.Violation, 0)
+		}
 		rows[i] = templates.ComplianceRow{
-			Artist:      artists[i],
-			HealthScore: results[i].HealthScore,
-			Violations:  results[i].Violations,
+			Artist:      a,
+			HealthScore: a.HealthScore,
+			Violations:  vs,
 		}
 	}
 
@@ -306,10 +318,15 @@ func (r *Router) handleReportComplianceExport(w http.ResponseWriter, req *http.R
 		params.Page++
 	}
 
-	results, err := r.ruleEngine.EvaluateAll(ctx, allArtists)
+	// Collect artist IDs and batch-load stored violations.
+	allIDs := make([]string, len(allArtists))
+	for i, a := range allArtists {
+		allIDs[i] = a.ID
+	}
+	violations, err := r.ruleService.GetViolationsForArtists(ctx, allIDs)
 	if err != nil {
-		r.logger.Error("evaluating artists for compliance export", "error", err)
-		writeError(w, req, http.StatusInternalServerError, "failed to evaluate artists")
+		r.logger.Error("loading violations for compliance export", "error", err)
+		writeError(w, req, http.StatusInternalServerError, "failed to load violations")
 		return
 	}
 
@@ -333,26 +350,26 @@ func (r *Router) handleReportComplianceExport(w http.ResponseWriter, req *http.R
 		return
 	}
 
-	for i, a := range allArtists {
+	for _, a := range allArtists {
 		if ctx.Err() != nil {
 			break
 		}
-		var violations []string
-		for _, v := range results[i].Violations {
-			violations = append(violations, v.RuleName)
+		var violationNames []string
+		for _, v := range violations[a.ID] {
+			violationNames = append(violationNames, v.RuleName)
 		}
 		libName := libNames[a.LibraryID]
 
 		if err := cw.Write([]string{
 			sanitizeCSV(a.Name),
-			fmt.Sprintf("%.0f", results[i].HealthScore),
+			fmt.Sprintf("%.0f", a.HealthScore),
 			boolCSV(a.NFOExists),
 			boolCSV(a.ThumbExists),
 			boolCSV(a.FanartExists),
 			boolCSV(a.LogoExists),
 			boolCSV(a.MusicBrainzID != ""),
 			sanitizeCSV(libName),
-			sanitizeCSV(strings.Join(violations, "; ")),
+			sanitizeCSV(strings.Join(violationNames, "; ")),
 		}); err != nil {
 			r.logger.Error("writing CSV row", "artist", a.Name, "error", err)
 			return
@@ -444,19 +461,28 @@ func (r *Router) handleCompliancePage(w http.ResponseWriter, req *http.Request) 
 		return
 	}
 
-	results, err := r.ruleEngine.EvaluateAll(ctx, artists)
+	// Collect artist IDs and batch-load stored violations.
+	pageIDs := make([]string, len(artists))
+	for i, a := range artists {
+		pageIDs[i] = a.ID
+	}
+	pageViolations, err := r.ruleService.GetViolationsForArtists(ctx, pageIDs)
 	if err != nil {
-		r.logger.Error("evaluating artists for compliance page", "error", err)
+		r.logger.Error("loading violations for compliance page", "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 
 	rows := make([]templates.ComplianceRow, len(artists))
-	for i := range artists {
+	for i, a := range artists {
+		vs := pageViolations[a.ID]
+		if vs == nil {
+			vs = make([]rule.Violation, 0)
+		}
 		rows[i] = templates.ComplianceRow{
-			Artist:      artists[i],
-			HealthScore: results[i].HealthScore,
-			Violations:  results[i].Violations,
+			Artist:      a,
+			HealthScore: a.HealthScore,
+			Violations:  vs,
 		}
 	}
 

@@ -180,10 +180,23 @@ func TestHandleRunRule_Returns202(t *testing.T) {
 }
 
 func TestHandleRunRule_409WhenAlreadyRunning(t *testing.T) {
-	r, _, ruleSvc := testRouterWithPipelineFull(t)
-	ruleID := firstRuleID(t, ruleSvc)
+	// Use a blocking stub so the first run stays in-progress until we release it.
+	blockCh := make(chan struct{})
+	stub := &stubPipeline{
+		runRuleFn: func(_ context.Context, _ string) (*rule.RunResult, error) {
+			<-blockCh
+			return &rule.RunResult{}, nil
+		},
+	}
+	r, _ := testRouterWithStubPipeline(t, stub)
 
-	// Start a run
+	rules, err := r.ruleService.List(context.Background())
+	if err != nil || len(rules) == 0 {
+		t.Fatalf("listing rules: err=%v, count=%d", err, len(rules))
+	}
+	ruleID := rules[0].ID
+
+	// Start a run (returns 202, goroutine blocks on blockCh)
 	req1 := httptest.NewRequest(http.MethodPost, "/api/v1/rules/"+ruleID+"/run", nil)
 	req1.SetPathValue("id", ruleID)
 	w1 := httptest.NewRecorder()
@@ -193,7 +206,7 @@ func TestHandleRunRule_409WhenAlreadyRunning(t *testing.T) {
 		t.Fatalf("first run: status = %d, want %d", w1.Code, http.StatusAccepted)
 	}
 
-	// Immediately try a second run while the first is still in progress
+	// Second run while the first is still blocked -- must get 409.
 	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/rules/"+ruleID+"/run", nil)
 	req2.SetPathValue("id", ruleID)
 	w2 := httptest.NewRecorder()
@@ -202,6 +215,9 @@ func TestHandleRunRule_409WhenAlreadyRunning(t *testing.T) {
 	if w2.Code != http.StatusConflict {
 		t.Fatalf("second run: status = %d, want %d; body: %s", w2.Code, http.StatusConflict, w2.Body.String())
 	}
+
+	// Release the blocked goroutine so it can clean up.
+	close(blockCh)
 }
 
 func TestHandleEvaluateArtist_NotFound(t *testing.T) {
