@@ -175,6 +175,11 @@ func TestHealthSubscriber_DebounceCoalesces(t *testing.T) {
 	// Wait for processing using poll instead of sleep
 	pollPendingQueue(t, sub)
 
+	// pollPendingQueue only confirms the pending map is empty, but evaluateArtist
+	// may still be running. Poll until the health score is actually persisted to
+	// confirm evaluation completed end-to-end.
+	pollHealthScore(t, svc, a.ID, func(score float64) bool { return score != 0.0 })
+
 	// Verify it was processed
 	sub.mu.Lock()
 	remaining := len(sub.pending)
