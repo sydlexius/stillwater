@@ -92,6 +92,7 @@ jobs:
         with:
           image-ref: stillwater:scan
           scanners: license
+          exit-code: '1'
           format: table
           severity: CRITICAL,HIGH
 
