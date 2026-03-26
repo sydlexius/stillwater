@@ -45,7 +45,7 @@ func (r *sqliteArtistRepo) ListUnevaluatedIDs(ctx context.Context) ([]string, er
 	rows, err := r.db.QueryContext(ctx,
 		`SELECT id FROM artists WHERE is_excluded = 0 AND health_evaluated_at IS NULL`)
 	if err != nil {
-		return nil, fmt.Errorf("querying zero-health artists: %w", err)
+		return nil, fmt.Errorf("querying unevaluated artists: %w", err)
 	}
 	defer rows.Close() //nolint:errcheck
 
@@ -53,12 +53,12 @@ func (r *sqliteArtistRepo) ListUnevaluatedIDs(ctx context.Context) ([]string, er
 	for rows.Next() {
 		var id string
 		if err := rows.Scan(&id); err != nil {
-			return nil, fmt.Errorf("scanning zero-health artist id: %w", err)
+			return nil, fmt.Errorf("scanning unevaluated artist id: %w", err)
 		}
 		ids = append(ids, id)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterating zero-health artists: %w", err)
+		return nil, fmt.Errorf("iterating unevaluated artists: %w", err)
 	}
 	return ids, nil
 }
