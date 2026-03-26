@@ -23,6 +23,7 @@ const (
 	EmbyLibraryScan      Type = "emby.library.scan"
 	JellyfinArtistUpdate Type = "jellyfin.artist.update"
 	JellyfinLibraryScan  Type = "jellyfin.library.scan"
+	ArtistUpdated        Type = "artist.updated"
 	FSDirCreated         Type = "fs.dir.created"
 	FSDirRemoved         Type = "fs.dir.removed"
 	FSUnexpectedWrite    Type = "fs.unexpected.write"

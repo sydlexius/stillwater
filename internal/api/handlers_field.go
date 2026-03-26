@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/event"
 	"github.com/sydlexius/stillwater/internal/provider"
 	"github.com/sydlexius/stillwater/web/templates"
 )
@@ -118,9 +119,12 @@ func (r *Router) handleFieldUpdate(w http.ResponseWriter, req *http.Request) {
 
 	r.publisher.PublishMetadata(req.Context(), a)
 
-	// Invalidate the health report cache because the field change may affect
-	// health scores (e.g. adding a biography clears a "missing biography"
-	// violation, changing an MBID affects "missing MBID" counts).
+	if r.eventBus != nil {
+		r.eventBus.Publish(event.Event{
+			Type: event.ArtistUpdated,
+			Data: map[string]any{"artist_id": a.ID},
+		})
+	}
 	r.InvalidateHealthCache()
 
 	if isHTMXRequest(req) {
@@ -170,9 +174,12 @@ func (r *Router) handleFieldClear(w http.ResponseWriter, req *http.Request) {
 
 	r.publisher.PublishMetadata(req.Context(), a)
 
-	// Invalidate the health report cache because clearing a field may change
-	// health scores (e.g. clearing an MBID introduces a "missing MBID"
-	// violation).
+	if r.eventBus != nil {
+		r.eventBus.Publish(event.Event{
+			Type: event.ArtistUpdated,
+			Data: map[string]any{"artist_id": a.ID},
+		})
+	}
 	r.InvalidateHealthCache()
 
 	if isHTMXRequest(req) {

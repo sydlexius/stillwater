@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/event"
 	"github.com/sydlexius/stillwater/internal/provider"
 	"github.com/sydlexius/stillwater/internal/rule"
 	"github.com/sydlexius/stillwater/web/templates"
@@ -48,7 +49,12 @@ func (r *Router) handleArtistRefresh(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	rule.EvaluateAndPersistHealth(req.Context(), r.ruleEngine, r.artistService, a, r.logger)
+	if r.eventBus != nil {
+		r.eventBus.Publish(event.Event{
+			Type: event.ArtistUpdated,
+			Data: map[string]any{"artist_id": a.ID},
+		})
+	}
 
 	// Metadata refresh changes artist fields that affect health scores.
 	r.InvalidateHealthCache()
@@ -193,7 +199,12 @@ func (r *Router) handleRefreshLink(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
-	rule.EvaluateAndPersistHealth(req.Context(), r.ruleEngine, r.artistService, a, r.logger)
+	if r.eventBus != nil {
+		r.eventBus.Publish(event.Event{
+			Type: event.ArtistUpdated,
+			Data: map[string]any{"artist_id": a.ID},
+		})
+	}
 
 	// Linking a provider ID and refreshing changes health-relevant fields.
 	r.InvalidateHealthCache()

@@ -361,6 +361,62 @@ func (s *Service) RecordHealthSnapshot(ctx context.Context, totalArtists, compli
 	return nil
 }
 
+// ViolationSummary tracks how many non-excluded artists currently fail a specific rule.
+type ViolationSummary struct {
+	RuleID   string `json:"rule_id"`
+	RuleName string `json:"rule_name"`
+	Count    int    `json:"count"`
+	Severity string `json:"severity"`
+}
+
+// TopViolationSummaries returns the most common open violations grouped by rule,
+// limited to the given count. Only non-excluded artists are considered.
+func (s *Service) TopViolationSummaries(ctx context.Context, limit int) ([]ViolationSummary, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT rv.rule_id, r.name, COUNT(*) AS cnt,
+		       CASE MAX(CASE rv.severity
+		           WHEN 'error' THEN 3
+		           WHEN 'warning' THEN 2
+		           WHEN 'info' THEN 1
+		           ELSE 0
+		       END)
+		           WHEN 3 THEN 'error'
+		           WHEN 2 THEN 'warning'
+		           WHEN 1 THEN 'info'
+		           ELSE 'warning'
+		       END AS severity
+		FROM rule_violations rv
+		JOIN rules r ON r.id = rv.rule_id
+		JOIN artists a ON a.id = rv.artist_id AND a.is_excluded = 0
+		WHERE rv.status IN ('open', 'pending_choice')
+		GROUP BY rv.rule_id
+		ORDER BY cnt DESC, rv.rule_id ASC
+		LIMIT ?
+	`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("querying top violation summaries: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck
+
+	var results []ViolationSummary
+	for rows.Next() {
+		var vs ViolationSummary
+		if err := rows.Scan(&vs.RuleID, &vs.RuleName, &vs.Count, &vs.Severity); err != nil {
+			return nil, fmt.Errorf("scanning violation summary: %w", err)
+		}
+		results = append(results, vs)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating violation summaries: %w", err)
+	}
+
+	return results, nil
+}
+
 // GetHealthHistory returns health snapshots within a time range, ordered by recorded_at.
 // If from or to are zero-valued, defaults to the last 90 days.
 func (s *Service) GetHealthHistory(ctx context.Context, from, to time.Time) ([]HealthSnapshot, error) {

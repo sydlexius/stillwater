@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"encoding/csv"
 	"fmt"
 	"net/http"
@@ -10,17 +9,10 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/artist"
-	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/rule"
 	"github.com/sydlexius/stillwater/web/components"
 	"github.com/sydlexius/stillwater/web/templates"
 )
-
-// healthCacheTTL is how long a computed health summary is considered fresh.
-// During this window, subsequent requests receive the cached result without
-// re-running EvaluateAll, which is the most expensive operation in the
-// reports pipeline.
-const healthCacheTTL = 30 * time.Second
 
 // healthSummary is the JSON response for the dashboard health endpoint.
 type healthSummary struct {
@@ -56,122 +48,57 @@ type librarySummary struct {
 }
 
 // handleReportHealth returns the current library health summary.
-// Evaluates all artists against active rules and records a health snapshot.
-//
-// Results are cached for healthCacheTTL (30 seconds). Concurrent requests
-// are coalesced via singleflight so only one goroutine runs the expensive
-// EvaluateAll call at a time. The cache is invalidated when artists or rules
-// are mutated (see InvalidateHealthCache).
-//
+// Reads stored per-artist health scores via SQL aggregation instead of
+// running EvaluateAll on every request. Scores are kept fresh by the
+// HealthSubscriber that processes ArtistUpdated events.
 // GET /api/v1/reports/health
 func (r *Router) handleReportHealth(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
 
-	// Fast path: check the cache under a read lock. Multiple concurrent
-	// readers can check simultaneously without blocking each other.
-	r.healthCacheMu.RLock()
-	if r.healthResult != nil && time.Since(r.healthCachedAt) < healthCacheTTL {
-		cached := *r.healthResult
-		r.healthCacheMu.RUnlock()
-		r.renderHealthResponse(w, req, cached)
-		return
-	}
-	r.healthCacheMu.RUnlock()
-
-	// Cache is stale or empty. Use singleflight to ensure only one goroutine
-	// runs the expensive computation. All other concurrent callers block here
-	// and receive the same result when the first caller finishes.
-	//
-	// Detach from the winning request's lifecycle: if the first caller's HTTP
-	// connection drops, its context cancels. Without WithoutCancel, that would
-	// abort the computation for all coalesced callers waiting on the same
-	// singleflight key. The detached context preserves request-scoped values
-	// (logging, tracing) while preventing one client's cancellation from
-	// failing everyone else.
-	sfCtx, sfCancel := context.WithTimeout(context.WithoutCancel(ctx), 60*time.Second)
-	defer sfCancel()
-	val, err, _ := r.healthFlight.Do("health", func() (any, error) {
-		// Double-check: another goroutine may have refreshed the cache
-		// between the RUnlock above and this singleflight invocation.
-		r.healthCacheMu.RLock()
-		if r.healthResult != nil && time.Since(r.healthCachedAt) < healthCacheTTL {
-			cached := *r.healthResult
-			r.healthCacheMu.RUnlock()
-			return cached, nil
-		}
-		r.healthCacheMu.RUnlock()
-
-		summary, compErr := r.computeHealthSummary(sfCtx)
-		if compErr != nil {
-			return nil, compErr
-		}
-
-		// Store the result in the cache under a write lock.
-		r.healthCacheMu.Lock()
-		r.healthResult = &summary
-		r.healthCachedAt = time.Now()
-		r.healthCacheMu.Unlock()
-
-		// Record a health snapshot once per computation (not per cache hit)
-		// so the history table stays accurate without being flooded.
-		if err := r.ruleService.RecordHealthSnapshot(sfCtx, summary.TotalArtists, summary.CompliantArtists, summary.Score); err != nil {
-			r.logger.Warn("recording health snapshot", "error", err)
-		}
-
-		return summary, nil
-	})
-
+	stats, err := r.artistService.GetHealthStats(ctx, "")
 	if err != nil {
-		r.logger.Error("computing health summary", "error", err)
+		r.logger.Error("querying health stats", "error", err)
 		writeError(w, req, http.StatusInternalServerError, "failed to generate health report")
 		return
 	}
 
-	summary := val.(healthSummary)
+	topViolations, err := r.ruleService.TopViolationSummaries(ctx, 10)
+	if err != nil {
+		r.logger.Error("querying top violations", "error", err)
+		writeError(w, req, http.StatusInternalServerError, "failed to generate health report")
+		return
+	}
+
+	summary := healthSummary{
+		Score:            stats.Score,
+		TotalArtists:     stats.TotalArtists,
+		CompliantArtists: stats.CompliantArtists,
+		MissingNFO:       stats.MissingNFO,
+		MissingThumb:     stats.MissingThumb,
+		MissingFanart:    stats.MissingFanart,
+		MissingMBID:      stats.MissingMBID,
+		TopViolations:    make([]violationSummary, 0, len(topViolations)),
+	}
+
+	for _, v := range topViolations {
+		summary.TopViolations = append(summary.TopViolations, violationSummary{
+			RuleID:   v.RuleID,
+			RuleName: v.RuleName,
+			Count:    v.Count,
+			Severity: v.Severity,
+		})
+	}
+
+	// Record a health snapshot (throttled)
+	if err := r.ruleService.RecordHealthSnapshot(ctx, summary.TotalArtists, summary.CompliantArtists, summary.Score); err != nil {
+		r.logger.Warn("recording health snapshot", "error", err)
+	}
+
 	r.renderHealthResponse(w, req, summary)
 }
 
-// computeHealthSummary fetches all non-excluded artists, evaluates them
-// against active rules, and builds the aggregate health summary. This is
-// the expensive part that the cache and singleflight protect.
-func (r *Router) computeHealthSummary(ctx context.Context) (healthSummary, error) {
-	params := artist.ListParams{
-		Page:     1,
-		PageSize: 200,
-		Sort:     "name",
-		Order:    "asc",
-		Filter:   "not_excluded",
-	}
-	params.Validate()
-
-	allArtists, total, err := r.artistService.List(ctx, params)
-	if err != nil {
-		return healthSummary{}, fmt.Errorf("listing artists: %w", err)
-	}
-
-	// Fetch remaining pages if total > 200
-	for len(allArtists) < total {
-		params.Page++
-		more, _, err := r.artistService.List(ctx, params)
-		if err != nil {
-			return healthSummary{}, fmt.Errorf("listing artists page %d: %w", params.Page, err)
-		}
-		allArtists = append(allArtists, more...)
-	}
-
-	results, err := r.ruleEngine.EvaluateAll(ctx, allArtists)
-	if err != nil {
-		return healthSummary{}, fmt.Errorf("evaluating artists: %w", err)
-	}
-
-	return buildHealthSummary(allArtists, results), nil
-}
-
 // renderHealthResponse writes the health summary as either an HTMX HTML
-// fragment or a JSON response, depending on the request headers. This is
-// separated from the computation so that each concurrent caller renders
-// its own response from the shared data (the singleflight only computes
-// the data, it does not render).
+// fragment or a JSON response, depending on the request headers.
 func (r *Router) renderHealthResponse(w http.ResponseWriter, req *http.Request, summary healthSummary) {
 	if isHTMXRequest(req) {
 		data := templates.HealthSummaryData{
@@ -191,16 +118,11 @@ func (r *Router) renderHealthResponse(w http.ResponseWriter, req *http.Request, 
 	writeJSON(w, http.StatusOK, summary)
 }
 
-// InvalidateHealthCache clears the cached health summary so the next
-// request triggers a fresh computation. Call this after any mutation that
-// could change artist data or rule configuration (e.g. field updates,
-// rule changes, scanner imports).
-func (r *Router) InvalidateHealthCache() {
-	r.healthCacheMu.Lock()
-	r.healthResult = nil
-	r.healthCachedAt = time.Time{}
-	r.healthCacheMu.Unlock()
-}
+// InvalidateHealthCache is a no-op retained for API compatibility with
+// callers added by PR #700. Health scores are now read from stored
+// per-artist values (updated via the event bus), so there is no
+// in-memory cache to invalidate.
+func (r *Router) InvalidateHealthCache() {}
 
 // handleReportHealthHistory returns health history data for charting.
 // GET /api/v1/reports/health/history?from=2024-01-01&to=2024-06-01
@@ -237,6 +159,7 @@ func (r *Router) handleReportHealthHistory(w http.ResponseWriter, req *http.Requ
 }
 
 // handleReportHealthByLibrary returns per-library health breakdown.
+// Reads stored per-artist health scores via SQL aggregation per library.
 // GET /api/v1/reports/health/by-library
 func (r *Router) handleReportHealthByLibrary(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
@@ -248,35 +171,46 @@ func (r *Router) handleReportHealthByLibrary(w http.ResponseWriter, req *http.Re
 		return
 	}
 
-	// Build per-library summaries
-	var summaries []librarySummary
-	var allArtists []artist.Artist
-	var allResults []rule.EvaluationResult
-
+	summaries := make([]librarySummary, 0, len(libs))
 	for _, lib := range libs {
-		artists, err := r.listAllArtists(ctx, lib.ID)
+		stats, err := r.artistService.GetHealthStats(ctx, lib.ID)
 		if err != nil {
-			r.logger.Error("listing artists for library health", "library", lib.Name, "error", err)
+			r.logger.Error("querying health stats for library", "library", lib.Name, "error", err)
 			continue
 		}
-		if len(artists) == 0 {
+		if stats.TotalArtists == 0 {
 			continue
 		}
-
-		results, err := r.ruleEngine.EvaluateAll(ctx, artists)
-		if err != nil {
-			r.logger.Error("evaluating artists for library health", "library", lib.Name, "error", err)
-			continue
-		}
-
-		allArtists = append(allArtists, artists...)
-		allResults = append(allResults, results...)
-
-		summaries = append(summaries, buildLibrarySummary(lib, artists, results))
+		summaries = append(summaries, librarySummary{
+			LibraryID:        lib.ID,
+			LibraryName:      lib.Name,
+			TotalArtists:     stats.TotalArtists,
+			CompliantArtists: stats.CompliantArtists,
+			Score:            stats.Score,
+			MissingNFO:       stats.MissingNFO,
+			MissingThumb:     stats.MissingThumb,
+			MissingFanart:    stats.MissingFanart,
+			MissingMBID:      stats.MissingMBID,
+		})
 	}
 
-	// Build overall summary from all artists
-	overall := buildOverallLibrarySummary(allArtists, allResults)
+	// Overall across all libraries
+	overallStats, err := r.artistService.GetHealthStats(ctx, "")
+	if err != nil {
+		r.logger.Error("querying overall health stats", "error", err)
+		writeError(w, req, http.StatusInternalServerError, "failed to compute overall health")
+		return
+	}
+
+	overall := librarySummary{
+		TotalArtists:     overallStats.TotalArtists,
+		CompliantArtists: overallStats.CompliantArtists,
+		Score:            overallStats.Score,
+		MissingNFO:       overallStats.MissingNFO,
+		MissingThumb:     overallStats.MissingThumb,
+		MissingFanart:    overallStats.MissingFanart,
+		MissingMBID:      overallStats.MissingMBID,
+	}
 
 	if isHTMXRequest(req) {
 		renderTempl(w, req, templates.ComplianceSummaryFragment(templates.ComplianceSummaryData{
@@ -290,104 +224,6 @@ func (r *Router) handleReportHealthByLibrary(w http.ResponseWriter, req *http.Re
 		"libraries": summaries,
 		"overall":   overall,
 	})
-}
-
-// listAllArtists fetches all non-excluded artists for a library via pagination.
-func (r *Router) listAllArtists(ctx context.Context, libraryID string) ([]artist.Artist, error) {
-	const pageSize = 200
-	params := artist.ListParams{
-		Page:      1,
-		PageSize:  pageSize,
-		Sort:      "name",
-		Order:     "asc",
-		Filter:    "not_excluded",
-		LibraryID: libraryID,
-	}
-	params.Validate()
-
-	var all []artist.Artist
-	for {
-		page, _, err := r.artistService.List(ctx, params)
-		if err != nil {
-			return nil, err
-		}
-		all = append(all, page...)
-		if len(page) < pageSize {
-			break
-		}
-		params.Page++
-	}
-	return all, nil
-}
-
-func buildLibrarySummary(lib library.Library, artists []artist.Artist, results []rule.EvaluationResult) librarySummary {
-	ls := librarySummary{
-		LibraryID:    lib.ID,
-		LibraryName:  lib.Name,
-		TotalArtists: len(artists),
-	}
-
-	totalPassed, totalRules := 0, 0
-	for i, a := range artists {
-		if results[i].HealthScore >= 100.0 {
-			ls.CompliantArtists++
-		}
-		if !a.NFOExists {
-			ls.MissingNFO++
-		}
-		if !a.ThumbExists {
-			ls.MissingThumb++
-		}
-		if !a.FanartExists {
-			ls.MissingFanart++
-		}
-		if a.MusicBrainzID == "" {
-			ls.MissingMBID++
-		}
-		totalPassed += results[i].RulesPassed
-		totalRules += results[i].RulesTotal
-	}
-
-	if totalRules > 0 {
-		ls.Score = float64(int(float64(totalPassed)/float64(totalRules)*1000)) / 10
-	} else if ls.TotalArtists > 0 {
-		ls.Score = 100.0
-	}
-
-	return ls
-}
-
-func buildOverallLibrarySummary(artists []artist.Artist, results []rule.EvaluationResult) librarySummary {
-	ls := librarySummary{TotalArtists: len(artists)}
-
-	totalPassed, totalRules := 0, 0
-	for i, a := range artists {
-		if results[i].HealthScore >= 100.0 {
-			ls.CompliantArtists++
-		}
-		if !a.NFOExists {
-			ls.MissingNFO++
-		}
-		if !a.ThumbExists {
-			ls.MissingThumb++
-		}
-		if !a.FanartExists {
-			ls.MissingFanart++
-		}
-		if a.MusicBrainzID == "" {
-			ls.MissingMBID++
-		}
-		totalPassed += results[i].RulesPassed
-		totalRules += results[i].RulesTotal
-	}
-
-	if totalRules > 0 {
-		ls.Score = float64(int(float64(totalPassed)/float64(totalRules)*1000)) / 10
-	} else if ls.TotalArtists > 0 {
-		ls.Score = 100.0
-	}
-
-	return ls
 }
 
 // handleViolationTrend returns daily violation creation and resolution counts.
@@ -586,86 +422,6 @@ func complianceListParams(req *http.Request) artist.ListParams {
 
 	params.Validate()
 	return params
-}
-
-func buildHealthSummary(artists []artist.Artist, results []rule.EvaluationResult) healthSummary {
-	var s healthSummary
-	s.TotalArtists = len(artists)
-
-	violationCounts := make(map[string]*violationSummary)
-
-	for i, a := range artists {
-		if results[i].HealthScore >= 100.0 {
-			s.CompliantArtists++
-		}
-		if !a.NFOExists {
-			s.MissingNFO++
-		}
-		if !a.ThumbExists {
-			s.MissingThumb++
-		}
-		if !a.FanartExists {
-			s.MissingFanart++
-		}
-		if a.MusicBrainzID == "" {
-			s.MissingMBID++
-		}
-
-		for _, v := range results[i].Violations {
-			if vs, ok := violationCounts[v.RuleID]; ok {
-				vs.Count++
-			} else {
-				violationCounts[v.RuleID] = &violationSummary{
-					RuleID:   v.RuleID,
-					RuleName: v.RuleName,
-					Count:    1,
-					Severity: v.Severity,
-				}
-			}
-		}
-	}
-
-	// Compute overall score
-	if s.TotalArtists > 0 {
-		totalPassed := 0
-		totalRules := 0
-		for _, r := range results {
-			totalPassed += r.RulesPassed
-			totalRules += r.RulesTotal
-		}
-		if totalRules > 0 {
-			s.Score = float64(totalPassed) / float64(totalRules) * 100.0
-			// Round to 1 decimal
-			s.Score = float64(int(s.Score*10)) / 10
-		} else {
-			s.Score = 100.0
-		}
-	} else {
-		s.Score = 100.0
-	}
-
-	// Convert map to sorted slice (most violations first)
-	for _, vs := range violationCounts {
-		s.TopViolations = append(s.TopViolations, *vs)
-	}
-	sortViolations(s.TopViolations)
-
-	// Limit to top 10
-	if len(s.TopViolations) > 10 {
-		s.TopViolations = s.TopViolations[:10]
-	}
-
-	return s
-}
-
-func sortViolations(vs []violationSummary) {
-	for i := 0; i < len(vs); i++ {
-		for j := i + 1; j < len(vs); j++ {
-			if vs[j].Count > vs[i].Count {
-				vs[i], vs[j] = vs[j], vs[i]
-			}
-		}
-	}
 }
 
 // handleCompliancePage renders the compliance report HTML page.

@@ -10,6 +10,9 @@ import (
 
 // EvaluateAndPersistHealth runs the rule engine against an artist and persists
 // the resulting health score. Errors are logged but not propagated (non-blocking).
+//
+// Deprecated: superseded by HealthSubscriber which re-evaluates scores
+// asynchronously via ArtistUpdated events. Retained for test compatibility.
 func EvaluateAndPersistHealth(ctx context.Context, engine *Engine, svc *artist.Service, a *artist.Artist, logger *slog.Logger) {
 	if engine == nil {
 		return

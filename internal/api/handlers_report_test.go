@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"sync"
 	"testing"
 	"time"
 
@@ -16,6 +15,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/database"
 	"github.com/sydlexius/stillwater/internal/encryption"
+	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/nfo"
 	"github.com/sydlexius/stillwater/internal/provider"
 	"github.com/sydlexius/stillwater/internal/publish"
@@ -614,113 +614,14 @@ func TestHandleViolationTrend_UpperBoundClamped(t *testing.T) {
 	}
 }
 
-func TestBuildHealthSummary(t *testing.T) {
-	artists := []artist.Artist{
-		{Name: "A", NFOExists: true, ThumbExists: true, FanartExists: true, MusicBrainzID: "id1"},
-		{Name: "B", NFOExists: false, ThumbExists: false, FanartExists: false, MusicBrainzID: ""},
-	}
-	results := []rule.EvaluationResult{
-		{HealthScore: 100, RulesPassed: 5, RulesTotal: 5},
-		{HealthScore: 40, RulesPassed: 2, RulesTotal: 5, Violations: []rule.Violation{
-			{RuleID: "nfo_exists", RuleName: "NFO Exists", Severity: "error"},
-			{RuleID: "thumb_exists", RuleName: "Thumb Exists", Severity: "warning"},
-		}},
-	}
-
-	s := buildHealthSummary(artists, results)
-
-	if s.TotalArtists != 2 {
-		t.Errorf("TotalArtists = %d, want 2", s.TotalArtists)
-	}
-	if s.CompliantArtists != 1 {
-		t.Errorf("CompliantArtists = %d, want 1", s.CompliantArtists)
-	}
-	if s.MissingNFO != 1 {
-		t.Errorf("MissingNFO = %d, want 1", s.MissingNFO)
-	}
-	if s.MissingThumb != 1 {
-		t.Errorf("MissingThumb = %d, want 1", s.MissingThumb)
-	}
-	if s.MissingMBID != 1 {
-		t.Errorf("MissingMBID = %d, want 1", s.MissingMBID)
-	}
-	if len(s.TopViolations) != 2 {
-		t.Errorf("TopViolations count = %d, want 2", len(s.TopViolations))
-	}
-	if s.Score != 70.0 {
-		t.Errorf("Score = %.1f, want 70.0", s.Score)
-	}
-}
-
-// TestHandleReportHealth_CacheHit verifies that two rapid requests return the
-// same cached data without re-running the expensive EvaluateAll computation.
-// The second request should hit the cache (response within the 30s TTL window).
-func TestHandleReportHealth_CacheHit(t *testing.T) {
+// TestHandleReportHealth_StoredScoresReflectNewArtists verifies that adding
+// artists changes the health endpoint response because it reads stored scores
+// from the database, not from a cache.
+func TestHandleReportHealth_StoredScoresReflectNewArtists(t *testing.T) {
 	r, artistSvc := testRouter(t)
 
-	addTestArtist(t, artistSvc, "Cache Artist A")
-	addTestArtist(t, artistSvc, "Cache Artist B")
+	addTestArtist(t, artistSvc, "Artist A")
 
-	// First request: populates the cache.
-	req1 := httptest.NewRequest(http.MethodGet, "/api/v1/reports/health", nil)
-	w1 := httptest.NewRecorder()
-	r.handleReportHealth(w1, req1)
-
-	if w1.Code != http.StatusOK {
-		t.Fatalf("first request: status = %d, want %d", w1.Code, http.StatusOK)
-	}
-
-	var resp1 healthSummary
-	if err := json.NewDecoder(w1.Body).Decode(&resp1); err != nil {
-		t.Fatalf("decoding first response: %v", err)
-	}
-
-	// Second request: should return the cached result with the same data.
-	req2 := httptest.NewRequest(http.MethodGet, "/api/v1/reports/health", nil)
-	w2 := httptest.NewRecorder()
-	r.handleReportHealth(w2, req2)
-
-	if w2.Code != http.StatusOK {
-		t.Fatalf("second request: status = %d, want %d", w2.Code, http.StatusOK)
-	}
-
-	var resp2 healthSummary
-	if err := json.NewDecoder(w2.Body).Decode(&resp2); err != nil {
-		t.Fatalf("decoding second response: %v", err)
-	}
-
-	// Both responses should have identical data because the second one
-	// was served from the cache.
-	if resp1.TotalArtists != resp2.TotalArtists {
-		t.Errorf("TotalArtists mismatch: first=%d, second=%d", resp1.TotalArtists, resp2.TotalArtists)
-	}
-	if resp1.Score != resp2.Score {
-		t.Errorf("Score mismatch: first=%.1f, second=%.1f", resp1.Score, resp2.Score)
-	}
-	if resp1.CompliantArtists != resp2.CompliantArtists {
-		t.Errorf("CompliantArtists mismatch: first=%d, second=%d", resp1.CompliantArtists, resp2.CompliantArtists)
-	}
-
-	// Verify the cache is actually populated by checking the internal state.
-	r.healthCacheMu.RLock()
-	defer r.healthCacheMu.RUnlock()
-	if r.healthResult == nil {
-		t.Error("healthResult is nil after two requests; cache should be populated")
-	}
-	if r.healthCachedAt.IsZero() {
-		t.Error("healthCachedAt is zero; cache timestamp should be set")
-	}
-}
-
-// TestHandleReportHealth_CacheInvalidation verifies that calling
-// InvalidateHealthCache clears the cached result, forcing the next
-// request to recompute from scratch.
-func TestHandleReportHealth_CacheInvalidation(t *testing.T) {
-	r, artistSvc := testRouter(t)
-
-	addTestArtist(t, artistSvc, "Invalidation Artist")
-
-	// First request: populates the cache.
 	req1 := httptest.NewRequest(http.MethodGet, "/api/v1/reports/health", nil)
 	w1 := httptest.NewRecorder()
 	r.handleReportHealth(w1, req1)
@@ -737,19 +638,10 @@ func TestHandleReportHealth_CacheInvalidation(t *testing.T) {
 		t.Fatalf("first response: TotalArtists = %d, want 1", resp1.TotalArtists)
 	}
 
-	// Add another artist and invalidate the cache.
-	addTestArtist(t, artistSvc, "New Artist After Invalidation")
-	r.InvalidateHealthCache()
+	// Add a second artist and re-query. Since the handler reads stored
+	// scores from SQL, it should immediately reflect the new artist.
+	addTestArtist(t, artistSvc, "Artist B")
 
-	// Verify the cache was actually cleared.
-	r.healthCacheMu.RLock()
-	cacheCleared := r.healthResult == nil
-	r.healthCacheMu.RUnlock()
-	if !cacheCleared {
-		t.Fatal("cache should be nil after InvalidateHealthCache")
-	}
-
-	// Second request: should recompute and include the new artist.
 	req2 := httptest.NewRequest(http.MethodGet, "/api/v1/reports/health", nil)
 	w2 := httptest.NewRecorder()
 	r.handleReportHealth(w2, req2)
@@ -764,81 +656,113 @@ func TestHandleReportHealth_CacheInvalidation(t *testing.T) {
 	}
 
 	if resp2.TotalArtists != 2 {
-		t.Errorf("after invalidation: TotalArtists = %d, want 2", resp2.TotalArtists)
+		t.Errorf("second response: TotalArtists = %d, want 2", resp2.TotalArtists)
 	}
 }
 
-// TestHandleReportHealth_Singleflight verifies that concurrent requests
-// are coalesced so all goroutines receive the same result. This test
-// launches multiple goroutines that call the handler simultaneously and
-// checks that all responses are identical (proving they shared a single
-// computation rather than each running their own).
-func TestHandleReportHealth_Singleflight(t *testing.T) {
-	r, artistSvc := testRouter(t)
+func TestHandleReportHealthByLibrary(t *testing.T) {
+	db, err := database.Open(":memory:")
+	if err != nil {
+		t.Fatalf("opening test db: %v", err)
+	}
+	if err := database.Migrate(db); err != nil {
+		t.Fatalf("running migrations: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
 
-	addTestArtist(t, artistSvc, "Singleflight Artist A")
-	addTestArtist(t, artistSvc, "Singleflight Artist B")
-	addTestArtist(t, artistSvc, "Singleflight Artist C")
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 
-	// Invalidate any pre-existing cache to force a fresh computation.
-	r.InvalidateHealthCache()
-
-	const concurrency = 10
-	type result struct {
-		status    int
-		body      healthSummary
-		decodeErr error
+	enc, _, err := encryption.NewEncryptor("")
+	if err != nil {
+		t.Fatalf("creating encryptor: %v", err)
 	}
 
-	// results is a pre-allocated slice (one slot per goroutine) so there
-	// are no concurrent writes to the same index -- each goroutine writes
-	// only to its own slot.
-	results := make([]result, concurrency)
-	var wg sync.WaitGroup
-	wg.Add(concurrency)
+	authSvc := auth.NewService(db)
+	artistSvc := artist.NewService(db)
+	connSvc := connection.NewService(db, enc)
+	libSvc := library.NewService(db)
+	ruleSvc := rule.NewService(db)
+	if err := ruleSvc.SeedDefaults(context.Background()); err != nil {
+		t.Fatalf("seeding rules: %v", err)
+	}
+	ruleEngine := rule.NewEngine(ruleSvc, db, nil, nil, logger)
+	nfoSnapSvc := nfo.NewSnapshotService(db)
+	providerSettings := provider.NewSettingsService(db, nil)
 
-	// Use a channel as a starting gate so all goroutines begin at roughly
-	// the same time, maximizing the chance that singleflight coalesces them.
-	start := make(chan struct{})
+	pub := publish.New(publish.Deps{
+		ArtistService:      artistSvc,
+		ConnectionService:  connSvc,
+		NFOSnapshotService: nfoSnapSvc,
+		Logger:             logger,
+	})
 
-	for i := 0; i < concurrency; i++ {
-		go func(idx int) {
-			defer wg.Done()
-			<-start // Wait for the starting gate.
+	r := NewRouter(RouterDeps{
+		AuthService:        authSvc,
+		ArtistService:      artistSvc,
+		LibraryService:     libSvc,
+		ConnectionService:  connSvc,
+		RuleService:        ruleSvc,
+		RuleEngine:         ruleEngine,
+		NFOSnapshotService: nfoSnapSvc,
+		ProviderSettings:   providerSettings,
+		DB:                 db,
+		Logger:             logger,
+		StaticDir:          "../../web/static",
+		Publisher:          pub,
+	})
 
-			req := httptest.NewRequest(http.MethodGet, "/api/v1/reports/health", nil)
-			w := httptest.NewRecorder()
-			r.handleReportHealth(w, req)
+	ctx := context.Background()
 
-			results[idx].status = w.Code
-			if w.Code == http.StatusOK {
-				if err := json.NewDecoder(w.Body).Decode(&results[idx].body); err != nil {
-					results[idx].decodeErr = err
-				}
-			}
-		}(i)
+	// Create two libraries with real temp directories
+	dir1 := t.TempDir()
+	lib1 := &library.Library{Name: "Rock", Path: dir1, Type: "regular", Source: "manual"}
+	if err := libSvc.Create(ctx, lib1); err != nil {
+		t.Fatalf("creating library 1: %v", err)
+	}
+	dir2 := t.TempDir()
+	lib2 := &library.Library{Name: "Jazz", Path: dir2, Type: "regular", Source: "manual"}
+	if err := libSvc.Create(ctx, lib2); err != nil {
+		t.Fatalf("creating library 2: %v", err)
 	}
 
-	// Open the starting gate so all goroutines fire simultaneously.
-	close(start)
-	wg.Wait()
+	// Add artists to each library
+	a1 := &artist.Artist{Name: "Rock Artist", SortName: "Rock Artist", Path: "/music/rock/artist1", LibraryID: lib1.ID, HealthScore: 90.0}
+	if err := artistSvc.Create(ctx, a1); err != nil {
+		t.Fatalf("creating rock artist: %v", err)
+	}
+	a2 := &artist.Artist{Name: "Jazz Artist", SortName: "Jazz Artist", Path: "/music/jazz/artist1", LibraryID: lib2.ID, HealthScore: 60.0}
+	if err := artistSvc.Create(ctx, a2); err != nil {
+		t.Fatalf("creating jazz artist: %v", err)
+	}
 
-	// All requests should succeed and return the same data.
-	for i := 0; i < concurrency; i++ {
-		if results[i].status != http.StatusOK {
-			t.Errorf("goroutine %d: status = %d, want %d", i, results[i].status, http.StatusOK)
-			continue
-		}
-		if results[i].decodeErr != nil {
-			t.Errorf("goroutine %d: decode error: %v", i, results[i].decodeErr)
-			continue
-		}
-		if results[i].body.TotalArtists != 3 {
-			t.Errorf("goroutine %d: TotalArtists = %d, want 3", i, results[i].body.TotalArtists)
-		}
-		if results[i].body.Score != results[0].body.Score {
-			t.Errorf("goroutine %d: Score = %.1f, want %.1f (same as goroutine 0)",
-				i, results[i].body.Score, results[0].body.Score)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/reports/health/by-library", nil)
+	w := httptest.NewRecorder()
+	r.handleReportHealthByLibrary(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	var resp struct {
+		Libraries []librarySummary `json:"libraries"`
+		Overall   librarySummary   `json:"overall"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+
+	if len(resp.Libraries) != 2 {
+		t.Fatalf("len(libraries) = %d, want 2", len(resp.Libraries))
+	}
+
+	if resp.Overall.TotalArtists != 2 {
+		t.Errorf("overall TotalArtists = %d, want 2", resp.Overall.TotalArtists)
+	}
+
+	// Verify each library has exactly 1 artist
+	for _, lib := range resp.Libraries {
+		if lib.TotalArtists != 1 {
+			t.Errorf("library %q TotalArtists = %d, want 1", lib.LibraryName, lib.TotalArtists)
 		}
 	}
 }
