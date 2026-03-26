@@ -96,6 +96,11 @@ func (r *Router) handleUpdateRule(w http.ResponseWriter, req *http.Request) {
 		r.ruleEngine.InvalidateRuleCache()
 	}
 
+	// Also invalidate the health report cache since rule changes affect
+	// health scores (e.g. enabling/disabling a rule changes which violations
+	// are counted).
+	r.InvalidateHealthCache()
+
 	writeJSON(w, http.StatusOK, existing)
 }
 

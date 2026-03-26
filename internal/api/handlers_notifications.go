@@ -179,6 +179,9 @@ func (r *Router) handleResolveViolation(w http.ResponseWriter, req *http.Request
 		return
 	}
 
+	// Dismissing a violation changes the effective health score.
+	r.InvalidateHealthCache()
+
 	writeJSON(w, http.StatusOK, map[string]string{"status": "resolved"})
 }
 
@@ -197,6 +200,9 @@ func (r *Router) handleBulkDismissViolations(w http.ResponseWriter, req *http.Re
 		writeError(w, req, http.StatusInternalServerError, fmt.Sprintf("bulk dismiss: %v", err))
 		return
 	}
+
+	// Bulk-dismissing violations changes health scores.
+	r.InvalidateHealthCache()
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)

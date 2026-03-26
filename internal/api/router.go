@@ -8,6 +8,9 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
+
+	"golang.org/x/sync/singleflight"
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -120,6 +123,16 @@ type Router struct {
 	identifyProgress   *IdentifyProgress
 	identifyMu         sync.RWMutex
 	undoStore          *rule.UndoStore
+
+	// healthCacheMu protects healthResult and healthCachedAt. Use RLock for
+	// reads and Lock for writes so concurrent cache checks do not block each other.
+	healthCacheMu  sync.RWMutex
+	healthResult   *healthSummary
+	healthCachedAt time.Time
+	// healthFlight coalesces concurrent health computations so only one
+	// goroutine runs the expensive EvaluateAll call at a time. All other
+	// callers receive the same result.
+	healthFlight singleflight.Group
 }
 
 // NewRouter creates a new Router with all routes configured.

@@ -154,6 +154,7 @@ func (r *Router) handleImageUpload(w http.ResponseWriter, req *http.Request) {
 		}
 		r.enforceCacheLimitIfNeeded(req.Context(), a)
 		r.updateArtistFanartCount(req.Context(), a)
+		r.InvalidateHealthCache()
 		// Skip platform sync for fanart appends: platforms only support a single
 		// backdrop image, and the primary (fanart.jpg) was already synced when
 		// first saved. Re-syncing here would re-push the primary, not the new
@@ -181,6 +182,10 @@ func (r *Router) handleImageUpload(w http.ResponseWriter, req *http.Request) {
 	if imageType == "fanart" {
 		r.updateArtistFanartCount(req.Context(), a)
 	}
+
+	// Invalidate the health cache immediately after the image is saved and
+	// DB flags updated, before platform sync (which can take up to 30s).
+	r.InvalidateHealthCache()
 
 	syncCtx, cancel := context.WithTimeout(req.Context(), 30*time.Second)
 	defer cancel()
@@ -261,6 +266,7 @@ func (r *Router) handleImageFetch(w http.ResponseWriter, req *http.Request) {
 		}
 		r.enforceCacheLimitIfNeeded(req.Context(), a)
 		r.updateArtistFanartCount(req.Context(), a)
+		r.InvalidateHealthCache()
 
 		syncCtx, cancel := context.WithTimeout(req.Context(), 30*time.Second)
 		defer cancel()
@@ -295,6 +301,10 @@ func (r *Router) handleImageFetch(w http.ResponseWriter, req *http.Request) {
 	if imageType == "fanart" {
 		r.updateArtistFanartCount(req.Context(), a)
 	}
+
+	// Invalidate the health report cache because fetching an image may
+	// resolve a "missing thumb/fanart/logo" violation.
+	r.InvalidateHealthCache()
 
 	syncCtx, cancel := context.WithTimeout(req.Context(), 30*time.Second)
 	defer cancel()
@@ -527,6 +537,10 @@ func (r *Router) handleImageCrop(w http.ResponseWriter, req *http.Request) {
 	r.enforceCacheLimitIfNeeded(req.Context(), a)
 
 	r.updateArtistImageFlag(req.Context(), a, body.Type)
+
+	// Invalidate the health report cache because saving a cropped image may
+	// resolve a "missing thumb/fanart/logo" violation.
+	r.InvalidateHealthCache()
 
 	syncCtx, cancel := context.WithTimeout(req.Context(), 30*time.Second)
 	defer cancel()
@@ -1048,6 +1062,9 @@ func (r *Router) handleDeleteImage(w http.ResponseWriter, req *http.Request) {
 			removeFailed = true
 		}
 		r.updateArtistFanartCount(req.Context(), a)
+		// Invalidate the health report cache because deleting an image may
+		// introduce a "missing fanart" violation.
+		r.InvalidateHealthCache()
 		fanartWarnings := make([]string, 0)
 		if removeFailed {
 			fanartWarnings = append(fanartWarnings, "some fanart files could not be deleted from disk")
@@ -1076,6 +1093,9 @@ func (r *Router) handleDeleteImage(w http.ResponseWriter, req *http.Request) {
 	if _, found := img.FindExistingImage(r.imageDir(a), patterns); !found {
 		r.clearArtistImageFlag(req.Context(), a, imageType)
 	}
+	// Invalidate the health report cache because deleting an image may
+	// introduce a "missing thumb/logo" violation.
+	r.InvalidateHealthCache()
 	warnings := make([]string, 0)
 	if deleteFailed {
 		warnings = append(warnings, "some image files could not be deleted from disk")
@@ -1337,6 +1357,7 @@ func (r *Router) handleLogoTrim(w http.ResponseWriter, req *http.Request) {
 	r.enforceCacheLimitIfNeeded(req.Context(), a)
 
 	r.updateArtistImageFlag(req.Context(), a, "logo")
+	r.InvalidateHealthCache()
 
 	syncCtx, cancel := context.WithTimeout(req.Context(), 30*time.Second)
 	defer cancel()
@@ -1669,6 +1690,7 @@ func (r *Router) handleFanartBatchDelete(w http.ResponseWriter, req *http.Reques
 	}
 
 	r.updateArtistFanartCount(req.Context(), a)
+	r.InvalidateHealthCache()
 
 	// Only sync to platforms if renumbering succeeded -- pushing misindexed
 	// fanart would corrupt platform galleries too.
@@ -1780,6 +1802,7 @@ func (r *Router) handleFanartBatchFetch(w http.ResponseWriter, req *http.Request
 		r.enforceCacheLimitIfNeeded(req.Context(), a)
 	}
 	r.updateArtistFanartCount(req.Context(), a)
+	r.InvalidateHealthCache()
 
 	// Sync all fanart to connected platforms (synchronous with timeout).
 	var syncWarnings []string

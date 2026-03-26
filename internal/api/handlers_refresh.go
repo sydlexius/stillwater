@@ -50,6 +50,9 @@ func (r *Router) handleArtistRefresh(w http.ResponseWriter, req *http.Request) {
 
 	rule.EvaluateAndPersistHealth(req.Context(), r.ruleEngine, r.artistService, a, r.logger)
 
+	// Metadata refresh changes artist fields that affect health scores.
+	r.InvalidateHealthCache()
+
 	if isHTMXRequest(req) {
 		r.renderRefreshWithOOB(w, req, a.ID, result.Sources)
 		return
@@ -191,6 +194,9 @@ func (r *Router) handleRefreshLink(w http.ResponseWriter, req *http.Request) {
 	}
 
 	rule.EvaluateAndPersistHealth(req.Context(), r.ruleEngine, r.artistService, a, r.logger)
+
+	// Linking a provider ID and refreshing changes health-relevant fields.
+	r.InvalidateHealthCache()
 
 	if isHTMXRequest(req) {
 		r.renderRefreshWithOOB(w, req, a.ID, result.Sources)

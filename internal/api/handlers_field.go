@@ -118,6 +118,11 @@ func (r *Router) handleFieldUpdate(w http.ResponseWriter, req *http.Request) {
 
 	r.publisher.PublishMetadata(req.Context(), a)
 
+	// Invalidate the health report cache because the field change may affect
+	// health scores (e.g. adding a biography clears a "missing biography"
+	// violation, changing an MBID affects "missing MBID" counts).
+	r.InvalidateHealthCache()
+
 	if isHTMXRequest(req) {
 		providers := r.fieldProviderNames(req, field)
 		renderTempl(w, req, templates.FieldDisplay(a, field, providers))
@@ -164,6 +169,11 @@ func (r *Router) handleFieldClear(w http.ResponseWriter, req *http.Request) {
 	}
 
 	r.publisher.PublishMetadata(req.Context(), a)
+
+	// Invalidate the health report cache because clearing a field may change
+	// health scores (e.g. clearing an MBID introduces a "missing MBID"
+	// violation).
+	r.InvalidateHealthCache()
 
 	if isHTMXRequest(req) {
 		providers := r.fieldProviderNames(req, field)
