@@ -84,7 +84,7 @@ func (a *Adapter) SearchArtist(_ context.Context, _ string) ([]provider.ArtistSe
 //   - A Wikidata Q-ID (e.g. "Q44190"): resolved via Wikidata sitelinks
 //   - A Wikipedia article title: used directly
 //
-// Returns biography text from the full article extract and structured
+// Returns biography text from the article intro section and structured
 // metadata (members, genres, years active, origin) from infobox parsing.
 func (a *Adapter) GetArtist(ctx context.Context, id string) (*provider.ArtistMetadata, error) {
 	title, err := a.resolveToTitle(ctx, id)
@@ -92,7 +92,7 @@ func (a *Adapter) GetArtist(ctx context.Context, id string) (*provider.ArtistMet
 		return nil, err
 	}
 
-	// Fetch the full article extract for biography text.
+	// Fetch the article intro extract for biography text.
 	if err := a.limiter.Wait(ctx, provider.NameWikipedia); err != nil {
 		return nil, &provider.ErrProviderUnavailable{
 			Provider: provider.NameWikipedia,
@@ -158,15 +158,15 @@ func (a *Adapter) GetArtist(ctx context.Context, id string) (*provider.ArtistMet
 	}
 
 	// Combine current and past members into the Members slice.
-	for _, name := range infobox.Members {
+	for _, memberName := range infobox.Members {
 		meta.Members = append(meta.Members, provider.MemberInfo{
-			Name:     name,
+			Name:     memberName,
 			IsActive: true,
 		})
 	}
-	for _, name := range infobox.PastMembers {
+	for _, memberName := range infobox.PastMembers {
 		meta.Members = append(meta.Members, provider.MemberInfo{
-			Name:     name,
+			Name:     memberName,
 			IsActive: false,
 		})
 	}
@@ -179,8 +179,9 @@ func (a *Adapter) GetImages(_ context.Context, _ string) ([]provider.ImageResult
 	return nil, nil
 }
 
-// TestConnection verifies connectivity to both the Wikipedia Action API and the
-// Wikidata SPARQL endpoint, since GetArtist depends on both services.
+// TestConnection verifies connectivity to the Wikipedia Action API, the
+// Wikidata SPARQL endpoint, and the Wikidata entity API, since GetArtist
+// depends on all three services for MBID, Q-ID, and article title lookups.
 func (a *Adapter) TestConnection(ctx context.Context) error {
 	// Probe 1: Wikipedia Action API
 	if err := a.limiter.Wait(ctx, provider.NameWikipedia); err != nil {
@@ -250,6 +251,42 @@ func (a *Adapter) TestConnection(ctx context.Context) error {
 		return &provider.ErrProviderUnavailable{
 			Provider: provider.NameWikipedia,
 			Cause:    fmt.Errorf("wikidata SPARQL HTTP %d", sparqlResp.StatusCode),
+		}
+	}
+
+	// Probe 3: Wikidata entity API (used for Q-ID sitelink resolution)
+	if err := a.limiter.Wait(ctx, provider.NameWikipedia); err != nil {
+		return &provider.ErrProviderUnavailable{
+			Provider: provider.NameWikipedia,
+			Cause:    fmt.Errorf("rate limiter: %w", err),
+		}
+	}
+
+	entityParams := url.Values{
+		"action": {"wbgetentities"},
+		"ids":    {"Q5"},
+		"props":  {"sitelinks"},
+		"format": {"json"},
+	}
+	entityReq, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		a.wikidataAPIEndpoint+"?"+entityParams.Encode(), nil)
+	if err != nil {
+		return err
+	}
+	entityReq.Header.Set("User-Agent", userAgent)
+	entityResp, err := a.client.Do(entityReq) //nolint:gosec // URL constructed from trusted Wikidata endpoint
+	if err != nil {
+		return &provider.ErrProviderUnavailable{
+			Provider: provider.NameWikipedia,
+			Cause:    fmt.Errorf("wikidata entity API: %w", err),
+		}
+	}
+	defer entityResp.Body.Close() //nolint:errcheck
+	_, _ = io.Copy(io.Discard, entityResp.Body)
+	if entityResp.StatusCode != http.StatusOK {
+		return &provider.ErrProviderUnavailable{
+			Provider: provider.NameWikipedia,
+			Cause:    fmt.Errorf("wikidata entity API HTTP %d", entityResp.StatusCode),
 		}
 	}
 
@@ -433,7 +470,7 @@ func (a *Adapter) resolveFromQID(ctx context.Context, qid string) (string, error
 	return enwiki.Title, nil
 }
 
-// fetchExtract fetches the full article text from the MediaWiki Action API.
+// fetchExtract fetches the article intro section from the MediaWiki Action API.
 // Returns the article display name and plain-text extract.
 func (a *Adapter) fetchExtract(ctx context.Context, title string) (string, string, error) {
 	params := url.Values{
@@ -478,7 +515,7 @@ func (a *Adapter) fetchExtract(ctx context.Context, title string) (string, strin
 		}
 	}
 
-	// Full article extracts can be large (200KB+ for well-known artists).
+	// Intro extracts are typically a few KB but can be larger for well-known artists.
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1*1024*1024))
 	if err != nil {
 		return "", "", &provider.ErrProviderUnavailable{

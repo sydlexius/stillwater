@@ -549,7 +549,6 @@ func splitOnBR(s string) []string {
 		} else {
 			start = pos + 3
 		}
-		lower = strings.ToLower(s) // refresh after advancing
 	}
 	return parts
 }

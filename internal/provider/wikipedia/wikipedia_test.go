@@ -158,13 +158,21 @@ func TestGetArtist_ValidMBID(t *testing.T) {
 
 func TestGetArtist_NonMBID(t *testing.T) {
 	// Non-UUID, non-QID string is treated as article title.
-	// With no action server, it should fail.
-	adapter := newTestAdapter(t, "", "", "")
+	// Action server returns 500 to simulate a deterministic failure.
+	actionSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer actionSrv.Close()
+
+	adapter := newTestAdapter(t, actionSrv.URL, "", "")
 
 	_, err := adapter.GetArtist(context.Background(), "Radiohead")
-	// "Radiohead" is treated as an article title, but the action server is unreachable.
 	if err == nil {
-		t.Fatal("expected error for unreachable action server")
+		t.Fatal("expected error when action server returns 500")
+	}
+	var unavail *provider.ErrProviderUnavailable
+	if !isErrUnavailable(err, &unavail) {
+		t.Errorf("expected ErrProviderUnavailable, got %T: %v", err, err)
 	}
 }
 
@@ -486,18 +494,26 @@ func TestGetArtist_ArticleTitle(t *testing.T) {
 	}
 }
 
+func okServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+}
+
 func TestTestConnection(t *testing.T) {
 	actionSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]any{"query": map[string]any{"general": map[string]any{}}}) //nolint:errcheck
 	}))
 	defer actionSrv.Close()
 
-	sparqlSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	}))
+	sparqlSrv := okServer(t)
 	defer sparqlSrv.Close()
 
-	adapter := newTestAdapter(t, actionSrv.URL, sparqlSrv.URL, "")
+	entitySrv := okServer(t)
+	defer entitySrv.Close()
+
+	adapter := newTestAdapter(t, actionSrv.URL, sparqlSrv.URL, entitySrv.URL)
 
 	if err := adapter.TestConnection(context.Background()); err != nil {
 		t.Errorf("TestConnection: %v", err)
@@ -637,6 +653,32 @@ func TestTestConnection_SPARQLFailure(t *testing.T) {
 	err := adapter.TestConnection(context.Background())
 	if err == nil {
 		t.Fatal("expected error when SPARQL returns 500")
+	}
+	var unavail *provider.ErrProviderUnavailable
+	if !isErrUnavailable(err, &unavail) {
+		t.Errorf("expected ErrProviderUnavailable, got %T: %v", err, err)
+	}
+}
+
+func TestTestConnection_EntityAPIFailure(t *testing.T) {
+	actionSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{"query": map[string]any{"general": map[string]any{}}}) //nolint:errcheck
+	}))
+	defer actionSrv.Close()
+
+	sparqlSrv := okServer(t)
+	defer sparqlSrv.Close()
+
+	entitySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer entitySrv.Close()
+
+	adapter := newTestAdapter(t, actionSrv.URL, sparqlSrv.URL, entitySrv.URL)
+
+	err := adapter.TestConnection(context.Background())
+	if err == nil {
+		t.Fatal("expected error when entity API returns 500")
 	}
 	var unavail *provider.ErrProviderUnavailable
 	if !isErrUnavailable(err, &unavail) {
