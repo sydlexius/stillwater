@@ -248,6 +248,8 @@ func TestStripRefs(t *testing.T) {
 		{"self-closing ref", "text<ref name=\"foo\" />more", "textmore"},
 		{"multiple refs", "a<ref>x</ref>b<ref>y</ref>c", "abc"},
 		{"no refs", "plain text", "plain text"},
+		{"br inside block ref", "<ref>foo<br />bar</ref>rest", "rest"},
+		{"br inside named block ref", "<ref name=\"x\">foo<br />bar</ref>rest", "rest"},
 	}
 
 	for _, tt := range tests {

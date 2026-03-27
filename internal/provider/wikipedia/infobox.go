@@ -553,6 +553,8 @@ func splitOnTopLevelCommas(s string) []string {
 }
 
 // stripRefs removes <ref>...</ref> and <ref ... /> tags.
+// Self-closing is determined by the opening tag ending with "/>", not by
+// any "/>" appearing later in the content (which could be a <br />).
 func stripRefs(s string) string {
 	for {
 		lower := strings.ToLower(s)
@@ -561,14 +563,20 @@ func stripRefs(s string) string {
 			break
 		}
 
-		// Self-closing <ref ... />
-		closeSlash := strings.Index(s[idx:], "/>")
-		closeTag := strings.Index(lower[idx:], "</ref>")
+		// Find the end of the opening tag.
+		tagEnd := strings.Index(s[idx:], ">")
+		if tagEnd < 0 {
+			// Malformed ref with no closing >, remove <ref.
+			s = s[:idx] + s[idx+4:]
+			continue
+		}
+		tagEnd += idx
 
-		if closeSlash >= 0 && (closeTag < 0 || closeSlash < closeTag) {
-			s = s[:idx] + s[idx+closeSlash+2:]
-		} else if closeTag >= 0 {
-			s = s[:idx] + s[idx+closeTag+6:]
+		// Check if the opening tag itself is self-closing (ends with />).
+		if strings.HasSuffix(strings.TrimSpace(s[idx:tagEnd+1]), "/>") {
+			s = s[:idx] + s[tagEnd+1:]
+		} else if closeTag := strings.Index(lower[tagEnd+1:], "</ref>"); closeTag >= 0 {
+			s = s[:idx] + s[tagEnd+1+closeTag+6:]
 		} else {
 			// Malformed ref, just remove <ref.
 			s = s[:idx] + s[idx+4:]
