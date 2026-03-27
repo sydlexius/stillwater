@@ -124,13 +124,9 @@ func parseFields(block string) map[string]string {
 	inner := strings.TrimPrefix(block, "{{")
 	inner = strings.TrimSuffix(inner, "}}")
 
-	// Skip past the template name (first line or until first |).
-	if idx := strings.Index(inner, "\n"); idx >= 0 {
-		first := inner[:idx]
-		if !strings.Contains(first, "|") || strings.Index(first, "|") > strings.Index(first, "infobox") {
-			inner = inner[idx+1:]
-		}
-	}
+	// The template name line (e.g. "Infobox musical artist") becomes the
+	// first segment after pipe-splitting. It has no "=" so strings.Cut
+	// skips it naturally -- no explicit stripping needed.
 
 	// Split on top-level pipes (depth 0 braces and brackets).
 	// Walk the string tracking {{ }} and [[ ]] depth so that pipes inside
