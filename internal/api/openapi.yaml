@@ -2662,10 +2662,15 @@ paths:
     get:
       tags: [Rules]
       summary: List rules
+      description: >
+        Returns all rules with their filesystem_dependent flag set. Also
+        includes has_local_library indicating whether at least one library
+        with a filesystem path exists. Filesystem-dependent rules cannot
+        be enabled when has_local_library is false.
       operationId: listRules
       responses:
         "200":
-          description: List of rules
+          description: List of rules with local library status
           content:
             application/json:
               schema:
@@ -2675,6 +2680,9 @@ paths:
                     type: array
                     items:
                       type: object
+                  has_local_library:
+                    type: boolean
+                    description: True when at least one library with a filesystem path exists
 
   /rules/{id}:
     put:

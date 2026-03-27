@@ -247,12 +247,18 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 		r.populateFSNotifySupported(libs)
 	}
 
-	// Probe symlink support against the first library path with a filesystem.
+	// Probe symlink support against the first library path with a filesystem,
+	// and check whether any local library (with a filesystem path) exists.
 	symlinkSupported := false
+	hasLocalLibrary := false
 	for _, lib := range libs {
 		if lib.Path != "" {
-			symlinkSupported = filesystem.ProbeSymlinkSupport(lib.Path)
-			break
+			if !hasLocalLibrary {
+				hasLocalLibrary = true
+			}
+			if !symlinkSupported {
+				symlinkSupported = filesystem.ProbeSymlinkSupport(lib.Path)
+			}
 		}
 	}
 
@@ -277,6 +283,7 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 		AutoFetchImages:         r.getBoolSetting(req.Context(), "auto_fetch_images", false),
 		SymlinkSupported:        symlinkSupported,
 		Rules:                   rules,
+		HasLocalLibrary:         hasLocalLibrary,
 		BadgeEnabled:            r.getBoolSetting(req.Context(), "notif_badge_enabled", true),
 		BadgeSeverityError:      r.getBoolSetting(req.Context(), "notif_badge_severity_error", true),
 		BadgeSeverityWarning:    r.getBoolSetting(req.Context(), "notif_badge_severity_warning", true),

@@ -215,6 +215,33 @@ var defaultRules = []Rule{
 	},
 }
 
+// filesystemRules is the set of rule IDs that are truly filesystem-only with
+// no API equivalent. Only rules that fundamentally cannot work without local
+// file access belong here. Rules that happen to use filesystem data today but
+// can be made API-compatible are tracked in separate issues:
+//   - #725: image existence/dimension rules (thumb, fanart, logo, banner)
+//   - #726: NFO content rules (nfo_has_mbid)
+//   - #727: directory-based rules (artist_id_mismatch, directory_name_mismatch)
+//   - #728: extraneous_images API equivalent
+var filesystemRules = map[string]bool{
+	RuleNFOExists:        true, // NFO is a local file format with no API equivalent
+	RuleExtraneousImages: true, // enumerates directory contents; API equivalent tracked in #728
+}
+
+// IsFilesystemDependent reports whether a rule requires a local library with a
+// filesystem path. Rules that only inspect database or API metadata return false.
+func IsFilesystemDependent(ruleID string) bool {
+	return filesystemRules[ruleID]
+}
+
+// tagFilesystemDependent sets the FilesystemDependent field on each rule
+// based on the filesystemRules map. Called after loading rules from the database.
+func tagFilesystemDependent(rules []Rule) {
+	for i := range rules {
+		rules[i].FilesystemDependent = filesystemRules[rules[i].ID]
+	}
+}
+
 // snapshotThrottleTTL is the minimum interval between health snapshot writes.
 // Concurrent GET /api/v1/reports/health requests under load all call
 // RecordHealthSnapshot; the throttle prevents them from queuing on SQLite's
@@ -312,7 +339,11 @@ func (s *Service) List(ctx context.Context) ([]Rule, error) {
 		}
 		rules = append(rules, *r)
 	}
-	return rules, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	tagFilesystemDependent(rules)
+	return rules, nil
 }
 
 // GetByID retrieves a rule by primary key.
@@ -328,6 +359,7 @@ func (s *Service) GetByID(ctx context.Context, id string) (*Rule, error) {
 		}
 		return nil, fmt.Errorf("getting rule by id: %w", err)
 	}
+	r.FilesystemDependent = filesystemRules[r.ID]
 	return r, nil
 }
 
@@ -342,6 +374,50 @@ func (s *Service) Update(ctx context.Context, r *Rule) error {
 		return fmt.Errorf("updating rule: %w", err)
 	}
 	return nil
+}
+
+// DisableFilesystemRules disables all enabled filesystem-dependent rules.
+// Called when the last local library is removed so that rules requiring
+// filesystem access are automatically turned off. Returns the number of
+// rules that were disabled.
+func (s *Service) DisableFilesystemRules(ctx context.Context) (int, error) {
+	// Build the list of filesystem-dependent rule IDs for the IN clause.
+	ids := make([]string, 0, len(filesystemRules))
+	for id := range filesystemRules {
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 {
+		return 0, nil
+	}
+
+	// Build parameterized query with the correct number of placeholders.
+	placeholders := make([]string, len(ids))
+	args := make([]any, 0, len(ids)+1)
+	now := time.Now().UTC().Format(time.RFC3339)
+	for i, id := range ids {
+		placeholders[i] = "?"
+		args = append(args, id)
+	}
+	args = append(args, now)
+
+	query := fmt.Sprintf( //nolint:gosec // G201: only "?" placeholders are interpolated; all values are parameterized
+		`UPDATE rules SET enabled = 0, updated_at = ? WHERE enabled = 1 AND id IN (%s)`,
+		strings.Join(placeholders, ", "),
+	)
+	// The updated_at parameter must be first to match the SET clause position.
+	// Reorder: updated_at, then all IDs.
+	orderedArgs := make([]any, 0, len(args))
+	orderedArgs = append(orderedArgs, now)
+	for _, id := range ids {
+		orderedArgs = append(orderedArgs, id)
+	}
+
+	result, err := s.db.ExecContext(ctx, query, orderedArgs...)
+	if err != nil {
+		return 0, fmt.Errorf("disabling filesystem rules: %w", err)
+	}
+	rows, _ := result.RowsAffected()
+	return int(rows), nil
 }
 
 // RecordHealthSnapshot inserts a row into the health_history table, subject to

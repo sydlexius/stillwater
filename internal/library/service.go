@@ -406,6 +406,19 @@ func isValidSharedFSStatus(s string) bool {
 	}
 }
 
+// HasLocalLibrary reports whether at least one library has a non-empty filesystem
+// path configured. Libraries without a path are API-only and cannot support
+// filesystem-dependent rule checks (NFO existence, image file analysis, etc.).
+func (s *Service) HasLocalLibrary(ctx context.Context) (bool, error) {
+	var count int
+	err := s.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM libraries WHERE path != '' AND path IS NOT NULL`).Scan(&count)
+	if err != nil {
+		return false, fmt.Errorf("checking for local libraries: %w", err)
+	}
+	return count > 0, nil
+}
+
 // isValidSource reports whether s is one of the allowed library source values.
 func isValidSource(s string) bool {
 	switch s {

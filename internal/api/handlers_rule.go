@@ -27,7 +27,10 @@ type ruleRunStatus struct {
 	Error            string    `json:"error,omitempty"`
 }
 
-// handleListRules returns all rules as JSON.
+// handleListRules returns all rules as JSON. Each rule includes a
+// filesystem_dependent field indicating whether it requires a local library
+// with a filesystem path. The response also includes has_local_library so
+// callers can determine whether filesystem-dependent rules are available.
 // GET /api/v1/rules
 func (r *Router) handleListRules(w http.ResponseWriter, req *http.Request) {
 	rules, err := r.ruleService.List(req.Context())
@@ -37,7 +40,19 @@ func (r *Router) handleListRules(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"rules": rules})
+	hasLocal := false
+	if r.libraryService != nil {
+		hasLocal, err = r.libraryService.HasLocalLibrary(req.Context())
+		if err != nil {
+			r.logger.Error("checking local library for rules list", "error", err)
+			// Non-fatal: return rules without library info rather than failing.
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"rules":             rules,
+		"has_local_library": hasLocal,
+	})
 }
 
 // handleUpdateRule updates a rule's enabled state and config.
@@ -69,6 +84,21 @@ func (r *Router) handleUpdateRule(w http.ResponseWriter, req *http.Request) {
 	}
 
 	if body.Enabled != nil {
+		// Prevent enabling a filesystem-dependent rule when no local library exists.
+		if *body.Enabled && rule.IsFilesystemDependent(ruleID) && r.libraryService != nil {
+			hasLocal, localErr := r.libraryService.HasLocalLibrary(req.Context())
+			if localErr != nil {
+				r.logger.Error("checking local library for rule enable guard", "error", localErr)
+				writeError(w, req, http.StatusInternalServerError, "failed to check library status")
+				return
+			}
+			if !hasLocal {
+				writeJSON(w, http.StatusConflict, map[string]string{
+					"error": "cannot enable a filesystem-dependent rule without a local library; add a library with a filesystem path first",
+				})
+				return
+			}
+		}
 		existing.Enabled = *body.Enabled
 	}
 	if body.AutomationMode != nil {
