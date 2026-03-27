@@ -423,6 +423,9 @@ var ErrUserNotConfigured = errors.New("user not configured on this instance")
 // The provider must be "emby" or "jellyfin". Returns true if a new account was created.
 // Uses INSERT...WHERE NOT EXISTS for race safety under concurrent requests.
 func (s *Service) SetupFederated(ctx context.Context, result FederatedAuthResult, provider string) (bool, error) {
+	if result.UserID == "" || result.UserName == "" {
+		return false, errors.New("incomplete federated auth result: missing user ID or name")
+	}
 	if !result.IsAdmin {
 		return false, errors.New("federated user is not an administrator")
 	}
@@ -454,6 +457,9 @@ func (s *Service) SetupFederated(ctx context.Context, result FederatedAuthResult
 // LoginFederated authenticates a federated user and returns a Stillwater session token.
 // The caller must have already validated credentials with the media server.
 func (s *Service) LoginFederated(ctx context.Context, result FederatedAuthResult, provider string) (string, error) {
+	if result.UserID == "" {
+		return "", errors.New("missing federated user ID")
+	}
 	var id, username string
 	err := s.db.QueryRowContext(ctx, `
 		SELECT id, username FROM users WHERE auth_provider = ? AND server_user_id = ?
@@ -465,8 +471,8 @@ func (s *Service) LoginFederated(ctx context.Context, result FederatedAuthResult
 		return "", fmt.Errorf("querying federated user: %w", err)
 	}
 
-	// Sync display name if it changed on the media server.
-	if result.UserName != username {
+	// Sync display name if it changed on the media server (skip if empty).
+	if result.UserName != "" && result.UserName != username {
 		now := time.Now().UTC().Format(time.RFC3339)
 		_, err = s.db.ExecContext(ctx, `
 			UPDATE users SET username = ?, updated_at = ? WHERE id = ?
