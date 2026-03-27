@@ -23,7 +23,7 @@ type Fixer interface {
 // CandidateDiscoverer is an optional interface that fixers may implement to
 // indicate they support candidate discovery without side effects. In manual
 // automation mode the pipeline only invokes Fix on fixers that implement this
-// interface. Fixers that write to disk unconditionally (LogoTrimFixer,
+// interface. Fixers that write to disk unconditionally (LogoPaddingFixer,
 // NFOFixer, ExtraneousImagesFixer) must NOT implement it.
 type CandidateDiscoverer interface {
 	SupportsCandidateDiscovery() bool
@@ -137,7 +137,7 @@ func (p *Pipeline) RunRule(ctx context.Context, ruleID string) (*RunResult, erro
 
 				// Manual mode: discover candidates but never auto-apply.
 				// Only invoke fixers that support candidate discovery
-				// without side effects. Side-effect fixers (LogoTrimFixer,
+				// without side effects. Side-effect fixers (LogoPaddingFixer,
 				// NFOFixer, ExtraneousImagesFixer) are skipped.
 				if targetRule.AutomationMode == AutomationModeManual {
 					fixer := p.findFixer(v)

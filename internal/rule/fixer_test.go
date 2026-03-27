@@ -841,118 +841,13 @@ func TestExtraneousImagesFixer_Fix_EmptyPath(t *testing.T) {
 	}
 }
 
-func TestLogoTrimFixer_CanFix(t *testing.T) {
-	f := NewLogoTrimFixer(nil, nonSharedFSCheck(), testLogger())
-	if !f.CanFix(&Violation{RuleID: RuleLogoTrimmable}) {
-		t.Error("should handle logo_trimmable")
-	}
-	if f.CanFix(&Violation{RuleID: RuleNFOExists}) {
-		t.Error("should not handle nfo_exists")
-	}
-}
-
-func TestLogoTrimFixer_Fix_TrimsPadding(t *testing.T) {
-	dir := t.TempDir()
-	// Create a padded PNG: 200x100 with 20px horizontal and 15px vertical padding.
-	createTestPNGWithPadding(t, filepath.Join(dir, "logo.png"), 200, 100, 20, 20, 15, 15)
-
-	origData, err := os.ReadFile(filepath.Join(dir, "logo.png"))
-	if err != nil {
-		t.Fatalf("reading original logo: %v", err)
-	}
-
-	a := &artist.Artist{Name: "Trim Test", Path: dir, LogoExists: true, LibraryID: "lib-test"}
-	f := NewLogoTrimFixer(nil, nonSharedFSCheck(), testLogger())
-
-	fr, err := f.Fix(context.Background(), a, &Violation{RuleID: RuleLogoTrimmable})
-	if err != nil {
-		t.Fatalf("Fix: %v", err)
-	}
-	if !fr.Fixed {
-		t.Errorf("Fixed = false, want true; message: %s", fr.Message)
-	}
-	if fr.RuleID != RuleLogoTrimmable {
-		t.Errorf("RuleID = %q, want %q", fr.RuleID, RuleLogoTrimmable)
-	}
-
-	// Verify the trimmed image has smaller dimensions than the original.
-	// Original is 200x100 with 20px horizontal + 15px vertical padding,
-	// so trimmed should be ~160x70.
-	trimmedData, err := os.ReadFile(filepath.Join(dir, "logo.png"))
-	if err != nil {
-		t.Fatalf("reading trimmed logo: %v", err)
-	}
-	origCfg, _, err := image.DecodeConfig(bytes.NewReader(origData))
-	if err != nil {
-		t.Fatalf("decoding original config: %v", err)
-	}
-	trimCfg, _, err := image.DecodeConfig(bytes.NewReader(trimmedData))
-	if err != nil {
-		t.Fatalf("decoding trimmed config: %v", err)
-	}
-	if trimCfg.Width >= origCfg.Width || trimCfg.Height >= origCfg.Height {
-		t.Errorf("trimmed dimensions %dx%d should be smaller than original %dx%d",
-			trimCfg.Width, trimCfg.Height, origCfg.Width, origCfg.Height)
-	}
-}
-
-func TestLogoTrimFixer_Fix_EmptyPath(t *testing.T) {
-	a := &artist.Artist{Name: "No Path", LibraryID: "lib-test"}
-	f := NewLogoTrimFixer(nil, nonSharedFSCheck(), testLogger())
-
-	fr, err := f.Fix(context.Background(), a, &Violation{RuleID: RuleLogoTrimmable})
-	if err != nil {
-		t.Fatalf("Fix: %v", err)
-	}
-	if fr.Fixed {
-		t.Error("Fixed = true, want false for empty path")
-	}
-	if fr.Message != "artist has no path" {
-		t.Errorf("Message = %q, want 'artist has no path'", fr.Message)
-	}
-}
-
-func TestLogoTrimFixer_Fix_NoLogoOnDisk(t *testing.T) {
-	dir := t.TempDir()
-	a := &artist.Artist{Name: "No Logo", Path: dir, LogoExists: true, LibraryID: "lib-test"}
-	f := NewLogoTrimFixer(nil, nonSharedFSCheck(), testLogger())
-
-	fr, err := f.Fix(context.Background(), a, &Violation{RuleID: RuleLogoTrimmable})
-	if err != nil {
-		t.Fatalf("Fix: %v", err)
-	}
-	if fr.Fixed {
-		t.Error("Fixed = true, want false when no logo on disk")
-	}
-	if fr.Message != "no logo file found on disk" {
-		t.Errorf("Message = %q, want 'no logo file found on disk'", fr.Message)
-	}
-}
-
-func TestLogoTrimFixer_Fix_CaseInsensitiveLookup(t *testing.T) {
-	dir := t.TempDir()
-	// Create file as Logo.PNG (mixed case) with padding.
-	createTestPNGWithPadding(t, filepath.Join(dir, "Logo.PNG"), 200, 100, 20, 20, 15, 15)
-
-	a := &artist.Artist{Name: "Case Test", Path: dir, LogoExists: true, LibraryID: "lib-test"}
-	f := NewLogoTrimFixer(nil, nonSharedFSCheck(), testLogger())
-
-	fr, err := f.Fix(context.Background(), a, &Violation{RuleID: RuleLogoTrimmable})
-	if err != nil {
-		t.Fatalf("Fix: %v", err)
-	}
-	if !fr.Fixed {
-		t.Errorf("Fixed = false, want true; fixer should find Logo.PNG via case-insensitive lookup; message: %s", fr.Message)
-	}
-}
-
 func TestLogoPaddingFixer_CanFix(t *testing.T) {
 	f := NewLogoPaddingFixer(nil, nonSharedFSCheck(), testLogger())
 	if !f.CanFix(&Violation{RuleID: RuleLogoPadding}) {
 		t.Error("should handle logo_padding")
 	}
-	if f.CanFix(&Violation{RuleID: RuleLogoTrimmable}) {
-		t.Error("should not handle logo_trimmable")
+	if f.CanFix(&Violation{RuleID: RuleNFOExists}) {
+		t.Error("should not handle nfo_exists")
 	}
 }
 
@@ -1220,7 +1115,7 @@ func TestPipeline_RunAll_RespectsManualMode(t *testing.T) {
 }
 
 // mockSideEffectFixer is a fixer that does NOT implement CandidateDiscoverer,
-// simulating side-effect fixers like LogoTrimFixer or NFOFixer.
+// simulating side-effect fixers like LogoPaddingFixer or NFOFixer.
 type mockSideEffectFixer struct {
 	canFix bool
 	calls  int
@@ -1264,8 +1159,8 @@ func TestPipeline_ManualMode_SkipsSideEffectFixer(t *testing.T) {
 		t.Fatalf("seeding rules: %v", err)
 	}
 
-	// Enable logo_trimmable and set it to manual mode.
-	r, err := ruleSvc.GetByID(ctx, RuleLogoTrimmable)
+	// Enable logo_padding and set it to manual mode.
+	r, err := ruleSvc.GetByID(ctx, RuleLogoPadding)
 	if err != nil {
 		t.Fatalf("getting rule: %v", err)
 	}
@@ -1276,7 +1171,8 @@ func TestPipeline_ManualMode_SkipsSideEffectFixer(t *testing.T) {
 	}
 
 	dir := t.TempDir()
-	// Create a padded logo so the checker flags it.
+	// Create a padded logo so the checker flags it. Content = 160x70 = 11200,
+	// total = 200x100 = 20000, padding = 44% which exceeds the 15% default.
 	createTestPNGWithPadding(t, filepath.Join(dir, "logo.png"), 200, 100, 20, 20, 15, 15)
 
 	a := &artist.Artist{
@@ -1290,13 +1186,13 @@ func TestPipeline_ManualMode_SkipsSideEffectFixer(t *testing.T) {
 	}
 
 	// Register a side-effect fixer (no CandidateDiscoverer) that handles
-	// logo_trimmable. It must NOT be called in manual mode.
+	// logo_padding. It must NOT be called in manual mode.
 	seFixer := &mockSideEffectFixer{canFix: true}
 
 	engine := NewEngine(ruleSvc, db, nil, nil, testLogger())
 	pipeline := NewPipeline(engine, artistSvc, ruleSvc, []Fixer{seFixer}, nil, testLogger())
 
-	result, err := pipeline.RunRule(ctx, RuleLogoTrimmable)
+	result, err := pipeline.RunRule(ctx, RuleLogoPadding)
 	if err != nil {
 		t.Fatalf("RunRule: %v", err)
 	}
@@ -1316,7 +1212,7 @@ func TestPipeline_ManualMode_SkipsSideEffectFixer(t *testing.T) {
 	}
 	found := false
 	for _, v := range openViolations {
-		if v.ArtistID == a.ID && v.RuleID == RuleLogoTrimmable {
+		if v.ArtistID == a.ID && v.RuleID == RuleLogoPadding {
 			found = true
 			if !v.Fixable {
 				t.Error("violation Fixable should be true (fixer exists, just skipped for safety)")
@@ -1324,7 +1220,7 @@ func TestPipeline_ManualMode_SkipsSideEffectFixer(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Error("expected open violation for manual-mode logo_trimmable rule")
+		t.Error("expected open violation for manual-mode logo_padding rule")
 	}
 }
 

@@ -251,7 +251,6 @@ func run() error {
 		rule.NewMetadataFixer(orchestrator, logger),
 		rule.NewImageFixer(orchestrator, platformService, fsCheck, logger),
 		rule.NewExtraneousImagesFixer(platformService, fsCheck, logger),
-		rule.NewLogoTrimFixer(platformService, fsCheck, logger),
 		rule.NewLogoPaddingFixer(platformService, fsCheck, logger),
 		rule.NewDirectoryRenameFixer(fsCheck, logger),
 		rule.NewBackdropSequencingFixer(platformService, fsCheck, logger),

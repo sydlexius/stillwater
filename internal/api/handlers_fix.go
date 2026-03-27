@@ -180,7 +180,7 @@ func captureFilesForRule(ctx context.Context, a *artist.Artist, ruleID string, r
 	case rule.RuleFanartExists, rule.RuleFanartMinRes, rule.RuleFanartAspect:
 		return captureImageFiles(ctx, a.Path, "fanart", r)
 
-	case rule.RuleLogoExists, rule.RuleLogoMinRes, rule.RuleLogoTrimmable, rule.RuleLogoPadding:
+	case rule.RuleLogoExists, rule.RuleLogoMinRes, rule.RuleLogoPadding:
 		return captureImageFiles(ctx, a.Path, "logo", r)
 
 	case rule.RuleBannerExists, rule.RuleBannerMinRes:
