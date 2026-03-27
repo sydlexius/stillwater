@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"image"
 	"image/color"
 	"image/jpeg"
@@ -1260,5 +1261,138 @@ func TestGetArtistBackdrop_NotFound(t *testing.T) {
 	_, _, err := c.GetArtistBackdrop(context.Background(), "jf-001", 0)
 	if err == nil {
 		t.Fatal("expected error for 404 response")
+	}
+}
+
+// --- AuthenticateByName tests ---
+
+func TestAuthenticateByName_Success(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/Users/AuthenticateByName" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		if r.Method != http.MethodPost {
+			t.Errorf("unexpected method: %s", r.Method)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(AuthResult{
+			AccessToken: "test-token-abc123",
+			User: AuthUser{
+				ID:   "user-001",
+				Name: "admin",
+				Policy: UserPolicy{
+					IsAdministrator: true,
+				},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	result, err := AuthenticateByName(context.Background(), srv.URL, "admin", "pass123", testLogger())
+	if err != nil {
+		t.Fatalf("AuthenticateByName failed: %v", err)
+	}
+	if result.AccessToken != "test-token-abc123" {
+		t.Errorf("AccessToken = %q, want %q", result.AccessToken, "test-token-abc123")
+	}
+	if result.User.ID != "user-001" {
+		t.Errorf("User.ID = %q, want %q", result.User.ID, "user-001")
+	}
+	if result.User.Name != "admin" {
+		t.Errorf("User.Name = %q, want %q", result.User.Name, "admin")
+	}
+	if !result.User.Policy.IsAdministrator {
+		t.Error("User.Policy.IsAdministrator = false, want true")
+	}
+}
+
+func TestAuthenticateByName_InvalidCredentials(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+
+	_, err := AuthenticateByName(context.Background(), srv.URL, "admin", "wrong", testLogger())
+	if err == nil {
+		t.Fatal("expected error for invalid credentials")
+	}
+	if !errors.Is(err, ErrInvalidCredentials) {
+		t.Errorf("error = %v, want ErrInvalidCredentials", err)
+	}
+}
+
+func TestAuthenticateByName_ServerUnreachable(t *testing.T) {
+	// Port 1 is almost certainly not listening, so the connection should fail.
+	_, err := AuthenticateByName(context.Background(), "http://127.0.0.1:1", "admin", "pass", testLogger())
+	if err == nil {
+		t.Fatal("expected error for unreachable server")
+	}
+}
+
+func TestAuthenticateByName_AuthorizationHeader(t *testing.T) {
+	var gotAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(AuthResult{
+			AccessToken: "tok",
+			User:        AuthUser{ID: "u1", Name: "admin"},
+		})
+	}))
+	defer srv.Close()
+
+	_, err := AuthenticateByName(context.Background(), srv.URL, "admin", "pass", testLogger())
+	if err != nil {
+		t.Fatalf("AuthenticateByName failed: %v", err)
+	}
+	// Jellyfin uses MediaBrowser prefix without UserId.
+	if !strings.HasPrefix(gotAuth, `MediaBrowser Client="Stillwater"`) {
+		t.Errorf("Authorization header does not start with MediaBrowser Client=Stillwater: %q", gotAuth)
+	}
+	// Verify no UserId field is present (Emby-only).
+	if strings.Contains(gotAuth, "UserId") {
+		t.Errorf("Authorization header should not contain UserId for Jellyfin: %q", gotAuth)
+	}
+	if !strings.Contains(gotAuth, `Device="Server"`) {
+		t.Errorf("Authorization header missing Device=Server: %q", gotAuth)
+	}
+	if !strings.Contains(gotAuth, `DeviceId="`) {
+		t.Errorf("Authorization header missing DeviceId: %q", gotAuth)
+	}
+	if !strings.Contains(gotAuth, `Version="`) {
+		t.Errorf("Authorization header missing Version: %q", gotAuth)
+	}
+}
+
+func TestAuthenticateByName_RequestBody(t *testing.T) {
+	var gotBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var err error
+		gotBody, err = io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("reading request body: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(AuthResult{
+			AccessToken: "tok",
+			User:        AuthUser{ID: "u1", Name: "admin"},
+		})
+	}))
+	defer srv.Close()
+
+	_, err := AuthenticateByName(context.Background(), srv.URL, "testuser", "testpass", testLogger())
+	if err != nil {
+		t.Fatalf("AuthenticateByName failed: %v", err)
+	}
+
+	var parsed map[string]string
+	if err := json.Unmarshal(gotBody, &parsed); err != nil {
+		t.Fatalf("parsing request body: %v", err)
+	}
+	if parsed["Username"] != "testuser" {
+		t.Errorf("Username = %q, want %q", parsed["Username"], "testuser")
+	}
+	if parsed["Pw"] != "testpass" {
+		t.Errorf("Pw = %q, want %q", parsed["Pw"], "testpass")
 	}
 }

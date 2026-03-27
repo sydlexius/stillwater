@@ -87,6 +87,22 @@ func (r *Router) handleUpdateSettings(w http.ResponseWriter, req *http.Request) 
 			return
 		}
 	}
+	if v, ok := body["musicbrainz.contributions"]; ok {
+		if v != "disabled" && v != "web_form" && v != "api" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{
+				"error": "musicbrainz.contributions must be disabled, web_form, or api",
+			})
+			return
+		}
+	}
+	if v, ok := body["auth.method"]; ok {
+		if v != "local" && v != "emby" && v != "jellyfin" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{
+				"error": "auth.method must be local, emby, or jellyfin",
+			})
+			return
+		}
+	}
 
 	now := time.Now().UTC().Format(time.RFC3339)
 	for k, v := range body {

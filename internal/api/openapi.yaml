@@ -925,6 +925,11 @@ paths:
     post:
       tags: [Auth]
       summary: Log in
+      description: |
+        Authenticates a user and sets a session cookie. Behavior depends on the
+        instance-level auth.method setting: for "local", validates against the
+        local user database; for "emby" or "jellyfin", authenticates against
+        the configured media server via its AuthenticateByName API.
       security: []
       operationId: login
       requestBody:
@@ -952,11 +957,22 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "502":
+          description: Media server unreachable (federated auth only)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /auth/setup:
     post:
       tags: [Auth]
       summary: Create initial admin account
+      description: |
+        Creates the initial administrator account during first-time setup.
+        Supports three auth methods: "local" creates a username/password account,
+        "emby" or "jellyfin" authenticates against a media server and auto-creates
+        the first server connection.
       security: []
       operationId: setup
       requestBody:
@@ -966,21 +982,42 @@ paths:
             schema:
               type: object
               properties:
+                auth_method:
+                  type: string
+                  enum: [local, emby, jellyfin]
+                  default: local
+                  description: Authentication method for this instance
                 username:
                   type: string
                 password:
                   type: string
-                  minLength: 8
+                  description: Must be at least 8 characters for local auth
+                server_url:
+                  type: string
+                  format: uri
+                  description: Media server URL, required when auth_method is emby or jellyfin
               required: [username, password]
       responses:
         "201":
-          description: Admin account created
+          description: Admin account created (and auto-logged in for federated auth)
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Status"
+        "403":
+          description: Media server user is not an administrator (federated auth only)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "409":
           description: Admin account already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "502":
+          description: Media server unreachable (federated auth only)
           content:
             application/json:
               schema:
@@ -6104,6 +6141,68 @@ paths:
                 type: string
         "404":
           description: Artist not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  # --- MusicBrainz contribution ---
+
+  /artists/{id}/musicbrainz/diffs:
+    get:
+      tags: [Artists]
+      operationId: getArtistMusicBrainzDiffs
+      summary: Get metadata diffs between Stillwater and MusicBrainz
+      description: >
+        Returns computed diffs between the current Stillwater metadata and the
+        last-known MusicBrainz values captured during the most recent provider
+        refresh. Only fields where the Stillwater value is non-empty and differs
+        from the MusicBrainz snapshot are included.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Diff results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  artist_id:
+                    type: string
+                  musicbrainz_id:
+                    type: string
+                  diffs:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        field:
+                          type: string
+                          description: Metadata field name
+                        stillwater_value:
+                          type: string
+                          description: Current value in Stillwater
+                        musicbrainz_value:
+                          type: string
+                          description: Last-known value from MusicBrainz
+                        source:
+                          type: string
+                          description: Provider that sourced the current Stillwater value
+                  contribution_mode:
+                    type: string
+                    enum: [disabled, web_form, api]
+                    description: Current MusicBrainz contribution setting
+                  last_fetched_at:
+                    type: string
+                    format: date-time
+                    description: When the MusicBrainz snapshots were last captured
+        "404":
+          description: Artist not found or has no MusicBrainz ID
           content:
             application/json:
               schema:

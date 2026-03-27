@@ -187,7 +187,7 @@ func (r *Router) handleSetActivePlatform(w http.ResponseWriter, req *http.Reques
 func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 	userID := middleware.UserIDFromContext(req.Context())
 	if userID == "" {
-		renderTempl(w, req, templates.LoginPage(r.assets()))
+		r.renderLoginPage(w, req)
 		return
 	}
 

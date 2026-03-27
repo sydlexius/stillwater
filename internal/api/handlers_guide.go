@@ -12,7 +12,7 @@ import (
 func (r *Router) handleGuidePage(w http.ResponseWriter, req *http.Request) {
 	userID := middleware.UserIDFromContext(req.Context())
 	if userID == "" {
-		renderTempl(w, req, templates.LoginPage(r.assets()))
+		r.renderLoginPage(w, req)
 		return
 	}
 	renderTempl(w, req, templates.GuidePage(r.assets()))

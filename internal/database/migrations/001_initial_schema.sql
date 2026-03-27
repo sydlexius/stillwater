@@ -9,8 +9,10 @@
 CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
     username TEXT NOT NULL UNIQUE,
-    password_hash TEXT NOT NULL,
+    password_hash TEXT NOT NULL DEFAULT '',
     role TEXT NOT NULL DEFAULT 'admin',
+    auth_provider TEXT NOT NULL DEFAULT 'local',
+    server_user_id TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -239,6 +241,20 @@ CREATE TABLE IF NOT EXISTS metadata_changes (
 
 CREATE INDEX idx_metadata_changes_artist ON metadata_changes(artist_id, created_at DESC);
 
+-- Stores the last-known MusicBrainz value for each metadata field per artist.
+-- Upserted on each provider refresh so that Stillwater can compute diffs between
+-- local edits and upstream MusicBrainz data for contribution workflows.
+CREATE TABLE IF NOT EXISTS mb_snapshots (
+    id          TEXT PRIMARY KEY,
+    artist_id   TEXT NOT NULL REFERENCES artists(id) ON DELETE CASCADE,
+    field       TEXT NOT NULL,
+    mb_value    TEXT NOT NULL DEFAULT '',
+    fetched_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    UNIQUE(artist_id, field)
+);
+
+CREATE INDEX idx_mb_snapshots_artist ON mb_snapshots(artist_id);
+
 -- =============================================================================
 -- Rule engine
 -- =============================================================================
@@ -395,6 +411,12 @@ INSERT OR IGNORE INTO settings (key, value) VALUES
     ('provider.priority.fanart',    '["fanarttv","audiodb"]'),
     ('provider.priority.logo',      '["fanarttv","audiodb"]'),
     ('provider.priority.banner',    '["fanarttv","audiodb"]');
+
+-- MusicBrainz contribution mode (disabled, web_form, api).
+INSERT OR IGNORE INTO settings (key, value) VALUES ('musicbrainz.contributions', 'disabled');
+
+-- Authentication method (local, emby, jellyfin). Instance-level setting chosen during setup.
+INSERT OR IGNORE INTO settings (key, value) VALUES ('auth.method', 'local');
 
 -- Default rule: extraneous images.
 INSERT OR IGNORE INTO rules (id, name, description, category, enabled, config, automation_mode, created_at, updated_at)

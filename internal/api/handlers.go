@@ -1,15 +1,21 @@
 package api
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/a-h/templ"
 	"github.com/sydlexius/stillwater/internal/api/middleware"
+	"github.com/sydlexius/stillwater/internal/auth"
+	"github.com/sydlexius/stillwater/internal/connection"
+	connEmby "github.com/sydlexius/stillwater/internal/connection/emby"
+	connJellyfin "github.com/sydlexius/stillwater/internal/connection/jellyfin"
 	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/version"
 	"github.com/sydlexius/stillwater/web/components"
@@ -63,12 +69,79 @@ func (r *Router) handleLogin(w http.ResponseWriter, req *http.Request) {
 		body.Password = req.FormValue("password")
 	}
 
-	token, err := r.authService.Login(req.Context(), body.Username, body.Password)
+	authMethod := r.getStringSetting(req.Context(), "auth.method", "local")
+
+	switch authMethod {
+	case "emby", "jellyfin":
+		r.handleLoginFederated(w, req, body.Username, body.Password, authMethod)
+	default:
+		r.handleLoginLocal(w, req, body.Username, body.Password)
+	}
+}
+
+// handleLoginLocal performs local username/password authentication.
+func (r *Router) handleLoginLocal(w http.ResponseWriter, req *http.Request, username, password string) {
+	token, err := r.authService.Login(req.Context(), username, password)
 	if err != nil {
+		r.logger.Warn("local login failed", "username", username)
 		writeFormError(w, req, http.StatusUnauthorized, "Invalid username or password.")
 		return
 	}
 
+	r.setSessionCookie(w, req, token)
+	w.Header().Set("HX-Redirect", r.basePath+"/")
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// handleLoginFederated authenticates against an Emby or Jellyfin server and
+// creates a local Stillwater session.
+func (r *Router) handleLoginFederated(w http.ResponseWriter, req *http.Request, username, password, authMethod string) {
+	serverURL := r.getStringSetting(req.Context(), "auth.server_url", "")
+	if serverURL == "" {
+		writeFormError(w, req, http.StatusInternalServerError, "Auth server URL not configured.")
+		return
+	}
+
+	result, err := r.authenticateByName(req.Context(), authMethod, serverURL, username, password)
+	if err != nil {
+		r.logger.Warn("federated login failed", "method", authMethod, "error", err)
+		if errors.Is(err, connEmby.ErrInvalidCredentials) || errors.Is(err, connJellyfin.ErrInvalidCredentials) {
+			writeFormError(w, req, http.StatusUnauthorized, fmt.Sprintf("Invalid %s credentials.", authMethodDisplayName(authMethod)))
+			return
+		}
+		writeFormError(w, req, http.StatusBadGateway, fmt.Sprintf("Cannot connect to %s server. Please verify the server is running.", authMethodDisplayName(authMethod)))
+		return
+	}
+
+	fedResult := auth.FederatedAuthResult{
+		AccessToken: result.AccessToken,
+		UserID:      result.User.ID,
+		UserName:    result.User.Name,
+		IsAdmin:     result.User.Policy.IsAdministrator,
+	}
+
+	token, err := r.authService.LoginFederated(req.Context(), fedResult, authMethod)
+	if err != nil {
+		if errors.Is(err, auth.ErrUserNotConfigured) {
+			r.logger.Warn("federated login: user not found", "method", authMethod, "server_user_id", result.User.ID)
+			writeFormError(w, req, http.StatusUnauthorized, "This account is not authorized for this Stillwater instance.")
+		} else {
+			r.logger.Error("federated session creation failed", "method", authMethod, "error", err)
+			writeFormError(w, req, http.StatusInternalServerError, "An internal error occurred. Please try again.")
+		}
+		return
+	}
+
+	// Update the connection API key if the server issued a new access token.
+	r.updateConnectionToken(req.Context(), authMethod, serverURL, result.User.ID, result.AccessToken)
+
+	r.setSessionCookie(w, req, token)
+	w.Header().Set("HX-Redirect", r.basePath+"/")
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// setSessionCookie writes the Stillwater session cookie to the response.
+func (r *Router) setSessionCookie(w http.ResponseWriter, req *http.Request, token string) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     "session",
 		Value:    token,
@@ -78,9 +151,103 @@ func (r *Router) handleLogin(w http.ResponseWriter, req *http.Request) {
 		Secure:   req.TLS != nil || req.Header.Get("X-Forwarded-Proto") == "https",
 		MaxAge:   86400,
 	})
+}
 
-	w.Header().Set("HX-Redirect", r.basePath+"/")
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+// renderLoginPage renders the login page with the configured auth method.
+func (r *Router) renderLoginPage(w http.ResponseWriter, req *http.Request) {
+	authMethod := r.getStringSetting(req.Context(), "auth.method", "local")
+	renderTempl(w, req, templates.LoginPage(r.assets(), authMethod))
+}
+
+// authMethodDisplayName returns a human-readable name for the auth method.
+func authMethodDisplayName(method string) string {
+	switch method {
+	case "emby":
+		return "Emby"
+	case "jellyfin":
+		return "Jellyfin"
+	default:
+		return method
+	}
+}
+
+// federatedAuthResult is a unified wrapper over emby.AuthResult and jellyfin.AuthResult.
+type federatedAuthResult struct {
+	AccessToken string
+	User        struct {
+		ID     string
+		Name   string
+		Policy struct {
+			IsAdministrator bool
+		}
+	}
+}
+
+// authenticateByName calls the appropriate media server's AuthenticateByName API.
+func (r *Router) authenticateByName(ctx context.Context, authMethod, serverURL, username, password string) (*federatedAuthResult, error) {
+	switch authMethod {
+	case "emby":
+		res, err := connEmby.AuthenticateByName(ctx, serverURL, username, password, r.logger)
+		if err != nil {
+			return nil, err
+		}
+		return &federatedAuthResult{
+			AccessToken: res.AccessToken,
+			User: struct {
+				ID     string
+				Name   string
+				Policy struct{ IsAdministrator bool }
+			}{
+				ID:   res.User.ID,
+				Name: res.User.Name,
+				Policy: struct{ IsAdministrator bool }{
+					IsAdministrator: res.User.Policy.IsAdministrator,
+				},
+			},
+		}, nil
+	case "jellyfin":
+		res, err := connJellyfin.AuthenticateByName(ctx, serverURL, username, password, r.logger)
+		if err != nil {
+			return nil, err
+		}
+		return &federatedAuthResult{
+			AccessToken: res.AccessToken,
+			User: struct {
+				ID     string
+				Name   string
+				Policy struct{ IsAdministrator bool }
+			}{
+				ID:   res.User.ID,
+				Name: res.User.Name,
+				Policy: struct{ IsAdministrator bool }{
+					IsAdministrator: res.User.Policy.IsAdministrator,
+				},
+			},
+		}, nil
+	default:
+		return nil, fmt.Errorf("unsupported auth method: %s", authMethod)
+	}
+}
+
+// updateConnectionToken updates the stored API key for a federated connection
+// if the media server issued a new access token during login.
+func (r *Router) updateConnectionToken(ctx context.Context, authMethod, serverURL, platformUserID, newToken string) {
+	conn, err := r.connectionService.GetByTypeAndURL(ctx, authMethod, serverURL)
+	if err != nil {
+		r.logger.Warn("failed to look up connection for token update", "method", authMethod, "error", err)
+		return
+	}
+	if conn == nil || conn.PlatformUserID != platformUserID {
+		return
+	}
+	// The service decrypts the stored key on read; compare with the new token.
+	if conn.APIKey == newToken {
+		return
+	}
+	conn.APIKey = newToken
+	if err := r.connectionService.Update(ctx, conn); err != nil {
+		r.logger.Warn("failed to update connection token after federated login", "error", err)
+	}
 }
 
 // handleLogout destroys the current session and clears the session cookie.
@@ -116,6 +283,7 @@ func (r *Router) handleMe(w http.ResponseWriter, req *http.Request) {
 }
 
 // handleSetup creates the initial admin user during first-time setup.
+// Supports both local account creation and federated auth via Emby/Jellyfin.
 // POST /api/v1/auth/setup
 func (r *Router) handleSetup(w http.ResponseWriter, req *http.Request) {
 	hasUsers, err := r.authService.HasUsers(req.Context())
@@ -129,8 +297,10 @@ func (r *Router) handleSetup(w http.ResponseWriter, req *http.Request) {
 	}
 
 	var body struct {
-		Username string `json:"username"`
-		Password string `json:"password"` //nolint:gosec // G117: not a hardcoded secret, this is a request field
+		AuthMethod string `json:"auth_method"`
+		Username   string `json:"username"`
+		Password   string `json:"password"`   //nolint:gosec // G117: not a hardcoded secret, this is a request field
+		ServerURL  string `json:"server_url"` //nolint:gosec // G117: not a secret, this is a server address
 	}
 	if strings.HasPrefix(req.Header.Get("Content-Type"), "application/json") {
 		if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
@@ -139,21 +309,35 @@ func (r *Router) handleSetup(w http.ResponseWriter, req *http.Request) {
 		}
 	} else {
 		req.Body = http.MaxBytesReader(w, req.Body, 1<<20)
+		body.AuthMethod = req.FormValue("auth_method")
 		body.Username = req.FormValue("username")
 		body.Password = req.FormValue("password")
+		body.ServerURL = req.FormValue("server_url")
 	}
 
-	if body.Username == "" || body.Password == "" {
+	switch body.AuthMethod {
+	case "", "local":
+		r.handleSetupLocal(w, req, body.Username, body.Password)
+	case "emby", "jellyfin":
+		r.handleSetupFederated(w, req, body.AuthMethod, body.Username, body.Password, body.ServerURL)
+	default:
+		writeFormError(w, req, http.StatusBadRequest, "Unsupported auth method.")
+	}
+}
+
+// handleSetupLocal creates the initial admin account with a local username/password.
+func (r *Router) handleSetupLocal(w http.ResponseWriter, req *http.Request, username, password string) {
+	if username == "" || password == "" {
 		writeFormError(w, req, http.StatusBadRequest, "Username and password are required.")
 		return
 	}
 
-	if len(body.Password) < 8 {
+	if len(password) < 8 {
 		writeFormError(w, req, http.StatusBadRequest, "Password must be at least 8 characters.")
 		return
 	}
 
-	created, err := r.authService.Setup(req.Context(), body.Username, body.Password)
+	created, err := r.authService.Setup(req.Context(), username, password)
 	if err != nil {
 		r.logger.Error("failed to create admin account", "error", err)
 		writeFormError(w, req, http.StatusInternalServerError, "An internal error occurred. Please try again.")
@@ -165,6 +349,114 @@ func (r *Router) handleSetup(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	w.Header().Set("HX-Redirect", r.basePath+"/")
+	writeJSON(w, http.StatusCreated, map[string]string{"status": "admin account created"})
+}
+
+// handleSetupFederated creates the initial admin account by authenticating against
+// an Emby or Jellyfin server. On success it also stores the auth settings and
+// auto-creates the first server connection.
+func (r *Router) handleSetupFederated(w http.ResponseWriter, req *http.Request, authMethod, username, password, serverURL string) {
+	if username == "" || password == "" {
+		writeFormError(w, req, http.StatusBadRequest, "Username and password are required.")
+		return
+	}
+
+	if serverURL == "" {
+		writeFormError(w, req, http.StatusBadRequest, "Server URL is required for federated authentication.")
+		return
+	}
+
+	cleanedURL, err := connection.ValidateBaseURL(serverURL)
+	if err != nil {
+		writeFormError(w, req, http.StatusBadRequest, "Invalid server URL.")
+		return
+	}
+
+	// Authenticate against the media server.
+	result, err := r.authenticateByName(req.Context(), authMethod, cleanedURL, username, password)
+	if err != nil {
+		r.logger.Warn("federated setup auth failed", "method", authMethod, "error", err)
+		if errors.Is(err, connEmby.ErrInvalidCredentials) || errors.Is(err, connJellyfin.ErrInvalidCredentials) {
+			writeFormError(w, req, http.StatusUnauthorized, fmt.Sprintf("Invalid %s credentials.", authMethodDisplayName(authMethod)))
+			return
+		}
+		writeFormError(w, req, http.StatusBadGateway, fmt.Sprintf("Cannot connect to %s server. Please verify the server is running and the URL is correct.", authMethodDisplayName(authMethod)))
+		return
+	}
+
+	// Only media server administrators can set up Stillwater.
+	if !result.User.Policy.IsAdministrator {
+		writeFormError(w, req, http.StatusForbidden, fmt.Sprintf("Only %s administrator accounts can set up Stillwater.", authMethodDisplayName(authMethod)))
+		return
+	}
+
+	fedResult := auth.FederatedAuthResult{
+		AccessToken: result.AccessToken,
+		UserID:      result.User.ID,
+		UserName:    result.User.Name,
+		IsAdmin:     result.User.Policy.IsAdministrator,
+	}
+
+	// Create the local user record.
+	created, err := r.authService.SetupFederated(req.Context(), fedResult, authMethod)
+	if err != nil {
+		r.logger.Error("failed to create federated admin account", "error", err)
+		writeFormError(w, req, http.StatusInternalServerError, "An internal error occurred. Please try again.")
+		return
+	}
+	if !created {
+		writeFormError(w, req, http.StatusConflict, "An admin account already exists.")
+		return
+	}
+
+	// Store auth settings. This is critical: if it fails, the login page will
+	// default to local auth and the federated user cannot log in. On failure,
+	// delete the user so setup can be retried.
+	now := time.Now().UTC().Format(time.RFC3339)
+	for k, v := range map[string]string{"auth.method": authMethod, "auth.server_url": cleanedURL} {
+		if _, err := r.db.ExecContext(req.Context(),
+			`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+			ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+			k, v, now); err != nil {
+			r.logger.Error("failed to store auth setting, rolling back user", "key", k, "error", err)
+			_, _ = r.db.ExecContext(req.Context(), `DELETE FROM users WHERE auth_provider = ? AND server_user_id = ?`, authMethod, result.User.ID) //nolint:errcheck
+			writeFormError(w, req, http.StatusInternalServerError, "An internal error occurred. Please try again.")
+			return
+		}
+	}
+
+	// Auto-create the first server connection.
+	connName := authMethodDisplayName(authMethod)
+	conn := &connection.Connection{
+		Name:                 connName,
+		Type:                 authMethod,
+		URL:                  cleanedURL,
+		APIKey:               result.AccessToken,
+		Enabled:              true,
+		FeatureLibraryImport: true,
+		FeatureNFOWrite:      true,
+		FeatureImageWrite:    true,
+		PlatformUserID:       result.User.ID,
+	}
+	if err := r.connectionService.Create(req.Context(), conn); err != nil {
+		r.logger.Error("failed to auto-create connection during federated setup", "error", err)
+		// Non-fatal: the user can add the connection manually later.
+	} else if err := r.connectionService.UpdateStatus(req.Context(), conn.ID, "ok", ""); err != nil {
+		r.logger.Warn("connection created but status update failed", "connection_id", conn.ID, "error", err)
+	}
+
+	// Auto-login the user.
+	token, err := r.authService.LoginFederated(req.Context(), fedResult, authMethod)
+	if err != nil {
+		r.logger.Error("failed to auto-login after federated setup", "error", err)
+		// Redirect to root so the user lands on the login page.
+		w.Header().Set("HX-Redirect", r.basePath+"/")
+		writeJSON(w, http.StatusCreated, map[string]string{"status": "admin account created"})
+		return
+	}
+
+	r.setSessionCookie(w, req, token)
 	w.Header().Set("HX-Redirect", r.basePath+"/")
 	writeJSON(w, http.StatusCreated, map[string]string{"status": "admin account created"})
 }
@@ -187,7 +479,7 @@ func (r *Router) handleIndex(w http.ResponseWriter, req *http.Request) {
 	// Check auth (populated by OptionalAuth middleware)
 	userID := middleware.UserIDFromContext(req.Context())
 	if userID == "" {
-		renderTempl(w, req, templates.LoginPage(r.assets()))
+		r.renderLoginPage(w, req)
 		return
 	}
 
