@@ -122,13 +122,18 @@ func (r *Router) handleLoginFederated(w http.ResponseWriter, req *http.Request, 
 
 	token, err := r.authService.LoginFederated(req.Context(), fedResult, authMethod)
 	if err != nil {
-		r.logger.Warn("federated session creation failed", "method", authMethod, "error", err)
-		writeFormError(w, req, http.StatusUnauthorized, "This account is not authorized for this Stillwater instance.")
+		if errors.Is(err, auth.ErrUserNotConfigured) {
+			r.logger.Warn("federated login: user not found", "method", authMethod, "server_user_id", result.User.ID)
+			writeFormError(w, req, http.StatusUnauthorized, "This account is not authorized for this Stillwater instance.")
+		} else {
+			r.logger.Error("federated session creation failed", "method", authMethod, "error", err)
+			writeFormError(w, req, http.StatusInternalServerError, "An internal error occurred. Please try again.")
+		}
 		return
 	}
 
 	// Update the connection API key if the server issued a new access token.
-	r.updateConnectionToken(req.Context(), authMethod, serverURL, result.AccessToken)
+	r.updateConnectionToken(req.Context(), authMethod, serverURL, result.User.ID, result.AccessToken)
 
 	r.setSessionCookie(w, req, token)
 	w.Header().Set("HX-Redirect", r.basePath+"/")
@@ -226,13 +231,13 @@ func (r *Router) authenticateByName(ctx context.Context, authMethod, serverURL, 
 
 // updateConnectionToken updates the stored API key for a federated connection
 // if the media server issued a new access token during login.
-func (r *Router) updateConnectionToken(ctx context.Context, authMethod, serverURL, newToken string) {
+func (r *Router) updateConnectionToken(ctx context.Context, authMethod, serverURL, platformUserID, newToken string) {
 	conn, err := r.connectionService.GetByTypeAndURL(ctx, authMethod, serverURL)
 	if err != nil {
 		r.logger.Warn("failed to look up connection for token update", "method", authMethod, "error", err)
 		return
 	}
-	if conn == nil {
+	if conn == nil || conn.PlatformUserID != platformUserID {
 		return
 	}
 	// The service decrypts the stored key on read; compare with the new token.
@@ -311,10 +316,12 @@ func (r *Router) handleSetup(w http.ResponseWriter, req *http.Request) {
 	}
 
 	switch body.AuthMethod {
+	case "", "local":
+		r.handleSetupLocal(w, req, body.Username, body.Password)
 	case "emby", "jellyfin":
 		r.handleSetupFederated(w, req, body.AuthMethod, body.Username, body.Password, body.ServerURL)
 	default:
-		r.handleSetupLocal(w, req, body.Username, body.Password)
+		writeFormError(w, req, http.StatusBadRequest, "Unsupported auth method.")
 	}
 }
 
@@ -404,14 +411,16 @@ func (r *Router) handleSetupFederated(w http.ResponseWriter, req *http.Request, 
 	}
 
 	// Store auth settings. This is critical: if it fails, the login page will
-	// default to local auth and the federated user cannot log in.
+	// default to local auth and the federated user cannot log in. On failure,
+	// delete the user so setup can be retried.
 	now := time.Now().UTC().Format(time.RFC3339)
 	for k, v := range map[string]string{"auth.method": authMethod, "auth.server_url": cleanedURL} {
 		if _, err := r.db.ExecContext(req.Context(),
 			`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
 			ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
 			k, v, now); err != nil {
-			r.logger.Error("failed to store auth setting", "key", k, "error", err)
+			r.logger.Error("failed to store auth setting, rolling back user", "key", k, "error", err)
+			_, _ = r.db.ExecContext(req.Context(), `DELETE FROM users WHERE auth_provider = ? AND server_user_id = ?`, authMethod, result.User.ID) //nolint:errcheck
 			writeFormError(w, req, http.StatusInternalServerError, "An internal error occurred. Please try again.")
 			return
 		}

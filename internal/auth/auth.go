@@ -416,24 +416,36 @@ type FederatedAuthResult struct {
 	IsAdmin     bool   // Whether the user is an administrator on the media server
 }
 
+// ErrUserNotConfigured is returned when a federated user is not registered on this instance.
+var ErrUserNotConfigured = errors.New("user not configured on this instance")
+
 // SetupFederated creates the initial admin account from a federated auth response.
 // The provider must be "emby" or "jellyfin". Returns true if a new account was created.
+// Uses INSERT...WHERE NOT EXISTS for race safety under concurrent requests.
 func (s *Service) SetupFederated(ctx context.Context, result FederatedAuthResult, provider string) (bool, error) {
-	has, err := s.HasUsers(ctx)
-	if err != nil {
-		return false, fmt.Errorf("checking existing users: %w", err)
+	if !result.IsAdmin {
+		return false, errors.New("federated user is not an administrator")
 	}
-	if has {
-		return false, nil
+	if provider != "emby" && provider != "jellyfin" {
+		return false, fmt.Errorf("unsupported auth provider: %s", provider)
 	}
 
 	id := uuid.New().String()
-	_, err = s.db.ExecContext(ctx, `
+	execResult, err := s.db.ExecContext(ctx, `
 		INSERT INTO users (id, username, password_hash, role, auth_provider, server_user_id)
-		VALUES (?, ?, '', 'admin', ?, ?)
+		SELECT ?, ?, '', 'admin', ?, ?
+		WHERE NOT EXISTS (SELECT 1 FROM users)
 	`, id, result.UserName, provider, result.UserID)
 	if err != nil {
 		return false, fmt.Errorf("creating federated admin user: %w", err)
+	}
+
+	rows, err := execResult.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("checking setup rows affected: %w", err)
+	}
+	if rows == 0 {
+		return false, nil
 	}
 
 	return true, nil
@@ -447,7 +459,7 @@ func (s *Service) LoginFederated(ctx context.Context, result FederatedAuthResult
 		SELECT id, username FROM users WHERE auth_provider = ? AND server_user_id = ?
 	`, provider, result.UserID).Scan(&id, &username)
 	if errors.Is(err, sql.ErrNoRows) {
-		return "", errors.New("user not configured on this instance")
+		return "", ErrUserNotConfigured
 	}
 	if err != nil {
 		return "", fmt.Errorf("querying federated user: %w", err)
