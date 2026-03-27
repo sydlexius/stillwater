@@ -1,0 +1,7 @@
+{{Infobox person
+| name         = Ludwig van Beethoven
+| birth_place  = [[Bonn]], [[Electorate of Cologne]]
+| birth_date   = {{birth date|1770|12|17|df=y}}
+| death_date   = {{death date and age|1827|3|26|1770|12|17|df=y}}
+| occupation   = Composer, pianist
+}}

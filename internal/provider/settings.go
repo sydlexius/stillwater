@@ -304,10 +304,10 @@ func (fp FieldPriority) EnabledProviders() []ProviderName {
 func DefaultPriorities() []FieldPriority {
 	return []FieldPriority{
 		{Field: "biography", Providers: []ProviderName{NameWikipedia, NameLastFM, NameAudioDB, NameDiscogs, NameWikidata, NameGenius}},
-		{Field: "genres", Providers: []ProviderName{NameMusicBrainz, NameLastFM, NameAudioDB, NameDiscogs, NameSpotify}},
+		{Field: "genres", Providers: []ProviderName{NameMusicBrainz, NameLastFM, NameAudioDB, NameDiscogs, NameSpotify, NameWikipedia}},
 		{Field: "styles", Providers: []ProviderName{NameDiscogs, NameAudioDB, NameLastFM, NameMusicBrainz}},
 		{Field: "moods", Providers: []ProviderName{NameAudioDB, NameLastFM}},
-		{Field: "members", Providers: []ProviderName{NameMusicBrainz, NameWikidata}},
+		{Field: "members", Providers: []ProviderName{NameMusicBrainz, NameWikidata, NameWikipedia}},
 		{Field: "formed", Providers: []ProviderName{NameMusicBrainz, NameWikidata, NameAudioDB}},
 		{Field: "thumb", Providers: []ProviderName{NameFanartTV, NameAudioDB, NameDeezer, NameSpotify}},
 		{Field: "fanart", Providers: []ProviderName{NameFanartTV, NameAudioDB}},

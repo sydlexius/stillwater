@@ -1,0 +1,6 @@
+{{Infobox composer
+| name         = Johann Sebastian Bach
+| birth_place  = [[Eisenach]], [[Saxe-Eisenach]]
+| genre        = {{hlist|[[Baroque music|Baroque]]|[[Sacred music|sacred]]}}
+| years_active = 1703{{ndash}}1750
+}}

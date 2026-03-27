@@ -1,0 +1,7 @@
+{{Infobox musical artist
+| name         = Beyonce
+| birth_place  = [[Houston, Texas]], U.S.
+| genre        = {{hlist|[[R&B]]|[[pop music|pop]]|[[hip hop music|hip hop]]|[[Soul music|soul]]}}
+| years_active = 1997{{ndash}}present
+| website      = {{URL|beyonce.com}}
+}}

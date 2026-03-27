@@ -239,15 +239,15 @@ The local compose mounts:
 
 The app is available at `http://localhost:1973` once started.
 
-### setupdocker.ps1
+### setupdocker.sh
 
-A local helper script `setupdocker.ps1` automates the full stop/build/start cycle. It is gitignored and not committed. Use it whenever a container rebuild and reload is needed:
+A local helper script `setupdocker.sh` automates the full stop/build/start cycle. It is gitignored and not committed. Use it whenever a container rebuild and reload is needed:
 
-```powershell
-.\setupdocker.ps1
+```bash
+./setupdocker.sh
 ```
 
-Run from PowerShell, not Git Bash -- MSYS2 path conversion in Git Bash breaks Docker volume mounts on Windows. The script stops and removes any running `stillwater*` containers, rebuilds the image, runs `docker compose -f docker-compose.local.yml up -d`, and tails the startup logs.
+The script stops and removes any running `stillwater*` containers, rebuilds the image, runs `docker compose -f docker-compose.local.yml up -d`, and tails the startup logs.
 
 ## PR Workflow
 
@@ -423,7 +423,7 @@ Every session that creates or destroys a worktree must update that file.
 
 ### Docker UAT in Worktrees
 
-`setupdocker.ps1` lives in the main repo root and is not duplicated into worktrees.
+`setupdocker.sh` lives in the main repo root and is not duplicated into worktrees.
 To run UAT from a worktree, either:
 - Copy the script into the worktree, or
 - Run it from the main repo after checking out the worktree's branch there temporarily

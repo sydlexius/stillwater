@@ -36,7 +36,6 @@ web/static/css/styles.css
 # Local overrides
 docker-compose.local.yml
 docker-compose.wsl.yml
-setupdocker.ps1
 setupdocker.sh
 .env.integration
 
