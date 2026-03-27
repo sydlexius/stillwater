@@ -51,6 +51,7 @@ type Service struct {
 	platformIDs  PlatformIDRepository
 	completeness CompletenessRepository
 	history      *HistoryService
+	mbSnapshots  MBSnapshotRepository
 }
 
 // SetHistoryService attaches a HistoryService to the artist Service so that
@@ -63,6 +64,32 @@ func (s *Service) SetHistoryService(h *HistoryService) {
 	s.history = h
 }
 
+// SetMBSnapshotRepository attaches a MBSnapshotRepository to the artist Service
+// for tracking last-known MusicBrainz field values. This is a setter rather than
+// a constructor parameter to avoid breaking existing call sites.
+func (s *Service) SetMBSnapshotRepository(repo MBSnapshotRepository) {
+	s.mbSnapshots = repo
+}
+
+// UpsertMBSnapshots stores or updates MusicBrainz value snapshots for the given artist.
+// No-op if no MBSnapshotRepository has been configured.
+func (s *Service) UpsertMBSnapshots(ctx context.Context, artistID string, snapshots []MBSnapshot) error {
+	if s.mbSnapshots == nil {
+		return nil
+	}
+	return s.mbSnapshots.UpsertAll(ctx, artistID, snapshots)
+}
+
+// GetMBSnapshots returns the last-known MusicBrainz values for the given artist,
+// keyed by field name. Returns an empty map if no snapshots exist or no repository
+// is configured.
+func (s *Service) GetMBSnapshots(ctx context.Context, artistID string) (map[string]MBSnapshot, error) {
+	if s.mbSnapshots == nil {
+		return make(map[string]MBSnapshot), nil
+	}
+	return s.mbSnapshots.GetForArtist(ctx, artistID)
+}
+
 // NewService creates an artist service backed by SQLite.
 func NewService(db *sql.DB) *Service {
 	return &Service{
@@ -73,6 +100,7 @@ func NewService(db *sql.DB) *Service {
 		images:       newSQLiteImageRepo(db),
 		platformIDs:  newSQLitePlatformIDRepo(db),
 		completeness: newSQLiteCompletenessRepo(db),
+		mbSnapshots:  newSQLiteMBSnapshotRepo(db),
 	}
 }
 

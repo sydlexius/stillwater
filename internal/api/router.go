@@ -388,6 +388,9 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/refresh/link", wrapAuth(r.handleRefreshLink, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/reidentify", wrapAuth(r.handleReidentify, authMw))
 
+	// MusicBrainz contribution routes
+	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/musicbrainz/diffs", wrapAuth(r.handleGetMBDiffs, authMw))
+
 	// Image routes
 	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/images/upload", wrapAuth(r.handleImageUpload, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/images/fetch", wrapAuth(r.handleImageFetch, authMw))
