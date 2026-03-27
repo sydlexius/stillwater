@@ -246,9 +246,11 @@ func AuthenticateByName(ctx context.Context, baseURL, username, password string,
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
 
-	// DeviceId is a truncated SHA-256 hash of the base URL, providing a stable
-	// identifier for this Stillwater instance without exposing the actual URL.
-	deviceID := fmt.Sprintf("%x", sha256.Sum256([]byte(baseURL)))[:16]
+	// DeviceId is a truncated SHA-256 hash of the validated base URL, providing
+	// a stable identifier per server without exposing the actual URL. Using the
+	// cleaned URL ensures equivalent inputs (e.g. with/without trailing slash)
+	// produce the same device identity.
+	deviceID := fmt.Sprintf("%x", sha256.Sum256([]byte(cleaned)))[:16]
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf(
