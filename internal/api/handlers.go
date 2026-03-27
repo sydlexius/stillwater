@@ -268,6 +268,7 @@ func (r *Router) handleLogout(w http.ResponseWriter, req *http.Request) {
 		MaxAge:   -1,
 	})
 
+	w.Header().Set("HX-Redirect", strings.TrimRight(r.basePath, "/")+"/")
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
