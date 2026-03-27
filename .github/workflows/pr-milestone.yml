@@ -1,0 +1,138 @@
+# Automatically assign a milestone to PRs based on the issues they reference.
+# Parses "Fixes #N", "Closes #N", and "Resolves #N" from the PR body,
+# looks up each issue's milestone, and assigns the first one found.
+# Warns via comment if referenced issues have conflicting milestones.
+
+name: PR Milestone
+
+on:
+  pull_request_target:
+    types: [opened, edited]
+    branches: [main]
+
+permissions:
+  issues: read
+  pull-requests: write
+
+jobs:
+  assign-milestone:
+    runs-on: ubuntu-latest
+    # Skip bot PRs (Dependabot, etc.) -- they never reference milestone issues
+    if: github.event.pull_request.user.login != 'dependabot[bot]'
+    steps:
+      - name: Assign milestone from linked issues
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const body = pr.body || '';
+
+            // Parse issue references: Fixes #N, Closes #N, Resolves #N
+            const pattern = /(?:fix(?:es)?|close[sd]?|resolve[sd]?)\s+#(\d+)/gi;
+            const issueNumbers = [];
+            let match;
+            while ((match = pattern.exec(body)) !== null) {
+              const num = parseInt(match[1], 10);
+              if (!issueNumbers.includes(num)) {
+                issueNumbers.push(num);
+              }
+            }
+
+            if (issueNumbers.length === 0) {
+              core.info('No issue references found in PR body, skipping');
+              return;
+            }
+
+            core.info(`Found issue references: ${issueNumbers.map(n => '#' + n).join(', ')}`);
+
+            // Look up milestones for each referenced issue
+            const milestones = new Map();
+            for (const num of issueNumbers) {
+              try {
+                const issue = await github.rest.issues.get({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: num,
+                });
+                if (issue.data.pull_request) {
+                  core.info(`#${num} is a pull request, skipping`);
+                  continue;
+                }
+                if (issue.data.milestone) {
+                  const ms = issue.data.milestone;
+                  if (!milestones.has(ms.number)) {
+                    milestones.set(ms.number, { title: ms.title, number: ms.number, issues: [] });
+                  }
+                  milestones.get(ms.number).issues.push(num);
+                }
+              } catch (err) {
+                core.warning(`Could not fetch issue #${num}: ${err.message}`);
+              }
+            }
+
+            if (milestones.size === 0) {
+              core.info('No referenced issues have milestones, skipping');
+              return;
+            }
+
+            const entries = Array.from(milestones.values());
+            const target = entries[0];
+
+            // Warn if issues reference conflicting milestones (upsert to avoid spam)
+            if (milestones.size > 1) {
+              const sentinel = '<!-- pr-milestone-conflict -->';
+              const list = entries
+                .map(m => `- **${m.title}** (from ${m.issues.map(n => '#' + n).join(', ')})`)
+                .join('\n');
+              const warningBody = [
+                sentinel,
+                'This PR references issues from multiple milestones:',
+                '',
+                list,
+                '',
+                `Auto-assigned the milestone from the first match: **${target.title}**.`,
+                'Update manually if this is incorrect.',
+              ].join('\n');
+
+              // Find existing warning comment to update instead of creating a new one
+              const comments = await github.rest.issues.listComments({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr.number,
+              });
+              const existing = comments.data.find(c => c.body && c.body.includes(sentinel));
+
+              if (existing) {
+                await github.rest.issues.updateComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: existing.id,
+                  body: warningBody,
+                });
+                core.info('Updated existing conflict warning comment');
+              } else {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: pr.number,
+                  body: warningBody,
+                });
+              }
+
+              core.warning(`Conflicting milestones detected, assigned "${target.title}"`);
+            }
+
+            // Only auto-assign when the PR has no milestone; respect manual choices
+            if (pr.milestone) {
+              core.info(`PR already has milestone "${pr.milestone.title}", not overwriting`);
+              return;
+            }
+
+            await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: pr.number,
+              milestone: target.number,
+            });
+
+            core.info(`Assigned milestone "${target.title}" to PR #${pr.number}`);
