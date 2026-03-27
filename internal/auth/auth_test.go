@@ -1192,10 +1192,10 @@ func TestSetupFederated_CreatesUser(t *testing.T) {
 	}
 
 	// Verify the user exists with correct fields.
-	var username, passwordHash, authProvider, serverUserID string
+	var username, passwordHash, authProvider, providerID string
 	err = svc.db.QueryRowContext(ctx, `
-		SELECT username, password_hash, auth_provider, server_user_id FROM users
-	`).Scan(&username, &passwordHash, &authProvider, &serverUserID)
+		SELECT username, password_hash, auth_provider, provider_id FROM users
+	`).Scan(&username, &passwordHash, &authProvider, &providerID)
 	if err != nil {
 		t.Fatalf("querying user: %v", err)
 	}
@@ -1209,8 +1209,8 @@ func TestSetupFederated_CreatesUser(t *testing.T) {
 	if authProvider != "emby" {
 		t.Errorf("auth_provider = %q, want %q", authProvider, "emby")
 	}
-	if serverUserID != "emby-user-123" {
-		t.Errorf("server_user_id = %q, want %q", serverUserID, "emby-user-123")
+	if providerID != "emby-user-123" {
+		t.Errorf("provider_id = %q, want %q", providerID, "emby-user-123")
 	}
 }
 
@@ -1337,7 +1337,7 @@ func TestLoginFederated_SyncsUsername(t *testing.T) {
 	// Verify the username was updated in the database.
 	var username string
 	err = svc.db.QueryRowContext(ctx, `
-		SELECT username FROM users WHERE auth_provider = 'emby' AND server_user_id = 'emby-user-sync'
+		SELECT username FROM users WHERE auth_provider = 'emby' AND provider_id = 'emby-user-sync'
 	`).Scan(&username)
 	if err != nil {
 		t.Fatalf("querying username: %v", err)
@@ -1363,10 +1363,10 @@ func TestSetup_LocalUnchanged(t *testing.T) {
 	}
 
 	// Verify the user has local auth defaults.
-	var authProvider, serverUserID, passwordHash string
+	var authProvider, providerID, passwordHash string
 	err = svc.db.QueryRowContext(ctx, `
-		SELECT auth_provider, server_user_id, password_hash FROM users WHERE username = 'localadmin'
-	`).Scan(&authProvider, &serverUserID, &passwordHash)
+		SELECT auth_provider, provider_id, password_hash FROM users WHERE username = 'localadmin'
+	`).Scan(&authProvider, &providerID, &passwordHash)
 	if err != nil {
 		t.Fatalf("querying user: %v", err)
 	}
@@ -1374,8 +1374,8 @@ func TestSetup_LocalUnchanged(t *testing.T) {
 	if authProvider != "local" {
 		t.Errorf("auth_provider = %q, want %q", authProvider, "local")
 	}
-	if serverUserID != "" {
-		t.Errorf("server_user_id = %q, want empty string", serverUserID)
+	if providerID != "" {
+		t.Errorf("provider_id = %q, want empty string", providerID)
 	}
 	if passwordHash == "" {
 		t.Error("expected non-empty password_hash for local user")

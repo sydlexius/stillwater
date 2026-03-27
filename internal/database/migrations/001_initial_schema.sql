@@ -7,14 +7,17 @@
 -- =============================================================================
 
 CREATE TABLE IF NOT EXISTS users (
-    id TEXT PRIMARY KEY,
-    username TEXT NOT NULL UNIQUE,
+    id            TEXT PRIMARY KEY,
+    username      TEXT NOT NULL UNIQUE,
+    display_name  TEXT NOT NULL DEFAULT '',
     password_hash TEXT NOT NULL DEFAULT '',
-    role TEXT NOT NULL DEFAULT 'admin',
+    role          TEXT NOT NULL DEFAULT 'operator',
     auth_provider TEXT NOT NULL DEFAULT 'local',
-    server_user_id TEXT NOT NULL DEFAULT '',
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    provider_id   TEXT NOT NULL DEFAULT '',
+    is_active     INTEGER NOT NULL DEFAULT 1,
+    invited_by    TEXT REFERENCES users(id) ON DELETE SET NULL,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE TABLE IF NOT EXISTS sessions (
@@ -54,6 +57,19 @@ CREATE TABLE IF NOT EXISTS audit_log (
 
 CREATE INDEX idx_audit_log_token_id ON audit_log(token_id);
 CREATE INDEX idx_audit_log_user_id ON audit_log(user_id);
+
+CREATE TABLE IF NOT EXISTS invites (
+    id          TEXT PRIMARY KEY,
+    code        TEXT NOT NULL UNIQUE,
+    role        TEXT NOT NULL DEFAULT 'operator',
+    created_by  TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    expires_at  TEXT NOT NULL,
+    redeemed_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+    redeemed_at TEXT,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX idx_invites_code ON invites(code);
 
 -- =============================================================================
 -- Connections and Libraries
@@ -418,6 +434,9 @@ INSERT OR IGNORE INTO settings (key, value) VALUES ('musicbrainz.contributions',
 -- Authentication method (local, emby, jellyfin). Instance-level setting chosen during setup.
 INSERT OR IGNORE INTO settings (key, value) VALUES ('auth.method', 'local');
 
+-- Multi-user mode. When false, the instance operates in single-admin mode.
+INSERT OR IGNORE INTO settings (key, value) VALUES ('multi_user.enabled', 'false');
+
 -- Default rule: extraneous images.
 INSERT OR IGNORE INTO rules (id, name, description, category, enabled, config, automation_mode, created_at, updated_at)
 VALUES ('extraneous_images', 'Extraneous image files', 'Detects non-canonical image files that may cause display issues on media servers', 'image', 1, '{"severity":"warning"}', 'manual', datetime('now'), datetime('now'));
@@ -441,6 +460,7 @@ DROP TABLE IF EXISTS libraries;
 DROP TABLE IF EXISTS webhooks;
 DROP TABLE IF EXISTS platform_profiles;
 DROP TABLE IF EXISTS scraper_config;
+DROP TABLE IF EXISTS invites;
 DROP TABLE IF EXISTS api_tokens;
 DROP TABLE IF EXISTS sessions;
 DROP TABLE IF EXISTS connections;

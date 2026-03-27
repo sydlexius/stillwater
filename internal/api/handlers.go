@@ -123,7 +123,7 @@ func (r *Router) handleLoginFederated(w http.ResponseWriter, req *http.Request, 
 	token, err := r.authService.LoginFederated(req.Context(), fedResult, authMethod)
 	if err != nil {
 		if errors.Is(err, auth.ErrUserNotConfigured) {
-			r.logger.Warn("federated login: user not found", "method", authMethod, "server_user_id", result.User.ID)
+			r.logger.Warn("federated login: user not found", "method", authMethod, "provider_id", result.User.ID)
 			writeFormError(w, req, http.StatusUnauthorized, "This account is not authorized for this Stillwater instance.")
 		} else {
 			r.logger.Error("federated session creation failed", "method", authMethod, "error", err)
@@ -420,7 +420,7 @@ func (r *Router) handleSetupFederated(w http.ResponseWriter, req *http.Request, 
 			ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
 			k, v, now); err != nil {
 			r.logger.Error("failed to store auth setting, rolling back user", "key", k, "error", err)
-			_, _ = r.db.ExecContext(req.Context(), `DELETE FROM users WHERE auth_provider = ? AND server_user_id = ?`, authMethod, result.User.ID) //nolint:errcheck
+			_, _ = r.db.ExecContext(req.Context(), `DELETE FROM users WHERE auth_provider = ? AND provider_id = ?`, authMethod, result.User.ID) //nolint:errcheck
 			writeFormError(w, req, http.StatusInternalServerError, "An internal error occurred. Please try again.")
 			return
 		}
