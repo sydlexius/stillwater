@@ -1,0 +1,115 @@
+# Automatically assign a milestone to PRs based on the issues they reference.
+# Parses "Fixes #N", "Closes #N", and "Resolves #N" from the PR body,
+# looks up each issue's milestone, and assigns the first one found.
+# Warns via comment if referenced issues have conflicting milestones.
+
+name: PR Milestone
+
+on:
+  pull_request:
+    types: [opened, edited]
+    branches: [main]
+
+permissions:
+  issues: read
+  pull-requests: write
+
+jobs:
+  assign-milestone:
+    runs-on: ubuntu-latest
+    # Skip bot PRs (Dependabot, etc.) -- they never reference milestone issues
+    if: github.event.pull_request.user.login != 'dependabot[bot]'
+    steps:
+      - name: Assign milestone from linked issues
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const body = pr.body || '';
+
+            // Parse issue references: Fixes #N, Closes #N, Resolves #N
+            const pattern = /(?:fix(?:es)?|close[sd]?|resolve[sd]?)\s+#(\d+)/gi;
+            const issueNumbers = [];
+            let match;
+            while ((match = pattern.exec(body)) !== null) {
+              const num = parseInt(match[1], 10);
+              if (!issueNumbers.includes(num)) {
+                issueNumbers.push(num);
+              }
+            }
+
+            if (issueNumbers.length === 0) {
+              core.info('No issue references found in PR body, skipping');
+              return;
+            }
+
+            core.info(`Found issue references: ${issueNumbers.map(n => '#' + n).join(', ')}`);
+
+            // Look up milestones for each referenced issue
+            const milestones = new Map();
+            for (const num of issueNumbers) {
+              try {
+                const issue = await github.rest.issues.get({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: num,
+                });
+                if (issue.data.milestone) {
+                  const ms = issue.data.milestone;
+                  if (!milestones.has(ms.number)) {
+                    milestones.set(ms.number, { title: ms.title, number: ms.number, issues: [] });
+                  }
+                  milestones.get(ms.number).issues.push(num);
+                }
+              } catch (err) {
+                core.warning(`Could not fetch issue #${num}: ${err.message}`);
+              }
+            }
+
+            if (milestones.size === 0) {
+              core.info('No referenced issues have milestones, skipping');
+              return;
+            }
+
+            // If PR already has the correct milestone, skip
+            const entries = Array.from(milestones.values());
+            const target = entries[0];
+
+            if (pr.milestone && pr.milestone.number === target.number) {
+              core.info(`PR already has milestone "${target.title}", skipping`);
+              return;
+            }
+
+            // Warn if issues reference conflicting milestones
+            if (milestones.size > 1) {
+              const list = entries
+                .map(m => `- **${m.title}** (from ${m.issues.map(n => '#' + n).join(', ')})`)
+                .join('\n');
+              const body = [
+                `This PR references issues from multiple milestones:`,
+                '',
+                list,
+                '',
+                `Assigning the milestone from the first match: **${target.title}**.`,
+                'Update manually if this is incorrect.',
+              ].join('\n');
+
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr.number,
+                body: body,
+              });
+
+              core.warning(`Conflicting milestones detected, assigned "${target.title}"`);
+            }
+
+            // Assign the milestone
+            await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: pr.number,
+              milestone: target.number,
+            });
+
+            core.info(`Assigned milestone "${target.title}" to PR #${pr.number}`);
