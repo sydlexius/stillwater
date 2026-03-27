@@ -1,6 +1,6 @@
 package templates
 
-templ LoginPage(assets AssetPaths) {
+templ LoginPage(assets AssetPaths, authMethod string) {
 	<!DOCTYPE html>
 	<html lang="en" class="h-full">
 		<head>
@@ -45,7 +45,13 @@ templ LoginPage(assets AssetPaths) {
 							<img src={ assets.BasePath + "/static/img/favicon.svg" } alt="" class="h-12 w-12" aria-hidden="true"/>
 						</div>
 						<h1 class="mt-3 text-3xl font-bold text-blue-600 dark:text-blue-400">Stillwater</h1>
-						<h2 class="mt-2 text-sm text-gray-600 dark:text-gray-400">Sign in to your account</h2>
+						if authMethod == "emby" {
+							<h2 class="mt-2 text-sm text-gray-600 dark:text-gray-400">Sign in with your Emby account</h2>
+						} else if authMethod == "jellyfin" {
+							<h2 class="mt-2 text-sm text-gray-600 dark:text-gray-400">Sign in with your Jellyfin account</h2>
+						} else {
+							<h2 class="mt-2 text-sm text-gray-600 dark:text-gray-400">Sign in to your account</h2>
+						}
 					</div>
 					<form
 						method="post"
@@ -57,7 +63,11 @@ templ LoginPage(assets AssetPaths) {
 					>
 						<div>
 							<label for="username" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
-								Username
+								if authMethod == "emby" || authMethod == "jellyfin" {
+									Server Username
+								} else {
+									Username
+								}
 							</label>
 							<input
 								id="username"
@@ -70,7 +80,11 @@ templ LoginPage(assets AssetPaths) {
 						</div>
 						<div>
 							<label for="password" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
-								Password
+								if authMethod == "emby" || authMethod == "jellyfin" {
+									Server Password
+								} else {
+									Password
+								}
 							</label>
 							<input
 								id="password"
@@ -85,7 +99,13 @@ templ LoginPage(assets AssetPaths) {
 							type="submit"
 							class="flex w-full justify-center rounded-lg bg-blue-600 px-3 py-2.5 text-sm font-semibold text-white shadow-lg hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
 						>
-							Sign In
+							if authMethod == "emby" {
+								Sign In with Emby
+							} else if authMethod == "jellyfin" {
+								Sign In with Jellyfin
+							} else {
+								Sign In
+							}
 						</button>
 					</form>
 					<div id="login-result"></div>

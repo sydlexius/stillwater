@@ -211,7 +211,7 @@ func (r *Router) handleNFOSnapshotRestore(w http.ResponseWriter, req *http.Reque
 func (r *Router) handleNFODiffPage(w http.ResponseWriter, req *http.Request) {
 	userID := middleware.UserIDFromContext(req.Context())
 	if userID == "" {
-		renderTempl(w, req, templates.LoginPage(r.assets()))
+		r.renderLoginPage(w, req)
 		return
 	}
 

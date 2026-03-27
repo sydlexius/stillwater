@@ -78,3 +78,21 @@ type ArtistDetailItem struct {
 	LockData          bool              `json:"LockData"`
 	LockedFields      []string          `json:"LockedFields"`
 }
+
+// AuthResult holds the response from POST /Users/AuthenticateByName.
+type AuthResult struct {
+	AccessToken string   `json:"AccessToken"`
+	User        AuthUser `json:"User"`
+}
+
+// AuthUser contains user identity from the AuthenticateByName response.
+type AuthUser struct {
+	ID     string     `json:"Id"`
+	Name   string     `json:"Name"`
+	Policy UserPolicy `json:"Policy"`
+}
+
+// UserPolicy contains user permission flags from the media server.
+type UserPolicy struct {
+	IsAdministrator bool `json:"IsAdministrator"`
+}

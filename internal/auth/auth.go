@@ -408,6 +408,79 @@ func PrehashPassword(password string) []byte {
 	return []byte(hex.EncodeToString(h[:]))
 }
 
+// FederatedAuthResult holds the response from a media server's AuthenticateByName API.
+type FederatedAuthResult struct {
+	AccessToken string // Media server access token (becomes the connection API key)
+	UserID      string // Media server user ID
+	UserName    string // Display name from media server
+	IsAdmin     bool   // Whether the user is an administrator on the media server
+}
+
+// SetupFederated creates the initial admin account from a federated auth response.
+// The provider must be "emby" or "jellyfin". Returns true if a new account was created.
+func (s *Service) SetupFederated(ctx context.Context, result FederatedAuthResult, provider string) (bool, error) {
+	has, err := s.HasUsers(ctx)
+	if err != nil {
+		return false, fmt.Errorf("checking existing users: %w", err)
+	}
+	if has {
+		return false, nil
+	}
+
+	id := uuid.New().String()
+	_, err = s.db.ExecContext(ctx, `
+		INSERT INTO users (id, username, password_hash, role, auth_provider, server_user_id)
+		VALUES (?, ?, '', 'admin', ?, ?)
+	`, id, result.UserName, provider, result.UserID)
+	if err != nil {
+		return false, fmt.Errorf("creating federated admin user: %w", err)
+	}
+
+	return true, nil
+}
+
+// LoginFederated authenticates a federated user and returns a Stillwater session token.
+// The caller must have already validated credentials with the media server.
+func (s *Service) LoginFederated(ctx context.Context, result FederatedAuthResult, provider string) (string, error) {
+	var id, username string
+	err := s.db.QueryRowContext(ctx, `
+		SELECT id, username FROM users WHERE auth_provider = ? AND server_user_id = ?
+	`, provider, result.UserID).Scan(&id, &username)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", errors.New("user not configured on this instance")
+	}
+	if err != nil {
+		return "", fmt.Errorf("querying federated user: %w", err)
+	}
+
+	// Sync display name if it changed on the media server.
+	if result.UserName != username {
+		now := time.Now().UTC().Format(time.RFC3339)
+		_, err = s.db.ExecContext(ctx, `
+			UPDATE users SET username = ?, updated_at = ? WHERE id = ?
+		`, result.UserName, now, id)
+		if err != nil {
+			return "", fmt.Errorf("syncing federated username: %w", err)
+		}
+	}
+
+	token, err := generateToken()
+	if err != nil {
+		return "", fmt.Errorf("generating session token: %w", err)
+	}
+
+	expiresAt := time.Now().Add(sessionDuration).UTC().Format(time.RFC3339)
+	_, err = s.db.ExecContext(ctx, `
+		INSERT INTO sessions (id, user_id, expires_at)
+		VALUES (?, ?, ?)
+	`, token, id, expiresAt)
+	if err != nil {
+		return "", fmt.Errorf("creating federated session: %w", err)
+	}
+
+	return token, nil
+}
+
 func generateToken() (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {

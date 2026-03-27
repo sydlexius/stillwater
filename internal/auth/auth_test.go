@@ -1169,3 +1169,224 @@ func TestTokenStatusValues(t *testing.T) {
 		t.Errorf("TokenStatusRevoked = %q, want %q", TokenStatusRevoked, "revoked")
 	}
 }
+
+// --- SetupFederated tests ---
+
+func TestSetupFederated_CreatesUser(t *testing.T) {
+	svc := setupTestService(t)
+	ctx := context.Background()
+
+	result := FederatedAuthResult{
+		AccessToken: "emby-token-abc",
+		UserID:      "emby-user-123",
+		UserName:    "Alice",
+		IsAdmin:     true,
+	}
+
+	created, err := svc.SetupFederated(ctx, result, "emby")
+	if err != nil {
+		t.Fatalf("SetupFederated: %v", err)
+	}
+	if !created {
+		t.Error("expected SetupFederated to return true for first user")
+	}
+
+	// Verify the user exists with correct fields.
+	var username, passwordHash, authProvider, serverUserID string
+	err = svc.db.QueryRowContext(ctx, `
+		SELECT username, password_hash, auth_provider, server_user_id FROM users
+	`).Scan(&username, &passwordHash, &authProvider, &serverUserID)
+	if err != nil {
+		t.Fatalf("querying user: %v", err)
+	}
+
+	if username != "Alice" {
+		t.Errorf("username = %q, want %q", username, "Alice")
+	}
+	if passwordHash != "" {
+		t.Errorf("password_hash = %q, want empty string", passwordHash)
+	}
+	if authProvider != "emby" {
+		t.Errorf("auth_provider = %q, want %q", authProvider, "emby")
+	}
+	if serverUserID != "emby-user-123" {
+		t.Errorf("server_user_id = %q, want %q", serverUserID, "emby-user-123")
+	}
+}
+
+func TestSetupFederated_RejectsWhenUsersExist(t *testing.T) {
+	// Create a local user first using the existing Setup method.
+	svc := createTestUser(t, "password123")
+	ctx := context.Background()
+
+	result := FederatedAuthResult{
+		AccessToken: "emby-token-abc",
+		UserID:      "emby-user-456",
+		UserName:    "Bob",
+		IsAdmin:     true,
+	}
+
+	created, err := svc.SetupFederated(ctx, result, "emby")
+	if err != nil {
+		t.Fatalf("SetupFederated: %v", err)
+	}
+	if created {
+		t.Error("expected SetupFederated to return false when users already exist")
+	}
+}
+
+// --- LoginFederated tests ---
+
+func TestLoginFederated_Success(t *testing.T) {
+	svc := setupTestService(t)
+	ctx := context.Background()
+
+	// Set up a federated user first.
+	result := FederatedAuthResult{
+		AccessToken: "jf-token-xyz",
+		UserID:      "jf-user-789",
+		UserName:    "Charlie",
+		IsAdmin:     true,
+	}
+	created, err := svc.SetupFederated(ctx, result, "jellyfin")
+	if err != nil {
+		t.Fatalf("SetupFederated: %v", err)
+	}
+	if !created {
+		t.Fatal("expected user to be created")
+	}
+
+	// Login with the same federated identity.
+	token, err := svc.LoginFederated(ctx, result, "jellyfin")
+	if err != nil {
+		t.Fatalf("LoginFederated: %v", err)
+	}
+	if token == "" {
+		t.Error("expected non-empty session token")
+	}
+	// Session token should be a hex string (64 chars for 32 bytes).
+	if len(token) != 64 {
+		t.Errorf("token length = %d, want 64", len(token))
+	}
+
+	// Verify the session is valid.
+	userID, err := svc.ValidateSession(ctx, token)
+	if err != nil {
+		t.Fatalf("ValidateSession: %v", err)
+	}
+	if userID == "" {
+		t.Error("expected non-empty user ID from session validation")
+	}
+}
+
+func TestLoginFederated_UnknownUser(t *testing.T) {
+	svc := setupTestService(t)
+	ctx := context.Background()
+
+	// Attempt to login without any user setup.
+	result := FederatedAuthResult{
+		AccessToken: "emby-token-unknown",
+		UserID:      "emby-user-unknown",
+		UserName:    "Nobody",
+		IsAdmin:     false,
+	}
+
+	_, err := svc.LoginFederated(ctx, result, "emby")
+	if err == nil {
+		t.Fatal("expected error for unknown federated user")
+	}
+	if !strings.Contains(err.Error(), "user not configured on this instance") {
+		t.Errorf("error = %q, want 'user not configured on this instance'", err.Error())
+	}
+}
+
+func TestLoginFederated_SyncsUsername(t *testing.T) {
+	svc := setupTestService(t)
+	ctx := context.Background()
+
+	// Set up a federated user with name "Alice".
+	setupResult := FederatedAuthResult{
+		AccessToken: "emby-token-sync",
+		UserID:      "emby-user-sync",
+		UserName:    "Alice",
+		IsAdmin:     true,
+	}
+	created, err := svc.SetupFederated(ctx, setupResult, "emby")
+	if err != nil {
+		t.Fatalf("SetupFederated: %v", err)
+	}
+	if !created {
+		t.Fatal("expected user to be created")
+	}
+
+	// Login with the same server user ID but a different display name.
+	loginResult := FederatedAuthResult{
+		AccessToken: "emby-token-sync-2",
+		UserID:      "emby-user-sync",
+		UserName:    "Bob",
+		IsAdmin:     true,
+	}
+	token, err := svc.LoginFederated(ctx, loginResult, "emby")
+	if err != nil {
+		t.Fatalf("LoginFederated: %v", err)
+	}
+	if token == "" {
+		t.Error("expected non-empty session token")
+	}
+
+	// Verify the username was updated in the database.
+	var username string
+	err = svc.db.QueryRowContext(ctx, `
+		SELECT username FROM users WHERE auth_provider = 'emby' AND server_user_id = 'emby-user-sync'
+	`).Scan(&username)
+	if err != nil {
+		t.Fatalf("querying username: %v", err)
+	}
+	if username != "Bob" {
+		t.Errorf("username = %q, want %q after sync", username, "Bob")
+	}
+}
+
+// --- Regression: local auth unchanged ---
+
+func TestSetup_LocalUnchanged(t *testing.T) {
+	svc := setupTestService(t)
+	ctx := context.Background()
+
+	// Create a local admin account using the original Setup method.
+	created, err := svc.Setup(ctx, "localadmin", "localpass")
+	if err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+	if !created {
+		t.Error("expected Setup to return true for first user")
+	}
+
+	// Verify the user has local auth defaults.
+	var authProvider, serverUserID, passwordHash string
+	err = svc.db.QueryRowContext(ctx, `
+		SELECT auth_provider, server_user_id, password_hash FROM users WHERE username = 'localadmin'
+	`).Scan(&authProvider, &serverUserID, &passwordHash)
+	if err != nil {
+		t.Fatalf("querying user: %v", err)
+	}
+
+	if authProvider != "local" {
+		t.Errorf("auth_provider = %q, want %q", authProvider, "local")
+	}
+	if serverUserID != "" {
+		t.Errorf("server_user_id = %q, want empty string", serverUserID)
+	}
+	if passwordHash == "" {
+		t.Error("expected non-empty password_hash for local user")
+	}
+
+	// Verify login still works.
+	token, err := svc.Login(ctx, "localadmin", "localpass")
+	if err != nil {
+		t.Fatalf("Login: %v", err)
+	}
+	if token == "" {
+		t.Error("expected non-empty session token from local login")
+	}
+}

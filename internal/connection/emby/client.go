@@ -1,8 +1,13 @@
 package emby
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -10,7 +15,11 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/connection/httpclient"
+	"github.com/sydlexius/stillwater/internal/version"
 )
+
+// ErrInvalidCredentials is returned when the media server rejects the credentials.
+var ErrInvalidCredentials = errors.New("invalid credentials")
 
 // Client communicates with an Emby server.
 type Client struct {
@@ -200,6 +209,68 @@ func (c *Client) GetArtistDetail(ctx context.Context, platformArtistID string) (
 		IsLocked:      item.LockData,
 		LockedFields:  item.LockedFields,
 	}, nil
+}
+
+// AuthenticateByName authenticates a user against an Emby server using
+// username and password. This is a package-level function because it does not
+// require an existing API key; authentication is the mechanism for obtaining one.
+func AuthenticateByName(ctx context.Context, baseURL, username, password string, logger *slog.Logger) (*AuthResult, error) {
+	cleaned, err := connection.ValidateBaseURL(baseURL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid base URL: %w", err)
+	}
+
+	reqURL := connection.BuildRequestURL(cleaned, "/Users/AuthenticateByName")
+
+	body, err := json.Marshal(map[string]string{
+		"Username": username,
+		"Pw":       password,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("encoding request body: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+
+	// DeviceId is a truncated SHA-256 hash of the base URL, providing a stable
+	// identifier for this Stillwater instance without exposing the actual URL.
+	deviceID := fmt.Sprintf("%x", sha256.Sum256([]byte(baseURL)))[:16]
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf(
+		`Emby UserId="", Client="Stillwater", Device="Server", DeviceId="%s", Version="%s"`,
+		deviceID, version.Version,
+	))
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("sending request: %w", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		var result AuthResult
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			return nil, fmt.Errorf("decoding response: %w", err)
+		}
+		if result.AccessToken == "" || result.User.ID == "" {
+			return nil, fmt.Errorf("incomplete authentication response: missing access token or user ID")
+		}
+		logger.Debug("emby authentication successful", "user", result.User.Name)
+		return &result, nil
+	case http.StatusUnauthorized:
+		// Drain the body so the connection can be reused.
+		_, _ = io.Copy(io.Discard, resp.Body)
+		return nil, ErrInvalidCredentials
+	default:
+		_, _ = io.Copy(io.Discard, resp.Body)
+		return nil, fmt.Errorf("authentication failed: HTTP %d", resp.StatusCode)
+	}
 }
 
 func (c *Client) setAuth(req *http.Request) {

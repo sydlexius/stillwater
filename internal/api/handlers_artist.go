@@ -83,7 +83,7 @@ func intQuery(r *http.Request, key string, def int) int {
 func (r *Router) handleArtistsPage(w http.ResponseWriter, req *http.Request) {
 	userID := middleware.UserIDFromContext(req.Context())
 	if userID == "" {
-		renderTempl(w, req, templates.LoginPage(r.assets()))
+		r.renderLoginPage(w, req)
 		return
 	}
 
@@ -211,7 +211,7 @@ func (r *Router) handleArtistsPage(w http.ResponseWriter, req *http.Request) {
 func (r *Router) handleArtistDetailPage(w http.ResponseWriter, req *http.Request) {
 	userID := middleware.UserIDFromContext(req.Context())
 	if userID == "" {
-		renderTempl(w, req, templates.LoginPage(r.assets()))
+		r.renderLoginPage(w, req)
 		return
 	}
 
@@ -260,7 +260,7 @@ func (r *Router) handleArtistDetailPage(w http.ResponseWriter, req *http.Request
 func (r *Router) handleArtistImagesPage(w http.ResponseWriter, req *http.Request) {
 	userID := middleware.UserIDFromContext(req.Context())
 	if userID == "" {
-		renderTempl(w, req, templates.LoginPage(r.assets()))
+		r.renderLoginPage(w, req)
 		return
 	}
 

@@ -446,7 +446,7 @@ func complianceListParams(req *http.Request) artist.ListParams {
 func (r *Router) handleCompliancePage(w http.ResponseWriter, req *http.Request) {
 	userID := middleware.UserIDFromContext(req.Context())
 	if userID == "" {
-		renderTempl(w, req, templates.LoginPage(r.assets()))
+		r.renderLoginPage(w, req)
 		return
 	}
 
