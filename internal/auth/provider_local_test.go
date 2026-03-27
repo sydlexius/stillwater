@@ -53,15 +53,36 @@ func TestLocalProviderAuthenticate(t *testing.T) {
 }
 
 func TestLocalProviderType(t *testing.T) {
-	provider := NewLocalProvider(nil)
+	db, err := database.Open(":memory:")
+	if err != nil {
+		t.Fatalf("opening test db: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	provider := NewLocalProvider(db)
 	if provider.Type() != "local" {
 		t.Errorf("Type() = %q, want %q", provider.Type(), "local")
 	}
 }
 
 func TestLocalProviderAutoProvision(t *testing.T) {
-	provider := NewLocalProvider(nil)
+	db, err := database.Open(":memory:")
+	if err != nil {
+		t.Fatalf("opening test db: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	provider := NewLocalProvider(db)
 	if provider.CanAutoProvision(nil) {
 		t.Error("local provider should never auto-provision")
 	}
+}
+
+func TestNewLocalProvider_NilDB(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("expected panic for nil db")
+		}
+	}()
+	NewLocalProvider(nil)
 }

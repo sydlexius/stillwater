@@ -7,8 +7,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 	"time"
+
+	"github.com/sydlexius/stillwater/internal/connection"
 )
 
 // EmbyProvider authenticates users against an Emby server.
@@ -21,14 +22,19 @@ type EmbyProvider struct {
 }
 
 // NewEmbyProvider creates an Emby authenticator.
-func NewEmbyProvider(serverURL string, autoProvision bool, guardRail, defaultRole string) *EmbyProvider {
+// The serverURL is validated using connection.ValidateBaseURL.
+func NewEmbyProvider(serverURL string, autoProvision bool, guardRail, defaultRole string) (*EmbyProvider, error) {
+	cleaned, err := connection.ValidateBaseURL(serverURL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid emby server URL: %w", err)
+	}
 	return &EmbyProvider{
-		serverURL:     strings.TrimRight(serverURL, "/"),
+		serverURL:     cleaned,
 		autoProvision: autoProvision,
 		guardRail:     guardRail,
 		defaultRole:   defaultRole,
 		client:        &http.Client{Timeout: 10 * time.Second},
-	}
+	}, nil
 }
 
 // Type returns "emby".
@@ -44,9 +50,8 @@ func (p *EmbyProvider) Authenticate(ctx context.Context, creds Credentials) (*Id
 		return nil, fmt.Errorf("encoding emby auth request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		p.serverURL+"/Users/AuthenticateByName",
-		bytes.NewReader(bodyBytes))
+	reqURL := p.serverURL + "/Users/AuthenticateByName"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, bytes.NewReader(bodyBytes)) //nolint:gosec // G107: URL validated by connection.ValidateBaseURL in constructor
 	if err != nil {
 		return nil, fmt.Errorf("creating emby auth request: %w", err)
 	}
@@ -98,7 +103,7 @@ func (p *EmbyProvider) Authenticate(ctx context.Context, creds Credentials) (*Id
 // CanAutoProvision checks if the identity meets the configured guard rail.
 // Defaults to restrictive (false) on unknown guard rail values.
 func (p *EmbyProvider) CanAutoProvision(identity *Identity) bool {
-	if !p.autoProvision {
+	if identity == nil || !p.autoProvision {
 		return false
 	}
 	switch p.guardRail {
@@ -113,6 +118,9 @@ func (p *EmbyProvider) CanAutoProvision(identity *Identity) bool {
 
 // MapRole maps Emby admin status to a Stillwater role.
 func (p *EmbyProvider) MapRole(identity *Identity) string {
+	if identity == nil {
+		return p.defaultRole
+	}
 	if identity.IsAdmin {
 		return "administrator"
 	}

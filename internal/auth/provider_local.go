@@ -15,7 +15,11 @@ type LocalProvider struct {
 }
 
 // NewLocalProvider creates a local password authenticator.
+// Panics if db is nil (startup-time misconfiguration).
 func NewLocalProvider(db *sql.DB) *LocalProvider {
+	if db == nil {
+		panic("auth: NewLocalProvider called with nil db")
+	}
 	return &LocalProvider{db: db}
 }
 

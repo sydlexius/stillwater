@@ -7,8 +7,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 	"time"
+
+	"github.com/sydlexius/stillwater/internal/connection"
 )
 
 // JellyfinProvider authenticates users against a Jellyfin server.
@@ -21,14 +22,19 @@ type JellyfinProvider struct {
 }
 
 // NewJellyfinProvider creates a Jellyfin authenticator.
-func NewJellyfinProvider(serverURL string, autoProvision bool, guardRail, defaultRole string) *JellyfinProvider {
+// The serverURL is validated using connection.ValidateBaseURL.
+func NewJellyfinProvider(serverURL string, autoProvision bool, guardRail, defaultRole string) (*JellyfinProvider, error) {
+	cleaned, err := connection.ValidateBaseURL(serverURL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid jellyfin server URL: %w", err)
+	}
 	return &JellyfinProvider{
-		serverURL:     strings.TrimRight(serverURL, "/"),
+		serverURL:     cleaned,
 		autoProvision: autoProvision,
 		guardRail:     guardRail,
 		defaultRole:   defaultRole,
 		client:        &http.Client{Timeout: 10 * time.Second},
-	}
+	}, nil
 }
 
 // Type returns "jellyfin".
@@ -44,9 +50,8 @@ func (p *JellyfinProvider) Authenticate(ctx context.Context, creds Credentials) 
 		return nil, fmt.Errorf("encoding jellyfin auth request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		p.serverURL+"/Users/AuthenticateByName",
-		bytes.NewReader(bodyBytes))
+	reqURL := p.serverURL + "/Users/AuthenticateByName"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, bytes.NewReader(bodyBytes)) //nolint:gosec // G107: URL validated by connection.ValidateBaseURL in constructor
 	if err != nil {
 		return nil, fmt.Errorf("creating jellyfin auth request: %w", err)
 	}
@@ -98,7 +103,7 @@ func (p *JellyfinProvider) Authenticate(ctx context.Context, creds Credentials) 
 // CanAutoProvision checks if the identity meets the configured guard rail.
 // Defaults to restrictive (false) on unknown guard rail values.
 func (p *JellyfinProvider) CanAutoProvision(identity *Identity) bool {
-	if !p.autoProvision {
+	if identity == nil || !p.autoProvision {
 		return false
 	}
 	switch p.guardRail {
@@ -113,6 +118,9 @@ func (p *JellyfinProvider) CanAutoProvision(identity *Identity) bool {
 
 // MapRole maps Jellyfin admin status to a Stillwater role.
 func (p *JellyfinProvider) MapRole(identity *Identity) string {
+	if identity == nil {
+		return p.defaultRole
+	}
 	if identity.IsAdmin {
 		return "administrator"
 	}
