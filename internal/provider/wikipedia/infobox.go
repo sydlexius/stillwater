@@ -213,16 +213,24 @@ func parseListField(value string) []string {
 
 	// After hlist unwrapping, items are pipe-separated (e.g. "[[Rock]]|[[Pop]]").
 	// Split on pipes that are outside wikilinks and templates.
+	// Skip segments that look like template parameters (contain "=" before content),
+	// e.g. "class=nowrap" from {{hlist|class=nowrap|[[A]]|[[B]]}}.
 	if strings.Contains(value, "|") && !strings.Contains(value, "\n*") {
 		pipeItems := splitOnTopLevelPipes(value)
 		if len(pipeItems) > 1 {
 			for _, part := range pipeItems {
-				item := cleanMarkup(part)
+				trimmed := strings.TrimSpace(part)
+				if strings.Contains(trimmed, "=") {
+					continue
+				}
+				item := cleanMarkup(trimmed)
 				if item != "" {
 					items = append(items, item)
 				}
 			}
-			return items
+			if len(items) > 0 {
+				return items
+			}
 		}
 	}
 
@@ -259,8 +267,10 @@ func parseListField(value string) []string {
 	}
 
 	// Fall back to comma separation if the value looks like a comma list.
+	// Use bracket-aware splitting so commas inside wikilinks
+	// (e.g. [[Crosby, Stills, Nash & Young]]) are not treated as separators.
 	if strings.Contains(value, ",") {
-		parts := strings.Split(value, ",")
+		parts := splitOnTopLevelCommas(value)
 		for _, part := range parts {
 			item := cleanMarkup(part)
 			if item != "" {
@@ -491,6 +501,49 @@ func splitOnTopLevelPipes(s string) []string {
 			continue
 		}
 		if s[i] == '|' && braceDepth == 0 && bracketDepth == 0 {
+			parts = append(parts, s[start:i])
+			start = i + 1
+		}
+	}
+	parts = append(parts, s[start:])
+	return parts
+}
+
+// splitOnTopLevelCommas splits s on commas that are outside
+// wikilinks ([[ ]]) and templates ({{ }}).
+func splitOnTopLevelCommas(s string) []string {
+	var parts []string
+	braceDepth := 0
+	bracketDepth := 0
+	start := 0
+	for i := 0; i < len(s); i++ {
+		if i+1 < len(s) && s[i] == '{' && s[i+1] == '{' {
+			braceDepth++
+			i++
+			continue
+		}
+		if i+1 < len(s) && s[i] == '}' && s[i+1] == '}' {
+			braceDepth--
+			if braceDepth < 0 {
+				braceDepth = 0
+			}
+			i++
+			continue
+		}
+		if i+1 < len(s) && s[i] == '[' && s[i+1] == '[' {
+			bracketDepth++
+			i++
+			continue
+		}
+		if i+1 < len(s) && s[i] == ']' && s[i+1] == ']' {
+			bracketDepth--
+			if bracketDepth < 0 {
+				bracketDepth = 0
+			}
+			i++
+			continue
+		}
+		if s[i] == ',' && braceDepth == 0 && bracketDepth == 0 {
 			parts = append(parts, s[start:i])
 			start = i + 1
 		}

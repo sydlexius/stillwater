@@ -319,6 +319,16 @@ func TestParseListField(t *testing.T) {
 			"[[Alternative rock]]",
 			[]string{"Alternative rock"},
 		},
+		{
+			"hlist with class param",
+			"{{hlist|class=nowrap|[[Electronic music|Electronic]]|[[House music|house]]}}",
+			[]string{"Electronic", "house"},
+		},
+		{
+			"comma inside wikilink preserved",
+			"[[Crosby, Stills, Nash & Young]], [[The Beatles]]",
+			[]string{"Crosby, Stills, Nash & Young", "The Beatles"},
+		},
 	}
 
 	for _, tt := range tests {
