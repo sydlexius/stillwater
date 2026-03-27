@@ -29,6 +29,9 @@ func OptionalAuth(authService *auth.Service) func(http.Handler) http.Handler {
 						ctx := context.WithValue(r.Context(), userIDKey, userID)
 						ctx = context.WithValue(ctx, authMethodKey, "api_token")
 						ctx = context.WithValue(ctx, tokenScopesKey, scopes)
+						if role, err := authService.GetUserRole(ctx, userID); err == nil {
+							ctx = context.WithValue(ctx, userRoleKey, role)
+						}
 						next.ServeHTTP(w, r.WithContext(ctx))
 						return
 					}
@@ -36,6 +39,9 @@ func OptionalAuth(authService *auth.Service) func(http.Handler) http.Handler {
 					if userID, err := authService.ValidateSession(r.Context(), token); err == nil {
 						ctx := context.WithValue(r.Context(), userIDKey, userID)
 						ctx = context.WithValue(ctx, authMethodKey, "session")
+						if role, err := authService.GetUserRole(ctx, userID); err == nil {
+							ctx = context.WithValue(ctx, userRoleKey, role)
+						}
 						next.ServeHTTP(w, r.WithContext(ctx))
 						return
 					}
@@ -65,6 +71,9 @@ func Auth(authService *auth.Service) func(http.Handler) http.Handler {
 				ctx := context.WithValue(r.Context(), userIDKey, userID)
 				ctx = context.WithValue(ctx, authMethodKey, "api_token")
 				ctx = context.WithValue(ctx, tokenScopesKey, scopes)
+				if role, err := authService.GetUserRole(ctx, userID); err == nil {
+					ctx = context.WithValue(ctx, userRoleKey, role)
+				}
 				next.ServeHTTP(w, r.WithContext(ctx))
 				return
 			}
@@ -77,6 +86,9 @@ func Auth(authService *auth.Service) func(http.Handler) http.Handler {
 
 			ctx := context.WithValue(r.Context(), userIDKey, userID)
 			ctx = context.WithValue(ctx, authMethodKey, "session")
+			if role, err := authService.GetUserRole(ctx, userID); err == nil {
+				ctx = context.WithValue(ctx, userRoleKey, role)
+			}
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
