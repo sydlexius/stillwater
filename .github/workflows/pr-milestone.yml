@@ -6,7 +6,7 @@
 name: PR Milestone
 
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, edited]
     branches: [main]
 
@@ -54,6 +54,10 @@ jobs:
                   repo: context.repo.repo,
                   issue_number: num,
                 });
+                if (issue.data.pull_request) {
+                  core.info(`#${num} is a pull request, skipping`);
+                  continue;
+                }
                 if (issue.data.milestone) {
                   const ms = issue.data.milestone;
                   if (!milestones.has(ms.number)) {
@@ -71,40 +75,59 @@ jobs:
               return;
             }
 
-            // If PR already has the correct milestone, skip
             const entries = Array.from(milestones.values());
             const target = entries[0];
 
-            if (pr.milestone && pr.milestone.number === target.number) {
-              core.info(`PR already has milestone "${target.title}", skipping`);
-              return;
-            }
-
-            // Warn if issues reference conflicting milestones
+            // Warn if issues reference conflicting milestones (upsert to avoid spam)
             if (milestones.size > 1) {
+              const sentinel = '<!-- pr-milestone-conflict -->';
               const list = entries
                 .map(m => `- **${m.title}** (from ${m.issues.map(n => '#' + n).join(', ')})`)
                 .join('\n');
-              const body = [
-                `This PR references issues from multiple milestones:`,
+              const warningBody = [
+                sentinel,
+                'This PR references issues from multiple milestones:',
                 '',
                 list,
                 '',
-                `Assigning the milestone from the first match: **${target.title}**.`,
+                `Auto-assigned the milestone from the first match: **${target.title}**.`,
                 'Update manually if this is incorrect.',
               ].join('\n');
 
-              await github.rest.issues.createComment({
+              // Find existing warning comment to update instead of creating a new one
+              const comments = await github.rest.issues.listComments({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: pr.number,
-                body: body,
               });
+              const existing = comments.data.find(c => c.body && c.body.includes(sentinel));
+
+              if (existing) {
+                await github.rest.issues.updateComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: existing.id,
+                  body: warningBody,
+                });
+                core.info('Updated existing conflict warning comment');
+              } else {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: pr.number,
+                  body: warningBody,
+                });
+              }
 
               core.warning(`Conflicting milestones detected, assigned "${target.title}"`);
             }
 
-            // Assign the milestone
+            // Only auto-assign when the PR has no milestone; respect manual choices
+            if (pr.milestone) {
+              core.info(`PR already has milestone "${pr.milestone.title}", not overwriting`);
+              return;
+            }
+
             await github.rest.issues.update({
               owner: context.repo.owner,
               repo: context.repo.repo,
