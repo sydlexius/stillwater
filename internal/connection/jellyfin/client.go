@@ -13,8 +13,6 @@ import (
 	"strings"
 	"time"
 
-	"net/url"
-
 	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/connection/httpclient"
 	"github.com/sydlexius/stillwater/internal/version"
@@ -230,16 +228,6 @@ func AuthenticateByName(ctx context.Context, baseURL, username, password string,
 		return nil, fmt.Errorf("invalid base URL: %w", err)
 	}
 
-	// Parse the validated base URL and construct a new url.URL from its
-	// components. Building from a struct literal breaks CodeQL taint tracking
-	// (go/request-forgery) while preserving the validated scheme and host.
-	parsed, _ := url.Parse(cleaned) // safe: ValidateBaseURL already validated
-	target := url.URL{
-		Scheme: parsed.Scheme,
-		Host:   parsed.Host,
-		Path:   parsed.Path + "/Users/AuthenticateByName",
-	}
-
 	body, err := json.Marshal(map[string]string{
 		"Username": username,
 		"Pw":       password,
@@ -248,7 +236,12 @@ func AuthenticateByName(ctx context.Context, baseURL, username, password string,
 		return nil, fmt.Errorf("encoding request body: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target.String(), bytes.NewReader(body))
+	// The URL is built from a validated base (ValidateBaseURL enforces http/https,
+	// rejects credentials, query strings, and fragments) plus a fixed API path.
+	// BuildRequestURL reconstructs the URL from parsed components via a url.URL
+	// struct literal, preventing path-based request target override.
+	reqURL := connection.BuildRequestURL(cleaned, "/Users/AuthenticateByName")
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, bytes.NewReader(body)) //nolint:gosec // G107: URL is validated by connection.ValidateBaseURL
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}

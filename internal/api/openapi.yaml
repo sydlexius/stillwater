@@ -6151,6 +6151,7 @@ paths:
   /artists/{id}/musicbrainz/diffs:
     get:
       tags: [Artists]
+      operationId: getArtistMusicBrainzDiffs
       summary: Get metadata diffs between Stillwater and MusicBrainz
       description: >
         Returns computed diffs between the current Stillwater metadata and the
