@@ -34,6 +34,7 @@ import (
 // RouterDeps bundles all dependencies needed by the HTTP router.
 type RouterDeps struct {
 	AuthService        *auth.Service
+	AuthRegistry       *auth.Registry
 	ArtistService      *artist.Service
 	HistoryService     *artist.HistoryService
 	ScannerService     *scanner.Service
@@ -75,6 +76,7 @@ type RouterDeps struct {
 // Router sets up all HTTP routes for the application.
 type Router struct {
 	authService        *auth.Service
+	authRegistry       *auth.Registry
 	artistService      *artist.Service
 	historyService     *artist.HistoryService
 	scannerService     *scanner.Service
@@ -128,6 +130,7 @@ type Router struct {
 func NewRouter(deps RouterDeps) *Router {
 	return &Router{
 		authService:        deps.AuthService,
+		authRegistry:       deps.AuthRegistry,
 		artistService:      deps.ArtistService,
 		historyService:     deps.HistoryService,
 		scannerService:     deps.ScannerService,
@@ -207,6 +210,15 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("GET "+bp+"/api/v1/auth/tokens", wrapAuth(r.handleListAPITokens, authMw))
 	mux.HandleFunc("DELETE "+bp+"/api/v1/auth/tokens/{id}", wrapAuth(r.handleRevokeAPIToken, authMw))
 	mux.HandleFunc("DELETE "+bp+"/api/v1/auth/tokens/{id}/permanent", wrapAuth(r.handleDeleteAPIToken, authMw))
+	// User management routes
+	mux.HandleFunc("POST "+bp+"/api/v1/users/invites", wrapAuth(middleware.RequireAdmin(r.handleCreateInvite), authMw))
+	mux.HandleFunc("GET "+bp+"/api/v1/users/invites", wrapAuth(middleware.RequireAdmin(r.handleListInvites), authMw))
+	mux.HandleFunc("DELETE "+bp+"/api/v1/users/invites/{id}", wrapAuth(middleware.RequireAdmin(r.handleRevokeInvite), authMw))
+	mux.HandleFunc("GET "+bp+"/api/v1/users", wrapAuth(middleware.RequireAdmin(r.handleListUsers), authMw))
+	mux.HandleFunc("GET "+bp+"/api/v1/users/{id}", wrapAuth(r.handleGetUser, authMw))
+	mux.HandleFunc("PATCH "+bp+"/api/v1/users/{id}", wrapAuth(middleware.RequireAdmin(r.handleUpdateUser), authMw))
+	mux.HandleFunc("DELETE "+bp+"/api/v1/users/{id}", wrapAuth(middleware.RequireAdmin(r.handleDeactivateUser), authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/users/register", r.handleRegister)
 	mux.HandleFunc("GET "+bp+"/api/v1/artists", wrapAuth(r.handleListArtists, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/locked", wrapAuth(r.handleListLockedArtists, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}", wrapAuth(r.handleGetArtist, authMw))
@@ -456,6 +468,7 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	csrfExempt := []string{
 		bp + "/api/v1/auth/login",
 		bp + "/api/v1/auth/setup",
+		bp + "/api/v1/users/register",
 	}
 	var handler http.Handler = mux
 	handler = csrfWithExemptions(csrf, handler, csrfExempt)

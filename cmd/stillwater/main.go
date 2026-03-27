@@ -152,6 +152,25 @@ func run() error {
 
 	// Initialize services
 	authService := auth.NewService(db)
+
+	// Build the auth provider registry from the stored auth.method setting.
+	// The local provider is always registered. Federated providers are added
+	// when their corresponding auth.method is configured and a server URL is set.
+	authRegistry := auth.NewRegistry()
+	authRegistry.Register(auth.NewLocalProvider(db))
+	{
+		authMethod := getDBStringSetting(db, context.Background(), "auth.method", "local")
+		authServerURL := getDBStringSetting(db, context.Background(), "auth.server_url", "")
+		if authServerURL != "" {
+			switch authMethod {
+			case "emby":
+				authRegistry.Register(auth.NewEmbyProvider(authServerURL, false, "admin", "operator"))
+			case "jellyfin":
+				authRegistry.Register(auth.NewJellyfinProvider(authServerURL, false, "admin", "operator"))
+			}
+		}
+	}
+
 	artistService := artist.NewService(db)
 	historyService := artist.NewHistoryService(db)
 	artistService.SetHistoryService(historyService)
@@ -374,6 +393,7 @@ func run() error {
 	// Set up HTTP router
 	router := api.NewRouter(api.RouterDeps{
 		AuthService:        authService,
+		AuthRegistry:       authRegistry,
 		ArtistService:      artistService,
 		HistoryService:     historyService,
 		ScannerService:     scannerService,

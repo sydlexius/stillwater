@@ -292,6 +292,52 @@ func (s *Service) CreateFederatedUser(ctx context.Context, identity *Identity, r
 	return s.GetUserByID(ctx, id)
 }
 
+// SyncDisplayName updates the username and display_name fields for a user to
+// match a new display name from an external provider. It is a best-effort
+// operation called during federated login to keep the stored name current.
+func (s *Service) SyncDisplayName(ctx context.Context, userID, displayName string) error {
+	now := time.Now().UTC().Format(time.RFC3339)
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE users SET username = ?, display_name = ?, updated_at = ? WHERE id = ?
+	`, displayName, displayName, now, userID)
+	if err != nil {
+		return fmt.Errorf("syncing display name: %w", err)
+	}
+	return nil
+}
+
+// GetUserByProvider returns the user whose auth_provider and provider_id match
+// the given values. Returns an error wrapping sql.ErrNoRows if not found.
+func (s *Service) GetUserByProvider(ctx context.Context, authProvider, providerID string) (*User, error) {
+	var u User
+	var invitedBy sql.NullString
+	var pID sql.NullString
+
+	err := s.db.QueryRowContext(ctx, `
+		SELECT id, username, display_name, role, auth_provider, provider_id,
+		       is_active, invited_by, created_at, updated_at
+		FROM users WHERE auth_provider = ? AND provider_id = ?
+	`, authProvider, providerID).Scan(
+		&u.ID, &u.Username, &u.DisplayName, &u.Role, &u.AuthProvider,
+		&pID, &u.IsActive, &invitedBy, &u.CreatedAt, &u.UpdatedAt,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, fmt.Errorf("user not found: %w", sql.ErrNoRows)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("getting user by provider: %w", err)
+	}
+
+	if pID.Valid {
+		u.ProviderID = pID.String
+	}
+	if invitedBy.Valid {
+		u.InvitedBy = &invitedBy.String
+	}
+
+	return &u, nil
+}
+
 // withImmediateTx executes fn within a BEGIN IMMEDIATE transaction, which
 // acquires the SQLite write lock at the start of the transaction rather than
 // deferring it to the first write. This prevents check-then-act races where

@@ -156,6 +156,26 @@ func (s *Service) Login(ctx context.Context, username, password string) (string,
 	return token, nil
 }
 
+// CreateSession creates a new session for the given user ID and returns the token.
+// This is used after authentication when the caller has already validated the identity.
+func (s *Service) CreateSession(ctx context.Context, userID string) (string, error) {
+	token, err := generateToken()
+	if err != nil {
+		return "", fmt.Errorf("generating session token: %w", err)
+	}
+
+	expiresAt := time.Now().Add(sessionDuration).UTC().Format(time.RFC3339)
+	_, err = s.db.ExecContext(ctx, `
+		INSERT INTO sessions (id, user_id, expires_at)
+		VALUES (?, ?, ?)
+	`, token, userID, expiresAt)
+	if err != nil {
+		return "", fmt.Errorf("creating session: %w", err)
+	}
+
+	return token, nil
+}
+
 // ValidateSession checks if a session token is valid and returns the user ID.
 func (s *Service) ValidateSession(ctx context.Context, token string) (string, error) {
 	var userID, expiresAt string

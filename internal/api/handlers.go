@@ -52,11 +52,15 @@ func (r *Router) assets() templates.AssetPaths {
 }
 
 // handleLogin authenticates a user and sets a session cookie.
+// If the auth registry is configured, it dispatches to the appropriate provider.
+// For backward compatibility, falls back to the legacy auth.method setting path
+// when the registry is not wired or the requested provider is not registered.
 // POST /api/v1/auth/login
 func (r *Router) handleLogin(w http.ResponseWriter, req *http.Request) {
 	var body struct {
 		Username string `json:"username"`
 		Password string `json:"password"` //nolint:gosec // G117: not a hardcoded secret, this is a request field
+		Provider string `json:"provider"` // optional; overrides the auth.method setting
 	}
 	if strings.HasPrefix(req.Header.Get("Content-Type"), "application/json") {
 		if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
@@ -67,19 +71,123 @@ func (r *Router) handleLogin(w http.ResponseWriter, req *http.Request) {
 		req.Body = http.MaxBytesReader(w, req.Body, 1<<20)
 		body.Username = req.FormValue("username")
 		body.Password = req.FormValue("password")
+		body.Provider = req.FormValue("provider")
 	}
 
-	authMethod := r.getStringSetting(req.Context(), "auth.method", "local")
+	// Determine provider type: explicit field takes priority, then auth.method setting.
+	providerType := body.Provider
+	if providerType == "" {
+		providerType = r.getStringSetting(req.Context(), "auth.method", "local")
+	}
 
-	switch authMethod {
+	// If the registry is configured and the provider is registered, use the new path.
+	if r.authRegistry != nil {
+		if provider, ok := r.authRegistry.Get(providerType); ok {
+			creds := auth.Credentials{
+				Username: body.Username,
+				Password: body.Password,
+			}
+			identity, err := provider.Authenticate(req.Context(), creds)
+			if err != nil {
+				r.logger.Warn("authentication failed", "provider", providerType, "error", err)
+				if providerType == "local" {
+					writeFormError(w, req, http.StatusUnauthorized, "Invalid username or password.")
+				} else {
+					writeFormError(w, req, http.StatusUnauthorized, fmt.Sprintf("Invalid %s credentials.", authMethodDisplayName(providerType)))
+				}
+				return
+			}
+			r.completeLogin(w, req, provider, identity)
+			return
+		}
+	}
+
+	// Legacy fallback: use the old branching logic when the registry is not
+	// wired or the provider is not yet registered.
+	switch providerType {
 	case "emby", "jellyfin":
-		r.handleLoginFederated(w, req, body.Username, body.Password, authMethod)
+		r.handleLoginFederated(w, req, body.Username, body.Password, providerType)
 	default:
 		r.handleLoginLocal(w, req, body.Username, body.Password)
 	}
 }
 
+// completeLogin is the post-authentication flow shared by all providers.
+// It looks up or auto-provisions the user, then creates a session.
+func (r *Router) completeLogin(w http.ResponseWriter, req *http.Request, provider auth.Authenticator, identity *auth.Identity) {
+	ctx := req.Context()
+
+	var user *auth.User
+	var lookupErr error
+
+	if identity.ProviderType == "local" {
+		// LocalProvider sets ProviderID to the user's database row ID.
+		user, lookupErr = r.authService.GetUserByID(ctx, identity.ProviderID)
+	} else {
+		// Federated providers: look up by auth_provider + provider_id columns.
+		user, lookupErr = r.authService.GetUserByProvider(ctx, identity.ProviderType, identity.ProviderID)
+	}
+
+	if lookupErr != nil {
+		// User not found -- check if auto-provisioning is allowed.
+		if !provider.CanAutoProvision(identity) {
+			r.logger.Warn("login: user not found and auto-provision disabled",
+				"provider", identity.ProviderType, "provider_id", identity.ProviderID)
+			writeFormError(w, req, http.StatusUnauthorized, "This account is not authorized for this Stillwater instance. Contact your administrator.")
+			return
+		}
+
+		// Auto-provision the user with the role determined by the provider.
+		role := provider.MapRole(identity)
+		if role == "" {
+			role = "operator"
+		}
+		var createErr error
+		user, createErr = r.authService.CreateFederatedUser(ctx, identity, role, "")
+		if createErr != nil {
+			r.logger.Error("failed to auto-provision federated user",
+				"provider", identity.ProviderType, "provider_id", identity.ProviderID, "error", createErr)
+			writeFormError(w, req, http.StatusInternalServerError, "An internal error occurred. Please try again.")
+			return
+		}
+	}
+
+	if !user.IsActive {
+		r.logger.Warn("login: inactive user attempted login", "user_id", user.ID)
+		writeFormError(w, req, http.StatusUnauthorized, "Your account has been deactivated. Contact your administrator.")
+		return
+	}
+
+	// Sync display name for federated users if it changed on the provider.
+	if identity.ProviderType != "local" && identity.DisplayName != "" && identity.DisplayName != user.Username {
+		if syncErr := r.authService.SyncDisplayName(ctx, user.ID, identity.DisplayName); syncErr != nil {
+			// Non-fatal: log and continue.
+			r.logger.Warn("failed to sync display name", "user_id", user.ID, "error", syncErr)
+		}
+	}
+
+	// Update the connection API key if the provider issued a new access token.
+	if identity.RawToken != "" && identity.ProviderType != "local" {
+		serverURL := r.getStringSetting(ctx, "auth.server_url", "")
+		if serverURL != "" {
+			r.updateConnectionToken(ctx, identity.ProviderType, serverURL, identity.ProviderID, identity.RawToken)
+		}
+	}
+
+	token, err := r.authService.CreateSession(ctx, user.ID)
+	if err != nil {
+		r.logger.Error("failed to create session", "user_id", user.ID, "error", err)
+		writeFormError(w, req, http.StatusInternalServerError, "An internal error occurred. Please try again.")
+		return
+	}
+
+	r.setSessionCookie(w, req, token)
+	w.Header().Set("HX-Redirect", r.basePath+"/")
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
 // handleLoginLocal performs local username/password authentication.
+// Used as a legacy fallback when the auth registry is not configured.
 func (r *Router) handleLoginLocal(w http.ResponseWriter, req *http.Request, username, password string) {
 	token, err := r.authService.Login(req.Context(), username, password)
 	if err != nil {
@@ -94,7 +202,8 @@ func (r *Router) handleLoginLocal(w http.ResponseWriter, req *http.Request, user
 }
 
 // handleLoginFederated authenticates against an Emby or Jellyfin server and
-// creates a local Stillwater session.
+// creates a local Stillwater session. Used as a legacy fallback when the auth
+// registry is not configured.
 func (r *Router) handleLoginFederated(w http.ResponseWriter, req *http.Request, username, password, authMethod string) {
 	serverURL := r.getStringSetting(req.Context(), "auth.server_url", "")
 	if serverURL == "" {
