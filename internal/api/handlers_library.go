@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -203,7 +204,38 @@ func (r *Router) handleDeleteLibrary(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	// When the last local library is removed, auto-disable filesystem-dependent
+	// rules so they do not evaluate against artists without filesystem paths.
+	r.maybeDisableFilesystemRules(req.Context())
+
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+}
+
+// maybeDisableFilesystemRules checks whether any local library (with a filesystem
+// path) still exists. If none remain, all enabled filesystem-dependent rules are
+// automatically disabled so they do not produce false violations for API-only artists.
+func (r *Router) maybeDisableFilesystemRules(ctx context.Context) {
+	hasLocal, err := r.libraryService.HasLocalLibrary(ctx)
+	if err != nil {
+		r.logger.Error("checking for local libraries after delete", "error", err)
+		return
+	}
+	if hasLocal {
+		return // at least one local library still exists; nothing to do
+	}
+
+	count, err := r.ruleService.DisableFilesystemRules(ctx)
+	if err != nil {
+		r.logger.Error("auto-disabling filesystem rules", "error", err)
+		return
+	}
+	if count > 0 {
+		r.logger.Info("auto-disabled filesystem-dependent rules because no local library remains",
+			"rules_disabled", count)
+		if r.ruleEngine != nil {
+			r.ruleEngine.InvalidateRuleCache()
+		}
+	}
 }
 
 // populateFSNotifySupported sets the FSNotifySupported field on each library

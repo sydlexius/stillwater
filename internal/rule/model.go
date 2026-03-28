@@ -25,15 +25,16 @@ const (
 
 // Rule represents a validation rule stored in the database.
 type Rule struct {
-	ID             string     `json:"id"`
-	Name           string     `json:"name"`
-	Description    string     `json:"description"`
-	Category       string     `json:"category"` // "nfo", "image", "metadata"
-	Enabled        bool       `json:"enabled"`
-	AutomationMode string     `json:"automation_mode"` // "auto", "manual"
-	Config         RuleConfig `json:"config"`
-	CreatedAt      time.Time  `json:"created_at"`
-	UpdatedAt      time.Time  `json:"updated_at"`
+	ID                  string     `json:"id"`
+	Name                string     `json:"name"`
+	Description         string     `json:"description"`
+	Category            string     `json:"category"` // "nfo", "image", "metadata"
+	Enabled             bool       `json:"enabled"`
+	AutomationMode      string     `json:"automation_mode"` // "auto", "manual"
+	Config              RuleConfig `json:"config"`
+	FilesystemDependent bool       `json:"filesystem_dependent"` // true if rule requires a local library with filesystem path
+	CreatedAt           time.Time  `json:"created_at"`
+	UpdatedAt           time.Time  `json:"updated_at"`
 }
 
 // RuleConfig holds configurable acceptance criteria for a rule.

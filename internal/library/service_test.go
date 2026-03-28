@@ -803,3 +803,57 @@ func TestListSharedFS(t *testing.T) {
 		t.Error("ListSharedFS missing 'Confirmed' library")
 	}
 }
+
+func TestHasLocalLibrary(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	// No libraries at all: should return false.
+	has, err := svc.HasLocalLibrary(ctx)
+	if err != nil {
+		t.Fatalf("HasLocalLibrary (empty): %v", err)
+	}
+	if has {
+		t.Error("expected HasLocalLibrary = false with no libraries")
+	}
+
+	// Add a pathless (API-only) library: should still return false.
+	pathlessLib := &Library{Name: "API Only", Path: "", Type: TypeRegular}
+	if err := svc.Create(ctx, pathlessLib); err != nil {
+		t.Fatalf("Create pathless: %v", err)
+	}
+	has, err = svc.HasLocalLibrary(ctx)
+	if err != nil {
+		t.Fatalf("HasLocalLibrary (pathless only): %v", err)
+	}
+	if has {
+		t.Error("expected HasLocalLibrary = false with only pathless library")
+	}
+
+	// Add a library with a path: should return true.
+	dir := t.TempDir()
+	localLib := &Library{Name: "Local", Path: dir, Type: TypeRegular}
+	if err := svc.Create(ctx, localLib); err != nil {
+		t.Fatalf("Create local: %v", err)
+	}
+	has, err = svc.HasLocalLibrary(ctx)
+	if err != nil {
+		t.Fatalf("HasLocalLibrary (with local): %v", err)
+	}
+	if !has {
+		t.Error("expected HasLocalLibrary = true with a local library")
+	}
+
+	// Delete the local library: should return false again.
+	if err := svc.Delete(ctx, localLib.ID); err != nil {
+		t.Fatalf("Delete local: %v", err)
+	}
+	has, err = svc.HasLocalLibrary(ctx)
+	if err != nil {
+		t.Fatalf("HasLocalLibrary (after delete): %v", err)
+	}
+	if has {
+		t.Error("expected HasLocalLibrary = false after deleting the local library")
+	}
+}

@@ -43,6 +43,7 @@ type SettingsData struct {
 	WebSearchProviders   []provider.WebSearchProviderStatus
 	AutoFetchImages      bool
 	Rules                []rule.Rule
+	HasLocalLibrary      bool
 	BadgeEnabled         bool
 	BadgeSeverityError   bool
 	BadgeSeverityWarning bool
@@ -1318,7 +1319,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 							</div>
 							<div class="px-6 divide-y divide-gray-100 dark:divide-gray-700">
 								for _, rl := range catRules {
-									@ruleRow(rl)
+									@ruleRow(rl, data.HasLocalLibrary)
 								}
 							</div>
 						</div>
@@ -3706,13 +3707,32 @@ templ profileCard(p platform.Profile) {
 	</div>
 }
 
-templ ruleRow(rl rule.Rule) {
-	<div class="py-4 space-y-2">
+templ ruleRow(rl rule.Rule, hasLocalLibrary bool) {
+	// A filesystem-dependent rule is unavailable when no local library exists.
+	// In that state, all controls are disabled and a tooltip explains why.
+	{{ fsUnavailable := rl.FilesystemDependent && !hasLocalLibrary }}
+	<div
+		class={
+			"py-4 space-y-2",
+			templ.KV("opacity-50", fsUnavailable),
+		}
+		if fsUnavailable {
+			title="This rule requires a local library with a filesystem path. Add a library with a path to enable it."
+		}
+	>
 		<div class="flex items-center justify-between gap-4">
 			<div class="flex-1 min-w-0">
 				<div class="flex items-center gap-2">
 					<span class="font-medium text-sm">{ rl.Name }</span>
 					@severityBadge(rl.Config.Severity)
+					if fsUnavailable {
+						<span
+							class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400"
+							title="Requires a local library with a filesystem path"
+						>
+							Requires local library
+						</span>
+					}
 				</div>
 				<p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{ rl.Description }</p>
 			</div>
@@ -3723,7 +3743,7 @@ templ ruleRow(rl rule.Rule) {
 					data-rule-id={ rl.ID }
 					data-run-btn
 					onclick="runRule(this)"
-					disabled?={ !rl.Enabled }
+					disabled?={ !rl.Enabled || fsUnavailable }
 					aria-label={ "Run " + rl.Name + " now" }
 					title="Run this rule now"
 				>
@@ -3734,7 +3754,7 @@ templ ruleRow(rl rule.Rule) {
 					aria-label={ "Automation mode for " + rl.Name }
 					data-rule-id={ rl.ID }
 					onchange="patchRule(this.dataset.ruleId, {automation_mode: this.value})"
-					disabled?={ !rl.Enabled }
+					disabled?={ !rl.Enabled || fsUnavailable }
 				>
 					<option value="auto" selected?={ rl.AutomationMode == "auto" || rl.AutomationMode == "" }>Auto-fix</option>
 					<option value="manual" selected?={ rl.AutomationMode == "manual" }>Manual (notify only)</option>
@@ -3746,7 +3766,11 @@ templ ruleRow(rl rule.Rule) {
 					aria-checked={ boolAttr(rl.Enabled) }
 					data-rule-id={ rl.ID }
 					onclick="toggleRuleEnabled(this)"
+					disabled?={ fsUnavailable }
 					aria-label={ "Enable " + rl.Name }
+					if fsUnavailable {
+						title="Cannot enable: no local library configured"
+					}
 				>
 					<span class={ ruleToggleKnobClasses(rl.Enabled) }></span>
 				</button>
@@ -3761,6 +3785,7 @@ templ ruleRow(rl rule.Rule) {
 					aria-expanded="false"
 					aria-controls={ "rule-cfg-" + rl.ID }
 					aria-label={ "Configure " + rl.Name }
+					disabled?={ fsUnavailable }
 				>Configure</button>
 				<div id={ "rule-cfg-" + rl.ID } class="hidden mt-2">
 					@ruleConfigForm(rl)
