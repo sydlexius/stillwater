@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -17,31 +18,57 @@ const (
 	userRoleKey    contextKey = "userRole"
 )
 
+// AuthProvider defines the authentication operations required by middleware.
+// This interface is satisfied by *auth.Service and enables testing with stubs.
+type AuthProvider interface {
+	ValidateSession(ctx context.Context, token string) (string, error)
+	ValidateAPIToken(ctx context.Context, token string) (userID string, scopes string, err error)
+	GetUserRole(ctx context.Context, userID string) (string, error)
+}
+
 // OptionalAuth returns middleware that populates the user context if a valid
 // session exists but does not reject unauthenticated requests. Use this for
 // public pages that change behavior based on auth state.
-func OptionalAuth(authService *auth.Service) func(http.Handler) http.Handler {
+func OptionalAuth(authService AuthProvider) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if token := extractToken(r); token != "" {
 				if strings.HasPrefix(token, auth.APITokenPrefix) {
 					if userID, scopes, err := authService.ValidateAPIToken(r.Context(), token); err == nil {
+						role, roleErr := authService.GetUserRole(r.Context(), userID)
+						if roleErr != nil {
+							slog.Warn("failed to get user role for API token", "user_id", userID, "error", roleErr) //nolint:gosec // G706: userID is a validated UUID from the auth service, not raw user input
+							next.ServeHTTP(w, r)
+							return
+						}
+						if role == "" {
+							slog.Warn("API token belongs to inactive user", "user_id", userID) //nolint:gosec // G706: userID is a validated UUID from the auth service
+							next.ServeHTTP(w, r)
+							return
+						}
 						ctx := context.WithValue(r.Context(), userIDKey, userID)
 						ctx = context.WithValue(ctx, authMethodKey, "api_token")
 						ctx = context.WithValue(ctx, tokenScopesKey, scopes)
-						if role, err := authService.GetUserRole(ctx, userID); err == nil {
-							ctx = context.WithValue(ctx, userRoleKey, role)
-						}
+						ctx = context.WithValue(ctx, userRoleKey, role)
 						next.ServeHTTP(w, r.WithContext(ctx))
 						return
 					}
 				} else {
 					if userID, err := authService.ValidateSession(r.Context(), token); err == nil {
+						role, roleErr := authService.GetUserRole(r.Context(), userID)
+						if roleErr != nil {
+							slog.Warn("failed to get user role for session", "user_id", userID, "error", roleErr) //nolint:gosec // G706: userID is a validated UUID from the auth service
+							next.ServeHTTP(w, r)
+							return
+						}
+						if role == "" {
+							slog.Warn("session belongs to inactive user", "user_id", userID) //nolint:gosec // G706: userID is a validated UUID from the auth service
+							next.ServeHTTP(w, r)
+							return
+						}
 						ctx := context.WithValue(r.Context(), userIDKey, userID)
 						ctx = context.WithValue(ctx, authMethodKey, "session")
-						if role, err := authService.GetUserRole(ctx, userID); err == nil {
-							ctx = context.WithValue(ctx, userRoleKey, role)
-						}
+						ctx = context.WithValue(ctx, userRoleKey, role)
 						next.ServeHTTP(w, r.WithContext(ctx))
 						return
 					}
@@ -53,7 +80,7 @@ func OptionalAuth(authService *auth.Service) func(http.Handler) http.Handler {
 }
 
 // Auth returns middleware that requires a valid session or API token.
-func Auth(authService *auth.Service) func(http.Handler) http.Handler {
+func Auth(authService AuthProvider) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			token := extractToken(r)
@@ -68,12 +95,20 @@ func Auth(authService *auth.Service) func(http.Handler) http.Handler {
 					http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
 					return
 				}
+				role, roleErr := authService.GetUserRole(r.Context(), userID)
+				if roleErr != nil {
+					slog.Error("failed to get user role for API token", "user_id", userID, "error", roleErr) //nolint:gosec // G706: userID is a validated UUID from the auth service
+					http.Error(w, `{"error":"internal server error"}`, http.StatusInternalServerError)
+					return
+				}
+				if role == "" {
+					http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+					return
+				}
 				ctx := context.WithValue(r.Context(), userIDKey, userID)
 				ctx = context.WithValue(ctx, authMethodKey, "api_token")
 				ctx = context.WithValue(ctx, tokenScopesKey, scopes)
-				if role, err := authService.GetUserRole(ctx, userID); err == nil {
-					ctx = context.WithValue(ctx, userRoleKey, role)
-				}
+				ctx = context.WithValue(ctx, userRoleKey, role)
 				next.ServeHTTP(w, r.WithContext(ctx))
 				return
 			}
@@ -84,11 +119,20 @@ func Auth(authService *auth.Service) func(http.Handler) http.Handler {
 				return
 			}
 
+			role, roleErr := authService.GetUserRole(r.Context(), userID)
+			if roleErr != nil {
+				slog.Error("failed to get user role for session", "user_id", userID, "error", roleErr) //nolint:gosec // G706: userID is a validated UUID from the auth service
+				http.Error(w, `{"error":"internal server error"}`, http.StatusInternalServerError)
+				return
+			}
+			if role == "" {
+				http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+				return
+			}
+
 			ctx := context.WithValue(r.Context(), userIDKey, userID)
 			ctx = context.WithValue(ctx, authMethodKey, "session")
-			if role, err := authService.GetUserRole(ctx, userID); err == nil {
-				ctx = context.WithValue(ctx, userRoleKey, role)
-			}
+			ctx = context.WithValue(ctx, userRoleKey, role)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
