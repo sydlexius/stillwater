@@ -28,29 +28,39 @@ func TestManager_LevelSwap(t *testing.T) {
 	mgr, logger := NewManager(Config{Level: "info", Format: "json"})
 	defer mgr.Close() //nolint:errcheck
 
-	// Info should be enabled initially
+	// With the MultiHandler architecture, the logger's Enabled() returns true
+	// for all levels because the RingHandler captures at DEBUG. The primary
+	// handler's level still controls what gets written to stdout/file.
+	// All levels should be enabled because the ring buffer captures everything.
 	if !logger.Enabled(context.Background(), slog.LevelInfo) {
 		t.Error("expected info to be enabled")
 	}
-
-	// Debug should not be enabled
-	if logger.Enabled(context.Background(), slog.LevelDebug) {
-		t.Error("expected debug to be disabled")
+	if !logger.Enabled(context.Background(), slog.LevelDebug) {
+		t.Error("expected debug to be enabled (ring buffer captures all levels)")
 	}
 
-	// Reconfigure to debug
+	// Reconfigure to debug -- all levels still enabled.
 	mgr.Reconfigure(Config{Level: "debug", Format: "json"})
 	if !logger.Enabled(context.Background(), slog.LevelDebug) {
 		t.Error("expected debug to be enabled after reconfigure")
 	}
 
-	// Reconfigure to error
+	// Reconfigure to error -- all levels still enabled via ring buffer.
 	mgr.Reconfigure(Config{Level: "error", Format: "json"})
-	if logger.Enabled(context.Background(), slog.LevelInfo) {
-		t.Error("expected info to be disabled when level is error")
-	}
 	if !logger.Enabled(context.Background(), slog.LevelError) {
 		t.Error("expected error to be enabled")
+	}
+
+	// Verify that ring buffer captured entries at all levels when logging at debug.
+	mgr.Reconfigure(Config{Level: "debug", Format: "json"})
+	rb := mgr.RingBuffer()
+	rb.Clear()
+	logger.Debug("debug msg")
+	logger.Info("info msg")
+	logger.Error("error msg")
+	entries := rb.Entries(LogFilter{Limit: 10})
+	if len(entries) != 3 {
+		t.Errorf("expected ring buffer to capture 3 entries, got %d", len(entries))
 	}
 }
 

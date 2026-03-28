@@ -282,6 +282,9 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	// Logging routes
 	mux.HandleFunc("GET "+bp+"/api/v1/settings/logging", wrapAuth(r.handleGetLogging, authMw))
 	mux.HandleFunc("PUT "+bp+"/api/v1/settings/logging", wrapAuth(r.handleUpdateLogging, authMw))
+	// Log viewer routes
+	mux.HandleFunc("GET "+bp+"/api/v1/logs", wrapAuth(r.handleGetLogs, authMw))
+	mux.HandleFunc("DELETE "+bp+"/api/v1/logs", wrapAuth(r.handleClearLogs, authMw))
 	// Maintenance routes
 	mux.HandleFunc("GET "+bp+"/api/v1/settings/maintenance/status", wrapAuth(r.handleMaintenanceStatus, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/settings/maintenance/optimize", wrapAuth(r.handleMaintenanceOptimize, authMw))

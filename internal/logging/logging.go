@@ -62,33 +62,47 @@ func (s *SwappableHandler) WithGroup(name string) slog.Handler {
 	return NewSwappableHandler(inner)
 }
 
+// DefaultRingBufferSize is the default number of log entries retained in memory
+// for the log viewer.
+const DefaultRingBufferSize = 2000
+
 // Manager owns the logger lifecycle and supports runtime reconfiguration.
 type Manager struct {
-	levelVar *slog.LevelVar
-	handler  *SwappableHandler
-	config   Config
-	mu       sync.Mutex
-	closer   io.Closer // lumberjack writer, if any
+	levelVar   *slog.LevelVar
+	handler    *SwappableHandler
+	config     Config
+	mu         sync.Mutex
+	closer     io.Closer // lumberjack writer, if any
+	ringBuffer *RingBuffer
 }
 
 // NewManager creates a Manager and returns it along with a ready-to-use logger.
+// Log entries are captured in an in-memory ring buffer for the log viewer.
 func NewManager(cfg Config) (*Manager, *slog.Logger) {
 	lvl := &slog.LevelVar{}
 	lvl.Set(parseLevel(cfg.Level))
 
+	rb := NewRingBuffer(DefaultRingBufferSize)
+
 	writer, closer := buildWriter(cfg)
-	inner := buildHandler(writer, lvl, cfg.Format)
+	inner := buildMultiHandler(writer, lvl, cfg.Format, rb)
 	handler := NewSwappableHandler(inner)
 
 	m := &Manager{
-		levelVar: lvl,
-		handler:  handler,
-		config:   cfg,
-		closer:   closer,
+		levelVar:   lvl,
+		handler:    handler,
+		config:     cfg,
+		closer:     closer,
+		ringBuffer: rb,
 	}
 
 	logger := slog.New(handler)
 	return m, logger
+}
+
+// RingBuffer returns the in-memory ring buffer used by the log viewer.
+func (m *Manager) RingBuffer() *RingBuffer {
+	return m.ringBuffer
 }
 
 // Reconfigure applies a new configuration at runtime. Level-only changes
@@ -107,16 +121,17 @@ func (m *Manager) Reconfigure(cfg Config) {
 		cfg.FileMaxAgeDays != m.config.FileMaxAgeDays
 
 	if needSwap {
-		// Close old file writer if any
-		if m.closer != nil {
-			m.closer.Close() //nolint:errcheck
-			m.closer = nil
-		}
-
 		writer, closer := buildWriter(cfg)
-		inner := buildHandler(writer, m.levelVar, cfg.Format)
+		inner := buildMultiHandler(writer, m.levelVar, cfg.Format, m.ringBuffer)
 		m.handler.Swap(inner)
+
+		// Close old file writer after swapping to eliminate the race
+		// window where a goroutine could write to a closed writer.
+		oldCloser := m.closer
 		m.closer = closer
+		if oldCloser != nil {
+			oldCloser.Close() //nolint:errcheck
+		}
 	}
 
 	m.config = cfg
@@ -208,6 +223,16 @@ func buildHandler(w io.Writer, leveler slog.Leveler, format string) slog.Handler
 		return slog.NewTextHandler(w, opts)
 	}
 	return slog.NewJSONHandler(w, opts)
+}
+
+// buildMultiHandler creates a MultiHandler that fans out to the primary
+// text/JSON handler and a RingHandler for in-memory log capture.
+func buildMultiHandler(w io.Writer, leveler slog.Leveler, format string, rb *RingBuffer) slog.Handler {
+	primary := buildHandler(w, leveler, format)
+	// The ring handler captures at DEBUG level so all entries are available
+	// for filtering in the log viewer, regardless of the primary handler's level.
+	ring := NewRingHandler(rb, slog.LevelDebug)
+	return NewMultiHandler(primary, ring)
 }
 
 // ValidLevel returns true if s is a recognized log level.

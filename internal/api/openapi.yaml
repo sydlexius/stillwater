@@ -515,6 +515,32 @@ components:
         updated_at:
           type: string
           format: date-time
+    LogEntry:
+      type: object
+      description: A single log record captured by the in-memory ring buffer.
+      properties:
+        time:
+          type: string
+          format: date-time
+          description: Timestamp of the log entry
+        level:
+          type: string
+          enum: [debug, info, warn, error]
+          description: Severity level
+        message:
+          type: string
+          description: Log message text
+        component:
+          type: string
+          description: Component that emitted the log entry (e.g. scanner, provider, api). Empty if not set.
+        attrs:
+          type: object
+          additionalProperties: true
+          description: Additional structured attributes from the log record
+      required:
+        - time
+        - level
+        - message
     LoggingConfig:
       type: object
       properties:
@@ -5419,6 +5445,88 @@ paths:
                 type: string
         "400":
           description: Invalid level or format
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /logs:
+    get:
+      tags: [Logs]
+      summary: Get recent log entries
+      description: Returns log entries from the in-memory ring buffer. Supports filtering by level, search text, component, and time. Returns JSON for API clients or HTML fragments when the HX-Request header is set.
+      operationId: getLogs
+      parameters:
+        - name: level
+          in: query
+          description: Minimum log level to include. Omit to return all levels.
+          schema:
+            type: string
+            enum: [debug, info, warn, error]
+        - name: search
+          in: query
+          description: Case-insensitive substring search on log message
+          schema:
+            type: string
+        - name: component
+          in: query
+          description: Exact match on the component attribute
+          schema:
+            type: string
+        - name: after
+          in: query
+          description: Only return entries after this RFC3339Nano timestamp
+          schema:
+            type: string
+            format: date-time
+        - name: limit
+          in: query
+          description: Maximum number of entries to return (default 100, max 500)
+          schema:
+            type: integer
+            default: 100
+            maximum: 500
+      responses:
+        "200":
+          description: Log entries (newest first for JSON, oldest first for HTML)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LogEntry"
+            text/html:
+              schema:
+                type: string
+                description: HTML fragment of styled log entry divs for HTMX polling
+        "503":
+          description: Logging manager or ring buffer not available
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      tags: [Logs]
+      summary: Clear log buffer
+      description: Removes all entries from the in-memory ring buffer. Returns JSON for API clients or an HTML fragment when the HX-Request header is set.
+      operationId: clearLogs
+      responses:
+        "200":
+          description: Buffer cleared
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: cleared
+            text/html:
+              schema:
+                type: string
+                description: HTML fragment confirming the buffer was cleared
+        "503":
+          description: Logging manager or ring buffer not available
           content:
             application/json:
               schema:
