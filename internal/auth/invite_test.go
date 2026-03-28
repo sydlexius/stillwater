@@ -49,9 +49,9 @@ func TestCreateInvite(t *testing.T) {
 	if !strings.HasPrefix(inv.Code, "sw_inv_") {
 		t.Errorf("Code = %q, expected prefix %q", inv.Code, "sw_inv_")
 	}
-	// Code should be "sw_inv_" (7 chars) + 8 hex chars = 15 chars total.
-	if len(inv.Code) != 15 {
-		t.Errorf("Code length = %d, want 15", len(inv.Code))
+	// Code should be "sw_inv_" (7 chars) + 32 hex chars = 39 chars total.
+	if len(inv.Code) != 39 {
+		t.Errorf("Code length = %d, want 39", len(inv.Code))
 	}
 	if inv.Role != "operator" {
 		t.Errorf("Role = %q, want %q", inv.Role, "operator")

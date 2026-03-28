@@ -37,8 +37,12 @@ type Invite struct {
 }
 
 // CreateInvite generates a new invitation with the given role and expiry duration.
-// The invite code has the format "sw_inv_" followed by 8 hex characters.
+// The invite code has the format "sw_inv_" followed by 32 hex characters.
 func (s *Service) CreateInvite(ctx context.Context, role, createdBy string, expiresIn time.Duration) (*Invite, error) {
+	if role != "administrator" && role != "operator" {
+		return nil, fmt.Errorf("invalid role %q: must be administrator or operator", role)
+	}
+
 	code, err := generateInviteCode()
 	if err != nil {
 		return nil, fmt.Errorf("generating invite code: %w", err)
@@ -95,7 +99,7 @@ func (s *Service) GetInviteByCode(ctx context.Context, code string) (*Invite, er
 		inv.RedeemedAt = &redeemedAt.String
 	}
 
-	if inv.RedeemedBy != nil {
+	if inv.RedeemedAt != nil {
 		return nil, ErrInviteRedeemed
 	}
 
@@ -118,7 +122,7 @@ func (s *Service) ListPendingInvites(ctx context.Context) ([]Invite, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, code, role, created_by, expires_at, redeemed_by, redeemed_at, created_at
 		FROM invites
-		WHERE redeemed_by IS NULL AND expires_at > ?
+		WHERE redeemed_at IS NULL AND expires_at > ?
 		ORDER BY created_at DESC
 	`, now)
 	if err != nil {
@@ -148,7 +152,10 @@ func (s *Service) ListPendingInvites(ctx context.Context) ([]Invite, error) {
 
 		invites = append(invites, inv)
 	}
-	return invites, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("listing pending invites: %w", err)
+	}
+	return invites, nil
 }
 
 // RedeemInvite validates an invite code and marks it as redeemed by the given user.
@@ -161,11 +168,19 @@ func (s *Service) RedeemInvite(ctx context.Context, code, userID string) (*Invit
 	}
 
 	now := time.Now().UTC().Format(time.RFC3339)
-	_, err = s.db.ExecContext(ctx, `
-		UPDATE invites SET redeemed_by = ?, redeemed_at = ? WHERE id = ?
+	result, err := s.db.ExecContext(ctx, `
+		UPDATE invites SET redeemed_by = ?, redeemed_at = ? WHERE id = ? AND redeemed_at IS NULL
 	`, userID, now, inv.ID)
 	if err != nil {
 		return nil, fmt.Errorf("redeeming invite: %w", err)
+	}
+
+	n, err := result.RowsAffected()
+	if err != nil {
+		return nil, fmt.Errorf("checking redeem rows affected: %w", err)
+	}
+	if n == 0 {
+		return nil, ErrInviteRedeemed
 	}
 
 	inv.RedeemedBy = &userID
@@ -178,7 +193,7 @@ func (s *Service) RedeemInvite(ctx context.Context, code, userID string) (*Invit
 // invite does not exist or has already been redeemed.
 func (s *Service) RevokeInvite(ctx context.Context, inviteID string) error {
 	result, err := s.db.ExecContext(ctx, `
-		DELETE FROM invites WHERE id = ? AND redeemed_by IS NULL
+		DELETE FROM invites WHERE id = ? AND redeemed_at IS NULL
 	`, inviteID)
 	if err != nil {
 		return fmt.Errorf("revoking invite: %w", err)
@@ -195,12 +210,13 @@ func (s *Service) RevokeInvite(ctx context.Context, inviteID string) error {
 	return nil
 }
 
-// generateInviteCode produces a unique invite code in the format "sw_inv_XXXXXXXX"
-// where X is a hex digit derived from 6 random bytes (8 hex chars used).
+// generateInviteCode produces a unique invite code in the format
+// "sw_inv_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX" where X is a hex digit
+// derived from 16 random bytes (32 hex chars).
 func generateInviteCode() (string, error) {
-	b := make([]byte, 6)
+	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
 		return "", err
 	}
-	return "sw_inv_" + hex.EncodeToString(b)[:8], nil
+	return "sw_inv_" + hex.EncodeToString(b), nil
 }

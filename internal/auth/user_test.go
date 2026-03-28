@@ -2,8 +2,8 @@ package auth
 
 import (
 	"context"
+	"database/sql"
 	"errors"
-	"strings"
 	"testing"
 )
 
@@ -48,8 +48,8 @@ func TestGetUserByID_NotFound(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for nonexistent user")
 	}
-	if !strings.Contains(err.Error(), "user not found") {
-		t.Errorf("expected 'user not found' error, got: %v", err)
+	if !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("expected sql.ErrNoRows, got: %v", err)
 	}
 }
 
