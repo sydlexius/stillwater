@@ -1,0 +1,461 @@
+package templates
+
+import "github.com/sydlexius/stillwater/internal/auth"
+
+// RegisterPageData holds the data needed to render the invite redemption page.
+type RegisterPageData struct {
+	// Code is the pre-populated invite code from the URL query parameter.
+	// Empty string if the page was loaded without a code.
+	Code string
+
+	// Invite is non-nil when the code was provided and valid.
+	// Nil when no code was given or the code is invalid/expired/redeemed.
+	Invite *auth.Invite
+
+	// InviteError is a human-readable message describing why the invite is invalid.
+	// Empty string when Invite is non-nil or no code was submitted yet.
+	InviteError string
+
+	// Providers is the list of enabled auth providers on this instance.
+	Providers []auth.Authenticator
+}
+
+// RegisterPage renders the invite redemption page.
+// Route: GET /register and GET /register?code=...
+templ RegisterPage(assets AssetPaths, data RegisterPageData) {
+	<!DOCTYPE html>
+	<html lang="en" class="h-full">
+		<head>
+			<meta charset="UTF-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+			<title>Create Account - Stillwater</title>
+			<link rel="stylesheet" href={ assets.CSS }/>
+			<link rel="icon" type="image/svg+xml" href={ assets.BasePath + "/static/img/favicon.svg" }/>
+			<link rel="icon" type="image/png" sizes="32x32" href={ assets.BasePath + "/static/img/favicon-32x32.png" }/>
+			<link rel="icon" type="image/png" sizes="16x16" href={ assets.BasePath + "/static/img/favicon-16x16.png" }/>
+			<link rel="apple-touch-icon" sizes="180x180" href={ assets.BasePath + "/static/img/apple-touch-icon.png" }/>
+			<link rel="manifest" href={ assets.BasePath + "/static/site.webmanifest" }/>
+			@themeInitScript()
+			<script src={ assets.HTMX }></script>
+			<meta name="htmx-base-path" content={ assets.BasePath }/>
+			<script>
+				(function() {
+					var el = document.querySelector('meta[name="htmx-base-path"]');
+					var bp = el ? el.content : '';
+					document.addEventListener('htmx:configRequest', function(evt) {
+						var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*\=\s*([^;]*).*$)|^.*$/, "$1");
+						if (csrfToken) {
+							evt.detail.headers['X-CSRF-Token'] = csrfToken;
+						}
+						if (bp && evt.detail.path.startsWith('/')) {
+							evt.detail.path = bp + evt.detail.path;
+						}
+					});
+				})();
+			</script>
+		</head>
+		<body class="h-full overflow-hidden text-gray-900 dark:text-gray-100">
+			<!-- Blurred background image -->
+			<img src={ assets.LoginBG } alt="" class="fixed inset-0 w-full h-full object-cover"/>
+			<!-- Dark overlay for contrast -->
+			<div class="fixed inset-0 bg-black/30"></div>
+			<!-- Register card -->
+			<div class="relative z-10 flex min-h-full items-center justify-center px-4 py-12">
+				<div class="w-full max-w-md space-y-6 rounded-2xl bg-white/80 dark:bg-gray-900/80 backdrop-blur-md p-8 shadow-2xl ring-1 ring-white/20">
+					<div class="text-center">
+						<div class="flex justify-center">
+							<img src={ assets.BasePath + "/static/img/favicon.svg" } alt="" class="h-12 w-12" aria-hidden="true"/>
+						</div>
+						<h1 class="mt-3 text-3xl font-bold text-blue-600 dark:text-blue-400">Stillwater</h1>
+						<h2 class="mt-2 text-lg font-semibold text-gray-900 dark:text-gray-100">Create your account</h2>
+						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">You've been invited to join this Stillwater instance.</p>
+					</div>
+					<!-- Invite code entry or invite info -->
+					if data.Invite == nil {
+						@registerInviteEntry(assets, data)
+					} else {
+						@registerInviteInfo(assets, data)
+					}
+					<!-- Back to login link -->
+					<p class="text-center text-sm text-gray-500 dark:text-gray-400">
+						Already have an account?
+						<a href={ templ.SafeURL(assets.BasePath + "/") } class="font-medium text-blue-600 dark:text-blue-400 hover:underline">Sign in</a>
+					</p>
+				</div>
+			</div>
+		</body>
+	</html>
+}
+
+// registerInviteEntry renders the invite code input form shown before a valid
+// code has been submitted.
+templ registerInviteEntry(assets AssetPaths, data RegisterPageData) {
+	if data.InviteError != "" {
+		<div
+			role="alert"
+			class="rounded-lg border border-red-300/60 dark:border-red-700/60 bg-red-50/80 dark:bg-red-900/30 px-4 py-3 text-sm text-red-700 dark:text-red-300"
+		>
+			{ data.InviteError }
+		</div>
+	}
+	<form
+		method="get"
+		action={ templ.SafeURL(assets.BasePath + "/register") }
+		class="space-y-4"
+	>
+		<div>
+			<label for="code" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Invite Code</label>
+			<input
+				id="code"
+				name="code"
+				type="text"
+				required
+				autocomplete="off"
+				placeholder="sw_inv_..."
+				value={ data.Code }
+				class="mt-1 block w-full rounded-lg border border-gray-300/60 dark:border-gray-600/60 bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm px-3 py-2 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+			/>
+		</div>
+		<button
+			type="submit"
+			class="flex w-full justify-center rounded-lg bg-blue-600 px-3 py-2.5 text-sm font-semibold text-white shadow-lg hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
+		>
+			Continue
+		</button>
+	</form>
+}
+
+// registerInviteInfo renders the invite metadata banner and the registration form
+// once a valid code has been verified.
+templ registerInviteInfo(assets AssetPaths, data RegisterPageData) {
+	<!-- Invite info banner -->
+	<div class="rounded-lg border border-blue-300/60 dark:border-blue-700/60 bg-blue-50/60 dark:bg-blue-900/20 px-4 py-3 text-sm text-blue-800 dark:text-blue-200">
+		<p>
+			<span class="font-medium">Invited by:</span> { data.Invite.CreatedBy }
+		</p>
+		<p class="mt-0.5">
+			<span class="font-medium">Role:</span> { data.Invite.Role }
+		</p>
+	</div>
+	<!-- Provider selection when multiple providers are available -->
+	if len(data.Providers) > 1 {
+		@registerProviderGrid(assets, data)
+	}
+	<!-- Registration form. When only one provider is available, auto-select it
+	     by adding a script that removes the hidden class from the sole form. -->
+	@registerForm(assets, data)
+	if len(data.Providers) == 1 {
+		<script>
+			(function() {
+				var forms = document.querySelectorAll('.reg-provider-form.hidden');
+				for (var i = 0; i < forms.length; i++) { forms[i].classList.remove('hidden'); }
+			})();
+		</script>
+	}
+}
+
+// registerProviderGrid renders a grid of provider selection cards.
+// Clicking a card switches the visible registration form below.
+templ registerProviderGrid(assets AssetPaths, data RegisterPageData) {
+	<div
+		class="grid gap-3"
+		style={ registerGridStyle(data.Providers) }
+		role="radiogroup"
+		aria-label="Sign-in method"
+	>
+		for _, p := range data.Providers {
+			if p.Type() == "local" {
+				<button
+					type="button"
+					role="radio"
+					aria-checked="false"
+					onclick="window.__registerSelectProvider && window.__registerSelectProvider('local')"
+					id="reg-card-local"
+					class="reg-provider-card flex flex-col items-center rounded-xl border-2 border-gray-200 dark:border-gray-700 bg-white/40 dark:bg-gray-800/40 p-4 text-center transition-all hover:shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+				>
+					<svg class="h-8 w-8 text-blue-600 dark:text-blue-400 mb-2" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
+						<path stroke-linecap="round" stroke-linejoin="round" d="M15.75 5.25a3 3 0 0 1 3 3m3 0a6 6 0 0 1-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1 1 21.75 8.25Z"></path>
+					</svg>
+					<span class="text-sm font-semibold text-gray-900 dark:text-gray-100">Local Account</span>
+					<span class="mt-1 text-xs text-gray-500 dark:text-gray-400">Username &amp; password</span>
+				</button>
+			}
+			if p.Type() == "emby" {
+				<button
+					type="button"
+					role="radio"
+					aria-checked="false"
+					onclick="window.__registerSelectProvider && window.__registerSelectProvider('emby')"
+					id="reg-card-emby"
+					class="reg-provider-card flex flex-col items-center rounded-xl border-2 border-gray-200 dark:border-gray-700 bg-white/40 dark:bg-gray-800/40 p-4 text-center transition-all hover:shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+				>
+					<img src={ assets.BasePath + "/static/img/logos/emby-128.png" } alt="" class="h-8 w-8 mb-2" aria-hidden="true"/>
+					<span class="text-sm font-semibold text-gray-900 dark:text-gray-100">Emby</span>
+					<span class="mt-1 text-xs text-gray-500 dark:text-gray-400">Use Emby account</span>
+				</button>
+			}
+			if p.Type() == "jellyfin" {
+				<button
+					type="button"
+					role="radio"
+					aria-checked="false"
+					onclick="window.__registerSelectProvider && window.__registerSelectProvider('jellyfin')"
+					id="reg-card-jellyfin"
+					class="reg-provider-card flex flex-col items-center rounded-xl border-2 border-gray-200 dark:border-gray-700 bg-white/40 dark:bg-gray-800/40 p-4 text-center transition-all hover:shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+				>
+					<img src={ assets.BasePath + "/static/img/logos/jellyfin-128.png" } alt="" class="h-8 w-8 mb-2" aria-hidden="true"/>
+					<span class="text-sm font-semibold text-gray-900 dark:text-gray-100">Jellyfin</span>
+					<span class="mt-1 text-xs text-gray-500 dark:text-gray-400">Use Jellyfin account</span>
+				</button>
+			}
+			if p.Type() == "oidc" {
+				<button
+					type="button"
+					role="radio"
+					aria-checked="false"
+					onclick="window.__registerSelectProvider && window.__registerSelectProvider('oidc')"
+					id="reg-card-oidc"
+					class="reg-provider-card flex flex-col items-center rounded-xl border-2 border-gray-200 dark:border-gray-700 bg-white/40 dark:bg-gray-800/40 p-4 text-center transition-all hover:shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+				>
+					<svg class="h-8 w-8 text-gray-500 dark:text-gray-400 mb-2" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
+						<path stroke-linecap="round" stroke-linejoin="round" d="M15.75 5.25a3 3 0 0 1 3 3m3 0a6 6 0 0 1-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1 1 21.75 8.25Z"></path>
+					</svg>
+					<span class="text-sm font-semibold text-gray-900 dark:text-gray-100">SSO</span>
+					<span class="mt-1 text-xs text-gray-500 dark:text-gray-400">Single sign-on</span>
+				</button>
+			}
+		}
+	</div>
+	<script>
+		(function() {
+			var cards = document.querySelectorAll('.reg-provider-card');
+			var forms = document.querySelectorAll('.reg-provider-form');
+			function selectCard(type) {
+				cards.forEach(function(c) {
+					var isSelected = c.id === 'reg-card-' + type;
+					c.setAttribute('aria-checked', isSelected ? 'true' : 'false');
+					if (isSelected) {
+						c.classList.add('border-blue-500', 'bg-blue-50/60');
+						c.classList.remove('border-gray-200', 'bg-white/40');
+					} else {
+						c.classList.remove('border-blue-500', 'bg-blue-50/60');
+						c.classList.add('border-gray-200', 'bg-white/40');
+					}
+				});
+				forms.forEach(function(f) {
+					if (f.id === 'reg-form-' + type) {
+						f.classList.remove('hidden');
+					} else {
+						f.classList.add('hidden');
+					}
+				});
+			}
+			// Activate the first card on load
+			var first = document.querySelector('.reg-provider-card');
+			if (first) {
+				var firstType = first.id.replace('reg-card-', '');
+				selectCard(firstType);
+			}
+			window.__registerSelectProvider = selectCard;
+		})();
+	</script>
+}
+
+// registerGridStyle returns the CSS grid-template-columns value based on provider count.
+func registerGridStyle(providers []auth.Authenticator) string {
+	n := len(providers)
+	if n <= 1 {
+		return "grid-template-columns: 1fr"
+	}
+	if n == 2 {
+		return "grid-template-columns: repeat(2, minmax(0, 1fr))"
+	}
+	return "grid-template-columns: repeat(3, minmax(0, 1fr))"
+}
+
+// registerForm renders the appropriate registration form for each provider type.
+// Error responses are displayed in the #register-result container using safe DOM
+// manipulation (textContent) to prevent XSS.
+templ registerForm(assets AssetPaths, data RegisterPageData) {
+	<div id="register-result"></div>
+	for _, p := range data.Providers {
+		if p.Type() == "local" {
+			<div id="reg-form-local" class="reg-provider-form space-y-4">
+				<form
+					class="space-y-4"
+					hx-post="/api/v1/users/register"
+					hx-swap="none"
+					hx-target="#register-result"
+				>
+					<input type="hidden" name="code" value={ data.Code }/>
+					<div>
+						<label for="reg-local-username" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Username</label>
+						<input
+							id="reg-local-username"
+							name="username"
+							type="text"
+							required
+							autocomplete="username"
+							class="mt-1 block w-full rounded-lg border border-gray-300/60 dark:border-gray-600/60 bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm px-3 py-2 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+						/>
+					</div>
+					<div>
+						<label for="reg-local-password" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Password</label>
+						<input
+							id="reg-local-password"
+							name="password"
+							type="password"
+							required
+							autocomplete="new-password"
+							minlength="8"
+							class="mt-1 block w-full rounded-lg border border-gray-300/60 dark:border-gray-600/60 bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm px-3 py-2 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+						/>
+						<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Minimum 8 characters</p>
+					</div>
+					<div>
+						<label for="reg-local-display" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+							Display Name <span class="text-gray-400 dark:text-gray-500 font-normal">(optional)</span>
+						</label>
+						<input
+							id="reg-local-display"
+							name="display_name"
+							type="text"
+							autocomplete="name"
+							class="mt-1 block w-full rounded-lg border border-gray-300/60 dark:border-gray-600/60 bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm px-3 py-2 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+						/>
+					</div>
+					<button
+						type="submit"
+						class="flex w-full justify-center rounded-lg bg-blue-600 px-3 py-2.5 text-sm font-semibold text-white shadow-lg hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
+					>
+						Create Account
+					</button>
+				</form>
+			</div>
+		}
+		if p.Type() == "emby" {
+			<div id="reg-form-emby" class="reg-provider-form hidden space-y-4">
+				<form
+					class="space-y-4"
+					hx-post="/api/v1/users/register"
+					hx-swap="none"
+					hx-target="#register-result"
+				>
+					<input type="hidden" name="code" value={ data.Code }/>
+					<input type="hidden" name="provider" value="emby"/>
+					<div>
+						<label for="reg-emby-username" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Emby Username</label>
+						<input
+							id="reg-emby-username"
+							name="username"
+							type="text"
+							required
+							autocomplete="username"
+							class="mt-1 block w-full rounded-lg border border-gray-300/60 dark:border-gray-600/60 bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm px-3 py-2 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+						/>
+					</div>
+					<div>
+						<label for="reg-emby-password" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Emby Password</label>
+						<input
+							id="reg-emby-password"
+							name="password"
+							type="password"
+							required
+							autocomplete="current-password"
+							class="mt-1 block w-full rounded-lg border border-gray-300/60 dark:border-gray-600/60 bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm px-3 py-2 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+						/>
+					</div>
+					<button
+						type="submit"
+						class="flex w-full justify-center rounded-lg bg-blue-600 px-3 py-2.5 text-sm font-semibold text-white shadow-lg hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
+					>
+						Create Account with Emby
+					</button>
+				</form>
+			</div>
+		}
+		if p.Type() == "jellyfin" {
+			<div id="reg-form-jellyfin" class="reg-provider-form hidden space-y-4">
+				<form
+					class="space-y-4"
+					hx-post="/api/v1/users/register"
+					hx-swap="none"
+					hx-target="#register-result"
+				>
+					<input type="hidden" name="code" value={ data.Code }/>
+					<input type="hidden" name="provider" value="jellyfin"/>
+					<div>
+						<label for="reg-jellyfin-username" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Jellyfin Username</label>
+						<input
+							id="reg-jellyfin-username"
+							name="username"
+							type="text"
+							required
+							autocomplete="username"
+							class="mt-1 block w-full rounded-lg border border-gray-300/60 dark:border-gray-600/60 bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm px-3 py-2 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+						/>
+					</div>
+					<div>
+						<label for="reg-jellyfin-password" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Jellyfin Password</label>
+						<input
+							id="reg-jellyfin-password"
+							name="password"
+							type="password"
+							required
+							autocomplete="current-password"
+							class="mt-1 block w-full rounded-lg border border-gray-300/60 dark:border-gray-600/60 bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm px-3 py-2 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+						/>
+					</div>
+					<button
+						type="submit"
+						class="flex w-full justify-center rounded-lg bg-blue-600 px-3 py-2.5 text-sm font-semibold text-white shadow-lg hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
+					>
+						Create Account with Jellyfin
+					</button>
+				</form>
+			</div>
+		}
+		if p.Type() == "oidc" {
+			<div id="reg-form-oidc" class="reg-provider-form hidden">
+				<a
+					href={ templ.SafeURL(assets.BasePath + "/api/v1/auth/oidc/login?invite=" + data.Code) }
+					aria-label="Sign in with SSO to create account"
+					class="flex w-full items-center justify-center gap-3 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
+				>
+					<svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
+						<path stroke-linecap="round" stroke-linejoin="round" d="M15.75 5.25a3 3 0 0 1 3 3m3 0a6 6 0 0 1-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1 1 21.75 8.25Z"></path>
+					</svg>
+					Sign in with SSO
+				</a>
+			</div>
+		}
+	}
+	<script>
+		(function() {
+			var basePath = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
+			// On successful registration (201), redirect to home.
+			document.body.addEventListener('htmx:afterRequest', function(evt) {
+				if (!evt.detail.elt) { return; }
+				var form = evt.detail.elt.closest('form[hx-post]');
+				if (!form) { return; }
+				if (evt.detail.xhr.status === 201) {
+					window.location.href = basePath + '/';
+					return;
+				}
+				// Show error message using textContent to prevent XSS.
+				var resultEl = document.getElementById('register-result');
+				if (!resultEl) { return; }
+				var msg = 'An error occurred. Please try again.';
+				try {
+					var parsed = JSON.parse(evt.detail.xhr.responseText);
+					if (parsed && parsed.error) { msg = parsed.error; }
+				} catch(e) { console.warn('Failed to parse error response:', e); }
+				var alertDiv = document.createElement('div');
+				alertDiv.setAttribute('role', 'alert');
+				alertDiv.className = 'rounded-lg border border-red-300/60 dark:border-red-700/60 bg-red-50/80 dark:bg-red-900/30 px-4 py-3 text-sm text-red-700 dark:text-red-300';
+				alertDiv.textContent = msg;
+				resultEl.replaceChildren(alertDiv);
+			});
+		})();
+	</script>
+}

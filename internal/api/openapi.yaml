@@ -990,6 +990,78 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  /auth/oidc/login:
+    get:
+      tags: [Auth]
+      summary: Initiate OIDC login
+      description: |
+        Initiates the OpenID Connect authorization code flow with PKCE.
+        Generates state, nonce, and code verifier parameters, stores them in
+        HTTP-only cookies, and redirects the user to the configured identity
+        provider's authorization endpoint. The IdP will redirect back to the
+        callback endpoint after authentication.
+      security: []
+      operationId: oidcLogin
+      responses:
+        "302":
+          description: Redirect to identity provider authorization endpoint
+        "404":
+          description: OIDC provider is not configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Internal error generating security parameters
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /auth/oidc/callback:
+    get:
+      tags: [Auth]
+      summary: OIDC callback
+      description: |
+        Handles the identity provider's redirect after authentication. Validates
+        the state parameter against the stored cookie, exchanges the authorization
+        code for tokens using PKCE, verifies the ID token and nonce, then runs the
+        standard login/provisioning flow (user lookup, auto-provision if enabled,
+        session creation). On success, sets a session cookie and redirects to the
+        application root.
+      security: []
+      operationId: oidcCallback
+      parameters:
+        - name: code
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Authorization code from the identity provider
+        - name: state
+          in: query
+          required: true
+          schema:
+            type: string
+          description: State parameter for CSRF validation
+        - name: error
+          in: query
+          schema:
+            type: string
+          description: Error code returned by the identity provider (e.g. access_denied)
+        - name: error_description
+          in: query
+          schema:
+            type: string
+          description: Human-readable error description from the identity provider
+      responses:
+        "302":
+          description: |
+            Redirect to the application root on success (with session cookie set),
+            or redirect to the login page with an error query parameter on failure.
+            All outcomes use browser redirects since this endpoint is hit via a
+            full-page navigation from the identity provider, not an HTMX request.
+
   /auth/setup:
     post:
       tags: [Auth]

@@ -35,6 +35,7 @@ func (r *Router) handleCreateAPIToken(w http.ResponseWriter, req *http.Request) 
 	if body.Scopes == "" {
 		body.Scopes = "read"
 	}
+	callerRole := middleware.RoleFromContext(req.Context())
 	var normalizedScopes []string
 	for _, s := range strings.Split(body.Scopes, ",") {
 		trimmed := strings.TrimSpace(s)
@@ -44,6 +45,11 @@ func (r *Router) handleCreateAPIToken(w http.ResponseWriter, req *http.Request) 
 		scope := auth.TokenScope(trimmed)
 		if !auth.ValidScopes[scope] {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid scope: " + string(scope)})
+			return
+		}
+		// Operators may not create admin-scoped tokens (scope ceiling).
+		if scope == auth.ScopeAdmin && callerRole != "administrator" {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden: operator role cannot create admin-scoped tokens"})
 			return
 		}
 		normalizedScopes = append(normalizedScopes, trimmed)

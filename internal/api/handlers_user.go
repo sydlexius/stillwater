@@ -101,9 +101,23 @@ func (r *Router) handleRegister(w http.ResponseWriter, req *http.Request) {
 	}
 	// Limit request body to 1 MB to prevent abuse on this public endpoint.
 	req.Body = http.MaxBytesReader(w, req.Body, 1<<20)
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body."})
-		return
+
+	// Accept both JSON (API clients) and form-encoded (HTMX browser forms).
+	ct := req.Header.Get("Content-Type")
+	if strings.HasPrefix(ct, "application/json") {
+		if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body."})
+			return
+		}
+	} else {
+		if err := req.ParseForm(); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body."})
+			return
+		}
+		body.Code = req.FormValue("code")
+		body.Username = req.FormValue("username")
+		body.Password = req.FormValue("password")
+		body.DisplayName = req.FormValue("display_name")
 	}
 
 	if body.Code == "" {

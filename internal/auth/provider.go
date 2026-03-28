@@ -28,10 +28,11 @@ type Authenticator interface {
 
 // Credentials carries authentication input from the user.
 type Credentials struct {
-	Username string // For local, Emby, Jellyfin
-	Password string // For local, Emby, Jellyfin
-	Code     string // OIDC authorization code
-	State    string // OIDC state parameter
+	Username string            // For local, Emby, Jellyfin
+	Password string            // For local, Emby, Jellyfin
+	Code     string            // OIDC authorization code
+	State    string            // OIDC state parameter
+	Extra    map[string]string // Provider-specific parameters (e.g. PKCE code_verifier)
 }
 
 // Identity is the result of a successful authentication.

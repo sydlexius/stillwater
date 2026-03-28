@@ -264,10 +264,55 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 
 	tab := req.URL.Query().Get("tab")
 	switch tab {
-	case "general", "providers", "connections", "libraries", "automation", "rules", "maintenance":
+	case "general", "providers", "connections", "libraries", "automation", "rules",
+		"users", "auth_providers", "maintenance", "logs":
 		// Valid tab.
 	default:
 		tab = "general"
+	}
+
+	multiUserEnabled := r.getBoolSetting(req.Context(), "multi_user.enabled", false)
+
+	// Populate users and invites only when the users tab is active to avoid
+	// unnecessary DB queries on every settings page load.
+	var usersTabData templates.UsersTabData
+	usersTabData.MultiUserEnabled = multiUserEnabled
+	if multiUserEnabled && tab == "users" {
+		if users, err := r.authService.ListUsers(req.Context()); err == nil {
+			usersTabData.Users = users
+		} else {
+			r.logger.Warn("listing users for settings page", "error", err)
+			usersTabData.LoadError = "Failed to load users. Please refresh the page."
+		}
+		if invites, err := r.authService.ListPendingInvites(req.Context()); err == nil {
+			usersTabData.Invites = invites
+		} else {
+			r.logger.Warn("listing invites for settings page", "error", err)
+			if usersTabData.LoadError == "" {
+				usersTabData.LoadError = "Failed to load invites. Please refresh the page."
+			}
+		}
+	}
+
+	authProvidersData := templates.AuthProvidersData{
+		LocalEnabled:          r.getBoolSetting(req.Context(), "auth.providers.local.enabled", true),
+		EmbyEnabled:           r.getBoolSetting(req.Context(), "auth.providers.emby.enabled", false),
+		EmbyAutoProvision:     r.getBoolSetting(req.Context(), "auth.providers.emby.auto_provision", false),
+		EmbyGuardRail:         r.getStringSetting(req.Context(), "auth.providers.emby.guard_rail", "admin"),
+		EmbyDefaultRole:       r.getStringSetting(req.Context(), "auth.providers.emby.default_role", "operator"),
+		EmbyServerURL:         r.getStringSetting(req.Context(), "auth.providers.emby.server_url", r.getStringSetting(req.Context(), "auth.server_url", "")),
+		JellyfinEnabled:       r.getBoolSetting(req.Context(), "auth.providers.jellyfin.enabled", false),
+		JellyfinAutoProvision: r.getBoolSetting(req.Context(), "auth.providers.jellyfin.auto_provision", false),
+		JellyfinGuardRail:     r.getStringSetting(req.Context(), "auth.providers.jellyfin.guard_rail", "admin"),
+		JellyfinDefaultRole:   r.getStringSetting(req.Context(), "auth.providers.jellyfin.default_role", "operator"),
+		JellyfinServerURL:     r.getStringSetting(req.Context(), "auth.providers.jellyfin.server_url", r.getStringSetting(req.Context(), "auth.server_url", "")),
+		OIDCEnabled:           r.getBoolSetting(req.Context(), "auth.providers.oidc.enabled", false),
+		OIDCIssuerURL:         r.getStringSetting(req.Context(), "auth.providers.oidc.issuer_url", ""),
+		OIDCClientID:          r.getStringSetting(req.Context(), "auth.providers.oidc.client_id", ""),
+		OIDCAutoProvision:     r.getBoolSetting(req.Context(), "auth.providers.oidc.auto_provision", false),
+		OIDCAdminGroups:       r.getStringSetting(req.Context(), "auth.providers.oidc.admin_groups", ""),
+		OIDCUserGroups:        r.getStringSetting(req.Context(), "auth.providers.oidc.user_groups", ""),
+		OIDCDefaultRole:       r.getStringSetting(req.Context(), "auth.providers.oidc.default_role", "operator"),
 	}
 
 	data := templates.SettingsData{
@@ -294,6 +339,8 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 		BackupMaxAgeDays:        r.getIntSetting(req.Context(), "backup_max_age_days", r.backupService.MaxAgeDays()),
 		CacheMaxSizeMB:          r.getStringSetting(req.Context(), "cache.image.max_size_mb", "0"),
 		NameSimilarityThreshold: r.getNameSimilarityThreshold(req.Context()),
+		Users:                   usersTabData,
+		AuthProviders:           authProvidersData,
 	}
 	renderTempl(w, req, templates.SettingsPage(r.assets(), data))
 }

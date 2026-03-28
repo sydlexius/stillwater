@@ -332,6 +332,98 @@ func (s *Service) ClaimInviteAndRegister(ctx context.Context, code, username, pa
 	return s.GetUserByID(ctx, userID)
 }
 
+// ClaimInviteAndRegisterFederated atomically validates an invite, creates a
+// federated user from the provider identity, and redeems the invite within a
+// single database transaction. Used for OIDC invite redemption where the user
+// authenticates via an external IdP instead of providing a local password.
+func (s *Service) ClaimInviteAndRegisterFederated(ctx context.Context, code string, identity *Identity) (*User, error) {
+	if identity == nil {
+		return nil, fmt.Errorf("identity is required for federated invite redemption")
+	}
+
+	var userID string
+
+	err := s.withImmediateTx(ctx, func(conn *sql.Conn) error {
+		var inv Invite
+		var redeemedAt sql.NullString
+
+		err := conn.QueryRowContext(ctx, `
+			SELECT id, code, role, created_by, expires_at, redeemed_at, created_at
+			FROM invites WHERE code = ?
+		`, code).Scan(
+			&inv.ID, &inv.Code, &inv.Role, &inv.CreatedBy, &inv.ExpiresAt,
+			&redeemedAt, &inv.CreatedAt,
+		)
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrInviteNotFound
+		}
+		if err != nil {
+			return fmt.Errorf("looking up invite: %w", err)
+		}
+
+		if redeemedAt.Valid {
+			return ErrInviteRedeemed
+		}
+
+		expires, err := time.Parse(time.RFC3339, inv.ExpiresAt)
+		if err != nil {
+			return fmt.Errorf("parsing invite expiry: %w", err)
+		}
+		if !time.Now().UTC().Before(expires) {
+			return ErrInviteExpired
+		}
+
+		userID = uuid.New().String()
+		now := time.Now().UTC().Format(time.RFC3339)
+
+		var invitedByVal sql.NullString
+		if inv.CreatedBy != "" {
+			invitedByVal = sql.NullString{String: inv.CreatedBy, Valid: true}
+		}
+
+		displayName := identity.DisplayName
+		if displayName == "" {
+			displayName = identity.ProviderID
+		}
+
+		_, err = conn.ExecContext(ctx, `
+			INSERT INTO users (id, username, display_name, password_hash, role, auth_provider, provider_id,
+			                   is_active, invited_by, created_at, updated_at)
+			VALUES (?, ?, ?, '', ?, ?, ?, 1, ?, ?, ?)
+		`, userID, displayName, displayName, inv.Role, identity.ProviderType, identity.ProviderID, invitedByVal, now, now)
+		if err != nil {
+			errLower := strings.ToLower(err.Error())
+			if strings.Contains(errLower, "unique constraint") && strings.Contains(errLower, "username") {
+				return ErrUsernameConflict
+			}
+			return fmt.Errorf("creating federated user: %w", err)
+		}
+
+		result, err := conn.ExecContext(ctx, `
+			UPDATE invites SET redeemed_by = ?, redeemed_at = ?
+			WHERE id = ? AND redeemed_at IS NULL AND expires_at > ?
+		`, userID, now, inv.ID, now)
+		if err != nil {
+			return fmt.Errorf("redeeming invite: %w", err)
+		}
+
+		n, err := result.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("checking redeem rows affected: %w", err)
+		}
+		if n == 0 {
+			return ErrInviteExpired
+		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return s.GetUserByID(ctx, userID)
+}
+
 // generateInviteCode produces a unique invite code in the format
 // "sw_inv_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX" where X is a hex digit
 // derived from 16 random bytes (32 hex chars).

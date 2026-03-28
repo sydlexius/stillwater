@@ -1,6 +1,11 @@
 package templates
 
-templ LoginPage(assets AssetPaths, authMethod string) {
+import "github.com/sydlexius/stillwater/internal/auth"
+
+// LoginPage renders the login page. It accepts a slice of enabled auth providers
+// so the page can show federated buttons and/or the local credentials form as
+// appropriate for this instance's configuration.
+templ LoginPage(assets AssetPaths, providers []auth.Authenticator) {
 	<!DOCTYPE html>
 	<html lang="en" class="h-full">
 		<head>
@@ -39,78 +44,210 @@ templ LoginPage(assets AssetPaths, authMethod string) {
 			<div class="fixed inset-0 bg-black/30"></div>
 			<!-- Login card -->
 			<div class="relative z-10 flex min-h-full items-center justify-center px-4 py-12">
-				<div class="w-full max-w-md space-y-8 rounded-2xl bg-white/80 dark:bg-gray-900/80 backdrop-blur-md p-8 shadow-2xl ring-1 ring-white/20">
+				<div class="w-full max-w-md space-y-6 rounded-2xl bg-white/80 dark:bg-gray-900/80 backdrop-blur-md p-8 shadow-2xl ring-1 ring-white/20">
 					<div class="text-center">
 						<div class="flex justify-center">
 							<img src={ assets.BasePath + "/static/img/favicon.svg" } alt="" class="h-12 w-12" aria-hidden="true"/>
 						</div>
 						<h1 class="mt-3 text-3xl font-bold text-blue-600 dark:text-blue-400">Stillwater</h1>
-						if authMethod == "emby" {
-							<h2 class="mt-2 text-sm text-gray-600 dark:text-gray-400">Sign in with your Emby account</h2>
-						} else if authMethod == "jellyfin" {
-							<h2 class="mt-2 text-sm text-gray-600 dark:text-gray-400">Sign in with your Jellyfin account</h2>
-						} else {
-							<h2 class="mt-2 text-sm text-gray-600 dark:text-gray-400">Sign in to your account</h2>
-						}
+						<h2 class="mt-2 text-sm text-gray-600 dark:text-gray-400">Sign in to your account</h2>
 					</div>
-					<form
-						method="post"
-						action={ templ.SafeURL(assets.BasePath + "/api/v1/auth/login") }
-						hx-post="/api/v1/auth/login"
-						hx-swap="innerHTML"
-						hx-target="#login-result"
-						class="mt-6 space-y-5"
-					>
-						<div>
-							<label for="username" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
-								if authMethod == "emby" || authMethod == "jellyfin" {
-									Server Username
-								} else {
-									Username
-								}
-							</label>
-							<input
-								id="username"
-								name="username"
-								type="text"
-								required
-								autocomplete="username"
-								class="mt-1 block w-full rounded-lg border border-gray-300/60 dark:border-gray-600/60 bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm px-3 py-2 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-							/>
-						</div>
-						<div>
-							<label for="password" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
-								if authMethod == "emby" || authMethod == "jellyfin" {
-									Server Password
-								} else {
-									Password
-								}
-							</label>
-							<input
-								id="password"
-								name="password"
-								type="password"
-								required
-								autocomplete="current-password"
-								class="mt-1 block w-full rounded-lg border border-gray-300/60 dark:border-gray-600/60 bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm px-3 py-2 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-							/>
-						</div>
-						<button
-							type="submit"
-							class="flex w-full justify-center rounded-lg bg-blue-600 px-3 py-2.5 text-sm font-semibold text-white shadow-lg hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
-						>
-							if authMethod == "emby" {
-								Sign In with Emby
-							} else if authMethod == "jellyfin" {
-								Sign In with Jellyfin
-							} else {
-								Sign In
-							}
-						</button>
-					</form>
+					<!-- Federated provider buttons (Emby, Jellyfin, OIDC) -->
+					@loginFederatedButtons(assets, providers)
+					<!-- Local credentials form -->
+					@loginLocalForm(assets, providers)
 					<div id="login-result"></div>
 				</div>
 			</div>
+			<script>
+				// Display OIDC or other redirect-based login errors passed via ?error= param.
+				(function() {
+					var params = new URLSearchParams(window.location.search);
+					var errorMsg = params.get('error');
+					if (!errorMsg) { return; }
+					var el = document.getElementById('login-result');
+					if (!el) { return; }
+					var alert = document.createElement('div');
+					alert.setAttribute('role', 'alert');
+					alert.className = 'rounded-lg border border-red-300/60 dark:border-red-700/60 bg-red-50/80 dark:bg-red-900/30 px-4 py-3 text-sm text-red-700 dark:text-red-300';
+					alert.textContent = errorMsg;
+					el.appendChild(alert);
+					// Clear the error from the URL so it does not persist on refresh.
+					history.replaceState(null, '', window.location.pathname);
+				})();
+			</script>
 		</body>
 	</html>
+}
+
+// loginFederatedButtons renders sign-in buttons for non-local providers.
+// Returns nothing if no federated providers are enabled.
+templ loginFederatedButtons(assets AssetPaths, providers []auth.Authenticator) {
+	for _, p := range providers {
+		if p.Type() == "emby" {
+			<button
+				type="button"
+				aria-label="Sign in with Emby"
+				onclick="document.getElementById('federated-form-provider').value='emby'; document.getElementById('federated-form').classList.remove('hidden'); document.getElementById('federated-form-title').textContent='Sign in with Emby'; document.getElementById('federated-submit').textContent='Sign In with Emby';"
+				class="flex w-full items-center justify-center gap-3 rounded-lg border border-gray-300/60 dark:border-gray-600/60 bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm px-4 py-2.5 text-sm font-semibold text-gray-700 dark:text-gray-200 shadow-sm hover:bg-gray-50/80 dark:hover:bg-gray-700/60 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-colors"
+			>
+				<img src={ assets.BasePath + "/static/img/logos/emby-128.png" } alt="" class="h-5 w-5" aria-hidden="true"/>
+				Sign in with Emby
+			</button>
+		}
+		if p.Type() == "jellyfin" {
+			<button
+				type="button"
+				aria-label="Sign in with Jellyfin"
+				onclick="document.getElementById('federated-form-provider').value='jellyfin'; document.getElementById('federated-form').classList.remove('hidden'); document.getElementById('federated-form-title').textContent='Sign in with Jellyfin'; document.getElementById('federated-submit').textContent='Sign In with Jellyfin';"
+				class="flex w-full items-center justify-center gap-3 rounded-lg border border-gray-300/60 dark:border-gray-600/60 bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm px-4 py-2.5 text-sm font-semibold text-gray-700 dark:text-gray-200 shadow-sm hover:bg-gray-50/80 dark:hover:bg-gray-700/60 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-colors"
+			>
+				<img src={ assets.BasePath + "/static/img/logos/jellyfin-128.png" } alt="" class="h-5 w-5" aria-hidden="true"/>
+				Sign in with Jellyfin
+			</button>
+		}
+		if p.Type() == "oidc" {
+			<a
+				href={ templ.SafeURL(assets.BasePath + "/api/v1/auth/oidc/login") }
+				aria-label="Sign in with OIDC"
+				class="flex w-full items-center justify-center gap-3 rounded-lg border border-gray-300/60 dark:border-gray-600/60 bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm px-4 py-2.5 text-sm font-semibold text-gray-700 dark:text-gray-200 shadow-sm hover:bg-gray-50/80 dark:hover:bg-gray-700/60 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-colors"
+			>
+				<svg class="h-5 w-5 text-gray-500 dark:text-gray-400" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
+					<path stroke-linecap="round" stroke-linejoin="round" d="M15.75 5.25a3 3 0 0 1 3 3m3 0a6 6 0 0 1-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1 1 21.75 8.25Z"></path>
+				</svg>
+				Sign in with SSO
+			</a>
+		}
+	}
+	<!-- Federated credentials form (hidden until a provider button is clicked) -->
+	@loginFederatedForm(assets, providers)
+	<!-- Divider shown when both federated and local providers exist -->
+	@loginDivider(providers)
+}
+
+// loginFederatedForm is the shared username/password form for Emby and Jellyfin.
+// It is hidden by default and shown by the provider button onclick handlers above.
+templ loginFederatedForm(assets AssetPaths, providers []auth.Authenticator) {
+	if hasFederatedProvider(providers) {
+		<div id="federated-form" class="hidden mt-2 space-y-4">
+			<p id="federated-form-title" class="text-sm font-medium text-gray-700 dark:text-gray-300 text-center"></p>
+			<form
+				method="post"
+				action={ templ.SafeURL(assets.BasePath + "/api/v1/auth/login") }
+				hx-post="/api/v1/auth/login"
+				hx-swap="innerHTML"
+				hx-target="#login-result"
+				class="space-y-4"
+			>
+				<input type="hidden" id="federated-form-provider" name="provider" value=""/>
+				<div>
+					<label for="federated-username" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Server Username</label>
+					<input
+						id="federated-username"
+						name="username"
+						type="text"
+						autocomplete="username"
+						class="mt-1 block w-full rounded-lg border border-gray-300/60 dark:border-gray-600/60 bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm px-3 py-2 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+					/>
+				</div>
+				<div>
+					<label for="federated-password" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Server Password</label>
+					<input
+						id="federated-password"
+						name="password"
+						type="password"
+						autocomplete="current-password"
+						class="mt-1 block w-full rounded-lg border border-gray-300/60 dark:border-gray-600/60 bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm px-3 py-2 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+					/>
+				</div>
+				<button
+					id="federated-submit"
+					type="submit"
+					class="flex w-full justify-center rounded-lg bg-blue-600 px-3 py-2.5 text-sm font-semibold text-white shadow-lg hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
+				>
+					Sign In
+				</button>
+			</form>
+		</div>
+	}
+}
+
+// loginDivider renders an "or" divider between federated and local auth sections.
+// Only rendered when at least one federated provider and the local provider coexist.
+templ loginDivider(providers []auth.Authenticator) {
+	if hasFederatedProvider(providers) && hasLocalProvider(providers) {
+		<div class="relative mt-2">
+			<div class="absolute inset-0 flex items-center" aria-hidden="true">
+				<div class="w-full border-t border-gray-300/60 dark:border-gray-600/60"></div>
+			</div>
+			<div class="relative flex justify-center text-sm">
+				<span class="bg-white/80 dark:bg-gray-900/80 px-3 text-gray-500 dark:text-gray-400">or</span>
+			</div>
+		</div>
+	}
+}
+
+// loginLocalForm renders the username/password form for local authentication.
+// Only rendered when the local provider is enabled.
+templ loginLocalForm(assets AssetPaths, providers []auth.Authenticator) {
+	if hasLocalProvider(providers) {
+		<form
+			method="post"
+			action={ templ.SafeURL(assets.BasePath + "/api/v1/auth/login") }
+			hx-post="/api/v1/auth/login"
+			hx-swap="innerHTML"
+			hx-target="#login-result"
+			class="space-y-5"
+		>
+			<input type="hidden" name="provider" value="local"/>
+			<div>
+				<label for="username" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Username</label>
+				<input
+					id="username"
+					name="username"
+					type="text"
+					required
+					autocomplete="username"
+					class="mt-1 block w-full rounded-lg border border-gray-300/60 dark:border-gray-600/60 bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm px-3 py-2 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+				/>
+			</div>
+			<div>
+				<label for="password" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Password</label>
+				<input
+					id="password"
+					name="password"
+					type="password"
+					required
+					autocomplete="current-password"
+					class="mt-1 block w-full rounded-lg border border-gray-300/60 dark:border-gray-600/60 bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm px-3 py-2 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+				/>
+			</div>
+			<button
+				type="submit"
+				class="flex w-full justify-center rounded-lg bg-blue-600 px-3 py-2.5 text-sm font-semibold text-white shadow-lg hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
+			>
+				Sign In
+			</button>
+		</form>
+	}
+}
+
+// hasFederatedProvider reports whether any non-local provider is in the list.
+func hasFederatedProvider(providers []auth.Authenticator) bool {
+	for _, p := range providers {
+		if p.Type() != "local" {
+			return true
+		}
+	}
+	return false
+}
+
+// hasLocalProvider reports whether the local provider is in the list.
+func hasLocalProvider(providers []auth.Authenticator) bool {
+	for _, p := range providers {
+		if p.Type() == "local" {
+			return true
+		}
+	}
+	return false
 }
