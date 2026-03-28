@@ -3895,7 +3895,7 @@ templ ruleConfigForm(rl rule.Rule) {
 					name="trim_margin"
 					min="0"
 					max="20"
-					value={ intOrDefault(rl.Config.TrimMargin, 2) }
+					value={ strconv.Itoa(rl.Config.TrimMargin) }
 					class="mt-0.5 w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
 				/>
 			</label>

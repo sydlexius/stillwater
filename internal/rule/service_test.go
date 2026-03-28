@@ -113,14 +113,16 @@ func TestMigrateDeprecatedRule(t *testing.T) {
 		t.Errorf("expected 0 open violations for deprecated rule, got %d", openCount)
 	}
 
-	var dismissedCount int
-	if err := db.QueryRowContext(ctx, `
-		SELECT COUNT(*) FROM rule_violations WHERE rule_id = ? AND status = 'dismissed'`,
-		ruleLogoTrimmableDeprecated).Scan(&dismissedCount); err != nil {
-		t.Fatalf("counting dismissed violations: %v", err)
-	}
-	if dismissedCount != 2 {
-		t.Errorf("expected 2 dismissed violations, got %d", dismissedCount)
+	for _, id := range []string{"vd1", "vd2"} {
+		var status string
+		if err := db.QueryRowContext(ctx, `
+			SELECT status FROM rule_violations WHERE id = ? AND rule_id = ?`,
+			id, ruleLogoTrimmableDeprecated).Scan(&status); err != nil {
+			t.Fatalf("reading status for %s: %v", id, err)
+		}
+		if status != ViolationStatusDismissed {
+			t.Errorf("violation %s status = %q, want %q", id, status, ViolationStatusDismissed)
+		}
 	}
 
 	// Rule row should be deleted.
