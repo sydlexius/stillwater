@@ -42,7 +42,10 @@ func (p *LocalProvider) Authenticate(ctx context.Context, creds Credentials) (*I
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(hash), PrehashPassword(creds.Password)); err != nil {
-		return nil, ErrInvalidCredentials
+		if errors.Is(err, bcrypt.ErrMismatchedHashAndPassword) {
+			return nil, ErrInvalidCredentials
+		}
+		return nil, fmt.Errorf("verifying password hash: %w", err)
 	}
 
 	name := displayName

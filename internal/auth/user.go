@@ -353,13 +353,17 @@ func (s *Service) withImmediateTx(ctx context.Context, fn func(conn *sql.Conn) e
 		return fmt.Errorf("beginning immediate transaction: %w", err)
 	}
 
+	// Use a non-cancellable context for COMMIT/ROLLBACK so transaction cleanup
+	// completes even if the caller's context is canceled (gosec G118).
+	cleanupCtx := context.WithoutCancel(ctx)
+
 	if err := fn(conn); err != nil {
-		conn.ExecContext(ctx, "ROLLBACK") //nolint:errcheck
+		conn.ExecContext(cleanupCtx, "ROLLBACK") //nolint:errcheck
 		return err
 	}
 
-	if _, err := conn.ExecContext(ctx, "COMMIT"); err != nil {
-		conn.ExecContext(ctx, "ROLLBACK") //nolint:errcheck
+	if _, err := conn.ExecContext(cleanupCtx, "COMMIT"); err != nil {
+		conn.ExecContext(cleanupCtx, "ROLLBACK") //nolint:errcheck
 		return fmt.Errorf("committing transaction: %w", err)
 	}
 
