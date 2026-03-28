@@ -37,6 +37,25 @@ type logoBoundsCacheEntry struct {
 // logo bounds cache. When this limit is reached, the oldest entry is evicted.
 const maxLogoBoundsCacheSize = 500
 
+// PlatformImageFetcher abstracts fetching and uploading artist images through
+// platform connections (Emby, Jellyfin). This allows the rule engine to check
+// and fix images for artists that have no local filesystem path but are managed
+// by a media server API.
+type PlatformImageFetcher interface {
+	// FetchArtistImage downloads the image bytes for the given Stillwater artist ID
+	// and image type (e.g. "logo", "thumb") from a connected media platform.
+	FetchArtistImage(ctx context.Context, artistID, imageType string) (data []byte, contentType string, err error)
+	// UploadArtistImage pushes image bytes to the connected media platform(s)
+	// for the given Stillwater artist ID and image type.
+	UploadArtistImage(ctx context.Context, artistID, imageType string, data []byte, contentType string) error
+}
+
+// apiImageCacheKey identifies a cached API-fetched image by artist and type.
+type apiImageCacheKey struct {
+	artistID  string
+	imageType string
+}
+
 // Engine evaluates rules against artists.
 type Engine struct {
 	service         *Service
@@ -74,6 +93,20 @@ type Engine struct {
 	// maxLogoBoundsCacheSize entries; oldest entry is evicted when full.
 	logoBoundsCache     map[logoBoundsCacheKey]logoBoundsCacheEntry
 	logoBoundsCacheKeys []logoBoundsCacheKey // insertion-order list for eviction
+
+	// imageFetcher provides platform API access for fetching and uploading
+	// artist images. When set, checkers and fixers can handle artists that
+	// have no local filesystem path (API-only imports from Emby/Jellyfin).
+	imageFetcher PlatformImageFetcher
+
+	// apiImageCacheMu guards apiImageCache.
+	apiImageCacheMu sync.Mutex
+	// apiImageCache stores raw image bytes fetched via the platform API. This
+	// avoids double-fetching between the checker (which reads the image to
+	// measure padding) and the fixer (which reads it again to trim). Entries
+	// are consumed (deleted) by ConsumeAPIImage when the fixer reads them,
+	// preventing unbounded growth without requiring a global clear.
+	apiImageCache map[apiImageCacheKey][]byte
 }
 
 // NewEngine creates a rule evaluation engine with all built-in checkers registered.
@@ -169,6 +202,59 @@ func (e *Engine) FSCache() *FSCache {
 	return e.fsCache
 }
 
+// SetImageFetcher attaches a platform image fetcher to the engine. When set,
+// the logo_padding checker and fixer can operate on API-only artists that have
+// no local filesystem path.
+func (e *Engine) SetImageFetcher(f PlatformImageFetcher) {
+	e.imageFetcher = f
+}
+
+// ImageFetcher returns the engine's platform image fetcher, or nil if none
+// is configured. Fixers use this accessor to fetch and upload images through
+// platform APIs.
+func (e *Engine) ImageFetcher() PlatformImageFetcher {
+	return e.imageFetcher
+}
+
+// lookupAPIImage returns cached image bytes fetched via the platform API for
+// the given artist and image type. Returns nil, false if no entry exists.
+// This is a read-only lookup used by checkers during evaluation.
+func (e *Engine) lookupAPIImage(artistID, imageType string) ([]byte, bool) {
+	key := apiImageCacheKey{artistID: artistID, imageType: imageType}
+	e.apiImageCacheMu.Lock()
+	defer e.apiImageCacheMu.Unlock()
+	data, ok := e.apiImageCache[key]
+	return data, ok
+}
+
+// ConsumeAPIImage returns cached image bytes and removes the entry from the
+// cache. This is the exported accessor used by fixers: the consume-on-read
+// pattern prevents unbounded cache growth and avoids the need for a global
+// cache clear in Evaluate (which would race with concurrent evaluations).
+func (e *Engine) ConsumeAPIImage(artistID, imageType string) ([]byte, bool) {
+	key := apiImageCacheKey{artistID: artistID, imageType: imageType}
+	e.apiImageCacheMu.Lock()
+	defer e.apiImageCacheMu.Unlock()
+	data, ok := e.apiImageCache[key]
+	if ok {
+		delete(e.apiImageCache, key)
+	}
+	return data, ok
+}
+
+// storeAPIImage caches image bytes fetched via the platform API for the given
+// artist and image type. Entries are consumed (deleted) by ConsumeAPIImage when
+// the fixer reads them, preventing unbounded growth.
+func (e *Engine) storeAPIImage(artistID, imageType string, data []byte) {
+	key := apiImageCacheKey{artistID: artistID, imageType: imageType}
+	e.apiImageCacheMu.Lock()
+	defer e.apiImageCacheMu.Unlock()
+	if e.apiImageCache == nil {
+		e.apiImageCache = make(map[apiImageCacheKey][]byte)
+	}
+	e.apiImageCache[key] = data
+}
+
 // InvalidateRuleCache drops the cached rule list so the next Evaluate call
 // fetches fresh data from the database. Call this after any rule mutation
 // (create, update, delete) to ensure the engine sees the change within the
@@ -182,8 +268,11 @@ func (e *Engine) InvalidateRuleCache() {
 
 // Evaluate runs all enabled rules against an artist and returns the results.
 func (e *Engine) Evaluate(ctx context.Context, a *artist.Artist) (*EvaluationResult, error) {
-	// Clear per-evaluation shared-filesystem cache so each top-level Evaluate
-	// call gets fresh data while avoiding N+1 queries within the same run.
+	// Clear the shared-filesystem cache so each top-level Evaluate call gets
+	// fresh data while avoiding N+1 queries within the same run. The API image
+	// cache is NOT cleared here: it is keyed by (artistID, imageType) so
+	// entries from different evaluations do not conflict, and the fixer consumes
+	// entries via ConsumeAPIImage (delete-on-read) to prevent unbounded growth.
 	e.sharedFSMu.Lock()
 	e.sharedFSCache = nil
 	e.sharedFSMu.Unlock()

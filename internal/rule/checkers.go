@@ -1,6 +1,7 @@
 package rule
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	goimage "image"
@@ -457,40 +458,88 @@ func (e *Engine) getLogoBoundsContent(logoPath string) (content, original goimag
 	return c, orig, true
 }
 
+// getLogoBoundsFromBytes computes ContentBounds from raw image bytes without
+// hitting the filesystem. Used for API-sourced images that have no local path.
+func (e *Engine) getLogoBoundsFromBytes(data []byte) (content, original goimage.Rectangle, ok bool) {
+	c, orig, err := image.ContentBounds(bytes.NewReader(data))
+	if err != nil {
+		e.logger.Debug("logo bounds from bytes: decode failed",
+			slog.String("error", err.Error()))
+		return goimage.Rectangle{}, goimage.Rectangle{}, false
+	}
+	return c, orig, true
+}
+
 // makeLogoPaddingChecker returns a Checker closure that detects logos where
 // total padding (transparent or whitespace) exceeds a configurable threshold.
 // Uses an area-based ratio and supports both PNG alpha and non-PNG whitespace.
 // Results of the underlying ContentBounds image decode are cached by
 // (filePath, modTime) on the Engine to avoid re-decoding the same file on
-// every evaluation.
+// every evaluation. For API-only artists (no local path), the checker fetches
+// the logo through the platform image fetcher and caches the raw bytes only
+// when a violation is found, so the fixer can consume them.
 func (e *Engine) makeLogoPaddingChecker() Checker {
 	return func(a *artist.Artist, cfg RuleConfig) *Violation {
-		if !a.LogoExists || a.Path == "" {
+		if !a.LogoExists {
 			return nil
 		}
 
-		entries, readErr := e.readDirCached(a.Path)
-		if readErr != nil {
-			e.logger.Debug("logo padding check skipped: cannot read artist directory",
-				slog.String("artist", a.Name),
-				slog.String("path", a.Path),
-				slog.String("error", readErr.Error()))
-			return nil
-		}
-		lowerToActual := buildLowerToActual(entries)
+		// apiData holds freshly fetched logo bytes from the platform API.
+		// Only stored in the cache when a violation is found, so the fixer
+		// can consume them. Passing checks discard the bytes immediately.
+		var apiData []byte
 
-		var logoPath string
-		for _, pattern := range logoPatterns {
-			if actual, ok := lowerToActual[strings.ToLower(pattern)]; ok {
-				logoPath = filepath.Join(a.Path, actual)
-				break
+		var content, original goimage.Rectangle
+		var ok bool
+
+		if a.Path != "" {
+			// Filesystem path available: use the cached file-based approach.
+			entries, readErr := e.readDirCached(a.Path)
+			if readErr != nil {
+				e.logger.Debug("logo padding check skipped: cannot read artist directory",
+					slog.String("artist", a.Name),
+					slog.String("path", a.Path),
+					slog.String("error", readErr.Error()))
+				return nil
 			}
-		}
-		if logoPath == "" {
+			lowerToActual := buildLowerToActual(entries)
+
+			var logoPath string
+			for _, pattern := range logoPatterns {
+				if actual, found := lowerToActual[strings.ToLower(pattern)]; found {
+					logoPath = filepath.Join(a.Path, actual)
+					break
+				}
+			}
+			if logoPath == "" {
+				return nil
+			}
+
+			content, original, ok = e.getLogoBoundsContent(logoPath)
+		} else if e.imageFetcher != nil {
+			// No local path: try fetching via platform API.
+			data, cached := e.lookupAPIImage(a.ID, "logo")
+			if !cached {
+				var fetchErr error
+				data, _, fetchErr = e.imageFetcher.FetchArtistImage(
+					context.Background(), a.ID, "logo")
+				if fetchErr != nil {
+					e.logger.Debug("logo padding check skipped: API fetch failed",
+						slog.String("artist", a.Name),
+						slog.String("error", fetchErr.Error()))
+					return nil
+				}
+				apiData = data // remember for caching on violation
+			}
+			if len(data) == 0 {
+				return nil
+			}
+			content, original, ok = e.getLogoBoundsFromBytes(data)
+		} else {
+			// No path and no image fetcher: cannot check.
 			return nil
 		}
 
-		content, original, ok := e.getLogoBoundsContent(logoPath)
 		if !ok || original.Dx() == 0 || original.Dy() == 0 {
 			return nil
 		}
@@ -515,6 +564,11 @@ func (e *Engine) makeLogoPaddingChecker() Checker {
 
 		if paddingRatio <= threshFrac {
 			return nil
+		}
+
+		// Cache API-fetched bytes for the fixer only when returning a violation.
+		if apiData != nil {
+			e.storeAPIImage(a.ID, "logo", apiData)
 		}
 
 		return &Violation{
