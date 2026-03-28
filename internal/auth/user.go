@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -247,6 +248,10 @@ func (s *Service) CreateLocalUser(ctx context.Context, username, password, displ
 		VALUES (?, ?, ?, ?, ?, 'local', '', 1, ?, ?, ?)
 	`, id, username, displayName, string(hash), role, invitedByVal, now, now)
 	if err != nil {
+		errLower := strings.ToLower(err.Error())
+		if strings.Contains(errLower, "unique constraint") && strings.Contains(errLower, "username") {
+			return nil, ErrUsernameConflict
+		}
 		return nil, fmt.Errorf("creating local user: %w", err)
 	}
 

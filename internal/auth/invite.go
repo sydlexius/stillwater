@@ -137,7 +137,7 @@ func (s *Service) ListPendingInvites(ctx context.Context) ([]Invite, error) {
 	}
 	defer rows.Close() //nolint:errcheck
 
-	var invites []Invite
+	invites := []Invite{}
 	for rows.Next() {
 		var inv Invite
 		var redeemedBy sql.NullString
