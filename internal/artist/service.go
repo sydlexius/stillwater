@@ -982,11 +982,15 @@ func applyImageMetadata(a *Artist, imgs []ArtistImage) {
 			a.ThumbExists = img.Exists
 			a.ThumbLowRes = img.LowRes
 			a.ThumbPlaceholder = img.Placeholder
+			a.ThumbWidth = img.Width
+			a.ThumbHeight = img.Height
 		case "fanart":
 			if img.SlotIndex == 0 {
 				a.FanartExists = img.Exists
 				a.FanartLowRes = img.LowRes
 				a.FanartPlaceholder = img.Placeholder
+				a.FanartWidth = img.Width
+				a.FanartHeight = img.Height
 			}
 			if img.Exists {
 				fanartCount++
@@ -995,10 +999,14 @@ func applyImageMetadata(a *Artist, imgs []ArtistImage) {
 			a.LogoExists = img.Exists
 			a.LogoLowRes = img.LowRes
 			a.LogoPlaceholder = img.Placeholder
+			a.LogoWidth = img.Width
+			a.LogoHeight = img.Height
 		case "banner":
 			a.BannerExists = img.Exists
 			a.BannerLowRes = img.LowRes
 			a.BannerPlaceholder = img.Placeholder
+			a.BannerWidth = img.Width
+			a.BannerHeight = img.Height
 		}
 	}
 	a.FanartCount = fanartCount
@@ -1019,6 +1027,8 @@ func extractImageMetadata(a *Artist) []ArtistImage {
 			Exists:      a.ThumbExists,
 			LowRes:      a.ThumbLowRes,
 			Placeholder: a.ThumbPlaceholder,
+			Width:       a.ThumbWidth,
+			Height:      a.ThumbHeight,
 		})
 	}
 	if a.FanartExists || a.FanartLowRes || a.FanartPlaceholder != "" {
@@ -1029,6 +1039,8 @@ func extractImageMetadata(a *Artist) []ArtistImage {
 			Exists:      a.FanartExists,
 			LowRes:      a.FanartLowRes,
 			Placeholder: a.FanartPlaceholder,
+			Width:       a.FanartWidth,
+			Height:      a.FanartHeight,
 		})
 		// Persist additional fanart slots so FanartCount round-trips through the DB.
 		// Slots 1..FanartCount-1 only track existence; per-slot metadata (dimensions,
@@ -1052,6 +1064,8 @@ func extractImageMetadata(a *Artist) []ArtistImage {
 			Exists:      a.LogoExists,
 			LowRes:      a.LogoLowRes,
 			Placeholder: a.LogoPlaceholder,
+			Width:       a.LogoWidth,
+			Height:      a.LogoHeight,
 		})
 	}
 	if a.BannerExists || a.BannerLowRes || a.BannerPlaceholder != "" {
@@ -1062,6 +1076,8 @@ func extractImageMetadata(a *Artist) []ArtistImage {
 			Exists:      a.BannerExists,
 			LowRes:      a.BannerLowRes,
 			Placeholder: a.BannerPlaceholder,
+			Width:       a.BannerWidth,
+			Height:      a.BannerHeight,
 		})
 	}
 

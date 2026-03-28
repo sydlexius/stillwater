@@ -75,14 +75,14 @@ func checkThumbExists(a *artist.Artist, _ RuleConfig) *Violation {
 }
 
 // makeThumbSquareChecker returns a Checker closure that uses the Engine's
-// cached directory listing to find and measure the thumbnail image.
+// DB-stored dimensions (with filesystem fallback) to measure the thumbnail.
 func (e *Engine) makeThumbSquareChecker() Checker {
 	return func(a *artist.Artist, cfg RuleConfig) *Violation {
 		if !a.ThumbExists {
 			return nil // thumb_exists rule handles this case
 		}
 
-		w, h, err := e.getImageDimensionsCached(a.Path, thumbPatterns)
+		w, h, err := e.getImageDimensionsResolved(a.ID, a.Path, "thumb", thumbPatterns)
 		if err != nil {
 			return nil // cannot read image; skip check
 		}
@@ -113,14 +113,14 @@ func (e *Engine) makeThumbSquareChecker() Checker {
 }
 
 // makeThumbMinResChecker returns a Checker closure that uses the Engine's
-// cached directory listing to find and measure the thumbnail image.
+// DB-stored dimensions (with filesystem fallback) to measure the thumbnail.
 func (e *Engine) makeThumbMinResChecker() Checker {
 	return func(a *artist.Artist, cfg RuleConfig) *Violation {
 		if !a.ThumbExists {
 			return nil // thumb_exists rule handles this case
 		}
 
-		w, h, err := e.getImageDimensionsCached(a.Path, thumbPatterns)
+		w, h, err := e.getImageDimensionsResolved(a.ID, a.Path, "thumb", thumbPatterns)
 		if err != nil {
 			return nil // cannot read image; skip check
 		}
@@ -203,13 +203,13 @@ func checkBioExists(a *artist.Artist, cfg RuleConfig) *Violation {
 }
 
 // makeFanartMinResChecker returns a Checker closure that uses the Engine's
-// cached directory listing to find and measure the fanart image.
+// DB-stored dimensions (with filesystem fallback) to measure the fanart.
 func (e *Engine) makeFanartMinResChecker() Checker {
 	return func(a *artist.Artist, cfg RuleConfig) *Violation {
 		if !a.FanartExists {
 			return nil // fanart_exists handles missing fanart
 		}
-		w, h, err := e.getImageDimensionsCached(a.Path, fanartPatterns)
+		w, h, err := e.getImageDimensionsResolved(a.ID, a.Path, "fanart", fanartPatterns)
 		if err != nil {
 			return nil
 		}
@@ -235,13 +235,13 @@ func (e *Engine) makeFanartMinResChecker() Checker {
 }
 
 // makeFanartAspectChecker returns a Checker closure that uses the Engine's
-// cached directory listing to find and measure the fanart image.
+// DB-stored dimensions (with filesystem fallback) to measure the fanart.
 func (e *Engine) makeFanartAspectChecker() Checker {
 	return func(a *artist.Artist, cfg RuleConfig) *Violation {
 		if !a.FanartExists {
 			return nil
 		}
-		w, h, err := e.getImageDimensionsCached(a.Path, fanartPatterns)
+		w, h, err := e.getImageDimensionsResolved(a.ID, a.Path, "fanart", fanartPatterns)
 		if err != nil {
 			return nil
 		}
@@ -269,13 +269,13 @@ func (e *Engine) makeFanartAspectChecker() Checker {
 }
 
 // makeLogoMinResChecker returns a Checker closure that uses the Engine's
-// cached directory listing to find and measure the logo image.
+// DB-stored dimensions (with filesystem fallback) to measure the logo.
 func (e *Engine) makeLogoMinResChecker() Checker {
 	return func(a *artist.Artist, cfg RuleConfig) *Violation {
 		if !a.LogoExists {
 			return nil
 		}
-		w, _, err := e.getImageDimensionsCached(a.Path, logoPatterns)
+		w, _, err := e.getImageDimensionsResolved(a.ID, a.Path, "logo", logoPatterns)
 		if err != nil {
 			return nil
 		}
@@ -312,13 +312,13 @@ func checkBannerExists(a *artist.Artist, _ RuleConfig) *Violation {
 }
 
 // makeBannerMinResChecker returns a Checker closure that uses the Engine's
-// cached directory listing to find and measure the banner image.
+// DB-stored dimensions (with filesystem fallback) to measure the banner.
 func (e *Engine) makeBannerMinResChecker() Checker {
 	return func(a *artist.Artist, cfg RuleConfig) *Violation {
 		if !a.BannerExists {
 			return nil
 		}
-		w, h, err := e.getImageDimensionsCached(a.Path, bannerPatterns)
+		w, h, err := e.getImageDimensionsResolved(a.ID, a.Path, "banner", bannerPatterns)
 		if err != nil {
 			return nil
 		}

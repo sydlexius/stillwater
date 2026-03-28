@@ -1,6 +1,9 @@
 package rule
 
 import (
+	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -372,4 +375,55 @@ func (e *Engine) getImageDimensionsCached(dirPath string, patterns []string) (in
 	}
 
 	return 0, 0, fmt.Errorf("no matching image in %s", dirPath)
+}
+
+// getImageDimensionsFromDB queries the artist_images table for the dimensions
+// of a specific image type (slot 0, exists_flag = 1). Returns (0, 0, nil) when
+// the row exists but dimensions are not populated, or when no matching row
+// exists. An error is only returned on actual database failures.
+func (e *Engine) getImageDimensionsFromDB(artistID, imageType string) (int, int, error) {
+	if e.db == nil {
+		return 0, 0, nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var w, h int
+	err := e.db.QueryRowContext(
+		ctx,
+		`SELECT width, height FROM artist_images
+		 WHERE artist_id = ? AND image_type = ? AND slot_index = 0 AND exists_flag = 1`,
+		artistID, imageType,
+	).Scan(&w, &h)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, 0, nil
+	}
+	if err != nil {
+		return 0, 0, fmt.Errorf("querying artist_images dimensions: %w", err)
+	}
+	return w, h, nil
+}
+
+// getImageDimensionsResolved tries to resolve image dimensions using DB-stored
+// values first, then falls back to the filesystem cache when the DB has no
+// dimensions (0, 0) and a directory path is available. This allows dimension
+// checks to work for API-imported artists (no filesystem path) as long as some
+// pipeline (e.g., scanner or provider image downloads) has populated the
+// artist_images width/height columns.
+func (e *Engine) getImageDimensionsResolved(artistID, dirPath, imageType string, patterns []string) (int, int, error) {
+	// Try DB first -- works for both filesystem and API-imported artists.
+	w, h, err := e.getImageDimensionsFromDB(artistID, imageType)
+	if err != nil {
+		return 0, 0, fmt.Errorf("querying dimensions from DB: %w", err)
+	}
+	if w > 0 && h > 0 {
+		return w, h, nil
+	}
+
+	// Fall back to filesystem when DB dimensions are missing and path is available.
+	if dirPath != "" {
+		return e.getImageDimensionsCached(dirPath, patterns)
+	}
+
+	return 0, 0, fmt.Errorf("no dimensions available for %s/%s", artistID, imageType)
 }
