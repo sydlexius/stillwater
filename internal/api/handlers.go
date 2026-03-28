@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -197,6 +198,87 @@ func (r *Router) completeLogin(w http.ResponseWriter, req *http.Request, provide
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
+// completeLoginRedirect performs the same user lookup/provision/session logic as
+// completeLogin but finishes with a browser redirect (302) instead of JSON.
+// Used for the OIDC callback which arrives as a full-page browser navigation.
+func (r *Router) completeLoginRedirect(w http.ResponseWriter, req *http.Request, provider auth.Authenticator, identity *auth.Identity) {
+	ctx := req.Context()
+
+	var user *auth.User
+	var lookupErr error
+
+	if identity.ProviderType == "local" {
+		user, lookupErr = r.authService.GetUserByID(ctx, identity.ProviderID)
+	} else {
+		user, lookupErr = r.authService.GetUserByProvider(ctx, identity.ProviderType, identity.ProviderID)
+	}
+
+	if lookupErr != nil {
+		if !errors.Is(lookupErr, sql.ErrNoRows) {
+			r.logger.Error("failed to look up user during login",
+				"provider", identity.ProviderType, "provider_id", identity.ProviderID, "error", lookupErr)
+			r.redirectWithError(w, req, "An internal error occurred. Please try again.")
+			return
+		}
+
+		if !provider.CanAutoProvision(identity) {
+			r.logger.Warn("login: user not found and auto-provision disabled",
+				"provider", identity.ProviderType, "provider_id", identity.ProviderID)
+			r.redirectWithError(w, req, "This account is not authorized for this Stillwater instance. Contact your administrator.")
+			return
+		}
+
+		role := provider.MapRole(identity)
+		if role == "" {
+			role = "operator"
+		}
+		var createErr error
+		user, createErr = r.authService.CreateFederatedUser(ctx, identity, role, "")
+		if createErr != nil {
+			r.logger.Error("failed to auto-provision federated user",
+				"provider", identity.ProviderType, "provider_id", identity.ProviderID, "error", createErr)
+			r.redirectWithError(w, req, "An internal error occurred. Please try again.")
+			return
+		}
+	}
+
+	if !user.IsActive {
+		r.logger.Warn("login: inactive user attempted login", "user_id", user.ID)
+		r.redirectWithError(w, req, "Your account has been deactivated. Contact your administrator.")
+		return
+	}
+
+	if identity.ProviderType != "local" && identity.DisplayName != "" && identity.DisplayName != user.DisplayName {
+		if syncErr := r.authService.SyncDisplayName(ctx, user.ID, identity.DisplayName); syncErr != nil {
+			r.logger.Warn("failed to sync display name", "user_id", user.ID, "error", syncErr)
+		}
+	}
+
+	if identity.RawToken != "" && identity.ProviderType != "local" {
+		serverURL := r.getStringSetting(ctx, "auth.server_url", "")
+		if serverURL != "" {
+			r.updateConnectionToken(ctx, identity.ProviderType, serverURL, identity.ProviderID, identity.RawToken)
+		}
+	}
+
+	token, err := r.authService.CreateSession(ctx, user.ID)
+	if err != nil {
+		r.logger.Error("failed to create session", "user_id", user.ID, "error", err)
+		r.redirectWithError(w, req, "An internal error occurred. Please try again.")
+		return
+	}
+
+	r.setSessionCookie(w, req, token)
+	http.Redirect(w, req, r.basePath+"/", http.StatusFound)
+}
+
+// redirectWithError redirects the user to the login page with an error message
+// as a query parameter. Used for OIDC and other browser-navigated flows where
+// JSON responses are not appropriate.
+func (r *Router) redirectWithError(w http.ResponseWriter, req *http.Request, msg string) {
+	http.Redirect(w, req, r.basePath+"/?error="+url.QueryEscape(msg), http.StatusFound)
+}
+
 // handleLoginLocal performs local username/password authentication.
 // Used as a legacy fallback when the auth registry is not configured.
 func (r *Router) handleLoginLocal(w http.ResponseWriter, req *http.Request, username, password string) {
@@ -273,11 +355,81 @@ func (r *Router) setSessionCookie(w http.ResponseWriter, req *http.Request, toke
 	})
 }
 
-// renderLoginPage renders the login page with the configured auth method.
+// renderLoginPage renders the login page with all enabled auth providers.
+// When the auth registry is configured, the page shows buttons for each
+// registered provider (Emby, Jellyfin, OIDC) plus a local credentials form
+// when the local provider is enabled.
+// Falls back to the legacy auth.method setting when no registry is wired.
 func (r *Router) renderLoginPage(w http.ResponseWriter, req *http.Request) {
-	authMethod := r.getStringSetting(req.Context(), "auth.method", "local")
-	renderTempl(w, req, templates.LoginPage(r.assets(), authMethod))
+	var providers []auth.Authenticator
+	if r.authRegistry != nil {
+		providers = r.authRegistry.Enabled()
+	}
+	// Legacy fallback: if no registry is configured, synthesize a single
+	// synthetic provider entry based on the auth.method setting so the
+	// template always has something to render.
+	if len(providers) == 0 {
+		authMethod := r.getStringSetting(req.Context(), "auth.method", "local")
+		providers = []auth.Authenticator{syntheticProvider{providerType: authMethod}}
+	}
+	renderTempl(w, req, templates.LoginPage(r.assets(), providers))
 }
+
+// handleRegisterPage serves the invite redemption page.
+// If a ?code= query parameter is present and valid it pre-validates the invite
+// and shows the registration form immediately; otherwise the user must enter
+// the code manually.
+// GET /register
+func (r *Router) handleRegisterPage(w http.ResponseWriter, req *http.Request) {
+	code := req.URL.Query().Get("code")
+
+	data := templates.RegisterPageData{
+		Code: code,
+	}
+
+	// Populate providers from registry (or fallback to local).
+	if r.authRegistry != nil {
+		data.Providers = r.authRegistry.Enabled()
+	}
+	if len(data.Providers) == 0 {
+		authMethod := r.getStringSetting(req.Context(), "auth.method", "local")
+		data.Providers = []auth.Authenticator{syntheticProvider{providerType: authMethod}}
+	}
+
+	// If a code was provided, validate it to show the invite info banner or an
+	// error message without requiring a form submission.
+	if code != "" && r.authService != nil {
+		invite, err := r.authService.GetInviteByCode(req.Context(), code)
+		switch {
+		case err == nil:
+			data.Invite = invite
+		case errors.Is(err, auth.ErrInviteNotFound):
+			data.InviteError = "This invite code is invalid."
+		case errors.Is(err, auth.ErrInviteRedeemed):
+			data.InviteError = "This invite has already been used."
+		case errors.Is(err, auth.ErrInviteExpired):
+			data.InviteError = "This invite has expired."
+		default:
+			r.logger.Error("validating invite code for register page", "error", err)
+			data.InviteError = "Unable to validate invite code. Please try again."
+		}
+	}
+
+	renderTempl(w, req, templates.RegisterPage(r.assets(), data))
+}
+
+// syntheticProvider is a minimal auth.Authenticator implementation used as a
+// fallback when the auth registry is not configured. It satisfies the interface
+// so the login and register templates can iterate over a provider list without
+// nil-checking the registry.
+type syntheticProvider struct{ providerType string }
+
+func (s syntheticProvider) Type() string { return s.providerType }
+func (s syntheticProvider) Authenticate(_ context.Context, _ auth.Credentials) (*auth.Identity, error) {
+	return nil, fmt.Errorf("synthetic provider does not support authentication")
+}
+func (s syntheticProvider) CanAutoProvision(_ *auth.Identity) bool { return false }
+func (s syntheticProvider) MapRole(_ *auth.Identity) string        { return "" }
 
 // authMethodDisplayName returns a human-readable name for the auth method.
 func authMethodDisplayName(method string) string {
@@ -436,11 +588,44 @@ func (r *Router) handleSetup(w http.ResponseWriter, req *http.Request) {
 		body.ServerURL = req.FormValue("server_url")
 	}
 
-	switch body.AuthMethod {
-	case "", "local":
+	authMethod := body.AuthMethod
+	if authMethod == "" {
+		authMethod = "local"
+	}
+
+	// For federated providers, use the registry path when available. This ensures
+	// the first user is always Administrator regardless of the provider's MapRole.
+	// Local setup must skip the registry because there is no existing user to
+	// authenticate against yet -- handleSetupLocal creates the user directly.
+	if r.authRegistry != nil && authMethod != "local" {
+		if provider, ok := r.authRegistry.Get(authMethod); ok {
+			creds := auth.Credentials{
+				Username: body.Username,
+				Password: body.Password,
+			}
+			identity, err := provider.Authenticate(req.Context(), creds)
+			if err != nil {
+				r.logger.Warn("setup authentication failed", "provider", authMethod, "error", err)
+				if authMethod == "local" {
+					writeFormError(w, req, http.StatusBadRequest, "Username and password are required.")
+				} else if errors.Is(err, auth.ErrInvalidCredentials) {
+					writeFormError(w, req, http.StatusUnauthorized, fmt.Sprintf("Invalid %s credentials.", authMethodDisplayName(authMethod)))
+				} else {
+					writeFormError(w, req, http.StatusBadGateway, fmt.Sprintf("Cannot connect to %s server. Please verify the server is running.", authMethodDisplayName(authMethod)))
+				}
+				return
+			}
+			r.handleSetupWithIdentity(w, req, identity, authMethod, body.ServerURL)
+			return
+		}
+	}
+
+	// Legacy fallback when the registry is not configured.
+	switch authMethod {
+	case "local":
 		r.handleSetupLocal(w, req, body.Username, body.Password)
 	case "emby", "jellyfin":
-		r.handleSetupFederated(w, req, body.AuthMethod, body.Username, body.Password, body.ServerURL)
+		r.handleSetupFederated(w, req, authMethod, body.Username, body.Password, body.ServerURL)
 	default:
 		writeFormError(w, req, http.StatusBadRequest, "Unsupported auth method.")
 	}
@@ -578,6 +763,109 @@ func (r *Router) handleSetupFederated(w http.ResponseWriter, req *http.Request, 
 	}
 
 	r.setSessionCookie(w, req, token)
+	w.Header().Set("HX-Redirect", r.basePath+"/")
+	writeJSON(w, http.StatusCreated, map[string]string{"status": "admin account created"})
+}
+
+// handleSetupWithIdentity completes the setup flow when the provider registry
+// is configured. The first user is always created as Administrator regardless
+// of what the provider's MapRole returns.
+func (r *Router) handleSetupWithIdentity(w http.ResponseWriter, req *http.Request, identity *auth.Identity, authMethod, serverURL string) {
+	ctx := req.Context()
+
+	// Emby and Jellyfin require a server URL and admin flag on the remote account.
+	requiresServerURL := authMethod == "emby" || authMethod == "jellyfin"
+	if requiresServerURL {
+		if serverURL == "" {
+			writeFormError(w, req, http.StatusBadRequest, "Server URL is required for federated authentication.")
+			return
+		}
+		cleanedURL, err := connection.ValidateBaseURL(serverURL)
+		if err != nil {
+			writeFormError(w, req, http.StatusBadRequest, "Invalid server URL.")
+			return
+		}
+		serverURL = cleanedURL
+
+		// Only media server administrators may complete the setup flow.
+		if !identity.IsAdmin {
+			writeFormError(w, req, http.StatusForbidden, fmt.Sprintf("Only %s administrator accounts can set up Stillwater.", authMethodDisplayName(authMethod)))
+			return
+		}
+	}
+
+	// The first user is always Administrator, regardless of MapRole.
+	var user *auth.User
+	var createErr error
+	if identity.ProviderType == "local" {
+		// Local setup: CreateLocalUser uses the username/display name from the identity.
+		// The identity ProviderID is the username for local providers.
+		user, createErr = r.authService.CreateLocalUser(ctx, identity.ProviderID, "", identity.DisplayName, "administrator", "")
+		if createErr != nil {
+			r.logger.Error("failed to create local admin account during setup", "error", createErr)
+			writeFormError(w, req, http.StatusInternalServerError, "An internal error occurred. Please try again.")
+			return
+		}
+	} else {
+		user, createErr = r.authService.CreateFederatedUser(ctx, identity, "administrator", "")
+		if createErr != nil {
+			r.logger.Error("failed to create federated admin account during setup",
+				"provider", authMethod, "error", createErr)
+			writeFormError(w, req, http.StatusInternalServerError, "An internal error occurred. Please try again.")
+			return
+		}
+
+		// For media server providers (emby/jellyfin), persist auth settings and
+		// auto-create the first server connection so the login page can redirect
+		// correctly. Other federated provider types manage this separately.
+		if requiresServerURL {
+			// Store auth settings so the login page uses the correct provider.
+			now := time.Now().UTC().Format(time.RFC3339)
+			for k, v := range map[string]string{"auth.method": authMethod, "auth.server_url": serverURL} {
+				if _, err := r.db.ExecContext(ctx,
+					`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+					ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+					k, v, now); err != nil {
+					r.logger.Error("failed to store auth setting, rolling back user", "key", k, "error", err)
+					_, _ = r.db.ExecContext(ctx, `DELETE FROM users WHERE id = ?`, user.ID) //nolint:errcheck
+					writeFormError(w, req, http.StatusInternalServerError, "An internal error occurred. Please try again.")
+					return
+				}
+			}
+
+			// Auto-create the first server connection.
+			connName := authMethodDisplayName(authMethod)
+			conn := &connection.Connection{
+				Name:                 connName,
+				Type:                 authMethod,
+				URL:                  serverURL,
+				APIKey:               identity.RawToken,
+				Enabled:              true,
+				FeatureLibraryImport: true,
+				FeatureNFOWrite:      true,
+				FeatureImageWrite:    true,
+				PlatformUserID:       identity.ProviderID,
+			}
+			if err := r.connectionService.Create(ctx, conn); err != nil {
+				r.logger.Error("failed to auto-create connection during federated setup", "error", err)
+				// Non-fatal: the user can add the connection manually later.
+			} else if err := r.connectionService.UpdateStatus(ctx, conn.ID, "ok", ""); err != nil {
+				r.logger.Warn("connection created but status update failed", "connection_id", conn.ID, "error", err)
+			}
+		}
+	}
+
+	// Create a session to auto-login the new administrator.
+	sessionToken, err := r.authService.CreateSession(ctx, user.ID)
+	if err != nil {
+		r.logger.Error("failed to create session after setup", "user_id", user.ID, "error", err)
+		// Non-fatal: redirect to login page.
+		w.Header().Set("HX-Redirect", r.basePath+"/")
+		writeJSON(w, http.StatusCreated, map[string]string{"status": "admin account created"})
+		return
+	}
+
+	r.setSessionCookie(w, req, sessionToken)
 	w.Header().Set("HX-Redirect", r.basePath+"/")
 	writeJSON(w, http.StatusCreated, map[string]string{"status": "admin account created"})
 }

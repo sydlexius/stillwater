@@ -55,6 +55,8 @@ type SettingsData struct {
 	SymlinkSupported        bool
 	CacheMaxSizeMB          string
 	NameSimilarityThreshold int
+	Users                UsersTabData
+	AuthProviders        AuthProvidersData
 }
 
 // settingsTab defines a tab in the settings page navigation.
@@ -72,6 +74,8 @@ func settingsTabs() []settingsTab {
 		{ID: "libraries", Label: "Libraries"},
 		{ID: "automation", Label: "Automation"},
 		{ID: "rules", Label: "Rules"},
+		{ID: "users", Label: "Users"},
+		{ID: "auth_providers", Label: "Auth Providers"},
 		{ID: "maintenance", Label: "Maintenance"},
 		{ID: "logs", Label: "Logs"},
 	}
@@ -463,6 +467,8 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 		@logViewerScript()
 		@settingsExportScript()
 		@profileNamingEditorScript()
+		@settingsUsersScript()
+		@settingsAuthProvidersScript()
 		<script src={ assets.SortableJS }></script>
 		<div class="space-y-6">
 			<div class="sw-card rounded-lg px-6 py-4">
@@ -1362,6 +1368,26 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 						</p>
 					</div>
 				</div>
+			</div>
+			<!-- Users tab -->
+			<div
+				data-tab-panel="users"
+				class={
+					"space-y-6",
+					templ.KV("hidden", data.ActiveTab != "users"),
+				}
+			>
+				@settingsUsersTab(data.Users)
+			</div>
+			<!-- Auth Providers tab -->
+			<div
+				data-tab-panel="auth_providers"
+				class={
+					"space-y-6",
+					templ.KV("hidden", data.ActiveTab != "auth_providers"),
+				}
+			>
+				@settingsAuthProvidersTab(data.AuthProviders)
 			</div>
 			<!-- Maintenance tab -->
 			<div

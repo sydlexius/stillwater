@@ -1,0 +1,479 @@
+package templates
+
+import "github.com/sydlexius/stillwater/internal/auth"
+
+// roleBadgeClasses returns CSS classes for a user role badge.
+func roleBadgeClasses(role string) string {
+	switch role {
+	case "administrator":
+		return "inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300"
+	default:
+		return "inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300"
+	}
+}
+
+// roleLabel returns a display label for a role string.
+func roleLabel(role string) string {
+	switch role {
+	case "administrator":
+		return "Administrator"
+	default:
+		return "Operator"
+	}
+}
+
+// authProviderBadgeClasses returns CSS classes for an auth provider badge.
+func authProviderBadgeClasses(provider string) string {
+	switch provider {
+	case "emby":
+		return "inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300"
+	case "jellyfin":
+		return "inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300"
+	case "oidc":
+		return "inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300"
+	default:
+		return "inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300"
+	}
+}
+
+// authProviderLabel returns a display label for an auth provider string.
+func authProviderLabel(provider string) string {
+	switch provider {
+	case "emby":
+		return "Emby"
+	case "jellyfin":
+		return "Jellyfin"
+	case "oidc":
+		return "OIDC"
+	default:
+		return "Local"
+	}
+}
+
+// userStatusBadgeClasses returns CSS classes for an active/inactive status badge.
+func userStatusBadgeClasses(active bool) string {
+	if active {
+		return "inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300"
+	}
+	return "inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400"
+}
+
+// userAvatarInitials returns the first two letters of a display name as initials.
+func userAvatarInitials(displayName, username string) string {
+	name := displayName
+	if name == "" {
+		name = username
+	}
+	runes := []rune(name)
+	switch {
+	case len(runes) == 0:
+		return "?"
+	case len(runes) == 1:
+		return string(runes[:1])
+	default:
+		return string(runes[:2])
+	}
+}
+
+// UsersTabData holds the data needed to render the users settings tab.
+type UsersTabData struct {
+	MultiUserEnabled bool
+	Users            []auth.User
+	Invites          []auth.Invite
+	LoadError        string // Non-empty when user or invite data failed to load
+}
+
+// settingsUsersTab renders the Users settings tab content.
+// This tab is only accessible to Administrators; the settings page itself
+// enforces authentication, and the users/invites API routes require admin role.
+templ settingsUsersTab(data UsersTabData) {
+	<!-- Multi-user toggle banner -->
+	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
+		<div class="px-6 py-4">
+			<div class="flex items-center justify-between">
+				<div>
+					<div class="font-medium text-sm">Multi-User Mode</div>
+					<div class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+						Allow multiple users to access this Stillwater instance with separate accounts and roles.
+					</div>
+				</div>
+				<button
+					type="button"
+					id="multi-user-toggle"
+					class={
+						"relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800",
+						templ.KV("bg-blue-600", data.MultiUserEnabled),
+						templ.KV("bg-gray-200 dark:bg-gray-600", !data.MultiUserEnabled),
+					}
+					role="switch"
+					aria-checked={ boolAttr(data.MultiUserEnabled) }
+					aria-label="Enable multi-user mode"
+					onclick="toggleMultiUser(this)"
+				>
+					<span
+						class={
+							"pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out",
+							templ.KV("translate-x-5", data.MultiUserEnabled),
+							templ.KV("translate-x-0", !data.MultiUserEnabled),
+						}
+					></span>
+				</button>
+			</div>
+		</div>
+	</div>
+	if data.MultiUserEnabled {
+		if data.LoadError != "" {
+			<div class="rounded-lg border border-amber-300/60 dark:border-amber-700/60 bg-amber-50/80 dark:bg-amber-900/30 px-4 py-3 text-sm text-amber-700 dark:text-amber-300" role="alert">
+				{ data.LoadError }
+			</div>
+		}
+		<!-- Users table -->
+		<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
+			<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+				<div>
+					<h2 class="text-lg font-semibold">Users</h2>
+					<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+						Manage who has access to this instance.
+					</p>
+				</div>
+				<button
+					type="button"
+					class="text-sm px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+					aria-label="Create invite link"
+					onclick="document.getElementById('create-invite-form').classList.toggle('hidden'); this.setAttribute('aria-expanded', document.getElementById('create-invite-form').classList.contains('hidden') ? 'false' : 'true')"
+					aria-expanded="false"
+					aria-controls="create-invite-form"
+				>
+					Create Invite
+				</button>
+			</div>
+			<!-- Create invite form (hidden by default) -->
+			<div id="create-invite-form" class="hidden px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-750">
+				<form
+					class="space-y-3"
+					onsubmit="submitCreateInvite(event, this)"
+				>
+					<div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+						<div>
+							<label for="invite-role" class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Role</label>
+							<select
+								id="invite-role"
+								name="role"
+								required
+								class="w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+								aria-label="Role for invited user"
+							>
+								<option value="operator">Operator</option>
+								<option value="administrator">Administrator</option>
+							</select>
+						</div>
+						<div>
+							<label for="invite-expires" class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Expires In</label>
+							<select
+								id="invite-expires"
+								name="expires_in"
+								required
+								class="w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+								aria-label="Invite expiry duration"
+							>
+								<option value="24h">24 hours</option>
+								<option value="3d">3 days</option>
+								<option value="7d" selected>7 days</option>
+								<option value="30d">30 days</option>
+							</select>
+						</div>
+						<div class="flex items-end gap-2">
+							<button
+								type="submit"
+								class="text-sm px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 transition-colors"
+							>
+								Generate
+							</button>
+							<button
+								type="button"
+								class="text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+								onclick="document.getElementById('create-invite-form').classList.add('hidden'); document.getElementById('invite-link-result').classList.add('hidden')"
+							>
+								Cancel
+							</button>
+						</div>
+					</div>
+					<div id="invite-link-result" class="hidden mt-2">
+						<div class="text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Invite Link</div>
+						<div class="flex items-center gap-2">
+							<input
+								id="invite-link-value"
+								type="text"
+								readonly
+								class="flex-1 rounded border border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-gray-900 px-3 py-1.5 text-xs font-mono text-gray-700 dark:text-gray-300 focus:outline-none"
+								aria-label="Generated invite link"
+							/>
+							<button
+								type="button"
+								class="text-xs px-2.5 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+								aria-label="Copy invite link to clipboard"
+								onclick="navigator.clipboard.writeText(document.getElementById('invite-link-value').value).then(function(){ showSuccessToast('Invite link copied'); }).catch(function(){ showToast('Failed to copy link'); })"
+							>
+								Copy
+							</button>
+						</div>
+						<p class="text-xs text-gray-500 dark:text-gray-400 mt-1">This link can only be used once.</p>
+					</div>
+				</form>
+			</div>
+			<div class="overflow-x-auto">
+				<table class="w-full text-sm" aria-label="User accounts">
+					<thead>
+						<tr class="border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-750 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+							<th class="px-6 py-3">User</th>
+							<th class="px-4 py-3">Role</th>
+							<th class="px-4 py-3">Auth Provider</th>
+							<th class="px-4 py-3">Status</th>
+							<th class="px-4 py-3 text-right">Actions</th>
+						</tr>
+					</thead>
+					<tbody
+						id="users-table-body"
+						hx-get="/api/v1/users"
+						hx-trigger="load"
+						hx-swap="innerHTML"
+					>
+						if len(data.Users) == 0 {
+							<tr>
+								<td colspan="5" class="px-6 py-8 text-center text-sm text-gray-500 dark:text-gray-400 italic">
+									Loading users...
+								</td>
+							</tr>
+						}
+						for _, u := range data.Users {
+							@userTableRow(u)
+						}
+					</tbody>
+				</table>
+			</div>
+		</div>
+		<!-- Pending invites -->
+		<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
+			<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+				<h2 class="text-lg font-semibold">Pending Invites</h2>
+				<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+					Invite links that have not been redeemed yet.
+				</p>
+			</div>
+			<div
+				id="invites-list"
+				class="px-6 py-4 space-y-2"
+				hx-get="/api/v1/users/invites"
+				hx-trigger="load"
+				hx-swap="innerHTML"
+			>
+				if len(data.Invites) == 0 {
+					<p class="text-sm text-gray-500 dark:text-gray-400 italic">Loading invites...</p>
+				}
+				for _, inv := range data.Invites {
+					@inviteRow(inv)
+				}
+			</div>
+		</div>
+	}
+}
+
+// userTableRow renders a single row in the users table.
+// Used both for initial SSR and for HTMX-driven updates.
+templ userTableRow(u auth.User) {
+	<tr
+		id={ "user-row-" + u.ID }
+		class="border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-750"
+	>
+		<td class="px-6 py-3">
+			<div class="flex items-center gap-3">
+				<div class="h-8 w-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs font-semibold shrink-0" aria-hidden="true">
+					{ userAvatarInitials(u.DisplayName, u.Username) }
+				</div>
+				<div>
+					<div class="font-medium text-sm text-gray-900 dark:text-gray-100">{ u.DisplayName }</div>
+					<div class="text-xs text-gray-500 dark:text-gray-400">{ u.Username }</div>
+				</div>
+			</div>
+		</td>
+		<td class="px-4 py-3">
+			<span class={ roleBadgeClasses(u.Role) }>{ roleLabel(u.Role) }</span>
+		</td>
+		<td class="px-4 py-3">
+			<span class={ authProviderBadgeClasses(u.AuthProvider) }>{ authProviderLabel(u.AuthProvider) }</span>
+		</td>
+		<td class="px-4 py-3">
+			<span class={ userStatusBadgeClasses(u.IsActive) }>
+				if u.IsActive {
+					Active
+				} else {
+					Inactive
+				}
+			</span>
+		</td>
+		<td class="px-4 py-3 text-right">
+			if u.IsActive {
+				<div class="flex items-center justify-end gap-2">
+					<select
+						class="text-xs rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500"
+						aria-label={ "Change role for " + u.DisplayName }
+						onchange={ templ.ComponentScript{Call: "changeUserRole(this, '" + u.ID + "')"} }
+					>
+						<option value="operator" selected?={ u.Role == "operator" }>Operator</option>
+						<option value="administrator" selected?={ u.Role == "administrator" }>Administrator</option>
+					</select>
+					<button
+						type="button"
+						class="text-xs px-2.5 py-1 rounded border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+						aria-label={ "Deactivate " + u.DisplayName }
+						onclick={ templ.ComponentScript{Call: "deactivateUser('" + u.ID + "', '" + u.DisplayName + "')"} }
+					>
+						Deactivate
+					</button>
+				</div>
+			}
+		</td>
+	</tr>
+}
+
+// inviteRow renders a single pending invite entry.
+templ inviteRow(inv auth.Invite) {
+	<div id={ "invite-row-" + inv.ID } class="flex items-center justify-between rounded-md border border-gray-200 dark:border-gray-700 px-4 py-3 bg-gray-50 dark:bg-gray-750">
+		<div class="flex items-center gap-4">
+			<span class="font-mono text-xs text-gray-700 dark:text-gray-300">{ inv.Code }</span>
+			<div class="text-xs text-gray-500 dark:text-gray-400">
+				Role: <span class={ roleBadgeClasses(inv.Role) }>{ roleLabel(inv.Role) }</span>
+			</div>
+			<div class="text-xs text-gray-500 dark:text-gray-400">
+				Expires: <span class="text-gray-700 dark:text-gray-300">{ inv.ExpiresAt }</span>
+			</div>
+		</div>
+		<div class="flex items-center gap-2">
+			<button
+				type="button"
+				class="text-xs px-2.5 py-1 rounded border border-gray-300 dark:border-gray-600 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+				aria-label={ "Copy invite link for code " + inv.Code }
+				onclick={ templ.ComponentScript{Call: "copyInviteLink('" + inv.Code + "')"} }
+			>
+				Copy Link
+			</button>
+			<button
+				type="button"
+				class="text-xs px-2.5 py-1 rounded border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+				aria-label={ "Revoke invite " + inv.Code }
+				hx-delete={ "/api/v1/users/invites/" + inv.ID }
+				hx-confirm="Revoke this invite? It will no longer be usable."
+				hx-target={ "#invite-row-" + inv.ID }
+				hx-swap="outerHTML"
+				hx-on::after-request="if(event.detail.successful){ showSuccessToast('Invite revoked'); }"
+			>
+				Revoke
+			</button>
+		</div>
+	</div>
+}
+
+// settingsUsersScript renders the inline JS for the users tab.
+templ settingsUsersScript() {
+	<script>
+		function getUsersCsrfToken() {
+			return document.cookie.replace(
+				/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1"
+			);
+		}
+
+		function toggleMultiUser(btn) {
+			var enabled = btn.getAttribute('aria-checked') === 'true';
+			var newVal = !enabled;
+			var csrfToken = getUsersCsrfToken();
+			fetch('/api/v1/settings', {
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
+				body: JSON.stringify({ 'multi_user.enabled': newVal ? 'true' : 'false' })
+			}).then(function(resp) {
+				if (!resp.ok) {
+					return resp.json().catch(function() { throw new Error('Server error (' + resp.status + ')'); }).then(function(d) { throw new Error(d.error || 'Failed to update setting'); });
+				}
+				// Reload to show/hide the users table and invites sections.
+				window.location.reload();
+			}).catch(function(err) {
+				showToast(err.message || 'Failed to update multi-user setting');
+			});
+		}
+
+		function submitCreateInvite(event, form) {
+			event.preventDefault();
+			var role = form.querySelector('[name="role"]').value;
+			var expiresIn = form.querySelector('[name="expires_in"]').value;
+			var csrfToken = getUsersCsrfToken();
+			fetch('/api/v1/users/invites', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
+				body: JSON.stringify({ role: role, expires_in: expiresIn })
+			}).then(function(resp) {
+				if (!resp.ok) {
+					return resp.json().catch(function() { throw new Error('Server error (' + resp.status + ')'); }).then(function(d) { throw new Error(d.error || 'Failed to create invite'); });
+				}
+				return resp.json();
+			}).then(function(invite) {
+				var link = window.location.origin + '/register?code=' + invite.code;
+				var resultEl = document.getElementById('invite-link-result');
+				var valueEl = document.getElementById('invite-link-value');
+				valueEl.value = link;
+				resultEl.classList.remove('hidden');
+				// Refresh the invites list.
+				htmx.trigger(document.getElementById('invites-list'), 'load');
+			}).catch(function(err) {
+				showToast(err.message || 'Failed to create invite');
+			});
+		}
+
+		function copyInviteLink(code) {
+			var link = window.location.origin + '/register?code=' + code;
+			navigator.clipboard.writeText(link).then(function() {
+				showSuccessToast('Invite link copied');
+			}).catch(function() {
+				showToast('Failed to copy link');
+			});
+		}
+
+		function changeUserRole(select, userId) {
+			var role = select.value;
+			var csrfToken = getUsersCsrfToken();
+			fetch('/api/v1/users/' + userId, {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
+				body: JSON.stringify({ role: role })
+			}).then(function(resp) {
+				if (!resp.ok) {
+					return resp.json().catch(function() { throw new Error('Server error (' + resp.status + ')'); }).then(function(d) { throw new Error(d.error || 'Failed to update role'); });
+				}
+				showSuccessToast('Role updated');
+				htmx.trigger(document.getElementById('users-table-body'), 'load');
+			}).catch(function(err) {
+				showToast(err.message || 'Failed to update role');
+				// Reload to reset the select back to the current value.
+				htmx.trigger(document.getElementById('users-table-body'), 'load');
+			});
+		}
+
+		function deactivateUser(userId, displayName) {
+			if (!confirm('Deactivate ' + displayName + '? Their sessions will be invalidated.')) {
+				return;
+			}
+			var csrfToken = getUsersCsrfToken();
+			fetch('/api/v1/users/' + userId, {
+				method: 'DELETE',
+				headers: { 'X-CSRF-Token': csrfToken }
+			}).then(function(resp) {
+				if (!resp.ok) {
+					return resp.json().catch(function() { throw new Error('Server error (' + resp.status + ')'); }).then(function(d) { throw new Error(d.error || 'Failed to deactivate user'); });
+				}
+				showSuccessToast('User deactivated');
+				htmx.trigger(document.getElementById('users-table-body'), 'load');
+			}).catch(function(err) {
+				showToast(err.message || 'Failed to deactivate user');
+			});
+		}
+	</script>
+}
