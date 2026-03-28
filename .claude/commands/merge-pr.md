@@ -10,10 +10,14 @@ Safe merge workflow: verify CodeRabbit status, check CI, squash-merge, and clean
 
 **PR number:** $ARGUMENTS
 
-If no PR number is provided, detect from the current branch:
+If `$ARGUMENTS` is a number, use it directly. Otherwise detect from the current branch:
 
 ```bash
-pr_number=$(gh pr view --json number --jq .number 2>/dev/null)
+pr_number="$ARGUMENTS"
+
+if [ -z "$pr_number" ]; then
+  pr_number=$(gh pr view --json number --jq .number 2>/dev/null)
+fi
 ```
 
 If still no PR found, stop and ask: "Which PR number should I merge?"
@@ -31,9 +35,13 @@ repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
 gh pr view $pr_number --json mergeStateStatus,mergeable \
   --jq '{mergeStateStatus, mergeable}'
 
-# Merge blockers (CHANGES_REQUESTED reviews)
+# Merge blockers (active CHANGES_REQUESTED -- latest review per reviewer)
 gh api "repos/$repo/pulls/$pr_number/reviews" --paginate \
-  --jq '[.[] | select(.state == "CHANGES_REQUESTED") | {id, user: .user.login}]'
+  --jq '[ group_by(.user.login)[]
+         | sort_by(.submitted_at) | last
+         | select(.state == "CHANGES_REQUESTED")
+         | {id, user: .user.login}
+       ]'
 
 # Unreplied bot comments
 bash $HOME/.claude/scripts/pr-unreplied-comments.sh $pr_number
@@ -51,17 +59,16 @@ If CI is not CLEAN/MERGEABLE, stop and explain why.
 Post a status check comment and wait for CR's response:
 
 ```bash
+# Set baseline BEFORE posting so a fast CR response is not missed
+baseline=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
 gh pr comment $pr_number --body "@coderabbitai status"
 ```
 
 Poll for CR's response by checking for a new issue-level comment from `coderabbitai`
-that appeared AFTER the status request. Use the timestamp of the status comment as
-the baseline.
+that appeared AFTER the baseline timestamp.
 
 ```bash
-# Get timestamp of our status comment (the latest issue comment from the PR author)
-baseline=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-
 # Poll at 10s intervals, max 6 attempts (60s total)
 for i in 1 2 3 4 5 6; do
   sleep 10
@@ -79,7 +86,9 @@ Once CR responds, fetch and parse the response:
 
 ```bash
 gh pr view $pr_number --comments --json comments \
-  --jq '[.comments[] | select(.author.login == "coderabbitai")] | sort_by(.createdAt) | last | .body'
+  --jq '[.comments[]
+         | select(.author.login == "coderabbitai" and .createdAt > "'"$baseline"'")
+        ] | sort_by(.createdAt) | last | .body'
 ```
 
 ### Parse the response
@@ -146,7 +155,16 @@ if [ -n "$branch" ]; then
 fi
 
 # Check for and remove any worktrees associated with this branch
-git worktree list | grep "$branch" && git worktree remove "$(git worktree list | grep "$branch" | awk '{print $1}')" 2>/dev/null || true
+if [ -n "$branch" ]; then
+  git worktree list --porcelain \
+    | awk -v b="refs/heads/$branch" '
+        $1=="worktree"{wt=$2}
+        $1=="branch" && $2==b{print wt}
+      ' \
+    | while IFS= read -r wt; do
+        [ -n "$wt" ] && git worktree remove "$wt" 2>/dev/null || true
+      done
+fi
 ```
 
 ---
