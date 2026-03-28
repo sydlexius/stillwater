@@ -69,6 +69,78 @@ func TestSeedDefaults(t *testing.T) {
 	}
 }
 
+func TestMigrateDeprecatedRule(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	// Insert the deprecated logo_trimmable rule.
+	_, err := db.ExecContext(ctx, `
+		INSERT INTO rules (id, name, description, category, enabled, automation_mode, config, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		ruleLogoTrimmableDeprecated, "Logo Trimmable", "Deprecated rule", "logo", 1, "manual", "{}", now, now)
+	if err != nil {
+		t.Fatalf("inserting deprecated rule: %v", err)
+	}
+
+	// Insert open violations for the deprecated rule (different artist IDs
+	// to satisfy the unique constraint on rule_id + artist_id).
+	for i, id := range []string{"vd1", "vd2"} {
+		artistID := int64(9000 + i)
+		_, err := db.ExecContext(ctx, `
+			INSERT INTO rule_violations (id, rule_id, artist_id, artist_name, severity, message, fixable, status, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			id, ruleLogoTrimmableDeprecated, artistID, "Test Artist", "warning", "trimmable", false, "open", now, now)
+		if err != nil {
+			t.Fatalf("inserting violation %s: %v", id, err)
+		}
+	}
+
+	// SeedDefaults should migrate the deprecated rule.
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("SeedDefaults: %v", err)
+	}
+
+	// Violations should be dismissed.
+	var openCount int
+	if err := db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM rule_violations WHERE rule_id = ? AND status = 'open'`,
+		ruleLogoTrimmableDeprecated).Scan(&openCount); err != nil {
+		t.Fatalf("counting open violations: %v", err)
+	}
+	if openCount != 0 {
+		t.Errorf("expected 0 open violations for deprecated rule, got %d", openCount)
+	}
+
+	for _, id := range []string{"vd1", "vd2"} {
+		var status string
+		if err := db.QueryRowContext(ctx, `
+			SELECT status FROM rule_violations WHERE id = ? AND rule_id = ?`,
+			id, ruleLogoTrimmableDeprecated).Scan(&status); err != nil {
+			t.Fatalf("reading status for %s: %v", id, err)
+		}
+		if status != ViolationStatusDismissed {
+			t.Errorf("violation %s status = %q, want %q", id, status, ViolationStatusDismissed)
+		}
+	}
+
+	// Rule row should be deleted.
+	var ruleCount int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM rules WHERE id = ?`,
+		ruleLogoTrimmableDeprecated).Scan(&ruleCount); err != nil {
+		t.Fatalf("counting rule rows: %v", err)
+	}
+	if ruleCount != 0 {
+		t.Errorf("expected deprecated rule to be deleted, got %d rows", ruleCount)
+	}
+
+	// Calling SeedDefaults again should be idempotent (no error).
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("second SeedDefaults (idempotent): %v", err)
+	}
+}
+
 func TestSeedDefaults_Idempotent(t *testing.T) {
 	db := setupTestDB(t)
 	svc := NewService(db)

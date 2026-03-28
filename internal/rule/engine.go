@@ -27,7 +27,7 @@ type logoBoundsCacheKey struct {
 }
 
 // logoBoundsCacheEntry stores the content and original rectangles returned
-// by ContentBounds or TrimAlphaBounds for a given logo file.
+// by ContentBounds for a given logo file.
 type logoBoundsCacheEntry struct {
 	content  image.Rectangle
 	original image.Rectangle
@@ -109,7 +109,6 @@ func NewEngine(service *Service, db *sql.DB, platformService *platform.Service, 
 	e.checkers[RuleExtraneousImages] = e.makeExtraneousImagesChecker()
 	e.checkers[RuleImageDuplicate] = e.makeImageDuplicateChecker()
 	e.checkers[RuleBackdropSequencing] = e.makeBackdropSequencingChecker()
-	e.checkers[RuleLogoTrimmable] = e.makeLogoTrimmableChecker()
 	e.checkers[RuleLogoPadding] = e.makeLogoPaddingChecker()
 	return e
 }

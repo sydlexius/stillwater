@@ -34,12 +34,15 @@ const (
 	RuleBannerMinRes          = "banner_min_res"
 	RuleExtraneousImages      = "extraneous_images"
 	RuleArtistIDMismatch      = "artist_id_mismatch"
-	RuleLogoTrimmable         = "logo_trimmable"
 	RuleDirectoryNameMismatch = "directory_name_mismatch"
 	RuleImageDuplicate        = "image_duplicate"
 	RuleMetadataQuality       = "metadata_quality"
 	RuleBackdropSequencing    = "backdrop_sequencing"
 	RuleLogoPadding           = "logo_padding"
+
+	// Deprecated rule IDs kept for migration. These rules have been merged
+	// into other rules but may still have violations in the database.
+	ruleLogoTrimmableDeprecated = "logo_trimmable"
 )
 
 // defaultRules defines the built-in rules seeded on first startup.
@@ -167,15 +170,6 @@ var defaultRules = []Rule{
 		Config:         RuleConfig{Tolerance: 0.8, Severity: "warning"},
 	},
 	{
-		ID:             RuleLogoTrimmable,
-		Name:           "Logo transparent padding",
-		Description:    "Logos with large transparent borders waste space and display inconsistently across media servers. This rule detects logos where transparent padding exceeds the configured threshold (default 5%) on any edge, and can automatically trim the padding to produce a tighter, cleaner logo.",
-		Category:       "image",
-		Enabled:        false,
-		AutomationMode: "manual",
-		Config:         RuleConfig{ThresholdPercent: 5, Severity: "info"},
-	},
-	{
 		ID:             RuleDirectoryNameMismatch,
 		Name:           "Directory name matches artist",
 		Description:    "Artist directory name should match the canonical artist name",
@@ -213,7 +207,7 @@ var defaultRules = []Rule{
 	{
 		ID:             RuleLogoPadding,
 		Name:           "Logo excessive padding",
-		Description:    "Detects logo images where excessive transparent or whitespace padding surrounds the content. Uses area-based detection: if the padding area exceeds the configured threshold (default 15%) of the total image area, a violation is raised. Auto-fix trims to content bounds with a configurable margin.",
+		Description:    "Detects logo images where excessive transparent (PNG) or whitespace (JPG) padding surrounds the content. If the padding area exceeds the configured threshold (default 15%) of the total image area, a violation is raised. Auto-fix trims to content bounds with a configurable margin. Replaces the former logo_trimmable rule.",
 		Category:       "image",
 		Enabled:        false,
 		AutomationMode: AutomationModeManual,
@@ -269,6 +263,31 @@ func (s *Service) SeedDefaults(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("seeding rule %s: %w", r.ID, err)
 		}
+	}
+	// Migrate deprecated logo_trimmable rule: dismiss any open violations
+	// and delete the rule definition so it no longer appears in the UI.
+	if err := s.migrateDeprecatedRule(ctx, ruleLogoTrimmableDeprecated); err != nil {
+		return fmt.Errorf("migrating deprecated rule %s: %w", ruleLogoTrimmableDeprecated, err)
+	}
+
+	return nil
+}
+
+// migrateDeprecatedRule dismisses open violations for a removed rule and
+// deletes its rule definition. This is idempotent: if the rule does not
+// exist, no error is returned.
+func (s *Service) migrateDeprecatedRule(ctx context.Context, ruleID string) error {
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE rule_violations SET status = 'dismissed'
+		WHERE rule_id = ? AND status = 'open'
+	`, ruleID)
+	if err != nil {
+		return fmt.Errorf("dismissing violations for %s: %w", ruleID, err)
+	}
+
+	_, err = s.db.ExecContext(ctx, `DELETE FROM rules WHERE id = ?`, ruleID)
+	if err != nil {
+		return fmt.Errorf("deleting rule %s: %w", ruleID, err)
 	}
 	return nil
 }

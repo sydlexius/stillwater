@@ -207,7 +207,7 @@ func severityBadgeClasses(severity string) string {
 func ruleHasConfig(id string) bool {
 	switch id {
 	case "thumb_min_res", "thumb_square", "fanart_min_res", "fanart_aspect",
-		"logo_min_res", "banner_min_res", "bio_exists", "logo_trimmable":
+		"logo_min_res", "banner_min_res", "bio_exists", "logo_padding":
 		return true
 	}
 	return false
@@ -5992,20 +5992,46 @@ func ruleRow(rl rule.Rule) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 509, "\">Configure</button><div id=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 509, "\" aria-expanded=\"false\" aria-controls=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var266 string
 			templ_7745c5c3_Var266, templ_7745c5c3_Err = templ.JoinStringErrs("rule-cfg-" + rl.ID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 3762, Col: 33}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 3762, Col: 40}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var266))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 510, "\" class=\"hidden mt-2\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 510, "\" aria-label=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var267 string
+			templ_7745c5c3_Var267, templ_7745c5c3_Err = templ.JoinStringErrs("Configure " + rl.Name)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 3763, Col: 40}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var267))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 511, "\">Configure</button><div id=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var268 string
+			templ_7745c5c3_Var268, templ_7745c5c3_Err = templ.JoinStringErrs("rule-cfg-" + rl.ID)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 3765, Col: 33}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var268))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 512, "\" class=\"hidden mt-2\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -6013,12 +6039,12 @@ func ruleRow(rl rule.Rule) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 511, "</div></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 513, "</div></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 512, "</div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 514, "</div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -6042,44 +6068,44 @@ func severityBadge(severity string) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var267 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var267 == nil {
-			templ_7745c5c3_Var267 = templ.NopComponent
+		templ_7745c5c3_Var269 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var269 == nil {
+			templ_7745c5c3_Var269 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
 		cls := severityBadgeClasses(severity)
-		var templ_7745c5c3_Var268 = []any{"inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium", cls}
-		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var268...)
+		var templ_7745c5c3_Var270 = []any{"inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium", cls}
+		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var270...)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 513, "<span class=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 515, "<span class=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var269 string
-		templ_7745c5c3_Var269, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var268).String())
+		var templ_7745c5c3_Var271 string
+		templ_7745c5c3_Var271, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var270).String())
 		if templ_7745c5c3_Err != nil {
 			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 1, Col: 0}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var269))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var271))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 514, "\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 516, "\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var270 string
-		templ_7745c5c3_Var270, templ_7745c5c3_Err = templ.JoinStringErrs(severity)
+		var templ_7745c5c3_Var272 string
+		templ_7745c5c3_Var272, templ_7745c5c3_Err = templ.JoinStringErrs(severity)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 3773, Col: 12}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 3776, Col: 12}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var270))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var272))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 515, "</span>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 517, "</span>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -6103,30 +6129,30 @@ func ruleConfigForm(rl rule.Rule) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var271 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var271 == nil {
-			templ_7745c5c3_Var271 = templ.NopComponent
+		templ_7745c5c3_Var273 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var273 == nil {
+			templ_7745c5c3_Var273 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 516, "<form class=\"grid grid-cols-2 gap-3 sm:grid-cols-3 items-end\" data-rule-id=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 518, "<form class=\"grid grid-cols-2 gap-3 sm:grid-cols-3 items-end\" data-rule-id=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var272 string
-		templ_7745c5c3_Var272, templ_7745c5c3_Err = templ.JoinStringErrs(rl.ID)
+		var templ_7745c5c3_Var274 string
+		templ_7745c5c3_Var274, templ_7745c5c3_Err = templ.JoinStringErrs(rl.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 3780, Col: 22}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 3783, Col: 22}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var272))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var274))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 517, "\" onsubmit=\"handleRuleConfigSubmit(event)\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 519, "\" onsubmit=\"handleRuleConfigSubmit(event)\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if rl.ID == "thumb_min_res" || rl.ID == "fanart_min_res" || rl.ID == "banner_min_res" || rl.ID == "logo_min_res" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 518, "<div class=\"col-span-full\"><label class=\"block\"><span class=\"text-xs text-gray-600 dark:text-gray-400\">Resolution preset</span> <select class=\"mt-0.5 w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500\" onchange=\"applyResPreset(this)\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 520, "<div class=\"col-span-full\"><label class=\"block\"><span class=\"text-xs text-gray-600 dark:text-gray-400\">Resolution preset</span> <select class=\"mt-0.5 w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500\" onchange=\"applyResPreset(this)\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -6134,54 +6160,35 @@ func ruleConfigForm(rl rule.Rule) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 519, "</select></label></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 521, "</select></label></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
 		if rl.ID == "thumb_min_res" || rl.ID == "fanart_min_res" || rl.ID == "banner_min_res" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 520, "<label class=\"block\"><span class=\"text-xs text-gray-600 dark:text-gray-400\">Min width (px)</span> <input type=\"number\" name=\"min_width\" min=\"1\" value=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var273 string
-			templ_7745c5c3_Var273, templ_7745c5c3_Err = templ.JoinStringErrs(intOrDefault(rl.Config.MinWidth, defaultMinWidth(rl.ID)))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 3803, Col: 69}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var273))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 521, "\" class=\"mt-0.5 w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500\"></label> <label class=\"block\"><span class=\"text-xs text-gray-600 dark:text-gray-400\">Min height (px)</span> <input type=\"number\" name=\"min_height\" min=\"1\" value=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var274 string
-			templ_7745c5c3_Var274, templ_7745c5c3_Err = templ.JoinStringErrs(intOrDefault(rl.Config.MinHeight, defaultMinHeight(rl.ID)))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 3813, Col: 71}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var274))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 522, "\" class=\"mt-0.5 w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500\"></label> ")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		}
-		if rl.ID == "logo_min_res" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 523, "<label class=\"block\"><span class=\"text-xs text-gray-600 dark:text-gray-400\">Min width (px)</span> <input type=\"number\" name=\"min_width\" min=\"1\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 522, "<label class=\"block\"><span class=\"text-xs text-gray-600 dark:text-gray-400\">Min width (px)</span> <input type=\"number\" name=\"min_width\" min=\"1\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var275 string
-			templ_7745c5c3_Var275, templ_7745c5c3_Err = templ.JoinStringErrs(intOrDefault(rl.Config.MinWidth, 400))
+			templ_7745c5c3_Var275, templ_7745c5c3_Err = templ.JoinStringErrs(intOrDefault(rl.Config.MinWidth, defaultMinWidth(rl.ID)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 3825, Col: 50}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 3806, Col: 69}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var275))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 523, "\" class=\"mt-0.5 w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500\"></label> <label class=\"block\"><span class=\"text-xs text-gray-600 dark:text-gray-400\">Min height (px)</span> <input type=\"number\" name=\"min_height\" min=\"1\" value=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var276 string
+			templ_7745c5c3_Var276, templ_7745c5c3_Err = templ.JoinStringErrs(intOrDefault(rl.Config.MinHeight, defaultMinHeight(rl.ID)))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 3816, Col: 71}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var276))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -6190,8 +6197,27 @@ func ruleConfigForm(rl rule.Rule) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
+		if rl.ID == "logo_min_res" {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 525, "<label class=\"block\"><span class=\"text-xs text-gray-600 dark:text-gray-400\">Min width (px)</span> <input type=\"number\" name=\"min_width\" min=\"1\" value=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var277 string
+			templ_7745c5c3_Var277, templ_7745c5c3_Err = templ.JoinStringErrs(intOrDefault(rl.Config.MinWidth, 400))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 3828, Col: 50}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var277))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 526, "\" class=\"mt-0.5 w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500\"></label> ")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
 		if rl.ID == "thumb_square" || rl.ID == "fanart_aspect" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 525, "<div class=\"col-span-full\"><label class=\"block\"><span class=\"text-xs text-gray-600 dark:text-gray-400\">Aspect ratio preset</span> <select class=\"mt-0.5 w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500\" onchange=\"applyAspectPreset(this)\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 527, "<div class=\"col-span-full\"><label class=\"block\"><span class=\"text-xs text-gray-600 dark:text-gray-400\">Aspect ratio preset</span> <select class=\"mt-0.5 w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500\" onchange=\"applyAspectPreset(this)\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -6199,48 +6225,29 @@ func ruleConfigForm(rl rule.Rule) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 526, "</select></label></div><label class=\"block\"><span class=\"text-xs text-gray-600 dark:text-gray-400\">Aspect ratio (decimal)</span> <input type=\"number\" name=\"aspect_ratio\" step=\"0.001\" min=\"0.1\" value=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var276 string
-			templ_7745c5c3_Var276, templ_7745c5c3_Err = templ.JoinStringErrs(floatOrDefault(rl.Config.AspectRatio, defaultAspectRatio(rl.ID)))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 3849, Col: 77}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var276))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 527, "\" class=\"mt-0.5 w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500\"></label> <label class=\"block\"><span class=\"text-xs text-gray-600 dark:text-gray-400\">Tolerance (e.g. 0.1)</span> <input type=\"number\" name=\"tolerance\" step=\"0.01\" min=\"0\" max=\"0.5\" value=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var277 string
-			templ_7745c5c3_Var277, templ_7745c5c3_Err = templ.JoinStringErrs(floatOrDefault(rl.Config.Tolerance, 0.1))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 3861, Col: 53}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var277))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 528, "\" class=\"mt-0.5 w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500\"></label> ")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		}
-		if rl.ID == "bio_exists" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 529, "<label class=\"block\"><span class=\"text-xs text-gray-600 dark:text-gray-400\">Min length (chars)</span> <input type=\"number\" name=\"min_length\" min=\"1\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 528, "</select></label></div><label class=\"block\"><span class=\"text-xs text-gray-600 dark:text-gray-400\">Aspect ratio (decimal)</span> <input type=\"number\" name=\"aspect_ratio\" step=\"0.001\" min=\"0.1\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var278 string
-			templ_7745c5c3_Var278, templ_7745c5c3_Err = templ.JoinStringErrs(intOrDefault(rl.Config.MinLength, 10))
+			templ_7745c5c3_Var278, templ_7745c5c3_Err = templ.JoinStringErrs(floatOrDefault(rl.Config.AspectRatio, defaultAspectRatio(rl.ID)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 3873, Col: 50}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 3852, Col: 77}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var278))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 529, "\" class=\"mt-0.5 w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500\"></label> <label class=\"block\"><span class=\"text-xs text-gray-600 dark:text-gray-400\">Tolerance (e.g. 0.1)</span> <input type=\"number\" name=\"tolerance\" step=\"0.01\" min=\"0\" max=\"0.5\" value=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var279 string
+			templ_7745c5c3_Var279, templ_7745c5c3_Err = templ.JoinStringErrs(floatOrDefault(rl.Config.Tolerance, 0.1))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 3864, Col: 53}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var279))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -6249,17 +6256,17 @@ func ruleConfigForm(rl rule.Rule) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		if rl.ID == "logo_trimmable" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 531, "<label class=\"block\"><span class=\"text-xs text-gray-600 dark:text-gray-400\">Threshold % (per side)</span> <input type=\"number\" name=\"threshold_percent\" step=\"0.5\" min=\"1\" max=\"50\" value=\"")
+		if rl.ID == "bio_exists" {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 531, "<label class=\"block\"><span class=\"text-xs text-gray-600 dark:text-gray-400\">Min length (chars)</span> <input type=\"number\" name=\"min_length\" min=\"1\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var279 string
-			templ_7745c5c3_Var279, templ_7745c5c3_Err = templ.JoinStringErrs(floatOrDefault(rl.Config.ThresholdPercent, 5))
+			var templ_7745c5c3_Var280 string
+			templ_7745c5c3_Var280, templ_7745c5c3_Err = templ.JoinStringErrs(intOrDefault(rl.Config.MinLength, 10))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 3887, Col: 58}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 3876, Col: 50}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var279))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var280))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -6268,37 +6275,69 @@ func ruleConfigForm(rl rule.Rule) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 533, "<label class=\"block\"><span class=\"text-xs text-gray-600 dark:text-gray-400\">Severity</span> <select name=\"severity\" class=\"mt-0.5 w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500\"><option value=\"error\"")
+		if rl.ID == "logo_padding" {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 533, "<label class=\"block\"><span class=\"text-xs text-gray-600 dark:text-gray-400\">Threshold % (total area)</span> <input type=\"number\" name=\"threshold_percent\" step=\"0.5\" min=\"1\" max=\"50\" value=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var281 string
+			templ_7745c5c3_Var281, templ_7745c5c3_Err = templ.JoinStringErrs(floatOrDefault(rl.Config.ThresholdPercent, 15))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 3890, Col: 59}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var281))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 534, "\" class=\"mt-0.5 w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500\"></label> <label class=\"block\"><span class=\"text-xs text-gray-600 dark:text-gray-400\">Trim margin (px)</span> <input type=\"number\" name=\"trim_margin\" min=\"0\" max=\"20\" value=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var282 string
+			templ_7745c5c3_Var282, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(rl.Config.TrimMargin))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 3901, Col: 47}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var282))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 535, "\" class=\"mt-0.5 w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500\"></label> ")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 536, "<label class=\"block\"><span class=\"text-xs text-gray-600 dark:text-gray-400\">Severity</span> <select name=\"severity\" class=\"mt-0.5 w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500\"><option value=\"error\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if rl.Config.Severity == "error" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 534, " selected")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 537, " selected")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 535, ">Error</option> <option value=\"warning\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 538, ">Error</option> <option value=\"warning\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if rl.Config.Severity == "warning" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 536, " selected")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 539, " selected")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 537, ">Warning</option> <option value=\"info\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 540, ">Warning</option> <option value=\"info\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if rl.Config.Severity == "info" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 538, " selected")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 541, " selected")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 539, ">Info</option></select></label><div class=\"flex gap-2 col-span-full\"><button type=\"submit\" class=\"text-xs px-3 py-1.5 rounded bg-green-600 text-white hover:bg-green-700 transition-colors\">Save</button> ")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 542, ">Info</option></select></label><div class=\"flex gap-2 col-span-full\"><button type=\"submit\" class=\"text-xs px-3 py-1.5 rounded bg-green-600 text-white hover:bg-green-700 transition-colors\">Save</button> ")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -6306,16 +6345,16 @@ func ruleConfigForm(rl rule.Rule) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 540, "<button type=\"button\" class=\"text-xs px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors\" onclick=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 543, "<button type=\"button\" class=\"text-xs px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors\" onclick=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var280 templ.ComponentScript = toggleRuleConfig(rl.ID)
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var280.Call)
+		var templ_7745c5c3_Var283 templ.ComponentScript = toggleRuleConfig(rl.ID)
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var283.Call)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 541, "\">Cancel</button></div></form>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 544, "\">Cancel</button></div></form>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -6339,185 +6378,185 @@ func resolutionPresetOptions(rl rule.Rule) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var281 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var281 == nil {
-			templ_7745c5c3_Var281 = templ.NopComponent
+		templ_7745c5c3_Var284 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var284 == nil {
+			templ_7745c5c3_Var284 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
 		if rl.ID == "fanart_min_res" {
 			key := fanartResPresetKey(rl.Config.MinWidth, rl.Config.MinHeight)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 542, "<option value=\"\">-- select preset --</option> <option value=\"1280,720\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 545, "<option value=\"\">-- select preset --</option> <option value=\"1280,720\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if key == "720p" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 543, " selected")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 546, " selected")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 544, ">720p HD (1280x720)</option> <option value=\"1920,1080\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 547, ">720p HD (1280x720)</option> <option value=\"1920,1080\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if key == "1080p" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 545, " selected")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 548, " selected")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 546, ">1080p Full HD (1920x1080)</option> <option value=\"2560,1440\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 549, ">1080p Full HD (1920x1080)</option> <option value=\"2560,1440\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if key == "1440p" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 547, " selected")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 550, " selected")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 548, ">1440p QHD (2560x1440)</option> <option value=\"3840,2160\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 551, ">1440p QHD (2560x1440)</option> <option value=\"3840,2160\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if key == "4k" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 549, " selected")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 552, " selected")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 550, ">4K UHD (3840x2160)</option> <option value=\"custom\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 553, ">4K UHD (3840x2160)</option> <option value=\"custom\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if key == "custom" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 551, " selected")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 554, " selected")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 552, ">Custom</option> ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 555, ">Custom</option> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
 		if rl.ID == "thumb_min_res" {
 			key := thumbResPresetKey(rl.Config.MinWidth, rl.Config.MinHeight)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 553, "<option value=\"\">-- select preset --</option> <option value=\"500,500\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 556, "<option value=\"\">-- select preset --</option> <option value=\"500,500\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if key == "std" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 554, " selected")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 557, " selected")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 555, ">Standard (500x500)</option> <option value=\"1000,1000\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 558, ">Standard (500x500)</option> <option value=\"1000,1000\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if key == "hd" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 556, " selected")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 559, " selected")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 557, ">HD (1000x1000)</option> <option value=\"2000,2000\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 560, ">HD (1000x1000)</option> <option value=\"2000,2000\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if key == "ultra" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 558, " selected")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 561, " selected")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 559, ">Ultra (2000x2000)</option> <option value=\"custom\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 562, ">Ultra (2000x2000)</option> <option value=\"custom\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if key == "custom" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 560, " selected")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 563, " selected")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 561, ">Custom</option> ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 564, ">Custom</option> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
 		if rl.ID == "banner_min_res" {
 			key := bannerResPresetKey(rl.Config.MinWidth, rl.Config.MinHeight)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 562, "<option value=\"\">-- select preset --</option> <option value=\"758,140\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 565, "<option value=\"\">-- select preset --</option> <option value=\"758,140\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if key == "kodi" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 563, " selected")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 566, " selected")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 564, ">Kodi standard (758x140)</option> <option value=\"1000,185\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 567, ">Kodi standard (758x140)</option> <option value=\"1000,185\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if key == "wide" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 565, " selected")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 568, " selected")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 566, ">Wide (1000x185)</option> <option value=\"custom\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 569, ">Wide (1000x185)</option> <option value=\"custom\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if key == "custom" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 567, " selected")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 570, " selected")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 568, ">Custom</option> ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 571, ">Custom</option> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
 		if rl.ID == "logo_min_res" {
 			key := logoWidthPresetKey(rl.Config.MinWidth)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 569, "<option value=\"\">-- select preset --</option> <option value=\"400\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 572, "<option value=\"\">-- select preset --</option> <option value=\"400\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if key == "std" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 570, " selected")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 573, " selected")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 571, ">Standard (400px)</option> <option value=\"800\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 574, ">Standard (400px)</option> <option value=\"800\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if key == "large" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 572, " selected")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 575, " selected")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 573, ">Large (800px)</option> <option value=\"custom\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 576, ">Large (800px)</option> <option value=\"custom\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if key == "custom" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 574, " selected")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 577, " selected")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 575, ">Custom</option>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 578, ">Custom</option>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -6542,81 +6581,81 @@ func aspectPresetOptions(rl rule.Rule) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var282 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var282 == nil {
-			templ_7745c5c3_Var282 = templ.NopComponent
+		templ_7745c5c3_Var285 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var285 == nil {
+			templ_7745c5c3_Var285 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
 		if rl.ID == "fanart_aspect" {
 			key := fanartAspectPresetKey(rl.Config.AspectRatio)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 576, "<option value=\"\">-- select preset --</option> <option value=\"1.7778\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 579, "<option value=\"\">-- select preset --</option> <option value=\"1.7778\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if key == "16:9" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 577, " selected")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 580, " selected")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 578, ">16:9 widescreen (1.778)</option> <option value=\"1.6\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 581, ">16:9 widescreen (1.778)</option> <option value=\"1.6\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if key == "16:10" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 579, " selected")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 582, " selected")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 580, ">16:10 (1.6)</option> <option value=\"2.0\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 583, ">16:10 (1.6)</option> <option value=\"2.0\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if key == "2:1" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 581, " selected")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 584, " selected")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 582, ">2:1 ultra-wide (2.0)</option> <option value=\"custom\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 585, ">2:1 ultra-wide (2.0)</option> <option value=\"custom\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if key == "custom" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 583, " selected")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 586, " selected")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 584, ">Custom</option> ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 587, ">Custom</option> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
 		if rl.ID == "thumb_square" {
 			key := thumbAspectPresetKey(rl.Config.AspectRatio)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 585, "<option value=\"\">-- select preset --</option> <option value=\"1.0\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 588, "<option value=\"\">-- select preset --</option> <option value=\"1.0\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if key == "1:1" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 586, " selected")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 589, " selected")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 587, ">1:1 square (1.0)</option> <option value=\"custom\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 590, ">1:1 square (1.0)</option> <option value=\"custom\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if key == "custom" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 588, " selected")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 591, " selected")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 589, ">Custom</option>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 592, ">Custom</option>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -6627,14 +6666,18 @@ func aspectPresetOptions(rl rule.Rule) templ.Component {
 
 func toggleRuleConfig(ruleID string) templ.ComponentScript {
 	return templ.ComponentScript{
-		Name: `__templ_toggleRuleConfig_904a`,
-		Function: `function __templ_toggleRuleConfig_904a(ruleID){var el = document.getElementById("rule-cfg-" + ruleID);
+		Name: `__templ_toggleRuleConfig_cd8e`,
+		Function: `function __templ_toggleRuleConfig_cd8e(ruleID){var el = document.getElementById("rule-cfg-" + ruleID);
 	if (el) {
 		el.classList.toggle("hidden");
+		var btn = document.querySelector('[aria-controls="rule-cfg-' + ruleID + '"]');
+		if (btn) {
+			btn.setAttribute("aria-expanded", String(!el.classList.contains("hidden")));
+		}
 	}
 }`,
-		Call:       templ.SafeScript(`__templ_toggleRuleConfig_904a`, ruleID),
-		CallInline: templ.SafeScriptInline(`__templ_toggleRuleConfig_904a`, ruleID),
+		Call:       templ.SafeScript(`__templ_toggleRuleConfig_cd8e`, ruleID),
+		CallInline: templ.SafeScriptInline(`__templ_toggleRuleConfig_cd8e`, ruleID),
 	}
 }
 
@@ -6654,12 +6697,12 @@ func badgeSettingScript() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var283 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var283 == nil {
-			templ_7745c5c3_Var283 = templ.NopComponent
+		templ_7745c5c3_Var286 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var286 == nil {
+			templ_7745c5c3_Var286 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 590, "<script>\n\t\tfunction updateSetting(key, checked) {\n\t\t\tvar csrfToken = document.cookie.replace(\n\t\t\t\t/(?:(?:^|.*;\\s*)csrf_token\\s*=\\s*([^;]*).*$)|^.*$/, \"$1\"\n\t\t\t);\n\t\t\tvar body = {};\n\t\t\tbody[key] = checked ? \"true\" : \"false\";\n\t\t\tfetch('/api/v1/settings', {\n\t\t\t\tmethod: 'PUT',\n\t\t\t\theaders: {\n\t\t\t\t\t'Content-Type': 'application/json',\n\t\t\t\t\t'X-CSRF-Token': csrfToken\n\t\t\t\t},\n\t\t\t\tbody: JSON.stringify(body)\n\t\t\t});\n\t\t}\n\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 593, "<script>\n\t\tfunction updateSetting(key, checked) {\n\t\t\tvar csrfToken = document.cookie.replace(\n\t\t\t\t/(?:(?:^|.*;\\s*)csrf_token\\s*=\\s*([^;]*).*$)|^.*$/, \"$1\"\n\t\t\t);\n\t\t\tvar body = {};\n\t\t\tbody[key] = checked ? \"true\" : \"false\";\n\t\t\tfetch('/api/v1/settings', {\n\t\t\t\tmethod: 'PUT',\n\t\t\t\theaders: {\n\t\t\t\t\t'Content-Type': 'application/json',\n\t\t\t\t\t'X-CSRF-Token': csrfToken\n\t\t\t\t},\n\t\t\t\tbody: JSON.stringify(body)\n\t\t\t});\n\t\t}\n\t</script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -6683,12 +6726,12 @@ func ruleScheduleScript() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var284 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var284 == nil {
-			templ_7745c5c3_Var284 = templ.NopComponent
+		templ_7745c5c3_Var287 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var287 == nil {
+			templ_7745c5c3_Var287 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 591, "<script>\n\t\tfunction updateRuleSchedule(value) {\n\t\t\tvar csrfToken = document.cookie.replace(\n\t\t\t\t/(?:(?:^|.*;\\s*)csrf_token\\s*=\\s*([^;]*).*$)|^.*$/, \"$1\"\n\t\t\t);\n\t\t\tfetch('/api/v1/settings', {\n\t\t\t\tmethod: 'PUT',\n\t\t\t\theaders: {\n\t\t\t\t\t'Content-Type': 'application/json',\n\t\t\t\t\t'X-CSRF-Token': csrfToken\n\t\t\t\t},\n\t\t\t\tbody: JSON.stringify({\"rule_schedule.interval_minutes\": value})\n\t\t\t});\n\t\t}\n\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 594, "<script>\n\t\tfunction updateRuleSchedule(value) {\n\t\t\tvar csrfToken = document.cookie.replace(\n\t\t\t\t/(?:(?:^|.*;\\s*)csrf_token\\s*=\\s*([^;]*).*$)|^.*$/, \"$1\"\n\t\t\t);\n\t\t\tfetch('/api/v1/settings', {\n\t\t\t\tmethod: 'PUT',\n\t\t\t\theaders: {\n\t\t\t\t\t'Content-Type': 'application/json',\n\t\t\t\t\t'X-CSRF-Token': csrfToken\n\t\t\t\t},\n\t\t\t\tbody: JSON.stringify({\"rule_schedule.interval_minutes\": value})\n\t\t\t});\n\t\t}\n\t</script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -6712,12 +6755,12 @@ func ruleToggleScript() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var285 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var285 == nil {
-			templ_7745c5c3_Var285 = templ.NopComponent
+		templ_7745c5c3_Var288 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var288 == nil {
+			templ_7745c5c3_Var288 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 592, "<script>\n\t\tfunction patchRule(ruleID, changes) {\n\t\t\tvar csrfToken = document.cookie.replace(\n\t\t\t\t/(?:(?:^|.*;\\s*)csrf_token\\s*=\\s*([^;]*).*$)|^.*$/, \"$1\"\n\t\t\t);\n\t\t\tfetch('/api/v1/rules/' + ruleID, {\n\t\t\t\tmethod: 'PUT',\n\t\t\t\theaders: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},\n\t\t\t\tbody: JSON.stringify(changes),\n\t\t\t\tcredentials: 'same-origin'\n\t\t\t}).then(function(r) {\n\t\t\t\tif (!r.ok && typeof showToast === 'function') {\n\t\t\t\t\tshowToast('Failed to update rule.');\n\t\t\t\t}\n\t\t\t}).catch(function() {\n\t\t\t\tif (typeof showToast === 'function') {\n\t\t\t\t\tshowToast('Network error updating rule.');\n\t\t\t\t}\n\t\t\t});\n\t\t}\n\n\t\tfunction toggleRuleEnabled(btn) {\n\t\t\tvar ruleID = btn.dataset.ruleId;\n\t\t\tvar isOn = btn.getAttribute('aria-checked') === 'true';\n\t\t\tvar newVal = !isOn;\n\t\t\tpatchRule(ruleID, {enabled: newVal});\n\t\t\t// Optimistic update\n\t\t\tbtn.setAttribute('aria-checked', String(newVal));\n\t\t\tvar knob = btn.querySelector('span');\n\t\t\tvar row = btn.closest('.py-4');\n\t\t\tvar sel = row ? row.querySelector('select[data-rule-id]') : null;\n\t\t\tvar runBtn = row ? row.querySelector('[data-run-btn]') : null;\n\t\t\tif (newVal) {\n\t\t\t\tbtn.classList.remove('bg-gray-200', 'dark:bg-gray-600');\n\t\t\t\tbtn.classList.add('bg-blue-600');\n\t\t\t\tknob.classList.remove('translate-x-0');\n\t\t\t\tknob.classList.add('translate-x-5');\n\t\t\t\tif (sel) sel.disabled = false;\n\t\t\t\tif (runBtn) runBtn.disabled = false;\n\t\t\t} else {\n\t\t\t\tbtn.classList.remove('bg-blue-600');\n\t\t\t\tbtn.classList.add('bg-gray-200', 'dark:bg-gray-600');\n\t\t\t\tknob.classList.remove('translate-x-5');\n\t\t\t\tknob.classList.add('translate-x-0');\n\t\t\t\tif (sel) sel.disabled = true;\n\t\t\t\tif (runBtn) runBtn.disabled = true;\n\t\t\t}\n\t\t}\n\n\t\tfunction runRule(btn) {\n\t\t\tvar ruleID = btn.dataset.ruleId;\n\t\t\tvar origText = btn.textContent;\n\t\t\tbtn.dataset.running = 'true';\n\t\t\tbtn.disabled = true;\n\t\t\tbtn.textContent = 'Running...';\n\t\t\tvar csrfToken = document.cookie.replace(\n\t\t\t\t/(?:(?:^|.*;\\s*)csrf_token\\s*=\\s*([^;]*).*$)|^.*$/, \"$1\"\n\t\t\t);\n\t\t\tfetch('/api/v1/rules/' + ruleID + '/run', {\n\t\t\t\tmethod: 'POST',\n\t\t\t\theaders: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},\n\t\t\t\tcredentials: 'same-origin'\n\t\t\t}).then(function(r) {\n\t\t\t\tif (r.status === 409) { showRuleToast('A rule evaluation is already running.', true); return null; }\n\t\t\t\tif (!r.ok) throw new Error('status ' + r.status);\n\t\t\t\treturn r.json();\n\t\t\t}).then(function(data) {\n\t\t\t\tif (!data) { finishRunBtn(btn, origText); return; }\n\t\t\t\t// Server accepted (202) -- poll for completion.\n\t\t\t\tpollRuleStatus(btn, origText);\n\t\t\t}).catch(function() {\n\t\t\t\tshowRuleToast('Failed to start rule evaluation.', true);\n\t\t\t\tfinishRunBtn(btn, origText);\n\t\t\t});\n\t\t}\n\n\t\tfunction pollRuleStatus(btn, origText) {\n\t\t\tpollAsyncStatus('/api/v1/rules/run-all/status', {\n\t\t\t\tonData: function(s) {\n\t\t\t\t\tif (s.status === 'running') return false;\n\t\t\t\t\tif (s.status === 'completed') {\n\t\t\t\t\t\tvar msg = 'Evaluated ' + s.artists_processed + ' artists: ' +\n\t\t\t\t\t\t\ts.violations_found + ' violations, ' +\n\t\t\t\t\t\t\ts.fixes_succeeded + ' fixed';\n\t\t\t\t\t\tshowRuleToast(msg, false);\n\t\t\t\t\t} else if (s.status === 'failed') {\n\t\t\t\t\t\tvar errMsg = s.error ? 'Rule evaluation failed: ' + s.error : 'Rule evaluation failed.';\n\t\t\t\t\t\tshowRuleToast(errMsg, true);\n\t\t\t\t\t} else if (s.status === 'idle') {\n\t\t\t\t\t\tshowRuleToast('Rule evaluation state lost (server may have restarted).', true);\n\t\t\t\t\t}\n\t\t\t\t\tfinishRunBtn(btn, origText);\n\t\t\t\t\treturn true;\n\t\t\t\t},\n\t\t\t\tonTimeout: function() {\n\t\t\t\t\tshowRuleToast('Rule evaluation polling timed out.', true);\n\t\t\t\t\tfinishRunBtn(btn, origText);\n\t\t\t\t},\n\t\t\t\tonHTTPError: function(status) {\n\t\t\t\t\tshowRuleToast('Status check failed (HTTP ' + status + ').', true);\n\t\t\t\t\tfinishRunBtn(btn, origText);\n\t\t\t\t},\n\t\t\t\tonNetworkError: function() {\n\t\t\t\t\tshowRuleToast('Lost connection while running rule.', true);\n\t\t\t\t\tfinishRunBtn(btn, origText);\n\t\t\t\t}\n\t\t\t});\n\t\t}\n\n\t\tfunction finishRunBtn(btn, origText) {\n\t\t\tdelete btn.dataset.running;\n\t\t\tbtn.textContent = origText;\n\t\t\tvar row = btn.closest('.py-4');\n\t\t\tvar toggle = row ? row.querySelector('[role=\"switch\"]') : null;\n\t\t\tvar isEnabled = toggle ? toggle.getAttribute('aria-checked') === 'true' : true;\n\t\t\tbtn.disabled = !isEnabled;\n\t\t}\n\n\t\t// showRuleToast displays a brief toast for rule run results.\n\t\t// Uses green for success, red for errors.\n\t\tfunction showRuleToast(msg, isError) {\n\t\t\tvar container = document.getElementById('error-toast-container');\n\t\t\tif (!container) { if (typeof showToast === 'function') showToast(msg); return; }\n\t\t\tvar toast = document.createElement('div');\n\t\t\tvar colors = isError\n\t\t\t\t? 'bg-red-50 dark:bg-red-900/50 text-red-800 dark:text-red-200 border-red-200 dark:border-red-800'\n\t\t\t\t: 'bg-green-50 dark:bg-green-900/50 text-green-800 dark:text-green-200 border-green-200 dark:border-green-800';\n\t\t\ttoast.className = 'flex items-center gap-3 rounded-lg px-4 py-3 text-sm shadow-lg border transition-opacity duration-300 ' + colors;\n\t\t\tvar span = document.createElement('span');\n\t\t\tspan.textContent = msg;\n\t\t\tvar btn = document.createElement('button');\n\t\t\tbtn.type = 'button';\n\t\t\tbtn.setAttribute('aria-label', 'Dismiss notification');\n\t\t\tbtn.className = 'ml-2 font-bold opacity-70 hover:opacity-100';\n\t\t\tbtn.textContent = '\\u00d7';\n\t\t\tbtn.onclick = function() { toast.remove(); };\n\t\t\ttoast.appendChild(span);\n\t\t\ttoast.appendChild(btn);\n\t\t\tcontainer.appendChild(toast);\n\t\t\tsetTimeout(function() { toast.style.opacity = '0'; setTimeout(function() { toast.remove(); }, 300); }, 5000);\n\t\t}\n\n\t\tfunction handleRuleConfigSubmit(event) {\n\t\t\tevent.preventDefault();\n\t\t\tvar form = event.target;\n\t\t\tvar ruleID = form.dataset.ruleId;\n\t\t\tvar cfg = {};\n\t\t\t['min_width', 'min_height', 'aspect_ratio', 'tolerance', 'min_length', 'threshold_percent'].forEach(function(f) {\n\t\t\t\tvar el = form.elements[f];\n\t\t\t\tif (el && el.value !== '') cfg[f] = parseFloat(el.value);\n\t\t\t});\n\t\t\tvar sev = form.elements['severity'];\n\t\t\tif (sev) cfg['severity'] = sev.value;\n\t\t\tpatchRule(ruleID, {config: cfg});\n\t\t\tvar panel = document.getElementById('rule-cfg-' + ruleID);\n\t\t\tif (panel) panel.classList.add('hidden');\n\t\t}\n\n\t\tfunction applyResPreset(select) {\n\t\t\tvar val = select.value;\n\t\t\tif (!val || val === 'custom') return;\n\t\t\tvar parts = val.split(',');\n\t\t\tvar form = select.closest('form');\n\t\t\tvar w = form.elements['min_width'];\n\t\t\tvar h = form.elements['min_height'];\n\t\t\tif (w && parts[0]) w.value = parts[0];\n\t\t\tif (h && parts.length > 1 && parts[1]) h.value = parts[1];\n\t\t}\n\n\t\tfunction applyAspectPreset(select) {\n\t\t\tvar val = select.value;\n\t\t\tif (!val || val === 'custom') return;\n\t\t\tvar form = select.closest('form');\n\t\t\tvar ar = form.elements['aspect_ratio'];\n\t\t\tif (ar) ar.value = val;\n\t\t}\n\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 595, "<script>\n\t\tfunction patchRule(ruleID, changes) {\n\t\t\tvar csrfToken = document.cookie.replace(\n\t\t\t\t/(?:(?:^|.*;\\s*)csrf_token\\s*=\\s*([^;]*).*$)|^.*$/, \"$1\"\n\t\t\t);\n\t\t\tfetch('/api/v1/rules/' + ruleID, {\n\t\t\t\tmethod: 'PUT',\n\t\t\t\theaders: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},\n\t\t\t\tbody: JSON.stringify(changes),\n\t\t\t\tcredentials: 'same-origin'\n\t\t\t}).then(function(r) {\n\t\t\t\tif (!r.ok && typeof showToast === 'function') {\n\t\t\t\t\tshowToast('Failed to update rule.');\n\t\t\t\t}\n\t\t\t}).catch(function() {\n\t\t\t\tif (typeof showToast === 'function') {\n\t\t\t\t\tshowToast('Network error updating rule.');\n\t\t\t\t}\n\t\t\t});\n\t\t}\n\n\t\tfunction toggleRuleEnabled(btn) {\n\t\t\tvar ruleID = btn.dataset.ruleId;\n\t\t\tvar isOn = btn.getAttribute('aria-checked') === 'true';\n\t\t\tvar newVal = !isOn;\n\t\t\tpatchRule(ruleID, {enabled: newVal});\n\t\t\t// Optimistic update\n\t\t\tbtn.setAttribute('aria-checked', String(newVal));\n\t\t\tvar knob = btn.querySelector('span');\n\t\t\tvar row = btn.closest('.py-4');\n\t\t\tvar sel = row ? row.querySelector('select[data-rule-id]') : null;\n\t\t\tvar runBtn = row ? row.querySelector('[data-run-btn]') : null;\n\t\t\tif (newVal) {\n\t\t\t\tbtn.classList.remove('bg-gray-200', 'dark:bg-gray-600');\n\t\t\t\tbtn.classList.add('bg-blue-600');\n\t\t\t\tknob.classList.remove('translate-x-0');\n\t\t\t\tknob.classList.add('translate-x-5');\n\t\t\t\tif (sel) sel.disabled = false;\n\t\t\t\tif (runBtn) runBtn.disabled = false;\n\t\t\t} else {\n\t\t\t\tbtn.classList.remove('bg-blue-600');\n\t\t\t\tbtn.classList.add('bg-gray-200', 'dark:bg-gray-600');\n\t\t\t\tknob.classList.remove('translate-x-5');\n\t\t\t\tknob.classList.add('translate-x-0');\n\t\t\t\tif (sel) sel.disabled = true;\n\t\t\t\tif (runBtn) runBtn.disabled = true;\n\t\t\t}\n\t\t}\n\n\t\tfunction runRule(btn) {\n\t\t\tvar ruleID = btn.dataset.ruleId;\n\t\t\tvar origText = btn.textContent;\n\t\t\tbtn.dataset.running = 'true';\n\t\t\tbtn.disabled = true;\n\t\t\tbtn.textContent = 'Running...';\n\t\t\tvar csrfToken = document.cookie.replace(\n\t\t\t\t/(?:(?:^|.*;\\s*)csrf_token\\s*=\\s*([^;]*).*$)|^.*$/, \"$1\"\n\t\t\t);\n\t\t\tfetch('/api/v1/rules/' + ruleID + '/run', {\n\t\t\t\tmethod: 'POST',\n\t\t\t\theaders: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},\n\t\t\t\tcredentials: 'same-origin'\n\t\t\t}).then(function(r) {\n\t\t\t\tif (r.status === 409) { showRuleToast('A rule evaluation is already running.', true); return null; }\n\t\t\t\tif (!r.ok) throw new Error('status ' + r.status);\n\t\t\t\treturn r.json();\n\t\t\t}).then(function(data) {\n\t\t\t\tif (!data) { finishRunBtn(btn, origText); return; }\n\t\t\t\t// Server accepted (202) -- poll for completion.\n\t\t\t\tpollRuleStatus(btn, origText);\n\t\t\t}).catch(function() {\n\t\t\t\tshowRuleToast('Failed to start rule evaluation.', true);\n\t\t\t\tfinishRunBtn(btn, origText);\n\t\t\t});\n\t\t}\n\n\t\tfunction pollRuleStatus(btn, origText) {\n\t\t\tpollAsyncStatus('/api/v1/rules/run-all/status', {\n\t\t\t\tonData: function(s) {\n\t\t\t\t\tif (s.status === 'running') return false;\n\t\t\t\t\tif (s.status === 'completed') {\n\t\t\t\t\t\tvar msg = 'Evaluated ' + s.artists_processed + ' artists: ' +\n\t\t\t\t\t\t\ts.violations_found + ' violations, ' +\n\t\t\t\t\t\t\ts.fixes_succeeded + ' fixed';\n\t\t\t\t\t\tshowRuleToast(msg, false);\n\t\t\t\t\t} else if (s.status === 'failed') {\n\t\t\t\t\t\tvar errMsg = s.error ? 'Rule evaluation failed: ' + s.error : 'Rule evaluation failed.';\n\t\t\t\t\t\tshowRuleToast(errMsg, true);\n\t\t\t\t\t} else if (s.status === 'idle') {\n\t\t\t\t\t\tshowRuleToast('Rule evaluation state lost (server may have restarted).', true);\n\t\t\t\t\t}\n\t\t\t\t\tfinishRunBtn(btn, origText);\n\t\t\t\t\treturn true;\n\t\t\t\t},\n\t\t\t\tonTimeout: function() {\n\t\t\t\t\tshowRuleToast('Rule evaluation polling timed out.', true);\n\t\t\t\t\tfinishRunBtn(btn, origText);\n\t\t\t\t},\n\t\t\t\tonHTTPError: function(status) {\n\t\t\t\t\tshowRuleToast('Status check failed (HTTP ' + status + ').', true);\n\t\t\t\t\tfinishRunBtn(btn, origText);\n\t\t\t\t},\n\t\t\t\tonNetworkError: function() {\n\t\t\t\t\tshowRuleToast('Lost connection while running rule.', true);\n\t\t\t\t\tfinishRunBtn(btn, origText);\n\t\t\t\t}\n\t\t\t});\n\t\t}\n\n\t\tfunction finishRunBtn(btn, origText) {\n\t\t\tdelete btn.dataset.running;\n\t\t\tbtn.textContent = origText;\n\t\t\tvar row = btn.closest('.py-4');\n\t\t\tvar toggle = row ? row.querySelector('[role=\"switch\"]') : null;\n\t\t\tvar isEnabled = toggle ? toggle.getAttribute('aria-checked') === 'true' : true;\n\t\t\tbtn.disabled = !isEnabled;\n\t\t}\n\n\t\t// showRuleToast displays a brief toast for rule run results.\n\t\t// Uses green for success, red for errors.\n\t\tfunction showRuleToast(msg, isError) {\n\t\t\tvar container = document.getElementById('error-toast-container');\n\t\t\tif (!container) { if (typeof showToast === 'function') showToast(msg); return; }\n\t\t\tvar toast = document.createElement('div');\n\t\t\tvar colors = isError\n\t\t\t\t? 'bg-red-50 dark:bg-red-900/50 text-red-800 dark:text-red-200 border-red-200 dark:border-red-800'\n\t\t\t\t: 'bg-green-50 dark:bg-green-900/50 text-green-800 dark:text-green-200 border-green-200 dark:border-green-800';\n\t\t\ttoast.className = 'flex items-center gap-3 rounded-lg px-4 py-3 text-sm shadow-lg border transition-opacity duration-300 ' + colors;\n\t\t\tvar span = document.createElement('span');\n\t\t\tspan.textContent = msg;\n\t\t\tvar btn = document.createElement('button');\n\t\t\tbtn.type = 'button';\n\t\t\tbtn.setAttribute('aria-label', 'Dismiss notification');\n\t\t\tbtn.className = 'ml-2 font-bold opacity-70 hover:opacity-100';\n\t\t\tbtn.textContent = '\\u00d7';\n\t\t\tbtn.onclick = function() { toast.remove(); };\n\t\t\ttoast.appendChild(span);\n\t\t\ttoast.appendChild(btn);\n\t\t\tcontainer.appendChild(toast);\n\t\t\tsetTimeout(function() { toast.style.opacity = '0'; setTimeout(function() { toast.remove(); }, 300); }, 5000);\n\t\t}\n\n\t\tfunction handleRuleConfigSubmit(event) {\n\t\t\tevent.preventDefault();\n\t\t\tvar form = event.target;\n\t\t\tvar ruleID = form.dataset.ruleId;\n\t\t\tvar cfg = {};\n\t\t\tvar intFields = {'min_width':1, 'min_height':1, 'min_length':1, 'trim_margin':1};\n\t\t\t['min_width', 'min_height', 'aspect_ratio', 'tolerance', 'min_length', 'threshold_percent', 'trim_margin'].forEach(function(f) {\n\t\t\t\tvar el = form.elements[f];\n\t\t\t\tif (el && el.value !== '') cfg[f] = intFields[f] ? parseInt(el.value, 10) : parseFloat(el.value);\n\t\t\t});\n\t\t\tvar sev = form.elements['severity'];\n\t\t\tif (sev) cfg['severity'] = sev.value;\n\t\t\tpatchRule(ruleID, {config: cfg});\n\t\t\tvar panel = document.getElementById('rule-cfg-' + ruleID);\n\t\t\tif (panel) panel.classList.add('hidden');\n\t\t}\n\n\t\tfunction applyResPreset(select) {\n\t\t\tvar val = select.value;\n\t\t\tif (!val || val === 'custom') return;\n\t\t\tvar parts = val.split(',');\n\t\t\tvar form = select.closest('form');\n\t\t\tvar w = form.elements['min_width'];\n\t\t\tvar h = form.elements['min_height'];\n\t\t\tif (w && parts[0]) w.value = parts[0];\n\t\t\tif (h && parts.length > 1 && parts[1]) h.value = parts[1];\n\t\t}\n\n\t\tfunction applyAspectPreset(select) {\n\t\t\tvar val = select.value;\n\t\t\tif (!val || val === 'custom') return;\n\t\t\tvar form = select.closest('form');\n\t\t\tvar ar = form.elements['aspect_ratio'];\n\t\t\tif (ar) ar.value = val;\n\t\t}\n\t</script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -6741,12 +6784,12 @@ func apiTokenScript() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var286 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var286 == nil {
-			templ_7745c5c3_Var286 = templ.NopComponent
+		templ_7745c5c3_Var289 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var289 == nil {
+			templ_7745c5c3_Var289 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 593, "<script>\n\t\tfunction createAPIToken(event) {\n\t\t\tevent.preventDefault();\n\t\t\tvar form = event.target;\n\t\t\tvar name = form.elements['name'].value;\n\t\t\tvar scopes = [];\n\t\t\tif (form.elements['scope_read'].checked) scopes.push('read');\n\t\t\tif (form.elements['scope_write'].checked) scopes.push('write');\n\t\t\tif (form.elements['scope_webhook'].checked) scopes.push('webhook');\n\t\t\tif (form.elements['scope_admin'].checked) scopes.push('admin');\n\t\t\tif (scopes.length === 0) {\n\t\t\t\talert('Select at least one scope');\n\t\t\t\treturn;\n\t\t\t}\n\t\t\tvar csrfToken = document.cookie.replace(\n\t\t\t\t/(?:(?:^|.*;\\s*)csrf_token\\s*=\\s*([^;]*).*$)|^.*$/, \"$1\"\n\t\t\t);\n\t\t\tfetch('/api/v1/auth/tokens', {\n\t\t\t\tmethod: 'POST',\n\t\t\t\theaders: {\n\t\t\t\t\t'Content-Type': 'application/json',\n\t\t\t\t\t'X-CSRF-Token': csrfToken\n\t\t\t\t},\n\t\t\t\tbody: JSON.stringify({ name: name, scopes: scopes.join(',') })\n\t\t\t})\n\t\t\t.then(function(resp) {\n\t\t\t\tif (!resp.ok) {\n\t\t\t\t\treturn resp.json().then(function(body) {\n\t\t\t\t\t\tthrow new Error(body.error || 'Failed to create token');\n\t\t\t\t\t}, function() {\n\t\t\t\t\t\tthrow new Error('Failed to create token');\n\t\t\t\t\t});\n\t\t\t\t}\n\t\t\t\treturn resp.json();\n\t\t\t})\n\t\t\t.then(function(data) {\n\t\t\t\tdocument.getElementById('token-plaintext').textContent = data.token;\n\t\t\t\tdocument.getElementById('token-created-result').classList.remove('hidden');\n\t\t\t\tform.reset();\n\t\t\t\tform.elements['scope_read'].checked = true;\n\t\t\t})\n\t\t\t.catch(function(err) {\n\t\t\t\talert(err.message);\n\t\t\t});\n\t\t}\n\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 596, "<script>\n\t\tfunction createAPIToken(event) {\n\t\t\tevent.preventDefault();\n\t\t\tvar form = event.target;\n\t\t\tvar name = form.elements['name'].value;\n\t\t\tvar scopes = [];\n\t\t\tif (form.elements['scope_read'].checked) scopes.push('read');\n\t\t\tif (form.elements['scope_write'].checked) scopes.push('write');\n\t\t\tif (form.elements['scope_webhook'].checked) scopes.push('webhook');\n\t\t\tif (form.elements['scope_admin'].checked) scopes.push('admin');\n\t\t\tif (scopes.length === 0) {\n\t\t\t\talert('Select at least one scope');\n\t\t\t\treturn;\n\t\t\t}\n\t\t\tvar csrfToken = document.cookie.replace(\n\t\t\t\t/(?:(?:^|.*;\\s*)csrf_token\\s*=\\s*([^;]*).*$)|^.*$/, \"$1\"\n\t\t\t);\n\t\t\tfetch('/api/v1/auth/tokens', {\n\t\t\t\tmethod: 'POST',\n\t\t\t\theaders: {\n\t\t\t\t\t'Content-Type': 'application/json',\n\t\t\t\t\t'X-CSRF-Token': csrfToken\n\t\t\t\t},\n\t\t\t\tbody: JSON.stringify({ name: name, scopes: scopes.join(',') })\n\t\t\t})\n\t\t\t.then(function(resp) {\n\t\t\t\tif (!resp.ok) {\n\t\t\t\t\treturn resp.json().then(function(body) {\n\t\t\t\t\t\tthrow new Error(body.error || 'Failed to create token');\n\t\t\t\t\t}, function() {\n\t\t\t\t\t\tthrow new Error('Failed to create token');\n\t\t\t\t\t});\n\t\t\t\t}\n\t\t\t\treturn resp.json();\n\t\t\t})\n\t\t\t.then(function(data) {\n\t\t\t\tdocument.getElementById('token-plaintext').textContent = data.token;\n\t\t\t\tdocument.getElementById('token-created-result').classList.remove('hidden');\n\t\t\t\tform.reset();\n\t\t\t\tform.elements['scope_read'].checked = true;\n\t\t\t})\n\t\t\t.catch(function(err) {\n\t\t\t\talert(err.message);\n\t\t\t});\n\t\t}\n\t</script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

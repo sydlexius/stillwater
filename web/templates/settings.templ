@@ -199,7 +199,7 @@ func severityBadgeClasses(severity string) string {
 func ruleHasConfig(id string) bool {
 	switch id {
 	case "thumb_min_res", "thumb_square", "fanart_min_res", "fanart_aspect",
-		"logo_min_res", "banner_min_res", "bio_exists", "logo_trimmable":
+		"logo_min_res", "banner_min_res", "bio_exists", "logo_padding":
 		return true
 	}
 	return false
@@ -3758,6 +3758,9 @@ templ ruleRow(rl rule.Rule) {
 					type="button"
 					class="text-xs text-blue-600 dark:text-blue-400 hover:underline"
 					onclick={ toggleRuleConfig(rl.ID) }
+					aria-expanded="false"
+					aria-controls={ "rule-cfg-" + rl.ID }
+					aria-label={ "Configure " + rl.Name }
 				>Configure</button>
 				<div id={ "rule-cfg-" + rl.ID } class="hidden mt-2">
 					@ruleConfigForm(rl)
@@ -3875,16 +3878,27 @@ templ ruleConfigForm(rl rule.Rule) {
 				/>
 			</label>
 		}
-		if rl.ID == "logo_trimmable" {
+		if rl.ID == "logo_padding" {
 			<label class="block">
-				<span class="text-xs text-gray-600 dark:text-gray-400">Threshold % (per side)</span>
+				<span class="text-xs text-gray-600 dark:text-gray-400">Threshold % (total area)</span>
 				<input
 					type="number"
 					name="threshold_percent"
 					step="0.5"
 					min="1"
 					max="50"
-					value={ floatOrDefault(rl.Config.ThresholdPercent, 5) }
+					value={ floatOrDefault(rl.Config.ThresholdPercent, 15) }
+					class="mt-0.5 w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+				/>
+			</label>
+			<label class="block">
+				<span class="text-xs text-gray-600 dark:text-gray-400">Trim margin (px)</span>
+				<input
+					type="number"
+					name="trim_margin"
+					min="0"
+					max="20"
+					value={ strconv.Itoa(rl.Config.TrimMargin) }
 					class="mt-0.5 w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
 				/>
 			</label>
@@ -3973,6 +3987,10 @@ script toggleRuleConfig(ruleID string) {
 	var el = document.getElementById("rule-cfg-" + ruleID);
 	if (el) {
 		el.classList.toggle("hidden");
+		var btn = document.querySelector('[aria-controls="rule-cfg-' + ruleID + '"]');
+		if (btn) {
+			btn.setAttribute("aria-expanded", String(!el.classList.contains("hidden")));
+		}
 	}
 }
 
@@ -4162,9 +4180,10 @@ templ ruleToggleScript() {
 			var form = event.target;
 			var ruleID = form.dataset.ruleId;
 			var cfg = {};
-			['min_width', 'min_height', 'aspect_ratio', 'tolerance', 'min_length', 'threshold_percent'].forEach(function(f) {
+			var intFields = {'min_width':1, 'min_height':1, 'min_length':1, 'trim_margin':1};
+			['min_width', 'min_height', 'aspect_ratio', 'tolerance', 'min_length', 'threshold_percent', 'trim_margin'].forEach(function(f) {
 				var el = form.elements[f];
-				if (el && el.value !== '') cfg[f] = parseFloat(el.value);
+				if (el && el.value !== '') cfg[f] = intFields[f] ? parseInt(el.value, 10) : parseFloat(el.value);
 			});
 			var sev = form.elements['severity'];
 			if (sev) cfg['severity'] = sev.value;

@@ -133,26 +133,6 @@ func TestImageFixer_SharedFS_Skips(t *testing.T) {
 	}
 }
 
-func TestLogoTrimFixer_SharedFS_Skips(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	check := NewSharedFSCheck(&stubLibQuerier{
-		lib: &library.Library{SharedFSStatus: library.SharedFSSuspected},
-	}, logger)
-	fixer := NewLogoTrimFixer(nil, check, logger)
-	a := &artist.Artist{Name: "Test", Path: t.TempDir(), LibraryID: "lib-1"}
-	v := &Violation{RuleID: RuleLogoTrimmable}
-	result, err := fixer.Fix(context.Background(), a, v)
-	if err != nil {
-		t.Fatalf("Fix: %v", err)
-	}
-	if result.Fixed {
-		t.Error("Fixed = true, want false")
-	}
-	if !strings.Contains(result.Message, "skipped") {
-		t.Errorf("Message = %q", result.Message)
-	}
-}
-
 func TestLogoPaddingFixer_SharedFS_Skips(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	check := NewSharedFSCheck(&stubLibQuerier{
