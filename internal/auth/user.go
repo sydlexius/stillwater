@@ -111,7 +111,10 @@ func (s *Service) ListUsers(ctx context.Context) ([]User, error) {
 
 		users = append(users, u)
 	}
-	return users, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("listing users: %w", err)
+	}
+	return users, nil
 }
 
 // UpdateUserRole changes a user's role. Valid roles are "administrator" and
@@ -250,6 +253,9 @@ func (s *Service) CreateLocalUser(ctx context.Context, username, password, displ
 
 // CreateFederatedUser creates a new user from a federated authentication identity.
 func (s *Service) CreateFederatedUser(ctx context.Context, identity *Identity, role, invitedBy string) (*User, error) {
+	if identity == nil {
+		return nil, fmt.Errorf("identity must not be nil")
+	}
 	if role != "administrator" && role != "operator" {
 		return nil, fmt.Errorf("invalid role %q: must be administrator or operator", role)
 	}
