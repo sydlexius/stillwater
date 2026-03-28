@@ -1643,3 +1643,249 @@ func TestCheckLogoPadding_NoPathNoFetcher(t *testing.T) {
 		t.Errorf("expected nil when no path and no fetcher, got %v", v)
 	}
 }
+
+// --- DB-based extraneous_images tests ---
+
+// insertTestArtist inserts a minimal artist row for testing DB-based checkers.
+// The artist has no filesystem path (simulating an API-imported artist).
+func insertTestArtist(t *testing.T, db *sql.DB, id, name string) {
+	t.Helper()
+	_, err := db.ExecContext(context.Background(),
+		`INSERT INTO artists (id, name, path) VALUES (?, ?, '')`,
+		id, name)
+	if err != nil {
+		t.Fatalf("inserting test artist: %v", err)
+	}
+}
+
+// insertTestImage inserts a row into artist_images for testing.
+func insertTestImage(t *testing.T, db *sql.DB, artistID, imageType string, slotIndex int) {
+	t.Helper()
+	id := fmt.Sprintf("%s-%s-%d", artistID, imageType, slotIndex)
+	_, err := db.ExecContext(context.Background(),
+		`INSERT INTO artist_images (id, artist_id, image_type, slot_index, exists_flag) VALUES (?, ?, ?, ?, 1)`,
+		id, artistID, imageType, slotIndex)
+	if err != nil {
+		t.Fatalf("inserting test image row: %v", err)
+	}
+}
+
+func TestCheckExtraneousImagesFromDB_ValidImages(t *testing.T) {
+	db := setupTestDB(t)
+	insertTestArtist(t, db, "art-1", "Test Artist")
+	insertTestImage(t, db, "art-1", "thumb", 0)
+	insertTestImage(t, db, "art-1", "fanart", 0)
+	insertTestImage(t, db, "art-1", "logo", 0)
+	insertTestImage(t, db, "art-1", "banner", 0)
+
+	e := &Engine{db: db, logger: slog.Default()}
+	a := &artist.Artist{ID: "art-1", Name: "Test Artist", Path: ""}
+	v := e.checkExtraneousImagesFromDB(a, RuleConfig{})
+	if v != nil {
+		t.Errorf("expected nil for artist with only valid images, got: %s", v.Message)
+	}
+}
+
+func TestCheckExtraneousImagesFromDB_UnknownImageType(t *testing.T) {
+	db := setupTestDB(t)
+	insertTestArtist(t, db, "art-2", "Test Artist 2")
+	insertTestImage(t, db, "art-2", "thumb", 0)
+	insertTestImage(t, db, "art-2", "poster", 0) // unknown type
+
+	e := &Engine{db: db, logger: slog.Default()}
+	a := &artist.Artist{ID: "art-2", Name: "Test Artist 2", Path: ""}
+	v := e.checkExtraneousImagesFromDB(a, RuleConfig{})
+	if v == nil {
+		t.Fatal("expected violation for unknown image_type 'poster'")
+	}
+	if v.RuleID != RuleExtraneousImages {
+		t.Errorf("RuleID = %q, want %q", v.RuleID, RuleExtraneousImages)
+	}
+	if v.Fixable {
+		t.Error("expected Fixable to be false for DB-based extraneous check")
+	}
+	if !strings.Contains(v.Message, "poster/0") {
+		t.Errorf("expected message to mention 'poster/0', got: %s", v.Message)
+	}
+}
+
+func TestCheckExtraneousImagesFromDB_InvalidSlotIndex(t *testing.T) {
+	db := setupTestDB(t)
+	insertTestArtist(t, db, "art-3", "Test Artist 3")
+	insertTestImage(t, db, "art-3", "thumb", 0)
+	insertTestImage(t, db, "art-3", "thumb", 1) // invalid: thumb only supports slot 0
+
+	e := &Engine{db: db, logger: slog.Default()}
+	a := &artist.Artist{ID: "art-3", Name: "Test Artist 3", Path: ""}
+	v := e.checkExtraneousImagesFromDB(a, RuleConfig{})
+	if v == nil {
+		t.Fatal("expected violation for thumb with slot_index > 0")
+	}
+	if !strings.Contains(v.Message, "thumb/1") {
+		t.Errorf("expected message to mention 'thumb/1', got: %s", v.Message)
+	}
+}
+
+func TestCheckExtraneousImagesFromDB_FanartMultiSlotValid(t *testing.T) {
+	db := setupTestDB(t)
+	insertTestArtist(t, db, "art-4", "Test Artist 4")
+	insertTestImage(t, db, "art-4", "fanart", 0)
+	insertTestImage(t, db, "art-4", "fanart", 1)
+	insertTestImage(t, db, "art-4", "fanart", 2)
+
+	e := &Engine{db: db, logger: slog.Default()}
+	a := &artist.Artist{ID: "art-4", Name: "Test Artist 4", Path: ""}
+	v := e.checkExtraneousImagesFromDB(a, RuleConfig{})
+	if v != nil {
+		t.Errorf("expected nil for fanart with multiple valid slots, got: %s", v.Message)
+	}
+}
+
+func TestCheckExtraneousImagesFromDB_NoImages(t *testing.T) {
+	db := setupTestDB(t)
+	insertTestArtist(t, db, "art-5", "Test Artist 5")
+
+	e := &Engine{db: db, logger: slog.Default()}
+	a := &artist.Artist{ID: "art-5", Name: "Test Artist 5", Path: ""}
+	v := e.checkExtraneousImagesFromDB(a, RuleConfig{})
+	if v != nil {
+		t.Errorf("expected nil for artist with no images, got: %s", v.Message)
+	}
+}
+
+func TestCheckExtraneousImagesFromDB_NilDB(t *testing.T) {
+	e := &Engine{db: nil, logger: slog.Default()}
+	a := &artist.Artist{ID: "art-6", Name: "Test Artist 6", Path: ""}
+	v := e.checkExtraneousImagesFromDB(a, RuleConfig{})
+	if v != nil {
+		t.Errorf("expected nil when db is nil, got: %s", v.Message)
+	}
+}
+
+// --- DB-based backdrop_sequencing tests ---
+
+func TestCheckBackdropSequencingFromDB_Contiguous(t *testing.T) {
+	db := setupTestDB(t)
+	insertTestArtist(t, db, "art-10", "Test Artist 10")
+	insertTestImage(t, db, "art-10", "fanart", 0)
+	insertTestImage(t, db, "art-10", "fanart", 1)
+	insertTestImage(t, db, "art-10", "fanart", 2)
+
+	e := &Engine{db: db, logger: slog.Default()}
+	a := &artist.Artist{ID: "art-10", Name: "Test Artist 10", Path: ""}
+	v := e.checkBackdropSequencingFromDB(a, RuleConfig{})
+	if v != nil {
+		t.Errorf("expected nil for contiguous fanart slots, got: %s", v.Message)
+	}
+}
+
+func TestCheckBackdropSequencingFromDB_WithGap(t *testing.T) {
+	db := setupTestDB(t)
+	insertTestArtist(t, db, "art-11", "Test Artist 11")
+	insertTestImage(t, db, "art-11", "fanart", 0)
+	insertTestImage(t, db, "art-11", "fanart", 2) // gap at index 1
+
+	e := &Engine{db: db, logger: slog.Default()}
+	a := &artist.Artist{ID: "art-11", Name: "Test Artist 11", Path: ""}
+	v := e.checkBackdropSequencingFromDB(a, RuleConfig{})
+	if v == nil {
+		t.Fatal("expected violation for gap in fanart slot sequence")
+	}
+	if v.RuleID != RuleBackdropSequencing {
+		t.Errorf("RuleID = %q, want %q", v.RuleID, RuleBackdropSequencing)
+	}
+	if v.Fixable {
+		t.Error("expected Fixable to be false for DB-based sequencing check")
+	}
+	if !strings.Contains(v.Message, "missing") {
+		t.Errorf("expected message to mention 'missing', got: %s", v.Message)
+	}
+}
+
+func TestCheckBackdropSequencingFromDB_NoFanart(t *testing.T) {
+	db := setupTestDB(t)
+	insertTestArtist(t, db, "art-12", "Test Artist 12")
+	insertTestImage(t, db, "art-12", "thumb", 0)
+
+	e := &Engine{db: db, logger: slog.Default()}
+	a := &artist.Artist{ID: "art-12", Name: "Test Artist 12", Path: ""}
+	v := e.checkBackdropSequencingFromDB(a, RuleConfig{})
+	if v != nil {
+		t.Errorf("expected nil when no fanart images exist, got: %s", v.Message)
+	}
+}
+
+func TestCheckBackdropSequencingFromDB_SingleFanart(t *testing.T) {
+	db := setupTestDB(t)
+	insertTestArtist(t, db, "art-13", "Test Artist 13")
+	insertTestImage(t, db, "art-13", "fanart", 0)
+
+	e := &Engine{db: db, logger: slog.Default()}
+	a := &artist.Artist{ID: "art-13", Name: "Test Artist 13", Path: ""}
+	v := e.checkBackdropSequencingFromDB(a, RuleConfig{})
+	if v != nil {
+		t.Errorf("expected nil for single fanart image, got: %s", v.Message)
+	}
+}
+
+func TestCheckBackdropSequencingFromDB_NilDB(t *testing.T) {
+	e := &Engine{db: nil, logger: slog.Default()}
+	a := &artist.Artist{ID: "art-14", Name: "Test Artist 14", Path: ""}
+	v := e.checkBackdropSequencingFromDB(a, RuleConfig{})
+	if v != nil {
+		t.Errorf("expected nil when db is nil, got: %s", v.Message)
+	}
+}
+
+func TestCheckBackdropSequencingFromDB_StartsAtNonZero(t *testing.T) {
+	db := setupTestDB(t)
+	insertTestArtist(t, db, "art-15", "Test Artist 15")
+	insertTestImage(t, db, "art-15", "fanart", 1) // missing slot 0
+	insertTestImage(t, db, "art-15", "fanart", 2)
+
+	e := &Engine{db: db, logger: slog.Default()}
+	a := &artist.Artist{ID: "art-15", Name: "Test Artist 15", Path: ""}
+	v := e.checkBackdropSequencingFromDB(a, RuleConfig{})
+	if v == nil {
+		t.Fatal("expected violation when fanart starts at slot 1 instead of 0")
+	}
+}
+
+// TestExtraneousImagesChecker_DispatchesToDB verifies that the full
+// makeExtraneousImagesChecker dispatches to the DB path when Path is empty.
+func TestExtraneousImagesChecker_DispatchesToDB(t *testing.T) {
+	db := setupTestDB(t)
+	insertTestArtist(t, db, "art-20", "Dispatch Test")
+	insertTestImage(t, db, "art-20", "poster", 0) // unknown type
+
+	e := &Engine{db: db, logger: slog.Default()}
+	checker := e.makeExtraneousImagesChecker()
+	a := artist.Artist{ID: "art-20", Name: "Dispatch Test", Path: ""}
+	v := checker(&a, RuleConfig{})
+	if v == nil {
+		t.Fatal("expected violation from DB path when Path is empty")
+	}
+	if v.Fixable {
+		t.Error("DB-based extraneous violations should not be fixable")
+	}
+}
+
+// TestBackdropSequencingChecker_DispatchesToDB verifies that the full
+// makeBackdropSequencingChecker dispatches to the DB path when Path is empty.
+func TestBackdropSequencingChecker_DispatchesToDB(t *testing.T) {
+	db := setupTestDB(t)
+	insertTestArtist(t, db, "art-21", "Dispatch Test 2")
+	insertTestImage(t, db, "art-21", "fanart", 0)
+	insertTestImage(t, db, "art-21", "fanart", 3) // gap
+
+	e := &Engine{db: db, logger: slog.Default()}
+	checker := e.makeBackdropSequencingChecker()
+	a := artist.Artist{ID: "art-21", Name: "Dispatch Test 2", Path: ""}
+	v := checker(&a, RuleConfig{})
+	if v == nil {
+		t.Fatal("expected violation from DB path when Path is empty")
+	}
+	if v.Fixable {
+		t.Error("DB-based sequencing violations should not be fixable")
+	}
+}

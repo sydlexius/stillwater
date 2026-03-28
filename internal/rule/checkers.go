@@ -729,7 +729,7 @@ func expectedImageFiles(profile *platform.Profile, artistPath string) map[string
 func (e *Engine) makeExtraneousImagesChecker() Checker {
 	return func(a *artist.Artist, cfg RuleConfig) *Violation {
 		if a.Path == "" {
-			return nil
+			return e.checkExtraneousImagesFromDB(a, cfg)
 		}
 
 		// When shared filesystem is detected, union expected files from all
@@ -815,6 +815,69 @@ func (e *Engine) checkExtraneousAgainst(a *artist.Artist, expected map[string]bo
 		Severity: effectiveSeverity(cfg),
 		Message:  fmt.Sprintf("artist %q has %d extraneous image file(s): %s", a.Name, len(extraneous), strings.Join(extraneous, ", ")),
 		Fixable:  true,
+	}
+}
+
+// checkExtraneousImagesFromDB is the API-artist equivalent of the filesystem
+// extraneous images checker. Instead of scanning a directory for unexpected
+// files, it queries the artist_images table for rows with unrecognized
+// image_type values or invalid slot_index values (e.g., slot_index > 0 for
+// non-fanart types, which only support a single slot).
+func (e *Engine) checkExtraneousImagesFromDB(a *artist.Artist, cfg RuleConfig) *Violation {
+	if e.db == nil {
+		return nil
+	}
+
+	// Valid image types that correspond to known slots.
+	validTypes := map[string]bool{
+		"thumb":  true,
+		"fanart": true,
+		"logo":   true,
+		"banner": true,
+	}
+
+	rows, err := e.db.QueryContext(context.Background(),
+		`SELECT image_type, slot_index FROM artist_images WHERE artist_id = ? AND exists_flag = 1`,
+		a.ID)
+	if err != nil {
+		e.logger.Debug("querying artist_images for extraneous check", "artist", a.Name, "error", err)
+		return nil
+	}
+	defer rows.Close() //nolint:errcheck
+
+	var extraneous []string
+	for rows.Next() {
+		var imageType string
+		var slotIndex int
+		if err := rows.Scan(&imageType, &slotIndex); err != nil {
+			e.logger.Debug("scanning artist_images row", "artist", a.Name, "error", err)
+			continue
+		}
+		if !validTypes[imageType] {
+			extraneous = append(extraneous, fmt.Sprintf("%s/%d", imageType, slotIndex))
+			continue
+		}
+		// Non-fanart types only support slot_index 0 (one image per type).
+		if imageType != "fanart" && slotIndex != 0 {
+			extraneous = append(extraneous, fmt.Sprintf("%s/%d", imageType, slotIndex))
+		}
+	}
+	if err := rows.Err(); err != nil {
+		e.logger.Debug("iterating artist_images rows", "artist", a.Name, "error", err)
+		return nil
+	}
+
+	if len(extraneous) == 0 {
+		return nil
+	}
+
+	return &Violation{
+		RuleID:   RuleExtraneousImages,
+		RuleName: "Extraneous image files",
+		Category: "image",
+		Severity: effectiveSeverity(cfg),
+		Message:  fmt.Sprintf("artist %q has %d extraneous image record(s): %s", a.Name, len(extraneous), strings.Join(extraneous, ", ")),
+		Fixable:  false, // no filesystem to clean up for API-imported artists
 	}
 }
 
@@ -1039,7 +1102,7 @@ func checkMetadataQuality(a *artist.Artist, cfg RuleConfig) *Violation {
 func (e *Engine) makeBackdropSequencingChecker() Checker {
 	return func(a *artist.Artist, cfg RuleConfig) *Violation {
 		if a.Path == "" {
-			return nil
+			return e.checkBackdropSequencingFromDB(a, cfg)
 		}
 
 		var profile *platform.Profile
@@ -1093,5 +1156,68 @@ func (e *Engine) makeBackdropSequencingChecker() Checker {
 			}
 		}
 		return nil
+	}
+}
+
+// checkBackdropSequencingFromDB is the API-artist equivalent of the filesystem
+// backdrop sequencing checker. Instead of discovering fanart files on disk, it
+// queries the artist_images table for fanart slot indices and checks that they
+// form a contiguous 0..N-1 sequence with no gaps.
+func (e *Engine) checkBackdropSequencingFromDB(a *artist.Artist, cfg RuleConfig) *Violation {
+	if e.db == nil {
+		return nil
+	}
+
+	rows, err := e.db.QueryContext(context.Background(),
+		`SELECT slot_index FROM artist_images WHERE artist_id = ? AND image_type = 'fanart' AND exists_flag = 1 ORDER BY slot_index`,
+		a.ID)
+	if err != nil {
+		e.logger.Debug("querying fanart slots for sequencing check", "artist", a.Name, "error", err)
+		return nil
+	}
+	defer rows.Close() //nolint:errcheck
+
+	var slots []int
+	for rows.Next() {
+		var idx int
+		if err := rows.Scan(&idx); err != nil {
+			e.logger.Debug("scanning fanart slot_index", "artist", a.Name, "error", err)
+			continue
+		}
+		slots = append(slots, idx)
+	}
+	if err := rows.Err(); err != nil {
+		e.logger.Debug("iterating fanart slot rows", "artist", a.Name, "error", err)
+		return nil
+	}
+
+	// No fanart or only one image: no sequencing issue possible.
+	if len(slots) <= 1 {
+		return nil
+	}
+
+	// Check that slots form a contiguous 0..N-1 sequence.
+	var missing []int
+	for i, idx := range slots {
+		if idx != i {
+			// Collect all missing indices between the expected and actual value.
+			for gap := i; gap < idx && gap < slots[len(slots)-1]; gap++ {
+				missing = append(missing, gap)
+			}
+			break
+		}
+	}
+
+	if len(missing) == 0 {
+		return nil
+	}
+
+	return &Violation{
+		RuleID:   RuleBackdropSequencing,
+		RuleName: "Backdrop/fanart sequencing",
+		Category: "image",
+		Severity: effectiveSeverity(cfg),
+		Message:  fmt.Sprintf("artist %q has non-contiguous fanart slots: missing index %v", a.Name, missing),
+		Fixable:  false, // no filesystem to renumber for API-imported artists
 	}
 }

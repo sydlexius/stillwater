@@ -222,10 +222,11 @@ var defaultRules = []Rule{
 //   - #725: image existence/dimension rules (thumb, fanart, logo, banner)
 //   - #726: NFO content rules (nfo_has_mbid)
 //   - #727: directory-based rules (artist_id_mismatch, directory_name_mismatch)
-//   - #728: extraneous_images API equivalent
+//
+// extraneous_images (#728) and backdrop_sequencing now have DB-based checker
+// paths that run when a.Path is empty, so they are no longer filesystem-only.
 var filesystemRules = map[string]bool{
-	RuleNFOExists:        true, // NFO is a local file format with no API equivalent
-	RuleExtraneousImages: true, // enumerates directory contents; API equivalent tracked in #728
+	RuleNFOExists: true, // NFO is a local file format with no API equivalent
 }
 
 // IsFilesystemDependent reports whether a rule requires a local library with a
