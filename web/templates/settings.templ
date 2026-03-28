@@ -4173,9 +4173,10 @@ templ ruleToggleScript() {
 			var form = event.target;
 			var ruleID = form.dataset.ruleId;
 			var cfg = {};
+			var intFields = {'min_width':1, 'min_height':1, 'min_length':1, 'trim_margin':1};
 			['min_width', 'min_height', 'aspect_ratio', 'tolerance', 'min_length', 'threshold_percent', 'trim_margin'].forEach(function(f) {
 				var el = form.elements[f];
-				if (el && el.value !== '') cfg[f] = parseFloat(el.value);
+				if (el && el.value !== '') cfg[f] = intFields[f] ? parseInt(el.value, 10) : parseFloat(el.value);
 			});
 			var sev = form.elements['severity'];
 			if (sev) cfg['severity'] = sev.value;

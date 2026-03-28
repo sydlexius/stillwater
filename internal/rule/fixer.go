@@ -23,7 +23,7 @@ type Fixer interface {
 // CandidateDiscoverer is an optional interface that fixers may implement to
 // indicate they support candidate discovery without side effects. In manual
 // automation mode the pipeline only invokes Fix on fixers that implement this
-// interface. Fixers that write to disk unconditionally (LogoPaddingFixer,
+// interface. Fixers that may write to disk as part of fixing (LogoPaddingFixer,
 // NFOFixer, ExtraneousImagesFixer) must NOT implement it.
 type CandidateDiscoverer interface {
 	SupportsCandidateDiscovery() bool
