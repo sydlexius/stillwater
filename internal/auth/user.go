@@ -119,104 +119,106 @@ func (s *Service) ListUsers(ctx context.Context) ([]User, error) {
 
 // UpdateUserRole changes a user's role. Valid roles are "administrator" and
 // "operator". Returns ErrLastAdmin if downgrading the last active administrator.
+// The admin-count check and role update run inside a BEGIN IMMEDIATE transaction
+// to prevent concurrent downgrades from racing past the last-admin safeguard.
 func (s *Service) UpdateUserRole(ctx context.Context, userID, newRole string) error {
 	if newRole != "administrator" && newRole != "operator" {
 		return fmt.Errorf("invalid role %q: must be administrator or operator", newRole)
 	}
 
-	if newRole == "operator" {
-		// Check if this user is an admin being downgraded.
-		var currentRole string
-		err := s.db.QueryRowContext(ctx, `
-			SELECT role FROM users WHERE id = ? AND is_active = 1
-		`, userID).Scan(&currentRole)
-		if errors.Is(err, sql.ErrNoRows) {
-			return fmt.Errorf("user not found: %w", sql.ErrNoRows)
-		}
-		if err != nil {
-			return fmt.Errorf("checking current role: %w", err)
+	return s.withImmediateTx(ctx, func(conn *sql.Conn) error {
+		if newRole == "operator" {
+			var currentRole string
+			err := conn.QueryRowContext(ctx, `
+				SELECT role FROM users WHERE id = ? AND is_active = 1
+			`, userID).Scan(&currentRole)
+			if errors.Is(err, sql.ErrNoRows) {
+				return fmt.Errorf("user not found: %w", sql.ErrNoRows)
+			}
+			if err != nil {
+				return fmt.Errorf("checking current role: %w", err)
+			}
+
+			if currentRole == "administrator" {
+				var count int
+				err := conn.QueryRowContext(ctx, `
+					SELECT COUNT(*) FROM users WHERE role = 'administrator' AND is_active = 1
+				`).Scan(&count)
+				if err != nil {
+					return fmt.Errorf("counting active admins: %w", err)
+				}
+				if count <= 1 {
+					return ErrLastAdmin
+				}
+			}
 		}
 
-		if currentRole == "administrator" {
-			count, err := s.countActiveAdmins(ctx)
+		now := time.Now().UTC().Format(time.RFC3339)
+		result, err := conn.ExecContext(ctx, `
+			UPDATE users SET role = ?, updated_at = ? WHERE id = ?
+		`, newRole, now, userID)
+		if err != nil {
+			return fmt.Errorf("updating user role: %w", err)
+		}
+
+		n, err := result.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("checking rows affected: %w", err)
+		}
+		if n == 0 {
+			return fmt.Errorf("user not found: %w", sql.ErrNoRows)
+		}
+
+		return nil
+	})
+}
+
+// DeactivateUser sets a user's is_active flag to 0 and deletes all their
+// sessions. Returns ErrLastAdmin if deactivating the last active administrator.
+// The admin-count check and deactivation run inside a BEGIN IMMEDIATE transaction
+// to prevent concurrent deactivations from racing past the last-admin safeguard.
+func (s *Service) DeactivateUser(ctx context.Context, userID string) error {
+	return s.withImmediateTx(ctx, func(conn *sql.Conn) error {
+		var role string
+		err := conn.QueryRowContext(ctx, `
+			SELECT role FROM users WHERE id = ? AND is_active = 1
+		`, userID).Scan(&role)
+		if errors.Is(err, sql.ErrNoRows) {
+			// Already inactive or does not exist -- nothing to do.
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("checking user for deactivation: %w", err)
+		}
+
+		if role == "administrator" {
+			var count int
+			err := conn.QueryRowContext(ctx, `
+				SELECT COUNT(*) FROM users WHERE role = 'administrator' AND is_active = 1
+			`).Scan(&count)
 			if err != nil {
-				return err
+				return fmt.Errorf("counting active admins: %w", err)
 			}
 			if count <= 1 {
 				return ErrLastAdmin
 			}
 		}
-	}
 
-	now := time.Now().UTC().Format(time.RFC3339)
-	result, err := s.db.ExecContext(ctx, `
-		UPDATE users SET role = ?, updated_at = ? WHERE id = ?
-	`, newRole, now, userID)
-	if err != nil {
-		return fmt.Errorf("updating user role: %w", err)
-	}
-
-	n, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("checking rows affected: %w", err)
-	}
-	if n == 0 {
-		return fmt.Errorf("user not found: %w", sql.ErrNoRows)
-	}
-
-	return nil
-}
-
-// DeactivateUser sets a user's is_active flag to 0 and deletes all their
-// sessions. Returns ErrLastAdmin if deactivating the last active administrator.
-func (s *Service) DeactivateUser(ctx context.Context, userID string) error {
-	// Check if this user is an active admin.
-	var role string
-	err := s.db.QueryRowContext(ctx, `
-		SELECT role FROM users WHERE id = ? AND is_active = 1
-	`, userID).Scan(&role)
-	if errors.Is(err, sql.ErrNoRows) {
-		// Already inactive or does not exist -- nothing to do.
-		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("checking user for deactivation: %w", err)
-	}
-
-	if role == "administrator" {
-		count, err := s.countActiveAdmins(ctx)
+		now := time.Now().UTC().Format(time.RFC3339)
+		_, err = conn.ExecContext(ctx, `
+			UPDATE users SET is_active = 0, updated_at = ? WHERE id = ?
+		`, now, userID)
 		if err != nil {
-			return err
+			return fmt.Errorf("deactivating user: %w", err)
 		}
-		if count <= 1 {
-			return ErrLastAdmin
+
+		_, err = conn.ExecContext(ctx, `DELETE FROM sessions WHERE user_id = ?`, userID)
+		if err != nil {
+			return fmt.Errorf("deleting sessions for deactivated user: %w", err)
 		}
-	}
 
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("beginning deactivation transaction: %w", err)
-	}
-	defer tx.Rollback() //nolint:errcheck
-
-	now := time.Now().UTC().Format(time.RFC3339)
-	_, err = tx.ExecContext(ctx, `
-		UPDATE users SET is_active = 0, updated_at = ? WHERE id = ?
-	`, now, userID)
-	if err != nil {
-		return fmt.Errorf("deactivating user: %w", err)
-	}
-
-	_, err = tx.ExecContext(ctx, `DELETE FROM sessions WHERE user_id = ?`, userID)
-	if err != nil {
-		return fmt.Errorf("deleting sessions for deactivated user: %w", err)
-	}
-
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("committing deactivation: %w", err)
-	}
-
-	return nil
+		return nil
+	})
 }
 
 // CreateLocalUser creates a new user with local password authentication.
@@ -256,6 +258,15 @@ func (s *Service) CreateFederatedUser(ctx context.Context, identity *Identity, r
 	if identity == nil {
 		return nil, fmt.Errorf("identity must not be nil")
 	}
+	if identity.ProviderType == "" {
+		return nil, fmt.Errorf("identity provider type must not be empty")
+	}
+	if identity.ProviderID == "" {
+		return nil, fmt.Errorf("identity provider ID must not be empty")
+	}
+	if identity.DisplayName == "" {
+		return nil, fmt.Errorf("identity display name must not be empty")
+	}
 	if role != "administrator" && role != "operator" {
 		return nil, fmt.Errorf("invalid role %q: must be administrator or operator", role)
 	}
@@ -281,14 +292,30 @@ func (s *Service) CreateFederatedUser(ctx context.Context, identity *Identity, r
 	return s.GetUserByID(ctx, id)
 }
 
-// countActiveAdmins returns the number of active administrator accounts.
-func (s *Service) countActiveAdmins(ctx context.Context) (int, error) {
-	var count int
-	err := s.db.QueryRowContext(ctx, `
-		SELECT COUNT(*) FROM users WHERE role = 'administrator' AND is_active = 1
-	`).Scan(&count)
+// withImmediateTx executes fn within a BEGIN IMMEDIATE transaction, which
+// acquires the SQLite write lock at the start of the transaction rather than
+// deferring it to the first write. This prevents check-then-act races where
+// concurrent transactions read stale data before their respective writes.
+func (s *Service) withImmediateTx(ctx context.Context, fn func(conn *sql.Conn) error) error {
+	conn, err := s.db.Conn(ctx)
 	if err != nil {
-		return 0, fmt.Errorf("counting active admins: %w", err)
+		return fmt.Errorf("acquiring connection: %w", err)
 	}
-	return count, nil
+	defer conn.Close() //nolint:errcheck
+
+	if _, err := conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+		return fmt.Errorf("beginning immediate transaction: %w", err)
+	}
+
+	if err := fn(conn); err != nil {
+		conn.ExecContext(ctx, "ROLLBACK") //nolint:errcheck
+		return err
+	}
+
+	if _, err := conn.ExecContext(ctx, "COMMIT"); err != nil {
+		conn.ExecContext(ctx, "ROLLBACK") //nolint:errcheck
+		return fmt.Errorf("committing transaction: %w", err)
+	}
+
+	return nil
 }
