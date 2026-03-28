@@ -14,6 +14,10 @@ on:
 permissions:
   pull-requests: write
 
+concurrency:
+  group: coderabbit-retry-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
 jobs:
   retry-review:
     name: Retry Rate-Limited Review
@@ -24,7 +28,23 @@ jobs:
       github.event.comment.user.login == 'coderabbitai[bot]' &&
       contains(github.event.comment.body, 'rate limited by coderabbit.ai')
     steps:
+      - name: Check for recent retry
+        id: guard
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          CUTOFF=$(date -u -d '-1 hour' +%Y-%m-%dT%H:%M:%SZ)
+          RETRIES=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments" \
+            --jq "[.[] | select(.user.login == \"github-actions[bot]\" and (.body | contains(\"@coderabbitai review\")) and .created_at > \"$CUTOFF\")] | length")
+          echo "recent_retries=$RETRIES" >> "$GITHUB_OUTPUT"
+          if [ "$RETRIES" -gt 0 ]; then
+            echo "Already retried within the last hour. Skipping to prevent loop."
+          fi
+
       - name: Parse wait time from rate-limit message
+        if: steps.guard.outputs.recent_retries == '0'
         id: parse
         env:
           COMMENT_BODY: ${{ github.event.comment.body }}
@@ -36,12 +56,14 @@ jobs:
             TOTAL=1800
           fi
           echo "wait=$TOTAL" >> "$GITHUB_OUTPUT"
-          echo "Rate-limited on PR #${{ github.event.issue.number }}. Waiting ${TOTAL}s (${MINUTES}m ${SECONDS}s + 60s buffer)."
+          echo "Rate-limited on PR #$PR_NUMBER. Waiting ${TOTAL}s (${MINUTES}m ${SECONDS}s + 60s buffer)."
 
       - name: Wait for rate limit cooldown
+        if: steps.guard.outputs.recent_retries == '0'
         run: sleep ${{ steps.parse.outputs.wait }}
 
       - name: Trigger CodeRabbit review
+        if: steps.guard.outputs.recent_retries == '0'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
