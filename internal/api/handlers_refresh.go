@@ -11,6 +11,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/event"
 	"github.com/sydlexius/stillwater/internal/provider"
+	"github.com/sydlexius/stillwater/internal/provider/musicbrainz"
 	"github.com/sydlexius/stillwater/internal/rule"
 	"github.com/sydlexius/stillwater/web/templates"
 )
@@ -252,6 +253,17 @@ func (r *Router) executeRefreshCtx(ctx context.Context, a *artist.Artist) (*prov
 	// FetchMetadata above is cancelable, but once we have the data, the
 	// Update/Publish/Upsert sequence must run to completion.
 	writeCtx := context.WithoutCancel(ctx)
+
+	// Capture MusicBrainz-sourced field values as snapshots for contribution diffs.
+	if result.Metadata != nil {
+		if snaps := musicbrainz.ExtractMBFieldValues(result.Metadata, result.Sources); len(snaps) > 0 {
+			if err := r.artistService.UpsertMBSnapshots(writeCtx, a.ID, snaps); err != nil {
+				r.logger.Warn("failed to upsert MB snapshots",
+					"artist_id", a.ID,
+					"error", err)
+			}
+		}
+	}
 
 	if err := r.artistService.Update(writeCtx, a); err != nil {
 		r.logger.Error("saving refreshed metadata failed",
