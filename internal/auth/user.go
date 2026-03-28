@@ -155,7 +155,7 @@ func (s *Service) UpdateUserRole(ctx context.Context, userID, newRole string) er
 
 		now := time.Now().UTC().Format(time.RFC3339)
 		result, err := conn.ExecContext(ctx, `
-			UPDATE users SET role = ?, updated_at = ? WHERE id = ?
+			UPDATE users SET role = ?, updated_at = ? WHERE id = ? AND is_active = 1
 		`, newRole, now, userID)
 		if err != nil {
 			return fmt.Errorf("updating user role: %w", err)
