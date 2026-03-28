@@ -94,15 +94,11 @@ func (rb *RingBuffer) Entries(filter LogFilter) []LogEntry {
 
 	searchLower := strings.ToLower(filter.Search)
 
-	// Cap allocation to the smaller of limit and available entries.
-	// This satisfies CodeQL's uncontrolled-allocation-size check by
-	// bounding the capacity to a value derived from internal state
-	// (rb.count) rather than solely from user input.
-	allocCap := limit
-	if rb.count < allocCap {
-		allocCap = rb.count
-	}
-	result := make([]LogEntry, 0, allocCap)
+	// Use a fixed-size initial allocation to satisfy CodeQL's
+	// uncontrolled-allocation-size check. The slice grows dynamically
+	// as needed but the initial capacity is a compile-time constant.
+	const initialCap = 64
+	result := make([]LogEntry, 0, initialCap)
 
 	// Iterate backwards from newest entry.
 	for i := 0; i < rb.count && len(result) < limit; i++ {
