@@ -54,6 +54,9 @@ func (r *Router) handleGetLogs(w http.ResponseWriter, req *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid limit: must be an integer"})
 			return
 		}
+		if n > 500 {
+			n = 500
+		}
 		filter.Limit = n
 	}
 
