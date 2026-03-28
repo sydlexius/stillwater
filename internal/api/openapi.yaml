@@ -1055,30 +1055,12 @@ paths:
             type: string
           description: Human-readable error description from the identity provider
       responses:
-        "200":
-          description: Login successful, session cookie set
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Status"
-        "400":
-          description: Missing or invalid state, nonce, verifier, or authorization code
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-        "401":
-          description: Authentication denied by identity provider or token verification failed
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-        "404":
-          description: OIDC provider is not configured
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
+        "302":
+          description: |
+            Redirect to the application root on success (with session cookie set),
+            or redirect to the login page with an error query parameter on failure.
+            All outcomes use browser redirects since this endpoint is hit via a
+            full-page navigation from the identity provider, not an HTMX request.
 
   /auth/setup:
     post:

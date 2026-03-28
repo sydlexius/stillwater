@@ -517,6 +517,8 @@ templ settingsAuthProvidersTab(data AuthProvidersData) {
 // settingsAuthProvidersScript renders the inline JS for the auth providers tab.
 templ settingsAuthProvidersScript() {
 	<script>
+		var authProvidersBasePath = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
+
 		function getAuthProvidersCsrfToken() {
 			return document.cookie.replace(
 				/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1"
@@ -530,7 +532,7 @@ templ settingsAuthProvidersScript() {
 			var key = 'auth.providers.' + provider + '.enabled';
 			var body = {};
 			body[key] = newVal ? 'true' : 'false';
-			fetch('/api/v1/settings', {
+			fetch(authProvidersBasePath + '/api/v1/settings', {
 				method: 'PUT',
 				headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
 				body: JSON.stringify(body)
@@ -551,7 +553,7 @@ templ settingsAuthProvidersScript() {
 			var csrfToken = getAuthProvidersCsrfToken();
 			var body = {};
 			body[key] = newVal ? 'true' : 'false';
-			fetch('/api/v1/settings', {
+			fetch(authProvidersBasePath + '/api/v1/settings', {
 				method: 'PUT',
 				headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
 				body: JSON.stringify(body)
@@ -581,7 +583,7 @@ templ settingsAuthProvidersScript() {
 			var csrfToken = getAuthProvidersCsrfToken();
 			var body = {};
 			body[key] = value;
-			fetch('/api/v1/settings', {
+			fetch(authProvidersBasePath + '/api/v1/settings', {
 				method: 'PUT',
 				headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
 				body: JSON.stringify(body)
@@ -613,7 +615,7 @@ templ settingsAuthProvidersScript() {
 			body['auth.providers.oidc.admin_groups'] = adminGroups;
 			body['auth.providers.oidc.user_groups'] = userGroups;
 
-			fetch('/api/v1/settings', {
+			fetch(authProvidersBasePath + '/api/v1/settings', {
 				method: 'PUT',
 				headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
 				body: JSON.stringify(body)

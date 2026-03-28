@@ -45,6 +45,11 @@ func (r *Router) handleOIDCLogin(w http.ResponseWriter, req *http.Request) {
 	}
 
 	authURL, codeVerifier := oidcProvider.AuthURL(state, nonce)
+	if authURL == "" || codeVerifier == "" {
+		r.logger.Error("oidc provider returned empty auth URL or code verifier -- is the provider initialized?")
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "An internal error occurred. Please try again."})
+		return
+	}
 
 	// Store state, nonce, and code verifier in HTTP-only cookies so they survive
 	// the redirect round-trip. Each cookie expires after 10 minutes, which is

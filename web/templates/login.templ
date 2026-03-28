@@ -59,6 +59,23 @@ templ LoginPage(assets AssetPaths, providers []auth.Authenticator) {
 					<div id="login-result"></div>
 				</div>
 			</div>
+			<script>
+				// Display OIDC or other redirect-based login errors passed via ?error= param.
+				(function() {
+					var params = new URLSearchParams(window.location.search);
+					var errorMsg = params.get('error');
+					if (!errorMsg) { return; }
+					var el = document.getElementById('login-result');
+					if (!el) { return; }
+					var alert = document.createElement('div');
+					alert.setAttribute('role', 'alert');
+					alert.className = 'rounded-lg border border-red-300/60 dark:border-red-700/60 bg-red-50/80 dark:bg-red-900/30 px-4 py-3 text-sm text-red-700 dark:text-red-300';
+					alert.textContent = errorMsg;
+					el.appendChild(alert);
+					// Clear the error from the URL so it does not persist on refresh.
+					history.replaceState(null, '', window.location.pathname);
+				})();
+			</script>
 		</body>
 	</html>
 }

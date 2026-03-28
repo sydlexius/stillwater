@@ -376,6 +376,8 @@ templ inviteRow(inv auth.Invite) {
 // settingsUsersScript renders the inline JS for the users tab.
 templ settingsUsersScript() {
 	<script>
+		var usersBasePath = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
+
 		function getUsersCsrfToken() {
 			return document.cookie.replace(
 				/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1"
@@ -386,7 +388,7 @@ templ settingsUsersScript() {
 			var enabled = btn.getAttribute('aria-checked') === 'true';
 			var newVal = !enabled;
 			var csrfToken = getUsersCsrfToken();
-			fetch('/api/v1/settings', {
+			fetch(usersBasePath + '/api/v1/settings', {
 				method: 'PUT',
 				headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
 				body: JSON.stringify({ 'multi_user.enabled': newVal ? 'true' : 'false' })
@@ -406,7 +408,7 @@ templ settingsUsersScript() {
 			var role = form.querySelector('[name="role"]').value;
 			var expiresIn = form.querySelector('[name="expires_in"]').value;
 			var csrfToken = getUsersCsrfToken();
-			fetch('/api/v1/users/invites', {
+			fetch(usersBasePath + '/api/v1/users/invites', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
 				body: JSON.stringify({ role: role, expires_in: expiresIn })
@@ -416,7 +418,7 @@ templ settingsUsersScript() {
 				}
 				return resp.json();
 			}).then(function(invite) {
-				var link = window.location.origin + '/register?code=' + invite.code;
+				var link = window.location.origin + usersBasePath + '/register?code=' + encodeURIComponent(invite.code);
 				var resultEl = document.getElementById('invite-link-result');
 				var valueEl = document.getElementById('invite-link-value');
 				valueEl.value = link;
@@ -429,7 +431,7 @@ templ settingsUsersScript() {
 		}
 
 		function copyInviteLink(code) {
-			var link = window.location.origin + '/register?code=' + code;
+			var link = window.location.origin + usersBasePath + '/register?code=' + encodeURIComponent(code);
 			navigator.clipboard.writeText(link).then(function() {
 				showSuccessToast('Invite link copied');
 			}).catch(function() {
@@ -440,7 +442,7 @@ templ settingsUsersScript() {
 		function changeUserRole(select, userId) {
 			var role = select.value;
 			var csrfToken = getUsersCsrfToken();
-			fetch('/api/v1/users/' + userId, {
+			fetch(usersBasePath + '/api/v1/users/' + userId, {
 				method: 'PATCH',
 				headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
 				body: JSON.stringify({ role: role })
@@ -462,7 +464,7 @@ templ settingsUsersScript() {
 				return;
 			}
 			var csrfToken = getUsersCsrfToken();
-			fetch('/api/v1/users/' + userId, {
+			fetch(usersBasePath + '/api/v1/users/' + userId, {
 				method: 'DELETE',
 				headers: { 'X-CSRF-Token': csrfToken }
 			}).then(function(resp) {

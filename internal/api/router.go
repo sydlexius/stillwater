@@ -200,11 +200,11 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("GET "+bp+"/api/v1/docs/openapi.yaml", r.handleOpenAPISpec)
 	mux.Handle("POST "+bp+"/api/v1/auth/login", loginRL.Middleware(http.HandlerFunc(r.handleLogin)))
 	mux.Handle("POST "+bp+"/api/v1/auth/setup", loginRL.Middleware(http.HandlerFunc(r.handleSetup)))
-	mux.Handle("POST "+bp+"/api/v1/users/register", loginRL.Middleware(http.HandlerFunc(r.handleRegister)))
+	mux.Handle("POST "+bp+"/api/v1/users/register", loginRL.Middleware(requireMultiUser(r.handleRegister)))
 	// OIDC authentication flow (public, rate-limited)
 	mux.Handle("GET "+bp+"/api/v1/auth/oidc/login", loginRL.Middleware(http.HandlerFunc(r.handleOIDCLogin)))
 	mux.Handle("GET "+bp+"/api/v1/auth/oidc/callback", loginRL.Middleware(http.HandlerFunc(r.handleOIDCCallback)))
-	mux.HandleFunc("GET "+bp+"/register", r.handleRegisterPage)
+	mux.HandleFunc("GET "+bp+"/register", requireMultiUser(r.handleRegisterPage))
 	mux.Handle("GET "+bp+"/static/", r.staticAssets.Handler(bp))
 	mux.HandleFunc("GET "+bp+"/", wrapOptionalAuth(r.handleIndex, optAuthMw))
 
