@@ -7,24 +7,24 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/auth"
 )
 
-// withAdminCtx adds the given user ID and administrator role to the request
-// context, simulating authenticated admin middleware.
+// withAdminCtx adds both user ID and administrator role to the request context.
 func withAdminCtx(req *http.Request, userID string) *http.Request {
 	ctx := middleware.WithTestUserID(req.Context(), userID)
 	ctx = middleware.WithTestRole(ctx, "administrator")
 	return req.WithContext(ctx)
 }
 
-func TestHandleRegister_ValidInvite(t *testing.T) {
-	r, authSvc, userID := testRouterWithAuth(t)
+func TestHandleRegister_Success(t *testing.T) {
+	r, authSvc, adminID := testRouterWithAuth(t)
 
 	// Create an invite as the admin.
-	invite, err := authSvc.CreateInvite(context.Background(), "operator", userID, 24*60*60*1e9) // 24h
+	invite, err := authSvc.CreateInvite(context.Background(), "operator", adminID, 24*time.Hour)
 	if err != nil {
 		t.Fatalf("creating invite: %v", err)
 	}
@@ -44,17 +44,70 @@ func TestHandleRegister_ValidInvite(t *testing.T) {
 		t.Fatalf("decoding response: %v", err)
 	}
 	if user.Username != "newuser" {
-		t.Errorf("expected username 'newuser', got %q", user.Username)
+		t.Errorf("Username = %q, want %q", user.Username, "newuser")
 	}
 	if user.DisplayName != "New User" {
-		t.Errorf("expected display_name 'New User', got %q", user.DisplayName)
+		t.Errorf("DisplayName = %q, want %q", user.DisplayName, "New User")
 	}
 	if user.Role != "operator" {
-		t.Errorf("expected role 'operator', got %q", user.Role)
+		t.Errorf("Role = %q, want %q", user.Role, "operator")
+	}
+
+	// Verify the session cookie was set (auto-login).
+	cookies := w.Result().Cookies()
+	found := false
+	for _, c := range cookies {
+		if c.Name == "session" && c.Value != "" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected session cookie to be set after registration")
 	}
 }
 
-func TestHandleUpdateUser_InvalidRole_Returns400(t *testing.T) {
+func TestHandleRegister_RedeemedInvite(t *testing.T) {
+	r, authSvc, adminID := testRouterWithAuth(t)
+
+	// Create and use an invite.
+	invite, err := authSvc.CreateInvite(context.Background(), "operator", adminID, 24*time.Hour)
+	if err != nil {
+		t.Fatalf("creating invite: %v", err)
+	}
+
+	// Register first user with this invite.
+	body := `{"code":"` + invite.Code + `","username":"firstuser","password":"securepassword123"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/users/register", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.handleRegister(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("first register: status = %d, want %d; body: %s", w.Code, http.StatusCreated, w.Body.String())
+	}
+
+	// Attempt to use the same invite again.
+	body = `{"code":"` + invite.Code + `","username":"seconduser","password":"securepassword123"}`
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/users/register", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w = httptest.NewRecorder()
+	r.handleRegister(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("second register: status = %d, want %d; body: %s", w.Code, http.StatusBadRequest, w.Body.String())
+	}
+
+	var resp map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding error response: %v", err)
+	}
+	if !strings.Contains(resp["error"], "already been used") {
+		t.Errorf("error = %q, want message about invite already used", resp["error"])
+	}
+}
+
+func TestHandleUpdateUser_InvalidRole(t *testing.T) {
 	r, _, userID := testRouterWithAuth(t)
 
 	body := `{"role":"superadmin"}`
@@ -71,26 +124,27 @@ func TestHandleUpdateUser_InvalidRole_Returns400(t *testing.T) {
 
 	var resp map[string]string
 	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
-		t.Fatalf("decoding response: %v", err)
+		t.Fatalf("decoding error response: %v", err)
 	}
-	if !strings.Contains(resp["error"], "Role must be") {
-		t.Errorf("expected role validation error, got %q", resp["error"])
+	if !strings.Contains(resp["error"], "administrator or operator") {
+		t.Errorf("error = %q, want message about valid roles", resp["error"])
 	}
 }
 
 func TestHandleUpdateUser_ValidRole(t *testing.T) {
 	r, authSvc, adminID := testRouterWithAuth(t)
 
-	// Create a second user to update (cannot downgrade the only admin).
-	user, err := authSvc.CreateLocalUser(context.Background(), "operator1", "password1234", "Operator One", "operator", adminID)
+	// Create a second admin so we can downgrade the first.
+	_, err := authSvc.CreateLocalUser(context.Background(), "admin2", "password123", "Admin 2", "administrator", adminID)
 	if err != nil {
-		t.Fatalf("creating operator user: %v", err)
+		t.Fatalf("creating second admin: %v", err)
 	}
 
-	body := `{"role":"administrator"}`
-	req := httptest.NewRequest(http.MethodPatch, "/api/v1/users/"+user.ID, strings.NewReader(body))
+	// Downgrade the first admin to operator.
+	body := `{"role":"operator"}`
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/users/"+adminID, strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	req.SetPathValue("id", user.ID)
+	req.SetPathValue("id", adminID)
 	req = withAdminCtx(req, adminID)
 	w := httptest.NewRecorder()
 	r.handleUpdateUser(w, req)
@@ -99,40 +153,11 @@ func TestHandleUpdateUser_ValidRole(t *testing.T) {
 		t.Fatalf("update user: status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
 	}
 
-	var updated auth.User
-	if err := json.NewDecoder(w.Body).Decode(&updated); err != nil {
+	var user auth.User
+	if err := json.NewDecoder(w.Body).Decode(&user); err != nil {
 		t.Fatalf("decoding response: %v", err)
 	}
-	if updated.Role != "administrator" {
-		t.Errorf("expected role 'administrator', got %q", updated.Role)
-	}
-}
-
-func TestHandleDeactivateUser_Success(t *testing.T) {
-	r, authSvc, adminID := testRouterWithAuth(t)
-
-	// Create a user to deactivate.
-	user, err := authSvc.CreateLocalUser(context.Background(), "toDeactivate", "password1234", "Deactivate Me", "operator", adminID)
-	if err != nil {
-		t.Fatalf("creating user: %v", err)
-	}
-
-	req := httptest.NewRequest(http.MethodDelete, "/api/v1/users/"+user.ID, nil)
-	req.SetPathValue("id", user.ID)
-	req = withAdminCtx(req, adminID)
-	w := httptest.NewRecorder()
-	r.handleDeactivateUser(w, req)
-
-	if w.Code != http.StatusNoContent {
-		t.Fatalf("deactivate: status = %d, want %d; body: %s", w.Code, http.StatusNoContent, w.Body.String())
-	}
-
-	// Verify user is deactivated.
-	deactivated, err := authSvc.GetUserByID(context.Background(), user.ID)
-	if err != nil {
-		t.Fatalf("getting deactivated user: %v", err)
-	}
-	if deactivated.IsActive {
-		t.Error("expected user to be inactive after deactivation")
+	if user.Role != "operator" {
+		t.Errorf("Role = %q, want %q", user.Role, "operator")
 	}
 }

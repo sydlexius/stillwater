@@ -7,9 +7,11 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // Sentinel errors for invite operations.
@@ -22,6 +24,9 @@ var (
 
 	// ErrInviteNotFound is returned when the invite code does not exist.
 	ErrInviteNotFound = errors.New("invite not found")
+
+	// ErrUsernameConflict is returned when a registration username already exists.
+	ErrUsernameConflict = errors.New("username already exists")
 )
 
 // Invite represents a single-use invitation link.
@@ -224,6 +229,98 @@ func (s *Service) RevokeInvite(ctx context.Context, inviteID string) error {
 	}
 
 	return nil
+}
+
+// ClaimInviteAndRegister atomically validates an invite, creates a local user,
+// and redeems the invite within a single database transaction. This eliminates
+// the TOCTOU race where two concurrent requests could both validate the same
+// invite code before either redeems it.
+func (s *Service) ClaimInviteAndRegister(ctx context.Context, code, username, password, displayName string) (*User, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("beginning transaction: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	// 1. Look up and validate the invite inside the transaction.
+	var inv Invite
+	var redeemedAt sql.NullString
+
+	err = tx.QueryRowContext(ctx, `
+		SELECT id, code, role, created_by, expires_at, redeemed_at, created_at
+		FROM invites WHERE code = ?
+	`, code).Scan(
+		&inv.ID, &inv.Code, &inv.Role, &inv.CreatedBy, &inv.ExpiresAt,
+		&redeemedAt, &inv.CreatedAt,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrInviteNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("looking up invite: %w", err)
+	}
+
+	if redeemedAt.Valid {
+		return nil, ErrInviteRedeemed
+	}
+
+	expires, err := time.Parse(time.RFC3339, inv.ExpiresAt)
+	if err != nil {
+		return nil, fmt.Errorf("parsing invite expiry: %w", err)
+	}
+	if time.Now().UTC().After(expires) {
+		return nil, ErrInviteExpired
+	}
+
+	// 2. Create the local user inside the transaction.
+	hash, err := bcrypt.GenerateFromPassword(PrehashPassword(password), bcrypt.DefaultCost)
+	if err != nil {
+		return nil, fmt.Errorf("hashing password: %w", err)
+	}
+
+	userID := uuid.New().String()
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	var invitedByVal sql.NullString
+	if inv.CreatedBy != "" {
+		invitedByVal = sql.NullString{String: inv.CreatedBy, Valid: true}
+	}
+
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO users (id, username, display_name, password_hash, role, auth_provider, provider_id,
+		                   is_active, invited_by, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, 'local', '', 1, ?, ?, ?)
+	`, userID, username, displayName, string(hash), inv.Role, invitedByVal, now, now)
+	if err != nil {
+		if strings.Contains(err.Error(), "UNIQUE constraint") && strings.Contains(err.Error(), "username") {
+			return nil, ErrUsernameConflict
+		}
+		return nil, fmt.Errorf("creating user: %w", err)
+	}
+
+	// 3. Redeem the invite inside the transaction.
+	result, err := tx.ExecContext(ctx, `
+		UPDATE invites SET redeemed_by = ?, redeemed_at = ? WHERE id = ? AND redeemed_at IS NULL
+	`, userID, now, inv.ID)
+	if err != nil {
+		return nil, fmt.Errorf("redeeming invite: %w", err)
+	}
+
+	n, err := result.RowsAffected()
+	if err != nil {
+		return nil, fmt.Errorf("checking redeem rows affected: %w", err)
+	}
+	if n == 0 {
+		return nil, ErrInviteRedeemed
+	}
+
+	// 4. Commit the transaction.
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("committing registration: %w", err)
+	}
+
+	// Read the user back from the committed data.
+	return s.GetUserByID(ctx, userID)
 }
 
 // generateInviteCode produces a unique invite code in the format

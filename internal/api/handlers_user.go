@@ -120,8 +120,8 @@ func (r *Router) handleRegister(w http.ResponseWriter, req *http.Request) {
 		body.DisplayName = body.Username
 	}
 
-	// Validate the invite code before creating the user.
-	invite, err := r.authService.GetInviteByCode(req.Context(), body.Code)
+	// Atomically validate invite, create user, and redeem invite in one transaction.
+	user, err := r.authService.ClaimInviteAndRegister(req.Context(), body.Code, body.Username, body.Password, body.DisplayName)
 	if err != nil {
 		switch {
 		case errors.Is(err, auth.ErrInviteNotFound):
@@ -129,34 +129,21 @@ func (r *Router) handleRegister(w http.ResponseWriter, req *http.Request) {
 		case errors.Is(err, auth.ErrInviteRedeemed):
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "This invite has already been used."})
 		case errors.Is(err, auth.ErrInviteExpired):
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "This invite has expired."})
+			writeJSON(w, http.StatusGone, map[string]string{"error": "This invite has expired."})
+		case errors.Is(err, auth.ErrUsernameConflict):
+			writeJSON(w, http.StatusConflict, map[string]string{"error": "Username is already taken."})
 		default:
-			r.logger.Error("failed to validate invite", "error", err)
+			r.logger.Error("failed to register user", "error", err)
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "An internal error occurred. Please try again."})
 		}
 		return
 	}
 
-	// Create the local user account.
-	user, err := r.authService.CreateLocalUser(req.Context(), body.Username, body.Password, body.DisplayName, invite.Role, invite.CreatedBy)
-	if err != nil {
-		r.logger.Error("failed to create user from invite", "error", err)
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "An internal error occurred. Please try again."})
-		return
-	}
-
-	// Mark the invite as redeemed.
-	if _, err := r.authService.RedeemInvite(req.Context(), body.Code, user.ID); err != nil {
-		// Non-fatal: the user is already created. Log but do not block login.
-		r.logger.Error("failed to redeem invite after user creation", "invite_code", body.Code, "user_id", user.ID, "error", err)
-	}
-
 	// Auto-login: create a session for the new user.
-	token, err := r.authService.Login(req.Context(), body.Username, body.Password)
+	token, err := r.authService.CreateSession(req.Context(), user.ID)
 	if err != nil {
 		// User was created successfully; failure to auto-login is non-fatal.
-		// The client can redirect to the login page.
-		r.logger.Error("failed to auto-login after registration", "username", body.Username, "error", err)
+		r.logger.Error("failed to auto-login after registration", "user_id", user.ID, "error", err)
 		writeJSON(w, http.StatusCreated, user)
 		return
 	}
