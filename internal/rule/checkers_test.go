@@ -1515,6 +1515,9 @@ type mockImageFetcher struct {
 	uploadType  string
 	uploadErr   error
 	uploadCalls int
+	listSlots   map[string]int
+	listErr     error
+	listCalls   int
 }
 
 func (m *mockImageFetcher) FetchArtistImage(_ context.Context, _, _ string) ([]byte, string, error) {
@@ -1527,6 +1530,11 @@ func (m *mockImageFetcher) UploadArtistImage(_ context.Context, _, _ string, dat
 	m.uploadData = data
 	m.uploadType = contentType
 	return m.uploadErr
+}
+
+func (m *mockImageFetcher) ListArtistImageSlots(_ context.Context, _ string) (map[string]int, error) {
+	m.listCalls++
+	return m.listSlots, m.listErr
 }
 
 // createTestPNGBytes returns raw PNG bytes for a padded image without writing
@@ -1759,6 +1767,90 @@ func TestCheckExtraneousImagesFromDB_NilDB(t *testing.T) {
 	v := e.checkExtraneousImagesFromDB(a, RuleConfig{})
 	if v != nil {
 		t.Errorf("expected nil when db is nil, got: %s", v.Message)
+	}
+}
+
+func TestCheckExtraneousImagesFromDB_PlatformUntracked(t *testing.T) {
+	// Artist has thumb/0 in the DB, but the platform reports thumb + fanart.
+	// The fanart/0 slot should be flagged as untracked.
+	db := setupTestDB(t)
+	insertTestArtist(t, db, "art-plat-1", "Platform Artist")
+	insertTestImage(t, db, "art-plat-1", "thumb", 0)
+
+	mock := &mockImageFetcher{
+		listSlots: map[string]int{"thumb": 1, "fanart": 2},
+	}
+	e := &Engine{db: db, logger: slog.Default(), imageFetcher: mock}
+	a := &artist.Artist{ID: "art-plat-1", Name: "Platform Artist", Path: ""}
+	v := e.checkExtraneousImagesFromDB(a, RuleConfig{})
+	if v == nil {
+		t.Fatal("expected violation for platform-reported fanart with no DB row")
+	}
+	if v.RuleID != RuleExtraneousImages {
+		t.Errorf("RuleID = %q, want %q", v.RuleID, RuleExtraneousImages)
+	}
+	if !strings.Contains(v.Message, "fanart/0 (untracked by Stillwater)") {
+		t.Errorf("expected message to mention 'fanart/0 (untracked by Stillwater)', got: %s", v.Message)
+	}
+	if !strings.Contains(v.Message, "fanart/1 (untracked by Stillwater)") {
+		t.Errorf("expected message to mention 'fanart/1 (untracked by Stillwater)', got: %s", v.Message)
+	}
+	// thumb/0 exists in DB, so it should NOT be flagged.
+	if strings.Contains(v.Message, "thumb/0 (untracked") {
+		t.Errorf("thumb/0 exists in DB and should not be flagged as untracked, got: %s", v.Message)
+	}
+	if mock.listCalls != 1 {
+		t.Errorf("listCalls = %d, want 1", mock.listCalls)
+	}
+}
+
+func TestCheckExtraneousImagesFromDB_PlatformAllTracked(t *testing.T) {
+	// Platform reports slots that all exist in the DB -- no violation expected.
+	db := setupTestDB(t)
+	insertTestArtist(t, db, "art-plat-2", "Tracked Artist")
+	insertTestImage(t, db, "art-plat-2", "thumb", 0)
+	insertTestImage(t, db, "art-plat-2", "logo", 0)
+
+	mock := &mockImageFetcher{
+		listSlots: map[string]int{"thumb": 1, "logo": 1},
+	}
+	e := &Engine{db: db, logger: slog.Default(), imageFetcher: mock}
+	a := &artist.Artist{ID: "art-plat-2", Name: "Tracked Artist", Path: ""}
+	v := e.checkExtraneousImagesFromDB(a, RuleConfig{})
+	if v != nil {
+		t.Errorf("expected nil when all platform slots are tracked in DB, got: %s", v.Message)
+	}
+}
+
+func TestCheckExtraneousImagesFromDB_PlatformFetchError(t *testing.T) {
+	// When ListArtistImageSlots returns an error, the checker should still
+	// return nil if the DB rows are all valid (graceful degradation).
+	db := setupTestDB(t)
+	insertTestArtist(t, db, "art-plat-3", "Error Artist")
+	insertTestImage(t, db, "art-plat-3", "thumb", 0)
+
+	mock := &mockImageFetcher{
+		listErr: fmt.Errorf("connection refused"),
+	}
+	e := &Engine{db: db, logger: slog.Default(), imageFetcher: mock}
+	a := &artist.Artist{ID: "art-plat-3", Name: "Error Artist", Path: ""}
+	v := e.checkExtraneousImagesFromDB(a, RuleConfig{})
+	if v != nil {
+		t.Errorf("expected nil when platform fetch fails, got: %s", v.Message)
+	}
+}
+
+func TestCheckExtraneousImagesFromDB_NoFetcher(t *testing.T) {
+	// When no imageFetcher is configured, only DB-based checks run.
+	db := setupTestDB(t)
+	insertTestArtist(t, db, "art-plat-4", "No Fetcher Artist")
+	insertTestImage(t, db, "art-plat-4", "thumb", 0)
+
+	e := &Engine{db: db, logger: slog.Default()} // no imageFetcher
+	a := &artist.Artist{ID: "art-plat-4", Name: "No Fetcher Artist", Path: ""}
+	v := e.checkExtraneousImagesFromDB(a, RuleConfig{})
+	if v != nil {
+		t.Errorf("expected nil for valid DB rows with no fetcher, got: %s", v.Message)
 	}
 }
 

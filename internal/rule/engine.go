@@ -48,6 +48,11 @@ type PlatformImageFetcher interface {
 	// UploadArtistImage pushes image bytes to the connected media platform(s)
 	// for the given Stillwater artist ID and image type.
 	UploadArtistImage(ctx context.Context, artistID, imageType string, data []byte, contentType string) error
+	// ListArtistImageSlots returns a map of image types to their slot count
+	// as reported by a connected platform. For example: {"thumb": 1, "fanart": 3, "logo": 1}.
+	// Used by the extraneous images checker to detect platform-reported images
+	// with no matching artist_images row.
+	ListArtistImageSlots(ctx context.Context, artistID string) (map[string]int, error)
 }
 
 // apiImageCacheKey identifies a cached API-fetched image by artist and type.

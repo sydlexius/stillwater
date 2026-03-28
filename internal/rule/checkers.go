@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -845,6 +846,9 @@ func (e *Engine) checkExtraneousImagesFromDB(a *artist.Artist, cfg RuleConfig) *
 	}
 	defer rows.Close() //nolint:errcheck
 
+	// Track DB slots so we can compare against platform-reported slots below.
+	dbSlots := make(map[string]bool)
+
 	var extraneous []string
 	for rows.Next() {
 		var imageType string
@@ -853,6 +857,9 @@ func (e *Engine) checkExtraneousImagesFromDB(a *artist.Artist, cfg RuleConfig) *
 			e.logger.Debug("scanning artist_images row", "artist", a.Name, "error", err)
 			continue
 		}
+
+		dbSlots[imageType+"/"+strconv.Itoa(slotIndex)] = true
+
 		if !validTypes[imageType] {
 			extraneous = append(extraneous, fmt.Sprintf("%s/%d", imageType, slotIndex))
 			continue
@@ -866,6 +873,23 @@ func (e *Engine) checkExtraneousImagesFromDB(a *artist.Artist, cfg RuleConfig) *
 	if err := rows.Err(); err != nil {
 		e.logger.Debug("iterating artist_images rows", "artist", a.Name, "error", err)
 		return nil
+	}
+
+	// Check for platform-reported image slots that have no matching
+	// artist_images row. These are images the platform knows about but
+	// Stillwater does not track, indicating unmanaged/orphaned images.
+	if e.imageFetcher != nil {
+		platformSlots, slotErr := e.imageFetcher.ListArtistImageSlots(context.Background(), a.ID)
+		if slotErr == nil {
+			for imgType, count := range platformSlots {
+				for slot := 0; slot < count; slot++ {
+					key := imgType + "/" + strconv.Itoa(slot)
+					if !dbSlots[key] {
+						extraneous = append(extraneous, key+" (untracked by Stillwater)")
+					}
+				}
+			}
+		}
 	}
 
 	if len(extraneous) == 0 {
