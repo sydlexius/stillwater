@@ -3758,6 +3758,9 @@ templ ruleRow(rl rule.Rule) {
 					type="button"
 					class="text-xs text-blue-600 dark:text-blue-400 hover:underline"
 					onclick={ toggleRuleConfig(rl.ID) }
+					aria-expanded="false"
+					aria-controls={ "rule-cfg-" + rl.ID }
+					aria-label={ "Configure " + rl.Name }
 				>Configure</button>
 				<div id={ "rule-cfg-" + rl.ID } class="hidden mt-2">
 					@ruleConfigForm(rl)
@@ -3984,6 +3987,10 @@ script toggleRuleConfig(ruleID string) {
 	var el = document.getElementById("rule-cfg-" + ruleID);
 	if (el) {
 		el.classList.toggle("hidden");
+		var btn = document.querySelector('[aria-controls="rule-cfg-' + ruleID + '"]');
+		if (btn) {
+			btn.setAttribute("aria-expanded", String(!el.classList.contains("hidden")));
+		}
 	}
 }
 
