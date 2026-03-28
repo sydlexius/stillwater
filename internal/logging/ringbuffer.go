@@ -53,7 +53,7 @@ type RingBuffer struct {
 // NewRingBuffer creates a ring buffer that holds up to size entries.
 func NewRingBuffer(size int) *RingBuffer {
 	if size <= 0 {
-		size = 2000
+		size = DefaultRingBufferSize
 	}
 	return &RingBuffer{
 		entries: make([]LogEntry, size),

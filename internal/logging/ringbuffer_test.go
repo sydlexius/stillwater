@@ -259,10 +259,23 @@ func TestRingBuffer_CombinedFilters(t *testing.T) {
 }
 
 func TestRingBuffer_ZeroSize(t *testing.T) {
-	// Zero or negative size should default to 2000.
+	// Zero or negative size should default to DefaultRingBufferSize.
 	rb := NewRingBuffer(0)
-	if rb.size != 2000 {
-		t.Errorf("expected default size 2000, got %d", rb.size)
+	if rb.size != DefaultRingBufferSize {
+		t.Errorf("expected default size %d, got %d", DefaultRingBufferSize, rb.size)
+	}
+}
+
+func TestRingBuffer_NegativeSize(t *testing.T) {
+	rb := NewRingBuffer(-1)
+	if rb.Len() != 0 {
+		t.Errorf("expected empty buffer, got %d", rb.Len())
+	}
+	// Should use the default size and behave normally.
+	rb.Write(LogEntry{Level: "info", Message: "test"})
+	entries := rb.Entries(LogFilter{Limit: 10})
+	if len(entries) != 1 {
+		t.Errorf("expected 1 entry from negative-size buffer (defaults to %d), got %d", DefaultRingBufferSize, len(entries))
 	}
 }
 

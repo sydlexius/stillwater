@@ -355,6 +355,18 @@ func TestHandleGetLogs_InvalidLimit(t *testing.T) {
 	}
 }
 
+func TestHandleGetLogs_NegativeLimit(t *testing.T) {
+	r, _ := newTestRouterWithLogs(t)
+
+	req := httptest.NewRequest("GET", "/api/v1/logs?limit=-5", nil)
+	rec := httptest.NewRecorder()
+	r.handleGetLogs(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for negative limit, got %d", rec.Code)
+	}
+}
+
 func TestLevelBadgeClass(t *testing.T) {
 	tests := []struct {
 		level string

@@ -42,7 +42,7 @@ func (r *Router) handleGetLogs(w http.ResponseWriter, req *http.Request) {
 	if after := req.URL.Query().Get("after"); after != "" {
 		t, err := time.Parse(time.RFC3339Nano, after)
 		if err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid after: must be RFC3339 timestamp"})
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid after: must be RFC3339 or RFC3339Nano timestamp"})
 			return
 		}
 		filter.After = t
@@ -52,6 +52,10 @@ func (r *Router) handleGetLogs(w http.ResponseWriter, req *http.Request) {
 		n, err := strconv.Atoi(limitStr)
 		if err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid limit: must be an integer"})
+			return
+		}
+		if n < 0 {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid limit: must be non-negative"})
 			return
 		}
 		if n > 500 {

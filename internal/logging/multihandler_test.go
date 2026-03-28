@@ -107,6 +107,12 @@ func TestMultiHandler_ErrorPropagation(t *testing.T) {
 	if len(failing.records) != 1 {
 		t.Errorf("failing handler should still receive record, got %d", len(failing.records))
 	}
+
+	// Also verify Handle returns the error directly.
+	err := multi.Handle(context.Background(), slog.Record{})
+	if err == nil {
+		t.Error("expected error from Handle when a handler fails")
+	}
 }
 
 func TestMultiHandler_WithAttrs(t *testing.T) {

@@ -28,27 +28,28 @@ func TestManager_LevelSwap(t *testing.T) {
 	mgr, logger := NewManager(Config{Level: "info", Format: "json"})
 	defer mgr.Close() //nolint:errcheck
 
-	// With the MultiHandler architecture, the logger's Enabled() returns true
-	// for all levels because the RingHandler captures at DEBUG. The primary
-	// handler's level still controls what gets written to stdout/file.
-	// All levels should be enabled because the ring buffer captures everything.
+	// The ring handler uses the same level as the configured level, so
+	// Enabled() accurately reflects what will be captured.
 	if !logger.Enabled(context.Background(), slog.LevelInfo) {
 		t.Error("expected info to be enabled")
 	}
-	if !logger.Enabled(context.Background(), slog.LevelDebug) {
-		t.Error("expected debug to be enabled (ring buffer captures all levels)")
+	if logger.Enabled(context.Background(), slog.LevelDebug) {
+		t.Error("expected debug to be disabled when configured at info")
 	}
 
-	// Reconfigure to debug -- all levels still enabled.
+	// Reconfigure to debug -- debug should now be enabled.
 	mgr.Reconfigure(Config{Level: "debug", Format: "json"})
 	if !logger.Enabled(context.Background(), slog.LevelDebug) {
 		t.Error("expected debug to be enabled after reconfigure")
 	}
 
-	// Reconfigure to error -- all levels still enabled via ring buffer.
+	// Reconfigure to error -- only error should be enabled.
 	mgr.Reconfigure(Config{Level: "error", Format: "json"})
 	if !logger.Enabled(context.Background(), slog.LevelError) {
 		t.Error("expected error to be enabled")
+	}
+	if logger.Enabled(context.Background(), slog.LevelInfo) {
+		t.Error("expected info to be disabled when configured at error")
 	}
 
 	// Verify that ring buffer captured entries at all levels when logging at debug.

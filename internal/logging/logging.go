@@ -229,9 +229,9 @@ func buildHandler(w io.Writer, leveler slog.Leveler, format string) slog.Handler
 // text/JSON handler and a RingHandler for in-memory log capture.
 func buildMultiHandler(w io.Writer, leveler slog.Leveler, format string, rb *RingBuffer) slog.Handler {
 	primary := buildHandler(w, leveler, format)
-	// The ring handler captures at DEBUG level so all entries are available
-	// for filtering in the log viewer, regardless of the primary handler's level.
-	ring := NewRingHandler(rb, slog.LevelDebug)
+	// The ring handler captures at the same level as the primary handler so
+	// that logger.Enabled() reflects the configured level accurately.
+	ring := NewRingHandler(rb, leveler)
 	return NewMultiHandler(primary, ring)
 }
 

@@ -1689,7 +1689,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 							id="log-viewer"
 							class="h-[28rem] overflow-y-auto font-mono text-xs bg-gray-950 rounded-lg border border-gray-800 p-2"
 							hx-get="/api/v1/logs?limit=200&level=info"
-							hx-trigger="load, every 2s"
+							hx-trigger="load, every 2s, logRefresh from:body"
 							hx-swap="innerHTML"
 						>
 							<div class="flex items-center justify-center h-full text-gray-500 text-sm">
@@ -1857,6 +1857,13 @@ templ logViewerScript() {
 			paused: false
 		};
 
+		// Resolve base path for sub-path deployments (e.g. reverse proxy prefix).
+		var logBasePath = '';
+		var logMeta = document.querySelector('meta[name="htmx-base-path"]');
+		if (logMeta && logMeta.content) {
+			logBasePath = logMeta.content;
+		}
+
 		// toggleLogLevel handles level-filter button clicks.
 		// The selected level becomes the minimum displayed level (e.g. selecting
 		// "warn" shows warn + error, selecting "debug" shows everything).
@@ -1866,6 +1873,7 @@ templ logViewerScript() {
 
 			// Update button visuals: buttons at or above the selected level
 			// get a ring highlight; buttons below it get dimmed.
+			// aria-pressed indicates single selection (only the clicked button).
 			var severity = { debug: 0, info: 1, warn: 2, error: 3 };
 			var selected = severity[level] || 1;
 			var buttons = document.querySelectorAll('.log-level-btn');
@@ -1878,12 +1886,12 @@ templ logViewerScript() {
 					var ringColor = levelRingClass(btnLevel);
 					buttons[i].className = buttons[i].className.replace(/ring-\S+\/50/g, '');
 					buttons[i].classList.add(ringColor);
-					buttons[i].setAttribute('aria-pressed', 'true');
 				} else {
 					buttons[i].classList.add('opacity-50');
 					buttons[i].classList.remove('ring-1');
-					buttons[i].setAttribute('aria-pressed', 'false');
 				}
+				// aria-pressed reflects which button was clicked, not the visual range.
+				buttons[i].setAttribute('aria-pressed', btnLevel === level ? 'true' : 'false');
 			}
 			updateLogFilters();
 		}
@@ -1905,14 +1913,15 @@ templ logViewerScript() {
 			logViewerState.search = search ? search.value : '';
 			var viewer = document.getElementById('log-viewer');
 			if (!viewer) return;
-			var url = '/api/v1/logs?limit=200&level=' + encodeURIComponent(logViewerState.level);
+			var url = logBasePath + '/api/v1/logs?limit=200&level=' + encodeURIComponent(logViewerState.level);
 			if (logViewerState.search) {
 				url += '&search=' + encodeURIComponent(logViewerState.search);
 			}
 			viewer.setAttribute('hx-get', url);
-			// If not paused, trigger an immediate refresh.
+			// If not paused, trigger an immediate refresh via body so the
+			// hx-trigger="logRefresh from:body" listener picks it up.
 			if (!logViewerState.paused && typeof htmx !== 'undefined') {
-				htmx.trigger(viewer, 'logRefresh');
+				htmx.trigger(document.body, 'logRefresh');
 			}
 		}
 
@@ -1928,8 +1937,8 @@ templ logViewerScript() {
 					btn.classList.add('bg-amber-600', 'text-white', 'border-amber-600');
 					btn.classList.remove('dark:hover:bg-gray-700', 'hover:bg-gray-100');
 				}
-				// Remove polling trigger to stop updates.
-				if (viewer) viewer.setAttribute('hx-trigger', 'logRefresh');
+				// Remove polling trigger to stop updates; keep manual refresh.
+				if (viewer) viewer.setAttribute('hx-trigger', 'logRefresh from:body');
 				if (typeof htmx !== 'undefined' && viewer) htmx.process(viewer);
 			} else {
 				if (btn) {
@@ -1939,7 +1948,7 @@ templ logViewerScript() {
 					btn.classList.add('dark:hover:bg-gray-700', 'hover:bg-gray-100');
 				}
 				// Restore polling trigger.
-				if (viewer) viewer.setAttribute('hx-trigger', 'load, every 2s, logRefresh');
+				if (viewer) viewer.setAttribute('hx-trigger', 'load, every 2s, logRefresh from:body');
 				if (typeof htmx !== 'undefined' && viewer) htmx.process(viewer);
 			}
 		}
@@ -1949,7 +1958,7 @@ templ logViewerScript() {
 			var csrfToken = document.cookie.replace(
 				/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1"
 			);
-			fetch('/api/v1/logs', {
+			fetch(logBasePath + '/api/v1/logs', {
 				method: 'DELETE',
 				headers: { 'X-CSRF-Token': csrfToken, 'HX-Request': 'true' }
 			}).then(function(r) {
@@ -1968,7 +1977,7 @@ templ logViewerScript() {
 		// downloadLogs fetches the current filtered entries as JSON and triggers
 		// a browser download as a .json file.
 		function downloadLogs() {
-			var url = '/api/v1/logs?limit=500&level=' + encodeURIComponent(logViewerState.level);
+			var url = logBasePath + '/api/v1/logs?limit=500&level=' + encodeURIComponent(logViewerState.level);
 			if (logViewerState.search) {
 				url += '&search=' + encodeURIComponent(logViewerState.search);
 			}
