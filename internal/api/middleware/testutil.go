@@ -9,3 +9,10 @@ import "context"
 func WithTestUserID(ctx context.Context, userID string) context.Context {
 	return context.WithValue(ctx, userIDKey, userID)
 }
+
+// WithTestRole injects a user role into the context. This is intended for
+// handler-level unit tests that need to simulate admin or operator contexts
+// without going through the auth middleware.
+func WithTestRole(ctx context.Context, role string) context.Context {
+	return context.WithValue(ctx, userRoleKey, role)
+}

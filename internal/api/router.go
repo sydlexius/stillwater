@@ -199,6 +199,7 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("GET "+bp+"/api/v1/docs/openapi.yaml", r.handleOpenAPISpec)
 	mux.Handle("POST "+bp+"/api/v1/auth/login", loginRL.Middleware(http.HandlerFunc(r.handleLogin)))
 	mux.Handle("POST "+bp+"/api/v1/auth/setup", loginRL.Middleware(http.HandlerFunc(r.handleSetup)))
+	mux.HandleFunc("POST "+bp+"/api/v1/users/register", r.handleRegister)
 	mux.Handle("GET "+bp+"/static/", r.staticAssets.Handler(bp))
 	mux.HandleFunc("GET "+bp+"/", wrapOptionalAuth(r.handleIndex, optAuthMw))
 
@@ -218,7 +219,6 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("GET "+bp+"/api/v1/users/{id}", wrapAuth(r.handleGetUser, authMw))
 	mux.HandleFunc("PATCH "+bp+"/api/v1/users/{id}", wrapAuth(middleware.RequireAdmin(r.handleUpdateUser), authMw))
 	mux.HandleFunc("DELETE "+bp+"/api/v1/users/{id}", wrapAuth(middleware.RequireAdmin(r.handleDeactivateUser), authMw))
-	mux.HandleFunc("POST "+bp+"/api/v1/users/register", r.handleRegister)
 	mux.HandleFunc("GET "+bp+"/api/v1/artists", wrapAuth(r.handleListArtists, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/locked", wrapAuth(r.handleListLockedArtists, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}", wrapAuth(r.handleGetArtist, authMw))

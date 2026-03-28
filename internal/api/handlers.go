@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -93,7 +94,13 @@ func (r *Router) handleLogin(w http.ResponseWriter, req *http.Request) {
 				if providerType == "local" {
 					writeFormError(w, req, http.StatusUnauthorized, "Invalid username or password.")
 				} else {
-					writeFormError(w, req, http.StatusUnauthorized, fmt.Sprintf("Invalid %s credentials.", authMethodDisplayName(providerType)))
+					// Distinguish connectivity errors from auth failures.
+					var netErr net.Error
+					if errors.As(err, &netErr) {
+						writeFormError(w, req, http.StatusBadGateway, fmt.Sprintf("Cannot connect to %s server. Please verify the server is running.", authMethodDisplayName(providerType)))
+					} else {
+						writeFormError(w, req, http.StatusUnauthorized, fmt.Sprintf("Invalid %s credentials.", authMethodDisplayName(providerType)))
+					}
 				}
 				return
 			}
@@ -129,6 +136,13 @@ func (r *Router) completeLogin(w http.ResponseWriter, req *http.Request, provide
 	}
 
 	if lookupErr != nil {
+		if !errors.Is(lookupErr, sql.ErrNoRows) {
+			r.logger.Error("failed to look up user during login",
+				"provider", identity.ProviderType, "provider_id", identity.ProviderID, "error", lookupErr)
+			writeFormError(w, req, http.StatusInternalServerError, "An internal error occurred. Please try again.")
+			return
+		}
+
 		// User not found -- check if auto-provisioning is allowed.
 		if !provider.CanAutoProvision(identity) {
 			r.logger.Warn("login: user not found and auto-provision disabled",
@@ -159,7 +173,7 @@ func (r *Router) completeLogin(w http.ResponseWriter, req *http.Request, provide
 	}
 
 	// Sync display name for federated users if it changed on the provider.
-	if identity.ProviderType != "local" && identity.DisplayName != "" && identity.DisplayName != user.Username {
+	if identity.ProviderType != "local" && identity.DisplayName != "" && identity.DisplayName != user.DisplayName {
 		if syncErr := r.authService.SyncDisplayName(ctx, user.ID, identity.DisplayName); syncErr != nil {
 			// Non-fatal: log and continue.
 			r.logger.Warn("failed to sync display name", "user_id", user.ID, "error", syncErr)

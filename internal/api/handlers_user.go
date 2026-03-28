@@ -233,6 +233,11 @@ func (r *Router) handleUpdateUser(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	if body.Role != "administrator" && body.Role != "operator" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Role must be administrator or operator."})
+		return
+	}
+
 	if err := r.authService.UpdateUserRole(req.Context(), id, body.Role); err != nil {
 		switch {
 		case errors.Is(err, auth.ErrLastAdmin):
@@ -290,5 +295,12 @@ func parseDuration(s string) (time.Duration, error) {
 		}
 		return time.Duration(days) * 24 * time.Hour, nil
 	}
-	return time.ParseDuration(s)
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		return 0, err
+	}
+	if d <= 0 {
+		return 0, fmt.Errorf("invalid duration: %s", s)
+	}
+	return d, nil
 }
