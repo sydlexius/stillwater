@@ -18,9 +18,9 @@ type MBSnapshot struct {
 
 // MBSnapshotRepository defines the persistence interface for MusicBrainz value snapshots.
 type MBSnapshotRepository interface {
-	// UpsertAll replaces all snapshot entries for the given artist with the
-	// provided list. Each entry is upserted by the (artist_id, field) unique
-	// constraint so that only the latest MusicBrainz value is retained.
+	// UpsertAll upserts the provided snapshot entries for the given artist.
+	// Each entry is upserted by the (artist_id, field) unique constraint so
+	// that only the latest MusicBrainz value is retained.
 	UpsertAll(ctx context.Context, artistID string, snapshots []MBSnapshot) error
 
 	// GetForArtist returns a map of field name to MusicBrainz value for the

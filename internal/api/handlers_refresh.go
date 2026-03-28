@@ -249,21 +249,21 @@ func (r *Router) executeRefreshCtx(ctx context.Context, a *artist.Artist) (*prov
 		})
 	}
 
+	// Shield write phase from cancellation to prevent half-applied metadata.
+	// FetchMetadata above is cancelable, but once we have the data, the
+	// Update/Publish/Upsert sequence must run to completion.
+	writeCtx := context.WithoutCancel(ctx)
+
 	// Capture MusicBrainz-sourced field values as snapshots for contribution diffs.
 	if result.Metadata != nil {
 		if snaps := musicbrainz.ExtractMBFieldValues(result.Metadata, result.Sources); len(snaps) > 0 {
-			if err := r.artistService.UpsertMBSnapshots(ctx, a.ID, snaps); err != nil {
+			if err := r.artistService.UpsertMBSnapshots(writeCtx, a.ID, snaps); err != nil {
 				r.logger.Warn("failed to upsert MB snapshots",
 					"artist_id", a.ID,
 					"error", err)
 			}
 		}
 	}
-
-	// Shield write phase from cancellation to prevent half-applied metadata.
-	// FetchMetadata above is cancelable, but once we have the data, the
-	// Update/Publish/Upsert sequence must run to completion.
-	writeCtx := context.WithoutCancel(ctx)
 
 	if err := r.artistService.Update(writeCtx, a); err != nil {
 		r.logger.Error("saving refreshed metadata failed",

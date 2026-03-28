@@ -3,6 +3,7 @@ package artist
 import (
 	"context"
 	"database/sql"
+	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
@@ -16,8 +17,8 @@ func newSQLiteMBSnapshotRepo(db *sql.DB) MBSnapshotRepository {
 	return &sqliteMBSnapshotRepo{db: db}
 }
 
-// UpsertAll replaces all snapshot entries for the given artist. Each entry is
-// upserted by the (artist_id, field) unique constraint.
+// UpsertAll upserts the provided snapshot entries for the given artist. Each
+// entry is upserted by the (artist_id, field) unique constraint.
 func (r *sqliteMBSnapshotRepo) UpsertAll(ctx context.Context, artistID string, snapshots []MBSnapshot) error {
 	if len(snapshots) == 0 {
 		return nil
@@ -72,7 +73,15 @@ func (r *sqliteMBSnapshotRepo) GetForArtist(ctx context.Context, artistID string
 		if err := rows.Scan(&s.ID, &s.ArtistID, &s.Field, &s.MBValue, &fetchedAt); err != nil {
 			return nil, err
 		}
-		s.FetchedAt, _ = time.Parse("2006-01-02T15:04:05Z", fetchedAt)
+		var parseErr error
+		s.FetchedAt, parseErr = time.Parse("2006-01-02T15:04:05Z", fetchedAt)
+		if parseErr != nil {
+			slog.Warn("failed to parse fetched_at timestamp",
+				"artist_id", s.ArtistID,
+				"field", s.Field,
+				"raw_value", fetchedAt,
+				"error", parseErr)
+		}
 		result[s.Field] = s
 	}
 	return result, rows.Err()

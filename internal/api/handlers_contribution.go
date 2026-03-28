@@ -44,6 +44,9 @@ func (r *Router) handleGetMBDiffs(w http.ResponseWriter, req *http.Request) {
 	}
 
 	diffs := musicbrainz.ComputeDiffs(a, snapshots, a.MetadataSources)
+	if diffs == nil {
+		diffs = []musicbrainz.FieldDiff{}
+	}
 
 	contributionMode := r.getStringSetting(ctx, "musicbrainz.contributions", "disabled")
 
@@ -56,16 +59,15 @@ func (r *Router) handleGetMBDiffs(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
-	var lastFetchedStr string
-	if lastFetched != nil {
-		lastFetchedStr = lastFetched.UTC().Format("2006-01-02T15:04:05Z")
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{
+	resp := map[string]any{
 		"artist_id":         a.ID,
 		"musicbrainz_id":    a.MusicBrainzID,
 		"diffs":             diffs,
 		"contribution_mode": contributionMode,
-		"last_fetched_at":   lastFetchedStr,
-	})
+	}
+	if lastFetched != nil {
+		resp["last_fetched_at"] = lastFetched.UTC().Format("2006-01-02T15:04:05Z")
+	}
+
+	writeJSON(w, http.StatusOK, resp)
 }
