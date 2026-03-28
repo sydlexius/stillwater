@@ -113,7 +113,7 @@ func (s *Service) Setup(ctx context.Context, username, password string) (bool, e
 	id := uuid.New().String()
 	_, err = s.db.ExecContext(ctx, `
 		INSERT INTO users (id, username, password_hash, role)
-		VALUES (?, ?, ?, 'admin')
+		VALUES (?, ?, ?, 'administrator')
 	`, id, username, string(hash))
 	if err != nil {
 		return false, fmt.Errorf("creating admin user: %w", err)
@@ -435,8 +435,8 @@ func (s *Service) SetupFederated(ctx context.Context, result FederatedAuthResult
 
 	id := uuid.New().String()
 	execResult, err := s.db.ExecContext(ctx, `
-		INSERT INTO users (id, username, password_hash, role, auth_provider, server_user_id)
-		SELECT ?, ?, '', 'admin', ?, ?
+		INSERT INTO users (id, username, password_hash, role, auth_provider, provider_id)
+		SELECT ?, ?, '', 'administrator', ?, ?
 		WHERE NOT EXISTS (SELECT 1 FROM users)
 	`, id, result.UserName, provider, result.UserID)
 	if err != nil {
@@ -462,7 +462,7 @@ func (s *Service) LoginFederated(ctx context.Context, result FederatedAuthResult
 	}
 	var id, username string
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, username FROM users WHERE auth_provider = ? AND server_user_id = ?
+		SELECT id, username FROM users WHERE auth_provider = ? AND provider_id = ?
 	`, provider, result.UserID).Scan(&id, &username)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", ErrUserNotConfigured

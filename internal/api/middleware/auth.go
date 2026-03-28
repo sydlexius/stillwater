@@ -14,6 +14,7 @@ const (
 	userIDKey      contextKey = "userID"
 	authMethodKey  contextKey = "authMethod"
 	tokenScopesKey contextKey = "tokenScopes"
+	userRoleKey    contextKey = "userRole"
 )
 
 // OptionalAuth returns middleware that populates the user context if a valid
@@ -100,6 +101,14 @@ func AuthMethodFromContext(ctx context.Context) string {
 // TokenScopesFromContext returns the comma-separated scopes string for API token auth.
 func TokenScopesFromContext(ctx context.Context) string {
 	if v, ok := ctx.Value(tokenScopesKey).(string); ok {
+		return v
+	}
+	return ""
+}
+
+// RoleFromContext returns the authenticated user's role ("administrator" or "operator").
+func RoleFromContext(ctx context.Context) string {
+	if v, ok := ctx.Value(userRoleKey).(string); ok {
 		return v
 	}
 	return ""
