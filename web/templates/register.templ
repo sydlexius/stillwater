@@ -43,6 +43,10 @@ templ RegisterPage(assets AssetPaths, data RegisterPageData) {
 					var el = document.querySelector('meta[name="htmx-base-path"]');
 					var bp = el ? el.content : '';
 					document.addEventListener('htmx:configRequest', function(evt) {
+						var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*\=\s*([^;]*).*$)|^.*$/, "$1");
+						if (csrfToken) {
+							evt.detail.headers['X-CSRF-Token'] = csrfToken;
+						}
 						if (bp && evt.detail.path.startsWith('/')) {
 							evt.detail.path = bp + evt.detail.path;
 						}
@@ -137,8 +141,17 @@ templ registerInviteInfo(assets AssetPaths, data RegisterPageData) {
 	if len(data.Providers) > 1 {
 		@registerProviderGrid(assets, data)
 	}
-	<!-- Registration form -->
+	<!-- Registration form. When only one provider is available, auto-select it
+	     by adding a script that removes the hidden class from the sole form. -->
 	@registerForm(assets, data)
+	if len(data.Providers) == 1 {
+		<script>
+			(function() {
+				var forms = document.querySelectorAll('.reg-provider-form.hidden');
+				for (var i = 0; i < forms.length; i++) { forms[i].classList.remove('hidden'); }
+			})();
+		</script>
+	}
 }
 
 // registerProviderGrid renders a grid of provider selection cards.

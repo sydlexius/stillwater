@@ -192,7 +192,7 @@ templ settingsUsersTab(data UsersTabData) {
 							<button
 								type="button"
 								class="text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-								onclick="document.getElementById('create-invite-form').classList.add('hidden'); document.getElementById('invite-link-result').classList.add('hidden')"
+								onclick="document.getElementById('create-invite-form').classList.add('hidden'); document.getElementById('invite-link-result').classList.add('hidden'); var tb = this.closest('.sw-card').querySelector('[aria-controls=create-invite-form]'); if(tb) tb.setAttribute('aria-expanded','false')"
 							>
 								Cancel
 							</button>
@@ -326,7 +326,9 @@ templ userTableRow(u auth.User) {
 						type="button"
 						class="text-xs px-2.5 py-1 rounded border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
 						aria-label={ "Deactivate " + u.DisplayName }
-						onclick={ templ.ComponentScript{Call: "deactivateUser('" + u.ID + "', '" + u.DisplayName + "')"} }
+						data-user-id={ u.ID }
+						data-display-name={ u.DisplayName }
+						onclick="deactivateUserFromDataset(this)"
 					>
 						Deactivate
 					</button>
@@ -353,7 +355,8 @@ templ inviteRow(inv auth.Invite) {
 				type="button"
 				class="text-xs px-2.5 py-1 rounded border border-gray-300 dark:border-gray-600 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
 				aria-label={ "Copy invite link for code " + inv.Code }
-				onclick={ templ.ComponentScript{Call: "copyInviteLink('" + inv.Code + "')"} }
+				data-inv-code={ inv.Code }
+				onclick="copyInviteLinkFromDataset(this)"
 			>
 				Copy Link
 			</button>
@@ -437,6 +440,14 @@ templ settingsUsersScript() {
 			}).catch(function() {
 				showToast('Failed to copy link');
 			});
+		}
+
+		function copyInviteLinkFromDataset(el) {
+			copyInviteLink(el.dataset.invCode);
+		}
+
+		function deactivateUserFromDataset(el) {
+			deactivateUser(el.dataset.userId, el.dataset.displayName);
 		}
 
 		function changeUserRole(select, userId) {

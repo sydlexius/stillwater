@@ -606,9 +606,7 @@ func (r *Router) handleSetup(w http.ResponseWriter, req *http.Request) {
 			identity, err := provider.Authenticate(req.Context(), creds)
 			if err != nil {
 				r.logger.Warn("setup authentication failed", "provider", authMethod, "error", err)
-				if authMethod == "local" {
-					writeFormError(w, req, http.StatusBadRequest, "Username and password are required.")
-				} else if errors.Is(err, auth.ErrInvalidCredentials) {
+				if errors.Is(err, auth.ErrInvalidCredentials) {
 					writeFormError(w, req, http.StatusUnauthorized, fmt.Sprintf("Invalid %s credentials.", authMethodDisplayName(authMethod)))
 				} else {
 					writeFormError(w, req, http.StatusBadGateway, fmt.Sprintf("Cannot connect to %s server. Please verify the server is running.", authMethodDisplayName(authMethod)))
@@ -795,63 +793,52 @@ func (r *Router) handleSetupWithIdentity(w http.ResponseWriter, req *http.Reques
 	}
 
 	// The first user is always Administrator, regardless of MapRole.
-	var user *auth.User
-	var createErr error
-	if identity.ProviderType == "local" {
-		// Local setup: CreateLocalUser uses the username/display name from the identity.
-		// The identity ProviderID is the username for local providers.
-		user, createErr = r.authService.CreateLocalUser(ctx, identity.ProviderID, "", identity.DisplayName, "administrator", "")
-		if createErr != nil {
-			r.logger.Error("failed to create local admin account during setup", "error", createErr)
-			writeFormError(w, req, http.StatusInternalServerError, "An internal error occurred. Please try again.")
-			return
-		}
-	} else {
-		user, createErr = r.authService.CreateFederatedUser(ctx, identity, "administrator", "")
-		if createErr != nil {
-			r.logger.Error("failed to create federated admin account during setup",
-				"provider", authMethod, "error", createErr)
-			writeFormError(w, req, http.StatusInternalServerError, "An internal error occurred. Please try again.")
-			return
+	// This method is only called for federated providers (local setup uses
+	// handleSetupLocal directly), so we always create a federated user.
+	user, createErr := r.authService.CreateFederatedUser(ctx, identity, "administrator", "")
+	if createErr != nil {
+		r.logger.Error("failed to create federated admin account during setup",
+			"provider", authMethod, "error", createErr)
+		writeFormError(w, req, http.StatusInternalServerError, "An internal error occurred. Please try again.")
+		return
+	}
+
+	// For media server providers (emby/jellyfin), persist auth settings and
+	// auto-create the first server connection so the login page can redirect
+	// correctly. Other federated provider types manage this separately.
+	if requiresServerURL {
+		// Store auth settings so the login page uses the correct provider.
+		now := time.Now().UTC().Format(time.RFC3339)
+		for k, v := range map[string]string{"auth.method": authMethod, "auth.server_url": serverURL} {
+			if _, err := r.db.ExecContext(ctx,
+				`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+				ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+				k, v, now); err != nil {
+				r.logger.Error("failed to store auth setting, rolling back user", "key", k, "error", err)
+				_, _ = r.db.ExecContext(ctx, `DELETE FROM users WHERE id = ?`, user.ID) //nolint:errcheck
+				writeFormError(w, req, http.StatusInternalServerError, "An internal error occurred. Please try again.")
+				return
+			}
 		}
 
-		// For media server providers (emby/jellyfin), persist auth settings and
-		// auto-create the first server connection so the login page can redirect
-		// correctly. Other federated provider types manage this separately.
-		if requiresServerURL {
-			// Store auth settings so the login page uses the correct provider.
-			now := time.Now().UTC().Format(time.RFC3339)
-			for k, v := range map[string]string{"auth.method": authMethod, "auth.server_url": serverURL} {
-				if _, err := r.db.ExecContext(ctx,
-					`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
-					ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
-					k, v, now); err != nil {
-					r.logger.Error("failed to store auth setting, rolling back user", "key", k, "error", err)
-					_, _ = r.db.ExecContext(ctx, `DELETE FROM users WHERE id = ?`, user.ID) //nolint:errcheck
-					writeFormError(w, req, http.StatusInternalServerError, "An internal error occurred. Please try again.")
-					return
-				}
-			}
-
-			// Auto-create the first server connection.
-			connName := authMethodDisplayName(authMethod)
-			conn := &connection.Connection{
-				Name:                 connName,
-				Type:                 authMethod,
-				URL:                  serverURL,
-				APIKey:               identity.RawToken,
-				Enabled:              true,
-				FeatureLibraryImport: true,
-				FeatureNFOWrite:      true,
-				FeatureImageWrite:    true,
-				PlatformUserID:       identity.ProviderID,
-			}
-			if err := r.connectionService.Create(ctx, conn); err != nil {
-				r.logger.Error("failed to auto-create connection during federated setup", "error", err)
-				// Non-fatal: the user can add the connection manually later.
-			} else if err := r.connectionService.UpdateStatus(ctx, conn.ID, "ok", ""); err != nil {
-				r.logger.Warn("connection created but status update failed", "connection_id", conn.ID, "error", err)
-			}
+		// Auto-create the first server connection.
+		connName := authMethodDisplayName(authMethod)
+		conn := &connection.Connection{
+			Name:                 connName,
+			Type:                 authMethod,
+			URL:                  serverURL,
+			APIKey:               identity.RawToken,
+			Enabled:              true,
+			FeatureLibraryImport: true,
+			FeatureNFOWrite:      true,
+			FeatureImageWrite:    true,
+			PlatformUserID:       identity.ProviderID,
+		}
+		if err := r.connectionService.Create(ctx, conn); err != nil {
+			r.logger.Error("failed to auto-create connection during federated setup", "error", err)
+			// Non-fatal: the user can add the connection manually later.
+		} else if err := r.connectionService.UpdateStatus(ctx, conn.ID, "ok", ""); err != nil {
+			r.logger.Warn("connection created but status update failed", "connection_id", conn.ID, "error", err)
 		}
 	}
 

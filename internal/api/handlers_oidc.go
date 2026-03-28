@@ -71,6 +71,12 @@ func (r *Router) handleOIDCLogin(w http.ResponseWriter, req *http.Request) {
 	http.SetCookie(w, cookieOpts("oidc_nonce", nonce))
 	http.SetCookie(w, cookieOpts("oidc_verifier", codeVerifier))
 
+	// Preserve invite code across the IdP round-trip so the callback can
+	// complete invite-based registration after OIDC authentication.
+	if inviteCode := req.URL.Query().Get("invite"); inviteCode != "" {
+		http.SetCookie(w, cookieOpts("oidc_invite", inviteCode))
+	}
+
 	http.Redirect(w, req, authURL, http.StatusFound)
 }
 
@@ -100,6 +106,7 @@ func (r *Router) handleOIDCCallback(w http.ResponseWriter, req *http.Request) {
 	// Validate state parameter against the cookie to prevent CSRF.
 	stateCookie, err := req.Cookie("oidc_state")
 	if err != nil || stateCookie.Value == "" {
+		r.logger.Warn("oidc callback: missing state cookie")
 		r.redirectWithError(w, req, "Missing OIDC state. Please try logging in again.")
 		return
 	}
@@ -114,19 +121,28 @@ func (r *Router) handleOIDCCallback(w http.ResponseWriter, req *http.Request) {
 	// Retrieve nonce and code verifier from cookies.
 	nonceCookie, err := req.Cookie("oidc_nonce")
 	if err != nil || nonceCookie.Value == "" {
+		r.logger.Warn("oidc callback: missing nonce cookie")
 		r.redirectWithError(w, req, "Missing OIDC nonce. Please try logging in again.")
 		return
 	}
 
 	verifierCookie, err := req.Cookie("oidc_verifier")
 	if err != nil || verifierCookie.Value == "" {
+		r.logger.Warn("oidc callback: missing verifier cookie")
 		r.redirectWithError(w, req, "Missing OIDC verifier. Please try logging in again.")
 		return
 	}
 
+	// Read optional invite code cookie (set when OIDC login was initiated from
+	// the invite redemption page).
+	var inviteCode string
+	if inviteCookie, cookieErr := req.Cookie("oidc_invite"); cookieErr == nil {
+		inviteCode = inviteCookie.Value
+	}
+
 	// Clear the OIDC cookies now that we have consumed them.
 	isSecure := req.TLS != nil || req.Header.Get("X-Forwarded-Proto") == "https"
-	for _, name := range []string{"oidc_state", "oidc_nonce", "oidc_verifier"} {
+	for _, name := range []string{"oidc_state", "oidc_nonce", "oidc_verifier", "oidc_invite"} {
 		http.SetCookie(w, &http.Cookie{
 			Name:     name,
 			Value:    "",
@@ -140,6 +156,7 @@ func (r *Router) handleOIDCCallback(w http.ResponseWriter, req *http.Request) {
 
 	code := req.URL.Query().Get("code")
 	if code == "" {
+		r.logger.Warn("oidc callback: missing authorization code")
 		r.redirectWithError(w, req, "Missing authorization code. Please try logging in again.")
 		return
 	}
@@ -165,6 +182,17 @@ func (r *Router) handleOIDCCallback(w http.ResponseWriter, req *http.Request) {
 		r.logger.Warn("oidc callback: nonce mismatch")
 		r.redirectWithError(w, req, "Invalid OIDC nonce. Please try logging in again.")
 		return
+	}
+
+	// If an invite code was carried through the flow, redeem it now to create
+	// the user account before attempting the standard login/provision path.
+	if inviteCode != "" {
+		_, redeemErr := r.authService.ClaimInviteAndRegisterFederated(req.Context(), inviteCode, identity)
+		if redeemErr != nil {
+			r.logger.Warn("oidc invite redemption failed", "invite_code_len", len(inviteCode), "error", redeemErr)
+			// Non-fatal: the user might already exist (invite already redeemed,
+			// or auto-provisioned). Fall through to the normal login flow.
+		}
 	}
 
 	// Use the redirect-based login completion flow (browser navigation, not HTMX).

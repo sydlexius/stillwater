@@ -202,7 +202,7 @@ func settingsUsersTab(data UsersTabData) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, " <!-- Users table --> <div class=\"sw-card bg-white dark:bg-gray-800 shadow rounded-lg\"><div class=\"px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between\"><div><h2 class=\"text-lg font-semibold\">Users</h2><p class=\"mt-1 text-sm text-gray-500 dark:text-gray-400\">Manage who has access to this instance.</p></div><button type=\"button\" class=\"text-sm px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors\" aria-label=\"Create invite link\" onclick=\"document.getElementById('create-invite-form').classList.toggle('hidden'); this.setAttribute('aria-expanded', document.getElementById('create-invite-form').classList.contains('hidden') ? 'false' : 'true')\" aria-expanded=\"false\" aria-controls=\"create-invite-form\">Create Invite</button></div><!-- Create invite form (hidden by default) --><div id=\"create-invite-form\" class=\"hidden px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-750\"><form class=\"space-y-3\" onsubmit=\"submitCreateInvite(event, this)\"><div class=\"grid grid-cols-1 sm:grid-cols-3 gap-3\"><div><label for=\"invite-role\" class=\"block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1\">Role</label> <select id=\"invite-role\" name=\"role\" required class=\"w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500\" aria-label=\"Role for invited user\"><option value=\"operator\">Operator</option> <option value=\"administrator\">Administrator</option></select></div><div><label for=\"invite-expires\" class=\"block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1\">Expires In</label> <select id=\"invite-expires\" name=\"expires_in\" required class=\"w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500\" aria-label=\"Invite expiry duration\"><option value=\"24h\">24 hours</option> <option value=\"3d\">3 days</option> <option value=\"7d\" selected>7 days</option> <option value=\"30d\">30 days</option></select></div><div class=\"flex items-end gap-2\"><button type=\"submit\" class=\"text-sm px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 transition-colors\">Generate</button> <button type=\"button\" class=\"text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors\" onclick=\"document.getElementById('create-invite-form').classList.add('hidden'); document.getElementById('invite-link-result').classList.add('hidden')\">Cancel</button></div></div><div id=\"invite-link-result\" class=\"hidden mt-2\"><div class=\"text-xs font-medium text-gray-700 dark:text-gray-300 mb-1\">Invite Link</div><div class=\"flex items-center gap-2\"><input id=\"invite-link-value\" type=\"text\" readonly class=\"flex-1 rounded border border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-gray-900 px-3 py-1.5 text-xs font-mono text-gray-700 dark:text-gray-300 focus:outline-none\" aria-label=\"Generated invite link\"> <button type=\"button\" class=\"text-xs px-2.5 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors\" aria-label=\"Copy invite link to clipboard\" onclick=\"navigator.clipboard.writeText(document.getElementById('invite-link-value').value).then(function(){ showSuccessToast('Invite link copied'); }).catch(function(){ showToast('Failed to copy link'); })\">Copy</button></div><p class=\"text-xs text-gray-500 dark:text-gray-400 mt-1\">This link can only be used once.</p></div></form></div><div class=\"overflow-x-auto\"><table class=\"w-full text-sm\" aria-label=\"User accounts\"><thead><tr class=\"border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-750 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider\"><th class=\"px-6 py-3\">User</th><th class=\"px-4 py-3\">Role</th><th class=\"px-4 py-3\">Auth Provider</th><th class=\"px-4 py-3\">Status</th><th class=\"px-4 py-3 text-right\">Actions</th></tr></thead> <tbody id=\"users-table-body\" hx-get=\"/api/v1/users\" hx-trigger=\"load\" hx-swap=\"innerHTML\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, " <!-- Users table --> <div class=\"sw-card bg-white dark:bg-gray-800 shadow rounded-lg\"><div class=\"px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between\"><div><h2 class=\"text-lg font-semibold\">Users</h2><p class=\"mt-1 text-sm text-gray-500 dark:text-gray-400\">Manage who has access to this instance.</p></div><button type=\"button\" class=\"text-sm px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors\" aria-label=\"Create invite link\" onclick=\"document.getElementById('create-invite-form').classList.toggle('hidden'); this.setAttribute('aria-expanded', document.getElementById('create-invite-form').classList.contains('hidden') ? 'false' : 'true')\" aria-expanded=\"false\" aria-controls=\"create-invite-form\">Create Invite</button></div><!-- Create invite form (hidden by default) --><div id=\"create-invite-form\" class=\"hidden px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-750\"><form class=\"space-y-3\" onsubmit=\"submitCreateInvite(event, this)\"><div class=\"grid grid-cols-1 sm:grid-cols-3 gap-3\"><div><label for=\"invite-role\" class=\"block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1\">Role</label> <select id=\"invite-role\" name=\"role\" required class=\"w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500\" aria-label=\"Role for invited user\"><option value=\"operator\">Operator</option> <option value=\"administrator\">Administrator</option></select></div><div><label for=\"invite-expires\" class=\"block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1\">Expires In</label> <select id=\"invite-expires\" name=\"expires_in\" required class=\"w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500\" aria-label=\"Invite expiry duration\"><option value=\"24h\">24 hours</option> <option value=\"3d\">3 days</option> <option value=\"7d\" selected>7 days</option> <option value=\"30d\">30 days</option></select></div><div class=\"flex items-end gap-2\"><button type=\"submit\" class=\"text-sm px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 transition-colors\">Generate</button> <button type=\"button\" class=\"text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors\" onclick=\"document.getElementById('create-invite-form').classList.add('hidden'); document.getElementById('invite-link-result').classList.add('hidden'); var tb = this.closest('.sw-card').querySelector('[aria-controls=create-invite-form]'); if(tb) tb.setAttribute('aria-expanded','false')\">Cancel</button></div></div><div id=\"invite-link-result\" class=\"hidden mt-2\"><div class=\"text-xs font-medium text-gray-700 dark:text-gray-300 mb-1\">Invite Link</div><div class=\"flex items-center gap-2\"><input id=\"invite-link-value\" type=\"text\" readonly class=\"flex-1 rounded border border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-gray-900 px-3 py-1.5 text-xs font-mono text-gray-700 dark:text-gray-300 focus:outline-none\" aria-label=\"Generated invite link\"> <button type=\"button\" class=\"text-xs px-2.5 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors\" aria-label=\"Copy invite link to clipboard\" onclick=\"navigator.clipboard.writeText(document.getElementById('invite-link-value').value).then(function(){ showSuccessToast('Invite link copied'); }).catch(function(){ showToast('Failed to copy link'); })\">Copy</button></div><p class=\"text-xs text-gray-500 dark:text-gray-400 mt-1\">This link can only be used once.</p></div></form></div><div class=\"overflow-x-auto\"><table class=\"w-full text-sm\" aria-label=\"User accounts\"><thead><tr class=\"border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-750 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider\"><th class=\"px-6 py-3\">User</th><th class=\"px-4 py-3\">Role</th><th class=\"px-4 py-3\">Auth Provider</th><th class=\"px-4 py-3\">Status</th><th class=\"px-4 py-3 text-right\">Actions</th></tr></thead> <tbody id=\"users-table-body\" hx-get=\"/api/v1/users\" hx-trigger=\"load\" hx-swap=\"innerHTML\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -480,15 +480,7 @@ func userTableRow(u auth.User) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 37, ">Administrator</option></select> ")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templ.RenderScriptItems(ctx, templ_7745c5c3_Buffer, templ.ComponentScript{Call: "deactivateUser('" + u.ID + "', '" + u.DisplayName + "')"})
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "<button type=\"button\" class=\"text-xs px-2.5 py-1 rounded border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors\" aria-label=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 37, ">Administrator</option></select> <button type=\"button\" class=\"text-xs px-2.5 py-1 rounded border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors\" aria-label=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -501,16 +493,33 @@ func userTableRow(u auth.User) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 39, "\" onclick=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "\" data-user-id=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var24 templ.ComponentScript = templ.ComponentScript{Call: "deactivateUser('" + u.ID + "', '" + u.DisplayName + "')"}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var24.Call)
+			var templ_7745c5c3_Var24 string
+			templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinStringErrs(u.ID)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 329, Col: 25}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 40, "\">Deactivate</button></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 39, "\" data-display-name=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var25 string
+			templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.JoinStringErrs(u.DisplayName)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 330, Col: 39}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var25))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 40, "\" onclick=\"deactivateUserFromDataset(this)\">Deactivate</button></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -540,21 +549,21 @@ func inviteRow(inv auth.Invite) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var25 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var25 == nil {
-			templ_7745c5c3_Var25 = templ.NopComponent
+		templ_7745c5c3_Var26 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var26 == nil {
+			templ_7745c5c3_Var26 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
 		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 42, "<div id=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var26 string
-		templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.JoinStringErrs("invite-row-" + inv.ID)
+		var templ_7745c5c3_Var27 string
+		templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.JoinStringErrs("invite-row-" + inv.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 341, Col: 33}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 343, Col: 33}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var26))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var27))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -562,12 +571,12 @@ func inviteRow(inv auth.Invite) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var27 string
-		templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.JoinStringErrs(inv.Code)
+		var templ_7745c5c3_Var28 string
+		templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.JoinStringErrs(inv.Code)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 343, Col: 78}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 345, Col: 78}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var27))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var28))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -575,8 +584,8 @@ func inviteRow(inv auth.Invite) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var28 = []any{roleBadgeClasses(inv.Role)}
-		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var28...)
+		var templ_7745c5c3_Var29 = []any{roleBadgeClasses(inv.Role)}
+		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var29...)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -584,12 +593,12 @@ func inviteRow(inv auth.Invite) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var29 string
-		templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var28).String())
+		var templ_7745c5c3_Var30 string
+		templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var29).String())
 		if templ_7745c5c3_Err != nil {
 			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 1, Col: 0}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var29))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var30))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -597,12 +606,12 @@ func inviteRow(inv auth.Invite) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var30 string
-		templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.JoinStringErrs(roleLabel(inv.Role))
+		var templ_7745c5c3_Var31 string
+		templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.JoinStringErrs(roleLabel(inv.Role))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 345, Col: 74}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 347, Col: 74}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var30))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var31))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -610,85 +619,81 @@ func inviteRow(inv auth.Invite) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var31 string
-		templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.JoinStringErrs(inv.ExpiresAt)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 348, Col: 75}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var31))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 48, "</span></div></div><div class=\"flex items-center gap-2\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templ.RenderScriptItems(ctx, templ_7745c5c3_Buffer, templ.ComponentScript{Call: "copyInviteLink('" + inv.Code + "')"})
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 49, "<button type=\"button\" class=\"text-xs px-2.5 py-1 rounded border border-gray-300 dark:border-gray-600 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors\" aria-label=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
 		var templ_7745c5c3_Var32 string
-		templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.JoinStringErrs("Copy invite link for code " + inv.Code)
+		templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.JoinStringErrs(inv.ExpiresAt)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 355, Col: 56}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 350, Col: 75}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var32))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 50, "\" onclick=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 48, "</span></div></div><div class=\"flex items-center gap-2\"><button type=\"button\" class=\"text-xs px-2.5 py-1 rounded border border-gray-300 dark:border-gray-600 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors\" aria-label=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var33 templ.ComponentScript = templ.ComponentScript{Call: "copyInviteLink('" + inv.Code + "')"}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var33.Call)
+		var templ_7745c5c3_Var33 string
+		templ_7745c5c3_Var33, templ_7745c5c3_Err = templ.JoinStringErrs("Copy invite link for code " + inv.Code)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 357, Col: 56}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var33))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 51, "\">Copy Link</button> <button type=\"button\" class=\"text-xs px-2.5 py-1 rounded border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors\" aria-label=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 49, "\" data-inv-code=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var34 string
-		templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.JoinStringErrs("Revoke invite " + inv.Code)
+		templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.JoinStringErrs(inv.Code)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 363, Col: 44}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 358, Col: 28}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var34))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 52, "\" hx-delete=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 50, "\" onclick=\"copyInviteLinkFromDataset(this)\">Copy Link</button> <button type=\"button\" class=\"text-xs px-2.5 py-1 rounded border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors\" aria-label=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var35 string
-		templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.JoinStringErrs("/api/v1/users/invites/" + inv.ID)
+		templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.JoinStringErrs("Revoke invite " + inv.Code)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 364, Col: 49}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 366, Col: 44}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var35))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 53, "\" hx-confirm=\"Revoke this invite? It will no longer be usable.\" hx-target=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 51, "\" hx-delete=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var36 string
-		templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.JoinStringErrs("#invite-row-" + inv.ID)
+		templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.JoinStringErrs("/api/v1/users/invites/" + inv.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 366, Col: 39}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 367, Col: 49}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var36))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 54, "\" hx-swap=\"outerHTML\" hx-on::after-request=\"if(event.detail.successful){ showSuccessToast('Invite revoked'); }\">Revoke</button></div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 52, "\" hx-confirm=\"Revoke this invite? It will no longer be usable.\" hx-target=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var37 string
+		templ_7745c5c3_Var37, templ_7745c5c3_Err = templ.JoinStringErrs("#invite-row-" + inv.ID)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_users.templ`, Line: 369, Col: 39}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var37))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 53, "\" hx-swap=\"outerHTML\" hx-on::after-request=\"if(event.detail.successful){ showSuccessToast('Invite revoked'); }\">Revoke</button></div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -713,12 +718,12 @@ func settingsUsersScript() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var37 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var37 == nil {
-			templ_7745c5c3_Var37 = templ.NopComponent
+		templ_7745c5c3_Var38 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var38 == nil {
+			templ_7745c5c3_Var38 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 55, "<script>\n\t\tvar usersBasePath = (document.querySelector('meta[name=\"htmx-base-path\"]') || {content: ''}).content;\n\n\t\tfunction getUsersCsrfToken() {\n\t\t\treturn document.cookie.replace(\n\t\t\t\t/(?:(?:^|.*;\\s*)csrf_token\\s*=\\s*([^;]*).*$)|^.*$/, \"$1\"\n\t\t\t);\n\t\t}\n\n\t\tfunction toggleMultiUser(btn) {\n\t\t\tvar enabled = btn.getAttribute('aria-checked') === 'true';\n\t\t\tvar newVal = !enabled;\n\t\t\tvar csrfToken = getUsersCsrfToken();\n\t\t\tfetch(usersBasePath + '/api/v1/settings', {\n\t\t\t\tmethod: 'PUT',\n\t\t\t\theaders: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },\n\t\t\t\tbody: JSON.stringify({ 'multi_user.enabled': newVal ? 'true' : 'false' })\n\t\t\t}).then(function(resp) {\n\t\t\t\tif (!resp.ok) {\n\t\t\t\t\treturn resp.json().catch(function() { throw new Error('Server error (' + resp.status + ')'); }).then(function(d) { throw new Error(d.error || 'Failed to update setting'); });\n\t\t\t\t}\n\t\t\t\t// Reload to show/hide the users table and invites sections.\n\t\t\t\twindow.location.reload();\n\t\t\t}).catch(function(err) {\n\t\t\t\tshowToast(err.message || 'Failed to update multi-user setting');\n\t\t\t});\n\t\t}\n\n\t\tfunction submitCreateInvite(event, form) {\n\t\t\tevent.preventDefault();\n\t\t\tvar role = form.querySelector('[name=\"role\"]').value;\n\t\t\tvar expiresIn = form.querySelector('[name=\"expires_in\"]').value;\n\t\t\tvar csrfToken = getUsersCsrfToken();\n\t\t\tfetch(usersBasePath + '/api/v1/users/invites', {\n\t\t\t\tmethod: 'POST',\n\t\t\t\theaders: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },\n\t\t\t\tbody: JSON.stringify({ role: role, expires_in: expiresIn })\n\t\t\t}).then(function(resp) {\n\t\t\t\tif (!resp.ok) {\n\t\t\t\t\treturn resp.json().catch(function() { throw new Error('Server error (' + resp.status + ')'); }).then(function(d) { throw new Error(d.error || 'Failed to create invite'); });\n\t\t\t\t}\n\t\t\t\treturn resp.json();\n\t\t\t}).then(function(invite) {\n\t\t\t\tvar link = window.location.origin + usersBasePath + '/register?code=' + encodeURIComponent(invite.code);\n\t\t\t\tvar resultEl = document.getElementById('invite-link-result');\n\t\t\t\tvar valueEl = document.getElementById('invite-link-value');\n\t\t\t\tvalueEl.value = link;\n\t\t\t\tresultEl.classList.remove('hidden');\n\t\t\t\t// Refresh the invites list.\n\t\t\t\thtmx.trigger(document.getElementById('invites-list'), 'load');\n\t\t\t}).catch(function(err) {\n\t\t\t\tshowToast(err.message || 'Failed to create invite');\n\t\t\t});\n\t\t}\n\n\t\tfunction copyInviteLink(code) {\n\t\t\tvar link = window.location.origin + usersBasePath + '/register?code=' + encodeURIComponent(code);\n\t\t\tnavigator.clipboard.writeText(link).then(function() {\n\t\t\t\tshowSuccessToast('Invite link copied');\n\t\t\t}).catch(function() {\n\t\t\t\tshowToast('Failed to copy link');\n\t\t\t});\n\t\t}\n\n\t\tfunction changeUserRole(select, userId) {\n\t\t\tvar role = select.value;\n\t\t\tvar csrfToken = getUsersCsrfToken();\n\t\t\tfetch(usersBasePath + '/api/v1/users/' + userId, {\n\t\t\t\tmethod: 'PATCH',\n\t\t\t\theaders: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },\n\t\t\t\tbody: JSON.stringify({ role: role })\n\t\t\t}).then(function(resp) {\n\t\t\t\tif (!resp.ok) {\n\t\t\t\t\treturn resp.json().catch(function() { throw new Error('Server error (' + resp.status + ')'); }).then(function(d) { throw new Error(d.error || 'Failed to update role'); });\n\t\t\t\t}\n\t\t\t\tshowSuccessToast('Role updated');\n\t\t\t\thtmx.trigger(document.getElementById('users-table-body'), 'load');\n\t\t\t}).catch(function(err) {\n\t\t\t\tshowToast(err.message || 'Failed to update role');\n\t\t\t\t// Reload to reset the select back to the current value.\n\t\t\t\thtmx.trigger(document.getElementById('users-table-body'), 'load');\n\t\t\t});\n\t\t}\n\n\t\tfunction deactivateUser(userId, displayName) {\n\t\t\tif (!confirm('Deactivate ' + displayName + '? Their sessions will be invalidated.')) {\n\t\t\t\treturn;\n\t\t\t}\n\t\t\tvar csrfToken = getUsersCsrfToken();\n\t\t\tfetch(usersBasePath + '/api/v1/users/' + userId, {\n\t\t\t\tmethod: 'DELETE',\n\t\t\t\theaders: { 'X-CSRF-Token': csrfToken }\n\t\t\t}).then(function(resp) {\n\t\t\t\tif (!resp.ok) {\n\t\t\t\t\treturn resp.json().catch(function() { throw new Error('Server error (' + resp.status + ')'); }).then(function(d) { throw new Error(d.error || 'Failed to deactivate user'); });\n\t\t\t\t}\n\t\t\t\tshowSuccessToast('User deactivated');\n\t\t\t\thtmx.trigger(document.getElementById('users-table-body'), 'load');\n\t\t\t}).catch(function(err) {\n\t\t\t\tshowToast(err.message || 'Failed to deactivate user');\n\t\t\t});\n\t\t}\n\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 54, "<script>\n\t\tvar usersBasePath = (document.querySelector('meta[name=\"htmx-base-path\"]') || {content: ''}).content;\n\n\t\tfunction getUsersCsrfToken() {\n\t\t\treturn document.cookie.replace(\n\t\t\t\t/(?:(?:^|.*;\\s*)csrf_token\\s*=\\s*([^;]*).*$)|^.*$/, \"$1\"\n\t\t\t);\n\t\t}\n\n\t\tfunction toggleMultiUser(btn) {\n\t\t\tvar enabled = btn.getAttribute('aria-checked') === 'true';\n\t\t\tvar newVal = !enabled;\n\t\t\tvar csrfToken = getUsersCsrfToken();\n\t\t\tfetch(usersBasePath + '/api/v1/settings', {\n\t\t\t\tmethod: 'PUT',\n\t\t\t\theaders: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },\n\t\t\t\tbody: JSON.stringify({ 'multi_user.enabled': newVal ? 'true' : 'false' })\n\t\t\t}).then(function(resp) {\n\t\t\t\tif (!resp.ok) {\n\t\t\t\t\treturn resp.json().catch(function() { throw new Error('Server error (' + resp.status + ')'); }).then(function(d) { throw new Error(d.error || 'Failed to update setting'); });\n\t\t\t\t}\n\t\t\t\t// Reload to show/hide the users table and invites sections.\n\t\t\t\twindow.location.reload();\n\t\t\t}).catch(function(err) {\n\t\t\t\tshowToast(err.message || 'Failed to update multi-user setting');\n\t\t\t});\n\t\t}\n\n\t\tfunction submitCreateInvite(event, form) {\n\t\t\tevent.preventDefault();\n\t\t\tvar role = form.querySelector('[name=\"role\"]').value;\n\t\t\tvar expiresIn = form.querySelector('[name=\"expires_in\"]').value;\n\t\t\tvar csrfToken = getUsersCsrfToken();\n\t\t\tfetch(usersBasePath + '/api/v1/users/invites', {\n\t\t\t\tmethod: 'POST',\n\t\t\t\theaders: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },\n\t\t\t\tbody: JSON.stringify({ role: role, expires_in: expiresIn })\n\t\t\t}).then(function(resp) {\n\t\t\t\tif (!resp.ok) {\n\t\t\t\t\treturn resp.json().catch(function() { throw new Error('Server error (' + resp.status + ')'); }).then(function(d) { throw new Error(d.error || 'Failed to create invite'); });\n\t\t\t\t}\n\t\t\t\treturn resp.json();\n\t\t\t}).then(function(invite) {\n\t\t\t\tvar link = window.location.origin + usersBasePath + '/register?code=' + encodeURIComponent(invite.code);\n\t\t\t\tvar resultEl = document.getElementById('invite-link-result');\n\t\t\t\tvar valueEl = document.getElementById('invite-link-value');\n\t\t\t\tvalueEl.value = link;\n\t\t\t\tresultEl.classList.remove('hidden');\n\t\t\t\t// Refresh the invites list.\n\t\t\t\thtmx.trigger(document.getElementById('invites-list'), 'load');\n\t\t\t}).catch(function(err) {\n\t\t\t\tshowToast(err.message || 'Failed to create invite');\n\t\t\t});\n\t\t}\n\n\t\tfunction copyInviteLink(code) {\n\t\t\tvar link = window.location.origin + usersBasePath + '/register?code=' + encodeURIComponent(code);\n\t\t\tnavigator.clipboard.writeText(link).then(function() {\n\t\t\t\tshowSuccessToast('Invite link copied');\n\t\t\t}).catch(function() {\n\t\t\t\tshowToast('Failed to copy link');\n\t\t\t});\n\t\t}\n\n\t\tfunction copyInviteLinkFromDataset(el) {\n\t\t\tcopyInviteLink(el.dataset.invCode);\n\t\t}\n\n\t\tfunction deactivateUserFromDataset(el) {\n\t\t\tdeactivateUser(el.dataset.userId, el.dataset.displayName);\n\t\t}\n\n\t\tfunction changeUserRole(select, userId) {\n\t\t\tvar role = select.value;\n\t\t\tvar csrfToken = getUsersCsrfToken();\n\t\t\tfetch(usersBasePath + '/api/v1/users/' + userId, {\n\t\t\t\tmethod: 'PATCH',\n\t\t\t\theaders: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },\n\t\t\t\tbody: JSON.stringify({ role: role })\n\t\t\t}).then(function(resp) {\n\t\t\t\tif (!resp.ok) {\n\t\t\t\t\treturn resp.json().catch(function() { throw new Error('Server error (' + resp.status + ')'); }).then(function(d) { throw new Error(d.error || 'Failed to update role'); });\n\t\t\t\t}\n\t\t\t\tshowSuccessToast('Role updated');\n\t\t\t\thtmx.trigger(document.getElementById('users-table-body'), 'load');\n\t\t\t}).catch(function(err) {\n\t\t\t\tshowToast(err.message || 'Failed to update role');\n\t\t\t\t// Reload to reset the select back to the current value.\n\t\t\t\thtmx.trigger(document.getElementById('users-table-body'), 'load');\n\t\t\t});\n\t\t}\n\n\t\tfunction deactivateUser(userId, displayName) {\n\t\t\tif (!confirm('Deactivate ' + displayName + '? Their sessions will be invalidated.')) {\n\t\t\t\treturn;\n\t\t\t}\n\t\t\tvar csrfToken = getUsersCsrfToken();\n\t\t\tfetch(usersBasePath + '/api/v1/users/' + userId, {\n\t\t\t\tmethod: 'DELETE',\n\t\t\t\theaders: { 'X-CSRF-Token': csrfToken }\n\t\t\t}).then(function(resp) {\n\t\t\t\tif (!resp.ok) {\n\t\t\t\t\treturn resp.json().catch(function() { throw new Error('Server error (' + resp.status + ')'); }).then(function(d) { throw new Error(d.error || 'Failed to deactivate user'); });\n\t\t\t\t}\n\t\t\t\tshowSuccessToast('User deactivated');\n\t\t\t\thtmx.trigger(document.getElementById('users-table-body'), 'load');\n\t\t\t}).catch(function(err) {\n\t\t\t\tshowToast(err.message || 'Failed to deactivate user');\n\t\t\t});\n\t\t}\n\t</script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

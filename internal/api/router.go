@@ -477,7 +477,6 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	csrfExempt := []string{
 		bp + "/api/v1/auth/login",
 		bp + "/api/v1/auth/setup",
-		bp + "/api/v1/users/register",
 	}
 	var handler http.Handler = mux
 	handler = csrfWithExemptions(csrf, handler, csrfExempt)
