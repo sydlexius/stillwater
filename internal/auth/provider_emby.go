@@ -68,7 +68,7 @@ func (p *EmbyProvider) Authenticate(ctx context.Context, creds Credentials) (*Id
 	if resp.StatusCode != http.StatusOK {
 		_, _ = io.Copy(io.Discard, resp.Body)
 		if resp.StatusCode == http.StatusUnauthorized {
-			return nil, fmt.Errorf("invalid emby credentials")
+			return nil, fmt.Errorf("emby: %w", ErrInvalidCredentials)
 		}
 		return nil, fmt.Errorf("emby returned status %d", resp.StatusCode)
 	}

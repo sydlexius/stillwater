@@ -292,7 +292,8 @@ func (s *Service) ClaimInviteAndRegister(ctx context.Context, code, username, pa
 		VALUES (?, ?, ?, ?, ?, 'local', '', 1, ?, ?, ?)
 	`, userID, username, displayName, string(hash), inv.Role, invitedByVal, now, now)
 	if err != nil {
-		if strings.Contains(err.Error(), "UNIQUE constraint") && strings.Contains(err.Error(), "username") {
+		errLower := strings.ToLower(err.Error())
+		if strings.Contains(errLower, "unique constraint") && strings.Contains(errLower, "username") {
 			return nil, ErrUsernameConflict
 		}
 		return nil, fmt.Errorf("creating user: %w", err)

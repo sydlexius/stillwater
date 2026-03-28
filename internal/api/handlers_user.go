@@ -99,6 +99,8 @@ func (r *Router) handleRegister(w http.ResponseWriter, req *http.Request) {
 		Password    string `json:"password"` //nolint:gosec // G117: not a hardcoded secret, this is a request field
 		DisplayName string `json:"display_name"`
 	}
+	// Limit request body to 1 MB to prevent abuse on this public endpoint.
+	req.Body = http.MaxBytesReader(w, req.Body, 1<<20)
 	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body."})
 		return

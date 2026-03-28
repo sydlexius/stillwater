@@ -68,7 +68,7 @@ func (p *JellyfinProvider) Authenticate(ctx context.Context, creds Credentials) 
 	if resp.StatusCode != http.StatusOK {
 		_, _ = io.Copy(io.Discard, resp.Body)
 		if resp.StatusCode == http.StatusUnauthorized {
-			return nil, fmt.Errorf("invalid jellyfin credentials")
+			return nil, fmt.Errorf("jellyfin: %w", ErrInvalidCredentials)
 		}
 		return nil, fmt.Errorf("jellyfin returned status %d", resp.StatusCode)
 	}

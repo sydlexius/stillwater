@@ -199,7 +199,7 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("GET "+bp+"/api/v1/docs/openapi.yaml", r.handleOpenAPISpec)
 	mux.Handle("POST "+bp+"/api/v1/auth/login", loginRL.Middleware(http.HandlerFunc(r.handleLogin)))
 	mux.Handle("POST "+bp+"/api/v1/auth/setup", loginRL.Middleware(http.HandlerFunc(r.handleSetup)))
-	mux.HandleFunc("POST "+bp+"/api/v1/users/register", r.handleRegister)
+	mux.Handle("POST "+bp+"/api/v1/users/register", loginRL.Middleware(http.HandlerFunc(r.handleRegister)))
 	mux.Handle("GET "+bp+"/static/", r.staticAssets.Handler(bp))
 	mux.HandleFunc("GET "+bp+"/", wrapOptionalAuth(r.handleIndex, optAuthMw))
 

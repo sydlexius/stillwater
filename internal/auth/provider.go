@@ -1,6 +1,13 @@
 package auth
 
-import "context"
+import (
+	"context"
+	"errors"
+)
+
+// ErrInvalidCredentials is returned by Authenticate when the provider
+// rejects the supplied credentials (wrong username/password).
+var ErrInvalidCredentials = errors.New("invalid credentials")
 
 // Authenticator handles authentication for a specific provider type.
 type Authenticator interface {

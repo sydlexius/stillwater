@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -93,14 +92,12 @@ func (r *Router) handleLogin(w http.ResponseWriter, req *http.Request) {
 				r.logger.Warn("authentication failed", "provider", providerType, "error", err)
 				if providerType == "local" {
 					writeFormError(w, req, http.StatusUnauthorized, "Invalid username or password.")
+				} else if errors.Is(err, auth.ErrInvalidCredentials) {
+					writeFormError(w, req, http.StatusUnauthorized, fmt.Sprintf("Invalid %s credentials.", authMethodDisplayName(providerType)))
 				} else {
-					// Distinguish connectivity errors from auth failures.
-					var netErr net.Error
-					if errors.As(err, &netErr) {
-						writeFormError(w, req, http.StatusBadGateway, fmt.Sprintf("Cannot connect to %s server. Please verify the server is running.", authMethodDisplayName(providerType)))
-					} else {
-						writeFormError(w, req, http.StatusUnauthorized, fmt.Sprintf("Invalid %s credentials.", authMethodDisplayName(providerType)))
-					}
+					// Network errors, non-200 responses, and malformed provider
+					// responses are upstream failures, not authentication rejections.
+					writeFormError(w, req, http.StatusBadGateway, fmt.Sprintf("Cannot connect to %s server. Please verify the server is running.", authMethodDisplayName(providerType)))
 				}
 				return
 			}
