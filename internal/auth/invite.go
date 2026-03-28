@@ -195,6 +195,9 @@ func (s *Service) RedeemInvite(ctx context.Context, code, userID string) (*Invit
 		rerr := s.db.QueryRowContext(ctx, `
 			SELECT expires_at, redeemed_at FROM invites WHERE id = ?
 		`, inv.ID).Scan(&expiresAt, &redeemedAt)
+		if errors.Is(rerr, sql.ErrNoRows) {
+			return nil, ErrInviteNotFound
+		}
 		if rerr != nil {
 			return nil, fmt.Errorf("re-checking invite state: %w", rerr)
 		}
@@ -301,8 +304,9 @@ func (s *Service) ClaimInviteAndRegister(ctx context.Context, code, username, pa
 
 		// 3. Redeem the invite inside the transaction.
 		result, err := conn.ExecContext(ctx, `
-			UPDATE invites SET redeemed_by = ?, redeemed_at = ? WHERE id = ? AND redeemed_at IS NULL
-		`, userID, now, inv.ID)
+			UPDATE invites SET redeemed_by = ?, redeemed_at = ?
+			WHERE id = ? AND redeemed_at IS NULL AND expires_at > ?
+		`, userID, now, inv.ID, now)
 		if err != nil {
 			return fmt.Errorf("redeeming invite: %w", err)
 		}
@@ -312,7 +316,10 @@ func (s *Service) ClaimInviteAndRegister(ctx context.Context, code, username, pa
 			return fmt.Errorf("checking redeem rows affected: %w", err)
 		}
 		if n == 0 {
-			return ErrInviteRedeemed
+			// Within the BEGIN IMMEDIATE tx, we already validated the invite
+			// was unredeemed and not expired. The most likely cause is a
+			// near-boundary expiry between the check and the UPDATE.
+			return ErrInviteExpired
 		}
 
 		return nil
