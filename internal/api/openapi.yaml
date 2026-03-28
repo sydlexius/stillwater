@@ -5485,6 +5485,7 @@ paths:
           schema:
             type: integer
             default: 100
+            minimum: 0
             maximum: 500
       responses:
         "200":
@@ -5505,6 +5506,7 @@ paths:
             application/json:
               schema:
                 type: object
+                required: [error]
                 properties:
                   error:
                     type: string

@@ -277,6 +277,16 @@ func TestRingBuffer_NegativeSize(t *testing.T) {
 	if len(entries) != 1 {
 		t.Errorf("expected 1 entry from negative-size buffer (defaults to %d), got %d", DefaultRingBufferSize, len(entries))
 	}
+
+	// Verify the buffer used DefaultRingBufferSize as fallback.
+	// Write DefaultRingBufferSize entries and verify they all fit.
+	rb.Clear()
+	for i := 0; i < DefaultRingBufferSize; i++ {
+		rb.Write(LogEntry{Level: "info", Message: fmt.Sprintf("msg %d", i)})
+	}
+	if rb.Len() != DefaultRingBufferSize {
+		t.Errorf("expected buffer size %d, got %d", DefaultRingBufferSize, rb.Len())
+	}
 }
 
 func TestLevelSeverity(t *testing.T) {

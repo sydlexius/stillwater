@@ -155,6 +155,40 @@ func TestHandleGetLogs_SearchFilter(t *testing.T) {
 	}
 }
 
+func TestHandleGetLogs_ComponentFilter(t *testing.T) {
+	r, rb := newTestRouterWithLogs(t)
+
+	now := time.Now()
+	rb.Write(logging.LogEntry{Time: now, Level: "info", Message: "scanning dirs", Component: "scanner"})
+	rb.Write(logging.LogEntry{Time: now.Add(time.Second), Level: "info", Message: "fetching art", Component: "provider"})
+
+	req := httptest.NewRequest("GET", "/api/v1/logs?component=scanner&limit=10", nil)
+	rec := httptest.NewRecorder()
+	r.handleGetLogs(rec, req)
+
+	res := rec.Result()
+	defer res.Body.Close()
+
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		t.Fatalf("reading body: %v", err)
+	}
+
+	var entries []logging.LogEntry
+	if err := json.Unmarshal(body, &entries); err != nil {
+		t.Fatalf("unmarshaling: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 scanner entry, got %d", len(entries))
+	}
+	if entries[0].Component != "scanner" {
+		t.Errorf("expected component 'scanner', got %q", entries[0].Component)
+	}
+	if entries[0].Message != "scanning dirs" {
+		t.Errorf("expected message 'scanning dirs', got %q", entries[0].Message)
+	}
+}
+
 func TestHandleGetLogs_Empty(t *testing.T) {
 	r, _ := newTestRouterWithLogs(t)
 

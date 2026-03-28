@@ -50,16 +50,60 @@ func (s *SwappableHandler) Handle(ctx context.Context, r slog.Record) error {
 	return (*s.inner.Load()).Handle(ctx, r)
 }
 
-// WithAttrs returns a new SwappableHandler whose inner handler has the attrs.
+// WithAttrs returns a DerivedHandler that delegates through this
+// SwappableHandler, so derived loggers observe Reconfigure changes.
 func (s *SwappableHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
-	inner := (*s.inner.Load()).WithAttrs(attrs)
-	return NewSwappableHandler(inner)
+	return &DerivedHandler{parent: s, attrs: attrs}
 }
 
-// WithGroup returns a new SwappableHandler whose inner handler has the group.
+// WithGroup returns a DerivedHandler that delegates through this
+// SwappableHandler, so derived loggers observe Reconfigure changes.
 func (s *SwappableHandler) WithGroup(name string) slog.Handler {
-	inner := (*s.inner.Load()).WithGroup(name)
-	return NewSwappableHandler(inner)
+	return &DerivedHandler{parent: s, group: name}
+}
+
+// DerivedHandler delegates to a parent SwappableHandler, applying accumulated
+// attributes and group prefix. When the parent's inner handler is swapped via
+// Reconfigure, derived handlers automatically observe the change.
+type DerivedHandler struct {
+	parent *SwappableHandler
+	attrs  []slog.Attr
+	group  string
+}
+
+// Enabled delegates to the parent's current inner handler.
+func (d *DerivedHandler) Enabled(ctx context.Context, level slog.Level) bool {
+	return (*d.parent.inner.Load()).Enabled(ctx, level)
+}
+
+// Handle loads the current inner handler from the parent, applies any
+// accumulated group and attrs, then delegates.
+func (d *DerivedHandler) Handle(ctx context.Context, r slog.Record) error {
+	inner := *d.parent.inner.Load()
+	if d.group != "" {
+		inner = inner.WithGroup(d.group)
+	}
+	if len(d.attrs) > 0 {
+		inner = inner.WithAttrs(d.attrs)
+	}
+	return inner.Handle(ctx, r)
+}
+
+// WithAttrs returns a new DerivedHandler with the additional attributes appended.
+func (d *DerivedHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	newAttrs := make([]slog.Attr, len(d.attrs)+len(attrs))
+	copy(newAttrs, d.attrs)
+	copy(newAttrs[len(d.attrs):], attrs)
+	return &DerivedHandler{parent: d.parent, attrs: newAttrs, group: d.group}
+}
+
+// WithGroup returns a new DerivedHandler with the group appended.
+func (d *DerivedHandler) WithGroup(name string) slog.Handler {
+	g := name
+	if d.group != "" {
+		g = d.group + "." + name
+	}
+	return &DerivedHandler{parent: d.parent, attrs: d.attrs, group: g}
 }
 
 // DefaultRingBufferSize is the default number of log entries retained in memory
