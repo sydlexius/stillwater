@@ -9,10 +9,9 @@ import (
 // are categorized as filesystem-dependent. Rules that can be made API-compatible
 // are tracked in #725, #726, #727, #728.
 func TestIsFilesystemDependent(t *testing.T) {
-	// Only 2 rules are truly filesystem-only.
+	// Only 1 rule is truly filesystem-only (NFO is a local file format).
 	fsRules := []string{
 		RuleNFOExists,
-		RuleExtraneousImages,
 	}
 	for _, id := range fsRules {
 		if !IsFilesystemDependent(id) {
@@ -22,6 +21,7 @@ func TestIsFilesystemDependent(t *testing.T) {
 
 	// All other rules are API-compatible (or will be made so in follow-up issues).
 	apiRules := []string{
+		RuleExtraneousImages,
 		RuleNFOHasMBID,
 		RuleThumbExists,
 		RuleThumbSquare,
@@ -56,9 +56,9 @@ func TestAllDefaultRulesAreCategorized(t *testing.T) {
 	// Build the expected set from the two explicit lists in TestIsFilesystemDependent.
 	categorized := map[string]bool{
 		// Filesystem-dependent rules.
-		RuleNFOExists:        true,
-		RuleExtraneousImages: true,
-		// API-compatible rules.
+		RuleNFOExists: true,
+		// API-compatible rules (includes rules with DB-based checker paths).
+		RuleExtraneousImages:      true,
 		RuleNFOHasMBID:            true,
 		RuleThumbExists:           true,
 		RuleThumbSquare:           true,
@@ -116,8 +116,10 @@ func TestTagFilesystemDependent(t *testing.T) {
 	if rules[1].FilesystemDependent {
 		t.Errorf("expected %s to NOT be tagged filesystem-dependent", rules[1].ID)
 	}
-	if !rules[2].FilesystemDependent {
-		t.Errorf("expected %s to be tagged filesystem-dependent", rules[2].ID)
+	// extraneous_images now has a DB-based checker path for API artists,
+	// so it is no longer classified as filesystem-dependent.
+	if rules[2].FilesystemDependent {
+		t.Errorf("expected %s to NOT be tagged filesystem-dependent (has DB path)", rules[2].ID)
 	}
 	if rules[3].FilesystemDependent {
 		t.Errorf("expected %s to NOT be tagged filesystem-dependent", rules[3].ID)

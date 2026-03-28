@@ -364,3 +364,123 @@ func TestFetchArtistImage_UnsupportedConnectionType(t *testing.T) {
 		t.Errorf("error = %q, want 'does not support image fetch'", err.Error())
 	}
 }
+
+func TestListArtistImageSlots_Success(t *testing.T) {
+	// Stand up a fake Emby server that returns artist detail with images.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// GetArtistDetail hits /Users/{userID}/Items/{artistID}
+		if strings.Contains(r.URL.Path, "/Users/") && strings.Contains(r.URL.Path, "/Items/") {
+			resp := map[string]interface{}{
+				"Name":     "Test Artist",
+				"SortName": "Test Artist",
+				"ImageTags": map[string]string{
+					"Primary": "abc123",
+					"Logo":    "def456",
+				},
+				"BackdropImageTags": []string{"bd1", "bd2", "bd3"},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(resp)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	connSvc := setupTestConnService(t)
+	ctx := context.Background()
+
+	conn := &connection.Connection{
+		Name:    "Test Emby",
+		Type:    connection.TypeEmby,
+		URL:     srv.URL,
+		APIKey:  "test-key",
+		Enabled: true,
+	}
+	if err := connSvc.Create(ctx, conn); err != nil {
+		t.Fatalf("creating connection: %v", err)
+	}
+	// Set PlatformUserID so GetArtistDetail can build the URL.
+	if err := connSvc.UpdatePlatformUserID(ctx, conn.ID, "user-001"); err != nil {
+		t.Fatalf("updating platform user ID: %v", err)
+	}
+
+	provider := &stubPlatformIDProvider{
+		ids: []artist.PlatformID{
+			{
+				ArtistID:         "artist-slots",
+				ConnectionID:     conn.ID,
+				PlatformArtistID: "emby-artist-slots",
+			},
+		},
+	}
+	bridge := New(connSvc, provider, slog.Default())
+
+	slots, err := bridge.ListArtistImageSlots(ctx, "artist-slots")
+	if err != nil {
+		t.Fatalf("ListArtistImageSlots: %v", err)
+	}
+
+	// Expected: thumb=1 (Primary tag present), fanart=3 (3 backdrop tags), logo=1
+	if slots["thumb"] != 1 {
+		t.Errorf("thumb = %d, want 1", slots["thumb"])
+	}
+	if slots["fanart"] != 3 {
+		t.Errorf("fanart = %d, want 3", slots["fanart"])
+	}
+	if slots["logo"] != 1 {
+		t.Errorf("logo = %d, want 1", slots["logo"])
+	}
+	if _, ok := slots["banner"]; ok {
+		t.Errorf("banner should not be present, got %d", slots["banner"])
+	}
+}
+
+func TestListArtistImageSlots_NoPlatformIDs(t *testing.T) {
+	connSvc := setupTestConnService(t)
+	provider := &stubPlatformIDProvider{ids: nil}
+	bridge := New(connSvc, provider, slog.Default())
+
+	_, err := bridge.ListArtistImageSlots(context.Background(), "artist-001")
+	if err == nil {
+		t.Fatal("expected error for artist with no platform IDs")
+	}
+	if !strings.Contains(err.Error(), "no platform ID mappings") {
+		t.Errorf("error = %q, want 'no platform ID mappings'", err.Error())
+	}
+}
+
+func TestListArtistImageSlots_UnsupportedType(t *testing.T) {
+	connSvc := setupTestConnService(t)
+	ctx := context.Background()
+
+	conn := &connection.Connection{
+		Name:    "Lidarr",
+		Type:    connection.TypeLidarr,
+		URL:     "http://localhost:8686",
+		APIKey:  "lidarr-key",
+		Enabled: true,
+	}
+	if err := connSvc.Create(ctx, conn); err != nil {
+		t.Fatalf("creating connection: %v", err)
+	}
+
+	provider := &stubPlatformIDProvider{
+		ids: []artist.PlatformID{
+			{
+				ArtistID:         "artist-lidarr",
+				ConnectionID:     conn.ID,
+				PlatformArtistID: "lidarr-artist",
+			},
+		},
+	}
+	bridge := New(connSvc, provider, slog.Default())
+
+	_, err := bridge.ListArtistImageSlots(ctx, "artist-lidarr")
+	if err == nil {
+		t.Fatal("expected error for unsupported connection type")
+	}
+	if !strings.Contains(err.Error(), "does not support artist detail") {
+		t.Errorf("error = %q, want 'does not support artist detail'", err.Error())
+	}
+}

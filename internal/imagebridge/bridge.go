@@ -136,6 +136,84 @@ func (b *Bridge) UploadArtistImage(ctx context.Context, artistID, imageType stri
 	return nil
 }
 
+// ListArtistImageSlots returns the image types and slot counts that a connected
+// platform reports for the given Stillwater artist ID. It resolves platform IDs,
+// builds the appropriate client, and calls GetArtistDetail to inspect the
+// platform-side image state. Returns the first successful result.
+func (b *Bridge) ListArtistImageSlots(ctx context.Context, artistID string) (map[string]int, error) {
+	platformIDs, err := b.artistService.GetPlatformIDs(ctx, artistID)
+	if err != nil {
+		return nil, fmt.Errorf("resolving platform IDs for artist %s: %w", artistID, err)
+	}
+	if len(platformIDs) == 0 {
+		return nil, fmt.Errorf("artist %s has no platform ID mappings", artistID)
+	}
+
+	var lastErr error
+	for _, pid := range platformIDs {
+		conn, connErr := b.connService.GetByID(ctx, pid.ConnectionID)
+		if connErr != nil {
+			b.logger.Debug("skipping connection: lookup failed",
+				slog.String("connection_id", pid.ConnectionID),
+				slog.String("error", connErr.Error()))
+			lastErr = connErr
+			continue
+		}
+		if !conn.Enabled {
+			continue
+		}
+
+		state, detailErr := b.getArtistDetailFromConnection(ctx, conn, pid.PlatformArtistID)
+		if detailErr != nil {
+			b.logger.Debug("artist detail failed for connection",
+				slog.String("connection_id", conn.ID),
+				slog.String("type", conn.Type),
+				slog.String("error", detailErr.Error()))
+			lastErr = detailErr
+			continue
+		}
+
+		slots := make(map[string]int)
+		if state.HasThumb {
+			slots["thumb"] = 1
+		}
+		if state.HasFanart {
+			count := state.BackdropCount
+			if count < 1 {
+				count = 1
+			}
+			slots["fanart"] = count
+		}
+		if state.HasLogo {
+			slots["logo"] = 1
+		}
+		if state.HasBanner {
+			slots["banner"] = 1
+		}
+		return slots, nil
+	}
+
+	if lastErr != nil {
+		return nil, fmt.Errorf("all platform connections failed; last error: %w", lastErr)
+	}
+	return nil, fmt.Errorf("no enabled platform connections for artist %s", artistID)
+}
+
+// getArtistDetailFromConnection builds the appropriate platform client and
+// fetches the artist detail state.
+func (b *Bridge) getArtistDetailFromConnection(ctx context.Context, conn *connection.Connection, platformArtistID string) (*connection.ArtistPlatformState, error) {
+	switch conn.Type {
+	case connection.TypeEmby:
+		c := emby.New(conn.URL, conn.APIKey, conn.PlatformUserID, b.logger)
+		return c.GetArtistDetail(ctx, platformArtistID)
+	case connection.TypeJellyfin:
+		c := jellyfin.New(conn.URL, conn.APIKey, conn.PlatformUserID, b.logger)
+		return c.GetArtistDetail(ctx, platformArtistID)
+	default:
+		return nil, fmt.Errorf("connection type %q does not support artist detail", conn.Type)
+	}
+}
+
 // fetchFromConnection builds the appropriate platform client and fetches the image.
 func (b *Bridge) fetchFromConnection(ctx context.Context, conn *connection.Connection, platformArtistID, imageType string) ([]byte, string, error) {
 	switch conn.Type {
