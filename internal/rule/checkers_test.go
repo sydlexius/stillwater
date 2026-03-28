@@ -1,6 +1,7 @@
 package rule
 
 import (
+	"database/sql"
 	"image"
 	"image/color"
 	"image/jpeg"
@@ -1192,5 +1193,309 @@ func TestLogoBoundsCache_ConcurrentAccess(t *testing.T) {
 
 	if size > maxLogoBoundsCacheSize {
 		t.Errorf("cache size %d exceeds maximum %d after concurrent access", size, maxLogoBoundsCacheSize)
+	}
+}
+
+// --- DB-backed dimension resolution tests ---
+
+// seedImageDimensions inserts an artist_images row with the given dimensions
+// for use in tests that exercise getImageDimensionsFromDB.
+func seedImageDimensions(t *testing.T, db *sql.DB, artistID, imageType string, w, h int) {
+	t.Helper()
+	_, err := db.Exec(`
+		INSERT INTO artist_images (id, artist_id, image_type, slot_index, exists_flag, low_res, placeholder, width, height, phash, file_format, source, last_written_at)
+		VALUES (?, ?, ?, 0, 1, 0, '', ?, ?, '', '', '', '')
+		ON CONFLICT(artist_id, image_type, slot_index) DO UPDATE SET exists_flag = 1, width = excluded.width, height = excluded.height`,
+		artistID+"-"+imageType, artistID, imageType, w, h,
+	)
+	if err != nil {
+		t.Fatalf("seeding image dimensions: %v", err)
+	}
+}
+
+func TestGetImageDimensionsFromDB(t *testing.T) {
+	db := setupTestDB(t)
+
+	e := &Engine{db: db, logger: slog.Default()}
+
+	// No row: returns (0, 0, nil).
+	w, h, err := e.getImageDimensionsFromDB("nonexistent", "thumb")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if w != 0 || h != 0 {
+		t.Errorf("expected (0,0), got (%d,%d)", w, h)
+	}
+
+	// Insert a row with real dimensions.
+	seedImageDimensions(t, db, "artist-1", "thumb", 600, 600)
+
+	w, h, err = e.getImageDimensionsFromDB("artist-1", "thumb")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if w != 600 || h != 600 {
+		t.Errorf("expected (600,600), got (%d,%d)", w, h)
+	}
+
+	// Different image type returns (0, 0) when not seeded.
+	w, h, err = e.getImageDimensionsFromDB("artist-1", "fanart")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if w != 0 || h != 0 {
+		t.Errorf("expected (0,0) for unseeded type, got (%d,%d)", w, h)
+	}
+}
+
+func TestGetImageDimensionsFromDB_NilDB(t *testing.T) {
+	e := &Engine{db: nil, logger: slog.Default()}
+
+	w, h, err := e.getImageDimensionsFromDB("artist-1", "thumb")
+	if err != nil {
+		t.Fatalf("unexpected error with nil db: %v", err)
+	}
+	if w != 0 || h != 0 {
+		t.Errorf("expected (0,0) with nil db, got (%d,%d)", w, h)
+	}
+}
+
+func TestGetImageDimensionsResolved_DBFirst(t *testing.T) {
+	db := setupTestDB(t)
+	e := &Engine{db: db, logger: slog.Default()}
+
+	seedImageDimensions(t, db, "artist-2", "fanart", 1920, 1080)
+
+	// DB has dimensions: should return them even with empty Path.
+	w, h, err := e.getImageDimensionsResolved("artist-2", "", "fanart", fanartPatterns)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if w != 1920 || h != 1080 {
+		t.Errorf("expected (1920,1080), got (%d,%d)", w, h)
+	}
+}
+
+func TestGetImageDimensionsResolved_FallbackToFS(t *testing.T) {
+	db := setupTestDB(t)
+	e := &Engine{db: db, logger: slog.Default()}
+
+	// DB has (0,0) dimensions for this artist (no row at all).
+	dir := t.TempDir()
+	createTestJPEG(t, filepath.Join(dir, "fanart.jpg"), 1920, 1080)
+
+	w, h, err := e.getImageDimensionsResolved("artist-3", dir, "fanart", fanartPatterns)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if w != 1920 || h != 1080 {
+		t.Errorf("expected (1920,1080), got (%d,%d)", w, h)
+	}
+}
+
+func TestGetImageDimensionsResolved_NoDBNoFS(t *testing.T) {
+	db := setupTestDB(t)
+	e := &Engine{db: db, logger: slog.Default()}
+
+	// No DB dimensions and empty path: should return an error.
+	_, _, err := e.getImageDimensionsResolved("artist-4", "", "thumb", thumbPatterns)
+	if err == nil {
+		t.Error("expected error when neither DB nor filesystem can provide dimensions")
+	}
+}
+
+// TestCheckers_EmptyPath_DBDimensions verifies that all 6 dimension-based
+// checkers produce violations for API-imported artists (Path == "") when the
+// artist_images table contains dimensions that fail the rule. This is the core
+// bug scenario from issue #726.
+func TestCheckers_EmptyPath_DBDimensions(t *testing.T) {
+	db := setupTestDB(t)
+
+	tests := []struct {
+		name      string
+		imageType string
+		w, h      int
+		checker   func(*Engine) Checker
+		cfg       RuleConfig
+		artistFn  func(id string) *artist.Artist
+		ruleID    string
+	}{
+		{
+			name:      "thumb_square with non-square DB dimensions",
+			imageType: "thumb",
+			w:         800, h: 400,
+			checker: func(e *Engine) Checker { return e.makeThumbSquareChecker() },
+			cfg:     RuleConfig{AspectRatio: 1.0, Tolerance: 0.1},
+			artistFn: func(id string) *artist.Artist {
+				return &artist.Artist{ID: id, Name: "Test", ThumbExists: true, Path: ""}
+			},
+			ruleID: RuleThumbSquare,
+		},
+		{
+			name:      "thumb_min_res with low-res DB dimensions",
+			imageType: "thumb",
+			w:         200, h: 200,
+			checker: func(e *Engine) Checker { return e.makeThumbMinResChecker() },
+			cfg:     RuleConfig{MinWidth: 500, MinHeight: 500},
+			artistFn: func(id string) *artist.Artist {
+				return &artist.Artist{ID: id, Name: "Test", ThumbExists: true, Path: ""}
+			},
+			ruleID: RuleThumbMinRes,
+		},
+		{
+			name:      "fanart_min_res with low-res DB dimensions",
+			imageType: "fanart",
+			w:         800, h: 450,
+			checker: func(e *Engine) Checker { return e.makeFanartMinResChecker() },
+			cfg:     RuleConfig{MinWidth: 1920, MinHeight: 1080},
+			artistFn: func(id string) *artist.Artist {
+				return &artist.Artist{ID: id, Name: "Test", FanartExists: true, Path: ""}
+			},
+			ruleID: RuleFanartMinRes,
+		},
+		{
+			name:      "fanart_aspect with square DB dimensions",
+			imageType: "fanart",
+			w:         1000, h: 1000,
+			checker: func(e *Engine) Checker { return e.makeFanartAspectChecker() },
+			cfg:     RuleConfig{AspectRatio: 16.0 / 9.0, Tolerance: 0.1},
+			artistFn: func(id string) *artist.Artist {
+				return &artist.Artist{ID: id, Name: "Test", FanartExists: true, Path: ""}
+			},
+			ruleID: RuleFanartAspect,
+		},
+		{
+			name:      "logo_min_res with narrow DB dimensions",
+			imageType: "logo",
+			w:         200, h: 100,
+			checker: func(e *Engine) Checker { return e.makeLogoMinResChecker() },
+			cfg:     RuleConfig{MinWidth: 400},
+			artistFn: func(id string) *artist.Artist {
+				return &artist.Artist{ID: id, Name: "Test", LogoExists: true, Path: ""}
+			},
+			ruleID: RuleLogoMinRes,
+		},
+		{
+			name:      "banner_min_res with small DB dimensions",
+			imageType: "banner",
+			w:         500, h: 100,
+			checker: func(e *Engine) Checker { return e.makeBannerMinResChecker() },
+			cfg:     RuleConfig{MinWidth: 1000, MinHeight: 185},
+			artistFn: func(id string) *artist.Artist {
+				return &artist.Artist{ID: id, Name: "Test", BannerExists: true, Path: ""}
+			},
+			ruleID: RuleBannerMinRes,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			artistID := "api-artist-" + tt.name
+			seedImageDimensions(t, db, artistID, tt.imageType, tt.w, tt.h)
+
+			e := &Engine{db: db, logger: slog.Default()}
+			checker := tt.checker(e)
+			a := tt.artistFn(artistID)
+
+			v := checker(a, tt.cfg)
+			if v == nil {
+				t.Fatalf("expected violation for %s with DB dimensions %dx%d and empty Path", tt.ruleID, tt.w, tt.h)
+			}
+			if v.RuleID != tt.ruleID {
+				t.Errorf("RuleID = %q, want %q", v.RuleID, tt.ruleID)
+			}
+		})
+	}
+}
+
+// TestCheckers_EmptyPath_DBDimensions_Pass verifies that checkers pass (return
+// nil) when DB dimensions satisfy the rule, even with empty Path.
+func TestCheckers_EmptyPath_DBDimensions_Pass(t *testing.T) {
+	db := setupTestDB(t)
+
+	tests := []struct {
+		name      string
+		imageType string
+		w, h      int
+		checker   func(*Engine) Checker
+		cfg       RuleConfig
+		artistFn  func(id string) *artist.Artist
+	}{
+		{
+			name:      "thumb_square passes with square DB dimensions",
+			imageType: "thumb",
+			w:         500, h: 500,
+			checker: func(e *Engine) Checker { return e.makeThumbSquareChecker() },
+			cfg:     RuleConfig{AspectRatio: 1.0, Tolerance: 0.1},
+			artistFn: func(id string) *artist.Artist {
+				return &artist.Artist{ID: id, Name: "Test", ThumbExists: true, Path: ""}
+			},
+		},
+		{
+			name:      "thumb_min_res passes with high-res DB dimensions",
+			imageType: "thumb",
+			w:         1000, h: 1000,
+			checker: func(e *Engine) Checker { return e.makeThumbMinResChecker() },
+			cfg:     RuleConfig{MinWidth: 500, MinHeight: 500},
+			artistFn: func(id string) *artist.Artist {
+				return &artist.Artist{ID: id, Name: "Test", ThumbExists: true, Path: ""}
+			},
+		},
+		{
+			name:      "fanart_min_res passes with full-res DB dimensions",
+			imageType: "fanart",
+			w:         1920, h: 1080,
+			checker: func(e *Engine) Checker { return e.makeFanartMinResChecker() },
+			cfg:     RuleConfig{MinWidth: 1920, MinHeight: 1080},
+			artistFn: func(id string) *artist.Artist {
+				return &artist.Artist{ID: id, Name: "Test", FanartExists: true, Path: ""}
+			},
+		},
+		{
+			name:      "fanart_aspect passes with correct aspect ratio DB dimensions",
+			imageType: "fanart",
+			w:         1920, h: 1080,
+			checker: func(e *Engine) Checker { return e.makeFanartAspectChecker() },
+			cfg:     RuleConfig{AspectRatio: 16.0 / 9.0, Tolerance: 0.1},
+			artistFn: func(id string) *artist.Artist {
+				return &artist.Artist{ID: id, Name: "Test", FanartExists: true, Path: ""}
+			},
+		},
+		{
+			name:      "logo_min_res passes with high-res DB dimensions",
+			imageType: "logo",
+			w:         800, h: 400,
+			checker: func(e *Engine) Checker { return e.makeLogoMinResChecker() },
+			cfg:     RuleConfig{MinWidth: 400},
+			artistFn: func(id string) *artist.Artist {
+				return &artist.Artist{ID: id, Name: "Test", LogoExists: true, Path: ""}
+			},
+		},
+		{
+			name:      "banner_min_res passes with high-res DB dimensions",
+			imageType: "banner",
+			w:         1200, h: 300,
+			checker: func(e *Engine) Checker { return e.makeBannerMinResChecker() },
+			cfg:     RuleConfig{MinWidth: 1000, MinHeight: 185},
+			artistFn: func(id string) *artist.Artist {
+				return &artist.Artist{ID: id, Name: "Test", BannerExists: true, Path: ""}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			artistID := "api-pass-" + tt.name
+			seedImageDimensions(t, db, artistID, tt.imageType, tt.w, tt.h)
+
+			e := &Engine{db: db, logger: slog.Default()}
+			checker := tt.checker(e)
+			a := tt.artistFn(artistID)
+
+			v := checker(a, tt.cfg)
+			if v != nil {
+				t.Errorf("expected nil (passing rule), got violation: %s", v.Message)
+			}
+		})
 	}
 }

@@ -50,6 +50,14 @@ type Artist struct {
 	FanartPlaceholder   string            `json:"fanart_placeholder,omitempty"`
 	LogoPlaceholder     string            `json:"logo_placeholder,omitempty"`
 	BannerPlaceholder   string            `json:"banner_placeholder,omitempty"`
+	ThumbWidth          int               `json:"thumb_width,omitempty"`
+	ThumbHeight         int               `json:"thumb_height,omitempty"`
+	FanartWidth         int               `json:"fanart_width,omitempty"`
+	FanartHeight        int               `json:"fanart_height,omitempty"`
+	LogoWidth           int               `json:"logo_width,omitempty"`
+	LogoHeight          int               `json:"logo_height,omitempty"`
+	BannerWidth         int               `json:"banner_width,omitempty"`
+	BannerHeight        int               `json:"banner_height,omitempty"`
 	HealthScore         float64           `json:"health_score"`
 	HealthEvaluatedAt   *time.Time        `json:"health_evaluated_at,omitempty"`
 	IsExcluded          bool              `json:"is_excluded"`

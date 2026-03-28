@@ -286,6 +286,14 @@ func (s *Service) processDirectory(ctx context.Context, dirPath, name, libraryID
 			FanartPlaceholder: detected.FanartPlaceholder,
 			LogoPlaceholder:   detected.LogoPlaceholder,
 			BannerPlaceholder: detected.BannerPlaceholder,
+			ThumbWidth:        detected.ThumbWidth,
+			ThumbHeight:       detected.ThumbHeight,
+			FanartWidth:       detected.FanartWidth,
+			FanartHeight:      detected.FanartHeight,
+			LogoWidth:         detected.LogoWidth,
+			LogoHeight:        detected.LogoHeight,
+			BannerWidth:       detected.BannerWidth,
+			BannerHeight:      detected.BannerHeight,
 		}
 		if excluded {
 			a.IsExcluded = true
@@ -342,6 +350,24 @@ func (s *Service) processDirectory(ctx context.Context, dirPath, name, libraryID
 			bannerPH = existing.BannerPlaceholder
 		}
 
+		// Preserve existing dimensions when probe fails (returns 0,0).
+		if detected.ThumbWidth == 0 && existing.ThumbWidth > 0 {
+			detected.ThumbWidth = existing.ThumbWidth
+			detected.ThumbHeight = existing.ThumbHeight
+		}
+		if detected.FanartWidth == 0 && existing.FanartWidth > 0 {
+			detected.FanartWidth = existing.FanartWidth
+			detected.FanartHeight = existing.FanartHeight
+		}
+		if detected.LogoWidth == 0 && existing.LogoWidth > 0 {
+			detected.LogoWidth = existing.LogoWidth
+			detected.LogoHeight = existing.LogoHeight
+		}
+		if detected.BannerWidth == 0 && existing.BannerWidth > 0 {
+			detected.BannerWidth = existing.BannerWidth
+			detected.BannerHeight = existing.BannerHeight
+		}
+
 		// Update file existence, low-resolution, and placeholder flags
 		changed := existing.NFOExists != detected.NFOExists ||
 			existing.ThumbExists != detected.ThumbExists ||
@@ -357,6 +383,14 @@ func (s *Service) processDirectory(ctx context.Context, dirPath, name, libraryID
 			existing.FanartPlaceholder != fanartPH ||
 			existing.LogoPlaceholder != logoPH ||
 			existing.BannerPlaceholder != bannerPH ||
+			existing.ThumbWidth != detected.ThumbWidth ||
+			existing.ThumbHeight != detected.ThumbHeight ||
+			existing.FanartWidth != detected.FanartWidth ||
+			existing.FanartHeight != detected.FanartHeight ||
+			existing.LogoWidth != detected.LogoWidth ||
+			existing.LogoHeight != detected.LogoHeight ||
+			existing.BannerWidth != detected.BannerWidth ||
+			existing.BannerHeight != detected.BannerHeight ||
 			existing.IsExcluded != excluded
 
 		if changed || detected.NFOExists {
@@ -374,6 +408,14 @@ func (s *Service) processDirectory(ctx context.Context, dirPath, name, libraryID
 			existing.FanartPlaceholder = fanartPH
 			existing.LogoPlaceholder = logoPH
 			existing.BannerPlaceholder = bannerPH
+			existing.ThumbWidth = detected.ThumbWidth
+			existing.ThumbHeight = detected.ThumbHeight
+			existing.FanartWidth = detected.FanartWidth
+			existing.FanartHeight = detected.FanartHeight
+			existing.LogoWidth = detected.LogoWidth
+			existing.LogoHeight = detected.LogoHeight
+			existing.BannerWidth = detected.BannerWidth
+			existing.BannerHeight = detected.BannerHeight
 
 			// Update exclusion status
 			if excluded {
@@ -556,7 +598,8 @@ func (s *Service) detectRemoved(ctx context.Context, discoveredPaths map[string]
 	}
 }
 
-// detectedFiles holds file existence, low-resolution, and placeholder flags for an artist directory.
+// detectedFiles holds file existence, low-resolution, placeholder, and dimension
+// (width/height) flags for an artist directory.
 type detectedFiles struct {
 	NFOExists         bool
 	ThumbExists       bool
@@ -572,6 +615,14 @@ type detectedFiles struct {
 	FanartPlaceholder string
 	LogoPlaceholder   string
 	BannerPlaceholder string
+	ThumbWidth        int
+	ThumbHeight       int
+	FanartWidth       int
+	FanartHeight      int
+	LogoWidth         int
+	LogoHeight        int
+	BannerWidth       int
+	BannerHeight      int
 }
 
 // detectFiles checks for the presence of known image and NFO files in an artist
@@ -611,7 +662,7 @@ func detectFiles(dirPath string, existing *artist.Artist) (detectedFiles, error)
 		if actual, ok := files[strings.ToLower(p)]; ok {
 			fp := filepath.Join(dirPath, actual)
 			d.ThumbExists = true
-			d.ThumbLowRes, d.ThumbPlaceholder = probeImageFile(fp, "thumb", existThumbPH)
+			d.ThumbWidth, d.ThumbHeight, d.ThumbLowRes, d.ThumbPlaceholder = probeImageFile(fp, "thumb", existThumbPH)
 			break
 		}
 	}
@@ -619,7 +670,7 @@ func detectFiles(dirPath string, existing *artist.Artist) (detectedFiles, error)
 		if actual, ok := files[strings.ToLower(p)]; ok {
 			fp := filepath.Join(dirPath, actual)
 			d.FanartExists = true
-			d.FanartLowRes, d.FanartPlaceholder = probeImageFile(fp, "fanart", existFanartPH)
+			d.FanartWidth, d.FanartHeight, d.FanartLowRes, d.FanartPlaceholder = probeImageFile(fp, "fanart", existFanartPH)
 			// Count all fanart files (primary + numbered variants).
 			fanartPaths, fanartErr := img.DiscoverFanart(dirPath, actual)
 			if fanartErr != nil {
@@ -639,7 +690,7 @@ func detectFiles(dirPath string, existing *artist.Artist) (detectedFiles, error)
 		if actual, ok := files[strings.ToLower(p)]; ok {
 			fp := filepath.Join(dirPath, actual)
 			d.LogoExists = true
-			d.LogoLowRes, d.LogoPlaceholder = probeImageFile(fp, "logo", existLogoPH)
+			d.LogoWidth, d.LogoHeight, d.LogoLowRes, d.LogoPlaceholder = probeImageFile(fp, "logo", existLogoPH)
 			break
 		}
 	}
@@ -647,7 +698,7 @@ func detectFiles(dirPath string, existing *artist.Artist) (detectedFiles, error)
 		if actual, ok := files[strings.ToLower(p)]; ok {
 			fp := filepath.Join(dirPath, actual)
 			d.BannerExists = true
-			d.BannerLowRes, d.BannerPlaceholder = probeImageFile(fp, "banner", existBannerPH)
+			d.BannerWidth, d.BannerHeight, d.BannerLowRes, d.BannerPlaceholder = probeImageFile(fp, "banner", existBannerPH)
 			break
 		}
 	}
@@ -658,27 +709,28 @@ func detectFiles(dirPath string, existing *artist.Artist) (detectedFiles, error)
 // probeImageFile opens a file once, probes dimensions for low-resolution
 // detection, and generates a placeholder. If existingPlaceholder is non-empty
 // the expensive full decode for placeholder generation is skipped.
-// Returns (lowRes, placeholder); errors are silently swallowed (non-fatal).
-func probeImageFile(filePath, imageType, existingPlaceholder string) (lowRes bool, placeholder string) {
+// Returns (width, height, lowRes, placeholder); errors are silently swallowed
+// (non-fatal).
+func probeImageFile(filePath, imageType, existingPlaceholder string) (width, height int, lowRes bool, placeholder string) {
 	f, err := os.Open(filePath) //nolint:gosec // path built from trusted naming patterns
 	if err != nil {
-		return false, ""
+		return 0, 0, false, ""
 	}
 	defer func() { _ = f.Close() }()
 
 	w, h, err := img.GetDimensions(f)
 	if err != nil {
-		return false, ""
+		return 0, 0, false, ""
 	}
 	lowRes = img.IsLowResolution(w, h, imageType)
 
 	if existingPlaceholder != "" {
-		return lowRes, existingPlaceholder
+		return w, h, lowRes, existingPlaceholder
 	}
 
 	if _, seekErr := f.Seek(0, io.SeekStart); seekErr != nil {
-		return lowRes, ""
+		return w, h, lowRes, ""
 	}
 	placeholder, _ = img.GeneratePlaceholder(f, imageType)
-	return lowRes, placeholder
+	return w, h, lowRes, placeholder
 }

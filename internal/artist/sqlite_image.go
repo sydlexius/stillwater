@@ -130,8 +130,8 @@ func (r *sqliteImageRepo) UpsertAll(ctx context.Context, artistID string, images
 			exists_flag = excluded.exists_flag,
 			low_res     = excluded.low_res,
 			placeholder = excluded.placeholder,
-			width       = excluded.width,
-			height      = excluded.height`)
+			width  = CASE WHEN excluded.width  > 0 THEN excluded.width  ELSE artist_images.width  END,
+			height = CASE WHEN excluded.height > 0 THEN excluded.height ELSE artist_images.height END`)
 	if err != nil {
 		return fmt.Errorf("preparing upsert: %w", err)
 	}
