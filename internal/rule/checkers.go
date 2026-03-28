@@ -837,7 +837,7 @@ func (e *Engine) checkExtraneousImagesFromDB(a *artist.Artist, cfg RuleConfig) *
 	}
 
 	rows, err := e.db.QueryContext(context.Background(),
-		`SELECT image_type, slot_index FROM artist_images WHERE artist_id = ? AND exists_flag = 1`,
+		`SELECT image_type, slot_index FROM artist_images WHERE artist_id = ?`,
 		a.ID)
 	if err != nil {
 		e.logger.Debug("querying artist_images for extraneous check", "artist", a.Name, "error", err)
@@ -1169,7 +1169,7 @@ func (e *Engine) checkBackdropSequencingFromDB(a *artist.Artist, cfg RuleConfig)
 	}
 
 	rows, err := e.db.QueryContext(context.Background(),
-		`SELECT slot_index FROM artist_images WHERE artist_id = ? AND image_type = 'fanart' AND exists_flag = 1 ORDER BY slot_index`,
+		`SELECT slot_index FROM artist_images WHERE artist_id = ? AND image_type = 'fanart' ORDER BY slot_index`,
 		a.ID)
 	if err != nil {
 		e.logger.Debug("querying fanart slots for sequencing check", "artist", a.Name, "error", err)
@@ -1191,21 +1191,22 @@ func (e *Engine) checkBackdropSequencingFromDB(a *artist.Artist, cfg RuleConfig)
 		return nil
 	}
 
-	// No fanart or only one image: no sequencing issue possible.
-	if len(slots) <= 1 {
+	// No fanart images: nothing to sequence.
+	if len(slots) == 0 {
 		return nil
 	}
 
 	// Check that slots form a contiguous 0..N-1 sequence.
 	var missing []int
-	for i, idx := range slots {
-		if idx != i {
-			// Collect all missing indices between the expected and actual value.
-			for gap := i; gap < idx && gap < slots[len(slots)-1]; gap++ {
-				missing = append(missing, gap)
-			}
-			break
+	expected := 0
+	for _, idx := range slots {
+		if idx < 0 {
+			continue
 		}
+		for gap := expected; gap < idx; gap++ {
+			missing = append(missing, gap)
+		}
+		expected = idx + 1
 	}
 
 	if len(missing) == 0 {
