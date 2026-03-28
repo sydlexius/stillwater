@@ -1,0 +1,52 @@
+# Automatically retry CodeRabbit reviews that were rate-limited.
+#
+# When CodeRabbit hits its per-developer hourly rate limit, it posts a
+# "rate limited" comment instead of reviewing. This workflow detects that
+# comment, waits for the cooldown to expire, then posts @coderabbitai review
+# to trigger the review automatically.
+
+name: CodeRabbit Review Retry
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  retry-review:
+    name: Retry Rate-Limited Review
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    if: >-
+      github.event.issue.pull_request &&
+      github.event.comment.user.login == 'coderabbitai[bot]' &&
+      contains(github.event.comment.body, 'rate limited by coderabbit.ai')
+    steps:
+      - name: Parse wait time from rate-limit message
+        id: parse
+        env:
+          COMMENT_BODY: ${{ github.event.comment.body }}
+        run: |
+          MINUTES=$(echo "$COMMENT_BODY" | grep -oP '\*\*(\d+) minute' | head -1 | grep -oP '\d+' || echo "0")
+          SECONDS=$(echo "$COMMENT_BODY" | grep -oP '(\d+) second' | head -1 | grep -oP '\d+' || echo "0")
+          TOTAL=$(( (MINUTES * 60) + SECONDS + 60 ))
+          if [ "$TOTAL" -gt 1800 ]; then
+            TOTAL=1800
+          fi
+          echo "wait=$TOTAL" >> "$GITHUB_OUTPUT"
+          echo "Rate-limited on PR #${{ github.event.issue.number }}. Waiting ${TOTAL}s (${MINUTES}m ${SECONDS}s + 60s buffer)."
+
+      - name: Wait for rate limit cooldown
+        run: sleep ${{ steps.parse.outputs.wait }}
+
+      - name: Trigger CodeRabbit review
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          gh api "repos/$REPO/issues/$PR_NUMBER/comments" \
+            -f body='@coderabbitai review'
+          echo "Posted review trigger on PR #$PR_NUMBER"
