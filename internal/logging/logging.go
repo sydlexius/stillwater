@@ -50,45 +50,103 @@ func (s *SwappableHandler) Handle(ctx context.Context, r slog.Record) error {
 	return (*s.inner.Load()).Handle(ctx, r)
 }
 
-// WithAttrs returns a new SwappableHandler whose inner handler has the attrs.
+// WithAttrs returns a DerivedHandler that delegates through this
+// SwappableHandler, so derived loggers observe Reconfigure changes.
 func (s *SwappableHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
-	inner := (*s.inner.Load()).WithAttrs(attrs)
-	return NewSwappableHandler(inner)
+	return &DerivedHandler{parent: s, attrs: attrs}
 }
 
-// WithGroup returns a new SwappableHandler whose inner handler has the group.
+// WithGroup returns a DerivedHandler that delegates through this
+// SwappableHandler, so derived loggers observe Reconfigure changes.
 func (s *SwappableHandler) WithGroup(name string) slog.Handler {
-	inner := (*s.inner.Load()).WithGroup(name)
-	return NewSwappableHandler(inner)
+	return &DerivedHandler{parent: s, group: name}
 }
+
+// DerivedHandler delegates to a parent SwappableHandler, applying accumulated
+// attributes and group prefix. When the parent's inner handler is swapped via
+// Reconfigure, derived handlers automatically observe the change.
+type DerivedHandler struct {
+	parent *SwappableHandler
+	attrs  []slog.Attr
+	group  string
+}
+
+// Enabled delegates to the parent's current inner handler.
+func (d *DerivedHandler) Enabled(ctx context.Context, level slog.Level) bool {
+	return (*d.parent.inner.Load()).Enabled(ctx, level)
+}
+
+// Handle loads the current inner handler from the parent, applies any
+// accumulated group and attrs, then delegates.
+func (d *DerivedHandler) Handle(ctx context.Context, r slog.Record) error {
+	inner := *d.parent.inner.Load()
+	if d.group != "" {
+		inner = inner.WithGroup(d.group)
+	}
+	if len(d.attrs) > 0 {
+		inner = inner.WithAttrs(d.attrs)
+	}
+	return inner.Handle(ctx, r)
+}
+
+// WithAttrs returns a new DerivedHandler with the additional attributes appended.
+func (d *DerivedHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	newAttrs := make([]slog.Attr, len(d.attrs)+len(attrs))
+	copy(newAttrs, d.attrs)
+	copy(newAttrs[len(d.attrs):], attrs)
+	return &DerivedHandler{parent: d.parent, attrs: newAttrs, group: d.group}
+}
+
+// WithGroup returns a new DerivedHandler with the group appended.
+func (d *DerivedHandler) WithGroup(name string) slog.Handler {
+	g := name
+	if d.group != "" {
+		g = d.group + "." + name
+	}
+	return &DerivedHandler{parent: d.parent, attrs: d.attrs, group: g}
+}
+
+// DefaultRingBufferSize is the default number of log entries retained in memory
+// for the log viewer.
+const DefaultRingBufferSize = 2000
 
 // Manager owns the logger lifecycle and supports runtime reconfiguration.
 type Manager struct {
-	levelVar *slog.LevelVar
-	handler  *SwappableHandler
-	config   Config
-	mu       sync.Mutex
-	closer   io.Closer // lumberjack writer, if any
+	levelVar   *slog.LevelVar
+	handler    *SwappableHandler
+	config     Config
+	mu         sync.Mutex
+	closer     io.Closer // lumberjack writer, if any
+	ringBuffer *RingBuffer
 }
 
 // NewManager creates a Manager and returns it along with a ready-to-use logger.
+// Log entries are captured in an in-memory ring buffer for the log viewer.
 func NewManager(cfg Config) (*Manager, *slog.Logger) {
 	lvl := &slog.LevelVar{}
 	lvl.Set(parseLevel(cfg.Level))
 
+	rb := NewRingBuffer(DefaultRingBufferSize)
+
 	writer, closer := buildWriter(cfg)
-	inner := buildHandler(writer, lvl, cfg.Format)
+	inner := buildMultiHandler(writer, lvl, cfg.Format, rb)
 	handler := NewSwappableHandler(inner)
 
 	m := &Manager{
-		levelVar: lvl,
-		handler:  handler,
-		config:   cfg,
-		closer:   closer,
+		levelVar:   lvl,
+		handler:    handler,
+		config:     cfg,
+		closer:     closer,
+		ringBuffer: rb,
 	}
 
 	logger := slog.New(handler)
 	return m, logger
+}
+
+// RingBuffer returns the in-memory ring buffer used by the log viewer.
+func (m *Manager) RingBuffer() *RingBuffer {
+	return m.ringBuffer
 }
 
 // Reconfigure applies a new configuration at runtime. Level-only changes
@@ -107,16 +165,17 @@ func (m *Manager) Reconfigure(cfg Config) {
 		cfg.FileMaxAgeDays != m.config.FileMaxAgeDays
 
 	if needSwap {
-		// Close old file writer if any
-		if m.closer != nil {
-			m.closer.Close() //nolint:errcheck
-			m.closer = nil
-		}
-
 		writer, closer := buildWriter(cfg)
-		inner := buildHandler(writer, m.levelVar, cfg.Format)
+		inner := buildMultiHandler(writer, m.levelVar, cfg.Format, m.ringBuffer)
 		m.handler.Swap(inner)
+
+		// Close old file writer after swapping to eliminate the race
+		// window where a goroutine could write to a closed writer.
+		oldCloser := m.closer
 		m.closer = closer
+		if oldCloser != nil {
+			oldCloser.Close() //nolint:errcheck
+		}
 	}
 
 	m.config = cfg
@@ -208,6 +267,16 @@ func buildHandler(w io.Writer, leveler slog.Leveler, format string) slog.Handler
 		return slog.NewTextHandler(w, opts)
 	}
 	return slog.NewJSONHandler(w, opts)
+}
+
+// buildMultiHandler creates a MultiHandler that fans out to the primary
+// text/JSON handler and a RingHandler for in-memory log capture.
+func buildMultiHandler(w io.Writer, leveler slog.Leveler, format string, rb *RingBuffer) slog.Handler {
+	primary := buildHandler(w, leveler, format)
+	// The ring handler captures at the same level as the primary handler so
+	// that logger.Enabled() reflects the configured level accurately.
+	ring := NewRingHandler(rb, leveler)
+	return NewMultiHandler(primary, ring)
 }
 
 // ValidLevel returns true if s is a recognized log level.

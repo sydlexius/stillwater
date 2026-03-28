@@ -73,6 +73,7 @@ func settingsTabs() []settingsTab {
 		{ID: "automation", Label: "Automation"},
 		{ID: "rules", Label: "Rules"},
 		{ID: "maintenance", Label: "Maintenance"},
+		{ID: "logs", Label: "Logs"},
 	}
 }
 
@@ -459,6 +460,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 		@apiTokenScript()
 		@ruleScheduleScript()
 		@maintenanceScript()
+		@logViewerScript()
 		@settingsExportScript()
 		@profileNamingEditorScript()
 		<script src={ assets.SortableJS }></script>
@@ -1615,6 +1617,91 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 					</div>
 				</div>
 			</div>
+			<!-- Logs tab -->
+			<div
+				data-tab-panel="logs"
+				class={
+					"space-y-6",
+					templ.KV("hidden", data.ActiveTab != "logs"),
+				}
+			>
+				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
+					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+						<h2 class="text-lg font-semibold">Log Viewer</h2>
+						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+							View application logs in real time with level filtering and search.
+						</p>
+					</div>
+					<div class="px-6 py-4 space-y-3">
+						<!-- Filter bar -->
+						<div class="flex flex-wrap items-center gap-2">
+							<div class="flex items-center gap-1" role="group" aria-label="Log level filter">
+								<button type="button" data-log-level="debug" onclick="toggleLogLevel(this)"
+									class="log-level-btn text-[10px] font-semibold uppercase px-2 py-1 rounded bg-gray-700 text-gray-300 opacity-50 hover:opacity-100 transition-opacity"
+									aria-pressed="false">
+									Debug
+								</button>
+								<button type="button" data-log-level="info" onclick="toggleLogLevel(this)"
+									class="log-level-btn text-[10px] font-semibold uppercase px-2 py-1 rounded bg-blue-900/50 text-blue-300 ring-1 ring-blue-500/50 transition-opacity"
+									aria-pressed="true">
+									Info
+								</button>
+								<button type="button" data-log-level="warn" onclick="toggleLogLevel(this)"
+									class="log-level-btn text-[10px] font-semibold uppercase px-2 py-1 rounded bg-amber-900/50 text-amber-300 ring-1 ring-amber-500/50 transition-opacity"
+									aria-pressed="false">
+									Warn
+								</button>
+								<button type="button" data-log-level="error" onclick="toggleLogLevel(this)"
+									class="log-level-btn text-[10px] font-semibold uppercase px-2 py-1 rounded bg-red-900/50 text-red-300 ring-1 ring-red-500/50 transition-opacity"
+									aria-pressed="false">
+									Error
+								</button>
+							</div>
+							<input
+								type="text"
+								id="log-search"
+								placeholder="Search logs..."
+								oninput="updateLogFilters()"
+								class="flex-1 min-w-[150px] rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+								aria-label="Search log messages"
+							/>
+							<div class="flex items-center gap-1">
+								<button type="button" id="log-pause-btn" onclick="toggleLogPause()"
+									class="text-xs px-2.5 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+									aria-label="Pause log updates"
+									aria-pressed="false">
+									Pause
+								</button>
+								<button type="button" onclick="clearLogs()"
+									class="text-xs px-2.5 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+									aria-label="Clear log buffer">
+									Clear
+								</button>
+								<button type="button" onclick="downloadLogs()"
+									class="text-xs px-2.5 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+									aria-label="Download filtered logs">
+									Download
+								</button>
+							</div>
+						</div>
+						<!-- Log viewer container -->
+						<div
+							id="log-viewer"
+							class="h-[28rem] overflow-y-auto font-mono text-xs bg-gray-950 rounded-lg border border-gray-800 p-2"
+							hx-get="/api/v1/logs?limit=200&level=info"
+							hx-trigger="load, every 2s, logRefresh from:body"
+							hx-swap="innerHTML"
+						>
+							<div class="flex items-center justify-center h-full text-gray-500 text-sm">
+								Loading logs...
+							</div>
+						</div>
+						<p class="text-xs text-gray-500 dark:text-gray-400">
+							Showing up to 200 most recent entries. Logs are stored in memory and reset on restart.
+						</p>
+					</div>
+				</div>
+			</div>
 		</div>
 		@sortableInitScript()
 	}
@@ -1758,6 +1845,181 @@ templ cacheScript() {
 				loadCacheStats();
 			}
 		})();
+	</script>
+}
+
+templ logViewerScript() {
+	<script>
+		// logViewerState tracks filter selections and pause status.
+		var logViewerState = {
+			level: 'info',
+			search: '',
+			paused: false
+		};
+
+		// Resolve base path for sub-path deployments (e.g. reverse proxy prefix).
+		var logBasePath = '';
+		var logMeta = document.querySelector('meta[name="htmx-base-path"]');
+		if (logMeta && logMeta.content) {
+			logBasePath = logMeta.content;
+		}
+
+		// toggleLogLevel handles level-filter button clicks.
+		// The selected level becomes the minimum displayed level (e.g. selecting
+		// "warn" shows warn + error, selecting "debug" shows everything).
+		function toggleLogLevel(btn) {
+			var level = btn.getAttribute('data-log-level');
+			logViewerState.level = level;
+
+			// Update button visuals: buttons at or above the selected level
+			// get a ring highlight; buttons below it get dimmed.
+			// aria-pressed indicates single selection (only the clicked button).
+			var severity = { debug: 0, info: 1, warn: 2, error: 3 };
+			var selected = (level in severity) ? severity[level] : 1;
+			var buttons = document.querySelectorAll('.log-level-btn');
+			for (var i = 0; i < buttons.length; i++) {
+				var btnLevel = buttons[i].getAttribute('data-log-level');
+				var btnSev = severity[btnLevel] || 0;
+				if (btnSev >= selected) {
+					buttons[i].classList.remove('opacity-50');
+					buttons[i].classList.add('ring-1');
+					var ringColor = levelRingClass(btnLevel);
+					buttons[i].className = buttons[i].className.replace(/ring-\S+\/50/g, '');
+					buttons[i].classList.add(ringColor);
+				} else {
+					buttons[i].classList.add('opacity-50');
+					buttons[i].classList.remove('ring-1');
+				}
+				// aria-pressed reflects which button was clicked, not the visual range.
+				buttons[i].setAttribute('aria-pressed', btnLevel === level ? 'true' : 'false');
+			}
+			updateLogFilters();
+		}
+
+		// levelRingClass returns the Tailwind ring color class for a log level.
+		function levelRingClass(level) {
+			switch (level) {
+				case 'debug': return 'ring-gray-500/50';
+				case 'info':  return 'ring-blue-500/50';
+				case 'warn':  return 'ring-amber-500/50';
+				case 'error': return 'ring-red-500/50';
+				default:      return 'ring-gray-500/50';
+			}
+		}
+
+		// updateLogFilters rebuilds the hx-get URL and triggers a fresh poll.
+		function updateLogFilters() {
+			var search = document.getElementById('log-search');
+			logViewerState.search = search ? search.value : '';
+			var viewer = document.getElementById('log-viewer');
+			if (!viewer) return;
+			var url = '/api/v1/logs?limit=200&level=' + encodeURIComponent(logViewerState.level);
+			if (logViewerState.search) {
+				url += '&search=' + encodeURIComponent(logViewerState.search);
+			}
+			viewer.setAttribute('hx-get', url);
+			// If not paused, trigger an immediate refresh via body so the
+			// hx-trigger="logRefresh from:body" listener picks it up.
+			if (!logViewerState.paused && typeof htmx !== 'undefined') {
+				htmx.trigger(document.body, 'logRefresh');
+			}
+		}
+
+		// toggleLogPause pauses or resumes the HTMX polling.
+		function toggleLogPause() {
+			logViewerState.paused = !logViewerState.paused;
+			var btn = document.getElementById('log-pause-btn');
+			var viewer = document.getElementById('log-viewer');
+			if (logViewerState.paused) {
+				if (btn) {
+					btn.textContent = 'Resume';
+					btn.setAttribute('aria-pressed', 'true');
+					btn.classList.add('bg-amber-600', 'text-white', 'border-amber-600');
+					btn.classList.remove('dark:hover:bg-gray-700', 'hover:bg-gray-100');
+				}
+				// Remove polling trigger to stop updates; keep manual refresh.
+				if (viewer) viewer.setAttribute('hx-trigger', 'logRefresh from:body');
+				if (typeof htmx !== 'undefined' && viewer) htmx.process(viewer);
+			} else {
+				if (btn) {
+					btn.textContent = 'Pause';
+					btn.setAttribute('aria-pressed', 'false');
+					btn.classList.remove('bg-amber-600', 'text-white', 'border-amber-600');
+					btn.classList.add('dark:hover:bg-gray-700', 'hover:bg-gray-100');
+				}
+				// Restore polling trigger.
+				if (viewer) viewer.setAttribute('hx-trigger', 'load, every 2s, logRefresh from:body');
+				if (typeof htmx !== 'undefined' && viewer) htmx.process(viewer);
+			}
+		}
+
+		// clearLogs sends a DELETE to clear the ring buffer and refreshes the viewer.
+		function clearLogs() {
+			var csrfToken = document.cookie.replace(
+				/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1"
+			);
+			fetch(logBasePath + '/api/v1/logs', {
+				method: 'DELETE',
+				headers: { 'X-CSRF-Token': csrfToken, 'HX-Request': 'true' }
+			}).then(function(r) {
+				if (!r.ok) throw new Error('clear failed');
+				return r.text();
+			}).then(function(html) {
+				var viewer = document.getElementById('log-viewer');
+				if (viewer) viewer.innerHTML = html;
+			}).catch(function() {
+				if (typeof showToast === 'function') {
+					showToast('Failed to clear logs.');
+				}
+			});
+		}
+
+		// downloadLogs fetches the current filtered entries as JSON and triggers
+		// a browser download as a .json file.
+		function downloadLogs() {
+			var url = logBasePath + '/api/v1/logs?limit=500&level=' + encodeURIComponent(logViewerState.level);
+			if (logViewerState.search) {
+				url += '&search=' + encodeURIComponent(logViewerState.search);
+			}
+			fetch(url, {
+				headers: { 'Accept': 'application/json' }
+			}).then(function(r) {
+				if (!r.ok) throw new Error('fetch failed');
+				return r.json();
+			}).then(function(data) {
+				var blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+				var a = document.createElement('a');
+				a.href = URL.createObjectURL(blob);
+				a.download = 'stillwater-logs-' + new Date().toISOString().slice(0, 19).replace(/:/g, '-') + '.json';
+				document.body.appendChild(a);
+				a.click();
+				document.body.removeChild(a);
+				URL.revokeObjectURL(a.href);
+			}).catch(function() {
+				if (typeof showToast === 'function') {
+					showToast('Failed to download logs.');
+				}
+			});
+		}
+
+		// Capture scroll position BEFORE the HTMX swap replaces content,
+		// so we know whether the user was near the bottom.
+		document.addEventListener('htmx:beforeSwap', function(evt) {
+			if (evt.detail && evt.detail.target && evt.detail.target.id === 'log-viewer') {
+				var v = evt.detail.target;
+				v.dataset.wasNearBottom = (v.scrollHeight - v.scrollTop - v.clientHeight < 50) ? 'true' : 'false';
+			}
+		});
+
+		// Auto-scroll: after new content settles, scroll to bottom only if the
+		// user was near the bottom before the swap.
+		document.addEventListener('htmx:afterSettle', function(evt) {
+			if (evt.detail && evt.detail.target && evt.detail.target.id === 'log-viewer') {
+				if (evt.detail.target.dataset.wasNearBottom === 'true') {
+					evt.detail.target.scrollTop = evt.detail.target.scrollHeight;
+				}
+			}
+		});
 	</script>
 }
 
@@ -2115,6 +2377,25 @@ templ settingsTabScript() {
 			// Refresh cache stats when switching to the General tab.
 			if (tabId === 'general' && typeof loadCacheStats === 'function') {
 				loadCacheStats();
+			}
+			// Pause log polling when leaving Logs tab, resume when entering.
+			var logViewer = document.getElementById('log-viewer');
+			if (logViewer && typeof logViewerState !== 'undefined') {
+				if (tabId === 'logs') {
+					// Entering Logs tab: resume if it was paused by tab switch.
+					if (logViewer.dataset.tabPaused === 'true') {
+						logViewer.dataset.tabPaused = 'false';
+						logViewer.setAttribute('hx-trigger', 'load, every 2s, logRefresh from:body');
+						if (typeof htmx !== 'undefined') htmx.process(logViewer);
+					}
+				} else {
+					// Leaving Logs tab: pause polling unless user already paused.
+					if (!logViewerState.paused) {
+						logViewer.dataset.tabPaused = 'true';
+						logViewer.setAttribute('hx-trigger', 'logRefresh from:body');
+						if (typeof htmx !== 'undefined') htmx.process(logViewer);
+					}
+				}
 			}
 		}
 	</script>

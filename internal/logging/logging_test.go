@@ -28,29 +28,40 @@ func TestManager_LevelSwap(t *testing.T) {
 	mgr, logger := NewManager(Config{Level: "info", Format: "json"})
 	defer mgr.Close() //nolint:errcheck
 
-	// Info should be enabled initially
+	// The ring handler uses the same level as the configured level, so
+	// Enabled() accurately reflects what will be captured.
 	if !logger.Enabled(context.Background(), slog.LevelInfo) {
 		t.Error("expected info to be enabled")
 	}
-
-	// Debug should not be enabled
 	if logger.Enabled(context.Background(), slog.LevelDebug) {
-		t.Error("expected debug to be disabled")
+		t.Error("expected debug to be disabled when configured at info")
 	}
 
-	// Reconfigure to debug
+	// Reconfigure to debug -- debug should now be enabled.
 	mgr.Reconfigure(Config{Level: "debug", Format: "json"})
 	if !logger.Enabled(context.Background(), slog.LevelDebug) {
 		t.Error("expected debug to be enabled after reconfigure")
 	}
 
-	// Reconfigure to error
+	// Reconfigure to error -- only error should be enabled.
 	mgr.Reconfigure(Config{Level: "error", Format: "json"})
-	if logger.Enabled(context.Background(), slog.LevelInfo) {
-		t.Error("expected info to be disabled when level is error")
-	}
 	if !logger.Enabled(context.Background(), slog.LevelError) {
 		t.Error("expected error to be enabled")
+	}
+	if logger.Enabled(context.Background(), slog.LevelInfo) {
+		t.Error("expected info to be disabled when configured at error")
+	}
+
+	// Verify that ring buffer captured entries at all levels when logging at debug.
+	mgr.Reconfigure(Config{Level: "debug", Format: "json"})
+	rb := mgr.RingBuffer()
+	rb.Clear()
+	logger.Debug("debug msg")
+	logger.Info("info msg")
+	logger.Error("error msg")
+	entries := rb.Entries(LogFilter{Limit: 10})
+	if len(entries) != 3 {
+		t.Errorf("expected ring buffer to capture 3 entries, got %d", len(entries))
 	}
 }
 
@@ -175,6 +186,62 @@ func TestFormatLevel(t *testing.T) {
 		if got := FormatLevel(tt.in); got != tt.out {
 			t.Errorf("FormatLevel(%v) = %q, want %q", tt.in, got, tt.out)
 		}
+	}
+}
+
+func TestDerivedHandler_SeesReconfigure(t *testing.T) {
+	mgr, logger := NewManager(Config{Level: "debug", Format: "json"})
+	defer mgr.Close() //nolint:errcheck
+
+	// Create a derived logger with an extra attribute.
+	derived := logger.With("component", "test")
+
+	rb := mgr.RingBuffer()
+	rb.Clear()
+
+	// Write via derived logger before reconfigure.
+	derived.Info("before reconfigure")
+
+	// Reconfigure to text format (this swaps the inner handler).
+	mgr.Reconfigure(Config{Level: "debug", Format: "text"})
+
+	// Write via derived logger after reconfigure.
+	derived.Info("after reconfigure")
+
+	// Both messages should appear in the ring buffer, proving the derived
+	// logger delegated through the parent and observed the swap.
+	entries := rb.Entries(LogFilter{Limit: 10})
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 entries from derived logger, got %d", len(entries))
+	}
+	// Verify newest first ordering.
+	if entries[0].Message != "after reconfigure" {
+		t.Errorf("expected 'after reconfigure', got %q", entries[0].Message)
+	}
+	if entries[1].Message != "before reconfigure" {
+		t.Errorf("expected 'before reconfigure', got %q", entries[1].Message)
+	}
+}
+
+func TestDerivedHandler_WithGroup(t *testing.T) {
+	mgr, logger := NewManager(Config{Level: "debug", Format: "json"})
+	defer mgr.Close() //nolint:errcheck
+
+	// Create a grouped derived logger.
+	grouped := logger.WithGroup("mygroup")
+
+	rb := mgr.RingBuffer()
+	rb.Clear()
+
+	grouped.Info("grouped message")
+
+	// Reconfigure and log again -- the grouped logger should still work.
+	mgr.Reconfigure(Config{Level: "debug", Format: "text"})
+	grouped.Info("grouped after reconfigure")
+
+	entries := rb.Entries(LogFilter{Limit: 10})
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(entries))
 	}
 }
 
