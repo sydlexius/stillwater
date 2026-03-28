@@ -857,8 +857,9 @@ func (e *Engine) checkExtraneousImagesFromDB(a *artist.Artist, cfg RuleConfig) *
 			extraneous = append(extraneous, fmt.Sprintf("%s/%d", imageType, slotIndex))
 			continue
 		}
-		// Non-fanart types only support slot_index 0 (one image per type).
-		if imageType != "fanart" && slotIndex != 0 {
+		// slot_index must be non-negative for all types.
+		// Non-fanart types only support slot_index 0.
+		if slotIndex < 0 || (imageType != "fanart" && slotIndex != 0) {
 			extraneous = append(extraneous, fmt.Sprintf("%s/%d", imageType, slotIndex))
 		}
 	}

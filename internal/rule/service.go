@@ -221,7 +221,11 @@ var defaultRules = []Rule{
 // can be made API-compatible are tracked in separate issues:
 //   - #725: image existence/dimension rules (thumb, fanart, logo, banner)
 //   - #726: NFO content rules (nfo_has_mbid)
-//   - #727: directory-based rules (artist_id_mismatch, directory_name_mismatch)
+//
+// artist_id_mismatch and directory_name_mismatch are inherently filesystem-only
+// (they compare directory names against artist names) but are not in this map
+// because they already return nil for pathless artists without needing to be
+// disabled globally. They are categorized as API-compatible (no-op for API artists).
 //
 // extraneous_images (#728) and backdrop_sequencing now have DB-based checker
 // paths that run when a.Path is empty, so they are no longer filesystem-only.
