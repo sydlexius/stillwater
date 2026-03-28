@@ -32,7 +32,7 @@ func RequireMultiUser(getSetting SettingReader) func(http.HandlerFunc) http.Hand
 	return func(next http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			enabled := getSetting(r.Context(), "multi_user.enabled", "false")
-			if enabled != "true" {
+			if enabled != "true" && enabled != "1" {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusNotFound)
 				_, _ = w.Write([]byte(`{"error":"not found"}`))
