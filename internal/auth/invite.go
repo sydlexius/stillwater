@@ -107,7 +107,9 @@ func (s *Service) GetInviteByCode(ctx context.Context, code string) (*Invite, er
 	if err != nil {
 		return nil, fmt.Errorf("parsing invite expiry: %w", err)
 	}
-	if time.Now().UTC().After(expires) {
+	// Use !Before for >= comparison, consistent with the SQL "expires_at > ?"
+	// in ListPendingInvites (both treat expires_at == now as expired).
+	if !time.Now().UTC().Before(expires) {
 		return nil, ErrInviteExpired
 	}
 
@@ -169,8 +171,9 @@ func (s *Service) RedeemInvite(ctx context.Context, code, userID string) (*Invit
 
 	now := time.Now().UTC().Format(time.RFC3339)
 	result, err := s.db.ExecContext(ctx, `
-		UPDATE invites SET redeemed_by = ?, redeemed_at = ? WHERE id = ? AND redeemed_at IS NULL
-	`, userID, now, inv.ID)
+		UPDATE invites SET redeemed_by = ?, redeemed_at = ?
+		WHERE id = ? AND redeemed_at IS NULL AND expires_at > ?
+	`, userID, now, inv.ID, now)
 	if err != nil {
 		return nil, fmt.Errorf("redeeming invite: %w", err)
 	}
@@ -180,7 +183,20 @@ func (s *Service) RedeemInvite(ctx context.Context, code, userID string) (*Invit
 		return nil, fmt.Errorf("checking redeem rows affected: %w", err)
 	}
 	if n == 0 {
-		return nil, ErrInviteRedeemed
+		// The invite was valid at GetInviteByCode but the UPDATE missed.
+		// Re-check to return the correct sentinel error.
+		var redeemedAt sql.NullString
+		var expiresAt string
+		rerr := s.db.QueryRowContext(ctx, `
+			SELECT expires_at, redeemed_at FROM invites WHERE id = ?
+		`, inv.ID).Scan(&expiresAt, &redeemedAt)
+		if rerr != nil {
+			return nil, fmt.Errorf("re-checking invite state: %w", rerr)
+		}
+		if redeemedAt.Valid {
+			return nil, ErrInviteRedeemed
+		}
+		return nil, ErrInviteExpired
 	}
 
 	inv.RedeemedBy = &userID
