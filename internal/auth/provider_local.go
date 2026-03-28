@@ -35,14 +35,14 @@ func (p *LocalProvider) Authenticate(ctx context.Context, creds Credentials) (*I
 		WHERE username = ? AND auth_provider = 'local' AND is_active = 1
 	`, creds.Username).Scan(&id, &hash, &displayName)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, errors.New("invalid credentials")
+		return nil, ErrInvalidCredentials
 	}
 	if err != nil {
 		return nil, fmt.Errorf("querying user: %w", err)
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(hash), PrehashPassword(creds.Password)); err != nil {
-		return nil, errors.New("invalid credentials")
+		return nil, ErrInvalidCredentials
 	}
 
 	name := displayName

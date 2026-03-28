@@ -50,7 +50,7 @@ func (p *EmbyProvider) Authenticate(ctx context.Context, creds Credentials) (*Id
 		return nil, fmt.Errorf("encoding emby auth request: %w", err)
 	}
 
-	reqURL := p.serverURL + "/Users/AuthenticateByName"
+	reqURL := connection.BuildRequestURL(p.serverURL, "/Users/AuthenticateByName")
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, bytes.NewReader(bodyBytes)) //nolint:gosec // G107: URL validated by connection.ValidateBaseURL in constructor
 	if err != nil {
 		return nil, fmt.Errorf("creating emby auth request: %w", err)

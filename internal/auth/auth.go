@@ -111,10 +111,11 @@ func (s *Service) Setup(ctx context.Context, username, password string) (bool, e
 	}
 
 	id := uuid.New().String()
+	now := time.Now().UTC().Format(time.RFC3339)
 	_, err = s.db.ExecContext(ctx, `
-		INSERT INTO users (id, username, password_hash, role)
-		VALUES (?, ?, ?, 'administrator')
-	`, id, username, string(hash))
+		INSERT INTO users (id, username, display_name, password_hash, role, auth_provider, is_active, created_at, updated_at)
+		VALUES (?, ?, ?, ?, 'administrator', 'local', 1, ?, ?)
+	`, id, username, username, string(hash), now, now)
 	if err != nil {
 		return false, fmt.Errorf("creating admin user: %w", err)
 	}
@@ -454,11 +455,12 @@ func (s *Service) SetupFederated(ctx context.Context, result FederatedAuthResult
 	}
 
 	id := uuid.New().String()
+	now := time.Now().UTC().Format(time.RFC3339)
 	execResult, err := s.db.ExecContext(ctx, `
-		INSERT INTO users (id, username, password_hash, role, auth_provider, provider_id)
-		SELECT ?, ?, '', 'administrator', ?, ?
+		INSERT INTO users (id, username, display_name, password_hash, role, auth_provider, provider_id, is_active, created_at, updated_at)
+		SELECT ?, ?, ?, '', 'administrator', ?, ?, 1, ?, ?
 		WHERE NOT EXISTS (SELECT 1 FROM users)
-	`, id, result.UserName, provider, result.UserID)
+	`, id, result.UserName, result.UserName, provider, result.UserID, now, now)
 	if err != nil {
 		return false, fmt.Errorf("creating federated admin user: %w", err)
 	}

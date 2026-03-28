@@ -89,7 +89,7 @@ func (s *Service) ListUsers(ctx context.Context) ([]User, error) {
 	}
 	defer rows.Close() //nolint:errcheck
 
-	var users []User
+	users := []User{}
 	for rows.Next() {
 		var u User
 		var invitedBy sql.NullString

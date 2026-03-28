@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -73,6 +74,9 @@ func TestEmbyProviderAuthenticate_Unauthorized(t *testing.T) {
 	_, err := provider.Authenticate(context.Background(), Credentials{Username: "bad", Password: "creds"})
 	if err == nil {
 		t.Fatal("expected error for 401 response")
+	}
+	if !errors.Is(err, ErrInvalidCredentials) {
+		t.Errorf("expected ErrInvalidCredentials, got: %v", err)
 	}
 }
 

@@ -50,7 +50,7 @@ func (p *JellyfinProvider) Authenticate(ctx context.Context, creds Credentials) 
 		return nil, fmt.Errorf("encoding jellyfin auth request: %w", err)
 	}
 
-	reqURL := p.serverURL + "/Users/AuthenticateByName"
+	reqURL := connection.BuildRequestURL(p.serverURL, "/Users/AuthenticateByName")
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, bytes.NewReader(bodyBytes)) //nolint:gosec // G107: URL validated by connection.ValidateBaseURL in constructor
 	if err != nil {
 		return nil, fmt.Errorf("creating jellyfin auth request: %w", err)

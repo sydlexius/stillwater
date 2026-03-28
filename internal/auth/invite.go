@@ -236,88 +236,89 @@ func (s *Service) RevokeInvite(ctx context.Context, inviteID string) error {
 // the TOCTOU race where two concurrent requests could both validate the same
 // invite code before either redeems it.
 func (s *Service) ClaimInviteAndRegister(ctx context.Context, code, username, password, displayName string) (*User, error) {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return nil, fmt.Errorf("beginning transaction: %w", err)
-	}
-	defer tx.Rollback() //nolint:errcheck
-
-	// 1. Look up and validate the invite inside the transaction.
-	var inv Invite
-	var redeemedAt sql.NullString
-
-	err = tx.QueryRowContext(ctx, `
-		SELECT id, code, role, created_by, expires_at, redeemed_at, created_at
-		FROM invites WHERE code = ?
-	`, code).Scan(
-		&inv.ID, &inv.Code, &inv.Role, &inv.CreatedBy, &inv.ExpiresAt,
-		&redeemedAt, &inv.CreatedAt,
-	)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrInviteNotFound
-	}
-	if err != nil {
-		return nil, fmt.Errorf("looking up invite: %w", err)
-	}
-
-	if redeemedAt.Valid {
-		return nil, ErrInviteRedeemed
-	}
-
-	expires, err := time.Parse(time.RFC3339, inv.ExpiresAt)
-	if err != nil {
-		return nil, fmt.Errorf("parsing invite expiry: %w", err)
-	}
-	if time.Now().UTC().After(expires) {
-		return nil, ErrInviteExpired
-	}
-
-	// 2. Create the local user inside the transaction.
+	// Pre-compute the bcrypt hash outside the transaction to avoid holding the
+	// write lock during the expensive key derivation.
 	hash, err := bcrypt.GenerateFromPassword(PrehashPassword(password), bcrypt.DefaultCost)
 	if err != nil {
 		return nil, fmt.Errorf("hashing password: %w", err)
 	}
 
-	userID := uuid.New().String()
-	now := time.Now().UTC().Format(time.RFC3339)
+	var userID string
 
-	var invitedByVal sql.NullString
-	if inv.CreatedBy != "" {
-		invitedByVal = sql.NullString{String: inv.CreatedBy, Valid: true}
-	}
+	err = s.withImmediateTx(ctx, func(conn *sql.Conn) error {
+		// 1. Look up and validate the invite inside the transaction.
+		var inv Invite
+		var redeemedAt sql.NullString
 
-	_, err = tx.ExecContext(ctx, `
-		INSERT INTO users (id, username, display_name, password_hash, role, auth_provider, provider_id,
-		                   is_active, invited_by, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, 'local', '', 1, ?, ?, ?)
-	`, userID, username, displayName, string(hash), inv.Role, invitedByVal, now, now)
-	if err != nil {
-		errLower := strings.ToLower(err.Error())
-		if strings.Contains(errLower, "unique constraint") && strings.Contains(errLower, "username") {
-			return nil, ErrUsernameConflict
+		err := conn.QueryRowContext(ctx, `
+			SELECT id, code, role, created_by, expires_at, redeemed_at, created_at
+			FROM invites WHERE code = ?
+		`, code).Scan(
+			&inv.ID, &inv.Code, &inv.Role, &inv.CreatedBy, &inv.ExpiresAt,
+			&redeemedAt, &inv.CreatedAt,
+		)
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrInviteNotFound
 		}
-		return nil, fmt.Errorf("creating user: %w", err)
-	}
+		if err != nil {
+			return fmt.Errorf("looking up invite: %w", err)
+		}
 
-	// 3. Redeem the invite inside the transaction.
-	result, err := tx.ExecContext(ctx, `
-		UPDATE invites SET redeemed_by = ?, redeemed_at = ? WHERE id = ? AND redeemed_at IS NULL
-	`, userID, now, inv.ID)
+		if redeemedAt.Valid {
+			return ErrInviteRedeemed
+		}
+
+		expires, err := time.Parse(time.RFC3339, inv.ExpiresAt)
+		if err != nil {
+			return fmt.Errorf("parsing invite expiry: %w", err)
+		}
+		// Use !Before for >= comparison, consistent with GetInviteByCode.
+		if !time.Now().UTC().Before(expires) {
+			return ErrInviteExpired
+		}
+
+		// 2. Create the local user inside the transaction.
+		userID = uuid.New().String()
+		now := time.Now().UTC().Format(time.RFC3339)
+
+		var invitedByVal sql.NullString
+		if inv.CreatedBy != "" {
+			invitedByVal = sql.NullString{String: inv.CreatedBy, Valid: true}
+		}
+
+		_, err = conn.ExecContext(ctx, `
+			INSERT INTO users (id, username, display_name, password_hash, role, auth_provider, provider_id,
+			                   is_active, invited_by, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, 'local', '', 1, ?, ?, ?)
+		`, userID, username, displayName, string(hash), inv.Role, invitedByVal, now, now)
+		if err != nil {
+			errLower := strings.ToLower(err.Error())
+			if strings.Contains(errLower, "unique constraint") && strings.Contains(errLower, "username") {
+				return ErrUsernameConflict
+			}
+			return fmt.Errorf("creating user: %w", err)
+		}
+
+		// 3. Redeem the invite inside the transaction.
+		result, err := conn.ExecContext(ctx, `
+			UPDATE invites SET redeemed_by = ?, redeemed_at = ? WHERE id = ? AND redeemed_at IS NULL
+		`, userID, now, inv.ID)
+		if err != nil {
+			return fmt.Errorf("redeeming invite: %w", err)
+		}
+
+		n, err := result.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("checking redeem rows affected: %w", err)
+		}
+		if n == 0 {
+			return ErrInviteRedeemed
+		}
+
+		return nil
+	})
 	if err != nil {
-		return nil, fmt.Errorf("redeeming invite: %w", err)
-	}
-
-	n, err := result.RowsAffected()
-	if err != nil {
-		return nil, fmt.Errorf("checking redeem rows affected: %w", err)
-	}
-	if n == 0 {
-		return nil, ErrInviteRedeemed
-	}
-
-	// 4. Commit the transaction.
-	if err := tx.Commit(); err != nil {
-		return nil, fmt.Errorf("committing registration: %w", err)
+		return nil, err
 	}
 
 	// Read the user back from the committed data.
