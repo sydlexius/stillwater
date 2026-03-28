@@ -340,7 +340,7 @@ func (s *Service) List(ctx context.Context) ([]Rule, error) {
 		rules = append(rules, *r)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("iterating rule rows: %w", err)
 	}
 	tagFilesystemDependent(rules)
 	return rules, nil
@@ -416,7 +416,10 @@ func (s *Service) DisableFilesystemRules(ctx context.Context) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("disabling filesystem rules: %w", err)
 	}
-	rows, _ := result.RowsAffected()
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("disabling filesystem rules: getting rows affected: %w", err)
+	}
 	return int(rows), nil
 }
 

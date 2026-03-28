@@ -49,15 +49,40 @@ func TestIsFilesystemDependent(t *testing.T) {
 }
 
 // TestAllDefaultRulesAreCategorized ensures every rule defined in defaultRules
-// has a categorization in the filesystemRules map or is intentionally excluded.
-// This prevents new rules from being added without a categorization decision.
+// appears in exactly one of the explicit categorization lists above. A new
+// default rule that is missing from both lists will fail this test, forcing a
+// deliberate categorization decision.
 func TestAllDefaultRulesAreCategorized(t *testing.T) {
+	// Build the expected set from the two explicit lists in TestIsFilesystemDependent.
+	categorized := map[string]bool{
+		// Filesystem-dependent rules.
+		RuleNFOExists:        true,
+		RuleExtraneousImages: true,
+		// API-compatible rules.
+		RuleNFOHasMBID:            true,
+		RuleThumbExists:           true,
+		RuleThumbSquare:           true,
+		RuleThumbMinRes:           true,
+		RuleFanartExists:          true,
+		RuleFanartMinRes:          true,
+		RuleFanartAspect:          true,
+		RuleLogoExists:            true,
+		RuleLogoMinRes:            true,
+		RuleLogoPadding:           true,
+		RuleBannerExists:          true,
+		RuleBannerMinRes:          true,
+		RuleBioExists:             true,
+		RuleMetadataQuality:       true,
+		RuleArtistIDMismatch:      true,
+		RuleDirectoryNameMismatch: true,
+		RuleImageDuplicate:        true,
+		RuleBackdropSequencing:    true,
+	}
+
 	for _, r := range defaultRules {
-		// The rule must be either explicitly in filesystemRules or explicitly
-		// not (which is covered by the absence from the map). This test ensures
-		// we have at least considered every default rule by verifying the test
-		// above covers it.
-		_ = IsFilesystemDependent(r.ID)
+		if !categorized[r.ID] {
+			t.Errorf("default rule %q is not categorized in TestIsFilesystemDependent; add it to fsRules or apiRules", r.ID)
+		}
 	}
 
 	// Verify that every entry in filesystemRules corresponds to a valid default rule.
