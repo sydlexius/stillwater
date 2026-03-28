@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/sydlexius/stillwater/internal/database"
@@ -44,11 +45,17 @@ func TestLocalProviderAuthenticate(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for invalid password")
 	}
+	if !errors.Is(err, ErrInvalidCredentials) {
+		t.Errorf("invalid password: expected ErrInvalidCredentials, got: %v", err)
+	}
 
 	// Nonexistent user.
 	_, err = provider.Authenticate(ctx, Credentials{Username: "nobody", Password: "password123"})
 	if err == nil {
 		t.Fatal("expected error for nonexistent user")
+	}
+	if !errors.Is(err, ErrInvalidCredentials) {
+		t.Errorf("nonexistent user: expected ErrInvalidCredentials, got: %v", err)
 	}
 }
 

@@ -111,10 +111,11 @@ func (s *Service) Setup(ctx context.Context, username, password string) (bool, e
 	}
 
 	id := uuid.New().String()
+	now := time.Now().UTC().Format(time.RFC3339)
 	_, err = s.db.ExecContext(ctx, `
-		INSERT INTO users (id, username, password_hash, role)
-		VALUES (?, ?, ?, 'administrator')
-	`, id, username, string(hash))
+		INSERT INTO users (id, username, display_name, password_hash, role, auth_provider, is_active, created_at, updated_at)
+		VALUES (?, ?, ?, ?, 'administrator', 'local', 1, ?, ?)
+	`, id, username, username, string(hash), now, now)
 	if err != nil {
 		return false, fmt.Errorf("creating admin user: %w", err)
 	}
@@ -149,6 +150,26 @@ func (s *Service) Login(ctx context.Context, username, password string) (string,
 		INSERT INTO sessions (id, user_id, expires_at)
 		VALUES (?, ?, ?)
 	`, token, id, expiresAt)
+	if err != nil {
+		return "", fmt.Errorf("creating session: %w", err)
+	}
+
+	return token, nil
+}
+
+// CreateSession creates a new session for the given user ID and returns the token.
+// This is used after authentication when the caller has already validated the identity.
+func (s *Service) CreateSession(ctx context.Context, userID string) (string, error) {
+	token, err := generateToken()
+	if err != nil {
+		return "", fmt.Errorf("generating session token: %w", err)
+	}
+
+	expiresAt := time.Now().Add(sessionDuration).UTC().Format(time.RFC3339)
+	_, err = s.db.ExecContext(ctx, `
+		INSERT INTO sessions (id, user_id, expires_at)
+		VALUES (?, ?, ?)
+	`, token, userID, expiresAt)
 	if err != nil {
 		return "", fmt.Errorf("creating session: %w", err)
 	}
@@ -434,11 +455,12 @@ func (s *Service) SetupFederated(ctx context.Context, result FederatedAuthResult
 	}
 
 	id := uuid.New().String()
+	now := time.Now().UTC().Format(time.RFC3339)
 	execResult, err := s.db.ExecContext(ctx, `
-		INSERT INTO users (id, username, password_hash, role, auth_provider, provider_id)
-		SELECT ?, ?, '', 'administrator', ?, ?
+		INSERT INTO users (id, username, display_name, password_hash, role, auth_provider, provider_id, is_active, created_at, updated_at)
+		SELECT ?, ?, ?, '', 'administrator', ?, ?, 1, ?, ?
 		WHERE NOT EXISTS (SELECT 1 FROM users)
-	`, id, result.UserName, provider, result.UserID)
+	`, id, result.UserName, result.UserName, provider, result.UserID, now, now)
 	if err != nil {
 		return false, fmt.Errorf("creating federated admin user: %w", err)
 	}
