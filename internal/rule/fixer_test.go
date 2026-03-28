@@ -3,6 +3,7 @@ package rule
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"image"
 	"image/color"
 	"image/jpeg"
@@ -899,7 +900,8 @@ func TestLogoPaddingFixer_Fix_TrimsPadding(t *testing.T) {
 	}
 }
 
-func TestLogoPaddingFixer_Fix_EmptyPath(t *testing.T) {
+func TestLogoPaddingFixer_Fix_EmptyPath_NoFetcher(t *testing.T) {
+	// Without an image fetcher, a path-less artist cannot be fixed.
 	a := &artist.Artist{Name: "No Path", LibraryID: "lib-test"}
 	f := NewLogoPaddingFixer(nil, nonSharedFSCheck(), testLogger())
 
@@ -908,10 +910,11 @@ func TestLogoPaddingFixer_Fix_EmptyPath(t *testing.T) {
 		t.Fatalf("Fix: %v", err)
 	}
 	if fr.Fixed {
-		t.Error("Fixed = true, want false for empty path")
+		t.Error("Fixed = true, want false for empty path without fetcher")
 	}
-	if fr.Message != "artist has no path" {
-		t.Errorf("Message = %q, want 'artist has no path'", fr.Message)
+	want := "artist has no path and no platform image fetcher configured"
+	if fr.Message != want {
+		t.Errorf("Message = %q, want %q", fr.Message, want)
 	}
 }
 
@@ -1707,5 +1710,166 @@ func TestPipeline_FixViolation_OrphanedArtist(t *testing.T) {
 	}
 	if got.Status != ViolationStatusDismissed {
 		t.Errorf("status = %q, want %q", got.Status, ViolationStatusDismissed)
+	}
+}
+
+// --- API-sourced logo padding fixer tests ---
+// These tests use mockImageFetcher and createTestPNGBytes defined in
+// checkers_test.go (same package).
+
+func TestLogoPaddingFixer_FixViaAPI_TrimAndUpload(t *testing.T) {
+	// 200x100 logo with 30px padding on each side. The fixer should trim
+	// and upload the trimmed result.
+	data := createTestPNGBytes(t, 200, 100, 30, 30, 30, 30)
+
+	mock := &mockImageFetcher{fetchData: data, fetchType: "image/png"}
+	f := NewLogoPaddingFixer(nil, nonSharedFSCheck(), testLogger())
+	f.SetImageFetcher(mock, func(artistID, imageType string) ([]byte, bool) {
+		return data, true
+	})
+
+	a := &artist.Artist{ID: "api-fix-001", Name: "API Trim", LogoExists: true, LibraryID: "lib-test"}
+	v := &Violation{RuleID: RuleLogoPadding, Config: RuleConfig{TrimMargin: 2}}
+
+	fr, err := f.Fix(context.Background(), a, v)
+	if err != nil {
+		t.Fatalf("Fix: %v", err)
+	}
+	if !fr.Fixed {
+		t.Errorf("Fixed = false, want true; message: %s", fr.Message)
+	}
+	if !strings.Contains(fr.Message, "via API") {
+		t.Errorf("Message = %q, should contain 'via API'", fr.Message)
+	}
+	if mock.uploadCalls != 1 {
+		t.Errorf("uploadCalls = %d, want 1", mock.uploadCalls)
+	}
+	if mock.uploadType != "image/png" {
+		t.Errorf("upload content type = %q, want image/png", mock.uploadType)
+	}
+	if len(mock.uploadData) == 0 {
+		t.Error("upload data is empty")
+	}
+}
+
+func TestLogoPaddingFixer_FixViaAPI_FetchError(t *testing.T) {
+	mock := &mockImageFetcher{fetchErr: fmt.Errorf("network error")}
+	f := NewLogoPaddingFixer(nil, nonSharedFSCheck(), testLogger())
+	f.SetImageFetcher(mock, func(_, _ string) ([]byte, bool) {
+		return nil, false
+	})
+
+	a := &artist.Artist{ID: "api-fix-002", Name: "Fetch Fail", LogoExists: true, LibraryID: "lib-test"}
+	v := &Violation{RuleID: RuleLogoPadding}
+
+	_, err := f.Fix(context.Background(), a, v)
+	if err == nil {
+		t.Fatal("expected error when API fetch fails")
+	}
+	if !strings.Contains(err.Error(), "fetching logo from platform API") {
+		t.Errorf("error = %q, want it to contain fetch error context", err.Error())
+	}
+}
+
+func TestLogoPaddingFixer_FixViaAPI_UploadError(t *testing.T) {
+	data := createTestPNGBytes(t, 200, 100, 30, 30, 30, 30)
+
+	mock := &mockImageFetcher{
+		fetchData: data,
+		fetchType: "image/png",
+		uploadErr: fmt.Errorf("server error"),
+	}
+	f := NewLogoPaddingFixer(nil, nonSharedFSCheck(), testLogger())
+	f.SetImageFetcher(mock, func(_, _ string) ([]byte, bool) {
+		return data, true
+	})
+
+	a := &artist.Artist{ID: "api-fix-003", Name: "Upload Fail", LogoExists: true, LibraryID: "lib-test"}
+	v := &Violation{RuleID: RuleLogoPadding, Config: RuleConfig{TrimMargin: 0}}
+
+	_, err := f.Fix(context.Background(), a, v)
+	if err == nil {
+		t.Fatal("expected error when upload fails")
+	}
+	if !strings.Contains(err.Error(), "uploading trimmed logo to platform") {
+		t.Errorf("error = %q, want it to contain upload error context", err.Error())
+	}
+}
+
+func TestLogoPaddingFixer_FixViaAPI_NoPaddingNoChange(t *testing.T) {
+	// Fully opaque image with no padding -- trim should produce no change.
+	data := createTestPNGBytes(t, 200, 100, 0, 0, 0, 0)
+
+	mock := &mockImageFetcher{fetchData: data, fetchType: "image/png"}
+	f := NewLogoPaddingFixer(nil, nonSharedFSCheck(), testLogger())
+	f.SetImageFetcher(mock, func(_, _ string) ([]byte, bool) {
+		return data, true
+	})
+
+	a := &artist.Artist{ID: "api-fix-004", Name: "No Change", LogoExists: true, LibraryID: "lib-test"}
+	v := &Violation{RuleID: RuleLogoPadding, Config: RuleConfig{TrimMargin: 0}}
+
+	fr, err := f.Fix(context.Background(), a, v)
+	if err != nil {
+		t.Fatalf("Fix: %v", err)
+	}
+	if fr.Fixed {
+		t.Error("Fixed = true, want false when no padding to trim")
+	}
+	if !strings.Contains(fr.Message, "no change needed") {
+		t.Errorf("Message = %q, want 'no change needed'", fr.Message)
+	}
+	// Should not attempt upload when nothing changed.
+	if mock.uploadCalls != 0 {
+		t.Errorf("uploadCalls = %d, want 0 (no change)", mock.uploadCalls)
+	}
+}
+
+func TestLogoPaddingFixer_FixViaAPI_UsesCache(t *testing.T) {
+	// When the cache has data, the fixer should not call FetchArtistImage.
+	data := createTestPNGBytes(t, 200, 100, 30, 30, 30, 30)
+
+	mock := &mockImageFetcher{fetchData: data, fetchType: "image/png"}
+	f := NewLogoPaddingFixer(nil, nonSharedFSCheck(), testLogger())
+	f.SetImageFetcher(mock, func(_, _ string) ([]byte, bool) {
+		return data, true // simulate cache hit
+	})
+
+	a := &artist.Artist{ID: "api-fix-005", Name: "Cache Hit", LogoExists: true, LibraryID: "lib-test"}
+	v := &Violation{RuleID: RuleLogoPadding, Config: RuleConfig{TrimMargin: 2}}
+
+	fr, err := f.Fix(context.Background(), a, v)
+	if err != nil {
+		t.Fatalf("Fix: %v", err)
+	}
+	if !fr.Fixed {
+		t.Errorf("Fixed = false, want true; message: %s", fr.Message)
+	}
+	// Cache hit: FetchArtistImage should NOT have been called.
+	if mock.fetchCalls != 0 {
+		t.Errorf("fetchCalls = %d, want 0 (cache hit)", mock.fetchCalls)
+	}
+}
+
+func TestLogoPaddingFixer_FixViaAPI_EmptyData(t *testing.T) {
+	// Empty data from both cache and fetch should report not-fixed.
+	mock := &mockImageFetcher{fetchData: nil, fetchType: ""}
+	f := NewLogoPaddingFixer(nil, nonSharedFSCheck(), testLogger())
+	f.SetImageFetcher(mock, func(_, _ string) ([]byte, bool) {
+		return nil, false
+	})
+
+	a := &artist.Artist{ID: "api-fix-006", Name: "Empty Data", LogoExists: true, LibraryID: "lib-test"}
+	v := &Violation{RuleID: RuleLogoPadding}
+
+	fr, err := f.Fix(context.Background(), a, v)
+	if err != nil {
+		t.Fatalf("Fix: %v", err)
+	}
+	if fr.Fixed {
+		t.Error("Fixed = true, want false for empty data")
+	}
+	if fr.Message != "no logo data available from platform API" {
+		t.Errorf("Message = %q", fr.Message)
 	}
 }

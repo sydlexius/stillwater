@@ -829,9 +829,15 @@ func (f *ExtraneousImagesFixer) Fix(ctx context.Context, a *artist.Artist, _ *Vi
 // LogoPaddingFixer trims excessive padding from logos, preserving a configurable
 // margin around the content. It uses area-based content detection that supports
 // both alpha transparency (PNG) and whitespace borders (JPG).
+//
+// For API-only artists (no local filesystem path), the fixer reads the logo
+// bytes from the engine's API image cache (populated by the checker) and
+// uploads the trimmed result back via the platform image fetcher.
 type LogoPaddingFixer struct {
 	platformService *platform.Service
 	fsCheck         *SharedFSCheck
+	imageFetcher    PlatformImageFetcher
+	apiImageLookup  func(artistID, imageType string) ([]byte, bool)
 	logger          *slog.Logger
 }
 
@@ -844,12 +850,22 @@ func NewLogoPaddingFixer(platformService *platform.Service, fsCheck *SharedFSChe
 	}
 }
 
+// SetImageFetcher attaches a platform image fetcher to the fixer. When set,
+// the fixer can trim logos for API-only artists that have no local path.
+func (f *LogoPaddingFixer) SetImageFetcher(fetcher PlatformImageFetcher, lookupFn func(artistID, imageType string) ([]byte, bool)) {
+	f.imageFetcher = fetcher
+	f.apiImageLookup = lookupFn
+}
+
 // CanFix returns true for the logo_padding rule.
 func (f *LogoPaddingFixer) CanFix(v *Violation) bool {
 	return v.RuleID == RuleLogoPadding
 }
 
 // Fix trims padding from the logo, keeping TrimMargin pixels around the content.
+// For filesystem-backed artists, reads from disk and saves back. For API-only
+// artists (no local path), fetches from the platform API cache and uploads the
+// trimmed result back to the connected platform(s).
 func (f *LogoPaddingFixer) Fix(ctx context.Context, a *artist.Artist, v *Violation) (*FixResult, error) {
 	if f.fsCheck.IsShared(ctx, a) {
 		return &FixResult{
@@ -859,14 +875,16 @@ func (f *LogoPaddingFixer) Fix(ctx context.Context, a *artist.Artist, v *Violati
 		}, nil
 	}
 
+	// API-only path: no local directory, use platform API.
 	if a.Path == "" {
-		return &FixResult{
-			RuleID:  RuleLogoPadding,
-			Fixed:   false,
-			Message: "artist has no path",
-		}, nil
+		return f.fixViaAPI(ctx, a, v)
 	}
 
+	return f.fixViaDisk(ctx, a, v)
+}
+
+// fixViaDisk handles the filesystem-based logo trim (original behavior).
+func (f *LogoPaddingFixer) fixViaDisk(ctx context.Context, a *artist.Artist, v *Violation) (*FixResult, error) {
 	entries, readErr := os.ReadDir(a.Path)
 	if readErr != nil {
 		return nil, fmt.Errorf("reading artist directory: %w", readErr)
@@ -968,6 +986,80 @@ func (f *LogoPaddingFixer) Fix(ctx context.Context, a *artist.Artist, v *Violati
 	msg := fmt.Sprintf("trimmed logo padding (margin %dpx)", margin)
 	if origErr == nil && newErr == nil {
 		msg = fmt.Sprintf("trimmed logo from %dx%d to %dx%d (margin %dpx)", origW, origH, newW, newH, margin)
+	}
+
+	return &FixResult{
+		RuleID:  RuleLogoPadding,
+		Fixed:   true,
+		Message: msg,
+	}, nil
+}
+
+// fixViaAPI handles the API-based logo trim for artists with no local path.
+// It reads from the engine's API image cache (populated by the checker), trims
+// the padding, and uploads the result to the connected platform(s).
+func (f *LogoPaddingFixer) fixViaAPI(ctx context.Context, a *artist.Artist, v *Violation) (*FixResult, error) {
+	if f.imageFetcher == nil {
+		return &FixResult{
+			RuleID:  RuleLogoPadding,
+			Fixed:   false,
+			Message: "artist has no path and no platform image fetcher configured",
+		}, nil
+	}
+
+	// Try the API image cache first (populated during checker evaluation),
+	// then fall back to a fresh fetch.
+	var data []byte
+	if f.apiImageLookup != nil {
+		data, _ = f.apiImageLookup(a.ID, "logo")
+	}
+	if len(data) == 0 {
+		var fetchErr error
+		data, _, fetchErr = f.imageFetcher.FetchArtistImage(ctx, a.ID, "logo")
+		if fetchErr != nil {
+			return nil, fmt.Errorf("fetching logo from platform API: %w", fetchErr)
+		}
+	}
+	if len(data) == 0 {
+		return &FixResult{
+			RuleID:  RuleLogoPadding,
+			Fixed:   false,
+			Message: "no logo data available from platform API",
+		}, nil
+	}
+
+	origW, origH, origErr := img.GetDimensions(bytes.NewReader(data))
+
+	margin := max(v.Config.TrimMargin, 0)
+
+	trimmed, contentType, trimErr := img.TrimWithMargin(bytes.NewReader(data), margin)
+	if trimErr != nil {
+		return nil, fmt.Errorf("trimming logo: %w", trimErr)
+	}
+
+	newW, newH, newErr := img.GetDimensions(bytes.NewReader(trimmed))
+
+	if origErr == nil && newErr == nil && origW == newW && origH == newH {
+		return &FixResult{
+			RuleID:  RuleLogoPadding,
+			Fixed:   false,
+			Message: fmt.Sprintf("logo is already %dx%d after applying margin; no change needed", origW, origH),
+		}, nil
+	}
+
+	// Map the detected format to a MIME content type for the upload.
+	mimeType := "image/png"
+	if contentType == "jpeg" || contentType == "jpg" {
+		mimeType = "image/jpeg"
+	}
+
+	if uploadErr := f.imageFetcher.UploadArtistImage(ctx, a.ID, "logo", trimmed, mimeType); uploadErr != nil {
+		return nil, fmt.Errorf("uploading trimmed logo to platform: %w", uploadErr)
+	}
+
+	msg := fmt.Sprintf("trimmed logo padding via API (margin %dpx)", margin)
+	if origErr == nil && newErr == nil {
+		msg = fmt.Sprintf("trimmed logo from %dx%d to %dx%d via API (margin %dpx)", origW, origH, newW, newH, margin)
 	}
 
 	return &FixResult{

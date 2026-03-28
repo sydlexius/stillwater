@@ -26,6 +26,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/database"
 	"github.com/sydlexius/stillwater/internal/encryption"
 	"github.com/sydlexius/stillwater/internal/event"
+	"github.com/sydlexius/stillwater/internal/imagebridge"
 	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/logging"
 	"github.com/sydlexius/stillwater/internal/maintenance"
@@ -193,6 +194,11 @@ func run() error {
 	ruleEngine := rule.NewEngine(ruleService, db, platformService, libraryService, logger)
 	ruleEngine.SetFSCache(rule.NewFSCache(0, 0, logger))
 
+	// Wire platform image bridge so the logo_padding rule can check and fix
+	// images for API-only artists that have no local filesystem path.
+	imageBridge := imagebridge.New(connectionService, artistService, logger)
+	ruleEngine.SetImageFetcher(imageBridge)
+
 	// Initialize scanner (depends on rule engine for health scoring)
 	scannerService := scanner.NewService(artistService, ruleEngine, ruleService, logger, cfg.Music.LibraryPath, cfg.Scanner.Exclusions)
 	scannerService.SetDefaultLibraryID(defaultLibID)
@@ -273,12 +279,14 @@ func run() error {
 	})
 
 	// Initialize fix pipeline (depends on orchestrator and snapshot service)
+	logoPaddingFixer := rule.NewLogoPaddingFixer(platformService, fsCheck, logger)
+	logoPaddingFixer.SetImageFetcher(imageBridge, ruleEngine.ConsumeAPIImage)
 	fixers := []rule.Fixer{
 		rule.NewNFOFixer(nfoSnapshotService, nfoSettingsService, fsCheck, expectedWrites),
 		rule.NewMetadataFixer(orchestrator, logger),
 		rule.NewImageFixer(orchestrator, platformService, fsCheck, logger),
 		rule.NewExtraneousImagesFixer(platformService, fsCheck, logger),
-		rule.NewLogoPaddingFixer(platformService, fsCheck, logger),
+		logoPaddingFixer,
 		rule.NewDirectoryRenameFixer(fsCheck, logger),
 		rule.NewBackdropSequencingFixer(platformService, fsCheck, logger),
 	}

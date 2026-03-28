@@ -1,7 +1,10 @@
 package rule
 
 import (
+	"bytes"
+	"context"
 	"database/sql"
+	"fmt"
 	"image"
 	"image/color"
 	"image/jpeg"
@@ -1497,5 +1500,146 @@ func TestCheckers_EmptyPath_DBDimensions_Pass(t *testing.T) {
 				t.Errorf("expected nil (passing rule), got violation: %s", v.Message)
 			}
 		})
+	}
+}
+
+// --- API-sourced logo padding tests ---
+
+// mockImageFetcher implements PlatformImageFetcher for testing.
+type mockImageFetcher struct {
+	fetchData   []byte
+	fetchType   string
+	fetchErr    error
+	fetchCalls  int
+	uploadData  []byte
+	uploadType  string
+	uploadErr   error
+	uploadCalls int
+}
+
+func (m *mockImageFetcher) FetchArtistImage(_ context.Context, _, _ string) ([]byte, string, error) {
+	m.fetchCalls++
+	return m.fetchData, m.fetchType, m.fetchErr
+}
+
+func (m *mockImageFetcher) UploadArtistImage(_ context.Context, _, _ string, data []byte, contentType string) error {
+	m.uploadCalls++
+	m.uploadData = data
+	m.uploadType = contentType
+	return m.uploadErr
+}
+
+// createTestPNGBytes returns raw PNG bytes for a padded image without writing
+// to disk. The image has the same structure as createTestPNGWithPadding.
+//
+//nolint:unparam // test helper; totalW/totalH parameterized for readability and parity with createTestPNGWithPadding
+func createTestPNGBytes(t *testing.T, totalW, totalH, padLeft, padRight, padTop, padBottom int) []byte {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, totalW, totalH))
+	for y := padTop; y < totalH-padBottom; y++ {
+		for x := padLeft; x < totalW-padRight; x++ {
+			img.Set(x, y, color.RGBA{R: 200, G: 100, B: 50, A: 255})
+		}
+	}
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		t.Fatalf("encoding png bytes: %v", err)
+	}
+	return buf.Bytes()
+}
+
+func TestCheckLogoPadding_APIFetch_ExcessPadding(t *testing.T) {
+	// 200x100 logo with 30px padding on each side. Padding = 72%.
+	data := createTestPNGBytes(t, 200, 100, 30, 30, 30, 30)
+
+	mock := &mockImageFetcher{fetchData: data, fetchType: "image/png"}
+	e := newTestEngine()
+	e.SetImageFetcher(mock)
+	checker := e.makeLogoPaddingChecker()
+
+	a := artist.Artist{ID: "api-001", Name: "API Artist", LogoExists: true, Path: ""}
+	v := checker(&a, RuleConfig{ThresholdPercent: 15})
+	if v == nil {
+		t.Fatal("expected violation for API-fetched logo with 72% padding")
+	}
+	if v.RuleID != RuleLogoPadding {
+		t.Errorf("RuleID = %q, want %q", v.RuleID, RuleLogoPadding)
+	}
+	if !v.Fixable {
+		t.Error("expected Fixable to be true")
+	}
+	if mock.fetchCalls != 1 {
+		t.Errorf("fetchCalls = %d, want 1", mock.fetchCalls)
+	}
+}
+
+func TestCheckLogoPadding_APIFetch_BelowThreshold(t *testing.T) {
+	// 200x100 with 5px padding. Padding = 14.5%, below 15%.
+	data := createTestPNGBytes(t, 200, 100, 5, 5, 5, 5)
+
+	mock := &mockImageFetcher{fetchData: data, fetchType: "image/png"}
+	e := newTestEngine()
+	e.SetImageFetcher(mock)
+	checker := e.makeLogoPaddingChecker()
+
+	a := artist.Artist{ID: "api-002", Name: "API Artist 2", LogoExists: true, Path: ""}
+	v := checker(&a, RuleConfig{ThresholdPercent: 15})
+	if v != nil {
+		t.Errorf("expected nil for API logo with 14.5%% padding, got %v", v)
+	}
+}
+
+func TestCheckLogoPadding_APIFetch_CachesBytes(t *testing.T) {
+	// Verify that the checker caches fetched bytes so a second evaluation
+	// of the same artist does not fetch again.
+	data := createTestPNGBytes(t, 200, 100, 30, 30, 30, 30)
+
+	mock := &mockImageFetcher{fetchData: data, fetchType: "image/png"}
+	e := newTestEngine()
+	e.SetImageFetcher(mock)
+	checker := e.makeLogoPaddingChecker()
+
+	a := artist.Artist{ID: "api-003", Name: "Cache Test", LogoExists: true, Path: ""}
+
+	// First call: fetches from the mock.
+	v1 := checker(&a, RuleConfig{ThresholdPercent: 15})
+	if v1 == nil {
+		t.Fatal("expected violation on first API call")
+	}
+	if mock.fetchCalls != 1 {
+		t.Errorf("fetchCalls after first call = %d, want 1", mock.fetchCalls)
+	}
+
+	// Second call: should use cached bytes, not fetch again.
+	v2 := checker(&a, RuleConfig{ThresholdPercent: 15})
+	if v2 == nil {
+		t.Fatal("expected violation on second API call (from cache)")
+	}
+	if mock.fetchCalls != 1 {
+		t.Errorf("fetchCalls after second call = %d, want 1 (cache hit expected)", mock.fetchCalls)
+	}
+}
+
+func TestCheckLogoPadding_APIFetch_FetchError(t *testing.T) {
+	mock := &mockImageFetcher{fetchErr: fmt.Errorf("connection refused")}
+	e := newTestEngine()
+	e.SetImageFetcher(mock)
+	checker := e.makeLogoPaddingChecker()
+
+	a := artist.Artist{ID: "api-004", Name: "Error Artist", LogoExists: true, Path: ""}
+	v := checker(&a, RuleConfig{ThresholdPercent: 15})
+	if v != nil {
+		t.Errorf("expected nil when API fetch fails, got %v", v)
+	}
+}
+
+func TestCheckLogoPadding_NoPathNoFetcher(t *testing.T) {
+	// No path and no fetcher: should return nil without error.
+	e := newTestEngine()
+	checker := e.makeLogoPaddingChecker()
+	a := artist.Artist{ID: "nf-001", Name: "No Fetch", LogoExists: true, Path: ""}
+	v := checker(&a, RuleConfig{ThresholdPercent: 15})
+	if v != nil {
+		t.Errorf("expected nil when no path and no fetcher, got %v", v)
 	}
 }
