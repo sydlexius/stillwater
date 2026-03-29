@@ -243,7 +243,7 @@ func TestDeactivateUser(t *testing.T) {
 	}
 }
 
-func TestDeactivateUser_LastAdmin(t *testing.T) {
+func TestDeactivateUser_BootstrapAdmin(t *testing.T) {
 	svc := setupTestService(t)
 	ctx := context.Background()
 
@@ -252,14 +252,111 @@ func TestDeactivateUser_LastAdmin(t *testing.T) {
 		t.Fatalf("Setup: %v", err)
 	}
 
+	// Create a second admin so the last-admin guard is not the reason for refusal.
+	_, err = svc.CreateLocalUser(ctx, "admin2", "pass2", "Admin Two", "administrator", "")
+	if err != nil {
+		t.Fatalf("CreateLocalUser: %v", err)
+	}
+
 	users, err := svc.ListUsers(ctx)
 	if err != nil {
 		t.Fatalf("ListUsers: %v", err)
 	}
 
-	err = svc.DeactivateUser(ctx, users[0].ID)
+	// The bootstrap admin is the protected one (is_protected = 1).
+	var bootstrapID string
+	for _, u := range users {
+		if u.IsProtected {
+			bootstrapID = u.ID
+			break
+		}
+	}
+	if bootstrapID == "" {
+		t.Fatal("no protected user found after Setup")
+	}
+
+	err = svc.DeactivateUser(ctx, bootstrapID)
+	if !errors.Is(err, ErrProtectedUser) {
+		t.Errorf("DeactivateUser bootstrap admin = %v, want ErrProtectedUser", err)
+	}
+}
+
+func TestDeactivateUser_LastAdmin(t *testing.T) {
+	svc := setupTestService(t)
+	ctx := context.Background()
+
+	// Create a non-bootstrap admin directly (no Setup call) so it is not protected.
+	admin, err := svc.CreateLocalUser(ctx, "admin", "password", "Admin", "administrator", "")
+	if err != nil {
+		t.Fatalf("CreateLocalUser: %v", err)
+	}
+
+	err = svc.DeactivateUser(ctx, admin.ID)
 	if !errors.Is(err, ErrLastAdmin) {
 		t.Errorf("DeactivateUser last admin = %v, want ErrLastAdmin", err)
+	}
+}
+
+func TestDeactivateUser_NonBootstrapAdmin(t *testing.T) {
+	svc := setupTestService(t)
+	ctx := context.Background()
+
+	// Create two non-bootstrap admins (no Setup call) so neither is protected.
+	admin1, err := svc.CreateLocalUser(ctx, "admin1", "pass1", "Admin One", "administrator", "")
+	if err != nil {
+		t.Fatalf("CreateLocalUser admin1: %v", err)
+	}
+	_, err = svc.CreateLocalUser(ctx, "admin2", "pass2", "Admin Two", "administrator", "")
+	if err != nil {
+		t.Fatalf("CreateLocalUser admin2: %v", err)
+	}
+
+	// Deactivating one of multiple non-bootstrap admins should succeed.
+	if err := svc.DeactivateUser(ctx, admin1.ID); err != nil {
+		t.Errorf("DeactivateUser non-bootstrap admin = %v, want nil", err)
+	}
+}
+
+func TestListUsers_BootstrapAdminIsProtected(t *testing.T) {
+	svc := setupTestService(t)
+	ctx := context.Background()
+
+	_, err := svc.Setup(ctx, "admin", "password")
+	if err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+
+	_, err = svc.CreateLocalUser(ctx, "op1", "pass1", "Op One", "operator", "")
+	if err != nil {
+		t.Fatalf("CreateLocalUser: %v", err)
+	}
+
+	users, err := svc.ListUsers(ctx)
+	if err != nil {
+		t.Fatalf("ListUsers: %v", err)
+	}
+
+	if len(users) != 2 {
+		t.Fatalf("expected 2 users, got %d", len(users))
+	}
+
+	// Find each user by username to avoid relying on slice ordering.
+	var protectedCount int
+	for _, u := range users {
+		switch u.Username {
+		case "admin":
+			if !u.IsProtected {
+				t.Errorf("bootstrap admin %q: expected IsProtected = true", u.Username)
+			}
+			protectedCount++
+		case "op1":
+			if u.IsProtected {
+				t.Errorf("non-bootstrap user %q: expected IsProtected = false", u.Username)
+			}
+		}
+	}
+	if protectedCount != 1 {
+		t.Errorf("expected exactly 1 protected user, got %d", protectedCount)
 	}
 }
 

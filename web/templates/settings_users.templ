@@ -322,16 +322,18 @@ templ userTableRow(u auth.User) {
 						<option value="operator" selected?={ u.Role == "operator" }>Operator</option>
 						<option value="administrator" selected?={ u.Role == "administrator" }>Administrator</option>
 					</select>
-					<button
-						type="button"
-						class="text-xs px-2.5 py-1 rounded border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-						aria-label={ "Deactivate " + u.DisplayName }
-						data-user-id={ u.ID }
-						data-display-name={ u.DisplayName }
-						onclick="deactivateUserFromDataset(this)"
-					>
-						Deactivate
-					</button>
+					if !u.IsProtected {
+						<button
+							type="button"
+							class="text-xs px-2.5 py-1 rounded border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+							aria-label={ "Deactivate " + u.DisplayName }
+							data-user-id={ u.ID }
+							data-display-name={ u.DisplayName }
+							onclick="deactivateUserFromDataset(this)"
+						>
+							Deactivate
+						</button>
+					}
 				</div>
 			}
 		</td>

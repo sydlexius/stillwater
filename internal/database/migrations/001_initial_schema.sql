@@ -15,10 +15,22 @@ CREATE TABLE IF NOT EXISTS users (
     auth_provider TEXT NOT NULL DEFAULT 'local',
     provider_id   TEXT NOT NULL DEFAULT '',
     is_active     INTEGER NOT NULL DEFAULT 1,
+    is_protected  INTEGER NOT NULL DEFAULT 0,
     invited_by    TEXT REFERENCES users(id) ON DELETE SET NULL,
     created_at    TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- +goose StatementBegin
+-- Prevent deactivating the bootstrap administrator at the database level.
+CREATE TRIGGER IF NOT EXISTS prevent_deactivate_protected_user
+BEFORE UPDATE OF is_active ON users
+FOR EACH ROW
+WHEN OLD.is_protected = 1 AND NEW.is_active = 0
+BEGIN
+    SELECT RAISE(ABORT, 'cannot deactivate a protected user');
+END;
+-- +goose StatementEnd
 
 CREATE TABLE IF NOT EXISTS sessions (
     id TEXT PRIMARY KEY,
