@@ -529,7 +529,7 @@ func (r *Router) handleCompliancePage(w http.ResponseWriter, req *http.Request) 
 		renderTempl(w, req, templates.ComplianceTable(data))
 		return
 	}
-	renderTempl(w, req, templates.CompliancePage(r.assets(), data))
+	renderTempl(w, req, templates.CompliancePage(r.assetsFor(req), data))
 }
 
 func toTemplateViolations(vs []violationSummary) []templates.ViolationSummaryData {

@@ -305,7 +305,7 @@ func (r *Router) handleNotificationsPage(w http.ResponseWriter, req *http.Reques
 	data := buildNotificationsData(p, violations)
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = templates.NotificationsPage(r.assets(), data).Render(req.Context(), w)
+	_ = templates.NotificationsPage(r.assetsFor(req), data).Render(req.Context(), w)
 }
 
 // handleApplyViolationCandidate downloads and applies a chosen image candidate.

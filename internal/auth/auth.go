@@ -123,7 +123,8 @@ func (s *Service) Setup(ctx context.Context, username, password string) (bool, e
 	return true, nil
 }
 
-// Login authenticates a user and returns a session token.
+// Login authenticates a user by username/password and returns a session token.
+// Credential validation happens here; session creation is delegated to CreateSession.
 func (s *Service) Login(ctx context.Context, username, password string) (string, error) {
 	var id, hash string
 	err := s.db.QueryRowContext(ctx, `
@@ -140,21 +141,7 @@ func (s *Service) Login(ctx context.Context, username, password string) (string,
 		return "", errors.New("invalid credentials")
 	}
 
-	token, err := generateToken()
-	if err != nil {
-		return "", fmt.Errorf("generating session token: %w", err)
-	}
-
-	expiresAt := time.Now().Add(sessionDuration).UTC().Format(time.RFC3339)
-	_, err = s.db.ExecContext(ctx, `
-		INSERT INTO sessions (id, user_id, expires_at)
-		VALUES (?, ?, ?)
-	`, token, id, expiresAt)
-	if err != nil {
-		return "", fmt.Errorf("creating session: %w", err)
-	}
-
-	return token, nil
+	return s.CreateSession(ctx, id)
 }
 
 // CreateSession creates a new session for the given user ID and returns the token.
@@ -478,6 +465,8 @@ func (s *Service) SetupFederated(ctx context.Context, result FederatedAuthResult
 
 // LoginFederated authenticates a federated user and returns a Stillwater session token.
 // The caller must have already validated credentials with the media server.
+// User lookup and display-name sync happen here; session creation is delegated
+// to CreateSession.
 func (s *Service) LoginFederated(ctx context.Context, result FederatedAuthResult, provider string) (string, error) {
 	if result.UserID == "" {
 		return "", errors.New("missing federated user ID")
@@ -504,21 +493,7 @@ func (s *Service) LoginFederated(ctx context.Context, result FederatedAuthResult
 		}
 	}
 
-	token, err := generateToken()
-	if err != nil {
-		return "", fmt.Errorf("generating session token: %w", err)
-	}
-
-	expiresAt := time.Now().Add(sessionDuration).UTC().Format(time.RFC3339)
-	_, err = s.db.ExecContext(ctx, `
-		INSERT INTO sessions (id, user_id, expires_at)
-		VALUES (?, ?, ?)
-	`, token, id, expiresAt)
-	if err != nil {
-		return "", fmt.Errorf("creating federated session: %w", err)
-	}
-
-	return token, nil
+	return s.CreateSession(ctx, id)
 }
 
 func generateToken() (string, error) {

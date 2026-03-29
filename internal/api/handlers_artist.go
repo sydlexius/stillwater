@@ -203,7 +203,7 @@ func (r *Router) handleArtistsPage(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	renderTempl(w, req, templates.ArtistsPage(r.assets(), data))
+	renderTempl(w, req, templates.ArtistsPage(r.assetsFor(req), data))
 }
 
 // handleArtistDetailPage renders the artist detail HTML page.
@@ -252,7 +252,7 @@ func (r *Router) handleArtistDetailPage(w http.ResponseWriter, req *http.Request
 		LibraryName:    libraryName,
 		LibrarySource:  librarySource,
 	}
-	renderTempl(w, req, templates.ArtistDetailPage(r.assets(), data))
+	renderTempl(w, req, templates.ArtistDetailPage(r.assetsFor(req), data))
 }
 
 // handleArtistImagesPage renders the image management page.
@@ -288,7 +288,7 @@ func (r *Router) handleArtistImagesPage(w http.ResponseWriter, req *http.Request
 		AutoFetchImages:  autoFetch,
 		SelectedType:     selectedType,
 	}
-	renderTempl(w, req, templates.ImageSearchPage(r.assets(), data))
+	renderTempl(w, req, templates.ImageSearchPage(r.assetsFor(req), data))
 }
 
 // isHTMXRequest checks if the request was made by HTMX.

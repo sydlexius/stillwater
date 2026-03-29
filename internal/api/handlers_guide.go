@@ -15,5 +15,5 @@ func (r *Router) handleGuidePage(w http.ResponseWriter, req *http.Request) {
 		r.renderLoginPage(w, req)
 		return
 	}
-	renderTempl(w, req, templates.GuidePage(r.assets()))
+	renderTempl(w, req, templates.GuidePage(r.assetsFor(req)))
 }

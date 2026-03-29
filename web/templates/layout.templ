@@ -17,6 +17,10 @@ type AssetPaths struct {
 	// BasePath is the server.base_path prefix (e.g. "/stillwater"). Empty string
 	// when the app is deployed at the root. Never has a trailing slash.
 	BasePath string
+	// IsAdmin is true when the authenticated user has the administrator role.
+	// Used by the layout to conditionally render admin-only UI elements such as
+	// the shared-filesystem bar and the Settings navigation link.
+	IsAdmin bool
 }
 
 templ Layout(title string, assets AssetPaths) {
@@ -59,8 +63,10 @@ templ Layout(title string, assets AssetPaths) {
 			<img src={ assets.LoginBG } alt="" class="fixed inset-0 -z-20 h-full w-full object-cover pointer-events-none select-none" aria-hidden="true"/>
 			<div class="fixed inset-0 -z-10 bg-black/15 dark:bg-black/45 pointer-events-none" aria-hidden="true"></div>
 			<div class="min-h-full">
-				@navbar(assets.BasePath)
-				@SharedFilesystemBar()
+				@navbar(assets.BasePath, assets.IsAdmin)
+				if assets.IsAdmin {
+					@SharedFilesystemBar()
+				}
 				<main class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
 					{ children... }
 				</main>
@@ -98,6 +104,12 @@ templ Layout(title string, assets AssetPaths) {
 			</script>
 			<script>
 				document.body.addEventListener('htmx:responseError', function(evt) {
+					// Suppress 403 errors from HTMX requests. These occur
+					// when a non-admin user's page includes a stale admin-only
+					// component. Log to console for debugging.
+					if (evt.detail.xhr && evt.detail.xhr.status === 403) {
+						console.warn('HTMX 403 suppressed:', evt.detail.xhr.responseURL); return;
+					}
 					showToast('Request failed: ' + (evt.detail.xhr.status || 'network error'));
 				});
 				document.body.addEventListener('htmx:timeout', function() {
@@ -416,7 +428,8 @@ templ themeToggleButton() {
 
 // navbar renders the top navigation bar. bp is the server base path (e.g.
 // "/stillwater") and may be empty when the app is deployed at the root.
-templ navbar(bp string) {
+// isAdmin controls visibility of admin-only links (e.g. Settings).
+templ navbar(bp string, isAdmin bool) {
 	<nav class="bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm shadow">
 		<div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
 			<div class="flex h-16 items-center justify-between">
@@ -439,9 +452,11 @@ templ navbar(bp string) {
 							Notifications
 							<span id="notif-badge-desktop" hx-get="/api/v1/notifications/badge" hx-trigger="load, every 30s" hx-swap="innerHTML"></span>
 						</a>
-						<a href={ templ.SafeURL(bp + "/settings") } class="rounded-md px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
-							Settings
-						</a>
+						if isAdmin {
+							<a href={ templ.SafeURL(bp + "/settings") } class="rounded-md px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
+								Settings
+							</a>
+						}
 						<a href={ templ.SafeURL(bp + "/guide") } class="rounded-md px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
 							Guide
 						</a>
@@ -493,9 +508,11 @@ templ navbar(bp string) {
 					Notifications
 					<span id="notif-badge-mobile"></span>
 				</a>
-				<a href={ templ.SafeURL(bp + "/settings") } class="block rounded-md px-3 py-3 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
-					Settings
-				</a>
+				if isAdmin {
+					<a href={ templ.SafeURL(bp + "/settings") } class="block rounded-md px-3 py-3 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
+						Settings
+					</a>
+				}
 				<a href={ templ.SafeURL(bp + "/guide") } class="block rounded-md px-3 py-3 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
 					Guide
 				</a>

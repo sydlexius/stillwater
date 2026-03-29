@@ -65,6 +65,7 @@ func TestLayout_NavLinksUseBasePath(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, bp+"/guide", nil)
 	ctx := middleware.WithTestUserID(req.Context(), "test-user-id")
+	ctx = middleware.WithTestRole(ctx, "administrator")
 	req = req.WithContext(ctx)
 	w := httptest.NewRecorder()
 
@@ -126,6 +127,7 @@ func TestLayout_NavLinksNoBasePath(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/guide", nil)
 	ctx := middleware.WithTestUserID(req.Context(), "test-user-id")
+	ctx = middleware.WithTestRole(ctx, "administrator")
 	req = req.WithContext(ctx)
 	w := httptest.NewRecorder()
 
