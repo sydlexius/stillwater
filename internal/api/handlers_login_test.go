@@ -404,20 +404,16 @@ func TestRoleEnforcementFlow_OperatorForbiddenOnAdminRoutes(t *testing.T) {
 			handler: r.handleGetSettings,
 		},
 		{
-			name:   "POST /api/v1/libraries",
-			method: http.MethodPost,
-			path:   "/api/v1/libraries",
-			handler: func(w http.ResponseWriter, req *http.Request) {
-				middleware.RequireAdmin(r.handleCreateLibrary)(w, req)
-			},
+			name:    "POST /api/v1/libraries",
+			method:  http.MethodPost,
+			path:    "/api/v1/libraries",
+			handler: r.handleCreateLibrary,
 		},
 		{
-			name:   "PUT /api/v1/rules/{id}",
-			method: http.MethodPut,
-			path:   "/api/v1/rules/some-rule-id",
-			handler: func(w http.ResponseWriter, req *http.Request) {
-				middleware.RequireAdmin(r.handleUpdateRule)(w, req)
-			},
+			name:    "PUT /api/v1/rules/{id}",
+			method:  http.MethodPut,
+			path:    "/api/v1/rules/some-rule-id",
+			handler: r.handleUpdateRule,
 		},
 	}
 
@@ -477,16 +473,18 @@ func TestRoleEnforcementFlow_AdminCanAccessAll(t *testing.T) {
 	r, _, adminID := testRouterWithAuth(t)
 
 	cases := []struct {
-		name    string
-		method  string
-		path    string
-		handler http.HandlerFunc
+		name      string
+		method    string
+		path      string
+		handler   http.HandlerFunc
+		adminOnly bool
 	}{
 		{
-			name:    "GET /api/v1/settings (admin only)",
-			method:  http.MethodGet,
-			path:    "/api/v1/settings",
-			handler: r.handleGetSettings,
+			name:      "GET /api/v1/settings (admin only)",
+			method:    http.MethodGet,
+			path:      "/api/v1/settings",
+			handler:   r.handleGetSettings,
+			adminOnly: true,
 		},
 		{
 			name:    "GET /api/v1/rules (operator allowed)",
@@ -501,7 +499,11 @@ func TestRoleEnforcementFlow_AdminCanAccessAll(t *testing.T) {
 			req := httptest.NewRequest(tc.method, tc.path, nil)
 			req = withAdminCtx(req, adminID)
 			w := httptest.NewRecorder()
-			tc.handler(w, req)
+			h := tc.handler
+			if tc.adminOnly {
+				h = middleware.RequireAdmin(h)
+			}
+			h(w, req)
 
 			if w.Code == http.StatusForbidden {
 				t.Errorf("admin on %s: should not get 403, got %d: %s", tc.name, w.Code, w.Body.String())
