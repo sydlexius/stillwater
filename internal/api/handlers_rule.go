@@ -235,6 +235,33 @@ func (r *Router) handleRunRule(w http.ResponseWriter, req *http.Request) {
 
 		result, err := r.pipeline.RunRule(ctx, ruleID)
 
+		// Compute violation counts outside the mutex (same pattern as run-all).
+		var violationsAutoFixed int
+		var violationsRemaining int
+		if err == nil {
+			violationsAutoFixed = result.FixesSucceeded
+			counts, dbErr := r.ruleService.CountActiveViolationsBySeverity(ctx)
+			if dbErr != nil {
+				r.logger.Warn("querying active violations for single-rule toast count", "error", dbErr)
+				violationsRemaining = result.ViolationsFound - violationsAutoFixed
+				if violationsRemaining < 0 {
+					violationsRemaining = 0
+				}
+			} else {
+				total := 0
+				if r.getBoolSetting(ctx, "notif_badge_severity_error", true) {
+					total += counts["error"]
+				}
+				if r.getBoolSetting(ctx, "notif_badge_severity_warning", true) {
+					total += counts["warning"]
+				}
+				if r.getBoolSetting(ctx, "notif_badge_severity_info", false) {
+					total += counts["info"]
+				}
+				violationsRemaining = total
+			}
+		}
+
 		r.ruleRunMu.Lock()
 		r.ruleRun.Running = false
 		r.ruleRun.CompletedAt = time.Now().UTC()
@@ -250,28 +277,10 @@ func (r *Router) handleRunRule(w http.ResponseWriter, req *http.Request) {
 		r.ruleRun.Status = "completed"
 		r.ruleRun.ArtistsProcessed = result.ArtistsProcessed
 		r.ruleRun.ViolationsFound = result.ViolationsFound
-		r.ruleRun.ViolationsAutoFixed = result.FixesSucceeded
+		r.ruleRun.ViolationsAutoFixed = violationsAutoFixed
+		r.ruleRun.ViolationsRemaining = violationsRemaining
 		r.ruleRun.FixesAttempted = result.FixesAttempted
 		r.ruleRun.FixesSucceeded = result.FixesSucceeded
-		r.ruleRunMu.Unlock()
-
-		// Compute remaining violations outside the mutex (same pattern as run-all).
-		violationsRemaining := result.ViolationsFound - result.FixesSucceeded
-		if violationsRemaining < 0 {
-			violationsRemaining = 0
-		}
-		if r.ruleService != nil {
-			if counts, dbErr := r.ruleService.CountActiveViolationsBySeverity(ctx); dbErr == nil {
-				violationsRemaining = 0
-				for _, n := range counts {
-					violationsRemaining += n
-				}
-			} else {
-				r.logger.Warn("querying active violations for single-rule toast count", "error", dbErr)
-			}
-		}
-		r.ruleRunMu.Lock()
-		r.ruleRun.ViolationsRemaining = violationsRemaining
 		r.ruleRunMu.Unlock()
 	}()
 

@@ -314,7 +314,7 @@ components:
           description: Number of violations that were automatically fixed
         violations_remaining:
           type: integer
-          description: Number of active violations remaining after auto-fixes
+          description: Number of active violations remaining, filtered by notification badge severity settings
         fixes_attempted:
           type: integer
         fixes_succeeded:

@@ -24,7 +24,8 @@ var quietExact = []string{
 
 // Logging returns middleware that logs each HTTP request with structured fields.
 // It scrubs sensitive query parameters and headers from log output.
-// Requests to paths in quietPaths are served but not logged.
+// Requests matching quietPrefixes or quietExact are served without logging
+// successful responses; error responses (>= 400) are still logged.
 func Logging(logger *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

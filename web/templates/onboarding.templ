@@ -176,7 +176,7 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 								type="button"
 								id="ob-add-library-btn"
 								class="text-sm px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-								onclick="document.getElementById('ob-library-form').classList.remove('hidden'); this.classList.add('hidden');"
+								onclick="document.getElementById('ob-library-form').classList.remove('hidden'); this.classList.add('hidden'); var e=document.getElementById('ob-library-error'); if(e) e.classList.add('hidden');"
 							>
 								Add Library
 							</button>
@@ -211,7 +211,7 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 								</div>
 								<div class="flex gap-2">
 									<button type="submit" class="text-sm px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 transition-colors">Save</button>
-									<button type="button" class="text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" onclick="document.getElementById('ob-library-form').classList.add('hidden'); document.getElementById('ob-add-library-btn').classList.remove('hidden');">Cancel</button>
+									<button type="button" class="text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" onclick="document.getElementById('ob-library-form').classList.add('hidden'); document.getElementById('ob-add-library-btn').classList.remove('hidden'); var e=document.getElementById('ob-library-error'); if(e) e.classList.add('hidden');">Cancel</button>
 								</div>
 							</form>
 						</div>
