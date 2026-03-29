@@ -201,6 +201,11 @@ func TestUpdateUserRole_LastAdmin(t *testing.T) {
 	if !errors.Is(err, ErrLastAdmin) {
 		t.Errorf("UpdateUserRole last admin = %v, want ErrLastAdmin", err)
 	}
+
+	// Same-role no-op on the sole admin must return nil, not ErrLastAdmin.
+	if err = svc.UpdateUserRole(ctx, admin.ID, "administrator"); err != nil {
+		t.Errorf("UpdateUserRole same-role sole admin = %v, want nil", err)
+	}
 }
 
 func TestDeactivateUser(t *testing.T) {
@@ -518,6 +523,11 @@ func TestUpdateUserRole_BootstrapAdmin(t *testing.T) {
 	err = svc.UpdateUserRole(ctx, bootstrapID, "operator")
 	if !errors.Is(err, ErrProtectedUser) {
 		t.Errorf("UpdateUserRole bootstrap admin = %v, want ErrProtectedUser", err)
+	}
+
+	// Same-role no-op on the protected admin must return nil, not ErrProtectedUser.
+	if err = svc.UpdateUserRole(ctx, bootstrapID, "administrator"); err != nil {
+		t.Errorf("UpdateUserRole same-role protected admin = %v, want nil", err)
 	}
 }
 
