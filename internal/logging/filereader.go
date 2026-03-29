@@ -231,8 +231,9 @@ func parseLogLine(line string) LogEntry {
 
 	// Auto-derive component from the Go package directory when not explicitly set.
 	if entry.Component == "" && known.Source != nil && known.Source.File != "" {
-		dir := filepath.Dir(known.Source.File)
-		entry.Component = filepath.Base(dir)
+		if base := filepath.Base(filepath.Dir(known.Source.File)); base != "." && base != "" {
+			entry.Component = base
+		}
 	}
 
 	if len(attrs) > 0 {

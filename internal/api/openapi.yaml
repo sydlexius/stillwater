@@ -5567,6 +5567,12 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/LogFileInfo"
+        "500":
+          description: Internal server error (e.g. filesystem permission issue)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "503":
           description: Logging manager not available
           content:
@@ -5594,6 +5600,12 @@ paths:
                     type: integer
                     format: int64
                     description: Total bytes freed
+        "500":
+          description: Internal server error (e.g. filesystem permission issue)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "503":
           description: Logging manager not available
           content:

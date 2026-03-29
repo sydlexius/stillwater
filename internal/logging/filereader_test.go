@@ -109,6 +109,10 @@ func TestReadLogFile_BasicFiltering(t *testing.T) {
 		if len(entries) != 2 {
 			t.Fatalf("got %d entries, want 2 (warn+error)", len(entries))
 		}
+		// Newest first: error before warn.
+		if entries[0].Level != "error" || entries[1].Level != "warn" {
+			t.Fatalf("levels: got %q, %q; want error, warn", entries[0].Level, entries[1].Level)
+		}
 	})
 
 	t.Run("search filter", func(t *testing.T) {
@@ -118,6 +122,10 @@ func TestReadLogFile_BasicFiltering(t *testing.T) {
 		}
 		if len(entries) != 2 {
 			t.Fatalf("got %d entries, want 2", len(entries))
+		}
+		// Newest first: "another info" before "info entry".
+		if entries[0].Message != "another info" || entries[1].Message != "info entry" {
+			t.Fatalf("messages: got %q, %q; want 'another info', 'info entry'", entries[0].Message, entries[1].Message)
 		}
 	})
 
@@ -161,6 +169,50 @@ func TestListLogFiles_CurrentOnly(t *testing.T) {
 	}
 	if files[0].Name != "stillwater.log" {
 		t.Errorf("Name: got %q, want %q", files[0].Name, "stillwater.log")
+	}
+}
+
+func TestParseLogLine_TraceLevel(t *testing.T) {
+	// slog serializes LevelTrace as "DEBUG-4". The parser should normalize this to "trace".
+	line := `{"time":"2024-03-29T10:00:00Z","level":"DEBUG-4","msg":"trace entry"}`
+	entry := parseLogLine(line)
+	if entry.Level != "trace" {
+		t.Errorf("Level: got %q, want %q", entry.Level, "trace")
+	}
+}
+
+func TestManagerReadLogFile_PathTraversal(t *testing.T) {
+	cfg := Config{Level: "info", Format: "json", FilePath: "/tmp/test.log"}
+	mgr, _ := NewManager(cfg)
+	defer mgr.Close() //nolint:errcheck
+
+	tests := []struct {
+		name     string
+		filename string
+		wantErr  bool
+	}{
+		{"valid filename", "test.log", true},        // file doesn't exist, but passes validation
+		{"path traversal", "../etc/passwd", true},   // rejected by validation
+		{"slash in name", "sub/test.log", true},     // rejected by validation
+		{"backslash in name", `sub\test.log`, true}, // rejected by validation
+		{"empty config", "", true},                  // tested separately below
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := mgr.ReadLogFile(tt.filename, LogFilter{})
+			if err == nil && tt.wantErr {
+				t.Error("expected error, got nil")
+			}
+		})
+	}
+
+	// Empty FilePath config should return "file logging not configured".
+	emptyCfg := Config{Level: "info", Format: "json"}
+	emptyMgr, _ := NewManager(emptyCfg)
+	defer emptyMgr.Close() //nolint:errcheck
+	_, err := emptyMgr.ReadLogFile("test.log", LogFilter{})
+	if err == nil || err.Error() != "file logging not configured" {
+		t.Errorf("expected 'file logging not configured' error, got %v", err)
 	}
 }
 
