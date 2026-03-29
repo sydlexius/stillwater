@@ -66,7 +66,8 @@ func (r *Router) handleListInvites(w http.ResponseWriter, req *http.Request) {
 		invites = []auth.Invite{}
 	}
 
-	// HTMX callers expect HTML invite rows, not JSON.
+	// Content negotiation: HTML for HTMX, JSON for API clients.
+	w.Header().Set("Vary", "HX-Request")
 	if req.Header.Get("HX-Request") == "true" {
 		r.renderInviteRows(w, req, invites)
 		return
@@ -193,7 +194,8 @@ func (r *Router) handleListUsers(w http.ResponseWriter, req *http.Request) {
 		users = []auth.User{}
 	}
 
-	// HTMX callers expect HTML table rows, not JSON.
+	// Content negotiation: HTML for HTMX, JSON for API clients.
+	w.Header().Set("Vary", "HX-Request")
 	if req.Header.Get("HX-Request") == "true" {
 		r.renderUserTableRows(w, req, users)
 		return
