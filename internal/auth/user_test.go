@@ -253,7 +253,7 @@ func TestDeactivateUser_BootstrapAdmin(t *testing.T) {
 	}
 
 	// Create a second admin so the last-admin guard is not the reason for refusal.
-	_, err = svc.CreateLocalUser(ctx, "admin2", "pass2", "Admin Two", "administrator", "")
+	secondAdmin, err := svc.CreateLocalUser(ctx, "admin2", "pass2", "Admin Two", "administrator", "")
 	if err != nil {
 		t.Fatalf("CreateLocalUser: %v", err)
 	}
@@ -263,16 +263,23 @@ func TestDeactivateUser_BootstrapAdmin(t *testing.T) {
 		t.Fatalf("ListUsers: %v", err)
 	}
 
-	// The bootstrap admin is the protected one (is_protected = 1).
+	// Find the bootstrap admin by username and assert admin2 is not protected.
 	var bootstrapID string
 	for _, u := range users {
-		if u.IsProtected {
+		switch u.Username {
+		case "admin":
+			if !u.IsProtected {
+				t.Fatal("expected bootstrap admin to be protected")
+			}
 			bootstrapID = u.ID
-			break
+		case "admin2":
+			if u.ID == secondAdmin.ID && u.IsProtected {
+				t.Fatal("expected second admin to be unprotected")
+			}
 		}
 	}
 	if bootstrapID == "" {
-		t.Fatal("no protected user found after Setup")
+		t.Fatal("no bootstrap user found after Setup")
 	}
 
 	err = svc.DeactivateUser(ctx, bootstrapID)
@@ -313,7 +320,14 @@ func TestDeactivateUser_NonBootstrapAdmin(t *testing.T) {
 
 	// Deactivating one of multiple non-bootstrap admins should succeed.
 	if err := svc.DeactivateUser(ctx, admin1.ID); err != nil {
-		t.Errorf("DeactivateUser non-bootstrap admin = %v, want nil", err)
+		t.Fatalf("DeactivateUser non-bootstrap admin: %v", err)
+	}
+	got, err := svc.GetUserByID(ctx, admin1.ID)
+	if err != nil {
+		t.Fatalf("GetUserByID admin1: %v", err)
+	}
+	if got.IsActive {
+		t.Error("expected deactivated non-bootstrap admin to be inactive")
 	}
 }
 
@@ -341,19 +355,30 @@ func TestListUsers_BootstrapAdminIsProtected(t *testing.T) {
 	}
 
 	// Find each user by username to avoid relying on slice ordering.
-	var protectedCount int
+	var (
+		foundAdmin     bool
+		foundOp1       bool
+		protectedCount int
+	)
 	for _, u := range users {
+		if u.IsProtected {
+			protectedCount++
+		}
 		switch u.Username {
 		case "admin":
+			foundAdmin = true
 			if !u.IsProtected {
 				t.Errorf("bootstrap admin %q: expected IsProtected = true", u.Username)
 			}
-			protectedCount++
 		case "op1":
+			foundOp1 = true
 			if u.IsProtected {
 				t.Errorf("non-bootstrap user %q: expected IsProtected = false", u.Username)
 			}
 		}
+	}
+	if !foundAdmin || !foundOp1 {
+		t.Fatalf("expected users %q and %q to be present", "admin", "op1")
 	}
 	if protectedCount != 1 {
 		t.Errorf("expected exactly 1 protected user, got %d", protectedCount)

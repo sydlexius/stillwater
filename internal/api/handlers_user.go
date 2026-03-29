@@ -296,8 +296,10 @@ func (r *Router) handleDeactivateUser(w http.ResponseWriter, req *http.Request) 
 	if err := r.authService.DeactivateUser(req.Context(), id); err != nil {
 		switch {
 		case errors.Is(err, auth.ErrProtectedUser):
+			r.logger.Warn("blocked deactivation of protected bootstrap admin", "user_id", id)
 			writeJSON(w, http.StatusConflict, map[string]string{"error": "The bootstrap administrator account cannot be deactivated."})
 		case errors.Is(err, auth.ErrLastAdmin):
+			r.logger.Warn("blocked deactivation of last active administrator", "user_id", id)
 			writeJSON(w, http.StatusConflict, map[string]string{"error": "Cannot deactivate the last active administrator."})
 		default:
 			r.logger.Error("failed to deactivate user", "user_id", id, "error", err)
