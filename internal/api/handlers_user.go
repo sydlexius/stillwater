@@ -261,6 +261,8 @@ func (r *Router) handleUpdateUser(w http.ResponseWriter, req *http.Request) {
 
 	if err := r.authService.UpdateUserRole(req.Context(), id, body.Role); err != nil {
 		switch {
+		case errors.Is(err, auth.ErrProtectedUser):
+			writeJSON(w, http.StatusConflict, map[string]string{"error": "The bootstrap administrator account role cannot be changed."})
 		case errors.Is(err, auth.ErrLastAdmin):
 			writeJSON(w, http.StatusConflict, map[string]string{"error": "Cannot downgrade the last active administrator."})
 		case errors.Is(err, sql.ErrNoRows):

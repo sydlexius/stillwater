@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -190,17 +191,13 @@ func TestUpdateUserRole_LastAdmin(t *testing.T) {
 	svc := setupTestService(t)
 	ctx := context.Background()
 
-	_, err := svc.Setup(ctx, "admin", "password")
+	// Create a non-bootstrap admin directly (no Setup call) so it is not protected.
+	admin, err := svc.CreateLocalUser(ctx, "admin", "password", "Admin", "administrator", "")
 	if err != nil {
-		t.Fatalf("Setup: %v", err)
+		t.Fatalf("CreateLocalUser: %v", err)
 	}
 
-	users, err := svc.ListUsers(ctx)
-	if err != nil {
-		t.Fatalf("ListUsers: %v", err)
-	}
-
-	err = svc.UpdateUserRole(ctx, users[0].ID, "operator")
+	err = svc.UpdateUserRole(ctx, admin.ID, "operator")
 	if !errors.Is(err, ErrLastAdmin) {
 		t.Errorf("UpdateUserRole last admin = %v, want ErrLastAdmin", err)
 	}
@@ -459,5 +456,103 @@ func TestCreateFederatedUser(t *testing.T) {
 	}
 	if !user.IsActive {
 		t.Error("expected IsActive = true")
+	}
+}
+
+func TestUpdateUserRole_BootstrapAdmin(t *testing.T) {
+	svc := setupTestService(t)
+	ctx := context.Background()
+
+	_, err := svc.Setup(ctx, "admin", "password")
+	if err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+
+	// Create a second admin so the last-admin guard is not the reason for refusal.
+	_, err = svc.CreateLocalUser(ctx, "admin2", "pass2", "Admin Two", "administrator", "")
+	if err != nil {
+		t.Fatalf("CreateLocalUser: %v", err)
+	}
+
+	users, err := svc.ListUsers(ctx)
+	if err != nil {
+		t.Fatalf("ListUsers: %v", err)
+	}
+
+	var bootstrapID string
+	for _, u := range users {
+		if u.IsProtected {
+			bootstrapID = u.ID
+			break
+		}
+	}
+	if bootstrapID == "" {
+		t.Fatal("no protected user found after Setup")
+	}
+
+	err = svc.UpdateUserRole(ctx, bootstrapID, "operator")
+	if !errors.Is(err, ErrProtectedUser) {
+		t.Errorf("UpdateUserRole bootstrap admin = %v, want ErrProtectedUser", err)
+	}
+}
+
+func TestGetUserByProvider_IsProtected(t *testing.T) {
+	svc := setupTestService(t)
+	ctx := context.Background()
+
+	// SetupFederated creates the bootstrap admin via the federated path.
+	result := FederatedAuthResult{
+		UserID:   "emby-user-1",
+		UserName: "Alice",
+		IsAdmin:  true,
+	}
+	if _, err := svc.SetupFederated(ctx, result, "emby"); err != nil {
+		t.Fatalf("SetupFederated: %v", err)
+	}
+
+	user, err := svc.GetUserByProvider(ctx, "emby", "emby-user-1")
+	if err != nil {
+		t.Fatalf("GetUserByProvider: %v", err)
+	}
+	if !user.IsProtected {
+		t.Error("expected federated bootstrap admin to have IsProtected = true")
+	}
+}
+
+func TestDBTrigger_PreventDeactivateProtectedUser(t *testing.T) {
+	svc := setupTestService(t)
+	ctx := context.Background()
+
+	_, err := svc.Setup(ctx, "admin", "password")
+	if err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+
+	// Execute the UPDATE directly, bypassing the service layer.
+	_, err = svc.db.ExecContext(ctx, `UPDATE users SET is_active = 0 WHERE is_protected = 1`)
+	if err == nil {
+		t.Fatal("expected DB trigger to reject UPDATE is_active=0 on protected user, got nil error")
+	}
+	if !strings.Contains(err.Error(), "cannot deactivate a protected user") {
+		t.Errorf("unexpected trigger error: %v", err)
+	}
+}
+
+func TestDBTrigger_PreventRoleChangeProtectedUser(t *testing.T) {
+	svc := setupTestService(t)
+	ctx := context.Background()
+
+	_, err := svc.Setup(ctx, "admin", "password")
+	if err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+
+	// Execute the UPDATE directly, bypassing the service layer.
+	_, err = svc.db.ExecContext(ctx, `UPDATE users SET role = 'operator' WHERE is_protected = 1`)
+	if err == nil {
+		t.Fatal("expected DB trigger to reject role UPDATE on protected user, got nil error")
+	}
+	if !strings.Contains(err.Error(), "cannot change role of a protected user") {
+		t.Errorf("unexpected trigger error: %v", err)
 	}
 }

@@ -124,25 +124,31 @@ func (s *Service) ListUsers(ctx context.Context) ([]User, error) {
 }
 
 // UpdateUserRole changes a user's role. Valid roles are "administrator" and
-// "operator". Returns ErrLastAdmin if downgrading the last active administrator.
-// The admin-count check and role update run inside a BEGIN IMMEDIATE transaction
-// to prevent concurrent downgrades from racing past the last-admin safeguard.
+// "operator". Returns ErrProtectedUser if downgrading the protected bootstrap
+// administrator, and ErrLastAdmin if downgrading the last active administrator.
+// The checks and role update run inside a BEGIN IMMEDIATE transaction
+// to prevent concurrent downgrades from racing past the safeguards.
 func (s *Service) UpdateUserRole(ctx context.Context, userID, newRole string) error {
 	if newRole != "administrator" && newRole != "operator" {
 		return fmt.Errorf("invalid role %q: must be administrator or operator", newRole)
 	}
 
 	return s.withImmediateTx(ctx, func(conn *sql.Conn) error {
+		var currentRole string
+		var isProtected bool
+		err := conn.QueryRowContext(ctx, `
+			SELECT role, is_protected FROM users WHERE id = ? AND is_active = 1
+		`, userID).Scan(&currentRole, &isProtected)
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("user not found: %w", sql.ErrNoRows)
+		}
+		if err != nil {
+			return fmt.Errorf("checking current role: %w", err)
+		}
+
 		if newRole == "operator" {
-			var currentRole string
-			err := conn.QueryRowContext(ctx, `
-				SELECT role FROM users WHERE id = ? AND is_active = 1
-			`, userID).Scan(&currentRole)
-			if errors.Is(err, sql.ErrNoRows) {
-				return fmt.Errorf("user not found: %w", sql.ErrNoRows)
-			}
-			if err != nil {
-				return fmt.Errorf("checking current role: %w", err)
+			if isProtected {
+				return ErrProtectedUser
 			}
 
 			if currentRole == "administrator" {
@@ -164,6 +170,9 @@ func (s *Service) UpdateUserRole(ctx context.Context, userID, newRole string) er
 			UPDATE users SET role = ?, updated_at = ? WHERE id = ? AND is_active = 1
 		`, newRole, now, userID)
 		if err != nil {
+			if strings.Contains(err.Error(), "cannot change role of a protected user") {
+				return ErrProtectedUser
+			}
 			return fmt.Errorf("updating user role: %w", err)
 		}
 
@@ -221,6 +230,9 @@ func (s *Service) DeactivateUser(ctx context.Context, userID string) error {
 			UPDATE users SET is_active = 0, updated_at = ? WHERE id = ?
 		`, now, userID)
 		if err != nil {
+			if strings.Contains(err.Error(), "cannot deactivate a protected user") {
+				return ErrProtectedUser
+			}
 			return fmt.Errorf("deactivating user: %w", err)
 		}
 

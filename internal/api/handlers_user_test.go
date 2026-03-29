@@ -163,17 +163,17 @@ func TestHandleUpdateUser_InvalidRole(t *testing.T) {
 func TestHandleUpdateUser_ValidRole(t *testing.T) {
 	r, authSvc, adminID := testRouterWithAuth(t)
 
-	// Create a second admin so we can downgrade the first.
-	_, err := authSvc.CreateLocalUser(context.Background(), "admin2", "password123", "Admin 2", "administrator", adminID)
+	// Create a second admin to downgrade (the first is protected).
+	second, err := authSvc.CreateLocalUser(context.Background(), "admin2", "password123", "Admin 2", "administrator", adminID)
 	if err != nil {
 		t.Fatalf("creating second admin: %v", err)
 	}
 
-	// Downgrade the first admin to operator.
+	// Downgrade the second (non-protected) admin to operator.
 	body := `{"role":"operator"}`
-	req := httptest.NewRequest(http.MethodPatch, "/api/v1/users/"+adminID, strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/users/"+second.ID, strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	req.SetPathValue("id", adminID)
+	req.SetPathValue("id", second.ID)
 	req = withAdminCtx(req, adminID)
 	w := httptest.NewRecorder()
 	r.handleUpdateUser(w, req)
@@ -188,5 +188,36 @@ func TestHandleUpdateUser_ValidRole(t *testing.T) {
 	}
 	if user.Role != "operator" {
 		t.Errorf("Role = %q, want %q", user.Role, "operator")
+	}
+}
+
+func TestHandleUpdateUser_BootstrapAdmin(t *testing.T) {
+	r, authSvc, adminID := testRouterWithAuth(t)
+
+	// Create a second admin so the last-admin guard is not the reason for refusal.
+	_, err := authSvc.CreateLocalUser(context.Background(), "admin2", "password123", "Admin 2", "administrator", adminID)
+	if err != nil {
+		t.Fatalf("creating second admin: %v", err)
+	}
+
+	// Attempt to downgrade the protected bootstrap admin.
+	body := `{"role":"operator"}`
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/users/"+adminID, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", adminID)
+	req = withAdminCtx(req, adminID)
+	w := httptest.NewRecorder()
+	r.handleUpdateUser(w, req)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("update bootstrap admin role: status = %d, want %d; body: %s", w.Code, http.StatusConflict, w.Body.String())
+	}
+
+	var resp map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding error response: %v", err)
+	}
+	if !strings.Contains(resp["error"], "bootstrap administrator") {
+		t.Errorf("error = %q, want message about bootstrap administrator", resp["error"])
 	}
 }

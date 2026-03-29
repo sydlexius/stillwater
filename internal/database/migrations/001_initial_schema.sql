@@ -32,6 +32,17 @@ BEGIN
 END;
 -- +goose StatementEnd
 
+-- +goose StatementBegin
+-- Prevent changing the role of the bootstrap administrator at the database level.
+CREATE TRIGGER IF NOT EXISTS prevent_role_change_protected_user
+BEFORE UPDATE OF role ON users
+FOR EACH ROW
+WHEN OLD.is_protected = 1
+BEGIN
+    SELECT RAISE(ABORT, 'cannot change role of a protected user');
+END;
+-- +goose StatementEnd
+
 CREATE TABLE IF NOT EXISTS sessions (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
