@@ -19,13 +19,13 @@
 function pollAsyncStatus(url, callbacks, options) {
   options = options || {};
   var intervalMs = options.intervalMs || 2000;
-  var maxAttempts = options.maxAttempts || 150;
+  var maxAttempts = (options.maxAttempts !== undefined) ? options.maxAttempts : 150;
   var headers = options.headers || {};
   var credentials = options.credentials || 'same-origin';
   var attempts = 0;
 
   var poll = setInterval(function () {
-    if (++attempts > maxAttempts) {
+    if (maxAttempts > 0 && ++attempts > maxAttempts) {
       clearInterval(poll);
       if (callbacks.onTimeout) callbacks.onTimeout();
       return;
