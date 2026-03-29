@@ -306,6 +306,14 @@ func (e *Engine) Evaluate(ctx context.Context, a *artist.Artist) (*EvaluationRes
 			continue
 		}
 
+		// Skip filesystem-dependent rules for artists without a local path.
+		// API-imported artists (Emby/Jellyfin) have no filesystem directory and
+		// cannot have NFO files; evaluating these rules against them produces
+		// false violations.
+		if r.FilesystemDependent && a.Path == "" {
+			continue
+		}
+
 		checker, ok := e.checkers[r.ID]
 		if !ok {
 			e.logger.Debug("no checker registered for rule", slog.String("rule_id", r.ID))
