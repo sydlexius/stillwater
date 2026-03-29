@@ -236,7 +236,7 @@ func (r *Router) handleNFODiffPage(w http.ResponseWriter, req *http.Request) {
 		Snapshots:  snapshots,
 		IsPathless: a.Path == "",
 	}
-	renderTempl(w, req, templates.NFODiffPage(r.assets(), data))
+	renderTempl(w, req, templates.NFODiffPage(r.assetsFor(req), data))
 }
 
 // handleNFOConflictCheck checks whether an artist's NFO has been modified externally.

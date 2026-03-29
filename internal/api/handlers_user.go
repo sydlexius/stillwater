@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/auth"
+	"github.com/sydlexius/stillwater/web/templates"
 )
 
 // handleCreateInvite generates a new single-use invite link.
@@ -50,6 +52,7 @@ func (r *Router) handleCreateInvite(w http.ResponseWriter, req *http.Request) {
 
 // handleListInvites returns all pending (unredeemed, non-expired) invites.
 // GET /api/v1/users/invites (admin only)
+// Returns JSON for API clients or HTML fragments when HX-Request is set.
 func (r *Router) handleListInvites(w http.ResponseWriter, req *http.Request) {
 	invites, err := r.authService.ListPendingInvites(req.Context())
 	if err != nil {
@@ -61,6 +64,12 @@ func (r *Router) handleListInvites(w http.ResponseWriter, req *http.Request) {
 	// Return an empty array rather than null when there are no invites.
 	if invites == nil {
 		invites = []auth.Invite{}
+	}
+
+	// HTMX callers expect HTML invite rows, not JSON.
+	if req.Header.Get("HX-Request") == "true" {
+		r.renderInviteRows(w, req, invites)
+		return
 	}
 
 	writeJSON(w, http.StatusOK, invites)
@@ -170,6 +179,7 @@ func (r *Router) handleRegister(w http.ResponseWriter, req *http.Request) {
 
 // handleListUsers returns all user accounts.
 // GET /api/v1/users (admin only)
+// Returns JSON for API clients or HTML table rows when HX-Request is set.
 func (r *Router) handleListUsers(w http.ResponseWriter, req *http.Request) {
 	users, err := r.authService.ListUsers(req.Context())
 	if err != nil {
@@ -181,6 +191,12 @@ func (r *Router) handleListUsers(w http.ResponseWriter, req *http.Request) {
 	// Return an empty array rather than null when there are no users.
 	if users == nil {
 		users = []auth.User{}
+	}
+
+	// HTMX callers expect HTML table rows, not JSON.
+	if req.Header.Get("HX-Request") == "true" {
+		r.renderUserTableRows(w, req, users)
+		return
 	}
 
 	writeJSON(w, http.StatusOK, users)
@@ -306,4 +322,39 @@ func parseDuration(s string) (time.Duration, error) {
 		return 0, fmt.Errorf("invalid duration: %s", s)
 	}
 	return d, nil
+}
+
+// renderUserTableRows writes user table rows as HTML fragments for HTMX.
+// Pre-renders to a buffer so partial failures return a 500 instead of truncated HTML.
+func (r *Router) renderUserTableRows(w http.ResponseWriter, req *http.Request, users []auth.User) {
+	var buf bytes.Buffer
+	for _, u := range users {
+		if err := templates.UserTableRowFragment(u).Render(req.Context(), &buf); err != nil {
+			r.logger.Error("rendering user table row", "user_id", u.ID, "error", err)
+			http.Error(w, "Failed to render user list", http.StatusInternalServerError)
+			return
+		}
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = w.Write(buf.Bytes())
+}
+
+// renderInviteRows writes invite entries as HTML fragments for HTMX.
+// Pre-renders to a buffer so partial failures return a 500 instead of truncated HTML.
+func (r *Router) renderInviteRows(w http.ResponseWriter, req *http.Request, invites []auth.Invite) {
+	if len(invites) == 0 {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte(`<p class="text-sm text-gray-500 dark:text-gray-400 italic">No pending invites.</p>`))
+		return
+	}
+	var buf bytes.Buffer
+	for _, inv := range invites {
+		if err := templates.InviteRowFragment(inv).Render(req.Context(), &buf); err != nil {
+			r.logger.Error("rendering invite row", "invite_id", inv.ID, "error", err)
+			http.Error(w, "Failed to render invite list", http.StatusInternalServerError)
+			return
+		}
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = w.Write(buf.Bytes())
 }

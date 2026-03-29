@@ -191,6 +191,13 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	// Settings page is admin-only. Operators get a 403 page instead of
+	// raw JSON so the browser renders something meaningful.
+	if middleware.RoleFromContext(req.Context()) != "administrator" {
+		http.Error(w, "Forbidden: administrator role required", http.StatusForbidden)
+		return
+	}
+
 	profiles, err := r.platformService.List(req.Context())
 	if err != nil {
 		r.logger.Error("listing platforms for settings page", "error", err)
@@ -342,5 +349,5 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 		Users:                   usersTabData,
 		AuthProviders:           authProvidersData,
 	}
-	renderTempl(w, req, templates.SettingsPage(r.assets(), data))
+	renderTempl(w, req, templates.SettingsPage(r.assetsFor(req), data))
 }

@@ -52,6 +52,16 @@ func (r *Router) assets() templates.AssetPaths {
 	}
 }
 
+// assetsFor returns AssetPaths with the IsAdmin flag set based on the
+// authenticated user's role from the request context. Use this instead of
+// assets() when rendering pages that include the Layout (which conditionally
+// shows admin-only elements like Settings nav and SharedFilesystemBar).
+func (r *Router) assetsFor(req *http.Request) templates.AssetPaths {
+	a := r.assets()
+	a.IsAdmin = middleware.RoleFromContext(req.Context()) == "administrator"
+	return a
+}
+
 // handleLogin authenticates a user and sets a session cookie.
 // If the auth registry is configured, it dispatches to the appropriate provider.
 // For backward compatibility, falls back to the legacy auth.method setting path
@@ -356,23 +366,40 @@ func (r *Router) setSessionCookie(w http.ResponseWriter, req *http.Request, toke
 }
 
 // renderLoginPage renders the login page with all enabled auth providers.
-// When the auth registry is configured, the page shows buttons for each
-// registered provider (Emby, Jellyfin, OIDC) plus a local credentials form
-// when the local provider is enabled.
-// Falls back to the legacy auth.method setting when no registry is wired.
+// Reads the enabled state of each provider from the database settings so that
+// toggling a provider in Settings is reflected on the login page immediately
+// without a server restart.
 func (r *Router) renderLoginPage(w http.ResponseWriter, req *http.Request) {
-	var providers []auth.Authenticator
-	if r.authRegistry != nil {
-		providers = r.authRegistry.Enabled()
-	}
-	// Legacy fallback: if no registry is configured, synthesize a single
-	// synthetic provider entry based on the auth.method setting so the
-	// template always has something to render.
-	if len(providers) == 0 {
-		authMethod := r.getStringSetting(req.Context(), "auth.method", "local")
-		providers = []auth.Authenticator{syntheticProvider{providerType: authMethod}}
-	}
+	providers := r.enabledAuthProviders(req.Context())
 	renderTempl(w, req, templates.LoginPage(r.assets(), providers))
+}
+
+// enabledAuthProviders builds the provider list for login and registration
+// pages by reading the auth.providers.*.enabled settings from the database.
+// This ensures that toggling a provider in Settings takes effect immediately.
+func (r *Router) enabledAuthProviders(ctx context.Context) []auth.Authenticator {
+	var providers []auth.Authenticator
+
+	if r.getBoolSetting(ctx, "auth.providers.local.enabled", true) {
+		providers = append(providers, syntheticProvider{providerType: "local"})
+	}
+	if r.getBoolSetting(ctx, "auth.providers.emby.enabled", false) {
+		providers = append(providers, syntheticProvider{providerType: "emby"})
+	}
+	if r.getBoolSetting(ctx, "auth.providers.jellyfin.enabled", false) {
+		providers = append(providers, syntheticProvider{providerType: "jellyfin"})
+	}
+	if r.getBoolSetting(ctx, "auth.providers.oidc.enabled", false) {
+		providers = append(providers, syntheticProvider{providerType: "oidc"})
+	}
+
+	// Fallback: if nothing is enabled (e.g. fresh install before settings
+	// exist), show the local login form so the admin can still sign in.
+	if len(providers) == 0 {
+		providers = append(providers, syntheticProvider{providerType: "local"})
+	}
+
+	return providers
 }
 
 // handleRegisterPage serves the invite redemption page.
@@ -387,14 +414,8 @@ func (r *Router) handleRegisterPage(w http.ResponseWriter, req *http.Request) {
 		Code: code,
 	}
 
-	// Populate providers from registry (or fallback to local).
-	if r.authRegistry != nil {
-		data.Providers = r.authRegistry.Enabled()
-	}
-	if len(data.Providers) == 0 {
-		authMethod := r.getStringSetting(req.Context(), "auth.method", "local")
-		data.Providers = []auth.Authenticator{syntheticProvider{providerType: authMethod}}
-	}
+	// Populate providers from database settings (same source as the login page).
+	data.Providers = r.enabledAuthProviders(req.Context())
 
 	// If a code was provided, validate it to show the invite info banner or an
 	// error message without requiring a form submission.
@@ -403,6 +424,17 @@ func (r *Router) handleRegisterPage(w http.ResponseWriter, req *http.Request) {
 		switch {
 		case err == nil:
 			data.Invite = invite
+			if inviter, lookupErr := r.authService.GetUserByID(req.Context(), invite.CreatedBy); lookupErr == nil {
+				if inviter.DisplayName != "" {
+					data.InviterName = inviter.DisplayName
+				} else {
+					data.InviterName = inviter.Username
+				}
+			} else {
+				r.logger.Warn("inviter lookup failed, using generic label",
+					"invite_id", invite.ID, "created_by", invite.CreatedBy, "error", lookupErr)
+				data.InviterName = "an administrator"
+			}
 		case errors.Is(err, auth.ErrInviteNotFound):
 			data.InviteError = "This invite code is invalid."
 		case errors.Is(err, auth.ErrInviteRedeemed):
@@ -893,7 +925,7 @@ func (r *Router) handleIndex(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	renderTempl(w, req, templates.IndexPage(r.assets()))
+	renderTempl(w, req, templates.IndexPage(r.assetsFor(req)))
 }
 
 // handleOnboardingPage serves the first-time setup wizard page.
@@ -992,7 +1024,7 @@ func (r *Router) handleOnboardingPage(w http.ResponseWriter, req *http.Request) 
 		CurrentStep:        currentStep,
 		UnidentifiedCount:  unidentifiedCount,
 	}
-	renderTempl(w, req, templates.OnboardingPage(r.assets(), data))
+	renderTempl(w, req, templates.OnboardingPage(r.assetsFor(req), data))
 }
 
 func renderTempl(w http.ResponseWriter, r *http.Request, component templ.Component) {

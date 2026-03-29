@@ -148,7 +148,7 @@ templ settingsUsersTab(data UsersTabData) {
 				</button>
 			</div>
 			<!-- Create invite form (hidden by default) -->
-			<div id="create-invite-form" class="hidden px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-750">
+			<div id="create-invite-form" class="hidden px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
 				<form
 					class="space-y-3"
 					onsubmit="submitCreateInvite(event, this)"
@@ -224,7 +224,7 @@ templ settingsUsersTab(data UsersTabData) {
 			<div class="overflow-x-auto">
 				<table class="w-full text-sm" aria-label="User accounts">
 					<thead>
-						<tr class="border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-750 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+						<tr class="border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
 							<th class="px-6 py-3">User</th>
 							<th class="px-4 py-3">Role</th>
 							<th class="px-4 py-3">Auth Provider</th>
@@ -340,7 +340,7 @@ templ userTableRow(u auth.User) {
 
 // inviteRow renders a single pending invite entry.
 templ inviteRow(inv auth.Invite) {
-	<div id={ "invite-row-" + inv.ID } class="flex items-center justify-between rounded-md border border-gray-200 dark:border-gray-700 px-4 py-3 bg-gray-50 dark:bg-gray-750">
+	<div id={ "invite-row-" + inv.ID } class="flex items-center justify-between rounded-md border border-gray-200 dark:border-gray-700 px-4 py-3 bg-gray-50 dark:bg-gray-900/50">
 		<div class="flex items-center gap-4">
 			<span class="font-mono text-xs text-gray-700 dark:text-gray-300">{ inv.Code }</span>
 			<div class="text-xs text-gray-500 dark:text-gray-400">
@@ -489,4 +489,16 @@ templ settingsUsersScript() {
 			});
 		}
 	</script>
+}
+
+// UserTableRowFragment is an exported wrapper around userTableRow for use by
+// the HTMX-driven user list endpoint (GET /api/v1/users with HX-Request).
+templ UserTableRowFragment(u auth.User) {
+	@userTableRow(u)
+}
+
+// InviteRowFragment is an exported wrapper around inviteRow for use by
+// the HTMX-driven invite list endpoint (GET /api/v1/users/invites with HX-Request).
+templ InviteRowFragment(inv auth.Invite) {
+	@inviteRow(inv)
 }
