@@ -16,9 +16,10 @@ import (
 // the last active administrator account.
 var ErrLastAdmin = errors.New("cannot remove or downgrade the last administrator")
 
-// ErrProtectedUser is returned when an operation attempts to deactivate
-// the bootstrap administrator account, which is permanently protected.
-var ErrProtectedUser = errors.New("cannot deactivate the protected bootstrap administrator")
+// ErrProtectedUser is returned when an operation attempts to deactivate or
+// change the role of the bootstrap administrator account, which is permanently
+// protected from modification.
+var ErrProtectedUser = errors.New("cannot modify or deactivate the protected bootstrap administrator")
 
 // User represents a Stillwater user account.
 type User struct {
@@ -144,6 +145,10 @@ func (s *Service) UpdateUserRole(ctx context.Context, userID, newRole string) er
 		}
 		if err != nil {
 			return fmt.Errorf("checking current role: %w", err)
+		}
+
+		if newRole == currentRole {
+			return nil
 		}
 
 		if newRole == "operator" {
