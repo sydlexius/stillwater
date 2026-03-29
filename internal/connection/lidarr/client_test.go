@@ -128,6 +128,118 @@ func TestCheckNFOWriterEnabled_False(t *testing.T) {
 	}
 }
 
+// TestCheckNFOWriterEnabled_SingleObject covers Lidarr versions that return a
+// single JSON object instead of an array from /api/v1/config/metadataprovider.
+func TestCheckNFOWriterEnabled_SingleObject(t *testing.T) {
+	tests := []struct {
+		name    string
+		body    string
+		want    bool
+		wantLib string
+	}{
+		{
+			name:    "kodi enabled",
+			body:    `{"id":1,"metadataType":"Kodi (XBMC) / Emby","consumerId":1,"consumerName":"Kodi (XBMC) / Emby","enable":true}`,
+			want:    true,
+			wantLib: "",
+		},
+		{
+			name:    "kodi disabled",
+			body:    `{"id":1,"metadataType":"Kodi (XBMC) / Emby","consumerId":1,"consumerName":"Kodi (XBMC) / Emby","enable":false}`,
+			want:    false,
+			wantLib: "",
+		},
+		{
+			name:    "non-kodi type",
+			body:    `{"id":1,"metadataType":"MediaBrowser","consumerId":1,"consumerName":"MediaBrowser","enable":true}`,
+			want:    false,
+			wantLib: "",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				if _, err := w.Write([]byte(tc.body)); err != nil {
+					t.Errorf("writing response: %v", err)
+				}
+			}))
+			defer srv.Close()
+
+			c := NewWithHTTPClient(srv.URL, "key", srv.Client(), testLogger())
+			enabled, libName, err := c.CheckNFOWriterEnabled(context.Background())
+			if err != nil {
+				t.Fatalf("CheckNFOWriterEnabled failed: %v", err)
+			}
+			if enabled != tc.want {
+				t.Errorf("enabled = %v, want %v", enabled, tc.want)
+			}
+			if libName != tc.wantLib {
+				t.Errorf("library name = %q, want %q", libName, tc.wantLib)
+			}
+		})
+	}
+}
+
+func TestDecodeMetadataProviderConfigs(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		wantLen int
+		wantErr bool
+	}{
+		{
+			name:    "array with two items",
+			input:   `[{"id":1,"metadataType":"A"},{"id":2,"metadataType":"B"}]`,
+			wantLen: 2,
+		},
+		{
+			name:    "array with one item",
+			input:   `[{"id":1,"metadataType":"A"}]`,
+			wantLen: 1,
+		},
+		{
+			name:    "empty array",
+			input:   `[]`,
+			wantLen: 0,
+		},
+		{
+			name:    "single object",
+			input:   `{"id":1,"metadataType":"Kodi (XBMC) / Emby","enable":true}`,
+			wantLen: 1,
+		},
+		{
+			name:    "invalid JSON",
+			input:   `not-json`,
+			wantErr: true,
+		},
+		{
+			name:    "empty input",
+			input:   ``,
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			configs, err := decodeMetadataProviderConfigs(json.RawMessage(tc.input))
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(configs) != tc.wantLen {
+				t.Errorf("got %d configs, want %d", len(configs), tc.wantLen)
+			}
+		})
+	}
+}
+
 func TestTriggerArtistRefresh(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/v1/command" {
