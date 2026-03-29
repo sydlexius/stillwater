@@ -522,6 +522,29 @@ components:
         updated_at:
           type: string
           format: date-time
+    LogFileInfo:
+      type: object
+      description: Metadata for a log file available for browsing in the log viewer.
+      properties:
+        name:
+          type: string
+          description: Filename (no path components)
+        size:
+          type: integer
+          format: int64
+          description: File size in bytes
+        mod_time:
+          type: string
+          format: date-time
+          description: Last modified time of the file
+        is_current:
+          type: boolean
+          description: True when this is the actively written log file
+      required:
+        - name
+        - size
+        - mod_time
+        - is_current
     LogEntry:
       type: object
       description: A single log record captured by the in-memory ring buffer.
@@ -532,7 +555,7 @@ components:
           description: Timestamp of the log entry
         level:
           type: string
-          enum: [debug, info, warn, error]
+          enum: [trace, debug, info, warn, error]
           description: Severity level
         message:
           type: string
@@ -553,7 +576,7 @@ components:
       properties:
         level:
           type: string
-          enum: [debug, info, warn, error]
+          enum: [trace, debug, info, warn, error]
         format:
           type: string
           enum: [text, json]
@@ -5500,7 +5523,7 @@ paths:
               properties:
                 level:
                   type: string
-                  enum: [debug, info, warn, error]
+                  enum: [trace, debug, info, warn, error]
                 format:
                   type: string
                   enum: [text, json]
@@ -5529,19 +5552,73 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  /logs/files:
+    get:
+      tags: [Logs]
+      summary: List available log files
+      description: Returns the log files available for browsing. The current (actively written) file is listed first, followed by rotated backups newest-first. Returns an empty array when file logging is not configured.
+      operationId: listLogFiles
+      responses:
+        "200":
+          description: Available log files
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LogFileInfo"
+        "503":
+          description: Logging manager not available
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      tags: [Logs]
+      summary: Delete rotated log files
+      description: Deletes all rotated log files (all except the current actively-written file). Returns the number of files deleted and bytes freed. Does nothing if file logging is not configured.
+      operationId: deleteLogFiles
+      responses:
+        "200":
+          description: Rotated files deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [deleted, bytes_freed]
+                properties:
+                  deleted:
+                    type: integer
+                    description: Number of files deleted
+                  bytes_freed:
+                    type: integer
+                    format: int64
+                    description: Total bytes freed
+        "503":
+          description: Logging manager not available
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   /logs:
     get:
       tags: [Logs]
       summary: Get recent log entries
-      description: Returns log entries from the in-memory ring buffer. Supports filtering by level, search text, component, and time. Returns JSON for API clients or HTML fragments when the HX-Request header is set.
+      description: Returns log entries from the in-memory ring buffer, or from a specific log file when the file parameter is provided. Supports filtering by level, search text, and component. Returns JSON for API clients or HTML fragments when the HX-Request header is set.
       operationId: getLogs
       parameters:
+        - name: file
+          in: query
+          description: Filename of a log file to read (e.g. stillwater-2024-03-28T10-00-00.000.log). Must be a plain filename with no path separators. When set, reads from disk instead of the ring buffer; the after filter is ignored. Requires file logging to be configured.
+          schema:
+            type: string
         - name: level
           in: query
           description: Minimum log level to include. Omit to return all levels.
           schema:
             type: string
-            enum: [debug, info, warn, error]
+            enum: [trace, debug, info, warn, error]
         - name: search
           in: query
           description: Case-insensitive substring search on log message
@@ -5554,7 +5631,7 @@ paths:
             type: string
         - name: after
           in: query
-          description: Only return entries after this RFC3339Nano timestamp
+          description: Only return entries after this RFC3339Nano timestamp (ring buffer only; ignored when file is set)
           schema:
             type: string
             format: date-time
@@ -5580,7 +5657,7 @@ paths:
                 type: string
                 description: HTML fragment of styled log entry divs for HTMX polling
         "400":
-          description: Invalid query parameter (bad level, unparsable after, or invalid limit)
+          description: Invalid query parameter (bad level, unparsable after, invalid limit, or invalid filename)
           content:
             application/json:
               schema:

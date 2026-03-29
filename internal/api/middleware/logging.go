@@ -90,7 +90,7 @@ func Logging(logger *slog.Logger, basePath string) func(http.Handler) http.Handl
 				slog.String("remote", r.RemoteAddr),
 			}
 
-			level := slog.LevelInfo
+			level := slog.LevelDebug
 			switch {
 			case sw.status >= 500:
 				level = slog.LevelError

@@ -407,7 +407,7 @@ func TestHandleGetLogs_AfterFilter(t *testing.T) {
 func TestHandleGetLogs_InvalidLevel(t *testing.T) {
 	r, _ := newTestRouterWithLogs(t)
 
-	req := httptest.NewRequest("GET", "/api/v1/logs?level=trace", nil)
+	req := httptest.NewRequest("GET", "/api/v1/logs?level=verbose", nil)
 	rec := httptest.NewRecorder()
 	r.handleGetLogs(rec, req)
 

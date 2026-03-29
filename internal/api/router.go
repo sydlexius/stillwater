@@ -291,6 +291,8 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	// Log viewer routes (admin only)
 	mux.HandleFunc("GET "+bp+"/api/v1/logs", wrapAuth(middleware.RequireAdmin(r.handleGetLogs), authMw))
 	mux.HandleFunc("DELETE "+bp+"/api/v1/logs", wrapAuth(middleware.RequireAdmin(r.handleClearLogs), authMw))
+	mux.HandleFunc("GET "+bp+"/api/v1/logs/files", wrapAuth(middleware.RequireAdmin(r.handleListLogFiles), authMw))
+	mux.HandleFunc("DELETE "+bp+"/api/v1/logs/files", wrapAuth(middleware.RequireAdmin(r.handleDeleteLogFiles), authMw))
 	// Maintenance routes (admin only)
 	mux.HandleFunc("GET "+bp+"/api/v1/settings/maintenance/status", wrapAuth(middleware.RequireAdmin(r.handleMaintenanceStatus), authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/settings/maintenance/optimize", wrapAuth(middleware.RequireAdmin(r.handleMaintenanceOptimize), authMw))

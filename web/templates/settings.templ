@@ -464,6 +464,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 		@apiTokenScript()
 		@ruleScheduleScript()
 		@maintenanceScript()
+		@loggingScript()
 		@logViewerScript()
 		@settingsExportScript()
 		@profileNamingEditorScript()
@@ -622,89 +623,6 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 						</div>
 					</div>
 				</div>
-				<!-- Logging Configuration -->
-				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
-					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-						<h2 class="text-lg font-semibold">Logging</h2>
-						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-							Configure log level, format, and optional file output. Changes take effect immediately.
-						</p>
-					</div>
-					<div class="px-6 py-4">
-						<form
-							id="logging-config-form"
-							hx-put="/api/v1/settings/logging"
-							hx-target="#logging-status"
-							hx-swap="innerHTML"
-							class="space-y-4"
-						>
-							<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-								<div>
-									<label for="log-level" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Level</label>
-									<select
-										id="log-level"
-										name="level"
-										class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-										hx-get="/api/v1/settings/logging"
-										hx-trigger="load"
-										hx-swap="none"
-										hx-on::after-request="if(event.detail.successful){try{var d=JSON.parse(event.detail.xhr.responseText);document.getElementById('log-level').value=d.level||'info';document.getElementById('log-format').value=d.format||'json';document.getElementById('log-file-path').value=d.file_path||'';document.getElementById('log-file-max-size').value=d.file_max_size_mb||100;document.getElementById('log-file-max-files').value=d.file_max_files||3;document.getElementById('log-file-max-age').value=d.file_max_age_days||30;toggleFileSettings();}catch(e){}}"
-									>
-										<option value="debug">Debug</option>
-										<option value="info" selected>Info</option>
-										<option value="warn">Warn</option>
-										<option value="error">Error</option>
-									</select>
-								</div>
-								<div>
-									<label for="log-format" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Format</label>
-									<select
-										id="log-format"
-										name="format"
-										class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-									>
-										<option value="json">JSON</option>
-										<option value="text">Text</option>
-									</select>
-								</div>
-							</div>
-							<div>
-								<label for="log-file-path" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">File output (optional)</label>
-								<input
-									id="log-file-path"
-									name="file_path"
-									type="text"
-									placeholder="/data/logs/stillwater.log"
-									class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-									oninput="toggleFileSettings()"
-								/>
-								<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Leave empty to log only to stdout. Logs are always written to stdout.</p>
-							</div>
-							<p id="file-rotation-hint" class="text-xs text-gray-500 dark:text-gray-400 italic">Enter a file path above to configure log rotation settings.</p>
-							<div id="file-rotation-settings" class="hidden grid grid-cols-1 gap-4 sm:grid-cols-3">
-								<div>
-									<label for="log-file-max-size" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Max size (MB)</label>
-									<input id="log-file-max-size" name="file_max_size_mb" type="number" value="100" min="1" class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"/>
-								</div>
-								<div>
-									<label for="log-file-max-files" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Max files</label>
-									<input id="log-file-max-files" name="file_max_files" type="number" value="3" min="1" class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"/>
-								</div>
-								<div>
-									<label for="log-file-max-age" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Max age (days)</label>
-									<input id="log-file-max-age" name="file_max_age_days" type="number" value="30" min="1" class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"/>
-								</div>
-							</div>
-							<div class="flex items-center gap-3">
-								<button type="submit" class="text-sm px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors">
-									Apply
-								</button>
-								<span id="logging-status"></span>
-							</div>
-						</form>
-					</div>
-				</div>
-				@loggingScript()
 				<!-- Image Cache Configuration -->
 				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
@@ -1651,6 +1569,132 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 					templ.KV("hidden", data.ActiveTab != "logs"),
 				}
 			>
+				<!-- Log Settings -->
+				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
+					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+						<h2 class="text-lg font-semibold">Log Settings</h2>
+						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+							Configure log level, format, and file output with rotation. Changes take effect immediately.
+						</p>
+					</div>
+					<div class="px-6 py-4">
+						<form
+							id="logging-config-form"
+							hx-put="/api/v1/settings/logging"
+							hx-target="#logging-status"
+							hx-swap="innerHTML"
+							class="space-y-4"
+						>
+							<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+								<div>
+									<label for="log-level" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Level</label>
+									<select
+										id="log-level"
+										name="level"
+										onchange="if(typeof updateEphemeralRow==='function')updateEphemeralRow()"
+										class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+										hx-get="/api/v1/settings/logging"
+										hx-trigger="load"
+										hx-swap="none"
+										hx-on::after-request="if(event.detail.successful){try{loadLoggingConfig(JSON.parse(event.detail.xhr.responseText));}catch(e){}}"
+									>
+										<option value="trace">Trace</option>
+										<option value="debug">Debug</option>
+										<option value="info" selected>Info</option>
+										<option value="warn">Warn</option>
+										<option value="error">Error</option>
+									</select>
+								</div>
+								<div>
+									<label for="log-format" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Format</label>
+									<select
+										id="log-format"
+										name="format"
+										class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+									>
+										<option value="json">JSON</option>
+										<option value="text">Text</option>
+									</select>
+								</div>
+							</div>
+							<!-- Ephemeral level: when checked, level change is not persisted to DB -->
+							<div id="ephemeral-level-row" class="hidden flex items-center gap-2">
+								<input type="checkbox" id="ephemeral-level" name="ephemeral" value="true"
+									class="rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 dark:bg-gray-700"
+									aria-label="Revert log level on restart"/>
+								<label for="ephemeral-level" class="text-sm text-gray-600 dark:text-gray-400">
+									Revert to <span id="ephemeral-revert-level" class="font-medium">info</span> on restart
+								</label>
+							</div>
+							<!-- Hidden input always submitted; JS keeps it in sync with the path display field -->
+							<input type="hidden" name="file_path" id="log-file-path" value=""/>
+							<!-- Log to file toggle -->
+							<div class="flex items-center justify-between py-1">
+								<div>
+									<p class="text-sm font-medium text-gray-700 dark:text-gray-300">Log to file</p>
+									<p class="text-xs text-gray-500 dark:text-gray-400">Write logs to a rotating file in addition to stdout.</p>
+								</div>
+								<button
+									type="button"
+									id="log-to-file-btn"
+									role="switch"
+									aria-checked="false"
+									aria-label="Enable file logging"
+									onclick="toggleFileLogging()"
+									class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-gray-200 dark:bg-gray-600 transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800 aria-checked:bg-blue-600"
+								>
+									<span class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out translate-x-0 aria-checked:translate-x-5"></span>
+								</button>
+							</div>
+							<!-- File logging settings (shown when toggle is on) -->
+							<div id="file-logging-settings" class="hidden space-y-4">
+								<div>
+									<label for="log-file-path-display" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Log file path</label>
+									<input
+										id="log-file-path-display"
+										type="text"
+										placeholder="/data/logs/stillwater.log"
+										class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+										oninput="syncLogFilePath(this.value)"
+									/>
+									<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Logs are always written to stdout. This enables an additional rotating file.</p>
+								</div>
+								<div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+									<div>
+										<label for="log-file-max-size" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Max size (MB)</label>
+										<input id="log-file-max-size" name="file_max_size_mb" type="number" value="10" min="1" class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500" aria-label="Maximum log file size in megabytes"/>
+									</div>
+									<div>
+										<label for="log-file-max-files" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Files to keep</label>
+										<input id="log-file-max-files" name="file_max_files" type="number" value="5" min="1" class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500" aria-label="Number of rotated log files to keep"/>
+									</div>
+									<div>
+										<label for="log-file-max-age" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Max age (days)</label>
+										<input id="log-file-max-age" name="file_max_age_days" type="number" value="30" min="1" class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500" aria-label="Maximum age of rotated log files in days"/>
+									</div>
+								</div>
+								<!-- Cleanup row (visible only when rotated files exist) -->
+								<div id="log-cleanup-row" class="hidden flex items-center gap-3 pt-1 border-t border-gray-200 dark:border-gray-700">
+									<button
+										type="button"
+										onclick="cleanupLogFiles()"
+										class="text-sm px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+									>
+										Clean up old logs
+									</button>
+									<span id="log-cleanup-status" class="text-sm text-gray-500 dark:text-gray-400" role="status" aria-live="polite"></span>
+								</div>
+							</div>
+							<div class="flex items-center gap-3">
+								<button type="submit" class="text-sm px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors">
+									Apply
+								</button>
+								<span id="logging-status" role="status" aria-live="polite"></span>
+							</div>
+						</form>
+					</div>
+				</div>
+				<!-- Log Viewer -->
 				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 						<h2 class="text-lg font-semibold">Log Viewer</h2>
@@ -1662,6 +1706,11 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 						<!-- Filter bar -->
 						<div class="flex flex-wrap items-center gap-2">
 							<div class="flex items-center gap-1" role="group" aria-label="Log level filter">
+								<button type="button" data-log-level="trace" onclick="toggleLogLevel(this)"
+									class="log-level-btn text-[10px] font-semibold uppercase px-2 py-1 rounded bg-purple-900/50 text-purple-300 opacity-50 hover:opacity-100 transition-opacity"
+									aria-pressed="false">
+									Trace
+								</button>
 								<button type="button" data-log-level="debug" onclick="toggleLogLevel(this)"
 									class="log-level-btn text-[10px] font-semibold uppercase px-2 py-1 rounded bg-gray-700 text-gray-300 opacity-50 hover:opacity-100 transition-opacity"
 									aria-pressed="false">
@@ -1710,6 +1759,18 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 								</button>
 							</div>
 						</div>
+						<!-- Log file picker (visible only when file logging is configured) -->
+						<div id="log-file-picker-row" class="hidden flex items-center gap-2">
+							<label for="log-file-select" class="text-xs text-gray-400 dark:text-gray-500 shrink-0">File:</label>
+							<select
+								id="log-file-select"
+								onchange="selectLogFile(this.value)"
+								class="rounded border border-gray-600 bg-gray-800 text-gray-200 text-xs px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500"
+								aria-label="Select log file to view"
+							>
+								<option value="">Live (current)</option>
+							</select>
+						</div>
 						<!-- Log viewer container -->
 						<div
 							id="log-viewer"
@@ -1723,7 +1784,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 							</div>
 						</div>
 						<p class="text-xs text-gray-500 dark:text-gray-400">
-							Showing up to 200 most recent entries. Logs are stored in memory and reset on restart.
+							Showing up to 200 most recent entries. Live view polls in real time; historical files are loaded on demand.
 						</p>
 					</div>
 				</div>
@@ -1779,19 +1840,123 @@ templ settingsTabBar(activeTab string) {
 
 templ loggingScript() {
 	<script>
-		function toggleFileSettings() {
-			var path = document.getElementById('log-file-path');
-			var settings = document.getElementById('file-rotation-settings');
-			var hint = document.getElementById('file-rotation-hint');
-			if (path && settings) {
-				if (path.value.trim() !== '') {
-					settings.classList.remove('hidden');
-					if (hint) hint.classList.add('hidden');
-				} else {
-					settings.classList.add('hidden');
-					if (hint) hint.classList.remove('hidden');
-				}
+		// Tracks the DB-persisted level so the ephemeral row can show what it will revert to.
+		var persistedLogLevel = 'info';
+
+		// loadLoggingConfig populates all logging settings fields from an API response.
+		function loadLoggingConfig(d) {
+			var levelEl = document.getElementById('log-level');
+			var formatEl = document.getElementById('log-format');
+			var pathHidden = document.getElementById('log-file-path');
+			var pathDisplay = document.getElementById('log-file-path-display');
+			var maxSize = document.getElementById('log-file-max-size');
+			var maxFiles = document.getElementById('log-file-max-files');
+			var maxAge = document.getElementById('log-file-max-age');
+			if (levelEl) levelEl.value = d.level || 'info';
+			if (formatEl) formatEl.value = d.format || 'json';
+			var fp = d.file_path || '';
+			if (pathHidden) pathHidden.value = fp;
+			if (pathDisplay) pathDisplay.value = fp || '/data/logs/stillwater.log';
+			if (maxSize) maxSize.value = d.file_max_size_mb || 10;
+			if (maxFiles) maxFiles.value = d.file_max_files || 5;
+			if (maxAge) maxAge.value = d.file_max_age_days || 30;
+			// Sync toggle and visibility to the current file path state.
+			setFileLoggingToggle(fp !== '');
+			updateCleanupRow();
+			// Track the persisted level for the ephemeral revert label.
+			persistedLogLevel = d.level || 'info';
+			updateEphemeralRow();
+		}
+
+		// setFileLoggingToggle updates the toggle button and shows/hides the file settings section.
+		function setFileLoggingToggle(enabled) {
+			var btn = document.getElementById('log-to-file-btn');
+			var settings = document.getElementById('file-logging-settings');
+			if (btn) btn.setAttribute('aria-checked', enabled ? 'true' : 'false');
+			if (settings) {
+				if (enabled) settings.classList.remove('hidden');
+				else settings.classList.add('hidden');
 			}
+		}
+
+		// toggleFileLogging handles the Log to file toggle click.
+		function toggleFileLogging() {
+			var btn = document.getElementById('log-to-file-btn');
+			var pathHidden = document.getElementById('log-file-path');
+			var pathDisplay = document.getElementById('log-file-path-display');
+			var enabled = btn && btn.getAttribute('aria-checked') !== 'true';
+			setFileLoggingToggle(enabled);
+			if (enabled) {
+				var val = pathDisplay ? pathDisplay.value.trim() : '';
+				if (!val) val = '/data/logs/stillwater.log';
+				if (pathDisplay) pathDisplay.value = val;
+				if (pathHidden) pathHidden.value = val;
+			} else {
+				if (pathHidden) pathHidden.value = '';
+			}
+		}
+
+		// syncLogFilePath keeps the hidden file_path input in sync with the visible display input.
+		function syncLogFilePath(value) {
+			var pathHidden = document.getElementById('log-file-path');
+			if (pathHidden) pathHidden.value = value;
+		}
+
+		// updateCleanupRow shows or hides the cleanup button based on whether rotated files exist.
+		function updateCleanupRow() {
+			fetch('/api/v1/logs/files')
+				.then(function(r) { if (!r.ok) throw new Error('failed'); return r.json(); })
+				.then(function(files) {
+					var row = document.getElementById('log-cleanup-row');
+					if (!row) return;
+					var hasRotated = files && files.some(function(f) { return !f.is_current; });
+					if (hasRotated) row.classList.remove('hidden');
+					else row.classList.add('hidden');
+				})
+				.catch(function() {});
+		}
+
+		// updateEphemeralRow shows the "Revert on restart" checkbox when the selected
+		// level differs from the persisted level (useful for temporary trace/debug).
+		function updateEphemeralRow() {
+			var levelEl = document.getElementById('log-level');
+			var row = document.getElementById('ephemeral-level-row');
+			var revertLabel = document.getElementById('ephemeral-revert-level');
+			var checkbox = document.getElementById('ephemeral-level');
+			if (!levelEl || !row) return;
+			var selected = levelEl.value;
+			if (selected !== persistedLogLevel) {
+				if (revertLabel) revertLabel.textContent = persistedLogLevel;
+				row.classList.remove('hidden');
+			} else {
+				row.classList.add('hidden');
+				if (checkbox) checkbox.checked = false;
+			}
+		}
+
+		// cleanupLogFiles deletes all rotated log files.
+		function cleanupLogFiles() {
+			var csrfToken = document.cookie.replace(
+				/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1"
+			);
+			var status = document.getElementById('log-cleanup-status');
+			fetch('/api/v1/logs/files', {
+				method: 'DELETE',
+				headers: { 'X-CSRF-Token': csrfToken }
+			}).then(function(r) {
+				if (!r.ok) throw new Error('cleanup failed');
+				return r.json();
+			}).then(function(data) {
+				if (status) {
+					var mb = (data.bytes_freed / (1024 * 1024)).toFixed(1);
+					status.textContent = 'Removed ' + data.deleted + ' file' + (data.deleted !== 1 ? 's' : '') + ' (' + mb + ' MB freed)';
+					setTimeout(function() { if (status) status.textContent = ''; }, 4000);
+				}
+				if (typeof loadLogFiles === 'function') loadLogFiles();
+				updateCleanupRow();
+			}).catch(function() {
+				if (status) status.textContent = 'Failed to clean up logs';
+			});
 		}
 	</script>
 }
@@ -1876,11 +2041,13 @@ templ cacheScript() {
 
 templ logViewerScript() {
 	<script>
-		// logViewerState tracks filter selections and pause status.
+		// logViewerState tracks filter selections, pause status, and the active file.
+		// file: '' means the live ring buffer; any other value is a historical filename.
 		var logViewerState = {
 			level: 'info',
 			search: '',
-			paused: false
+			paused: false,
+			file: ''
 		};
 
 		// Resolve base path for sub-path deployments (e.g. reverse proxy prefix).
@@ -1900,7 +2067,7 @@ templ logViewerScript() {
 			// Update button visuals: buttons at or above the selected level
 			// get a ring highlight; buttons below it get dimmed.
 			// aria-pressed indicates single selection (only the clicked button).
-			var severity = { debug: 0, info: 1, warn: 2, error: 3 };
+			var severity = { trace: -1, debug: 0, info: 1, warn: 2, error: 3 };
 			var selected = (level in severity) ? severity[level] : 1;
 			var buttons = document.querySelectorAll('.log-level-btn');
 			for (var i = 0; i < buttons.length; i++) {
@@ -1925,6 +2092,7 @@ templ logViewerScript() {
 		// levelRingClass returns the Tailwind ring color class for a log level.
 		function levelRingClass(level) {
 			switch (level) {
+				case 'trace': return 'ring-purple-500/50';
 				case 'debug': return 'ring-gray-500/50';
 				case 'info':  return 'ring-blue-500/50';
 				case 'warn':  return 'ring-amber-500/50';
@@ -1940,9 +2108,12 @@ templ logViewerScript() {
 			logViewerState.search = search ? search.value : '';
 			var viewer = document.getElementById('log-viewer');
 			if (!viewer) return;
-			var url = '/api/v1/logs?limit=200&level=' + encodeURIComponent(logViewerState.level);
+			var url = logBasePath + '/api/v1/logs?limit=200&level=' + encodeURIComponent(logViewerState.level);
 			if (logViewerState.search) {
 				url += '&search=' + encodeURIComponent(logViewerState.search);
+			}
+			if (logViewerState.file) {
+				url += '&file=' + encodeURIComponent(logViewerState.file);
 			}
 			viewer.setAttribute('hx-get', url);
 			// Re-process the element so HTMX picks up the new hx-get URL
@@ -1954,6 +2125,75 @@ templ logViewerScript() {
 			if (!logViewerState.paused && typeof htmx !== 'undefined') {
 				htmx.trigger(document.body, 'logRefresh');
 			}
+		}
+
+		// loadLogFiles fetches the available log files and populates the file picker.
+		// The picker row is shown only when file logging is configured (non-empty list).
+		function loadLogFiles() {
+			fetch(logBasePath + '/api/v1/logs/files')
+				.then(function(r) { if (!r.ok) throw new Error('failed'); return r.json(); })
+				.then(function(files) {
+					var row = document.getElementById('log-file-picker-row');
+					var sel = document.getElementById('log-file-select');
+					if (!row || !sel) return;
+					if (!files || files.length === 0) {
+						row.classList.add('hidden');
+						return;
+					}
+					var current = logViewerState.file;
+					// Rebuild options using DOM methods (no innerHTML with dynamic content).
+					while (sel.options.length > 0) { sel.remove(0); }
+					var live = document.createElement('option');
+					live.value = '';
+					live.textContent = 'Live (current)';
+					sel.appendChild(live);
+					files.forEach(function(f) {
+						if (f.is_current) return; // already represented by "Live (current)"
+						var opt = document.createElement('option');
+						opt.value = f.name;
+						var mb = (f.size / (1024 * 1024)).toFixed(1);
+						opt.textContent = f.name + ' \u2014 ' + mb + ' MB';
+						sel.appendChild(opt);
+					});
+					// Restore previous selection or fall back to live.
+					sel.value = current;
+					if (sel.value !== current) { sel.value = ''; }
+					row.classList.remove('hidden');
+					// Also update the cleanup button visibility.
+					if (typeof updateCleanupRow === 'function') updateCleanupRow();
+				})
+				.catch(function() {
+					var row = document.getElementById('log-file-picker-row');
+					if (row) row.classList.add('hidden');
+				});
+		}
+
+		// selectLogFile switches the viewer between live ring buffer and a
+		// historical log file. Pass an empty string to return to live view.
+		function selectLogFile(filename) {
+			logViewerState.file = filename;
+			var viewer = document.getElementById('log-viewer');
+			var pauseBtn = document.getElementById('log-pause-btn');
+			var clearBtn = document.querySelector('[onclick="clearLogs()"]');
+			if (filename) {
+				// Historical file: disable polling and action buttons that only
+				// apply to the live ring buffer.
+				if (viewer) {
+					viewer.setAttribute('hx-trigger', 'logRefresh from:body');
+					if (typeof htmx !== 'undefined') htmx.process(viewer);
+				}
+				if (pauseBtn) pauseBtn.disabled = true;
+				if (clearBtn) clearBtn.disabled = true;
+			} else {
+				// Live view: restore polling (unless user had manually paused).
+				if (viewer && !logViewerState.paused) {
+					viewer.setAttribute('hx-trigger', 'load, every 2s, logRefresh from:body');
+					if (typeof htmx !== 'undefined') htmx.process(viewer);
+				}
+				if (pauseBtn) pauseBtn.disabled = false;
+				if (clearBtn) clearBtn.disabled = false;
+			}
+			updateLogFilters();
 		}
 
 		// toggleLogPause pauses or resumes the HTMX polling.
@@ -2032,6 +2272,15 @@ templ logViewerScript() {
 				}
 			});
 		}
+
+		// Load the file picker and cleanup row when the Logs tab is active on page load.
+		(function() {
+			var panel = document.querySelector('[data-tab-panel="logs"]');
+			if (panel && !panel.classList.contains('hidden')) {
+				loadLogFiles();
+				if (typeof updateCleanupRow === 'function') updateCleanupRow();
+			}
+		})();
 
 		// Capture scroll position BEFORE the HTMX swap replaces content,
 		// so we know whether the user was near the bottom.
@@ -2413,7 +2662,9 @@ templ settingsTabScript() {
 			var logViewer = document.getElementById('log-viewer');
 			if (logViewer && typeof logViewerState !== 'undefined') {
 				if (tabId === 'logs') {
-					// Entering Logs tab: resume if it was paused by tab switch.
+					// Entering Logs tab: refresh file list, cleanup row, and resume if tab-paused.
+					if (typeof loadLogFiles === 'function') loadLogFiles();
+					if (typeof updateCleanupRow === 'function') updateCleanupRow();
 					if (logViewer.dataset.tabPaused === 'true') {
 						logViewer.dataset.tabPaused = 'false';
 						logViewer.setAttribute('hx-trigger', 'load, every 2s, logRefresh from:body');

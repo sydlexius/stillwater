@@ -6,6 +6,8 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -106,6 +108,10 @@ func (d *DerivedHandler) WithGroup(name string) slog.Handler {
 	return &DerivedHandler{parent: d.parent, attrs: d.attrs, group: g}
 }
 
+// LevelTrace is a custom slog level below Debug, intended for very verbose
+// output (per-request headers, SQL parameters, etc.).
+const LevelTrace = slog.LevelDebug - 4 // -8
+
 // DefaultRingBufferSize is the default number of log entries retained in memory
 // for the log viewer.
 const DefaultRingBufferSize = 2000
@@ -188,6 +194,61 @@ func (m *Manager) Config() Config {
 	return m.config
 }
 
+// ListLogFiles returns available log files (current + rotated backups).
+// Returns nil if file logging is not configured.
+func (m *Manager) ListLogFiles() ([]LogFileInfo, error) {
+	m.mu.Lock()
+	fp := m.config.FilePath
+	m.mu.Unlock()
+	return ListLogFiles(fp)
+}
+
+// DeleteRotatedFiles deletes rotated log files (all files except the current
+// one). Returns the count of files deleted and total bytes freed.
+func (m *Manager) DeleteRotatedFiles() (int, int64, error) {
+	m.mu.Lock()
+	fp := m.config.FilePath
+	m.mu.Unlock()
+	if fp == "" {
+		return 0, 0, nil
+	}
+	files, err := ListLogFiles(fp)
+	if err != nil {
+		return 0, 0, fmt.Errorf("listing log files: %w", err)
+	}
+	dir := filepath.Dir(fp)
+	var count int
+	var bytesFreed int64
+	for _, f := range files {
+		if f.IsCurrent {
+			continue
+		}
+		if err := os.Remove(filepath.Join(dir, f.Name)); err != nil {
+			continue // best-effort
+		}
+		count++
+		bytesFreed += f.Size
+	}
+	return count, bytesFreed, nil
+}
+
+// ReadLogFile reads entries from a named log file in the configured log
+// directory and returns them newest-first. The filename must be a plain name
+// with no path separators. Returns an error if file logging is not configured.
+func (m *Manager) ReadLogFile(filename string, filter LogFilter) ([]LogEntry, error) {
+	if filename != filepath.Base(filename) || strings.ContainsAny(filename, "/\\") {
+		return nil, fmt.Errorf("invalid log filename")
+	}
+	m.mu.Lock()
+	fp := m.config.FilePath
+	m.mu.Unlock()
+	if fp == "" {
+		return nil, fmt.Errorf("file logging not configured")
+	}
+	fullPath := filepath.Join(filepath.Dir(fp), filename)
+	return ReadLogFile(fullPath, filter)
+}
+
 // Close releases resources (e.g. the log file writer).
 func (m *Manager) Close() error {
 	m.mu.Lock()
@@ -203,6 +264,8 @@ func (m *Manager) Close() error {
 // parseLevel converts a string to slog.Level, defaulting to Info.
 func parseLevel(s string) slog.Level {
 	switch s {
+	case "trace":
+		return LevelTrace
 	case "debug":
 		return slog.LevelDebug
 	case "warn":
@@ -217,6 +280,8 @@ func parseLevel(s string) slog.Level {
 // FormatLevel converts a slog.Level to its string name.
 func FormatLevel(l slog.Level) string {
 	switch l {
+	case LevelTrace:
+		return "trace"
 	case slog.LevelDebug:
 		return "debug"
 	case slog.LevelWarn:
@@ -238,11 +303,11 @@ func buildWriter(cfg Config) (io.Writer, io.Closer) {
 
 	maxSize := cfg.FileMaxSizeMB
 	if maxSize <= 0 {
-		maxSize = 100
+		maxSize = 10
 	}
 	maxFiles := cfg.FileMaxFiles
 	if maxFiles <= 0 {
-		maxFiles = 3
+		maxFiles = 5
 	}
 	maxAge := cfg.FileMaxAgeDays
 	if maxAge <= 0 {
@@ -284,7 +349,7 @@ func buildMultiHandler(w io.Writer, leveler slog.Leveler, format string, rb *Rin
 // ValidLevel returns true if s is a recognized log level.
 func ValidLevel(s string) bool {
 	switch s {
-	case "debug", "info", "warn", "error":
+	case "trace", "debug", "info", "warn", "error":
 		return true
 	}
 	return false
@@ -304,8 +369,8 @@ func DefaultConfig() Config {
 	return Config{
 		Level:          "info",
 		Format:         "json",
-		FileMaxSizeMB:  100,
-		FileMaxFiles:   3,
+		FileMaxSizeMB:  10,
+		FileMaxFiles:   5,
 		FileMaxAgeDays: 30,
 	}
 }

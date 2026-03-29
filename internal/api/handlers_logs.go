@@ -40,15 +40,6 @@ func (r *Router) handleGetLogs(w http.ResponseWriter, req *http.Request) {
 		filter.Level = level
 	}
 
-	if after := req.URL.Query().Get("after"); after != "" {
-		t, err := time.Parse(time.RFC3339Nano, after)
-		if err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid after: must be RFC3339 or RFC3339Nano timestamp"})
-			return
-		}
-		filter.After = t
-	}
-
 	if limitStr := req.URL.Query().Get("limit"); limitStr != "" {
 		n, err := strconv.Atoi(limitStr)
 		if err != nil {
@@ -65,6 +56,32 @@ func (r *Router) handleGetLogs(w http.ResponseWriter, req *http.Request) {
 		filter.Limit = n
 	}
 
+	// If a specific log file is requested, read from disk instead of the ring buffer.
+	if file := req.URL.Query().Get("file"); file != "" {
+		entries, err := r.logManager.ReadLogFile(file, filter)
+		if err != nil {
+			r.logger.Warn("reading log file", "file", file, "error", err)
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "failed to read log file"})
+			return
+		}
+		if req.Header.Get("HX-Request") == "true" {
+			r.renderLogEntries(w, entries)
+			return
+		}
+		writeJSON(w, http.StatusOK, entries)
+		return
+	}
+
+	// Default: read from the in-memory ring buffer (live view).
+	if after := req.URL.Query().Get("after"); after != "" {
+		t, err := time.Parse(time.RFC3339Nano, after)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid after: must be RFC3339 or RFC3339Nano timestamp"})
+			return
+		}
+		filter.After = t
+	}
+
 	entries := rb.Entries(filter)
 
 	if req.Header.Get("HX-Request") == "true" {
@@ -73,6 +90,45 @@ func (r *Router) handleGetLogs(w http.ResponseWriter, req *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, entries)
+}
+
+// handleListLogFiles returns the log files available for browsing.
+// GET /api/v1/logs/files
+func (r *Router) handleListLogFiles(w http.ResponseWriter, req *http.Request) {
+	if r.logManager == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "logging manager not available"})
+		return
+	}
+
+	files, err := r.logManager.ListLogFiles()
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to list log files"})
+		return
+	}
+
+	if files == nil {
+		files = []logging.LogFileInfo{}
+	}
+
+	writeJSON(w, http.StatusOK, files)
+}
+
+// handleDeleteLogFiles deletes rotated log files (all except the current file).
+// DELETE /api/v1/logs/files
+func (r *Router) handleDeleteLogFiles(w http.ResponseWriter, req *http.Request) {
+	if r.logManager == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "logging manager not available"})
+		return
+	}
+	deleted, bytesFreed, err := r.logManager.DeleteRotatedFiles()
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to delete log files"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"deleted":     deleted,
+		"bytes_freed": bytesFreed,
+	})
 }
 
 // handleClearLogs clears all entries from the in-memory ring buffer.
@@ -119,13 +175,20 @@ func (r *Router) renderLogEntries(w http.ResponseWriter, entries []logging.LogEn
 		ts := entry.Time.Format("2006-01-02 15:04:05.000")
 		levelBadge := levelBadgeClass(entry.Level)
 
-		// Show source file:line when available, otherwise fall back to component.
-		source := entry.Source
-		if source == "" {
-			source = entry.Component
+		// Prefer the component label (scanner, backup, watcher...) for the visible
+		// column -- it is more human-readable than a filename. When no component is
+		// set, fall back to the source filename without the line number. The full
+		// file:line is kept in the tooltip so developers can still find the call site.
+		display := entry.Component
+		tooltip := entry.Source
+		if display == "" {
+			display = entry.Source
+			if i := strings.LastIndex(display, ":"); i > 0 {
+				display = display[:i]
+			}
 		}
-		if source == "" {
-			source = "-"
+		if display == "" {
+			display = "-"
 		}
 
 		b.WriteString(`<div class="flex gap-2 text-xs font-mono py-0.5 border-b border-gray-800/30 log-line">`)
@@ -133,7 +196,7 @@ func (r *Router) renderLogEntries(w http.ResponseWriter, entries []logging.LogEn
 		fmt.Fprintf(&b, `<span class="px-1.5 rounded text-[10px] font-semibold uppercase shrink-0 w-12 text-center %s">%s</span>`,
 			levelBadge, html.EscapeString(strings.ToUpper(entry.Level)))
 		fmt.Fprintf(&b, `<span class="text-gray-400 shrink-0 w-32 truncate" title="%s">[%s]</span>`,
-			html.EscapeString(source), html.EscapeString(source))
+			html.EscapeString(tooltip), html.EscapeString(display))
 
 		// Message text.
 		fmt.Fprintf(&b, `<span class="text-gray-200 break-all">%s`, html.EscapeString(entry.Message))
@@ -168,6 +231,8 @@ func (r *Router) renderLogEntries(w http.ResponseWriter, entries []logging.LogEn
 // levelBadgeClass returns Tailwind classes for the log level badge.
 func levelBadgeClass(level string) string {
 	switch strings.ToLower(level) {
+	case "trace":
+		return "bg-purple-900/50 text-purple-300"
 	case "debug":
 		return "bg-gray-700 text-gray-300"
 	case "info":

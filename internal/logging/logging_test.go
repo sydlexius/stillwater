@@ -132,12 +132,12 @@ func TestManager_ReconfigureIdempotent(t *testing.T) {
 }
 
 func TestValidLevel(t *testing.T) {
-	for _, l := range []string{"debug", "info", "warn", "error"} {
+	for _, l := range []string{"trace", "debug", "info", "warn", "error"} {
 		if !ValidLevel(l) {
 			t.Errorf("expected %q to be valid", l)
 		}
 	}
-	for _, l := range []string{"", "trace", "fatal", "DEBUG"} {
+	for _, l := range []string{"", "fatal", "DEBUG", "TRACE"} {
 		if ValidLevel(l) {
 			t.Errorf("expected %q to be invalid", l)
 		}
