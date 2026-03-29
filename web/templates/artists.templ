@@ -362,6 +362,19 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 				}).catch(function() {});
 			}
 
+			// After HTMX swaps artist content, push the current filter/sort state
+			// into the URL so browser back-navigation restores the correct view.
+			document.body.addEventListener('htmx:afterSwap', function(evt) {
+				if (evt.detail.target && evt.detail.target.id === 'artist-content') {
+					var params = buildArtistParams({});
+					var qs = Object.keys(params).filter(function(k) { return params[k]; }).map(function(k) {
+						return encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);
+					}).join('&');
+					var url = '/artists' + (qs ? '?' + qs : '');
+					history.replaceState(null, '', url);
+				}
+			});
+
 			// When the page is restored from bfcache (browser back/forward navigation),
 			// sync filter controls from the URL query params and reload content so
 			// status badges reflect the latest state.

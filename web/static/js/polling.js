@@ -25,7 +25,7 @@ function pollAsyncStatus(url, callbacks, options) {
   var attempts = 0;
 
   var poll = setInterval(function () {
-    if (++attempts > maxAttempts) {
+    if (maxAttempts > 0 && ++attempts > maxAttempts) {
       clearInterval(poll);
       if (callbacks.onTimeout) callbacks.onTimeout();
       return;

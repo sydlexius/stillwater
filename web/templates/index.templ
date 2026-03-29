@@ -156,7 +156,7 @@ templ IndexPage(assets AssetPaths) {
 						showToast('Network error while checking rule status');
 						resetRuleButton();
 					}
-				});
+				}, {maxAttempts: 0});
 			}
 
 			function resetRuleButton() {

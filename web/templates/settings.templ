@@ -4483,7 +4483,7 @@ templ ruleToggleScript() {
 					showRuleToast('Lost connection while running rule.', true);
 					finishRunBtn(btn, origText);
 				}
-			});
+			}, {maxAttempts: 0});
 		}
 
 		function finishRunBtn(btn, origText) {
