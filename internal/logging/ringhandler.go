@@ -44,6 +44,7 @@ func (h *RingHandler) Handle(_ context.Context, r slog.Record) error {
 	// Extract source location from the record's PC (set by slog when the
 	// caller uses slog.Info/Warn/etc). AddSource in the primary handler
 	// only affects that handler; we replicate the logic here.
+	var pkgName string // derived package name for auto-component
 	if h.addSource && r.PC != 0 {
 		fs := runtime.CallersFrames([]uintptr{r.PC})
 		f, _ := fs.Next()
@@ -57,6 +58,19 @@ func (h *RingHandler) Handle(_ context.Context, r slog.Record) error {
 				}
 			}
 			entry.Source = fmt.Sprintf("%s:%d", short, f.Line)
+
+			// Derive the Go package directory name for auto-component.
+			// e.g. ".../internal/watcher/probe.go" -> "watcher"
+			dir := f.File[:len(f.File)-len(short)]
+			if len(dir) > 1 && dir[len(dir)-1] == '/' {
+				dir = dir[:len(dir)-1]
+			}
+			for i := len(dir) - 1; i >= 0; i-- {
+				if dir[i] == '/' {
+					pkgName = dir[i+1:]
+					break
+				}
+			}
 		}
 	}
 
@@ -87,6 +101,11 @@ func (h *RingHandler) Handle(_ context.Context, r slog.Record) error {
 		}
 		return true
 	})
+
+	// If no explicit component was set, use the derived package name.
+	if entry.Component == "" && pkgName != "" {
+		entry.Component = pkgName
+	}
 
 	if len(attrs) > 0 {
 		entry.Attrs = attrs

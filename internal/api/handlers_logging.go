@@ -53,7 +53,7 @@ func (r *Router) handleUpdateLogging(w http.ResponseWriter, req *http.Request) {
 	}
 
 	if cfg.Level != "" && !logging.ValidLevel(cfg.Level) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid level; must be debug, info, warn, or error"})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid level; must be trace, debug, info, warn, or error"})
 		return
 	}
 	if cfg.Format != "" && !logging.ValidFormat(cfg.Format) {
@@ -79,15 +79,22 @@ func (r *Router) handleUpdateLogging(w http.ResponseWriter, req *http.Request) {
 		cfg.FileMaxAgeDays = current.FileMaxAgeDays
 	}
 
+	// When ephemeral is true, skip persisting the log level to the database
+	// so it reverts to the previously saved level on restart. This is useful
+	// for temporarily enabling trace or debug logging without a permanent change.
+	ephemeral := req.FormValue("ephemeral") == "true"
+
 	// Persist to settings table
 	now := time.Now().UTC().Format(time.RFC3339)
 	settings := map[string]string{
-		"logging.level":             cfg.Level,
 		"logging.format":            cfg.Format,
 		"logging.file_path":         cfg.FilePath,
 		"logging.file_max_size_mb":  strconv.Itoa(cfg.FileMaxSizeMB),
 		"logging.file_max_files":    strconv.Itoa(cfg.FileMaxFiles),
 		"logging.file_max_age_days": strconv.Itoa(cfg.FileMaxAgeDays),
+	}
+	if !ephemeral {
+		settings["logging.level"] = cfg.Level
 	}
 	for k, v := range settings {
 		_, err := r.db.ExecContext(req.Context(), //nolint:gosec // static query

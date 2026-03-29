@@ -25,9 +25,11 @@ type LogFilter struct {
 	Limit     int       // max entries to return (default 100, max 500)
 }
 
-// levelSeverity returns a numeric severity for ordering: debug=0, info=1, warn=2, error=3.
+// levelSeverity returns a numeric severity for ordering: trace=-1, debug=0, info=1, warn=2, error=3.
 func levelSeverity(level string) int {
 	switch strings.ToLower(level) {
+	case "trace":
+		return -1
 	case "debug":
 		return 0
 	case "info":
