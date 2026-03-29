@@ -38,6 +38,9 @@ func TestGetUserByID(t *testing.T) {
 	if !got.IsActive {
 		t.Error("expected IsActive = true")
 	}
+	if !got.IsProtected {
+		t.Error("expected IsProtected = true for bootstrap admin")
+	}
 }
 
 func TestGetUserByID_NotFound(t *testing.T) {

@@ -107,6 +107,35 @@ func TestHandleRegister_RedeemedInvite(t *testing.T) {
 	}
 }
 
+func TestHandleDeactivateUser_BootstrapAdmin(t *testing.T) {
+	r, authSvc, adminID := testRouterWithAuth(t)
+
+	// Create a second admin so the last-admin guard is not the reason for refusal.
+	_, err := authSvc.CreateLocalUser(context.Background(), "admin2", "password123", "Admin 2", "administrator", adminID)
+	if err != nil {
+		t.Fatalf("creating second admin: %v", err)
+	}
+
+	// Attempt to deactivate the bootstrap admin (adminID from Setup).
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/users/"+adminID, nil)
+	req.SetPathValue("id", adminID)
+	req = withAdminCtx(req, adminID)
+	w := httptest.NewRecorder()
+	r.handleDeactivateUser(w, req)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("deactivate bootstrap admin: status = %d, want %d; body: %s", w.Code, http.StatusConflict, w.Body.String())
+	}
+
+	var resp map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding error response: %v", err)
+	}
+	if !strings.Contains(resp["error"], "bootstrap administrator") {
+		t.Errorf("error = %q, want message about bootstrap administrator", resp["error"])
+	}
+}
+
 func TestHandleUpdateUser_InvalidRole(t *testing.T) {
 	r, _, userID := testRouterWithAuth(t)
 

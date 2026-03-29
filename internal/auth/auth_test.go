@@ -1212,6 +1212,15 @@ func TestSetupFederated_CreatesUser(t *testing.T) {
 	if providerID != "emby-user-123" {
 		t.Errorf("provider_id = %q, want %q", providerID, "emby-user-123")
 	}
+
+	var isProtected bool
+	err = svc.db.QueryRowContext(ctx, `SELECT is_protected FROM users`).Scan(&isProtected)
+	if err != nil {
+		t.Fatalf("querying is_protected: %v", err)
+	}
+	if !isProtected {
+		t.Error("expected is_protected = true for federated bootstrap admin")
+	}
 }
 
 func TestSetupFederated_RejectsWhenUsersExist(t *testing.T) {
