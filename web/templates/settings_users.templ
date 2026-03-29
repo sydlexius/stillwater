@@ -315,23 +315,26 @@ templ userTableRow(u auth.User) {
 			if u.IsActive {
 				<div class="flex items-center justify-end gap-2">
 					<select
-						class="text-xs rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500"
+						class="text-xs rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
 						aria-label={ "Change role for " + u.DisplayName }
+						disabled?={ u.IsProtected }
 						onchange={ templ.ComponentScript{Call: "changeUserRole(this, '" + u.ID + "')"} }
 					>
 						<option value="operator" selected?={ u.Role == "operator" }>Operator</option>
 						<option value="administrator" selected?={ u.Role == "administrator" }>Administrator</option>
 					</select>
-					<button
-						type="button"
-						class="text-xs px-2.5 py-1 rounded border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-						aria-label={ "Deactivate " + u.DisplayName }
-						data-user-id={ u.ID }
-						data-display-name={ u.DisplayName }
-						onclick="deactivateUserFromDataset(this)"
-					>
-						Deactivate
-					</button>
+					if !u.IsProtected {
+						<button
+							type="button"
+							class="text-xs px-2.5 py-1 rounded border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+							aria-label={ "Deactivate " + u.DisplayName }
+							data-user-id={ u.ID }
+							data-display-name={ u.DisplayName }
+							onclick="deactivateUserFromDataset(this)"
+						>
+							Deactivate
+						</button>
+					}
 				</div>
 			}
 		</td>

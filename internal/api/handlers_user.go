@@ -261,7 +261,11 @@ func (r *Router) handleUpdateUser(w http.ResponseWriter, req *http.Request) {
 
 	if err := r.authService.UpdateUserRole(req.Context(), id, body.Role); err != nil {
 		switch {
+		case errors.Is(err, auth.ErrProtectedUser):
+			r.logger.Warn("blocked role change of protected bootstrap admin", "user_id", id)
+			writeJSON(w, http.StatusConflict, map[string]string{"error": "The bootstrap administrator account role cannot be changed."})
 		case errors.Is(err, auth.ErrLastAdmin):
+			r.logger.Warn("blocked downgrade of last active administrator", "user_id", id)
 			writeJSON(w, http.StatusConflict, map[string]string{"error": "Cannot downgrade the last active administrator."})
 		case errors.Is(err, sql.ErrNoRows):
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "User not found."})
@@ -293,7 +297,11 @@ func (r *Router) handleDeactivateUser(w http.ResponseWriter, req *http.Request) 
 
 	if err := r.authService.DeactivateUser(req.Context(), id); err != nil {
 		switch {
+		case errors.Is(err, auth.ErrProtectedUser):
+			r.logger.Warn("blocked deactivation of protected bootstrap admin", "user_id", id)
+			writeJSON(w, http.StatusConflict, map[string]string{"error": "The bootstrap administrator account cannot be deactivated."})
 		case errors.Is(err, auth.ErrLastAdmin):
+			r.logger.Warn("blocked deactivation of last active administrator", "user_id", id)
 			writeJSON(w, http.StatusConflict, map[string]string{"error": "Cannot deactivate the last active administrator."})
 		default:
 			r.logger.Error("failed to deactivate user", "user_id", id, "error", err)

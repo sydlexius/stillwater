@@ -1,0 +1,52 @@
+# Trigger a CodeRabbit review on PRs opened or updated by the Copilot agent.
+#
+# CodeRabbit's auto_review skips draft PRs (drafts: false in .coderabbit.yaml),
+# but Copilot always opens PRs as drafts. This workflow posts @coderabbitai review
+# on open and on each new push so the review always runs.
+
+name: CodeRabbit review for Copilot PRs
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+
+permissions:
+  pull-requests: write
+
+jobs:
+  trigger-review:
+    name: Trigger CodeRabbit review
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.user.login == 'Copilot'
+    steps:
+      - name: Check for recent CodeRabbit trigger
+        id: guard
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          # Avoid duplicate triggers: skip if we already posted a review comment
+          # for this exact commit within the last 10 minutes.
+          CUTOFF=$(date -u -d '-10 minutes' +%Y-%m-%dT%H:%M:%SZ)
+          RECENT=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments" \
+            --jq "[.[] | select(
+              .user.login == \"github-actions[bot]\" and
+              (.body | contains(\"@coderabbitai review\")) and
+              .created_at > \"$CUTOFF\"
+            )] | length")
+          echo "recent=$RECENT" >> "$GITHUB_OUTPUT"
+
+      - name: Post review trigger
+        if: steps.guard.outputs.recent == '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          gh api "repos/$REPO/issues/$PR_NUMBER/comments" \
+            -f body='@coderabbitai review'
+          echo "Posted @coderabbitai review on PR #$PR_NUMBER"
