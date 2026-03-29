@@ -253,15 +253,21 @@ func (r *Router) handleCreateConnection(w http.ResponseWriter, req *http.Request
 		return
 	}
 
+	// Lidarr is a read-only metadata source (MBID seeding). Default its
+	// library-import and write feature flags to false.
+	libImport := body.Type != connection.TypeLidarr
+	nfoWrite := body.Type != connection.TypeLidarr
+	imageWrite := body.Type != connection.TypeLidarr
+
 	c := &connection.Connection{
 		Name:                 body.Name,
 		Type:                 body.Type,
 		URL:                  body.URL,
 		APIKey:               body.APIKey,
 		Enabled:              body.Enabled,
-		FeatureLibraryImport: true,
-		FeatureNFOWrite:      true,
-		FeatureImageWrite:    true,
+		FeatureLibraryImport: libImport,
+		FeatureNFOWrite:      nfoWrite,
+		FeatureImageWrite:    imageWrite,
 		PlatformUserID:       platformUserID,
 	}
 	if err := r.connectionService.Create(req.Context(), c); err != nil {

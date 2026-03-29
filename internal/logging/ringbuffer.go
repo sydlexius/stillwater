@@ -12,6 +12,7 @@ type LogEntry struct {
 	Level     string         `json:"level"`
 	Message   string         `json:"message"`
 	Component string         `json:"component,omitempty"`
+	Source    string         `json:"source,omitempty"`
 	Attrs     map[string]any `json:"attrs,omitempty"`
 }
 

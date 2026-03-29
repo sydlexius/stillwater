@@ -42,12 +42,8 @@ func (s *Service) Create(ctx context.Context, c *Connection) error {
 	if c.Status == "" {
 		c.Status = "unknown"
 	}
-	// Default feature toggles to enabled for new connections.
-	if !c.FeatureLibraryImport && !c.FeatureNFOWrite && !c.FeatureImageWrite {
-		c.FeatureLibraryImport = true
-		c.FeatureNFOWrite = true
-		c.FeatureImageWrite = true
-	}
+	// Feature toggles are set by the handler based on connection type.
+	// Lidarr connections explicitly default to all-false (read-only).
 
 	encKey, err := s.encryptor.Encrypt(c.APIKey)
 	if err != nil {

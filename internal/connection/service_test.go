@@ -372,11 +372,13 @@ func TestDeduplicateByTypeURL(t *testing.T) {
 	}
 }
 
-func TestCreateDefaultsFeatureFlags(t *testing.T) {
+func TestCreatePreservesFeatureFlags(t *testing.T) {
 	svc := setupTestService(t)
 	ctx := context.Background()
 
-	c := &Connection{Name: "Features", Type: TypeEmby, URL: "http://feat:8096", APIKey: "key", Enabled: true}
+	// Feature flags are set by the handler based on connection type.
+	// Verify that explicitly-false flags are preserved (Lidarr read-only).
+	c := &Connection{Name: "Lidarr", Type: TypeLidarr, URL: "http://lidarr:8686", APIKey: "key", Enabled: true}
 	if err := svc.Create(ctx, c); err != nil {
 		t.Fatal(err)
 	}
@@ -385,14 +387,36 @@ func TestCreateDefaultsFeatureFlags(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !got.FeatureLibraryImport {
-		t.Error("expected FeatureLibraryImport to default to true")
+	if got.FeatureLibraryImport {
+		t.Error("expected FeatureLibraryImport to remain false for Lidarr")
 	}
-	if !got.FeatureNFOWrite {
-		t.Error("expected FeatureNFOWrite to default to true")
+	if got.FeatureNFOWrite {
+		t.Error("expected FeatureNFOWrite to remain false for Lidarr")
 	}
-	if !got.FeatureImageWrite {
-		t.Error("expected FeatureImageWrite to default to true")
+	if got.FeatureImageWrite {
+		t.Error("expected FeatureImageWrite to remain false for Lidarr")
+	}
+
+	// Verify that explicitly-true flags are also preserved.
+	c2 := &Connection{
+		Name: "Emby", Type: TypeEmby, URL: "http://emby:8096", APIKey: "key2", Enabled: true,
+		FeatureLibraryImport: true, FeatureNFOWrite: true, FeatureImageWrite: true,
+	}
+	if err := svc.Create(ctx, c2); err != nil {
+		t.Fatal(err)
+	}
+	got2, err := svc.GetByID(ctx, c2.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got2.FeatureLibraryImport {
+		t.Error("expected FeatureLibraryImport to be true for Emby")
+	}
+	if !got2.FeatureNFOWrite {
+		t.Error("expected FeatureNFOWrite to be true for Emby")
+	}
+	if !got2.FeatureImageWrite {
+		t.Error("expected FeatureImageWrite to be true for Emby")
 	}
 }
 

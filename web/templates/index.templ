@@ -116,9 +116,15 @@ templ IndexPage(assets AssetPaths) {
 				pollAsyncStatus('/api/v1/rules/run-all/status', {
 					onData: function(data) {
 						if (data.status === 'completed') {
-							var msg = 'Rules complete: ' + data.violations_found + ' violations';
-							if (data.fixes_succeeded > 0) {
-								msg += ', ' + data.fixes_succeeded + ' fixed';
+							var msg;
+							if (data.violations_found === 0) {
+								msg = 'No violations found';
+							} else if (data.violations_remaining === 0 && data.violations_auto_fixed > 0) {
+								msg = 'Found ' + data.violations_found + ' violations, all auto-fixed';
+							} else if (data.violations_auto_fixed > 0) {
+								msg = 'Found ' + data.violations_found + ' violations (' + data.violations_auto_fixed + ' auto-fixed, ' + data.violations_remaining + ' remaining)';
+							} else {
+								msg = 'Found ' + data.violations_found + ' violations (' + data.violations_remaining + ' remaining)';
 							}
 							showSuccessToast(msg);
 							resetRuleButton();
