@@ -67,27 +67,35 @@ func TestLogging_QuietPaths(t *testing.T) {
 	// log output. This prevents self-referential noise from the log viewer
 	// polling endpoint and reduces static-asset log spam.
 	tests := []struct {
-		path   string
-		status int
-		quiet  bool
+		basePath string
+		path     string
+		status   int
+		quiet    bool
 	}{
-		{"/api/v1/logs", http.StatusOK, true},
-		{"/api/v1/logs?limit=200&level=info", http.StatusOK, true},
-		{"/static/css/styles.css", http.StatusOK, true},
-		{"/static/js/htmx.min.js", http.StatusOK, true},
-		{"/api/v1/artists", http.StatusOK, false},
-		{"/api/v1/settings", http.StatusOK, false},
-		// Exact match: /api/v1/logs-archive must NOT be quiet.
-		{"/api/v1/logs-archive", http.StatusOK, false},
+		// No base path.
+		{"", "/api/v1/logs", http.StatusOK, true},
+		{"", "/api/v1/logs?limit=200&level=info", http.StatusOK, true},
+		{"", "/static/css/styles.css", http.StatusOK, true},
+		{"", "/static/js/htmx.min.js", http.StatusOK, true},
+		{"", "/api/v1/artists", http.StatusOK, false},
+		{"", "/api/v1/settings", http.StatusOK, false},
+		{"", "/api/v1/logs-archive", http.StatusOK, false},
 		// Error responses on quiet paths must still be logged.
-		{"/api/v1/logs", http.StatusInternalServerError, false},
-		{"/static/css/missing.css", http.StatusNotFound, false},
+		{"", "/api/v1/logs", http.StatusInternalServerError, false},
+		{"", "/static/css/missing.css", http.StatusNotFound, false},
+		// With base path (sub-path deployment).
+		{"/stillwater", "/stillwater/api/v1/logs", http.StatusOK, true},
+		{"/stillwater", "/stillwater/static/css/styles.css", http.StatusOK, true},
+		{"/stillwater", "/stillwater/api/v1/artists", http.StatusOK, false},
+		// Base path: root paths should NOT be quiet (wrong prefix).
+		{"/stillwater", "/api/v1/logs", http.StatusOK, false},
+		{"/stillwater", "/static/css/styles.css", http.StatusOK, false},
 	}
 
 	for _, tt := range tests {
 		var buf bytes.Buffer
 		logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
-		handler := Logging(logger)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		handler := Logging(logger, tt.basePath)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(tt.status)
 		}))
 
@@ -97,10 +105,10 @@ func TestLogging_QuietPaths(t *testing.T) {
 
 		logged := buf.Len() > 0
 		if tt.quiet && logged {
-			t.Errorf("path %q (status %d) should be quiet but produced log output: %s", tt.path, tt.status, buf.String())
+			t.Errorf("basePath=%q path=%q (status %d) should be quiet but produced log output", tt.basePath, tt.path, tt.status)
 		}
 		if !tt.quiet && !logged {
-			t.Errorf("path %q (status %d) should produce log output but was quiet", tt.path, tt.status)
+			t.Errorf("basePath=%q path=%q (status %d) should produce log output but was quiet", tt.basePath, tt.path, tt.status)
 		}
 	}
 }

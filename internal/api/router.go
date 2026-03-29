@@ -480,7 +480,7 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	}
 	var handler http.Handler = mux
 	handler = csrfWithExemptions(csrf, handler, csrfExempt)
-	handler = middleware.Logging(r.logger)(handler)
+	handler = middleware.Logging(r.logger, bp)(handler)
 	handler = middleware.SecurityHeaders(handler)
 	return handler
 }

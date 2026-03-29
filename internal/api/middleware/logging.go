@@ -10,23 +10,35 @@ import (
 // scrubPatterns are substrings that indicate sensitive values in log output.
 var scrubPatterns = []string{"apikey", "api_key", "password", "secret", "token", "authorization"}
 
-// quietPrefixes are URL path prefixes suppressed from HTTP request logging.
+// quietPrefixSuffixes are path suffixes checked with base-path prepended.
 // This reduces static-asset log spam.
-var quietPrefixes = []string{
+var quietPrefixSuffixes = []string{
 	"/static/",
 }
 
-// quietExact are URL paths suppressed via exact match. Using exact match
-// prevents accidentally suppressing unrelated paths (e.g. /api/v1/logs-archive).
-var quietExact = []string{
+// quietExactSuffixes are path suffixes checked via exact match after
+// base-path prepending. Exact match prevents accidentally suppressing
+// unrelated paths (e.g. /api/v1/logs-archive).
+var quietExactSuffixes = []string{
 	"/api/v1/logs",
 }
 
 // Logging returns middleware that logs each HTTP request with structured fields.
 // It scrubs sensitive query parameters and headers from log output.
-// Requests matching quietPrefixes or quietExact are served without logging
-// successful responses; error responses (>= 400) are still logged.
-func Logging(logger *slog.Logger) func(http.Handler) http.Handler {
+// basePath is prepended to quiet path patterns so sub-path deployments are
+// handled correctly. Successful requests on quiet paths are not logged;
+// error responses (>= 400) are still logged.
+func Logging(logger *slog.Logger, basePath string) func(http.Handler) http.Handler {
+	// Build the resolved quiet-path lists once at init.
+	quietPrefixes := make([]string, len(quietPrefixSuffixes))
+	for i, s := range quietPrefixSuffixes {
+		quietPrefixes[i] = basePath + s
+	}
+	quietExact := make([]string, len(quietExactSuffixes))
+	for i, s := range quietExactSuffixes {
+		quietExact[i] = basePath + s
+	}
+
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Check whether this path should be silently served.
