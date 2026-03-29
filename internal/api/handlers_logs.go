@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"html"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -114,21 +115,51 @@ func (r *Router) renderLogEntries(w http.ResponseWriter, entries []logging.LogEn
 	// so the newest entries appear at the bottom (natural scroll direction).
 	for i := len(entries) - 1; i >= 0; i-- {
 		entry := entries[i]
-		ts := entry.Time.Format("15:04:05.000")
+		// Include date and time so entries are unambiguous across days.
+		ts := entry.Time.Format("2006-01-02 15:04:05.000")
 		levelBadge := levelBadgeClass(entry.Level)
-		comp := entry.Component
-		if comp == "" {
-			comp = "-"
+
+		// Show source file:line when available, otherwise fall back to component.
+		source := entry.Source
+		if source == "" {
+			source = entry.Component
+		}
+		if source == "" {
+			source = "-"
 		}
 
 		b.WriteString(`<div class="flex gap-2 text-xs font-mono py-0.5 border-b border-gray-800/30 log-line">`)
-		fmt.Fprintf(&b, `<span class="text-gray-500 shrink-0 w-[5.5rem]">%s</span>`, html.EscapeString(ts))
+		fmt.Fprintf(&b, `<span class="text-gray-500 shrink-0 w-[9rem]">%s</span>`, html.EscapeString(ts))
 		fmt.Fprintf(&b, `<span class="px-1.5 rounded text-[10px] font-semibold uppercase shrink-0 w-12 text-center %s">%s</span>`,
 			levelBadge, html.EscapeString(strings.ToUpper(entry.Level)))
-		fmt.Fprintf(&b, `<span class="text-gray-400 shrink-0 w-24 truncate" title="%s">[%s]</span>`,
-			html.EscapeString(comp), html.EscapeString(comp))
-		fmt.Fprintf(&b, `<span class="text-gray-200 break-all">%s</span>`, html.EscapeString(entry.Message))
-		b.WriteString("</div>\n")
+		fmt.Fprintf(&b, `<span class="text-gray-400 shrink-0 w-32 truncate" title="%s">[%s]</span>`,
+			html.EscapeString(source), html.EscapeString(source))
+
+		// Message text.
+		fmt.Fprintf(&b, `<span class="text-gray-200 break-all">%s`, html.EscapeString(entry.Message))
+
+		// Render all attributes as inline key=value pairs so HTTP request
+		// entries show method, path, status, duration, and any other attrs
+		// from non-HTTP log entries are also visible.
+		if len(entry.Attrs) > 0 {
+			// Sort keys for deterministic rendering across polls.
+			keys := make([]string, 0, len(entry.Attrs))
+			for k := range entry.Attrs {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+
+			b.WriteString(` <span class="text-gray-500">`)
+			for i, k := range keys {
+				if i > 0 {
+					b.WriteString(" ")
+				}
+				fmt.Fprintf(&b, `%s=%s`, html.EscapeString(k), html.EscapeString(fmt.Sprintf("%v", entry.Attrs[k])))
+			}
+			b.WriteString(`</span>`)
+		}
+
+		b.WriteString("</span></div>\n")
 	}
 
 	w.Write([]byte(b.String())) //nolint:errcheck

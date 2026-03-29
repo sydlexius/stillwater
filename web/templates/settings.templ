@@ -1933,7 +1933,8 @@ templ logViewerScript() {
 			}
 		}
 
-		// updateLogFilters rebuilds the hx-get URL and triggers a fresh poll.
+		// updateLogFilters rebuilds the hx-get URL and re-registers HTMX
+		// polling so the periodic trigger uses the updated URL.
 		function updateLogFilters() {
 			var search = document.getElementById('log-search');
 			logViewerState.search = search ? search.value : '';
@@ -1944,8 +1945,12 @@ templ logViewerScript() {
 				url += '&search=' + encodeURIComponent(logViewerState.search);
 			}
 			viewer.setAttribute('hx-get', url);
-			// If not paused, trigger an immediate refresh via body so the
-			// hx-trigger="logRefresh from:body" listener picks it up.
+			// Re-process the element so HTMX picks up the new hx-get URL
+			// for subsequent periodic polls ("every 2s" trigger).
+			if (typeof htmx !== 'undefined') {
+				htmx.process(viewer);
+			}
+			// Trigger an immediate refresh so the user sees results now.
 			if (!logViewerState.paused && typeof htmx !== 'undefined') {
 				htmx.trigger(document.body, 'logRefresh');
 			}
@@ -3713,7 +3718,7 @@ templ serviceConnectionCard(connType string, displayName string, exampleURL stri
 							>
 								Test
 							</button>
-							if c.Status == "ok" {
+							if c.Status == "ok" && c.Type != "lidarr" {
 								<button
 									type="button"
 									class="text-xs px-2 py-1 rounded border border-blue-300 dark:border-blue-700 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
@@ -4446,9 +4451,16 @@ templ ruleToggleScript() {
 				onData: function(s) {
 					if (s.status === 'running') return false;
 					if (s.status === 'completed') {
-						var msg = 'Evaluated ' + s.artists_processed + ' artists: ' +
-							s.violations_found + ' violations, ' +
-							s.fixes_succeeded + ' fixed';
+						var msg;
+						if (s.violations_found === 0) {
+							msg = 'Evaluated ' + s.artists_processed + ' artists: no violations found';
+						} else if (s.violations_remaining === 0 && s.violations_auto_fixed > 0) {
+							msg = 'Evaluated ' + s.artists_processed + ' artists: ' + s.violations_found + ' violations, all auto-fixed';
+						} else if (s.violations_auto_fixed > 0) {
+							msg = 'Evaluated ' + s.artists_processed + ' artists: ' + s.violations_found + ' violations (' + s.violations_auto_fixed + ' auto-fixed, ' + s.violations_remaining + ' remaining)';
+						} else {
+							msg = 'Evaluated ' + s.artists_processed + ' artists: ' + s.violations_found + ' violations (' + s.violations_remaining + ' remaining)';
+						}
 						showRuleToast(msg, false);
 					} else if (s.status === 'failed') {
 						var errMsg = s.error ? 'Rule evaluation failed: ' + s.error : 'Rule evaluation failed.';

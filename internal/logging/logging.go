@@ -261,8 +261,9 @@ func buildWriter(cfg Config) (io.Writer, io.Closer) {
 }
 
 // buildHandler creates a slog.Handler with the given writer, leveler, and format.
+// AddSource is enabled so that log entries include the source file and line number.
 func buildHandler(w io.Writer, leveler slog.Leveler, format string) slog.Handler {
-	opts := &slog.HandlerOptions{Level: leveler}
+	opts := &slog.HandlerOptions{Level: leveler, AddSource: true}
 	if format == "text" {
 		return slog.NewTextHandler(w, opts)
 	}
@@ -275,7 +276,8 @@ func buildMultiHandler(w io.Writer, leveler slog.Leveler, format string, rb *Rin
 	primary := buildHandler(w, leveler, format)
 	// The ring handler captures at the same level as the primary handler so
 	// that logger.Enabled() reflects the configured level accurately.
-	ring := NewRingHandler(rb, leveler)
+	// addSource=true captures caller file:line for the log viewer.
+	ring := NewRingHandler(rb, leveler, true)
 	return NewMultiHandler(primary, ring)
 }
 

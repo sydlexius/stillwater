@@ -16,15 +16,17 @@ import (
 
 // ruleRunStatus tracks the state of an async run-all-rules operation.
 type ruleRunStatus struct {
-	Running          bool      `json:"running"`
-	Status           string    `json:"status"` // idle, running, completed, failed
-	ArtistsProcessed int       `json:"artists_processed"`
-	ViolationsFound  int       `json:"violations_found"`
-	FixesAttempted   int       `json:"fixes_attempted"`
-	FixesSucceeded   int       `json:"fixes_succeeded"`
-	StartedAt        time.Time `json:"started_at,omitempty"`
-	CompletedAt      time.Time `json:"completed_at,omitempty"`
-	Error            string    `json:"error,omitempty"`
+	Running             bool      `json:"running"`
+	Status              string    `json:"status"` // idle, running, completed, failed
+	ArtistsProcessed    int       `json:"artists_processed"`
+	ViolationsFound     int       `json:"violations_found"`
+	ViolationsAutoFixed int       `json:"violations_auto_fixed"`
+	ViolationsRemaining int       `json:"violations_remaining"`
+	FixesAttempted      int       `json:"fixes_attempted"`
+	FixesSucceeded      int       `json:"fixes_succeeded"`
+	StartedAt           time.Time `json:"started_at,omitempty"`
+	CompletedAt         time.Time `json:"completed_at,omitempty"`
+	Error               string    `json:"error,omitempty"`
 }
 
 // handleListRules returns all rules as JSON. Each rule includes a
@@ -383,14 +385,23 @@ func (r *Router) handleRunAllRules(w http.ResponseWriter, req *http.Request) {
 
 		result, err := r.pipeline.RunAll(ctx)
 
-		// Compute violation count outside the mutex to avoid blocking status polls.
+		// Compute violation counts outside the mutex to avoid blocking status polls.
 		// Check err first -- RunAll returns nil result on error paths.
 		var violationsFound int
+		var violationsAutoFixed int
+		var violationsRemaining int
 		if err == nil {
 			violationsFound = result.ViolationsFound
+			violationsAutoFixed = result.FixesSucceeded
+			// Query remaining active violations from DB (badge count).
 			counts, dbErr := r.ruleService.CountActiveViolationsBySeverity(ctx)
 			if dbErr != nil {
 				r.logger.Warn("querying active violations for toast count", "error", dbErr)
+				// Fall back to computed remaining count.
+				violationsRemaining = violationsFound - violationsAutoFixed
+				if violationsRemaining < 0 {
+					violationsRemaining = 0
+				}
 			} else {
 				total := 0
 				if r.getBoolSetting(ctx, "notif_badge_severity_error", true) {
@@ -402,7 +413,7 @@ func (r *Router) handleRunAllRules(w http.ResponseWriter, req *http.Request) {
 				if r.getBoolSetting(ctx, "notif_badge_severity_info", false) {
 					total += counts["info"]
 				}
-				violationsFound = total
+				violationsRemaining = total
 			}
 		}
 
@@ -423,6 +434,8 @@ func (r *Router) handleRunAllRules(w http.ResponseWriter, req *http.Request) {
 		r.ruleRun.FixesAttempted = result.FixesAttempted
 		r.ruleRun.FixesSucceeded = result.FixesSucceeded
 		r.ruleRun.ViolationsFound = violationsFound
+		r.ruleRun.ViolationsAutoFixed = violationsAutoFixed
+		r.ruleRun.ViolationsRemaining = violationsRemaining
 		r.ruleRunMu.Unlock()
 
 		// Reset scheduler timer so the next tick starts a full interval from now,

@@ -8,7 +8,7 @@ import (
 
 func TestRingHandler_BasicCapture(t *testing.T) {
 	rb := NewRingBuffer(10)
-	h := NewRingHandler(rb, slog.LevelDebug)
+	h := NewRingHandler(rb, slog.LevelDebug, false)
 	logger := slog.New(h)
 
 	logger.Info("hello world")
@@ -27,7 +27,7 @@ func TestRingHandler_BasicCapture(t *testing.T) {
 
 func TestRingHandler_ComponentExtraction(t *testing.T) {
 	rb := NewRingBuffer(10)
-	h := NewRingHandler(rb, slog.LevelDebug)
+	h := NewRingHandler(rb, slog.LevelDebug, false)
 	logger := slog.New(h)
 
 	logger.Info("scanning library", "component", "scanner", "path", "/music")
@@ -52,7 +52,7 @@ func TestRingHandler_ComponentExtraction(t *testing.T) {
 func TestRingHandler_LevelFiltering(t *testing.T) {
 	rb := NewRingBuffer(10)
 	// Only capture warn and above.
-	h := NewRingHandler(rb, slog.LevelWarn)
+	h := NewRingHandler(rb, slog.LevelWarn, false)
 	logger := slog.New(h)
 
 	logger.Debug("debug msg")
@@ -68,7 +68,7 @@ func TestRingHandler_LevelFiltering(t *testing.T) {
 
 func TestRingHandler_Enabled(t *testing.T) {
 	rb := NewRingBuffer(10)
-	h := NewRingHandler(rb, slog.LevelWarn)
+	h := NewRingHandler(rb, slog.LevelWarn, false)
 
 	if h.Enabled(context.Background(), slog.LevelDebug) {
 		t.Error("debug should not be enabled when level is warn")
@@ -86,7 +86,7 @@ func TestRingHandler_Enabled(t *testing.T) {
 
 func TestRingHandler_WithAttrs(t *testing.T) {
 	rb := NewRingBuffer(10)
-	h := NewRingHandler(rb, slog.LevelDebug)
+	h := NewRingHandler(rb, slog.LevelDebug, false)
 
 	// Create a child handler with pre-stored attrs.
 	child := h.WithAttrs([]slog.Attr{slog.String("service", "api")})
@@ -104,7 +104,7 @@ func TestRingHandler_WithAttrs(t *testing.T) {
 
 func TestRingHandler_WithGroup(t *testing.T) {
 	rb := NewRingBuffer(10)
-	h := NewRingHandler(rb, slog.LevelDebug)
+	h := NewRingHandler(rb, slog.LevelDebug, false)
 
 	// Create a grouped handler.
 	child := h.WithGroup("http")
@@ -122,7 +122,7 @@ func TestRingHandler_WithGroup(t *testing.T) {
 
 func TestRingHandler_WithAttrsAndComponent(t *testing.T) {
 	rb := NewRingBuffer(10)
-	h := NewRingHandler(rb, slog.LevelDebug)
+	h := NewRingHandler(rb, slog.LevelDebug, false)
 
 	// Pre-store a component attr via WithAttrs.
 	child := h.WithAttrs([]slog.Attr{slog.String("component", "scanner")})
@@ -145,7 +145,7 @@ func TestRingHandler_WithAttrsAndComponent(t *testing.T) {
 
 func TestRingHandler_MultipleLevels(t *testing.T) {
 	rb := NewRingBuffer(10)
-	h := NewRingHandler(rb, slog.LevelDebug)
+	h := NewRingHandler(rb, slog.LevelDebug, false)
 	logger := slog.New(h)
 
 	logger.Debug("debug msg")

@@ -308,6 +308,13 @@ components:
           type: integer
         violations_found:
           type: integer
+          description: Total number of violations detected during evaluation
+        violations_auto_fixed:
+          type: integer
+          description: Number of violations that were automatically fixed
+        violations_remaining:
+          type: integer
+          description: Number of active violations remaining after auto-fixes
         fixes_attempted:
           type: integer
         fixes_succeeded:

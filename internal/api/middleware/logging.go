@@ -10,13 +10,49 @@ import (
 // scrubPatterns are substrings that indicate sensitive values in log output.
 var scrubPatterns = []string{"apikey", "api_key", "password", "secret", "token", "authorization"}
 
+// quietPaths are URL path prefixes that should not generate HTTP request log
+// entries. This prevents self-referential noise (e.g. the log viewer polling
+// endpoint logging its own requests) and reduces static-asset log spam.
+var quietPaths = []string{
+	"/api/v1/logs",
+	"/static/",
+}
+
 // Logging returns middleware that logs each HTTP request with structured fields.
 // It scrubs sensitive query parameters and headers from log output.
+// Requests to paths in quietPaths are served but not logged.
 func Logging(logger *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Check whether this path should be silently served.
+			quiet := false
+			for _, prefix := range quietPaths {
+				if strings.HasPrefix(r.URL.Path, prefix) {
+					quiet = true
+					break
+				}
+			}
+
 			start := time.Now()
 			sw := &statusWriter{ResponseWriter: w, status: http.StatusOK}
+
+			if quiet {
+				next.ServeHTTP(sw, r)
+				// Still log errors on quiet paths so failures are never invisible.
+				if sw.status >= 400 {
+					level := slog.LevelWarn
+					if sw.status >= 500 {
+						level = slog.LevelError
+					}
+					logger.LogAttrs(r.Context(), level, "http request",
+						slog.String("method", r.Method),
+						slog.String("path", r.URL.Path),
+						slog.Int("status", sw.status),
+						slog.Duration("duration", time.Since(start)),
+					)
+				}
+				return
+			}
 
 			next.ServeHTTP(sw, r)
 
