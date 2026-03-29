@@ -1641,9 +1641,9 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 									aria-checked="false"
 									aria-label="Enable file logging"
 									onclick="toggleFileLogging()"
-									class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-gray-200 dark:bg-gray-600 transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800 aria-checked:bg-blue-600"
+									class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-gray-200 dark:bg-gray-600 transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800"
 								>
-									<span class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out translate-x-0 aria-checked:translate-x-5"></span>
+									<span class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out translate-x-0"></span>
 								</button>
 							</div>
 							<!-- File logging settings (shown when toggle is on) -->
@@ -1840,6 +1840,13 @@ templ settingsTabBar(activeTab string) {
 
 templ loggingScript() {
 	<script>
+		// Resolve base path for sub-path deployments.
+		var logSettingsBasePath = '';
+		var logSettingsMeta = document.querySelector('meta[name="htmx-base-path"]');
+		if (logSettingsMeta && logSettingsMeta.content) {
+			logSettingsBasePath = logSettingsMeta.content;
+		}
+
 		// Tracks the DB-persisted level so the ephemeral row can show what it will revert to.
 		var persistedLogLevel = 'info';
 
@@ -1871,8 +1878,27 @@ templ loggingScript() {
 		// setFileLoggingToggle updates the toggle button and shows/hides the file settings section.
 		function setFileLoggingToggle(enabled) {
 			var btn = document.getElementById('log-to-file-btn');
+			var knob = btn ? btn.querySelector('span') : null;
 			var settings = document.getElementById('file-logging-settings');
-			if (btn) btn.setAttribute('aria-checked', enabled ? 'true' : 'false');
+			if (btn) {
+				btn.setAttribute('aria-checked', enabled ? 'true' : 'false');
+				if (enabled) {
+					btn.classList.remove('bg-gray-200', 'dark:bg-gray-600');
+					btn.classList.add('bg-blue-600');
+				} else {
+					btn.classList.remove('bg-blue-600');
+					btn.classList.add('bg-gray-200', 'dark:bg-gray-600');
+				}
+			}
+			if (knob) {
+				if (enabled) {
+					knob.classList.remove('translate-x-0');
+					knob.classList.add('translate-x-5');
+				} else {
+					knob.classList.remove('translate-x-5');
+					knob.classList.add('translate-x-0');
+				}
+			}
 			if (settings) {
 				if (enabled) settings.classList.remove('hidden');
 				else settings.classList.add('hidden');
@@ -1904,7 +1930,7 @@ templ loggingScript() {
 
 		// updateCleanupRow shows or hides the cleanup button based on whether rotated files exist.
 		function updateCleanupRow() {
-			fetch('/api/v1/logs/files')
+			fetch(logSettingsBasePath + '/api/v1/logs/files')
 				.then(function(r) { if (!r.ok) throw new Error('failed'); return r.json(); })
 				.then(function(files) {
 					var row = document.getElementById('log-cleanup-row');
@@ -1940,7 +1966,7 @@ templ loggingScript() {
 				/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1"
 			);
 			var status = document.getElementById('log-cleanup-status');
-			fetch('/api/v1/logs/files', {
+			fetch(logSettingsBasePath + '/api/v1/logs/files', {
 				method: 'DELETE',
 				headers: { 'X-CSRF-Token': csrfToken }
 			}).then(function(r) {
@@ -2152,7 +2178,7 @@ templ logViewerScript() {
 						var opt = document.createElement('option');
 						opt.value = f.name;
 						var mb = (f.size / (1024 * 1024)).toFixed(1);
-						opt.textContent = f.name + ' \u2014 ' + mb + ' MB';
+						opt.textContent = f.name + ' - ' + mb + ' MB';
 						sel.appendChild(opt);
 					});
 					// Restore previous selection or fall back to live.

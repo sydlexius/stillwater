@@ -13,7 +13,7 @@ import (
 
 // LogFileInfo describes a log file available for browsing in the log viewer.
 type LogFileInfo struct {
-	Name      string    `json:"name"`
+	Name      string    `json:"name"` // plain filename, no directory components
 	Size      int64     `json:"size"`
 	ModTime   time.Time `json:"mod_time"`
 	IsCurrent bool      `json:"is_current"`
@@ -94,7 +94,13 @@ type slogJSONSource struct {
 // first. The After filter is ignored (it only applies to the live ring buffer).
 // At most maxFileLines lines are read from the file to bound memory usage.
 func ReadLogFile(path string, filter LogFilter) ([]LogEntry, error) {
-	f, err := os.Open(path) //nolint:gosec // G304: path is validated by Manager.ReadLogFile before reaching here
+	// Clean the path and reject traversal patterns so the sanitization is
+	// visible to static analysis tools (CodeQL, gosec) at the call site.
+	cleaned := filepath.Clean(path)
+	if strings.Contains(cleaned, "..") {
+		return nil, fmt.Errorf("invalid log file path")
+	}
+	f, err := os.Open(cleaned) //nolint:gosec // G304: path validated above and by Manager.ReadLogFile
 	if err != nil {
 		return nil, fmt.Errorf("opening log file: %w", err)
 	}
@@ -113,20 +119,37 @@ func ReadLogFile(path string, filter LogFilter) ([]LogEntry, error) {
 	}
 	searchLower := strings.ToLower(filter.Search)
 
-	// Scan all lines, keeping only the last maxFileLines.
+	// Maintain a fixed-size ring of the last maxFileLines lines so memory
+	// stays bounded even for very large log files.
 	scanner := bufio.NewScanner(f)
 	const maxTokenSize = 512 * 1024 // 512 KB per line
 	scanner.Buffer(make([]byte, maxTokenSize), maxTokenSize)
 
-	var rawLines []string
+	rawLines := make([]string, 0, maxFileLines)
+	ringStart := 0
+	ringFull := false
 	for scanner.Scan() {
-		rawLines = append(rawLines, scanner.Text())
+		line := scanner.Text()
+		if !ringFull {
+			rawLines = append(rawLines, line)
+			if len(rawLines) == maxFileLines {
+				ringFull = true
+			}
+		} else {
+			rawLines[ringStart] = line
+			ringStart = (ringStart + 1) % maxFileLines
+		}
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, fmt.Errorf("reading log file: %w", err)
 	}
-	if len(rawLines) > maxFileLines {
-		rawLines = rawLines[len(rawLines)-maxFileLines:]
+	// Reconstruct chronological order if the ring wrapped.
+	if ringFull {
+		ordered := make([]string, 0, maxFileLines)
+		for i := 0; i < maxFileLines; i++ {
+			ordered = append(ordered, rawLines[(ringStart+i)%maxFileLines])
+		}
+		rawLines = ordered
 	}
 
 	// Parse lines in reverse (newest first) and apply filters.
@@ -182,9 +205,16 @@ func parseLogLine(line string) LogEntry {
 		}
 	}
 
+	// slog serializes custom levels as offsets (e.g. LevelTrace = DEBUG-4 -> "DEBUG-4").
+	// Normalize to the canonical name so filtering and badge styling work correctly.
+	level := strings.ToLower(known.Level)
+	if level == "debug-4" {
+		level = "trace"
+	}
+
 	entry := LogEntry{
 		Time:    known.Time,
-		Level:   strings.ToLower(known.Level),
+		Level:   level,
 		Message: known.Msg,
 	}
 
