@@ -250,8 +250,28 @@ func (r *Router) handleRunRule(w http.ResponseWriter, req *http.Request) {
 		r.ruleRun.Status = "completed"
 		r.ruleRun.ArtistsProcessed = result.ArtistsProcessed
 		r.ruleRun.ViolationsFound = result.ViolationsFound
+		r.ruleRun.ViolationsAutoFixed = result.FixesSucceeded
 		r.ruleRun.FixesAttempted = result.FixesAttempted
 		r.ruleRun.FixesSucceeded = result.FixesSucceeded
+		r.ruleRunMu.Unlock()
+
+		// Compute remaining violations outside the mutex (same pattern as run-all).
+		violationsRemaining := result.ViolationsFound - result.FixesSucceeded
+		if violationsRemaining < 0 {
+			violationsRemaining = 0
+		}
+		if r.ruleService != nil {
+			if counts, dbErr := r.ruleService.CountActiveViolationsBySeverity(ctx); dbErr == nil {
+				violationsRemaining = 0
+				for _, n := range counts {
+					violationsRemaining += n
+				}
+			} else {
+				r.logger.Warn("querying active violations for single-rule toast count", "error", dbErr)
+			}
+		}
+		r.ruleRunMu.Lock()
+		r.ruleRun.ViolationsRemaining = violationsRemaining
 		r.ruleRunMu.Unlock()
 	}()
 

@@ -10,12 +10,16 @@ import (
 // scrubPatterns are substrings that indicate sensitive values in log output.
 var scrubPatterns = []string{"apikey", "api_key", "password", "secret", "token", "authorization"}
 
-// quietPaths are URL path prefixes that should not generate HTTP request log
-// entries. This prevents self-referential noise (e.g. the log viewer polling
-// endpoint logging its own requests) and reduces static-asset log spam.
-var quietPaths = []string{
-	"/api/v1/logs",
+// quietPrefixes are URL path prefixes suppressed from HTTP request logging.
+// This reduces static-asset log spam.
+var quietPrefixes = []string{
 	"/static/",
+}
+
+// quietExact are URL paths suppressed via exact match. Using exact match
+// prevents accidentally suppressing unrelated paths (e.g. /api/v1/logs-archive).
+var quietExact = []string{
+	"/api/v1/logs",
 }
 
 // Logging returns middleware that logs each HTTP request with structured fields.
@@ -26,10 +30,18 @@ func Logging(logger *slog.Logger) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Check whether this path should be silently served.
 			quiet := false
-			for _, prefix := range quietPaths {
+			for _, prefix := range quietPrefixes {
 				if strings.HasPrefix(r.URL.Path, prefix) {
 					quiet = true
 					break
+				}
+			}
+			if !quiet {
+				for _, exact := range quietExact {
+					if r.URL.Path == exact {
+						quiet = true
+						break
+					}
 				}
 			}
 

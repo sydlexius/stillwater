@@ -3,6 +3,7 @@ package logging
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"testing"
 )
 
@@ -140,6 +141,25 @@ func TestRingHandler_WithAttrsAndComponent(t *testing.T) {
 	}
 	if _, ok := entries[0].Attrs["component"]; ok {
 		t.Error("component should be extracted, not in attrs map")
+	}
+}
+
+func TestRingHandler_AddSourcePopulatesSource(t *testing.T) {
+	rb := NewRingBuffer(10)
+	h := NewRingHandler(rb, slog.LevelDebug, true)
+	logger := slog.New(h)
+
+	logger.Info("source test")
+
+	entries := rb.Entries(LogFilter{Limit: 10})
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(entries))
+	}
+	if entries[0].Source == "" {
+		t.Error("expected Source to be populated when addSource is true")
+	}
+	if !strings.Contains(entries[0].Source, ":") {
+		t.Errorf("expected Source to contain file:line format, got %q", entries[0].Source)
 	}
 }
 

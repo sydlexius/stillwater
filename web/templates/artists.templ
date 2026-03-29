@@ -380,6 +380,15 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 						var el = document.getElementById('artist-' + name + '-input');
 						if (el && val !== null) el.value = val;
 					});
+					// Update visible sort labels and view toggle to match restored state.
+					var sortInput = document.getElementById('artist-sort-input');
+					var orderInput = document.getElementById('artist-order-input');
+					if (sortInput && orderInput) updateSortUI(sortInput.value, orderInput.value);
+					var viewInput = document.getElementById('artist-view-input');
+					if (viewInput) {
+						var colToggle = document.getElementById('col-toggle-wrapper');
+						if (colToggle) colToggle.classList.toggle('hidden', viewInput.value !== 'table');
+					}
 					htmx.ajax('GET', window.location.pathname + window.location.search, {target: '#artist-content', swap: 'outerHTML'});
 				}
 			});

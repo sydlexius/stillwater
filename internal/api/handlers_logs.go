@@ -129,7 +129,7 @@ func (r *Router) renderLogEntries(w http.ResponseWriter, entries []logging.LogEn
 		}
 
 		b.WriteString(`<div class="flex gap-2 text-xs font-mono py-0.5 border-b border-gray-800/30 log-line">`)
-		fmt.Fprintf(&b, `<span class="text-gray-500 shrink-0 w-[9rem]">%s</span>`, html.EscapeString(ts))
+		fmt.Fprintf(&b, `<span class="text-gray-500 shrink-0 w-[11rem] whitespace-nowrap">%s</span>`, html.EscapeString(ts))
 		fmt.Fprintf(&b, `<span class="px-1.5 rounded text-[10px] font-semibold uppercase shrink-0 w-12 text-center %s">%s</span>`,
 			levelBadge, html.EscapeString(strings.ToUpper(entry.Level)))
 		fmt.Fprintf(&b, `<span class="text-gray-400 shrink-0 w-32 truncate" title="%s">[%s]</span>`,
