@@ -69,9 +69,9 @@ func TestReadLogFile_BasicFiltering(t *testing.T) {
 	path := filepath.Join(dir, "test.log")
 
 	lines := []map[string]any{
-		{"time": "2024-03-29T10:00:00Z", "level": "DEBUG", "msg": "debug entry", "source": nil},
+		{"time": "2024-03-29T10:00:00Z", "level": "DEBUG", "msg": "debug entry", "source": nil, "component": "scanner"},
 		{"time": "2024-03-29T10:00:01Z", "level": "INFO", "msg": "info entry", "source": nil},
-		{"time": "2024-03-29T10:00:02Z", "level": "WARN", "msg": "warn entry", "source": nil},
+		{"time": "2024-03-29T10:00:02Z", "level": "WARN", "msg": "warn entry", "source": nil, "component": "scanner"},
 		{"time": "2024-03-29T10:00:03Z", "level": "ERROR", "msg": "error entry", "source": nil},
 		{"time": "2024-03-29T10:00:04Z", "level": "INFO", "msg": "another info", "source": nil},
 	}
@@ -137,6 +137,21 @@ func TestReadLogFile_BasicFiltering(t *testing.T) {
 		}
 		if len(entries) != 2 {
 			t.Fatalf("got %d entries, want 2", len(entries))
+		}
+	})
+
+	t.Run("component filter", func(t *testing.T) {
+		entries, err := ReadLogFile(path, LogFilter{Component: "scanner", Limit: 10})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(entries) != 2 {
+			t.Fatalf("got %d entries, want 2 (scanner entries)", len(entries))
+		}
+		for _, e := range entries {
+			if e.Component != "scanner" {
+				t.Errorf("expected component=scanner, got %q", e.Component)
+			}
 		}
 	})
 }
@@ -264,5 +279,12 @@ func TestListLogFiles_WithRotated(t *testing.T) {
 	// Current file must be first.
 	if !files[0].IsCurrent {
 		t.Error("first file should be current")
+	}
+	// Rotated file must not be marked current and must have the correct name.
+	if files[1].IsCurrent {
+		t.Error("rotated file should have IsCurrent=false")
+	}
+	if files[1].Name != "stillwater-2024-03-28T10-00-00.000.log" {
+		t.Errorf("rotated file name: got %q, want %q", files[1].Name, "stillwater-2024-03-28T10-00-00.000.log")
 	}
 }
