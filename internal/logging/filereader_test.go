@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -213,6 +214,32 @@ func TestManagerReadLogFile_PathTraversal(t *testing.T) {
 	_, err := emptyMgr.ReadLogFile("test.log", LogFilter{})
 	if err == nil || err.Error() != "file logging not configured" {
 		t.Errorf("expected 'file logging not configured' error, got %v", err)
+	}
+}
+
+func TestReadLogFile_PathTraversal(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.log")
+	if err := os.WriteFile(path, []byte("{\"time\":\"2024-03-29T10:00:00Z\",\"level\":\"INFO\",\"msg\":\"ok\"}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// A relative path containing ".." should be rejected by ReadLogFile's own
+	// guard, independent of the Manager-level validation. filepath.Clean
+	// preserves leading ".." in relative paths.
+	traversalPath := "../" + filepath.Base(dir) + "/test.log"
+	_, err := ReadLogFile(traversalPath, LogFilter{Limit: 1})
+	if err == nil || !strings.Contains(err.Error(), "invalid log file path") {
+		t.Fatalf("got err %v, want 'invalid log file path'", err)
+	}
+
+	// A clean path should succeed.
+	entries, err := ReadLogFile(path, LogFilter{Limit: 1})
+	if err != nil {
+		t.Fatalf("clean path failed: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("got %d entries, want 1", len(entries))
 	}
 }
 
