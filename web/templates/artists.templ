@@ -364,14 +364,23 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 
 			// After HTMX swaps artist content, push the current filter/sort state
 			// into the URL so browser back-navigation restores the correct view.
+			// Uses window.location.pathname (not hardcoded '/artists') for basePath
+			// support, and carries over the page param from the HTMX request URL.
 			document.body.addEventListener('htmx:afterSwap', function(evt) {
 				if (evt.detail.target && evt.detail.target.id === 'artist-content') {
 					var params = buildArtistParams({});
+					// Extract page from the HTMX request URL if present.
+					try {
+						var reqUrl = new URL(evt.detail.requestInfo.path, window.location.origin);
+						var page = reqUrl.searchParams.get('page');
+						if (page && page !== '1') params.page = page;
+						var pageSize = reqUrl.searchParams.get('page_size');
+						if (pageSize) params.page_size = pageSize;
+					} catch(e) { /* ignore parse errors */ }
 					var qs = Object.keys(params).filter(function(k) { return params[k]; }).map(function(k) {
 						return encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);
 					}).join('&');
-					var url = '/artists' + (qs ? '?' + qs : '');
-					history.replaceState(null, '', url);
+					history.replaceState(null, '', window.location.pathname + (qs ? '?' + qs : ''));
 				}
 			});
 

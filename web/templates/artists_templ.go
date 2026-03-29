@@ -662,7 +662,7 @@ func ArtistsPage(assets AssetPaths, data ArtistListData) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 58, "</div><script>\n\t\t\tvar _sortActiveClass = 'w-full text-left px-4 py-1.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 font-semibold text-blue-600 dark:text-blue-400';\n\t\t\tvar _sortInactiveClass = 'w-full text-left px-4 py-1.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200';\n\t\t\tvar _sortFieldLabels = {sort_name: 'Sort Name', health_score: 'Health', updated_at: 'Updated', created_at: 'Added'};\n\n\t\t\tfunction updateSortUI(sort, order) {\n\t\t\t\tvar fieldLabel = document.getElementById('sort-field-label');\n\t\t\t\tvar orderLabel = document.getElementById('sort-order-label');\n\t\t\t\tif (fieldLabel) fieldLabel.textContent = _sortFieldLabels[sort] || 'Name';\n\t\t\t\tif (orderLabel) orderLabel.textContent = order === 'desc' ? 'desc' : 'asc';\n\t\t\t\t['name', 'sort_name', 'health_score', 'updated_at', 'created_at'].forEach(function(f) {\n\t\t\t\t\tvar btn = document.querySelector('#sort-dropdown button[onclick=\"setSort(\\'' + f + '\\')\"]');\n\t\t\t\t\tif (btn) btn.className = f === sort ? _sortActiveClass : _sortInactiveClass;\n\t\t\t\t});\n\t\t\t\t['asc', 'desc'].forEach(function(d) {\n\t\t\t\t\tvar btn = document.querySelector('#sort-dropdown button[onclick=\"setOrder(\\'' + d + '\\')\"]');\n\t\t\t\t\tif (btn) btn.className = d === order ? _sortActiveClass : _sortInactiveClass;\n\t\t\t\t});\n\t\t\t}\n\n\t\t\tfunction setSort(field) {\n\t\t\t\tvar sortInput = document.getElementById('artist-sort-input');\n\t\t\t\tvar orderInput = document.getElementById('artist-order-input');\n\t\t\t\tif (!sortInput || !orderInput) return;\n\t\t\t\tif (sortInput.value === field) {\n\t\t\t\t\torderInput.value = (orderInput.value === 'asc') ? 'desc' : 'asc';\n\t\t\t\t} else {\n\t\t\t\t\tsortInput.value = field;\n\t\t\t\t\torderInput.value = 'asc';\n\t\t\t\t}\n\t\t\t\tupdateSortUI(sortInput.value, orderInput.value);\n\t\t\t\tcloseSortDropdown();\n\t\t\t\thtmx.ajax('GET', '/artists', {\n\t\t\t\t\ttarget: '#artist-content',\n\t\t\t\t\tswap: 'outerHTML',\n\t\t\t\t\tvalues: buildArtistParams({page: '1'})\n\t\t\t\t});\n\t\t\t}\n\n\t\t\tfunction setOrder(dir) {\n\t\t\t\tvar sortInput = document.getElementById('artist-sort-input');\n\t\t\t\tvar orderInput = document.getElementById('artist-order-input');\n\t\t\t\tif (!orderInput) return;\n\t\t\t\torderInput.value = dir;\n\t\t\t\tupdateSortUI(sortInput ? sortInput.value : '', dir);\n\t\t\t\tcloseSortDropdown();\n\t\t\t\thtmx.ajax('GET', '/artists', {\n\t\t\t\t\ttarget: '#artist-content',\n\t\t\t\t\tswap: 'outerHTML',\n\t\t\t\t\tvalues: buildArtistParams({page: '1'})\n\t\t\t\t});\n\t\t\t}\n\n\t\t\tfunction closeSortDropdown() {\n\t\t\t\tvar d = document.getElementById('sort-dropdown');\n\t\t\t\tif (d) d.removeAttribute('open');\n\t\t\t}\n\n\t\t\tfunction buildArtistParams(overrides) {\n\t\t\t\tvar params = {};\n\t\t\t\t['search', 'filter', 'library_id', 'view', 'sort', 'order'].forEach(function(name) {\n\t\t\t\t\tvar el = document.querySelector('[name=\"' + name + '\"]');\n\t\t\t\t\tif (el) params[name] = el.value;\n\t\t\t\t});\n\t\t\t\treturn Object.assign(params, overrides);\n\t\t\t}\n\n\t\t\tfunction setView(view) {\n\t\t\t\tvar input = document.getElementById('artist-view-input');\n\t\t\t\tif (input) input.value = view;\n\t\t\t\t// Show/hide column toggle based on view\n\t\t\t\tvar colToggle = document.getElementById('col-toggle-wrapper');\n\t\t\t\tif (colToggle) {\n\t\t\t\t\tif (view === 'table') {\n\t\t\t\t\t\tcolToggle.classList.remove('hidden');\n\t\t\t\t\t} else {\n\t\t\t\t\t\tcolToggle.classList.add('hidden');\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t\t// Fire-and-forget save preference\n\t\t\t\tvar csrfToken = document.cookie.replace(/(?:(?:^|.*;\\s*)csrf_token\\s*\\=\\s*([^;]*).*$)|^.*$/, \"$1\");\n\t\t\t\tfetch('/api/v1/settings', {\n\t\t\t\t\tmethod: 'PUT',\n\t\t\t\t\theaders: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},\n\t\t\t\t\tbody: JSON.stringify({\"ui.artists_view\": view})\n\t\t\t\t}).catch(function() {});\n\t\t\t}\n\n\t\t\t// After HTMX swaps artist content, push the current filter/sort state\n\t\t\t// into the URL so browser back-navigation restores the correct view.\n\t\t\tdocument.body.addEventListener('htmx:afterSwap', function(evt) {\n\t\t\t\tif (evt.detail.target && evt.detail.target.id === 'artist-content') {\n\t\t\t\t\tvar params = buildArtistParams({});\n\t\t\t\t\tvar qs = Object.keys(params).filter(function(k) { return params[k]; }).map(function(k) {\n\t\t\t\t\t\treturn encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);\n\t\t\t\t\t}).join('&');\n\t\t\t\t\tvar url = '/artists' + (qs ? '?' + qs : '');\n\t\t\t\t\thistory.replaceState(null, '', url);\n\t\t\t\t}\n\t\t\t});\n\n\t\t\t// When the page is restored from bfcache (browser back/forward navigation),\n\t\t\t// sync filter controls from the URL query params and reload content so\n\t\t\t// status badges reflect the latest state.\n\t\t\twindow.addEventListener('pageshow', function(evt) {\n\t\t\t\tif (evt.persisted) {\n\t\t\t\t\tvar params = new URLSearchParams(window.location.search);\n\t\t\t\t\t// Sync select elements from URL params.\n\t\t\t\t\t['filter', 'library_id'].forEach(function(name) {\n\t\t\t\t\t\tvar val = params.get(name);\n\t\t\t\t\t\tvar el = document.querySelector('select[name=\"' + name + '\"]');\n\t\t\t\t\t\tif (el) el.value = (val !== null) ? val : '';\n\t\t\t\t\t});\n\t\t\t\t\t// Sync hidden inputs from URL params.\n\t\t\t\t\t['view', 'sort', 'order'].forEach(function(name) {\n\t\t\t\t\t\tvar val = params.get(name);\n\t\t\t\t\t\tvar el = document.getElementById('artist-' + name + '-input');\n\t\t\t\t\t\tif (el && val !== null) el.value = val;\n\t\t\t\t\t});\n\t\t\t\t\t// Update visible sort labels and view toggle to match restored state.\n\t\t\t\t\tvar sortInput = document.getElementById('artist-sort-input');\n\t\t\t\t\tvar orderInput = document.getElementById('artist-order-input');\n\t\t\t\t\tif (sortInput && orderInput) updateSortUI(sortInput.value, orderInput.value);\n\t\t\t\t\tvar viewInput = document.getElementById('artist-view-input');\n\t\t\t\t\tif (viewInput) {\n\t\t\t\t\t\tvar colToggle = document.getElementById('col-toggle-wrapper');\n\t\t\t\t\t\tif (colToggle) colToggle.classList.toggle('hidden', viewInput.value !== 'table');\n\t\t\t\t\t}\n\t\t\t\t\thtmx.ajax('GET', window.location.pathname + window.location.search, {target: '#artist-content', swap: 'outerHTML'});\n\t\t\t\t}\n\t\t\t});\n\n\t\t\t(function() {\n\t\t\t\tvar btn = document.getElementById('scan-btn');\n\t\t\t\tif (!btn) return;\n\n\t\t\t\tdocument.body.addEventListener('htmx:afterRequest', function(evt) {\n\t\t\t\t\tif (evt.detail.elt !== btn) return;\n\t\t\t\t\tif (!evt.detail.successful) return;\n\n\t\t\t\t\tvar spinner = document.getElementById('scan-spinner');\n\t\t\t\t\tvar label = document.getElementById('scan-label');\n\t\t\t\t\tbtn.disabled = true;\n\t\t\t\t\tspinner.classList.remove('hidden');\n\t\t\t\t\tlabel.textContent = 'Scanning...';\n\n\t\t\t\t\tfunction resetScanUI() {\n\t\t\t\t\t\tbtn.disabled = false;\n\t\t\t\t\t\tspinner.classList.add('hidden');\n\t\t\t\t\t\tlabel.textContent = 'Scan Library';\n\t\t\t\t\t}\n\t\t\t\t\tpollAsyncStatus('/api/v1/scanner/status', {\n\t\t\t\t\t\tonData: function(data) {\n\t\t\t\t\t\t\tif (data.status === 'completed' || data.status === 'failed') {\n\t\t\t\t\t\t\t\tresetScanUI();\n\t\t\t\t\t\t\t\thtmx.ajax('GET', window.location.pathname + window.location.search, {target: '#artist-content', swap: 'outerHTML'});\n\t\t\t\t\t\t\t\treturn true;\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\treturn false;\n\t\t\t\t\t\t},\n\t\t\t\t\t\tonTimeout: function() {\n\t\t\t\t\t\t\tresetScanUI();\n\t\t\t\t\t\t},\n\t\t\t\t\t\tonHTTPError: function() {\n\t\t\t\t\t\t\tresetScanUI();\n\t\t\t\t\t\t},\n\t\t\t\t\t\tonNetworkError: function() {\n\t\t\t\t\t\t\tresetScanUI();\n\t\t\t\t\t\t}\n\t\t\t\t\t});\n\t\t\t\t});\n\t\t\t})();\n\t\t</script>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 58, "</div><script>\n\t\t\tvar _sortActiveClass = 'w-full text-left px-4 py-1.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 font-semibold text-blue-600 dark:text-blue-400';\n\t\t\tvar _sortInactiveClass = 'w-full text-left px-4 py-1.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200';\n\t\t\tvar _sortFieldLabels = {sort_name: 'Sort Name', health_score: 'Health', updated_at: 'Updated', created_at: 'Added'};\n\n\t\t\tfunction updateSortUI(sort, order) {\n\t\t\t\tvar fieldLabel = document.getElementById('sort-field-label');\n\t\t\t\tvar orderLabel = document.getElementById('sort-order-label');\n\t\t\t\tif (fieldLabel) fieldLabel.textContent = _sortFieldLabels[sort] || 'Name';\n\t\t\t\tif (orderLabel) orderLabel.textContent = order === 'desc' ? 'desc' : 'asc';\n\t\t\t\t['name', 'sort_name', 'health_score', 'updated_at', 'created_at'].forEach(function(f) {\n\t\t\t\t\tvar btn = document.querySelector('#sort-dropdown button[onclick=\"setSort(\\'' + f + '\\')\"]');\n\t\t\t\t\tif (btn) btn.className = f === sort ? _sortActiveClass : _sortInactiveClass;\n\t\t\t\t});\n\t\t\t\t['asc', 'desc'].forEach(function(d) {\n\t\t\t\t\tvar btn = document.querySelector('#sort-dropdown button[onclick=\"setOrder(\\'' + d + '\\')\"]');\n\t\t\t\t\tif (btn) btn.className = d === order ? _sortActiveClass : _sortInactiveClass;\n\t\t\t\t});\n\t\t\t}\n\n\t\t\tfunction setSort(field) {\n\t\t\t\tvar sortInput = document.getElementById('artist-sort-input');\n\t\t\t\tvar orderInput = document.getElementById('artist-order-input');\n\t\t\t\tif (!sortInput || !orderInput) return;\n\t\t\t\tif (sortInput.value === field) {\n\t\t\t\t\torderInput.value = (orderInput.value === 'asc') ? 'desc' : 'asc';\n\t\t\t\t} else {\n\t\t\t\t\tsortInput.value = field;\n\t\t\t\t\torderInput.value = 'asc';\n\t\t\t\t}\n\t\t\t\tupdateSortUI(sortInput.value, orderInput.value);\n\t\t\t\tcloseSortDropdown();\n\t\t\t\thtmx.ajax('GET', '/artists', {\n\t\t\t\t\ttarget: '#artist-content',\n\t\t\t\t\tswap: 'outerHTML',\n\t\t\t\t\tvalues: buildArtistParams({page: '1'})\n\t\t\t\t});\n\t\t\t}\n\n\t\t\tfunction setOrder(dir) {\n\t\t\t\tvar sortInput = document.getElementById('artist-sort-input');\n\t\t\t\tvar orderInput = document.getElementById('artist-order-input');\n\t\t\t\tif (!orderInput) return;\n\t\t\t\torderInput.value = dir;\n\t\t\t\tupdateSortUI(sortInput ? sortInput.value : '', dir);\n\t\t\t\tcloseSortDropdown();\n\t\t\t\thtmx.ajax('GET', '/artists', {\n\t\t\t\t\ttarget: '#artist-content',\n\t\t\t\t\tswap: 'outerHTML',\n\t\t\t\t\tvalues: buildArtistParams({page: '1'})\n\t\t\t\t});\n\t\t\t}\n\n\t\t\tfunction closeSortDropdown() {\n\t\t\t\tvar d = document.getElementById('sort-dropdown');\n\t\t\t\tif (d) d.removeAttribute('open');\n\t\t\t}\n\n\t\t\tfunction buildArtistParams(overrides) {\n\t\t\t\tvar params = {};\n\t\t\t\t['search', 'filter', 'library_id', 'view', 'sort', 'order'].forEach(function(name) {\n\t\t\t\t\tvar el = document.querySelector('[name=\"' + name + '\"]');\n\t\t\t\t\tif (el) params[name] = el.value;\n\t\t\t\t});\n\t\t\t\treturn Object.assign(params, overrides);\n\t\t\t}\n\n\t\t\tfunction setView(view) {\n\t\t\t\tvar input = document.getElementById('artist-view-input');\n\t\t\t\tif (input) input.value = view;\n\t\t\t\t// Show/hide column toggle based on view\n\t\t\t\tvar colToggle = document.getElementById('col-toggle-wrapper');\n\t\t\t\tif (colToggle) {\n\t\t\t\t\tif (view === 'table') {\n\t\t\t\t\t\tcolToggle.classList.remove('hidden');\n\t\t\t\t\t} else {\n\t\t\t\t\t\tcolToggle.classList.add('hidden');\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t\t// Fire-and-forget save preference\n\t\t\t\tvar csrfToken = document.cookie.replace(/(?:(?:^|.*;\\s*)csrf_token\\s*\\=\\s*([^;]*).*$)|^.*$/, \"$1\");\n\t\t\t\tfetch('/api/v1/settings', {\n\t\t\t\t\tmethod: 'PUT',\n\t\t\t\t\theaders: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},\n\t\t\t\t\tbody: JSON.stringify({\"ui.artists_view\": view})\n\t\t\t\t}).catch(function() {});\n\t\t\t}\n\n\t\t\t// After HTMX swaps artist content, push the current filter/sort state\n\t\t\t// into the URL so browser back-navigation restores the correct view.\n\t\t\t// Uses window.location.pathname (not hardcoded '/artists') for basePath\n\t\t\t// support, and carries over the page param from the HTMX request URL.\n\t\t\tdocument.body.addEventListener('htmx:afterSwap', function(evt) {\n\t\t\t\tif (evt.detail.target && evt.detail.target.id === 'artist-content') {\n\t\t\t\t\tvar params = buildArtistParams({});\n\t\t\t\t\t// Extract page from the HTMX request URL if present.\n\t\t\t\t\ttry {\n\t\t\t\t\t\tvar reqUrl = new URL(evt.detail.requestInfo.path, window.location.origin);\n\t\t\t\t\t\tvar page = reqUrl.searchParams.get('page');\n\t\t\t\t\t\tif (page && page !== '1') params.page = page;\n\t\t\t\t\t\tvar pageSize = reqUrl.searchParams.get('page_size');\n\t\t\t\t\t\tif (pageSize) params.page_size = pageSize;\n\t\t\t\t\t} catch(e) { /* ignore parse errors */ }\n\t\t\t\t\tvar qs = Object.keys(params).filter(function(k) { return params[k]; }).map(function(k) {\n\t\t\t\t\t\treturn encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);\n\t\t\t\t\t}).join('&');\n\t\t\t\t\thistory.replaceState(null, '', window.location.pathname + (qs ? '?' + qs : ''));\n\t\t\t\t}\n\t\t\t});\n\n\t\t\t// When the page is restored from bfcache (browser back/forward navigation),\n\t\t\t// sync filter controls from the URL query params and reload content so\n\t\t\t// status badges reflect the latest state.\n\t\t\twindow.addEventListener('pageshow', function(evt) {\n\t\t\t\tif (evt.persisted) {\n\t\t\t\t\tvar params = new URLSearchParams(window.location.search);\n\t\t\t\t\t// Sync select elements from URL params.\n\t\t\t\t\t['filter', 'library_id'].forEach(function(name) {\n\t\t\t\t\t\tvar val = params.get(name);\n\t\t\t\t\t\tvar el = document.querySelector('select[name=\"' + name + '\"]');\n\t\t\t\t\t\tif (el) el.value = (val !== null) ? val : '';\n\t\t\t\t\t});\n\t\t\t\t\t// Sync hidden inputs from URL params.\n\t\t\t\t\t['view', 'sort', 'order'].forEach(function(name) {\n\t\t\t\t\t\tvar val = params.get(name);\n\t\t\t\t\t\tvar el = document.getElementById('artist-' + name + '-input');\n\t\t\t\t\t\tif (el && val !== null) el.value = val;\n\t\t\t\t\t});\n\t\t\t\t\t// Update visible sort labels and view toggle to match restored state.\n\t\t\t\t\tvar sortInput = document.getElementById('artist-sort-input');\n\t\t\t\t\tvar orderInput = document.getElementById('artist-order-input');\n\t\t\t\t\tif (sortInput && orderInput) updateSortUI(sortInput.value, orderInput.value);\n\t\t\t\t\tvar viewInput = document.getElementById('artist-view-input');\n\t\t\t\t\tif (viewInput) {\n\t\t\t\t\t\tvar colToggle = document.getElementById('col-toggle-wrapper');\n\t\t\t\t\t\tif (colToggle) colToggle.classList.toggle('hidden', viewInput.value !== 'table');\n\t\t\t\t\t}\n\t\t\t\t\thtmx.ajax('GET', window.location.pathname + window.location.search, {target: '#artist-content', swap: 'outerHTML'});\n\t\t\t\t}\n\t\t\t});\n\n\t\t\t(function() {\n\t\t\t\tvar btn = document.getElementById('scan-btn');\n\t\t\t\tif (!btn) return;\n\n\t\t\t\tdocument.body.addEventListener('htmx:afterRequest', function(evt) {\n\t\t\t\t\tif (evt.detail.elt !== btn) return;\n\t\t\t\t\tif (!evt.detail.successful) return;\n\n\t\t\t\t\tvar spinner = document.getElementById('scan-spinner');\n\t\t\t\t\tvar label = document.getElementById('scan-label');\n\t\t\t\t\tbtn.disabled = true;\n\t\t\t\t\tspinner.classList.remove('hidden');\n\t\t\t\t\tlabel.textContent = 'Scanning...';\n\n\t\t\t\t\tfunction resetScanUI() {\n\t\t\t\t\t\tbtn.disabled = false;\n\t\t\t\t\t\tspinner.classList.add('hidden');\n\t\t\t\t\t\tlabel.textContent = 'Scan Library';\n\t\t\t\t\t}\n\t\t\t\t\tpollAsyncStatus('/api/v1/scanner/status', {\n\t\t\t\t\t\tonData: function(data) {\n\t\t\t\t\t\t\tif (data.status === 'completed' || data.status === 'failed') {\n\t\t\t\t\t\t\t\tresetScanUI();\n\t\t\t\t\t\t\t\thtmx.ajax('GET', window.location.pathname + window.location.search, {target: '#artist-content', swap: 'outerHTML'});\n\t\t\t\t\t\t\t\treturn true;\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\treturn false;\n\t\t\t\t\t\t},\n\t\t\t\t\t\tonTimeout: function() {\n\t\t\t\t\t\t\tresetScanUI();\n\t\t\t\t\t\t},\n\t\t\t\t\t\tonHTTPError: function() {\n\t\t\t\t\t\t\tresetScanUI();\n\t\t\t\t\t\t},\n\t\t\t\t\t\tonNetworkError: function() {\n\t\t\t\t\t\t\tresetScanUI();\n\t\t\t\t\t\t}\n\t\t\t\t\t});\n\t\t\t\t});\n\t\t\t})();\n\t\t</script>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -816,7 +816,7 @@ func ArtistRow(a artist.Artist, sources map[string]LibrarySourceInfo, compliance
 			var templ_7745c5c3_Var38 string
 			templ_7745c5c3_Var38, templ_7745c5c3_Err = templ.JoinStringErrs(complianceDotTitle(artistCompliance(a.ID, compliance)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 519, Col: 68}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 528, Col: 68}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var38))
 			if templ_7745c5c3_Err != nil {
@@ -829,7 +829,7 @@ func ArtistRow(a artist.Artist, sources map[string]LibrarySourceInfo, compliance
 			var templ_7745c5c3_Var39 string
 			templ_7745c5c3_Var39, templ_7745c5c3_Err = templ.JoinStringErrs(complianceDotTitle(artistCompliance(a.ID, compliance)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 520, Col: 73}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 529, Col: 73}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var39))
 			if templ_7745c5c3_Err != nil {
@@ -848,7 +848,7 @@ func ArtistRow(a artist.Artist, sources map[string]LibrarySourceInfo, compliance
 			var templ_7745c5c3_Var40 string
 			templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.JoinStringErrs(logoSrc(artistSourceInfo(a, sources).Source))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 526, Col: 56}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 535, Col: 56}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var40))
 			if templ_7745c5c3_Err != nil {
@@ -861,7 +861,7 @@ func ArtistRow(a artist.Artist, sources map[string]LibrarySourceInfo, compliance
 			var templ_7745c5c3_Var41 string
 			templ_7745c5c3_Var41, templ_7745c5c3_Err = templ.JoinStringErrs(sourceDisplayName(artistSourceInfo(a, sources).Source))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 527, Col: 66}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 536, Col: 66}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var41))
 			if templ_7745c5c3_Err != nil {
@@ -874,7 +874,7 @@ func ArtistRow(a artist.Artist, sources map[string]LibrarySourceInfo, compliance
 			var templ_7745c5c3_Var42 string
 			templ_7745c5c3_Var42, templ_7745c5c3_Err = templ.JoinStringErrs(artistSourceInfo(a, sources).ConnectionName)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 528, Col: 57}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 537, Col: 57}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var42))
 			if templ_7745c5c3_Err != nil {
@@ -892,7 +892,7 @@ func ArtistRow(a artist.Artist, sources map[string]LibrarySourceInfo, compliance
 		var templ_7745c5c3_Var43 templ.SafeURL
 		templ_7745c5c3_Var43, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/artists/" + a.ID))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 533, Col: 45}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 542, Col: 45}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var43))
 		if templ_7745c5c3_Err != nil {
@@ -905,7 +905,7 @@ func ArtistRow(a artist.Artist, sources map[string]LibrarySourceInfo, compliance
 		var templ_7745c5c3_Var44 string
 		templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.JoinStringErrs(a.Name)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 536, Col: 13}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 545, Col: 13}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var44))
 		if templ_7745c5c3_Err != nil {
@@ -923,7 +923,7 @@ func ArtistRow(a artist.Artist, sources map[string]LibrarySourceInfo, compliance
 			var templ_7745c5c3_Var45 string
 			templ_7745c5c3_Var45, templ_7745c5c3_Err = templ.JoinStringErrs(a.SortName)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 539, Col: 59}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 548, Col: 59}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var45))
 			if templ_7745c5c3_Err != nil {
@@ -1080,7 +1080,7 @@ func ArtistCard(a artist.Artist, sources map[string]LibrarySourceInfo, complianc
 		var templ_7745c5c3_Var49 templ.SafeURL
 		templ_7745c5c3_Var49, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/artists/" + a.ID))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 584, Col: 42}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 593, Col: 42}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var49))
 		if templ_7745c5c3_Err != nil {
@@ -1112,7 +1112,7 @@ func ArtistCard(a artist.Artist, sources map[string]LibrarySourceInfo, complianc
 				var templ_7745c5c3_Var51 string
 				templ_7745c5c3_Var51, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(templ.SafeCSS("background-image:url('" + a.ThumbPlaceholder + "')"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 590, Col: 110}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 599, Col: 110}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var51))
 				if templ_7745c5c3_Err != nil {
@@ -1130,7 +1130,7 @@ func ArtistCard(a artist.Artist, sources map[string]LibrarySourceInfo, complianc
 			var templ_7745c5c3_Var52 string
 			templ_7745c5c3_Var52, templ_7745c5c3_Err = templ.JoinStringErrs("/api/v1/artists/" + a.ID + "/images/thumb/file")
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 593, Col: 59}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 602, Col: 59}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var52))
 			if templ_7745c5c3_Err != nil {
@@ -1143,7 +1143,7 @@ func ArtistCard(a artist.Artist, sources map[string]LibrarySourceInfo, complianc
 			var templ_7745c5c3_Var53 string
 			templ_7745c5c3_Var53, templ_7745c5c3_Err = templ.JoinStringErrs(a.Name)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 594, Col: 17}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 603, Col: 17}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var53))
 			if templ_7745c5c3_Err != nil {
@@ -1161,7 +1161,7 @@ func ArtistCard(a artist.Artist, sources map[string]LibrarySourceInfo, complianc
 			var templ_7745c5c3_Var54 string
 			templ_7745c5c3_Var54, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(templ.SafeCSS("background-image:url('" + a.ThumbPlaceholder + "')"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 599, Col: 109}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 608, Col: 109}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var54))
 			if templ_7745c5c3_Err != nil {
@@ -1203,7 +1203,7 @@ func ArtistCard(a artist.Artist, sources map[string]LibrarySourceInfo, complianc
 			var templ_7745c5c3_Var57 string
 			templ_7745c5c3_Var57, templ_7745c5c3_Err = templ.JoinStringErrs(complianceDotTitle(artistCompliance(a.ID, compliance)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 610, Col: 67}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 619, Col: 67}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var57))
 			if templ_7745c5c3_Err != nil {
@@ -1216,7 +1216,7 @@ func ArtistCard(a artist.Artist, sources map[string]LibrarySourceInfo, complianc
 			var templ_7745c5c3_Var58 string
 			templ_7745c5c3_Var58, templ_7745c5c3_Err = templ.JoinStringErrs(complianceDotTitle(artistCompliance(a.ID, compliance)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 611, Col: 72}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 620, Col: 72}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var58))
 			if templ_7745c5c3_Err != nil {
@@ -1235,7 +1235,7 @@ func ArtistCard(a artist.Artist, sources map[string]LibrarySourceInfo, complianc
 			var templ_7745c5c3_Var59 string
 			templ_7745c5c3_Var59, templ_7745c5c3_Err = templ.JoinStringErrs(artistSourceInfo(a, sources).ConnectionName)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 618, Col: 56}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 627, Col: 56}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var59))
 			if templ_7745c5c3_Err != nil {
@@ -1248,7 +1248,7 @@ func ArtistCard(a artist.Artist, sources map[string]LibrarySourceInfo, complianc
 			var templ_7745c5c3_Var60 string
 			templ_7745c5c3_Var60, templ_7745c5c3_Err = templ.JoinStringErrs(logoSrc(artistSourceInfo(a, sources).Source))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 621, Col: 56}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 630, Col: 56}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var60))
 			if templ_7745c5c3_Err != nil {
@@ -1261,7 +1261,7 @@ func ArtistCard(a artist.Artist, sources map[string]LibrarySourceInfo, complianc
 			var templ_7745c5c3_Var61 string
 			templ_7745c5c3_Var61, templ_7745c5c3_Err = templ.JoinStringErrs(sourceDisplayName(artistSourceInfo(a, sources).Source))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 622, Col: 66}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 631, Col: 66}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var61))
 			if templ_7745c5c3_Err != nil {
@@ -1279,7 +1279,7 @@ func ArtistCard(a artist.Artist, sources map[string]LibrarySourceInfo, complianc
 		var templ_7745c5c3_Var62 string
 		templ_7745c5c3_Var62, templ_7745c5c3_Err = templ.JoinStringErrs(a.Name)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 629, Col: 90}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 638, Col: 90}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var62))
 		if templ_7745c5c3_Err != nil {
@@ -1292,7 +1292,7 @@ func ArtistCard(a artist.Artist, sources map[string]LibrarySourceInfo, complianc
 		var templ_7745c5c3_Var63 string
 		templ_7745c5c3_Var63, templ_7745c5c3_Err = templ.JoinStringErrs(a.Name)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 630, Col: 12}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 639, Col: 12}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var63))
 		if templ_7745c5c3_Err != nil {
@@ -1327,7 +1327,7 @@ func ArtistCard(a artist.Artist, sources map[string]LibrarySourceInfo, complianc
 		var templ_7745c5c3_Var66 string
 		templ_7745c5c3_Var66, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%.0f%%", a.HealthScore))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 633, Col: 42}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 642, Col: 42}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var66))
 		if templ_7745c5c3_Err != nil {
