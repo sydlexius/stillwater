@@ -362,10 +362,33 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 				}).catch(function() {});
 			}
 
-			// Reload the artist content when the page is restored from bfcache (browser
-			// back/forward navigation) so status badges reflect the latest state.
+			// When the page is restored from bfcache (browser back/forward navigation),
+			// sync filter controls from the URL query params and reload content so
+			// status badges reflect the latest state.
 			window.addEventListener('pageshow', function(evt) {
 				if (evt.persisted) {
+					var params = new URLSearchParams(window.location.search);
+					// Sync select elements from URL params.
+					['filter', 'library_id'].forEach(function(name) {
+						var val = params.get(name);
+						var el = document.querySelector('select[name="' + name + '"]');
+						if (el) el.value = (val !== null) ? val : '';
+					});
+					// Sync hidden inputs from URL params.
+					['view', 'sort', 'order'].forEach(function(name) {
+						var val = params.get(name);
+						var el = document.getElementById('artist-' + name + '-input');
+						if (el && val !== null) el.value = val;
+					});
+					// Update visible sort labels and view toggle to match restored state.
+					var sortInput = document.getElementById('artist-sort-input');
+					var orderInput = document.getElementById('artist-order-input');
+					if (sortInput && orderInput) updateSortUI(sortInput.value, orderInput.value);
+					var viewInput = document.getElementById('artist-view-input');
+					if (viewInput) {
+						var colToggle = document.getElementById('col-toggle-wrapper');
+						if (colToggle) colToggle.classList.toggle('hidden', viewInput.value !== 'table');
+					}
 					htmx.ajax('GET', window.location.pathname + window.location.search, {target: '#artist-content', swap: 'outerHTML'});
 				}
 			});

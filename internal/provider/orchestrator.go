@@ -36,6 +36,22 @@ type FieldSource struct {
 	Provider ProviderName `json:"provider"`
 }
 
+// fieldProviderExclusions lists providers that structurally cannot provide data
+// for specific fields. MusicBrainz, for example, does not return biography text
+// so the field is always empty when sourced from MusicBrainz.
+var fieldProviderExclusions = map[string]map[ProviderName]bool{
+	"biography": {NameMusicBrainz: true},
+}
+
+// isExcludedForField returns true if a provider is structurally unable to
+// provide data for the given field and should be skipped.
+func isExcludedForField(field string, prov ProviderName) bool {
+	if ex, ok := fieldProviderExclusions[field]; ok {
+		return ex[prov]
+	}
+	return false
+}
+
 // FetchResult holds the merged result of querying multiple providers.
 type FetchResult struct {
 	Metadata           *ArtistMetadata `json:"metadata"`
@@ -119,6 +135,9 @@ func (o *Orchestrator) FetchMetadata(ctx context.Context, mbid, name string, pro
 		isImageField := isImageFieldName(pri.Field)
 		for _, provName := range pri.EnabledProviders() {
 			if !available[provName] {
+				continue
+			}
+			if isExcludedForField(pri.Field, provName) {
 				continue
 			}
 
@@ -539,7 +558,7 @@ func (o *Orchestrator) FetchFieldFromProviders(ctx context.Context, mbid, name, 
 	for _, pri := range priorities {
 		if pri.Field == field {
 			for _, p := range pri.EnabledProviders() {
-				if available[p] {
+				if available[p] && !isExcludedForField(field, p) {
 					providers = append(providers, p)
 				}
 			}

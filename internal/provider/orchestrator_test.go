@@ -1127,6 +1127,9 @@ func TestOrchestratorAllJunkBiographiesLeaveFieldEmpty(t *testing.T) {
 // providers. In this case, MusicBrainz returns a Discogs URL containing the
 // numeric Discogs ID, and Discogs should receive that numeric ID instead of
 // the MBID (which would always 404).
+//
+// Uses the genres field because MusicBrainz is excluded from biography
+// (it does not return biography data).
 func TestOrchestratorCrossProviderIDEnrichment(t *testing.T) {
 	registry, settings := setupOrchestratorTest(t)
 
@@ -1141,8 +1144,8 @@ func TestOrchestratorCrossProviderIDEnrichment(t *testing.T) {
 		authReq: false,
 		getArtFn: func(_ context.Context, id string) (*ArtistMetadata, error) {
 			return &ArtistMetadata{
-				Name:      "A-ha",
-				Biography: "Norwegian band",
+				Name:   "A-ha",
+				Genres: []string{"synth-pop"},
 				URLs: map[string]string{
 					"discogs": "https://www.discogs.com/artist/24941-a-ha",
 					"deezer":  "https://www.deezer.com/artist/75798",
@@ -1168,10 +1171,16 @@ func TestOrchestratorCrossProviderIDEnrichment(t *testing.T) {
 		},
 	})
 
-	// Set up priorities so MusicBrainz is queried first (for biography),
-	// then Discogs (for biography fallback).
-	if err := settings.SetPriority(context.Background(), "biography", []ProviderName{NameMusicBrainz, NameDiscogs}); err != nil {
-		t.Fatalf("SetPriority: %v", err)
+	// Set up priorities so MusicBrainz is queried first (for genres),
+	// then Discogs (for genres). The enrichment from MusicBrainz URL results
+	// should feed Discogs the extracted numeric ID. Discogs must be disabled
+	// for biography (which comes before genres in default order) so it is not
+	// called before MusicBrainz has provided URL enrichment.
+	if err := settings.SetDisabledProviders(context.Background(), "biography", []ProviderName{NameDiscogs}); err != nil {
+		t.Fatalf("SetDisabledProviders biography: %v", err)
+	}
+	if err := settings.SetPriority(context.Background(), "genres", []ProviderName{NameMusicBrainz, NameDiscogs}); err != nil {
+		t.Fatalf("SetPriority genres: %v", err)
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
@@ -1389,13 +1398,16 @@ func TestFetchMetadataAggregatesImagesFromMultipleProviders(t *testing.T) {
 
 // TestFetchMetadataTextFieldStopsAtFirstMatch verifies that text fields
 // (e.g., biography) still stop at the first provider with data.
+// Uses Wikipedia as the first provider because MusicBrainz is excluded from
+// biography (it does not return biography data), and Wikipedia does not
+// require an API key.
 func TestFetchMetadataTextFieldStopsAtFirstMatch(t *testing.T) {
 	registry, settings := setupOrchestratorTest(t)
 
 	firstCalled := false
 
 	registry.Register(&mockProvider{
-		name: NameMusicBrainz,
+		name: NameWikipedia,
 		getArtFn: func(_ context.Context, _ string) (*ArtistMetadata, error) {
 			firstCalled = true
 			return &ArtistMetadata{
@@ -1414,7 +1426,7 @@ func TestFetchMetadataTextFieldStopsAtFirstMatch(t *testing.T) {
 		},
 	})
 
-	if err := settings.SetPriority(context.Background(), "biography", []ProviderName{NameMusicBrainz, NameAudioDB}); err != nil {
+	if err := settings.SetPriority(context.Background(), "biography", []ProviderName{NameWikipedia, NameAudioDB}); err != nil {
 		t.Fatalf("SetPriority: %v", err)
 	}
 
@@ -1426,7 +1438,7 @@ func TestFetchMetadataTextFieldStopsAtFirstMatch(t *testing.T) {
 		t.Fatalf("FetchMetadata: %v", err)
 	}
 
-	// Biography should come from first provider (MusicBrainz won).
+	// Biography should come from first provider (Wikipedia won).
 	if !firstCalled {
 		t.Error("expected first provider to be called")
 	}

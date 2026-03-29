@@ -176,16 +176,17 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 								type="button"
 								id="ob-add-library-btn"
 								class="text-sm px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-								onclick="document.getElementById('ob-library-form').classList.remove('hidden'); this.classList.add('hidden');"
+								onclick="document.getElementById('ob-library-form').classList.remove('hidden'); this.classList.add('hidden'); var e=document.getElementById('ob-library-error'); if(e) e.classList.add('hidden');"
 							>
 								Add Library
 							</button>
+							<div id="ob-library-error" role="alert" class="hidden mb-2 rounded-md bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 px-3 py-2 text-sm text-red-700 dark:text-red-300"></div>
 							<form
 								id="ob-library-form"
 								class="hidden mt-3 space-y-3"
 								hx-post="/api/v1/libraries"
 								hx-swap="none"
-								hx-on::after-request="if(event.detail.successful) { onLibrarySaved(); }"
+								hx-on::after-request="onLibraryAfterRequest(event)"
 							>
 								<div class="grid grid-cols-1 gap-3">
 									<input
@@ -210,7 +211,7 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 								</div>
 								<div class="flex gap-2">
 									<button type="submit" class="text-sm px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 transition-colors">Save</button>
-									<button type="button" class="text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" onclick="document.getElementById('ob-library-form').classList.add('hidden'); document.getElementById('ob-add-library-btn').classList.remove('hidden');">Cancel</button>
+									<button type="button" class="text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" onclick="document.getElementById('ob-library-form').classList.add('hidden'); document.getElementById('ob-add-library-btn').classList.remove('hidden'); var e=document.getElementById('ob-library-error'); if(e) e.classList.add('hidden');">Cancel</button>
 								</div>
 							</form>
 						</div>
@@ -277,8 +278,8 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 							}
 							@onboardingConnectionCard("lidarr", "Lidarr", "http://192.168.1.100:8686", data.Connections) {
 								<ul class="text-xs text-gray-500 dark:text-gray-400 mt-1 space-y-0.5 list-disc list-inside">
-									<li>Import monitored artist lists with filesystem paths and MusicBrainz IDs</li>
-									<li>Trigger per-artist metadata refreshes via Lidarr's command queue</li>
+									<li>Read-only metadata source for MusicBrainz ID seeding</li>
+									<li>No library is created for Lidarr connections</li>
 									<li>Detect Lidarr NFO writer configuration to warn about write conflicts</li>
 									<li>Read metadata profiles for configuration awareness</li>
 								</ul>
@@ -593,11 +594,29 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 					el.closest('[data-profile-card]').classList.add('border-blue-500', 'bg-blue-50', 'dark:bg-blue-900/20');
 				}
 
-				function onLibrarySaved() {
-					document.getElementById('ob-library-form').reset();
-					document.getElementById('ob-library-form').classList.add('hidden');
-					document.getElementById('ob-add-library-btn').classList.remove('hidden');
-					refreshLibraryList();
+				function onLibraryAfterRequest(event) {
+					var errorEl = document.getElementById('ob-library-error');
+					if (event.detail.successful) {
+						if (errorEl) errorEl.classList.add('hidden');
+						document.getElementById('ob-library-form').reset();
+						document.getElementById('ob-library-form').classList.add('hidden');
+						document.getElementById('ob-add-library-btn').classList.remove('hidden');
+						refreshLibraryList();
+					} else {
+						// Show inline error from the server response.
+						var msg = 'Failed to add library. Please check the path and try again.';
+						try {
+							var xhr = event.detail.xhr;
+							if (xhr && xhr.responseText) {
+								var data = JSON.parse(xhr.responseText);
+								if (data.error) msg = data.error;
+							}
+						} catch (e) { /* use default message */ }
+						if (errorEl) {
+							errorEl.textContent = msg;
+							errorEl.classList.remove('hidden');
+						}
+					}
 				}
 
 				function refreshLibraryList() {
@@ -1126,10 +1145,13 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 									testBtn.classList.remove('hidden');
 									testBtn.onclick = function() { testConnection(data.id, connType); };
 								}
-								var discoverBtn = document.getElementById('ob-conn-discover-btn-' + connType);
-								if (discoverBtn) {
-									discoverBtn.classList.remove('hidden');
-									discoverBtn.onclick = function() { discoverLibraries(data.id, connType); };
+								// Lidarr is read-only (MBID seeding); no libraries to discover.
+								if (connType !== 'lidarr') {
+									var discoverBtn = document.getElementById('ob-conn-discover-btn-' + connType);
+									if (discoverBtn) {
+										discoverBtn.classList.remove('hidden');
+										discoverBtn.onclick = function() { discoverLibraries(data.id, connType); };
+									}
 								}
 							}
 						} catch(e) {}
@@ -1152,12 +1174,14 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 						if (data.status === 'ok') {
 							if (resultEl) { resultEl.className = 'text-xs mt-1 text-green-600 dark:text-green-400'; resultEl.textContent = 'Connection successful'; }
 							if (dot) { dot.className = 'mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-green-500'; }
-							var discoverBtn = document.getElementById('ob-conn-discover-btn-' + connType);
-							if (discoverBtn) {
-								discoverBtn.classList.remove('hidden');
-								if (!discoverBtn.dataset.bound) {
-									discoverBtn.onclick = function() { discoverLibraries(connID, connType); };
-									discoverBtn.dataset.bound = '1';
+							if (connType !== 'lidarr') {
+								var discoverBtn = document.getElementById('ob-conn-discover-btn-' + connType);
+								if (discoverBtn) {
+									discoverBtn.classList.remove('hidden');
+									if (!discoverBtn.dataset.bound) {
+										discoverBtn.onclick = function() { discoverLibraries(connID, connType); };
+										discoverBtn.dataset.bound = '1';
+									}
 								}
 							}
 						} else {
@@ -1500,17 +1524,19 @@ templ onboardingConnectionCard(connType string, displayName string, exampleURL s
 					>
 						Test
 					</button>
-					<button
-						type="button"
-						id={ "ob-conn-discover-btn-" + connType }
-						class={
-							"text-xs px-2.5 py-1 rounded border border-blue-300 dark:border-blue-700 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors",
-							templ.KV("hidden", findConnectionByType(conns, connType).Status != "ok"),
-						}
-						onclick={ initDiscoverLibraries(findConnectionByType(conns, connType).ID, connType) }
-					>
-						Discover Libraries
-					</button>
+					if connType != "lidarr" {
+						<button
+							type="button"
+							id={ "ob-conn-discover-btn-" + connType }
+							class={
+								"text-xs px-2.5 py-1 rounded border border-blue-300 dark:border-blue-700 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors",
+								templ.KV("hidden", findConnectionByType(conns, connType).Status != "ok"),
+							}
+							onclick={ initDiscoverLibraries(findConnectionByType(conns, connType).ID, connType) }
+						>
+							Discover Libraries
+						</button>
+					}
 				</div>
 			} else {
 				<button
@@ -1580,13 +1606,15 @@ templ onboardingConnectionCard(connType string, displayName string, exampleURL s
 					>
 						Test
 					</button>
-					<button
-						type="button"
-						id={ "ob-conn-discover-btn-" + connType }
-						class="hidden text-xs px-2.5 py-1 rounded border border-blue-300 dark:border-blue-700 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
-					>
-						Discover Libraries
-					</button>
+					if connType != "lidarr" {
+						<button
+							type="button"
+							id={ "ob-conn-discover-btn-" + connType }
+							class="hidden text-xs px-2.5 py-1 rounded border border-blue-300 dark:border-blue-700 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+						>
+							Discover Libraries
+						</button>
+					}
 				</div>
 				<div id={ "ob-conn-test-result-" + connType } class="text-xs mt-1"></div>
 				<div id={ "ob-discover-" + connType } class="mt-2"></div>

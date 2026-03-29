@@ -95,6 +95,57 @@ func TestHandleGetLogs_HTMX(t *testing.T) {
 	}
 }
 
+func TestHandleGetLogs_HTMX_AttrsAndSource(t *testing.T) {
+	r, rb := newTestRouterWithLogs(t)
+
+	now := time.Now()
+	rb.Write(logging.LogEntry{
+		Time:    now,
+		Level:   "info",
+		Message: "http request",
+		Source:  "router.go:42",
+		Attrs: map[string]any{
+			"method":   "GET",
+			"path":     "/api/v1/artists",
+			"status":   200,
+			"duration": "12ms",
+		},
+	})
+
+	req := httptest.NewRequest("GET", "/api/v1/logs?limit=10", nil)
+	req.Header.Set("HX-Request", "true")
+	rec := httptest.NewRecorder()
+	r.handleGetLogs(rec, req)
+
+	res := rec.Result()
+	defer res.Body.Close()
+
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		t.Fatalf("reading body: %v", err)
+	}
+	out := string(body)
+
+	// Bug 3: timestamp should include date portion.
+	dateStr := now.Format("2006-01-02")
+	if !strings.Contains(out, dateStr) {
+		t.Errorf("expected HTML to contain date %q", dateStr)
+	}
+
+	// Bug 4: source field should appear instead of [-].
+	if !strings.Contains(out, "router.go:42") {
+		t.Error("expected HTML to contain source 'router.go:42'")
+	}
+
+	// Bug 5/7: attrs should be rendered inline.
+	if !strings.Contains(out, "method=GET") {
+		t.Error("expected HTML to contain 'method=GET'")
+	}
+	if !strings.Contains(out, "status=200") {
+		t.Error("expected HTML to contain 'status=200'")
+	}
+}
+
 func TestHandleGetLogs_LevelFilter(t *testing.T) {
 	r, rb := newTestRouterWithLogs(t)
 

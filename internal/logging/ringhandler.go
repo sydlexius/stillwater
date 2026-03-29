@@ -2,24 +2,29 @@ package logging
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+	"runtime"
 )
 
 // RingHandler is an slog.Handler that captures log records into a RingBuffer.
 // It is intended to be used alongside the primary handler via MultiHandler.
 type RingHandler struct {
-	buffer *RingBuffer
-	level  slog.Leveler
-	attrs  []slog.Attr
-	group  string
+	buffer    *RingBuffer
+	level     slog.Leveler
+	attrs     []slog.Attr
+	group     string
+	addSource bool
 }
 
 // NewRingHandler creates a handler that writes to the given buffer.
-// The level controls the minimum severity captured.
-func NewRingHandler(buffer *RingBuffer, level slog.Leveler) *RingHandler {
+// The level controls the minimum severity captured. When addSource is true,
+// the handler captures the caller's source file and line number.
+func NewRingHandler(buffer *RingBuffer, level slog.Leveler, addSource bool) *RingHandler {
 	return &RingHandler{
-		buffer: buffer,
-		level:  level,
+		buffer:    buffer,
+		level:     level,
+		addSource: addSource,
 	}
 }
 
@@ -34,6 +39,25 @@ func (h *RingHandler) Handle(_ context.Context, r slog.Record) error {
 		Time:    r.Time,
 		Level:   FormatLevel(r.Level),
 		Message: r.Message,
+	}
+
+	// Extract source location from the record's PC (set by slog when the
+	// caller uses slog.Info/Warn/etc). AddSource in the primary handler
+	// only affects that handler; we replicate the logic here.
+	if h.addSource && r.PC != 0 {
+		fs := runtime.CallersFrames([]uintptr{r.PC})
+		f, _ := fs.Next()
+		if f.File != "" {
+			// Use short file name (last path component) for readability.
+			short := f.File
+			for i := len(short) - 1; i >= 0; i-- {
+				if short[i] == '/' {
+					short = short[i+1:]
+					break
+				}
+			}
+			entry.Source = fmt.Sprintf("%s:%d", short, f.Line)
+		}
 	}
 
 	// Collect attributes: start with pre-stored attrs from WithAttrs,
@@ -78,10 +102,11 @@ func (h *RingHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	copy(newAttrs, h.attrs)
 	newAttrs = append(newAttrs, attrs...)
 	return &RingHandler{
-		buffer: h.buffer,
-		level:  h.level,
-		attrs:  newAttrs,
-		group:  h.group,
+		buffer:    h.buffer,
+		level:     h.level,
+		attrs:     newAttrs,
+		group:     h.group,
+		addSource: h.addSource,
 	}
 }
 
@@ -94,9 +119,10 @@ func (h *RingHandler) WithGroup(name string) slog.Handler {
 	newAttrs := make([]slog.Attr, len(h.attrs))
 	copy(newAttrs, h.attrs)
 	return &RingHandler{
-		buffer: h.buffer,
-		level:  h.level,
-		attrs:  newAttrs,
-		group:  newGroup,
+		buffer:    h.buffer,
+		level:     h.level,
+		attrs:     newAttrs,
+		group:     newGroup,
+		addSource: h.addSource,
 	}
 }

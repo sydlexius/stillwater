@@ -133,18 +133,8 @@ func (r *Router) handleDiscoverLibraries(w http.ResponseWriter, req *http.Reques
 		}
 
 	case connection.TypeLidarr:
-		d := discoveredLibrary{
-			ExternalID: "lidarr",
-			Name:       conn.Name + " Library",
-		}
-		existing, lookupErr := r.libraryService.GetByConnectionAndExternalID(req.Context(), connID, "lidarr")
-		if lookupErr != nil {
-			r.logger.Error("checking existing library", "external_id", "lidarr", "error", lookupErr)
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to check existing library"})
-			return
-		}
-		d.Imported = existing != nil
-		discovered = append(discovered, d)
+		// Lidarr is a read-only metadata source (MBID seeding); Stillwater does
+		// not import libraries from Lidarr connections, so return an empty list.
 
 	default:
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unsupported connection type"})
