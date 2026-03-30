@@ -240,38 +240,14 @@ func TestClearProviderField(t *testing.T) {
 // --- FieldPickerOptions ---
 
 func TestFieldPickerOptions(t *testing.T) {
-	genders := FieldPickerOptions("gender")
-	if len(genders) == 0 {
-		t.Fatal("FieldPickerOptions(gender) returned empty slice")
-	}
-	for _, want := range []string{"Male", "Female", "Non-binary", "Other", "Unknown"} {
-		found := false
-		for _, g := range genders {
-			if g == want {
-				found = true
-				break
-			}
-		}
-		if !found {
-			t.Errorf("FieldPickerOptions(gender) missing %q", want)
-		}
+	wantGenders := []string{"male", "female", "non-binary", "other", "unknown"}
+	if got := FieldPickerOptions("gender"); !slicesEqual(got, wantGenders) {
+		t.Errorf("FieldPickerOptions(gender) = %v, want %v", got, wantGenders)
 	}
 
-	types := FieldPickerOptions("type")
-	if len(types) == 0 {
-		t.Fatal("FieldPickerOptions(type) returned empty slice")
-	}
-	for _, want := range []string{"Person", "Group", "Orchestra", "Choir", "Character", "Other"} {
-		found := false
-		for _, tp := range types {
-			if tp == want {
-				found = true
-				break
-			}
-		}
-		if !found {
-			t.Errorf("FieldPickerOptions(type) missing %q", want)
-		}
+	wantTypes := []string{"person", "group", "orchestra", "choir", "character", "other"}
+	if got := FieldPickerOptions("type"); !slicesEqual(got, wantTypes) {
+		t.Errorf("FieldPickerOptions(type) = %v, want %v", got, wantTypes)
 	}
 
 	if got := FieldPickerOptions("name"); got != nil {
@@ -280,6 +256,18 @@ func TestFieldPickerOptions(t *testing.T) {
 	if got := FieldPickerOptions("biography"); got != nil {
 		t.Errorf("FieldPickerOptions(biography) = %v, want nil", got)
 	}
+}
+
+func slicesEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func TestUpdateField_NameAndSortName(t *testing.T) {

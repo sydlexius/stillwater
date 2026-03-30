@@ -354,10 +354,10 @@ templ detailFieldEditSelect(a *artist.Artist, field, label, value string, option
 				>
 					<option value="" selected?={ value == "" }>Not set</option>
 					for _, opt := range options {
-						<option value={ opt } selected?={ value == opt }>{ opt }</option>
+						<option value={ opt } selected?={ value == opt }>{ strings.ToUpper(opt[:1]) + opt[1:] }</option>
 					}
 					if value != "" && !slices.Contains(options, value) {
-						<option value={ value } selected>{ value }</option>
+						<option value={ value } selected>{ strings.ToUpper(value[:1]) + value[1:] }</option>
 					}
 				</select>
 				<button type="submit" class="p-1 text-green-600 hover:text-green-700 transition-colors" title="Save" aria-label={ "Save " + label }>
