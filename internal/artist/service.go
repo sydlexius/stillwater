@@ -450,6 +450,8 @@ func (s *Service) UpdateField(ctx context.Context, id, field, value string) erro
 	s.MarkDirty(ctx, id)
 	return nil
 }
+
+// ClearField clears the named field on the artist identified by id.
 //
 // When a HistoryService is attached, the old value is read before clearing
 // and a MetadataChange is recorded if the field was non-empty. History

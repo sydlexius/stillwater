@@ -430,7 +430,7 @@ func (p *Pipeline) RunAll(ctx context.Context) (*RunResult, error) {
 
 	for _, id := range dirtyIDs {
 		if ctx.Err() != nil {
-			break
+			return result, ctx.Err()
 		}
 
 		a, err := p.artistService.GetByID(ctx, id)
