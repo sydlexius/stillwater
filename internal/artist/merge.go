@@ -40,6 +40,7 @@ type MetadataUpdate struct {
 	SortName       string
 	Type           string
 	Gender         string
+	Country        string
 	Disambiguation string
 	MusicBrainzID  string
 	AudioDBID      string
@@ -158,11 +159,20 @@ func applyOverwriteAttempted(a *Artist, u *MetadataUpdate, attemptedFields []str
 	if attempted["disbanded"] {
 		changed = setString(&a.Disbanded, u.Disbanded) || changed
 	}
+	if attempted["country"] {
+		changed = setString(&a.Country, u.Country) || changed
+	}
 
-	// Type, Gender, YearsActive: non-empty overwrite only (never clear).
-	changed = setNonEmpty(&a.Type, u.Type) || changed
-	changed = setNonEmpty(&a.Gender, u.Gender) || changed
-	changed = setNonEmpty(&a.YearsActive, u.YearsActive) || changed
+	// Type, Gender, YearsActive: non-empty overwrite only when attempted (never clear).
+	if attempted["type"] {
+		changed = setNonEmpty(&a.Type, u.Type) || changed
+	}
+	if attempted["gender"] {
+		changed = setNonEmpty(&a.Gender, u.Gender) || changed
+	}
+	if attempted["years_active"] {
+		changed = setNonEmpty(&a.YearsActive, u.YearsActive) || changed
+	}
 
 	// Provider IDs: fill-empty only.
 	changed = fillEmpty(&a.MusicBrainzID, u.MusicBrainzID) || changed
@@ -182,6 +192,7 @@ func applyFillEmpty(a *Artist, u *MetadataUpdate) bool {
 
 	changed = fillEmpty(&a.Type, u.Type) || changed
 	changed = fillEmpty(&a.Gender, u.Gender) || changed
+	changed = fillEmpty(&a.Country, u.Country) || changed
 	changed = fillEmpty(&a.MusicBrainzID, u.MusicBrainzID) || changed
 	changed = fillEmpty(&a.AudioDBID, u.AudioDBID) || changed
 	changed = fillEmpty(&a.DiscogsID, u.DiscogsID) || changed
@@ -204,7 +215,7 @@ func applyFillEmpty(a *Artist, u *MetadataUpdate) bool {
 // applyNFOImport applies NFO-takes-precedence semantics:
 //   - Identity fields (Name, SortName, MBID, AudioDBID, Biography): non-empty overwrite
 //   - All provider IDs: non-empty overwrite
-//   - Classification (Type, Gender, Disambiguation): unconditional
+//   - Classification (Type, Gender, Country, Disambiguation): unconditional
 //   - Lists (Genres, Styles, Moods) and dates: unconditional
 func applyNFOImport(a *Artist, u *MetadataUpdate) bool {
 	changed := false
@@ -223,6 +234,7 @@ func applyNFOImport(a *Artist, u *MetadataUpdate) bool {
 	// Classification fields: unconditional overwrite.
 	changed = setString(&a.Type, u.Type) || changed
 	changed = setString(&a.Gender, u.Gender) || changed
+	changed = setString(&a.Country, u.Country) || changed
 	changed = setString(&a.Disambiguation, u.Disambiguation) || changed
 
 	// Lists: unconditional overwrite.
@@ -248,6 +260,7 @@ func applySnapshotRestore(a *Artist, u *MetadataUpdate) bool {
 	changed = setString(&a.SortName, u.SortName) || changed
 	changed = setString(&a.Type, u.Type) || changed
 	changed = setString(&a.Gender, u.Gender) || changed
+	changed = setString(&a.Country, u.Country) || changed
 	changed = setString(&a.Disambiguation, u.Disambiguation) || changed
 	changed = setString(&a.MusicBrainzID, u.MusicBrainzID) || changed
 	changed = setString(&a.AudioDBID, u.AudioDBID) || changed
@@ -296,6 +309,7 @@ func FetchResultToUpdate(result *provider.FetchResult) *MetadataUpdate {
 		SortName:       m.SortName,
 		Type:           m.Type,
 		Gender:         m.Gender,
+		Country:        m.Country,
 		Disambiguation: m.Disambiguation,
 		MusicBrainzID:  m.MusicBrainzID,
 		AudioDBID:      m.AudioDBID,
