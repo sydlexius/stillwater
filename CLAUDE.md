@@ -329,7 +329,7 @@ Before squashing and pushing, verify these categories that Copilot consistently 
 - [ ] Engine/rule tests assert relative properties (e.g., "violations > 0") rather than exact counts that break when new rules are added
 
 **PR closing keywords:**
-- [ ] PR body includes `Closes #N` for every issue the branch addresses (derived from branch name, commit messages, or user context)
+- [ ] Planned PR body or PR template will include `Closes #N` for every issue the branch addresses (derived from branch name, commit messages, or user context)
 
 ### Review comment scope policy
 

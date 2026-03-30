@@ -235,7 +235,7 @@ gh pr create --title "<branch-description>" --body "$(cat <<'EOF'
 ## Summary
 <bullet points from $ARGUMENTS or inferred from commit message>
 
-Closes #<N>
+<!-- Insert one `Closes #N` line per issue here -->
 
 ## Test plan
 - [ ] `go test ./...` passes
