@@ -759,3 +759,57 @@ func isErrNotFound(err error, target **provider.ErrNotFound) bool {
 func isErrUnavailable(err error, target **provider.ErrProviderUnavailable) bool {
 	return errors.As(err, target)
 }
+
+// TestGetArtist_VerbosityIntro checks that GetArtist sends exintro=true when
+// no verbosity is set on the context (default conservative behaviour).
+func TestGetArtist_VerbosityIntro(t *testing.T) {
+	var receivedExintro string
+	actionSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("action") == "query" {
+			receivedExintro = r.URL.Query().Get("exintro")
+		}
+		resp := extractResponse{}
+		resp.Query.Pages = map[string]extractPage{
+			"12345": {PageID: 12345, Title: "Radiohead", Extract: "Radiohead are an English rock band."},
+		}
+		json.NewEncoder(w).Encode(resp) //nolint:errcheck
+	}))
+	defer actionSrv.Close()
+
+	adapter := newTestAdapter(t, actionSrv.URL, "", "")
+	_, err := adapter.GetArtist(context.Background(), "Radiohead")
+	if err != nil {
+		t.Fatalf("GetArtist: %v", err)
+	}
+	if receivedExintro != "true" {
+		t.Errorf("exintro query param = %q, want %q (default should be intro-only)", receivedExintro, "true")
+	}
+}
+
+// TestGetArtist_VerbosityFull checks that GetArtist omits exintro when the
+// context carries a "full" biography verbosity, fetching the whole article.
+func TestGetArtist_VerbosityFull(t *testing.T) {
+	var receivedExintro string
+	actionSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("action") == "query" {
+			receivedExintro = r.URL.Query().Get("exintro")
+		}
+		resp := extractResponse{}
+		resp.Query.Pages = map[string]extractPage{
+			"12345": {PageID: 12345, Title: "Radiohead", Extract: strings.Repeat("Full article text. ", 100)},
+		}
+		json.NewEncoder(w).Encode(resp) //nolint:errcheck
+	}))
+	defer actionSrv.Close()
+
+	adapter := newTestAdapter(t, actionSrv.URL, "", "")
+	ctx := provider.WithBiographyVerbosity(context.Background(), "full")
+	_, err := adapter.GetArtist(ctx, "Radiohead")
+	if err != nil {
+		t.Fatalf("GetArtist: %v", err)
+	}
+	if receivedExintro != "" {
+		t.Errorf("exintro query param = %q, want empty (full article mode must omit exintro)", receivedExintro)
+	}
+}
+
