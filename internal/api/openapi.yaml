@@ -7903,3 +7903,42 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /events/stream:
+    get:
+      summary: SSE event stream
+      description: |
+        Server-Sent Events endpoint that streams real-time system events to
+        connected browser clients. Events include scan completions, rule
+        violations, bulk operation results, and artist updates.
+
+        The connection sends a heartbeat comment every 30 seconds to keep
+        the connection alive. Clients should auto-reconnect on disconnect.
+
+        Event format follows the SSE specification with named events:
+        ```
+        event: scan.completed
+        data: {"type":"scan.completed","title":"Scan completed","message":"Library scan finished","timestamp":"...","data":{}}
+        ```
+      operationId: getEventStream
+      tags:
+        - Events
+      responses:
+        "200":
+          description: SSE stream established. Events are sent as text/event-stream.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: SSE formatted event stream with named events and JSON data payloads.
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: SSE hub not available
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"

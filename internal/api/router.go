@@ -71,6 +71,7 @@ type RouterDeps struct {
 	StaticDir          string
 	ImageCacheDir      string
 	Publisher          *publish.Publisher
+	SSEHub             *SSEHub
 }
 
 // Router sets up all HTTP routes for the application.
@@ -124,6 +125,7 @@ type Router struct {
 	identifyProgress   *IdentifyProgress
 	identifyMu         sync.RWMutex
 	undoStore          *rule.UndoStore
+	sseHub             *SSEHub
 }
 
 // NewRouter creates a new Router with all routes configured.
@@ -166,6 +168,7 @@ func NewRouter(deps RouterDeps) *Router {
 		basePath:           deps.BasePath,
 		imageCacheDir:      deps.ImageCacheDir,
 		publisher:          deps.Publisher,
+		sseHub:             deps.SSEHub,
 		staticAssets:       NewStaticAssets(deps.StaticDir, deps.Logger),
 		ssrfClient: &http.Client{
 			Timeout:   fetchTimeout,
@@ -384,6 +387,9 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/bulk-identify", wrapAuth(r.handleBulkIdentifyProgress, authMw))
 	mux.HandleFunc("DELETE "+bp+"/api/v1/artists/bulk-identify", wrapAuth(r.handleBulkIdentifyCancel, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/artists/bulk-identify/link", wrapAuth(r.handleBulkIdentifyLink, authMw))
+
+	// SSE event stream
+	mux.HandleFunc("GET "+bp+"/api/v1/events/stream", wrapAuth(r.handleSSEStream, authMw))
 
 	// Violation trend
 	mux.HandleFunc("GET "+bp+"/api/v1/violations/trend", wrapAuth(r.handleViolationTrend, authMw))
