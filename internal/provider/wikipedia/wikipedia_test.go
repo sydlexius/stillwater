@@ -761,7 +761,7 @@ func isErrUnavailable(err error, target **provider.ErrProviderUnavailable) bool 
 }
 
 // TestGetArtist_VerbosityIntro checks that GetArtist sends exintro=true when
-// no verbosity is set on the context (default conservative behaviour).
+// no verbosity is set on the context (default conservative behavior).
 func TestGetArtist_VerbosityIntro(t *testing.T) {
 	var receivedExintro string
 	actionSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -812,4 +812,3 @@ func TestGetArtist_VerbosityFull(t *testing.T) {
 		t.Errorf("exintro query param = %q, want empty (full article mode must omit exintro)", receivedExintro)
 	}
 }
-
