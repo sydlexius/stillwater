@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"runtime"
@@ -120,7 +121,7 @@ func (r *Router) handleApplyUpdate(w http.ResponseWriter, req *http.Request) {
 	}
 
 	inst := updater.NewInstaller(nil, r.logger)
-	if err := inst.Install(req.Context(), *asset); err != nil {
+	if err := inst.Install(context.WithoutCancel(req.Context()), *asset); err != nil {
 		r.logger.Error("update install failed", "error", err, "asset", asset.Name)
 		writeJSON(w, http.StatusInternalServerError,
 			map[string]string{"error": "install failed; the previous binary has been restored"})
@@ -230,19 +231,15 @@ func (r *Router) handlePutUpdateConfig(w http.ResponseWriter, req *http.Request)
 }
 
 // selectAsset picks the most appropriate binary asset from a release.
-// It prefers assets whose name contains both the OS and architecture of the
-// running process, then falls back to the first available asset.
+// It selects the asset whose name contains both the OS and architecture of the
+// running process. Returns nil when no matching asset is found rather than
+// falling back to an arbitrary asset that may be incompatible.
 func selectAsset(assets []updater.AssetInfo) *updater.AssetInfo {
 	goos := runtime.GOOS
 	goarch := runtime.GOARCH
 	for i := range assets {
 		name := strings.ToLower(assets[i].Name)
 		if strings.Contains(name, goos) && strings.Contains(name, goarch) {
-			return &assets[i]
-		}
-	}
-	for i := range assets {
-		if assets[i].DownloadURL != "" {
 			return &assets[i]
 		}
 	}

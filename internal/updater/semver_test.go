@@ -19,6 +19,9 @@ func TestParse(t *testing.T) {
 		{"", Version{}, true},
 		{"1.2", Version{}, true},
 		{"a.b.c", Version{}, true},
+		{"-1.2.3", Version{}, true},
+		{"1.-2.3", Version{}, true},
+		{"1.2.-3", Version{}, true},
 	}
 
 	for _, tc := range tests {
@@ -69,9 +72,19 @@ func TestVersionGT(t *testing.T) {
 		// Pre-release < release of same version.
 		{"1.0.0", "1.0.0-beta.1", true},
 		{"1.0.0-beta.1", "1.0.0", false},
-		// Two pre-releases: lexicographic.
+		// Two pre-releases: lexicographic for alpha identifiers.
 		{"1.0.0-rc.2", "1.0.0-beta.1", true},
 		{"1.0.0-beta.1", "1.0.0-rc.2", false},
+		// Numeric pre-release segments compared as integers.
+		{"1.0.0-beta.10", "1.0.0-beta.2", true},
+		{"1.0.0-beta.2", "1.0.0-beta.10", false},
+		{"1.0.0-alpha.10", "1.0.0-alpha.9", true},
+		// Numeric identifier has lower precedence than alphanumeric.
+		{"1.0.0-alpha", "1.0.0-1", true},
+		{"1.0.0-1", "1.0.0-alpha", false},
+		// Longer pre-release wins when all segments equal.
+		{"1.0.0-beta.1.extra", "1.0.0-beta.1", true},
+		{"1.0.0-beta.1", "1.0.0-beta.1.extra", false},
 	}
 	for _, tc := range tests {
 		a, err := Parse(tc.a)

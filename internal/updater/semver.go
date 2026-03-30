@@ -41,13 +41,22 @@ func Parse(s string) (Version, error) {
 	if err != nil {
 		return Version{}, fmt.Errorf("invalid major version %q: %w", parts[0], err)
 	}
+	if major < 0 {
+		return Version{}, fmt.Errorf("invalid major version %q: must be non-negative", parts[0])
+	}
 	minor, err := strconv.Atoi(parts[1])
 	if err != nil {
 		return Version{}, fmt.Errorf("invalid minor version %q: %w", parts[1], err)
 	}
+	if minor < 0 {
+		return Version{}, fmt.Errorf("invalid minor version %q: must be non-negative", parts[1])
+	}
 	patch, err := strconv.Atoi(parts[2])
 	if err != nil {
 		return Version{}, fmt.Errorf("invalid patch version %q: %w", parts[2], err)
+	}
+	if patch < 0 {
+		return Version{}, fmt.Errorf("invalid patch version %q: must be non-negative", parts[2])
 	}
 
 	return Version{Major: major, Minor: minor, Patch: patch, Pre: pre}, nil
@@ -63,9 +72,14 @@ func (v Version) String() string {
 }
 
 // GT reports whether v is strictly greater than other.
-// Pre-release versions are ordered after releases with the same core version
-// (e.g. 1.0.0-beta.1 < 1.0.0).  When both have a pre-release, they are
-// compared lexicographically.
+//
+// Core version (Major.Minor.Patch) is compared numerically first.
+// For equal core versions, a release (empty Pre) beats any pre-release.
+// When both have a pre-release, identifiers are compared per the semver spec:
+// dot-separated segments are compared left to right; numeric segments are
+// compared as integers; alphanumeric segments are compared lexicographically;
+// a numeric segment has lower precedence than an alphanumeric one; if all
+// compared segments are equal, the longer identifier wins.
 func (v Version) GT(other Version) bool {
 	if v.Major != other.Major {
 		return v.Major > other.Major
@@ -83,8 +97,58 @@ func (v Version) GT(other Version) bool {
 	if v.Pre != "" && other.Pre == "" {
 		return false
 	}
-	// Both pre-release or both release.
-	return v.Pre > other.Pre
+	// Both pre-release: compare per semver spec.
+	return comparePre(v.Pre, other.Pre) > 0
+}
+
+// comparePre compares two pre-release identifier strings per the semver spec.
+// Returns positive when a > b, negative when a < b, and 0 when equal.
+func comparePre(a, b string) int {
+	if a == b {
+		return 0
+	}
+	partsA := strings.Split(a, ".")
+	partsB := strings.Split(b, ".")
+	limit := len(partsA)
+	if len(partsB) < limit {
+		limit = len(partsB)
+	}
+	for i := 0; i < limit; i++ {
+		aNum, aErr := strconv.Atoi(partsA[i])
+		bNum, bErr := strconv.Atoi(partsB[i])
+		switch {
+		case aErr == nil && bErr == nil:
+			// Both numeric: compare as integers.
+			if aNum != bNum {
+				if aNum > bNum {
+					return 1
+				}
+				return -1
+			}
+		case aErr != nil && bErr != nil:
+			// Both alphanumeric: lexicographic comparison.
+			if partsA[i] != partsB[i] {
+				if partsA[i] > partsB[i] {
+					return 1
+				}
+				return -1
+			}
+		case aErr == nil:
+			// a is numeric, b is alphanumeric: numeric has lower precedence.
+			return -1
+		default:
+			// a is alphanumeric, b is numeric: alphanumeric has higher precedence.
+			return 1
+		}
+	}
+	// All compared segments equal; longer identifier wins.
+	if len(partsA) > len(partsB) {
+		return 1
+	}
+	if len(partsA) < len(partsB) {
+		return -1
+	}
+	return 0
 }
 
 // IsPreRelease reports whether the version has a pre-release identifier.

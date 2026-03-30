@@ -78,12 +78,13 @@ templ settingsUpdatesTab(data UpdaterTabData) {
 					<span class="text-sm font-mono text-gray-900 dark:text-gray-100">{ data.CurrentVersion }</span>
 				</div>
 				<div class="flex items-center gap-3">
-					<span class="text-sm font-medium text-gray-700 dark:text-gray-300 w-36">Check for updates</span>
+					<span id="updater-enabled-label" class="text-sm font-medium text-gray-700 dark:text-gray-300 w-36">Check for updates</span>
 					<label class="relative inline-flex items-center cursor-pointer">
 						<input
 							type="checkbox"
 							id="updater-enabled"
 							class="sr-only peer"
+							aria-labelledby="updater-enabled-label"
 							if data.Enabled {
 								checked
 							}
@@ -119,12 +120,13 @@ templ settingsUpdatesTab(data UpdaterTabData) {
 					</select>
 				</div>
 				<div class="flex items-center gap-3">
-					<span class="text-sm font-medium text-gray-700 dark:text-gray-300 w-36">Auto-update</span>
+					<span id="updater-auto-label" class="text-sm font-medium text-gray-700 dark:text-gray-300 w-36">Auto-update</span>
 					<label class="relative inline-flex items-center cursor-pointer">
 						<input
 							type="checkbox"
 							id="updater-auto"
 							class="sr-only peer"
+							aria-labelledby="updater-auto-label"
 							if data.AutoUpdate {
 								checked
 							}
@@ -155,6 +157,8 @@ templ settingsUpdatesTab(data UpdaterTabData) {
 
 templ settingsUpdatesScript() {
 	<script>
+		var updatesBasePath = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
+
 		function saveUpdaterConfig() {
 			var enabled = document.getElementById('updater-enabled');
 			var channel = document.getElementById('updater-channel');
@@ -171,7 +175,7 @@ templ settingsUpdatesScript() {
 			var csrfToken = document.cookie.replace(
 				/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, '$1'
 			);
-			fetch('/api/v1/updates/config', {
+			fetch(updatesBasePath + '/api/v1/updates/config', {
 				method: 'PUT',
 				headers: {
 					'Content-Type': 'application/json',
@@ -200,7 +204,7 @@ templ settingsUpdatesScript() {
 			if (spinner) spinner.classList.remove('hidden');
 			if (result) result.classList.add('hidden');
 
-			fetch('/api/v1/updates/check', { method: 'GET' })
+			fetch(updatesBasePath + '/api/v1/updates/check', { method: 'GET' })
 				.then(function(r) { return r.json(); })
 				.then(function(data) {
 					if (!result) return;
@@ -240,7 +244,7 @@ templ settingsUpdatesScript() {
 			var csrfToken = document.cookie.replace(
 				/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, '$1'
 			);
-			fetch('/api/v1/updates/apply', {
+			fetch(updatesBasePath + '/api/v1/updates/apply', {
 				method: 'POST',
 				headers: { 'X-CSRF-Token': csrfToken }
 			})

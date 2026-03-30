@@ -166,7 +166,7 @@ func (c *Checker) Channel() Channel {
 }
 
 // StartScheduler runs periodic update checks in the background until ctx is
-// cancelled. interval must be positive; values smaller than 1 h are clamped to
+// canceled. interval must be positive; values smaller than 1 h are clamped to
 // 1 h to avoid hammering the GitHub API.
 func (c *Checker) StartScheduler(ctx context.Context, interval time.Duration) {
 	const minInterval = time.Hour
@@ -212,7 +212,7 @@ func (c *Checker) fetchReleases(ctx context.Context) ([]githubRelease, error) {
 	if err != nil {
 		return nil, fmt.Errorf("GET %s: %w", url, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("GitHub API returned %d", resp.StatusCode)

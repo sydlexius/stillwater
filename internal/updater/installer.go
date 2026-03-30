@@ -62,11 +62,13 @@ func (inst *Installer) Install(ctx context.Context, asset AssetInfo) error {
 	}
 
 	// Step 2: Verify checksum.
-	if asset.ChecksumURL != "" {
-		if err := inst.verifyChecksum(ctx, tmpPath, asset.ChecksumURL); err != nil {
-			_ = os.Remove(tmpPath)
-			return fmt.Errorf("checksum verification failed: %w", err)
-		}
+	if asset.ChecksumURL == "" {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("asset %q has no checksum URL; refusing to install unverified binary", asset.Name)
+	}
+	if err := inst.verifyChecksum(ctx, tmpPath, asset.ChecksumURL); err != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("checksum verification failed: %w", err)
 	}
 
 	// Step 3: Backup current binary.
@@ -103,7 +105,7 @@ func (inst *Installer) download(ctx context.Context, url, destPath, refPath stri
 	if err != nil {
 		return fmt.Errorf("GET %s: %w", url, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("server returned %d", resp.StatusCode)
@@ -115,7 +117,7 @@ func (inst *Installer) download(ctx context.Context, url, destPath, refPath stri
 		perm = info.Mode().Perm()
 	}
 
-	f, err := os.OpenFile(destPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
+	f, err := os.OpenFile(destPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm) //nolint:gosec // G304: destPath is a controlled temp path in the binary's own directory, not user input
 	if err != nil {
 		return fmt.Errorf("creating temp file: %w", err)
 	}
@@ -143,7 +145,7 @@ func (inst *Installer) verifyChecksum(ctx context.Context, filePath, checksumURL
 	if err != nil {
 		return fmt.Errorf("fetching checksum: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("checksum server returned %d", resp.StatusCode)
@@ -167,7 +169,7 @@ func (inst *Installer) verifyChecksum(ctx context.Context, filePath, checksumURL
 	if err != nil {
 		return fmt.Errorf("opening file for checksum: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	h := sha256.New()
 	if _, err := io.Copy(h, f); err != nil {

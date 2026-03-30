@@ -25,7 +25,7 @@ func fakeRelease(tag string, prerelease bool, body string) githubRelease {
 	}
 }
 
-func testCheckerWithServer(t *testing.T, releases []githubRelease, current string, ch Channel) (*Checker, *httptest.Server) {
+func testCheckerWithServer(t *testing.T, releases []githubRelease, ch Channel) (*Checker, *httptest.Server) {
 	t.Helper()
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -35,9 +35,9 @@ func testCheckerWithServer(t *testing.T, releases []githubRelease, current strin
 		}
 	}))
 
-	v, err := Parse(current)
+	v, err := Parse("1.0.0")
 	if err != nil {
-		t.Fatalf("Parse(%q): %v", current, err)
+		t.Fatalf("Parse: %v", err)
 	}
 
 	checker := NewChecker("example/repo", ch, v, srv.Client(), nil)
@@ -90,7 +90,7 @@ func TestChecker_UpdateAvailable(t *testing.T) {
 		fakeRelease("v1.1.0", false, "New features"),
 		fakeRelease("v1.0.0", false, "Initial"),
 	}
-	checker, srv := testCheckerWithServer(t, releases, "1.0.0", ChannelLatest)
+	checker, srv := testCheckerWithServer(t, releases, ChannelLatest)
 	defer srv.Close()
 
 	info, err := checker.Check(context.Background())
@@ -112,7 +112,7 @@ func TestChecker_NoUpdate(t *testing.T) {
 	releases := []githubRelease{
 		fakeRelease("v1.0.0", false, ""),
 	}
-	checker, srv := testCheckerWithServer(t, releases, "1.0.0", ChannelLatest)
+	checker, srv := testCheckerWithServer(t, releases, ChannelLatest)
 	defer srv.Close()
 
 	info, err := checker.Check(context.Background())
@@ -129,7 +129,7 @@ func TestChecker_ChannelLatest_SkipsPrerelease(t *testing.T) {
 		fakeRelease("v1.1.0-beta.1", true, ""),
 		fakeRelease("v1.0.0", false, ""),
 	}
-	checker, srv := testCheckerWithServer(t, releases, "1.0.0", ChannelLatest)
+	checker, srv := testCheckerWithServer(t, releases, ChannelLatest)
 	defer srv.Close()
 
 	info, err := checker.Check(context.Background())
@@ -147,7 +147,7 @@ func TestChecker_ChannelBeta_IncludesBeta(t *testing.T) {
 		fakeRelease("v1.1.0-beta.1", true, ""),
 		fakeRelease("v1.0.0", false, ""),
 	}
-	checker, srv := testCheckerWithServer(t, releases, "1.0.0", ChannelBeta)
+	checker, srv := testCheckerWithServer(t, releases, ChannelBeta)
 	defer srv.Close()
 
 	info, err := checker.Check(context.Background())
@@ -167,7 +167,7 @@ func TestChecker_ChannelBeta_SkipsDevRelease(t *testing.T) {
 		fakeRelease("v1.1.0-nightly.20260101", true, ""),
 		fakeRelease("v1.0.0", false, ""),
 	}
-	checker, srv := testCheckerWithServer(t, releases, "1.0.0", ChannelBeta)
+	checker, srv := testCheckerWithServer(t, releases, ChannelBeta)
 	defer srv.Close()
 
 	info, err := checker.Check(context.Background())
@@ -184,7 +184,7 @@ func TestChecker_ChannelDev_IncludesAll(t *testing.T) {
 	releases := []githubRelease{
 		fakeRelease("v1.1.0-nightly.20260101", true, ""),
 	}
-	checker, srv := testCheckerWithServer(t, releases, "1.0.0", ChannelDev)
+	checker, srv := testCheckerWithServer(t, releases, ChannelDev)
 	defer srv.Close()
 
 	info, err := checker.Check(context.Background())
@@ -200,7 +200,7 @@ func TestChecker_SkipsDraft(t *testing.T) {
 	draft := fakeRelease("v1.1.0", false, "")
 	draft.Draft = true
 	releases := []githubRelease{draft, fakeRelease("v1.0.0", false, "")}
-	checker, srv := testCheckerWithServer(t, releases, "1.0.0", ChannelLatest)
+	checker, srv := testCheckerWithServer(t, releases, ChannelLatest)
 	defer srv.Close()
 
 	info, err := checker.Check(context.Background())
@@ -214,7 +214,7 @@ func TestChecker_SkipsDraft(t *testing.T) {
 
 func TestChecker_CachedResult(t *testing.T) {
 	releases := []githubRelease{fakeRelease("v1.1.0", false, "")}
-	checker, srv := testCheckerWithServer(t, releases, "1.0.0", ChannelLatest)
+	checker, srv := testCheckerWithServer(t, releases, ChannelLatest)
 	defer srv.Close()
 
 	cached, ts := checker.CachedResult()
@@ -244,12 +244,17 @@ func TestChecker_CachedResult(t *testing.T) {
 
 func TestChecker_SetChannel(t *testing.T) {
 	releases := []githubRelease{fakeRelease("v1.0.0", false, "")}
-	checker, srv := testCheckerWithServer(t, releases, "1.0.0", ChannelLatest)
+	checker, srv := testCheckerWithServer(t, releases, ChannelLatest)
 	defer srv.Close()
 
-	// Populate cache.
-	_, _ = checker.Check(context.Background())
-	_, ts1 := checker.CachedResult()
+	// Populate cache and verify it was set.
+	if _, err := checker.Check(context.Background()); err != nil {
+		t.Fatalf("Check: %v", err)
+	}
+	cached, ts1 := checker.CachedResult()
+	if cached == nil || ts1.IsZero() {
+		t.Fatal("expected cache to be populated after Check")
+	}
 
 	// Changing channel invalidates cache.
 	checker.SetChannel(ChannelBeta)
@@ -257,7 +262,7 @@ func TestChecker_SetChannel(t *testing.T) {
 	if !ts2.IsZero() {
 		t.Error("expected cache to be cleared after SetChannel")
 	}
-	_ = ts1 // used in earlier assertion
+	_ = ts1 // used in assertion above
 }
 
 func TestMapAssets(t *testing.T) {

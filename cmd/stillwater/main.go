@@ -933,9 +933,8 @@ func getDBIntSetting(db *sql.DB, key string, fallback int) int {
 }
 
 // buildUpdateChecker constructs the updater Checker when the self-update
-// mechanism is enabled. Returns nil if SW_UPDATER_DISABLED is set, if
-// the process is running inside a container, or if the updater is not
-// yet enabled in the DB settings (enabled=false by default).
+// mechanism is enabled. Returns nil if SW_UPDATER_DISABLED is set or if the
+// current version string cannot be parsed.
 //
 // The caller is responsible for starting the background scheduler goroutine
 // after the graceful-shutdown context is available.

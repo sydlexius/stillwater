@@ -17,13 +17,15 @@ func TestInContainer_ReturnsBool(t *testing.T) {
 func TestInContainer_ContainerEnvVar(t *testing.T) {
 	// Save and restore env.
 	original := os.Getenv("container")
-	defer os.Setenv("container", original) //nolint:errcheck // best-effort restore in test
+	defer func() { _ = os.Setenv("container", original) }() //nolint:errcheck // best-effort restore in test
 
 	// When "container" is empty, this alone doesn't detect a container.
-	os.Setenv("container", "")
+	_ = os.Setenv("container", "") //nolint:errcheck // test env
 	// We can't assert false here since /.dockerenv or cgroup may be present,
 	// but we can assert true when the env var is set.
-	os.Setenv("container", "podman")
+	if err := os.Setenv("container", "podman"); err != nil {
+		t.Fatalf("os.Setenv: %v", err)
+	}
 	if !InContainer() {
 		t.Error("expected InContainer() = true when 'container' env var is set")
 	}
