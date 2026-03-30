@@ -740,3 +740,111 @@ func isValidProviderName(name provider.ProviderName) bool {
 	}
 	return false
 }
+
+// handleGetProviderFields returns the field configuration for a provider, including
+// which fields are enabled/disabled and which fields the provider can contribute to.
+func (r *Router) handleGetProviderFields(w http.ResponseWriter, req *http.Request) {
+	name := provider.ProviderName(req.PathValue("name"))
+	if !isValidProviderName(name) {
+		writeError(w, req, http.StatusBadRequest, "unknown provider")
+		return
+	}
+
+	disabledFields, err := r.providerSettings.GetDisabledFields(req.Context(), name)
+	if err != nil {
+		r.logger.Error("getting provider disabled fields", "provider", name, "error", err)
+		writeError(w, req, http.StatusInternalServerError, "failed to get provider fields")
+		return
+	}
+
+	allFields := provider.ProviderFields(name)
+	disabledSet := make(map[string]bool, len(disabledFields))
+	for _, f := range disabledFields {
+		disabledSet[f] = true
+	}
+
+	type fieldStatus struct {
+		Field   string `json:"field"`
+		Enabled bool   `json:"enabled"`
+	}
+	fields := make([]fieldStatus, 0, len(allFields))
+	for _, f := range allFields {
+		fields = append(fields, fieldStatus{
+			Field:   f,
+			Enabled: !disabledSet[f],
+		})
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"provider":        name,
+		"fields":          fields,
+		"disabled_fields": disabledFields,
+	})
+}
+
+// handleToggleProviderField toggles a single metadata field on or off for a provider.
+// PUT /api/v1/providers/{name}/fields/{field}/toggle
+func (r *Router) handleToggleProviderField(w http.ResponseWriter, req *http.Request) {
+	name := provider.ProviderName(req.PathValue("name"))
+	if !isValidProviderName(name) {
+		writeError(w, req, http.StatusBadRequest, "unknown provider")
+		return
+	}
+
+	field := req.PathValue("field")
+	if field == "" {
+		writeError(w, req, http.StatusBadRequest, "field is required")
+		return
+	}
+
+	// Verify the field is valid for this provider.
+	validField := false
+	for _, f := range provider.ProviderFields(name) {
+		if f == field {
+			validField = true
+			break
+		}
+	}
+	if !validField {
+		writeError(w, req, http.StatusBadRequest, "field not supported by this provider")
+		return
+	}
+
+	current, err := r.providerSettings.GetDisabledFields(req.Context(), name)
+	if err != nil {
+		r.logger.Error("loading disabled fields for toggle", "provider", name, "error", err)
+		writeError(w, req, http.StatusInternalServerError, "failed to load field config")
+		return
+	}
+
+	// Toggle: if the field is in the disabled list, remove it (enable).
+	// If not in the disabled list, add it (disable).
+	found := false
+	var newDisabled []string
+	for _, f := range current {
+		if f == field {
+			found = true
+			continue // Remove from disabled = enable
+		}
+		newDisabled = append(newDisabled, f)
+	}
+	if !found {
+		newDisabled = append(newDisabled, field)
+	}
+
+	if err := r.providerSettings.SetDisabledFields(req.Context(), name, newDisabled); err != nil {
+		r.logger.Error("toggling provider field", "provider", name, "field", field, "error", err)
+		writeError(w, req, http.StatusInternalServerError, "failed to update field config")
+		return
+	}
+
+	// For HTMX requests, re-render the provider card so the gear panel reflects
+	// the updated state.
+	if isHTMXRequest(req) {
+		r.renderProviderCard(w, req, name, false)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "toggled"})
+}
+

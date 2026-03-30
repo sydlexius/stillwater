@@ -2683,6 +2683,77 @@ paths:
               schema:
                 type: string
 
+  /providers/{name}/fields:
+    get:
+      tags: [Providers]
+      summary: Get per-provider field configuration
+      operationId: getProviderFields
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Field configuration for the provider
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  provider:
+                    type: string
+                  fields:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        field:
+                          type: string
+                        enabled:
+                          type: boolean
+                  disabled_fields:
+                    type: array
+                    items:
+                      type: string
+                    description: Fields disabled for this provider. Empty when all fields are enabled.
+        "400":
+          description: Unknown provider
+
+  /providers/{name}/fields/{field}/toggle:
+    put:
+      tags: [Providers]
+      summary: Toggle a metadata field on or off for a provider
+      operationId: toggleProviderField
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: field
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Field toggled (returns HTML provider card when HX-Request header is set)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [toggled]
+            text/html:
+              schema:
+                type: string
+        "400":
+          description: Unknown provider or unsupported field
+
   /providers/priorities:
     get:
       tags: [Providers]

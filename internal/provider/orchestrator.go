@@ -114,6 +114,13 @@ func (o *Orchestrator) FetchMetadata(ctx context.Context, mbid, name string, pro
 		return nil, fmt.Errorf("loading available providers: %w", err)
 	}
 
+	// Load per-provider disabled field configuration once before iterating
+	// priorities so the check is O(1) per provider/field combination.
+	disabledFields, err := o.settings.GetAllDisabledFields(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("loading provider field config: %w", err)
+	}
+
 	result := &FetchResult{
 		Metadata: &ArtistMetadata{
 			URLs: make(map[string]string),
@@ -138,6 +145,11 @@ func (o *Orchestrator) FetchMetadata(ctx context.Context, mbid, name string, pro
 				continue
 			}
 			if isExcludedForField(pri.Field, provName) {
+				continue
+			}
+			// Skip this provider if the user has disabled this field in its
+			// per-provider field configuration.
+			if isFieldDisabled(disabledFields[provName], pri.Field) {
 				continue
 			}
 
@@ -196,6 +208,16 @@ func (o *Orchestrator) FetchMetadata(ctx context.Context, mbid, name string, pro
 	}
 
 	return result, nil
+}
+
+// isFieldDisabled returns true when field appears in the disabled list.
+func isFieldDisabled(disabled []string, field string) bool {
+	for _, f := range disabled {
+		if f == field {
+			return true
+		}
+	}
+	return false
 }
 
 // FetchImages queries all configured, image-capable providers and collects

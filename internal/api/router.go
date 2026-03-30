@@ -320,6 +320,8 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("GET "+bp+"/api/v1/providers/priorities", wrapAuth(middleware.RequireAdmin(r.handleGetPriorities), authMw))
 	mux.HandleFunc("PUT "+bp+"/api/v1/providers/priorities", wrapAuth(middleware.RequireAdmin(r.handleSetPriorities), authMw))
 	mux.HandleFunc("PUT "+bp+"/api/v1/providers/priorities/{field}/{provider}/toggle", wrapAuth(middleware.RequireAdmin(r.handleToggleFieldProvider), authMw))
+	mux.HandleFunc("GET "+bp+"/api/v1/providers/{name}/fields", wrapAuth(middleware.RequireAdmin(r.handleGetProviderFields), authMw))
+	mux.HandleFunc("PUT "+bp+"/api/v1/providers/{name}/fields/{field}/toggle", wrapAuth(middleware.RequireAdmin(r.handleToggleProviderField), authMw))
 	mux.HandleFunc("PUT "+bp+"/api/v1/providers/{name}/mirror", wrapAuth(middleware.RequireAdmin(r.handleSetMirror), authMw))
 	mux.HandleFunc("DELETE "+bp+"/api/v1/providers/{name}/mirror", wrapAuth(middleware.RequireAdmin(r.handleDeleteMirror), authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/providers/search", wrapAuth(r.handleProviderSearch, authMw))

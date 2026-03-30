@@ -162,6 +162,22 @@ func AllWebSearchProviderNames() []ProviderName {
 	return []ProviderName{NameDuckDuckGo}
 }
 
+// ProviderFields returns the metadata fields that a provider can contribute to,
+// based on the default priority configuration. Image fields (thumb, fanart, logo,
+// banner) are included when the provider appears in those priority lists.
+func ProviderFields(name ProviderName) []string {
+	var fields []string
+	for _, pri := range DefaultPriorities() {
+		for _, p := range pri.Providers {
+			if p == name {
+				fields = append(fields, pri.Field)
+				break
+			}
+		}
+	}
+	return fields
+}
+
 // WebMetadataScraper is the interface for web scrapers that extract metadata
 // from provider web pages. Unlike Provider (which uses structured APIs),
 // web scrapers parse HTML pages and are expected to break when sites change.

@@ -410,6 +410,41 @@ func providerIsDisabled(name provider.ProviderName, disabled []provider.Provider
 	return false
 }
 
+// fieldConfigDisabledForProvider returns true when the provider has the given field
+// disabled in its per-provider field configuration.
+func fieldConfigDisabledForProvider(prov provider.ProviderName, field string, keys []provider.ProviderKeyStatus) bool {
+	for _, k := range keys {
+		if k.Name == prov {
+			for _, f := range k.DisabledFields {
+				if f == field {
+					return true
+				}
+			}
+			return false
+		}
+	}
+	return false
+}
+
+// anyFieldsConfigurable returns true when a provider has at least one configurable field.
+func anyFieldsConfigurable(name provider.ProviderName) bool {
+	return len(provider.ProviderFields(name)) > 0
+}
+
+// fieldEnabled returns true when the field is not in the provider's disabled list.
+func fieldEnabled(field string, disabledFields []string) bool {
+	for _, f := range disabledFields {
+		if f == field {
+			return false
+		}
+	}
+	return true
+}
+
+// disabledFieldCount returns the number of fields disabled for a provider.
+func disabledFieldCount(disabledFields []string) int {
+	return len(disabledFields)
+}
 
 // connectionsForType filters connections by type.
 func connectionsForType(conns []connection.Connection, connType string) []connection.Connection {
@@ -448,6 +483,14 @@ func isWebSearchProvider(name provider.ProviderName) bool {
 		}
 	}
 	return false
+}
+
+// fieldToggleTitle returns an accessible title for a field toggle button.
+func fieldToggleTitle(field string, enabled bool) string {
+	if enabled {
+		return "Disable " + field + " from this provider"
+	}
+	return "Enable " + field + " from this provider"
 }
 
 templ SettingsPage(assets AssetPaths, data SettingsData) {
@@ -3403,6 +3446,23 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 					Configure
 				</button>
 			}
+			if anyFieldsConfigurable(pk.Name) {
+				if disabledFieldCount(pk.DisabledFields) > 0 {
+					<span class="inline-flex items-center rounded-full px-1.5 py-0.5 text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300" title="Some fields are disabled">
+						{ strconv.Itoa(disabledFieldCount(pk.DisabledFields)) } disabled
+					</span>
+				}
+				<button
+					type="button"
+					class="p-1.5 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-gray-500 dark:text-gray-400"
+					onclick={ toggleFieldConfig(string(pk.Name)) }
+					aria-expanded="false"
+					aria-controls={ "field-config-panel-" + string(pk.Name) }
+					title="Configure fields"
+				>
+					@components.IconCog6Tooth("h-4 w-4")
+				</button>
+			}
 		</div>
 	</div>
 	if pk.RequiresKey || pk.OptionalKey {
@@ -3637,6 +3697,37 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 			</form>
 		</div>
 	}
+	if anyFieldsConfigurable(pk.Name) {
+		<div id={ "field-config-panel-" + string(pk.Name) } class="hidden mt-2 sm:ml-8 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+			<p class="text-xs text-gray-500 dark:text-gray-400 mb-2">
+				Choose which fields this provider should contribute. Disabled fields are skipped during metadata fetches.
+			</p>
+			<div class="flex flex-wrap gap-2">
+				for _, field := range provider.ProviderFields(pk.Name) {
+					{{ enabled := fieldEnabled(field, pk.DisabledFields) }}
+					<button
+						type="button"
+						class={
+							"inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors cursor-pointer",
+							templ.KV("bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300 border-green-300 dark:border-green-700 hover:bg-green-100 dark:hover:bg-green-900/40", enabled),
+							templ.KV("bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border-red-300 dark:border-red-700 opacity-60 hover:opacity-80", !enabled),
+						}
+						hx-put={ "/api/v1/providers/" + string(pk.Name) + "/fields/" + field + "/toggle" }
+						hx-target={ "#provider-card-" + string(pk.Name) }
+						hx-swap="innerHTML"
+						title={ fieldToggleTitle(field, enabled) }
+					>
+						if enabled {
+							@components.IconCheck("h-3 w-3")
+						} else {
+							@components.IconXMark("h-3 w-3")
+						}
+						{ field }
+					</button>
+				}
+			</div>
+		</div>
+	}
 }
 
 script saveNameSimilarityThreshold() {
@@ -3708,6 +3799,17 @@ script toggleProviderConfig(providerName string) {
 		}
 		panel.classList.toggle("hidden");
 		const btn = document.querySelector('[aria-controls="config-panel-' + providerName + '"]');
+		if (btn) {
+			btn.setAttribute("aria-expanded", !panel.classList.contains("hidden"));
+		}
+	}
+}
+
+script toggleFieldConfig(providerName string) {
+	const panel = document.getElementById("field-config-panel-" + providerName);
+	if (panel) {
+		panel.classList.toggle("hidden");
+		const btn = document.querySelector('[aria-controls="field-config-panel-' + providerName + '"]');
 		if (btn) {
 			btn.setAttribute("aria-expanded", !panel.classList.contains("hidden"));
 		}

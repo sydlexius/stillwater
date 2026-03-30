@@ -201,6 +201,7 @@ type ProviderKeyStatus struct {
 	RateLimit       *RateLimitInfo `json:"rate_limit,omitempty"`
 	SupportsBaseURL bool           `json:"supports_base_url,omitempty"`
 	Mirror          *MirrorConfig  `json:"mirror,omitempty"`
+	DisabledFields  []string       `json:"disabled_fields,omitempty"`
 }
 
 // ListProviderKeyStatuses returns the key configuration status for all known providers.
@@ -254,6 +255,11 @@ func (s *SettingsService) ListProviderKeyStatuses(ctx context.Context) ([]Provid
 			}
 			pks.Mirror = mirror
 		}
+		disabledFields, err := s.GetDisabledFields(ctx, name)
+		if err != nil {
+			return nil, err
+		}
+		pks.DisabledFields = disabledFields
 		statuses = append(statuses, pks)
 	}
 	return statuses, nil
@@ -730,4 +736,69 @@ func (s *SettingsService) SetNameSimilarityThreshold(ctx context.Context, thresh
 		return fmt.Errorf("storing name similarity threshold: %w", err)
 	}
 	return nil
+}
+
+// fieldDisabledSettingKey returns the settings table key for a provider's disabled field list.
+func fieldDisabledSettingKey(name ProviderName) string {
+	return fmt.Sprintf("provider.%s.disabled_fields", name)
+}
+
+// GetDisabledFields returns the list of metadata fields disabled for a provider.
+// Returns nil (all fields enabled) when no configuration is stored.
+func (s *SettingsService) GetDisabledFields(ctx context.Context, name ProviderName) ([]string, error) {
+	key := fieldDisabledSettingKey(name)
+	var value string
+	err := s.db.QueryRowContext(ctx, "SELECT value FROM settings WHERE key = ?", key).Scan(&value)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("reading disabled fields for %s: %w", name, err)
+	}
+	var fields []string
+	if err := json.Unmarshal([]byte(value), &fields); err != nil {
+		return nil, fmt.Errorf("parsing disabled fields for %s: %w", name, err)
+	}
+	return fields, nil
+}
+
+// SetDisabledFields stores the list of metadata fields disabled for a provider.
+// Passing an empty or nil slice removes the configuration row (all fields enabled).
+func (s *SettingsService) SetDisabledFields(ctx context.Context, name ProviderName, fields []string) error {
+	key := fieldDisabledSettingKey(name)
+	if len(fields) == 0 {
+		_, err := s.db.ExecContext(ctx, "DELETE FROM settings WHERE key = ?", key)
+		if err != nil {
+			return fmt.Errorf("clearing disabled fields for %s: %w", name, err)
+		}
+		return nil
+	}
+	data, err := json.Marshal(fields)
+	if err != nil {
+		return fmt.Errorf("marshaling disabled fields for %s: %w", name, err)
+	}
+	_, err = s.db.ExecContext(ctx,
+		"INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = datetime('now')",
+		key, string(data), string(data),
+	)
+	if err != nil {
+		return fmt.Errorf("storing disabled fields for %s: %w", name, err)
+	}
+	return nil
+}
+
+// GetAllDisabledFields returns a map of provider name to disabled field list for all
+// known providers. Providers with no configuration are omitted from the map.
+func (s *SettingsService) GetAllDisabledFields(ctx context.Context) (map[ProviderName][]string, error) {
+	result := make(map[ProviderName][]string)
+	for _, name := range AllProviderNames() {
+		fields, err := s.GetDisabledFields(ctx, name)
+		if err != nil {
+			return nil, err
+		}
+		if len(fields) > 0 {
+			result[name] = fields
+		}
+	}
+	return result, nil
 }
