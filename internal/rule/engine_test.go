@@ -315,6 +315,13 @@ func TestEvaluate_FilesystemRulesSkippedForAPIArtists(t *testing.T) {
 		t.Fatalf("Evaluate: %v", err)
 	}
 
+	// At least some non-filesystem rules must have been evaluated; a zero
+	// RulesTotal would mean the engine skipped everything, making the test
+	// vacuously true and worthless.
+	if result.RulesTotal == 0 {
+		t.Fatal("RulesTotal = 0, expected non-filesystem rules to be evaluated for a pathless artist")
+	}
+
 	// nfo_exists must not appear in violations for a pathless artist.
 	for _, v := range result.Violations {
 		if v.RuleID == RuleNFOExists {
