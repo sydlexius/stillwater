@@ -328,6 +328,9 @@ Before squashing and pushing, verify these categories that Copilot consistently 
 - [ ] `io.ReadAll(r.Body)` errors are checked before using the result in test handlers
 - [ ] Engine/rule tests assert relative properties (e.g., "violations > 0") rather than exact counts that break when new rules are added
 
+**PR closing keywords:**
+- [ ] PR body includes `Closes #N` for every issue the branch addresses (derived from branch name, commit messages, or user context)
+
 ### Review comment scope policy
 
 **Default: fix now.** When a Copilot review comment or adjacent code issue is discovered
