@@ -35,6 +35,17 @@
 
     nav.setAttribute('data-sidebar-state', state);
 
+    // When hidden, mark the nav as inert so screen readers and keyboard
+    // navigation skip it. The restore button is outside the nav and stays
+    // focusable.
+    if (state === 'hidden') {
+      nav.setAttribute('aria-hidden', 'true');
+      nav.inert = true;
+    } else {
+      nav.removeAttribute('aria-hidden');
+      nav.inert = false;
+    }
+
     // Update collapse button aria-expanded.
     var collapseBtn = getCollapseBtn();
     if (collapseBtn) {

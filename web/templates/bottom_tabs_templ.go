@@ -53,20 +53,20 @@ func BottomTabs(bp string, currentPath string, isAdmin bool) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = bottomTab(bp, "/", currentPath, "Dashboard", dashboardIcon()).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = bottomTab(bp, "/", "/", currentPath, "Dashboard", dashboardIcon()).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = bottomTab(bp, "/artists", currentPath, "Artists", artistsIcon()).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = bottomTab(bp, "/artists", "/artists", currentPath, "Artists", artistsIcon()).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = bottomTab(bp, "/reports/compliance", currentPath, "Reports", reportsIcon()).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = bottomTab(bp, "/reports/compliance", "/reports", currentPath, "Reports", reportsIcon()).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if isAdmin {
-			templ_7745c5c3_Err = bottomTab(bp, "/settings", currentPath, "Settings", settingsIcon()).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = bottomTab(bp, "/settings", "/settings", currentPath, "Settings", settingsIcon()).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -80,7 +80,10 @@ func BottomTabs(bp string, currentPath string, isAdmin bool) templ.Component {
 }
 
 // bottomTab renders a single tab link in the bottom navigation bar.
-func bottomTab(bp string, tabPath string, currentPath string, label string, icon templ.Component) templ.Component {
+// href is the link destination; matchPath is used for active-state detection
+// (allows the link to point to a specific sub-page while highlighting on a
+// broader prefix).
+func bottomTab(bp string, href string, matchPath string, currentPath string, label string, icon templ.Component) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -101,7 +104,7 @@ func bottomTab(bp string, tabPath string, currentPath string, label string, icon
 			templ_7745c5c3_Var2 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		var templ_7745c5c3_Var3 = []any{"sw-bottom-tab", templ.KV("sw-bottom-tab-active", isTabActive(currentPath, tabPath))}
+		var templ_7745c5c3_Var3 = []any{"sw-bottom-tab", templ.KV("sw-bottom-tab-active", isTabActive(currentPath, matchPath))}
 		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var3...)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
@@ -111,9 +114,9 @@ func bottomTab(bp string, tabPath string, currentPath string, label string, icon
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var4 templ.SafeURL
-		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(bp + tabPath))
+		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(bp + href))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/bottom_tabs.templ`, Line: 40, Col: 36}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/bottom_tabs.templ`, Line: 43, Col: 33}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 		if templ_7745c5c3_Err != nil {
@@ -136,7 +139,7 @@ func bottomTab(bp string, tabPath string, currentPath string, label string, icon
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		if isTabActive(currentPath, tabPath) {
+		if isTabActive(currentPath, matchPath) {
 			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, " aria-current=\"page\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
@@ -157,7 +160,7 @@ func bottomTab(bp string, tabPath string, currentPath string, label string, icon
 		var templ_7745c5c3_Var6 string
 		templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/bottom_tabs.templ`, Line: 47, Col: 43}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/bottom_tabs.templ`, Line: 50, Col: 43}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 		if templ_7745c5c3_Err != nil {

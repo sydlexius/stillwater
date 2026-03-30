@@ -182,6 +182,7 @@
       .then(function (prefs) {
         writeCache(prefs);
         applyAll(prefs);
+        document.dispatchEvent(new CustomEvent('sw:preferences-applied'));
         return prefs;
       })
       .catch(function (err) {
@@ -227,8 +228,10 @@
             cached[key] = data.value;
             writeCache(cached);
             applySingle(key, data.value);
+            document.dispatchEvent(new CustomEvent('sw:preferences-applied'));
             return data.value;
           }
+          document.dispatchEvent(new CustomEvent('sw:preferences-applied'));
           return value;
         });
       })

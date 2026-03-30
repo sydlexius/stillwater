@@ -69,14 +69,16 @@ func (r *Router) assetsFor(req *http.Request) templates.AssetPaths {
 	a.Version = version.Version
 
 	// Look up the full user record to get display name and avatar info.
-	// Falls back to the user ID if the lookup fails (non-fatal).
+	// Username and DisplayName default to empty; only populated from the
+	// fetched user record so we never leak the raw UUID to the UI.
 	userID := middleware.UserIDFromContext(ctx)
-	a.Username = userID
 	if userID != "" {
 		if user, err := r.authService.GetUserByID(ctx, userID); err == nil {
 			a.Username = user.Username
 			a.DisplayName = user.DisplayName
 			a.AvatarURL = r.buildAvatarURL(ctx, user)
+		} else {
+			slog.Warn("failed to look up user for sidebar", "user_id", userID, "error", err)
 		}
 	}
 
@@ -104,7 +106,17 @@ func (r *Router) buildAvatarURL(ctx context.Context, user *auth.User) string {
 	if user.ProviderID == "" {
 		return ""
 	}
-	serverURL := r.getStringSetting(ctx, "auth.server_url", "")
+	// Try provider-specific server URL first, fall back to the legacy global key.
+	var serverURL string
+	switch user.AuthProvider {
+	case "emby":
+		serverURL = r.getStringSetting(ctx, "auth.providers.emby.server_url", "")
+	case "jellyfin":
+		serverURL = r.getStringSetting(ctx, "auth.providers.jellyfin.server_url", "")
+	}
+	if serverURL == "" {
+		serverURL = r.getStringSetting(ctx, "auth.server_url", "")
+	}
 	if serverURL == "" {
 		return ""
 	}

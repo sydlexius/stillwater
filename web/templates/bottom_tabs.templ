@@ -25,21 +25,24 @@ templ BottomTabs(bp string, currentPath string, isAdmin bool) {
 		aria-label="Mobile navigation"
 		class="sw-bottom-tabs"
 	>
-		@bottomTab(bp, "/", currentPath, "Dashboard", dashboardIcon())
-		@bottomTab(bp, "/artists", currentPath, "Artists", artistsIcon())
-		@bottomTab(bp, "/reports/compliance", currentPath, "Reports", reportsIcon())
+		@bottomTab(bp, "/", "/", currentPath, "Dashboard", dashboardIcon())
+		@bottomTab(bp, "/artists", "/artists", currentPath, "Artists", artistsIcon())
+		@bottomTab(bp, "/reports/compliance", "/reports", currentPath, "Reports", reportsIcon())
 		if isAdmin {
-			@bottomTab(bp, "/settings", currentPath, "Settings", settingsIcon())
+			@bottomTab(bp, "/settings", "/settings", currentPath, "Settings", settingsIcon())
 		}
 	</nav>
 }
 
 // bottomTab renders a single tab link in the bottom navigation bar.
-templ bottomTab(bp string, tabPath string, currentPath string, label string, icon templ.Component) {
+// href is the link destination; matchPath is used for active-state detection
+// (allows the link to point to a specific sub-page while highlighting on a
+// broader prefix).
+templ bottomTab(bp string, href string, matchPath string, currentPath string, label string, icon templ.Component) {
 	<a
-		href={ templ.SafeURL(bp + tabPath) }
-		class={ "sw-bottom-tab", templ.KV("sw-bottom-tab-active", isTabActive(currentPath, tabPath)) }
-		if isTabActive(currentPath, tabPath) {
+		href={ templ.SafeURL(bp + href) }
+		class={ "sw-bottom-tab", templ.KV("sw-bottom-tab-active", isTabActive(currentPath, matchPath)) }
+		if isTabActive(currentPath, matchPath) {
 			aria-current="page"
 		}
 	>
