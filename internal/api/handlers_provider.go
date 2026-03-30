@@ -847,4 +847,3 @@ func (r *Router) handleToggleProviderField(w http.ResponseWriter, req *http.Requ
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "toggled"})
 }
-
