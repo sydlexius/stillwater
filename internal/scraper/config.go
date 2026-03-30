@@ -60,10 +60,22 @@ func ValidateConfig(cfg *ScraperConfig) error {
 		if f.Primary != "" && !validProviders[f.Primary] {
 			return fmt.Errorf("unknown provider name: %q", f.Primary)
 		}
-		if f.Verbosity != "" && f.Field == FieldBiography {
-			if !ValidBiographyVerbosity(BiographyVerbosity(f.Verbosity)) {
-				return fmt.Errorf("invalid verbosity %q for biography field; valid values: %q, %q",
-					f.Verbosity, VerbosityIntro, VerbosityFull)
+		if f.Verbosity != "" {
+			opts := VerbosityOptionsFor(f.Field, f.Primary)
+			if len(opts) == 0 {
+				return fmt.Errorf("verbosity is not configurable for field %q with provider %q",
+					f.Field, f.Primary)
+			}
+			valid := false
+			for _, o := range opts {
+				if o.Value == f.Verbosity {
+					valid = true
+					break
+				}
+			}
+			if !valid {
+				return fmt.Errorf("invalid verbosity %q for field %q; valid values are defined by VerbosityOptionsFor",
+					f.Verbosity, f.Field)
 			}
 		}
 	}
@@ -119,9 +131,10 @@ func ValidBiographyVerbosity(v BiographyVerbosity) bool {
 
 // VerbosityOption describes a single verbosity choice shown in the UI.
 type VerbosityOption struct {
-	Value   string `json:"value"`
-	Label   string `json:"label"`
-	Default bool   `json:"default"`
+	Value       string `json:"value"`
+	Label       string `json:"label"`
+	Default     bool   `json:"default"`
+	Description string `json:"description,omitempty"`
 }
 
 // VerbosityOptionsFor returns the supported verbosity options for a given
@@ -129,8 +142,10 @@ type VerbosityOption struct {
 func VerbosityOptionsFor(field FieldName, prov provider.ProviderName) []VerbosityOption {
 	if field == FieldBiography && prov == provider.NameWikipedia {
 		return []VerbosityOption{
-			{Value: string(VerbosityIntro), Label: "Intro only", Default: true},
-			{Value: string(VerbosityFull), Label: "Full article"},
+			{Value: string(VerbosityIntro), Label: "Intro only", Default: true,
+				Description: "Fetch only the introduction section (conservative, a few paragraphs)."},
+			{Value: string(VerbosityFull), Label: "Full article",
+				Description: "Fetch the full article text (may be 200 KB+)."},
 		}
 	}
 	return nil
