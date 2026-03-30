@@ -46,6 +46,10 @@ func (s *stubPipeline) RunAll(_ context.Context) (*rule.RunResult, error) {
 	return &rule.RunResult{}, nil
 }
 
+func (s *stubPipeline) RunAllForce(_ context.Context) (*rule.RunResult, error) {
+	return &rule.RunResult{}, nil
+}
+
 func (s *stubPipeline) FixViolation(ctx context.Context, violationID string) (*rule.FixResult, error) {
 	if s.fixViolationFn != nil {
 		return s.fixViolationFn(ctx, violationID)

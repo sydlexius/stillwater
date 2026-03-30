@@ -16,7 +16,7 @@ const artistColumns = `id, name, sort_name, type, gender, disambiguation,
 	health_score, health_evaluated_at, is_excluded, exclusion_reason, is_classical,
 	locked, lock_source, locked_at,
 	metadata_sources,
-	last_scanned_at, created_at, updated_at`
+	last_scanned_at, dirty_since, rules_evaluated_at, created_at, updated_at`
 
 // prefixedArtistColumns returns artistColumns with each column prefixed by the given table alias.
 func prefixedArtistColumns(table string) string {
@@ -38,6 +38,8 @@ type scannedArtist struct {
 	metadataSources   string
 	healthEvaluatedAt sql.NullString
 	lastScannedAt     sql.NullString
+	dirtySince        sql.NullString
+	rulesEvaluatedAt  sql.NullString
 	nfo               int
 	isExcluded        int
 	isClassical       int
@@ -57,7 +59,7 @@ func (s *scannedArtist) scanPtrs() []any {
 		&s.a.HealthScore, &s.healthEvaluatedAt, &s.isExcluded, &s.a.ExclusionReason, &s.isClassical,
 		&s.locked, &s.a.LockSource, &s.lockedAt,
 		&s.metadataSources,
-		&s.lastScannedAt,
+		&s.lastScannedAt, &s.dirtySince, &s.rulesEvaluatedAt,
 		&s.createdAt, &s.updatedAt,
 	}
 }
@@ -86,6 +88,14 @@ func (s *scannedArtist) apply() {
 	if s.lastScannedAt.Valid {
 		t := dbutil.ParseTime(s.lastScannedAt.String)
 		s.a.LastScannedAt = &t
+	}
+	if s.dirtySince.Valid {
+		t := dbutil.ParseTime(s.dirtySince.String)
+		s.a.DirtySince = &t
+	}
+	if s.rulesEvaluatedAt.Valid {
+		t := dbutil.ParseTime(s.rulesEvaluatedAt.String)
+		s.a.RulesEvaluatedAt = &t
 	}
 	s.a.CreatedAt = dbutil.ParseTime(s.createdAt)
 	s.a.UpdatedAt = dbutil.ParseTime(s.updatedAt)

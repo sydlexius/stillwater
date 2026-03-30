@@ -70,10 +70,12 @@ type Artist struct {
 	DiscogsIDFetchedAt  *time.Time        `json:"discogs_id_fetched_at,omitempty"`
 	WikidataIDFetchedAt *time.Time        `json:"wikidata_id_fetched_at,omitempty"`
 	LastFMFetchedAt     *time.Time        `json:"lastfm_fetched_at,omitempty"`
-	MetadataSources     map[string]string `json:"metadata_sources,omitempty"`
-	LastScannedAt       *time.Time        `json:"last_scanned_at,omitempty"`
-	CreatedAt           time.Time         `json:"created_at"`
-	UpdatedAt           time.Time         `json:"updated_at"`
+	MetadataSources  map[string]string `json:"metadata_sources,omitempty"`
+	LastScannedAt    *time.Time        `json:"last_scanned_at,omitempty"`
+	DirtySince       *time.Time        `json:"dirty_since,omitempty"`
+	RulesEvaluatedAt *time.Time        `json:"rules_evaluated_at,omitempty"`
+	CreatedAt        time.Time         `json:"created_at"`
+	UpdatedAt        time.Time         `json:"updated_at"`
 }
 
 // ProviderIDMap returns the artist's provider-specific IDs as a map keyed by

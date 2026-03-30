@@ -19,6 +19,8 @@ type ruleRunStatus struct {
 	Running             bool      `json:"running"`
 	Status              string    `json:"status"` // idle, running, completed, failed
 	ArtistsProcessed    int       `json:"artists_processed"`
+	ArtistsSkipped      int       `json:"artists_skipped"`
+	ArtistsTotal        int       `json:"artists_total"`
 	ViolationsFound     int       `json:"violations_found"`
 	ViolationsAutoFixed int       `json:"violations_auto_fixed"`
 	ViolationsRemaining int       `json:"violations_remaining"`
@@ -132,6 +134,14 @@ func (r *Router) handleUpdateRule(w http.ResponseWriter, req *http.Request) {
 	// health scores (e.g. enabling/disabling a rule changes which violations
 	// are counted).
 	r.InvalidateHealthCache()
+
+	// Mark all artists dirty so the next rule run re-evaluates everyone under
+	// the updated rule configuration. Best-effort: log and continue on failure.
+	if r.artistService != nil {
+		if err := r.artistService.MarkAllDirty(req.Context()); err != nil {
+			r.logger.Warn("marking all artists dirty after rule update", "rule_id", ruleID, "error", err)
+		}
+	}
 
 	writeJSON(w, http.StatusOK, existing)
 }
@@ -374,7 +384,10 @@ func (r *Router) handleRunArtistRules(w http.ResponseWriter, req *http.Request) 
 	})
 }
 
-// handleRunAllRules starts an async run of all enabled rules against all artists.
+// handleRunAllRules starts an async run of all enabled rules against artists.
+// By default only dirty artists (those changed since last evaluation) are
+// re-evaluated. Pass ?force=true to re-evaluate every artist regardless of
+// dirty status.
 // Returns 202 Accepted immediately with status polling via GET /api/v1/rules/run-all/status.
 // Returns 409 Conflict if a run is already in progress.
 // POST /api/v1/rules/run-all
@@ -384,6 +397,8 @@ func (r *Router) handleRunAllRules(w http.ResponseWriter, req *http.Request) {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "rule pipeline not configured"})
 		return
 	}
+
+	force := req.URL.Query().Get("force") == "true"
 
 	r.ruleRunMu.Lock()
 	if r.ruleRun != nil && r.ruleRun.Running {
@@ -412,7 +427,13 @@ func (r *Router) handleRunAllRules(w http.ResponseWriter, req *http.Request) {
 			}
 		}()
 
-		result, err := r.pipeline.RunAll(ctx)
+		var result *rule.RunResult
+		var err error
+		if force {
+			result, err = r.pipeline.RunAllForce(ctx)
+		} else {
+			result, err = r.pipeline.RunAll(ctx)
+		}
 
 		// Compute violation counts outside the mutex to avoid blocking status polls.
 		// Check err first -- RunAll returns nil result on error paths.
@@ -460,6 +481,8 @@ func (r *Router) handleRunAllRules(w http.ResponseWriter, req *http.Request) {
 
 		r.ruleRun.Status = "completed"
 		r.ruleRun.ArtistsProcessed = result.ArtistsProcessed
+		r.ruleRun.ArtistsSkipped = result.ArtistsSkipped
+		r.ruleRun.ArtistsTotal = result.ArtistsTotal
 		r.ruleRun.FixesAttempted = result.FixesAttempted
 		r.ruleRun.FixesSucceeded = result.FixesSucceeded
 		r.ruleRun.ViolationsFound = violationsFound

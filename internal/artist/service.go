@@ -159,6 +159,33 @@ func (s *Service) ListUnevaluatedIDs(ctx context.Context) ([]string, error) {
 	return s.artists.ListUnevaluatedIDs(ctx)
 }
 
+// MarkDirty sets dirty_since to the current UTC time for the given artist,
+// indicating its data has changed and rules must be re-evaluated.
+// Errors are logged at Warn level and do not fail the caller.
+func (s *Service) MarkDirty(ctx context.Context, id string) {
+	if err := s.artists.MarkDirty(ctx, id); err != nil {
+		slog.Warn("marking artist dirty", "artist_id", id, "error", err)
+	}
+}
+
+// MarkAllDirty sets dirty_since to the current UTC time for all non-excluded
+// artists, forcing a full re-evaluation on the next rule run.
+func (s *Service) MarkAllDirty(ctx context.Context) error {
+	return s.artists.MarkAllDirty(ctx)
+}
+
+// SetRulesEvaluatedAt records the current UTC time as rules_evaluated_at for
+// the given artist. Called by the rule pipeline after evaluating an artist.
+func (s *Service) SetRulesEvaluatedAt(ctx context.Context, id string) error {
+	return s.artists.SetRulesEvaluatedAt(ctx, id)
+}
+
+// ListDirtyIDs returns the IDs of non-excluded artists whose data has changed
+// since they were last evaluated.
+func (s *Service) ListDirtyIDs(ctx context.Context) ([]string, error) {
+	return s.artists.ListDirtyIDs(ctx)
+}
+
 // GetByID retrieves an artist by primary key, including provider IDs and image metadata.
 func (s *Service) GetByID(ctx context.Context, id string) (*Artist, error) {
 	a, err := s.artists.GetByID(ctx, id)
@@ -330,7 +357,11 @@ func (s *Service) Update(ctx context.Context, a *Artist) error {
 		}
 	}
 
-	return s.persistNormalized(ctx, a)
+	if err := s.persistNormalized(ctx, a); err != nil {
+		return err
+	}
+	s.MarkDirty(ctx, a.ID)
+	return nil
 }
 
 // persistNormalized writes provider IDs and image metadata to the normalized
@@ -416,10 +447,9 @@ func (s *Service) UpdateField(ctx context.Context, id, field, value string) erro
 		}
 	}
 
+	s.MarkDirty(ctx, id)
 	return nil
 }
-
-// ClearField sets a single metadata field to its zero value.
 //
 // When a HistoryService is attached, the old value is read before clearing
 // and a MetadataChange is recorded if the field was non-empty. History
@@ -460,6 +490,7 @@ func (s *Service) ClearField(ctx context.Context, id, field string) error {
 		}
 	}
 
+	s.MarkDirty(ctx, id)
 	return nil
 }
 

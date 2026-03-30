@@ -63,7 +63,88 @@ func (r *sqliteArtistRepo) ListUnevaluatedIDs(ctx context.Context) ([]string, er
 	return ids, nil
 }
 
-// HealthStats returns aggregate health metrics for non-excluded artists.
+// MarkDirty sets dirty_since to the current UTC time for the given artist.
+// This signals that the artist's data has changed and rules must be re-evaluated.
+func (r *sqliteArtistRepo) MarkDirty(ctx context.Context, id string) error {
+	now := time.Now().UTC().Format(time.RFC3339)
+	result, err := r.db.ExecContext(ctx,
+		`UPDATE artists SET dirty_since = ? WHERE id = ?`,
+		now, id)
+	if err != nil {
+		return fmt.Errorf("marking artist dirty: %w", err)
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("checking rows affected: %w", err)
+	}
+	if n == 0 {
+		return fmt.Errorf("%w: %s", ErrNotFound, id)
+	}
+	return nil
+}
+
+// MarkAllDirty sets dirty_since to the current UTC time for all non-excluded
+// artists, forcing a full re-evaluation on the next rule run.
+func (r *sqliteArtistRepo) MarkAllDirty(ctx context.Context) error {
+	now := time.Now().UTC().Format(time.RFC3339)
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE artists SET dirty_since = ? WHERE is_excluded = 0`,
+		now)
+	if err != nil {
+		return fmt.Errorf("marking all artists dirty: %w", err)
+	}
+	return nil
+}
+
+// SetRulesEvaluatedAt records the current UTC time as rules_evaluated_at for
+// the given artist, marking it clean until its data changes again.
+func (r *sqliteArtistRepo) SetRulesEvaluatedAt(ctx context.Context, id string) error {
+	now := time.Now().UTC().Format(time.RFC3339)
+	result, err := r.db.ExecContext(ctx,
+		`UPDATE artists SET rules_evaluated_at = ? WHERE id = ?`,
+		now, id)
+	if err != nil {
+		return fmt.Errorf("setting rules_evaluated_at: %w", err)
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("checking rows affected: %w", err)
+	}
+	if n == 0 {
+		return fmt.Errorf("%w: %s", ErrNotFound, id)
+	}
+	return nil
+}
+
+// ListDirtyIDs returns the IDs of non-excluded artists that need rule
+// re-evaluation: those that have never been evaluated (rules_evaluated_at IS
+// NULL) or whose data changed after the last evaluation (dirty_since >
+// rules_evaluated_at).
+func (r *sqliteArtistRepo) ListDirtyIDs(ctx context.Context) ([]string, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id FROM artists
+		WHERE is_excluded = 0
+		  AND (rules_evaluated_at IS NULL OR (dirty_since IS NOT NULL AND dirty_since > rules_evaluated_at))
+		ORDER BY name`)
+	if err != nil {
+		return nil, fmt.Errorf("querying dirty artists: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck
+
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scanning dirty artist id: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating dirty artists: %w", err)
+	}
+	return ids, nil
+}
+
 // When libraryID is non-empty, only artists in that library are included.
 // This runs a single indexed SQL query with LEFT JOINs instead of loading
 // every artist into memory.

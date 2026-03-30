@@ -34,6 +34,23 @@ type Repository interface {
 	// ListUnevaluatedIDs returns IDs of non-excluded artists that have never been evaluated
 	// (health_evaluated_at IS NULL).
 	ListUnevaluatedIDs(ctx context.Context) ([]string, error)
+
+	// MarkDirty sets dirty_since to the current UTC time for the given artist,
+	// indicating that its data has changed and rules must be re-evaluated.
+	MarkDirty(ctx context.Context, id string) error
+
+	// MarkAllDirty sets dirty_since to the current UTC time for all non-excluded
+	// artists, forcing a full re-evaluation on the next rule run.
+	MarkAllDirty(ctx context.Context) error
+
+	// SetRulesEvaluatedAt records the current UTC time as rules_evaluated_at for
+	// the given artist, marking it clean until its data changes again.
+	SetRulesEvaluatedAt(ctx context.Context, id string) error
+
+	// ListDirtyIDs returns the IDs of non-excluded artists whose data has changed
+	// since they were last evaluated (dirty_since > rules_evaluated_at OR
+	// rules_evaluated_at IS NULL).
+	ListDirtyIDs(ctx context.Context) ([]string, error)
 }
 
 // ProviderIDRepository handles provider-specific ID lookups and persistence.

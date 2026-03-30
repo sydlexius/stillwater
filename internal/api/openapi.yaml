@@ -306,6 +306,13 @@ components:
           enum: [idle, running, completed, failed]
         artists_processed:
           type: integer
+          description: Number of artists evaluated during this run
+        artists_skipped:
+          type: integer
+          description: Number of artists skipped because they were unchanged since last evaluation (dirty-tracking runs only)
+        artists_total:
+          type: integer
+          description: Total number of non-excluded artists in the library
         violations_found:
           type: integer
           description: Total number of violations detected during evaluation
@@ -2927,9 +2934,20 @@ paths:
       tags: [Rules]
       summary: Run all enabled rules (async)
       description: >
-        Starts an asynchronous run of all enabled rules against all artists.
+        Starts an asynchronous run of all enabled rules. By default only
+        artists whose data has changed since their last evaluation (dirty
+        artists) are re-evaluated, making subsequent runs near-instant when
+        few artists have changed. Pass ?force=true to re-evaluate every
+        non-excluded artist regardless of dirty status.
         Returns 202 immediately; poll GET /rules/run-all/status for completion status.
       operationId: runAllRules
+      parameters:
+        - in: query
+          name: force
+          schema:
+            type: boolean
+            default: false
+          description: When true, re-evaluate all artists regardless of dirty status
       responses:
         "202":
           description: Run started
