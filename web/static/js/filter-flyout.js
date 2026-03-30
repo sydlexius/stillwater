@@ -11,18 +11,6 @@
 (function () {
   'use strict';
 
-  // Read the base path from the meta tag for sub-path deployments.
-  var bpEl = document.querySelector('meta[name="htmx-base-path"]');
-  var bp = bpEl ? bpEl.content : '';
-
-  // csrfToken reads the CSRF token from the csrf_token cookie.
-  function csrfToken() {
-    return document.cookie.replace(
-      /(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/,
-      '$1'
-    );
-  }
-
   // getPanel returns the panel element by id.
   function getPanel(id) {
     return document.getElementById(id);
@@ -139,7 +127,7 @@
 
     var items = panel.querySelectorAll('[data-filter-state]');
     var count = 0;
-    items.forEach(function (item) {
+    Array.prototype.forEach.call(items, function (item) {
       var s = item.getAttribute('data-filter-state');
       if (s === 'include' || s === 'exclude') count++;
     });
@@ -159,7 +147,7 @@
 
     var params = {};
     var items = panel.querySelectorAll('[data-filter-key][data-filter-value][data-filter-state]');
-    items.forEach(function (item) {
+    Array.prototype.forEach.call(items, function (item) {
       var state = item.getAttribute('data-filter-state');
       if (state === 'neutral') return;
       var key = item.getAttribute('data-filter-key');
@@ -181,15 +169,16 @@
     var url = new URL(window.location.href);
 
     // Remove all existing filter params managed by this flyout (they carry
-    // the data-filter-key values).
-    var panel2 = getPanel(id);
-    var allKeys = new Set();
-    if (panel2) {
-      panel2.querySelectorAll('[data-filter-key]').forEach(function (el) {
-        allKeys.add(el.getAttribute('data-filter-key'));
-      });
-    }
-    allKeys.forEach(function (k) { url.searchParams.delete(k); });
+    // the data-filter-key values). Use a plain object instead of Set for ES5
+    // compatibility.
+    var allKeys = {};
+    Array.prototype.forEach.call(
+      panel.querySelectorAll('[data-filter-key]'),
+      function (el) {
+        allKeys[el.getAttribute('data-filter-key')] = true;
+      }
+    );
+    Object.keys(allKeys).forEach(function (k) { url.searchParams.delete(k); });
 
     // Write new params.
     Object.keys(params).forEach(function (key) {
@@ -216,22 +205,28 @@
     var panel = getPanel(id);
     if (!panel) return;
 
-    panel.querySelectorAll('[data-filter-state]').forEach(function (item) {
-      var label = item.querySelector('.sw-filter-item-label');
-      var labelText = label ? label.textContent.trim() : '';
-      var icon = item.querySelector('.sw-filter-item-icon');
-      item.setAttribute('data-filter-state', 'neutral');
-      item.setAttribute('aria-label', ariaLabel('neutral', labelText));
-      if (icon) icon.textContent = '';
-    });
+    Array.prototype.forEach.call(
+      panel.querySelectorAll('[data-filter-state]'),
+      function (item) {
+        var label = item.querySelector('.sw-filter-item-label');
+        var labelText = label ? label.textContent.trim() : '';
+        var icon = item.querySelector('.sw-filter-item-icon');
+        item.setAttribute('data-filter-state', 'neutral');
+        item.setAttribute('aria-label', ariaLabel('neutral', labelText));
+        if (icon) icon.textContent = '';
+      }
+    );
 
     refreshActiveCount(id);
 
     // Remove filter params from the URL.
     var url = new URL(window.location.href);
-    panel.querySelectorAll('[data-filter-key]').forEach(function (el) {
-      url.searchParams.delete(el.getAttribute('data-filter-key'));
-    });
+    Array.prototype.forEach.call(
+      panel.querySelectorAll('[data-filter-key]'),
+      function (el) {
+        url.searchParams.delete(el.getAttribute('data-filter-key'));
+      }
+    );
     history.pushState(null, '', url.toString());
 
     // Trigger HTMX reload so the cleared state is reflected.
@@ -253,34 +248,67 @@
     if (!panel) return;
 
     var url = new URL(window.location.href);
-    panel.querySelectorAll('[data-filter-key][data-filter-value]').forEach(function (item) {
-      var key = item.getAttribute('data-filter-key');
-      var value = item.getAttribute('data-filter-value');
-      var label = item.querySelector('.sw-filter-item-label');
-      var labelText = label ? label.textContent.trim() : '';
-      var icon = item.querySelector('.sw-filter-item-icon');
+    Array.prototype.forEach.call(
+      panel.querySelectorAll('[data-filter-key][data-filter-value]'),
+      function (item) {
+        var key = item.getAttribute('data-filter-key');
+        var value = item.getAttribute('data-filter-value');
+        var label = item.querySelector('.sw-filter-item-label');
+        var labelText = label ? label.textContent.trim() : '';
+        var icon = item.querySelector('.sw-filter-item-icon');
 
-      var state = 'neutral';
-      var vals = url.searchParams.getAll(key);
-      if (vals.indexOf('+' + value) !== -1) {
-        state = 'include';
-      } else if (vals.indexOf('-' + value) !== -1) {
-        state = 'exclude';
+        var state = 'neutral';
+        var vals = url.searchParams.getAll(key);
+        if (vals.indexOf('+' + value) !== -1) {
+          state = 'include';
+        } else if (vals.indexOf('-' + value) !== -1) {
+          state = 'exclude';
+        }
+
+        item.setAttribute('data-filter-state', state);
+        item.setAttribute('aria-label', ariaLabel(state, labelText));
+        if (icon) icon.textContent = iconChar(state);
       }
-
-      item.setAttribute('data-filter-state', state);
-      item.setAttribute('aria-label', ariaLabel(state, labelText));
-      if (icon) icon.textContent = iconChar(state);
-    });
+    );
 
     refreshActiveCount(id);
   }
 
-  // Keyboard trap: Escape closes the open flyout.
+  // Keyboard handling: Escape closes the open flyout; Tab/Shift+Tab traps
+  // focus inside the open flyout panel.
   document.addEventListener('keydown', function (e) {
-    if (e.key !== 'Escape') return;
     var openPanel = document.querySelector('.sw-filter-flyout.sw-filter-flyout--open');
-    if (openPanel) close(openPanel.id);
+
+    if (e.key === 'Escape') {
+      if (openPanel) close(openPanel.id);
+      return;
+    }
+
+    // Focus trap: when the flyout is open, Tab/Shift+Tab cycle only within
+    // the panel's focusable elements.
+    if (openPanel && e.key === 'Tab') {
+      var focusableNodes = openPanel.querySelectorAll(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), ' +
+        'textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      );
+      var focusable = Array.prototype.slice.call(focusableNodes).filter(function (el) {
+        return el.offsetParent !== null;
+      });
+      if (focusable.length === 0) return;
+      var first = focusable[0];
+      var last = focusable[focusable.length - 1];
+      if (e.shiftKey) {
+        if (document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else {
+        if (document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    }
   });
 
   // Expose public API.

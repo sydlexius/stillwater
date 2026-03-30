@@ -1260,8 +1260,13 @@ func (r *Router) handle404(w http.ResponseWriter, req *http.Request) {
 // ServeError500 renders the custom 500 error page. Other handlers can call
 // this helper instead of http.Error when an unexpected internal error occurs
 // and the request was a browser navigation (not a JSON API call).
+// JSON API clients (Accept: application/json or /api/ path prefix) and HTMX
+// partial requests (HX-Request: true) receive a JSON error body.
 func (r *Router) ServeError500(w http.ResponseWriter, req *http.Request) {
-	if strings.Contains(req.Header.Get("Accept"), "application/json") {
+	isJSON := strings.Contains(req.Header.Get("Accept"), "application/json")
+	isHTMX := req.Header.Get("HX-Request") == "true"
+	isAPI := strings.HasPrefix(req.URL.Path, r.basePath+"/api/")
+	if isJSON || isHTMX || isAPI {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal server error"})
 		return
 	}

@@ -38,12 +38,10 @@ func (r *Router) handleFilesystemBrowse(w http.ResponseWriter, req *http.Request
 		return
 	}
 
-	// Normalise the path and reject any remaining ".." segments as a defense-in-depth check.
+	// Normalise the path. After filepath.Clean all ".." sequences are resolved
+	// into the canonical path; no further traversal check is needed here.
+	// filepath.EvalSymlinks below provides the authoritative absolute-path check.
 	cleaned := filepath.Clean(rawPath)
-	if strings.Contains(cleaned, "..") {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "path must not contain traversal segments"})
-		return
-	}
 
 	// Resolve symlinks and verify the resolved path is still absolute.
 	resolved, err := filepath.EvalSymlinks(cleaned)

@@ -14,6 +14,7 @@ templ PathPickerModal() {
 		role="dialog"
 		aria-modal="true"
 		aria-labelledby="path-picker-title"
+		tabindex="-1"
 	>
 		<div
 			class="fixed inset-0 bg-black/50 transition-opacity"
@@ -80,8 +81,12 @@ templ PathPickerModal() {
 	(function() {
 		// _ppTargetInputId is the id of the <input> that will receive the chosen path.
 		var _ppTargetInputId = null;
-		// _ppCurrentPath is the path currently shown in the modal.
+		// _ppCurrentPath is the path currently shown in the modal (set only after a
+		// successful fetch, not optimistically).
 		var _ppCurrentPath = '/';
+		// _ppOpener is the element that had focus when the modal was opened; focus is
+		// restored to it on close or confirm.
+		var _ppOpener = null;
 
 		// openPathPicker opens the modal and loads the given initial path.
 		// inputId: the id of the <input> element to populate on confirm.
@@ -89,6 +94,7 @@ templ PathPickerModal() {
 		window.openPathPicker = function(inputId, initialPath) {
 			_ppTargetInputId = inputId;
 			_ppCurrentPath = (initialPath && initialPath.trim()) ? initialPath.trim() : '/';
+			_ppOpener = document.activeElement;
 			var modal = document.getElementById('path-picker-modal');
 			if (modal) {
 				modal.classList.remove('hidden');
@@ -103,6 +109,8 @@ templ PathPickerModal() {
 			if (modal) modal.classList.add('hidden');
 			_ppTargetInputId = null;
 			_ppCurrentPath = '/';
+			if (_ppOpener && typeof _ppOpener.focus === 'function') _ppOpener.focus();
+			_ppOpener = null;
 		};
 
 		// confirmPathPicker populates the target input with the current path and closes.
@@ -116,10 +124,18 @@ templ PathPickerModal() {
 					input.dispatchEvent(new Event('change', { bubbles: true }));
 				}
 			}
-			closePathPicker();
+			var opener = _ppOpener;
+			var modal = document.getElementById('path-picker-modal');
+			if (modal) modal.classList.add('hidden');
+			_ppTargetInputId = null;
+			_ppCurrentPath = '/';
+			_ppOpener = null;
+			if (opener && typeof opener.focus === 'function') opener.focus();
 		};
 
 		// ppLoadPath fetches directory entries for the given path and updates the modal.
+		// _ppCurrentPath is only updated after a successful response to avoid using
+		// an optimistic path if the fetch fails.
 		function ppLoadPath(path) {
 			ppSetError('');
 			ppSetLoadingState();
@@ -141,6 +157,7 @@ templ PathPickerModal() {
 					return resp.json();
 				})
 				.then(function(data) {
+					// Update current path only on success.
 					_ppCurrentPath = data.path;
 					ppRenderBreadcrumb(data.path);
 					ppRenderListing(data.path, data.entries);
@@ -210,7 +227,6 @@ templ PathPickerModal() {
 			}
 
 			var list = document.createElement('ul');
-			list.setAttribute('role', 'listbox');
 			list.setAttribute('aria-label', 'Subdirectories');
 			list.className = 'space-y-0.5';
 
@@ -222,7 +238,6 @@ templ PathPickerModal() {
 
 					var btn = document.createElement('button');
 					btn.type = 'button';
-					btn.setAttribute('role', 'option');
 					btn.className = 'w-full flex items-center gap-2 px-3 py-1.5 rounded text-sm text-left text-gray-800 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-blue-900/30 hover:text-blue-700 dark:hover:text-blue-300 transition-colors group';
 					btn.addEventListener('click', function() { ppLoadPath(fullPath); });
 

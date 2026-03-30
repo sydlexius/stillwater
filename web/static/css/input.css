@@ -1235,8 +1235,12 @@ input:-webkit-autofill:focus {
 /* include state: blue */
 .sw-filter-item[data-filter-state="include"] {
   background: rgba(59, 130, 246, 0.15);
-  color: #93c5fd;
+  color: #1d4ed8; /* blue-700 for light mode */
   border-color: rgba(59, 130, 246, 0.35);
+}
+
+:where(.dark, .dark *) .sw-filter-item[data-filter-state="include"] {
+  color: #93c5fd; /* blue-300 for dark mode */
 }
 
 .sw-filter-item[data-filter-state="include"]:hover {
@@ -1246,8 +1250,12 @@ input:-webkit-autofill:focus {
 /* exclude state: red */
 .sw-filter-item[data-filter-state="exclude"] {
   background: rgba(239, 68, 68, 0.12);
-  color: #fca5a5;
+  color: #b91c1c; /* red-700 for light mode */
   border-color: rgba(239, 68, 68, 0.3);
+}
+
+:where(.dark, .dark *) .sw-filter-item[data-filter-state="exclude"] {
+  color: #fca5a5; /* red-300 for dark mode */
 }
 
 .sw-filter-item[data-filter-state="exclude"]:hover {

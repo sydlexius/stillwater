@@ -186,7 +186,7 @@ func ContextMenu(id string, compact bool) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "\" class=\"ctx-bottom-sheet\" role=\"menu\" aria-modal=\"true\" aria-label=\"Actions\"><!-- Scrim -->")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "\" class=\"ctx-bottom-sheet\" role=\"menu\" aria-modal=\"true\" aria-label=\"Actions\" aria-hidden=\"true\" inert><!-- Scrim -->")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -319,7 +319,7 @@ func contextMenuItems(items []ContextMenuItemData) templ.Component {
 			}
 		}
 		for i, item := range items {
-			if item.Destructive && i == firstDestructiveIndex(items) {
+			if item.Destructive && i == firstDestructiveIndex(items) && i > 0 {
 				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "<div class=\"context-menu-divider\"></div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
@@ -412,7 +412,7 @@ func contextMenuItem(item ContextMenuItemData) templ.Component {
 			var templ_7745c5c3_Var17 string
 			templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(item.HXPost)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/context_menu.templ`, Line: 169, Col: 24}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/context_menu.templ`, Line: 172, Col: 24}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 			if templ_7745c5c3_Err != nil {
@@ -430,7 +430,7 @@ func contextMenuItem(item ContextMenuItemData) templ.Component {
 				var templ_7745c5c3_Var18 string
 				templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(item.HXTarget)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/context_menu.templ`, Line: 171, Col: 29}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/context_menu.templ`, Line: 174, Col: 29}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
 				if templ_7745c5c3_Err != nil {
@@ -449,7 +449,7 @@ func contextMenuItem(item ContextMenuItemData) templ.Component {
 				var templ_7745c5c3_Var19 string
 				templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(item.HXConfirm)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/context_menu.templ`, Line: 174, Col: 31}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/context_menu.templ`, Line: 177, Col: 31}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 				if templ_7745c5c3_Err != nil {
@@ -482,7 +482,7 @@ func contextMenuItem(item ContextMenuItemData) templ.Component {
 		var templ_7745c5c3_Var20 string
 		templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(item.Label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/context_menu.templ`, Line: 183, Col: 14}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/context_menu.templ`, Line: 186, Col: 14}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
 		if templ_7745c5c3_Err != nil {
@@ -502,25 +502,33 @@ func contextMenuItem(item ContextMenuItemData) templ.Component {
 // On mobile (< 768px) the bottom sheet is shown instead of the dropdown.
 func ToggleContextMenu(id string) templ.ComponentScript {
 	return templ.ComponentScript{
-		Name: `__templ_ToggleContextMenu_08e2`,
-		Function: `function __templ_ToggleContextMenu_08e2(id){var panel = document.getElementById('ctx-panel-' + id);
+		Name: `__templ_ToggleContextMenu_7590`,
+		Function: `function __templ_ToggleContextMenu_7590(id){var panel = document.getElementById('ctx-panel-' + id);
 	var sheet = document.getElementById('ctx-sheet-' + id);
 	var trigger = document.querySelector('[data-context-menu="' + id + '"] > button');
 	if (!panel) return;
 
 	var isMobile = window.innerWidth < 768;
-	var isOpen = !panel.classList.contains('hidden');
+	var isOpen = isMobile
+		? (sheet ? sheet.classList.contains('ctx-sheet-open') : false)
+		: !panel.classList.contains('hidden');
 
 	// Close all other open menus first.
 	document.querySelectorAll('[data-context-menu] [role="menu"]:not(.hidden):not(.ctx-bottom-sheet), .ctx-bottom-sheet.ctx-sheet-open').forEach(function(p) {
 		if (p.classList.contains('ctx-bottom-sheet')) {
 			p.classList.remove('ctx-sheet-open');
+			p.setAttribute('aria-hidden', 'true');
+			p.setAttribute('inert', '');
 			document.body.classList.remove('ctx-sheet-body-lock');
 		} else {
 			p.classList.add('hidden');
 		}
-		var prev = p.previousElementSibling;
-		if (prev && prev.tagName === 'BUTTON') prev.setAttribute('aria-expanded', 'false');
+		// Find the trigger button via the parent container, not previousElementSibling.
+		var parent = p.parentElement;
+		if (parent) {
+			var btn = parent.querySelector(':scope > button[aria-expanded]');
+			if (btn) btn.setAttribute('aria-expanded', 'false');
+		}
 	});
 
 	if (!isOpen) {
@@ -528,6 +536,8 @@ func ToggleContextMenu(id string) templ.ComponentScript {
 			// Store trigger ref so focus can return on close.
 			sheet._trigger = trigger;
 			sheet.classList.add('ctx-sheet-open');
+			sheet.setAttribute('aria-hidden', 'false');
+			sheet.removeAttribute('inert');
 			document.body.classList.add('ctx-sheet-body-lock');
 			if (trigger) trigger.setAttribute('aria-expanded', 'true');
 			// Focus first item in the sheet for keyboard users.
@@ -544,8 +554,8 @@ func ToggleContextMenu(id string) templ.ComponentScript {
 		}
 	}
 }`,
-		Call:       templ.SafeScript(`__templ_ToggleContextMenu_08e2`, id),
-		CallInline: templ.SafeScriptInline(`__templ_ToggleContextMenu_08e2`, id),
+		Call:       templ.SafeScript(`__templ_ToggleContextMenu_7590`, id),
+		CallInline: templ.SafeScriptInline(`__templ_ToggleContextMenu_7590`, id),
 	}
 }
 
@@ -553,11 +563,13 @@ func ToggleContextMenu(id string) templ.ComponentScript {
 // to the trigger element.
 func CloseContextMenu(id string) templ.ComponentScript {
 	return templ.ComponentScript{
-		Name: `__templ_CloseContextMenu_e5c3`,
-		Function: `function __templ_CloseContextMenu_e5c3(id){var sheet = document.getElementById('ctx-sheet-' + id);
+		Name: `__templ_CloseContextMenu_ce51`,
+		Function: `function __templ_CloseContextMenu_ce51(id){var sheet = document.getElementById('ctx-sheet-' + id);
 	var trigger = document.querySelector('[data-context-menu="' + id + '"] > button');
 	if (sheet) {
 		sheet.classList.remove('ctx-sheet-open');
+		sheet.setAttribute('aria-hidden', 'true');
+		sheet.setAttribute('inert', '');
 		document.body.classList.remove('ctx-sheet-body-lock');
 	}
 	if (trigger) {
@@ -565,8 +577,8 @@ func CloseContextMenu(id string) templ.ComponentScript {
 		trigger.focus();
 	}
 }`,
-		Call:       templ.SafeScript(`__templ_CloseContextMenu_e5c3`, id),
-		CallInline: templ.SafeScriptInline(`__templ_CloseContextMenu_e5c3`, id),
+		Call:       templ.SafeScript(`__templ_CloseContextMenu_ce51`, id),
+		CallInline: templ.SafeScriptInline(`__templ_CloseContextMenu_ce51`, id),
 	}
 }
 
@@ -594,7 +606,7 @@ func ContextMenuGlobalJS() templ.Component {
 			templ_7745c5c3_Var21 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "<script>\n\t\t(function() {\n\t\t\tfunction closeAllContextMenus() {\n\t\t\t\tdocument.querySelectorAll('[data-context-menu] [role=\"menu\"]:not(.hidden)').forEach(function(p) {\n\t\t\t\t\tif (p.classList.contains('ctx-bottom-sheet')) {\n\t\t\t\t\t\tp.classList.remove('ctx-sheet-open');\n\t\t\t\t\t\tdocument.body.classList.remove('ctx-sheet-body-lock');\n\t\t\t\t\t} else {\n\t\t\t\t\t\tp.classList.add('hidden');\n\t\t\t\t\t}\n\t\t\t\t\t// Walk up to find the trigger button sibling.\n\t\t\t\t\tvar parent = p.parentElement;\n\t\t\t\t\tif (parent) {\n\t\t\t\t\t\tvar btn = parent.querySelector(':scope > button[aria-expanded]');\n\t\t\t\t\t\tif (btn) btn.setAttribute('aria-expanded', 'false');\n\t\t\t\t\t}\n\t\t\t\t});\n\t\t\t}\n\n\t\t\tdocument.addEventListener('click', function(e) {\n\t\t\t\tvar menu = e.target.closest('[data-context-menu]');\n\t\t\t\tif (!menu) {\n\t\t\t\t\tcloseAllContextMenus();\n\t\t\t\t}\n\t\t\t});\n\n\t\t\tdocument.addEventListener('keydown', function(e) {\n\t\t\t\tif (e.key === 'Escape') {\n\t\t\t\t\t// Return focus to the trigger of any open bottom sheet.\n\t\t\t\t\tdocument.querySelectorAll('.ctx-bottom-sheet.ctx-sheet-open').forEach(function(sheet) {\n\t\t\t\t\t\tvar t = sheet._trigger;\n\t\t\t\t\t\tsheet.classList.remove('ctx-sheet-open');\n\t\t\t\t\t\tdocument.body.classList.remove('ctx-sheet-body-lock');\n\t\t\t\t\t\tvar parent = sheet.parentElement;\n\t\t\t\t\t\tif (parent) {\n\t\t\t\t\t\t\tvar btn = parent.querySelector(':scope > button[aria-expanded]');\n\t\t\t\t\t\t\tif (btn) btn.setAttribute('aria-expanded', 'false');\n\t\t\t\t\t\t}\n\t\t\t\t\t\tif (t) t.focus();\n\t\t\t\t\t});\n\t\t\t\t\tcloseAllContextMenus();\n\t\t\t\t}\n\n\t\t\t\t// Focus trap for open bottom sheets: Tab and Shift+Tab cycle inside.\n\t\t\t\tvar openSheet = document.querySelector('.ctx-bottom-sheet.ctx-sheet-open');\n\t\t\t\tif (openSheet && e.key === 'Tab') {\n\t\t\t\t\tvar focusable = Array.prototype.slice.call(\n\t\t\t\t\t\topenSheet.querySelectorAll('button:not([disabled]), [tabindex=\"0\"]')\n\t\t\t\t\t).filter(function(el) { return el.offsetParent !== null; });\n\t\t\t\t\tif (focusable.length === 0) return;\n\t\t\t\t\tvar first = focusable[0];\n\t\t\t\t\tvar last = focusable[focusable.length - 1];\n\t\t\t\t\tif (e.shiftKey) {\n\t\t\t\t\t\tif (document.activeElement === first) {\n\t\t\t\t\t\t\te.preventDefault();\n\t\t\t\t\t\t\tlast.focus();\n\t\t\t\t\t\t}\n\t\t\t\t\t} else {\n\t\t\t\t\t\tif (document.activeElement === last) {\n\t\t\t\t\t\t\te.preventDefault();\n\t\t\t\t\t\t\tfirst.focus();\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t});\n\n\t\t\t// Close menus when an HTMX request starts from inside a menu.\n\t\t\tdocument.body.addEventListener('htmx:beforeRequest', function(e) {\n\t\t\t\tif (e.detail.elt.closest('[data-context-menu]')) {\n\t\t\t\t\tcloseAllContextMenus();\n\t\t\t\t}\n\t\t\t});\n\t\t})();\n\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "<script>\n\t\t(function() {\n\t\t\tfunction closeAllContextMenus() {\n\t\t\t\tdocument.querySelectorAll('[data-context-menu] [role=\"menu\"]:not(.hidden), .ctx-bottom-sheet.ctx-sheet-open').forEach(function(p) {\n\t\t\t\t\tif (p.classList.contains('ctx-bottom-sheet')) {\n\t\t\t\t\t\tp.classList.remove('ctx-sheet-open');\n\t\t\t\t\t\tp.setAttribute('aria-hidden', 'true');\n\t\t\t\t\t\tp.setAttribute('inert', '');\n\t\t\t\t\t\tdocument.body.classList.remove('ctx-sheet-body-lock');\n\t\t\t\t\t} else {\n\t\t\t\t\t\tp.classList.add('hidden');\n\t\t\t\t\t}\n\t\t\t\t\t// Walk up to find the trigger button sibling.\n\t\t\t\t\tvar parent = p.parentElement;\n\t\t\t\t\tif (parent) {\n\t\t\t\t\t\tvar btn = parent.querySelector(':scope > button[aria-expanded]');\n\t\t\t\t\t\tif (btn) btn.setAttribute('aria-expanded', 'false');\n\t\t\t\t\t}\n\t\t\t\t});\n\t\t\t}\n\n\t\t\tdocument.addEventListener('click', function(e) {\n\t\t\t\tvar menu = e.target.closest('[data-context-menu]');\n\t\t\t\tif (!menu) {\n\t\t\t\t\tcloseAllContextMenus();\n\t\t\t\t}\n\t\t\t});\n\n\t\t\tdocument.addEventListener('keydown', function(e) {\n\t\t\t\tif (e.key === 'Escape') {\n\t\t\t\t\t// Return focus to the trigger of any open bottom sheet.\n\t\t\t\t\tdocument.querySelectorAll('.ctx-bottom-sheet.ctx-sheet-open').forEach(function(sheet) {\n\t\t\t\t\t\tvar t = sheet._trigger;\n\t\t\t\t\t\tsheet.classList.remove('ctx-sheet-open');\n\t\t\t\t\t\tsheet.setAttribute('aria-hidden', 'true');\n\t\t\t\t\t\tsheet.setAttribute('inert', '');\n\t\t\t\t\t\tdocument.body.classList.remove('ctx-sheet-body-lock');\n\t\t\t\t\t\tvar parent = sheet.parentElement;\n\t\t\t\t\t\tif (parent) {\n\t\t\t\t\t\t\tvar btn = parent.querySelector(':scope > button[aria-expanded]');\n\t\t\t\t\t\t\tif (btn) btn.setAttribute('aria-expanded', 'false');\n\t\t\t\t\t\t}\n\t\t\t\t\t\tif (t) t.focus();\n\t\t\t\t\t});\n\t\t\t\t\tcloseAllContextMenus();\n\t\t\t\t}\n\n\t\t\t\t// Focus trap for open bottom sheets: Tab and Shift+Tab cycle inside.\n\t\t\t\tvar openSheet = document.querySelector('.ctx-bottom-sheet.ctx-sheet-open');\n\t\t\t\tif (openSheet && e.key === 'Tab') {\n\t\t\t\t\tvar focusable = Array.prototype.slice.call(\n\t\t\t\t\t\topenSheet.querySelectorAll('button:not([disabled]), [tabindex=\"0\"]')\n\t\t\t\t\t).filter(function(el) { return el.offsetParent !== null; });\n\t\t\t\t\tif (focusable.length === 0) return;\n\t\t\t\t\tvar first = focusable[0];\n\t\t\t\t\tvar last = focusable[focusable.length - 1];\n\t\t\t\t\tif (e.shiftKey) {\n\t\t\t\t\t\tif (document.activeElement === first) {\n\t\t\t\t\t\t\te.preventDefault();\n\t\t\t\t\t\t\tlast.focus();\n\t\t\t\t\t\t}\n\t\t\t\t\t} else {\n\t\t\t\t\t\tif (document.activeElement === last) {\n\t\t\t\t\t\t\te.preventDefault();\n\t\t\t\t\t\t\tfirst.focus();\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t});\n\n\t\t\t// Close menus when an HTMX request starts from inside a menu.\n\t\t\tdocument.body.addEventListener('htmx:beforeRequest', function(e) {\n\t\t\t\tif (e.detail.elt.closest('[data-context-menu]')) {\n\t\t\t\t\tcloseAllContextMenus();\n\t\t\t\t}\n\t\t\t});\n\t\t})();\n\t</script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

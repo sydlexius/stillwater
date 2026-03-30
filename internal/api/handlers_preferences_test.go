@@ -346,6 +346,23 @@ func TestUpdatePreference_SuppressConfirmAcceptsTrueAndFalse(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("PUT false expected 200, got %d: %s", w.Code, w.Body.String())
 	}
+
+	// Verify the stored value is now "false".
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/preferences/suppress_confirm_delete_artist", nil)
+	req.SetPathValue("key", "suppress_confirm_delete_artist")
+	req = withUserCtx(req, userID)
+	w = httptest.NewRecorder()
+	r.handleGetPreference(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET after PUT false: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var getResp map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&getResp); err != nil {
+		t.Fatalf("decoding GET response: %v", err)
+	}
+	if getResp["value"] != "false" {
+		t.Errorf("expected value=false after unsuppress, got %q", getResp["value"])
+	}
 }
 
 func TestUpdatePreference_SuppressConfirmRejectsInvalidValue(t *testing.T) {

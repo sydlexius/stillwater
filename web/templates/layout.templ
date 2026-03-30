@@ -506,7 +506,9 @@ templ Layout(title string, assets AssetPaths) {
 					function trapFocus(e) {
 						var m = getModal();
 						var nodes = m.el.querySelectorAll(FOCUSABLE);
-						var focusable = Array.prototype.slice.call(nodes);
+						var focusable = Array.prototype.slice.call(nodes).filter(function(el) {
+							return !el.closest('[hidden]') && !el.closest('.hidden') && el.offsetParent !== null;
+						});
 						if (focusable.length === 0) return;
 						var first = focusable[0];
 						var last = focusable[focusable.length - 1];

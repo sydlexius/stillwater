@@ -35,8 +35,8 @@ type BottomSheetItemData struct {
 // cases where a bottom sheet is the primary interaction (e.g. triggered from a
 // dedicated "more" button).
 //
-// id must be unique on the page. The sheet is opened by calling
-// window.openBottomSheet('<id>') and closed by window.closeBottomSheet('<id>').
+// id must be unique on the page. The sheet is opened by calling the templ
+// script function OpenBottomSheet(id) and closed by CloseBottomSheet(id).
 //
 // Accessibility:
 //   - role="menu" and aria-modal="true" on the sheet panel.
@@ -111,7 +111,7 @@ func BottomSheet(id string, items []BottomSheetItemData) templ.Component {
 			}
 		}
 		for i, item := range items {
-			if item.Destructive && i == bsFirstDestructiveIndex(items) {
+			if item.Destructive && i == bsFirstDestructiveIndex(items) && i > 0 {
 				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<div class=\"context-menu-divider\"></div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err

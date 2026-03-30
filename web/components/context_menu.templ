@@ -80,6 +80,8 @@ templ ContextMenu(id string, compact bool) {
 			role="menu"
 			aria-modal="true"
 			aria-label="Actions"
+			aria-hidden="true"
+			inert
 		>
 			<!-- Scrim -->
 			<div
@@ -131,8 +133,9 @@ templ contextMenuItems(items []ContextMenuItemData) {
 		}
 	}
 	// Check if any destructive items exist; if so, render divider then them.
+	// Skip the divider when the very first item is destructive (nothing above it).
 	for i, item := range items {
-		if item.Destructive && i == firstDestructiveIndex(items) {
+		if item.Destructive && i == firstDestructiveIndex(items) && i > 0 {
 			<div class="context-menu-divider"></div>
 		}
 		if item.Destructive {
@@ -195,18 +198,26 @@ script ToggleContextMenu(id string) {
 	if (!panel) return;
 
 	var isMobile = window.innerWidth < 768;
-	var isOpen = !panel.classList.contains('hidden');
+	var isOpen = isMobile
+		? (sheet ? sheet.classList.contains('ctx-sheet-open') : false)
+		: !panel.classList.contains('hidden');
 
 	// Close all other open menus first.
 	document.querySelectorAll('[data-context-menu] [role="menu"]:not(.hidden):not(.ctx-bottom-sheet), .ctx-bottom-sheet.ctx-sheet-open').forEach(function(p) {
 		if (p.classList.contains('ctx-bottom-sheet')) {
 			p.classList.remove('ctx-sheet-open');
+			p.setAttribute('aria-hidden', 'true');
+			p.setAttribute('inert', '');
 			document.body.classList.remove('ctx-sheet-body-lock');
 		} else {
 			p.classList.add('hidden');
 		}
-		var prev = p.previousElementSibling;
-		if (prev && prev.tagName === 'BUTTON') prev.setAttribute('aria-expanded', 'false');
+		// Find the trigger button via the parent container, not previousElementSibling.
+		var parent = p.parentElement;
+		if (parent) {
+			var btn = parent.querySelector(':scope > button[aria-expanded]');
+			if (btn) btn.setAttribute('aria-expanded', 'false');
+		}
 	});
 
 	if (!isOpen) {
@@ -214,6 +225,8 @@ script ToggleContextMenu(id string) {
 			// Store trigger ref so focus can return on close.
 			sheet._trigger = trigger;
 			sheet.classList.add('ctx-sheet-open');
+			sheet.setAttribute('aria-hidden', 'false');
+			sheet.removeAttribute('inert');
 			document.body.classList.add('ctx-sheet-body-lock');
 			if (trigger) trigger.setAttribute('aria-expanded', 'true');
 			// Focus first item in the sheet for keyboard users.
@@ -238,6 +251,8 @@ script CloseContextMenu(id string) {
 	var trigger = document.querySelector('[data-context-menu="' + id + '"] > button');
 	if (sheet) {
 		sheet.classList.remove('ctx-sheet-open');
+		sheet.setAttribute('aria-hidden', 'true');
+		sheet.setAttribute('inert', '');
 		document.body.classList.remove('ctx-sheet-body-lock');
 	}
 	if (trigger) {
@@ -253,9 +268,11 @@ templ ContextMenuGlobalJS() {
 	<script>
 		(function() {
 			function closeAllContextMenus() {
-				document.querySelectorAll('[data-context-menu] [role="menu"]:not(.hidden)').forEach(function(p) {
+				document.querySelectorAll('[data-context-menu] [role="menu"]:not(.hidden), .ctx-bottom-sheet.ctx-sheet-open').forEach(function(p) {
 					if (p.classList.contains('ctx-bottom-sheet')) {
 						p.classList.remove('ctx-sheet-open');
+						p.setAttribute('aria-hidden', 'true');
+						p.setAttribute('inert', '');
 						document.body.classList.remove('ctx-sheet-body-lock');
 					} else {
 						p.classList.add('hidden');
@@ -282,6 +299,8 @@ templ ContextMenuGlobalJS() {
 					document.querySelectorAll('.ctx-bottom-sheet.ctx-sheet-open').forEach(function(sheet) {
 						var t = sheet._trigger;
 						sheet.classList.remove('ctx-sheet-open');
+						sheet.setAttribute('aria-hidden', 'true');
+						sheet.setAttribute('inert', '');
 						document.body.classList.remove('ctx-sheet-body-lock');
 						var parent = sheet.parentElement;
 						if (parent) {

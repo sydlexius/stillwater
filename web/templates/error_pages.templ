@@ -28,6 +28,8 @@ templ Error404Page(assets AssetPaths) {
 						id="report-404-btn"
 						type="button"
 						onclick="toggleIssuePreview('404')"
+						aria-controls="issue-preview"
+						aria-expanded="false"
 						class="inline-flex items-center justify-center gap-2 rounded-md border border-gray-300 dark:border-gray-600 px-4 py-2.5 text-sm font-medium hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
 					>
 						Report this issue
@@ -88,6 +90,8 @@ templ Error500Page(assets AssetPaths) {
 						id="report-500-btn"
 						type="button"
 						onclick="toggleIssuePreview('500')"
+						aria-controls="issue-preview"
+						aria-expanded="false"
 						class="inline-flex items-center justify-center gap-2 rounded-md border border-gray-300 dark:border-gray-600 px-4 py-2.5 text-sm font-medium hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
 					>
 						Report this issue
@@ -157,6 +161,7 @@ templ errorPageScript() {
 				var preview = document.getElementById('issue-preview');
 				var previewBody = document.getElementById('issue-preview-body');
 				var link = document.getElementById('issue-open-link');
+				var btn = document.getElementById('report-' + statusCode + '-btn');
 				if (!preview) return;
 
 				if (preview.classList.contains('hidden')) {
@@ -164,8 +169,10 @@ templ errorPageScript() {
 					if (previewBody) previewBody.textContent = body;
 					if (link) link.href = buildIssueURL(statusCode);
 					preview.classList.remove('hidden');
+					if (btn) btn.setAttribute('aria-expanded', 'true');
 				} else {
 					preview.classList.add('hidden');
+					if (btn) btn.setAttribute('aria-expanded', 'false');
 				}
 			};
 		})();
