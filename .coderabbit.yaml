@@ -6,13 +6,13 @@ tone_instructions: |
 reviews:
   auto_review:
     enabled: true
-    drafts: false
+    drafts: true
     auto_incremental_review: true
   path_filters:
     - "!**/*.csv"
     - "!**/*.env*"
   profile: assertive
-  request_changes_workflow: false
+  request_changes_workflow: true
   high_level_summary: true
   poem: false
   path_instructions:
