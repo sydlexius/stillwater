@@ -460,12 +460,26 @@ INSERT OR IGNORE INTO settings (key, value) VALUES ('auth.method', 'local');
 -- Multi-user mode. When false, the instance operates in single-admin mode.
 INSERT OR IGNORE INTO settings (key, value) VALUES ('multi_user.enabled', 'false');
 
+-- =============================================================================
+-- User preferences
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS user_preferences (
+    user_id    TEXT NOT NULL,
+    key        TEXT NOT NULL,
+    value      TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (user_id, key),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
 -- Default rule: extraneous images.
 INSERT OR IGNORE INTO rules (id, name, description, category, enabled, config, automation_mode, created_at, updated_at)
 VALUES ('extraneous_images', 'Extraneous image files', 'Detects non-canonical image files that may cause display issues on media servers', 'image', 1, '{"severity":"warning"}', 'manual', datetime('now'), datetime('now'));
 
 -- +goose Down
 -- Greenfield schema: full teardown.
+DROP TABLE IF EXISTS user_preferences;
 DROP TABLE IF EXISTS bulk_job_items;
 DROP TABLE IF EXISTS bulk_jobs;
 DROP TABLE IF EXISTS rule_violations;

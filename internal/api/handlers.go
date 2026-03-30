@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -47,6 +48,7 @@ func (r *Router) assets() templates.AssetPaths {
 		SortableJS: r.basePath + r.staticAssets.Path("/js/Sortable.min.js"),
 		HelpJS:     r.basePath + r.staticAssets.Path("/js/help.js"),
 		PollingJS:  r.basePath + r.staticAssets.Path("/js/polling.js"),
+		SessionJS:  r.basePath + r.staticAssets.Path("/js/session.js"),
 		LoginBG:    r.basePath + r.staticAssets.Path("/img/login-bg.jpg"),
 		BasePath:   r.basePath,
 	}
@@ -204,7 +206,14 @@ func (r *Router) completeLogin(w http.ResponseWriter, req *http.Request, provide
 	}
 
 	r.setSessionCookie(w, req, token)
-	w.Header().Set("HX-Redirect", r.basePath+"/")
+
+	// If the login form included a return URL (from session timeout redirect),
+	// send the user back to that page instead of the default root.
+	dest := r.basePath + "/"
+	if returnURL := validateReturnURL(req.FormValue("return_url")); returnURL != "" {
+		dest = r.basePath + returnURL
+	}
+	w.Header().Set("HX-Redirect", dest)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
@@ -279,7 +288,14 @@ func (r *Router) completeLoginRedirect(w http.ResponseWriter, req *http.Request,
 	}
 
 	r.setSessionCookie(w, req, token)
-	http.Redirect(w, req, r.basePath+"/", http.StatusFound)
+
+	// Honor a return URL passed via query parameter (OIDC state could carry
+	// this in a future enhancement; for now it defaults to root).
+	dest := r.basePath + "/"
+	if returnURL := validateReturnURL(req.FormValue("return_url")); returnURL != "" {
+		dest = r.basePath + returnURL
+	}
+	http.Redirect(w, req, dest, http.StatusFound)
 }
 
 // redirectWithError redirects the user to the login page with an error message
@@ -287,6 +303,48 @@ func (r *Router) completeLoginRedirect(w http.ResponseWriter, req *http.Request,
 // JSON responses are not appropriate.
 func (r *Router) redirectWithError(w http.ResponseWriter, req *http.Request, msg string) {
 	http.Redirect(w, req, r.basePath+"/?error="+url.QueryEscape(msg), http.StatusFound)
+}
+
+// validateReturnURL checks that a return URL is a safe relative path.
+// It rejects absolute URLs, protocol-relative URLs, and other open-redirect
+// vectors. Returns the validated path or empty string if the input is invalid.
+func validateReturnURL(rawURL string) string {
+	if rawURL == "" {
+		return ""
+	}
+
+	// Strip backslashes to prevent bypass via "\" which some browsers
+	// normalize to "/", turning "\evil.com" into "//evil.com".
+	cleaned := strings.ReplaceAll(rawURL, "\\", "")
+	if cleaned == "" {
+		slog.Debug("rejected return URL: empty after backslash strip", "raw", rawURL) //nolint:gosec // G706: debug audit log; slog escapes values in structured output
+		return ""
+	}
+
+	// Must start with a single forward slash (relative path).
+	if !strings.HasPrefix(cleaned, "/") {
+		slog.Debug("rejected return URL: no leading slash", "raw", rawURL) //nolint:gosec // G706: debug audit log
+		return ""
+	}
+
+	// Reject protocol-relative URLs ("//evil.com").
+	if strings.HasPrefix(cleaned, "//") {
+		slog.Debug("rejected return URL: protocol-relative", "raw", rawURL) //nolint:gosec // G706: debug audit log
+		return ""
+	}
+
+	// Reject any URL with a scheme (e.g. "javascript:", "data:", "http:").
+	parsed, err := url.Parse(cleaned)
+	if err != nil {
+		slog.Debug("rejected return URL: parse error", "raw", rawURL, "error", err) //nolint:gosec // G706: debug audit log
+		return ""
+	}
+	if parsed.Scheme != "" || parsed.Host != "" {
+		slog.Debug("rejected return URL: has scheme or host", "raw", rawURL) //nolint:gosec // G706: debug audit log
+		return ""
+	}
+
+	return cleaned
 }
 
 // handleLoginLocal performs local username/password authentication.
@@ -300,7 +358,11 @@ func (r *Router) handleLoginLocal(w http.ResponseWriter, req *http.Request, user
 	}
 
 	r.setSessionCookie(w, req, token)
-	w.Header().Set("HX-Redirect", r.basePath+"/")
+	dest := r.basePath + "/"
+	if returnURL := validateReturnURL(req.FormValue("return_url")); returnURL != "" {
+		dest = r.basePath + returnURL
+	}
+	w.Header().Set("HX-Redirect", dest)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
@@ -348,7 +410,11 @@ func (r *Router) handleLoginFederated(w http.ResponseWriter, req *http.Request, 
 	r.updateConnectionToken(req.Context(), authMethod, serverURL, result.User.ID, result.AccessToken)
 
 	r.setSessionCookie(w, req, token)
-	w.Header().Set("HX-Redirect", r.basePath+"/")
+	dest := r.basePath + "/"
+	if returnURL := validateReturnURL(req.FormValue("return_url")); returnURL != "" {
+		dest = r.basePath + returnURL
+	}
+	w.Header().Set("HX-Redirect", dest)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 

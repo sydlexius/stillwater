@@ -61,19 +61,32 @@ templ LoginPage(assets AssetPaths, providers []auth.Authenticator) {
 			</div>
 			<script>
 				// Display OIDC or other redirect-based login errors passed via ?error= param.
+				// Also propagate ?return= into hidden form fields so the return URL
+				// survives the HTMX POST to /api/v1/auth/login.
 				(function() {
 					var params = new URLSearchParams(window.location.search);
 					var errorMsg = params.get('error');
-					if (!errorMsg) { return; }
-					var el = document.getElementById('login-result');
-					if (!el) { return; }
-					var alert = document.createElement('div');
-					alert.setAttribute('role', 'alert');
-					alert.className = 'rounded-lg border border-red-300/60 dark:border-red-700/60 bg-red-50/80 dark:bg-red-900/30 px-4 py-3 text-sm text-red-700 dark:text-red-300';
-					alert.textContent = errorMsg;
-					el.appendChild(alert);
-					// Clear the error from the URL so it does not persist on refresh.
-					history.replaceState(null, '', window.location.pathname);
+					if (errorMsg) {
+						var el = document.getElementById('login-result');
+						if (el) {
+							var alert = document.createElement('div');
+							alert.setAttribute('role', 'alert');
+							alert.className = 'rounded-lg border border-red-300/60 dark:border-red-700/60 bg-red-50/80 dark:bg-red-900/30 px-4 py-3 text-sm text-red-700 dark:text-red-300';
+							alert.textContent = errorMsg;
+							el.appendChild(alert);
+						}
+						// Clear the error from the URL so it does not persist on refresh.
+						history.replaceState(null, '', window.location.pathname + window.location.search.replace(/[?&]error=[^&]*/, ''));
+					}
+					// Copy the return URL into all login forms so the server can
+					// redirect the user back after successful authentication.
+					var returnURL = params.get('return');
+					if (returnURL) {
+						var fields = document.querySelectorAll('input[name="return_url"]');
+						for (var i = 0; i < fields.length; i++) {
+							fields[i].value = returnURL;
+						}
+					}
 				})();
 			</script>
 		</body>
@@ -140,6 +153,7 @@ templ loginFederatedForm(assets AssetPaths, providers []auth.Authenticator) {
 				class="space-y-4"
 			>
 				<input type="hidden" id="federated-form-provider" name="provider" value=""/>
+					<input type="hidden" name="return_url" value=""/>
 				<div>
 					<label for="federated-username" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Server Username</label>
 					<input
@@ -200,6 +214,7 @@ templ loginLocalForm(assets AssetPaths, providers []auth.Authenticator) {
 			class="space-y-5"
 		>
 			<input type="hidden" name="provider" value="local"/>
+				<input type="hidden" name="return_url" value=""/>
 			<div>
 				<label for="username" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Username</label>
 				<input

@@ -188,7 +188,7 @@ func LoginPage(assets AssetPaths, providers []auth.Authenticator) templ.Componen
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "<div id=\"login-result\"></div></div></div><script>\n\t\t\t\t// Display OIDC or other redirect-based login errors passed via ?error= param.\n\t\t\t\t(function() {\n\t\t\t\t\tvar params = new URLSearchParams(window.location.search);\n\t\t\t\t\tvar errorMsg = params.get('error');\n\t\t\t\t\tif (!errorMsg) { return; }\n\t\t\t\t\tvar el = document.getElementById('login-result');\n\t\t\t\t\tif (!el) { return; }\n\t\t\t\t\tvar alert = document.createElement('div');\n\t\t\t\t\talert.setAttribute('role', 'alert');\n\t\t\t\t\talert.className = 'rounded-lg border border-red-300/60 dark:border-red-700/60 bg-red-50/80 dark:bg-red-900/30 px-4 py-3 text-sm text-red-700 dark:text-red-300';\n\t\t\t\t\talert.textContent = errorMsg;\n\t\t\t\t\tel.appendChild(alert);\n\t\t\t\t\t// Clear the error from the URL so it does not persist on refresh.\n\t\t\t\t\thistory.replaceState(null, '', window.location.pathname);\n\t\t\t\t})();\n\t\t\t</script></body></html>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "<div id=\"login-result\"></div></div></div><script>\n\t\t\t\t// Display OIDC or other redirect-based login errors passed via ?error= param.\n\t\t\t\t// Also propagate ?return= into hidden form fields so the return URL\n\t\t\t\t// survives the HTMX POST to /api/v1/auth/login.\n\t\t\t\t(function() {\n\t\t\t\t\tvar params = new URLSearchParams(window.location.search);\n\t\t\t\t\tvar errorMsg = params.get('error');\n\t\t\t\t\tif (errorMsg) {\n\t\t\t\t\t\tvar el = document.getElementById('login-result');\n\t\t\t\t\t\tif (el) {\n\t\t\t\t\t\t\tvar alert = document.createElement('div');\n\t\t\t\t\t\t\talert.setAttribute('role', 'alert');\n\t\t\t\t\t\t\talert.className = 'rounded-lg border border-red-300/60 dark:border-red-700/60 bg-red-50/80 dark:bg-red-900/30 px-4 py-3 text-sm text-red-700 dark:text-red-300';\n\t\t\t\t\t\t\talert.textContent = errorMsg;\n\t\t\t\t\t\t\tel.appendChild(alert);\n\t\t\t\t\t\t}\n\t\t\t\t\t\t// Clear the error from the URL so it does not persist on refresh.\n\t\t\t\t\t\thistory.replaceState(null, '', window.location.pathname + window.location.search.replace(/[?&]error=[^&]*/, ''));\n\t\t\t\t\t}\n\t\t\t\t\t// Copy the return URL into all login forms so the server can\n\t\t\t\t\t// redirect the user back after successful authentication.\n\t\t\t\t\tvar returnURL = params.get('return');\n\t\t\t\t\tif (returnURL) {\n\t\t\t\t\t\tvar fields = document.querySelectorAll('input[name=\"return_url\"]');\n\t\t\t\t\t\tfor (var i = 0; i < fields.length; i++) {\n\t\t\t\t\t\t\tfields[i].value = returnURL;\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t})();\n\t\t\t</script></body></html>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -228,7 +228,7 @@ func loginFederatedButtons(assets AssetPaths, providers []auth.Authenticator) te
 				var templ_7745c5c3_Var13 string
 				templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(assets.BasePath + "/static/img/logos/emby-128.png")
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/login.templ`, Line: 94, Col: 65}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/login.templ`, Line: 107, Col: 65}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 				if templ_7745c5c3_Err != nil {
@@ -251,7 +251,7 @@ func loginFederatedButtons(assets AssetPaths, providers []auth.Authenticator) te
 				var templ_7745c5c3_Var14 string
 				templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(assets.BasePath + "/static/img/logos/jellyfin.svg")
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/login.templ`, Line: 105, Col: 65}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/login.templ`, Line: 118, Col: 65}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 				if templ_7745c5c3_Err != nil {
@@ -274,7 +274,7 @@ func loginFederatedButtons(assets AssetPaths, providers []auth.Authenticator) te
 				var templ_7745c5c3_Var15 templ.SafeURL
 				templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(assets.BasePath + "/api/v1/auth/oidc/login"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/login.templ`, Line: 111, Col: 69}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/login.templ`, Line: 124, Col: 69}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 				if templ_7745c5c3_Err != nil {
@@ -337,13 +337,13 @@ func loginFederatedForm(assets AssetPaths, providers []auth.Authenticator) templ
 			var templ_7745c5c3_Var17 templ.SafeURL
 			templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(assets.BasePath + "/api/v1/auth/login"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/login.templ`, Line: 136, Col: 66}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/login.templ`, Line: 149, Col: 66}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "\" hx-post=\"/api/v1/auth/login\" hx-swap=\"innerHTML\" hx-target=\"#login-result\" class=\"space-y-4\"><input type=\"hidden\" id=\"federated-form-provider\" name=\"provider\" value=\"\"><div><label for=\"federated-username\" class=\"block text-sm font-medium text-gray-700 dark:text-gray-300\">Server Username</label> <input id=\"federated-username\" name=\"username\" type=\"text\" autocomplete=\"username\" class=\"mt-1 block w-full rounded-lg border border-gray-300/60 dark:border-gray-600/60 bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm px-3 py-2 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50\"></div><div><label for=\"federated-password\" class=\"block text-sm font-medium text-gray-700 dark:text-gray-300\">Server Password</label> <input id=\"federated-password\" name=\"password\" type=\"password\" autocomplete=\"current-password\" class=\"mt-1 block w-full rounded-lg border border-gray-300/60 dark:border-gray-600/60 bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm px-3 py-2 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50\"></div><button id=\"federated-submit\" type=\"submit\" class=\"flex w-full justify-center rounded-lg bg-blue-600 px-3 py-2.5 text-sm font-semibold text-white shadow-lg hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors\">Sign In</button></form></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "\" hx-post=\"/api/v1/auth/login\" hx-swap=\"innerHTML\" hx-target=\"#login-result\" class=\"space-y-4\"><input type=\"hidden\" id=\"federated-form-provider\" name=\"provider\" value=\"\"> <input type=\"hidden\" name=\"return_url\" value=\"\"><div><label for=\"federated-username\" class=\"block text-sm font-medium text-gray-700 dark:text-gray-300\">Server Username</label> <input id=\"federated-username\" name=\"username\" type=\"text\" autocomplete=\"username\" class=\"mt-1 block w-full rounded-lg border border-gray-300/60 dark:border-gray-600/60 bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm px-3 py-2 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50\"></div><div><label for=\"federated-password\" class=\"block text-sm font-medium text-gray-700 dark:text-gray-300\">Server Password</label> <input id=\"federated-password\" name=\"password\" type=\"password\" autocomplete=\"current-password\" class=\"mt-1 block w-full rounded-lg border border-gray-300/60 dark:border-gray-600/60 bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm px-3 py-2 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50\"></div><button id=\"federated-submit\" type=\"submit\" class=\"flex w-full justify-center rounded-lg bg-blue-600 px-3 py-2.5 text-sm font-semibold text-white shadow-lg hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors\">Sign In</button></form></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -416,13 +416,13 @@ func loginLocalForm(assets AssetPaths, providers []auth.Authenticator) templ.Com
 			var templ_7745c5c3_Var20 templ.SafeURL
 			templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(assets.BasePath + "/api/v1/auth/login"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/login.templ`, Line: 196, Col: 65}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/login.templ`, Line: 210, Col: 65}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "\" hx-post=\"/api/v1/auth/login\" hx-swap=\"innerHTML\" hx-target=\"#login-result\" class=\"space-y-5\"><input type=\"hidden\" name=\"provider\" value=\"local\"><div><label for=\"username\" class=\"block text-sm font-medium text-gray-700 dark:text-gray-300\">Username</label> <input id=\"username\" name=\"username\" type=\"text\" required autocomplete=\"username\" class=\"mt-1 block w-full rounded-lg border border-gray-300/60 dark:border-gray-600/60 bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm px-3 py-2 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50\"></div><div><label for=\"password\" class=\"block text-sm font-medium text-gray-700 dark:text-gray-300\">Password</label> <input id=\"password\" name=\"password\" type=\"password\" required autocomplete=\"current-password\" class=\"mt-1 block w-full rounded-lg border border-gray-300/60 dark:border-gray-600/60 bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm px-3 py-2 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50\"></div><button type=\"submit\" class=\"flex w-full justify-center rounded-lg bg-blue-600 px-3 py-2.5 text-sm font-semibold text-white shadow-lg hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors\">Sign In</button></form>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "\" hx-post=\"/api/v1/auth/login\" hx-swap=\"innerHTML\" hx-target=\"#login-result\" class=\"space-y-5\"><input type=\"hidden\" name=\"provider\" value=\"local\"> <input type=\"hidden\" name=\"return_url\" value=\"\"><div><label for=\"username\" class=\"block text-sm font-medium text-gray-700 dark:text-gray-300\">Username</label> <input id=\"username\" name=\"username\" type=\"text\" required autocomplete=\"username\" class=\"mt-1 block w-full rounded-lg border border-gray-300/60 dark:border-gray-600/60 bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm px-3 py-2 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50\"></div><div><label for=\"password\" class=\"block text-sm font-medium text-gray-700 dark:text-gray-300\">Password</label> <input id=\"password\" name=\"password\" type=\"password\" required autocomplete=\"current-password\" class=\"mt-1 block w-full rounded-lg border border-gray-300/60 dark:border-gray-600/60 bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm px-3 py-2 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50\"></div><button type=\"submit\" class=\"flex w-full justify-center rounded-lg bg-blue-600 px-3 py-2.5 text-sm font-semibold text-white shadow-lg hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors\">Sign In</button></form>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

@@ -3683,6 +3683,81 @@ paths:
               schema:
                 $ref: "#/components/schemas/Status"
 
+  /preferences:
+    get:
+      tags: [Preferences]
+      summary: Get all user preferences
+      operationId: getPreferences
+      description: >
+        Returns all preference keys for the authenticated user, merged with defaults.
+        Preferences are per-user appearance settings (theme, glass intensity, sidebar
+        state, typography, etc.).
+      responses:
+        "200":
+          description: Preference key-value map
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: string
+        "401":
+          description: Not authenticated
+        "500":
+          description: Internal server error
+  /preferences/{key}:
+    put:
+      tags: [Preferences]
+      summary: Update a user preference
+      operationId: updatePreference
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+            enum:
+              - theme
+              - glass_intensity
+              - sidebar_state
+              - content_width
+              - font_family
+              - font_size
+              - letter_spacing
+              - thumbnail_size
+              - reduced_motion
+              - lite_mode
+              - language
+              - notification_enabled
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [value]
+              properties:
+                value:
+                  type: string
+      responses:
+        "200":
+          description: Preference updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  key:
+                    type: string
+                  value:
+                    type: string
+        "400":
+          description: Invalid key or value
+        "401":
+          description: Not authenticated
+        "500":
+          description: Internal server error
+
   /settings/backup:
     post:
       tags: [Backup]
