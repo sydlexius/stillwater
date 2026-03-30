@@ -82,7 +82,6 @@ func TestLayout_NavLinksUseBasePath(t *testing.T) {
 		`href="/stillwater/"`,
 		`href="/stillwater/artists"`,
 		`href="/stillwater/reports/compliance"`,
-		`href="/stillwater/notifications"`,
 		`href="/stillwater/settings"`,
 		`href="/stillwater/guide"`,
 	}
@@ -144,7 +143,6 @@ func TestLayout_NavLinksNoBasePath(t *testing.T) {
 		`href="/"`,
 		`href="/artists"`,
 		`href="/reports/compliance"`,
-		`href="/notifications"`,
 		`href="/settings"`,
 		`href="/guide"`,
 	}
