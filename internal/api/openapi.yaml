@@ -2683,7 +2683,7 @@ paths:
               schema:
                 type: string
 
-  /providers/{name}/fields:
+  /providers/fields/{name}:
     get:
       tags: [Providers]
       summary: Get per-provider field configuration
@@ -2721,7 +2721,7 @@ paths:
         "400":
           description: Unknown provider
 
-  /providers/{name}/fields/{field}/toggle:
+  /providers/fields/{name}/{field}/toggle:
     put:
       tags: [Providers]
       summary: Toggle a metadata field on or off for a provider

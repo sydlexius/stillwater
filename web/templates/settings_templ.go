@@ -4002,7 +4002,7 @@ func ProviderKeyCard(pk provider.ProviderKeyStatus) templ.Component {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var159 string
-				templ_7745c5c3_Var159, templ_7745c5c3_Err = templ.JoinStringErrs("/api/v1/providers/" + string(pk.Name) + "/fields/" + field + "/toggle")
+				templ_7745c5c3_Var159, templ_7745c5c3_Err = templ.JoinStringErrs("/api/v1/providers/fields/" + string(pk.Name) + "/" + field + "/toggle")
 				if templ_7745c5c3_Err != nil {
 					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings.templ`, Line: 3715, Col: 86}
 				}

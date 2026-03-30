@@ -783,7 +783,7 @@ func (r *Router) handleGetProviderFields(w http.ResponseWriter, req *http.Reques
 }
 
 // handleToggleProviderField toggles a single metadata field on or off for a provider.
-// PUT /api/v1/providers/{name}/fields/{field}/toggle
+// PUT /api/v1/providers/fields/{name}/{field}/toggle
 func (r *Router) handleToggleProviderField(w http.ResponseWriter, req *http.Request) {
 	name := provider.ProviderName(req.PathValue("name"))
 	if !isValidProviderName(name) {

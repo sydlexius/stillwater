@@ -3712,7 +3712,7 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 							templ.KV("bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300 border-green-300 dark:border-green-700 hover:bg-green-100 dark:hover:bg-green-900/40", enabled),
 							templ.KV("bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border-red-300 dark:border-red-700 opacity-60 hover:opacity-80", !enabled),
 						}
-						hx-put={ "/api/v1/providers/" + string(pk.Name) + "/fields/" + field + "/toggle" }
+						hx-put={ "/api/v1/providers/fields/" + string(pk.Name) + "/" + field + "/toggle" }
 						hx-target={ "#provider-card-" + string(pk.Name) }
 						hx-swap="innerHTML"
 						title={ fieldToggleTitle(field, enabled) }
