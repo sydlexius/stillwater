@@ -194,7 +194,7 @@ templ contextMenuItem(item ContextMenuItemData) {
 script ToggleContextMenu(id string) {
 	var panel = document.getElementById('ctx-panel-' + id);
 	var sheet = document.getElementById('ctx-sheet-' + id);
-	var trigger = document.querySelector('[data-context-menu="' + id + '"] > button');
+	var trigger = document.querySelector('[aria-controls="ctx-panel-' + id + '"]');
 	if (!panel) return;
 
 	var isMobile = window.innerWidth < 768;
@@ -231,8 +231,15 @@ script ToggleContextMenu(id string) {
 			if (trigger) trigger.setAttribute('aria-expanded', 'true');
 			// Focus first item in the sheet for keyboard users.
 			setTimeout(function() {
+				if (!sheet.isConnected) return;
+				if (!sheet.classList.contains('ctx-sheet-open')) return;
 				var firstItem = sheet.querySelector('[role="menuitem"]:not([disabled])');
-				if (firstItem) firstItem.focus();
+				if (firstItem) {
+					firstItem.focus();
+				} else {
+					var cancel = sheet.querySelector('.ctx-sheet-cancel');
+					if (cancel) cancel.focus();
+				}
 			}, 300);
 		} else {
 			panel.classList.remove('hidden');
@@ -248,7 +255,7 @@ script ToggleContextMenu(id string) {
 // to the trigger element.
 script CloseContextMenu(id string) {
 	var sheet = document.getElementById('ctx-sheet-' + id);
-	var trigger = document.querySelector('[data-context-menu="' + id + '"] > button');
+	var trigger = document.querySelector('[aria-controls="ctx-panel-' + id + '"]');
 	if (sheet) {
 		sheet.classList.remove('ctx-sheet-open');
 		sheet.setAttribute('aria-hidden', 'true');

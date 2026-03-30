@@ -470,6 +470,9 @@ templ Layout(title string, assets AssetPaths) {
 					var pendingEvent = null;
 					var pendingCallback = null;
 					var pendingConfirmKey = null;
+					// Generation counter prevents stale isSuppressed callbacks from
+					// acting on a superseded htmx:confirm event.
+					var _confirmGeneration = 0;
 
 					// In-memory suppression cache so we only hit the API once per page
 					// load per action key.
@@ -636,7 +639,9 @@ templ Layout(title string, assets AssetPaths) {
 
 						var confirmKey = trigger.getAttribute('data-confirm-key');
 						if (confirmKey) {
+							var gen = ++_confirmGeneration;
 							isSuppressed(confirmKey).then(function(suppressed) {
+								if (gen !== _confirmGeneration) return;
 								if (suppressed) {
 									evt.detail.issueRequest(true);
 									return;
@@ -685,7 +690,9 @@ templ Layout(title string, assets AssetPaths) {
 					// onConfirm is called immediately without showing the modal.
 					window.showConfirmDialog = function(message, confirmKey, onConfirm, opts) {
 						if (confirmKey) {
+							var gen = ++_confirmGeneration;
 							isSuppressed(confirmKey).then(function(suppressed) {
+								if (gen !== _confirmGeneration) return;
 								if (suppressed) {
 									onConfirm();
 									return;

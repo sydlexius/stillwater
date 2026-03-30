@@ -145,8 +145,14 @@ script OpenBottomSheet(id string) {
 	document.body.classList.add('ctx-sheet-body-lock');
 	setTimeout(function() {
 		if (!sheet.isConnected) return;
+		if (!sheet.classList.contains('ctx-sheet-open')) return;
 		var firstItem = sheet.querySelector('[role="menuitem"]:not([disabled])');
-		if (firstItem) firstItem.focus();
+		if (firstItem) {
+			firstItem.focus();
+		} else {
+			var cancel = sheet.querySelector('.ctx-sheet-cancel');
+			if (cancel) cancel.focus();
+		}
 	}, 300);
 }
 

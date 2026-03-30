@@ -502,10 +502,10 @@ func contextMenuItem(item ContextMenuItemData) templ.Component {
 // On mobile (< 768px) the bottom sheet is shown instead of the dropdown.
 func ToggleContextMenu(id string) templ.ComponentScript {
 	return templ.ComponentScript{
-		Name: `__templ_ToggleContextMenu_7590`,
-		Function: `function __templ_ToggleContextMenu_7590(id){var panel = document.getElementById('ctx-panel-' + id);
+		Name: `__templ_ToggleContextMenu_28ec`,
+		Function: `function __templ_ToggleContextMenu_28ec(id){var panel = document.getElementById('ctx-panel-' + id);
 	var sheet = document.getElementById('ctx-sheet-' + id);
-	var trigger = document.querySelector('[data-context-menu="' + id + '"] > button');
+	var trigger = document.querySelector('[aria-controls="ctx-panel-' + id + '"]');
 	if (!panel) return;
 
 	var isMobile = window.innerWidth < 768;
@@ -542,8 +542,15 @@ func ToggleContextMenu(id string) templ.ComponentScript {
 			if (trigger) trigger.setAttribute('aria-expanded', 'true');
 			// Focus first item in the sheet for keyboard users.
 			setTimeout(function() {
+				if (!sheet.isConnected) return;
+				if (!sheet.classList.contains('ctx-sheet-open')) return;
 				var firstItem = sheet.querySelector('[role="menuitem"]:not([disabled])');
-				if (firstItem) firstItem.focus();
+				if (firstItem) {
+					firstItem.focus();
+				} else {
+					var cancel = sheet.querySelector('.ctx-sheet-cancel');
+					if (cancel) cancel.focus();
+				}
 			}, 300);
 		} else {
 			panel.classList.remove('hidden');
@@ -554,8 +561,8 @@ func ToggleContextMenu(id string) templ.ComponentScript {
 		}
 	}
 }`,
-		Call:       templ.SafeScript(`__templ_ToggleContextMenu_7590`, id),
-		CallInline: templ.SafeScriptInline(`__templ_ToggleContextMenu_7590`, id),
+		Call:       templ.SafeScript(`__templ_ToggleContextMenu_28ec`, id),
+		CallInline: templ.SafeScriptInline(`__templ_ToggleContextMenu_28ec`, id),
 	}
 }
 
@@ -563,9 +570,9 @@ func ToggleContextMenu(id string) templ.ComponentScript {
 // to the trigger element.
 func CloseContextMenu(id string) templ.ComponentScript {
 	return templ.ComponentScript{
-		Name: `__templ_CloseContextMenu_ce51`,
-		Function: `function __templ_CloseContextMenu_ce51(id){var sheet = document.getElementById('ctx-sheet-' + id);
-	var trigger = document.querySelector('[data-context-menu="' + id + '"] > button');
+		Name: `__templ_CloseContextMenu_f242`,
+		Function: `function __templ_CloseContextMenu_f242(id){var sheet = document.getElementById('ctx-sheet-' + id);
+	var trigger = document.querySelector('[aria-controls="ctx-panel-' + id + '"]');
 	if (sheet) {
 		sheet.classList.remove('ctx-sheet-open');
 		sheet.setAttribute('aria-hidden', 'true');
@@ -577,8 +584,8 @@ func CloseContextMenu(id string) templ.ComponentScript {
 		trigger.focus();
 	}
 }`,
-		Call:       templ.SafeScript(`__templ_CloseContextMenu_ce51`, id),
-		CallInline: templ.SafeScriptInline(`__templ_CloseContextMenu_ce51`, id),
+		Call:       templ.SafeScript(`__templ_CloseContextMenu_f242`, id),
+		CallInline: templ.SafeScriptInline(`__templ_CloseContextMenu_f242`, id),
 	}
 }
 

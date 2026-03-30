@@ -3851,7 +3851,23 @@ paths:
             suppress_confirm_* key of the form suppress_confirm_{action} where
             {action} contains only lowercase letters, digits, and underscores.
           schema:
-            type: string
+            oneOf:
+              - type: string
+                enum:
+                  - theme
+                  - glass_intensity
+                  - sidebar_state
+                  - content_width
+                  - font_family
+                  - font_size
+                  - letter_spacing
+                  - thumbnail_size
+                  - reduced_motion
+                  - lite_mode
+                  - language
+                  - notification_enabled
+              - type: string
+                pattern: "^suppress_confirm_[a-z0-9_]+$"
       responses:
         "200":
           description: Preference value
@@ -3863,8 +3879,14 @@ paths:
                 properties:
                   key:
                     type: string
+                    description: The preference key that was requested.
                   value:
                     type: string
+                    description: >
+                      The current value of the preference. For known fixed
+                      keys, returns the stored value or the compiled default
+                      when no row exists. For suppress_confirm_* keys, returns
+                      "true" or "false".
         "400":
           description: Unknown preference key
           content:
@@ -3896,7 +3918,23 @@ paths:
             suppress_confirm_{action}. suppress_confirm_* keys accept only
             "true" or "false".
           schema:
-            type: string
+            oneOf:
+              - type: string
+                enum:
+                  - theme
+                  - glass_intensity
+                  - sidebar_state
+                  - content_width
+                  - font_family
+                  - font_size
+                  - letter_spacing
+                  - thumbnail_size
+                  - reduced_motion
+                  - lite_mode
+                  - language
+                  - notification_enabled
+              - type: string
+                pattern: "^suppress_confirm_[a-z0-9_]+$"
       requestBody:
         required: true
         content:
@@ -3918,8 +3956,10 @@ paths:
                 properties:
                   key:
                     type: string
+                    description: The preference key that was updated.
                   value:
                     type: string
+                    description: The new value after the update.
         "400":
           description: Invalid key or value
           content:
