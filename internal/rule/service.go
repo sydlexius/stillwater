@@ -703,37 +703,55 @@ func (s *Service) UpsertRuleResults(ctx context.Context, results []RuleResult) e
 	if len(results) == 0 {
 		return nil
 	}
-	evaluatedAt := time.Now().UTC().Format(time.RFC3339)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("beginning transaction for rule results: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	stmt, err := tx.PrepareContext(ctx, `
+		INSERT INTO rule_results (artist_id, rule_id, passed, violation_id, violation_message, evaluated_at)
+		VALUES (?, ?, ?,
+			CASE ? WHEN 0 THEN (
+				SELECT id FROM rule_violations
+				WHERE rule_id = ? AND artist_id = ?
+				  AND status IN ('open', 'pending_choice')
+				LIMIT 1
+			) ELSE NULL END,
+			?, ?)
+		ON CONFLICT(artist_id, rule_id) DO UPDATE SET
+			passed            = excluded.passed,
+			violation_id      = excluded.violation_id,
+			violation_message = excluded.violation_message,
+			evaluated_at      = excluded.evaluated_at
+	`)
+	if err != nil {
+		return fmt.Errorf("preparing rule results statement: %w", err)
+	}
+	defer stmt.Close() //nolint:errcheck
+
+	defaultEvaluatedAt := time.Now().UTC()
 	for _, rr := range results {
-		if !rr.EvaluatedAt.IsZero() {
-			evaluatedAt = rr.EvaluatedAt.Format(time.RFC3339)
+		evaluatedAtTime := rr.EvaluatedAt
+		if evaluatedAtTime.IsZero() {
+			evaluatedAtTime = defaultEvaluatedAt
 		}
+		evaluatedAt := evaluatedAtTime.Format(time.RFC3339)
 		passed := dbutil.BoolToInt(rr.Passed)
 		var violationMsg *string
 		if rr.ViolationMessage != "" {
 			violationMsg = &rr.ViolationMessage
 		}
-		_, err := s.db.ExecContext(ctx, `
-			INSERT INTO rule_results (artist_id, rule_id, passed, violation_id, violation_message, evaluated_at)
-			VALUES (?, ?, ?,
-				CASE ? WHEN 0 THEN (
-					SELECT id FROM rule_violations
-					WHERE rule_id = ? AND artist_id = ?
-					  AND status IN ('open', 'pending_choice')
-					LIMIT 1
-				) ELSE NULL END,
-				?, ?)
-			ON CONFLICT(artist_id, rule_id) DO UPDATE SET
-				passed            = excluded.passed,
-				violation_id      = excluded.violation_id,
-				violation_message = excluded.violation_message,
-				evaluated_at      = excluded.evaluated_at
-		`, rr.ArtistID, rr.RuleID, passed,
+		if _, err := stmt.ExecContext(ctx,
+			rr.ArtistID, rr.RuleID, passed,
 			passed, rr.RuleID, rr.ArtistID,
-			violationMsg, evaluatedAt)
-		if err != nil {
+			violationMsg, evaluatedAt,
+		); err != nil {
 			return fmt.Errorf("upserting rule result (artist=%s rule=%s): %w", rr.ArtistID, rr.RuleID, err)
 		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("committing rule results: %w", err)
 	}
 	return nil
 }

@@ -768,71 +768,71 @@ func TestHandleReportHealthByLibrary(t *testing.T) {
 }
 
 func TestHandleReportRules_Empty(t *testing.T) {
-r, _ := testRouter(t)
+	r, _ := testRouter(t)
 
-req := httptest.NewRequest(http.MethodGet, "/api/v1/reports/rules", nil)
-w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/reports/rules", nil)
+	w := httptest.NewRecorder()
 
-r.handleReportRules(w, req)
+	r.handleReportRules(w, req)
 
-if w.Code != http.StatusOK {
-t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
-}
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
 
-var resp struct {
-Rules []rule.RuleStats `json:"rules"`
-}
-if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
-t.Fatalf("decoding response: %v", err)
-}
-if resp.Rules == nil {
-t.Error("rules field must not be nil (empty array expected)")
-}
-if len(resp.Rules) != 0 {
-t.Errorf("expected 0 rule stats when no evaluations have run, got %d", len(resp.Rules))
-}
+	var resp struct {
+		Rules []rule.RuleStats `json:"rules"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if resp.Rules == nil {
+		t.Error("rules field must not be nil (empty array expected)")
+	}
+	if len(resp.Rules) != 0 {
+		t.Errorf("expected 0 rule stats when no evaluations have run, got %d", len(resp.Rules))
+	}
 }
 
 func TestHandleReportRules_WithData(t *testing.T) {
-r, artistSvc := testRouter(t)
-ctx := context.Background()
+	r, artistSvc := testRouter(t)
+	ctx := context.Background()
 
-a := addTestArtist(t, artistSvc, "Stats Artist")
+	a := addTestArtist(t, artistSvc, "Stats Artist")
 
-// Insert a rule_result directly for deterministic test setup.
-db := r.db
-_, err := db.ExecContext(ctx, `
+	// Insert a rule_result directly for deterministic test setup.
+	db := r.db
+	_, err := db.ExecContext(ctx, `
 INSERT INTO rule_results (artist_id, rule_id, passed, evaluated_at)
 SELECT ?, id, 1, datetime('now') FROM rules LIMIT 1
 `, a.ID)
-if err != nil {
-t.Fatalf("inserting rule_result: %v", err)
-}
+	if err != nil {
+		t.Fatalf("inserting rule_result: %v", err)
+	}
 
-req2 := httptest.NewRequest(http.MethodGet, "/api/v1/reports/rules", nil)
-w2 := httptest.NewRecorder()
-r.handleReportRules(w2, req2)
+	req2 := httptest.NewRequest(http.MethodGet, "/api/v1/reports/rules", nil)
+	w2 := httptest.NewRecorder()
+	r.handleReportRules(w2, req2)
 
-if w2.Code != http.StatusOK {
-t.Fatalf("status = %d, want %d", w2.Code, http.StatusOK)
-}
+	if w2.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w2.Code, http.StatusOK)
+	}
 
-var resp struct {
-Rules []rule.RuleStats `json:"rules"`
-}
-if err := json.NewDecoder(w2.Body).Decode(&resp); err != nil {
-t.Fatalf("decoding response: %v", err)
-}
-if len(resp.Rules) == 0 {
-t.Error("expected at least 1 rule stat row after inserting a result")
-}
-for _, rs := range resp.Rules {
-if rs.TotalArtists <= 0 {
-t.Errorf("rule %s: total_artists = %d, want > 0", rs.RuleID, rs.TotalArtists)
-}
-if rs.PassCount+rs.FailCount != rs.TotalArtists {
-t.Errorf("rule %s: pass_count(%d) + fail_count(%d) != total_artists(%d)",
-rs.RuleID, rs.PassCount, rs.FailCount, rs.TotalArtists)
-}
-}
+	var resp struct {
+		Rules []rule.RuleStats `json:"rules"`
+	}
+	if err := json.NewDecoder(w2.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if len(resp.Rules) == 0 {
+		t.Error("expected at least 1 rule stat row after inserting a result")
+	}
+	for _, rs := range resp.Rules {
+		if rs.TotalArtists <= 0 {
+			t.Errorf("rule %s: total_artists = %d, want > 0", rs.RuleID, rs.TotalArtists)
+		}
+		if rs.PassCount+rs.FailCount != rs.TotalArtists {
+			t.Errorf("rule %s: pass_count(%d) + fail_count(%d) != total_artists(%d)",
+				rs.RuleID, rs.PassCount, rs.FailCount, rs.TotalArtists)
+		}
+	}
 }

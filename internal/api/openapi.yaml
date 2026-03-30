@@ -5306,7 +5306,7 @@ paths:
       description: >
         Returns aggregated pass and fail counts for every rule that has at least
         one stored result. Results are read directly from the rule_results table
-        and do not invoke the rule engine, making this an O(1) query.
+        via a single aggregation query; the rule engine is not invoked.
       operationId: getReportRules
       responses:
         "200":
@@ -5340,7 +5340,7 @@ paths:
                         pass_rate:
                           type: number
                           format: float
-                          description: pass_count / total_artists * 100, rounded to two decimal places. Zero when total_artists is zero.
+                          description: pass_count / total_artists * 100. Zero when total_artists is zero.
                       required: [rule_id, rule_name, total_artists, pass_count, fail_count, pass_rate]
                 required: [rules]
         "500":
