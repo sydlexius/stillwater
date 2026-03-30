@@ -118,20 +118,36 @@ func (r *Router) handleArtistsPage(w http.ResponseWriter, req *http.Request) {
 		totalPages++
 	}
 
-	// Collect artist IDs and fetch per-artist compliance status from active
-	// rule violations. Compliance is best-effort: a failure here does not
-	// prevent the page from rendering.
-	var complianceMap map[string]artist.ComplianceStatus
-	if r.ruleService != nil && len(artists) > 0 {
-		ids := make([]string, len(artists))
+	// Collect artist IDs for batch lookups (compliance, platform presence).
+	var artistIDs []string
+	if len(artists) > 0 {
+		artistIDs = make([]string, len(artists))
 		for i, a := range artists {
-			ids[i] = a.ID
+			artistIDs[i] = a.ID
 		}
-		cm, err := r.ruleService.GetComplianceForArtists(req.Context(), ids)
+	}
+
+	// Fetch per-artist compliance status from active rule violations.
+	// Best-effort: a failure does not prevent the page from rendering.
+	var complianceMap map[string]artist.ComplianceStatus
+	if r.ruleService != nil && len(artistIDs) > 0 {
+		cm, err := r.ruleService.GetComplianceForArtists(req.Context(), artistIDs)
 		if err != nil {
 			r.logger.Error("fetching compliance for artist list", "error", err)
 		} else {
 			complianceMap = cm
+		}
+	}
+
+	// Fetch per-artist platform presence (Emby, Jellyfin, Lidarr) from
+	// artist_platform_ids joined with connections. Best-effort.
+	var platformPresence map[string]artist.PlatformPresence
+	if len(artistIDs) > 0 {
+		pp, err := r.artistService.GetPlatformPresenceForArtists(req.Context(), artistIDs)
+		if err != nil {
+			r.logger.Warn("fetching platform presence for artist list", "error", err)
+		} else {
+			platformPresence = pp
 		}
 	}
 
@@ -150,13 +166,15 @@ func (r *Router) handleArtistsPage(w http.ResponseWriter, req *http.Request) {
 			View:        view,
 			LibraryID:   params.LibraryID,
 		},
-		ComplianceMap: complianceMap,
-		Search:        params.Search,
-		Sort:          params.Sort,
-		Order:         params.Order,
-		Filter:        params.Filter,
-		LibraryID:     params.LibraryID,
-		View:          view,
+		ComplianceMap:    complianceMap,
+		PlatformPresence: platformPresence,
+		Search:           params.Search,
+		Sort:             params.Sort,
+		Order:            params.Order,
+		Filter:           params.Filter,
+		LibraryID:        params.LibraryID,
+		View:             view,
+		ProfileName:      r.getActiveProfileName(req.Context()),
 	}
 
 	if r.libraryService != nil {
@@ -251,6 +269,7 @@ func (r *Router) handleArtistDetailPage(w http.ResponseWriter, req *http.Request
 		FieldProviders: fieldProviders,
 		LibraryName:    libraryName,
 		LibrarySource:  librarySource,
+		ProfileName:    r.getActiveProfileName(req.Context()),
 	}
 	renderTempl(w, req, templates.ArtistDetailPage(r.assetsFor(req), data))
 }
@@ -287,6 +306,7 @@ func (r *Router) handleArtistImagesPage(w http.ResponseWriter, req *http.Request
 		WebSearchEnabled: webSearchEnabled,
 		AutoFetchImages:  autoFetch,
 		SelectedType:     selectedType,
+		ProfileName:      r.getActiveProfileName(req.Context()),
 	}
 	renderTempl(w, req, templates.ImageSearchPage(r.assetsFor(req), data))
 }

@@ -345,6 +345,7 @@ func (r *Router) renderRefreshWithOOB(w http.ResponseWriter, req *http.Request, 
 		Artist:         *a,
 		Members:        members,
 		FieldProviders: fieldProviders,
+		ProfileName:    r.getActiveProfileName(req.Context()),
 	}
 
 	// Write primary response then OOB fragments sequentially

@@ -1247,3 +1247,92 @@ func (e *Engine) checkBackdropSequencingFromDB(a *artist.Artist, cfg RuleConfig)
 		Fixable:  false, // no filesystem to renumber for API-imported artists
 	}
 }
+
+// countBackdrops counts the total number of backdrop/fanart image files in an
+// artist directory. It iterates over all configured fanart naming patterns from
+// the active platform profile (falling back to defaults) and sums the discovered
+// files for each pattern. Duplicate files across patterns are not double-counted
+// because DiscoverFanart only returns files matching a single primary name.
+func (e *Engine) countBackdrops(dir string) int {
+	var profile *platform.Profile
+	if e.platformService != nil {
+		profile, _ = e.platformService.GetActive(context.Background())
+	}
+
+	var fanartNames []string
+	if profile != nil {
+		fanartNames = profile.ImageNaming.NamesForType("fanart")
+	}
+	if len(fanartNames) == 0 {
+		fanartNames = image.FileNamesForType(image.DefaultFileNames, "fanart")
+	}
+
+	// Track files already counted to avoid double-counting when multiple
+	// primary names resolve to the same underlying files.
+	seen := make(map[string]bool)
+	count := 0
+	for _, primaryName := range fanartNames {
+		discovered, err := image.DiscoverFanart(dir, primaryName)
+		if err != nil {
+			continue
+		}
+		for _, path := range discovered {
+			if !seen[path] {
+				seen[path] = true
+				count++
+			}
+		}
+	}
+	return count
+}
+
+// countBackdropsFromDB counts the number of fanart image slots recorded in the
+// artist_images table for the given artist. Used for API-imported artists that
+// have no local filesystem path.
+func (e *Engine) countBackdropsFromDB(artistID string) int {
+	if e.db == nil {
+		return 0
+	}
+	var count int
+	err := e.db.QueryRowContext(context.Background(),
+		`SELECT COUNT(*) FROM artist_images WHERE artist_id = ? AND image_type = 'fanart'`,
+		artistID).Scan(&count)
+	if err != nil {
+		return 0
+	}
+	return count
+}
+
+// makeBackdropMinCountChecker returns a Checker closure that flags artists with
+// fewer backdrop/fanart images than the configured minimum count (MinCount in
+// RuleConfig). When the artist has a filesystem path, backdrops are counted by
+// scanning the directory. For API-imported artists (no path), the artist_images
+// table is queried instead.
+func (e *Engine) makeBackdropMinCountChecker() Checker {
+	return func(a *artist.Artist, cfg RuleConfig) *Violation {
+		minCount := cfg.MinCount
+		if minCount <= 0 {
+			minCount = 1 // safety default
+		}
+
+		var count int
+		if a.Path != "" {
+			count = e.countBackdrops(a.Path)
+		} else {
+			count = e.countBackdropsFromDB(a.ID)
+		}
+
+		if count >= minCount {
+			return nil
+		}
+
+		return &Violation{
+			RuleID:   RuleBackdropMinCount,
+			RuleName: "Minimum backdrop count",
+			Category: "image",
+			Severity: effectiveSeverity(cfg),
+			Message:  fmt.Sprintf("artist %q has %d backdrop(s), minimum is %d", a.Name, count, minCount),
+			Fixable:  true,
+		}
+	}
+}

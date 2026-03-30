@@ -49,6 +49,7 @@ type RuleConfig struct {
 	SelectBestCandidate bool    `json:"select_best_candidate,omitempty"` // auto-pick highest-res when multiple candidates
 	ThresholdPercent    float64 `json:"threshold_percent,omitempty"`     // total padding area % threshold (logo_padding)
 	TrimMargin          int     `json:"trim_margin,omitempty"`           // pixels of padding to keep after trimming (logo_padding)
+	MinCount            int     `json:"min_count,omitempty"`             // minimum number of images (backdrop_min_count)
 	ArticleMode         string  `json:"article_mode,omitempty"`          // "prefix" (default), "suffix", "strip"
 	DiscoveryOnly       bool    `json:"-"`                               // transient: set by pipeline in manual mode, never persisted
 }

@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+	img "github.com/sydlexius/stillwater/internal/image"
 	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/rule"
 	"github.com/sydlexius/stillwater/web/components"
@@ -32,6 +33,7 @@ type ComplianceData struct {
 	Order          string
 	HealthScoreMin int
 	HealthScoreMax int
+	ProfileName    string // Active platform profile name for image terminology
 }
 
 // LibrarySummaryData holds per-library health stats for the summary section.
@@ -197,10 +199,10 @@ templ CompliancePage(assets AssetPaths, data ComplianceData) {
 					>
 						<option value="" selected?={ data.Filter == "" }>No Filter</option>
 						<option value="missing_nfo" selected?={ data.Filter == "missing_nfo" }>Missing Metadata</option>
-						<option value="missing_thumb" selected?={ data.Filter == "missing_thumb" }>Missing Thumbnail</option>
-						<option value="missing_fanart" selected?={ data.Filter == "missing_fanart" }>Missing Fanart</option>
-						<option value="missing_logo" selected?={ data.Filter == "missing_logo" }>Missing Logo</option>
-						<option value="missing_banner" selected?={ data.Filter == "missing_banner" }>Missing Banner</option>
+						<option value="missing_thumb" selected?={ data.Filter == "missing_thumb" }>Missing { img.ImageTermFor("thumb", data.ProfileName) }</option>
+						<option value="missing_fanart" selected?={ data.Filter == "missing_fanart" }>Missing { img.ImageTermFor("fanart", data.ProfileName) }</option>
+						<option value="missing_logo" selected?={ data.Filter == "missing_logo" }>Missing { img.ImageTermFor("logo", data.ProfileName) }</option>
+						<option value="missing_banner" selected?={ data.Filter == "missing_banner" }>Missing { img.ImageTermFor("banner", data.ProfileName) }</option>
 						<option value="missing_mbid" selected?={ data.Filter == "missing_mbid" }>Missing MBID</option>
 					</select>
 					<!-- Health score range -->
@@ -239,9 +241,9 @@ templ CompliancePage(assets AssetPaths, data ComplianceData) {
 						{Key: "artist", Label: "Artist", Required: true},
 						{Key: "score", Label: "Score"},
 						{Key: "metadata", Label: "Metadata"},
-						{Key: "thumb", Label: "Thumb"},
-						{Key: "fanart", Label: "Fanart"},
-						{Key: "logo", Label: "Logo"},
+						{Key: "thumb", Label: img.ImageTermFor("thumb", data.ProfileName)},
+						{Key: "fanart", Label: img.ImageTermFor("fanart", data.ProfileName)},
+						{Key: "logo", Label: img.ImageTermFor("logo", data.ProfileName)},
 						{Key: "mbid", Label: "MBID"},
 						{Key: "actions", Label: "Actions"},
 					})
@@ -379,13 +381,13 @@ templ ComplianceTable(data ComplianceData) {
 							Metadata
 						</th>
 						<th scope="col" data-col="thumb" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
-							Thumb
+							{ img.ImageTermFor("thumb", data.ProfileName) }
 						</th>
 						<th scope="col" data-col="fanart" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
-							Fanart
+							{ img.ImageTermFor("fanart", data.ProfileName) }
 						</th>
 						<th scope="col" data-col="logo" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
-							Logo
+							{ img.ImageTermFor("logo", data.ProfileName) }
 						</th>
 						<th scope="col" data-col="mbid" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
 							MBID
@@ -404,7 +406,7 @@ templ ComplianceTable(data ComplianceData) {
 						</tr>
 					}
 					for _, row := range data.Rows {
-						@complianceRow(row)
+						@complianceRow(row, data.ProfileName)
 					}
 				</tbody>
 			</table>
@@ -413,7 +415,7 @@ templ ComplianceTable(data ComplianceData) {
 	</div>
 }
 
-templ complianceRow(row ComplianceRow) {
+templ complianceRow(row ComplianceRow, profileName string) {
 	<tr class="hover:bg-gray-50 dark:hover:bg-gray-800">
 		<td class="px-4 py-3 text-center">
 			<input
@@ -440,13 +442,13 @@ templ complianceRow(row ComplianceRow) {
 			@components.StatusBadge(row.Artist.NFOExists, "Metadata")
 		</td>
 		<td data-col="thumb" class="px-4 py-3 text-center">
-			@components.StatusBadge(row.Artist.ThumbExists, "Thumb")
+			@components.StatusBadge(row.Artist.ThumbExists, img.ImageTermFor("thumb", profileName))
 		</td>
 		<td data-col="fanart" class="px-4 py-3 text-center">
-			@components.StatusBadge(row.Artist.FanartExists, "Fanart")
+			@components.StatusBadge(row.Artist.FanartExists, img.ImageTermFor("fanart", profileName))
 		</td>
 		<td data-col="logo" class="px-4 py-3 text-center">
-			@components.StatusBadge(row.Artist.LogoExists, "Logo")
+			@components.StatusBadge(row.Artist.LogoExists, img.ImageTermFor("logo", profileName))
 		</td>
 		<td data-col="mbid" class="px-4 py-3 text-center">
 			@components.StatusBadge(row.Artist.MusicBrainzID != "", "MBID")

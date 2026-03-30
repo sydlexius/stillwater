@@ -523,6 +523,7 @@ func (r *Router) handleCompliancePage(w http.ResponseWriter, req *http.Request) 
 		Order:          params.Order,
 		HealthScoreMin: params.HealthScoreMin,
 		HealthScoreMax: params.HealthScoreMax,
+		ProfileName:    r.getActiveProfileName(req.Context()),
 	}
 
 	if isHTMXRequest(req) {

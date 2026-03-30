@@ -864,6 +864,137 @@ func TestCheckBackdropSequencing_SingleFile(t *testing.T) {
 	}
 }
 
+// --- countBackdrops tests ---
+
+func TestCountBackdrops_Empty(t *testing.T) {
+	dir := t.TempDir()
+	e := &Engine{platformService: nil}
+	count := e.countBackdrops(dir)
+	if count != 0 {
+		t.Errorf("countBackdrops empty dir = %d, want 0", count)
+	}
+}
+
+func TestCountBackdrops_SingleFanart(t *testing.T) {
+	dir := t.TempDir()
+	createTestJPEG(t, filepath.Join(dir, "fanart.jpg"), 1920, 1080)
+
+	e := &Engine{platformService: nil}
+	count := e.countBackdrops(dir)
+	if count != 1 {
+		t.Errorf("countBackdrops single = %d, want 1", count)
+	}
+}
+
+func TestCountBackdrops_MultipleFanart(t *testing.T) {
+	dir := t.TempDir()
+	createTestJPEG(t, filepath.Join(dir, "fanart.jpg"), 1920, 1080)
+	createTestJPEG(t, filepath.Join(dir, "fanart2.jpg"), 1920, 1080)
+	createTestJPEG(t, filepath.Join(dir, "fanart3.jpg"), 1920, 1080)
+
+	e := &Engine{platformService: nil}
+	count := e.countBackdrops(dir)
+	if count < 3 {
+		t.Errorf("countBackdrops multiple = %d, want >= 3", count)
+	}
+}
+
+func TestCountBackdrops_IgnoresNonFanart(t *testing.T) {
+	dir := t.TempDir()
+	createTestJPEG(t, filepath.Join(dir, "fanart.jpg"), 1920, 1080)
+	createTestJPEG(t, filepath.Join(dir, "folder.jpg"), 500, 500)
+	createTestJPEG(t, filepath.Join(dir, "logo.png"), 400, 200)
+
+	e := &Engine{platformService: nil}
+	count := e.countBackdrops(dir)
+	if count != 1 {
+		t.Errorf("countBackdrops with non-fanart = %d, want 1", count)
+	}
+}
+
+// --- makeBackdropMinCountChecker tests ---
+
+func TestCheckBackdropMinCount_Satisfied(t *testing.T) {
+	dir := t.TempDir()
+	createTestJPEG(t, filepath.Join(dir, "fanart.jpg"), 1920, 1080)
+	createTestJPEG(t, filepath.Join(dir, "fanart2.jpg"), 1920, 1080)
+
+	e := &Engine{platformService: nil}
+	checker := e.makeBackdropMinCountChecker()
+
+	a := artist.Artist{Name: "Test", Path: dir}
+	v := checker(&a, RuleConfig{MinCount: 2})
+	if v != nil {
+		t.Errorf("expected nil when count meets minimum, got: %s", v.Message)
+	}
+}
+
+func TestCheckBackdropMinCount_BelowMinimum(t *testing.T) {
+	dir := t.TempDir()
+	createTestJPEG(t, filepath.Join(dir, "fanart.jpg"), 1920, 1080)
+
+	e := &Engine{platformService: nil}
+	checker := e.makeBackdropMinCountChecker()
+
+	a := artist.Artist{Name: "Test", Path: dir}
+	v := checker(&a, RuleConfig{MinCount: 3})
+	if v == nil {
+		t.Fatal("expected violation when count is below minimum")
+	}
+	if v.RuleID != RuleBackdropMinCount {
+		t.Errorf("RuleID = %q, want %q", v.RuleID, RuleBackdropMinCount)
+	}
+	if !v.Fixable {
+		t.Error("expected Fixable to be true")
+	}
+}
+
+func TestCheckBackdropMinCount_NoBackdrops(t *testing.T) {
+	dir := t.TempDir()
+
+	e := &Engine{platformService: nil}
+	checker := e.makeBackdropMinCountChecker()
+
+	a := artist.Artist{Name: "Test", Path: dir}
+	v := checker(&a, RuleConfig{MinCount: 1})
+	if v == nil {
+		t.Fatal("expected violation when no backdrops exist")
+	}
+	if v.RuleID != RuleBackdropMinCount {
+		t.Errorf("RuleID = %q, want %q", v.RuleID, RuleBackdropMinCount)
+	}
+}
+
+func TestCheckBackdropMinCount_DefaultMinCount(t *testing.T) {
+	// MinCount 0 should default to 1
+	dir := t.TempDir()
+
+	e := &Engine{platformService: nil}
+	checker := e.makeBackdropMinCountChecker()
+
+	a := artist.Artist{Name: "Test", Path: dir}
+	v := checker(&a, RuleConfig{MinCount: 0})
+	if v == nil {
+		t.Fatal("expected violation with default min count and no backdrops")
+	}
+}
+
+func TestCheckBackdropMinCount_ExactlyAtMinimum(t *testing.T) {
+	dir := t.TempDir()
+	createTestJPEG(t, filepath.Join(dir, "fanart.jpg"), 1920, 1080)
+	createTestJPEG(t, filepath.Join(dir, "fanart2.jpg"), 1920, 1080)
+	createTestJPEG(t, filepath.Join(dir, "fanart3.jpg"), 1920, 1080)
+
+	e := &Engine{platformService: nil}
+	checker := e.makeBackdropMinCountChecker()
+
+	a := artist.Artist{Name: "Test", Path: dir}
+	v := checker(&a, RuleConfig{MinCount: 3})
+	if v != nil {
+		t.Errorf("expected nil when count equals minimum, got: %s", v.Message)
+	}
+}
+
 // --- checkLogoPadding tests ---
 
 func TestCheckLogoPadding_ExcessPadding(t *testing.T) {

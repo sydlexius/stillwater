@@ -38,6 +38,7 @@ const (
 	RuleImageDuplicate        = "image_duplicate"
 	RuleMetadataQuality       = "metadata_quality"
 	RuleBackdropSequencing    = "backdrop_sequencing"
+	RuleBackdropMinCount      = "backdrop_min_count"
 	RuleLogoPadding           = "logo_padding"
 
 	// Deprecated rule IDs kept for migration. These rules have been merged
@@ -203,6 +204,15 @@ var defaultRules = []Rule{
 		Enabled:        false,
 		AutomationMode: AutomationModeManual,
 		Config:         RuleConfig{Severity: "warning"},
+	},
+	{
+		ID:             RuleBackdropMinCount,
+		Name:           "Minimum backdrop count",
+		Description:    "Flags artists with fewer backdrops than the configured minimum. The auto-fixer fetches additional backdrops from providers, skipping duplicates via perceptual hash comparison.",
+		Category:       "image",
+		Enabled:        false,
+		AutomationMode: AutomationModeManual,
+		Config:         RuleConfig{MinCount: 1, Severity: "warning"},
 	},
 	{
 		ID:             RuleLogoPadding,

@@ -70,6 +70,13 @@ func (r *Router) handleUpdateSettings(w http.ResponseWriter, req *http.Request) 
 			return
 		}
 	}
+	if v, ok := body["images.backdrop.target_count"]; ok {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 || n > 10 {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "images.backdrop.target_count must be between 1 and 10"})
+			return
+		}
+	}
 	if v, ok := body["provider.name_similarity_threshold"]; ok {
 		n, err := strconv.Atoi(v)
 		if err != nil || n < 0 || n > 100 {

@@ -7,6 +7,7 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/auth"
 	"github.com/sydlexius/stillwater/internal/connection"
+	img "github.com/sydlexius/stillwater/internal/image"
 	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/platform"
 	"github.com/sydlexius/stillwater/internal/provider"
@@ -524,10 +525,10 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 										}
 									</p>
 								</div>
-								@profileNamingRow("Thumbnail", "thumb", data.ActiveProfile.ImageNaming.Thumb, !profileEditable(data.ActiveProfile))
-								@profileNamingRow("Fanart", "fanart", data.ActiveProfile.ImageNaming.Fanart, !profileEditable(data.ActiveProfile))
-								@profileNamingRow("Logo", "logo", data.ActiveProfile.ImageNaming.Logo, !profileEditable(data.ActiveProfile))
-								@profileNamingRow("Banner", "banner", data.ActiveProfile.ImageNaming.Banner, !profileEditable(data.ActiveProfile))
+								@profileNamingRow(img.ImageTermFor("thumb", data.ActiveProfile.Name), "thumb", data.ActiveProfile.ImageNaming.Thumb, !profileEditable(data.ActiveProfile))
+								@profileNamingRow(img.ImageTermFor("fanart", data.ActiveProfile.Name), "fanart", data.ActiveProfile.ImageNaming.Fanart, !profileEditable(data.ActiveProfile))
+								@profileNamingRow(img.ImageTermFor("logo", data.ActiveProfile.Name), "logo", data.ActiveProfile.ImageNaming.Logo, !profileEditable(data.ActiveProfile))
+								@profileNamingRow(img.ImageTermFor("banner", data.ActiveProfile.Name), "banner", data.ActiveProfile.ImageNaming.Banner, !profileEditable(data.ActiveProfile))
 							</div>
 							if profileEditable(data.ActiveProfile) {
 								<div class="mt-4 flex items-center justify-between">

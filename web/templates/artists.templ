@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+	img "github.com/sydlexius/stillwater/internal/image"
 	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/web/components"
 )
@@ -16,17 +17,19 @@ type LibrarySourceInfo struct {
 
 // ArtistListData holds the data for the artist list page.
 type ArtistListData struct {
-	Artists        []artist.Artist
-	Libraries      []library.Library
-	LibrarySources map[string]LibrarySourceInfo // library ID -> source info (only for non-manual)
-	ComplianceMap  map[string]artist.ComplianceStatus // artist ID -> compliance status
-	Pagination     components.PaginationData
-	Search         string
-	Sort           string
-	Order          string
-	Filter         string
-	LibraryID      string
-	View           string // "table" or "grid"
+	Artists          []artist.Artist
+	Libraries        []library.Library
+	LibrarySources   map[string]LibrarySourceInfo          // library ID -> source info (only for non-manual)
+	ComplianceMap    map[string]artist.ComplianceStatus     // artist ID -> compliance status
+	PlatformPresence map[string]artist.PlatformPresence     // artist ID -> platform badges
+	Pagination       components.PaginationData
+	Search           string
+	Sort             string
+	Order            string
+	Filter           string
+	LibraryID        string
+	View             string // "table" or "grid"
+	ProfileName      string // Active platform profile name for image terminology
 }
 
 // complianceDotClass returns the Tailwind background class for a compliance indicator dot.
@@ -76,6 +79,49 @@ func artistSourceInfo(a artist.Artist, sources map[string]LibrarySourceInfo) Lib
 		return LibrarySourceInfo{}
 	}
 	return sources[a.LibraryID]
+}
+
+// artistHasFilesystem returns true when the artist was discovered from a
+// filesystem library scan (has a non-empty path).
+func artistHasFilesystem(a artist.Artist) bool {
+	return a.Path != ""
+}
+
+// lidarrTooltip returns the tooltip text for a Lidarr platform badge.
+// Uses the connection name from library sources if available.
+func lidarrTooltip(a artist.Artist, sources map[string]LibrarySourceInfo) string {
+	info := artistSourceInfo(a, sources)
+	if info.Source == "lidarr" && info.ConnectionName != "" {
+		return "Managed by " + info.ConnectionName
+	}
+	return "Managed by Lidarr"
+}
+
+// embyTooltip returns the tooltip text for an Emby platform badge.
+func embyTooltip(a artist.Artist, sources map[string]LibrarySourceInfo) string {
+	info := artistSourceInfo(a, sources)
+	if info.Source == "emby" && info.ConnectionName != "" {
+		return "Present in " + info.ConnectionName
+	}
+	return "Present in Emby"
+}
+
+// jellyfinTooltip returns the tooltip text for a Jellyfin platform badge.
+func jellyfinTooltip(a artist.Artist, sources map[string]LibrarySourceInfo) string {
+	info := artistSourceInfo(a, sources)
+	if info.Source == "jellyfin" && info.ConnectionName != "" {
+		return "Present in " + info.ConnectionName
+	}
+	return "Present in Jellyfin"
+}
+
+// artistPlatformPresence looks up an artist's platform presence from the map,
+// returning a zero value (no platforms) if the artist is not found.
+func artistPlatformPresence(id string, m map[string]artist.PlatformPresence) artist.PlatformPresence {
+	if m == nil {
+		return artist.PlatformPresence{}
+	}
+	return m[id]
 }
 
 // libraryDropdownLabel returns the display label for a library in the dropdown.
@@ -195,10 +241,10 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 					>
 						<option value="" selected?={ data.Filter == "" }>All Artists</option>
 						<option value="missing_nfo" selected?={ data.Filter == "missing_nfo" }>Missing Metadata</option>
-						<option value="missing_thumb" selected?={ data.Filter == "missing_thumb" }>Missing Thumbnail</option>
-						<option value="missing_fanart" selected?={ data.Filter == "missing_fanart" }>Missing Fanart</option>
-						<option value="missing_logo" selected?={ data.Filter == "missing_logo" }>Missing Logo</option>
-						<option value="missing_banner" selected?={ data.Filter == "missing_banner" }>Missing Banner</option>
+						<option value="missing_thumb" selected?={ data.Filter == "missing_thumb" }>Missing { img.ImageTermFor("thumb", data.ProfileName) }</option>
+						<option value="missing_fanart" selected?={ data.Filter == "missing_fanart" }>Missing { img.ImageTermFor("fanart", data.ProfileName) }</option>
+						<option value="missing_logo" selected?={ data.Filter == "missing_logo" }>Missing { img.ImageTermFor("logo", data.ProfileName) }</option>
+						<option value="missing_banner" selected?={ data.Filter == "missing_banner" }>Missing { img.ImageTermFor("banner", data.ProfileName) }</option>
 						<option value="missing_mbid" selected?={ data.Filter == "missing_mbid" }>Missing MBID</option>
 						<option value="excluded" selected?={ data.Filter == "excluded" }>Excluded</option>
 						<option value="not_excluded" selected?={ data.Filter == "not_excluded" }>Not Excluded</option>
@@ -228,9 +274,9 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 					@components.ColumnToggle("artists", "artists-table", []components.ColumnDef{
 						{Key: "name", Label: "Name", Required: true},
 						{Key: "metadata", Label: "Metadata"},
-						{Key: "thumb", Label: "Thumb"},
-						{Key: "fanart", Label: "Fanart"},
-						{Key: "logo", Label: "Logo"},
+						{Key: "thumb", Label: img.ImageTermFor("thumb", data.ProfileName)},
+						{Key: "fanart", Label: img.ImageTermFor("fanart", data.ProfileName)},
+						{Key: "logo", Label: img.ImageTermFor("logo", data.ProfileName)},
 						{Key: "mbid", Label: "MBID"},
 					})
 				</div>
@@ -487,13 +533,13 @@ templ ArtistTable(data ArtistListData) {
 							Metadata
 						</th>
 						<th scope="col" data-col="thumb" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
-							Thumb
+							{ img.ImageTermFor("thumb", data.ProfileName) }
 						</th>
 						<th scope="col" data-col="fanart" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
-							Fanart
+							{ img.ImageTermFor("fanart", data.ProfileName) }
 						</th>
 						<th scope="col" data-col="logo" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
-							Logo
+							{ img.ImageTermFor("logo", data.ProfileName) }
 						</th>
 						<th scope="col" data-col="mbid" class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
 							MBID
@@ -509,7 +555,7 @@ templ ArtistTable(data ArtistListData) {
 						</tr>
 					}
 					for _, a := range data.Artists {
-						@ArtistRow(a, data.LibrarySources, data.ComplianceMap)
+						@ArtistRow(a, data.LibrarySources, data.ComplianceMap, data.PlatformPresence, data.ProfileName)
 					}
 				</tbody>
 			</table>
@@ -518,7 +564,7 @@ templ ArtistTable(data ArtistListData) {
 	</div>
 }
 
-templ ArtistRow(a artist.Artist, sources map[string]LibrarySourceInfo, compliance map[string]artist.ComplianceStatus) {
+templ ArtistRow(a artist.Artist, sources map[string]LibrarySourceInfo, compliance map[string]artist.ComplianceStatus, platforms map[string]artist.PlatformPresence, profileName string) {
 	<tr class={ "hover:bg-gray-50 dark:hover:bg-gray-800", templ.KV("opacity-50", a.IsExcluded) }>
 		<td data-col="name" class="px-4 py-3 text-sm">
 			<div class="flex items-center gap-1.5">
@@ -530,14 +576,7 @@ templ ArtistRow(a artist.Artist, sources map[string]LibrarySourceInfo, complianc
 						role="img"
 					></span>
 				}
-				if artistSourceInfo(a, sources).Source != "" {
-					<img
-						src={ logoSrc(artistSourceInfo(a, sources).Source) }
-						alt={ sourceDisplayName(artistSourceInfo(a, sources).Source) }
-						title={ artistSourceInfo(a, sources).ConnectionName }
-						class="h-4 w-4 shrink-0"
-					/>
-				}
+				@artistPlatformBadges(a, sources, platforms)
 				<a
 					href={ templ.SafeURL("/artists/" + a.ID) }
 					class="font-medium text-blue-600 dark:text-blue-400 hover:underline"
@@ -556,13 +595,13 @@ templ ArtistRow(a artist.Artist, sources map[string]LibrarySourceInfo, complianc
 			@components.StatusBadge(a.NFOExists, "Metadata")
 		</td>
 		<td data-col="thumb" class="px-4 py-3 text-center">
-			@components.ImageStatusBadge(a.ThumbExists, a.ThumbLowRes, "Thumb")
+			@components.ImageStatusBadge(a.ThumbExists, a.ThumbLowRes, img.ImageTermFor("thumb", profileName))
 		</td>
 		<td data-col="fanart" class="px-4 py-3 text-center">
-			@components.ImageStatusBadge(a.FanartExists, a.FanartLowRes, "Fanart")
+			@components.ImageStatusBadge(a.FanartExists, a.FanartLowRes, img.ImageTermFor("fanart", profileName))
 		</td>
 		<td data-col="logo" class="px-4 py-3 text-center">
-			@components.ImageStatusBadge(a.LogoExists, a.LogoLowRes, "Logo")
+			@components.ImageStatusBadge(a.LogoExists, a.LogoLowRes, img.ImageTermFor("logo", profileName))
 		</td>
 		<td data-col="mbid" class="px-4 py-3 text-center">
 			@components.StatusBadge(a.MusicBrainzID != "", "MBID")
@@ -580,7 +619,7 @@ templ ArtistGrid(data ArtistListData) {
 		} else {
 			<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
 				for _, a := range data.Artists {
-					@ArtistCard(a, data.LibrarySources, data.ComplianceMap)
+					@ArtistCard(a, data.LibrarySources, data.ComplianceMap, data.PlatformPresence)
 				}
 			</div>
 		}
@@ -588,7 +627,7 @@ templ ArtistGrid(data ArtistListData) {
 	</div>
 }
 
-templ ArtistCard(a artist.Artist, sources map[string]LibrarySourceInfo, compliance map[string]artist.ComplianceStatus) {
+templ ArtistCard(a artist.Artist, sources map[string]LibrarySourceInfo, compliance map[string]artist.ComplianceStatus, platforms map[string]artist.PlatformPresence) {
 	<a
 		href={ templ.SafeURL("/artists/" + a.ID) }
 		class={ "group block rounded-lg overflow-hidden bg-white dark:bg-gray-800 shadow hover:shadow-md transition-shadow", templ.KV("opacity-50", a.IsExcluded) }
@@ -621,18 +660,7 @@ templ ArtistCard(a artist.Artist, sources map[string]LibrarySourceInfo, complian
 					role="img"
 				></span>
 			}
-			if artistSourceInfo(a, sources).Source != "" {
-				<div
-					class="absolute bottom-1 right-1 rounded-full bg-black/60 p-1"
-					title={ artistSourceInfo(a, sources).ConnectionName }
-				>
-					<img
-						src={ logoSrc(artistSourceInfo(a, sources).Source) }
-						alt={ sourceDisplayName(artistSourceInfo(a, sources).Source) }
-						class="h-4 w-4"
-					/>
-				</div>
-			}
+			@artistCardPlatformBadges(a, sources, platforms)
 		</div>
 		<div class="px-2 py-2">
 			<p class="text-sm font-medium text-gray-900 dark:text-gray-100 truncate" title={ a.Name }>
@@ -643,4 +671,54 @@ templ ArtistCard(a artist.Artist, sources map[string]LibrarySourceInfo, complian
 			</p>
 		</div>
 	</a>
+}
+
+// artistPlatformBadges renders inline platform badges for the table view name column.
+// Badge order: Filesystem, Lidarr, Emby, Jellyfin (discovery source first, then platforms).
+templ artistPlatformBadges(a artist.Artist, sources map[string]LibrarySourceInfo, platforms map[string]artist.PlatformPresence) {
+	if artistHasFilesystem(a) || artistPlatformPresence(a.ID, platforms).HasLidarr || artistPlatformPresence(a.ID, platforms).HasEmby || artistPlatformPresence(a.ID, platforms).HasJellyfin || artistSourceInfo(a, sources).Source != "" {
+		<span class="inline-flex items-center gap-0.5 shrink-0">
+			if artistHasFilesystem(a) {
+				@components.PlatformBadge("filesystem", "Found in " + a.Path)
+			}
+			if artistPlatformPresence(a.ID, platforms).HasLidarr || artistSourceInfo(a, sources).Source == "lidarr" {
+				@components.PlatformBadge("lidarr", lidarrTooltip(a, sources))
+			}
+			if artistPlatformPresence(a.ID, platforms).HasEmby || artistSourceInfo(a, sources).Source == "emby" {
+				@components.PlatformBadge("emby", embyTooltip(a, sources))
+			}
+			if artistPlatformPresence(a.ID, platforms).HasJellyfin || artistSourceInfo(a, sources).Source == "jellyfin" {
+				@components.PlatformBadge("jellyfin", jellyfinTooltip(a, sources))
+			}
+		</span>
+	}
+}
+
+// artistCardPlatformBadges renders overlay platform badges for the grid card view.
+// Badges are positioned in the bottom-right corner of the card image area.
+templ artistCardPlatformBadges(a artist.Artist, sources map[string]LibrarySourceInfo, platforms map[string]artist.PlatformPresence) {
+	if artistHasFilesystem(a) || artistPlatformPresence(a.ID, platforms).HasLidarr || artistPlatformPresence(a.ID, platforms).HasEmby || artistPlatformPresence(a.ID, platforms).HasJellyfin || artistSourceInfo(a, sources).Source != "" {
+		<div class="absolute bottom-1 right-1 flex items-center gap-0.5">
+			if artistHasFilesystem(a) {
+				<span class="rounded-full bg-black/60 p-0.5">
+					@components.PlatformBadge("filesystem", "Found in " + a.Path)
+				</span>
+			}
+			if artistPlatformPresence(a.ID, platforms).HasLidarr || artistSourceInfo(a, sources).Source == "lidarr" {
+				<span class="rounded-full bg-black/60 p-0.5">
+					@components.PlatformBadge("lidarr", lidarrTooltip(a, sources))
+				</span>
+			}
+			if artistPlatformPresence(a.ID, platforms).HasEmby || artistSourceInfo(a, sources).Source == "emby" {
+				<span class="rounded-full bg-black/60 p-0.5">
+					@components.PlatformBadge("emby", embyTooltip(a, sources))
+				</span>
+			}
+			if artistPlatformPresence(a.ID, platforms).HasJellyfin || artistSourceInfo(a, sources).Source == "jellyfin" {
+				<span class="rounded-full bg-black/60 p-0.5">
+					@components.PlatformBadge("jellyfin", jellyfinTooltip(a, sources))
+				</span>
+			}
+		</div>
+	}
 }

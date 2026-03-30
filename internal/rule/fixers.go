@@ -305,7 +305,8 @@ func (f *ImageFixer) fetchImages(ctx context.Context, mbid string, providerIDs m
 func (f *ImageFixer) CanFix(v *Violation) bool {
 	switch v.RuleID {
 	case RuleThumbExists, RuleFanartExists, RuleLogoExists, RuleThumbSquare, RuleThumbMinRes,
-		RuleFanartMinRes, RuleFanartAspect, RuleLogoMinRes, RuleBannerExists, RuleBannerMinRes:
+		RuleFanartMinRes, RuleFanartAspect, RuleLogoMinRes, RuleBannerExists, RuleBannerMinRes,
+		RuleBackdropMinCount:
 		return true
 	default:
 		return false
@@ -517,7 +518,7 @@ func ruleToImageType(ruleID string) string {
 	switch ruleID {
 	case RuleThumbExists, RuleThumbSquare, RuleThumbMinRes:
 		return "thumb"
-	case RuleFanartExists, RuleFanartMinRes, RuleFanartAspect:
+	case RuleFanartExists, RuleFanartMinRes, RuleFanartAspect, RuleBackdropMinCount:
 		return "fanart"
 	case RuleLogoExists, RuleLogoMinRes:
 		return "logo"

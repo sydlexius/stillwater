@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+	img "github.com/sydlexius/stillwater/internal/image"
 	"github.com/sydlexius/stillwater/internal/provider"
 	"github.com/sydlexius/stillwater/web/components"
 )
@@ -15,6 +16,7 @@ type ImageSearchData struct {
 	WebSearchEnabled bool
 	AutoFetchImages  bool   // When true, auto-search providers on page load
 	SelectedType     string // "thumb", "fanart", "logo", "banner", or "" for generic
+	ProfileName      string // Active platform profile name for image terminology
 }
 
 templ ImageSearchPage(assets AssetPaths, data ImageSearchData) {
@@ -32,7 +34,7 @@ templ ImageSearchPage(assets AssetPaths, data ImageSearchData) {
 					<span class="text-gray-400">/</span>
 				</div>
 				if data.SelectedType != "" {
-					<h1 class="mt-2 text-2xl font-bold">{ imageTypeLabel(data.SelectedType) }</h1>
+					<h1 class="mt-2 text-2xl font-bold">{ img.ImageTermFor(data.SelectedType, data.ProfileName) }</h1>
 				} else {
 					<h1 class="mt-2 text-2xl font-bold">Image Management</h1>
 				}
@@ -112,7 +114,7 @@ templ imageSearchContextualized(data ImageSearchData) {
 	<div class="max-w-4xl mx-auto space-y-6" data-artist-id={ data.Artist.ID } data-image-type={ data.SelectedType }>
 		<section class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
 			<div class="flex items-center justify-between mb-4">
-				<h2 class="text-lg font-semibold">Current { imageTypeLabel(data.SelectedType) }</h2>
+				<h2 class="text-lg font-semibold">Current { img.ImageTermFor(data.SelectedType, data.ProfileName) }</h2>
 				<span class="inline-flex items-center gap-1">
 					@components.ContextMenu("img-actions-"+data.Artist.ID, false) {
 						if data.Artist.MusicBrainzID != "" {
@@ -205,13 +207,13 @@ templ imageSearchContextualized(data ImageSearchData) {
 				if imageExistsForType(data.Artist, data.SelectedType) {
 					<img
 						src={ fmt.Sprintf("/api/v1/artists/%s/images/%s/file", data.Artist.ID, data.SelectedType) }
-						alt={ imageTypeLabel(data.SelectedType) }
+						alt={ img.ImageTermFor(data.SelectedType, data.ProfileName) }
 						class="max-w-full max-h-96 object-contain"
 					/>
 				} else {
 					<div class="text-center text-gray-400">
 						@components.IconPlusCircle("mx-auto h-12 w-12")
-						<p class="mt-2 text-sm">No { imageTypeLabel(data.SelectedType) } image yet</p>
+						<p class="mt-2 text-sm">No { img.ImageTermFor(data.SelectedType, data.ProfileName) } image yet</p>
 					</div>
 				}
 				<div id="drop-hint" class="hidden absolute inset-0 bg-blue-500/10 border-2 border-dashed border-blue-400 rounded-lg flex items-center justify-center">
@@ -381,19 +383,42 @@ templ imageSearchContextualized(data ImageSearchData) {
 					statusEl.replaceChildren(s);
 				}
 
+				// openAutoCrop opens the crop modal with the image data URI and locks
+				// the aspect ratio to the slot requirement. Called when an upload or
+				// fetch returns needs_crop=true.
+				function openAutoCrop(data) {
+					if (typeof openCropModal !== 'function') return;
+					var cropType = document.getElementById('crop-type');
+					if (cropType) cropType.value = data.type;
+					openCropModal(data.image_data, data.type);
+					// Lock the aspect ratio to the required value after the
+					// cropper finishes initializing (onload fires asynchronously).
+					var ratio = data.required_ratio;
+					if (ratio && ratio > 0) {
+						setTimeout(function() {
+							if (typeof setCropRatio === 'function') setCropRatio(ratio);
+						}, 300);
+					}
+					setStatus('Image needs cropping to match the ' + data.type + ' aspect ratio.', 'text-amber-600');
+				}
+
 				function uploadFile(file) {
+					var bp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
 					var fd = new FormData();
 					fd.append('file', file);
 					fd.append('type', imageType);
 					setStatus('Uploading...', 'text-gray-500');
-					fetch('/api/v1/artists/' + artistID + '/images/upload', {
+					fetch(bp + '/api/v1/artists/' + artistID + '/images/upload', {
 						method: 'POST',
 						headers: {'X-CSRF-Token': csrfToken()},
 						body: fd,
 						credentials: 'same-origin'
 					}).then(function(r) {
-						if (r.ok) { window.location.reload(); }
-						else { r.text().then(function(t) { setStatus(t, 'text-red-500'); }); }
+						return r.json().then(function(data) {
+							if (!r.ok) { setStatus(data.error || 'Upload failed', 'text-red-500'); return; }
+							if (data.needs_crop) { openAutoCrop(data); return; }
+							window.location.reload();
+						});
 					}).catch(function() { setStatus('Upload failed', 'text-red-500'); });
 				}
 
@@ -411,19 +436,23 @@ templ imageSearchContextualized(data ImageSearchData) {
 				});
 
 				document.getElementById('fetch-url-submit').addEventListener('click', function() {
+					var bp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
 					var url = document.getElementById('fetch-url-input').value.trim();
 					if (!url) return;
 					var modal = document.getElementById('fetch-url-modal');
 					setStatus('Fetching...', 'text-gray-500');
 					modal.classList.add('hidden');
-					fetch('/api/v1/artists/' + artistID + '/images/fetch', {
+					fetch(bp + '/api/v1/artists/' + artistID + '/images/fetch', {
 						method: 'POST',
-						headers: {'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRF-Token': csrfToken()},
-						body: 'url=' + encodeURIComponent(url) + '&type=' + imageType,
+						headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken()},
+						body: JSON.stringify({url: url, type: imageType}),
 						credentials: 'same-origin'
 					}).then(function(r) {
-						if (r.ok) { window.location.reload(); }
-						else { r.text().then(function(t) { setStatus(t, 'text-red-500'); }); }
+						return r.json().then(function(data) {
+							if (!r.ok) { setStatus(data.error || 'Fetch failed', 'text-red-500'); return; }
+							if (data.needs_crop) { openAutoCrop(data); return; }
+							window.location.reload();
+						});
 					}).catch(function() { setStatus('Fetch failed', 'text-red-500'); });
 				});
 
@@ -556,10 +585,10 @@ templ imageSearchGeneric(data ImageSearchData) {
 			<section class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
 				<h2 class="text-lg font-semibold mb-3">Current Images</h2>
 				<div class="space-y-2">
-					@components.StatusBadge(data.Artist.ThumbExists, "Thumbnail")
-					@components.StatusBadge(data.Artist.FanartExists, "Fanart")
-					@components.StatusBadge(data.Artist.LogoExists, "Logo")
-					@components.StatusBadge(data.Artist.BannerExists, "Banner")
+					@components.StatusBadge(data.Artist.ThumbExists, img.ImageTermFor("thumb", data.ProfileName))
+					@components.StatusBadge(data.Artist.FanartExists, img.ImageTermFor("fanart", data.ProfileName))
+					@components.StatusBadge(data.Artist.LogoExists, img.ImageTermFor("logo", data.ProfileName))
+					@components.StatusBadge(data.Artist.BannerExists, img.ImageTermFor("banner", data.ProfileName))
 				</div>
 			</section>
 			<section id="compare-panel" class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow hidden">
@@ -740,19 +769,14 @@ func imageExistsForType(a artist.Artist, t string) bool {
 	}
 }
 
+// imageTypeLabel returns the default display label for an image slot.
+// For platform-specific labels, use img.ImageTermFor(slot, profileName).
 func imageTypeLabel(t string) string {
-	switch t {
-	case "thumb":
-		return "Thumbnail"
-	case "fanart":
-		return "Fanart"
-	case "logo":
-		return "Logo"
-	case "banner":
-		return "Banner"
-	default:
+	label := img.ImageTermFor(t, "")
+	if label == "" {
 		return t
 	}
+	return label
 }
 
 script openCropForType(imgSrc string, imageType string) {
