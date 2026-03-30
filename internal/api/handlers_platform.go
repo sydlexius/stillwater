@@ -7,6 +7,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/filesystem"
 	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/platform"
+	"github.com/sydlexius/stillwater/internal/scraper"
 	"github.com/sydlexius/stillwater/web/templates"
 )
 
@@ -220,6 +221,11 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 		r.logger.Error("getting provider priorities for settings page", "error", err)
 	}
 
+	scraperCfg, err := r.scraperService.GetConfig(req.Context(), scraper.ScopeGlobal)
+	if err != nil {
+		r.logger.Error("getting scraper config for settings page", "error", err)
+	}
+
 	conns, err := r.connectionService.List(req.Context())
 	if err != nil {
 		r.logger.Error("listing connections for settings page", "error", err)
@@ -329,6 +335,7 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 		ActiveProfile:           active,
 		ProviderKeys:            providerKeys,
 		Priorities:              priorities,
+		ScraperConfig:           scraperCfg,
 		Connections:             conns,
 		Webhooks:                webhooks,
 		WebSearchProviders:      webSearchProviders,

@@ -372,3 +372,21 @@ type ErrAuthRequired struct {
 func (e *ErrAuthRequired) Error() string {
 	return fmt.Sprintf("provider %s: API key not configured", e.Provider)
 }
+
+// contextKeyBiographyVerbosity is the unexported context key for the
+// biography verbosity setting passed from the scraper executor to providers.
+type contextKeyBiographyVerbosity struct{}
+
+// WithBiographyVerbosity returns a new context carrying the requested
+// biography verbosity value (e.g. "intro" or "full").
+func WithBiographyVerbosity(ctx context.Context, verbosity string) context.Context {
+	return context.WithValue(ctx, contextKeyBiographyVerbosity{}, verbosity)
+}
+
+// BiographyVerbosityFromContext returns the biography verbosity value stored
+// in ctx, or an empty string if none was set. An empty string should be
+// treated by providers as the default conservative option (intro-only).
+func BiographyVerbosityFromContext(ctx context.Context) string {
+	v, _ := ctx.Value(contextKeyBiographyVerbosity{}).(string)
+	return v
+}

@@ -4631,6 +4631,58 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  /scraper/config/fields/{field}/verbosity:
+    put:
+      tags: [Scraper]
+      summary: Update biography verbosity for a field
+      description: >
+        Updates the verbosity setting for a single field in the global scraper
+        configuration. Only applicable for provider-field combinations that
+        support multiple verbosity levels (e.g. Wikipedia biography: intro vs
+        full article). Passing an empty string resets to the default (intro-only).
+      operationId: updateFieldVerbosity
+      parameters:
+        - name: field
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Field name (e.g. "biography")
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [verbosity]
+              properties:
+                verbosity:
+                  type: string
+                  description: >
+                    Verbosity level. Valid values for Wikipedia biography:
+                    "intro" (intro section only, default) or "full" (full
+                    article text). Pass an empty string to reset to default.
+                  example: "full"
+      responses:
+        "200":
+          description: Verbosity setting saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+        "400":
+          description: Invalid field name or verbosity value
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Field not found in scraper config
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   /scraper/providers:
     get:
       tags: [Scraper]
