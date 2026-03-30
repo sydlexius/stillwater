@@ -37,6 +37,9 @@
       return;
     }
 
+    // Clear cached preferences so the next user does not see stale settings.
+    if (window.swPreferences) { window.swPreferences.clearCache(); }
+
     // Strip the base path prefix so the return URL is basePath-relative.
     // The server prepends basePath when building the redirect, so sending
     // the full pathname would cause double-prefixing (e.g. /sw/sw/artists).

@@ -3734,9 +3734,23 @@ paths:
                     enum: [off, on, auto]
                   language:
                     type: string
+                    enum: [en]
                   notification_enabled:
                     type: string
                     enum: ["true", "false"]
+                required:
+                  - theme
+                  - glass_intensity
+                  - sidebar_state
+                  - content_width
+                  - font_family
+                  - font_size
+                  - letter_spacing
+                  - thumbnail_size
+                  - reduced_motion
+                  - lite_mode
+                  - language
+                  - notification_enabled
         "401":
           description: Not authenticated
           content:
