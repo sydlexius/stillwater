@@ -252,7 +252,7 @@ func TestUploadArtistImage_NoImageWriteFeature(t *testing.T) {
 		t.Fatalf("creating connection: %v", err)
 	}
 	// Disable image_write after creation.
-	if err := connSvc.UpdateFeatures(ctx, conn.ID, true, false, false); err != nil {
+	if err := connSvc.UpdateFeatures(ctx, conn.ID, true, false, false, false, false); err != nil {
 		t.Fatalf("disabling image_write: %v", err)
 	}
 

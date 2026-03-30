@@ -16,39 +16,43 @@ import (
 
 // connectionResponse is a Connection without the raw API key for list responses.
 type connectionResponse struct {
-	ID                   string  `json:"id"`
-	Name                 string  `json:"name"`
-	Type                 string  `json:"type"`
-	URL                  string  `json:"url"`
-	HasKey               bool    `json:"has_key"`
-	HasPlatformUserID    bool    `json:"has_platform_user_id"`
-	Enabled              bool    `json:"enabled"`
-	Status               string  `json:"status"`
-	StatusMessage        string  `json:"status_message,omitempty"`
-	LastCheckedAt        *string `json:"last_checked_at,omitempty"`
-	CreatedAt            string  `json:"created_at"`
-	UpdatedAt            string  `json:"updated_at"`
-	FeatureLibraryImport bool    `json:"feature_library_import"`
-	FeatureNFOWrite      bool    `json:"feature_nfo_write"`
-	FeatureImageWrite    bool    `json:"feature_image_write"`
+	ID                    string  `json:"id"`
+	Name                  string  `json:"name"`
+	Type                  string  `json:"type"`
+	URL                   string  `json:"url"`
+	HasKey                bool    `json:"has_key"`
+	HasPlatformUserID     bool    `json:"has_platform_user_id"`
+	Enabled               bool    `json:"enabled"`
+	Status                string  `json:"status"`
+	StatusMessage         string  `json:"status_message,omitempty"`
+	LastCheckedAt         *string `json:"last_checked_at,omitempty"`
+	CreatedAt             string  `json:"created_at"`
+	UpdatedAt             string  `json:"updated_at"`
+	FeatureLibraryImport  bool    `json:"feature_library_import"`
+	FeatureNFOWrite       bool    `json:"feature_nfo_write"`
+	FeatureImageWrite     bool    `json:"feature_image_write"`
+	FeatureMetadataPush   bool    `json:"feature_metadata_push"`
+	FeatureTriggerRefresh bool    `json:"feature_trigger_refresh"`
 }
 
 func toConnectionResponse(c connection.Connection) connectionResponse {
 	resp := connectionResponse{
-		ID:                   c.ID,
-		Name:                 c.Name,
-		Type:                 c.Type,
-		URL:                  c.URL,
-		HasKey:               c.APIKey != "",
-		HasPlatformUserID:    c.PlatformUserID != "",
-		Enabled:              c.Enabled,
-		Status:               c.Status,
-		StatusMessage:        c.StatusMessage,
-		CreatedAt:            c.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
-		UpdatedAt:            c.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
-		FeatureLibraryImport: c.FeatureLibraryImport,
-		FeatureNFOWrite:      c.FeatureNFOWrite,
-		FeatureImageWrite:    c.FeatureImageWrite,
+		ID:                    c.ID,
+		Name:                  c.Name,
+		Type:                  c.Type,
+		URL:                   c.URL,
+		HasKey:                c.APIKey != "",
+		HasPlatformUserID:     c.PlatformUserID != "",
+		Enabled:               c.Enabled,
+		Status:                c.Status,
+		StatusMessage:         c.StatusMessage,
+		CreatedAt:             c.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		UpdatedAt:             c.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		FeatureLibraryImport:  c.FeatureLibraryImport,
+		FeatureNFOWrite:       c.FeatureNFOWrite,
+		FeatureImageWrite:     c.FeatureImageWrite,
+		FeatureMetadataPush:   c.FeatureMetadataPush,
+		FeatureTriggerRefresh: c.FeatureTriggerRefresh,
 	}
 	if c.LastCheckedAt != nil {
 		s := c.LastCheckedAt.Format("2006-01-02T15:04:05Z07:00")
@@ -102,23 +106,25 @@ func (r *Router) handleGetConnection(w http.ResponseWriter, req *http.Request) {
 
 	resp := toConnectionResponse(*c)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"id":                     resp.ID,
-		"name":                   resp.Name,
-		"type":                   resp.Type,
-		"url":                    resp.URL,
-		"has_key":                resp.HasKey,
-		"has_platform_user_id":   resp.HasPlatformUserID,
-		"enabled":                resp.Enabled,
-		"status":                 resp.Status,
-		"status_message":         resp.StatusMessage,
-		"last_checked_at":        resp.LastCheckedAt,
-		"created_at":             resp.CreatedAt,
-		"updated_at":             resp.UpdatedAt,
-		"feature_library_import": resp.FeatureLibraryImport,
-		"feature_nfo_write":      resp.FeatureNFOWrite,
-		"feature_image_write":    resp.FeatureImageWrite,
-		"library_count":          len(libs),
-		"artist_count":           artistCount,
+		"id":                      resp.ID,
+		"name":                    resp.Name,
+		"type":                    resp.Type,
+		"url":                     resp.URL,
+		"has_key":                 resp.HasKey,
+		"has_platform_user_id":    resp.HasPlatformUserID,
+		"enabled":                 resp.Enabled,
+		"status":                  resp.Status,
+		"status_message":          resp.StatusMessage,
+		"last_checked_at":         resp.LastCheckedAt,
+		"created_at":              resp.CreatedAt,
+		"updated_at":              resp.UpdatedAt,
+		"feature_library_import":  resp.FeatureLibraryImport,
+		"feature_nfo_write":       resp.FeatureNFOWrite,
+		"feature_image_write":     resp.FeatureImageWrite,
+		"feature_metadata_push":   resp.FeatureMetadataPush,
+		"feature_trigger_refresh": resp.FeatureTriggerRefresh,
+		"library_count":           len(libs),
+		"artist_count":            artistCount,
 	})
 }
 
@@ -327,14 +333,16 @@ func (r *Router) handleUpdateConnection(w http.ResponseWriter, req *http.Request
 	}
 
 	var body struct {
-		Name                 string `json:"name"`
-		Type                 string `json:"type"`
-		URL                  string `json:"url"`
-		APIKey               string `json:"api_key"` //nolint:gosec // G101: not a hardcoded secret, this is a request field
-		Enabled              *bool  `json:"enabled"`
-		FeatureLibraryImport *bool  `json:"feature_library_import"`
-		FeatureNFOWrite      *bool  `json:"feature_nfo_write"`
-		FeatureImageWrite    *bool  `json:"feature_image_write"`
+		Name                  string `json:"name"`
+		Type                  string `json:"type"`
+		URL                   string `json:"url"`
+		APIKey                string `json:"api_key"` //nolint:gosec // G101: not a hardcoded secret, this is a request field
+		Enabled               *bool  `json:"enabled"`
+		FeatureLibraryImport  *bool  `json:"feature_library_import"`
+		FeatureNFOWrite       *bool  `json:"feature_nfo_write"`
+		FeatureImageWrite     *bool  `json:"feature_image_write"`
+		FeatureMetadataPush   *bool  `json:"feature_metadata_push"`
+		FeatureTriggerRefresh *bool  `json:"feature_trigger_refresh"`
 	}
 	if !DecodeJSON(w, req, &body) {
 		return
@@ -363,6 +371,12 @@ func (r *Router) handleUpdateConnection(w http.ResponseWriter, req *http.Request
 	}
 	if body.FeatureImageWrite != nil {
 		existing.FeatureImageWrite = *body.FeatureImageWrite
+	}
+	if body.FeatureMetadataPush != nil {
+		existing.FeatureMetadataPush = *body.FeatureMetadataPush
+	}
+	if body.FeatureTriggerRefresh != nil {
+		existing.FeatureTriggerRefresh = *body.FeatureTriggerRefresh
 	}
 
 	if err := r.connectionService.Update(req.Context(), existing); err != nil {
@@ -441,6 +455,7 @@ func (r *Router) handleTestConnection(w http.ResponseWriter, req *http.Request) 
 	defer cancel()
 
 	var testErr error
+	var driftWarnings []string
 	switch conn.Type {
 	case connection.TypeEmby:
 		client := emby.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger)
@@ -452,6 +467,16 @@ func (r *Router) handleTestConnection(w http.ResponseWriter, req *http.Request) 
 			}
 			if updErr := r.connectionService.UpdatePlatformUserID(testCtx, id, uid); updErr != nil {
 				r.logger.Error("persisting emby platform user id", "error", updErr)
+			}
+			// Drift detection: check for conflicting platform settings.
+			if settings, settingsErr := client.GetLibrarySettings(testCtx); settingsErr == nil {
+				for _, s := range settings {
+					if s.HasConflicts {
+						warning := "library " + s.LibraryName + " has active fetchers/savers that may overwrite Stillwater-managed metadata"
+						driftWarnings = append(driftWarnings, warning)
+						r.logger.Warn("emby platform settings drift detected", "connection_id", id, "library", s.LibraryName)
+					}
+				}
 			}
 		}
 	case connection.TypeJellyfin:
@@ -465,10 +490,32 @@ func (r *Router) handleTestConnection(w http.ResponseWriter, req *http.Request) 
 			if updErr := r.connectionService.UpdatePlatformUserID(testCtx, id, uid); updErr != nil {
 				r.logger.Error("persisting jellyfin platform user id", "error", updErr)
 			}
+			// Drift detection: check for conflicting platform settings.
+			if settings, settingsErr := client.GetLibrarySettings(testCtx); settingsErr == nil {
+				for _, s := range settings {
+					if s.HasConflicts {
+						warning := "library " + s.LibraryName + " has active fetchers that may overwrite Stillwater-managed metadata"
+						driftWarnings = append(driftWarnings, warning)
+						r.logger.Warn("jellyfin platform settings drift detected", "connection_id", id, "library", s.LibraryName)
+					}
+				}
+			}
 		}
 	case connection.TypeLidarr:
 		client := lidarr.New(conn.URL, conn.APIKey, r.logger)
 		testErr = client.TestConnection(testCtx)
+		if testErr == nil {
+			// Drift detection: check for enabled metadata consumers.
+			if consumers, consumersErr := client.GetMetadataConsumers(testCtx); consumersErr == nil {
+				for _, c := range consumers {
+					if c.Enabled {
+						warning := "metadata consumer " + c.ConsumerName + " is enabled and may write NFO files"
+						driftWarnings = append(driftWarnings, warning)
+						r.logger.Warn("lidarr platform settings drift detected", "connection_id", id, "consumer", c.ConsumerName)
+					}
+				}
+			}
+		}
 	default:
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unsupported connection type: " + conn.Type})
 		return
@@ -483,7 +530,11 @@ func (r *Router) handleTestConnection(w http.ResponseWriter, req *http.Request) 
 	if updateErr := r.connectionService.UpdateStatus(req.Context(), id, status, msg); updateErr != nil {
 		r.logger.Error("updating connection status", "error", updateErr)
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": status, "message": msg})
+	resp := map[string]any{"status": status, "message": msg}
+	if len(driftWarnings) > 0 {
+		resp["drift_warnings"] = driftWarnings
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // handleUpdateConnectionFeatures toggles feature flags on a connection.
@@ -500,9 +551,11 @@ func (r *Router) handleUpdateConnectionFeatures(w http.ResponseWriter, req *http
 	}
 
 	var body struct {
-		FeatureLibraryImport *bool `json:"feature_library_import"`
-		FeatureNFOWrite      *bool `json:"feature_nfo_write"`
-		FeatureImageWrite    *bool `json:"feature_image_write"`
+		FeatureLibraryImport  *bool `json:"feature_library_import"`
+		FeatureNFOWrite       *bool `json:"feature_nfo_write"`
+		FeatureImageWrite     *bool `json:"feature_image_write"`
+		FeatureMetadataPush   *bool `json:"feature_metadata_push"`
+		FeatureTriggerRefresh *bool `json:"feature_trigger_refresh"`
 	}
 	if !DecodeJSON(w, req, &body) {
 		return
@@ -511,6 +564,8 @@ func (r *Router) handleUpdateConnectionFeatures(w http.ResponseWriter, req *http
 	libImport := existing.FeatureLibraryImport
 	nfoWrite := existing.FeatureNFOWrite
 	imageWrite := existing.FeatureImageWrite
+	metadataPush := existing.FeatureMetadataPush
+	triggerRefresh := existing.FeatureTriggerRefresh
 	if body.FeatureLibraryImport != nil {
 		libImport = *body.FeatureLibraryImport
 	}
@@ -520,8 +575,14 @@ func (r *Router) handleUpdateConnectionFeatures(w http.ResponseWriter, req *http
 	if body.FeatureImageWrite != nil {
 		imageWrite = *body.FeatureImageWrite
 	}
+	if body.FeatureMetadataPush != nil {
+		metadataPush = *body.FeatureMetadataPush
+	}
+	if body.FeatureTriggerRefresh != nil {
+		triggerRefresh = *body.FeatureTriggerRefresh
+	}
 
-	if err := r.connectionService.UpdateFeatures(req.Context(), id, libImport, nfoWrite, imageWrite); err != nil {
+	if err := r.connectionService.UpdateFeatures(req.Context(), id, libImport, nfoWrite, imageWrite, metadataPush, triggerRefresh); err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "connection not found"})
 			return
@@ -531,4 +592,228 @@ func (r *Router) handleUpdateConnectionFeatures(w http.ResponseWriter, req *http
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
+}
+
+// handleGetPlatformSettings returns the fetcher/saver/downloader configuration for all
+// music libraries on a connection's platform.
+// GET /api/v1/connections/{id}/platform-settings
+func (r *Router) handleGetPlatformSettings(w http.ResponseWriter, req *http.Request) {
+	id, ok := RequirePathParam(w, req, "id")
+	if !ok {
+		return
+	}
+	conn, err := r.connectionService.GetByID(req.Context(), id)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "connection not found"})
+		return
+	}
+
+	settingsCtx, cancel := context.WithTimeout(req.Context(), 15*time.Second)
+	defer cancel()
+
+	switch conn.Type {
+	case connection.TypeEmby:
+		client := emby.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger)
+		settings, settingsErr := client.GetLibrarySettings(settingsCtx)
+		if settingsErr != nil {
+			r.logger.Error("reading emby platform settings", "connection_id", id, "error", settingsErr)
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "could not read platform settings"})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"connection_type": conn.Type,
+			"libraries":       settings,
+		})
+
+	case connection.TypeJellyfin:
+		client := jellyfin.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger)
+		settings, settingsErr := client.GetLibrarySettings(settingsCtx)
+		if settingsErr != nil {
+			r.logger.Error("reading jellyfin platform settings", "connection_id", id, "error", settingsErr)
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "could not read platform settings"})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"connection_type": conn.Type,
+			"libraries":       settings,
+			"note":            "Jellyfin ignores MetadataSavers=[] for NFO writes. Use lockdata injection for reliable NFO protection.",
+		})
+
+	case connection.TypeLidarr:
+		client := lidarr.New(conn.URL, conn.APIKey, r.logger)
+		consumers, consumersErr := client.GetMetadataConsumers(settingsCtx)
+		if consumersErr != nil {
+			r.logger.Error("reading lidarr metadata consumers", "connection_id", id, "error", consumersErr)
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "could not read platform settings"})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"connection_type":    conn.Type,
+			"metadata_consumers": consumers,
+			"note":               "Lidarr metadata consumers are a global setting, not per-library.",
+		})
+
+	default:
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unsupported connection type"})
+	}
+}
+
+// handleDisablePlatformSettings disables conflicting fetchers/savers for a specific library.
+// For Emby/Jellyfin, this operates per-library. For Lidarr, the consumer_id body field
+// identifies the global metadata consumer to disable.
+// POST /api/v1/connections/{id}/platform-settings/disable
+func (r *Router) handleDisablePlatformSettings(w http.ResponseWriter, req *http.Request) {
+	id, ok := RequirePathParam(w, req, "id")
+	if !ok {
+		return
+	}
+	conn, err := r.connectionService.GetByID(req.Context(), id)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "connection not found"})
+		return
+	}
+
+	var body struct {
+		LibraryID  string `json:"library_id"`
+		ConsumerID int    `json:"consumer_id"`
+	}
+	if !DecodeJSON(w, req, &body) {
+		return
+	}
+
+	disableCtx, cancel := context.WithTimeout(req.Context(), 15*time.Second)
+	defer cancel()
+
+	switch conn.Type {
+	case connection.TypeEmby:
+		if body.LibraryID == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "library_id is required for Emby connections"})
+			return
+		}
+		client := emby.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger)
+		if disableErr := client.DisableConflictingSettings(disableCtx, body.LibraryID); disableErr != nil {
+			r.logger.Error("disabling emby conflicting settings", "connection_id", id, "library_id", body.LibraryID, "error", disableErr)
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "could not disable platform settings"})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"status": "disabled"})
+
+	case connection.TypeJellyfin:
+		if body.LibraryID == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "library_id is required for Jellyfin connections"})
+			return
+		}
+		client := jellyfin.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger)
+		if disableErr := client.DisableConflictingSettings(disableCtx, body.LibraryID); disableErr != nil {
+			r.logger.Error("disabling jellyfin conflicting settings", "connection_id", id, "library_id", body.LibraryID, "error", disableErr)
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "could not disable platform settings"})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{
+			"status": "disabled",
+			"note":   "NFO protection requires lockdata injection. Clearing MetadataSavers alone is not reliable for Jellyfin.",
+		})
+
+	case connection.TypeLidarr:
+		if body.ConsumerID == 0 {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "consumer_id is required for Lidarr connections"})
+			return
+		}
+		client := lidarr.New(conn.URL, conn.APIKey, r.logger)
+		if disableErr := client.DisableMetadataConsumer(disableCtx, body.ConsumerID); disableErr != nil {
+			r.logger.Error("disabling lidarr metadata consumer", "connection_id", id, "consumer_id", body.ConsumerID, "error", disableErr)
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "could not disable metadata consumer"})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"status": "disabled"})
+
+	default:
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unsupported connection type"})
+	}
+}
+
+// handleGetPlatformSummary returns a summary of platform setting management status for
+// a connection. Used for the connection card badge.
+// GET /api/v1/connections/{id}/platform-summary
+func (r *Router) handleGetPlatformSummary(w http.ResponseWriter, req *http.Request) {
+	id, ok := RequirePathParam(w, req, "id")
+	if !ok {
+		return
+	}
+	conn, err := r.connectionService.GetByID(req.Context(), id)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "connection not found"})
+		return
+	}
+
+	summaryCtx, cancel := context.WithTimeout(req.Context(), 15*time.Second)
+	defer cancel()
+
+	switch conn.Type {
+	case connection.TypeEmby:
+		client := emby.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger)
+		settings, settingsErr := client.GetLibrarySettings(summaryCtx)
+		if settingsErr != nil {
+			r.logger.Error("reading emby settings for summary", "connection_id", id, "error", settingsErr)
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "could not read platform settings"})
+			return
+		}
+		total := len(settings)
+		managed := 0
+		for _, s := range settings {
+			if !s.HasConflicts {
+				managed++
+			}
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"total_libraries":   total,
+			"managed_libraries": managed,
+			"has_conflicts":     managed < total,
+		})
+
+	case connection.TypeJellyfin:
+		client := jellyfin.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger)
+		settings, settingsErr := client.GetLibrarySettings(summaryCtx)
+		if settingsErr != nil {
+			r.logger.Error("reading jellyfin settings for summary", "connection_id", id, "error", settingsErr)
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "could not read platform settings"})
+			return
+		}
+		total := len(settings)
+		managed := 0
+		for _, s := range settings {
+			if !s.HasConflicts {
+				managed++
+			}
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"total_libraries":   total,
+			"managed_libraries": managed,
+			"has_conflicts":     managed < total,
+			"needs_lockdata":    true,
+		})
+
+	case connection.TypeLidarr:
+		client := lidarr.New(conn.URL, conn.APIKey, r.logger)
+		consumers, consumersErr := client.GetMetadataConsumers(summaryCtx)
+		if consumersErr != nil {
+			r.logger.Error("reading lidarr consumers for summary", "connection_id", id, "error", consumersErr)
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "could not read platform settings"})
+			return
+		}
+		hasConflicts := false
+		for _, c := range consumers {
+			if c.Enabled {
+				hasConflicts = true
+				break
+			}
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"total_consumers": len(consumers),
+			"has_conflicts":   hasConflicts,
+		})
+
+	default:
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unsupported connection type"})
+	}
 }

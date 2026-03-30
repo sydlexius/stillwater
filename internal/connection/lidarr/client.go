@@ -98,6 +98,46 @@ func (c *Client) TriggerArtistRefresh(ctx context.Context, artistID int) (*Comma
 	return &resp, nil
 }
 
+// MetadataConsumerStatus describes the state of a Lidarr metadata consumer (e.g., Kodi/XBMC).
+type MetadataConsumerStatus struct {
+	ID           int    `json:"id"`
+	ConsumerName string `json:"consumer_name"`
+	MetadataType string `json:"metadata_type"`
+	Enabled      bool   `json:"enabled"`
+}
+
+// GetMetadataConsumers returns the metadata consumer configuration from Lidarr.
+// This is a global setting, not per-library.
+func (c *Client) GetMetadataConsumers(ctx context.Context) ([]MetadataConsumerStatus, error) {
+	var configs []MetadataProviderConfig
+	if err := c.Get(ctx, "/api/v1/config/metadataprovider", &configs); err != nil {
+		return nil, fmt.Errorf("getting metadata provider config: %w", err)
+	}
+
+	var results []MetadataConsumerStatus
+	for _, cfg := range configs {
+		results = append(results, MetadataConsumerStatus{
+			ID:           cfg.ID,
+			ConsumerName: cfg.ConsumerName,
+			MetadataType: cfg.MetadataType,
+			Enabled:      cfg.Enable,
+		})
+	}
+	return results, nil
+}
+
+// DisableMetadataConsumer disables a specific metadata consumer by config ID.
+func (c *Client) DisableMetadataConsumer(ctx context.Context, configID int) error {
+	payload := MetadataProviderConfig{ID: configID, Enable: false}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("encoding metadata provider config: %w", err)
+	}
+
+	path := fmt.Sprintf("/api/v1/config/metadataprovider/%d", configID)
+	return c.PutJSON(ctx, path, bytes.NewReader(body), nil)
+}
+
 func (c *Client) setAuth(req *http.Request) {
 	req.Header.Set("X-Api-Key", c.APIKey)
 }

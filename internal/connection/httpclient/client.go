@@ -126,6 +126,35 @@ func (b *BaseClient) GetRaw(ctx context.Context, path string) ([]byte, string, e
 	return data, resp.Header.Get("Content-Type"), nil
 }
 
+// PutJSON performs a PUT request with Content-Type application/json and returns an error
+// if the status is >= 300. The response body is optionally decoded into result.
+func (b *BaseClient) PutJSON(ctx context.Context, path string, body io.Reader, result any) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, connection.BuildRequestURL(b.BaseURL, path), body)
+	if err != nil {
+		return fmt.Errorf("creating request: %w", err)
+	}
+	b.AuthFunc(req)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := b.HTTPClient.Do(req) //nolint:gosec // URL constructed from trusted base + API path
+	if err != nil {
+		return fmt.Errorf("executing request: %w", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+
+	if resp.StatusCode >= 300 {
+		return fmt.Errorf("unexpected status %d: %s", resp.StatusCode, readErrorBody(resp.Body))
+	}
+
+	if result != nil {
+		if err := json.NewDecoder(resp.Body).Decode(result); err != nil {
+			return fmt.Errorf("decoding response: %w", err)
+		}
+	}
+	_, _ = io.Copy(io.Discard, resp.Body)
+	return nil
+}
+
 // PostJSON performs a POST request with Content-Type application/json and decodes the response.
 // Returns an error if the status is >= 300.
 func (b *BaseClient) PostJSON(ctx context.Context, path string, body io.Reader, result any) error {

@@ -286,6 +286,81 @@ func AuthenticateByName(ctx context.Context, baseURL, username, password string,
 	}
 }
 
+// GetLibrarySettings reads the fetcher/saver/downloader configuration for all music libraries.
+// Each library entry describes which image fetchers, metadata fetchers, and metadata savers
+// are active for MusicArtist content. The NeedsLockdata field indicates whether NFO lockdata
+// injection is required because Jellyfin ignores MetadataSavers=[] for NFO writes.
+func (c *Client) GetLibrarySettings(ctx context.Context) ([]LibrarySettingsStatus, error) {
+	libs, err := c.GetMusicLibraries(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("getting music libraries: %w", err)
+	}
+
+	var results []LibrarySettingsStatus
+	for _, lib := range libs {
+		status := LibrarySettingsStatus{
+			LibraryID:               lib.ItemID,
+			LibraryName:             lib.Name,
+			MetadataSavers:          lib.LibraryOptions.MetadataSavers,
+			EnableInternetProviders: lib.LibraryOptions.EnableInternetProviders,
+		}
+		for _, opt := range lib.LibraryOptions.TypeOptions {
+			if strings.EqualFold(opt.Type, "MusicArtist") {
+				status.ImageFetchers = opt.ImageFetchers
+				status.MetadataFetchers = opt.MetadataFetchers
+				break
+			}
+		}
+		// Jellyfin MetadataSavers=[] does NOT stop NFO writes. The only reliable
+		// method is <lockdata>true</lockdata> in the NFO file itself.
+		status.NeedsLockdata = true
+		// A library has conflicts if fetchers are active (when internet providers are enabled).
+		status.HasConflicts = status.EnableInternetProviders &&
+			(len(status.ImageFetchers) > 0 || len(status.MetadataFetchers) > 0)
+		results = append(results, status)
+	}
+	return results, nil
+}
+
+// DisableConflictingSettings clears image fetchers and metadata fetchers for
+// MusicArtist content in the specified library via the Jellyfin API.
+// Note: this does NOT disable NFO writes because Jellyfin ignores MetadataSavers=[];
+// NFO protection requires lockdata injection (handled separately by the NFO writer).
+func (c *Client) DisableConflictingSettings(ctx context.Context, libraryID string) error {
+	libs, err := c.GetMusicLibraries(ctx)
+	if err != nil {
+		return fmt.Errorf("getting music libraries: %w", err)
+	}
+
+	var target *VirtualFolder
+	for i, lib := range libs {
+		if lib.ItemID == libraryID {
+			target = &libs[i]
+			break
+		}
+	}
+	if target == nil {
+		return fmt.Errorf("library not found: %s", libraryID)
+	}
+
+	// Clear MusicArtist-specific fetchers.
+	for i, opt := range target.LibraryOptions.TypeOptions {
+		if strings.EqualFold(opt.Type, "MusicArtist") {
+			target.LibraryOptions.TypeOptions[i].ImageFetchers = []string{}
+			target.LibraryOptions.TypeOptions[i].MetadataFetchers = []string{}
+			break
+		}
+	}
+
+	body, err := json.Marshal(target.LibraryOptions)
+	if err != nil {
+		return fmt.Errorf("encoding library options: %w", err)
+	}
+
+	path := fmt.Sprintf("/Library/VirtualFolders/LibraryOptions?Id=%s", libraryID)
+	return c.Post(ctx, path, bytes.NewReader(body))
+}
+
 func (c *Client) setAuth(req *http.Request) {
 	req.Header.Set("Authorization", fmt.Sprintf(`MediaBrowser Token="%s"`, c.APIKey))
 }

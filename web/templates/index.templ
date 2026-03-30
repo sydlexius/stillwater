@@ -10,19 +10,18 @@ templ IndexPage(assets AssetPaths) {
 						Artist metadata and image management overview.
 					</p>
 				</div>
-				<button
-					id="run-rules-btn"
-					onclick="startRuleRun()"
-					class="inline-flex items-center justify-center gap-2 rounded-md bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+				<a
+					id="last-evaluated-link"
+					href="/reports/compliance"
+					class="inline-flex items-center gap-1.5 text-sm text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+					title="Go to Reports"
 				>
-					<span id="run-rules-spinner" class="hidden">
-						<svg class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-							<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-							<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-						</svg>
-					</span>
-					<span id="run-rules-label">Run Rules</span>
-				</button>
+					<span id="last-evaluated-text">Loading...</span>
+					<!-- Small refresh/arrow icon linking to reports -->
+					<svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
+						<path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3"></path>
+					</svg>
+				</a>
 			</div>
 			<div
 				id="health-summary"
@@ -77,96 +76,54 @@ templ IndexPage(assets AssetPaths) {
 		</div>
 		<script src={ assets.ChartJS }></script>
 		<script>
-			function startRuleRun() {
-				var btn = document.getElementById('run-rules-btn');
-				var spinner = document.getElementById('run-rules-spinner');
-				var label = document.getElementById('run-rules-label');
-				var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*\=\s*([^;]*).*$)|^.*$/, "$1");
-
-				btn.disabled = true;
-				spinner.classList.remove('hidden');
-				label.textContent = 'Running...';
-
-				fetch('/api/v1/rules/run-all', {
-					method: 'POST',
-					headers: {
-						'Content-Type': 'application/json',
-						'X-CSRF-Token': csrfToken
-					}
-				}).then(function(r) {
-					if (r.status === 202) {
-						showSuccessToast('Rule evaluation started...');
-						pollRuleStatus();
-					} else if (r.status === 409) {
-						showToast('Rules already running');
-						pollRuleStatus();
-					} else {
-						return r.json().then(function(data) {
-							showToast(data.error || 'Failed to start rules');
-							resetRuleButton();
-						});
-					}
-				}).catch(function() {
-					showToast('Failed to start rule evaluation');
-					resetRuleButton();
-				});
-			}
-
-			function pollRuleStatus() {
-				pollAsyncStatus('/api/v1/rules/run-all/status', {
-					onData: function(data) {
-						if (data.status === 'completed') {
-							var msg;
-							if (data.violations_found === 0) {
-								msg = 'No violations found';
-							} else if (data.violations_remaining === 0 && data.violations_auto_fixed > 0) {
-								msg = 'Found ' + data.violations_found + ' violations, all auto-fixed';
-							} else if (data.violations_auto_fixed > 0) {
-								msg = 'Found ' + data.violations_found + ' violations (' + data.violations_auto_fixed + ' auto-fixed, ' + data.violations_remaining + ' remaining)';
-							} else {
-								msg = 'Found ' + data.violations_found + ' violations (' + data.violations_remaining + ' remaining)';
-							}
-							showSuccessToast(msg);
-							resetRuleButton();
-							htmx.ajax('GET', '/api/v1/reports/health', {target: '#health-summary', swap: 'innerHTML'});
-							htmx.ajax('GET', '/api/v1/notifications/badge', {target: '#sidebar-notif-badge', swap: 'innerHTML'});
-							return true;
+			// Fetch last evaluation timestamp and display relative time.
+			(function() {
+				var bp = (function() {
+					var el = document.querySelector('meta[name="htmx-base-path"]');
+					return el ? el.content : '';
+				})();
+				var link = document.getElementById('last-evaluated-link');
+				if (link) {
+					link.href = bp + '/reports/compliance';
+				}
+				fetch(bp + '/api/v1/rules/status')
+					.then(function(res) {
+						if (!res.ok) return null;
+						return res.json();
+					})
+					.then(function(data) {
+						var el = document.getElementById('last-evaluated-text');
+						if (!el || !data) {
+							if (el) el.textContent = 'Never evaluated';
+							return;
 						}
-						if (data.status === 'failed') {
-							showToast('Rule evaluation failed: ' + (data.error || 'unknown error'));
-							resetRuleButton();
-							return true;
+						if (!data.last_evaluation_at) {
+							el.textContent = 'Never evaluated';
+							return;
 						}
-						if (data.status === 'idle') {
-							showToast('Rule run state was lost');
-							resetRuleButton();
-							return true;
+						var evalTime = new Date(data.last_evaluation_at);
+						var now = new Date();
+						var diffMs = now - evalTime;
+						var diffMin = Math.floor(diffMs / 60000);
+						var label;
+						if (diffMin < 1) {
+							label = 'just now';
+						} else if (diffMin < 60) {
+							label = diffMin + ' min ago';
+						} else if (diffMin < 1440) {
+							var hours = Math.floor(diffMin / 60);
+							label = hours + (hours === 1 ? ' hour ago' : ' hours ago');
+						} else {
+							var days = Math.floor(diffMin / 1440);
+							label = days + (days === 1 ? ' day ago' : ' days ago');
 						}
-						return false;
-					},
-					onTimeout: function() {
-						showToast('Rule status polling timed out');
-						resetRuleButton();
-					},
-					onHTTPError: function(status) {
-						showToast('Status check failed (HTTP ' + status + ')');
-						resetRuleButton();
-					},
-					onNetworkError: function() {
-						showToast('Network error while checking rule status');
-						resetRuleButton();
-					}
-				}, {maxAttempts: 0});
-			}
-
-			function resetRuleButton() {
-				var btn = document.getElementById('run-rules-btn');
-				var spinner = document.getElementById('run-rules-spinner');
-				var label = document.getElementById('run-rules-label');
-				if (btn) btn.disabled = false;
-				if (spinner) spinner.classList.add('hidden');
-				if (label) label.textContent = 'Run Rules';
-			}
+						el.textContent = 'Last evaluated: ' + label;
+					})
+					.catch(function() {
+						var el = document.getElementById('last-evaluated-text');
+						if (el) el.textContent = 'Never evaluated';
+					});
+			})();
 
 			(function() {
 				var isDark = document.documentElement.classList.contains('dark');
