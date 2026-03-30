@@ -367,6 +367,7 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("GET "+bp+"/api/v1/scraper/config/connections/{id}", wrapAuth(middleware.RequireAdmin(r.handleGetConnectionScraperConfig), authMw))
 	mux.HandleFunc("PUT "+bp+"/api/v1/scraper/config/connections/{id}", wrapAuth(middleware.RequireAdmin(r.handleUpdateConnectionScraperConfig), authMw))
 	mux.HandleFunc("DELETE "+bp+"/api/v1/scraper/config/connections/{id}", wrapAuth(middleware.RequireAdmin(r.handleResetConnectionScraperConfig), authMw))
+	mux.HandleFunc("PUT "+bp+"/api/v1/scraper/config/fields/{field}/verbosity", wrapAuth(middleware.RequireAdmin(r.handleUpdateFieldVerbosity), authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/scraper/providers", wrapAuth(r.handleListScraperProviders, authMw))
 
 	// Rule routes (config/enable requires admin; execution/evaluate/fix are operator-accessible)

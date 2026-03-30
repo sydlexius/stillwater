@@ -148,6 +148,11 @@ func (e *Executor) scrapeField(
 	mu *sync.Mutex,
 	result *provider.FetchResult,
 ) FieldResult {
+	// Attach field-level verbosity to the context so provider adapters can
+	// adjust their API calls accordingly (e.g. Wikipedia exintro parameter).
+	if field.Verbosity != "" {
+		ctx = provider.WithBiographyVerbosity(ctx, field.Verbosity)
+	}
 	queried := false
 	isImage := CategoryFor(field.Field) == CategoryImages
 

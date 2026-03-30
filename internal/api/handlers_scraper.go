@@ -139,3 +139,70 @@ func (r *Router) handleListScraperProviders(w http.ResponseWriter, req *http.Req
 
 	writeJSON(w, http.StatusOK, map[string]any{"providers": caps})
 }
+
+// handleUpdateFieldVerbosity updates the verbosity setting for a single field
+// in the global scraper configuration. Only fields and providers that support
+// verbosity control will accept a non-empty value; others are rejected.
+func (r *Router) handleUpdateFieldVerbosity(w http.ResponseWriter, req *http.Request) {
+	fieldName := scraper.FieldName(req.PathValue("field"))
+	if !scraper.IsValidFieldName(fieldName) {
+		writeError(w, req, http.StatusBadRequest, "unknown field name")
+		return
+	}
+
+	var body struct {
+		Verbosity string `json:"verbosity"`
+	}
+	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+		writeError(w, req, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	cfg, err := r.scraperService.GetConfig(req.Context(), scraper.ScopeGlobal)
+	if err != nil {
+		r.logger.Error("loading scraper config for verbosity update", "error", err)
+		writeError(w, req, http.StatusInternalServerError, "failed to load scraper config")
+		return
+	}
+
+	updated := false
+	for i := range cfg.Fields {
+		if cfg.Fields[i].Field != fieldName {
+			continue
+		}
+		// Validate the verbosity value against the configured primary provider.
+		if body.Verbosity != "" {
+			opts := scraper.VerbosityOptionsFor(fieldName, cfg.Fields[i].Primary)
+			if len(opts) == 0 {
+				writeError(w, req, http.StatusBadRequest, "verbosity is not configurable for this field and provider combination")
+				return
+			}
+			valid := false
+			for _, o := range opts {
+				if o.Value == body.Verbosity {
+					valid = true
+					break
+				}
+			}
+			if !valid {
+				writeError(w, req, http.StatusBadRequest, "invalid verbosity value")
+				return
+			}
+		}
+		cfg.Fields[i].Verbosity = body.Verbosity
+		updated = true
+		break
+	}
+
+	if !updated {
+		writeError(w, req, http.StatusNotFound, "field not found in scraper config")
+		return
+	}
+
+	if err := r.scraperService.SaveConfig(req.Context(), scraper.ScopeGlobal, cfg, nil); err != nil {
+		r.logger.Error("saving scraper config for verbosity update", "error", err)
+		writeError(w, req, http.StatusInternalServerError, "failed to save scraper config")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "saved"})
+}

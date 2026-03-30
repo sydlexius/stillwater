@@ -99,7 +99,8 @@ func (a *Adapter) GetArtist(ctx context.Context, id string) (*provider.ArtistMet
 			Cause:    fmt.Errorf("rate limiter: %w", err),
 		}
 	}
-	name, extract, err := a.fetchExtract(ctx, title)
+	fullArticle := provider.BiographyVerbosityFromContext(ctx) == "full"
+	name, extract, err := a.fetchExtract(ctx, title, fullArticle)
 	if err != nil {
 		return nil, err
 	}
@@ -470,16 +471,21 @@ func (a *Adapter) resolveFromQID(ctx context.Context, qid string) (string, error
 	return enwiki.Title, nil
 }
 
-// fetchExtract fetches the article intro section from the MediaWiki Action API.
+// fetchExtract fetches the article text from the MediaWiki Action API.
+// When fullArticle is false (default), only the intro section is fetched
+// via the exintro parameter. When fullArticle is true the full article
+// text is returned, which may be very large for well-documented artists.
 // Returns the article display name and plain-text extract.
-func (a *Adapter) fetchExtract(ctx context.Context, title string) (string, string, error) {
+func (a *Adapter) fetchExtract(ctx context.Context, title string, fullArticle bool) (string, string, error) {
 	params := url.Values{
 		"action":      {"query"},
 		"titles":      {title},
 		"prop":        {"extracts"},
 		"explaintext": {"true"},
-		"exintro":     {"true"},
 		"format":      {"json"},
+	}
+	if !fullArticle {
+		params.Set("exintro", "true")
 	}
 	reqURL := a.actionEndpoint + "?" + params.Encode()
 
@@ -515,8 +521,15 @@ func (a *Adapter) fetchExtract(ctx context.Context, title string) (string, strin
 		}
 	}
 
-	// Intro extracts are typically a few KB but can be larger for well-known artists.
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 1*1024*1024))
+	// Full article text can be much larger than an intro extract (200KB+).
+	// Cap at 4 MB to avoid excessive memory use while still accommodating the
+	// largest well-documented artist articles.
+	limitBytes := int64(4 * 1024 * 1024)
+	if !fullArticle {
+		// Intro extracts are typically a few KB but can be larger for well-known artists.
+		limitBytes = 1 * 1024 * 1024
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, limitBytes))
 	if err != nil {
 		return "", "", &provider.ErrProviderUnavailable{
 			Provider: provider.NameWikipedia,

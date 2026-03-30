@@ -60,6 +60,12 @@ func ValidateConfig(cfg *ScraperConfig) error {
 		if f.Primary != "" && !validProviders[f.Primary] {
 			return fmt.Errorf("unknown provider name: %q", f.Primary)
 		}
+		if f.Verbosity != "" && f.Field == FieldBiography {
+			if !ValidBiographyVerbosity(BiographyVerbosity(f.Verbosity)) {
+				return fmt.Errorf("invalid verbosity %q for biography field; valid values: %q, %q",
+					f.Verbosity, VerbosityIntro, VerbosityFull)
+			}
+		}
 	}
 
 	for _, chain := range cfg.FallbackChains {
@@ -95,12 +101,48 @@ func CategoryFor(f FieldName) FieldCategory {
 // ScopeGlobal is the scope identifier for the global scraper configuration.
 const ScopeGlobal = "global"
 
+// BiographyVerbosity controls how much text is fetched for the biography field.
+type BiographyVerbosity string
+
+// Known biography verbosity levels.
+const (
+	// VerbosityIntro fetches only the article introduction (default, concise).
+	VerbosityIntro BiographyVerbosity = "intro"
+	// VerbosityFull fetches the full article text (may be very long).
+	VerbosityFull BiographyVerbosity = "full"
+)
+
+// ValidBiographyVerbosity returns true if v is a recognised biography verbosity value.
+func ValidBiographyVerbosity(v BiographyVerbosity) bool {
+	return v == VerbosityIntro || v == VerbosityFull
+}
+
+// VerbosityOption describes a single verbosity choice shown in the UI.
+type VerbosityOption struct {
+	Value   string `json:"value"`
+	Label   string `json:"label"`
+	Default bool   `json:"default"`
+}
+
+// VerbosityOptionsFor returns the supported verbosity options for a given
+// provider-field combination. Returns nil when verbosity is not configurable.
+func VerbosityOptionsFor(field FieldName, prov provider.ProviderName) []VerbosityOption {
+	if field == FieldBiography && prov == provider.NameWikipedia {
+		return []VerbosityOption{
+			{Value: string(VerbosityIntro), Label: "Intro only", Default: true},
+			{Value: string(VerbosityFull), Label: "Full article"},
+		}
+	}
+	return nil
+}
+
 // FieldConfig describes the primary provider assignment for a single field.
 type FieldConfig struct {
-	Field    FieldName             `json:"field"`
-	Primary  provider.ProviderName `json:"primary"`
-	Enabled  bool                  `json:"enabled"`
-	Category FieldCategory         `json:"category"`
+	Field     FieldName             `json:"field"`
+	Primary   provider.ProviderName `json:"primary"`
+	Enabled   bool                  `json:"enabled"`
+	Category  FieldCategory         `json:"category"`
+	Verbosity string                `json:"verbosity,omitempty"` // Only meaningful for applicable provider-field combinations.
 }
 
 // FallbackChain defines the ordered list of fallback providers for a category.
@@ -142,6 +184,18 @@ func (c *ScraperConfig) PrimaryFor(field FieldName) provider.ProviderName {
 	for _, f := range c.Fields {
 		if f.Field == field {
 			return f.Primary
+		}
+	}
+	return ""
+}
+
+// VerbosityFor returns the configured verbosity for the given field.
+// Returns an empty string when no verbosity has been set (callers should
+// treat empty as the default conservative option).
+func (c *ScraperConfig) VerbosityFor(field FieldName) string {
+	for _, f := range c.Fields {
+		if f.Field == field {
+			return f.Verbosity
 		}
 	}
 	return ""
