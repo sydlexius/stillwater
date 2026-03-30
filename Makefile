@@ -44,6 +44,9 @@ test-cover:
 	go test -count=1 -v -race -coverprofile=coverage.out ./...
 	go tool cover -html=coverage.out -o coverage.html
 
+## check: Format, lint, and build in one step (run before every commit)
+check: fmt lint build
+
 ## lint: Run golangci-lint
 lint:
 	golangci-lint run ./...

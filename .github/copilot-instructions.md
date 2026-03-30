@@ -1,5 +1,17 @@
 # Copilot PR Review Instructions
 
+## Before every commit
+
+Run `make check` before committing. This chains `make fmt`, `make lint`, and
+`make build` in one step and catches the same issues that CI enforces:
+
+```
+make check
+```
+
+If `golangci-lint` is not installed locally, run `make hooks` to install the
+pre-commit hook that runs the same checks automatically on every `git commit`.
+
 ## Project summary
 
 Stillwater is a self-hosted web application for managing artist/composer
