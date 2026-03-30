@@ -232,7 +232,7 @@ templ PathPickerModal() {
 
 			for (var i = 0; i < entries.length; i++) {
 				(function(name) {
-					var fullPath = (currentPath.endsWith('/') ? currentPath : currentPath + '/') + name;
+					var fullPath = (currentPath.charAt(currentPath.length - 1) === '/' ? currentPath : currentPath + '/') + name;
 
 					var li = document.createElement('li');
 
@@ -312,12 +312,41 @@ templ PathPickerModal() {
 		// Expose ppLoadPath on window so breadcrumb/listing buttons can reach it.
 		window.ppLoadPath = ppLoadPath;
 
-		// Close on Escape key.
+		// Close on Escape key; trap Tab focus within the modal when visible.
 		document.addEventListener('keydown', function(e) {
+			var modal = document.getElementById('path-picker-modal');
+			if (!modal || modal.classList.contains('hidden')) return;
+
 			if (e.key === 'Escape') {
-				var modal = document.getElementById('path-picker-modal');
-				if (modal && !modal.classList.contains('hidden')) {
-					closePathPicker();
+				closePathPicker();
+				return;
+			}
+
+			if (e.key === 'Tab') {
+				var FOCUSABLE = 'button:not([disabled]),[href],input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
+				var nodes = modal.querySelectorAll(FOCUSABLE);
+				var focusable = Array.prototype.slice.call(nodes).filter(function(el) {
+					return !el.closest('[hidden]') && !el.closest('.hidden') && el.offsetParent !== null;
+				});
+				if (focusable.length === 0) return;
+				var first = focusable[0];
+				var last = focusable[focusable.length - 1];
+				var active = document.activeElement;
+				if (active && !modal.contains(active)) {
+					e.preventDefault();
+					(e.shiftKey ? last : first).focus();
+					return;
+				}
+				if (e.shiftKey) {
+					if (active === first) {
+						e.preventDefault();
+						last.focus();
+					}
+				} else {
+					if (active === last) {
+						e.preventDefault();
+						first.focus();
+					}
 				}
 			}
 		});

@@ -3665,7 +3665,7 @@ paths:
           required: true
           schema:
             type: string
-          description: Absolute filesystem path to list. Must not be a relative path or contain traversal segments.
+          description: Absolute filesystem path to list. Must be an absolute path; traversal segments (e.g. "..") are normalized by the server via filepath.Clean before listing.
       responses:
         "200":
           description: Directory listing
@@ -3674,7 +3674,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/FilesystemBrowseResult"
         "400":
-          description: Invalid path (not absolute, traversal segments, not a directory, or symlink resolution failed)
+          description: Invalid path (not absolute, not a directory, or symlink resolution failed)
           content:
             application/json:
               schema:

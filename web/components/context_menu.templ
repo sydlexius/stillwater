@@ -287,8 +287,10 @@ templ ContextMenuGlobalJS() {
 			}
 
 			document.addEventListener('click', function(e) {
+				if (!(e.target instanceof Element)) return;
 				var menu = e.target.closest('[data-context-menu]');
-				if (!menu) {
+				var bottomSheet = e.target.closest('.ctx-bottom-sheet');
+				if (!menu && !bottomSheet) {
 					closeAllContextMenus();
 				}
 			});
