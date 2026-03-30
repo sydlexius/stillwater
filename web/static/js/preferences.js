@@ -137,18 +137,15 @@
 
   // Redirect to login when a 401 is received from a direct fetch call.
   // The session.js handler only covers HTMX requests; this covers fetch().
-  // The login page is at the root (GET {basePath}/).
+  // The login page is at the root (GET {basePath}/). No loop guard needed
+  // because preferences.js is only loaded by Layout (authenticated pages),
+  // not the login template.
   function handleSessionExpiry() {
     var loginUrl = bp + '/';
-    var path = window.location.pathname;
-    // Already at root/login -- do not redirect to avoid loops.
-    if (path === loginUrl || path === (bp || '/')) {
-      return;
-    }
     // Clear cached preferences so the next user does not see stale settings.
     clearCache();
     // Strip base path prefix so the server does not double-prefix on redirect.
-    var relPath = path;
+    var relPath = window.location.pathname;
     if (bp && relPath.indexOf(bp) === 0) {
       relPath = relPath.substring(bp.length) || '/';
     }
