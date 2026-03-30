@@ -124,7 +124,7 @@ const (
 	VerbosityFull BiographyVerbosity = "full"
 )
 
-// ValidBiographyVerbosity returns true if v is a recognised biography verbosity value.
+// ValidBiographyVerbosity returns true if v is a recognized biography verbosity value.
 func ValidBiographyVerbosity(v BiographyVerbosity) bool {
 	return v == VerbosityIntro || v == VerbosityFull
 }
