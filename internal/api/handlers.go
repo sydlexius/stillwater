@@ -40,17 +40,18 @@ func (r *Router) handleHealth(w http.ResponseWriter, req *http.Request) {
 // templates can construct correct absolute URLs in sub-path deployments.
 func (r *Router) assets() templates.AssetPaths {
 	return templates.AssetPaths{
-		CSS:        r.basePath + r.staticAssets.Path("/css/styles.css"),
-		HTMX:       r.basePath + r.staticAssets.Path("/js/htmx.min.js"),
-		CropperJS:  r.basePath + r.staticAssets.Path("/js/cropper.min.js"),
-		CropperCSS: r.basePath + r.staticAssets.Path("/css/cropper.min.css"),
-		ChartJS:    r.basePath + r.staticAssets.Path("/js/chart.min.js"),
-		SortableJS: r.basePath + r.staticAssets.Path("/js/Sortable.min.js"),
-		HelpJS:     r.basePath + r.staticAssets.Path("/js/help.js"),
-		PollingJS:  r.basePath + r.staticAssets.Path("/js/polling.js"),
-		SessionJS:  r.basePath + r.staticAssets.Path("/js/session.js"),
-		LoginBG:    r.basePath + r.staticAssets.Path("/img/login-bg.jpg"),
-		BasePath:   r.basePath,
+		CSS:           r.basePath + r.staticAssets.Path("/css/styles.css"),
+		HTMX:          r.basePath + r.staticAssets.Path("/js/htmx.min.js"),
+		CropperJS:     r.basePath + r.staticAssets.Path("/js/cropper.min.js"),
+		CropperCSS:    r.basePath + r.staticAssets.Path("/css/cropper.min.css"),
+		ChartJS:       r.basePath + r.staticAssets.Path("/js/chart.min.js"),
+		SortableJS:    r.basePath + r.staticAssets.Path("/js/Sortable.min.js"),
+		HelpJS:        r.basePath + r.staticAssets.Path("/js/help.js"),
+		PollingJS:     r.basePath + r.staticAssets.Path("/js/polling.js"),
+		SessionJS:     r.basePath + r.staticAssets.Path("/js/session.js"),
+		PreferencesJS: r.basePath + r.staticAssets.Path("/js/preferences.js"),
+		LoginBG:       r.basePath + r.staticAssets.Path("/img/login-bg.jpg"),
+		BasePath:      r.basePath,
 	}
 }
 
@@ -209,8 +210,12 @@ func (r *Router) completeLogin(w http.ResponseWriter, req *http.Request, provide
 
 	// If the login form included a return URL (from session timeout redirect),
 	// send the user back to that page instead of the default root.
+	// Strip basePath prefix if already present to avoid double-prefixing.
 	dest := r.basePath + "/"
 	if returnURL := validateReturnURL(req.FormValue("return_url")); returnURL != "" {
+		if r.basePath != "" && strings.HasPrefix(returnURL, r.basePath+"/") {
+			returnURL = strings.TrimPrefix(returnURL, r.basePath)
+		}
 		dest = r.basePath + returnURL
 	}
 	w.Header().Set("HX-Redirect", dest)
@@ -290,13 +295,14 @@ func (r *Router) completeLoginRedirect(w http.ResponseWriter, req *http.Request,
 	r.setSessionCookie(w, req, token)
 
 	// Honor a return URL from the form, query parameter, or OIDC cookie.
+	// The validated URL is re-parsed with url.Parse to give CodeQL's taint
+	// analysis a recognized sanitizer (it cannot follow validateReturnURL).
 	dest := r.basePath + "/"
-	if returnURL := validateReturnURL(req.FormValue("return_url")); returnURL != "" {
-		dest = r.basePath + returnURL
+	var rawReturn string
+	if v := validateReturnURL(req.FormValue("return_url")); v != "" {
+		rawReturn = v
 	} else if c, err := req.Cookie("oidc_return"); err == nil && c.Value != "" {
-		if returnURL := validateReturnURL(c.Value); returnURL != "" {
-			dest = r.basePath + returnURL
-		}
+		rawReturn = validateReturnURL(c.Value)
 		// Clear the cookie after use. Match the Secure/SameSite attributes from
 		// the original cookie set in handleOIDCLogin so browsers delete it.
 		http.SetCookie(w, &http.Cookie{
@@ -308,6 +314,24 @@ func (r *Router) completeLoginRedirect(w http.ResponseWriter, req *http.Request,
 			SameSite: http.SameSiteLaxMode,
 			Secure:   req.TLS != nil || req.Header.Get("X-Forwarded-Proto") == "https",
 		})
+	}
+	if rawReturn != "" {
+		if parsed, err := url.Parse(rawReturn); err == nil && parsed.Host == "" && parsed.Scheme == "" {
+			// Strip basePath prefix if already present to avoid double-prefixing.
+			// The client JS should send basePath-relative URLs, but guard
+			// against older clients or direct form submissions that include it.
+			path := parsed.Path
+			if r.basePath != "" && strings.HasPrefix(path, r.basePath+"/") {
+				path = strings.TrimPrefix(path, r.basePath)
+			}
+			dest = r.basePath + path
+			if parsed.RawQuery != "" {
+				dest += "?" + parsed.RawQuery
+			}
+			if parsed.Fragment != "" {
+				dest += "#" + parsed.Fragment
+			}
+		}
 	}
 	http.Redirect(w, req, dest, http.StatusFound)
 }
@@ -383,6 +407,9 @@ func (r *Router) handleLoginLocal(w http.ResponseWriter, req *http.Request, user
 	r.setSessionCookie(w, req, token)
 	dest := r.basePath + "/"
 	if returnURL := validateReturnURL(req.FormValue("return_url")); returnURL != "" {
+		if r.basePath != "" && strings.HasPrefix(returnURL, r.basePath+"/") {
+			returnURL = strings.TrimPrefix(returnURL, r.basePath)
+		}
 		dest = r.basePath + returnURL
 	}
 	w.Header().Set("HX-Redirect", dest)
@@ -435,6 +462,9 @@ func (r *Router) handleLoginFederated(w http.ResponseWriter, req *http.Request, 
 	r.setSessionCookie(w, req, token)
 	dest := r.basePath + "/"
 	if returnURL := validateReturnURL(req.FormValue("return_url")); returnURL != "" {
+		if r.basePath != "" && strings.HasPrefix(returnURL, r.basePath+"/") {
+			returnURL = strings.TrimPrefix(returnURL, r.basePath)
+		}
 		dest = r.basePath + returnURL
 	}
 	w.Header().Set("HX-Redirect", dest)

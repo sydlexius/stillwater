@@ -138,7 +138,14 @@
     if (path === loginUrl || path === (bp || '/')) {
       return;
     }
-    var returnURL = path + window.location.search + window.location.hash;
+    // Clear cached preferences so the next user does not see stale settings.
+    clearCache();
+    // Strip base path prefix so the server does not double-prefix on redirect.
+    var relPath = path;
+    if (bp && relPath.indexOf(bp) === 0) {
+      relPath = relPath.substring(bp.length) || '/';
+    }
+    var returnURL = relPath + window.location.search + window.location.hash;
     window.location.href = loginUrl + '?return=' + encodeURIComponent(returnURL);
   }
 
