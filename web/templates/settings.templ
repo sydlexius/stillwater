@@ -57,6 +57,33 @@ type SettingsData struct {
 	NameSimilarityThreshold int
 	Users                UsersTabData
 	AuthProviders        AuthProvidersData
+	Updater              UpdaterTabData
+}
+
+// UpdaterTabData holds data for the Updates settings tab.
+type UpdaterTabData struct {
+	// CurrentVersion is the running binary version.
+	CurrentVersion string
+	// InContainer is true when the process is running inside Docker or similar.
+	InContainer bool
+	// UpdaterEnabled is true when the update checker is active.
+	UpdaterEnabled bool
+	// Enabled is the user-configured enabled flag from the DB settings.
+	Enabled bool
+	// Channel is the configured release channel.
+	Channel string
+	// AutoUpdate is true when automatic updates are enabled.
+	AutoUpdate bool
+	// CheckIntervalHours is the interval between background checks.
+	CheckIntervalHours int
+	// UpdateAvailable is true when a newer version was found.
+	UpdateAvailable bool
+	// LatestVersion is the latest available version, empty if none.
+	LatestVersion string
+	// ReleaseURL is the GitHub release page URL.
+	ReleaseURL string
+	// Changelog is the release notes excerpt.
+	Changelog string
 }
 
 // settingsTab defines a tab in the settings page navigation.
@@ -76,6 +103,7 @@ func settingsTabs() []settingsTab {
 		{ID: "rules", Label: "Rules"},
 		{ID: "users", Label: "Users"},
 		{ID: "auth_providers", Label: "Auth Providers"},
+		{ID: "updates", Label: "Updates"},
 		{ID: "maintenance", Label: "Maintenance"},
 		{ID: "logs", Label: "Logs"},
 	}
@@ -1306,6 +1334,16 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 				}
 			>
 				@settingsAuthProvidersTab(data.AuthProviders)
+			</div>
+			<!-- Updates tab -->
+			<div
+				data-tab-panel="updates"
+				class={
+					"space-y-6",
+					templ.KV("hidden", data.ActiveTab != "updates"),
+				}
+			>
+				@settingsUpdatesTab(data.Updater)
 			</div>
 			<!-- Maintenance tab -->
 			<div

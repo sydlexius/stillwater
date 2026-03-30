@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -199,4 +200,19 @@ func (r *Router) getStringSetting(ctx context.Context, key string, fallback stri
 		return fallback
 	}
 	return v
+}
+
+// upsertSettings writes multiple key-value pairs to the settings table.
+func (r *Router) upsertSettings(ctx context.Context, pairs map[string]string) error {
+	now := time.Now().UTC().Format(time.RFC3339)
+	for k, v := range pairs {
+		_, err := r.db.ExecContext(ctx,
+			`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+			 ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+			k, v, now)
+		if err != nil {
+			return fmt.Errorf("upserting %q: %w", k, err)
+		}
+	}
+	return nil
 }
