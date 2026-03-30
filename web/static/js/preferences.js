@@ -219,6 +219,7 @@
           cached[key] = previousValue;
           writeCache(cached);
           applySingle(key, previousValue);
+          document.dispatchEvent(new CustomEvent('sw:preferences-applied'));
           return previousValue;
         }
         return resp.json().then(function (data) {
@@ -240,6 +241,7 @@
         cached[key] = previousValue;
         writeCache(cached);
         applySingle(key, previousValue);
+        document.dispatchEvent(new CustomEvent('sw:preferences-applied'));
         return previousValue;
       });
   }

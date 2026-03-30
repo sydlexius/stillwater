@@ -467,13 +467,13 @@
 
 /* Content area margin to accommodate sidebar */
 .sw-sidebar-content {
-  margin-left: 220px; /* matches --sw-sidebar-width-full; CSS default so there is no flash */
+  margin-left: var(--sw-sidebar-width-full);
   transition: margin-left 0.2s ease;
 }
 
 /* Sibling-based defaults for non-full sidebar states */
 #sw-sidebar[data-sidebar-state="icon-only"] ~ .sw-sidebar-content {
-  margin-left: 56px;
+  margin-left: var(--sw-sidebar-width-icon);
 }
 #sw-sidebar[data-sidebar-state="hidden"] ~ .sw-sidebar-content {
   margin-left: 0;
