@@ -131,6 +131,8 @@ func TestParseAcceptLanguage(t *testing.T) {
 		{"wildcard ignored", "*", "en"},
 		{"mixed known and unknown", "fr, de;q=0.5", "de"},
 		{"case insensitive", "EN-US", "en"},
+		{"q=0 excluded per RFC 9110", "de;q=0, en;q=0.5", "en"},
+		{"all q=0 falls back", "de;q=0, fr;q=0", "en"},
 	}
 
 	for _, tt := range tests {

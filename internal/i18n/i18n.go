@@ -189,9 +189,20 @@ func (b *Bundle) ParseAcceptLanguage(header string) string {
 			qPart := strings.TrimSpace(part[idx+1:])
 			if strings.HasPrefix(qPart, "q=") {
 				if w, err := strconv.ParseFloat(qPart[2:], 64); err == nil {
+					// Clamp to [0, 1] per RFC 9110.
+					if w < 0 {
+						w = 0
+					} else if w > 1 {
+						w = 1
+					}
 					weight = w
 				}
 			}
+		}
+
+		// RFC 9110: q=0 means "not acceptable" -- skip this locale entirely.
+		if weight == 0 {
+			continue
 		}
 
 		// Normalize: take only the primary language subtag (e.g. "en-US" -> "en").

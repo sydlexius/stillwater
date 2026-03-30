@@ -3694,17 +3694,61 @@ paths:
         state, typography, etc.).
       responses:
         "200":
-          description: Preference key-value map
+          description: >
+            All 12 preference keys with the user's values merged over defaults.
+            The response always contains exactly these keys.
           content:
             application/json:
               schema:
                 type: object
-                additionalProperties:
-                  type: string
+                properties:
+                  theme:
+                    type: string
+                    enum: [dark, light, system]
+                  glass_intensity:
+                    type: string
+                    enum: [light, medium, heavy]
+                  sidebar_state:
+                    type: string
+                    enum: [full, icon-only, hidden]
+                  content_width:
+                    type: string
+                    enum: [narrow, wide]
+                  font_family:
+                    type: string
+                    enum: [system, inter, atkinson]
+                  font_size:
+                    type: string
+                    enum: [small, medium, large]
+                  letter_spacing:
+                    type: string
+                    enum: [normal, wide, extra-wide]
+                  thumbnail_size:
+                    type: string
+                    enum: [small, medium, large]
+                  reduced_motion:
+                    type: string
+                    enum: [system, on, off]
+                  lite_mode:
+                    type: string
+                    enum: [off, on, auto]
+                  language:
+                    type: string
+                  notification_enabled:
+                    type: string
+                    enum: ["true", "false"]
         "401":
           description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "500":
           description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /preferences/{key}:
     put:
       tags: [Preferences]
@@ -3753,10 +3797,22 @@ paths:
                     type: string
         "400":
           description: Invalid key or value
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "401":
           description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "500":
           description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /settings/backup:
     post:

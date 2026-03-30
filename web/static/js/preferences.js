@@ -138,7 +138,7 @@
     if (path === loginUrl || path === (bp || '/')) {
       return;
     }
-    var returnURL = path + window.location.search;
+    var returnURL = path + window.location.search + window.location.hash;
     window.location.href = loginUrl + '?return=' + encodeURIComponent(returnURL);
   }
 
@@ -235,13 +235,24 @@
     return readCache();
   }
 
+  // Clear the preference cache. Called on logout to prevent the next user
+  // from briefly seeing the previous user's appearance settings.
+  function clearCache() {
+    try {
+      sessionStorage.removeItem(STORAGE_KEY);
+    } catch (e) {
+      // Storage unavailable -- non-fatal.
+    }
+  }
+
   // --- Expose public API ---
 
   window.swPreferences = {
     load: load,
     set: set,
     applyAll: applyAll,
-    getCache: getCache
+    getCache: getCache,
+    clearCache: clearCache
   };
 
   // --- Auto-initialize on page load ---

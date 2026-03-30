@@ -297,8 +297,17 @@ func (r *Router) completeLoginRedirect(w http.ResponseWriter, req *http.Request,
 		if returnURL := validateReturnURL(c.Value); returnURL != "" {
 			dest = r.basePath + returnURL
 		}
-		// Clear the cookie after use.
-		http.SetCookie(w, &http.Cookie{Name: "oidc_return", Value: "", Path: "/", MaxAge: -1})
+		// Clear the cookie after use. Match the Secure/SameSite attributes from
+		// the original cookie set in handleOIDCLogin so browsers delete it.
+		http.SetCookie(w, &http.Cookie{
+			Name:     "oidc_return",
+			Value:    "",
+			Path:     "/",
+			MaxAge:   -1,
+			HttpOnly: true,
+			SameSite: http.SameSiteLaxMode,
+			Secure:   req.TLS != nil || req.Header.Get("X-Forwarded-Proto") == "https",
+		})
 	}
 	http.Redirect(w, req, dest, http.StatusFound)
 }

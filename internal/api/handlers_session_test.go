@@ -42,10 +42,10 @@ func TestValidateReturnURL(t *testing.T) {
 		{name: "backslash slash becomes local path", input: `\/evil.com`, want: "/evil.com"},
 
 		// Path traversal: these are valid local relative paths (no open redirect).
+		// The server passes them through as-is; the browser resolves dot segments
+		// relative to the current origin, which stays local.
 		{name: "dot-dot traversal", input: "/foo/../bar", want: "/foo/../bar"},
 		{name: "dot segment", input: "/foo/./bar", want: "/foo/./bar"},
-		// Traversal that would resolve to protocol-relative is caught by the
-		// double-slash check after the browser resolves /../ sequences.
 		{name: "traversal to root", input: "/a/../../b", want: "/a/../../b"},
 
 		// Invalid: control characters (header injection prevention).

@@ -37,7 +37,7 @@
       return;
     }
 
-    var returnURL = window.location.pathname + window.location.search;
+    var returnURL = window.location.pathname + window.location.search + window.location.hash;
     window.location.href = loginPath + "?return=" + encodeURIComponent(returnURL);
   });
 })();
