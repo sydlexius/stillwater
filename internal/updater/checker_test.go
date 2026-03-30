@@ -50,7 +50,7 @@ func testCheckerWithServer(t *testing.T, releases []githubRelease, current strin
 	}
 	checker.repo = ""
 	checker.client = &http.Client{
-		Timeout: 5 * time.Second,
+		Timeout:   5 * time.Second,
 		Transport: &staticReleasesTransport{releases: releases},
 	}
 

@@ -357,23 +357,23 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 
 // buildUpdaterTabData assembles the UpdaterTabData for the settings page.
 func (r *Router) buildUpdaterTabData(req *http.Request) templates.UpdaterTabData {
-inContainer := updater.InContainer()
-d := templates.UpdaterTabData{
-CurrentVersion:     version.Version,
-InContainer:        inContainer,
-UpdaterEnabled:     r.updateChecker != nil,
-Enabled:            r.getBoolSetting(req.Context(), "updater.enabled", false),
-Channel:            r.getStringSetting(req.Context(), "updater.channel", string(updater.ChannelLatest)),
-AutoUpdate:         r.getBoolSetting(req.Context(), "updater.auto_update", false),
-CheckIntervalHours: r.getIntSetting(req.Context(), "updater.check_interval_hours", 24),
-}
-if r.updateChecker != nil {
-if cached, _ := r.updateChecker.CachedResult(); cached != nil && cached.Available {
-d.UpdateAvailable = true
-d.LatestVersion = cached.Latest
-d.ReleaseURL = cached.ReleaseURL
-d.Changelog = cached.Changelog
-}
-}
-return d
+	inContainer := updater.InContainer()
+	d := templates.UpdaterTabData{
+		CurrentVersion:     version.Version,
+		InContainer:        inContainer,
+		UpdaterEnabled:     r.updateChecker != nil,
+		Enabled:            r.getBoolSetting(req.Context(), "updater.enabled", false),
+		Channel:            r.getStringSetting(req.Context(), "updater.channel", string(updater.ChannelLatest)),
+		AutoUpdate:         r.getBoolSetting(req.Context(), "updater.auto_update", false),
+		CheckIntervalHours: r.getIntSetting(req.Context(), "updater.check_interval_hours", 24),
+	}
+	if r.updateChecker != nil {
+		if cached, _ := r.updateChecker.CachedResult(); cached != nil && cached.Available {
+			d.UpdateAvailable = true
+			d.LatestVersion = cached.Latest
+			d.ReleaseURL = cached.ReleaseURL
+			d.Changelog = cached.Changelog
+		}
+	}
+	return d
 }

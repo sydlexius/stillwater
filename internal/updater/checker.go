@@ -33,25 +33,25 @@ type AssetInfo struct {
 
 // UpdateInfo is the result of an update check.
 type UpdateInfo struct {
-	Available   bool      `json:"available"`
-	Current     string    `json:"current"`
-	Latest      string    `json:"latest,omitempty"`
-	Channel     Channel   `json:"channel"`
-	ReleaseURL  string    `json:"release_url,omitempty"`
-	ReleaseDate time.Time `json:"release_date,omitempty"`
-	Changelog   string    `json:"changelog,omitempty"`
+	Available   bool        `json:"available"`
+	Current     string      `json:"current"`
+	Latest      string      `json:"latest,omitempty"`
+	Channel     Channel     `json:"channel"`
+	ReleaseURL  string      `json:"release_url,omitempty"`
+	ReleaseDate time.Time   `json:"release_date,omitempty"`
+	Changelog   string      `json:"changelog,omitempty"`
 	Assets      []AssetInfo `json:"assets,omitempty"`
 }
 
 // githubRelease is the GitHub Releases API response shape.
 type githubRelease struct {
-	TagName     string         `json:"tag_name"`
-	Prerelease  bool           `json:"prerelease"`
-	Draft       bool           `json:"draft"`
-	HTMLURL     string         `json:"html_url"`
-	PublishedAt time.Time      `json:"published_at"`
-	Body        string         `json:"body"`
-	Assets      []githubAsset  `json:"assets"`
+	TagName     string        `json:"tag_name"`
+	Prerelease  bool          `json:"prerelease"`
+	Draft       bool          `json:"draft"`
+	HTMLURL     string        `json:"html_url"`
+	PublishedAt time.Time     `json:"published_at"`
+	Body        string        `json:"body"`
+	Assets      []githubAsset `json:"assets"`
 }
 
 // githubAsset is one downloadable file in a GitHub release.
@@ -63,14 +63,14 @@ type githubAsset struct {
 
 // Checker polls the GitHub Releases API and caches the latest result.
 type Checker struct {
-	repo    string          // "owner/repo"
+	repo    string // "owner/repo"
 	channel Channel
 	current Version
 	client  *http.Client
 	logger  *slog.Logger
 
-	mu      sync.RWMutex
-	cached  *UpdateInfo
+	mu        sync.RWMutex
+	cached    *UpdateInfo
 	checkedAt time.Time
 }
 

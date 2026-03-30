@@ -248,4 +248,3 @@ func selectAsset(assets []updater.AssetInfo) *updater.AssetInfo {
 	}
 	return nil
 }
-

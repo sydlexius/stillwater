@@ -940,20 +940,20 @@ func getDBIntSetting(db *sql.DB, key string, fallback int) int {
 // The caller is responsible for starting the background scheduler goroutine
 // after the graceful-shutdown context is available.
 func buildUpdateChecker(cfg *config.Config, logger *slog.Logger) *updater.Checker {
-if cfg.Updater.Disabled {
-logger.Debug("updater disabled via config")
-return nil
-}
-v, err := updater.Parse(version.Version)
-if err != nil {
-logger.Warn("cannot parse current version for update checker", "version", version.Version, "error", err)
-return nil
-}
-return updater.NewChecker(
-"sydlexius/stillwater",
-updater.ChannelLatest,
-v,
-nil,
-logger,
-)
+	if cfg.Updater.Disabled {
+		logger.Debug("updater disabled via config")
+		return nil
+	}
+	v, err := updater.Parse(version.Version)
+	if err != nil {
+		logger.Warn("cannot parse current version for update checker", "version", version.Version, "error", err)
+		return nil
+	}
+	return updater.NewChecker(
+		"sydlexius/stillwater",
+		updater.ChannelLatest,
+		v,
+		nil,
+		logger,
+	)
 }
