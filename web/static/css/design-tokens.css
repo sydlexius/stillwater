@@ -1,0 +1,119 @@
+/* Design token system for Stillwater UI
+ *
+ * All visual constants are defined here as CSS custom properties.
+ * Components reference these tokens instead of hard-coding colors,
+ * sizes, or effects. User preferences (glass intensity, font size,
+ * etc.) override tokens via data-* attributes on <html>.
+ */
+
+:root {
+  /* -- Sidebar ------------------------------------------------------------ */
+  --sw-sidebar-bg: #0f172a;
+  --sw-sidebar-text: #94a3b8;
+  --sw-sidebar-text-hover: #cbd5e1;
+  --sw-sidebar-active-bg: rgba(59, 130, 246, 0.15);
+  --sw-sidebar-active-text: #60a5fa;
+  --sw-sidebar-border: rgba(255, 255, 255, 0.06);
+  --sw-sidebar-width-full: 220px;
+  --sw-sidebar-width-icon: 56px;
+
+  /* -- Content ------------------------------------------------------------ */
+  --sw-content-bg: #f8f9fa;
+  --sw-content-text: #1e293b;
+  --sw-content-text-secondary: #64748b;
+
+  /* -- Glass -------------------------------------------------------------- */
+  --sw-glass-bg: rgba(30, 41, 59, 0.65);
+  --sw-glass-bg-light: rgba(255, 255, 255, 0.75);
+  --sw-glass-border: rgba(255, 255, 255, 0.1);
+  --sw-glass-blur-light: blur(20px) saturate(130%);
+  --sw-glass-blur-medium: blur(32px) saturate(150%);
+  --sw-glass-blur-heavy: blur(48px) saturate(180%);
+  --sw-glass-blur: var(--sw-glass-blur-medium);
+
+  /* -- Accents ------------------------------------------------------------ */
+  --sw-accent-primary: #3b82f6;
+  --sw-accent-primary-glow: rgba(59, 130, 246, 0.3);
+  --sw-severity-error: #f87171;
+  --sw-severity-error-bg: rgba(248, 113, 113, 0.12);
+  --sw-severity-warning: #fbbf24;
+  --sw-severity-warning-bg: rgba(251, 191, 36, 0.12);
+  --sw-severity-info: #818cf8;
+  --sw-severity-info-bg: rgba(129, 140, 248, 0.12);
+  --sw-success: #4ade80;
+  --sw-success-bg: rgba(74, 222, 128, 0.12);
+
+  /* -- Typography --------------------------------------------------------- */
+  --sw-font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --sw-font-size-base: 14px;
+  --sw-letter-spacing: normal;
+
+  /* -- Layout ------------------------------------------------------------- */
+  --sw-content-max-width: 1200px;
+  --sw-radius-sm: 6px;
+  --sw-radius-md: 10px;
+  --sw-radius-lg: 14px;
+  --sw-radius-xl: 20px;
+}
+
+/* Dark theme overrides (dark is the primary/default theme) */
+.dark {
+  --sw-content-bg: #0f172a;
+  --sw-content-text: #e2e8f0;
+  --sw-content-text-secondary: #94a3b8;
+}
+
+/* -- Glass intensity (set via data-glass on <html>) ----------------------- */
+[data-glass="light"] { --sw-glass-blur: var(--sw-glass-blur-light); }
+[data-glass="medium"] { --sw-glass-blur: var(--sw-glass-blur-medium); }
+[data-glass="heavy"] { --sw-glass-blur: var(--sw-glass-blur-heavy); }
+
+/* -- Content width (set via data-width on <html>) ------------------------- */
+[data-width="narrow"] main { max-width: var(--sw-content-max-width); margin: 0 auto; }
+[data-width="wide"] main { max-width: none; }
+
+/* -- Font size (set via data-font-size on <html>) ------------------------- */
+[data-font-size="small"] { font-size: 13px; }
+[data-font-size="medium"] { font-size: 14px; }
+[data-font-size="large"] { font-size: 16px; }
+
+/* -- Letter spacing (set via data-letter-spacing on <html>) --------------- */
+[data-letter-spacing="normal"] { letter-spacing: normal; }
+[data-letter-spacing="wide"] { letter-spacing: 0.025em; }
+[data-letter-spacing="extra-wide"] { letter-spacing: 0.05em; }
+
+/* -- Font family (set via data-font-family on <html>) --------------------- */
+[data-font-family="system"] { --sw-font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+[data-font-family="inter"] { --sw-font-family: 'Inter', -apple-system, sans-serif; }
+[data-font-family="atkinson"] { --sw-font-family: 'Atkinson Hyperlegible', -apple-system, sans-serif; }
+
+/* -- Thumbnail sizes (set via data-thumbnail-size on <html>) -------------- */
+[data-thumbnail-size="small"] { --sw-thumb-size: 32px; --sw-thumb-grid-min: 140px; }
+[data-thumbnail-size="medium"] { --sw-thumb-size: 44px; --sw-thumb-grid-min: 180px; }
+[data-thumbnail-size="large"] { --sw-thumb-size: 56px; --sw-thumb-grid-min: 220px; }
+
+/* -- Lite mode (disables glass, backdrop-filter, transitions) ------------- */
+[data-lite="on"] {
+  --sw-glass-blur: none;
+  --sw-glass-bg: rgba(30, 41, 59, 0.95);
+}
+[data-lite="on"] .ambient-bg { display: none; }
+[data-lite="on"] .glass-noise { display: none; }
+
+/* -- Reduced motion ------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* User-toggled reduced motion (data-motion on <html>) */
+[data-motion="on"] *,
+[data-motion="on"] *::before,
+[data-motion="on"] *::after {
+  animation-duration: 0.01ms !important;
+  transition-duration: 0.01ms !important;
+}

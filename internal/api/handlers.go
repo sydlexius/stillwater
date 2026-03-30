@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -39,16 +40,18 @@ func (r *Router) handleHealth(w http.ResponseWriter, req *http.Request) {
 // templates can construct correct absolute URLs in sub-path deployments.
 func (r *Router) assets() templates.AssetPaths {
 	return templates.AssetPaths{
-		CSS:        r.basePath + r.staticAssets.Path("/css/styles.css"),
-		HTMX:       r.basePath + r.staticAssets.Path("/js/htmx.min.js"),
-		CropperJS:  r.basePath + r.staticAssets.Path("/js/cropper.min.js"),
-		CropperCSS: r.basePath + r.staticAssets.Path("/css/cropper.min.css"),
-		ChartJS:    r.basePath + r.staticAssets.Path("/js/chart.min.js"),
-		SortableJS: r.basePath + r.staticAssets.Path("/js/Sortable.min.js"),
-		HelpJS:     r.basePath + r.staticAssets.Path("/js/help.js"),
-		PollingJS:  r.basePath + r.staticAssets.Path("/js/polling.js"),
-		LoginBG:    r.basePath + r.staticAssets.Path("/img/login-bg.jpg"),
-		BasePath:   r.basePath,
+		CSS:           r.basePath + r.staticAssets.Path("/css/styles.css"),
+		HTMX:          r.basePath + r.staticAssets.Path("/js/htmx.min.js"),
+		CropperJS:     r.basePath + r.staticAssets.Path("/js/cropper.min.js"),
+		CropperCSS:    r.basePath + r.staticAssets.Path("/css/cropper.min.css"),
+		ChartJS:       r.basePath + r.staticAssets.Path("/js/chart.min.js"),
+		SortableJS:    r.basePath + r.staticAssets.Path("/js/Sortable.min.js"),
+		HelpJS:        r.basePath + r.staticAssets.Path("/js/help.js"),
+		PollingJS:     r.basePath + r.staticAssets.Path("/js/polling.js"),
+		SessionJS:     r.basePath + r.staticAssets.Path("/js/session.js"),
+		PreferencesJS: r.basePath + r.staticAssets.Path("/js/preferences.js"),
+		LoginBG:       r.basePath + r.staticAssets.Path("/img/login-bg.jpg"),
+		BasePath:      r.basePath,
 	}
 }
 
@@ -204,7 +207,12 @@ func (r *Router) completeLogin(w http.ResponseWriter, req *http.Request, provide
 	}
 
 	r.setSessionCookie(w, req, token)
-	w.Header().Set("HX-Redirect", r.basePath+"/")
+
+	// If the login form included a return URL (from session timeout redirect),
+	// send the user back to that page instead of the default root.
+	// Strip basePath prefix if already present to avoid double-prefixing.
+	dest := buildSafeRedirect(r.basePath, validateReturnURL(req.FormValue("return_url")))
+	w.Header().Set("HX-Redirect", dest)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
@@ -279,7 +287,54 @@ func (r *Router) completeLoginRedirect(w http.ResponseWriter, req *http.Request,
 	}
 
 	r.setSessionCookie(w, req, token)
-	http.Redirect(w, req, r.basePath+"/", http.StatusFound)
+
+	// Honor a return URL from the form, query parameter, or OIDC cookie.
+	var rawReturn string
+	if v := validateReturnURL(req.FormValue("return_url")); v != "" {
+		rawReturn = v
+	} else if c, err := req.Cookie("oidc_return"); err == nil && c.Value != "" {
+		rawReturn = validateReturnURL(c.Value)
+		// Clear the cookie after use. Match the Secure/SameSite attributes from
+		// the original cookie set in handleOIDCLogin so browsers delete it.
+		http.SetCookie(w, &http.Cookie{
+			Name:     "oidc_return",
+			Value:    "",
+			Path:     "/",
+			MaxAge:   -1,
+			HttpOnly: true,
+			SameSite: http.SameSiteLaxMode,
+			Secure:   req.TLS != nil || req.Header.Get("X-Forwarded-Proto") == "https",
+		})
+	}
+	dest := buildSafeRedirect(r.basePath, rawReturn)
+	http.Redirect(w, req, dest, http.StatusFound)
+}
+
+// buildSafeRedirect constructs a redirect URL from a validated return path.
+// The return path is re-parsed with url.Parse and only the Path component is
+// used, which breaks any taint chain from user input to the redirect target.
+// This satisfies CodeQL's go/unvalidated-url-redirection rule.
+func buildSafeRedirect(basePath, returnPath string) string {
+	dest := basePath + "/"
+	if returnPath == "" {
+		return dest
+	}
+	parsed, err := url.Parse(returnPath)
+	if err != nil || parsed.Host != "" || parsed.Scheme != "" {
+		return dest
+	}
+	safePath := parsed.Path
+	if basePath != "" && strings.HasPrefix(safePath, basePath+"/") {
+		safePath = strings.TrimPrefix(safePath, basePath)
+	}
+	dest = basePath + safePath
+	if parsed.RawQuery != "" {
+		dest += "?" + parsed.RawQuery
+	}
+	if parsed.Fragment != "" {
+		dest += "#" + parsed.Fragment
+	}
+	return dest
 }
 
 // redirectWithError redirects the user to the login page with an error message
@@ -287,6 +342,57 @@ func (r *Router) completeLoginRedirect(w http.ResponseWriter, req *http.Request,
 // JSON responses are not appropriate.
 func (r *Router) redirectWithError(w http.ResponseWriter, req *http.Request, msg string) {
 	http.Redirect(w, req, r.basePath+"/?error="+url.QueryEscape(msg), http.StatusFound)
+}
+
+// validateReturnURL checks that a return URL is a safe relative path.
+// It rejects absolute URLs, protocol-relative URLs, and other open-redirect
+// vectors. Returns the validated path or empty string if the input is invalid.
+func validateReturnURL(rawURL string) string {
+	if rawURL == "" {
+		return ""
+	}
+
+	// Reject URLs containing ASCII control characters (CR, LF, null, etc.)
+	// to prevent header injection via Location or HX-Redirect headers.
+	for _, c := range rawURL {
+		if c < 0x20 || c == 0x7f {
+			slog.Debug("rejected return URL: contains control character", "raw", rawURL) //nolint:gosec // G706: debug audit log
+			return ""
+		}
+	}
+
+	// Strip backslashes to prevent bypass via "\" which some browsers
+	// normalize to "/", turning "\evil.com" into "//evil.com".
+	cleaned := strings.ReplaceAll(rawURL, "\\", "")
+	if cleaned == "" {
+		slog.Debug("rejected return URL: empty after backslash strip", "raw", rawURL) //nolint:gosec // G706: debug audit log; slog escapes values in structured output
+		return ""
+	}
+
+	// Must start with a single forward slash (relative path).
+	if !strings.HasPrefix(cleaned, "/") {
+		slog.Debug("rejected return URL: no leading slash", "raw", rawURL) //nolint:gosec // G706: debug audit log
+		return ""
+	}
+
+	// Reject protocol-relative URLs ("//evil.com").
+	if strings.HasPrefix(cleaned, "//") {
+		slog.Debug("rejected return URL: protocol-relative", "raw", rawURL) //nolint:gosec // G706: debug audit log
+		return ""
+	}
+
+	// Reject any URL with a scheme (e.g. "javascript:", "data:", "http:").
+	parsed, err := url.Parse(cleaned)
+	if err != nil {
+		slog.Debug("rejected return URL: parse error", "raw", rawURL, "error", err) //nolint:gosec // G706: debug audit log
+		return ""
+	}
+	if parsed.Scheme != "" || parsed.Host != "" {
+		slog.Debug("rejected return URL: has scheme or host", "raw", rawURL) //nolint:gosec // G706: debug audit log
+		return ""
+	}
+
+	return cleaned
 }
 
 // handleLoginLocal performs local username/password authentication.
@@ -300,7 +406,8 @@ func (r *Router) handleLoginLocal(w http.ResponseWriter, req *http.Request, user
 	}
 
 	r.setSessionCookie(w, req, token)
-	w.Header().Set("HX-Redirect", r.basePath+"/")
+	dest := buildSafeRedirect(r.basePath, validateReturnURL(req.FormValue("return_url")))
+	w.Header().Set("HX-Redirect", dest)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
@@ -348,7 +455,8 @@ func (r *Router) handleLoginFederated(w http.ResponseWriter, req *http.Request, 
 	r.updateConnectionToken(req.Context(), authMethod, serverURL, result.User.ID, result.AccessToken)
 
 	r.setSessionCookie(w, req, token)
-	w.Header().Set("HX-Redirect", r.basePath+"/")
+	dest := buildSafeRedirect(r.basePath, validateReturnURL(req.FormValue("return_url")))
+	w.Header().Set("HX-Redirect", dest)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 

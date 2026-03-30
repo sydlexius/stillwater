@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./design-tokens.css";
 
 @custom-variant dark (&:where(.dark, .dark *));
 
@@ -36,4 +37,41 @@
   background-position: center;
   filter: blur(8px);
   transform: scale(1.1);
+}
+
+/* -- Glass surface (token-driven) ----------------------------------------- */
+.sw-glass {
+  background: var(--sw-glass-bg);
+  backdrop-filter: var(--sw-glass-blur);
+  -webkit-backdrop-filter: var(--sw-glass-blur);
+  border: 1px solid var(--sw-glass-border);
+}
+
+/* Glass noise texture overlay -- add to any element with position: relative */
+.glass-noise::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+  background-size: 256px;
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+/* -- Cross-browser thin scrollbars ---------------------------------------- */
+.sw-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+}
+.sw-scroll::-webkit-scrollbar { width: 6px; }
+.sw-scroll::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.15); border-radius: 3px; }
+.sw-scroll::-webkit-scrollbar-track { background: transparent; }
+
+/* -- Autofill fix for dark/glass backgrounds ------------------------------ */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--sw-content-text);
+  -webkit-box-shadow: 0 0 0px 1000px var(--sw-content-bg) inset;
+  transition: background-color 5000s ease-in-out 0s;
 }

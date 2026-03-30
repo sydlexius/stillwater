@@ -1,0 +1,49 @@
+{
+  "nav.dashboard": "Dashboard",
+  "nav.artists": "Artists",
+  "nav.reports": "Reports",
+  "nav.settings": "Settings",
+  "nav.rules": "Rules",
+  "nav.guide": "Guide",
+  "nav.logout": "Log Out",
+
+  "dashboard.title": "Dashboard",
+  "dashboard.health_score": "Health Score",
+  "dashboard.total_artists": "Total Artists",
+  "dashboard.total_violations": "Total Violations",
+  "dashboard.recent_activity": "Recent Activity",
+
+  "artists.title": "Artists",
+  "artists.search_placeholder": "Search artists...",
+  "artists.no_results": "No artists found",
+  "artists.count.one": "{count} artist",
+  "artists.count.other": "{count} artists",
+
+  "settings.title": "Settings",
+  "settings.general": "General",
+  "settings.connections": "Connections",
+  "settings.providers": "Providers",
+  "settings.notifications": "Notifications",
+  "settings.maintenance": "Maintenance",
+  "settings.users": "Users",
+  "settings.logs": "Logs",
+  "settings.appearance": "Appearance",
+  "settings.saved": "Settings saved successfully",
+  "settings.save_error": "Failed to save settings",
+
+  "reports.title": "Reports",
+  "reports.violations": "Violations",
+  "reports.health": "Health",
+
+  "actions.save": "Save",
+  "actions.cancel": "Cancel",
+  "actions.delete": "Delete",
+  "actions.edit": "Edit",
+  "actions.confirm": "Confirm",
+  "actions.count.one": "{count} action",
+  "actions.count.other": "{count} actions",
+
+  "status.loading": "Loading...",
+  "status.error": "An error occurred",
+  "status.no_data": "No data available"
+}

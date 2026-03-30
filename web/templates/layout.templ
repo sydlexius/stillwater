@@ -13,7 +13,9 @@ type AssetPaths struct {
 	SortableJS string
 	HelpJS     string
 	PollingJS  string
-	LoginBG    string
+	SessionJS      string
+	PreferencesJS  string
+	LoginBG        string
 	// BasePath is the server.base_path prefix (e.g. "/stillwater"). Empty string
 	// when the app is deployed at the root. Never has a trailing slash.
 	BasePath string
@@ -76,12 +78,19 @@ templ Layout(title string, assets AssetPaths) {
 			@components.ContextMenuGlobalJS()
 			@HelpOverlay()
 			<script src={ assets.PollingJS }></script>
+			<script src={ assets.SessionJS }></script>
+			<script src={ assets.PreferencesJS }></script>
 			<script src={ assets.HelpJS }></script>
 			<div id="error-toast-container" class="fixed top-4 right-4 z-50 flex flex-col gap-2 w-80"></div>
 			<script>
-				// Theme toggle: cycles Light -> Dark -> System
+				// Theme toggle: cycles Light -> Dark -> System.
+				// Uses the preferences API (via swPreferences) as the single source
+				// of truth. Falls back to localStorage for the initial paint before
+				// the API responds (the preferences.js IIFE applies cached values
+				// synchronously on load).
 				function cycleTheme() {
-					var current = localStorage.getItem('theme');
+					var cached = window.swPreferences ? window.swPreferences.getCache() : null;
+					var current = (cached && cached.theme) || localStorage.getItem('theme') || 'dark';
 					var next;
 					if (current === 'light') {
 						next = 'dark';
@@ -90,9 +99,14 @@ templ Layout(title string, assets AssetPaths) {
 					} else {
 						next = 'light';
 					}
-					applyTheme(next);
+					if (window.swPreferences) {
+						window.swPreferences.set('theme', next);
+					} else {
+						// Fallback for login page where preferences.js is not loaded.
+						applyThemeFallback(next);
+					}
 				}
-				function applyTheme(pref) {
+				function applyThemeFallback(pref) {
 					if (pref === 'system') {
 						localStorage.removeItem('theme');
 					} else {
@@ -468,6 +482,7 @@ templ navbar(bp string, isAdmin bool) {
 					<button
 						hx-post="/api/v1/auth/logout"
 						hx-redirect={ bp + "/" }
+						hx-on::before-request="if(window.swPreferences)swPreferences.clearCache()"
 						class="rounded-md px-3 py-2 text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
 					>
 						Logout
@@ -526,6 +541,7 @@ templ navbar(bp string, isAdmin bool) {
 				<button
 					hx-post="/api/v1/auth/logout"
 					hx-redirect={ bp + "/" }
+					hx-on::before-request="if(window.swPreferences)swPreferences.clearCache()"
 					class="block w-full rounded-md px-3 py-3 text-left text-base font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-700 dark:hover:text-gray-200"
 				>
 					Logout

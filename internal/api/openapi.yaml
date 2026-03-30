@@ -3683,6 +3683,152 @@ paths:
               schema:
                 $ref: "#/components/schemas/Status"
 
+  /preferences:
+    get:
+      tags: [Preferences]
+      summary: Get all user preferences
+      operationId: getPreferences
+      description: >
+        Returns all preference keys for the authenticated user, merged with defaults.
+        Preferences are per-user appearance settings (theme, glass intensity, sidebar
+        state, typography, etc.).
+      responses:
+        "200":
+          description: >
+            All 12 preference keys with the user's values merged over defaults.
+            The response always contains exactly these keys.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  theme:
+                    type: string
+                    enum: [dark, light, system]
+                  glass_intensity:
+                    type: string
+                    enum: [light, medium, heavy]
+                  sidebar_state:
+                    type: string
+                    enum: [full, icon-only, hidden]
+                  content_width:
+                    type: string
+                    enum: [narrow, wide]
+                  font_family:
+                    type: string
+                    enum: [system, inter, atkinson]
+                  font_size:
+                    type: string
+                    enum: [small, medium, large]
+                  letter_spacing:
+                    type: string
+                    enum: [normal, wide, extra-wide]
+                  thumbnail_size:
+                    type: string
+                    enum: [small, medium, large]
+                  reduced_motion:
+                    type: string
+                    enum: [system, on, off]
+                  lite_mode:
+                    type: string
+                    enum: [off, on, auto]
+                  language:
+                    type: string
+                    enum: [en]
+                  notification_enabled:
+                    type: string
+                    enum: ["true", "false"]
+                required:
+                  - theme
+                  - glass_intensity
+                  - sidebar_state
+                  - content_width
+                  - font_family
+                  - font_size
+                  - letter_spacing
+                  - thumbnail_size
+                  - reduced_motion
+                  - lite_mode
+                  - language
+                  - notification_enabled
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /preferences/{key}:
+    put:
+      tags: [Preferences]
+      summary: Update a user preference
+      operationId: updatePreference
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+            enum:
+              - theme
+              - glass_intensity
+              - sidebar_state
+              - content_width
+              - font_family
+              - font_size
+              - letter_spacing
+              - thumbnail_size
+              - reduced_motion
+              - lite_mode
+              - language
+              - notification_enabled
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [value]
+              properties:
+                value:
+                  type: string
+      responses:
+        "200":
+          description: Preference updated
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [key, value]
+                properties:
+                  key:
+                    type: string
+                  value:
+                    type: string
+        "400":
+          description: Invalid key or value
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   /settings/backup:
     post:
       tags: [Backup]
