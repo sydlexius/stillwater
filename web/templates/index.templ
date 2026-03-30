@@ -144,10 +144,6 @@ templ IndexPage(assets AssetPaths) {
 						}
 						return false;
 					},
-					onTimeout: function() {
-						showToast('Rule status polling timed out');
-						resetRuleButton();
-					},
 					onHTTPError: function(status) {
 						showToast('Status check failed (HTTP ' + status + ')');
 						resetRuleButton();
@@ -156,7 +152,7 @@ templ IndexPage(assets AssetPaths) {
 						showToast('Network error while checking rule status');
 						resetRuleButton();
 					}
-				}, {maxAttempts: 0});
+				});
 			}
 
 			function resetRuleButton() {

@@ -443,9 +443,6 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 							}
 							return false;
 						},
-						onTimeout: function() {
-							resetScanUI();
-						},
 						onHTTPError: function() {
 							resetScanUI();
 						},

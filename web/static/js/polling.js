@@ -6,12 +6,12 @@
 //   url       - Status endpoint to fetch on each tick.
 //   callbacks - Object with event handlers:
 //       onData(data)      - Called with parsed JSON each tick. Return true to stop polling.
-//       onTimeout()       - Called when maxAttempts is exceeded.
+//       onTimeout()       - Called when maxAttempts is exceeded (only when maxAttempts > 0).
 //       onHTTPError(status) - Called when the response is not ok (receives HTTP status code).
 //       onNetworkError()  - Called on fetch/network failure.
 //   options   - Optional overrides:
 //       intervalMs   (default 2000)
-//       maxAttempts  (default 150)
+//       maxAttempts  (default 0; 0 means no timeout -- poll until done or error)
 //       headers      (default {})
 //       credentials  (default 'same-origin')
 //
@@ -19,7 +19,7 @@
 function pollAsyncStatus(url, callbacks, options) {
   options = options || {};
   var intervalMs = options.intervalMs || 2000;
-  var maxAttempts = (options.maxAttempts !== undefined) ? options.maxAttempts : 150;
+  var maxAttempts = (options.maxAttempts !== undefined) ? options.maxAttempts : 0;
   var headers = options.headers || {};
   var credentials = options.credentials || 'same-origin';
   var attempts = 0;

@@ -2988,10 +2988,6 @@ templ settingsLibraryScript() {
 					}
 					return false;
 				},
-				onTimeout: function() {
-					resetUI();
-					showToast("Operation timed out");
-				},
 				onHTTPError: function(status) {
 					resetUI();
 					showToast("Status check failed (HTTP " + status + ")");
@@ -4748,10 +4744,6 @@ templ ruleToggleScript() {
 					finishRunBtn(btn, origText);
 					return true;
 				},
-				onTimeout: function() {
-					showRuleToast('Rule evaluation polling timed out.', true);
-					finishRunBtn(btn, origText);
-				},
 				onHTTPError: function(status) {
 					showRuleToast('Status check failed (HTTP ' + status + ').', true);
 					finishRunBtn(btn, origText);
@@ -4760,7 +4752,7 @@ templ ruleToggleScript() {
 					showRuleToast('Lost connection while running rule.', true);
 					finishRunBtn(btn, origText);
 				}
-			}, {maxAttempts: 0});
+			});
 		}
 
 		function finishRunBtn(btn, origText) {
