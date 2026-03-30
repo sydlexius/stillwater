@@ -11,6 +11,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/platform"
 	"github.com/sydlexius/stillwater/internal/provider"
 	"github.com/sydlexius/stillwater/internal/rule"
+	"github.com/sydlexius/stillwater/internal/scraper"
 	"github.com/sydlexius/stillwater/internal/webhook"
 	"github.com/sydlexius/stillwater/web/components"
 )
@@ -38,6 +39,7 @@ type SettingsData struct {
 	ActiveProfile        *platform.Profile
 	ProviderKeys         []provider.ProviderKeyStatus
 	Priorities           []provider.FieldPriority
+	ScraperConfig        *scraper.ScraperConfig
 	Connections          []connection.Connection
 	Webhooks             []webhook.Webhook
 	WebSearchProviders   []provider.WebSearchProviderStatus
@@ -723,6 +725,9 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 							</div>
 						</div>
 					</div>
+				}
+				if data.ScraperConfig != nil {
+					@FieldOptionsCard(data.ScraperConfig)
 				}
 				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
@@ -3888,6 +3893,74 @@ templ priorityChipRowInner(pri provider.FieldPriority, available []provider.Prov
 			<p class="text-xs text-gray-400 dark:text-gray-500 italic mt-1">No configured providers for this field.</p>
 		}
 	</div>
+}
+
+// verbosityLabel returns a human-readable label for a verbosity value.
+func verbosityLabel(v string) string {
+	switch scraper.BiographyVerbosity(v) {
+	case scraper.VerbosityFull:
+		return "Full article"
+	default:
+		return "Intro only"
+	}
+}
+
+// FieldOptionsCard renders per-field configuration options (e.g. verbosity)
+// for provider-field combinations that support them.
+templ FieldOptionsCard(cfg *scraper.ScraperConfig) {
+	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
+		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+			<h2 class="text-lg font-semibold">Field Options</h2>
+			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+				Additional configuration options for specific provider-field combinations.
+			</p>
+		</div>
+		<div class="px-6 py-4 space-y-4">
+			for _, field := range cfg.Fields {
+				if len(scraper.VerbosityOptionsFor(field.Field, field.Primary)) > 0 {
+					<div class="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3">
+						<div>
+							<span class="text-sm font-medium capitalize">{ string(field.Field) }</span>
+							<span class="text-xs text-gray-400 dark:text-gray-500 ml-2">via { field.Primary.DisplayName() }</span>
+							<p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+								Controls how much text is fetched. "Full article" may be very large (200 KB+).
+							</p>
+						</div>
+						<div class="flex items-center gap-2 mt-2 sm:mt-0">
+							<label for={ "verbosity-" + string(field.Field) } class="sr-only">Biography verbosity</label>
+							<select
+								id={ "verbosity-" + string(field.Field) }
+								name="verbosity"
+								class="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+								hx-put={ "/api/v1/scraper/config/fields/" + string(field.Field) + "/verbosity" }
+								hx-trigger="change"
+								hx-vals={ `{"verbosity": "` + field.Verbosity + `"}` }
+								hx-swap="none"
+								onchange={ updateVerbosity(string(field.Field)) }
+							>
+								for _, opt := range scraper.VerbosityOptionsFor(field.Field, field.Primary) {
+									<option
+										value={ opt.Value }
+										selected?={ field.Verbosity == opt.Value || (field.Verbosity == "" && opt.Default) }
+									>
+										{ opt.Label }
+									</option>
+								}
+							</select>
+						</div>
+					</div>
+				}
+			}
+		</div>
+	</div>
+}
+
+script updateVerbosity(field string) {
+	var sel = document.getElementById('verbosity-' + field);
+	htmx.ajax('PUT', '/api/v1/scraper/config/fields/' + field + '/verbosity', {
+		values: {verbosity: sel.value},
+		swap: 'none'
+	});
 }
 
 templ WebSearchToggle(ws provider.WebSearchProviderStatus) {
