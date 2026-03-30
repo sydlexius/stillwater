@@ -287,27 +287,6 @@ func buildNotificationsData(p rule.ViolationListParams, violations []rule.RuleVi
 	return data
 }
 
-// handleNotificationsPage renders the notifications page.
-// GET /notifications
-func (r *Router) handleNotificationsPage(w http.ResponseWriter, req *http.Request) {
-	p := parseNotificationParams(req)
-
-	violations, err := r.ruleService.ListViolationsFiltered(req.Context(), p)
-	if err != nil {
-		writeError(w, req, http.StatusInternalServerError, "failed to load violations")
-		return
-	}
-
-	if violations == nil {
-		violations = []rule.RuleViolation{}
-	}
-
-	data := buildNotificationsData(p, violations)
-
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = templates.NotificationsPage(r.assetsFor(req), data).Render(req.Context(), w)
-}
-
 // handleApplyViolationCandidate downloads and applies a chosen image candidate.
 // POST /api/v1/notifications/{id}/apply-candidate
 func (r *Router) handleApplyViolationCandidate(w http.ResponseWriter, req *http.Request) {
