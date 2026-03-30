@@ -50,6 +50,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/scanner"
 	"github.com/sydlexius/stillwater/internal/scraper"
 	"github.com/sydlexius/stillwater/internal/settingsio"
+	"github.com/sydlexius/stillwater/internal/updater"
 	"github.com/sydlexius/stillwater/internal/version"
 	"github.com/sydlexius/stillwater/internal/watcher"
 	"github.com/sydlexius/stillwater/internal/webhook"
@@ -407,6 +408,7 @@ func run() error {
 	}
 
 	// Set up HTTP router
+	updateChecker := buildUpdateChecker(cfg, logger)
 	router := api.NewRouter(api.RouterDeps{
 		AuthService:        authService,
 		AuthRegistry:       authRegistry,
@@ -446,6 +448,7 @@ func run() error {
 		ImageCacheDir:      filepath.Join(filepath.Dir(cfg.Database.Path), "cache", "images"),
 		Publisher:          publisher,
 		RuleScheduler:      ruleScheduler,
+		UpdateChecker:      updateChecker,
 	})
 
 	// Graceful shutdown
@@ -484,6 +487,12 @@ func run() error {
 	// Start backup scheduler
 	if cfg.Backup.Enabled {
 		go backupService.StartScheduler(ctx, time.Duration(cfg.Backup.IntervalHours)*time.Hour)
+	}
+
+	// Start update checker background scheduler when the updater is enabled.
+	if updateChecker != nil {
+		checkInterval := time.Duration(getDBIntSetting(db, "updater.check_interval_hours", 24)) * time.Hour
+		go updateChecker.StartScheduler(ctx, checkInterval)
 	}
 
 	// Start maintenance scheduler (reads interval from DB settings, defaults to daily)
@@ -921,4 +930,29 @@ func getDBIntSetting(db *sql.DB, key string, fallback int) int {
 		return fallback
 	}
 	return n
+}
+
+// buildUpdateChecker constructs the updater Checker when the self-update
+// mechanism is enabled. Returns nil if SW_UPDATER_DISABLED is set or if the
+// current version string cannot be parsed.
+//
+// The caller is responsible for starting the background scheduler goroutine
+// after the graceful-shutdown context is available.
+func buildUpdateChecker(cfg *config.Config, logger *slog.Logger) *updater.Checker {
+	if cfg.Updater.Disabled {
+		logger.Debug("updater disabled via config")
+		return nil
+	}
+	v, err := updater.Parse(version.Version)
+	if err != nil {
+		logger.Warn("cannot parse current version for update checker", "version", version.Version, "error", err)
+		return nil
+	}
+	return updater.NewChecker(
+		"sydlexius/stillwater",
+		updater.ChannelLatest,
+		v,
+		nil,
+		logger,
+	)
 }

@@ -7,6 +7,8 @@ import (
 	"github.com/sydlexius/stillwater/internal/filesystem"
 	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/platform"
+	"github.com/sydlexius/stillwater/internal/updater"
+	"github.com/sydlexius/stillwater/internal/version"
 	"github.com/sydlexius/stillwater/web/templates"
 )
 
@@ -272,7 +274,7 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 	tab := req.URL.Query().Get("tab")
 	switch tab {
 	case "general", "providers", "connections", "libraries", "automation", "rules",
-		"users", "auth_providers", "maintenance", "logs":
+		"users", "auth_providers", "updates", "maintenance", "logs":
 		// Valid tab.
 	default:
 		tab = "general"
@@ -348,6 +350,30 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 		NameSimilarityThreshold: r.getNameSimilarityThreshold(req.Context()),
 		Users:                   usersTabData,
 		AuthProviders:           authProvidersData,
+		Updater:                 r.buildUpdaterTabData(req),
 	}
 	renderTempl(w, req, templates.SettingsPage(r.assetsFor(req), data))
+}
+
+// buildUpdaterTabData assembles the UpdaterTabData for the settings page.
+func (r *Router) buildUpdaterTabData(req *http.Request) templates.UpdaterTabData {
+	inContainer := updater.InContainer()
+	d := templates.UpdaterTabData{
+		CurrentVersion:     version.Version,
+		InContainer:        inContainer,
+		UpdaterEnabled:     r.updateChecker != nil,
+		Enabled:            r.getBoolSetting(req.Context(), "updater.enabled", false),
+		Channel:            r.getStringSetting(req.Context(), "updater.channel", string(updater.ChannelLatest)),
+		AutoUpdate:         r.getBoolSetting(req.Context(), "updater.auto_update", false),
+		CheckIntervalHours: r.getIntSetting(req.Context(), "updater.check_interval_hours", 24),
+	}
+	if r.updateChecker != nil {
+		if cached, _ := r.updateChecker.CachedResult(); cached != nil && cached.Available {
+			d.UpdateAvailable = true
+			d.LatestVersion = cached.Latest
+			d.ReleaseURL = cached.ReleaseURL
+			d.Changelog = cached.Changelog
+		}
+	}
+	return d
 }

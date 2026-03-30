@@ -84,6 +84,72 @@ components:
       properties:
         status:
           type: string
+    UpdateInfo:
+      type: object
+      description: The result of a GitHub Releases update check.
+      properties:
+        available:
+          type: boolean
+          description: True when a newer version was found.
+        current:
+          type: string
+          description: The version currently running.
+        latest:
+          type: string
+          description: The latest version available. Present only when available is true.
+        channel:
+          type: string
+          enum: [latest, beta, dev]
+          description: The release channel that was queried.
+        release_url:
+          type: string
+          description: GitHub release page URL.
+        release_date:
+          type: string
+          format: date-time
+          description: Publication date of the latest release.
+        changelog:
+          type: string
+          description: Release notes body text.
+        assets:
+          type: array
+          items:
+            $ref: "#/components/schemas/AssetInfo"
+    AssetInfo:
+      type: object
+      description: A downloadable release asset.
+      properties:
+        name:
+          type: string
+          description: Filename of the asset.
+        download_url:
+          type: string
+          description: Direct download URL.
+        checksum_url:
+          type: string
+          description: URL of the corresponding .sha256 checksum file.
+        size:
+          type: integer
+          format: int64
+          description: Asset size in bytes.
+    UpdaterConfig:
+      type: object
+      description: Updater configuration settings.
+      properties:
+        enabled:
+          type: boolean
+          description: Whether the background update checker is enabled. Defaults to false.
+        channel:
+          type: string
+          enum: [latest, beta, dev]
+          description: Release channel to check for updates.
+        auto_update:
+          type: boolean
+          description: Automatically install updates when found. Requires a restart to take effect.
+        check_interval_hours:
+          type: integer
+          minimum: 1
+          description: Interval between background checks, in hours. Defaults to 24.
     ConnectionResponse:
       type: object
       properties:
@@ -7509,6 +7575,166 @@ paths:
                 $ref: "#/components/schemas/Error"
         "500":
           description: Platform delete failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /updates/status:
+    get:
+      tags: [Updates]
+      summary: Get update status
+      description: Returns the running version, Docker/container detection result, and the most recently cached update check result.
+      operationId: getUpdateStatus
+      responses:
+        "200":
+          description: Update status information.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  current_version:
+                    type: string
+                    description: The currently running binary version.
+                  commit:
+                    type: string
+                    description: The build commit hash.
+                  in_container:
+                    type: boolean
+                    description: True when the process is running inside a Docker or compatible container.
+                  updater_enabled:
+                    type: boolean
+                    description: True when the update checker is initialised and active.
+                  channel:
+                    type: string
+                    enum: [latest, beta, dev]
+                    description: The configured release channel.
+                  cached_update:
+                    $ref: "#/components/schemas/UpdateInfo"
+                  checked_at:
+                    type: string
+                    format: date-time
+                    description: ISO-8601 timestamp of the last check. Absent if no check has been performed.
+  /updates/check:
+    get:
+      tags: [Updates]
+      summary: Check for updates
+      description: Triggers an immediate check against the GitHub Releases API and returns the result.
+      operationId: checkForUpdate
+      responses:
+        "200":
+          description: Update check result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpdateInfo"
+        "503":
+          description: Update checker is disabled.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "502":
+          description: GitHub API unreachable or returned an error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /updates/apply:
+    post:
+      tags: [Updates]
+      summary: Install available update
+      description: Downloads and atomically installs the latest available update. Returns 409 when running in a container.
+      operationId: applyUpdate
+      responses:
+        "200":
+          description: Update installed. A restart is required to complete the upgrade.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    description: Always "installed".
+                  version:
+                    type: string
+                    description: The newly installed version string.
+        "404":
+          description: No update available.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Binary replacement not supported in container environments.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: No suitable binary asset found for the current platform.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Download or installation failed; previous binary has been restored.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "502":
+          description: GitHub API unreachable when performing a fresh check before installation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Update checker is disabled.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /updates/config:
+    get:
+      tags: [Updates]
+      summary: Get updater configuration
+      description: Returns the current update checker settings stored in the database.
+      operationId: getUpdateConfig
+      responses:
+        "200":
+          description: Current updater configuration.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpdaterConfig"
+    put:
+      tags: [Updates]
+      summary: Update updater configuration
+      description: Updates one or more updater settings. All fields are optional.
+      operationId: putUpdateConfig
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdaterConfig"
+      responses:
+        "200":
+          description: Settings updated successfully.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+        "400":
+          description: Validation error (invalid channel or check_interval_hours).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Failed to persist settings.
           content:
             application/json:
               schema:

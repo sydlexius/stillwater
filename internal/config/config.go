@@ -19,6 +19,7 @@ type Config struct {
 	Scanner    ScannerConfig    `yaml:"scanner"`
 	Backup     BackupConfig     `yaml:"backup"`
 	Logging    LoggingConfig    `yaml:"logging"`
+	Updater    UpdaterConfig    `yaml:"updater"`
 }
 
 // ServerConfig holds HTTP server settings.
@@ -65,6 +66,14 @@ type BackupConfig struct {
 type LoggingConfig struct {
 	Level  string `yaml:"level"`  // SW_LOG_LEVEL
 	Format string `yaml:"format"` // SW_LOG_FORMAT
+}
+
+// UpdaterConfig holds settings for the self-update mechanism.
+type UpdaterConfig struct {
+	// Disabled disables all update checking and installation.
+	// Set SW_UPDATER_DISABLED=true to suppress update checks in environments
+	// where this is managed externally (e.g. package managers, CI).
+	Disabled bool `yaml:"disabled"` // SW_UPDATER_DISABLED
 }
 
 // Default returns a Config with sensible defaults.
@@ -180,6 +189,9 @@ func (c *Config) loadFromEnv() {
 	}
 	if v := os.Getenv("SW_LOG_FORMAT"); v != "" {
 		c.Logging.Format = v
+	}
+	if v := os.Getenv("SW_UPDATER_DISABLED"); v != "" {
+		c.Updater.Disabled = v == "true" || v == "1"
 	}
 }
 
