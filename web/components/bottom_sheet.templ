@@ -1,0 +1,170 @@
+package components
+
+// BottomSheetItemData describes a single action item in a standalone BottomSheet.
+// For context menu bottom sheets the items come from the ContextMenu children slot.
+//
+// For items that need a custom JS onclick handler, use the slot-based
+// ContextMenu component or write button elements directly inside the sheet.
+type BottomSheetItemData struct {
+	// Label is the visible text for the item.
+	Label string
+	// Icon is an optional icon rendered before the label. Pass nil to omit.
+	Icon templ.Component
+	// Destructive marks the item as a dangerous action (styled red).
+	Destructive bool
+	// Disabled prevents interaction and greys out the item.
+	Disabled bool
+	// HXPost is an hx-post URL for HTMX-driven items.
+	HXPost string
+	// HXTarget is an optional hx-target selector for HTMX items.
+	HXTarget string
+	// HXConfirm is an optional confirmation message for HTMX items.
+	HXConfirm string
+}
+
+// BottomSheet renders a standalone mobile-first action sheet that slides up from
+// the bottom of the screen. It is independent of ContextMenu and is intended for
+// cases where a bottom sheet is the primary interaction (e.g. triggered from a
+// dedicated "more" button).
+//
+// id must be unique on the page. The sheet is opened by calling the templ
+// script function OpenBottomSheet(id) and closed by CloseBottomSheet(id).
+//
+// Accessibility:
+//   - role="menu" and aria-modal="true" on the sheet panel.
+//   - Focus is trapped inside the sheet while open.
+//   - Escape closes the sheet and returns focus to the trigger element.
+//   - The scrim is aria-hidden.
+//
+// Usage:
+//
+//	@components.BottomSheet("artist-sheet", items)
+templ BottomSheet(id string, items []BottomSheetItemData) {
+	<div
+		id={ "bs-" + id }
+		class="ctx-bottom-sheet"
+		role="menu"
+		aria-modal="true"
+		aria-label="Actions"
+		aria-hidden="true"
+		inert
+	>
+		<!-- Scrim: clicking it closes the sheet -->
+		<div
+			class="ctx-sheet-scrim"
+			onclick={ CloseBottomSheet(id) }
+			aria-hidden="true"
+		></div>
+		<!-- Sheet panel -->
+		<div class="ctx-sheet-panel">
+			<!-- Drag handle -->
+			<div class="ctx-sheet-handle-bar" aria-hidden="true">
+				<div class="ctx-sheet-handle"></div>
+			</div>
+			<!-- Item list -->
+			<div class="ctx-sheet-items">
+				for _, item := range items {
+					if !item.Destructive {
+						@bottomSheetItem(item)
+					}
+				}
+				for i, item := range items {
+					if item.Destructive && i == bsFirstDestructiveIndex(items) && i > 0 {
+						<div class="context-menu-divider"></div>
+					}
+					if item.Destructive {
+						@bottomSheetItem(item)
+					}
+				}
+			</div>
+			<!-- Cancel -->
+			<div class="ctx-sheet-footer">
+				<button
+					type="button"
+					class="ctx-sheet-cancel"
+					onclick={ CloseBottomSheet(id) }
+				>
+					Cancel
+				</button>
+			</div>
+		</div>
+	</div>
+}
+
+// bsFirstDestructiveIndex returns the index of the first destructive item or -1.
+func bsFirstDestructiveIndex(items []BottomSheetItemData) int {
+	for i, item := range items {
+		if item.Destructive {
+			return i
+		}
+	}
+	return -1
+}
+
+// bottomSheetItem renders a single item row inside a standalone BottomSheet.
+templ bottomSheetItem(item BottomSheetItemData) {
+	<button
+		type="button"
+		role="menuitem"
+		class={
+			"context-menu-item",
+			templ.KV("context-menu-item-danger", item.Destructive),
+			templ.KV("context-menu-item-disabled", item.Disabled),
+		}
+		if item.Disabled {
+			disabled
+		}
+		if item.HXPost != "" {
+			hx-post={ item.HXPost }
+			if item.HXTarget != "" {
+				hx-target={ item.HXTarget }
+			}
+			if item.HXConfirm != "" {
+				hx-confirm={ item.HXConfirm }
+			}
+		}
+	>
+		if item.Icon != nil {
+			<span class="context-menu-item-icon" aria-hidden="true">
+				@item.Icon
+			</span>
+		}
+		{ item.Label }
+	</button>
+}
+
+// OpenBottomSheet returns a JS expression that opens the standalone BottomSheet
+// with the given id and stores the trigger element for focus restoration.
+script OpenBottomSheet(id string) {
+	var sheet = document.getElementById('bs-' + id);
+	if (!sheet) return;
+	sheet._trigger = document.activeElement;
+	sheet.classList.add('ctx-sheet-open');
+	sheet.setAttribute('aria-hidden', 'false');
+	sheet.removeAttribute('inert');
+	document.body.classList.add('ctx-sheet-body-lock');
+	setTimeout(function() {
+		if (!sheet.isConnected) return;
+		if (!sheet.classList.contains('ctx-sheet-open')) return;
+		var firstItem = sheet.querySelector('[role="menuitem"]:not([disabled])');
+		if (firstItem) {
+			firstItem.focus();
+		} else {
+			var cancel = sheet.querySelector('.ctx-sheet-cancel');
+			if (cancel) cancel.focus();
+		}
+	}, 300);
+}
+
+// CloseBottomSheet returns a JS expression that closes the standalone BottomSheet
+// with the given id and restores focus to the trigger element.
+script CloseBottomSheet(id string) {
+	var sheet = document.getElementById('bs-' + id);
+	if (!sheet) return;
+	var trigger = sheet._trigger;
+	sheet.classList.remove('ctx-sheet-open');
+	sheet.setAttribute('aria-hidden', 'true');
+	sheet.setAttribute('inert', '');
+	document.body.classList.remove('ctx-sheet-body-lock');
+	if (trigger && typeof trigger.focus === 'function') trigger.focus();
+}

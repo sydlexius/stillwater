@@ -203,3 +203,223 @@ func TestUpdatePreference_RejectsInvalidValue(t *testing.T) {
 		t.Errorf("unexpected error message: %q", resp["error"])
 	}
 }
+
+// -- handleGetPreference (single key) tests --
+
+func TestGetPreference_ReturnsDefault(t *testing.T) {
+	r, _, userID := testRouterWithAuth(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/preferences/theme", nil)
+	req.SetPathValue("key", "theme")
+	req = withUserCtx(req, userID)
+	w := httptest.NewRecorder()
+
+	r.handleGetPreference(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if resp["key"] != "theme" {
+		t.Errorf("expected key=theme, got %q", resp["key"])
+	}
+	if resp["value"] != "dark" {
+		t.Errorf("expected value=dark (default), got %q", resp["value"])
+	}
+}
+
+func TestGetPreference_ReturnsStoredValue(t *testing.T) {
+	r, _, userID := testRouterWithAuth(t)
+
+	// Store a non-default value.
+	body := `{"value":"light"}`
+	putReq := httptest.NewRequest(http.MethodPut, "/api/v1/preferences/theme", strings.NewReader(body))
+	putReq.SetPathValue("key", "theme")
+	putReq = withUserCtx(putReq, userID)
+	putW := httptest.NewRecorder()
+	r.handleUpdatePreference(putW, putReq)
+	if putW.Code != http.StatusOK {
+		t.Fatalf("PUT expected 200, got %d: %s", putW.Code, putW.Body.String())
+	}
+
+	// GET single key and verify it reflects the stored value.
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/preferences/theme", nil)
+	req.SetPathValue("key", "theme")
+	req = withUserCtx(req, userID)
+	w := httptest.NewRecorder()
+
+	r.handleGetPreference(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if resp["value"] != "light" {
+		t.Errorf("expected value=light after update, got %q", resp["value"])
+	}
+}
+
+func TestGetPreference_UnknownKey(t *testing.T) {
+	r, _, userID := testRouterWithAuth(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/preferences/nonexistent", nil)
+	req.SetPathValue("key", "nonexistent")
+	req = withUserCtx(req, userID)
+	w := httptest.NewRecorder()
+
+	r.handleGetPreference(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestGetPreference_SuppressConfirmDefaultsFalse(t *testing.T) {
+	r, _, userID := testRouterWithAuth(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/preferences/suppress_confirm_delete_artist", nil)
+	req.SetPathValue("key", "suppress_confirm_delete_artist")
+	req = withUserCtx(req, userID)
+	w := httptest.NewRecorder()
+
+	r.handleGetPreference(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if resp["value"] != "false" {
+		t.Errorf("expected value=false for unset suppress key, got %q", resp["value"])
+	}
+}
+
+func TestUpdatePreference_SuppressConfirmAcceptsTrueAndFalse(t *testing.T) {
+	r, _, userID := testRouterWithAuth(t)
+
+	// Suppress the action.
+	body := `{"value":"true"}`
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/preferences/suppress_confirm_delete_artist", strings.NewReader(body))
+	req.SetPathValue("key", "suppress_confirm_delete_artist")
+	req = withUserCtx(req, userID)
+	w := httptest.NewRecorder()
+	r.handleUpdatePreference(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("PUT true expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Verify GET returns true.
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/preferences/suppress_confirm_delete_artist", nil)
+	req.SetPathValue("key", "suppress_confirm_delete_artist")
+	req = withUserCtx(req, userID)
+	w = httptest.NewRecorder()
+	r.handleGetPreference(w, req)
+
+	var resp map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if resp["value"] != "true" {
+		t.Errorf("expected value=true after suppress, got %q", resp["value"])
+	}
+
+	// Unsuppress.
+	body = `{"value":"false"}`
+	req = httptest.NewRequest(http.MethodPut, "/api/v1/preferences/suppress_confirm_delete_artist", strings.NewReader(body))
+	req.SetPathValue("key", "suppress_confirm_delete_artist")
+	req = withUserCtx(req, userID)
+	w = httptest.NewRecorder()
+	r.handleUpdatePreference(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("PUT false expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Verify the stored value is now "false".
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/preferences/suppress_confirm_delete_artist", nil)
+	req.SetPathValue("key", "suppress_confirm_delete_artist")
+	req = withUserCtx(req, userID)
+	w = httptest.NewRecorder()
+	r.handleGetPreference(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET after PUT false: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var getResp map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&getResp); err != nil {
+		t.Fatalf("decoding GET response: %v", err)
+	}
+	if getResp["value"] != "false" {
+		t.Errorf("expected value=false after unsuppress, got %q", getResp["value"])
+	}
+}
+
+func TestUpdatePreference_SuppressConfirmRejectsInvalidValue(t *testing.T) {
+	r, _, userID := testRouterWithAuth(t)
+
+	body := `{"value":"yes"}`
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/preferences/suppress_confirm_delete", strings.NewReader(body))
+	req.SetPathValue("key", "suppress_confirm_delete")
+	req = withUserCtx(req, userID)
+	w := httptest.NewRecorder()
+	r.handleUpdatePreference(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestGetPreference_Unauthenticated(t *testing.T) {
+	r, _, _ := testRouterWithAuth(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/preferences/theme", nil)
+	req.SetPathValue("key", "theme")
+	// No withUserCtx -- unauthenticated.
+	w := httptest.NewRecorder()
+	r.handleGetPreference(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestIsSuppressConfirmKey(t *testing.T) {
+	valid := []string{
+		"suppress_confirm_delete",
+		"suppress_confirm_delete_artist",
+		"suppress_confirm_bulk_fix_all",
+		"suppress_confirm_a",
+		"suppress_confirm_x1",
+	}
+	invalid := []string{
+		"suppress_confirm_",
+		"suppress_confirm",
+		"theme",
+		"suppress_confirm_DELETE",
+		"suppress_confirm_has-dash",
+		"suppress_confirm_has space",
+		"",
+	}
+
+	for _, k := range valid {
+		if !isSuppressConfirmKey(k) {
+			t.Errorf("expected %q to be a valid suppress_confirm key", k)
+		}
+	}
+	for _, k := range invalid {
+		if isSuppressConfirmKey(k) {
+			t.Errorf("expected %q to be an invalid suppress_confirm key", k)
+		}
+	}
+}

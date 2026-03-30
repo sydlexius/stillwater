@@ -8,14 +8,42 @@ package components
 import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
+// ContextMenuItemData describes a single item in a ContextMenuList.
+// Icon is an optional icon component rendered before the label.
+// Destructive items are styled red and automatically separated from
+// non-destructive items with a divider.
+//
+// For items that need a custom JS onclick handler, use the slot-based
+// ContextMenu component instead and write the button element directly.
+type ContextMenuItemData struct {
+	// Label is the visible text for the menu item.
+	Label string
+	// Icon is an optional icon rendered before the label. Pass nil to omit.
+	Icon templ.Component
+	// Destructive marks the item as a dangerous action (styled red).
+	Destructive bool
+	// Disabled prevents interaction and greys out the item.
+	Disabled bool
+	// HXPost is an hx-post URL for HTMX-driven items.
+	HXPost string
+	// HXTarget is an optional hx-target selector for HTMX items.
+	HXTarget string
+	// HXConfirm is an optional confirmation message for HTMX items.
+	HXConfirm string
+}
+
 // ContextMenu renders a contextual "..." dropdown menu. The trigger is always
-// visible as a horizontal ellipsis icon. Menu items are passed as children.
+// visible as a horizontal ellipsis icon. Menu items are passed as children via
+// the slot-based API, or via ContextMenuList for the structured item API.
 // Each ContextMenu must have a unique id on the page.
 //
 // The compact parameter controls icon sizing: true for sidebar/inline contexts,
 // false for standard button rows.
 //
-// Usage:
+// On mobile (< 768px) the menu renders as a bottom sheet instead of a dropdown.
+// The bottom sheet is driven by the same ToggleContextMenu script.
+//
+// Usage (slot-based, preserves existing call sites):
 //
 //	@components.ContextMenu("artist-bio-actions", false) {
 //	    <button role="menuitem" class="context-menu-item" ...>Edit</button>
@@ -50,7 +78,7 @@ func ContextMenu(id string, compact bool) templ.Component {
 		var templ_7745c5c3_Var2 string
 		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinStringErrs(id)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/context_menu.templ`, Line: 18, Col: 57}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/context_menu.templ`, Line: 46, Col: 57}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
 		if templ_7745c5c3_Err != nil {
@@ -94,7 +122,7 @@ func ContextMenu(id string, compact bool) templ.Component {
 		var templ_7745c5c3_Var5 string
 		templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs("ctx-panel-" + id)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/context_menu.templ`, Line: 30, Col: 36}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/context_menu.templ`, Line: 58, Col: 36}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 		if templ_7745c5c3_Err != nil {
@@ -124,20 +152,20 @@ func ContextMenu(id string, compact bool) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "</button><div id=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "</button><!-- Desktop dropdown panel (hidden on mobile via CSS) --><div id=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var7 string
 		templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs("ctx-panel-" + id)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/context_menu.templ`, Line: 41, Col: 25}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/context_menu.templ`, Line: 70, Col: 25}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "\" class=\"hidden absolute right-0 top-full z-40 mt-1 min-w-[10rem] rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 py-1 shadow-lg\" role=\"menu\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "\" class=\"hidden absolute right-0 top-full z-40 mt-1 min-w-[10rem] rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 py-1 shadow-lg ctx-desktop-panel\" role=\"menu\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -145,7 +173,322 @@ func ContextMenu(id string, compact bool) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</div><!-- Mobile bottom sheet (hidden on desktop via CSS) --><div id=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var8 string
+		templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs("ctx-sheet-" + id)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/context_menu.templ`, Line: 78, Col: 25}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "\" class=\"ctx-bottom-sheet\" role=\"menu\" aria-modal=\"true\" aria-label=\"Actions\" aria-hidden=\"true\" inert><!-- Scrim -->")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templ.RenderScriptItems(ctx, templ_7745c5c3_Buffer, CloseContextMenu(id))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "<div class=\"ctx-sheet-scrim\" onclick=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var9 templ.ComponentScript = CloseContextMenu(id)
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var9.Call)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "\" aria-hidden=\"true\"></div><!-- Sheet panel --><div class=\"ctx-sheet-panel\"><!-- Drag handle --><div class=\"ctx-sheet-handle-bar\" aria-hidden=\"true\"><div class=\"ctx-sheet-handle\"></div></div><!-- Item list mirrors the desktop panel children --><div class=\"ctx-sheet-items\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templ_7745c5c3_Var1.Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "</div><!-- Cancel button --><div class=\"ctx-sheet-footer\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templ.RenderScriptItems(ctx, templ_7745c5c3_Buffer, CloseContextMenu(id))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "<button type=\"button\" class=\"ctx-sheet-cancel\" onclick=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var10 templ.ComponentScript = CloseContextMenu(id)
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var10.Call)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "\">Cancel</button></div></div></div></div>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		return nil
+	})
+}
+
+// ContextMenuList renders a ContextMenu from a structured list of ContextMenuItemData.
+// Destructive items are automatically grouped at the bottom behind a divider.
+// This is the preferred API for new call sites; the slot-based ContextMenu is
+// preserved for backward compatibility.
+func ContextMenuList(id string, compact bool, items []ContextMenuItemData) templ.Component {
+	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
+			return templ_7745c5c3_CtxErr
+		}
+		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+		if !templ_7745c5c3_IsBuffer {
+			defer func() {
+				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err == nil {
+					templ_7745c5c3_Err = templ_7745c5c3_BufErr
+				}
+			}()
+		}
+		ctx = templ.InitializeContext(ctx)
+		templ_7745c5c3_Var11 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var11 == nil {
+			templ_7745c5c3_Var11 = templ.NopComponent
+		}
+		ctx = templ.ClearChildren(ctx)
+		templ_7745c5c3_Var12 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+			if !templ_7745c5c3_IsBuffer {
+				defer func() {
+					templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+					if templ_7745c5c3_Err == nil {
+						templ_7745c5c3_Err = templ_7745c5c3_BufErr
+					}
+				}()
+			}
+			ctx = templ.InitializeContext(ctx)
+			templ_7745c5c3_Err = contextMenuItems(items).Render(ctx, templ_7745c5c3_Buffer)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			return nil
+		})
+		templ_7745c5c3_Err = ContextMenu(id, compact).Render(templ.WithChildren(ctx, templ_7745c5c3_Var12), templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		return nil
+	})
+}
+
+// contextMenuItems renders the item list, separating destructive items from
+// non-destructive ones with a divider.
+func contextMenuItems(items []ContextMenuItemData) templ.Component {
+	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
+			return templ_7745c5c3_CtxErr
+		}
+		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+		if !templ_7745c5c3_IsBuffer {
+			defer func() {
+				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err == nil {
+					templ_7745c5c3_Err = templ_7745c5c3_BufErr
+				}
+			}()
+		}
+		ctx = templ.InitializeContext(ctx)
+		templ_7745c5c3_Var13 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var13 == nil {
+			templ_7745c5c3_Var13 = templ.NopComponent
+		}
+		ctx = templ.ClearChildren(ctx)
+		for _, item := range items {
+			if !item.Destructive {
+				templ_7745c5c3_Err = contextMenuItem(item).Render(ctx, templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+		}
+		for i, item := range items {
+			if item.Destructive && i == firstDestructiveIndex(items) && i > 0 {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "<div class=\"context-menu-divider\"></div>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, " ")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			if item.Destructive {
+				templ_7745c5c3_Err = contextMenuItem(item).Render(ctx, templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+		}
+		return nil
+	})
+}
+
+// firstDestructiveIndex returns the index of the first destructive item, or -1.
+// Used to render the divider exactly once before the destructive block.
+func firstDestructiveIndex(items []ContextMenuItemData) int {
+	for i, item := range items {
+		if item.Destructive {
+			return i
+		}
+	}
+	return -1
+}
+
+// contextMenuItem renders a single structured menu item as a button.
+func contextMenuItem(item ContextMenuItemData) templ.Component {
+	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
+			return templ_7745c5c3_CtxErr
+		}
+		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+		if !templ_7745c5c3_IsBuffer {
+			defer func() {
+				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err == nil {
+					templ_7745c5c3_Err = templ_7745c5c3_BufErr
+				}
+			}()
+		}
+		ctx = templ.InitializeContext(ctx)
+		templ_7745c5c3_Var14 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var14 == nil {
+			templ_7745c5c3_Var14 = templ.NopComponent
+		}
+		ctx = templ.ClearChildren(ctx)
+		var templ_7745c5c3_Var15 = []any{"context-menu-item",
+			templ.KV("context-menu-item-danger", item.Destructive),
+			templ.KV("context-menu-item-disabled", item.Disabled),
+		}
+		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var15...)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "<button type=\"button\" role=\"menuitem\" class=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var16 string
+		templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(templ.CSSClasses(templ_7745c5c3_Var15).String())
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/context_menu.templ`, Line: 1, Col: 0}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		if item.Disabled {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, " disabled")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		if item.HXPost != "" {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, " hx-post=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var17 string
+			templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(item.HXPost)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/context_menu.templ`, Line: 172, Col: 24}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			if item.HXTarget != "" {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, " hx-target=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var18 string
+				templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(item.HXTarget)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/context_menu.templ`, Line: 174, Col: 29}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			if item.HXConfirm != "" {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, " hx-confirm=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var19 string
+				templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(item.HXConfirm)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/context_menu.templ`, Line: 177, Col: 31}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, ">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		if item.Icon != nil {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "<span class=\"context-menu-item-icon\" aria-hidden=\"true\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = item.Icon.Render(ctx, templ_7745c5c3_Buffer)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "</span> ")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		var templ_7745c5c3_Var20 string
+		templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(item.Label)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/context_menu.templ`, Line: 186, Col: 14}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "</button>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -156,34 +499,99 @@ func ContextMenu(id string, compact bool) templ.Component {
 // ToggleContextMenu opens or closes the dropdown panel for the given context
 // menu id. It is exported so that custom split-button layouts in other packages
 // can reuse the same toggle behavior.
+// On mobile (< 768px) the bottom sheet is shown instead of the dropdown.
 func ToggleContextMenu(id string) templ.ComponentScript {
 	return templ.ComponentScript{
-		Name: `__templ_ToggleContextMenu_031f`,
-		Function: `function __templ_ToggleContextMenu_031f(id){var panel = document.getElementById('ctx-panel-' + id);
+		Name: `__templ_ToggleContextMenu_28ec`,
+		Function: `function __templ_ToggleContextMenu_28ec(id){var panel = document.getElementById('ctx-panel-' + id);
+	var sheet = document.getElementById('ctx-sheet-' + id);
+	var trigger = document.querySelector('[aria-controls="ctx-panel-' + id + '"]');
 	if (!panel) return;
-	var btn = panel.previousElementSibling;
-	var isOpen = !panel.classList.contains('hidden');
+
+	var isMobile = window.innerWidth < 768;
+	var isOpen = isMobile
+		? (sheet ? sheet.classList.contains('ctx-sheet-open') : false)
+		: !panel.classList.contains('hidden');
+
 	// Close all other open menus first.
-	document.querySelectorAll('[data-context-menu] [role="menu"]:not(.hidden)').forEach(function(p) {
-		p.classList.add('hidden');
-		var prev = p.previousElementSibling;
-		if (prev) prev.setAttribute('aria-expanded', 'false');
+	document.querySelectorAll('[data-context-menu] [role="menu"]:not(.hidden):not(.ctx-bottom-sheet), .ctx-bottom-sheet.ctx-sheet-open').forEach(function(p) {
+		if (p.classList.contains('ctx-bottom-sheet')) {
+			p.classList.remove('ctx-sheet-open');
+			p.setAttribute('aria-hidden', 'true');
+			p.setAttribute('inert', '');
+			document.body.classList.remove('ctx-sheet-body-lock');
+		} else {
+			p.classList.add('hidden');
+		}
+		// Find the trigger button via the parent container, not previousElementSibling.
+		var parent = p.parentElement;
+		if (parent) {
+			var btn = parent.querySelector(':scope > button[aria-expanded]');
+			if (btn) btn.setAttribute('aria-expanded', 'false');
+		}
 	});
+
 	if (!isOpen) {
-		panel.classList.remove('hidden');
-		if (btn) btn.setAttribute('aria-expanded', 'true');
-		// Move focus to the first menu item for keyboard users.
-		var firstItem = panel.querySelector('[role="menuitem"]');
-		if (firstItem) firstItem.focus();
+		if (isMobile && sheet) {
+			// Store trigger ref so focus can return on close.
+			sheet._trigger = trigger;
+			sheet.classList.add('ctx-sheet-open');
+			sheet.setAttribute('aria-hidden', 'false');
+			sheet.removeAttribute('inert');
+			document.body.classList.add('ctx-sheet-body-lock');
+			if (trigger) trigger.setAttribute('aria-expanded', 'true');
+			// Focus first item in the sheet for keyboard users.
+			setTimeout(function() {
+				if (!sheet.isConnected) return;
+				if (!sheet.classList.contains('ctx-sheet-open')) return;
+				var firstItem = sheet.querySelector('[role="menuitem"]:not([disabled])');
+				if (firstItem) {
+					firstItem.focus();
+				} else {
+					var cancel = sheet.querySelector('.ctx-sheet-cancel');
+					if (cancel) cancel.focus();
+				}
+			}, 300);
+		} else {
+			panel.classList.remove('hidden');
+			if (trigger) trigger.setAttribute('aria-expanded', 'true');
+			// Move focus to the first menu item for keyboard users.
+			var firstItem = panel.querySelector('[role="menuitem"]');
+			if (firstItem) firstItem.focus();
+		}
 	}
 }`,
-		Call:       templ.SafeScript(`__templ_ToggleContextMenu_031f`, id),
-		CallInline: templ.SafeScriptInline(`__templ_ToggleContextMenu_031f`, id),
+		Call:       templ.SafeScript(`__templ_ToggleContextMenu_28ec`, id),
+		CallInline: templ.SafeScriptInline(`__templ_ToggleContextMenu_28ec`, id),
+	}
+}
+
+// CloseContextMenu closes the bottom sheet for the given id and returns focus
+// to the trigger element.
+func CloseContextMenu(id string) templ.ComponentScript {
+	return templ.ComponentScript{
+		Name: `__templ_CloseContextMenu_f242`,
+		Function: `function __templ_CloseContextMenu_f242(id){var sheet = document.getElementById('ctx-sheet-' + id);
+	var trigger = document.querySelector('[aria-controls="ctx-panel-' + id + '"]');
+	if (sheet) {
+		sheet.classList.remove('ctx-sheet-open');
+		sheet.setAttribute('aria-hidden', 'true');
+		sheet.setAttribute('inert', '');
+		document.body.classList.remove('ctx-sheet-body-lock');
+	}
+	if (trigger) {
+		trigger.setAttribute('aria-expanded', 'false');
+		trigger.focus();
+	}
+}`,
+		Call:       templ.SafeScript(`__templ_CloseContextMenu_f242`, id),
+		CallInline: templ.SafeScriptInline(`__templ_CloseContextMenu_f242`, id),
 	}
 }
 
 // ContextMenuGlobalJS must be included once in the layout (before </body>).
-// It handles click-outside and Escape-to-close for all context menus.
+// It handles click-outside and Escape-to-close for all context menus, and
+// focus-trap for the mobile bottom sheet.
 func ContextMenuGlobalJS() templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -200,12 +608,12 @@ func ContextMenuGlobalJS() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var8 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var8 == nil {
-			templ_7745c5c3_Var8 = templ.NopComponent
+		templ_7745c5c3_Var21 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var21 == nil {
+			templ_7745c5c3_Var21 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<script>\n\t\t(function() {\n\t\t\tfunction closeAllContextMenus() {\n\t\t\t\tdocument.querySelectorAll('[data-context-menu] [role=\"menu\"]:not(.hidden)').forEach(function(p) {\n\t\t\t\t\tp.classList.add('hidden');\n\t\t\t\t\tp.previousElementSibling.setAttribute('aria-expanded', 'false');\n\t\t\t\t});\n\t\t\t}\n\t\t\tdocument.addEventListener('click', function(e) {\n\t\t\t\tvar menu = e.target.closest('[data-context-menu]');\n\t\t\t\tif (!menu) {\n\t\t\t\t\tcloseAllContextMenus();\n\t\t\t\t}\n\t\t\t});\n\t\t\tdocument.addEventListener('keydown', function(e) {\n\t\t\t\tif (e.key === 'Escape') {\n\t\t\t\t\tcloseAllContextMenus();\n\t\t\t\t}\n\t\t\t});\n\t\t\t// Close menus when an HTMX request starts from inside a menu.\n\t\t\tdocument.body.addEventListener('htmx:beforeRequest', function(e) {\n\t\t\t\tif (e.detail.elt.closest('[data-context-menu]')) {\n\t\t\t\t\tcloseAllContextMenus();\n\t\t\t\t}\n\t\t\t});\n\t\t})();\n\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "<script>\n\t\t(function() {\n\t\t\tfunction closeAllContextMenus() {\n\t\t\t\tdocument.querySelectorAll('[data-context-menu] [role=\"menu\"]:not(.hidden), .ctx-bottom-sheet.ctx-sheet-open').forEach(function(p) {\n\t\t\t\t\tif (p.classList.contains('ctx-bottom-sheet')) {\n\t\t\t\t\t\tp.classList.remove('ctx-sheet-open');\n\t\t\t\t\t\tp.setAttribute('aria-hidden', 'true');\n\t\t\t\t\t\tp.setAttribute('inert', '');\n\t\t\t\t\t\tdocument.body.classList.remove('ctx-sheet-body-lock');\n\t\t\t\t\t} else {\n\t\t\t\t\t\tp.classList.add('hidden');\n\t\t\t\t\t}\n\t\t\t\t\t// Walk up to find the trigger button sibling.\n\t\t\t\t\tvar parent = p.parentElement;\n\t\t\t\t\tif (parent) {\n\t\t\t\t\t\tvar btn = parent.querySelector(':scope > button[aria-expanded]');\n\t\t\t\t\t\tif (btn) btn.setAttribute('aria-expanded', 'false');\n\t\t\t\t\t}\n\t\t\t\t});\n\t\t\t}\n\n\t\t\tdocument.addEventListener('click', function(e) {\n\t\t\t\tif (!(e.target instanceof Element)) return;\n\t\t\t\tvar menu = e.target.closest('[data-context-menu]');\n\t\t\t\tvar bottomSheet = e.target.closest('.ctx-bottom-sheet');\n\t\t\t\tif (!menu && !bottomSheet) {\n\t\t\t\t\tcloseAllContextMenus();\n\t\t\t\t}\n\t\t\t});\n\n\t\t\tdocument.addEventListener('keydown', function(e) {\n\t\t\t\tif (e.key === 'Escape') {\n\t\t\t\t\t// Return focus to the trigger of any open bottom sheet.\n\t\t\t\t\tdocument.querySelectorAll('.ctx-bottom-sheet.ctx-sheet-open').forEach(function(sheet) {\n\t\t\t\t\t\tvar t = sheet._trigger;\n\t\t\t\t\t\tsheet.classList.remove('ctx-sheet-open');\n\t\t\t\t\t\tsheet.setAttribute('aria-hidden', 'true');\n\t\t\t\t\t\tsheet.setAttribute('inert', '');\n\t\t\t\t\t\tdocument.body.classList.remove('ctx-sheet-body-lock');\n\t\t\t\t\t\tvar parent = sheet.parentElement;\n\t\t\t\t\t\tif (parent) {\n\t\t\t\t\t\t\tvar btn = parent.querySelector(':scope > button[aria-expanded]');\n\t\t\t\t\t\t\tif (btn) btn.setAttribute('aria-expanded', 'false');\n\t\t\t\t\t\t}\n\t\t\t\t\t\tif (t) t.focus();\n\t\t\t\t\t});\n\t\t\t\t\tcloseAllContextMenus();\n\t\t\t\t}\n\n\t\t\t\t// Focus trap for open bottom sheets: Tab and Shift+Tab cycle inside.\n\t\t\t\tvar openSheet = document.querySelector('.ctx-bottom-sheet.ctx-sheet-open');\n\t\t\t\tif (openSheet && e.key === 'Tab') {\n\t\t\t\t\tvar focusable = Array.prototype.slice.call(\n\t\t\t\t\t\topenSheet.querySelectorAll('button:not([disabled]), [tabindex=\"0\"]')\n\t\t\t\t\t).filter(function(el) { return el.offsetParent !== null; });\n\t\t\t\t\tif (focusable.length === 0) return;\n\t\t\t\t\tvar first = focusable[0];\n\t\t\t\t\tvar last = focusable[focusable.length - 1];\n\t\t\t\t\tif (e.shiftKey) {\n\t\t\t\t\t\tif (document.activeElement === first) {\n\t\t\t\t\t\t\te.preventDefault();\n\t\t\t\t\t\t\tlast.focus();\n\t\t\t\t\t\t}\n\t\t\t\t\t} else {\n\t\t\t\t\t\tif (document.activeElement === last) {\n\t\t\t\t\t\t\te.preventDefault();\n\t\t\t\t\t\t\tfirst.focus();\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t});\n\n\t\t\t// Close menus when an HTMX request starts from inside a menu.\n\t\t\tdocument.body.addEventListener('htmx:beforeRequest', function(e) {\n\t\t\t\tif (e.detail.elt.closest('[data-context-menu]')) {\n\t\t\t\t\tcloseAllContextMenus();\n\t\t\t\t}\n\t\t\t});\n\t\t})();\n\t</script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

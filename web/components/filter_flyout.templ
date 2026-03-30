@@ -1,0 +1,176 @@
+package components
+
+import "strconv"
+
+// FilterFlyout renders a slide-in filter panel from the right edge of the
+// screen. It wraps arbitrary filter content passed as templ children and
+// provides a standard header, scrollable body, and footer with apply/clear
+// controls.
+//
+// Parameters:
+//   - id:          unique HTML id for the panel element (also used to derive
+//                  related element ids such as the scrim and close button)
+//   - title:       heading text shown in the panel header
+//   - triggerID:   id of the button that opens the flyout; focus returns here
+//                  when the flyout closes
+//   - activeCount: number of active (non-neutral) filters currently applied;
+//                  shown as a badge in the footer when > 0
+//   - targetSel:   CSS selector for the HTMX content region to reload when the
+//                  user applies filters (e.g. "#artist-grid")
+templ FilterFlyout(id, title, triggerID string, activeCount int, targetSel string) {
+	<!-- Scrim: clicking it closes the flyout -->
+	<div
+		id={ id + "-scrim" }
+		class="sw-filter-scrim"
+		aria-hidden="true"
+		onclick={ closeFilterFlyout(id) }
+	></div>
+	<!-- Panel -->
+	<aside
+		id={ id }
+		class="sw-filter-flyout sw-glass glass-noise"
+		role="region"
+		aria-label={ title + " filters" }
+		aria-hidden="true"
+		inert
+		data-trigger-id={ triggerID }
+		data-target-sel={ targetSel }
+	>
+		<!-- Header -->
+		<div class="sw-filter-flyout-header">
+			<h2 class="sw-filter-flyout-title">{ title }</h2>
+			<button
+				type="button"
+				class="sw-filter-flyout-close"
+				aria-label="Close filter panel"
+				onclick={ closeFilterFlyout(id) }
+			>
+				<!-- Heroicons: x-mark (mini) -->
+				<svg class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+					<path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z"></path>
+				</svg>
+			</button>
+		</div>
+		<!-- Scrollable body: caller inserts FilterSection blocks here -->
+		<div class="sw-filter-flyout-body sw-scroll">
+			{ children... }
+		</div>
+		<!-- Footer -->
+		<div class="sw-filter-flyout-footer">
+			if activeCount > 0 {
+				<span class="sw-filter-active-badge" aria-live="polite">
+					{ strconv.Itoa(activeCount) } active
+				</span>
+			} else {
+				<span class="sw-filter-active-badge" aria-live="polite"></span>
+			}
+			<div class="sw-filter-flyout-actions">
+				<button
+					type="button"
+					class="sw-filter-btn-ghost"
+					onclick={ clearAllFilterFlyout(id) }
+				>
+					Clear All
+				</button>
+				<button
+					type="button"
+					class="sw-filter-btn-primary"
+					onclick={ applyFilterFlyout(id) }
+				>
+					Apply
+				</button>
+			</div>
+		</div>
+	</aside>
+}
+
+// FilterSection renders a labeled group of filter items inside a FilterFlyout
+// body. Uses fieldset/legend for accessible grouping.
+//
+// Parameters:
+//   - legend: visible group heading (e.g. "Severity", "Image Type")
+templ FilterSection(legend string) {
+	<fieldset class="sw-filter-section">
+		<legend class="sw-filter-section-legend">{ legend }</legend>
+		<div class="sw-filter-section-items">
+			{ children... }
+		</div>
+	</fieldset>
+}
+
+// FilterItem renders a three-state cycling chip for a single filter option.
+// States cycle: neutral (gray) -> include (blue, +) -> exclude (red, -) -> neutral.
+// The current state is stored in the data-filter-state attribute and reflected
+// in the aria-label so screen readers announce the transition.
+//
+// Parameters:
+//   - flyoutID: id of the containing FilterFlyout panel
+//   - key:      URL query-param key (e.g. "severity")
+//   - value:    URL query-param value (e.g. "error")
+//   - label:    human-readable label (e.g. "Error")
+//   - state:    initial state: "neutral", "include", or "exclude"
+templ FilterItem(flyoutID, key, value, label, state string) {
+	<button
+		type="button"
+		class="sw-filter-item"
+		data-filter-flyout={ flyoutID }
+		data-filter-key={ key }
+		data-filter-value={ value }
+		data-filter-state={ state }
+		aria-label={ filterItemAriaLabel(state, label) }
+		onclick={ cycleFilterItem() }
+	>
+		<span class="sw-filter-item-icon" aria-hidden="true">
+			{ filterItemIcon(state) }
+		</span>
+		<span class="sw-filter-item-label">{ label }</span>
+	</button>
+}
+
+// filterItemAriaLabel returns the accessible label string for the current state.
+func filterItemAriaLabel(state, label string) string {
+	switch state {
+	case "include":
+		return "Include " + label + " (click to exclude)"
+	case "exclude":
+		return "Exclude " + label + " (click to clear)"
+	default:
+		return "Any " + label + " (click to include)"
+	}
+}
+
+// filterItemIcon returns the icon character for the current state.
+func filterItemIcon(state string) string {
+	switch state {
+	case "include":
+		return "+"
+	case "exclude":
+		return "-"
+	default:
+		return ""
+	}
+}
+
+// Script stubs -- the real implementations live in filter-flyout.js, which is
+// loaded globally via layout.templ. These script blocks exist solely to
+// generate valid templ.ComponentScript values for use in onclick attributes.
+
+script openFilterFlyout(id string) {
+	swFilterFlyout.open(id);
+}
+
+script closeFilterFlyout(id string) {
+	swFilterFlyout.close(id);
+}
+
+script applyFilterFlyout(id string) {
+	swFilterFlyout.apply(id);
+}
+
+script clearAllFilterFlyout(id string) {
+	swFilterFlyout.clearAll(id);
+}
+
+script cycleFilterItem() {
+	swFilterFlyout.cycleItem(this);
+}

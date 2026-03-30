@@ -1,0 +1,180 @@
+package templates
+
+// Error404Page renders the "page not found" error page inside the sidebar layout.
+templ Error404Page(assets AssetPaths) {
+	@Layout("Page Not Found", assets) {
+		<div class="flex flex-col items-center justify-center min-h-[60vh] text-center px-4">
+			<div class="sw-card rounded-2xl px-8 py-10 max-w-lg w-full space-y-6">
+				<div class="flex justify-center">
+					<svg class="w-20 h-20 text-gray-400 dark:text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1" stroke="currentColor" aria-hidden="true">
+						<path stroke-linecap="round" stroke-linejoin="round" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 5.25h.008v.008H12v-.008Z"/>
+					</svg>
+				</div>
+				<div class="space-y-2">
+					<p class="text-6xl font-black text-gray-300 dark:text-gray-600 tabular-nums">404</p>
+					<h1 class="text-2xl font-bold text-gray-900 dark:text-gray-100">Page not found</h1>
+					<p class="text-sm text-gray-500 dark:text-gray-400">
+						The page you requested could not be found. It may have been moved or deleted.
+					</p>
+				</div>
+				<div class="flex flex-col sm:flex-row gap-3 justify-center">
+					<a
+						href={ templ.SafeURL(assets.BasePath + "/") }
+						class="inline-flex items-center justify-center gap-2 rounded-md bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
+					>
+						Go to Dashboard
+					</a>
+					<button
+						id="report-404-btn"
+						type="button"
+						onclick="toggleIssuePreview('404')"
+						aria-controls="issue-preview"
+						aria-expanded="false"
+						class="inline-flex items-center justify-center gap-2 rounded-md border border-gray-300 dark:border-gray-600 px-4 py-2.5 text-sm font-medium hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+					>
+						Report this issue
+					</button>
+				</div>
+				<div id="issue-preview" class="hidden rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 p-4 text-left text-xs text-gray-600 dark:text-gray-400 space-y-2">
+					<p class="font-semibold text-gray-700 dark:text-gray-300">The following will be pre-filled in the GitHub issue:</p>
+					<pre id="issue-preview-body" class="whitespace-pre-wrap break-words font-mono text-xs leading-relaxed"></pre>
+					<a
+						id="issue-open-link"
+						href="#"
+						target="_blank"
+						rel="noopener noreferrer"
+						class="inline-flex items-center gap-1 text-blue-600 dark:text-blue-400 hover:underline font-medium"
+					>
+						Open GitHub issue
+						<svg class="w-3 h-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 0 0 3 8.25v10.5A2.25 2.25 0 0 0 5.25 21h10.5A2.25 2.25 0 0 0 18 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25"/></svg>
+					</a>
+				</div>
+			</div>
+		</div>
+		@errorPageScript()
+	}
+}
+
+// Error500Page renders the "internal server error" page inside the sidebar layout.
+templ Error500Page(assets AssetPaths) {
+	@Layout("Something Went Wrong", assets) {
+		<div class="flex flex-col items-center justify-center min-h-[60vh] text-center px-4">
+			<div class="sw-card rounded-2xl px-8 py-10 max-w-lg w-full space-y-6">
+				<div class="flex justify-center">
+					<svg class="w-20 h-20 text-red-400 dark:text-red-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1" stroke="currentColor" aria-hidden="true">
+						<path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z"/>
+					</svg>
+				</div>
+				<div class="space-y-2">
+					<p class="text-6xl font-black text-gray-300 dark:text-gray-600 tabular-nums">500</p>
+					<h1 class="text-2xl font-bold text-gray-900 dark:text-gray-100">Something went wrong</h1>
+					<p class="text-sm text-gray-500 dark:text-gray-400">
+						An unexpected error occurred on the server. You can try again or report the issue.
+					</p>
+				</div>
+				<div class="flex flex-col sm:flex-row gap-3 justify-center">
+					<a
+						href={ templ.SafeURL(assets.BasePath + "/") }
+						class="inline-flex items-center justify-center gap-2 rounded-md bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
+					>
+						Go to Dashboard
+					</a>
+					<button
+						type="button"
+						onclick="history.back()"
+						class="inline-flex items-center justify-center gap-2 rounded-md border border-gray-300 dark:border-gray-600 px-4 py-2.5 text-sm font-medium hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+					>
+						Go back
+					</button>
+					<button
+						id="report-500-btn"
+						type="button"
+						onclick="toggleIssuePreview('500')"
+						aria-controls="issue-preview"
+						aria-expanded="false"
+						class="inline-flex items-center justify-center gap-2 rounded-md border border-gray-300 dark:border-gray-600 px-4 py-2.5 text-sm font-medium hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+					>
+						Report this issue
+					</button>
+				</div>
+				<div id="issue-preview" class="hidden rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 p-4 text-left text-xs text-gray-600 dark:text-gray-400 space-y-2">
+					<p class="font-semibold text-gray-700 dark:text-gray-300">The following will be pre-filled in the GitHub issue:</p>
+					<pre id="issue-preview-body" class="whitespace-pre-wrap break-words font-mono text-xs leading-relaxed"></pre>
+					<a
+						id="issue-open-link"
+						href="#"
+						target="_blank"
+						rel="noopener noreferrer"
+						class="inline-flex items-center gap-1 text-blue-600 dark:text-blue-400 hover:underline font-medium"
+					>
+						Open GitHub issue
+						<svg class="w-3 h-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 0 0 3 8.25v10.5A2.25 2.25 0 0 0 5.25 21h10.5A2.25 2.25 0 0 0 18 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25"/></svg>
+					</a>
+				</div>
+			</div>
+		</div>
+		@errorPageScript()
+	}
+}
+
+// errorPageScript injects the client-side logic for building and previewing the
+// pre-filled GitHub issue report URL.
+templ errorPageScript() {
+	<script>
+		(function() {
+			function getVersion() {
+				var el = document.querySelector('meta[name="app-version"]');
+				return el ? el.content : 'unknown';
+			}
+
+			function buildIssueBody(statusCode) {
+				var route = window.location.pathname;
+				var ts = new Date().toISOString();
+				var ver = getVersion();
+				return [
+					'**Error type:** HTTP ' + statusCode,
+					'**Route:** ' + route,
+					'**Timestamp (UTC):** ' + ts,
+					'**App version:** ' + ver,
+					'',
+					'**Steps to reproduce:**',
+					'1. ',
+					'',
+					'**Expected behavior:**',
+					'',
+					'**Actual behavior:**',
+					'HTTP ' + statusCode + ' error on ' + route,
+					'',
+					'**Additional context:**',
+					''
+				].join('\n');
+			}
+
+			function buildIssueURL(statusCode) {
+				var title = 'HTTP ' + statusCode + ' error on ' + window.location.pathname;
+				var body = buildIssueBody(statusCode);
+				var base = 'https://github.com/sydlexius/stillwater/issues/new';
+				return base + '?template=bug.md&title=' + encodeURIComponent(title) + '&body=' + encodeURIComponent(body);
+			}
+
+			window.toggleIssuePreview = function(statusCode) {
+				var preview = document.getElementById('issue-preview');
+				var previewBody = document.getElementById('issue-preview-body');
+				var link = document.getElementById('issue-open-link');
+				var btn = document.getElementById('report-' + statusCode + '-btn');
+				if (!preview) return;
+
+				if (preview.classList.contains('hidden')) {
+					var body = buildIssueBody(statusCode);
+					if (previewBody) previewBody.textContent = body;
+					if (link) link.href = buildIssueURL(statusCode);
+					preview.classList.remove('hidden');
+					if (btn) btn.setAttribute('aria-expanded', 'true');
+				} else {
+					preview.classList.add('hidden');
+					if (btn) btn.setAttribute('aria-expanded', 'false');
+				}
+			};
+		})();
+	</script>
+}

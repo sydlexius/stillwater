@@ -1,13 +1,41 @@
 package components
 
+// ContextMenuItemData describes a single item in a ContextMenuList.
+// Icon is an optional icon component rendered before the label.
+// Destructive items are styled red and automatically separated from
+// non-destructive items with a divider.
+//
+// For items that need a custom JS onclick handler, use the slot-based
+// ContextMenu component instead and write the button element directly.
+type ContextMenuItemData struct {
+	// Label is the visible text for the menu item.
+	Label string
+	// Icon is an optional icon rendered before the label. Pass nil to omit.
+	Icon templ.Component
+	// Destructive marks the item as a dangerous action (styled red).
+	Destructive bool
+	// Disabled prevents interaction and greys out the item.
+	Disabled bool
+	// HXPost is an hx-post URL for HTMX-driven items.
+	HXPost string
+	// HXTarget is an optional hx-target selector for HTMX items.
+	HXTarget string
+	// HXConfirm is an optional confirmation message for HTMX items.
+	HXConfirm string
+}
+
 // ContextMenu renders a contextual "..." dropdown menu. The trigger is always
-// visible as a horizontal ellipsis icon. Menu items are passed as children.
+// visible as a horizontal ellipsis icon. Menu items are passed as children via
+// the slot-based API, or via ContextMenuList for the structured item API.
 // Each ContextMenu must have a unique id on the page.
 //
 // The compact parameter controls icon sizing: true for sidebar/inline contexts,
 // false for standard button rows.
 //
-// Usage:
+// On mobile (< 768px) the menu renders as a bottom sheet instead of a dropdown.
+// The bottom sheet is driven by the same ToggleContextMenu script.
+//
+// Usage (slot-based, preserves existing call sites):
 //
 //	@components.ContextMenu("artist-bio-actions", false) {
 //	    <button role="menuitem" class="context-menu-item" ...>Edit</button>
@@ -37,61 +65,285 @@ templ ContextMenu(id string, compact bool) {
 				@IconEllipsisHorizontal("h-4 w-4")
 			}
 		</button>
+		<!-- Desktop dropdown panel (hidden on mobile via CSS) -->
 		<div
 			id={ "ctx-panel-" + id }
-			class="hidden absolute right-0 top-full z-40 mt-1 min-w-[10rem] rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 py-1 shadow-lg"
+			class="hidden absolute right-0 top-full z-40 mt-1 min-w-[10rem] rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 py-1 shadow-lg ctx-desktop-panel"
 			role="menu"
 		>
 			{ children... }
 		</div>
+		<!-- Mobile bottom sheet (hidden on desktop via CSS) -->
+		<div
+			id={ "ctx-sheet-" + id }
+			class="ctx-bottom-sheet"
+			role="menu"
+			aria-modal="true"
+			aria-label="Actions"
+			aria-hidden="true"
+			inert
+		>
+			<!-- Scrim -->
+			<div
+				class="ctx-sheet-scrim"
+				onclick={ CloseContextMenu(id) }
+				aria-hidden="true"
+			></div>
+			<!-- Sheet panel -->
+			<div class="ctx-sheet-panel">
+				<!-- Drag handle -->
+				<div class="ctx-sheet-handle-bar" aria-hidden="true">
+					<div class="ctx-sheet-handle"></div>
+				</div>
+				<!-- Item list mirrors the desktop panel children -->
+				<div class="ctx-sheet-items">
+					{ children... }
+				</div>
+				<!-- Cancel button -->
+				<div class="ctx-sheet-footer">
+					<button
+						type="button"
+						class="ctx-sheet-cancel"
+						onclick={ CloseContextMenu(id) }
+					>
+						Cancel
+					</button>
+				</div>
+			</div>
+		</div>
 	</div>
+}
+
+// ContextMenuList renders a ContextMenu from a structured list of ContextMenuItemData.
+// Destructive items are automatically grouped at the bottom behind a divider.
+// This is the preferred API for new call sites; the slot-based ContextMenu is
+// preserved for backward compatibility.
+templ ContextMenuList(id string, compact bool, items []ContextMenuItemData) {
+	@ContextMenu(id, compact) {
+		@contextMenuItems(items)
+	}
+}
+
+// contextMenuItems renders the item list, separating destructive items from
+// non-destructive ones with a divider.
+templ contextMenuItems(items []ContextMenuItemData) {
+	for _, item := range items {
+		if !item.Destructive {
+			@contextMenuItem(item)
+		}
+	}
+	// Check if any destructive items exist; if so, render divider then them.
+	// Skip the divider when the very first item is destructive (nothing above it).
+	for i, item := range items {
+		if item.Destructive && i == firstDestructiveIndex(items) && i > 0 {
+			<div class="context-menu-divider"></div>
+		}
+		if item.Destructive {
+			@contextMenuItem(item)
+		}
+	}
+}
+
+// firstDestructiveIndex returns the index of the first destructive item, or -1.
+// Used to render the divider exactly once before the destructive block.
+func firstDestructiveIndex(items []ContextMenuItemData) int {
+	for i, item := range items {
+		if item.Destructive {
+			return i
+		}
+	}
+	return -1
+}
+
+// contextMenuItem renders a single structured menu item as a button.
+templ contextMenuItem(item ContextMenuItemData) {
+	<button
+		type="button"
+		role="menuitem"
+		class={
+			"context-menu-item",
+			templ.KV("context-menu-item-danger", item.Destructive),
+			templ.KV("context-menu-item-disabled", item.Disabled),
+		}
+		if item.Disabled {
+			disabled
+		}
+		if item.HXPost != "" {
+			hx-post={ item.HXPost }
+			if item.HXTarget != "" {
+				hx-target={ item.HXTarget }
+			}
+			if item.HXConfirm != "" {
+				hx-confirm={ item.HXConfirm }
+			}
+		}
+	>
+		if item.Icon != nil {
+			<span class="context-menu-item-icon" aria-hidden="true">
+				@item.Icon
+			</span>
+		}
+		{ item.Label }
+	</button>
 }
 
 // ToggleContextMenu opens or closes the dropdown panel for the given context
 // menu id. It is exported so that custom split-button layouts in other packages
 // can reuse the same toggle behavior.
+// On mobile (< 768px) the bottom sheet is shown instead of the dropdown.
 script ToggleContextMenu(id string) {
 	var panel = document.getElementById('ctx-panel-' + id);
+	var sheet = document.getElementById('ctx-sheet-' + id);
+	var trigger = document.querySelector('[aria-controls="ctx-panel-' + id + '"]');
 	if (!panel) return;
-	var btn = panel.previousElementSibling;
-	var isOpen = !panel.classList.contains('hidden');
+
+	var isMobile = window.innerWidth < 768;
+	var isOpen = isMobile
+		? (sheet ? sheet.classList.contains('ctx-sheet-open') : false)
+		: !panel.classList.contains('hidden');
+
 	// Close all other open menus first.
-	document.querySelectorAll('[data-context-menu] [role="menu"]:not(.hidden)').forEach(function(p) {
-		p.classList.add('hidden');
-		var prev = p.previousElementSibling;
-		if (prev) prev.setAttribute('aria-expanded', 'false');
+	document.querySelectorAll('[data-context-menu] [role="menu"]:not(.hidden):not(.ctx-bottom-sheet), .ctx-bottom-sheet.ctx-sheet-open').forEach(function(p) {
+		if (p.classList.contains('ctx-bottom-sheet')) {
+			p.classList.remove('ctx-sheet-open');
+			p.setAttribute('aria-hidden', 'true');
+			p.setAttribute('inert', '');
+			document.body.classList.remove('ctx-sheet-body-lock');
+		} else {
+			p.classList.add('hidden');
+		}
+		// Find the trigger button via the parent container, not previousElementSibling.
+		var parent = p.parentElement;
+		if (parent) {
+			var btn = parent.querySelector(':scope > button[aria-expanded]');
+			if (btn) btn.setAttribute('aria-expanded', 'false');
+		}
 	});
+
 	if (!isOpen) {
-		panel.classList.remove('hidden');
-		if (btn) btn.setAttribute('aria-expanded', 'true');
-		// Move focus to the first menu item for keyboard users.
-		var firstItem = panel.querySelector('[role="menuitem"]');
-		if (firstItem) firstItem.focus();
+		if (isMobile && sheet) {
+			// Store trigger ref so focus can return on close.
+			sheet._trigger = trigger;
+			sheet.classList.add('ctx-sheet-open');
+			sheet.setAttribute('aria-hidden', 'false');
+			sheet.removeAttribute('inert');
+			document.body.classList.add('ctx-sheet-body-lock');
+			if (trigger) trigger.setAttribute('aria-expanded', 'true');
+			// Focus first item in the sheet for keyboard users.
+			setTimeout(function() {
+				if (!sheet.isConnected) return;
+				if (!sheet.classList.contains('ctx-sheet-open')) return;
+				var firstItem = sheet.querySelector('[role="menuitem"]:not([disabled])');
+				if (firstItem) {
+					firstItem.focus();
+				} else {
+					var cancel = sheet.querySelector('.ctx-sheet-cancel');
+					if (cancel) cancel.focus();
+				}
+			}, 300);
+		} else {
+			panel.classList.remove('hidden');
+			if (trigger) trigger.setAttribute('aria-expanded', 'true');
+			// Move focus to the first menu item for keyboard users.
+			var firstItem = panel.querySelector('[role="menuitem"]');
+			if (firstItem) firstItem.focus();
+		}
+	}
+}
+
+// CloseContextMenu closes the bottom sheet for the given id and returns focus
+// to the trigger element.
+script CloseContextMenu(id string) {
+	var sheet = document.getElementById('ctx-sheet-' + id);
+	var trigger = document.querySelector('[aria-controls="ctx-panel-' + id + '"]');
+	if (sheet) {
+		sheet.classList.remove('ctx-sheet-open');
+		sheet.setAttribute('aria-hidden', 'true');
+		sheet.setAttribute('inert', '');
+		document.body.classList.remove('ctx-sheet-body-lock');
+	}
+	if (trigger) {
+		trigger.setAttribute('aria-expanded', 'false');
+		trigger.focus();
 	}
 }
 
 // ContextMenuGlobalJS must be included once in the layout (before </body>).
-// It handles click-outside and Escape-to-close for all context menus.
+// It handles click-outside and Escape-to-close for all context menus, and
+// focus-trap for the mobile bottom sheet.
 templ ContextMenuGlobalJS() {
 	<script>
 		(function() {
 			function closeAllContextMenus() {
-				document.querySelectorAll('[data-context-menu] [role="menu"]:not(.hidden)').forEach(function(p) {
-					p.classList.add('hidden');
-					p.previousElementSibling.setAttribute('aria-expanded', 'false');
+				document.querySelectorAll('[data-context-menu] [role="menu"]:not(.hidden), .ctx-bottom-sheet.ctx-sheet-open').forEach(function(p) {
+					if (p.classList.contains('ctx-bottom-sheet')) {
+						p.classList.remove('ctx-sheet-open');
+						p.setAttribute('aria-hidden', 'true');
+						p.setAttribute('inert', '');
+						document.body.classList.remove('ctx-sheet-body-lock');
+					} else {
+						p.classList.add('hidden');
+					}
+					// Walk up to find the trigger button sibling.
+					var parent = p.parentElement;
+					if (parent) {
+						var btn = parent.querySelector(':scope > button[aria-expanded]');
+						if (btn) btn.setAttribute('aria-expanded', 'false');
+					}
 				});
 			}
+
 			document.addEventListener('click', function(e) {
+				if (!(e.target instanceof Element)) return;
 				var menu = e.target.closest('[data-context-menu]');
-				if (!menu) {
+				var bottomSheet = e.target.closest('.ctx-bottom-sheet');
+				if (!menu && !bottomSheet) {
 					closeAllContextMenus();
 				}
 			});
+
 			document.addEventListener('keydown', function(e) {
 				if (e.key === 'Escape') {
+					// Return focus to the trigger of any open bottom sheet.
+					document.querySelectorAll('.ctx-bottom-sheet.ctx-sheet-open').forEach(function(sheet) {
+						var t = sheet._trigger;
+						sheet.classList.remove('ctx-sheet-open');
+						sheet.setAttribute('aria-hidden', 'true');
+						sheet.setAttribute('inert', '');
+						document.body.classList.remove('ctx-sheet-body-lock');
+						var parent = sheet.parentElement;
+						if (parent) {
+							var btn = parent.querySelector(':scope > button[aria-expanded]');
+							if (btn) btn.setAttribute('aria-expanded', 'false');
+						}
+						if (t) t.focus();
+					});
 					closeAllContextMenus();
 				}
+
+				// Focus trap for open bottom sheets: Tab and Shift+Tab cycle inside.
+				var openSheet = document.querySelector('.ctx-bottom-sheet.ctx-sheet-open');
+				if (openSheet && e.key === 'Tab') {
+					var focusable = Array.prototype.slice.call(
+						openSheet.querySelectorAll('button:not([disabled]), [tabindex="0"]')
+					).filter(function(el) { return el.offsetParent !== null; });
+					if (focusable.length === 0) return;
+					var first = focusable[0];
+					var last = focusable[focusable.length - 1];
+					if (e.shiftKey) {
+						if (document.activeElement === first) {
+							e.preventDefault();
+							last.focus();
+						}
+					} else {
+						if (document.activeElement === last) {
+							e.preventDefault();
+							first.focus();
+						}
+					}
+				}
 			});
+
 			// Close menus when an HTMX request starts from inside a menu.
 			document.body.addEventListener('htmx:beforeRequest', function(e) {
 				if (e.detail.elt.closest('[data-context-menu]')) {
