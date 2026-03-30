@@ -129,7 +129,7 @@ templ IndexPage(assets AssetPaths) {
 							showSuccessToast(msg);
 							resetRuleButton();
 							htmx.ajax('GET', '/api/v1/reports/health', {target: '#health-summary', swap: 'innerHTML'});
-							htmx.ajax('GET', '/api/v1/notifications/badge', {target: '#notif-badge-desktop', swap: 'innerHTML'});
+							htmx.ajax('GET', '/api/v1/notifications/badge', {target: '#sidebar-notif-badge', swap: 'innerHTML'});
 							return true;
 						}
 						if (data.status === 'failed') {

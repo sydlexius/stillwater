@@ -182,6 +182,7 @@
       .then(function (prefs) {
         writeCache(prefs);
         applyAll(prefs);
+        document.dispatchEvent(new CustomEvent('sw:preferences-applied'));
         return prefs;
       })
       .catch(function (err) {
@@ -218,6 +219,7 @@
           cached[key] = previousValue;
           writeCache(cached);
           applySingle(key, previousValue);
+          document.dispatchEvent(new CustomEvent('sw:preferences-applied'));
           return previousValue;
         }
         return resp.json().then(function (data) {
@@ -227,8 +229,10 @@
             cached[key] = data.value;
             writeCache(cached);
             applySingle(key, data.value);
+            document.dispatchEvent(new CustomEvent('sw:preferences-applied'));
             return data.value;
           }
+          document.dispatchEvent(new CustomEvent('sw:preferences-applied'));
           return value;
         });
       })
@@ -237,6 +241,7 @@
         cached[key] = previousValue;
         writeCache(cached);
         applySingle(key, previousValue);
+        document.dispatchEvent(new CustomEvent('sw:preferences-applied'));
         return previousValue;
       });
   }

@@ -15,6 +15,7 @@ type AssetPaths struct {
 	PollingJS  string
 	SessionJS      string
 	PreferencesJS  string
+	SidebarJS      string
 	LoginBG        string
 	// BasePath is the server.base_path prefix (e.g. "/stillwater"). Empty string
 	// when the app is deployed at the root. Never has a trailing slash.
@@ -23,6 +24,21 @@ type AssetPaths struct {
 	// Used by the layout to conditionally render admin-only UI elements such as
 	// the shared-filesystem bar and the Settings navigation link.
 	IsAdmin bool
+	// CurrentPath is the request path with BasePath stripped. Used by the
+	// mobile bottom tab bar to highlight the active tab.
+	CurrentPath string
+	// Username is the authenticated user's login name for the sidebar profile.
+	Username string
+	// DisplayName is the user's preferred display name. May differ from
+	// Username for federated accounts (Emby/Jellyfin). Empty falls back to Username.
+	DisplayName string
+	// AvatarURL is the URL for the user's profile image from the auth provider.
+	// Empty for local accounts or when the provider has no image.
+	AvatarURL string
+	// Role is the authenticated user's role ("administrator" or "operator").
+	Role string
+	// Version is the application version string for the sidebar footer.
+	Version string
 }
 
 templ Layout(title string, assets AssetPaths) {
@@ -61,11 +77,19 @@ templ Layout(title string, assets AssetPaths) {
 				})();
 			</script>
 		</head>
-		<body class="h-full bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
+		<body class="h-full bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100" style="font-family: var(--sw-font-family)">
 			<img src={ assets.LoginBG } alt="" class="fixed inset-0 -z-20 h-full w-full object-cover pointer-events-none select-none" aria-hidden="true"/>
 			<div class="fixed inset-0 -z-10 bg-black/15 dark:bg-black/45 pointer-events-none" aria-hidden="true"></div>
-			<div class="min-h-full">
-				@navbar(assets.BasePath, assets.IsAdmin)
+			@Sidebar(SidebarData{
+				BasePath:    assets.BasePath,
+				IsAdmin:     assets.IsAdmin,
+				Username:    assets.Username,
+				DisplayName: assets.DisplayName,
+				AvatarURL:   assets.AvatarURL,
+				Role:        assets.Role,
+				Version:     assets.Version,
+			})
+			<div class="min-h-full sw-sidebar-content" id="sw-main-content">
 				if assets.IsAdmin {
 					@SharedFilesystemBar()
 				}
@@ -73,6 +97,7 @@ templ Layout(title string, assets AssetPaths) {
 					{ children... }
 				</main>
 			</div>
+			@BottomTabs(assets.BasePath, assets.CurrentPath, assets.IsAdmin)
 			@components.ConfirmModal()
 			@components.FieldProviderModal()
 			@components.ContextMenuGlobalJS()
@@ -80,6 +105,7 @@ templ Layout(title string, assets AssetPaths) {
 			<script src={ assets.PollingJS }></script>
 			<script src={ assets.SessionJS }></script>
 			<script src={ assets.PreferencesJS }></script>
+			<script src={ assets.SidebarJS }></script>
 			<script src={ assets.HelpJS }></script>
 			<div id="error-toast-container" class="fixed top-4 right-4 z-50 flex flex-col gap-2 w-80"></div>
 			<script>
@@ -420,147 +446,4 @@ templ themeInitScript() {
 			}
 		})();
 	</script>
-}
-
-templ themeToggleButton() {
-	<button
-		type="button"
-		class="rounded-md p-2 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-700 dark:hover:text-gray-200"
-		onclick="cycleTheme()"
-		aria-label="Toggle theme"
-	>
-		<!-- Sun icon (shown in dark mode) -->
-		<svg class="hidden dark:block h-5 w-5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-			<path stroke-linecap="round" stroke-linejoin="round" d="M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z"></path>
-		</svg>
-		<!-- Moon icon (shown in light mode) -->
-		<svg class="block dark:hidden h-5 w-5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-			<path stroke-linecap="round" stroke-linejoin="round" d="M21.752 15.002A9.718 9.718 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z"></path>
-		</svg>
-	</button>
-}
-
-// navbar renders the top navigation bar. bp is the server base path (e.g.
-// "/stillwater") and may be empty when the app is deployed at the root.
-// isAdmin controls visibility of admin-only links (e.g. Settings).
-templ navbar(bp string, isAdmin bool) {
-	<nav class="bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm shadow">
-		<div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-			<div class="flex h-16 items-center justify-between">
-				<div class="flex items-center">
-					<a href={ templ.SafeURL(bp + "/") } class="flex items-center gap-2 text-xl font-bold text-blue-600 dark:text-blue-400">
-						<img src={ bp + "/static/img/favicon.svg" } alt="" class="h-7 w-7" aria-hidden="true"/>
-						Stillwater
-					</a>
-					<div class="ml-10 hidden md:flex items-baseline space-x-4">
-						<a href={ templ.SafeURL(bp + "/") } class="rounded-md px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
-							Dashboard
-						</a>
-						<a href={ templ.SafeURL(bp + "/artists") } class="rounded-md px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
-							Artists
-						</a>
-						<a href={ templ.SafeURL(bp + "/reports/compliance") } class="rounded-md px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
-							Reports
-						</a>
-						<a href={ templ.SafeURL(bp + "/notifications") } class="relative rounded-md px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
-							Notifications
-							<span id="notif-badge-desktop" hx-get="/api/v1/notifications/badge" hx-trigger="load, every 30s" hx-swap="innerHTML"></span>
-						</a>
-						if isAdmin {
-							<a href={ templ.SafeURL(bp + "/settings") } class="rounded-md px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
-								Settings
-							</a>
-						}
-						<a href={ templ.SafeURL(bp + "/guide") } class="rounded-md px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
-							Guide
-						</a>
-					</div>
-				</div>
-				<div class="hidden md:flex items-center gap-1">
-					@themeToggleButton()
-					@helpButton()
-					<button
-						hx-post="/api/v1/auth/logout"
-						hx-redirect={ bp + "/" }
-						hx-on::before-request="if(window.swPreferences)swPreferences.clearCache()"
-						class="rounded-md px-3 py-2 text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
-					>
-						Logout
-					</button>
-				</div>
-				<div class="flex items-center gap-1 md:hidden">
-					@themeToggleButton()
-					<button
-						type="button"
-						class="inline-flex items-center justify-center rounded-md p-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-						aria-controls="mobile-menu"
-						aria-expanded="false"
-						onclick="var m=document.getElementById('mobile-menu');var open=m.classList.toggle('hidden');this.setAttribute('aria-expanded',!open);this.querySelector('.icon-open').classList.toggle('hidden');this.querySelector('.icon-close').classList.toggle('hidden')"
-					>
-						<span class="sr-only">Open main menu</span>
-						<svg class="icon-open h-6 w-6" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
-							<path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5"></path>
-						</svg>
-						<svg class="icon-close hidden h-6 w-6" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
-							<path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"></path>
-						</svg>
-					</button>
-				</div>
-			</div>
-		</div>
-		<div class="hidden md:hidden" id="mobile-menu">
-			<div class="space-y-1 px-2 pb-3 pt-2">
-				<a href={ templ.SafeURL(bp + "/") } class="block rounded-md px-3 py-3 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
-					Dashboard
-				</a>
-				<a href={ templ.SafeURL(bp + "/artists") } class="block rounded-md px-3 py-3 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
-					Artists
-				</a>
-				<a href={ templ.SafeURL(bp + "/reports/compliance") } class="block rounded-md px-3 py-3 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
-					Reports
-				</a>
-				<a href={ templ.SafeURL(bp + "/notifications") } class="relative block rounded-md px-3 py-3 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
-					Notifications
-					<span id="notif-badge-mobile"></span>
-				</a>
-				if isAdmin {
-					<a href={ templ.SafeURL(bp + "/settings") } class="block rounded-md px-3 py-3 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
-						Settings
-					</a>
-				}
-				<a href={ templ.SafeURL(bp + "/guide") } class="block rounded-md px-3 py-3 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
-					Guide
-				</a>
-				<button
-					type="button"
-					onclick="toggleHelpOverlay()"
-					class="block w-full rounded-md px-3 py-3 text-left text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-				>
-					Help
-				</button>
-				<button
-					hx-post="/api/v1/auth/logout"
-					hx-redirect={ bp + "/" }
-					hx-on::before-request="if(window.swPreferences)swPreferences.clearCache()"
-					class="block w-full rounded-md px-3 py-3 text-left text-base font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-700 dark:hover:text-gray-200"
-				>
-					Logout
-				</button>
-			</div>
-		</div>
-	</nav>
-}
-
-templ helpButton() {
-	<button
-		type="button"
-		class="rounded-md p-2 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-700 dark:hover:text-gray-200"
-		onclick="toggleHelpOverlay()"
-		aria-label="Help"
-		title="Help (?)"
-	>
-		<svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-			<path stroke-linecap="round" stroke-linejoin="round" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z"></path>
-		</svg>
-	</button>
 }

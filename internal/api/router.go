@@ -465,7 +465,9 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("GET "+bp+"/settings", wrapOptionalAuth(r.handleSettingsPage, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/guide", wrapOptionalAuth(r.handleGuidePage, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/setup/wizard", wrapOptionalAuth(r.handleOnboardingPage, optAuthMw))
-	mux.HandleFunc("GET "+bp+"/notifications", wrapAuth(r.handleNotificationsPage, authMw))
+	mux.HandleFunc("GET "+bp+"/notifications", wrapAuth(func(w http.ResponseWriter, req *http.Request) {
+		http.Redirect(w, req, r.basePath+"/", http.StatusMovedPermanently)
+	}, authMw))
 	mux.HandleFunc("GET "+bp+"/notifications/table", wrapAuth(r.handleNotificationsTable, authMw))
 
 	// Start the pprof listener on a dedicated localhost port when SW_PPROF=1 or

@@ -50,6 +50,7 @@ func (r *Router) assets() templates.AssetPaths {
 		PollingJS:     r.basePath + r.staticAssets.Path("/js/polling.js"),
 		SessionJS:     r.basePath + r.staticAssets.Path("/js/session.js"),
 		PreferencesJS: r.basePath + r.staticAssets.Path("/js/preferences.js"),
+		SidebarJS:     r.basePath + r.staticAssets.Path("/js/sidebar.js"),
 		LoginBG:       r.basePath + r.staticAssets.Path("/img/login-bg.jpg"),
 		BasePath:      r.basePath,
 	}
@@ -61,8 +62,66 @@ func (r *Router) assets() templates.AssetPaths {
 // shows admin-only elements like Settings nav and SharedFilesystemBar).
 func (r *Router) assetsFor(req *http.Request) templates.AssetPaths {
 	a := r.assets()
-	a.IsAdmin = middleware.RoleFromContext(req.Context()) == "administrator"
+	ctx := req.Context()
+	role := middleware.RoleFromContext(ctx)
+	a.IsAdmin = role == "administrator"
+	a.Role = role
+	a.Version = version.Version
+
+	// Look up the full user record to get display name and avatar info.
+	// Username and DisplayName default to empty; only populated from the
+	// fetched user record so we never leak the raw UUID to the UI.
+	userID := middleware.UserIDFromContext(ctx)
+	if userID != "" {
+		if user, err := r.authService.GetUserByID(ctx, userID); err == nil {
+			a.Username = user.Username
+			a.DisplayName = user.DisplayName
+			a.AvatarURL = r.buildAvatarURL(ctx, user)
+		} else {
+			slog.Warn("failed to look up user for sidebar", "user_id", userID, "error", err)
+		}
+	}
+
+	// Strip the base path prefix so the bottom tab bar can match the active
+	// route without knowing the deployment prefix.
+	path := req.URL.Path
+	if r.basePath != "" {
+		path = strings.TrimPrefix(path, r.basePath)
+	}
+	if path == "" {
+		path = "/"
+	}
+	a.CurrentPath = path
 	return a
+}
+
+// buildAvatarURL constructs a profile image URL for federated users (Emby/Jellyfin).
+// Returns an empty string for local users or when the server URL is not configured.
+// Emby: {serverURL}/Users/{providerID}/Images/Primary
+// Jellyfin: {serverURL}/Users/{providerID}/Images/Primary
+func (r *Router) buildAvatarURL(ctx context.Context, user *auth.User) string {
+	if user.AuthProvider != "emby" && user.AuthProvider != "jellyfin" {
+		return ""
+	}
+	if user.ProviderID == "" {
+		return ""
+	}
+	// Try provider-specific server URL first, fall back to the legacy global key.
+	var serverURL string
+	switch user.AuthProvider {
+	case "emby":
+		serverURL = r.getStringSetting(ctx, "auth.providers.emby.server_url", "")
+	case "jellyfin":
+		serverURL = r.getStringSetting(ctx, "auth.providers.jellyfin.server_url", "")
+	}
+	if serverURL == "" {
+		serverURL = r.getStringSetting(ctx, "auth.server_url", "")
+	}
+	if serverURL == "" {
+		return ""
+	}
+	// Both Emby and Jellyfin use the same endpoint for user profile images.
+	return serverURL + "/Users/" + url.PathEscape(user.ProviderID) + "/Images/Primary"
 }
 
 // handleLogin authenticates a user and sets a session cookie.
