@@ -695,6 +695,87 @@ func (s *Service) UpsertViolation(ctx context.Context, v *RuleViolation) error {
 	return nil
 }
 
+// UpsertRuleResults batch-upserts per-rule evaluation outcomes for a set of artists.
+// Both passes and failures are stored. For failed results, violation_id is populated
+// automatically via a subquery referencing any existing open violation in rule_violations.
+// This method is a no-op when results is empty.
+func (s *Service) UpsertRuleResults(ctx context.Context, results []RuleResult) error {
+	if len(results) == 0 {
+		return nil
+	}
+	evaluatedAt := time.Now().UTC().Format(time.RFC3339)
+	for _, rr := range results {
+		if !rr.EvaluatedAt.IsZero() {
+			evaluatedAt = rr.EvaluatedAt.Format(time.RFC3339)
+		}
+		passed := dbutil.BoolToInt(rr.Passed)
+		var violationMsg *string
+		if rr.ViolationMessage != "" {
+			violationMsg = &rr.ViolationMessage
+		}
+		_, err := s.db.ExecContext(ctx, `
+			INSERT INTO rule_results (artist_id, rule_id, passed, violation_id, violation_message, evaluated_at)
+			VALUES (?, ?, ?,
+				CASE ? WHEN 0 THEN (
+					SELECT id FROM rule_violations
+					WHERE rule_id = ? AND artist_id = ?
+					  AND status IN ('open', 'pending_choice')
+					LIMIT 1
+				) ELSE NULL END,
+				?, ?)
+			ON CONFLICT(artist_id, rule_id) DO UPDATE SET
+				passed            = excluded.passed,
+				violation_id      = excluded.violation_id,
+				violation_message = excluded.violation_message,
+				evaluated_at      = excluded.evaluated_at
+		`, rr.ArtistID, rr.RuleID, passed,
+			passed, rr.RuleID, rr.ArtistID,
+			violationMsg, evaluatedAt)
+		if err != nil {
+			return fmt.Errorf("upserting rule result (artist=%s rule=%s): %w", rr.ArtistID, rr.RuleID, err)
+		}
+	}
+	return nil
+}
+
+// GetRuleStats returns pass and fail counts for every rule that has at least
+// one result row. Results are joined with the rules table for the rule name.
+func (s *Service) GetRuleStats(ctx context.Context) ([]RuleStats, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT
+			r.id,
+			r.name,
+			COUNT(*) AS total,
+			SUM(rr.passed) AS pass_count,
+			COUNT(*) - SUM(rr.passed) AS fail_count
+		FROM rule_results rr
+		JOIN rules r ON r.id = rr.rule_id
+		GROUP BY r.id, r.name
+		ORDER BY r.name ASC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("querying rule stats: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck
+
+	var stats []RuleStats
+	for rows.Next() {
+		var rs RuleStats
+		if err := rows.Scan(&rs.RuleID, &rs.RuleName, &rs.TotalArtists, &rs.PassCount, &rs.FailCount); err != nil {
+			return nil, fmt.Errorf("scanning rule stats: %w", err)
+		}
+		if rs.TotalArtists > 0 {
+			rs.PassRate = float64(rs.PassCount) / float64(rs.TotalArtists) * 100.0
+		}
+		stats = append(stats, rs)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating rule stats: %w", err)
+	}
+
+	return stats, nil
+}
+
 // ListViolations returns rule violations filtered by status.
 // If status is empty, returns all violations.
 func (s *Service) ListViolations(ctx context.Context, status string) ([]RuleViolation, error) {

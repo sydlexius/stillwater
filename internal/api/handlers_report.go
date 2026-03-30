@@ -599,3 +599,25 @@ func (r *Router) handleReportMetadataCompleteness(w http.ResponseWriter, req *ht
 
 	writeJSON(w, http.StatusOK, report)
 }
+
+// ruleStatsResponse is the JSON envelope for the per-rule statistics endpoint.
+type ruleStatsResponse struct {
+Rules []rule.RuleStats `json:"rules"`
+}
+
+// handleReportRules returns per-rule pass/fail statistics derived from the
+// rule_results table. Responses are O(1) DB aggregations that do not invoke
+// the rule engine.
+// GET /api/v1/reports/rules
+func (r *Router) handleReportRules(w http.ResponseWriter, req *http.Request) {
+stats, err := r.ruleService.GetRuleStats(req.Context())
+if err != nil {
+r.logger.Error("fetching rule stats", "error", err)
+writeError(w, req, http.StatusInternalServerError, "failed to fetch rule statistics")
+return
+}
+if stats == nil {
+stats = []rule.RuleStats{}
+}
+writeJSON(w, http.StatusOK, ruleStatsResponse{Rules: stats})
+}

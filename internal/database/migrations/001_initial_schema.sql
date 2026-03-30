@@ -334,6 +334,28 @@ CREATE INDEX idx_rule_violations_created_at ON rule_violations(created_at);
 CREATE INDEX idx_rule_violations_resolved_at ON rule_violations(resolved_at);
 
 -- =============================================================================
+-- Per-rule evaluation results
+-- =============================================================================
+
+-- rule_results stores the outcome of every rule evaluation per artist.
+-- Both passes and failures are recorded so report endpoints can aggregate
+-- without calling the rule engine. The violation_id FK links to the persisted
+-- rule_violations row when passed = 0 and a violation has been upserted.
+CREATE TABLE IF NOT EXISTS rule_results (
+    artist_id        TEXT NOT NULL REFERENCES artists(id) ON DELETE CASCADE,
+    rule_id          TEXT NOT NULL REFERENCES rules(id) ON DELETE CASCADE,
+    passed           INTEGER NOT NULL DEFAULT 0,
+    violation_id     TEXT REFERENCES rule_violations(id) ON DELETE SET NULL,
+    violation_message TEXT,
+    evaluated_at     TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (artist_id, rule_id)
+);
+
+CREATE INDEX idx_rule_results_rule_id ON rule_results(rule_id);
+CREATE INDEX idx_rule_results_passed ON rule_results(passed);
+CREATE INDEX idx_rule_results_evaluated_at ON rule_results(evaluated_at);
+
+-- =============================================================================
 -- Health tracking
 -- =============================================================================
 
@@ -468,6 +490,7 @@ VALUES ('extraneous_images', 'Extraneous image files', 'Detects non-canonical im
 -- Greenfield schema: full teardown.
 DROP TABLE IF EXISTS bulk_job_items;
 DROP TABLE IF EXISTS bulk_jobs;
+DROP TABLE IF EXISTS rule_results;
 DROP TABLE IF EXISTS rule_violations;
 DROP TABLE IF EXISTS rules;
 DROP TABLE IF EXISTS health_history;

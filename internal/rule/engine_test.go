@@ -556,3 +556,145 @@ func TestCachedRules_ConcurrentAccess(t *testing.T) {
 		}
 	}
 }
+
+func TestEvaluate_WritesRuleResults(t *testing.T) {
+db := setupTestDB(t)
+svc := NewService(db)
+ctx := context.Background()
+
+if err := svc.SeedDefaults(ctx); err != nil {
+t.Fatalf("SeedDefaults: %v", err)
+}
+
+// Disable filesystem-dependent rules so the test does not need real files.
+for _, id := range []string{
+RuleThumbSquare, RuleThumbMinRes, RuleFanartMinRes, RuleFanartAspect,
+RuleBannerExists, RuleBannerMinRes, RuleLogoExists, RuleLogoMinRes, RuleLogoPadding,
+RuleExtraneousImages, RuleImageDuplicate, RuleBackdropSequencing,
+} {
+r, err := svc.GetByID(ctx, id)
+if err != nil {
+continue
+}
+r.Enabled = false
+if err := svc.Update(ctx, r); err != nil {
+t.Fatalf("disabling rule %s: %v", id, err)
+}
+}
+
+engine := NewEngine(svc, db, nil, nil, testLogger())
+
+a := &artist.Artist{
+ID:            "artist-re1",
+Name:          "Test Artist",
+MusicBrainzID: "5b11f4ce-a62d-471e-81fc-a69a8278c7da",
+NFOExists:     true,
+ThumbExists:   true,
+FanartExists:  true,
+}
+_, err := db.ExecContext(ctx, `
+INSERT INTO artists (id, name, sort_name, type, path, created_at, updated_at)
+VALUES (?, ?, ?, 'group', '/music/x', datetime('now'), datetime('now'))
+`, a.ID, a.Name, a.Name)
+if err != nil {
+t.Fatalf("inserting artist: %v", err)
+}
+
+result, err := engine.Evaluate(ctx, a)
+if err != nil {
+t.Fatalf("Evaluate: %v", err)
+}
+
+if result.RulesTotal == 0 {
+t.Fatal("RulesTotal = 0, expected at least one enabled rule")
+}
+
+// Verify rule_results rows were written.
+var count int
+if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM rule_results WHERE artist_id = ?", a.ID).Scan(&count); err != nil {
+t.Fatalf("counting rule_results: %v", err)
+}
+if count != result.RulesTotal {
+t.Errorf("rule_results rows = %d, want %d (one per evaluated rule)", count, result.RulesTotal)
+}
+
+// Verify pass count matches.
+var passCount int
+if err := db.QueryRowContext(ctx, "SELECT SUM(passed) FROM rule_results WHERE artist_id = ?", a.ID).Scan(&passCount); err != nil {
+t.Fatalf("summing passed: %v", err)
+}
+if passCount != result.RulesPassed {
+t.Errorf("stored pass_count = %d, want %d", passCount, result.RulesPassed)
+}
+}
+
+func TestEvaluate_RuleResultsUpdatedOnReevaluation(t *testing.T) {
+db := setupTestDB(t)
+svc := NewService(db)
+ctx := context.Background()
+
+if err := svc.SeedDefaults(ctx); err != nil {
+t.Fatalf("SeedDefaults: %v", err)
+}
+
+// Disable all rules except nfo_exists for a focused test.
+rules, err := svc.List(ctx)
+if err != nil {
+t.Fatalf("List rules: %v", err)
+}
+for _, r := range rules {
+if r.ID == RuleNFOExists {
+continue
+}
+r.Enabled = false
+if err := svc.Update(ctx, &r); err != nil {
+t.Fatalf("disabling rule %s: %v", r.ID, err)
+}
+}
+
+_, err = db.ExecContext(ctx, `
+INSERT INTO artists (id, name, sort_name, type, path, created_at, updated_at)
+VALUES ('artist-re2', 'Re-eval Artist', 'Re-eval Artist', 'group', '/music/x', datetime('now'), datetime('now'))
+`)
+if err != nil {
+t.Fatalf("inserting artist: %v", err)
+}
+
+engine := NewEngine(svc, db, nil, nil, testLogger())
+
+// First evaluation: NFO missing -> fail.
+a := &artist.Artist{ID: "artist-re2", Name: "Re-eval Artist", NFOExists: false}
+if _, err := engine.Evaluate(ctx, a); err != nil {
+t.Fatalf("first Evaluate: %v", err)
+}
+
+var passed int
+if err := db.QueryRowContext(ctx, "SELECT passed FROM rule_results WHERE artist_id = 'artist-re2' AND rule_id = ?", RuleNFOExists).Scan(&passed); err != nil {
+t.Fatalf("querying first result: %v", err)
+}
+if passed != 0 {
+t.Errorf("first eval: passed = %d, want 0 (NFO missing)", passed)
+}
+
+// Second evaluation: NFO now present -> pass.
+a.NFOExists = true
+if _, err := engine.Evaluate(ctx, a); err != nil {
+t.Fatalf("second Evaluate: %v", err)
+}
+
+if err := db.QueryRowContext(ctx, "SELECT passed FROM rule_results WHERE artist_id = 'artist-re2' AND rule_id = ?", RuleNFOExists).Scan(&passed); err != nil {
+t.Fatalf("querying second result: %v", err)
+}
+if passed != 1 {
+t.Errorf("second eval: passed = %d, want 1 (NFO present)", passed)
+}
+
+// Only one row per (artist, rule) -- upsert should not create duplicates.
+var count int
+if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM rule_results WHERE artist_id = 'artist-re2' AND rule_id = ?", RuleNFOExists).Scan(&count); err != nil {
+t.Fatalf("counting rows: %v", err)
+}
+if count != 1 {
+t.Errorf("rule_results count = %d, want 1 (upsert must not duplicate)", count)
+}
+}
