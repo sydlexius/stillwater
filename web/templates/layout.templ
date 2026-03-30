@@ -525,8 +525,13 @@ templ Layout(title string, assets AssetPaths) {
 						}
 					}
 
+					// _modalOpener holds the element that had focus when the modal was opened;
+					// focus is restored to it when the modal is dismissed.
+					var _modalOpener = null;
+
 					function showModal(message, confirmKey, opts) {
 						var m = getModal();
+						_modalOpener = document.activeElement;
 						if (opts && opts.html) {
 							// opts.html is only set by trusted internal callers; the message
 							// is always application-generated, never from user input.
@@ -555,6 +560,11 @@ templ Layout(title string, assets AssetPaths) {
 						pendingEvent = null;
 						pendingCallback = null;
 						pendingConfirmKey = null;
+						// Return focus to the element that triggered the dialog.
+						if (_modalOpener && typeof _modalOpener.focus === 'function') {
+							_modalOpener.focus();
+						}
+						_modalOpener = null;
 					}
 
 					// saveSuppression persists "suppress_confirm_{action}" = "true" to the

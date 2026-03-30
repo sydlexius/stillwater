@@ -81,7 +81,7 @@ func BottomSheet(id string, items []BottomSheetItemData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "\" class=\"ctx-bottom-sheet\" role=\"menu\" aria-modal=\"true\" aria-label=\"Actions\"><!-- Scrim: clicking it closes the sheet -->")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "\" class=\"ctx-bottom-sheet\" role=\"menu\" aria-modal=\"true\" aria-label=\"Actions\" aria-hidden=\"true\" inert><!-- Scrim: clicking it closes the sheet -->")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -224,7 +224,7 @@ func bottomSheetItem(sheetID string, item BottomSheetItemData) templ.Component {
 			var templ_7745c5c3_Var8 string
 			templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(item.HXPost)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/bottom_sheet.templ`, Line: 116, Col: 24}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/bottom_sheet.templ`, Line: 118, Col: 24}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 			if templ_7745c5c3_Err != nil {
@@ -242,7 +242,7 @@ func bottomSheetItem(sheetID string, item BottomSheetItemData) templ.Component {
 				var templ_7745c5c3_Var9 string
 				templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(item.HXTarget)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/bottom_sheet.templ`, Line: 118, Col: 29}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/bottom_sheet.templ`, Line: 120, Col: 29}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 				if templ_7745c5c3_Err != nil {
@@ -261,7 +261,7 @@ func bottomSheetItem(sheetID string, item BottomSheetItemData) templ.Component {
 				var templ_7745c5c3_Var10 string
 				templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(item.HXConfirm)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/bottom_sheet.templ`, Line: 121, Col: 31}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/bottom_sheet.templ`, Line: 123, Col: 31}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 				if templ_7745c5c3_Err != nil {
@@ -294,7 +294,7 @@ func bottomSheetItem(sheetID string, item BottomSheetItemData) templ.Component {
 		var templ_7745c5c3_Var11 string
 		templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(item.Label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/bottom_sheet.templ`, Line: 130, Col: 14}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/bottom_sheet.templ`, Line: 132, Col: 14}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 		if templ_7745c5c3_Err != nil {
@@ -312,19 +312,22 @@ func bottomSheetItem(sheetID string, item BottomSheetItemData) templ.Component {
 // with the given id and stores the trigger element for focus restoration.
 func OpenBottomSheet(id string) templ.ComponentScript {
 	return templ.ComponentScript{
-		Name: `__templ_OpenBottomSheet_754e`,
-		Function: `function __templ_OpenBottomSheet_754e(id){var sheet = document.getElementById('bs-' + id);
+		Name: `__templ_OpenBottomSheet_a4de`,
+		Function: `function __templ_OpenBottomSheet_a4de(id){var sheet = document.getElementById('bs-' + id);
 	if (!sheet) return;
 	sheet._trigger = document.activeElement;
 	sheet.classList.add('ctx-sheet-open');
+	sheet.removeAttribute('aria-hidden');
+	sheet.removeAttribute('inert');
 	document.body.classList.add('ctx-sheet-body-lock');
 	setTimeout(function() {
+		if (!sheet.isConnected) return;
 		var firstItem = sheet.querySelector('[role="menuitem"]:not([disabled])');
 		if (firstItem) firstItem.focus();
 	}, 300);
 }`,
-		Call:       templ.SafeScript(`__templ_OpenBottomSheet_754e`, id),
-		CallInline: templ.SafeScriptInline(`__templ_OpenBottomSheet_754e`, id),
+		Call:       templ.SafeScript(`__templ_OpenBottomSheet_a4de`, id),
+		CallInline: templ.SafeScriptInline(`__templ_OpenBottomSheet_a4de`, id),
 	}
 }
 
@@ -332,16 +335,18 @@ func OpenBottomSheet(id string) templ.ComponentScript {
 // with the given id and restores focus to the trigger element.
 func CloseBottomSheet(id string) templ.ComponentScript {
 	return templ.ComponentScript{
-		Name: `__templ_CloseBottomSheet_644f`,
-		Function: `function __templ_CloseBottomSheet_644f(id){var sheet = document.getElementById('bs-' + id);
+		Name: `__templ_CloseBottomSheet_3bb2`,
+		Function: `function __templ_CloseBottomSheet_3bb2(id){var sheet = document.getElementById('bs-' + id);
 	if (!sheet) return;
 	var trigger = sheet._trigger;
 	sheet.classList.remove('ctx-sheet-open');
+	sheet.setAttribute('aria-hidden', 'true');
+	sheet.setAttribute('inert', '');
 	document.body.classList.remove('ctx-sheet-body-lock');
 	if (trigger && typeof trigger.focus === 'function') trigger.focus();
 }`,
-		Call:       templ.SafeScript(`__templ_CloseBottomSheet_644f`, id),
-		CallInline: templ.SafeScriptInline(`__templ_CloseBottomSheet_644f`, id),
+		Call:       templ.SafeScript(`__templ_CloseBottomSheet_3bb2`, id),
+		CallInline: templ.SafeScriptInline(`__templ_CloseBottomSheet_3bb2`, id),
 	}
 }
 

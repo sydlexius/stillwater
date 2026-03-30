@@ -81,8 +81,9 @@ templ PathPickerModal() {
 	(function() {
 		// _ppTargetInputId is the id of the <input> that will receive the chosen path.
 		var _ppTargetInputId = null;
-		// _ppCurrentPath is the path currently shown in the modal (set only after a
-		// successful fetch, not optimistically).
+		// _ppCurrentPath is the path currently shown in the modal. It is set to
+		// initialPath when the modal opens, then updated to the server-confirmed
+		// path after each successful browse fetch.
 		var _ppCurrentPath = '/';
 		// _ppOpener is the element that had focus when the modal was opened; focus is
 		// restored to it on close or confirm.
