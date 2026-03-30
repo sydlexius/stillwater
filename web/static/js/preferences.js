@@ -102,8 +102,11 @@
     }
 
     // Theme also toggles the "dark" class for Tailwind dark-mode support.
+    // "system" follows the OS preference via matchMedia.
     if (key === 'theme') {
-      if (value === 'dark') {
+      var isDark = value === 'dark' ||
+        (value === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      if (isDark) {
         root.classList.add('dark');
       } else {
         root.classList.remove('dark');
@@ -127,14 +130,16 @@
 
   // Redirect to login when a 401 is received from a direct fetch call.
   // The session.js handler only covers HTMX requests; this covers fetch().
+  // The login page is at the root (GET {basePath}/).
   function handleSessionExpiry() {
-    var loginPath = bp + '/login';
+    var loginUrl = bp + '/';
     var path = window.location.pathname;
-    if (path === loginPath || path === loginPath + '/') {
+    // Already at root/login -- do not redirect to avoid loops.
+    if (path === loginUrl || path === (bp || '/')) {
       return;
     }
     var returnURL = path + window.location.search;
-    window.location.href = loginPath + '?return=' + encodeURIComponent(returnURL);
+    window.location.href = loginUrl + '?return=' + encodeURIComponent(returnURL);
   }
 
   // --- API communication ---
@@ -177,11 +182,12 @@
   // Persist a single preference change to the server, update cache, and apply.
   // Returns a Promise that resolves with the updated preference value.
   function set(key, value) {
+    // Save previous value for rollback if the server rejects.
+    var cached = readCache() || {};
+    var previousValue = cached[key] || DEFAULTS[key];
+
     // Optimistic: apply immediately so the UI feels instant.
     applySingle(key, value);
-
-    // Update the local cache optimistically.
-    var cached = readCache() || {};
     cached[key] = value;
     writeCache(cached);
 
@@ -196,8 +202,12 @@
           if (resp.status === 401) {
             handleSessionExpiry();
           }
-          console.warn('swPreferences: server rejected "' + key + '" (HTTP ' + resp.status + ')');
-          return value;
+          console.warn('swPreferences: server rejected "' + key + '" (HTTP ' + resp.status + '), reverting');
+          // Revert to previous value so client stays consistent with server.
+          cached[key] = previousValue;
+          writeCache(cached);
+          applySingle(key, previousValue);
+          return previousValue;
         }
         return resp.json().then(function (data) {
           // The API may normalize the value; update cache with what the
@@ -212,8 +222,11 @@
         });
       })
       .catch(function (err) {
-        console.warn('swPreferences: failed to save preference "' + key + '"', err);
-        return value;
+        console.warn('swPreferences: failed to save preference "' + key + '", reverting', err);
+        cached[key] = previousValue;
+        writeCache(cached);
+        applySingle(key, previousValue);
+        return previousValue;
       });
   }
 

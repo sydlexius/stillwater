@@ -77,6 +77,14 @@ func (r *Router) handleOIDCLogin(w http.ResponseWriter, req *http.Request) {
 		http.SetCookie(w, cookieOpts("oidc_invite", inviteCode))
 	}
 
+	// Preserve the return URL across the IdP round-trip so the callback can
+	// redirect the user back to where they were before session expiry.
+	if returnURL := req.URL.Query().Get("return"); returnURL != "" {
+		if validated := validateReturnURL(returnURL); validated != "" {
+			http.SetCookie(w, cookieOpts("oidc_return", validated))
+		}
+	}
+
 	http.Redirect(w, req, authURL, http.StatusFound)
 }
 

@@ -188,7 +188,7 @@ func LoginPage(assets AssetPaths, providers []auth.Authenticator) templ.Componen
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "<div id=\"login-result\"></div></div></div><script>\n\t\t\t\t// Display OIDC or other redirect-based login errors passed via ?error= param.\n\t\t\t\t// Also propagate ?return= into hidden form fields so the return URL\n\t\t\t\t// survives the HTMX POST to /api/v1/auth/login.\n\t\t\t\t(function() {\n\t\t\t\t\tvar params = new URLSearchParams(window.location.search);\n\t\t\t\t\tvar errorMsg = params.get('error');\n\t\t\t\t\tif (errorMsg) {\n\t\t\t\t\t\tvar el = document.getElementById('login-result');\n\t\t\t\t\t\tif (el) {\n\t\t\t\t\t\t\tvar alert = document.createElement('div');\n\t\t\t\t\t\t\talert.setAttribute('role', 'alert');\n\t\t\t\t\t\t\talert.className = 'rounded-lg border border-red-300/60 dark:border-red-700/60 bg-red-50/80 dark:bg-red-900/30 px-4 py-3 text-sm text-red-700 dark:text-red-300';\n\t\t\t\t\t\t\talert.textContent = errorMsg;\n\t\t\t\t\t\t\tel.appendChild(alert);\n\t\t\t\t\t\t}\n\t\t\t\t\t\t// Clear the error from the URL so it does not persist on refresh.\n\t\t\t\t\t\thistory.replaceState(null, '', window.location.pathname + window.location.search.replace(/[?&]error=[^&]*/, ''));\n\t\t\t\t\t}\n\t\t\t\t\t// Copy the return URL into all login forms so the server can\n\t\t\t\t\t// redirect the user back after successful authentication.\n\t\t\t\t\tvar returnURL = params.get('return');\n\t\t\t\t\tif (returnURL) {\n\t\t\t\t\t\tvar fields = document.querySelectorAll('input[name=\"return_url\"]');\n\t\t\t\t\t\tfor (var i = 0; i < fields.length; i++) {\n\t\t\t\t\t\t\tfields[i].value = returnURL;\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t})();\n\t\t\t</script></body></html>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "<div id=\"login-result\"></div></div></div><script>\n\t\t\t\t// Display OIDC or other redirect-based login errors passed via ?error= param.\n\t\t\t\t// Also propagate ?return= into hidden form fields so the return URL\n\t\t\t\t// survives the HTMX POST to /api/v1/auth/login.\n\t\t\t\t(function() {\n\t\t\t\t\tvar params = new URLSearchParams(window.location.search);\n\t\t\t\t\tvar errorMsg = params.get('error');\n\t\t\t\t\tif (errorMsg) {\n\t\t\t\t\t\tvar el = document.getElementById('login-result');\n\t\t\t\t\t\tif (el) {\n\t\t\t\t\t\t\tvar alert = document.createElement('div');\n\t\t\t\t\t\t\talert.setAttribute('role', 'alert');\n\t\t\t\t\t\t\talert.className = 'rounded-lg border border-red-300/60 dark:border-red-700/60 bg-red-50/80 dark:bg-red-900/30 px-4 py-3 text-sm text-red-700 dark:text-red-300';\n\t\t\t\t\t\t\talert.textContent = errorMsg;\n\t\t\t\t\t\t\tel.appendChild(alert);\n\t\t\t\t\t\t}\n\t\t\t\t\t\t// Clear the error from the URL so it does not persist on refresh.\n\t\t\t\t\t\t// Use URLSearchParams to safely remove just the error key\n\t\t\t\t\t\t// without corrupting other query parameters.\n\t\t\t\t\t\tvar cleanURL = new URL(window.location.href);\n\t\t\t\t\t\tcleanURL.searchParams.delete('error');\n\t\t\t\t\t\thistory.replaceState(null, '', cleanURL.pathname + cleanURL.search);\n\t\t\t\t\t}\n\t\t\t\t\t// Copy the return URL into all login forms so the server can\n\t\t\t\t\t// redirect the user back after successful authentication.\n\t\t\t\t\tvar returnURL = params.get('return');\n\t\t\t\t\tif (returnURL) {\n\t\t\t\t\t\tvar fields = document.querySelectorAll('input[name=\"return_url\"]');\n\t\t\t\t\t\tfor (var i = 0; i < fields.length; i++) {\n\t\t\t\t\t\t\tfields[i].value = returnURL;\n\t\t\t\t\t\t}\n\t\t\t\t\t\t// Also append return URL to OIDC redirect links so the\n\t\t\t\t\t\t// return destination survives the redirect-based login flow.\n\t\t\t\t\t\tvar oidcLinks = document.querySelectorAll('a[href*=\"oidc/login\"]');\n\t\t\t\t\t\tfor (var j = 0; j < oidcLinks.length; j++) {\n\t\t\t\t\t\t\tvar u = new URL(oidcLinks[j].href);\n\t\t\t\t\t\t\tu.searchParams.set('return', returnURL);\n\t\t\t\t\t\t\toidcLinks[j].href = u.toString();\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t})();\n\t\t\t</script></body></html>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -228,7 +228,7 @@ func loginFederatedButtons(assets AssetPaths, providers []auth.Authenticator) te
 				var templ_7745c5c3_Var13 string
 				templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(assets.BasePath + "/static/img/logos/emby-128.png")
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/login.templ`, Line: 107, Col: 65}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/login.templ`, Line: 119, Col: 65}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 				if templ_7745c5c3_Err != nil {
@@ -251,7 +251,7 @@ func loginFederatedButtons(assets AssetPaths, providers []auth.Authenticator) te
 				var templ_7745c5c3_Var14 string
 				templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(assets.BasePath + "/static/img/logos/jellyfin.svg")
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/login.templ`, Line: 118, Col: 65}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/login.templ`, Line: 130, Col: 65}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 				if templ_7745c5c3_Err != nil {
@@ -274,7 +274,7 @@ func loginFederatedButtons(assets AssetPaths, providers []auth.Authenticator) te
 				var templ_7745c5c3_Var15 templ.SafeURL
 				templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(assets.BasePath + "/api/v1/auth/oidc/login"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/login.templ`, Line: 124, Col: 69}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/login.templ`, Line: 136, Col: 69}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 				if templ_7745c5c3_Err != nil {
@@ -337,7 +337,7 @@ func loginFederatedForm(assets AssetPaths, providers []auth.Authenticator) templ
 			var templ_7745c5c3_Var17 templ.SafeURL
 			templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(assets.BasePath + "/api/v1/auth/login"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/login.templ`, Line: 149, Col: 66}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/login.templ`, Line: 161, Col: 66}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 			if templ_7745c5c3_Err != nil {
@@ -416,7 +416,7 @@ func loginLocalForm(assets AssetPaths, providers []auth.Authenticator) templ.Com
 			var templ_7745c5c3_Var20 templ.SafeURL
 			templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(assets.BasePath + "/api/v1/auth/login"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/login.templ`, Line: 210, Col: 65}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/login.templ`, Line: 222, Col: 65}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
 			if templ_7745c5c3_Err != nil {

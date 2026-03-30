@@ -289,11 +289,16 @@ func (r *Router) completeLoginRedirect(w http.ResponseWriter, req *http.Request,
 
 	r.setSessionCookie(w, req, token)
 
-	// Honor a return URL passed via query parameter (OIDC state could carry
-	// this in a future enhancement; for now it defaults to root).
+	// Honor a return URL from the form, query parameter, or OIDC cookie.
 	dest := r.basePath + "/"
 	if returnURL := validateReturnURL(req.FormValue("return_url")); returnURL != "" {
 		dest = r.basePath + returnURL
+	} else if c, err := req.Cookie("oidc_return"); err == nil && c.Value != "" {
+		if returnURL := validateReturnURL(c.Value); returnURL != "" {
+			dest = r.basePath + returnURL
+		}
+		// Clear the cookie after use.
+		http.SetCookie(w, &http.Cookie{Name: "oidc_return", Value: "", Path: "/", MaxAge: -1})
 	}
 	http.Redirect(w, req, dest, http.StatusFound)
 }
@@ -311,6 +316,15 @@ func (r *Router) redirectWithError(w http.ResponseWriter, req *http.Request, msg
 func validateReturnURL(rawURL string) string {
 	if rawURL == "" {
 		return ""
+	}
+
+	// Reject URLs containing ASCII control characters (CR, LF, null, etc.)
+	// to prevent header injection via Location or HX-Redirect headers.
+	for _, c := range rawURL {
+		if c < 0x20 || c == 0x7f {
+			slog.Debug("rejected return URL: contains control character", "raw", rawURL) //nolint:gosec // G706: debug audit log
+			return ""
+		}
 	}
 
 	// Strip backslashes to prevent bypass via "\" which some browsers

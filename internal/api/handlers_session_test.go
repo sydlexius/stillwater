@@ -48,6 +48,13 @@ func TestValidateReturnURL(t *testing.T) {
 		// double-slash check after the browser resolves /../ sequences.
 		{name: "traversal to root", input: "/a/../../b", want: "/a/../../b"},
 
+		// Invalid: control characters (header injection prevention).
+		{name: "CRLF injection", input: "/settings\r\nX-Injected: true", want: ""},
+		{name: "newline only", input: "/settings\nX-Injected: true", want: ""},
+		{name: "carriage return only", input: "/settings\rX-Injected: true", want: ""},
+		{name: "null byte", input: "/settings\x00evil", want: ""},
+		{name: "tab character", input: "/settings\tevil", want: ""},
+
 		// Invalid: no leading slash.
 		{name: "relative no slash", input: "evil.com", want: ""},
 		{name: "relative path", input: "settings", want: ""},

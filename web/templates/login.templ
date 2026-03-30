@@ -76,7 +76,11 @@ templ LoginPage(assets AssetPaths, providers []auth.Authenticator) {
 							el.appendChild(alert);
 						}
 						// Clear the error from the URL so it does not persist on refresh.
-						history.replaceState(null, '', window.location.pathname + window.location.search.replace(/[?&]error=[^&]*/, ''));
+						// Use URLSearchParams to safely remove just the error key
+						// without corrupting other query parameters.
+						var cleanURL = new URL(window.location.href);
+						cleanURL.searchParams.delete('error');
+						history.replaceState(null, '', cleanURL.pathname + cleanURL.search);
 					}
 					// Copy the return URL into all login forms so the server can
 					// redirect the user back after successful authentication.
@@ -85,6 +89,14 @@ templ LoginPage(assets AssetPaths, providers []auth.Authenticator) {
 						var fields = document.querySelectorAll('input[name="return_url"]');
 						for (var i = 0; i < fields.length; i++) {
 							fields[i].value = returnURL;
+						}
+						// Also append return URL to OIDC redirect links so the
+						// return destination survives the redirect-based login flow.
+						var oidcLinks = document.querySelectorAll('a[href*="oidc/login"]');
+						for (var j = 0; j < oidcLinks.length; j++) {
+							var u = new URL(oidcLinks[j].href);
+							u.searchParams.set('return', returnURL);
+							oidcLinks[j].href = u.toString();
 						}
 					}
 				})();
