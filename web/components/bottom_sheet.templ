@@ -140,7 +140,7 @@ script OpenBottomSheet(id string) {
 	if (!sheet) return;
 	sheet._trigger = document.activeElement;
 	sheet.classList.add('ctx-sheet-open');
-	sheet.removeAttribute('aria-hidden');
+	sheet.setAttribute('aria-hidden', 'false');
 	sheet.removeAttribute('inert');
 	document.body.classList.add('ctx-sheet-body-lock');
 	setTimeout(function() {

@@ -312,12 +312,12 @@ func bottomSheetItem(item BottomSheetItemData) templ.Component {
 // with the given id and stores the trigger element for focus restoration.
 func OpenBottomSheet(id string) templ.ComponentScript {
 	return templ.ComponentScript{
-		Name: `__templ_OpenBottomSheet_9ed7`,
-		Function: `function __templ_OpenBottomSheet_9ed7(id){var sheet = document.getElementById('bs-' + id);
+		Name: `__templ_OpenBottomSheet_d0eb`,
+		Function: `function __templ_OpenBottomSheet_d0eb(id){var sheet = document.getElementById('bs-' + id);
 	if (!sheet) return;
 	sheet._trigger = document.activeElement;
 	sheet.classList.add('ctx-sheet-open');
-	sheet.removeAttribute('aria-hidden');
+	sheet.setAttribute('aria-hidden', 'false');
 	sheet.removeAttribute('inert');
 	document.body.classList.add('ctx-sheet-body-lock');
 	setTimeout(function() {
@@ -332,8 +332,8 @@ func OpenBottomSheet(id string) templ.ComponentScript {
 		}
 	}, 300);
 }`,
-		Call:       templ.SafeScript(`__templ_OpenBottomSheet_9ed7`, id),
-		CallInline: templ.SafeScriptInline(`__templ_OpenBottomSheet_9ed7`, id),
+		Call:       templ.SafeScript(`__templ_OpenBottomSheet_d0eb`, id),
+		CallInline: templ.SafeScriptInline(`__templ_OpenBottomSheet_d0eb`, id),
 	}
 }
 
