@@ -107,7 +107,11 @@ templ Layout(title string, assets AssetPaths) {
 					}
 				}
 				function applyThemeFallback(pref) {
-					localStorage.setItem('theme', pref === 'system' ? '' : pref);
+					if (pref === 'system') {
+						localStorage.removeItem('theme');
+					} else {
+						localStorage.setItem('theme', pref);
+					}
 					var isDark = pref === 'dark' || (pref === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
 					document.documentElement.classList.toggle('dark', isDark);
 				}

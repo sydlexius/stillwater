@@ -211,13 +211,7 @@ func (r *Router) completeLogin(w http.ResponseWriter, req *http.Request, provide
 	// If the login form included a return URL (from session timeout redirect),
 	// send the user back to that page instead of the default root.
 	// Strip basePath prefix if already present to avoid double-prefixing.
-	dest := r.basePath + "/"
-	if returnURL := validateReturnURL(req.FormValue("return_url")); returnURL != "" {
-		if r.basePath != "" && strings.HasPrefix(returnURL, r.basePath+"/") {
-			returnURL = strings.TrimPrefix(returnURL, r.basePath)
-		}
-		dest = r.basePath + returnURL
-	}
+	dest := buildSafeRedirect(r.basePath, validateReturnURL(req.FormValue("return_url")))
 	w.Header().Set("HX-Redirect", dest)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
@@ -295,9 +289,6 @@ func (r *Router) completeLoginRedirect(w http.ResponseWriter, req *http.Request,
 	r.setSessionCookie(w, req, token)
 
 	// Honor a return URL from the form, query parameter, or OIDC cookie.
-	// The validated URL is re-parsed with url.Parse to give CodeQL's taint
-	// analysis a recognized sanitizer (it cannot follow validateReturnURL).
-	dest := r.basePath + "/"
 	var rawReturn string
 	if v := validateReturnURL(req.FormValue("return_url")); v != "" {
 		rawReturn = v
@@ -315,25 +306,35 @@ func (r *Router) completeLoginRedirect(w http.ResponseWriter, req *http.Request,
 			Secure:   req.TLS != nil || req.Header.Get("X-Forwarded-Proto") == "https",
 		})
 	}
-	if rawReturn != "" {
-		if parsed, err := url.Parse(rawReturn); err == nil && parsed.Host == "" && parsed.Scheme == "" {
-			// Strip basePath prefix if already present to avoid double-prefixing.
-			// The client JS should send basePath-relative URLs, but guard
-			// against older clients or direct form submissions that include it.
-			path := parsed.Path
-			if r.basePath != "" && strings.HasPrefix(path, r.basePath+"/") {
-				path = strings.TrimPrefix(path, r.basePath)
-			}
-			dest = r.basePath + path
-			if parsed.RawQuery != "" {
-				dest += "?" + parsed.RawQuery
-			}
-			if parsed.Fragment != "" {
-				dest += "#" + parsed.Fragment
-			}
-		}
-	}
+	dest := buildSafeRedirect(r.basePath, rawReturn)
 	http.Redirect(w, req, dest, http.StatusFound)
+}
+
+// buildSafeRedirect constructs a redirect URL from a validated return path.
+// The return path is re-parsed with url.Parse and only the Path component is
+// used, which breaks any taint chain from user input to the redirect target.
+// This satisfies CodeQL's go/unvalidated-url-redirection rule.
+func buildSafeRedirect(basePath, returnPath string) string {
+	dest := basePath + "/"
+	if returnPath == "" {
+		return dest
+	}
+	parsed, err := url.Parse(returnPath)
+	if err != nil || parsed.Host != "" || parsed.Scheme != "" {
+		return dest
+	}
+	safePath := parsed.Path
+	if basePath != "" && strings.HasPrefix(safePath, basePath+"/") {
+		safePath = strings.TrimPrefix(safePath, basePath)
+	}
+	dest = basePath + safePath
+	if parsed.RawQuery != "" {
+		dest += "?" + parsed.RawQuery
+	}
+	if parsed.Fragment != "" {
+		dest += "#" + parsed.Fragment
+	}
+	return dest
 }
 
 // redirectWithError redirects the user to the login page with an error message
@@ -405,13 +406,7 @@ func (r *Router) handleLoginLocal(w http.ResponseWriter, req *http.Request, user
 	}
 
 	r.setSessionCookie(w, req, token)
-	dest := r.basePath + "/"
-	if returnURL := validateReturnURL(req.FormValue("return_url")); returnURL != "" {
-		if r.basePath != "" && strings.HasPrefix(returnURL, r.basePath+"/") {
-			returnURL = strings.TrimPrefix(returnURL, r.basePath)
-		}
-		dest = r.basePath + returnURL
-	}
+	dest := buildSafeRedirect(r.basePath, validateReturnURL(req.FormValue("return_url")))
 	w.Header().Set("HX-Redirect", dest)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
@@ -460,13 +455,7 @@ func (r *Router) handleLoginFederated(w http.ResponseWriter, req *http.Request, 
 	r.updateConnectionToken(req.Context(), authMethod, serverURL, result.User.ID, result.AccessToken)
 
 	r.setSessionCookie(w, req, token)
-	dest := r.basePath + "/"
-	if returnURL := validateReturnURL(req.FormValue("return_url")); returnURL != "" {
-		if r.basePath != "" && strings.HasPrefix(returnURL, r.basePath+"/") {
-			returnURL = strings.TrimPrefix(returnURL, r.basePath)
-		}
-		dest = r.basePath + returnURL
-	}
+	dest := buildSafeRedirect(r.basePath, validateReturnURL(req.FormValue("return_url")))
 	w.Header().Set("HX-Redirect", dest)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }

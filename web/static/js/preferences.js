@@ -69,6 +69,13 @@
     }
   }
 
+  // --- CSRF token helper ---
+
+  function csrfToken() {
+    var match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/);
+    return match ? match[1] : '';
+  }
+
   // --- Lite mode auto-detection ---
 
   function detectLiteMode() {
@@ -201,7 +208,7 @@
     return fetch(API_BASE + '/' + encodeURIComponent(key), {
       method: 'PUT',
       credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken() },
       body: JSON.stringify({ value: value })
     })
       .then(function (resp) {
@@ -263,12 +270,20 @@
   };
 
   // --- Auto-initialize on page load ---
-  // Apply cached preferences synchronously (this script runs in <head> or
-  // early in <body>) so the first paint already has the right theme/layout.
-  var cached = readCache();
-  if (cached) {
-    applyAll(cached);
+  // Step 1 (synchronous): Apply cached preferences immediately so the first
+  // paint has the right theme/layout without waiting for the API.
+  var initCached = readCache();
+  if (initCached) {
+    applyAll(initCached);
   } else {
     applyAll(DEFAULTS);
+  }
+
+  // Step 2 (async): Fetch fresh preferences from the API once the DOM is ready.
+  // This syncs server-stored preferences into the cache and applies any changes.
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function () { load(); });
+  } else {
+    load();
   }
 })();
