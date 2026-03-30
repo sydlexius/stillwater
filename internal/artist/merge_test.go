@@ -83,7 +83,9 @@ func TestOverwriteAttempted_TypeGenderNeverCleared(t *testing.T) {
 func TestOverwriteAttempted_TypeGenderOverwriteWhenNonEmpty(t *testing.T) {
 	a := &Artist{Type: "person", Gender: "male"}
 	u := &MetadataUpdate{Type: "group", Gender: "female"}
-	changed := ApplyMetadata(a, u, OverwriteAttempted, MergeOptions{})
+	changed := ApplyMetadata(a, u, OverwriteAttempted, MergeOptions{
+		AttemptedFields: []string{"type", "gender"},
+	})
 	if !changed {
 		t.Error("expected change")
 	}
@@ -95,16 +97,43 @@ func TestOverwriteAttempted_TypeGenderOverwriteWhenNonEmpty(t *testing.T) {
 	}
 }
 
+func TestOverwriteAttempted_TypeGenderUntouchedWhenNotAttempted(t *testing.T) {
+	a := &Artist{Type: "person", Gender: "male"}
+	u := &MetadataUpdate{Type: "group", Gender: "female"}
+	changed := ApplyMetadata(a, u, OverwriteAttempted, MergeOptions{})
+	if changed {
+		t.Error("expected no change when type/gender not attempted")
+	}
+	if a.Type != "person" {
+		t.Errorf("type should be unchanged, got %q", a.Type)
+	}
+	if a.Gender != "male" {
+		t.Errorf("gender should be unchanged, got %q", a.Gender)
+	}
+}
+
 func TestOverwriteAttempted_YearsActiveNonEmptyOnly(t *testing.T) {
 	a := &Artist{YearsActive: "1990-2000"}
 	u := &MetadataUpdate{YearsActive: ""}
+	// Not attempted: years_active must not be touched at all.
 	ApplyMetadata(a, u, OverwriteAttempted, MergeOptions{})
 	if a.YearsActive != "1990-2000" {
-		t.Errorf("years_active should not be cleared, got %q", a.YearsActive)
+		t.Errorf("years_active should not be cleared when not attempted, got %q", a.YearsActive)
 	}
 
+	// Attempted with empty value: non-empty-only semantics -- must not clear.
+	ApplyMetadata(a, u, OverwriteAttempted, MergeOptions{
+		AttemptedFields: []string{"years_active"},
+	})
+	if a.YearsActive != "1990-2000" {
+		t.Errorf("years_active should not be cleared by empty value, got %q", a.YearsActive)
+	}
+
+	// Attempted with non-empty value: should update.
 	u.YearsActive = "2000-2010"
-	changed := ApplyMetadata(a, u, OverwriteAttempted, MergeOptions{})
+	changed := ApplyMetadata(a, u, OverwriteAttempted, MergeOptions{
+		AttemptedFields: []string{"years_active"},
+	})
 	if !changed || a.YearsActive != "2000-2010" {
 		t.Errorf("years_active = %q, want %q", a.YearsActive, "2000-2010")
 	}
