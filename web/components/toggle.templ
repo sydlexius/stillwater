@@ -1,0 +1,41 @@
+package components
+
+import "strconv"
+
+// Toggle renders an iOS-style toggle switch backed by a hidden checkbox.
+// The hidden <input type="checkbox"> carries the form value so the toggle
+// works naturally with both standard form submissions and HTMX (hx-trigger
+// on "change" fires when the checkbox state flips).
+//
+// Parameters:
+//   - id:          HTML id for the underlying checkbox input
+//   - name:        form field name submitted with the value "true" when checked
+//   - checked:     initial on/off state
+//   - label:       visible text label rendered beside the toggle
+//   - description: optional help text shown below the label (pass "" to omit)
+templ Toggle(id, name string, checked bool, label, description string) {
+	<label class="sw-toggle-wrapper" for={ id }>
+		<input
+			type="checkbox"
+			id={ id }
+			name={ name }
+			value="true"
+			class="sw-toggle-input"
+			if checked {
+				checked
+			}
+			role="switch"
+			aria-checked={ strconv.FormatBool(checked) }
+			onchange="this.setAttribute('aria-checked', this.checked)"
+		/>
+		<span class="sw-toggle-track" aria-hidden="true">
+			<span class="sw-toggle-knob"></span>
+		</span>
+		<span class="sw-toggle-label">
+			<span class="sw-toggle-label-text">{ label }</span>
+			if description != "" {
+				<span class="sw-toggle-description">{ description }</span>
+			}
+		</span>
+	</label>
+}

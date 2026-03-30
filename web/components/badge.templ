@@ -37,6 +37,173 @@ templ StatusBadge(exists bool, label string) {
 	}
 }
 
+// SeverityBadge renders a pill badge for rule violation severity levels.
+// Uses design tokens (--sw-severity-error, --sw-severity-warning, --sw-severity-info)
+// for consistent theming. Always renders icon + text for accessibility.
+// Valid levels: "error", "warning", "info". Unknown levels fall back to info.
+templ SeverityBadge(level string) {
+	switch level {
+		case "error":
+			<span
+				class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
+				style="color: var(--sw-severity-error); background: var(--sw-severity-error-bg);"
+				aria-label={ "Severity: " + level }
+			>
+				<!-- Heroicons: exclamation-circle (mini) -->
+				<svg class="h-3 w-3 shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+					<path fill-rule="evenodd" d="M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0Zm-8-5a.75.75 0 0 1 .75.75v4.5a.75.75 0 0 1-1.5 0v-4.5A.75.75 0 0 1 10 5Zm0 10a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clip-rule="evenodd"></path>
+				</svg>
+				Error
+			</span>
+		case "warning":
+			<span
+				class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
+				style="color: var(--sw-severity-warning); background: var(--sw-severity-warning-bg);"
+				aria-label={ "Severity: " + level }
+			>
+				<!-- Heroicons: exclamation-triangle (mini) -->
+				<svg class="h-3 w-3 shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+					<path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495ZM10 6a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 10 6Zm0 9a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clip-rule="evenodd"></path>
+				</svg>
+				Warning
+			</span>
+		default:
+			<span
+				class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
+				style="color: var(--sw-severity-info); background: var(--sw-severity-info-bg);"
+				aria-label="Severity: info"
+			>
+				<!-- Heroicons: information-circle (mini) -->
+				<svg class="h-3 w-3 shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+					<path fill-rule="evenodd" d="M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0Zm-7-4a1 1 0 1 1-2 0 1 1 0 0 1 2 0ZM9 9a.75.75 0 0 0 0 1.5h.253a.25.25 0 0 1 .244.304l-.459 2.066A1.75 1.75 0 0 0 10.747 15H11a.75.75 0 0 0 0-1.5h-.253a.25.25 0 0 1-.244-.304l.459-2.066A1.75 1.75 0 0 0 9.253 9H9Z" clip-rule="evenodd"></path>
+				</svg>
+				Info
+			</span>
+	}
+}
+
+// LockBadge renders a padlock badge indicating the source of a metadata lock.
+// Valid sources: "user" (manually locked by user), "import" (locked by import process).
+// Unknown sources fall back to a generic lock icon labeled with the source string.
+templ LockBadge(source string) {
+	switch source {
+		case "user":
+			<span
+				class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
+				style="color: var(--sw-severity-warning); background: var(--sw-severity-warning-bg);"
+				aria-label="Locked by user"
+			>
+				<!-- Heroicons: lock-closed (mini) -->
+				<svg class="h-3 w-3 shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+					<path fill-rule="evenodd" d="M10 1a4.5 4.5 0 0 0-4.5 4.5V9H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-.5V5.5A4.5 4.5 0 0 0 10 1Zm3 8V5.5a3 3 0 1 0-6 0V9h6Z" clip-rule="evenodd"></path>
+				</svg>
+				User-locked
+			</span>
+		case "import":
+			<span
+				class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
+				style="color: var(--sw-severity-info); background: var(--sw-severity-info-bg);"
+				aria-label="Locked by import"
+			>
+				<!-- Heroicons: lock-closed (mini) -->
+				<svg class="h-3 w-3 shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+					<path fill-rule="evenodd" d="M10 1a4.5 4.5 0 0 0-4.5 4.5V9H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-.5V5.5A4.5 4.5 0 0 0 10 1Zm3 8V5.5a3 3 0 1 0-6 0V9h6Z" clip-rule="evenodd"></path>
+				</svg>
+				Import-locked
+			</span>
+		default:
+			<span
+				class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
+				style="color: var(--sw-content-text-secondary); background: rgba(148, 163, 184, 0.12);"
+				if source != "" {
+					aria-label={ "Locked: " + source }
+				} else {
+					aria-label="Locked"
+				}
+			>
+				<!-- Heroicons: lock-closed (mini) -->
+				<svg class="h-3 w-3 shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+					<path fill-rule="evenodd" d="M10 1a4.5 4.5 0 0 0-4.5 4.5V9H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-.5V5.5A4.5 4.5 0 0 0 10 1Zm3 8V5.5a3 3 0 1 0-6 0V9h6Z" clip-rule="evenodd"></path>
+				</svg>
+				if source != "" {
+					{ source }
+				} else {
+					Locked
+				}
+			</span>
+	}
+}
+
+// SyncBadge renders a sync state indicator badge.
+// Valid states: "synced" (green check), "partial" (amber warning), "unsynced" (grey dash),
+// "syncing" (blue spinner), "error" (red X). Unknown states fall back to unsynced.
+templ SyncBadge(state string) {
+	switch state {
+		case "synced":
+			<span
+				class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
+				style="color: var(--sw-success); background: var(--sw-success-bg);"
+				aria-label="Sync status: synced"
+			>
+				<!-- Heroicons: check-circle (mini) -->
+				<svg class="h-3 w-3 shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+					<path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm3.857-9.809a.75.75 0 0 0-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 1 0-1.06 1.061l2.5 2.5a.75.75 0 0 0 1.137-.089l4-5.5Z" clip-rule="evenodd"></path>
+				</svg>
+				Synced
+			</span>
+		case "partial":
+			<span
+				class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
+				style="color: var(--sw-severity-warning); background: var(--sw-severity-warning-bg);"
+				aria-label="Sync status: partially synced"
+			>
+				<!-- Heroicons: exclamation-triangle (mini) -->
+				<svg class="h-3 w-3 shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+					<path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495ZM10 6a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 10 6Zm0 9a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clip-rule="evenodd"></path>
+				</svg>
+				Partial
+			</span>
+		case "syncing":
+			<span
+				class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
+				style="color: var(--sw-accent-primary); background: rgba(59, 130, 246, 0.12);"
+				role="status"
+				aria-label="Sync status: syncing"
+				aria-live="polite"
+			>
+				<!-- Heroicons: arrow-path (mini) with spin animation -->
+				<svg class="h-3 w-3 shrink-0 sw-spin" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+					<path fill-rule="evenodd" d="M15.312 11.424a5.5 5.5 0 0 1-9.201 2.466l-.312-.311h2.451a.75.75 0 0 0 0-1.5H4.5a.75.75 0 0 0-.75.75v3.75a.75.75 0 0 0 1.5 0v-2.127l.17.17a7 7 0 0 0 11.712-3.133.75.75 0 0 0-1.449-.39l-.37-.075Zm-10.624-2.85a5.5 5.5 0 0 1 9.201-2.465l.312.311H11.75a.75.75 0 0 0 0 1.5h3.75a.75.75 0 0 0 .75-.75V3.42a.75.75 0 0 0-1.5 0v2.127l-.17-.17A7 7 0 0 0 3.268 8.51a.75.75 0 0 0 1.449.39l.37.075Z" clip-rule="evenodd"></path>
+				</svg>
+				Syncing
+			</span>
+		case "error":
+			<span
+				class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
+				style="color: var(--sw-severity-error); background: var(--sw-severity-error-bg);"
+				aria-label="Sync status: error"
+			>
+				<!-- Heroicons: x-circle (mini) -->
+				<svg class="h-3 w-3 shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+					<path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16ZM8.28 7.22a.75.75 0 0 0-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 1 0 1.06 1.06L10 11.06l1.72 1.72a.75.75 0 1 0 1.06-1.06L11.06 10l1.72-1.72a.75.75 0 0 0-1.06-1.06L10 8.94 8.28 7.22Z" clip-rule="evenodd"></path>
+				</svg>
+				Error
+			</span>
+		default:
+			<span
+				class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
+				style="color: var(--sw-content-text-secondary); background: rgba(148, 163, 184, 0.12);"
+				aria-label="Sync status: not synced"
+			>
+				<!-- Heroicons: minus-circle (mini) -->
+				<svg class="h-3 w-3 shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+					<path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16ZM6.75 9.25a.75.75 0 0 0 0 1.5h6.5a.75.75 0 0 0 0-1.5h-6.5Z" clip-rule="evenodd"></path>
+				</svg>
+				Unsynced
+			</span>
+	}
+}
+
 // ImageStatusBadge renders a three-state indicator for image presence and quality:
 //   - missing:        red pill with X
 //   - exists, low-res: amber pill with checkmark and "low res" tooltip

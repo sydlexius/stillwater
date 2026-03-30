@@ -66,6 +66,41 @@ func (p PaginationData) pageURL(page int) string {
 	return p.BaseURL + "?" + v.Encode()
 }
 
+// LoadMore renders an append-style pagination button that fetches the next page
+// and appends results to the target container. The button shows "Load N more of M"
+// and displays a spinner during the request. The hxGet URL should include the next
+// page query parameters. The hxTarget is the CSS selector for the container to
+// append results into.
+templ LoadMore(remaining, pageSize int, hxGet, hxTarget string) {
+	if remaining > 0 {
+		// Show the smaller of pageSize or remaining as the batch count.
+		<div class="flex justify-center py-4">
+			<button
+				type="button"
+				hx-get={ hxGet }
+				hx-target={ hxTarget }
+				hx-swap="beforeend"
+				hx-indicator="this"
+				aria-label={ fmt.Sprintf("Load %d more of %d remaining items", min(pageSize, remaining), remaining) }
+				class="group inline-flex items-center gap-2 rounded-md px-4 py-2.5 text-sm font-semibold text-gray-900 dark:text-gray-100 ring-1 ring-inset ring-gray-300 dark:ring-gray-600 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed [&.htmx-request]:pointer-events-none"
+			>
+				// Default label, hidden during request.
+				<span class="[.htmx-request>&]:hidden">
+					Load { fmt.Sprint(min(pageSize, remaining)) } more of { fmt.Sprint(remaining) }
+				</span>
+				// Spinner, shown only during request.
+				<span class="hidden [.htmx-request>&]:inline-flex items-center gap-2">
+					<svg class="h-4 w-4 animate-spin text-gray-400" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+						<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+						<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+					</svg>
+					Loading...
+				</span>
+			</button>
+		</div>
+	}
+}
+
 templ Pagination(data PaginationData) {
 	if data.TotalPages > 1 {
 		<nav class="flex items-center justify-between border-t border-gray-200 dark:border-gray-700 px-4 py-3 sm:px-6" aria-label="Pagination">

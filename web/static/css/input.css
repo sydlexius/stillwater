@@ -518,6 +518,255 @@
 #sw-sidebar[data-sidebar-state="icon-only"] .sw-sidebar-link:focus-visible::after {
   opacity: 1;
 }
+/* -- Segmented control ---------------------------------------------------- */
+.sw-segmented {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  padding: 3px;
+  border-radius: var(--sw-radius-md);
+  background: var(--sw-glass-bg);
+  border: 1px solid var(--sw-glass-border);
+}
+
+.sw-segment {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 14px;
+  border-radius: calc(var(--sw-radius-md) - 2px);
+  cursor: pointer;
+  user-select: none;
+  color: var(--sw-content-text-secondary);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1.25rem;
+  transition: color 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
+  white-space: nowrap;
+}
+
+.sw-segment:hover {
+  color: var(--sw-content-text);
+}
+
+.sw-segment--active {
+  background-color: var(--sw-accent-primary);
+  color: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.sw-segment--active:hover {
+  color: #fff;
+}
+
+.sw-segment-label {
+  pointer-events: none;
+}
+
+/* Thin vertical divider between inactive segments; hidden next to active */
+.sw-segment-divider {
+  width: 1px;
+  height: 14px;
+  background: var(--sw-glass-border);
+  flex-shrink: 0;
+  transition: opacity 0.15s ease;
+}
+
+.sw-segment--active + .sw-segment-divider,
+.sw-segment-divider + .sw-segment--active {
+  opacity: 0;
+}
+
+/* Focus-visible ring on the label when the hidden radio is focused via keyboard */
+.sw-segment:has(input:focus-visible) {
+  outline: 2px solid var(--sw-accent-primary);
+  outline-offset: 2px;
+}
+
+/* Respect reduced motion (system preference) */
+@media (prefers-reduced-motion: reduce) {
+  .sw-segment,
+  .sw-segment-divider {
+    transition: none;
+  }
+}
+
+/* Respect reduced motion (user toggle via data-motion attribute) */
+[data-motion="on"] .sw-segment,
+[data-motion="on"] .sw-segment-divider {
+  transition: none;
+}
+
+/* -- iOS-style toggle switch ---------------------------------------------- */
+.sw-toggle-wrapper {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+/* Hide the native checkbox but keep it accessible to screen readers */
+.sw-toggle-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Pill-shaped track */
+.sw-toggle-track {
+  position: relative;
+  flex-shrink: 0;
+  width: 44px;
+  height: 24px;
+  border-radius: 9999px;
+  background-color: rgba(148, 163, 184, 0.35);
+  transition: background-color 200ms ease;
+}
+
+/* Sliding knob */
+.sw-toggle-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  border-radius: 9999px;
+  background-color: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  transition: transform 200ms ease;
+}
+
+/* Checked state: accent track color, knob slides right */
+.sw-toggle-input:checked + .sw-toggle-track {
+  background-color: var(--sw-accent-primary);
+}
+
+.sw-toggle-input:checked + .sw-toggle-track .sw-toggle-knob {
+  transform: translateX(20px);
+}
+
+/* Focus ring for keyboard navigation */
+.sw-toggle-input:focus-visible + .sw-toggle-track {
+  outline: 2px solid var(--sw-accent-primary);
+  outline-offset: 2px;
+}
+
+/* Label and description text */
+.sw-toggle-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  padding-top: 2px;
+}
+
+.sw-toggle-label-text {
+  font-size: var(--sw-font-size-base);
+  color: var(--sw-content-text);
+  line-height: 1.25;
+}
+
+.sw-toggle-description {
+  font-size: 0.8125rem;
+  color: var(--sw-content-text-secondary);
+  line-height: 1.35;
+}
+
+/* Respect reduced motion (system preference) */
+@media (prefers-reduced-motion: reduce) {
+  .sw-toggle-track,
+  .sw-toggle-knob {
+    transition: none;
+  }
+}
+
+/* Respect reduced motion (user toggle via data-motion attribute) */
+[data-motion="on"] .sw-toggle-track,
+[data-motion="on"] .sw-toggle-knob {
+  transition: none;
+}
+
+/* -- Skeleton loader shimmer ---------------------------------------------- */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.sw-skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--sw-content-text-secondary) 0%,
+    rgba(148, 163, 184, 0.3) 50%,
+    var(--sw-content-text-secondary) 100%
+  );
+  background-size: 200% 100%;
+  opacity: 0.12;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+.sw-skeleton-card {
+  width: 100%;
+  height: 160px;
+}
+
+.sw-skeleton-row {
+  width: 100%;
+  height: 40px;
+}
+
+.sw-skeleton-text {
+  width: 100%;
+  height: 14px;
+}
+
+.sw-skeleton-text-short {
+  width: 60%;
+  height: 14px;
+}
+
+/* Respect reduced motion (system preference) */
+@media (prefers-reduced-motion: reduce) {
+  .sw-skeleton { animation: none; }
+}
+
+/* Respect reduced motion (user toggle via data-motion attribute) */
+[data-motion="on"] .sw-skeleton { animation: none; }
+
+/* -- Spinner -------------------------------------------------------------- */
+.sw-spinner-animated {
+  animation: spin 0.75s linear infinite;
+  color: var(--sw-accent-primary);
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.sw-spinner-static {
+  color: var(--sw-accent-primary);
+}
+
+/* Reduced motion: swap animated spinner for static icon */
+@media (prefers-reduced-motion: reduce) {
+  .sw-spinner-animated { display: none; }
+  .sw-spinner-static { display: inline-block; }
+}
+
+[data-motion="on"] .sw-spinner-animated { display: none; }
+[data-motion="on"] .sw-spinner-static { display: inline-block; }
+
+/* -- Sync badge spin (reduced-motion aware) ------------------------------- */
+.sw-spin { animation: spin 1s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .sw-spin { animation: none; } }
+[data-motion="on"] .sw-spin { animation: none; }
 
 /* -- Autofill fix for dark/glass backgrounds ------------------------------ */
 input:-webkit-autofill,

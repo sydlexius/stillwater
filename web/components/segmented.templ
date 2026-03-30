@@ -1,0 +1,81 @@
+package components
+
+import "fmt"
+
+// SegmentOption defines a single option within a segmented control.
+// Value is the form-submission value, Label is the display text,
+// and Style is optional inline CSS (useful for font-family previews).
+type SegmentOption struct {
+	Value string
+	Label string
+	Style string
+}
+
+// Segmented renders a segmented control (radio group) styled as a horizontal
+// pill bar. It dispatches a "segmented:changed" custom event on selection and
+// uses hidden radio inputs so it works inside native forms.
+//
+// Parameters:
+//   - id:       DOM id for the container
+//   - name:     form field name for the radio group
+//   - options:  available choices
+//   - selected: the Value of the currently active option
+templ Segmented(id, name string, options []SegmentOption, selected string) {
+	<div
+		id={ id }
+		class="sw-segmented"
+		role="radiogroup"
+		aria-label={ name }
+	>
+		for i, opt := range options {
+			<label
+				class={ "sw-segment", templ.KV("sw-segment--active", opt.Value == selected) }
+				if opt.Style != "" {
+					style={ opt.Style }
+				}
+			>
+				<input
+					type="radio"
+					name={ name }
+					value={ opt.Value }
+					class="sr-only"
+					if opt.Value == selected {
+						checked
+					}
+					aria-checked={ fmt.Sprintf("%t", opt.Value == selected) }
+				/>
+				<span class="sw-segment-label">
+					{ opt.Label }
+				</span>
+			</label>
+			if i < len(options) - 1 {
+				<span class="sw-segment-divider" aria-hidden="true"></span>
+			}
+		}
+	</div>
+	// Event delegation: a single listener handles all radio changes within
+	// this segmented control. Updates the active class on the parent label
+	// and dispatches a bubbling "segmented:changed" custom event.
+	<script>
+		(function() {
+			var el = document.getElementById(document.currentScript.previousElementSibling.id);
+			if (!el || el.dataset.swInit) return;
+			el.dataset.swInit = "1";
+			el.addEventListener("change", function(e) {
+				if (e.target.type !== "radio") return;
+				el.querySelectorAll(".sw-segment").forEach(function(s) {
+					s.classList.remove("sw-segment--active");
+				});
+				e.target.closest(".sw-segment").classList.add("sw-segment--active");
+				// Update aria-checked on all radios in the group
+				el.querySelectorAll('input[type="radio"]').forEach(function(r) {
+					r.setAttribute("aria-checked", r.checked ? "true" : "false");
+				});
+				el.dispatchEvent(new CustomEvent("segmented:changed", {
+					bubbles: true,
+					detail: { name: e.target.name, value: e.target.value }
+				}));
+			});
+		})();
+	</script>
+}
