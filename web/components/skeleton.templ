@@ -1,0 +1,85 @@
+package components
+
+// SkeletonCard renders a card-shaped loading placeholder with a shimmer effect.
+// Use in place of content cards while data is being fetched.
+templ SkeletonCard() {
+	<div
+		class="sw-skeleton sw-skeleton-card rounded-lg"
+		aria-hidden="true"
+	>
+	</div>
+}
+
+// SkeletonRow renders a table-row-shaped loading placeholder with a shimmer effect.
+// Use in place of table rows while data is being fetched.
+templ SkeletonRow() {
+	<div
+		class="sw-skeleton sw-skeleton-row rounded"
+		aria-hidden="true"
+	>
+	</div>
+}
+
+// SkeletonText renders a block of text-line placeholders with a shimmer effect.
+// The lines parameter controls how many lines to render.
+templ SkeletonText(lines int) {
+	<div
+		class="flex flex-col gap-2"
+		aria-hidden="true"
+	>
+		for i := range lines {
+			if i == lines-1 {
+				// Last line is shorter for a natural look
+				<div class="sw-skeleton sw-skeleton-text-short rounded"></div>
+			} else {
+				<div class="sw-skeleton sw-skeleton-text rounded"></div>
+			}
+		}
+	</div>
+}
+
+// Spinner renders an inline loading spinner.
+// When reduced motion is active (via prefers-reduced-motion or data-motion="on"),
+// the spinner displays a static loading indicator instead of animating.
+templ Spinner() {
+	<span
+		class="sw-spinner inline-flex items-center justify-center"
+		role="status"
+		aria-label="Loading"
+	>
+		// Animated spinner (hidden when reduced motion is active)
+		<svg
+			class="sw-spinner-animated h-5 w-5"
+			viewBox="0 0 24 24"
+			fill="none"
+			xmlns="http://www.w3.org/2000/svg"
+		>
+			<circle
+				class="opacity-25"
+				cx="12"
+				cy="12"
+				r="10"
+				stroke="currentColor"
+				stroke-width="3"
+			></circle>
+			<path
+				class="opacity-75"
+				fill="currentColor"
+				d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+			></path>
+		</svg>
+		// Static icon (shown only when reduced motion is active)
+		<svg
+			class="sw-spinner-static h-5 w-5 hidden"
+			viewBox="0 0 24 24"
+			fill="none"
+			stroke="currentColor"
+			stroke-width="2"
+			xmlns="http://www.w3.org/2000/svg"
+		>
+			<circle cx="12" cy="12" r="10" class="opacity-25"></circle>
+			<path class="opacity-75" d="M12 6v6l4 2" stroke-linecap="round" stroke-linejoin="round"></path>
+		</svg>
+		<span class="sr-only">Loading...</span>
+	</span>
+}

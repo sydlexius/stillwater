@@ -8,8 +8,10 @@ package components
 import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
-// ErrorToast renders a dismissible toast notification.
-// Level should be "error", "warning", or "success".
+// ErrorToast renders a server-rendered fallback toast notification using the
+// sw-glass treatment and left-border color coding. Level should be "error",
+// "warning", or "success". The toast renders inline where placed and
+// auto-dismisses after 5 seconds via a local script tag.
 func ErrorToast(level, message string) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -31,10 +33,10 @@ func ErrorToast(level, message string) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		var templ_7745c5c3_Var2 = []any{"fixed top-4 right-4 z-50 flex items-center gap-3 rounded-lg px-4 py-3 text-sm shadow-lg transition-opacity duration-300",
-			templ.KV("bg-red-50 dark:bg-red-900/50 text-red-800 dark:text-red-200 border border-red-200 dark:border-red-800", level == "error"),
-			templ.KV("bg-yellow-50 dark:bg-yellow-900/50 text-yellow-800 dark:text-yellow-200 border border-yellow-200 dark:border-yellow-800", level == "warning"),
-			templ.KV("bg-green-50 dark:bg-green-900/50 text-green-800 dark:text-green-200 border border-green-200 dark:border-green-800", level == "success"),
+		var templ_7745c5c3_Var2 = []any{"sw-glass flex items-center gap-3 rounded-lg px-4 py-3 text-sm shadow-lg transition-opacity duration-300 border-l-4",
+			templ.KV("border-l-red-500 text-red-800 dark:text-red-200", level == "error"),
+			templ.KV("border-l-amber-500 text-amber-800 dark:text-amber-200", level == "warning"),
+			templ.KV("border-l-emerald-500 text-emerald-800 dark:text-emerald-200", level == "success"),
 		}
 		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var2...)
 		if templ_7745c5c3_Err != nil {
@@ -53,20 +55,20 @@ func ErrorToast(level, message string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "\"><span>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "\" style=\"border-left-width: 4px\"><span class=\"flex-1\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var4 string
 		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(message)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/error_toast.templ`, Line: 15, Col: 17}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/components/error_toast.templ`, Line: 18, Col: 32}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</span> <button onclick=\"this.parentElement.remove()\" class=\"ml-2 font-bold opacity-70 hover:opacity-100\">&times;</button></div><script>\n\t\tsetTimeout(function() {\n\t\t\tvar el = document.getElementById('error-toast');\n\t\t\tif (el) {\n\t\t\t\tel.style.opacity = '0';\n\t\t\t\tsetTimeout(function() { el.remove(); }, 300);\n\t\t\t}\n\t\t}, 5000);\n\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</span> <button type=\"button\" onclick=\"this.parentElement.remove()\" class=\"ml-2 font-bold opacity-70 hover:opacity-100 shrink-0\" aria-label=\"Dismiss notification\">&times;</button></div><script>\n\t\tsetTimeout(function() {\n\t\t\tvar el = document.getElementById('error-toast');\n\t\t\tif (el) {\n\t\t\t\tel.style.opacity = '0';\n\t\t\t\tsetTimeout(function() { el.remove(); }, 300);\n\t\t\t}\n\t\t}, 5000);\n\t</script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

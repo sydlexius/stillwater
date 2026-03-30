@@ -107,7 +107,282 @@ templ Layout(title string, assets AssetPaths) {
 			<script src={ assets.PreferencesJS }></script>
 			<script src={ assets.SidebarJS }></script>
 			<script src={ assets.HelpJS }></script>
-			<div id="error-toast-container" class="fixed top-4 right-4 z-50 flex flex-col gap-2 w-80"></div>
+			<div id="error-toast-container" class="fixed top-4 right-4 z-50 flex flex-col gap-2 w-80" role="status" aria-live="polite"></div>
+			<script>
+				// -- Toast Manager -----------------------------------------------
+				// Provides grouping (same type+message within 2s collapses into a
+				// count badge), a max of 3 visible toasts with queueing, and glass
+				// treatment via the sw-glass CSS class.
+				(function() {
+					var MAX_VISIBLE = 3;
+					var GROUP_WINDOW_MS = 2000;
+
+					// Each entry: { el, type, msg, count, countEl, dismissTimer, ticker, removeTimeout }
+					var visible = [];
+					var queue = [];
+
+					function getContainer() {
+						return document.getElementById('error-toast-container');
+					}
+
+					// Find a visible or queued toast with same type and message that
+					// arrived within the grouping window.
+					function findGroupable(type, msg) {
+						var now = Date.now();
+						var all = visible.concat(queue);
+						for (var i = 0; i < all.length; i++) {
+							var t = all[i];
+							if (t.type === type && t.msg === msg && (now - t.createdAt) < GROUP_WINDOW_MS) {
+								return t;
+							}
+						}
+						return null;
+					}
+
+					function updateCountBadge(entry) {
+						if (!entry.countEl) {
+							entry.countEl = document.createElement('span');
+							entry.countEl.className = 'inline-flex items-center justify-center ml-1.5 min-w-[20px] h-5 rounded-full px-1.5 text-xs font-semibold tabular-nums bg-white/20 text-current';
+							entry.countEl.setAttribute('aria-label', 'Grouped notification count');
+							// Insert count badge after the message span.
+							var msgSpan = entry.el.querySelector('span');
+							if (msgSpan && msgSpan.nextSibling) {
+								entry.el.insertBefore(entry.countEl, msgSpan.nextSibling);
+							} else {
+								entry.el.appendChild(entry.countEl);
+							}
+						}
+						entry.countEl.textContent = entry.count;
+						entry.countEl.setAttribute('aria-label', 'Notification repeated ' + entry.count + ' times');
+					}
+
+					function removeFromVisible(entry) {
+						var idx = visible.indexOf(entry);
+						if (idx !== -1) visible.splice(idx, 1);
+						// Pop from queue if space available.
+						while (queue.length > 0 && visible.length < MAX_VISIBLE) {
+							var next = queue.shift();
+							appendToast(next);
+						}
+					}
+
+					function dismissToast(entry) {
+						if (entry.dismissTimer) clearTimeout(entry.dismissTimer);
+						if (entry.ticker) clearInterval(entry.ticker);
+						entry.el.style.opacity = '0';
+						entry.removeTimeout = setTimeout(function() {
+							if (entry.el.parentNode) entry.el.remove();
+							removeFromVisible(entry);
+						}, 300);
+					}
+
+					function appendToast(entry) {
+						var container = getContainer();
+						if (!container) return;
+						visible.push(entry);
+						container.appendChild(entry.el);
+						// Start auto-dismiss timer when the toast becomes visible,
+						// not when it is created, so queued toasts do not expire
+						// before being shown.
+						if (entry.autoDismissMs && !entry.dismissTimer) {
+							entry.dismissTimer = setTimeout(function() { dismissToast(entry); }, entry.autoDismissMs);
+						}
+					}
+
+					function colorClasses(type) {
+						switch (type) {
+							case 'error':
+								return 'border-l-4 border-l-red-500 text-red-800 dark:text-red-200';
+							case 'warning':
+								return 'border-l-4 border-l-amber-500 text-amber-800 dark:text-amber-200';
+							case 'success':
+								return 'border-l-4 border-l-emerald-500 text-emerald-800 dark:text-emerald-200';
+							case 'undo':
+								return 'border-l-4 border-l-blue-500 text-blue-800 dark:text-blue-200';
+							default:
+								return 'border-l-4 border-l-red-500 text-red-800 dark:text-red-200';
+						}
+					}
+
+					function createToastElement(type, msg) {
+						var toast = document.createElement('div');
+						toast.className = 'sw-glass flex items-center gap-3 rounded-lg px-4 py-3 text-sm shadow-lg transition-opacity duration-300 ' + colorClasses(type);
+						var span = document.createElement('span');
+						span.className = 'flex-1';
+						span.textContent = msg;
+						var btn = document.createElement('button');
+						btn.type = 'button';
+						btn.className = 'ml-2 font-bold opacity-70 hover:opacity-100 shrink-0';
+						btn.textContent = '\u00d7';
+						btn.setAttribute('aria-label', 'Dismiss notification');
+						toast.appendChild(span);
+						toast.appendChild(btn);
+						return toast;
+					}
+
+					function enqueueToast(type, msg, autoDismissMs) {
+						// Check for groupable existing toast.
+						var existing = findGroupable(type, msg);
+						if (existing) {
+							existing.count++;
+							existing.createdAt = Date.now();
+							updateCountBadge(existing);
+							// Reset auto-dismiss timer on group update.
+							if (existing.dismissTimer) {
+								clearTimeout(existing.dismissTimer);
+								existing.dismissTimer = setTimeout(function() { dismissToast(existing); }, autoDismissMs);
+							}
+							return existing;
+						}
+
+						var el = createToastElement(type, msg);
+						var entry = {
+							el: el,
+							type: type,
+							msg: msg,
+							count: 1,
+							countEl: null,
+							dismissTimer: null,
+							ticker: null,
+							removeTimeout: null,
+							createdAt: Date.now(),
+							autoDismissMs: autoDismissMs
+						};
+
+						var btn = el.querySelector('button');
+						btn.onclick = function() { dismissToast(entry); };
+
+						if (visible.length >= MAX_VISIBLE) {
+							queue.push(entry);
+						} else {
+							appendToast(entry);
+						}
+						return entry;
+					}
+
+					// -- Public API (backwards compatible) --
+					window.showToast = function(msg) {
+						enqueueToast('error', msg, 5000);
+					};
+					window.showSuccessToast = function(msg) {
+						enqueueToast('success', msg, 5000);
+					};
+					window.showWarningToast = function(msg) {
+						enqueueToast('warning', msg, 8000);
+					};
+
+					// showUndoToast: success-like toast with an Undo button and countdown.
+					// Not subject to grouping (each undo action is unique).
+					window.showUndoToast = function(msg, undoID, undoSeconds, csrfToken) {
+						var container = getContainer();
+						if (!container) return;
+
+						var toast = document.createElement('div');
+						toast.className = 'sw-glass flex items-center gap-3 rounded-lg px-4 py-3 text-sm shadow-lg border-l-4 border-l-blue-500 text-blue-800 dark:text-blue-200 transition-opacity duration-300';
+
+						var msgSpan = document.createElement('span');
+						msgSpan.className = 'flex-1';
+						msgSpan.textContent = msg;
+
+						var countSpan = document.createElement('span');
+						countSpan.className = 'ml-1 tabular-nums opacity-80';
+						countSpan.textContent = '(' + undoSeconds + 's)';
+
+						var undoBtn = document.createElement('button');
+						undoBtn.type = 'button';
+						undoBtn.className = 'ml-auto rounded border border-blue-400/50 px-2 py-0.5 text-xs font-semibold hover:bg-white/10 transition-colors';
+						undoBtn.textContent = 'Undo';
+						undoBtn.setAttribute('aria-label', 'Undo applied fix');
+
+						var closeBtn = document.createElement('button');
+						closeBtn.type = 'button';
+						closeBtn.className = 'font-bold opacity-70 hover:opacity-100 shrink-0';
+						closeBtn.textContent = '\u00d7';
+						closeBtn.setAttribute('aria-label', 'Close notification');
+
+						toast.appendChild(msgSpan);
+						toast.appendChild(countSpan);
+						toast.appendChild(undoBtn);
+						toast.appendChild(closeBtn);
+
+						var entry = {
+							el: toast,
+							type: 'undo',
+							msg: msg,
+							count: 1,
+							countEl: null,
+							dismissTimer: null,
+							ticker: null,
+							removeTimeout: null,
+							createdAt: Date.now()
+						};
+
+						// Countdown ticker.
+						var remaining = undoSeconds;
+						entry.ticker = setInterval(function() {
+							remaining--;
+							if (remaining <= 0) {
+								clearInterval(entry.ticker);
+								countSpan.textContent = '';
+							} else {
+								countSpan.textContent = '(' + remaining + 's)';
+							}
+						}, 1000);
+
+						entry.dismissTimer = setTimeout(function() { dismissToast(entry); }, undoSeconds * 1000);
+
+						function dismissNow() {
+							dismissToast(entry);
+						}
+
+						closeBtn.onclick = dismissNow;
+
+						undoBtn.onclick = function() {
+							undoBtn.disabled = true;
+							undoBtn.textContent = 'Undoing...';
+							var bpEl = document.querySelector('meta[name="htmx-base-path"]');
+							var bp = bpEl ? bpEl.content : '';
+							fetch(bp + '/api/v1/fix-undo/' + encodeURIComponent(undoID), {
+								method: 'POST',
+								headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
+								credentials: 'same-origin'
+							}).then(function(resp) {
+								if (!resp.ok) {
+									return resp.json().then(function(d) {
+										throw new Error(d.error || 'HTTP ' + resp.status);
+									});
+								}
+								return resp.json();
+							}).then(function() {
+								dismissNow();
+								if (typeof showSuccessToast === 'function') showSuccessToast('Fix reverted');
+								if (typeof reloadNotificationsTable === 'function') reloadNotificationsTable();
+							}).catch(function(err) {
+								dismissNow();
+								if (typeof showToast === 'function') showToast('Undo failed: ' + (err.message || 'Unknown error'));
+							});
+						};
+
+						// Undo toasts show immediately because they are time-sensitive,
+						// but respect MAX_VISIBLE to prevent unbounded stacking during
+						// rapid fix-all. If at capacity, dismiss the oldest non-undo
+						// visible toast to make room.
+						if (visible.length >= MAX_VISIBLE) {
+							var idx = -1;
+							for (var i = 0; i < visible.length; i++) {
+								if (visible[i].type !== 'undo') {
+									idx = i;
+									break;
+								}
+							}
+							if (idx === -1) idx = 0; // all undo -- dismiss oldest
+							dismissToast(visible[idx]);
+						}
+						visible.push(entry);
+						container.appendChild(toast);
+					};
+				})();
+			</script>
 			<script>
 				// Theme toggle: cycles Light -> Dark -> System.
 				// Uses the preferences API (via swPreferences) as the single source
@@ -155,145 +430,6 @@ templ Layout(title string, assets AssetPaths) {
 				document.body.addEventListener('htmx:timeout', function() {
 					showToast('Request timed out. Please try again.');
 				});
-				function showToast(msg) {
-					var container = document.getElementById('error-toast-container');
-					var toast = document.createElement('div');
-					toast.className = 'flex items-center gap-3 rounded-lg px-4 py-3 text-sm shadow-lg bg-red-50 dark:bg-red-900/50 text-red-800 dark:text-red-200 border border-red-200 dark:border-red-800 transition-opacity duration-300';
-					var span = document.createElement('span');
-					span.textContent = msg;
-					var btn = document.createElement('button');
-					btn.className = 'ml-2 font-bold opacity-70 hover:opacity-100';
-					btn.textContent = '\u00d7';
-					btn.onclick = function() { toast.remove(); };
-					toast.appendChild(span);
-					toast.appendChild(btn);
-					container.appendChild(toast);
-					setTimeout(function() {
-						toast.style.opacity = '0';
-						setTimeout(function() { toast.remove(); }, 300);
-					}, 5000);
-				}
-				function showSuccessToast(msg) {
-					var container = document.getElementById('error-toast-container');
-					var toast = document.createElement('div');
-					toast.className = 'flex items-center gap-3 rounded-lg px-4 py-3 text-sm shadow-lg bg-green-50 dark:bg-green-900/50 text-green-800 dark:text-green-200 border border-green-200 dark:border-green-800 transition-opacity duration-300';
-					var span = document.createElement('span');
-					span.textContent = msg;
-					var btn = document.createElement('button');
-					btn.className = 'ml-2 font-bold opacity-70 hover:opacity-100';
-					btn.textContent = '\u00d7';
-					btn.onclick = function() { toast.remove(); };
-					toast.appendChild(span);
-					toast.appendChild(btn);
-					container.appendChild(toast);
-					setTimeout(function() {
-						toast.style.opacity = '0';
-						setTimeout(function() { toast.remove(); }, 300);
-					}, 5000);
-				}
-				function showWarningToast(msg) {
-					var container = document.getElementById('error-toast-container');
-					var toast = document.createElement('div');
-					toast.className = 'flex items-center gap-3 rounded-lg px-4 py-3 text-sm shadow-lg bg-amber-50 dark:bg-amber-900/50 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-800 transition-opacity duration-300';
-					var span = document.createElement('span');
-					span.textContent = msg;
-					var btn = document.createElement('button');
-					btn.className = 'ml-2 font-bold opacity-70 hover:opacity-100';
-					btn.textContent = '\u00d7';
-					btn.onclick = function() { toast.remove(); };
-					toast.appendChild(span);
-					toast.appendChild(btn);
-					container.appendChild(toast);
-					setTimeout(function() {
-						toast.style.opacity = '0';
-						setTimeout(function() { toast.remove(); }, 300);
-					}, 8000);
-				}
-				// showUndoToast displays a success toast with an Undo button and a
-				// countdown indicator. The countdown mirrors the server-side undo
-				// window (undoSeconds). Clicking Undo calls the undo endpoint.
-				function showUndoToast(msg, undoID, undoSeconds, csrfToken) {
-					var container = document.getElementById('error-toast-container');
-					var toast = document.createElement('div');
-					toast.className = 'flex items-center gap-3 rounded-lg px-4 py-3 text-sm shadow-lg bg-green-50 dark:bg-green-900/50 text-green-800 dark:text-green-200 border border-green-200 dark:border-green-800 transition-opacity duration-300';
-
-					var msgSpan = document.createElement('span');
-					msgSpan.textContent = msg;
-
-					var countSpan = document.createElement('span');
-					countSpan.className = 'ml-1 tabular-nums text-green-600 dark:text-green-300';
-					countSpan.textContent = '(' + undoSeconds + 's)';
-
-					var undoBtn = document.createElement('button');
-					undoBtn.className = 'ml-auto rounded border border-green-400 dark:border-green-600 px-2 py-0.5 text-xs font-semibold text-green-700 dark:text-green-300 hover:bg-green-100 dark:hover:bg-green-800 transition-colors';
-					undoBtn.textContent = 'Undo';
-					undoBtn.setAttribute('aria-label', 'Undo applied fix');
-
-					var closeBtn = document.createElement('button');
-					closeBtn.className = 'font-bold opacity-70 hover:opacity-100';
-					closeBtn.textContent = '\u00d7';
-					closeBtn.setAttribute('aria-label', 'Close notification');
-
-					toast.appendChild(msgSpan);
-					toast.appendChild(countSpan);
-					toast.appendChild(undoBtn);
-					toast.appendChild(closeBtn);
-					container.appendChild(toast);
-
-					// Countdown ticker updates every second until the window expires.
-					var remaining = undoSeconds;
-					var ticker = setInterval(function() {
-						remaining--;
-						if (remaining <= 0) {
-							clearInterval(ticker);
-							countSpan.textContent = '';
-						} else {
-							countSpan.textContent = '(' + remaining + 's)';
-						}
-					}, 1000);
-
-					// Auto-dismiss after the undo window elapses.
-					var dismissTimer = setTimeout(function() {
-						clearInterval(ticker);
-						toast.style.opacity = '0';
-						setTimeout(function() { toast.remove(); }, 300);
-					}, undoSeconds * 1000);
-
-					function dismissNow() {
-						clearInterval(ticker);
-						clearTimeout(dismissTimer);
-						toast.style.opacity = '0';
-						setTimeout(function() { toast.remove(); }, 300);
-					}
-
-					closeBtn.onclick = dismissNow;
-
-					undoBtn.onclick = function() {
-						undoBtn.disabled = true;
-						undoBtn.textContent = 'Undoing...';
-						var bpEl = document.querySelector('meta[name="htmx-base-path"]');
-						var bp = bpEl ? bpEl.content : '';
-						fetch(bp + '/api/v1/fix-undo/' + encodeURIComponent(undoID), {
-							method: 'POST',
-							headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
-							credentials: 'same-origin'
-						}).then(function(resp) {
-							if (!resp.ok) {
-								return resp.json().then(function(d) {
-									throw new Error(d.error || 'HTTP ' + resp.status);
-								});
-							}
-							return resp.json();
-						}).then(function() {
-							dismissNow();
-							if (typeof showSuccessToast === 'function') showSuccessToast('Fix reverted');
-							if (typeof reloadNotificationsTable === 'function') reloadNotificationsTable();
-						}).catch(function(err) {
-							dismissNow();
-							if (typeof showToast === 'function') showToast('Undo failed: ' + (err.message || 'Unknown error'));
-						});
-					};
-				}
 				document.body.addEventListener('syncWarning', function(evt) {
 					// HTMX wraps non-object HX-Trigger payloads (including arrays) as { value: ... }.
 					// Unwrap when present; fall back to evt.detail for programmatic dispatches.
