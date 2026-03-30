@@ -350,6 +350,25 @@ func (s *Service) UpdateImageProvenance(ctx context.Context, artistID, imageType
 	return s.images.UpdateProvenance(ctx, artistID, imageType, slotIndex, phash, source, fileFormat, lastWrittenAt)
 }
 
+// GenderOptions lists the predefined gender values aligned with MusicBrainz.
+var GenderOptions = []string{"Male", "Female", "Non-binary", "Other", "Unknown"}
+
+// TypeOptions lists the predefined artist type values aligned with MusicBrainz.
+var TypeOptions = []string{"Person", "Group", "Orchestra", "Choir", "Character", "Other"}
+
+// FieldPickerOptions returns the ordered list of picker options for constrained
+// fields. It returns nil for fields that accept free-form text.
+func FieldPickerOptions(field string) []string {
+	switch field {
+	case "gender":
+		return GenderOptions
+	case "type":
+		return TypeOptions
+	default:
+		return nil
+	}
+}
+
 // IsEditableField reports whether the given field name can be updated via
 // the field-level API. This includes both direct-column fields (in
 // fieldColumnMap) and provider-ID fields (in providerFieldMap).

@@ -237,6 +237,51 @@ func TestClearProviderField(t *testing.T) {
 	}
 }
 
+// --- FieldPickerOptions ---
+
+func TestFieldPickerOptions(t *testing.T) {
+	genders := FieldPickerOptions("gender")
+	if len(genders) == 0 {
+		t.Fatal("FieldPickerOptions(gender) returned empty slice")
+	}
+	for _, want := range []string{"Male", "Female", "Non-binary", "Other", "Unknown"} {
+		found := false
+		for _, g := range genders {
+			if g == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("FieldPickerOptions(gender) missing %q", want)
+		}
+	}
+
+	types := FieldPickerOptions("type")
+	if len(types) == 0 {
+		t.Fatal("FieldPickerOptions(type) returned empty slice")
+	}
+	for _, want := range []string{"Person", "Group", "Orchestra", "Choir", "Character", "Other"} {
+		found := false
+		for _, tp := range types {
+			if tp == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("FieldPickerOptions(type) missing %q", want)
+		}
+	}
+
+	if got := FieldPickerOptions("name"); got != nil {
+		t.Errorf("FieldPickerOptions(name) = %v, want nil", got)
+	}
+	if got := FieldPickerOptions("biography"); got != nil {
+		t.Errorf("FieldPickerOptions(biography) = %v, want nil", got)
+	}
+}
+
 func TestUpdateField_NameAndSortName(t *testing.T) {
 	db := setupTestDB(t)
 	svc := NewService(db)

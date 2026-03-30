@@ -1,6 +1,7 @@
 package templates
 
 import (
+	"slices"
 	"strings"
 	"strconv"
 
@@ -40,7 +41,9 @@ templ FieldEdit(a *artist.Artist, field string) {
 			@tagFieldEdit(a, "styles", "Styles", a.Styles)
 		case "moods":
 			@tagFieldEdit(a, "moods", "Moods", a.Moods)
-		case "formed", "born", "disbanded", "died", "years_active", "type", "gender",
+		case "type", "gender":
+			@detailFieldEditSelect(a, field, fieldLabel(field), artist.FieldValueFromArtist(a, field), artist.FieldPickerOptions(field))
+		case "formed", "born", "disbanded", "died", "years_active",
 			"name", "sort_name", "disambiguation",
 			"musicbrainz_id", "audiodb_id", "discogs_id", "wikidata_id", "deezer_id":
 			@detailFieldEdit(a, field, fieldLabel(field), artist.FieldValueFromArtist(a, field))
@@ -310,6 +313,53 @@ templ detailFieldEdit(a *artist.Artist, field, label, value string) {
 					aria-label={ label }
 					class="flex-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
 				/>
+				<button type="submit" class="p-1 text-green-600 hover:text-green-700 transition-colors" title="Save" aria-label={ "Save " + label }>
+					@components.IconCheck("h-4 w-4")
+				</button>
+				<button
+					type="button"
+					class="p-1 text-gray-400 hover:text-gray-600 transition-colors"
+					title="Cancel"
+					aria-label={ "Cancel editing " + label }
+					hx-get={ "/api/v1/artists/" + a.ID + "/fields/" + field + "/display" }
+					hx-target={ "#field-" + field + "-" + a.ID }
+					hx-swap="outerHTML"
+				>
+					@components.IconXMark("h-4 w-4")
+				</button>
+			</form>
+		</dd>
+	</div>
+}
+
+// --- Provider ID fields ---
+
+// detailFieldEditSelect renders a picker field in edit mode using a <select>
+// dropdown. If the current value is not in the options list, it is shown as a
+// custom entry so it is not silently discarded.
+templ detailFieldEditSelect(a *artist.Artist, field, label, value string, options []string) {
+	<div id={ "field-" + field + "-" + a.ID }>
+		<dt class="text-gray-500 dark:text-gray-400">{ label }</dt>
+		<dd>
+			<form
+				class="flex items-center gap-1 mt-0.5"
+				hx-patch={ "/api/v1/artists/" + a.ID + "/fields/" + field }
+				hx-target={ "#field-" + field + "-" + a.ID }
+				hx-swap="outerHTML"
+			>
+				<select
+					name="value"
+					aria-label={ label }
+					class="flex-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+				>
+					<option value="" selected?={ value == "" }>Not set</option>
+					for _, opt := range options {
+						<option value={ opt } selected?={ value == opt }>{ opt }</option>
+					}
+					if value != "" && !slices.Contains(options, value) {
+						<option value={ value } selected>{ value }</option>
+					}
+				</select>
 				<button type="submit" class="p-1 text-green-600 hover:text-green-700 transition-colors" title="Save" aria-label={ "Save " + label }>
 					@components.IconCheck("h-4 w-4")
 				</button>
