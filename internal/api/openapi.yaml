@@ -426,6 +426,21 @@ components:
         shared_libraries:
           type: integer
           description: Current count of libraries whose shared-filesystem status is set by evidence
+    FilesystemBrowseResult:
+      type: object
+      required: [path, entries, parent]
+      properties:
+        path:
+          type: string
+          description: The resolved absolute path that was listed.
+        entries:
+          type: array
+          items:
+            type: string
+          description: Names of direct subdirectories within path, sorted case-insensitively. Hidden directories are excluded.
+        parent:
+          type: string
+          description: Parent directory of path. Empty string when path is the filesystem root.
     LibraryOpResult:
       type: object
       properties:
@@ -3634,6 +3649,61 @@ paths:
               schema:
                 $ref: "#/components/schemas/SharedFilesystemRecheckResult"
 
+  /filesystem/browse:
+    get:
+      tags: [Filesystem]
+      operationId: browseFilesystem
+      summary: Browse filesystem directories
+      description: >
+        Returns the direct subdirectories of the given absolute path.
+        Only directories are returned; files are excluded. Hidden directories
+        (those whose names start with a dot) are also excluded.
+        Requires administrator role.
+      parameters:
+        - name: path
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Absolute filesystem path to list. Must not be a relative path or contain traversal segments.
+      responses:
+        "200":
+          description: Directory listing
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FilesystemBrowseResult"
+        "400":
+          description: Invalid path (not absolute, traversal segments, not a directory, or symlink resolution failed)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Unauthenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Forbidden (administrator role required)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Path not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Failed to read directory
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   /settings:
     get:
       tags: [Settings]
@@ -3764,6 +3834,55 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
   /preferences/{key}:
+    get:
+      tags: [Preferences]
+      summary: Get a single user preference
+      operationId: getPreference
+      description: >
+        Returns the value of a single preference key for the authenticated user.
+        For known fixed keys the value is merged with the compiled default when no
+        row exists. For suppress_confirm_* keys a missing row returns "false".
+      parameters:
+        - name: key
+          in: path
+          required: true
+          description: >
+            A known preference key (theme, glass_intensity, etc.) or a
+            suppress_confirm_* key of the form suppress_confirm_{action} where
+            {action} contains only lowercase letters, digits, and underscores.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Preference value
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [key, value]
+                properties:
+                  key:
+                    type: string
+                  value:
+                    type: string
+        "400":
+          description: Unknown preference key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     put:
       tags: [Preferences]
       summary: Update a user preference
@@ -3772,21 +3891,12 @@ paths:
         - name: key
           in: path
           required: true
+          description: >
+            A known preference key or a suppress_confirm_* key of the form
+            suppress_confirm_{action}. suppress_confirm_* keys accept only
+            "true" or "false".
           schema:
             type: string
-            enum:
-              - theme
-              - glass_intensity
-              - sidebar_state
-              - content_width
-              - font_family
-              - font_size
-              - letter_spacing
-              - thumbnail_size
-              - reduced_motion
-              - lite_mode
-              - language
-              - notification_enabled
       requestBody:
         required: true
         content:

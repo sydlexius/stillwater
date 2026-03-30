@@ -16,6 +16,7 @@ type AssetPaths struct {
 	SessionJS      string
 	PreferencesJS  string
 	SidebarJS      string
+	FilterFlyoutJS string
 	LoginBG        string
 	// BasePath is the server.base_path prefix (e.g. "/stillwater"). Empty string
 	// when the app is deployed at the root. Never has a trailing slash.
@@ -61,6 +62,7 @@ templ Layout(title string, assets AssetPaths) {
 			// request path so sub-path deployments work without modifying each
 			// individual hx-get / hx-post attribute.
 			<meta name="htmx-base-path" content={ assets.BasePath }/>
+			<meta name="app-version" content={ assets.Version }/>
 			<script>
 				(function() {
 					var el = document.querySelector('meta[name="htmx-base-path"]');
@@ -100,12 +102,14 @@ templ Layout(title string, assets AssetPaths) {
 			@BottomTabs(assets.BasePath, assets.CurrentPath, assets.IsAdmin)
 			@components.ConfirmModal()
 			@components.FieldProviderModal()
+			@components.PathPickerModal()
 			@components.ContextMenuGlobalJS()
 			@HelpOverlay()
 			<script src={ assets.PollingJS }></script>
 			<script src={ assets.SessionJS }></script>
 			<script src={ assets.PreferencesJS }></script>
 			<script src={ assets.SidebarJS }></script>
+			<script src={ assets.FilterFlyoutJS }></script>
 			<script src={ assets.HelpJS }></script>
 			<div id="error-toast-container" class="fixed top-4 right-4 z-50 flex flex-col gap-2 w-80" role="status" aria-live="polite"></div>
 			<script>
@@ -446,7 +450,17 @@ templ Layout(title string, assets AssetPaths) {
 			<script>
 				// Confirmation modal interceptor for HTMX hx-confirm events.
 				// Replaces the native browser confirm() with a styled modal.
-				// Elements with data-confirm-key support "Don't ask again" via localStorage.
+				//
+				// Per-action suppression is stored server-side via the preferences API
+				// using the key pattern "suppress_confirm_{action}". When an element
+				// carries a data-confirm-key attribute the modal shows a "Don't ask
+				// again" toggle that, when enabled, persists the suppression to the
+				// server. On subsequent triggers the JS checks the stored preference
+				// and skips the modal if suppressed. An in-memory cache avoids
+				// repeated API calls within the same page session.
+				//
+				// Keyboard: Escape cancels, Enter confirms (unless Cancel or the toggle
+				// has focus), Tab is trapped within the modal while it is open.
 				//
 				// Also exposes window.showConfirmDialog(message, confirmKey, onConfirm)
 				// for programmatic use (e.g. when the message must be built dynamically
@@ -457,6 +471,20 @@ templ Layout(title string, assets AssetPaths) {
 					var pendingCallback = null;
 					var pendingConfirmKey = null;
 
+					// In-memory suppression cache so we only hit the API once per page
+					// load per action key.
+					var suppressionCache = {};
+
+					function csrfToken() {
+						var m = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/);
+						return m ? m[1] : '';
+					}
+
+					function basePath() {
+						var el = document.querySelector('meta[name="htmx-base-path"]');
+						return el ? el.content : '';
+					}
+
 					function getModal() {
 						if (!modal) {
 							modal = {
@@ -466,27 +494,57 @@ templ Layout(title string, assets AssetPaths) {
 								accept: document.getElementById('confirm-modal-accept'),
 								cancel: document.getElementById('confirm-modal-cancel'),
 								remember: document.getElementById('confirm-modal-remember'),
-								rememberLabel: document.getElementById('confirm-modal-remember-label'),
+								rememberWrapper: document.getElementById('confirm-modal-remember-wrapper'),
 								backdrop: document.getElementById('confirm-backdrop')
 							};
 						}
 						return modal;
 					}
 
+					var FOCUSABLE = 'button:not([disabled]),[href],input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
+
+					function trapFocus(e) {
+						var m = getModal();
+						var nodes = m.el.querySelectorAll(FOCUSABLE);
+						var focusable = Array.prototype.slice.call(nodes);
+						if (focusable.length === 0) return;
+						var first = focusable[0];
+						var last = focusable[focusable.length - 1];
+						if (e.shiftKey) {
+							if (document.activeElement === first) {
+								e.preventDefault();
+								last.focus();
+							}
+						} else {
+							if (document.activeElement === last) {
+								e.preventDefault();
+								first.focus();
+							}
+						}
+					}
+
 					function showModal(message, confirmKey, opts) {
 						var m = getModal();
 						if (opts && opts.html) {
+							// opts.html is only set by trusted internal callers; the message
+							// is always application-generated, never from user input.
 							m.message.innerHTML = message;
 						} else {
 							m.message.textContent = message;
 						}
-						m.remember.checked = false;
+						// Reset the "Don't ask again" toggle to unchecked each time.
+						if (m.remember) {
+							m.remember.checked = false;
+							m.remember.setAttribute('aria-checked', 'false');
+						}
 						if (confirmKey) {
-							m.rememberLabel.classList.remove('hidden');
+							m.rememberWrapper.classList.remove('hidden');
 						} else {
-							m.rememberLabel.classList.add('hidden');
+							m.rememberWrapper.classList.add('hidden');
 						}
 						m.el.classList.remove('hidden');
+						// Move focus to Cancel so keyboard users can dismiss immediately.
+						if (m.cancel) m.cancel.focus();
 					}
 
 					function hideModal() {
@@ -497,6 +555,66 @@ templ Layout(title string, assets AssetPaths) {
 						pendingConfirmKey = null;
 					}
 
+					// saveSuppression persists "suppress_confirm_{action}" = "true" to the
+					// preferences API. Non-fatal on failure: in-memory cache still suppresses
+					// for this session.
+					function saveSuppression(confirmKey) {
+						var prefKey = 'suppress_confirm_' + confirmKey;
+						suppressionCache[confirmKey] = true;
+						fetch(basePath() + '/api/v1/preferences/' + encodeURIComponent(prefKey), {
+							method: 'PUT',
+							credentials: 'same-origin',
+							headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken()},
+							body: JSON.stringify({value: 'true'})
+						}).then(function(resp) {
+							if (!resp.ok) {
+								console.warn('confirm-modal: failed to save suppression for ' + prefKey + ' (HTTP ' + resp.status + ')');
+							}
+						}).catch(function(err) {
+							console.warn('confirm-modal: failed to save suppression for ' + prefKey, err);
+						});
+					}
+
+					// isSuppressed checks the in-memory cache first, then queries the
+					// preferences API. Returns a Promise<bool>.
+					function isSuppressed(confirmKey) {
+						if (suppressionCache.hasOwnProperty(confirmKey)) {
+							return Promise.resolve(suppressionCache[confirmKey]);
+						}
+						var prefKey = 'suppress_confirm_' + confirmKey;
+						return fetch(basePath() + '/api/v1/preferences/' + encodeURIComponent(prefKey), {
+							credentials: 'same-origin'
+						}).then(function(resp) {
+							if (!resp.ok) return false;
+							return resp.json().then(function(data) {
+								var suppressed = !!(data && data.value === 'true');
+								suppressionCache[confirmKey] = suppressed;
+								return suppressed;
+							});
+						}).catch(function(err) {
+							console.warn('confirm-modal: failed to check suppression for ' + confirmKey, err);
+							return false;
+						});
+					}
+
+					function doConfirm() {
+						var m = getModal();
+						if (pendingEvent) {
+							var trigger = pendingEvent.detail.elt;
+							var confirmKey = trigger.getAttribute('data-confirm-key');
+							if (confirmKey && m.remember && m.remember.checked) {
+								saveSuppression(confirmKey);
+							}
+							pendingEvent.detail.issueRequest(true);
+						} else if (pendingCallback) {
+							if (pendingConfirmKey && m.remember && m.remember.checked) {
+								saveSuppression(pendingConfirmKey);
+							}
+							pendingCallback();
+						}
+						hideModal();
+					}
+
 					document.body.addEventListener('htmx:confirm', function(evt) {
 						var trigger = evt.detail.elt;
 						var question = evt.detail.question;
@@ -505,40 +623,48 @@ templ Layout(title string, assets AssetPaths) {
 						evt.preventDefault();
 
 						var confirmKey = trigger.getAttribute('data-confirm-key');
-						if (confirmKey && localStorage.getItem('ui.confirm.' + confirmKey) === 'skip') {
-							evt.detail.issueRequest(true);
-							return;
+						if (confirmKey) {
+							isSuppressed(confirmKey).then(function(suppressed) {
+								if (suppressed) {
+									evt.detail.issueRequest(true);
+									return;
+								}
+								pendingEvent = evt;
+								showModal(question, confirmKey);
+							});
+						} else {
+							pendingEvent = evt;
+							showModal(question, null);
 						}
-
-						pendingEvent = evt;
-						showModal(question, confirmKey);
 					});
 
 					document.addEventListener('click', function(e) {
-						if (e.target.id === 'confirm-modal-accept') {
-							var m = getModal();
-							if (pendingEvent) {
-								var trigger = pendingEvent.detail.elt;
-								var confirmKey = trigger.getAttribute('data-confirm-key');
-								if (confirmKey && m.remember.checked) {
-									localStorage.setItem('ui.confirm.' + confirmKey, 'skip');
-								}
-								pendingEvent.detail.issueRequest(true);
-							} else if (pendingCallback) {
-								if (pendingConfirmKey && m.remember.checked) {
-									localStorage.setItem('ui.confirm.' + pendingConfirmKey, 'skip');
-								}
-								pendingCallback();
-							}
-							hideModal();
-						} else if (e.target.id === 'confirm-modal-cancel' || e.target.id === 'confirm-backdrop') {
+						var target = e.target;
+						if (target.id === 'confirm-modal-accept' || (target.closest && target.closest('#confirm-modal-accept'))) {
+							doConfirm();
+						} else if (target.id === 'confirm-modal-cancel' || target.id === 'confirm-backdrop' ||
+								(target.closest && target.closest('#confirm-modal-cancel'))) {
 							hideModal();
 						}
 					});
 
 					document.addEventListener('keydown', function(e) {
-						if (e.key === 'Escape' && (pendingEvent || pendingCallback)) {
+						var m = getModal();
+						var isOpen = m && m.el && !m.el.classList.contains('hidden') && (pendingEvent || pendingCallback);
+						if (!isOpen) return;
+
+						if (e.key === 'Escape') {
 							hideModal();
+						} else if (e.key === 'Enter') {
+							// Do not confirm if Cancel button or the toggle input has focus.
+							var active = document.activeElement;
+							if (active && (active.id === 'confirm-modal-cancel' || active.id === 'confirm-modal-remember')) {
+								return;
+							}
+							e.preventDefault();
+							doConfirm();
+						} else if (e.key === 'Tab') {
+							trapFocus(e);
 						}
 					});
 
@@ -546,13 +672,21 @@ templ Layout(title string, assets AssetPaths) {
 					// If the user previously chose "Don't ask again" for this key,
 					// onConfirm is called immediately without showing the modal.
 					window.showConfirmDialog = function(message, confirmKey, onConfirm, opts) {
-						if (confirmKey && localStorage.getItem('ui.confirm.' + confirmKey) === 'skip') {
-							onConfirm();
-							return;
+						if (confirmKey) {
+							isSuppressed(confirmKey).then(function(suppressed) {
+								if (suppressed) {
+									onConfirm();
+									return;
+								}
+								pendingCallback = onConfirm;
+								pendingConfirmKey = confirmKey;
+								showModal(message, confirmKey, opts);
+							});
+						} else {
+							pendingCallback = onConfirm;
+							pendingConfirmKey = null;
+							showModal(message, null, opts);
 						}
-						pendingCallback = onConfirm;
-						pendingConfirmKey = confirmKey;
-						showModal(message, confirmKey, opts);
 					};
 				})();
 			</script>

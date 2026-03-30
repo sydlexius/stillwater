@@ -1,7 +1,10 @@
 package api
 
 import (
+	"database/sql"
+	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
 )
@@ -21,6 +24,12 @@ const (
 	PrefLiteMode            = "lite_mode"
 	PrefLanguage            = "language"
 	PrefNotificationEnabled = "notification_enabled"
+
+	// PrefSuppressConfirmPrefix is the prefix for per-action confirm suppression
+	// preferences. Keys have the form "suppress_confirm_{action}" and accept
+	// "true" or "false". These are not listed in preferenceDefaults because they
+	// are created dynamically by the UI as the user opts out of specific dialogs.
+	PrefSuppressConfirmPrefix = "suppress_confirm_"
 )
 
 // preferenceDef describes a valid preference key, its default value, and allowed values.
@@ -60,6 +69,68 @@ func init() {
 			panic("preference " + key + ": default value " + def.defaultValue + " not in allowed values")
 		}
 	}
+}
+
+// isSuppressConfirmKey reports whether key is a valid per-action confirm
+// suppression preference (prefix "suppress_confirm_" followed by at least one
+// character that is a lowercase letter, digit, or underscore).
+func isSuppressConfirmKey(key string) bool {
+	if !strings.HasPrefix(key, PrefSuppressConfirmPrefix) {
+		return false
+	}
+	action := key[len(PrefSuppressConfirmPrefix):]
+	if len(action) == 0 {
+		return false
+	}
+	for _, c := range action {
+		if (c < 'a' || c > 'z') && (c < '0' || c > '9') && c != '_' {
+			return false
+		}
+	}
+	return true
+}
+
+// handleGetPreference returns a single preference for the authenticated user.
+// For fixed preference keys the value is merged with the compiled default.
+// For suppress_confirm_* keys a missing row returns "false".
+// GET /api/v1/preferences/{key}
+func (r *Router) handleGetPreference(w http.ResponseWriter, req *http.Request) {
+	userID := middleware.UserIDFromContext(req.Context())
+	if userID == "" {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+
+	key, ok := RequirePathParam(w, req, "key")
+	if !ok {
+		return
+	}
+
+	def, known := preferenceDefaults[key]
+	suppressKey := isSuppressConfirmKey(key)
+	if !known && !suppressKey {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unknown preference key"})
+		return
+	}
+
+	var value string
+	err := r.db.QueryRowContext(req.Context(),
+		`SELECT value FROM user_preferences WHERE user_id = ? AND key = ?`, userID, key).Scan(&value)
+	if err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
+			r.logger.Error("querying user preference", "key", key, "error", err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+			return
+		}
+		// No stored row -- use default.
+		if suppressKey {
+			value = "false"
+		} else {
+			value = def.defaultValue
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"key": key, "value": value})
 }
 
 // handleGetPreferences returns all preferences for the authenticated user,
@@ -124,7 +195,8 @@ func (r *Router) handleUpdatePreference(w http.ResponseWriter, req *http.Request
 	}
 
 	def, known := preferenceDefaults[key]
-	if !known {
+	suppressKey := isSuppressConfirmKey(key)
+	if !known && !suppressKey {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unknown preference key"})
 		return
 	}
@@ -137,11 +209,16 @@ func (r *Router) handleUpdatePreference(w http.ResponseWriter, req *http.Request
 	}
 
 	// Validate value against allowed list.
-	valid := false
-	for _, allowed := range def.allowedValues {
-		if body.Value == allowed {
-			valid = true
-			break
+	// suppress_confirm_* keys only accept "true" or "false".
+	var valid bool
+	if suppressKey {
+		valid = body.Value == "true" || body.Value == "false"
+	} else {
+		for _, allowed := range def.allowedValues {
+			if body.Value == allowed {
+				valid = true
+				break
+			}
 		}
 	}
 	if !valid {

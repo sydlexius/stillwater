@@ -40,19 +40,20 @@ func (r *Router) handleHealth(w http.ResponseWriter, req *http.Request) {
 // templates can construct correct absolute URLs in sub-path deployments.
 func (r *Router) assets() templates.AssetPaths {
 	return templates.AssetPaths{
-		CSS:           r.basePath + r.staticAssets.Path("/css/styles.css"),
-		HTMX:          r.basePath + r.staticAssets.Path("/js/htmx.min.js"),
-		CropperJS:     r.basePath + r.staticAssets.Path("/js/cropper.min.js"),
-		CropperCSS:    r.basePath + r.staticAssets.Path("/css/cropper.min.css"),
-		ChartJS:       r.basePath + r.staticAssets.Path("/js/chart.min.js"),
-		SortableJS:    r.basePath + r.staticAssets.Path("/js/Sortable.min.js"),
-		HelpJS:        r.basePath + r.staticAssets.Path("/js/help.js"),
-		PollingJS:     r.basePath + r.staticAssets.Path("/js/polling.js"),
-		SessionJS:     r.basePath + r.staticAssets.Path("/js/session.js"),
-		PreferencesJS: r.basePath + r.staticAssets.Path("/js/preferences.js"),
-		SidebarJS:     r.basePath + r.staticAssets.Path("/js/sidebar.js"),
-		LoginBG:       r.basePath + r.staticAssets.Path("/img/login-bg.jpg"),
-		BasePath:      r.basePath,
+		CSS:            r.basePath + r.staticAssets.Path("/css/styles.css"),
+		HTMX:           r.basePath + r.staticAssets.Path("/js/htmx.min.js"),
+		CropperJS:      r.basePath + r.staticAssets.Path("/js/cropper.min.js"),
+		CropperCSS:     r.basePath + r.staticAssets.Path("/css/cropper.min.css"),
+		ChartJS:        r.basePath + r.staticAssets.Path("/js/chart.min.js"),
+		SortableJS:     r.basePath + r.staticAssets.Path("/js/Sortable.min.js"),
+		HelpJS:         r.basePath + r.staticAssets.Path("/js/help.js"),
+		PollingJS:      r.basePath + r.staticAssets.Path("/js/polling.js"),
+		SessionJS:      r.basePath + r.staticAssets.Path("/js/session.js"),
+		PreferencesJS:  r.basePath + r.staticAssets.Path("/js/preferences.js"),
+		SidebarJS:      r.basePath + r.staticAssets.Path("/js/sidebar.js"),
+		FilterFlyoutJS: r.basePath + r.staticAssets.Path("/js/filter-flyout.js"),
+		LoginBG:        r.basePath + r.staticAssets.Path("/img/login-bg.jpg"),
+		BasePath:       r.basePath,
 	}
 }
 
@@ -1233,5 +1234,41 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(v); err != nil {
 		http.Error(w, "encode error", http.StatusInternalServerError)
+	}
+}
+
+// handle404 serves the custom 404 error page for unmatched routes.
+// JSON API clients (Accept: application/json or /api/ path prefix) and HTMX
+// partial requests (HX-Request: true) receive a JSON error body so they are
+// not served a full HTML document in a swap target.
+func (r *Router) handle404(w http.ResponseWriter, req *http.Request) {
+	isJSON := strings.Contains(req.Header.Get("Accept"), "application/json")
+	isHTMX := req.Header.Get("HX-Request") == "true"
+	isAPI := strings.HasPrefix(req.URL.Path, r.basePath+"/api/")
+	if isJSON || isHTMX || isAPI {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusNotFound)
+	if err := templates.Error404Page(r.assetsFor(req)).Render(req.Context(), w); err != nil {
+		r.logger.Error("rendering 404 page", "error", err)
+		// Headers already sent; cannot write a different status.
+	}
+}
+
+// ServeError500 renders the custom 500 error page. Other handlers can call
+// this helper instead of http.Error when an unexpected internal error occurs
+// and the request was a browser navigation (not a JSON API call).
+func (r *Router) ServeError500(w http.ResponseWriter, req *http.Request) {
+	if strings.Contains(req.Header.Get("Accept"), "application/json") {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal server error"})
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusInternalServerError)
+	if err := templates.Error500Page(r.assetsFor(req)).Render(req.Context(), w); err != nil {
+		r.logger.Error("rendering 500 page", "error", err)
+		// Headers already sent; cannot write a different status.
 	}
 }

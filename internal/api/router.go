@@ -218,6 +218,7 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("DELETE "+bp+"/api/v1/auth/tokens/{id}/permanent", wrapAuth(r.handleDeleteAPIToken, authMw))
 	// User preferences routes (per-user, no admin required)
 	mux.HandleFunc("GET "+bp+"/api/v1/preferences", wrapAuth(r.handleGetPreferences, authMw))
+	mux.HandleFunc("GET "+bp+"/api/v1/preferences/{key}", wrapAuth(r.handleGetPreference, authMw))
 	mux.HandleFunc("PUT "+bp+"/api/v1/preferences/{key}", wrapAuth(r.handleUpdatePreference, authMw))
 	// User management routes (multi-user gate + admin role required)
 	mux.HandleFunc("POST "+bp+"/api/v1/users/invites", wrapAuth(requireMultiUser(middleware.RequireAdmin(r.handleCreateInvite)), authMw))
@@ -314,6 +315,8 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("GET "+bp+"/api/v1/shared-filesystem/status", wrapAuth(middleware.RequireAdmin(r.handleSharedFilesystemStatus), authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/shared-filesystem/dismiss", wrapAuth(middleware.RequireAdmin(r.handleSharedFilesystemDismiss), authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/shared-filesystem/recheck", wrapAuth(middleware.RequireAdmin(r.handleSharedFilesystemRecheck), authMw))
+	// Filesystem browse route (admin only) -- used by the path picker modal
+	mux.HandleFunc("GET "+bp+"/api/v1/filesystem/browse", wrapAuth(middleware.RequireAdmin(r.handleFilesystemBrowse), authMw))
 
 	// Provider routes (key config requires admin; search/fetch are operator-accessible)
 	mux.HandleFunc("GET "+bp+"/api/v1/providers", wrapAuth(middleware.RequireAdmin(r.handleListProviders), authMw))
@@ -478,6 +481,11 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	} else if v := os.Getenv("SW_PPROF"); v != "" {
 		r.logger.Warn("SW_PPROF is set but not recognized; use '1' or 'true' to enable", "value", v)
 	}
+
+	// Catch-all: unmatched routes render the custom 404 page. Registered last
+	// so all explicit routes above take precedence. Uses optional auth so the
+	// sidebar can show the logged-in state when the user is authenticated.
+	mux.HandleFunc(bp+"/{path...}", wrapOptionalAuth(r.handle404, optAuthMw))
 
 	// Apply middleware chain: security headers > logging > CSRF
 	// Login and setup are exempt from CSRF (registered with rate limiter above)
