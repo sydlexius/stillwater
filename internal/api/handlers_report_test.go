@@ -799,14 +799,7 @@ ctx := context.Background()
 
 a := addTestArtist(t, artistSvc, "Stats Artist")
 
-// Run evaluation to populate rule_results.
-req := httptest.NewRequest(http.MethodGet, "/api/v1/artists/"+a.ID+"/health", nil)
-w := httptest.NewRecorder()
-r.handleEvaluateArtist(w, req.WithContext(
-// inject path param manually via chi-style context (uses standard http path values)
-req.WithContext(req.Context()),
-))
-// Use test DB to insert a rule_result directly for simplicity.
+// Insert a rule_result directly for deterministic test setup.
 db := r.db
 _, err := db.ExecContext(ctx, `
 INSERT INTO rule_results (artist_id, rule_id, passed, evaluated_at)
