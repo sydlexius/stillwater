@@ -89,6 +89,8 @@ func fieldLabel(field string) string {
 		return "Type"
 	case "gender":
 		return "Gender"
+	case "country":
+		return "Country"
 	case "members":
 		return "Members"
 	case "name":

@@ -153,6 +153,7 @@ CREATE TABLE IF NOT EXISTS artists (
     sort_name TEXT,
     type TEXT NOT NULL DEFAULT '',
     gender TEXT NOT NULL DEFAULT '',
+    country TEXT NOT NULL DEFAULT '',
     disambiguation TEXT NOT NULL DEFAULT '',
     genres TEXT NOT NULL DEFAULT '[]',
     styles TEXT NOT NULL DEFAULT '[]',

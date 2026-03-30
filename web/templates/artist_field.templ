@@ -21,7 +21,7 @@ templ FieldDisplay(a *artist.Artist, field string, providers []string) {
 			@tagFieldDisplay(a, "styles", "Styles", a.Styles, "bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200", providers)
 		case "moods":
 			@tagFieldDisplay(a, "moods", "Moods", a.Moods, "bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200", providers)
-		case "formed", "born", "disbanded", "died", "years_active", "type", "gender",
+		case "formed", "born", "disbanded", "died", "years_active", "type", "gender", "country",
 			"name", "sort_name", "disambiguation":
 			@detailFieldDisplay(a, field, fieldLabel(field), artist.FieldValueFromArtist(a, field), providers)
 		case "musicbrainz_id", "audiodb_id", "discogs_id", "wikidata_id", "deezer_id":
@@ -40,7 +40,7 @@ templ FieldEdit(a *artist.Artist, field string) {
 			@tagFieldEdit(a, "styles", "Styles", a.Styles)
 		case "moods":
 			@tagFieldEdit(a, "moods", "Moods", a.Moods)
-		case "formed", "born", "disbanded", "died", "years_active", "type", "gender",
+		case "formed", "born", "disbanded", "died", "years_active", "type", "gender", "country",
 			"name", "sort_name", "disambiguation",
 			"musicbrainz_id", "audiodb_id", "discogs_id", "wikidata_id", "deezer_id":
 			@detailFieldEdit(a, field, fieldLabel(field), artist.FieldValueFromArtist(a, field))

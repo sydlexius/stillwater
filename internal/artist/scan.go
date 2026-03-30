@@ -9,7 +9,7 @@ import (
 
 // artistColumns is the ordered list of columns for SELECT queries.
 // Provider IDs are stored in artist_provider_ids, image metadata in artist_images.
-const artistColumns = `id, name, sort_name, type, gender, disambiguation,
+const artistColumns = `id, name, sort_name, type, gender, country, disambiguation,
 	genres, styles, moods,
 	years_active, born, formed, died, disbanded, biography,
 	path, library_id, nfo_exists,
@@ -50,7 +50,7 @@ type scannedArtist struct {
 // scanPtrs returns the ordered slice of pointers matching artistColumns.
 func (s *scannedArtist) scanPtrs() []any {
 	return []any{
-		&s.a.ID, &s.a.Name, &s.a.SortName, &s.a.Type, &s.a.Gender, &s.a.Disambiguation,
+		&s.a.ID, &s.a.Name, &s.a.SortName, &s.a.Type, &s.a.Gender, &s.a.Country, &s.a.Disambiguation,
 		&s.genres, &s.styles, &s.moods,
 		&s.a.YearsActive, &s.a.Born, &s.a.Formed, &s.a.Died, &s.a.Disbanded, &s.a.Biography,
 		&s.a.Path, &s.libraryID, &s.nfo,

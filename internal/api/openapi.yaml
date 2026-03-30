@@ -706,6 +706,8 @@ components:
           description: Artist type, e.g. "person" or "group".
         gender:
           type: string
+        country:
+          type: string
         disambiguation:
           type: string
         musicbrainz_id:

@@ -19,6 +19,7 @@ type Artist struct {
 	Type                string            `json:"type"`
 	Gender              string            `json:"gender"`
 	Disambiguation      string            `json:"disambiguation"`
+	Country             string            `json:"country"`
 	MusicBrainzID       string            `json:"musicbrainz_id"`
 	AudioDBID           string            `json:"audiodb_id"`
 	DiscogsID           string            `json:"discogs_id"`

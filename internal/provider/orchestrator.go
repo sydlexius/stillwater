@@ -455,9 +455,51 @@ func applyField(result *FetchResult, field string, pr *providerResult, source Pr
 			result.Sources = append(result.Sources, FieldSource{Field: field, Provider: source})
 			return true
 		}
+	case "type":
+		if meta.Type != "" && result.Metadata.Type == "" {
+			result.Metadata.Type = meta.Type
+			result.Sources = append(result.Sources, FieldSource{Field: field, Provider: source})
+			return true
+		}
+	case "gender":
+		if meta.Gender != "" && result.Metadata.Gender == "" {
+			result.Metadata.Gender = meta.Gender
+			result.Sources = append(result.Sources, FieldSource{Field: field, Provider: source})
+			return true
+		}
+	case "years_active":
+		if meta.YearsActive != "" && result.Metadata.YearsActive == "" {
+			result.Metadata.YearsActive = meta.YearsActive
+			result.Sources = append(result.Sources, FieldSource{Field: field, Provider: source})
+			return true
+		}
 	case "formed":
 		if meta.Formed != "" && result.Metadata.Formed == "" {
 			result.Metadata.Formed = meta.Formed
+			result.Sources = append(result.Sources, FieldSource{Field: field, Provider: source})
+			return true
+		}
+	case "disbanded":
+		if meta.Disbanded != "" && result.Metadata.Disbanded == "" {
+			result.Metadata.Disbanded = meta.Disbanded
+			result.Sources = append(result.Sources, FieldSource{Field: field, Provider: source})
+			return true
+		}
+	case "born":
+		if meta.Born != "" && result.Metadata.Born == "" {
+			result.Metadata.Born = meta.Born
+			result.Sources = append(result.Sources, FieldSource{Field: field, Provider: source})
+			return true
+		}
+	case "died":
+		if meta.Died != "" && result.Metadata.Died == "" {
+			result.Metadata.Died = meta.Died
+			result.Sources = append(result.Sources, FieldSource{Field: field, Provider: source})
+			return true
+		}
+	case "country":
+		if meta.Country != "" && result.Metadata.Country == "" {
+			result.Metadata.Country = meta.Country
 			result.Sources = append(result.Sources, FieldSource{Field: field, Provider: source})
 			return true
 		}

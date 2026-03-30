@@ -61,7 +61,7 @@ func FieldDisplay(a *artist.Artist, field string, providers []string) templ.Comp
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-		case "formed", "born", "disbanded", "died", "years_active", "type", "gender",
+		case "formed", "born", "disbanded", "died", "years_active", "type", "gender", "country",
 			"name", "sort_name", "disambiguation":
 			templ_7745c5c3_Err = detailFieldDisplay(a, field, fieldLabel(field), artist.FieldValueFromArtist(a, field), providers).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
@@ -120,7 +120,7 @@ func FieldEdit(a *artist.Artist, field string) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-		case "formed", "born", "disbanded", "died", "years_active", "type", "gender",
+		case "formed", "born", "disbanded", "died", "years_active", "type", "gender", "country",
 			"name", "sort_name", "disambiguation",
 			"musicbrainz_id", "audiodb_id", "discogs_id", "wikidata_id", "deezer_id":
 			templ_7745c5c3_Err = detailFieldEdit(a, field, fieldLabel(field), artist.FieldValueFromArtist(a, field)).Render(ctx, templ_7745c5c3_Buffer)
