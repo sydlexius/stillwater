@@ -242,3 +242,51 @@ func TestHandleOnboardingPage_UnidentifiedCount(t *testing.T) {
 		t.Errorf("expected data-unidentified-count=\"1\" in response body, got body:\n%s", body)
 	}
 }
+
+func TestHandleOnboardingPage_UserAuthProvider(t *testing.T) {
+	tests := []struct {
+		name          string
+		authProvider  string
+		insertUser    bool
+		wantAttribute string
+	}{
+		{"local auth", "local", true, `data-user-auth-provider="local"`},
+		{"emby federated", "emby", true, `data-user-auth-provider="emby"`},
+		{"jellyfin federated", "jellyfin", true, `data-user-auth-provider="jellyfin"`},
+		{"oidc federated", "oidc", true, `data-user-auth-provider="oidc"`},
+		{"user not found", "", false, `data-user-auth-provider=""`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create a fresh router for each test case to avoid username conflicts.
+			r := testRouterForOnboarding(t)
+			ctx := context.Background()
+
+			if tt.insertUser {
+				// Insert a test user with the specified auth provider.
+				_, err := r.db.ExecContext(ctx,
+					`INSERT INTO users (id, username, display_name, role, auth_provider, is_active, is_protected, created_at, updated_at)
+					 VALUES ('test-user-id', 'testuser', 'Test User', 'admin', ?, 1, 0, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')`,
+					tt.authProvider)
+				if err != nil {
+					t.Fatalf("inserting test user: %v", err)
+				}
+			}
+
+			req := onboardingRequest()
+			w := httptest.NewRecorder()
+
+			r.handleOnboardingPage(w, req)
+
+			if w.Code != http.StatusOK {
+				t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+			}
+
+			body := w.Body.String()
+			if !strings.Contains(body, tt.wantAttribute) {
+				t.Errorf("expected %s in response body", tt.wantAttribute)
+			}
+		})
+	}
+}

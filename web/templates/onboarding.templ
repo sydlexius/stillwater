@@ -18,6 +18,7 @@ type OnboardingData struct {
 	Connections        []connection.Connection
 	CurrentStep        int
 	UnidentifiedCount  int
+	UserAuthProvider   string // "local", "emby", "jellyfin", "oidc", etc.
 }
 
 // findConnectionByType returns the first connection matching the given type, or nil.
@@ -62,7 +63,7 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 				})();
 			</script>
 		</head>
-		<body class="h-full bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100" data-current-step={ strconv.Itoa(data.CurrentStep) } data-unidentified-count={ strconv.Itoa(data.UnidentifiedCount) }>
+		<body class="h-full bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100" data-current-step={ strconv.Itoa(data.CurrentStep) } data-unidentified-count={ strconv.Itoa(data.UnidentifiedCount) } data-user-auth-provider={ data.UserAuthProvider }>
 			<div class="flex min-h-full items-start justify-center px-4 py-8 sm:py-12">
 				<div class="w-full max-w-2xl space-y-6">
 					<div class="text-center">
@@ -201,13 +202,17 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 										required
 										class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
 									/>
-									<select
-										name="type"
-										class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-									>
-										<option value="regular">Regular</option>
-										<option value="classical">Classical</option>
-									</select>
+									<div class="flex flex-col gap-1.5">
+										<select
+											name="type"
+											class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+											onchange="syncLibraryTypeHelpText()"
+										>
+											<option value="regular">Regular</option>
+											<option value="classical">Classical</option>
+										</select>
+										<p id="ob-library-type-help" class="text-xs text-gray-500 dark:text-gray-400" aria-live="polite"></p>
+									</div>
 								</div>
 								<div class="flex gap-2">
 									<button type="submit" class="text-sm px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 transition-colors">Save</button>
@@ -562,6 +567,20 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 						document.getElementById('back-btn').classList.add('hidden');
 					}
 
+					// Step 2 (platform): auto-select based on auth provider only if no platform is already selected
+					if (step === 2) {
+						var userAuthProvider = document.body.dataset.userAuthProvider;
+						if (userAuthProvider && (userAuthProvider === 'emby' || userAuthProvider === 'jellyfin')) {
+							var hasActiveCard = document.querySelector('[data-profile-card].border-blue-500') !== null;
+							if (!hasActiveCard) {
+								// Defer auto-select slightly to ensure DOM is fully updated
+								setTimeout(function() {
+									autoSelectPlatformCard(userAuthProvider);
+								}, 100);
+							}
+						}
+					}
+
 					fetch(basePath + '/api/v1/settings', {
 						method: 'PUT',
 						headers: {'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken()},
@@ -594,11 +613,33 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 					el.closest('[data-profile-card]').classList.add('border-blue-500', 'bg-blue-50', 'dark:bg-blue-900/20');
 				}
 
+				function autoSelectPlatformCard(platformId) {
+					// Validate platformId against allowlist to prevent selector injection
+					if (platformId !== 'emby' && platformId !== 'jellyfin') {
+						return;
+					}
+					var card = document.querySelector('[data-profile-card][hx-post*="/' + platformId + '/"]');
+					if (card) {
+						card.click();
+					}
+				}
+
+				function syncLibraryTypeHelpText() {
+					var selectEl = document.querySelector('#ob-library-form select[name="type"]');
+					var helpEl = document.getElementById('ob-library-type-help');
+					if (selectEl && helpEl) {
+						helpEl.textContent = selectEl.value === 'classical'
+							? 'Classical: For libraries that primarily contain classical music. Affects labeling; advanced classical features are planned for a future release.'
+							: 'Regular: Standard artist-centric library. Use this for most music collections.';
+					}
+				}
+
 				function onLibraryAfterRequest(event) {
 					var errorEl = document.getElementById('ob-library-error');
 					if (event.detail.successful) {
 						if (errorEl) errorEl.classList.add('hidden');
 						document.getElementById('ob-library-form').reset();
+						syncLibraryTypeHelpText();
 						document.getElementById('ob-library-form').classList.add('hidden');
 						document.getElementById('ob-add-library-btn').classList.remove('hidden');
 						refreshLibraryList();
@@ -1198,6 +1239,9 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 				if (currentStep !== 0) {
 					goToStep(currentStep);
 				}
+
+				// Initialize library type help text visibility on page load
+				syncLibraryTypeHelpText();
 			</script>
 		</body>
 	</html>
