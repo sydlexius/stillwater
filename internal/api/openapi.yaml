@@ -6393,6 +6393,14 @@ paths:
               properties:
                 passphrase:
                   type: string
+                export_users:
+                  type: boolean
+                  description: Include user accounts in the export. Defaults to false. Exported users have no credentials.
+                  default: false
+                export_invites:
+                  type: boolean
+                  description: Include pending (unredeemed) invites in the export. Defaults to false.
+                  default: false
               required: [passphrase]
           application/x-www-form-urlencoded:
             schema:
@@ -6400,6 +6408,14 @@ paths:
               properties:
                 passphrase:
                   type: string
+                export_users:
+                  type: boolean
+                  description: Include user accounts in the export.
+                  default: false
+                export_invites:
+                  type: boolean
+                  description: Include pending invites in the export.
+                  default: false
               required: [passphrase]
       responses:
         "200":

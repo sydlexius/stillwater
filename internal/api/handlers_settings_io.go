@@ -21,22 +21,29 @@ func (r *Router) handleSettingsExport(w http.ResponseWriter, req *http.Request) 
 
 	// Read passphrase from POST body (form-encoded or JSON)
 	var passphrase string
+	var exportOpts settingsio.ExportOptions
 	ct := req.Header.Get("Content-Type")
 	if strings.HasPrefix(ct, "application/json") {
 		var body struct {
-			Passphrase string `json:"passphrase"`
+			Passphrase    string `json:"passphrase"`
+			ExportUsers   bool   `json:"export_users"`
+			ExportInvites bool   `json:"export_invites"`
 		}
 		if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 			return
 		}
 		passphrase = body.Passphrase
+		exportOpts.ExportUsers = body.ExportUsers
+		exportOpts.ExportInvites = body.ExportInvites
 	} else {
 		if err := req.ParseForm(); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid form data"})
 			return
 		}
 		passphrase = req.FormValue("passphrase")
+		exportOpts.ExportUsers = req.FormValue("export_users") == "true"
+		exportOpts.ExportInvites = req.FormValue("export_invites") == "true"
 	}
 
 	if passphrase == "" {
@@ -44,7 +51,7 @@ func (r *Router) handleSettingsExport(w http.ResponseWriter, req *http.Request) 
 		return
 	}
 
-	envelope, err := r.settingsIOService.Export(req.Context(), passphrase)
+	envelope, err := r.settingsIOService.ExportWithOptions(req.Context(), passphrase, exportOpts)
 	if err != nil {
 		r.logger.Error("settings export failed", "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "export failed"})
@@ -150,7 +157,19 @@ func (r *Router) handleSettingsImport(w http.ResponseWriter, req *http.Request) 
 			result.ProviderKeys, result.Priorities, result.Rules, result.ScraperConfigs,
 			result.UserPreferences,
 		)
-		w.Write([]byte(html)) //nolint:errcheck,gosec // G705: all format args are %d (integers)
+		if result.Users > 0 || result.Invites > 0 {
+			html += fmt.Sprintf(
+				`<div class="text-sm text-green-600 dark:text-green-400">Users: %d, Invites: %d.</div>`,
+				result.Users, result.Invites,
+			)
+		}
+		for _, warning := range result.Warnings {
+			html += fmt.Sprintf(
+				`<div class="text-sm text-yellow-600 dark:text-yellow-400">Warning: %s</div>`,
+				warning,
+			)
+		}
+		w.Write([]byte(html)) //nolint:errcheck,gosec // G705: all format args are integers or pre-validated strings
 		return
 	}
 

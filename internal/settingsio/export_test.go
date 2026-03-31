@@ -336,9 +336,13 @@ func TestRoundTrip_WithUsersAndInvites(t *testing.T) {
 
 	svc := NewService(db, provSettings, connSvc, platSvc, whSvc)
 	passphrase := "test-users-passphrase"
-	envelope, err := svc.Export(ctx, passphrase)
+	// Use ExportWithOptions to include users and invites in the export
+	envelope, err := svc.ExportWithOptions(ctx, passphrase, ExportOptions{
+		ExportUsers:   true,
+		ExportInvites: true,
+	})
 	if err != nil {
-		t.Fatalf("Export: %v", err)
+		t.Fatalf("ExportWithOptions: %v", err)
 	}
 
 	// Import into a fresh DB with users and invites enabled
@@ -483,13 +487,23 @@ func TestImport_ScraperConfigs_Upsert(t *testing.T) {
 		t.Errorf("expected 2 scraper configs, got %d", result.ScraperConfigs)
 	}
 
-	// Verify global config was updated
+	// Verify global config was updated — compare semantically since normalizeJSONObject
+	// re-marshals (which may reorder keys).
 	var configJSON string
 	if err := db.QueryRowContext(ctx, `SELECT config_json FROM scraper_config WHERE scope = 'global'`).Scan(&configJSON); err != nil {
 		t.Fatalf("querying scraper config: %v", err)
 	}
-	if configJSON != string(newConfig) {
-		t.Errorf("expected updated config, got %s", configJSON)
+	var gotObj, wantObj any
+	if err := json.Unmarshal([]byte(configJSON), &gotObj); err != nil {
+		t.Fatalf("parsing stored config: %v", err)
+	}
+	if err := json.Unmarshal(newConfig, &wantObj); err != nil {
+		t.Fatalf("parsing expected config: %v", err)
+	}
+	gotBytes, _ := json.Marshal(gotObj)
+	wantBytes, _ := json.Marshal(wantObj)
+	if string(gotBytes) != string(wantBytes) {
+		t.Errorf("expected updated config %s, got %s", wantBytes, gotBytes)
 	}
 
 	// Verify new scope was inserted
@@ -714,10 +728,14 @@ func TestNormalizeJSONObject(t *testing.T) {
 		{json.RawMessage("null"), "{}"},
 		{json.RawMessage(`"string"`), "{}"},
 		{json.RawMessage(`[1,2,3]`), "{}"},
+		// Invalid JSON is rejected
+		{json.RawMessage(`{`), "{}"},
+		{json.RawMessage(`{not json}`), "{}"},
+		// Valid objects are accepted and re-marshaled (canonical form)
 		{json.RawMessage(`{"key":"value"}`), `{"key":"value"}`},
 		{json.RawMessage(`{}`), `{}`},
-		// Whitespace-prefixed object
-		{json.RawMessage("  {\"a\":1}"), "  {\"a\":1}"},
+		// Whitespace-prefixed valid object is accepted (whitespace dropped on re-marshal)
+		{json.RawMessage("  {\"a\":1}"), `{"a":1}`},
 	}
 	for _, tc := range cases {
 		got := normalizeJSONObject(tc.input)
@@ -844,4 +862,129 @@ func mustMarshal(t *testing.T, v any) []byte {
 		t.Fatalf("marshal: %v", err)
 	}
 	return data
+}
+
+func TestExport_DefaultExcludesUsersAndInvites(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := context.Background()
+
+	provSettings, connSvc, platSvc, whSvc := newTestServices(t, db)
+	now := time.Now().UTC().Format(time.RFC3339)
+	future := time.Now().UTC().Add(24 * time.Hour).Format(time.RFC3339)
+
+	// Seed a user and an invite
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO users (id, username, display_name, password_hash, role, auth_provider,
+		                   provider_id, is_active, is_protected, created_at, updated_at)
+		VALUES ('u1', 'admin', 'Admin', '', 'administrator', 'local', '', 1, 1, ?, ?)
+	`, now, now); err != nil {
+		t.Fatalf("seeding user: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO invites (id, code, role, created_by, expires_at, created_at)
+		VALUES ('inv1', 'sw_inv_test', 'operator', 'u1', ?, ?)
+	`, future, now); err != nil {
+		t.Fatalf("seeding invite: %v", err)
+	}
+
+	svc := NewService(db, provSettings, connSvc, platSvc, whSvc)
+	passphrase := "test-default-export"
+
+	// Default Export() must not include users or invites
+	envelope, err := svc.Export(ctx, passphrase)
+	if err != nil {
+		t.Fatalf("Export: %v", err)
+	}
+
+	plaintext, err := decryptWithPassphrase(envelope.Data, envelope.Salt, passphrase)
+	if err != nil {
+		t.Fatalf("decrypt: %v", err)
+	}
+	var payload Payload
+	if err := json.Unmarshal(plaintext, &payload); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if len(payload.Users) != 0 {
+		t.Errorf("expected no users in default export, got %d", len(payload.Users))
+	}
+	if len(payload.Invites) != 0 {
+		t.Errorf("expected no invites in default export, got %d", len(payload.Invites))
+	}
+
+	// ExportWithOptions with flags set must include them
+	envelopeWithOpts, err := svc.ExportWithOptions(ctx, passphrase, ExportOptions{ExportUsers: true, ExportInvites: true})
+	if err != nil {
+		t.Fatalf("ExportWithOptions: %v", err)
+	}
+	plaintext2, err := decryptWithPassphrase(envelopeWithOpts.Data, envelopeWithOpts.Salt, passphrase)
+	if err != nil {
+		t.Fatalf("decrypt opts: %v", err)
+	}
+	var payload2 Payload
+	if err := json.Unmarshal(plaintext2, &payload2); err != nil {
+		t.Fatalf("unmarshal opts: %v", err)
+	}
+	if len(payload2.Users) != 1 {
+		t.Errorf("expected 1 user in opt-in export, got %d", len(payload2.Users))
+	}
+	if len(payload2.Invites) != 1 {
+		t.Errorf("expected 1 invite in opt-in export, got %d", len(payload2.Invites))
+	}
+}
+
+func TestImport_Users_UsernameConflictWarning(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := context.Background()
+
+	provSettings, connSvc, platSvc, whSvc := newTestServices(t, db)
+	svc := NewService(db, provSettings, connSvc, platSvc, whSvc)
+
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	// Seed a user that will conflict on username
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO users (id, username, display_name, password_hash, role, auth_provider,
+		                   provider_id, is_active, is_protected, created_at, updated_at)
+		VALUES ('existing-id', 'admin', 'Existing Admin', '', 'administrator', 'local', '', 1, 1, ?, ?)
+	`, now, now); err != nil {
+		t.Fatalf("seeding user: %v", err)
+	}
+
+	// Payload has a user with same username but different id
+	payload := Payload{
+		Settings:     map[string]string{},
+		ProviderKeys: map[string]string{},
+		Users: []UserExport{
+			{ID: "new-id", Username: "admin", DisplayName: "Admin", Role: "administrator", AuthProvider: "local", IsActive: true, IsProtected: true, CreatedAt: now},
+		},
+	}
+
+	passphrase := "test-conflict"
+	data, salt, err := encryptWithPassphrase(mustMarshal(t, payload), passphrase)
+	if err != nil {
+		t.Fatalf("encrypt: %v", err)
+	}
+	env := &Envelope{Version: currentVersion, Salt: salt, Data: data}
+
+	result, err := svc.ImportWithOptions(ctx, env, passphrase, ImportOptions{ImportUsers: true})
+	if err != nil {
+		t.Fatalf("ImportWithOptions: %v", err)
+	}
+
+	if result.Users != 0 {
+		t.Errorf("expected 0 users imported (conflict), got %d", result.Users)
+	}
+
+	// A warning about the skipped user should be present
+	foundWarning := false
+	for _, w := range result.Warnings {
+		if w == `skipped user "admin": username already exists on target instance` {
+			foundWarning = true
+			break
+		}
+	}
+	if !foundWarning {
+		t.Errorf("expected username conflict warning, got warnings: %v", result.Warnings)
+	}
 }

@@ -94,7 +94,8 @@ type UserPrefExport struct {
 }
 
 // UserExport holds user account data without credentials.
-// password_hash is always empty string on export for security hygiene.
+// Credentials are not exported; imported users must authenticate via
+// federated auth or use password reset.
 type UserExport struct {
 	ID           string  `json:"id"`
 	Username     string  `json:"username"`
@@ -170,10 +171,26 @@ type ImportOptions struct {
 	ImportInvites bool
 }
 
-// Export collects all settings data, encrypts it with the given passphrase,
-// and returns an Envelope. The passphrase is used with PBKDF2 to derive an
-// AES-256-GCM key, making exports portable across instances.
+// ExportOptions controls optional categories during export.
+type ExportOptions struct {
+	// ExportUsers controls whether user accounts are included in the export.
+	// Defaults to false; user exports include identity metadata but no credentials.
+	ExportUsers bool
+	// ExportInvites controls whether pending (unredeemed) invites are included.
+	ExportInvites bool
+}
+
+// Export collects all settings data (excluding users and invites), encrypts it
+// with the given passphrase, and returns an Envelope. To include users or
+// invites, use ExportWithOptions.
 func (s *Service) Export(ctx context.Context, passphrase string) (*Envelope, error) {
+	return s.ExportWithOptions(ctx, passphrase, ExportOptions{})
+}
+
+// ExportWithOptions collects all settings data, encrypts it with the given
+// passphrase, and returns an Envelope. User accounts and pending invites are
+// only included when explicitly requested via ExportOptions.
+func (s *Service) ExportWithOptions(ctx context.Context, passphrase string, opts ExportOptions) (*Envelope, error) {
 	payload := Payload{
 		Settings:     make(map[string]string),
 		ProviderKeys: make(map[string]string),
@@ -318,58 +335,62 @@ func (s *Service) Export(ctx context.Context, passphrase string) (*Envelope, err
 		return nil, fmt.Errorf("iterating user preferences: %w", err)
 	}
 
-	// Collect users (password_hash is never exported)
-	userRows, err := s.db.QueryContext(ctx, `
-		SELECT id, username, display_name, role, auth_provider,
-		       COALESCE(provider_id, ''), is_active, is_protected,
-		       invited_by, created_at
-		FROM users ORDER BY created_at ASC
-	`)
-	if err != nil {
-		return nil, fmt.Errorf("querying users: %w", err)
-	}
-	defer userRows.Close() //nolint:errcheck
-	for userRows.Next() {
-		var ue UserExport
-		var invitedBy sql.NullString
-		var isActive, isProtected int
-		if err := userRows.Scan(
-			&ue.ID, &ue.Username, &ue.DisplayName, &ue.Role, &ue.AuthProvider,
-			&ue.ProviderID, &isActive, &isProtected, &invitedBy, &ue.CreatedAt,
-		); err != nil {
-			return nil, fmt.Errorf("scanning user: %w", err)
+	// Collect users (opt-in; credentials are never exported)
+	if opts.ExportUsers {
+		userRows, err := s.db.QueryContext(ctx, `
+			SELECT id, username, display_name, role, auth_provider,
+			       COALESCE(provider_id, ''), is_active, is_protected,
+			       invited_by, created_at
+			FROM users ORDER BY created_at ASC
+		`)
+		if err != nil {
+			return nil, fmt.Errorf("querying users: %w", err)
 		}
-		ue.IsActive = isActive != 0
-		ue.IsProtected = isProtected != 0
-		if invitedBy.Valid {
-			ue.InvitedBy = &invitedBy.String
+		defer userRows.Close() //nolint:errcheck
+		for userRows.Next() {
+			var ue UserExport
+			var invitedBy sql.NullString
+			var isActive, isProtected int
+			if err := userRows.Scan(
+				&ue.ID, &ue.Username, &ue.DisplayName, &ue.Role, &ue.AuthProvider,
+				&ue.ProviderID, &isActive, &isProtected, &invitedBy, &ue.CreatedAt,
+			); err != nil {
+				return nil, fmt.Errorf("scanning user: %w", err)
+			}
+			ue.IsActive = isActive != 0
+			ue.IsProtected = isProtected != 0
+			if invitedBy.Valid {
+				ue.InvitedBy = &invitedBy.String
+			}
+			payload.Users = append(payload.Users, ue)
 		}
-		payload.Users = append(payload.Users, ue)
-	}
-	if err := userRows.Err(); err != nil {
-		return nil, fmt.Errorf("iterating users: %w", err)
+		if err := userRows.Err(); err != nil {
+			return nil, fmt.Errorf("iterating users: %w", err)
+		}
 	}
 
-	// Collect unredeemed invites
-	inviteRows, err := s.db.QueryContext(ctx, `
-		SELECT id, code, role, created_by, expires_at, created_at
-		FROM invites WHERE redeemed_at IS NULL ORDER BY created_at ASC
-	`)
-	if err != nil {
-		return nil, fmt.Errorf("querying invites: %w", err)
-	}
-	defer inviteRows.Close() //nolint:errcheck
-	for inviteRows.Next() {
-		var ie InviteExport
-		if err := inviteRows.Scan(
-			&ie.ID, &ie.Code, &ie.Role, &ie.CreatedBy, &ie.ExpiresAt, &ie.CreatedAt,
-		); err != nil {
-			return nil, fmt.Errorf("scanning invite: %w", err)
+	// Collect unredeemed invites (opt-in)
+	if opts.ExportInvites {
+		inviteRows, err := s.db.QueryContext(ctx, `
+			SELECT id, code, role, created_by, expires_at, created_at
+			FROM invites WHERE redeemed_at IS NULL ORDER BY created_at ASC
+		`)
+		if err != nil {
+			return nil, fmt.Errorf("querying invites: %w", err)
 		}
-		payload.Invites = append(payload.Invites, ie)
-	}
-	if err := inviteRows.Err(); err != nil {
-		return nil, fmt.Errorf("iterating invites: %w", err)
+		defer inviteRows.Close() //nolint:errcheck
+		for inviteRows.Next() {
+			var ie InviteExport
+			if err := inviteRows.Scan(
+				&ie.ID, &ie.Code, &ie.Role, &ie.CreatedBy, &ie.ExpiresAt, &ie.CreatedAt,
+			); err != nil {
+				return nil, fmt.Errorf("scanning invite: %w", err)
+			}
+			payload.Invites = append(payload.Invites, ie)
+		}
+		if err := inviteRows.Err(); err != nil {
+			return nil, fmt.Errorf("iterating invites: %w", err)
+		}
 	}
 
 	// Marshal and encrypt payload
@@ -621,6 +642,9 @@ func (s *Service) importPayload(ctx context.Context, payload *Payload, opts Impo
 			n, _ := res.RowsAffected()
 			if n > 0 {
 				result.Users++
+			} else {
+				result.Warnings = append(result.Warnings,
+					fmt.Sprintf("skipped user %q: username already exists on target instance", ue.Username))
 			}
 		}
 	}
@@ -696,23 +720,23 @@ func (s *Service) importPayload(ctx context.Context, payload *Payload, opts Impo
 	return result, nil
 }
 
-// normalizeJSONObject ensures raw is a valid JSON object string.
-// If raw is nil, empty, or not a JSON object (e.g. null, array, string),
-// it returns "{}". This prevents unmarshal failures in services that expect
-// an object at the destination column.
+// normalizeJSONObject ensures raw is a syntactically valid JSON object string.
+// If raw is nil, empty, syntactically invalid, or not a JSON object
+// (e.g. null, array, string), it returns "{}". This prevents unmarshal
+// failures in services that expect an object at the destination column.
 func normalizeJSONObject(raw json.RawMessage) string {
 	if len(raw) == 0 {
 		return "{}"
 	}
-	// Trim whitespace to check the opening character
-	trimmed := raw
-	for len(trimmed) > 0 && (trimmed[0] == ' ' || trimmed[0] == '\t' || trimmed[0] == '\n' || trimmed[0] == '\r') {
-		trimmed = trimmed[1:]
-	}
-	if len(trimmed) == 0 || trimmed[0] != '{' {
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil || m == nil {
 		return "{}"
 	}
-	return string(raw)
+	canonical, err := json.Marshal(m)
+	if err != nil {
+		return "{}"
+	}
+	return string(canonical)
 }
 
 // deriveKey uses PBKDF2-SHA256 to derive a 32-byte AES-256 key from a
