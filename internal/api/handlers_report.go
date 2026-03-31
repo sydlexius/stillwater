@@ -25,6 +25,12 @@ type healthSummary struct {
 	MissingFanart    int                `json:"missing_fanart"`
 	MissingMBID      int                `json:"missing_mbid"`
 	TopViolations    []violationSummary `json:"top_violations"`
+	// Tier counts group artists by health score range.
+	TierExcellent int `json:"tier_excellent"` // 80-100
+	TierGood      int `json:"tier_good"`      // 60-79
+	TierFair      int `json:"tier_fair"`      // 40-59
+	TierPoor      int `json:"tier_poor"`      // 20-39
+	TierCritical  int `json:"tier_critical"`  // 0-19
 }
 
 // violationSummary tracks how many artists fail a specific rule.
@@ -79,6 +85,11 @@ func (r *Router) handleReportHealth(w http.ResponseWriter, req *http.Request) {
 		MissingFanart:    stats.MissingFanart,
 		MissingMBID:      stats.MissingMBID,
 		TopViolations:    make([]violationSummary, 0, len(topViolations)),
+		TierExcellent:    stats.TierExcellent,
+		TierGood:         stats.TierGood,
+		TierFair:         stats.TierFair,
+		TierPoor:         stats.TierPoor,
+		TierCritical:     stats.TierCritical,
 	}
 
 	for _, v := range topViolations {
@@ -111,6 +122,11 @@ func (r *Router) renderHealthResponse(w http.ResponseWriter, req *http.Request, 
 			MissingFanart:    summary.MissingFanart,
 			MissingMBID:      summary.MissingMBID,
 			TopViolations:    toTemplateViolations(summary.TopViolations),
+			TierExcellent:    summary.TierExcellent,
+			TierGood:         summary.TierGood,
+			TierFair:         summary.TierFair,
+			TierPoor:         summary.TierPoor,
+			TierCritical:     summary.TierCritical,
 		}
 		renderTempl(w, req, templates.HealthSummaryFragment(data))
 		return
@@ -124,6 +140,37 @@ func (r *Router) renderHealthResponse(w http.ResponseWriter, req *http.Request, 
 // per-artist values (updated via the event bus), so there is no
 // in-memory cache to invalidate.
 func (r *Router) InvalidateHealthCache() {}
+
+// handleReportHealthTiers returns health score tier counts as an HTMX fragment.
+// Used by the Trends tab on the Reports page to render the tier distribution cards.
+// GET /api/v1/reports/health/tiers
+func (r *Router) handleReportHealthTiers(w http.ResponseWriter, req *http.Request) {
+	ctx := req.Context()
+
+	stats, err := r.artistService.GetHealthStats(ctx, "")
+	if err != nil {
+		r.logger.Error("querying health stats for tiers", "error", err)
+		writeError(w, req, http.StatusInternalServerError, "failed to load health tiers")
+		return
+	}
+
+	data := templates.HealthSummaryData{
+		Score:            stats.Score,
+		TotalArtists:     stats.TotalArtists,
+		CompliantArtists: stats.CompliantArtists,
+		MissingNFO:       stats.MissingNFO,
+		MissingThumb:     stats.MissingThumb,
+		MissingFanart:    stats.MissingFanart,
+		MissingMBID:      stats.MissingMBID,
+		TierExcellent:    stats.TierExcellent,
+		TierGood:         stats.TierGood,
+		TierFair:         stats.TierFair,
+		TierPoor:         stats.TierPoor,
+		TierCritical:     stats.TierCritical,
+	}
+
+	renderTempl(w, req, templates.HealthTierFragment(data))
+}
 
 // handleReportHealthHistory returns health history data for charting.
 // GET /api/v1/reports/health/history?from=2024-01-01&to=2024-06-01
@@ -444,96 +491,124 @@ func complianceListParams(req *http.Request) artist.ListParams {
 	return params
 }
 
-// handleCompliancePage renders the compliance report HTML page.
-// GET /reports/compliance
-func (r *Router) handleCompliancePage(w http.ResponseWriter, req *http.Request) {
+// handleReportsPage renders the unified Reports page with Trends, Compliance, and Coverage tabs.
+// GET /reports
+func (r *Router) handleReportsPage(w http.ResponseWriter, req *http.Request) {
 	userID := middleware.UserIDFromContext(req.Context())
 	if userID == "" {
 		r.renderLoginPage(w, req)
 		return
 	}
 
+	tab := req.URL.Query().Get("tab")
+	switch tab {
+	case "compliance", "coverage", "trends":
+		// valid tabs -- keep as-is
+	default:
+		tab = "trends"
+	}
+
 	ctx := req.Context()
-	params := complianceListParams(req)
-	status := req.URL.Query().Get("status")
 
-	artists, total, err := r.artistService.List(ctx, params)
-	if err != nil {
-		r.logger.Error("listing artists for compliance page", "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
+	// For the compliance tab, load artist data. For other tabs, use an empty struct.
+	var complianceData templates.ComplianceData
+	if isHTMXRequest(req) || tab == "compliance" {
+		params := complianceListParams(req)
+		status := req.URL.Query().Get("status")
 
-	// Collect artist IDs and batch-load stored violations.
-	pageIDs := make([]string, len(artists))
-	for i, a := range artists {
-		pageIDs[i] = a.ID
-	}
-	pageViolations, err := r.ruleService.GetViolationsForArtists(ctx, pageIDs)
-	if err != nil {
-		r.logger.Error("loading violations for compliance page", "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-
-	rows := make([]templates.ComplianceRow, len(artists))
-	for i, a := range artists {
-		vs := pageViolations[a.ID]
-		if vs == nil {
-			vs = make([]rule.Violation, 0)
+		artists, total, err := r.artistService.List(ctx, params)
+		if err != nil {
+			r.logger.Error("listing artists for reports page", "error", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
 		}
-		rows[i] = templates.ComplianceRow{
-			Artist:      a,
-			HealthScore: a.HealthScore,
-			Violations:  vs,
+
+		pageIDs := make([]string, len(artists))
+		for i, a := range artists {
+			pageIDs[i] = a.ID
 		}
-	}
+		pageViolations, err := r.ruleService.GetViolationsForArtists(ctx, pageIDs)
+		if err != nil {
+			r.logger.Error("loading violations for reports page", "error", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
 
-	totalPages := total / params.PageSize
-	if total%params.PageSize > 0 {
-		totalPages++
-	}
+		rows := make([]templates.ComplianceRow, len(artists))
+		for i, a := range artists {
+			vs := pageViolations[a.ID]
+			if vs == nil {
+				vs = make([]rule.Violation, 0)
+			}
+			rows[i] = templates.ComplianceRow{
+				Artist:      a,
+				HealthScore: a.HealthScore,
+				Violations:  vs,
+			}
+		}
 
-	libs, err := r.libraryService.List(ctx)
-	if err != nil {
-		r.logger.Warn("listing libraries for compliance page", "error", err)
-	}
+		totalPages := total / params.PageSize
+		if total%params.PageSize > 0 {
+			totalPages++
+		}
 
-	data := templates.ComplianceData{
-		Rows: rows,
-		Pagination: components.PaginationData{
-			CurrentPage:    params.Page,
-			TotalPages:     totalPages,
-			PageSize:       params.PageSize,
-			TotalItems:     total,
-			BaseURL:        "/reports/compliance",
+		libs, err := r.libraryService.List(ctx)
+		if err != nil {
+			r.logger.Warn("listing libraries for reports page", "error", err)
+		}
+
+		complianceData = templates.ComplianceData{
+			Rows: rows,
+			Pagination: components.PaginationData{
+				CurrentPage:    params.Page,
+				TotalPages:     totalPages,
+				PageSize:       params.PageSize,
+				TotalItems:     total,
+				BaseURL:        "/reports",
+				Sort:           params.Sort,
+				Order:          params.Order,
+				Search:         params.Search,
+				Filter:         params.Filter,
+				LibraryID:      params.LibraryID,
+				TargetID:       "compliance-table",
+				Status:         status,
+				HealthScoreMin: params.HealthScoreMin,
+				HealthScoreMax: params.HealthScoreMax,
+			},
+			Search:         params.Search,
+			Status:         status,
+			Filter:         req.URL.Query().Get("filter"),
+			Libraries:      libs,
+			LibraryID:      params.LibraryID,
 			Sort:           params.Sort,
 			Order:          params.Order,
-			Search:         params.Search,
-			Filter:         params.Filter,
-			LibraryID:      params.LibraryID,
-			TargetID:       "compliance-table",
-			Status:         status,
 			HealthScoreMin: params.HealthScoreMin,
 			HealthScoreMax: params.HealthScoreMax,
-		},
-		Search:         params.Search,
-		Status:         status,
-		Filter:         req.URL.Query().Get("filter"),
-		Libraries:      libs,
-		LibraryID:      params.LibraryID,
-		Sort:           params.Sort,
-		Order:          params.Order,
-		HealthScoreMin: params.HealthScoreMin,
-		HealthScoreMax: params.HealthScoreMax,
-		ProfileName:    r.getActiveProfileName(req.Context()),
+			ProfileName:    r.getActiveProfileName(req.Context()),
+		}
+
+		if isHTMXRequest(req) {
+			renderTempl(w, req, templates.ComplianceTable(complianceData))
+			return
+		}
 	}
 
-	if isHTMXRequest(req) {
-		renderTempl(w, req, templates.ComplianceTable(data))
-		return
+	data := templates.ReportsPageData{
+		Compliance: complianceData,
+		ActiveTab:  tab,
 	}
-	renderTempl(w, req, templates.CompliancePage(r.assetsFor(req), data))
+
+	renderTempl(w, req, templates.ReportsPage(r.assetsFor(req), data))
+}
+
+// handleCompliancePage redirects /reports/compliance to /reports for backward compatibility.
+// GET /reports/compliance
+func (r *Router) handleCompliancePage(w http.ResponseWriter, req *http.Request) {
+	target := r.basePath + "/reports"
+	if q := req.URL.RawQuery; q != "" {
+		target += "?" + q
+	}
+	http.Redirect(w, req, target, http.StatusMovedPermanently)
 }
 
 func toTemplateViolations(vs []violationSummary) []templates.ViolationSummaryData {
