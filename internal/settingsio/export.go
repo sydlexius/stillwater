@@ -561,7 +561,8 @@ func (s *Service) importPayload(ctx context.Context, payload *Payload, opts Impo
 		}
 	}
 
-	// Import scraper configurations: upsert by scope.
+	// Import scraper configurations: upsert by scope. Always generate a new ID
+	// on insert; ON CONFLICT(scope) preserves the existing row's ID on update.
 	for _, sce := range payload.ScraperConfigs {
 		configStr := "{}"
 		if len(sce.ConfigJSON) > 0 {
@@ -573,13 +574,12 @@ func (s *Service) importPayload(ctx context.Context, payload *Payload, opts Impo
 		}
 		_, err := s.db.ExecContext(ctx, `
 			INSERT INTO scraper_config (id, scope, config_json, overrides_json, created_at, updated_at)
-			VALUES (COALESCE((SELECT id FROM scraper_config WHERE scope = ?), lower(hex(randomblob(16)))),
-			        ?, ?, ?, ?, ?)
+			VALUES (lower(hex(randomblob(16))), ?, ?, ?, ?, ?)
 			ON CONFLICT(scope) DO UPDATE SET
 				config_json = excluded.config_json,
 				overrides_json = excluded.overrides_json,
 				updated_at = excluded.updated_at
-		`, sce.Scope, sce.Scope, configStr, overridesStr, now, now)
+		`, sce.Scope, configStr, overridesStr, now, now)
 		if err != nil {
 			return nil, fmt.Errorf("upserting scraper config for scope %q: %w", sce.Scope, err)
 		}
@@ -605,7 +605,7 @@ func (s *Service) importPayload(ctx context.Context, payload *Payload, opts Impo
 			if ue.IsProtected {
 				isProtected = 1
 			}
-			_, err := s.db.ExecContext(ctx, `
+			res, err := s.db.ExecContext(ctx, `
 				INSERT INTO users (id, username, display_name, password_hash, role, auth_provider,
 				                   provider_id, is_active, is_protected, invited_by, created_at, updated_at)
 				VALUES (?, ?, ?, '', ?, ?, ?, ?, ?, ?, ?, ?)
@@ -615,7 +615,10 @@ func (s *Service) importPayload(ctx context.Context, payload *Payload, opts Impo
 			if err != nil {
 				return nil, fmt.Errorf("importing user %q: %w", ue.Username, err)
 			}
-			result.Users++
+			n, _ := res.RowsAffected()
+			if n > 0 {
+				result.Users++
+			}
 		}
 	}
 
@@ -643,9 +646,20 @@ func (s *Service) importPayload(ctx context.Context, payload *Payload, opts Impo
 	}
 
 	// Import invites (optional): only unredeemed invites are exported/imported.
+	// Invites whose creator (created_by) does not exist in the target DB are
+	// skipped with a warning to avoid foreign key constraint violations.
 	if opts.ImportInvites && len(payload.Invites) > 0 {
 		for _, ie := range payload.Invites {
-			_, err := s.db.ExecContext(ctx, `
+			var creatorExists bool
+			if err := s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM users WHERE id = ?)`, ie.CreatedBy).Scan(&creatorExists); err != nil {
+				return nil, fmt.Errorf("checking creator for invite %q: %w", ie.ID, err)
+			}
+			if !creatorExists {
+				result.Warnings = append(result.Warnings,
+					fmt.Sprintf("skipped invite %q: creator user %q not found", ie.ID, ie.CreatedBy))
+				continue
+			}
+			res, err := s.db.ExecContext(ctx, `
 				INSERT INTO invites (id, code, role, created_by, expires_at, created_at)
 				VALUES (?, ?, ?, ?, ?, ?)
 				ON CONFLICT(id) DO NOTHING
@@ -653,7 +667,10 @@ func (s *Service) importPayload(ctx context.Context, payload *Payload, opts Impo
 			if err != nil {
 				return nil, fmt.Errorf("importing invite %q: %w", ie.ID, err)
 			}
-			result.Invites++
+			n, _ := res.RowsAffected()
+			if n > 0 {
+				result.Invites++
+			}
 		}
 	}
 
