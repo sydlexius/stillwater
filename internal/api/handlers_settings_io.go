@@ -65,6 +65,7 @@ func (r *Router) handleSettingsImport(w http.ResponseWriter, req *http.Request) 
 
 	var envelope settingsio.Envelope
 	var passphrase string
+	var opts settingsio.ImportOptions
 
 	ct := req.Header.Get("Content-Type")
 	if strings.HasPrefix(ct, "application/json") {
@@ -79,10 +80,12 @@ func (r *Router) handleSettingsImport(w http.ResponseWriter, req *http.Request) 
 			return
 		}
 
-		// Expect {"passphrase": "...", "envelope": {...}}
+		// Expect {"passphrase": "...", "envelope": {...}, "import_users": false, "import_invites": false}
 		var payload struct {
-			Passphrase string              `json:"passphrase"`
-			Envelope   settingsio.Envelope `json:"envelope"`
+			Passphrase    string              `json:"passphrase"`
+			Envelope      settingsio.Envelope `json:"envelope"`
+			ImportUsers   bool                `json:"import_users"`
+			ImportInvites bool                `json:"import_invites"`
 		}
 		if err := json.Unmarshal(body, &payload); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON"})
@@ -90,6 +93,8 @@ func (r *Router) handleSettingsImport(w http.ResponseWriter, req *http.Request) 
 		}
 		envelope = payload.Envelope
 		passphrase = payload.Passphrase
+		opts.ImportUsers = payload.ImportUsers
+		opts.ImportInvites = payload.ImportInvites
 	} else {
 		// Multipart form upload
 		if err := req.ParseMultipartForm(maxImportSize); err != nil {
@@ -98,6 +103,8 @@ func (r *Router) handleSettingsImport(w http.ResponseWriter, req *http.Request) 
 		}
 
 		passphrase = req.FormValue("passphrase")
+		opts.ImportUsers = req.FormValue("import_users") == "true"
+		opts.ImportInvites = req.FormValue("import_invites") == "true"
 
 		file, _, err := req.FormFile("file")
 		if err != nil {
@@ -126,7 +133,7 @@ func (r *Router) handleSettingsImport(w http.ResponseWriter, req *http.Request) 
 		return
 	}
 
-	result, err := r.settingsIOService.Import(req.Context(), &envelope, passphrase)
+	result, err := r.settingsIOService.ImportWithOptions(req.Context(), &envelope, passphrase, opts)
 	if err != nil {
 		r.logger.Error("settings import failed", "error", err)
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
@@ -137,9 +144,11 @@ func (r *Router) handleSettingsImport(w http.ResponseWriter, req *http.Request) 
 		w.Header().Set("Content-Type", "text/html")
 		html := fmt.Sprintf(
 			`<div class="text-sm text-green-600 dark:text-green-400">`+
-				`Import complete: %d settings, %d connections, %d profiles, %d webhooks, %d provider keys, %d priorities.`+
+				`Import complete: %d settings, %d connections, %d profiles, %d webhooks, %d provider keys, %d priorities, %d rules, %d scraper configs, %d preferences.`+
 				`</div>`,
-			result.Settings, result.Connections, result.Profiles, result.Webhooks, result.ProviderKeys, result.Priorities,
+			result.Settings, result.Connections, result.Profiles, result.Webhooks,
+			result.ProviderKeys, result.Priorities, result.Rules, result.ScraperConfigs,
+			result.UserPreferences,
 		)
 		w.Write([]byte(html)) //nolint:errcheck,gosec // G705: all format args are %d (integers)
 		return

@@ -24,6 +24,9 @@ import (
 // pbkdf2Iterations is the OWASP-recommended iteration count for PBKDF2-SHA256.
 const pbkdf2Iterations = 600_000
 
+// currentVersion is the export format version written on new exports.
+const currentVersion = "1.1"
+
 // Envelope is the outer JSON wrapper for an exported settings file.
 type Envelope struct {
 	Version    string `json:"version"`
@@ -35,12 +38,17 @@ type Envelope struct {
 
 // Payload is the decrypted inner content of an export.
 type Payload struct {
-	Settings           map[string]string  `json:"settings"`
-	Connections        []ConnectionExport `json:"connections"`
-	PlatformProfiles   []platform.Profile `json:"platform_profiles"`
-	Webhooks           []webhook.Webhook  `json:"webhooks"`
-	ProviderKeys       map[string]string  `json:"provider_keys"`
-	ProviderPriorities []PriorityExport   `json:"provider_priorities"`
+	Settings           map[string]string     `json:"settings"`
+	Connections        []ConnectionExport    `json:"connections"`
+	PlatformProfiles   []platform.Profile    `json:"platform_profiles"`
+	Webhooks           []webhook.Webhook     `json:"webhooks"`
+	ProviderKeys       map[string]string     `json:"provider_keys"`
+	ProviderPriorities []PriorityExport      `json:"provider_priorities"`
+	Rules              []RuleExport          `json:"rules,omitempty"`
+	ScraperConfigs     []ScraperConfigExport `json:"scraper_configs,omitempty"`
+	UserPreferences    []UserPrefExport      `json:"user_preferences,omitempty"`
+	Users              []UserExport          `json:"users,omitempty"`
+	Invites            []InviteExport        `json:"invites,omitempty"`
 }
 
 // ConnectionExport is a connection with its API key decrypted for export.
@@ -62,14 +70,68 @@ type PriorityExport struct {
 	Disabled  []provider.ProviderName `json:"disabled,omitempty"`
 }
 
+// RuleExport holds the user-configurable state of a rule.
+// Rules are seeded by the server; export captures only what users can customize.
+type RuleExport struct {
+	ID             string          `json:"id"`
+	Enabled        bool            `json:"enabled"`
+	AutomationMode string          `json:"automation_mode"`
+	Config         json.RawMessage `json:"config"`
+}
+
+// ScraperConfigExport holds the raw scraper configuration for a scope.
+type ScraperConfigExport struct {
+	Scope         string          `json:"scope"`
+	ConfigJSON    json.RawMessage `json:"config_json"`
+	OverridesJSON json.RawMessage `json:"overrides_json"`
+}
+
+// UserPrefExport holds a single user preference key/value pair.
+type UserPrefExport struct {
+	UserID string `json:"user_id"`
+	Key    string `json:"key"`
+	Value  string `json:"value"`
+}
+
+// UserExport holds user account data without credentials.
+// password_hash is always empty string on export for security hygiene.
+type UserExport struct {
+	ID           string  `json:"id"`
+	Username     string  `json:"username"`
+	DisplayName  string  `json:"display_name"`
+	Role         string  `json:"role"`
+	AuthProvider string  `json:"auth_provider"`
+	ProviderID   string  `json:"provider_id,omitempty"`
+	IsActive     bool    `json:"is_active"`
+	IsProtected  bool    `json:"is_protected"`
+	InvitedBy    *string `json:"invited_by,omitempty"`
+	CreatedAt    string  `json:"created_at"`
+}
+
+// InviteExport holds a pending (unredeemed) invite.
+type InviteExport struct {
+	ID        string `json:"id"`
+	Code      string `json:"code"`
+	Role      string `json:"role"`
+	CreatedBy string `json:"created_by"`
+	ExpiresAt string `json:"expires_at"`
+	CreatedAt string `json:"created_at"`
+}
+
 // ImportResult summarizes what was imported.
 type ImportResult struct {
-	Settings     int `json:"settings"`
-	Connections  int `json:"connections"`
-	Profiles     int `json:"platform_profiles"`
-	Webhooks     int `json:"webhooks"`
-	ProviderKeys int `json:"provider_keys"`
-	Priorities   int `json:"priorities"`
+	Settings        int      `json:"settings"`
+	Connections     int      `json:"connections"`
+	Profiles        int      `json:"platform_profiles"`
+	Webhooks        int      `json:"webhooks"`
+	ProviderKeys    int      `json:"provider_keys"`
+	Priorities      int      `json:"priorities"`
+	Rules           int      `json:"rules"`
+	ScraperConfigs  int      `json:"scraper_configs"`
+	UserPreferences int      `json:"user_preferences"`
+	Users           int      `json:"users"`
+	Invites         int      `json:"invites"`
+	Warnings        []string `json:"warnings,omitempty"`
 }
 
 // Service handles settings export and import.
@@ -96,6 +158,16 @@ func NewService(
 		platformSvc:      ps2,
 		webhookSvc:       ws,
 	}
+}
+
+// ImportOptions controls optional categories during import.
+type ImportOptions struct {
+	// ImportUsers controls whether user accounts are imported.
+	// Defaults to false; imported users have empty password hashes and must
+	// authenticate via federated auth or use password reset.
+	ImportUsers bool
+	// ImportInvites controls whether pending invites are imported.
+	ImportInvites bool
 }
 
 // Export collects all settings data, encrypts it with the given passphrase,
@@ -185,6 +257,121 @@ func (s *Service) Export(ctx context.Context, passphrase string) (*Envelope, err
 		})
 	}
 
+	// Collect rules (user-configurable state only)
+	ruleRows, err := s.db.QueryContext(ctx,
+		`SELECT id, enabled, automation_mode, config FROM rules ORDER BY id`)
+	if err != nil {
+		return nil, fmt.Errorf("querying rules: %w", err)
+	}
+	defer ruleRows.Close() //nolint:errcheck
+	for ruleRows.Next() {
+		var re RuleExport
+		var enabled int
+		var configStr string
+		if err := ruleRows.Scan(&re.ID, &enabled, &re.AutomationMode, &configStr); err != nil {
+			return nil, fmt.Errorf("scanning rule: %w", err)
+		}
+		re.Enabled = enabled != 0
+		re.Config = json.RawMessage(configStr)
+		payload.Rules = append(payload.Rules, re)
+	}
+	if err := ruleRows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating rules: %w", err)
+	}
+
+	// Collect scraper configurations
+	scraperRows, err := s.db.QueryContext(ctx,
+		`SELECT scope, config_json, overrides_json FROM scraper_config ORDER BY scope`)
+	if err != nil {
+		return nil, fmt.Errorf("querying scraper configs: %w", err)
+	}
+	defer scraperRows.Close() //nolint:errcheck
+	for scraperRows.Next() {
+		var sce ScraperConfigExport
+		var configStr, overridesStr string
+		if err := scraperRows.Scan(&sce.Scope, &configStr, &overridesStr); err != nil {
+			return nil, fmt.Errorf("scanning scraper config: %w", err)
+		}
+		sce.ConfigJSON = json.RawMessage(configStr)
+		sce.OverridesJSON = json.RawMessage(overridesStr)
+		payload.ScraperConfigs = append(payload.ScraperConfigs, sce)
+	}
+	if err := scraperRows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating scraper configs: %w", err)
+	}
+
+	// Collect user preferences
+	prefRows, err := s.db.QueryContext(ctx,
+		`SELECT user_id, key, value FROM user_preferences ORDER BY user_id, key`)
+	if err != nil {
+		return nil, fmt.Errorf("querying user preferences: %w", err)
+	}
+	defer prefRows.Close() //nolint:errcheck
+	for prefRows.Next() {
+		var up UserPrefExport
+		if err := prefRows.Scan(&up.UserID, &up.Key, &up.Value); err != nil {
+			return nil, fmt.Errorf("scanning user preference: %w", err)
+		}
+		payload.UserPreferences = append(payload.UserPreferences, up)
+	}
+	if err := prefRows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating user preferences: %w", err)
+	}
+
+	// Collect users (password_hash is never exported)
+	userRows, err := s.db.QueryContext(ctx, `
+		SELECT id, username, display_name, role, auth_provider,
+		       COALESCE(provider_id, ''), is_active, is_protected,
+		       invited_by, created_at
+		FROM users ORDER BY created_at ASC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("querying users: %w", err)
+	}
+	defer userRows.Close() //nolint:errcheck
+	for userRows.Next() {
+		var ue UserExport
+		var invitedBy sql.NullString
+		var isActive, isProtected int
+		if err := userRows.Scan(
+			&ue.ID, &ue.Username, &ue.DisplayName, &ue.Role, &ue.AuthProvider,
+			&ue.ProviderID, &isActive, &isProtected, &invitedBy, &ue.CreatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scanning user: %w", err)
+		}
+		ue.IsActive = isActive != 0
+		ue.IsProtected = isProtected != 0
+		if invitedBy.Valid {
+			ue.InvitedBy = &invitedBy.String
+		}
+		payload.Users = append(payload.Users, ue)
+	}
+	if err := userRows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating users: %w", err)
+	}
+
+	// Collect unredeemed invites
+	inviteRows, err := s.db.QueryContext(ctx, `
+		SELECT id, code, role, created_by, expires_at, created_at
+		FROM invites WHERE redeemed_at IS NULL ORDER BY created_at ASC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("querying invites: %w", err)
+	}
+	defer inviteRows.Close() //nolint:errcheck
+	for inviteRows.Next() {
+		var ie InviteExport
+		if err := inviteRows.Scan(
+			&ie.ID, &ie.Code, &ie.Role, &ie.CreatedBy, &ie.ExpiresAt, &ie.CreatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scanning invite: %w", err)
+		}
+		payload.Invites = append(payload.Invites, ie)
+	}
+	if err := inviteRows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating invites: %w", err)
+	}
+
 	// Marshal and encrypt payload
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
@@ -197,7 +384,7 @@ func (s *Service) Export(ctx context.Context, passphrase string) (*Envelope, err
 	}
 
 	envelope := &Envelope{
-		Version:    "1.0",
+		Version:    currentVersion,
 		AppVersion: version.Version,
 		CreatedAt:  time.Now().UTC().Format(time.RFC3339),
 		Salt:       salt,
@@ -209,12 +396,21 @@ func (s *Service) Export(ctx context.Context, passphrase string) (*Envelope, err
 
 // Import decrypts and applies settings from an Envelope using the given
 // passphrase. The passphrase must match the one used during export.
+// Users and invites in the payload are not imported; use ImportWithOptions
+// to import those optional categories.
 func (s *Service) Import(ctx context.Context, env *Envelope, passphrase string) (*ImportResult, error) {
+	return s.ImportWithOptions(ctx, env, passphrase, ImportOptions{})
+}
+
+// ImportWithOptions decrypts and applies settings from an Envelope using the
+// given passphrase and options. Users and invites are only imported when
+// explicitly requested via ImportOptions, since imported users have empty
+// password hashes and must authenticate via federated auth or password reset.
+func (s *Service) ImportWithOptions(ctx context.Context, env *Envelope, passphrase string, opts ImportOptions) (*ImportResult, error) {
 	if env.Data == "" {
 		return nil, fmt.Errorf("empty export data")
 	}
 
-	// Decrypt
 	plaintext, err := decryptWithPassphrase(env.Data, env.Salt, passphrase)
 	if err != nil {
 		return nil, fmt.Errorf("decrypting export data (wrong passphrase?): %w", err)
@@ -225,10 +421,15 @@ func (s *Service) Import(ctx context.Context, env *Envelope, passphrase string) 
 		return nil, fmt.Errorf("parsing export payload: %w", err)
 	}
 
+	return s.importPayload(ctx, &payload, opts)
+}
+
+// importPayload applies all categories from a decrypted Payload.
+func (s *Service) importPayload(ctx context.Context, payload *Payload, opts ImportOptions) (*ImportResult, error) {
 	result := &ImportResult{}
+	now := time.Now().UTC().Format(time.RFC3339)
 
 	// Import settings
-	now := time.Now().UTC().Format(time.RFC3339)
 	for k, v := range payload.Settings {
 		_, err := s.db.ExecContext(ctx,
 			`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
@@ -255,7 +456,6 @@ func (s *Service) Import(ctx context.Context, env *Envelope, passphrase string) 
 			return nil, fmt.Errorf("looking up connection %q: %w", ce.Name, err)
 		}
 		if existing != nil {
-			// Update existing
 			existing.Name = ce.Name
 			existing.APIKey = ce.APIKey
 			existing.Enabled = ce.Enabled
@@ -266,7 +466,6 @@ func (s *Service) Import(ctx context.Context, env *Envelope, passphrase string) 
 				return nil, fmt.Errorf("updating connection %q: %w", ce.Name, err)
 			}
 		} else {
-			// Create new
 			c := &connection.Connection{
 				Name:                 ce.Name,
 				Type:                 ce.Type,
@@ -317,7 +516,7 @@ func (s *Service) Import(ctx context.Context, env *Envelope, passphrase string) 
 				return nil, fmt.Errorf("updating webhook %q: %w", w.Name, err)
 			}
 		} else {
-			w.ID = "" // Let Create generate a new ID
+			w.ID = ""
 			if err := s.webhookSvc.Create(ctx, &w); err != nil {
 				return nil, fmt.Errorf("creating webhook %q: %w", w.Name, err)
 			}
@@ -336,6 +535,126 @@ func (s *Service) Import(ctx context.Context, env *Envelope, passphrase string) 
 			}
 		}
 		result.Priorities++
+	}
+
+	// Import rules: update enabled, automation_mode, and config for existing rules only.
+	// Rules are seeded by the server; unrecognized rule IDs are skipped with no error.
+	for _, re := range payload.Rules {
+		configStr := "{}"
+		if len(re.Config) > 0 {
+			configStr = string(re.Config)
+		}
+		enabled := 0
+		if re.Enabled {
+			enabled = 1
+		}
+		res, err := s.db.ExecContext(ctx, `
+			UPDATE rules SET enabled = ?, automation_mode = ?, config = ?, updated_at = ?
+			WHERE id = ?
+		`, enabled, re.AutomationMode, configStr, now, re.ID)
+		if err != nil {
+			return nil, fmt.Errorf("updating rule %q: %w", re.ID, err)
+		}
+		n, _ := res.RowsAffected()
+		if n > 0 {
+			result.Rules++
+		}
+	}
+
+	// Import scraper configurations: upsert by scope.
+	for _, sce := range payload.ScraperConfigs {
+		configStr := "{}"
+		if len(sce.ConfigJSON) > 0 {
+			configStr = string(sce.ConfigJSON)
+		}
+		overridesStr := "{}"
+		if len(sce.OverridesJSON) > 0 {
+			overridesStr = string(sce.OverridesJSON)
+		}
+		_, err := s.db.ExecContext(ctx, `
+			INSERT INTO scraper_config (id, scope, config_json, overrides_json, created_at, updated_at)
+			VALUES (COALESCE((SELECT id FROM scraper_config WHERE scope = ?), lower(hex(randomblob(16)))),
+			        ?, ?, ?, ?, ?)
+			ON CONFLICT(scope) DO UPDATE SET
+				config_json = excluded.config_json,
+				overrides_json = excluded.overrides_json,
+				updated_at = excluded.updated_at
+		`, sce.Scope, sce.Scope, configStr, overridesStr, now, now)
+		if err != nil {
+			return nil, fmt.Errorf("upserting scraper config for scope %q: %w", sce.Scope, err)
+		}
+		result.ScraperConfigs++
+	}
+
+	// Import users (optional): password_hash is always set to empty string.
+	// Imported users must authenticate via federated auth or use password reset.
+	// Users are imported before preferences so foreign key checks succeed.
+	if opts.ImportUsers && len(payload.Users) > 0 {
+		result.Warnings = append(result.Warnings,
+			"imported users have empty password hashes; accounts must use federated auth or password reset")
+		for _, ue := range payload.Users {
+			var invitedByVal sql.NullString
+			if ue.InvitedBy != nil && *ue.InvitedBy != "" {
+				invitedByVal = sql.NullString{String: *ue.InvitedBy, Valid: true}
+			}
+			isActive := 0
+			if ue.IsActive {
+				isActive = 1
+			}
+			isProtected := 0
+			if ue.IsProtected {
+				isProtected = 1
+			}
+			_, err := s.db.ExecContext(ctx, `
+				INSERT INTO users (id, username, display_name, password_hash, role, auth_provider,
+				                   provider_id, is_active, is_protected, invited_by, created_at, updated_at)
+				VALUES (?, ?, ?, '', ?, ?, ?, ?, ?, ?, ?, ?)
+				ON CONFLICT(username) DO NOTHING
+			`, ue.ID, ue.Username, ue.DisplayName, ue.Role, ue.AuthProvider,
+				ue.ProviderID, isActive, isProtected, invitedByVal, ue.CreatedAt, now)
+			if err != nil {
+				return nil, fmt.Errorf("importing user %q: %w", ue.Username, err)
+			}
+			result.Users++
+		}
+	}
+
+	// Import user preferences: upsert by (user_id, key).
+	// Preferences referencing unknown users are skipped with a warning.
+	for _, up := range payload.UserPreferences {
+		var exists int
+		if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM users WHERE id = ?`, up.UserID).Scan(&exists); err != nil {
+			return nil, fmt.Errorf("checking user for preference: %w", err)
+		}
+		if exists == 0 {
+			result.Warnings = append(result.Warnings,
+				fmt.Sprintf("skipped preference %q for unknown user %q", up.Key, up.UserID))
+			continue
+		}
+		_, err := s.db.ExecContext(ctx, `
+			INSERT INTO user_preferences (user_id, key, value, updated_at)
+			VALUES (?, ?, ?, ?)
+			ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+		`, up.UserID, up.Key, up.Value, now)
+		if err != nil {
+			return nil, fmt.Errorf("upserting preference %q for user %q: %w", up.Key, up.UserID, err)
+		}
+		result.UserPreferences++
+	}
+
+	// Import invites (optional): only unredeemed invites are exported/imported.
+	if opts.ImportInvites && len(payload.Invites) > 0 {
+		for _, ie := range payload.Invites {
+			_, err := s.db.ExecContext(ctx, `
+				INSERT INTO invites (id, code, role, created_by, expires_at, created_at)
+				VALUES (?, ?, ?, ?, ?, ?)
+				ON CONFLICT(id) DO NOTHING
+			`, ie.ID, ie.Code, ie.Role, ie.CreatedBy, ie.ExpiresAt, ie.CreatedAt)
+			if err != nil {
+				return nil, fmt.Errorf("importing invite %q: %w", ie.ID, err)
+			}
+			result.Invites++
+		}
 	}
 
 	return result, nil

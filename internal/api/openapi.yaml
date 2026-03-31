@@ -6443,6 +6443,12 @@ paths:
                   type: string
                 envelope:
                   type: object
+                import_users:
+                  type: boolean
+                  description: Import user accounts. Imported users have empty password hashes and must authenticate via federated auth or use password reset. Defaults to false.
+                import_invites:
+                  type: boolean
+                  description: Import pending invites. Defaults to false.
               required: [passphrase, envelope]
           multipart/form-data:
             schema:
@@ -6453,6 +6459,14 @@ paths:
                 file:
                   type: string
                   format: binary
+                import_users:
+                  type: string
+                  enum: ["true", "false"]
+                  description: Import user accounts when "true". Defaults to "false".
+                import_invites:
+                  type: string
+                  enum: ["true", "false"]
+                  description: Import pending invites when "true". Defaults to "false".
               required: [passphrase, file]
       responses:
         "200":
@@ -6474,6 +6488,26 @@ paths:
                     type: integer
                   priorities:
                     type: integer
+                  rules:
+                    type: integer
+                    description: Number of rule configurations applied.
+                  scraper_configs:
+                    type: integer
+                    description: Number of scraper configurations upserted.
+                  user_preferences:
+                    type: integer
+                    description: Number of user preferences upserted.
+                  users:
+                    type: integer
+                    description: Number of users imported (only non-zero when import_users is true).
+                  invites:
+                    type: integer
+                    description: Number of invites imported (only non-zero when import_invites is true).
+                  warnings:
+                    type: array
+                    items:
+                      type: string
+                    description: Non-fatal warnings encountered during import (e.g. skipped preferences for unknown users).
             text/html:
               schema:
                 type: string

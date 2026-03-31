@@ -73,6 +73,57 @@ func setupTestDB(t *testing.T) *sql.DB {
 			created_at TEXT NOT NULL DEFAULT (datetime('now')),
 			updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 		)`,
+		`CREATE TABLE IF NOT EXISTS rules (
+			id TEXT PRIMARY KEY,
+			name TEXT NOT NULL,
+			description TEXT,
+			category TEXT NOT NULL,
+			enabled INTEGER NOT NULL DEFAULT 1,
+			config TEXT NOT NULL DEFAULT '{}',
+			automation_mode TEXT NOT NULL DEFAULT 'auto',
+			created_at TEXT NOT NULL DEFAULT (datetime('now')),
+			updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+		)`,
+		`CREATE TABLE IF NOT EXISTS scraper_config (
+			id TEXT PRIMARY KEY,
+			scope TEXT NOT NULL UNIQUE,
+			config_json TEXT NOT NULL DEFAULT '{}',
+			overrides_json TEXT NOT NULL DEFAULT '{}',
+			created_at TEXT NOT NULL DEFAULT (datetime('now')),
+			updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+		)`,
+		`CREATE TABLE IF NOT EXISTS users (
+			id TEXT PRIMARY KEY,
+			username TEXT NOT NULL UNIQUE,
+			display_name TEXT NOT NULL DEFAULT '',
+			password_hash TEXT NOT NULL DEFAULT '',
+			role TEXT NOT NULL DEFAULT 'operator',
+			auth_provider TEXT NOT NULL DEFAULT 'local',
+			provider_id TEXT NOT NULL DEFAULT '',
+			is_active INTEGER NOT NULL DEFAULT 1,
+			is_protected INTEGER NOT NULL DEFAULT 0,
+			invited_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+			created_at TEXT NOT NULL DEFAULT (datetime('now')),
+			updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+		)`,
+		`CREATE TABLE IF NOT EXISTS user_preferences (
+			user_id TEXT NOT NULL,
+			key TEXT NOT NULL,
+			value TEXT NOT NULL,
+			updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+			PRIMARY KEY (user_id, key),
+			FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+		)`,
+		`CREATE TABLE IF NOT EXISTS invites (
+			id TEXT PRIMARY KEY,
+			code TEXT NOT NULL UNIQUE,
+			role TEXT NOT NULL DEFAULT 'operator',
+			created_by TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			expires_at TEXT NOT NULL,
+			redeemed_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+			redeemed_at TEXT,
+			created_at TEXT NOT NULL DEFAULT (datetime('now'))
+		)`,
 	} {
 		if _, err := db.ExecContext(context.Background(), stmt); err != nil {
 			t.Fatalf("setup: %v", err)
@@ -141,6 +192,18 @@ func TestRoundTrip(t *testing.T) {
 		t.Fatalf("creating webhook: %v", err)
 	}
 
+	// Seed a rule
+	db.ExecContext(ctx, `
+		INSERT INTO rules (id, name, description, category, enabled, automation_mode, config, created_at, updated_at)
+		VALUES ('thumb_exists', 'Thumb exists', 'Test rule', 'image', 0, 'manual', '{"severity":"warning"}', ?, ?)
+	`, now, now)
+
+	// Seed a scraper config
+	db.ExecContext(ctx, `
+		INSERT INTO scraper_config (id, scope, config_json, overrides_json, created_at, updated_at)
+		VALUES ('sc-1', 'global', '{"fields":[]}', '{}', ?, ?)
+	`, now, now)
+
 	// Export with passphrase
 	svc := NewService(db, provSettings, connSvc, platSvc, whSvc)
 	passphrase := "test-export-passphrase"
@@ -149,8 +212,8 @@ func TestRoundTrip(t *testing.T) {
 		t.Fatalf("Export: %v", err)
 	}
 
-	if envelope.Version != "1.0" {
-		t.Errorf("expected version 1.0, got %s", envelope.Version)
+	if envelope.Version != currentVersion {
+		t.Errorf("expected version %s, got %s", currentVersion, envelope.Version)
 	}
 	if envelope.Data == "" {
 		t.Error("expected non-empty encrypted data")
@@ -163,6 +226,12 @@ func TestRoundTrip(t *testing.T) {
 	db2 := setupTestDB(t)
 	provSettings2, connSvc2, platSvc2, whSvc2 := newTestServices(t, db2)
 	svc2 := NewService(db2, provSettings2, connSvc2, platSvc2, whSvc2)
+
+	// Seed rules in db2 so the update finds them
+	db2.ExecContext(ctx, `
+		INSERT INTO rules (id, name, description, category, enabled, automation_mode, config, created_at, updated_at)
+		VALUES ('thumb_exists', 'Thumb exists', 'Test rule', 'image', 1, 'auto', '{}', ?, ?)
+	`, now, now)
 
 	// Import with the same passphrase
 	result, err := svc2.Import(ctx, envelope, passphrase)
@@ -182,6 +251,12 @@ func TestRoundTrip(t *testing.T) {
 	if result.Webhooks != 1 {
 		t.Errorf("expected 1 webhook, got %d", result.Webhooks)
 	}
+	if result.Rules != 1 {
+		t.Errorf("expected 1 rule updated, got %d", result.Rules)
+	}
+	if result.ScraperConfigs != 1 {
+		t.Errorf("expected 1 scraper config upserted, got %d", result.ScraperConfigs)
+	}
 
 	// Verify imported data
 	var testVal string
@@ -196,6 +271,245 @@ func TestRoundTrip(t *testing.T) {
 	}
 	if conns[0].Name != "Test Emby" {
 		t.Errorf("expected 'Test Emby', got %s", conns[0].Name)
+	}
+
+	// Verify rule was updated (enabled was 1 in db2, should be 0 after import)
+	var ruleEnabled int
+	db2.QueryRowContext(ctx, `SELECT enabled FROM rules WHERE id = 'thumb_exists'`).Scan(&ruleEnabled)
+	if ruleEnabled != 0 {
+		t.Errorf("expected rule enabled=0 after import, got %d", ruleEnabled)
+	}
+
+	// Verify scraper config was upserted
+	var scraperScope string
+	db2.QueryRowContext(ctx, `SELECT scope FROM scraper_config WHERE scope = 'global'`).Scan(&scraperScope)
+	if scraperScope != "global" {
+		t.Errorf("expected scraper config for 'global' scope, got %q", scraperScope)
+	}
+}
+
+func TestRoundTrip_WithUsersAndInvites(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := context.Background()
+
+	provSettings, connSvc, platSvc, whSvc := newTestServices(t, db)
+	now := time.Now().UTC().Format(time.RFC3339)
+	future := time.Now().UTC().Add(24 * time.Hour).Format(time.RFC3339)
+
+	// Seed a user (with bootstrap admin)
+	db.ExecContext(ctx, `
+		INSERT INTO users (id, username, display_name, password_hash, role, auth_provider,
+		                   provider_id, is_active, is_protected, created_at, updated_at)
+		VALUES ('u1', 'admin', 'Admin User', 'hash', 'administrator', 'local', '', 1, 1, ?, ?)
+	`, now, now)
+
+	// Seed user preferences
+	db.ExecContext(ctx, `
+		INSERT INTO user_preferences (user_id, key, value, updated_at) VALUES ('u1', 'theme', 'dark', ?)
+	`, now)
+
+	// Seed an unredeemed invite (created_by references existing user)
+	db.ExecContext(ctx, `
+		INSERT INTO invites (id, code, role, created_by, expires_at, created_at)
+		VALUES ('inv1', 'sw_inv_abc123', 'operator', 'u1', ?, ?)
+	`, future, now)
+
+	svc := NewService(db, provSettings, connSvc, platSvc, whSvc)
+	passphrase := "test-users-passphrase"
+	envelope, err := svc.Export(ctx, passphrase)
+	if err != nil {
+		t.Fatalf("Export: %v", err)
+	}
+
+	// Import into a fresh DB with users and invites enabled
+	db2 := setupTestDB(t)
+	provSettings2, connSvc2, platSvc2, whSvc2 := newTestServices(t, db2)
+	svc2 := NewService(db2, provSettings2, connSvc2, platSvc2, whSvc2)
+
+	result, err := svc2.ImportWithOptions(ctx, envelope, passphrase, ImportOptions{
+		ImportUsers:   true,
+		ImportInvites: true,
+	})
+	if err != nil {
+		t.Fatalf("ImportWithOptions: %v", err)
+	}
+
+	if result.Users != 1 {
+		t.Errorf("expected 1 user imported, got %d", result.Users)
+	}
+	if result.Invites != 1 {
+		t.Errorf("expected 1 invite imported, got %d", result.Invites)
+	}
+	// Preferences should have been imported too (user exists now)
+	if result.UserPreferences != 1 {
+		t.Errorf("expected 1 user preference imported, got %d", result.UserPreferences)
+	}
+
+	// Verify user was imported with empty password_hash
+	var pwHash string
+	db2.QueryRowContext(ctx, `SELECT password_hash FROM users WHERE id = 'u1'`).Scan(&pwHash)
+	if pwHash != "" {
+		t.Errorf("expected empty password_hash for imported user, got %q", pwHash)
+	}
+
+	// Verify warning was issued about password hashes
+	foundWarning := false
+	for _, w := range result.Warnings {
+		if w != "" {
+			foundWarning = true
+			break
+		}
+	}
+	if !foundWarning {
+		t.Error("expected at least one warning about empty password hashes")
+	}
+}
+
+func TestImport_Rules_SkipsUnknownIDs(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := context.Background()
+
+	provSettings, connSvc, platSvc, whSvc := newTestServices(t, db)
+	svc := NewService(db, provSettings, connSvc, platSvc, whSvc)
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	// Seed one known rule
+	db.ExecContext(ctx, `
+		INSERT INTO rules (id, name, description, category, enabled, automation_mode, config, created_at, updated_at)
+		VALUES ('known_rule', 'Known Rule', 'desc', 'nfo', 1, 'auto', '{}', ?, ?)
+	`, now, now)
+
+	// Build a payload with one known and one unknown rule ID
+	payload := Payload{
+		Settings:     map[string]string{},
+		ProviderKeys: map[string]string{},
+		Rules: []RuleExport{
+			{ID: "known_rule", Enabled: false, AutomationMode: "manual", Config: json.RawMessage(`{"severity":"warning"}`)},
+			{ID: "unknown_rule", Enabled: true, AutomationMode: "auto", Config: json.RawMessage(`{}`)},
+		},
+	}
+
+	passphrase := "test-rules"
+	data, salt, err := encryptWithPassphrase(mustMarshal(t, payload), passphrase)
+	if err != nil {
+		t.Fatalf("encrypt: %v", err)
+	}
+	env := &Envelope{Version: currentVersion, Salt: salt, Data: data}
+
+	result, err := svc.Import(ctx, env, passphrase)
+	if err != nil {
+		t.Fatalf("Import: %v", err)
+	}
+
+	// Only 1 rule should be counted (the known one); the unknown one is silently skipped
+	if result.Rules != 1 {
+		t.Errorf("expected 1 rule updated, got %d", result.Rules)
+	}
+
+	// Verify the known rule was updated
+	var enabled int
+	db.QueryRowContext(ctx, `SELECT enabled FROM rules WHERE id = 'known_rule'`).Scan(&enabled)
+	if enabled != 0 {
+		t.Errorf("expected known_rule enabled=0, got %d", enabled)
+	}
+}
+
+func TestImport_ScraperConfigs_Upsert(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := context.Background()
+
+	provSettings, connSvc, platSvc, whSvc := newTestServices(t, db)
+	svc := NewService(db, provSettings, connSvc, platSvc, whSvc)
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	// Seed an existing scraper config
+	db.ExecContext(ctx, `
+		INSERT INTO scraper_config (id, scope, config_json, overrides_json, created_at, updated_at)
+		VALUES ('sc-existing', 'global', '{"old":true}', '{}', ?, ?)
+	`, now, now)
+
+	newConfig := json.RawMessage(`{"fields":[{"field":"biography","enabled":true}]}`)
+	payload := Payload{
+		Settings:     map[string]string{},
+		ProviderKeys: map[string]string{},
+		ScraperConfigs: []ScraperConfigExport{
+			{Scope: "global", ConfigJSON: newConfig, OverridesJSON: json.RawMessage(`{}`)},
+			{Scope: "conn-123", ConfigJSON: json.RawMessage(`{"fields":[]}`), OverridesJSON: json.RawMessage(`{"fields":{"biography":true}}`)},
+		},
+	}
+
+	passphrase := "test-scraper"
+	data, salt, err := encryptWithPassphrase(mustMarshal(t, payload), passphrase)
+	if err != nil {
+		t.Fatalf("encrypt: %v", err)
+	}
+	env := &Envelope{Version: currentVersion, Salt: salt, Data: data}
+
+	result, err := svc.Import(ctx, env, passphrase)
+	if err != nil {
+		t.Fatalf("Import: %v", err)
+	}
+
+	if result.ScraperConfigs != 2 {
+		t.Errorf("expected 2 scraper configs, got %d", result.ScraperConfigs)
+	}
+
+	// Verify global config was updated
+	var configJSON string
+	db.QueryRowContext(ctx, `SELECT config_json FROM scraper_config WHERE scope = 'global'`).Scan(&configJSON)
+	if configJSON != string(newConfig) {
+		t.Errorf("expected updated config, got %s", configJSON)
+	}
+
+	// Verify new scope was inserted
+	var count int
+	db.QueryRowContext(ctx, `SELECT COUNT(*) FROM scraper_config WHERE scope = 'conn-123'`).Scan(&count)
+	if count != 1 {
+		t.Errorf("expected 1 scraper config for 'conn-123', got %d", count)
+	}
+}
+
+func TestImport_UserPreferences_SkipsUnknownUsers(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := context.Background()
+
+	provSettings, connSvc, platSvc, whSvc := newTestServices(t, db)
+	svc := NewService(db, provSettings, connSvc, platSvc, whSvc)
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	// Create one user
+	db.ExecContext(ctx, `
+		INSERT INTO users (id, username, display_name, password_hash, role, auth_provider,
+		                   provider_id, is_active, is_protected, created_at, updated_at)
+		VALUES ('u1', 'user1', 'User One', '', 'operator', 'local', '', 1, 0, ?, ?)
+	`, now, now)
+
+	payload := Payload{
+		Settings:     map[string]string{},
+		ProviderKeys: map[string]string{},
+		UserPreferences: []UserPrefExport{
+			{UserID: "u1", Key: "theme", Value: "dark"},
+			{UserID: "nonexistent", Key: "theme", Value: "light"},
+		},
+	}
+
+	passphrase := "test-prefs"
+	data, salt, err := encryptWithPassphrase(mustMarshal(t, payload), passphrase)
+	if err != nil {
+		t.Fatalf("encrypt: %v", err)
+	}
+	env := &Envelope{Version: currentVersion, Salt: salt, Data: data}
+
+	result, err := svc.Import(ctx, env, passphrase)
+	if err != nil {
+		t.Fatalf("Import: %v", err)
+	}
+
+	if result.UserPreferences != 1 {
+		t.Errorf("expected 1 preference imported, got %d", result.UserPreferences)
+	}
+	if len(result.Warnings) != 1 {
+		t.Errorf("expected 1 warning for unknown user, got %d", len(result.Warnings))
 	}
 }
 
@@ -297,9 +611,42 @@ func TestImport_EmptyData(t *testing.T) {
 	}
 }
 
+func TestImport_OldVersion_Backward_Compat(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := context.Background()
+
+	provSettings, connSvc, platSvc, whSvc := newTestServices(t, db)
+	svc := NewService(db, provSettings, connSvc, platSvc, whSvc)
+
+	// Build a v1.0 payload (no rules/scraper/users/invites fields)
+	payload := Payload{
+		Settings:     map[string]string{"legacy.key": "legacy.value"},
+		ProviderKeys: map[string]string{},
+	}
+
+	passphrase := "compat-test"
+	data, salt, err := encryptWithPassphrase(mustMarshal(t, payload), passphrase)
+	if err != nil {
+		t.Fatalf("encrypt: %v", err)
+	}
+	env := &Envelope{Version: "1.0", Salt: salt, Data: data}
+
+	result, err := svc.Import(ctx, env, passphrase)
+	if err != nil {
+		t.Fatalf("Import of v1.0 envelope: %v", err)
+	}
+
+	if result.Settings != 1 {
+		t.Errorf("expected 1 setting imported, got %d", result.Settings)
+	}
+	if result.Rules != 0 {
+		t.Errorf("expected 0 rules from v1.0 envelope, got %d", result.Rules)
+	}
+}
+
 func TestEnvelope_JSON(t *testing.T) {
 	env := Envelope{
-		Version:    "1.0",
+		Version:    currentVersion,
 		AppVersion: "0.20.0",
 		CreatedAt:  "2024-01-01T00:00:00Z",
 		Salt:       "c29tZS1zYWx0",
@@ -314,10 +661,20 @@ func TestEnvelope_JSON(t *testing.T) {
 	if err := json.Unmarshal(data, &decoded); err != nil {
 		t.Fatalf("unmarshaling: %v", err)
 	}
-	if decoded.Version != "1.0" {
-		t.Errorf("expected 1.0, got %s", decoded.Version)
+	if decoded.Version != currentVersion {
+		t.Errorf("expected %s, got %s", currentVersion, decoded.Version)
 	}
 	if decoded.Salt != "c29tZS1zYWx0" {
 		t.Errorf("expected salt preserved, got %s", decoded.Salt)
 	}
+}
+
+// mustMarshal marshals v to JSON and fails the test on error.
+func mustMarshal(t *testing.T, v any) []byte {
+	t.Helper()
+	data, err := json.Marshal(v)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	return data
 }
