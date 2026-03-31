@@ -1269,3 +1269,91 @@ input:-webkit-autofill:focus {
   width: 12px;
   text-align: center;
 }
+
+/* -- Context help icon and tooltip popover --------------------------------- */
+.sw-context-help {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.sw-context-help-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  border: 1.5px solid var(--sw-glass-border);
+  color: var(--sw-content-text-secondary);
+  background: transparent;
+  transition: color 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.sw-context-help-btn:hover {
+  color: var(--sw-accent-primary);
+  border-color: var(--sw-accent-primary);
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.sw-context-help-btn:focus-visible {
+  outline: 2px solid var(--sw-accent-primary);
+  outline-offset: 2px;
+}
+
+.sw-context-help-popover {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  transform: translateX(-50%);
+  width: 240px;
+  padding: 10px 12px;
+  background: var(--sw-glass-bg);
+  backdrop-filter: blur(16px) saturate(160%);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+  border: 1px solid var(--sw-glass-border);
+  border-radius: var(--sw-radius-md);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.22);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--sw-content-text);
+  z-index: 100;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.sw-context-help-popover[aria-hidden="false"] {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Arrow pointing down */
+.sw-context-help-popover::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 6px solid transparent;
+  border-top-color: var(--sw-glass-border);
+}
+
+/* If not enough space above, flip to below */
+@media (max-height: 400px) {
+  .sw-context-help-popover {
+    bottom: auto;
+    top: calc(100% + 8px);
+  }
+  .sw-context-help-popover::after {
+    top: auto;
+    bottom: 100%;
+    border-top-color: transparent;
+    border-bottom-color: var(--sw-glass-border);
+  }
+}
