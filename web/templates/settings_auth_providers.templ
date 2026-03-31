@@ -37,8 +37,8 @@ func guardRailLabel(v string) string {
 	return "Admins only"
 }
 
-// settingsAuthProvidersTab renders the Auth Providers settings tab content.
-// Only Administrators can access this tab (settings page is admin-only).
+// settingsAuthProvidersTab renders the Authentication settings section content.
+// Only Administrators can access this section (settings page is admin-only).
 templ settingsAuthProvidersTab(data AuthProvidersData) {
 	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
