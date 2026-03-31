@@ -376,7 +376,8 @@ func (s *Service) ExportWithOptions(ctx context.Context, passphrase string, opts
 			ue.IsActive = isActive != 0
 			ue.IsProtected = isProtected != 0
 			if invitedBy.Valid {
-				ue.InvitedBy = &invitedBy.String
+				invitedByStr := invitedBy.String
+				ue.InvitedBy = &invitedByStr
 			}
 			payload.Users = append(payload.Users, ue)
 		}
@@ -630,26 +631,12 @@ func (s *Service) importPayload(ctx context.Context, payload *Payload, opts Impo
 	// Imported users must authenticate via federated auth or use password reset.
 	// Users are imported before preferences so foreign key checks succeed.
 	if opts.ImportUsers && len(payload.Users) > 0 {
-		// Preload IDs that will exist after this import pass so that invited_by
-		// references can be validated before inserting each user.
-		importedIDs, err := s.loadUserIDs(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("loading existing user IDs: %w", err)
-		}
-		// Also mark the IDs that will be imported in this batch so invited_by
-		// forward-references within the same export are resolved correctly.
+		// Two-pass approach: first insert all users with invited_by = NULL to
+		// avoid FK violations when a referenced user is skipped due to INSERT
+		// OR IGNORE (id or username conflict). Then update invited_by for
+		// successfully inserted users whose inviter is confirmed to exist.
+		insertedIDs := make(map[string]bool)
 		for _, ue := range payload.Users {
-			importedIDs[ue.ID] = true
-		}
-
-		for _, ue := range payload.Users {
-			// Null out invited_by if the referenced user is not present on the
-			// target instance and is not part of this import batch; otherwise
-			// the INSERT will fail with a foreign-key violation.
-			var invitedByVal sql.NullString
-			if ue.InvitedBy != nil && *ue.InvitedBy != "" && importedIDs[*ue.InvitedBy] {
-				invitedByVal = sql.NullString{String: *ue.InvitedBy, Valid: true}
-			}
 			isActive := 0
 			if ue.IsActive {
 				isActive = 1
@@ -663,21 +650,43 @@ func (s *Service) importPayload(ctx context.Context, payload *Payload, opts Impo
 			res, err := s.db.ExecContext(ctx, `
 				INSERT OR IGNORE INTO users (id, username, display_name, password_hash, role, auth_provider,
 				                            provider_id, is_active, is_protected, invited_by, created_at, updated_at)
-				VALUES (?, ?, ?, '', ?, ?, ?, ?, ?, ?, ?, ?)
+				VALUES (?, ?, ?, '', ?, ?, ?, ?, ?, NULL, ?, ?)
 			`, ue.ID, ue.Username, ue.DisplayName, ue.Role, ue.AuthProvider,
-				ue.ProviderID, isActive, isProtected, invitedByVal, ue.CreatedAt, now)
+				ue.ProviderID, isActive, isProtected, ue.CreatedAt, now)
 			if err != nil {
 				return nil, fmt.Errorf("importing user %q: %w", ue.Username, err)
 			}
 			n, _ := res.RowsAffected()
 			if n > 0 {
 				result.Users++
+				insertedIDs[ue.ID] = true
 			} else {
 				result.Warnings = append(result.Warnings,
 					fmt.Sprintf("skipped user %q: conflicts with an existing user on target instance", ue.Username))
 			}
 		}
+
+		// Second pass: set invited_by for inserted users whose inviter actually
+		// exists in the DB (either pre-existing or just inserted above).
 		if result.Users > 0 {
+			confirmedIDs, err := s.loadUserIDs(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("loading user IDs after user import: %w", err)
+			}
+			for _, ue := range payload.Users {
+				if !insertedIDs[ue.ID] || ue.InvitedBy == nil || *ue.InvitedBy == "" {
+					continue
+				}
+				if !confirmedIDs[*ue.InvitedBy] {
+					continue
+				}
+				if _, err := s.db.ExecContext(ctx, `
+					UPDATE users SET invited_by = ? WHERE id = ?
+				`, *ue.InvitedBy, ue.ID); err != nil {
+					return nil, fmt.Errorf("updating invited_by for user %q: %w", ue.Username, err)
+				}
+			}
+
 			result.Warnings = append(result.Warnings,
 				"imported users have empty password hashes; accounts must use federated auth or password reset")
 		}
@@ -738,6 +747,9 @@ func (s *Service) importPayload(ctx context.Context, payload *Payload, opts Impo
 			n, _ := res.RowsAffected()
 			if n > 0 {
 				result.Invites++
+			} else {
+				result.Warnings = append(result.Warnings,
+					fmt.Sprintf("skipped invite %q: conflicting id or code", ie.ID))
 			}
 		}
 	}
