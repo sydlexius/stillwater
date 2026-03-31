@@ -7,6 +7,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/platform"
 	"github.com/sydlexius/stillwater/internal/provider"
+	"github.com/sydlexius/stillwater/web/components"
 )
 
 // OnboardingData holds the data for the onboarding wizard page.
@@ -64,6 +65,7 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 			</script>
 		</head>
 		<body class="h-full bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100" data-current-step={ strconv.Itoa(data.CurrentStep) } data-unidentified-count={ strconv.Itoa(data.UnidentifiedCount) } data-user-auth-provider={ data.UserAuthProvider }>
+			@components.ContextHelpScript()
 			<div class="flex min-h-full items-start justify-center px-4 py-8 sm:py-12">
 				<div class="w-full max-w-2xl space-y-6">
 					<div class="text-center">
@@ -203,14 +205,18 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 										class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
 									/>
 									<div class="flex flex-col gap-1.5">
-										<select
-											name="type"
-											class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-											onchange="syncLibraryTypeHelpText()"
-										>
-											<option value="regular">Regular</option>
-											<option value="classical">Classical</option>
-										</select>
+										<div class="flex items-center gap-1.5">
+											<select
+												name="type"
+												class="flex-1 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+												onchange="syncLibraryTypeHelpText()"
+												aria-label="Library type"
+											>
+												<option value="regular">Regular</option>
+												<option value="classical">Classical</option>
+											</select>
+											@components.ContextHelp("help-ob-lib-type", "Library Type", "Regular: standard artist library for all genres. Classical: for libraries that primarily contain classical music. Classical mode adjusts artist labeling; additional classical-specific features are planned for a future release.")
+										</div>
 										<p id="ob-library-type-help" class="text-xs text-gray-500 dark:text-gray-400" aria-live="polite"></p>
 									</div>
 								</div>

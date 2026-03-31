@@ -1,0 +1,96 @@
+package components
+
+// ContextHelp renders a small "?" help icon that reveals a tooltip popover on
+// click. It is keyboard-accessible: Tab to focus, Space/Enter to activate,
+// Escape to dismiss.
+//
+// Parameters:
+//   - id:    a unique DOM id for this help icon (used to associate aria attributes)
+//   - label: a short topic label used in the aria-label (e.g. "OIDC Issuer URL")
+//   - text:  1-3 sentences of help text shown in the popover
+templ ContextHelp(id, label, text string) {
+	<span class="sw-context-help" id={ id }>
+		<button
+			type="button"
+			class="sw-context-help-btn"
+			aria-label={ "Help: " + label }
+			aria-expanded="false"
+			aria-controls={ id + "-popover" }
+			onclick="swContextHelpToggle(this)"
+			onkeydown="if(event.key==='Escape')swContextHelpClose(this)"
+		>?</button>
+		<span
+			id={ id + "-popover" }
+			role="tooltip"
+			class="sw-context-help-popover"
+			aria-hidden="true"
+		>
+			{ text }
+		</span>
+	</span>
+	// The script tag is placed once via the document-level listener (see
+	// initContextHelp()). Each ContextHelp instance relies on global functions
+	// defined in the layout's context-help initialization block.
+}
+
+// ContextHelpScript renders the global JS for all ContextHelp components on the
+// page. Include this once in any template that uses ContextHelp. If called
+// multiple times on the same page (e.g. from two different sub-templates), only
+// the first call registers the event listeners.
+templ ContextHelpScript() {
+	<script>
+		(function () {
+			// Guard: only register listeners once per page, even if this script
+			// block is injected by multiple sub-templates.
+			if (document.documentElement.dataset.swContextHelpInit) return;
+			document.documentElement.dataset.swContextHelpInit = '1';
+
+			// Close any open popover that is not `btn`.
+			function swContextHelpCloseOthers(btn) {
+				document.querySelectorAll('.sw-context-help-btn[aria-expanded="true"]').forEach(function (b) {
+					if (b !== btn) {
+						b.setAttribute('aria-expanded', 'false');
+						var tip = document.getElementById(b.getAttribute('aria-controls'));
+						if (tip) tip.setAttribute('aria-hidden', 'true');
+					}
+				});
+			}
+
+			// Toggle the popover for `btn`.
+			window.swContextHelpToggle = function (btn) {
+				var open = btn.getAttribute('aria-expanded') === 'true';
+				swContextHelpCloseOthers(open ? null : btn);
+				if (open) {
+					btn.setAttribute('aria-expanded', 'false');
+					var tip = document.getElementById(btn.getAttribute('aria-controls'));
+					if (tip) tip.setAttribute('aria-hidden', 'true');
+				} else {
+					btn.setAttribute('aria-expanded', 'true');
+					var tip2 = document.getElementById(btn.getAttribute('aria-controls'));
+					if (tip2) tip2.setAttribute('aria-hidden', 'false');
+				}
+			};
+
+			// Close the popover attached to `btn`.
+			window.swContextHelpClose = function (btn) {
+				btn.setAttribute('aria-expanded', 'false');
+				var tip = document.getElementById(btn.getAttribute('aria-controls'));
+				if (tip) tip.setAttribute('aria-hidden', 'true');
+			};
+
+			// Close all open popovers when clicking outside any help icon.
+			document.addEventListener('click', function (e) {
+				if (!e.target.closest('.sw-context-help')) {
+					swContextHelpCloseOthers(null);
+				}
+			});
+
+			// Close on Escape from anywhere.
+			document.addEventListener('keydown', function (e) {
+				if (e.key === 'Escape') {
+					swContextHelpCloseOthers(null);
+				}
+			});
+		})();
+	</script>
+}

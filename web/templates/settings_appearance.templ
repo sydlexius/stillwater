@@ -1,0 +1,303 @@
+package templates
+
+import "github.com/sydlexius/stillwater/web/components"
+
+// AppearancePrefsData holds the current user preference values shown in the
+// Appearance settings tab. All fields are pre-populated from the user_preferences
+// table (or the compiled defaults) by the settings page handler.
+type AppearancePrefsData struct {
+	Theme         string // "dark" | "light" | "system"
+	GlassIntensity string // "light" | "medium" | "heavy"
+	ThumbnailSize  string // "small" | "medium" | "large"
+	SidebarState   string // "full" | "icon-only" | "hidden"
+	ContentWidth   string // "narrow" | "wide"
+	ReducedMotion  string // "system" | "on" | "off"
+	Language       string // "en" (Phase 1 only)
+	FontFamily     string // "system" | "inter" | "atkinson"
+	LetterSpacing  string // "normal" | "wide" | "extra-wide"
+	FontSize       string // "small" | "medium" | "large"
+	LiteMode       string // "off" | "on" | "auto"
+}
+
+// settingsAppearanceTab renders the Appearance settings tab.
+templ settingsAppearanceTab(prefs AppearancePrefsData) {
+	@components.ContextHelpScript()
+	<!-- Theme -->
+	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
+		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+			<h2 class="text-lg font-semibold">Theme and Color</h2>
+			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+				Control the color scheme and visual intensity of glass effects.
+			</p>
+		</div>
+		<div class="px-6 py-4 space-y-5">
+			<!-- Theme -->
+			<div class="flex items-center justify-between gap-4">
+				<div class="flex items-center gap-2">
+					<div>
+						<div class="text-sm font-medium">Theme</div>
+						<div class="text-xs text-gray-500 dark:text-gray-400">Sets the color scheme used across the application.</div>
+					</div>
+					@components.ContextHelp("help-theme", "Theme", "Light uses a bright background. Dark uses a dark background. System follows your device's color scheme preference and changes automatically.")
+				</div>
+				@components.Segmented("pref-theme", "theme",
+					[]components.SegmentOption{
+						{Value: "light", Label: "Light"},
+						{Value: "dark", Label: "Dark"},
+						{Value: "system", Label: "System"},
+					},
+					prefs.Theme,
+				)
+			</div>
+			<!-- Glass intensity -->
+			<div class="flex items-center justify-between gap-4">
+				<div class="flex items-center gap-2">
+					<div>
+						<div class="text-sm font-medium">Glass Intensity</div>
+						<div class="text-xs text-gray-500 dark:text-gray-400">Controls the blur and opacity of frosted glass overlays and panels.</div>
+					</div>
+					@components.ContextHelp("help-glass", "Glass Intensity", "Adjusts the blur strength and opacity of frosted glass surfaces. Light is subtle, Heavy gives a stronger diffusion effect. Disable in Lite Mode to remove glass effects entirely.")
+				</div>
+				@components.Segmented("pref-glass-intensity", "glass_intensity",
+					[]components.SegmentOption{
+						{Value: "light", Label: "Light"},
+						{Value: "medium", Label: "Medium"},
+						{Value: "heavy", Label: "Heavy"},
+					},
+					prefs.GlassIntensity,
+				)
+			</div>
+		</div>
+	</div>
+	<!-- Layout -->
+	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
+		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+			<h2 class="text-lg font-semibold">Layout</h2>
+			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+				Control how content and navigation are arranged.
+			</p>
+		</div>
+		<div class="px-6 py-4 space-y-5">
+			<!-- Thumbnail size -->
+			<div class="flex items-center justify-between gap-4">
+				<div>
+					<div class="text-sm font-medium">Thumbnail Size</div>
+					<div class="text-xs text-gray-500 dark:text-gray-400">Affects image grid card sizes throughout the app.</div>
+				</div>
+				@components.Segmented("pref-thumbnail-size", "thumbnail_size",
+					[]components.SegmentOption{
+						{Value: "small", Label: "Small"},
+						{Value: "medium", Label: "Medium"},
+						{Value: "large", Label: "Large"},
+					},
+					prefs.ThumbnailSize,
+				)
+			</div>
+			<!-- Sidebar default state -->
+			<div class="flex items-center justify-between gap-4">
+				<div>
+					<div class="text-sm font-medium">Sidebar Default State</div>
+					<div class="text-xs text-gray-500 dark:text-gray-400">How the sidebar appears when you open the app.</div>
+				</div>
+				@components.Segmented("pref-sidebar-state", "sidebar_state",
+					[]components.SegmentOption{
+						{Value: "full", Label: "Full"},
+						{Value: "icon-only", Label: "Icon-only"},
+						{Value: "hidden", Label: "Hidden"},
+					},
+					prefs.SidebarState,
+				)
+			</div>
+			<!-- Content width -->
+			<div class="flex items-center justify-between gap-4">
+				<div>
+					<div class="text-sm font-medium">Content Width</div>
+					<div class="text-xs text-gray-500 dark:text-gray-400">Narrow constrains the content area for readability. Full stretches to the viewport.</div>
+				</div>
+				@components.Segmented("pref-content-width", "content_width",
+					[]components.SegmentOption{
+						{Value: "narrow", Label: "Narrow"},
+						{Value: "wide", Label: "Full"},
+					},
+					prefs.ContentWidth,
+				)
+			</div>
+		</div>
+	</div>
+	<!-- Typography -->
+	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
+		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+			<h2 class="text-lg font-semibold">Typography</h2>
+			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+				Adjust font family, size, and letter spacing.
+			</p>
+		</div>
+		<div class="px-6 py-4 space-y-5">
+			<!-- Font family -->
+			<div class="flex items-center justify-between gap-4">
+				<div>
+					<div class="text-sm font-medium">Font Family</div>
+					<div class="text-xs text-gray-500 dark:text-gray-400">Choose the typeface used for all body text and UI labels.</div>
+				</div>
+				@components.Segmented("pref-font-family", "font_family",
+					[]components.SegmentOption{
+						{Value: "system", Label: "System", Style: "font-family: system-ui, sans-serif;"},
+						{Value: "inter", Label: "Inter", Style: "font-family: 'Inter', sans-serif;"},
+						{Value: "atkinson", Label: "Atkinson", Style: "font-family: 'Atkinson Hyperlegible', sans-serif;"},
+					},
+					prefs.FontFamily,
+				)
+			</div>
+			<!-- Letter spacing -->
+			<div class="flex items-center justify-between gap-4">
+				<div class="flex items-center gap-2">
+					<div>
+						<div class="text-sm font-medium">Letter Spacing</div>
+						<div class="text-xs text-gray-500 dark:text-gray-400">Increase spacing between characters for improved readability.</div>
+					</div>
+					@components.ContextHelp("help-letter-spacing", "Letter Spacing", "Increases the space between characters. Wide and Extra Wide are useful for users with dyslexia or low vision. Each option is rendered in its own spacing so you can preview the difference.")
+				</div>
+				@components.Segmented("pref-letter-spacing", "letter_spacing",
+					[]components.SegmentOption{
+						{Value: "normal", Label: "Normal", Style: "letter-spacing: normal;"},
+						{Value: "wide", Label: "Wide", Style: "letter-spacing: 0.05em;"},
+						{Value: "extra-wide", Label: "Extra Wide", Style: "letter-spacing: 0.12em;"},
+					},
+					prefs.LetterSpacing,
+				)
+			</div>
+			<!-- Font size -->
+			<div class="flex items-center justify-between gap-4">
+				<div>
+					<div class="text-sm font-medium">Font Size</div>
+					<div class="text-xs text-gray-500 dark:text-gray-400">Base size for all body text in the interface.</div>
+				</div>
+				@components.Segmented("pref-font-size", "font_size",
+					[]components.SegmentOption{
+						{Value: "small", Label: "Small"},
+						{Value: "medium", Label: "Medium"},
+						{Value: "large", Label: "Large"},
+					},
+					prefs.FontSize,
+				)
+			</div>
+		</div>
+	</div>
+	<!-- Accessibility and Performance -->
+	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
+		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+			<h2 class="text-lg font-semibold">Accessibility and Performance</h2>
+			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+				Reduce motion and disable heavy visual effects for better performance or accessibility.
+			</p>
+		</div>
+		<div class="px-6 py-4 space-y-5">
+			<!-- Reduced motion -->
+			<div class="flex items-center justify-between gap-4">
+				<div class="flex items-center gap-2">
+					<div>
+						<div class="text-sm font-medium">Reduced Motion</div>
+						<div class="text-xs text-gray-500 dark:text-gray-400">Minimizes or removes CSS animations and transitions.</div>
+					</div>
+					@components.ContextHelp("help-reduced-motion", "Reduced Motion", "System follows your OS-level accessibility setting. On forces reduced motion regardless of OS preference, which is useful if your browser does not expose the system setting.")
+				</div>
+				@components.Segmented("pref-reduced-motion", "reduced_motion",
+					[]components.SegmentOption{
+						{Value: "system", Label: "System"},
+						{Value: "on", Label: "On"},
+						{Value: "off", Label: "Off"},
+					},
+					prefs.ReducedMotion,
+				)
+			</div>
+			<!-- Lite mode -->
+			<div class="flex items-center justify-between gap-4">
+				<div class="flex items-center gap-2">
+					<div>
+						<div class="text-sm font-medium">Lite Mode</div>
+						<div class="text-xs text-gray-500 dark:text-gray-400">Disables glass effects, animations, BlurHash placeholders, and large image loading.</div>
+					</div>
+					@components.ContextHelp("help-lite-mode", "Lite Mode", "Auto detects low-end devices (fewer than 4 CPU cores or less than 4 GB RAM) and enables Lite Mode automatically. On forces Lite Mode regardless of device, improving performance on constrained hardware or slow connections.")
+				</div>
+				@components.Segmented("pref-lite-mode", "lite_mode",
+					[]components.SegmentOption{
+						{Value: "off", Label: "Off"},
+						{Value: "on", Label: "On"},
+						{Value: "auto", Label: "Auto"},
+					},
+					prefs.LiteMode,
+				)
+			</div>
+		</div>
+	</div>
+	<!-- Language -->
+	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
+		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+			<h2 class="text-lg font-semibold">Language</h2>
+			<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+				Language settings. Additional locales will appear here when available.
+			</p>
+		</div>
+		<div class="px-6 py-4">
+			<div class="flex items-center justify-between gap-4">
+				<div>
+					<div class="text-sm font-medium">Language</div>
+					<div class="text-xs text-gray-500 dark:text-gray-400">Interface language. English is the only supported locale in this release.</div>
+				</div>
+				<select
+					class="text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500"
+					aria-label="Interface language"
+					id="pref-language"
+					onchange="swSaveAppearancePref('language', this.value)"
+				>
+					<option value="en" selected?={ prefs.Language == "en" || prefs.Language == "" }>English</option>
+				</select>
+			</div>
+		</div>
+	</div>
+	@appearanceScript()
+}
+
+// appearanceScript renders the inline JS for the Appearance settings tab.
+// All segmented controls on this tab dispatch "segmented:changed" events which
+// are intercepted here and persisted via the swPreferences API.
+templ appearanceScript() {
+	<script>
+		(function () {
+			// Save a single appearance preference via swPreferences.set, which
+			// persists to the server and applies to the DOM immediately.
+			window.swSaveAppearancePref = function (key, value) {
+				if (window.swPreferences) {
+					window.swPreferences.set(key, value).then(function (saved) {
+						// swPreferences.set resolves with the previous value when the
+						// server rejects a change (it reverts client-side). Only show
+						// success if the server actually accepted the new value.
+						if (saved === value) {
+							if (typeof window.showSuccessToast === 'function') {
+								showSuccessToast('Preference saved');
+							}
+						} else {
+							if (typeof window.showToast === 'function') {
+								showToast('Failed to save preference');
+							}
+						}
+					}).catch(function () {
+						if (typeof window.showToast === 'function') {
+							showToast('Failed to save preference');
+						}
+					});
+				}
+			};
+
+			// Wire all segmented controls inside the appearance tab panel.
+			// Each segmented control fires "segmented:changed" with {name, value}.
+			var panel = document.querySelector('[data-tab-panel="appearance"]');
+			if (!panel) return;
+
+			panel.addEventListener('segmented:changed', function (e) {
+				if (!e.detail) return;
+				swSaveAppearancePref(e.detail.name, e.detail.value);
+			});
+		})();
+	</script>
+}
