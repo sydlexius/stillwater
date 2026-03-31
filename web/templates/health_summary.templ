@@ -12,6 +12,12 @@ type HealthSummaryData struct {
 	MissingFanart    int
 	MissingMBID      int
 	TopViolations    []ViolationSummaryData
+	// Tier counts for the Reports page health score distribution.
+	TierExcellent int // 80-100
+	TierGood      int // 60-79
+	TierFair      int // 40-59
+	TierPoor      int // 20-39
+	TierCritical  int // 0-19
 }
 
 // ViolationSummaryData represents a rule violation count for display.
@@ -42,9 +48,9 @@ templ HealthSummaryFragment(data HealthSummaryData) {
 			{ fmt.Sprint(data.CompliantArtists) } of { fmt.Sprint(data.TotalArtists) } fully compliant
 		</p>
 	</div>
-	@quickStatCard("Missing Metadata", data.MissingNFO, "/reports/compliance?filter=missing_nfo")
-	@quickStatCard("Missing Thumb", data.MissingThumb, "/reports/compliance?filter=missing_thumb")
-	@quickStatCard("Missing MBID", data.MissingMBID, "/reports/compliance?filter=missing_mbid")
+	@quickStatCard("Missing Metadata", data.MissingNFO, "reports?tab=compliance&filter=missing_nfo")
+	@quickStatCard("Missing Thumb", data.MissingThumb, "reports?tab=compliance&filter=missing_thumb")
+	@quickStatCard("Missing MBID", data.MissingMBID, "reports?tab=compliance&filter=missing_mbid")
 	if len(data.TopViolations) > 0 {
 		<div class="sw-card sm:col-span-2 lg:col-span-4 rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
 			<h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Top Violations</h3>
@@ -69,6 +75,30 @@ templ HealthSummaryFragment(data HealthSummaryData) {
 			</div>
 		</div>
 	}
+}
+
+// HealthTierFragment renders health score tier distribution cards for the Reports Trends tab.
+// Each card links to the Compliance tab filtered to that tier's score range.
+templ HealthTierFragment(data HealthSummaryData) {
+	<div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+		@healthTierCard("Excellent", "80-100", data.TierExcellent, "text-green-600 dark:text-green-400", "border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20", "reports?tab=compliance&health_min=80")
+		@healthTierCard("Good", "60-79", data.TierGood, "text-blue-600 dark:text-blue-400", "border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20", "reports?tab=compliance&health_min=60&health_max=79")
+		@healthTierCard("Fair", "40-59", data.TierFair, "text-yellow-600 dark:text-yellow-400", "border-yellow-200 dark:border-yellow-800 bg-yellow-50 dark:bg-yellow-900/20", "reports?tab=compliance&health_min=40&health_max=59")
+		@healthTierCard("Poor", "20-39", data.TierPoor, "text-orange-600 dark:text-orange-400", "border-orange-200 dark:border-orange-800 bg-orange-50 dark:bg-orange-900/20", "reports?tab=compliance&health_min=20&health_max=39")
+		@healthTierCard("Critical", "0-19", data.TierCritical, "text-red-600 dark:text-red-400", "border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20", "reports?tab=compliance&health_max=19")
+	</div>
+}
+
+templ healthTierCard(label, rangeStr string, count int, colorClass, bgClass, filterURL string) {
+	<a
+		href={ templ.SafeURL(filterURL) }
+		class={ "rounded-lg border p-4 flex flex-col gap-1 hover:shadow-md transition-shadow", bgClass }
+		aria-label={ label + " tier: " + fmt.Sprint(count) + " artists (" + rangeStr + "%)" }
+	>
+		<span class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">{ label }</span>
+		<span class={ "text-2xl font-bold", colorClass }>{ fmt.Sprint(count) }</span>
+		<span class="text-xs text-gray-400 dark:text-gray-500">{ rangeStr }%</span>
+	</a>
 }
 
 templ quickStatCard(label string, count int, link string) {

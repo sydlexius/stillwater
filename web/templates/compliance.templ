@@ -36,6 +36,12 @@ type ComplianceData struct {
 	ProfileName    string // Active platform profile name for image terminology
 }
 
+// ReportsPageData holds all data for the unified Reports page.
+type ReportsPageData struct {
+	Compliance ComplianceData
+	ActiveTab  string // "trends", "compliance", or "coverage"
+}
+
 // LibrarySummaryData holds per-library health stats for the summary section.
 type LibrarySummaryData struct {
 	LibraryID        string
@@ -62,9 +68,9 @@ func sortIcon(currentSort, col, currentOrder string) string {
 		return ""
 	}
 	if currentOrder == "desc" {
-		return " ↓"
+		return " \u2193"
 	}
-	return " ↑"
+	return " \u2191"
 }
 
 // complianceExportURL builds the CSV export URL with current filter params.
@@ -101,15 +107,17 @@ func complianceExportURL(data ComplianceData) string {
 	return "/api/v1/reports/compliance/export"
 }
 
-templ CompliancePage(assets AssetPaths, data ComplianceData) {
-	@Layout("Compliance Report", assets) {
+// ReportsPage is the unified reports page with Trends, Compliance, and Coverage tabs.
+templ ReportsPage(assets AssetPaths, data ReportsPageData) {
+	@Layout("Reports", assets) {
 		<script src={ assets.ChartJS }></script>
 		<div class="space-y-6">
+			<!-- Page header -->
 			<div class="sw-card rounded-lg px-6 py-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
 				<div>
-					<h1 class="text-2xl font-bold">Compliance Report</h1>
+					<h1 class="text-2xl font-bold">Reports</h1>
 					<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-						Per-artist rule compliance with actionable details.
+						Health trends, per-artist compliance, and metadata coverage.
 					</p>
 				</div>
 				<button
@@ -129,140 +137,73 @@ templ CompliancePage(assets AssetPaths, data ComplianceData) {
 					<span id="run-rules-label">Run Rules</span>
 				</button>
 			</div>
-			<!-- Library summary section (lazy-loaded) -->
+			<!-- Health scorecard strip (clickable metrics filtering compliance table) -->
 			<div
-				id="compliance-summary"
-				hx-get="/api/v1/reports/health/by-library"
+				id="reports-scorecard"
+				hx-get="/api/v1/reports/health"
 				hx-trigger="load"
 				hx-swap="innerHTML"
+				class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5"
 			>
-				<div class="flex items-center justify-center py-6">
-					<svg class="animate-spin h-6 w-6 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-						<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-						<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-					</svg>
+				<div class="sw-card rounded-lg p-4 animate-pulse">
+					<div class="h-4 bg-gray-200 dark:bg-gray-700 rounded w-3/4 mb-2"></div>
+					<div class="h-8 bg-gray-200 dark:bg-gray-700 rounded w-1/2"></div>
 				</div>
 			</div>
-			<!-- Filters -->
-			<div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-				<div class="relative flex-1 max-w-sm">
-					<input
-						type="search"
-						name="search"
-						value={ data.Search }
-						placeholder="Search artists..."
-						hx-get="/reports/compliance"
-						hx-trigger="keyup changed delay:300ms"
-						hx-target="#compliance-table"
-						hx-swap="outerHTML"
-						hx-include="[name='status'],[name='filter'],[name='library_id'],[name='sort'],[name='order'],[name='health_min'],[name='health_max']"
-						class="block w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-					/>
-				</div>
-				<div class="flex flex-wrap items-center gap-3">
-					if len(data.Libraries) > 1 {
-						<select
-							name="library_id"
-							hx-get="/reports/compliance"
-							hx-trigger="change"
-							hx-target="#compliance-table"
-							hx-swap="outerHTML"
-							hx-include="[name='search'],[name='status'],[name='filter'],[name='sort'],[name='order'],[name='health_min'],[name='health_max']"
-							class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-						>
-							<option value="" selected?={ data.LibraryID == "" }>All Libraries</option>
-							for _, lib := range data.Libraries {
-								<option value={ lib.ID } selected?={ data.LibraryID == lib.ID }>{ lib.Name }</option>
-							}
-						</select>
-					}
-					<select
-						name="status"
-						hx-get="/reports/compliance"
-						hx-trigger="change"
-						hx-target="#compliance-table"
-						hx-swap="outerHTML"
-						hx-include="[name='search'],[name='filter'],[name='library_id'],[name='sort'],[name='order'],[name='health_min'],[name='health_max']"
-						class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-					>
-						<option value="all" selected?={ data.Status == "" || data.Status == "all" }>All Artists</option>
-						<option value="compliant" selected?={ data.Status == "compliant" }>Compliant</option>
-						<option value="non_compliant" selected?={ data.Status == "non_compliant" }>Non-Compliant</option>
-					</select>
-					<select
-						name="filter"
-						hx-get="/reports/compliance"
-						hx-trigger="change"
-						hx-target="#compliance-table"
-						hx-swap="outerHTML"
-						hx-include="[name='search'],[name='status'],[name='library_id'],[name='sort'],[name='order'],[name='health_min'],[name='health_max']"
-						class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-					>
-						<option value="" selected?={ data.Filter == "" }>No Filter</option>
-						<option value="missing_nfo" selected?={ data.Filter == "missing_nfo" }>Missing Metadata</option>
-						<option value="missing_thumb" selected?={ data.Filter == "missing_thumb" }>Missing { img.ImageTermFor("thumb", data.ProfileName) }</option>
-						<option value="missing_fanart" selected?={ data.Filter == "missing_fanart" }>Missing { img.ImageTermFor("fanart", data.ProfileName) }</option>
-						<option value="missing_logo" selected?={ data.Filter == "missing_logo" }>Missing { img.ImageTermFor("logo", data.ProfileName) }</option>
-						<option value="missing_banner" selected?={ data.Filter == "missing_banner" }>Missing { img.ImageTermFor("banner", data.ProfileName) }</option>
-						<option value="missing_mbid" selected?={ data.Filter == "missing_mbid" }>Missing MBID</option>
-					</select>
-					<!-- Health score range -->
-					<div class="flex items-center gap-1">
-						<input
-							type="number"
-							name="health_min"
-							min="0"
-							max="100"
-							placeholder="Min %"
-							value={ intOrEmpty(data.HealthScoreMin) }
-							hx-get="/reports/compliance"
-							hx-trigger="change"
-							hx-target="#compliance-table"
-							hx-swap="outerHTML"
-							hx-include="[name='search'],[name='status'],[name='filter'],[name='library_id'],[name='sort'],[name='order'],[name='health_max']"
-							class="w-20 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-						/>
-						<span class="text-gray-400 text-sm">-</span>
-						<input
-							type="number"
-							name="health_max"
-							min="0"
-							max="100"
-							placeholder="Max %"
-							value={ intOrEmpty(data.HealthScoreMax) }
-							hx-get="/reports/compliance"
-							hx-trigger="change"
-							hx-target="#compliance-table"
-							hx-swap="outerHTML"
-							hx-include="[name='search'],[name='status'],[name='filter'],[name='library_id'],[name='sort'],[name='order'],[name='health_min']"
-							class="w-20 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-						/>
-					</div>
-					@components.ColumnToggle("compliance", "compliance-tbl", []components.ColumnDef{
-						{Key: "artist", Label: "Artist", Required: true},
-						{Key: "score", Label: "Score"},
-						{Key: "metadata", Label: "Metadata"},
-						{Key: "thumb", Label: img.ImageTermFor("thumb", data.ProfileName)},
-						{Key: "fanart", Label: img.ImageTermFor("fanart", data.ProfileName)},
-						{Key: "logo", Label: img.ImageTermFor("logo", data.ProfileName)},
-						{Key: "mbid", Label: "MBID"},
-						{Key: "actions", Label: "Actions"},
-					})
+			<!-- Tab navigation -->
+			<div class="border-b border-gray-200 dark:border-gray-700">
+				<nav class="-mb-px flex gap-1" aria-label="Reports tabs" role="tablist">
 					<a
-						href={ templ.SafeURL(complianceExportURL(data)) }
-						class="inline-flex items-center gap-1.5 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+						href="?tab=trends"
+						class={ "reports-tab px-4 py-2.5 text-sm font-medium rounded-t-md border-b-2 transition-colors", templ.KV("border-blue-500 text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20", data.ActiveTab == "trends" || data.ActiveTab == ""), templ.KV("border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600", data.ActiveTab != "trends" && data.ActiveTab != "") }
+						hx-get="?tab=trends"
+						hx-target="#reports-tab-content"
+						hx-swap="innerHTML"
+						hx-push-url="true"
+						role="tab"
+						aria-selected={ fmt.Sprintf("%v", data.ActiveTab == "trends" || data.ActiveTab == "") }
+						aria-controls="reports-tab-content"
 					>
-						<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-							<path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"></path>
-						</svg>
-						Export CSV
+						Trends
 					</a>
-				</div>
+					<a
+						href="?tab=compliance"
+						class={ "reports-tab px-4 py-2.5 text-sm font-medium rounded-t-md border-b-2 transition-colors", templ.KV("border-blue-500 text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20", data.ActiveTab == "compliance"), templ.KV("border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600", data.ActiveTab != "compliance") }
+						hx-get="?tab=compliance"
+						hx-target="#reports-tab-content"
+						hx-swap="innerHTML"
+						hx-push-url="true"
+						role="tab"
+						aria-selected={ fmt.Sprintf("%v", data.ActiveTab == "compliance") }
+						aria-controls="reports-tab-content"
+					>
+						Compliance
+					</a>
+					<a
+						href="?tab=coverage"
+						class={ "reports-tab px-4 py-2.5 text-sm font-medium rounded-t-md border-b-2 transition-colors", templ.KV("border-blue-500 text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20", data.ActiveTab == "coverage"), templ.KV("border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600", data.ActiveTab != "coverage") }
+						hx-get="?tab=coverage"
+						hx-target="#reports-tab-content"
+						hx-swap="innerHTML"
+						hx-push-url="true"
+						role="tab"
+						aria-selected={ fmt.Sprintf("%v", data.ActiveTab == "coverage") }
+						aria-controls="reports-tab-content"
+					>
+						Coverage
+					</a>
+				</nav>
 			</div>
-			<!-- Hidden sort inputs -->
-			<input type="hidden" name="sort" id="compliance-sort" value={ data.Sort }/>
-			<input type="hidden" name="order" id="compliance-order" value={ data.Order }/>
-			@ComplianceTable(data)
+			<!-- Tab content area -->
+			<div id="reports-tab-content" role="tabpanel">
+				if data.ActiveTab == "compliance" {
+					@ReportsComplianceTab(data.Compliance)
+				} else if data.ActiveTab == "coverage" {
+					@ReportsCoverageTab(data.Compliance)
+				} else {
+					@ReportsTrendsTab()
+				}
+			</div>
 		</div>
 		<!-- Bulk action bar (hidden until selections exist) -->
 		<div
@@ -297,22 +238,235 @@ templ CompliancePage(assets AssetPaths, data ComplianceData) {
 			</div>
 		</div>
 		@runRulesScript()
-		@complianceScript()
+		@reportsTabScript()
 	}
+}
+
+// ReportsTrendsTab renders the Trends tab content: health score chart, violations chart, and tier visualization.
+templ ReportsTrendsTab() {
+	<div class="space-y-6">
+		<!-- Health score tier visualization (lazy-loaded via HTMX) -->
+		<div class="sw-card rounded-lg bg-white dark:bg-gray-800 p-4 shadow sm:p-6">
+			<h2 class="text-lg font-semibold mb-4">Health Score Distribution</h2>
+			<p class="text-xs text-gray-400 dark:text-gray-500 mb-3">Click a tier to view those artists in the Compliance tab.</p>
+			<div
+				id="health-tier-content"
+				hx-get="/api/v1/reports/health/tiers"
+				hx-trigger="load"
+				hx-swap="innerHTML"
+				class="text-sm text-gray-500 dark:text-gray-400"
+			>
+				<p>Loading...</p>
+			</div>
+		</div>
+		<!-- Health Score Trend chart -->
+		<div class="sw-card rounded-lg bg-white dark:bg-gray-800 p-4 shadow sm:p-6">
+			<h2 class="text-lg font-semibold mb-4">Health Score Trend</h2>
+			<div class="relative h-[250px] sm:h-[300px]">
+				<canvas id="health-chart"></canvas>
+			</div>
+		</div>
+		<!-- Violations Trend chart -->
+		<div class="sw-card rounded-lg bg-white dark:bg-gray-800 p-4 shadow sm:p-6">
+			<div class="flex items-center justify-between mb-4">
+				<h2 class="text-lg font-semibold">Violations Trend</h2>
+				<select
+					id="violations-trend-days"
+					aria-label="Date range for violations trend chart"
+					onchange="loadViolationsTrend(this.value)"
+					class="text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1"
+				>
+					<option value="7">Last 7 days</option>
+					<option value="30" selected>Last 30 days</option>
+					<option value="90">Last 90 days</option>
+				</select>
+			</div>
+			<div class="relative h-[250px] sm:h-[300px]">
+				<canvas id="violations-chart"></canvas>
+			</div>
+		</div>
+	</div>
+	@reportsTrendsScript()
+}
+
+// ReportsCoverageTab renders the Coverage tab content: metadata completeness bar chart.
+templ ReportsCoverageTab(data ComplianceData) {
+	<div class="space-y-6">
+		<!-- Metadata Completeness -->
+		<div class="sw-card rounded-lg bg-white dark:bg-gray-800 p-4 shadow sm:p-6">
+			<h2 class="text-lg font-semibold mb-1">Metadata Completeness</h2>
+			<div
+				id="completeness-summary"
+				hx-get="/api/v1/reports/metadata-completeness"
+				hx-trigger="load"
+				hx-swap="innerHTML"
+				class="text-sm text-gray-500 dark:text-gray-400"
+			>
+				<p>Loading...</p>
+			</div>
+			<div class="mt-4 relative h-[300px] sm:h-[360px]">
+				<canvas id="completeness-chart"></canvas>
+			</div>
+		</div>
+		<!-- Library summary section (lazy-loaded) -->
+		<div
+			id="compliance-summary"
+			hx-get="/api/v1/reports/health/by-library"
+			hx-trigger="load"
+			hx-swap="innerHTML"
+		>
+			<div class="flex items-center justify-center py-6">
+				<svg class="animate-spin h-6 w-6 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+					<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+					<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+				</svg>
+			</div>
+		</div>
+	</div>
+	@reportsCoverageScript()
+}
+
+// ReportsComplianceTab renders the Compliance tab: filter bar + artist table.
+templ ReportsComplianceTab(data ComplianceData) {
+	<div class="space-y-6">
+		<!-- Filters -->
+		<div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+			<div class="relative flex-1 max-w-sm">
+				<input
+					type="search"
+					name="search"
+					value={ data.Search }
+					placeholder="Search artists..."
+					hx-get="/reports"
+					hx-trigger="keyup changed delay:300ms"
+					hx-target="#compliance-table"
+					hx-swap="outerHTML"
+					hx-include="[name='status'],[name='filter'],[name='library_id'],[name='sort'],[name='order'],[name='health_min'],[name='health_max'],[name='tab']"
+					class="block w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+				/>
+			</div>
+			<div class="flex flex-wrap items-center gap-3">
+				if len(data.Libraries) > 1 {
+					<select
+						name="library_id"
+						hx-get="/reports"
+						hx-trigger="change"
+						hx-target="#compliance-table"
+						hx-swap="outerHTML"
+						hx-include="[name='search'],[name='status'],[name='filter'],[name='sort'],[name='order'],[name='health_min'],[name='health_max'],[name='tab']"
+						class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+					>
+						<option value="" selected?={ data.LibraryID == "" }>All Libraries</option>
+						for _, lib := range data.Libraries {
+							<option value={ lib.ID } selected?={ data.LibraryID == lib.ID }>{ lib.Name }</option>
+						}
+					</select>
+				}
+				<select
+					name="status"
+					hx-get="/reports"
+					hx-trigger="change"
+					hx-target="#compliance-table"
+					hx-swap="outerHTML"
+					hx-include="[name='search'],[name='filter'],[name='library_id'],[name='sort'],[name='order'],[name='health_min'],[name='health_max'],[name='tab']"
+					class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+				>
+					<option value="all" selected?={ data.Status == "" || data.Status == "all" }>All Artists</option>
+					<option value="compliant" selected?={ data.Status == "compliant" }>Compliant</option>
+					<option value="non_compliant" selected?={ data.Status == "non_compliant" }>Non-Compliant</option>
+				</select>
+				<select
+					name="filter"
+					hx-get="/reports"
+					hx-trigger="change"
+					hx-target="#compliance-table"
+					hx-swap="outerHTML"
+					hx-include="[name='search'],[name='status'],[name='library_id'],[name='sort'],[name='order'],[name='health_min'],[name='health_max'],[name='tab']"
+					class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+				>
+					<option value="" selected?={ data.Filter == "" }>No Filter</option>
+					<option value="missing_nfo" selected?={ data.Filter == "missing_nfo" }>Missing Metadata</option>
+					<option value="missing_thumb" selected?={ data.Filter == "missing_thumb" }>Missing { img.ImageTermFor("thumb", data.ProfileName) }</option>
+					<option value="missing_fanart" selected?={ data.Filter == "missing_fanart" }>Missing { img.ImageTermFor("fanart", data.ProfileName) }</option>
+					<option value="missing_logo" selected?={ data.Filter == "missing_logo" }>Missing { img.ImageTermFor("logo", data.ProfileName) }</option>
+					<option value="missing_banner" selected?={ data.Filter == "missing_banner" }>Missing { img.ImageTermFor("banner", data.ProfileName) }</option>
+					<option value="missing_mbid" selected?={ data.Filter == "missing_mbid" }>Missing MBID</option>
+				</select>
+				<!-- Health score range -->
+				<div class="flex items-center gap-1">
+					<input
+						type="number"
+						name="health_min"
+						min="0"
+						max="100"
+						placeholder="Min %"
+						value={ intOrEmpty(data.HealthScoreMin) }
+						hx-get="/reports"
+						hx-trigger="change"
+						hx-target="#compliance-table"
+						hx-swap="outerHTML"
+						hx-include="[name='search'],[name='status'],[name='filter'],[name='library_id'],[name='sort'],[name='order'],[name='health_max'],[name='tab']"
+						class="w-20 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+					/>
+					<span class="text-gray-400 text-sm">-</span>
+					<input
+						type="number"
+						name="health_max"
+						min="0"
+						max="100"
+						placeholder="Max %"
+						value={ intOrEmpty(data.HealthScoreMax) }
+						hx-get="/reports"
+						hx-trigger="change"
+						hx-target="#compliance-table"
+						hx-swap="outerHTML"
+						hx-include="[name='search'],[name='status'],[name='filter'],[name='library_id'],[name='sort'],[name='order'],[name='health_min'],[name='tab']"
+						class="w-20 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+					/>
+				</div>
+				@components.ColumnToggle("compliance", "compliance-tbl", []components.ColumnDef{
+					{Key: "artist", Label: "Artist", Required: true},
+					{Key: "score", Label: "Score"},
+					{Key: "metadata", Label: "Metadata"},
+					{Key: "thumb", Label: img.ImageTermFor("thumb", data.ProfileName)},
+					{Key: "fanart", Label: img.ImageTermFor("fanart", data.ProfileName)},
+					{Key: "logo", Label: img.ImageTermFor("logo", data.ProfileName)},
+					{Key: "mbid", Label: "MBID"},
+					{Key: "actions", Label: "Actions"},
+				})
+				<a
+					href={ templ.SafeURL(complianceExportURL(data)) }
+					class="inline-flex items-center gap-1.5 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+				>
+					<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+						<path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"></path>
+					</svg>
+					Export CSV
+				</a>
+			</div>
+		</div>
+		<!-- Hidden inputs for tab-aware requests -->
+		<input type="hidden" name="tab" value="compliance"/>
+		<!-- Hidden sort inputs -->
+		<input type="hidden" name="sort" id="compliance-sort" value={ data.Sort }/>
+		<input type="hidden" name="order" id="compliance-order" value={ data.Order }/>
+		@ComplianceTable(data)
+	</div>
+	@complianceScript()
 }
 
 // coverageChartJSON serializes library coverage data as JSON for Chart.js.
 // profileName controls the dataset labels for thumb/fanart (e.g. "Primary"/"Backdrop" for Emby).
 func coverageChartJSON(libs []LibrarySummaryData, profileName string) string {
 	type chartData struct {
-		Labels     []string `json:"labels"`
-		Metadata   []int    `json:"metadata"`
-		Thumb      []int    `json:"thumb"`
-		Fanart     []int    `json:"fanart"`
-		MBID       []int    `json:"mbid"`
-		Total      []int    `json:"total"`
-		ThumbLabel  string  `json:"thumb_label"`
-		FanartLabel string  `json:"fanart_label"`
+		Labels      []string `json:"labels"`
+		Metadata    []int    `json:"metadata"`
+		Thumb       []int    `json:"thumb"`
+		Fanart      []int    `json:"fanart"`
+		MBID        []int    `json:"mbid"`
+		Total       []int    `json:"total"`
+		ThumbLabel  string   `json:"thumb_label"`
+		FanartLabel string   `json:"fanart_label"`
 	}
 	d := chartData{
 		Labels:      make([]string, len(libs)),
@@ -368,7 +522,7 @@ templ ComplianceTable(data ComplianceData) {
 							tabindex="0"
 							role="button"
 							onclick="sortBy('name')"
-						onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();sortBy('name')}"
+							onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();sortBy('name')}"
 						>
 							Artist{ sortIcon(data.Sort, "name", data.Order) }
 						</th>
@@ -670,9 +824,9 @@ templ runRulesScript() {
 						}
 						showSuccessToast(msg);
 						resetRuleButton();
-						// Refresh health summary and compliance table if present.
-						if (document.getElementById('health-summary')) {
-							htmx.ajax('GET', '/api/v1/reports/health', {target: '#health-summary', swap: 'innerHTML'});
+						// Refresh scorecard and compliance summary if present.
+						if (document.getElementById('reports-scorecard')) {
+							htmx.ajax('GET', '/api/v1/reports/health', {target: '#reports-scorecard', swap: 'innerHTML'});
 						}
 						if (document.getElementById('compliance-summary')) {
 							htmx.ajax('GET', '/api/v1/reports/health/by-library', {target: '#compliance-summary', swap: 'innerHTML'});
@@ -715,6 +869,306 @@ templ runRulesScript() {
 			if (spinner) spinner.classList.add('hidden');
 			if (label) label.textContent = 'Run Rules';
 		}
+	</script>
+}
+
+// reportsTrendsScript initializes the Health Score Trend and Violations Trend charts
+// with a glow plugin using the --sw-accent-primary-glow CSS token.
+templ reportsTrendsScript() {
+	<script>
+		(function() {
+			// Chart glow plugin: adds a drop-shadow filter on line chart strokes.
+			// Respects prefers-reduced-motion by disabling the glow animation.
+			var prefersReducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+			var glowPlugin = {
+				id: 'swGlow',
+				beforeDatasetDraw: function(chart, args) {
+					if (prefersReducedMotion) return;
+					var meta = chart.getDatasetMeta(args.index);
+					if (!meta || meta.type !== 'line') return;
+					var ctx = chart.ctx;
+					var ca = chart.chartArea;
+					if (!ca) return;
+					var glowColor = getComputedStyle(document.documentElement)
+						.getPropertyValue('--sw-accent-primary-glow').trim() || 'rgba(59,130,246,0.3)';
+					ctx.save();
+					ctx.filter = 'drop-shadow(0 0 6px ' + glowColor + ')';
+					var ds = chart.data.datasets[args.index];
+					if (ds.fill) {
+						// Store the original flat color on first draw so we can recreate
+						// the gradient on each render (handles canvas resize).
+						if (!ds._origBg) ds._origBg = ds.backgroundColor;
+						var grad = ctx.createLinearGradient(0, ca.top, 0, ca.bottom);
+						grad.addColorStop(0, ds._origBg);
+						grad.addColorStop(1, 'rgba(0,0,0,0)');
+						ds.backgroundColor = grad;
+					}
+				},
+				afterDatasetDraw: function(chart, args) {
+					if (prefersReducedMotion) return;
+					var meta = chart.getDatasetMeta(args.index);
+					if (!meta || meta.type !== 'line') return;
+					if (!chart.chartArea) return;
+					chart.ctx.restore();
+				}
+			};
+
+			var isDark = document.documentElement.classList.contains('dark');
+			var textColor = isDark ? '#9ca3af' : '#6b7280';
+			var gridColor = isDark ? '#374151' : '#e5e7eb';
+			var bp = (function() {
+				var el = document.querySelector('meta[name="htmx-base-path"]');
+				return el ? el.content : '';
+			})();
+
+			// Health Score Trend
+			fetch(bp + '/api/v1/reports/health/history')
+				.then(function(res) {
+					if (!res.ok) { return null; }
+					return res.json();
+				})
+				.then(function(data) {
+					if (!data) { return; }
+					var history = data.history || [];
+					if (history.length === 0) return;
+
+					var labels = history.map(function(h) {
+						return h.recorded_at.substring(0, 10);
+					});
+					var scores = history.map(function(h) { return h.score; });
+
+					var ctx = document.getElementById('health-chart');
+					if (!ctx) return;
+					new Chart(ctx, {
+						plugins: [glowPlugin],
+						type: 'line',
+						data: {
+							labels: labels,
+							datasets: [{
+								label: 'Health Score',
+								data: scores,
+								borderColor: '#3b82f6',
+								backgroundColor: 'rgba(59, 130, 246, 0.1)',
+								fill: true,
+								tension: 0.3,
+								pointRadius: 2,
+								pointHoverRadius: 5
+							}]
+						},
+						options: {
+							responsive: true,
+							maintainAspectRatio: false,
+							scales: {
+								y: {
+									min: 0,
+									max: 100,
+									ticks: { color: textColor },
+									grid: { color: gridColor }
+								},
+								x: {
+									ticks: { color: textColor, maxTicksLimit: 10 },
+									grid: { color: gridColor }
+								}
+							},
+							plugins: {
+								legend: { labels: { color: textColor } }
+							}
+						}
+					});
+				})
+				.catch(function() { showToast('Failed to load health history', 'error'); });
+
+			var violationsChart = null;
+
+			window.loadViolationsTrend = function(days) {
+				fetch(bp + '/api/v1/violations/trend?days=' + encodeURIComponent(days))
+					.then(function(res) {
+						if (!res.ok) {
+							showToast('Failed to load violations trend');
+							return null;
+						}
+						return res.json();
+					})
+					.then(function(data) {
+						if (!data) { return; }
+						var trend = data.trend || [];
+
+						var labels = trend.map(function(p) { return p.date; });
+						var created = trend.map(function(p) { return p.created; });
+						var resolved = trend.map(function(p) { return p.resolved; });
+
+						var ctx = document.getElementById('violations-chart');
+						if (!ctx) return;
+						if (violationsChart) {
+							violationsChart.destroy();
+						}
+						violationsChart = new Chart(ctx, {
+							plugins: [glowPlugin],
+							type: 'line',
+							data: {
+								labels: labels,
+								datasets: [
+									{
+										label: 'Created',
+										data: created,
+										borderColor: '#ef4444',
+										backgroundColor: 'rgba(239, 68, 68, 0.1)',
+										fill: true,
+										tension: 0.3,
+										pointRadius: 2,
+										pointHoverRadius: 5
+									},
+									{
+										label: 'Resolved',
+										data: resolved,
+										borderColor: '#22c55e',
+										backgroundColor: 'rgba(34, 197, 94, 0.1)',
+										fill: true,
+										tension: 0.3,
+										pointRadius: 2,
+										pointHoverRadius: 5
+									}
+								]
+							},
+							options: {
+								responsive: true,
+								maintainAspectRatio: false,
+								scales: {
+									y: {
+										min: 0,
+										ticks: {
+											color: textColor,
+											stepSize: 1,
+											precision: 0
+										},
+										grid: { color: gridColor }
+									},
+									x: {
+										ticks: { color: textColor, maxTicksLimit: 10 },
+										grid: { color: gridColor }
+									}
+								},
+								plugins: {
+									legend: { labels: { color: textColor } }
+								}
+							}
+						});
+					})
+					.catch(function() { showToast('Failed to load violations trend', 'error'); });
+			};
+
+			loadViolationsTrend(30);
+		})();
+	</script>
+}
+
+// reportsCoverageScript initializes the Metadata Completeness bar chart.
+templ reportsCoverageScript() {
+	<script>
+		(function() {
+			var isDark = document.documentElement.classList.contains('dark');
+			var textColor = isDark ? '#9ca3af' : '#6b7280';
+			var gridColor = isDark ? '#374151' : '#e5e7eb';
+			var bp = (function() {
+				var el = document.querySelector('meta[name="htmx-base-path"]');
+				return el ? el.content : '';
+			})();
+
+			fetch(bp + '/api/v1/reports/metadata-completeness')
+				.then(function(res) {
+					if (!res.ok) {
+						showToast('Failed to load completeness data', 'error');
+						return null;
+					}
+					return res.json();
+				})
+				.then(function(data) {
+					if (!data || !data.field_coverage || data.field_coverage.length === 0) return;
+					var fields = data.field_coverage;
+					var labels = fields.map(function(f) { return f.field; });
+					var values = fields.map(function(f) { return f.percentage; });
+					var bgColors = values.map(function(v) {
+						if (v >= 80) return 'rgba(34, 197, 94, 0.75)';
+						if (v >= 50) return 'rgba(234, 179, 8, 0.75)';
+						return 'rgba(239, 68, 68, 0.75)';
+					});
+					var ctx = document.getElementById('completeness-chart');
+					if (!ctx) return;
+					new Chart(ctx, {
+						type: 'bar',
+						data: {
+							labels: labels,
+							datasets: [{
+								label: 'Coverage (%)',
+								data: values,
+								backgroundColor: bgColors,
+								borderRadius: 3
+							}]
+						},
+						options: {
+							indexAxis: 'y',
+							responsive: true,
+							maintainAspectRatio: false,
+							scales: {
+								x: {
+									min: 0,
+									max: 100,
+									ticks: {
+										color: textColor,
+										callback: function(v) { return v + '%'; }
+									},
+									grid: { color: gridColor }
+								},
+								y: {
+									ticks: { color: textColor }
+								}
+							},
+							plugins: {
+								legend: { display: false },
+								tooltip: {
+									callbacks: {
+										label: function(ctx) {
+											var f = fields[ctx.dataIndex];
+											return f.count + ' / ' + f.total + ' (' + f.percentage.toFixed(1) + '%)';
+										}
+									}
+								}
+							}
+						}
+					});
+				})
+				.catch(function() { showToast('Failed to load completeness data', 'error'); });
+		})();
+	</script>
+}
+
+// reportsTabScript handles HTMX tab switching and active tab state updates.
+templ reportsTabScript() {
+	<script>
+		// Keep tab link active states in sync after HTMX partial swaps.
+		document.body.addEventListener('htmx:pushedIntoHistory', function(e) {
+			var url = new URL(e.detail.path, window.location.origin);
+			var tab = url.searchParams.get('tab') || 'trends';
+			document.querySelectorAll('.reports-tab').forEach(function(link) {
+				var linkUrl = new URL(link.href, window.location.origin);
+				var linkTab = linkUrl.searchParams.get('tab') || 'trends';
+				var isActive = (linkTab === tab);
+				link.classList.toggle('border-blue-500', isActive);
+				link.classList.toggle('text-blue-600', isActive);
+				link.classList.toggle('dark:text-blue-400', isActive);
+				link.classList.toggle('bg-blue-50', isActive);
+				link.classList.toggle('dark:bg-blue-900/20', isActive);
+				link.classList.toggle('border-transparent', !isActive);
+				link.classList.toggle('text-gray-500', !isActive);
+				link.classList.toggle('dark:text-gray-400', !isActive);
+				link.classList.toggle('hover:text-gray-700', !isActive);
+				link.classList.toggle('dark:hover:text-gray-300', !isActive);
+				link.classList.toggle('hover:border-gray-300', !isActive);
+				link.classList.toggle('dark:hover:border-gray-600', !isActive);
+				link.setAttribute('aria-selected', isActive ? 'true' : 'false');
+			});
+		});
 	</script>
 }
 
