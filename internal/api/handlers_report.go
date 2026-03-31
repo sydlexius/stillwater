@@ -214,8 +214,9 @@ func (r *Router) handleReportHealthByLibrary(w http.ResponseWriter, req *http.Re
 
 	if isHTMXRequest(req) {
 		renderTempl(w, req, templates.ComplianceSummaryFragment(templates.ComplianceSummaryData{
-			Libraries: toTemplateSummaries(summaries),
-			Overall:   toTemplateSummary(overall),
+			Libraries:   toTemplateSummaries(summaries),
+			Overall:     toTemplateSummary(overall),
+			ProfileName: r.getActiveProfileName(req.Context()),
 		}))
 		return
 	}

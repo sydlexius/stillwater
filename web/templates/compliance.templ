@@ -51,8 +51,9 @@ type LibrarySummaryData struct {
 
 // ComplianceSummaryData is the lazy-loaded summary section data.
 type ComplianceSummaryData struct {
-	Libraries []LibrarySummaryData
-	Overall   LibrarySummaryData
+	Libraries   []LibrarySummaryData
+	Overall     LibrarySummaryData
+	ProfileName string // Active platform profile name for image terminology
 }
 
 // sortIcon returns the sort direction indicator for a column header.
@@ -301,22 +302,27 @@ templ CompliancePage(assets AssetPaths, data ComplianceData) {
 }
 
 // coverageChartJSON serializes library coverage data as JSON for Chart.js.
-func coverageChartJSON(libs []LibrarySummaryData) string {
+// profileName controls the dataset labels for thumb/fanart (e.g. "Primary"/"Backdrop" for Emby).
+func coverageChartJSON(libs []LibrarySummaryData, profileName string) string {
 	type chartData struct {
-		Labels   []string `json:"labels"`
-		Metadata []int    `json:"metadata"`
-		Thumb    []int    `json:"thumb"`
-		Fanart   []int    `json:"fanart"`
-		MBID     []int    `json:"mbid"`
-		Total    []int    `json:"total"`
+		Labels     []string `json:"labels"`
+		Metadata   []int    `json:"metadata"`
+		Thumb      []int    `json:"thumb"`
+		Fanart     []int    `json:"fanart"`
+		MBID       []int    `json:"mbid"`
+		Total      []int    `json:"total"`
+		ThumbLabel  string  `json:"thumb_label"`
+		FanartLabel string  `json:"fanart_label"`
 	}
 	d := chartData{
-		Labels:   make([]string, len(libs)),
-		Metadata: make([]int, len(libs)),
-		Thumb:    make([]int, len(libs)),
-		Fanart:   make([]int, len(libs)),
-		MBID:     make([]int, len(libs)),
-		Total:    make([]int, len(libs)),
+		Labels:      make([]string, len(libs)),
+		Metadata:    make([]int, len(libs)),
+		Thumb:       make([]int, len(libs)),
+		Fanart:      make([]int, len(libs)),
+		MBID:        make([]int, len(libs)),
+		Total:       make([]int, len(libs)),
+		ThumbLabel:  img.ImageTermFor("thumb", profileName),
+		FanartLabel: img.ImageTermFor("fanart", profileName),
 	}
 	for i, lib := range libs {
 		d.Labels[i] = lib.LibraryName
@@ -503,7 +509,7 @@ templ ComplianceSummaryFragment(data ComplianceSummaryData) {
 }
 
 templ coverageChartData(data ComplianceSummaryData) {
-	<div id="coverage-chart-data" class="hidden" data-chart={ coverageChartJSON(data.Libraries) }></div>
+	<div id="coverage-chart-data" class="hidden" data-chart={ coverageChartJSON(data.Libraries, data.ProfileName) }></div>
 	<script>
 		(function() {
 			var el = document.getElementById('coverage-chart-data');
@@ -523,8 +529,8 @@ templ coverageChartData(data ComplianceSummaryData) {
 					labels: d.labels,
 					datasets: [
 						{ label: 'Metadata', data: d.metadata, backgroundColor: '#3b82f6' },
-						{ label: 'Thumb', data: d.thumb, backgroundColor: '#10b981' },
-						{ label: 'Fanart', data: d.fanart, backgroundColor: '#f59e0b' },
+						{ label: d.thumb_label || 'Thumb', data: d.thumb, backgroundColor: '#10b981' },
+						{ label: d.fanart_label || 'Fanart', data: d.fanart, backgroundColor: '#f59e0b' },
 						{ label: 'MBID', data: d.mbid, backgroundColor: '#8b5cf6' }
 					]
 				},

@@ -141,5 +141,8 @@ func (r *sqlitePlatformIDRepo) GetPresenceForArtists(ctx context.Context, artist
 		}
 		result[artistID] = p
 	}
-	return result, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating platform presence rows: %w", err)
+	}
+	return result, nil
 }

@@ -1673,7 +1673,7 @@ func (r *Router) handleFanartList(w http.ResponseWriter, req *http.Request) {
 		if req.URL.Query().Get("management") == "true" {
 			renderTempl(w, req, templates.FanartManagementGallery(artistID, items))
 		} else {
-			renderTempl(w, req, templates.FanartGallery(artistID, items))
+			renderTempl(w, req, templates.FanartGallery(artistID, items, r.getActiveProfileName(req.Context())))
 		}
 		return
 	}

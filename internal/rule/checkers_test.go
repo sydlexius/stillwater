@@ -18,6 +18,8 @@ import (
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+
+	_ "modernc.org/sqlite"
 )
 
 func TestCheckNFOExists(t *testing.T) {
@@ -992,6 +994,64 @@ func TestCheckBackdropMinCount_ExactlyAtMinimum(t *testing.T) {
 	v := checker(&a, RuleConfig{MinCount: 3})
 	if v != nil {
 		t.Errorf("expected nil when count equals minimum, got: %s", v.Message)
+	}
+}
+
+func TestCheckBackdropMinCount_DBPath(t *testing.T) {
+	// Test the DB-based counting path (artist with empty Path).
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	// Create the artist_images table used by countBackdropsFromDB.
+	_, err = db.Exec(`CREATE TABLE artist_images (
+		artist_id TEXT NOT NULL,
+		image_type TEXT NOT NULL,
+		exists_flag INTEGER NOT NULL DEFAULT 0
+	)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Insert 3 fanart rows with exists_flag=1 for artist "a1".
+	for i := 0; i < 3; i++ {
+		_, err = db.Exec(`INSERT INTO artist_images (artist_id, image_type, exists_flag) VALUES (?, 'fanart', 1)`, "a1")
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Insert one non-existing fanart row (exists_flag=0) -- should not count.
+	_, err = db.Exec(`INSERT INTO artist_images (artist_id, image_type, exists_flag) VALUES ('a1', 'fanart', 0)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Insert a thumb row -- should not count.
+	_, err = db.Exec(`INSERT INTO artist_images (artist_id, image_type, exists_flag) VALUES ('a1', 'thumb', 1)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	e := &Engine{db: db, logger: slog.Default()}
+	checker := e.makeBackdropMinCountChecker()
+
+	// Artist with empty Path forces DB path.
+	a := artist.Artist{ID: "a1", Name: "Test DB Path", Path: ""}
+
+	// Should pass: 3 fanart rows >= minCount 2.
+	v := checker(&a, RuleConfig{MinCount: 2})
+	if v != nil {
+		t.Errorf("expected nil when DB count meets minimum, got: %s", v.Message)
+	}
+
+	// Should fail: 3 fanart rows < minCount 5.
+	v = checker(&a, RuleConfig{MinCount: 5})
+	if v == nil {
+		t.Fatal("expected violation when DB count is below minimum")
+	}
+	if v.RuleID != RuleBackdropMinCount {
+		t.Errorf("RuleID = %q, want %q", v.RuleID, RuleBackdropMinCount)
 	}
 }
 

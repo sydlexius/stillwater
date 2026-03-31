@@ -504,10 +504,11 @@ type FanartGalleryItem struct {
 }
 
 // FanartGallery renders the fanart gallery management panel as an HTMX partial.
-templ FanartGallery(artistID string, items []FanartGalleryItem) {
+// profileName controls image terminology (e.g. "backdrop" for Emby vs "fanart" for Kodi).
+templ FanartGallery(artistID string, items []FanartGalleryItem, profileName string) {
 	<div id="fanart-gallery" class="space-y-4" data-artist-id={ artistID }>
 		<div class="flex items-center justify-between">
-			<h3 class="text-sm font-semibold">{ strconv.Itoa(len(items)) } fanart images</h3>
+			<h3 class="text-sm font-semibold">{ strconv.Itoa(len(items)) } { strings.ToLower(img.ImageTermFor("fanart", profileName)) } images</h3>
 			<button
 				type="button"
 				id="fanart-delete-selected"

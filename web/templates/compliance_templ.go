@@ -59,8 +59,9 @@ type LibrarySummaryData struct {
 
 // ComplianceSummaryData is the lazy-loaded summary section data.
 type ComplianceSummaryData struct {
-	Libraries []LibrarySummaryData
-	Overall   LibrarySummaryData
+	Libraries   []LibrarySummaryData
+	Overall     LibrarySummaryData
+	ProfileName string // Active platform profile name for image terminology
 }
 
 // sortIcon returns the sort direction indicator for a column header.
@@ -148,7 +149,7 @@ func CompliancePage(assets AssetPaths, data ComplianceData) templ.Component {
 			var templ_7745c5c3_Var3 string
 			templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(assets.ChartJS)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/compliance.templ`, Line: 105, Col: 30}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/compliance.templ`, Line: 106, Col: 30}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 			if templ_7745c5c3_Err != nil {
@@ -161,7 +162,7 @@ func CompliancePage(assets AssetPaths, data ComplianceData) templ.Component {
 			var templ_7745c5c3_Var4 string
 			templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(data.Search)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/compliance.templ`, Line: 151, Col: 25}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/compliance.templ`, Line: 152, Col: 25}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 			if templ_7745c5c3_Err != nil {
@@ -194,7 +195,7 @@ func CompliancePage(assets AssetPaths, data ComplianceData) templ.Component {
 					var templ_7745c5c3_Var5 string
 					templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(lib.ID)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/compliance.templ`, Line: 174, Col: 30}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/compliance.templ`, Line: 175, Col: 30}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 					if templ_7745c5c3_Err != nil {
@@ -217,7 +218,7 @@ func CompliancePage(assets AssetPaths, data ComplianceData) templ.Component {
 					var templ_7745c5c3_Var6 string
 					templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(lib.Name)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/compliance.templ`, Line: 174, Col: 82}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/compliance.templ`, Line: 175, Col: 82}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 					if templ_7745c5c3_Err != nil {
@@ -300,7 +301,7 @@ func CompliancePage(assets AssetPaths, data ComplianceData) templ.Component {
 			var templ_7745c5c3_Var7 string
 			templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(img.ImageTermFor("thumb", data.ProfileName))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/compliance.templ`, Line: 202, Col: 134}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/compliance.templ`, Line: 203, Col: 134}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 			if templ_7745c5c3_Err != nil {
@@ -323,7 +324,7 @@ func CompliancePage(assets AssetPaths, data ComplianceData) templ.Component {
 			var templ_7745c5c3_Var8 string
 			templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(img.ImageTermFor("fanart", data.ProfileName))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/compliance.templ`, Line: 203, Col: 137}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/compliance.templ`, Line: 204, Col: 137}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 			if templ_7745c5c3_Err != nil {
@@ -346,7 +347,7 @@ func CompliancePage(assets AssetPaths, data ComplianceData) templ.Component {
 			var templ_7745c5c3_Var9 string
 			templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(img.ImageTermFor("logo", data.ProfileName))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/compliance.templ`, Line: 204, Col: 131}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/compliance.templ`, Line: 205, Col: 131}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 			if templ_7745c5c3_Err != nil {
@@ -369,7 +370,7 @@ func CompliancePage(assets AssetPaths, data ComplianceData) templ.Component {
 			var templ_7745c5c3_Var10 string
 			templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(img.ImageTermFor("banner", data.ProfileName))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/compliance.templ`, Line: 205, Col: 137}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/compliance.templ`, Line: 206, Col: 137}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 			if templ_7745c5c3_Err != nil {
@@ -392,7 +393,7 @@ func CompliancePage(assets AssetPaths, data ComplianceData) templ.Component {
 			var templ_7745c5c3_Var11 string
 			templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(intOrEmpty(data.HealthScoreMin))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/compliance.templ`, Line: 216, Col: 46}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/compliance.templ`, Line: 217, Col: 46}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 			if templ_7745c5c3_Err != nil {
@@ -405,7 +406,7 @@ func CompliancePage(assets AssetPaths, data ComplianceData) templ.Component {
 			var templ_7745c5c3_Var12 string
 			templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(intOrEmpty(data.HealthScoreMax))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/compliance.templ`, Line: 231, Col: 46}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/compliance.templ`, Line: 232, Col: 46}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 			if templ_7745c5c3_Err != nil {
@@ -435,7 +436,7 @@ func CompliancePage(assets AssetPaths, data ComplianceData) templ.Component {
 			var templ_7745c5c3_Var13 templ.SafeURL
 			templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(complianceExportURL(data)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/compliance.templ`, Line: 251, Col: 53}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/compliance.templ`, Line: 252, Col: 53}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 			if templ_7745c5c3_Err != nil {
@@ -448,7 +449,7 @@ func CompliancePage(assets AssetPaths, data ComplianceData) templ.Component {
 			var templ_7745c5c3_Var14 string
 			templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(data.Sort)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/compliance.templ`, Line: 262, Col: 74}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/compliance.templ`, Line: 263, Col: 74}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 			if templ_7745c5c3_Err != nil {
@@ -461,7 +462,7 @@ func CompliancePage(assets AssetPaths, data ComplianceData) templ.Component {
 			var templ_7745c5c3_Var15 string
 			templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(data.Order)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/compliance.templ`, Line: 263, Col: 77}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/compliance.templ`, Line: 264, Col: 77}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 			if templ_7745c5c3_Err != nil {
@@ -502,22 +503,27 @@ func CompliancePage(assets AssetPaths, data ComplianceData) templ.Component {
 }
 
 // coverageChartJSON serializes library coverage data as JSON for Chart.js.
-func coverageChartJSON(libs []LibrarySummaryData) string {
+// profileName controls the dataset labels for thumb/fanart (e.g. "Primary"/"Backdrop" for Emby).
+func coverageChartJSON(libs []LibrarySummaryData, profileName string) string {
 	type chartData struct {
-		Labels   []string `json:"labels"`
-		Metadata []int    `json:"metadata"`
-		Thumb    []int    `json:"thumb"`
-		Fanart   []int    `json:"fanart"`
-		MBID     []int    `json:"mbid"`
-		Total    []int    `json:"total"`
+		Labels      []string `json:"labels"`
+		Metadata    []int    `json:"metadata"`
+		Thumb       []int    `json:"thumb"`
+		Fanart      []int    `json:"fanart"`
+		MBID        []int    `json:"mbid"`
+		Total       []int    `json:"total"`
+		ThumbLabel  string   `json:"thumb_label"`
+		FanartLabel string   `json:"fanart_label"`
 	}
 	d := chartData{
-		Labels:   make([]string, len(libs)),
-		Metadata: make([]int, len(libs)),
-		Thumb:    make([]int, len(libs)),
-		Fanart:   make([]int, len(libs)),
-		MBID:     make([]int, len(libs)),
-		Total:    make([]int, len(libs)),
+		Labels:      make([]string, len(libs)),
+		Metadata:    make([]int, len(libs)),
+		Thumb:       make([]int, len(libs)),
+		Fanart:      make([]int, len(libs)),
+		MBID:        make([]int, len(libs)),
+		Total:       make([]int, len(libs)),
+		ThumbLabel:  img.ImageTermFor("thumb", profileName),
+		FanartLabel: img.ImageTermFor("fanart", profileName),
 	}
 	for i, lib := range libs {
 		d.Labels[i] = lib.LibraryName
@@ -570,7 +576,7 @@ func ComplianceTable(data ComplianceData) templ.Component {
 		var templ_7745c5c3_Var17 string
 		templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(sortIcon(data.Sort, "name", data.Order))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/compliance.templ`, Line: 367, Col: 54}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/compliance.templ`, Line: 373, Col: 54}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 		if templ_7745c5c3_Err != nil {
@@ -583,7 +589,7 @@ func ComplianceTable(data ComplianceData) templ.Component {
 		var templ_7745c5c3_Var18 string
 		templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(sortIcon(data.Sort, "health_score", data.Order))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/compliance.templ`, Line: 378, Col: 61}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/compliance.templ`, Line: 384, Col: 61}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
 		if templ_7745c5c3_Err != nil {
@@ -596,7 +602,7 @@ func ComplianceTable(data ComplianceData) templ.Component {
 		var templ_7745c5c3_Var19 string
 		templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(img.ImageTermFor("thumb", data.ProfileName))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/compliance.templ`, Line: 384, Col: 52}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/compliance.templ`, Line: 390, Col: 52}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 		if templ_7745c5c3_Err != nil {
@@ -609,7 +615,7 @@ func ComplianceTable(data ComplianceData) templ.Component {
 		var templ_7745c5c3_Var20 string
 		templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(img.ImageTermFor("fanart", data.ProfileName))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/compliance.templ`, Line: 387, Col: 53}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/compliance.templ`, Line: 393, Col: 53}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
 		if templ_7745c5c3_Err != nil {
@@ -622,7 +628,7 @@ func ComplianceTable(data ComplianceData) templ.Component {
 		var templ_7745c5c3_Var21 string
 		templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.JoinStringErrs(img.ImageTermFor("logo", data.ProfileName))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/compliance.templ`, Line: 390, Col: 51}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/compliance.templ`, Line: 396, Col: 51}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var21))
 		if templ_7745c5c3_Err != nil {
@@ -688,7 +694,7 @@ func complianceRow(row ComplianceRow, profileName string) templ.Component {
 		var templ_7745c5c3_Var23 string
 		templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(row.Artist.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/compliance.templ`, Line: 424, Col: 25}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/compliance.templ`, Line: 430, Col: 25}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
 		if templ_7745c5c3_Err != nil {
@@ -701,7 +707,7 @@ func complianceRow(row ComplianceRow, profileName string) templ.Component {
 		var templ_7745c5c3_Var24 templ.SafeURL
 		templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/artists/" + row.Artist.ID))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/compliance.templ`, Line: 430, Col: 53}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/compliance.templ`, Line: 436, Col: 53}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
 		if templ_7745c5c3_Err != nil {
@@ -714,7 +720,7 @@ func complianceRow(row ComplianceRow, profileName string) templ.Component {
 		var templ_7745c5c3_Var25 string
 		templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.JoinStringErrs(row.Artist.Name)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/compliance.templ`, Line: 433, Col: 21}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/compliance.templ`, Line: 439, Col: 21}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var25))
 		if templ_7745c5c3_Err != nil {
@@ -749,7 +755,7 @@ func complianceRow(row ComplianceRow, profileName string) templ.Component {
 		var templ_7745c5c3_Var28 string
 		templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%.0f%%", row.HealthScore))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/compliance.templ`, Line: 438, Col: 44}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/compliance.templ`, Line: 444, Col: 44}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var28))
 		if templ_7745c5c3_Err != nil {
@@ -807,7 +813,7 @@ func complianceRow(row ComplianceRow, profileName string) templ.Component {
 			var templ_7745c5c3_Var29 templ.SafeURL
 			templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/artists/" + row.Artist.ID + "/nfo"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/compliance.templ`, Line: 460, Col: 64}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/compliance.templ`, Line: 466, Col: 64}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var29))
 			if templ_7745c5c3_Err != nil {
@@ -877,7 +883,7 @@ func ComplianceSummaryFragment(data ComplianceSummaryData) templ.Component {
 		var templ_7745c5c3_Var33 string
 		templ_7745c5c3_Var33, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%.1f%%", data.Overall.Score))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/compliance.templ`, Line: 478, Col: 47}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/compliance.templ`, Line: 484, Col: 47}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var33))
 		if templ_7745c5c3_Err != nil {
@@ -890,7 +896,7 @@ func ComplianceSummaryFragment(data ComplianceSummaryData) templ.Component {
 		var templ_7745c5c3_Var34 string
 		templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprint(data.Overall.CompliantArtists))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/compliance.templ`, Line: 481, Col: 47}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/compliance.templ`, Line: 487, Col: 47}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var34))
 		if templ_7745c5c3_Err != nil {
@@ -903,7 +909,7 @@ func ComplianceSummaryFragment(data ComplianceSummaryData) templ.Component {
 		var templ_7745c5c3_Var35 string
 		templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprint(data.Overall.TotalArtists))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/compliance.templ`, Line: 481, Col: 92}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/compliance.templ`, Line: 487, Col: 92}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var35))
 		if templ_7745c5c3_Err != nil {
@@ -921,7 +927,7 @@ func ComplianceSummaryFragment(data ComplianceSummaryData) templ.Component {
 			var templ_7745c5c3_Var36 string
 			templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.JoinStringErrs(lib.LibraryName)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/compliance.templ`, Line: 487, Col: 100}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/compliance.templ`, Line: 493, Col: 100}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var36))
 			if templ_7745c5c3_Err != nil {
@@ -934,7 +940,7 @@ func ComplianceSummaryFragment(data ComplianceSummaryData) templ.Component {
 			var templ_7745c5c3_Var37 string
 			templ_7745c5c3_Var37, templ_7745c5c3_Err = templ.JoinStringErrs(lib.LibraryName)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/compliance.templ`, Line: 487, Col: 120}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/compliance.templ`, Line: 493, Col: 120}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var37))
 			if templ_7745c5c3_Err != nil {
@@ -969,7 +975,7 @@ func ComplianceSummaryFragment(data ComplianceSummaryData) templ.Component {
 			var templ_7745c5c3_Var40 string
 			templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%.1f%%", lib.Score))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/compliance.templ`, Line: 489, Col: 39}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/compliance.templ`, Line: 495, Col: 39}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var40))
 			if templ_7745c5c3_Err != nil {
@@ -982,7 +988,7 @@ func ComplianceSummaryFragment(data ComplianceSummaryData) templ.Component {
 			var templ_7745c5c3_Var41 string
 			templ_7745c5c3_Var41, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprint(lib.CompliantArtists))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/compliance.templ`, Line: 492, Col: 39}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/compliance.templ`, Line: 498, Col: 39}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var41))
 			if templ_7745c5c3_Err != nil {
@@ -995,7 +1001,7 @@ func ComplianceSummaryFragment(data ComplianceSummaryData) templ.Component {
 			var templ_7745c5c3_Var42 string
 			templ_7745c5c3_Var42, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprint(lib.TotalArtists))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/compliance.templ`, Line: 492, Col: 75}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/compliance.templ`, Line: 498, Col: 75}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var42))
 			if templ_7745c5c3_Err != nil {
@@ -1050,15 +1056,15 @@ func coverageChartData(data ComplianceSummaryData) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var44 string
-		templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.JoinStringErrs(coverageChartJSON(data.Libraries))
+		templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.JoinStringErrs(coverageChartJSON(data.Libraries, data.ProfileName))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/compliance.templ`, Line: 506, Col: 92}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/compliance.templ`, Line: 512, Col: 110}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var44))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 87, "\"></div><script>\n\t\t(function() {\n\t\t\tvar el = document.getElementById('coverage-chart-data');\n\t\t\tif (!el || typeof Chart === 'undefined') return;\n\t\t\tvar d;\n\t\t\ttry { d = JSON.parse(el.getAttribute('data-chart')); } catch(e) { return; }\n\t\t\tvar ctx = document.getElementById('coverage-chart');\n\t\t\tif (!ctx) return;\n\n\t\t\tvar isDark = document.documentElement.classList.contains('dark');\n\t\t\tvar gridColor = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)';\n\t\t\tvar textColor = isDark ? '#9ca3af' : '#6b7280';\n\n\t\t\tnew Chart(ctx, {\n\t\t\t\ttype: 'bar',\n\t\t\t\tdata: {\n\t\t\t\t\tlabels: d.labels,\n\t\t\t\t\tdatasets: [\n\t\t\t\t\t\t{ label: 'Metadata', data: d.metadata, backgroundColor: '#3b82f6' },\n\t\t\t\t\t\t{ label: 'Thumb', data: d.thumb, backgroundColor: '#10b981' },\n\t\t\t\t\t\t{ label: 'Fanart', data: d.fanart, backgroundColor: '#f59e0b' },\n\t\t\t\t\t\t{ label: 'MBID', data: d.mbid, backgroundColor: '#8b5cf6' }\n\t\t\t\t\t]\n\t\t\t\t},\n\t\t\t\toptions: {\n\t\t\t\t\tresponsive: true,\n\t\t\t\t\tmaintainAspectRatio: false,\n\t\t\t\t\tplugins: {\n\t\t\t\t\t\tlegend: { labels: { color: textColor } },\n\t\t\t\t\t\ttooltip: {\n\t\t\t\t\t\t\tcallbacks: {\n\t\t\t\t\t\t\t\tlabel: function(ctx) {\n\t\t\t\t\t\t\t\t\tvar total = d.total[ctx.dataIndex];\n\t\t\t\t\t\t\t\t\treturn ctx.dataset.label + ': ' + ctx.raw + '/' + total;\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}\n\t\t\t\t\t},\n\t\t\t\t\tscales: {\n\t\t\t\t\t\tx: { ticks: { color: textColor }, grid: { color: gridColor } },\n\t\t\t\t\t\ty: { ticks: { color: textColor }, grid: { color: gridColor }, beginAtZero: true }\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t});\n\t\t})();\n\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 87, "\"></div><script>\n\t\t(function() {\n\t\t\tvar el = document.getElementById('coverage-chart-data');\n\t\t\tif (!el || typeof Chart === 'undefined') return;\n\t\t\tvar d;\n\t\t\ttry { d = JSON.parse(el.getAttribute('data-chart')); } catch(e) { return; }\n\t\t\tvar ctx = document.getElementById('coverage-chart');\n\t\t\tif (!ctx) return;\n\n\t\t\tvar isDark = document.documentElement.classList.contains('dark');\n\t\t\tvar gridColor = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)';\n\t\t\tvar textColor = isDark ? '#9ca3af' : '#6b7280';\n\n\t\t\tnew Chart(ctx, {\n\t\t\t\ttype: 'bar',\n\t\t\t\tdata: {\n\t\t\t\t\tlabels: d.labels,\n\t\t\t\t\tdatasets: [\n\t\t\t\t\t\t{ label: 'Metadata', data: d.metadata, backgroundColor: '#3b82f6' },\n\t\t\t\t\t\t{ label: d.thumb_label || 'Thumb', data: d.thumb, backgroundColor: '#10b981' },\n\t\t\t\t\t\t{ label: d.fanart_label || 'Fanart', data: d.fanart, backgroundColor: '#f59e0b' },\n\t\t\t\t\t\t{ label: 'MBID', data: d.mbid, backgroundColor: '#8b5cf6' }\n\t\t\t\t\t]\n\t\t\t\t},\n\t\t\t\toptions: {\n\t\t\t\t\tresponsive: true,\n\t\t\t\t\tmaintainAspectRatio: false,\n\t\t\t\t\tplugins: {\n\t\t\t\t\t\tlegend: { labels: { color: textColor } },\n\t\t\t\t\t\ttooltip: {\n\t\t\t\t\t\t\tcallbacks: {\n\t\t\t\t\t\t\t\tlabel: function(ctx) {\n\t\t\t\t\t\t\t\t\tvar total = d.total[ctx.dataIndex];\n\t\t\t\t\t\t\t\t\treturn ctx.dataset.label + ': ' + ctx.raw + '/' + total;\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}\n\t\t\t\t\t},\n\t\t\t\t\tscales: {\n\t\t\t\t\t\tx: { ticks: { color: textColor }, grid: { color: gridColor } },\n\t\t\t\t\t\ty: { ticks: { color: textColor }, grid: { color: gridColor }, beginAtZero: true }\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t});\n\t\t})();\n\t</script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

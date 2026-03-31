@@ -401,7 +401,7 @@ templ imageSearchContextualized(data ImageSearchData) {
 					// Pass the required ratio so the Cropper ready callback
 					// applies it reliably instead of a timing-dependent setTimeout.
 					openCropModal(data.image_data, data.type, data.required_ratio);
-					setStatus('Image needs cropping to match the ' + data.type + ' aspect ratio.', 'text-amber-600');
+					setStatus('Image needs cropping to match the required aspect ratio.', 'text-amber-600');
 				}
 
 				function uploadFile(file) {
@@ -417,7 +417,7 @@ templ imageSearchContextualized(data ImageSearchData) {
 						credentials: 'same-origin'
 					}).then(function(r) {
 						return r.json().then(function(data) {
-							if (!r.ok) { setStatus(data.error || 'Upload failed', 'text-red-500'); return; }
+							if (!r.ok) { setStatus('Upload failed', 'text-red-500'); return; }
 							if (data.needs_crop) { openAutoCrop(data); return; }
 							window.location.reload();
 						});

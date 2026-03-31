@@ -134,6 +134,22 @@ func TestCheckGeometry(t *testing.T) {
 			wantCrop:  false, // 1.745 vs 1.778 is ~1.8% off, within 10%
 			wantRatio: 16.0 / 9.0,
 		},
+		{
+			name:      "thumb exactly 10% off does not need crop",
+			width:     900,
+			height:    1000,
+			slot:      "thumb",
+			wantCrop:  false, // 0.9 vs 1.0 is exactly 10%, within tolerance
+			wantRatio: 1.0,
+		},
+		{
+			name:      "thumb just over 10% off needs crop",
+			width:     899,
+			height:    1000,
+			slot:      "thumb",
+			wantCrop:  true, // 0.899 vs 1.0 is ~10.1%, exceeds 10% tolerance
+			wantRatio: 1.0,
+		},
 	}
 
 	for _, tt := range tests {

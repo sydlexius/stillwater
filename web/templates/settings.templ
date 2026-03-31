@@ -4293,8 +4293,8 @@ templ profileCard(p platform.Profile) {
 					<span class="text-gray-400 dark:text-gray-500">Disabled</span>
 				}
 			</div>
-			<div>Thumb: { joinNames(p.ImageNaming.Thumb) }</div>
-			<div>Fanart: { joinNames(p.ImageNaming.Fanart) }</div>
+			<div>{ img.ImageTermFor("thumb", p.Name) }: { joinNames(p.ImageNaming.Thumb) }</div>
+			<div>{ img.ImageTermFor("fanart", p.Name) }: { joinNames(p.ImageNaming.Fanart) }</div>
 		</div>
 	</div>
 }

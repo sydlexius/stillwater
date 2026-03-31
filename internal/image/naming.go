@@ -47,7 +47,7 @@ func PrimaryFileName(naming map[string][]string, imageType string) string {
 //	logo      | Logo            | Logo             | Logo
 //	banner    | Banner          | Banner           | Banner
 func ImageTermFor(slot, profileName string) string {
-	key := strings.ToLower(profileName)
+	key := strings.ToLower(strings.TrimSpace(profileName))
 	switch key {
 	case "kodi", "plex":
 		return kodiTerms[slot]

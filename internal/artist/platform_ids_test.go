@@ -321,7 +321,7 @@ func TestGetPlatformPresenceForArtists(t *testing.T) {
 	}
 }
 
-func TestGetPlatformPresenceForArtists_Empty(t *testing.T) {
+func TestGetPlatformPresenceForArtists_Nil(t *testing.T) {
 	svc := setupPlatformPresenceTest(t)
 	ctx := context.Background()
 
@@ -330,7 +330,20 @@ func TestGetPlatformPresenceForArtists_Empty(t *testing.T) {
 		t.Fatal(err)
 	}
 	if result != nil {
-		t.Errorf("expected nil for empty input, got %v", result)
+		t.Errorf("expected nil for nil input, got %v", result)
+	}
+}
+
+func TestGetPlatformPresenceForArtists_EmptySlice(t *testing.T) {
+	svc := setupPlatformPresenceTest(t)
+	ctx := context.Background()
+
+	result, err := svc.GetPlatformPresenceForArtists(ctx, []string{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result != nil {
+		t.Errorf("expected nil for empty slice input, got %v", result)
 	}
 }
 
