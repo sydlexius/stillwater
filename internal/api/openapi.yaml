@@ -6478,10 +6478,12 @@ paths:
                 import_users:
                   type: string
                   enum: ["true", "false"]
+                  default: "false"
                   description: Import user accounts when "true". Defaults to "false".
                 import_invites:
                   type: string
                   enum: ["true", "false"]
+                  default: "false"
                   description: Import pending invites when "true". Defaults to "false".
               required: [passphrase, file]
       responses:
