@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"sync"
@@ -97,31 +98,83 @@ func (h *SSEHub) ClientCount() int {
 // into SSE events and broadcast them to all connected clients.
 func (h *SSEHub) SubscribeToEventBus(bus *event.Bus) {
 	// Map internal event types to human-readable notification messages.
+	// Each mapping has a buildMsg function that constructs a useful message
+	// from the actual fields published in the event data. If buildMsg is nil
+	// or returns an empty string, the title is used as the message.
 	type eventMapping struct {
 		eventType event.Type
 		title     string
-		msgKey    string // key in event.Data to use as message body, empty = use title
+		buildMsg  func(data map[string]any) string
+	}
+
+	// strVal safely extracts a string value from the event data map.
+	strVal := func(data map[string]any, key string) string {
+		if v, ok := data[key]; ok {
+			if s, ok := v.(string); ok {
+				return s
+			}
+		}
+		return ""
+	}
+
+	// fmtInt safely formats an integer-like value from the event data map.
+	fmtInt := func(data map[string]any, key string) string {
+		if v, ok := data[key]; ok {
+			switch n := v.(type) {
+			case int:
+				return fmt.Sprintf("%d", n)
+			case int64:
+				return fmt.Sprintf("%d", n)
+			case float64:
+				return fmt.Sprintf("%d", int64(n))
+			}
+		}
+		return ""
 	}
 
 	mappings := []eventMapping{
-		{event.ScanCompleted, "Scan completed", "summary"},
-		{event.RuleViolation, "New rule violation", "message"},
-		{event.BulkCompleted, "Bulk operation completed", "summary"},
-		{event.ArtistNew, "New artist discovered", "name"},
-		{event.ArtistUpdated, "Artist updated", "name"},
-		{event.MetadataFixed, "Metadata fixed", "message"},
+		{event.ScanCompleted, "Scan completed", func(data map[string]any) string {
+			status := strVal(data, "status")
+			newArtists := fmtInt(data, "new_artists")
+			totalDirs := fmtInt(data, "total_directories")
+			if status != "" && newArtists != "" && totalDirs != "" {
+				return "Scan " + status + ": " + newArtists + " new artists from " + totalDirs + " directories"
+			}
+			if status != "" {
+				return "Scan " + status
+			}
+			return ""
+		}},
+		{event.RuleViolation, "New rule violation", func(data map[string]any) string {
+			return strVal(data, "message")
+		}},
+		{event.BulkCompleted, "Bulk operation completed", func(data map[string]any) string {
+			opType := strVal(data, "type")
+			status := strVal(data, "status")
+			if opType != "" && status != "" {
+				return "Bulk " + opType + " " + status
+			}
+			if status != "" {
+				return "Bulk operation " + status
+			}
+			return ""
+		}},
+		{event.ArtistNew, "New artist discovered", nil},
+		{event.ArtistUpdated, "Artist updated", nil},
+		{event.MetadataFixed, "Metadata fixed", func(data map[string]any) string {
+			return strVal(data, "message")
+		}},
 	}
 
 	for _, m := range mappings {
 		m := m // capture loop variable
 		bus.Subscribe(m.eventType, func(e event.Event) {
-			msg := m.title
-			if m.msgKey != "" {
-				if v, ok := e.Data[m.msgKey]; ok {
-					if s, ok := v.(string); ok && s != "" {
-						msg = s
-					}
-				}
+			msg := ""
+			if m.buildMsg != nil {
+				msg = m.buildMsg(e.Data)
+			}
+			if msg == "" {
+				msg = m.title
 			}
 			h.Broadcast(SSEEvent{
 				Type:      string(e.Type),
@@ -171,12 +224,14 @@ func (r *Router) handleSSEStream(w http.ResponseWriter, req *http.Request) {
 	defer r.sseHub.Unregister(client)
 
 	// Send initial connection confirmation.
-	writeSSEEvent(w, "connected", SSEEvent{
+	if err := writeSSEEvent(w, "connected", SSEEvent{
 		Type:      "connected",
 		Title:     "Connected",
 		Message:   "SSE stream established",
 		Timestamp: time.Now().UTC(),
-	})
+	}, r.logger); err != nil {
+		return
+	}
 	flusher.Flush()
 
 	// Heartbeat ticker to keep the connection alive.
@@ -193,7 +248,10 @@ func (r *Router) handleSSEStream(w http.ResponseWriter, req *http.Request) {
 				// Channel closed (hub shut down).
 				return
 			}
-			writeSSEEvent(w, evt.Type, evt)
+			if err := writeSSEEvent(w, evt.Type, evt, r.logger); err != nil {
+				// Write failed -- client likely disconnected.
+				return
+			}
 			flusher.Flush()
 		case <-heartbeat.C:
 			// Send a comment line as keepalive.
@@ -207,22 +265,28 @@ func (r *Router) handleSSEStream(w http.ResponseWriter, req *http.Request) {
 }
 
 // writeSSEEvent writes a single SSE event to the response writer.
-func writeSSEEvent(w http.ResponseWriter, eventType string, evt SSEEvent) {
+// Returns an error if JSON marshaling or writing fails. Write errors
+// typically indicate the client has disconnected.
+func writeSSEEvent(w http.ResponseWriter, eventType string, evt SSEEvent, logger *slog.Logger) error {
 	data, err := json.Marshal(evt)
 	if err != nil {
-		return
+		logger.Warn("sse event marshal failed", "type", eventType, "error", err)
+		return err
 	}
 	// SSE format: "event: <type>\ndata: <json>\n\n"
 	if _, err := w.Write([]byte("event: " + eventType + "\n")); err != nil {
-		return
+		return err
 	}
 	if _, err := w.Write([]byte("data: ")); err != nil {
-		return
+		return err
 	}
 	if _, err := w.Write(data); err != nil {
-		return
+		return err
 	}
-	_, _ = w.Write([]byte("\n\n"))
+	if _, err := w.Write([]byte("\n\n")); err != nil {
+		return err
+	}
+	return nil
 }
 
 // userIDFromRequest extracts the user ID from the request context.

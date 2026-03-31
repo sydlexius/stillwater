@@ -116,11 +116,14 @@ func TestSSEHub_SubscribeToEventBus(t *testing.T) {
 	go bus.Start()
 	defer bus.Stop()
 
-	// Publish a scan completed event.
+	// Publish a scan completed event with the same data shape the scanner uses.
 	bus.Publish(event.Event{
 		Type: event.ScanCompleted,
 		Data: map[string]any{
-			"summary": "Scanned 100 artists",
+			"scan_id":           "abc-123",
+			"status":            "completed",
+			"total_directories": 50,
+			"new_artists":       3,
 		},
 	})
 
@@ -133,8 +136,9 @@ func TestSSEHub_SubscribeToEventBus(t *testing.T) {
 		if got.Title != "Scan completed" {
 			t.Errorf("got title %q, want %q", got.Title, "Scan completed")
 		}
-		if got.Message != "Scanned 100 artists" {
-			t.Errorf("got message %q, want %q", got.Message, "Scanned 100 artists")
+		wantMsg := "Scan completed: 3 new artists from 50 directories"
+		if got.Message != wantMsg {
+			t.Errorf("got message %q, want %q", got.Message, wantMsg)
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("did not receive event within timeout")

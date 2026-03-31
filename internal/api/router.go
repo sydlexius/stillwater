@@ -130,7 +130,7 @@ type Router struct {
 
 // NewRouter creates a new Router with all routes configured.
 func NewRouter(deps RouterDeps) *Router {
-	return &Router{
+	r := &Router{
 		authService:        deps.AuthService,
 		authRegistry:       deps.AuthRegistry,
 		artistService:      deps.ArtistService,
@@ -178,6 +178,17 @@ func NewRouter(deps RouterDeps) *Router {
 		libraryOps:  make(map[string]*LibraryOpResult),
 		undoStore:   rule.NewUndoStore(),
 	}
+
+	// Auto-init the SSE hub if not provided by the caller, so the /events/stream
+	// endpoint is always functional even when main.go does not wire one.
+	if r.sseHub == nil {
+		r.sseHub = NewSSEHub(deps.Logger)
+	}
+	if deps.EventBus != nil {
+		r.sseHub.SubscribeToEventBus(deps.EventBus)
+	}
+
+	return r
 }
 
 // Handler returns the fully configured HTTP handler with middleware applied.

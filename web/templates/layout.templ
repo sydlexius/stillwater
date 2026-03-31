@@ -111,7 +111,6 @@ templ Layout(title string, assets AssetPaths) {
 			<script src={ assets.PreferencesJS }></script>
 			<script src={ assets.SidebarJS }></script>
 			<script src={ assets.FilterFlyoutJS }></script>
-			<script src={ assets.SSEJS }></script>
 			<script src={ assets.HelpJS }></script>
 			<div id="error-toast-container" class="fixed top-4 right-4 z-50 flex flex-col gap-2 w-80" role="status" aria-live="polite"></div>
 			<script>
@@ -738,6 +737,7 @@ templ Layout(title string, assets AssetPaths) {
 					}
 				});
 			</script>
+			<script src={ assets.SSEJS }></script>
 		</body>
 	</html>
 }

@@ -91,12 +91,15 @@
   }
 
   function refreshNotificationBadge() {
-    // Find the notification badge element and trigger an HTMX refresh
-    // if it exists. The badge uses hx-get for polling; we trigger a
-    // manual load to get an immediate update.
-    var badge = document.getElementById("notification-badge");
+    // Find the sidebar notification badge and trigger an immediate HTMX
+    // refresh. The badge uses hx-get for polling; we call htmx.ajax
+    // directly to bypass the polling interval after an SSE event.
+    var badge = document.getElementById("sidebar-notif-badge");
     if (badge && typeof htmx !== "undefined") {
-      htmx.trigger(badge, "sse-refresh");
+      var url = badge.getAttribute("hx-get");
+      if (url) {
+        htmx.ajax("GET", url, { target: badge });
+      }
     }
   }
 
