@@ -460,6 +460,8 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/platform-backdrops", wrapAuth(r.handlePlatformBackdrops, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/platform-backdrops/{connectionId}/{index}/thumbnail", wrapAuth(r.handlePlatformBackdropThumbnail, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/fanart-sync-state", wrapAuth(r.handleFanartSyncState, authMw))
+	// Ambient backdrop (random artist fanart for layout background)
+	mux.HandleFunc("GET "+bp+"/api/v1/images/random-backdrop", wrapAuth(r.handleRandomBackdrop, authMw))
 	// Generic image routes
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/images/{type}/file", wrapAuth(r.handleServeImage, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/images/{type}/info", wrapAuth(r.handleImageInfo, authMw))

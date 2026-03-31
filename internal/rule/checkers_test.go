@@ -18,6 +18,8 @@ import (
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+
+	_ "modernc.org/sqlite"
 )
 
 func TestCheckNFOExists(t *testing.T) {
@@ -861,6 +863,195 @@ func TestCheckBackdropSequencing_SingleFile(t *testing.T) {
 	v := checker(&a, RuleConfig{})
 	if v != nil {
 		t.Errorf("expected nil for single fanart file, got: %s", v.Message)
+	}
+}
+
+// --- countBackdrops tests ---
+
+func TestCountBackdrops_Empty(t *testing.T) {
+	dir := t.TempDir()
+	e := &Engine{platformService: nil}
+	count := e.countBackdrops(dir)
+	if count != 0 {
+		t.Errorf("countBackdrops empty dir = %d, want 0", count)
+	}
+}
+
+func TestCountBackdrops_SingleFanart(t *testing.T) {
+	dir := t.TempDir()
+	createTestJPEG(t, filepath.Join(dir, "fanart.jpg"), 1920, 1080)
+
+	e := &Engine{platformService: nil}
+	count := e.countBackdrops(dir)
+	if count != 1 {
+		t.Errorf("countBackdrops single = %d, want 1", count)
+	}
+}
+
+func TestCountBackdrops_MultipleFanart(t *testing.T) {
+	dir := t.TempDir()
+	createTestJPEG(t, filepath.Join(dir, "fanart.jpg"), 1920, 1080)
+	createTestJPEG(t, filepath.Join(dir, "fanart2.jpg"), 1920, 1080)
+	createTestJPEG(t, filepath.Join(dir, "fanart3.jpg"), 1920, 1080)
+
+	e := &Engine{platformService: nil}
+	count := e.countBackdrops(dir)
+	if count < 3 {
+		t.Errorf("countBackdrops multiple = %d, want >= 3", count)
+	}
+}
+
+func TestCountBackdrops_IgnoresNonFanart(t *testing.T) {
+	dir := t.TempDir()
+	createTestJPEG(t, filepath.Join(dir, "fanart.jpg"), 1920, 1080)
+	createTestJPEG(t, filepath.Join(dir, "folder.jpg"), 500, 500)
+	createTestJPEG(t, filepath.Join(dir, "logo.png"), 400, 200)
+
+	e := &Engine{platformService: nil}
+	count := e.countBackdrops(dir)
+	if count != 1 {
+		t.Errorf("countBackdrops with non-fanart = %d, want 1", count)
+	}
+}
+
+// --- makeBackdropMinCountChecker tests ---
+
+func TestCheckBackdropMinCount_Satisfied(t *testing.T) {
+	dir := t.TempDir()
+	createTestJPEG(t, filepath.Join(dir, "fanart.jpg"), 1920, 1080)
+	createTestJPEG(t, filepath.Join(dir, "fanart2.jpg"), 1920, 1080)
+
+	e := &Engine{platformService: nil}
+	checker := e.makeBackdropMinCountChecker()
+
+	a := artist.Artist{Name: "Test", Path: dir}
+	v := checker(&a, RuleConfig{MinCount: 2})
+	if v != nil {
+		t.Errorf("expected nil when count meets minimum, got: %s", v.Message)
+	}
+}
+
+func TestCheckBackdropMinCount_BelowMinimum(t *testing.T) {
+	dir := t.TempDir()
+	createTestJPEG(t, filepath.Join(dir, "fanart.jpg"), 1920, 1080)
+
+	e := &Engine{platformService: nil}
+	checker := e.makeBackdropMinCountChecker()
+
+	a := artist.Artist{Name: "Test", Path: dir}
+	v := checker(&a, RuleConfig{MinCount: 3})
+	if v == nil {
+		t.Fatal("expected violation when count is below minimum")
+	}
+	if v.RuleID != RuleBackdropMinCount {
+		t.Errorf("RuleID = %q, want %q", v.RuleID, RuleBackdropMinCount)
+	}
+	if v.Fixable {
+		t.Error("expected Fixable to be false for detection-only rule")
+	}
+}
+
+func TestCheckBackdropMinCount_NoBackdrops(t *testing.T) {
+	dir := t.TempDir()
+
+	e := &Engine{platformService: nil}
+	checker := e.makeBackdropMinCountChecker()
+
+	a := artist.Artist{Name: "Test", Path: dir}
+	v := checker(&a, RuleConfig{MinCount: 1})
+	if v == nil {
+		t.Fatal("expected violation when no backdrops exist")
+	}
+	if v.RuleID != RuleBackdropMinCount {
+		t.Errorf("RuleID = %q, want %q", v.RuleID, RuleBackdropMinCount)
+	}
+}
+
+func TestCheckBackdropMinCount_DefaultMinCount(t *testing.T) {
+	// MinCount 0 should default to 1
+	dir := t.TempDir()
+
+	e := &Engine{platformService: nil}
+	checker := e.makeBackdropMinCountChecker()
+
+	a := artist.Artist{Name: "Test", Path: dir}
+	v := checker(&a, RuleConfig{MinCount: 0})
+	if v == nil {
+		t.Fatal("expected violation with default min count and no backdrops")
+	}
+}
+
+func TestCheckBackdropMinCount_ExactlyAtMinimum(t *testing.T) {
+	dir := t.TempDir()
+	createTestJPEG(t, filepath.Join(dir, "fanart.jpg"), 1920, 1080)
+	createTestJPEG(t, filepath.Join(dir, "fanart2.jpg"), 1920, 1080)
+	createTestJPEG(t, filepath.Join(dir, "fanart3.jpg"), 1920, 1080)
+
+	e := &Engine{platformService: nil}
+	checker := e.makeBackdropMinCountChecker()
+
+	a := artist.Artist{Name: "Test", Path: dir}
+	v := checker(&a, RuleConfig{MinCount: 3})
+	if v != nil {
+		t.Errorf("expected nil when count equals minimum, got: %s", v.Message)
+	}
+}
+
+func TestCheckBackdropMinCount_DBPath(t *testing.T) {
+	// Test the DB-based counting path (artist with empty Path).
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	// Create the artist_images table used by countBackdropsFromDB.
+	_, err = db.Exec(`CREATE TABLE artist_images (
+		artist_id TEXT NOT NULL,
+		image_type TEXT NOT NULL,
+		exists_flag INTEGER NOT NULL DEFAULT 0
+	)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Insert 3 fanart rows with exists_flag=1 for artist "a1".
+	for i := 0; i < 3; i++ {
+		_, err = db.Exec(`INSERT INTO artist_images (artist_id, image_type, exists_flag) VALUES (?, 'fanart', 1)`, "a1")
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Insert one non-existing fanart row (exists_flag=0) -- should not count.
+	_, err = db.Exec(`INSERT INTO artist_images (artist_id, image_type, exists_flag) VALUES ('a1', 'fanart', 0)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Insert a thumb row -- should not count.
+	_, err = db.Exec(`INSERT INTO artist_images (artist_id, image_type, exists_flag) VALUES ('a1', 'thumb', 1)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	e := &Engine{db: db, logger: slog.Default()}
+	checker := e.makeBackdropMinCountChecker()
+
+	// Artist with empty Path forces DB path.
+	a := artist.Artist{ID: "a1", Name: "Test DB Path", Path: ""}
+
+	// Should pass: 3 fanart rows >= minCount 2.
+	v := checker(&a, RuleConfig{MinCount: 2})
+	if v != nil {
+		t.Errorf("expected nil when DB count meets minimum, got: %s", v.Message)
+	}
+
+	// Should fail: 3 fanart rows < minCount 5.
+	v = checker(&a, RuleConfig{MinCount: 5})
+	if v == nil {
+		t.Fatal("expected violation when DB count is below minimum")
+	}
+	if v.RuleID != RuleBackdropMinCount {
+		t.Errorf("RuleID = %q, want %q", v.RuleID, RuleBackdropMinCount)
 	}
 }
 

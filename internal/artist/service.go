@@ -833,6 +833,13 @@ func (s *Service) DeletePlatformIDsByArtist(ctx context.Context, artistID string
 	return s.platformIDs.DeleteByArtistID(ctx, artistID)
 }
 
+// GetPlatformPresenceForArtists returns platform presence (Emby, Jellyfin,
+// Lidarr) for a batch of artists. Artists with no platform ID mappings are
+// omitted from the result map.
+func (s *Service) GetPlatformPresenceForArtists(ctx context.Context, artistIDs []string) (map[string]PlatformPresence, error) {
+	return s.platformIDs.GetPresenceForArtists(ctx, artistIDs)
+}
+
 // hydrateProviderIDs loads provider IDs from the normalized table and applies
 // them to the Artist struct fields.
 func (s *Service) hydrateProviderIDs(ctx context.Context, a *Artist) error {

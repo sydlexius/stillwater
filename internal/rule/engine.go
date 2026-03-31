@@ -147,6 +147,7 @@ func NewEngine(service *Service, db *sql.DB, platformService *platform.Service, 
 	e.checkers[RuleExtraneousImages] = e.makeExtraneousImagesChecker()
 	e.checkers[RuleImageDuplicate] = e.makeImageDuplicateChecker()
 	e.checkers[RuleBackdropSequencing] = e.makeBackdropSequencingChecker()
+	e.checkers[RuleBackdropMinCount] = e.makeBackdropMinCountChecker()
 	e.checkers[RuleLogoPadding] = e.makeLogoPaddingChecker()
 	return e
 }

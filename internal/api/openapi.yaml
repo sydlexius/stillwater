@@ -1739,6 +1739,14 @@ paths:
           required: true
           schema:
             type: string
+        - name: skip_crop
+          in: query
+          schema:
+            type: string
+            enum: ["true"]
+          description: >
+            When set to "true", skip geometry checking and save the image even
+            if the aspect ratio does not match the slot requirement.
       requestBody:
         required: true
         content:
@@ -1755,7 +1763,7 @@ paths:
               required: [file, type]
       responses:
         "200":
-          description: Image saved
+          description: Image saved, or needs_crop when the aspect ratio does not match the slot requirement
           content:
             application/json:
               schema:
@@ -1763,6 +1771,7 @@ paths:
                 properties:
                   status:
                     type: string
+                    description: '"ok" when saved successfully, "needs_crop" when the image requires cropping before saving.'
                   saved:
                     type: array
                     items:
@@ -1777,6 +1786,24 @@ paths:
                   count:
                     type: integer
                     description: Total number of fanart images now on disk for this artist. Present only when type is fanart.
+                  needs_crop:
+                    type: boolean
+                    description: True when the uploaded image aspect ratio does not match the target slot. The image is not saved; the client should present a crop UI.
+                  required_ratio:
+                    type: number
+                    description: The aspect ratio (width/height) required by the target slot. Present only when needs_crop is true.
+                  actual_ratio:
+                    type: number
+                    description: The actual aspect ratio of the uploaded image. Present only when needs_crop is true.
+                  width:
+                    type: integer
+                    description: Width of the uploaded image in pixels. Present only when needs_crop is true.
+                  height:
+                    type: integer
+                    description: Height of the uploaded image in pixels. Present only when needs_crop is true.
+                  image_data:
+                    type: string
+                    description: Base64-encoded data URI of the uploaded image. Present only when needs_crop is true, for use in a client-side crop tool.
         "413":
           description: File exceeds 25MB limit
           content:
@@ -1795,6 +1822,14 @@ paths:
           required: true
           schema:
             type: string
+        - name: skip_crop
+          in: query
+          schema:
+            type: string
+            enum: ["true"]
+          description: >
+            When set to "true", skip geometry checking and save the image even
+            if the aspect ratio does not match the slot requirement.
       requestBody:
         required: true
         content:
@@ -1821,7 +1856,7 @@ paths:
               required: [url, type]
       responses:
         "200":
-          description: Image fetched and saved
+          description: Image fetched and saved, or needs_crop when the aspect ratio does not match the slot requirement
           content:
             application/json:
               schema:
@@ -1829,6 +1864,7 @@ paths:
                 properties:
                   status:
                     type: string
+                    description: '"ok" when saved successfully, "needs_crop" when the image requires cropping before saving.'
                   saved:
                     type: array
                     items:
@@ -1843,6 +1879,24 @@ paths:
                   count:
                     type: integer
                     description: Total number of fanart images now on disk for this artist. Present only when type is fanart.
+                  needs_crop:
+                    type: boolean
+                    description: True when the fetched image aspect ratio does not match the target slot. The image is not saved; the client should present a crop UI.
+                  required_ratio:
+                    type: number
+                    description: The aspect ratio (width/height) required by the target slot. Present only when needs_crop is true.
+                  actual_ratio:
+                    type: number
+                    description: The actual aspect ratio of the fetched image. Present only when needs_crop is true.
+                  width:
+                    type: integer
+                    description: Width of the fetched image in pixels. Present only when needs_crop is true.
+                  height:
+                    type: integer
+                    description: Height of the fetched image in pixels. Present only when needs_crop is true.
+                  image_data:
+                    type: string
+                    description: Base64-encoded data URI of the fetched image. Present only when needs_crop is true, for use in a client-side crop tool.
 
   /artists/{id}/images/search:
     get:
@@ -3756,7 +3810,9 @@ paths:
         cache.image.max_size_mb (integer as string),
         provider.name_similarity_threshold (0-100 integer as string;
         minimum similarity score for provider name matching,
-        set to 0 to disable validation, default 60).
+        set to 0 to disable validation, default 60),
+        images.backdrop.target_count (1-10 integer as string;
+        target number of backdrop/fanart images per artist, default 1).
       requestBody:
         required: true
         content:
@@ -7646,6 +7702,22 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+
+  /images/random-backdrop:
+    get:
+      tags: [Images]
+      summary: Random artist backdrop redirect
+      operationId: randomBackdrop
+      description: >
+        Picks a random artist that has at least one fanart/backdrop image and
+        returns a 307 redirect to that artist's fanart file endpoint. Used by
+        the ambient backdrop feature to display a blurred background image in
+        the layout shell. Returns 404 if no artists have fanart images.
+      responses:
+        "307":
+          description: Redirect to artist fanart file endpoint
+        "404":
+          description: No artists with fanart images found
 
   /artists/{id}/images/{type}/file:
     get:

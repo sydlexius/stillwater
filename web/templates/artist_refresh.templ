@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/sydlexius/stillwater/internal/artist"
+	img "github.com/sydlexius/stillwater/internal/image"
 	"github.com/sydlexius/stillwater/internal/provider"
 	"github.com/sydlexius/stillwater/web/components"
 )
@@ -20,6 +21,7 @@ type RefreshOOBData struct {
 	Artist         artist.Artist
 	Members        []artist.BandMember
 	FieldProviders map[string][]string
+	ProfileName    string // Active platform profile name for image terminology
 }
 
 // RefreshDisambiguationForm renders the MusicBrainz search form when an artist
@@ -196,10 +198,10 @@ templ RefreshOOBFragments(data RefreshOOBData) {
 	<section id={ "artist-images-" + data.Artist.ID } hx-swap-oob="outerHTML" class="sw-card rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
 		<h2 class="text-lg font-semibold mb-3">Images</h2>
 		<div class="grid grid-cols-2 gap-3">
-			@ImagePreviewCard(data.Artist.ID, "thumb", data.Artist.ThumbExists, "Thumbnail", 0)
-			@ImagePreviewCard(data.Artist.ID, "fanart", data.Artist.FanartExists, "Fanart", data.Artist.FanartCount)
-			@ImagePreviewCard(data.Artist.ID, "logo", data.Artist.LogoExists, "Logo", 0)
-			@ImagePreviewCard(data.Artist.ID, "banner", data.Artist.BannerExists, "Banner", 0)
+			@ImagePreviewCard(data.Artist.ID, "thumb", data.Artist.ThumbExists, img.ImageTermFor("thumb", data.ProfileName), 0)
+			@ImagePreviewCard(data.Artist.ID, "fanart", data.Artist.FanartExists, img.ImageTermFor("fanart", data.ProfileName), data.Artist.FanartCount)
+			@ImagePreviewCard(data.Artist.ID, "logo", data.Artist.LogoExists, img.ImageTermFor("logo", data.ProfileName), 0)
+			@ImagePreviewCard(data.Artist.ID, "banner", data.Artist.BannerExists, img.ImageTermFor("banner", data.ProfileName), 0)
 		</div>
 		<div class="mt-3">
 			@components.StatusBadge(data.Artist.NFOExists, "Metadata")

@@ -83,6 +83,19 @@ templ Layout(title string, assets AssetPaths) {
 		<body class="h-full bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100" style="font-family: var(--sw-font-family)">
 			<img src={ assets.LoginBG } alt="" class="fixed inset-0 -z-20 h-full w-full object-cover pointer-events-none select-none" aria-hidden="true"/>
 			<div class="fixed inset-0 -z-10 bg-black/15 dark:bg-black/45 pointer-events-none" aria-hidden="true"></div>
+			<!-- Ambient backdrop: heavily blurred random artist fanart behind content -->
+			<div
+				class="ambient-bg fixed inset-0 -z-10 pointer-events-none select-none overflow-hidden"
+				aria-hidden="true"
+				id="ambient-backdrop"
+			>
+				<img
+					id="ambient-backdrop-img"
+					alt=""
+					class="h-full w-full object-cover"
+					style="filter: blur(60px) brightness(0.7) saturate(1.4); transform: scale(1.1)"
+				/>
+			</div>
 			@Sidebar(SidebarData{
 				BasePath:    assets.BasePath,
 				IsAdmin:     assets.IsAdmin,
@@ -421,6 +434,34 @@ templ Layout(title string, assets AssetPaths) {
 					var isDark = pref === 'dark' || (pref === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
 					document.documentElement.classList.toggle('dark', isDark);
 				}
+			</script>
+			<script>
+				// Ambient backdrop: fetch a random artist backdrop and display it
+				// behind the main content with heavy blur. Respects the ambient_bg
+				// preference and lite mode (CSS hides .ambient-bg when data-lite="on").
+				(function() {
+					var el = document.querySelector('meta[name="htmx-base-path"]');
+					var bp = el ? el.content : '';
+					var img = document.getElementById('ambient-backdrop-img');
+					if (!img) return;
+
+					// Check stored preference. The preferences.js IIFE applies data
+					// attributes synchronously, so we can read the ambient_bg preference
+					// from the cached sessionStorage value before the API responds.
+					// Skip in lite mode -- CSS hides the element but the fetch
+					// still costs a network round-trip.
+					if (document.documentElement.getAttribute('data-lite') === 'on') return;
+
+					// Only fetch when a user session exists (csrf_token cookie
+					// is set by the auth middleware on login).
+					if (!/(?:^|;\s*)csrf_token=/.test(document.cookie)) return;
+
+					var prefs = {};
+					try { prefs = JSON.parse(sessionStorage.getItem('sw-preferences') || '{}'); } catch(e) {}
+					if (prefs.ambient_bg === 'off') return;
+
+					img.src = bp + '/api/v1/images/random-backdrop';
+				})();
 			</script>
 			<script>
 				document.body.addEventListener('htmx:responseError', function(evt) {

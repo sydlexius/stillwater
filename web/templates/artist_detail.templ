@@ -8,6 +8,7 @@ import (
 	"strings"
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/connection"
+	img "github.com/sydlexius/stillwater/internal/image"
 	"github.com/sydlexius/stillwater/web/components"
 )
 
@@ -19,6 +20,7 @@ type ArtistDetailData struct {
 	FieldProviders map[string][]string
 	LibraryName         string
 	LibrarySource       string
+	ProfileName         string // Active platform profile name for image terminology
 }
 
 templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
@@ -292,10 +294,10 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 					<section id={ "artist-images-" + data.Artist.ID } class="sw-card rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
 						<h2 class="text-lg font-semibold mb-3">Images</h2>
 						<div class="grid grid-cols-2 gap-3">
-							@ImagePreviewCard(data.Artist.ID, "thumb", data.Artist.ThumbExists, "Thumbnail", 0)
-							@ImagePreviewCard(data.Artist.ID, "fanart", data.Artist.FanartExists, "Fanart", data.Artist.FanartCount)
-							@ImagePreviewCard(data.Artist.ID, "logo", data.Artist.LogoExists, "Logo", 0)
-							@ImagePreviewCard(data.Artist.ID, "banner", data.Artist.BannerExists, "Banner", 0)
+							@ImagePreviewCard(data.Artist.ID, "thumb", data.Artist.ThumbExists, img.ImageTermFor("thumb", data.ProfileName), 0)
+							@ImagePreviewCard(data.Artist.ID, "fanart", data.Artist.FanartExists, img.ImageTermFor("fanart", data.ProfileName), data.Artist.FanartCount)
+							@ImagePreviewCard(data.Artist.ID, "logo", data.Artist.LogoExists, img.ImageTermFor("logo", data.ProfileName), 0)
+							@ImagePreviewCard(data.Artist.ID, "banner", data.Artist.BannerExists, img.ImageTermFor("banner", data.ProfileName), 0)
 						</div>
 						<div class="mt-3">
 							@components.StatusBadge(data.Artist.NFOExists, "Metadata")
@@ -502,10 +504,11 @@ type FanartGalleryItem struct {
 }
 
 // FanartGallery renders the fanart gallery management panel as an HTMX partial.
-templ FanartGallery(artistID string, items []FanartGalleryItem) {
+// profileName controls image terminology (e.g. "backdrop" for Emby vs "fanart" for Kodi).
+templ FanartGallery(artistID string, items []FanartGalleryItem, profileName string) {
 	<div id="fanart-gallery" class="space-y-4" data-artist-id={ artistID }>
 		<div class="flex items-center justify-between">
-			<h3 class="text-sm font-semibold">{ strconv.Itoa(len(items)) } fanart images</h3>
+			<h3 class="text-sm font-semibold">{ strconv.Itoa(len(items)) } { strings.ToLower(img.ImageTermFor("fanart", profileName)) } images</h3>
 			<button
 				type="button"
 				id="fanart-delete-selected"
@@ -705,7 +708,8 @@ templ MembersSection(artistID string, members []artist.BandMember, providers []s
 
 // PlatformStateCard renders the platform state comparison card for one connection.
 // Returned as an HTMX outerHTML swap to replace the loading placeholder.
-templ PlatformStateCard(a *artist.Artist, conn *connection.Connection, state *connection.ArtistPlatformState) {
+// profileName is the active platform profile name used for Stillwater-side image labels.
+templ PlatformStateCard(a *artist.Artist, conn *connection.Connection, state *connection.ArtistPlatformState, profileName string) {
 	<div class="rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
 		<div class="flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-700/50">
 			<div class="flex items-center gap-2">
@@ -780,16 +784,16 @@ templ PlatformStateCard(a *artist.Artist, conn *connection.Connection, state *co
 					<tr>
 						<td class="px-4 py-2 text-gray-500 dark:text-gray-400 font-medium align-top">Images</td>
 						<td class="px-4 py-2">
-							@platformImageBadge("Thumb", a.ThumbExists)
-							@platformImageBadge("Fanart", a.FanartExists)
-							@platformImageBadge("Logo", a.LogoExists)
-							@platformImageBadge("Banner", a.BannerExists)
+							@platformImageBadge(img.ImageTermFor("thumb", profileName), a.ThumbExists)
+							@platformImageBadge(img.ImageTermFor("fanart", profileName), a.FanartExists)
+							@platformImageBadge(img.ImageTermFor("logo", profileName), a.LogoExists)
+							@platformImageBadge(img.ImageTermFor("banner", profileName), a.BannerExists)
 						</td>
 						<td class="px-4 py-2">
-							@platformImageBadge("Thumb", state.HasThumb)
-							@platformImageBadge("Fanart", state.HasFanart)
-							@platformImageBadge("Logo", state.HasLogo)
-							@platformImageBadge("Banner", state.HasBanner)
+							@platformImageBadge(img.ImageTermFor("thumb", conn.Type), state.HasThumb)
+							@platformImageBadge(img.ImageTermFor("fanart", conn.Type), state.HasFanart)
+							@platformImageBadge(img.ImageTermFor("logo", conn.Type), state.HasLogo)
+							@platformImageBadge(img.ImageTermFor("banner", conn.Type), state.HasBanner)
 						</td>
 						<td class="px-4 py-2 text-center">
 							<span class="text-gray-300 dark:text-gray-600">--</span>

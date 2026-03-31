@@ -7,6 +7,7 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/auth"
 	"github.com/sydlexius/stillwater/internal/connection"
+	img "github.com/sydlexius/stillwater/internal/image"
 	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/platform"
 	"github.com/sydlexius/stillwater/internal/provider"
@@ -524,10 +525,10 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 										}
 									</p>
 								</div>
-								@profileNamingRow("Thumbnail", "thumb", data.ActiveProfile.ImageNaming.Thumb, !profileEditable(data.ActiveProfile))
-								@profileNamingRow("Fanart", "fanart", data.ActiveProfile.ImageNaming.Fanart, !profileEditable(data.ActiveProfile))
-								@profileNamingRow("Logo", "logo", data.ActiveProfile.ImageNaming.Logo, !profileEditable(data.ActiveProfile))
-								@profileNamingRow("Banner", "banner", data.ActiveProfile.ImageNaming.Banner, !profileEditable(data.ActiveProfile))
+								@profileNamingRow(img.ImageTermFor("thumb", data.ActiveProfile.Name), "thumb", data.ActiveProfile.ImageNaming.Thumb, !profileEditable(data.ActiveProfile))
+								@profileNamingRow(img.ImageTermFor("fanart", data.ActiveProfile.Name), "fanart", data.ActiveProfile.ImageNaming.Fanart, !profileEditable(data.ActiveProfile))
+								@profileNamingRow(img.ImageTermFor("logo", data.ActiveProfile.Name), "logo", data.ActiveProfile.ImageNaming.Logo, !profileEditable(data.ActiveProfile))
+								@profileNamingRow(img.ImageTermFor("banner", data.ActiveProfile.Name), "banner", data.ActiveProfile.ImageNaming.Banner, !profileEditable(data.ActiveProfile))
 							</div>
 							if profileEditable(data.ActiveProfile) {
 								<div class="mt-4 flex items-center justify-between">
@@ -535,7 +536,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 										<div class="font-medium text-sm">Use symlinks for duplicate copies</div>
 										<div class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
 											if data.SymlinkSupported {
-												When multiple filenames are configured for an image type, create symlinks instead of byte-for-byte copies. Fanart images are always real files.
+												When multiple filenames are configured for an image type, create symlinks instead of byte-for-byte copies. { img.ImageTermFor("fanart", data.ActiveProfile.Name) } images are always real files.
 											} else {
 												Symlinks are not supported on this filesystem. The library path does not support symbolic links.
 											}
@@ -4292,8 +4293,8 @@ templ profileCard(p platform.Profile) {
 					<span class="text-gray-400 dark:text-gray-500">Disabled</span>
 				}
 			</div>
-			<div>Thumb: { joinNames(p.ImageNaming.Thumb) }</div>
-			<div>Fanart: { joinNames(p.ImageNaming.Fanart) }</div>
+			<div>{ img.ImageTermFor("thumb", p.Name) }: { joinNames(p.ImageNaming.Thumb) }</div>
+			<div>{ img.ImageTermFor("fanart", p.Name) }: { joinNames(p.ImageNaming.Fanart) }</div>
 		</div>
 	</div>
 }

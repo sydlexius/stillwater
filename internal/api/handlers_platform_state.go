@@ -67,7 +67,7 @@ func (r *Router) handleGetPlatformState(w http.ResponseWriter, req *http.Request
 	state.PremiereDate = dateOnly(state.PremiereDate)
 	state.EndDate = dateOnly(state.EndDate)
 
-	renderTempl(w, req, templates.PlatformStateCard(a, conn, state))
+	renderTempl(w, req, templates.PlatformStateCard(a, conn, state, r.getActiveProfileName(req.Context())))
 }
 
 // handlePullMetadata pulls metadata from a platform connection and overwrites

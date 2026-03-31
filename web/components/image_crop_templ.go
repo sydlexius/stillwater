@@ -57,21 +57,22 @@ func ImageCropModal(artistID string) templ.Component {
 
 func saveCroppedImage(artistID string) templ.ComponentScript {
 	return templ.ComponentScript{
-		Name: `__templ_saveCroppedImage_dfcf`,
-		Function: `function __templ_saveCroppedImage_dfcf(artistID){if (!window._cropper) return;
-	const canvas = window._cropper.getCroppedCanvas();
+		Name: `__templ_saveCroppedImage_f187`,
+		Function: `function __templ_saveCroppedImage_f187(artistID){if (!window._cropper) return;
+	var canvas = window._cropper.getCroppedCanvas();
 	if (!canvas) return;
-	const cropType = document.getElementById('crop-type').value;
+	var cropType = document.getElementById('crop-type').value;
 	// Logos must be PNG to preserve alpha; all other types stay JPEG to avoid
 	// unnecessary format conversion and larger file sizes.
-	const mimeType = cropType === 'logo' ? 'image/png' : 'image/jpeg';
-	const base64 = canvas.toDataURL(mimeType, 0.92);
-	const csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*\=\s*([^;]*).*$)|^.*$/, "$1");
-	fetch('/api/v1/artists/' + artistID + '/images/crop', {
+	var mimeType = cropType === 'logo' ? 'image/png' : 'image/jpeg';
+	var base64 = canvas.toDataURL(mimeType, 0.92);
+	var token = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*\=\s*([^;]*).*$)|^.*$/, "$1");
+	var bp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
+	fetch(bp + '/api/v1/artists/' + artistID + '/images/crop', {
 		method: 'POST',
 		headers: {
 			'Content-Type': 'application/json',
-			'X-CSRF-Token': csrfToken
+			'X-CSRF-Token': token
 		},
 		body: JSON.stringify({
 			image_data: base64,
@@ -80,15 +81,15 @@ func saveCroppedImage(artistID string) templ.ComponentScript {
 			width: canvas.width,
 			height: canvas.height
 		})
-	}).then(r => r.json()).then(data => {
+	}).then(function(r) { return r.json(); }).then(function(data) {
 		if (data.status === 'ok') {
 			closeCropModal();
 			window.location.reload();
 		}
 	});
 }`,
-		Call:       templ.SafeScript(`__templ_saveCroppedImage_dfcf`, artistID),
-		CallInline: templ.SafeScriptInline(`__templ_saveCroppedImage_dfcf`, artistID),
+		Call:       templ.SafeScript(`__templ_saveCroppedImage_f187`, artistID),
+		CallInline: templ.SafeScriptInline(`__templ_saveCroppedImage_f187`, artistID),
 	}
 }
 

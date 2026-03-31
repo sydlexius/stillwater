@@ -232,3 +232,145 @@ func TestSetPlatformID_MultipleArtists(t *testing.T) {
 		t.Errorf("artist 2: got %q, want %q", got2, "emby-222")
 	}
 }
+
+// setupPlatformPresenceTest creates a test service with emby, jellyfin, and lidarr connections.
+// Returns the service and db for direct SQL access in tests.
+func setupPlatformPresenceTest(t *testing.T) *Service {
+	t.Helper()
+	db, err := database.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+
+	ctx := context.Background()
+	for _, q := range []string{
+		`INSERT INTO connections (id, name, type, url, encrypted_api_key, enabled, status, created_at, updated_at)
+			VALUES ('conn-1', 'Test Emby', 'emby', 'http://emby:8096', 'enc-key', 1, 'ok', datetime('now'), datetime('now'))`,
+		`INSERT INTO connections (id, name, type, url, encrypted_api_key, enabled, status, created_at, updated_at)
+			VALUES ('conn-2', 'Test Jellyfin', 'jellyfin', 'http://jf:8096', 'enc-key', 1, 'ok', datetime('now'), datetime('now'))`,
+		`INSERT INTO connections (id, name, type, url, encrypted_api_key, enabled, status, created_at, updated_at)
+			VALUES ('conn-3', 'Test Lidarr', 'lidarr', 'http://lidarr:8686', 'enc-key', 1, 'ok', datetime('now'), datetime('now'))`,
+	} {
+		if _, err := db.ExecContext(ctx, q); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	return NewService(db)
+}
+
+func TestGetPlatformPresenceForArtists(t *testing.T) {
+	svc := setupPlatformPresenceTest(t)
+	ctx := context.Background()
+
+	a1 := createTestArtist(t, svc, "Radiohead")
+	a2 := createTestArtist(t, svc, "Bjork")
+	a3 := createTestArtist(t, svc, "Portishead")
+
+	// a1: Emby + Jellyfin
+	if err := svc.SetPlatformID(ctx, a1.ID, "conn-1", "emby-111"); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.SetPlatformID(ctx, a1.ID, "conn-2", "jf-111"); err != nil {
+		t.Fatal(err)
+	}
+
+	// a2: Lidarr only
+	if err := svc.SetPlatformID(ctx, a2.ID, "conn-3", "lidarr-222"); err != nil {
+		t.Fatal(err)
+	}
+
+	// a3: no platform IDs (should be absent from result)
+
+	result, err := svc.GetPlatformPresenceForArtists(ctx, []string{a1.ID, a2.ID, a3.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// a1 should have Emby and Jellyfin
+	p1 := result[a1.ID]
+	if !p1.HasEmby {
+		t.Error("a1: expected HasEmby=true")
+	}
+	if !p1.HasJellyfin {
+		t.Error("a1: expected HasJellyfin=true")
+	}
+	if p1.HasLidarr {
+		t.Error("a1: expected HasLidarr=false")
+	}
+
+	// a2 should have Lidarr only
+	p2 := result[a2.ID]
+	if p2.HasEmby {
+		t.Error("a2: expected HasEmby=false")
+	}
+	if p2.HasJellyfin {
+		t.Error("a2: expected HasJellyfin=false")
+	}
+	if !p2.HasLidarr {
+		t.Error("a2: expected HasLidarr=true")
+	}
+
+	// a3 should not be in the map
+	if _, ok := result[a3.ID]; ok {
+		t.Error("a3: expected to be absent from result map")
+	}
+}
+
+func TestGetPlatformPresenceForArtists_Nil(t *testing.T) {
+	svc := setupPlatformPresenceTest(t)
+	ctx := context.Background()
+
+	result, err := svc.GetPlatformPresenceForArtists(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result != nil {
+		t.Errorf("expected nil for nil input, got %v", result)
+	}
+}
+
+func TestGetPlatformPresenceForArtists_EmptySlice(t *testing.T) {
+	svc := setupPlatformPresenceTest(t)
+	ctx := context.Background()
+
+	result, err := svc.GetPlatformPresenceForArtists(ctx, []string{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result != nil {
+		t.Errorf("expected nil for empty slice input, got %v", result)
+	}
+}
+
+func TestGetPlatformPresenceForArtists_AllPlatforms(t *testing.T) {
+	svc := setupPlatformPresenceTest(t)
+	ctx := context.Background()
+
+	a := createTestArtist(t, svc, "Radiohead")
+
+	// Artist with all three platform types
+	svc.SetPlatformID(ctx, a.ID, "conn-1", "emby-111")
+	svc.SetPlatformID(ctx, a.ID, "conn-2", "jf-111")
+	svc.SetPlatformID(ctx, a.ID, "conn-3", "lidarr-111")
+
+	result, err := svc.GetPlatformPresenceForArtists(ctx, []string{a.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	p := result[a.ID]
+	if !p.HasEmby {
+		t.Error("expected HasEmby=true")
+	}
+	if !p.HasJellyfin {
+		t.Error("expected HasJellyfin=true")
+	}
+	if !p.HasLidarr {
+		t.Error("expected HasLidarr=true")
+	}
+}

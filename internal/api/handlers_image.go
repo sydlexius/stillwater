@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -142,6 +143,35 @@ func (r *Router) handleImageUpload(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	// Check whether the image dimensions match the slot's required aspect ratio.
+	// If mismatched, return the image data to the client for cropping instead of saving.
+	skipCrop := req.URL.Query().Get("skip_crop") == "true"
+	if !skipCrop {
+		w2, h2, dimErr := img.GetDimensions(bytes.NewReader(data))
+		if dimErr == nil {
+			geo := img.CheckGeometry(w2, h2, imageType)
+			if geo.NeedsCrop {
+				encoded := base64.StdEncoding.EncodeToString(data)
+				detectedCT := http.DetectContentType(data)
+				if detectedCT == "application/octet-stream" && ct != "" {
+					detectedCT = ct
+				}
+				dataURI := "data:" + detectedCT + ";base64," + encoded
+				writeJSON(w, http.StatusOK, map[string]any{
+					"status":         "needs_crop",
+					"needs_crop":     true,
+					"required_ratio": geo.RequiredRatio,
+					"actual_ratio":   geo.ActualRatio,
+					"width":          geo.Width,
+					"height":         geo.Height,
+					"image_data":     dataURI,
+					"type":           imageType,
+				})
+				return
+			}
+		}
+	}
+
 	// User uploads always get "user" source provenance.
 	uploadMeta := &img.ExifMeta{Source: "user", Fetched: time.Now().UTC(), Mode: "user"}
 
@@ -265,6 +295,41 @@ func (r *Router) handleImageFetch(w http.ResponseWriter, req *http.Request) {
 		r.logger.Warn("fetching image from URL", "url", imageURL, "error", err)
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": fmt.Sprintf("failed to fetch image: %v", err)})
 		return
+	}
+
+	// Check geometry before saving. If the aspect ratio does not match the slot
+	// requirement, return the fetched image data for client-side cropping.
+	skipCrop := req.URL.Query().Get("skip_crop") == "true"
+	if !skipCrop && !isHTMXRequest(req) {
+		w2, h2, dimErr := img.GetDimensions(bytes.NewReader(data))
+		if dimErr == nil {
+			geo := img.CheckGeometry(w2, h2, imageType)
+			if geo.NeedsCrop {
+				format, _, _ := img.DetectFormat(bytes.NewReader(data))
+				var mimeType string
+				switch format {
+				case img.FormatPNG:
+					mimeType = "image/png"
+				case img.FormatWebP:
+					mimeType = "image/webp"
+				default:
+					mimeType = "image/jpeg"
+				}
+				encoded := base64.StdEncoding.EncodeToString(data)
+				dataURI := "data:" + mimeType + ";base64," + encoded
+				writeJSON(w, http.StatusOK, map[string]any{
+					"status":         "needs_crop",
+					"needs_crop":     true,
+					"required_ratio": geo.RequiredRatio,
+					"actual_ratio":   geo.ActualRatio,
+					"width":          geo.Width,
+					"height":         geo.Height,
+					"image_data":     dataURI,
+					"type":           imageType,
+				})
+				return
+			}
+		}
 	}
 
 	fetchMeta := &img.ExifMeta{Source: "user", Fetched: time.Now().UTC(), URL: imageURL, Mode: "user"}
@@ -619,6 +684,19 @@ func (r *Router) processAndSaveImage(ctx context.Context, dir string, imageType 
 // getActiveNamingConfig returns the filenames for the given image type from the
 // active platform profile. Returns the full array so that image saves write
 // copies for every configured filename.
+// getActiveProfileName returns the name of the currently active platform profile
+// (e.g. "Kodi", "Emby", "Jellyfin"). Returns empty string if no profile is active.
+func (r *Router) getActiveProfileName(ctx context.Context) string {
+	if r.platformService == nil {
+		return ""
+	}
+	profile, err := r.platformService.GetActive(ctx)
+	if err != nil || profile == nil {
+		return ""
+	}
+	return profile.Name
+}
+
 func (r *Router) getActiveNamingConfig(ctx context.Context, imageType string) []string {
 	names, _ := r.getActiveNamingAndSymlinks(ctx, imageType)
 	return names
@@ -1595,7 +1673,7 @@ func (r *Router) handleFanartList(w http.ResponseWriter, req *http.Request) {
 		if req.URL.Query().Get("management") == "true" {
 			renderTempl(w, req, templates.FanartManagementGallery(artistID, items))
 		} else {
-			renderTempl(w, req, templates.FanartGallery(artistID, items))
+			renderTempl(w, req, templates.FanartGallery(artistID, items, r.getActiveProfileName(req.Context())))
 		}
 		return
 	}
@@ -1880,4 +1958,31 @@ func (r *Router) handleFanartBatchFetch(w http.ResponseWriter, req *http.Request
 		"count":         a.FanartCount,
 		"sync_warnings": syncWarnings,
 	})
+}
+
+// handleRandomBackdrop picks a random artist that has a fanart image and
+// redirects to its image file endpoint. Used by the ambient backdrop feature
+// to display a blurred background in the layout shell.
+// GET /api/v1/images/random-backdrop
+func (r *Router) handleRandomBackdrop(w http.ResponseWriter, req *http.Request) {
+	// Query a random artist ID that has at least one fanart image.
+	var artistID string
+	err := r.db.QueryRowContext(req.Context(),
+		`SELECT artist_id FROM artist_images
+		 WHERE image_type = 'fanart' AND slot_index = 0 AND exists_flag = 1
+		 ORDER BY RANDOM() LIMIT 1`).Scan(&artistID)
+	if err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
+			r.logger.Error("random backdrop query failed", slog.String("error", err.Error()))
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+		// No artists with fanart found; return 404 Not Found.
+		http.NotFound(w, req)
+		return
+	}
+
+	// Redirect to the standard image serve endpoint for this artist's fanart.
+	target := r.basePath + "/api/v1/artists/" + url.PathEscape(artistID) + "/images/fanart/file"
+	http.Redirect(w, req, target, http.StatusTemporaryRedirect)
 }

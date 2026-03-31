@@ -204,6 +204,76 @@ templ SyncBadge(state string) {
 	}
 }
 
+// badgeLabel returns tooltip if non-empty, otherwise falls back to the platform name.
+func badgeLabel(tooltip, platform string) string {
+	if tooltip != "" {
+		return tooltip
+	}
+	if platform != "" {
+		return platform
+	}
+	return "Unknown platform"
+}
+
+// PlatformBadge renders a small icon badge for a platform source (filesystem,
+// lidarr, emby, jellyfin). Used in artist list/grid views to indicate which
+// platforms have the artist. The tooltip provides additional context.
+templ PlatformBadge(platform, tooltip string) {
+	switch platform {
+		case "filesystem":
+			<span
+				class="inline-flex items-center justify-center rounded-full p-0.5"
+				style="color: #94a3b8; background: rgba(148, 163, 184, 0.15);"
+				title={ badgeLabel(tooltip, platform) }
+				aria-label={ badgeLabel(tooltip, platform) }
+			>
+				<!-- Heroicons: folder (mini) -->
+				<svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+					<path d="M3.75 3A1.75 1.75 0 0 0 2 4.75v3.26a3.235 3.235 0 0 1 1.75-.51h12.5c.644 0 1.245.188 1.75.51V6.75A1.75 1.75 0 0 0 16.25 5h-4.836a.25.25 0 0 1-.177-.073L9.823 3.513A1.75 1.75 0 0 0 8.586 3H3.75ZM3.75 9A1.75 1.75 0 0 0 2 10.75v4.5c0 .966.784 1.75 1.75 1.75h12.5A1.75 1.75 0 0 0 18 15.25v-4.5A1.75 1.75 0 0 0 16.25 9H3.75Z"></path>
+				</svg>
+			</span>
+		case "lidarr":
+			<span
+				class="inline-flex items-center justify-center rounded-full"
+				style="background: rgba(46, 204, 113, 0.15);"
+				title={ badgeLabel(tooltip, platform) }
+				aria-label={ badgeLabel(tooltip, platform) }
+			>
+				<img src="/static/img/logos/lidarr.svg" alt="" aria-hidden="true" class="h-4 w-4 rounded-full"/>
+			</span>
+		case "emby":
+			<span
+				class="inline-flex items-center justify-center rounded-full"
+				style="background: rgba(82, 181, 75, 0.15);"
+				title={ badgeLabel(tooltip, platform) }
+				aria-label={ badgeLabel(tooltip, platform) }
+			>
+				<img src="/static/img/logos/emby-32.png" srcset="/static/img/logos/emby-32.png 1x, /static/img/logos/emby-64.png 2x" alt="" aria-hidden="true" class="h-4 w-4 rounded-full"/>
+			</span>
+		case "jellyfin":
+			<span
+				class="inline-flex items-center justify-center rounded-full"
+				style="background: rgba(0, 164, 220, 0.15);"
+				title={ badgeLabel(tooltip, platform) }
+				aria-label={ badgeLabel(tooltip, platform) }
+			>
+				<img src="/static/img/logos/jellyfin.svg" alt="" aria-hidden="true" class="h-4 w-4 rounded-full"/>
+			</span>
+		default:
+			<span
+				class="inline-flex items-center justify-center rounded-full p-0.5"
+				style="color: #94a3b8; background: rgba(148, 163, 184, 0.15);"
+				title={ badgeLabel(tooltip, platform) }
+				aria-label={ badgeLabel(tooltip, platform) }
+			>
+				<!-- Heroicons: question-mark-circle (mini) -->
+				<svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+					<path fill-rule="evenodd" d="M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0ZM8.94 6.94a.75.75 0 1 1-1.061-1.061 3 3 0 1 1 2.871 5.026v.345a.75.75 0 0 1-1.5 0v-.5c0-.72.57-1.172 1.081-1.287A1.5 1.5 0 1 0 8.94 6.94ZM10 15a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clip-rule="evenodd"></path>
+				</svg>
+			</span>
+	}
+}
+
 // ImageStatusBadge renders a three-state indicator for image presence and quality:
 //   - missing:        red pill with X
 //   - exists, low-res: amber pill with checkmark and "low res" tooltip

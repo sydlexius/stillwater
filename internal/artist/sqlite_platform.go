@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/dbutil"
@@ -93,4 +94,55 @@ func (r *sqlitePlatformIDRepo) DeleteByArtistID(ctx context.Context, artistID st
 		return fmt.Errorf("deleting platform ids for artist: %w", err)
 	}
 	return nil
+}
+
+// GetPresenceForArtists returns a map of artist ID to PlatformPresence by
+// joining artist_platform_ids with connections to determine which platform
+// types each artist has a mapping for. Artists with no mappings are omitted.
+func (r *sqlitePlatformIDRepo) GetPresenceForArtists(ctx context.Context, artistIDs []string) (map[string]PlatformPresence, error) {
+	if len(artistIDs) == 0 {
+		return nil, nil
+	}
+
+	placeholders := make([]string, len(artistIDs))
+	args := make([]any, len(artistIDs))
+	for i, id := range artistIDs {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+
+	// Return one row per (artist, connection_type) pair. GROUP BY collapses
+	// multiple connections of the same type into a single row per artist.
+	query := `SELECT ap.artist_id, c.type ` + //nolint:gosec // G202: placeholders are "?" literals
+		`FROM artist_platform_ids ap ` +
+		`JOIN connections c ON c.id = ap.connection_id ` +
+		`WHERE ap.artist_id IN (` + strings.Join(placeholders, ",") + `) ` +
+		`GROUP BY ap.artist_id, c.type`
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("batch getting platform presence: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck
+
+	result := make(map[string]PlatformPresence, len(artistIDs))
+	for rows.Next() {
+		var artistID, connType string
+		if err := rows.Scan(&artistID, &connType); err != nil {
+			return nil, fmt.Errorf("scanning platform presence row: %w", err)
+		}
+		p := result[artistID]
+		switch connType {
+		case "emby":
+			p.HasEmby = true
+		case "jellyfin":
+			p.HasJellyfin = true
+		case "lidarr":
+			p.HasLidarr = true
+		}
+		result[artistID] = p
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating platform presence rows: %w", err)
+	}
+	return result, nil
 }
