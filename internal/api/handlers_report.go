@@ -9,6 +9,7 @@ import (
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/artist"
+	img "github.com/sydlexius/stillwater/internal/image"
 	"github.com/sydlexius/stillwater/internal/rule"
 	"github.com/sydlexius/stillwater/web/components"
 	"github.com/sydlexius/stillwater/web/templates"
@@ -346,7 +347,8 @@ func (r *Router) handleReportComplianceExport(w http.ResponseWriter, req *http.R
 	w.WriteHeader(http.StatusOK)
 
 	cw := csv.NewWriter(w)
-	if err := cw.Write([]string{"Artist Name", "Health Score", "Metadata", "Thumb", "Fanart", "Logo", "MBID", "Library", "Violations"}); err != nil {
+	profileName := r.getActiveProfileName(req.Context())
+	if err := cw.Write([]string{"Artist Name", "Health Score", "Metadata", img.ImageTermFor("thumb", profileName), img.ImageTermFor("fanart", profileName), img.ImageTermFor("logo", profileName), "MBID", "Library", "Violations"}); err != nil {
 		r.logger.Error("writing CSV header", "error", err)
 		return
 	}
