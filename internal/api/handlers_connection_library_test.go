@@ -503,7 +503,10 @@ func createTestJPEGForHandler(t *testing.T) []byte {
 
 func TestPopulateFromEmby_DownloadsImages(t *testing.T) {
 	jpegData := createTestJPEGForHandler(t)
-	artistDir := t.TempDir()
+	artistDir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	libPath := filepath.Dir(artistDir)
 
 	var imageRequested atomic.Bool
@@ -760,7 +763,10 @@ func TestPopulateFromEmby_UsesImageCacheWhenNoPath(t *testing.T) {
 
 func TestPopulateFromJellyfin_DownloadsImages(t *testing.T) {
 	jpegData := createTestJPEGForHandler(t)
-	artistDir := t.TempDir()
+	artistDir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	libPath := filepath.Dir(artistDir)
 
 	var imageRequested atomic.Bool
@@ -1070,7 +1076,10 @@ func TestPopulateFromEmby_PlatformPathNotStoredWhenPathless(t *testing.T) {
 }
 
 func TestPopulateFromEmby_PlatformPathStoredWhenUnderLibraryRoot(t *testing.T) {
-	artistDir := t.TempDir()
+	artistDir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	embySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
