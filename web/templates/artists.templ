@@ -88,29 +88,26 @@ func artistHasFilesystem(a artist.Artist) bool {
 }
 
 // lidarrTooltip returns the tooltip text for a Lidarr platform badge.
-// Uses the connection name from library sources if available.
-func lidarrTooltip(a artist.Artist, sources map[string]LibrarySourceInfo) string {
-	info := artistSourceInfo(a, sources)
-	if info.Source == "lidarr" && info.ConnectionName != "" {
-		return "Managed by " + info.ConnectionName
+// Uses the connection name from src if available.
+func lidarrTooltip(src LibrarySourceInfo) string {
+	if src.Source == "lidarr" && src.ConnectionName != "" {
+		return "Managed by " + src.ConnectionName
 	}
 	return "Managed by Lidarr"
 }
 
 // embyTooltip returns the tooltip text for an Emby platform badge.
-func embyTooltip(a artist.Artist, sources map[string]LibrarySourceInfo) string {
-	info := artistSourceInfo(a, sources)
-	if info.Source == "emby" && info.ConnectionName != "" {
-		return "Present in " + info.ConnectionName
+func embyTooltip(src LibrarySourceInfo) string {
+	if src.Source == "emby" && src.ConnectionName != "" {
+		return "Present in " + src.ConnectionName
 	}
 	return "Present in Emby"
 }
 
 // jellyfinTooltip returns the tooltip text for a Jellyfin platform badge.
-func jellyfinTooltip(a artist.Artist, sources map[string]LibrarySourceInfo) string {
-	info := artistSourceInfo(a, sources)
-	if info.Source == "jellyfin" && info.ConnectionName != "" {
-		return "Present in " + info.ConnectionName
+func jellyfinTooltip(src LibrarySourceInfo) string {
+	if src.Source == "jellyfin" && src.ConnectionName != "" {
+		return "Present in " + src.ConnectionName
 	}
 	return "Present in Jellyfin"
 }
@@ -140,13 +137,13 @@ func computeArtistBadges(a artist.Artist, sources map[string]LibrarySourceInfo, 
 		badges = append(badges, artistBadge{"filesystem", "Found in " + a.Path})
 	}
 	if p.HasLidarr || src.Source == "lidarr" {
-		badges = append(badges, artistBadge{"lidarr", lidarrTooltip(a, sources)})
+		badges = append(badges, artistBadge{"lidarr", lidarrTooltip(src)})
 	}
 	if p.HasEmby || src.Source == "emby" {
-		badges = append(badges, artistBadge{"emby", embyTooltip(a, sources)})
+		badges = append(badges, artistBadge{"emby", embyTooltip(src)})
 	}
 	if p.HasJellyfin || src.Source == "jellyfin" {
-		badges = append(badges, artistBadge{"jellyfin", jellyfinTooltip(a, sources)})
+		badges = append(badges, artistBadge{"jellyfin", jellyfinTooltip(src)})
 	}
 	return badges
 }
