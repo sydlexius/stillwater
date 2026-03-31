@@ -678,6 +678,8 @@ func (s *Service) importPayload(ctx context.Context, payload *Payload, opts Impo
 					continue
 				}
 				if !confirmedIDs[*ue.InvitedBy] {
+					result.Warnings = append(result.Warnings,
+						fmt.Sprintf("user %q: invited_by reference to %q was not set (inviter not found)", ue.Username, *ue.InvitedBy))
 					continue
 				}
 				if _, err := s.db.ExecContext(ctx, `
