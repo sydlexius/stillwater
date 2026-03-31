@@ -145,15 +145,15 @@ func HealthSummaryFragment(data HealthSummaryData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = quickStatCard("Missing Metadata", data.MissingNFO, "?tab=compliance&filter=missing_nfo").Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = quickStatCard("Missing Metadata", data.MissingNFO, "reports?tab=compliance&filter=missing_nfo").Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = quickStatCard("Missing Thumb", data.MissingThumb, "?tab=compliance&filter=missing_thumb").Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = quickStatCard("Missing Thumb", data.MissingThumb, "reports?tab=compliance&filter=missing_thumb").Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = quickStatCard("Missing MBID", data.MissingMBID, "?tab=compliance&filter=missing_mbid").Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = quickStatCard("Missing MBID", data.MissingMBID, "reports?tab=compliance&filter=missing_mbid").Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -256,23 +256,23 @@ func HealthTierFragment(data HealthSummaryData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = healthTierCard("Excellent", "80-100", data.TierExcellent, "text-green-600 dark:text-green-400", "border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20", "?tab=compliance&health_min=80").Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = healthTierCard("Excellent", "80-100", data.TierExcellent, "text-green-600 dark:text-green-400", "border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20", "reports?tab=compliance&health_min=80").Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = healthTierCard("Good", "60-79", data.TierGood, "text-blue-600 dark:text-blue-400", "border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20", "?tab=compliance&health_min=60&health_max=79").Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = healthTierCard("Good", "60-79", data.TierGood, "text-blue-600 dark:text-blue-400", "border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20", "reports?tab=compliance&health_min=60&health_max=79").Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = healthTierCard("Fair", "40-59", data.TierFair, "text-yellow-600 dark:text-yellow-400", "border-yellow-200 dark:border-yellow-800 bg-yellow-50 dark:bg-yellow-900/20", "?tab=compliance&health_min=40&health_max=59").Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = healthTierCard("Fair", "40-59", data.TierFair, "text-yellow-600 dark:text-yellow-400", "border-yellow-200 dark:border-yellow-800 bg-yellow-50 dark:bg-yellow-900/20", "reports?tab=compliance&health_min=40&health_max=59").Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = healthTierCard("Poor", "20-39", data.TierPoor, "text-orange-600 dark:text-orange-400", "border-orange-200 dark:border-orange-800 bg-orange-50 dark:bg-orange-900/20", "?tab=compliance&health_min=20&health_max=39").Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = healthTierCard("Poor", "20-39", data.TierPoor, "text-orange-600 dark:text-orange-400", "border-orange-200 dark:border-orange-800 bg-orange-50 dark:bg-orange-900/20", "reports?tab=compliance&health_min=20&health_max=39").Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = healthTierCard("Critical", "0-19", data.TierCritical, "text-red-600 dark:text-red-400", "border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20", "?tab=compliance&health_max=19").Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = healthTierCard("Critical", "0-19", data.TierCritical, "text-red-600 dark:text-red-400", "border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20", "reports?tab=compliance&health_max=19").Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

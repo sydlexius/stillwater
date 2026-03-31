@@ -883,16 +883,33 @@ templ reportsTrendsScript() {
 
 			var glowPlugin = {
 				id: 'swGlow',
-				beforeDraw: function(chart) {
+				beforeDatasetDraw: function(chart, args) {
 					if (prefersReducedMotion) return;
+					var meta = chart.getDatasetMeta(args.index);
+					if (!meta || meta.type !== 'line') return;
 					var ctx = chart.ctx;
+					var ca = chart.chartArea;
+					if (!ca) return;
 					var glowColor = getComputedStyle(document.documentElement)
 						.getPropertyValue('--sw-accent-primary-glow').trim() || 'rgba(59,130,246,0.3)';
 					ctx.save();
 					ctx.filter = 'drop-shadow(0 0 6px ' + glowColor + ')';
+					var ds = chart.data.datasets[args.index];
+					if (ds.fill) {
+						// Store the original flat color on first draw so we can recreate
+						// the gradient on each render (handles canvas resize).
+						if (!ds._origBg) ds._origBg = ds.backgroundColor;
+						var grad = ctx.createLinearGradient(0, ca.top, 0, ca.bottom);
+						grad.addColorStop(0, ds._origBg);
+						grad.addColorStop(1, 'rgba(0,0,0,0)');
+						ds.backgroundColor = grad;
+					}
 				},
-				afterDraw: function(chart) {
+				afterDatasetDraw: function(chart, args) {
 					if (prefersReducedMotion) return;
+					var meta = chart.getDatasetMeta(args.index);
+					if (!meta || meta.type !== 'line') return;
+					if (!chart.chartArea) return;
 					chart.ctx.restore();
 				}
 			};
