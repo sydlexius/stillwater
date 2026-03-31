@@ -222,11 +222,20 @@ gh pr view 2>&1
 If no PR exists, offer to create one:
 "Push succeeded. Create the PR now? (yes/no)"
 
-If yes, run:
+If yes, determine which issue(s) this branch closes:
+
+1. Parse the branch name for an issue number (e.g. `fix/123-some-desc` or `feat/456-thing`).
+2. Scan commit messages for `#N` references.
+3. Check `$ARGUMENTS` for explicit issue numbers.
+
+Collect all discovered issue numbers into a list. Then run:
+
 ```bash
 gh pr create --title "<branch-description>" --body "$(cat <<'EOF'
 ## Summary
 <bullet points from $ARGUMENTS or inferred from commit message>
+
+<!-- Insert one `Closes #N` line per issue here -->
 
 ## Test plan
 - [ ] `go test ./...` passes
@@ -237,6 +246,10 @@ Generated with [Claude Code](https://claude.com/claude-code)
 EOF
 )"
 ```
+
+Include one `Closes #N` line per issue. If the branch addresses multiple issues, list
+each on its own line (e.g. `Closes #12`, `Closes #34`). If no issue number can be
+determined, ask the user: "Which issue(s) does this PR close? (e.g. #123)"
 
 Fill in the summary from `$ARGUMENTS` if provided, or from the squashed commit message
 if not.
