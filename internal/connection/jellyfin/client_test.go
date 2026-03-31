@@ -1396,3 +1396,134 @@ func TestAuthenticateByName_RequestBody(t *testing.T) {
 		t.Errorf("Pw = %q, want %q", parsed["Pw"], "testpass")
 	}
 }
+
+func TestGetLibrarySettings(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[
+			{
+				"Name": "Music",
+				"CollectionType": "music",
+				"ItemId": "lib-001",
+				"LibraryOptions": {
+					"SaveLocalMetadata": false,
+					"MetadataSavers": [],
+					"EnableInternetProviders": true,
+					"TypeOptions": [
+						{
+							"Type": "MusicArtist",
+							"ImageFetchers": ["FanArt"],
+							"MetadataFetchers": ["MusicBrainz"]
+						}
+					]
+				}
+			},
+			{
+				"Name": "Podcasts",
+				"CollectionType": "music",
+				"ItemId": "lib-002",
+				"LibraryOptions": {
+					"SaveLocalMetadata": false,
+					"MetadataSavers": [],
+					"EnableInternetProviders": false,
+					"TypeOptions": [
+						{
+							"Type": "MusicArtist",
+							"ImageFetchers": ["FanArt"],
+							"MetadataFetchers": []
+						}
+					]
+				}
+			}
+		]`))
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "test-key", "", srv.Client(), testLogger())
+	settings, err := c.GetLibrarySettings(context.Background())
+	if err != nil {
+		t.Fatalf("GetLibrarySettings: %v", err)
+	}
+	if len(settings) != 2 {
+		t.Fatalf("got %d libraries, want 2", len(settings))
+	}
+
+	// First library has internet providers enabled with active fetchers.
+	if !settings[0].HasConflicts {
+		t.Error("expected first library to have conflicts")
+	}
+	if !settings[0].NeedsLockdata {
+		t.Error("expected NeedsLockdata to be true for Jellyfin")
+	}
+
+	// Second library has internet providers disabled, so no conflicts despite having fetchers.
+	if settings[1].HasConflicts {
+		t.Error("expected second library to have no conflicts (internet providers disabled)")
+	}
+}
+
+func TestDisableConflictingSettings_Jellyfin(t *testing.T) {
+	bodyCh := make(chan []byte, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/Library/VirtualFolders" && r.Method == http.MethodGet:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`[
+				{
+					"Name": "Music",
+					"CollectionType": "music",
+					"ItemId": "lib-001",
+					"LibraryOptions": {
+						"SaveLocalMetadata": false,
+						"MetadataSavers": ["Nfo"],
+						"EnableInternetProviders": true,
+						"TypeOptions": [
+							{
+								"Type": "MusicArtist",
+								"ImageFetchers": ["FanArt"],
+								"MetadataFetchers": ["MusicBrainz"]
+							}
+						]
+					}
+				}
+			]`))
+		case r.URL.Path == "/Library/VirtualFolders/LibraryOptions" && r.Method == http.MethodPost:
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Errorf("reading body: %v", err)
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			bodyCh <- body
+			w.WriteHeader(http.StatusOK)
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "test-key", "", srv.Client(), testLogger())
+	if err := c.DisableConflictingSettings(context.Background(), "lib-001"); err != nil {
+		t.Fatalf("DisableConflictingSettings: %v", err)
+	}
+
+	// Verify the request body clears fetchers (but NOT MetadataSavers for Jellyfin).
+	receivedBody := <-bodyCh
+	var opts LibraryOptions
+	if err := json.Unmarshal(receivedBody, &opts); err != nil {
+		t.Fatalf("parsing sent body: %v", err)
+	}
+	// Jellyfin's DisableConflictingSettings does NOT clear MetadataSavers because
+	// it does not reliably prevent NFO writes. Lockdata injection is needed instead.
+	for _, to := range opts.TypeOptions {
+		if to.Type == "MusicArtist" {
+			if len(to.ImageFetchers) != 0 {
+				t.Errorf("ImageFetchers = %v, want empty", to.ImageFetchers)
+			}
+			if len(to.MetadataFetchers) != 0 {
+				t.Errorf("MetadataFetchers = %v, want empty", to.MetadataFetchers)
+			}
+		}
+	}
+}

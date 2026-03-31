@@ -430,7 +430,7 @@ func TestUpdateFeatures(t *testing.T) {
 	}
 
 	// Disable NFO write only
-	if err := svc.UpdateFeatures(ctx, c.ID, true, false, true); err != nil {
+	if err := svc.UpdateFeatures(ctx, c.ID, true, false, true, false, false); err != nil {
 		t.Fatalf("UpdateFeatures: %v", err)
 	}
 
@@ -451,7 +451,7 @@ func TestUpdateFeatures(t *testing.T) {
 
 func TestUpdateFeatures_NotFound(t *testing.T) {
 	svc := setupTestService(t)
-	if err := svc.UpdateFeatures(context.Background(), "nonexistent", true, true, true); err == nil {
+	if err := svc.UpdateFeatures(context.Background(), "nonexistent", true, true, true, false, false); err == nil {
 		t.Error("expected error updating features for nonexistent connection")
 	}
 }
@@ -539,5 +539,85 @@ func TestUpdateStatus(t *testing.T) {
 	}
 	if got.LastCheckedAt == nil {
 		t.Error("expected LastCheckedAt to be set")
+	}
+}
+
+func TestNewFeatureFlags_DefaultFalse(t *testing.T) {
+	svc := setupTestService(t)
+	ctx := context.Background()
+
+	c := &Connection{Name: "Defaults", Type: TypeEmby, URL: "http://defaults:8096", APIKey: "key", Enabled: true}
+	if err := svc.Create(ctx, c); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := svc.GetByID(ctx, c.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.FeatureMetadataPush {
+		t.Error("expected FeatureMetadataPush to default to false")
+	}
+	if got.FeatureTriggerRefresh {
+		t.Error("expected FeatureTriggerRefresh to default to false")
+	}
+}
+
+func TestUpdateFeatures_NewFlags(t *testing.T) {
+	svc := setupTestService(t)
+	ctx := context.Background()
+
+	c := &Connection{Name: "NewFlags", Type: TypeEmby, URL: "http://nf:8096", APIKey: "key", Enabled: true}
+	if err := svc.Create(ctx, c); err != nil {
+		t.Fatal(err)
+	}
+
+	// Enable metadata push but disable trigger refresh to verify independent storage.
+	if err := svc.UpdateFeatures(ctx, c.ID, true, true, true, true, false); err != nil {
+		t.Fatalf("UpdateFeatures: %v", err)
+	}
+
+	got, err := svc.GetByID(ctx, c.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.FeatureMetadataPush {
+		t.Error("expected FeatureMetadataPush to be true")
+	}
+	if got.FeatureTriggerRefresh {
+		t.Error("expected FeatureTriggerRefresh to be false")
+	}
+}
+
+func TestUpdate_PreservesNewFeatureFlags(t *testing.T) {
+	svc := setupTestService(t)
+	ctx := context.Background()
+
+	c := &Connection{
+		Name: "PreserveNew", Type: TypeEmby, URL: "http://on:8096", APIKey: "key", Enabled: true,
+		FeatureMetadataPush: true, FeatureTriggerRefresh: true,
+	}
+	if err := svc.Create(ctx, c); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := svc.GetByID(ctx, c.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got.Name = "PreserveNewUpdated"
+	if err := svc.Update(ctx, got); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+
+	after, err := svc.GetByID(ctx, c.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !after.FeatureMetadataPush {
+		t.Error("expected FeatureMetadataPush to be preserved as true")
+	}
+	if !after.FeatureTriggerRefresh {
+		t.Error("expected FeatureTriggerRefresh to be preserved as true")
 	}
 }

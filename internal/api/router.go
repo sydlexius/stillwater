@@ -261,6 +261,9 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("DELETE "+bp+"/api/v1/connections/{id}", wrapAuth(middleware.RequireAdmin(r.handleDeleteConnection), authMw))
 	mux.HandleFunc("PATCH "+bp+"/api/v1/connections/{id}/features", wrapAuth(middleware.RequireAdmin(r.handleUpdateConnectionFeatures), authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/connections/{id}/test", wrapAuth(r.handleTestConnection, authMw))
+	mux.HandleFunc("GET "+bp+"/api/v1/connections/{id}/platform-settings", wrapAuth(r.handleGetPlatformSettings, authMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/connections/{id}/platform-settings/disable", wrapAuth(middleware.RequireAdmin(r.handleDisablePlatformSettings), authMw))
+	mux.HandleFunc("GET "+bp+"/api/v1/connections/{id}/platform-summary", wrapAuth(r.handleGetPlatformSummary, authMw))
 	// Connection library discovery/import routes
 	mux.HandleFunc("GET "+bp+"/api/v1/connections/{id}/libraries", wrapAuth(r.handleDiscoverLibraries, authMw))
 	mux.HandleFunc("POST "+bp+"/api/v1/connections/{id}/libraries/import", wrapAuth(middleware.RequireAdmin(r.handleImportLibraries), authMw))

@@ -538,9 +538,19 @@ templ Layout(title string, assets AssetPaths) {
 						if (opts && opts.html) {
 							// opts.html is only set by trusted internal callers; the message
 							// is always application-generated, never from user input.
-							m.message.innerHTML = message;
+							m.message.innerHTML = message; //nolint:trusted-html -- application-generated, not user input
 						} else {
 							m.message.textContent = message;
+						}
+						// Apply optional title and accept-button overrides.
+						if (opts && opts.title && m.title) {
+							m.title.textContent = opts.title;
+						}
+						if (opts && opts.acceptText && m.accept) {
+							m.accept.textContent = opts.acceptText;
+						}
+						if (opts && opts.acceptClass && m.accept) {
+							m.accept.className = opts.acceptClass;
 						}
 						// Reset the "Don't ask again" toggle to unchecked each time.
 						if (m.remember) {
@@ -563,6 +573,12 @@ templ Layout(title string, assets AssetPaths) {
 						pendingEvent = null;
 						pendingCallback = null;
 						pendingConfirmKey = null;
+						// Reset title and accept button to defaults.
+						if (m.title) m.title.textContent = 'Confirm';
+						if (m.accept) {
+							m.accept.textContent = 'Confirm';
+							m.accept.className = 'rounded bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 transition-colors focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2';
+						}
 						// Return focus to the element that triggered the dialog.
 						if (_modalOpener && typeof _modalOpener.focus === 'function') {
 							_modalOpener.focus();

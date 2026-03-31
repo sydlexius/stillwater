@@ -102,11 +102,29 @@ templ CompliancePage(assets AssetPaths, data ComplianceData) {
 	@Layout("Compliance Report", assets) {
 		<script src={ assets.ChartJS }></script>
 		<div class="space-y-6">
-			<div class="sw-card rounded-lg px-6 py-4">
-				<h1 class="text-2xl font-bold">Compliance Report</h1>
-				<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-					Per-artist rule compliance with actionable details.
-				</p>
+			<div class="sw-card rounded-lg px-6 py-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+				<div>
+					<h1 class="text-2xl font-bold">Compliance Report</h1>
+					<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+						Per-artist rule compliance with actionable details.
+					</p>
+				</div>
+				<button
+					id="run-rules-btn"
+					type="button"
+					onclick="confirmAndRunRules()"
+					aria-controls="confirm-modal"
+					aria-haspopup="dialog"
+					class="inline-flex items-center justify-center gap-2 rounded-md bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+				>
+					<span id="run-rules-spinner" class="hidden">
+						<svg class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+							<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+							<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+						</svg>
+					</span>
+					<span id="run-rules-label">Run Rules</span>
+				</button>
 			</div>
 			<!-- Library summary section (lazy-loaded) -->
 			<div
@@ -275,6 +293,7 @@ templ CompliancePage(assets AssetPaths, data ComplianceData) {
 				</div>
 			</div>
 		</div>
+		@runRulesScript()
 		@complianceScript()
 	}
 }
@@ -528,6 +547,166 @@ templ coverageChartData(data ComplianceSummaryData) {
 				}
 			});
 		})();
+	</script>
+}
+
+// runRulesScript renders the "Run Rules" button logic with a confirmation modal
+// that shows artist count and estimated duration before starting evaluation.
+templ runRulesScript() {
+	<script>
+		// confirmAndRunRules fetches the artist count, then shows a confirmation
+		// modal with the estimated duration before starting rule evaluation.
+		function confirmAndRunRules() {
+			var bp = (function() {
+				var el = document.querySelector('meta[name="htmx-base-path"]');
+				return el ? el.content : '';
+			})();
+
+			// Fetch artist count from the health endpoint to build the estimate.
+			fetch(bp + '/api/v1/reports/health')
+				.then(function(res) {
+					if (!res.ok) {
+						// If we cannot determine the count, proceed without estimate.
+						showRunRulesConfirm(bp, 0);
+						return;
+					}
+					return res.json();
+				})
+				.then(function(data) {
+					if (!data) return;
+					var count = (data && data.total_artists) ? data.total_artists : 0;
+					showRunRulesConfirm(bp, count);
+				})
+				.catch(function() {
+					showRunRulesConfirm(bp, 0);
+				});
+		}
+
+		function showRunRulesConfirm(bp, artistCount) {
+			var message;
+			if (artistCount > 0) {
+				var minutes = Math.ceil(artistCount * 0.05 / 60);
+				if (minutes < 1) minutes = 1;
+				message = 'This will evaluate rules for <strong>' + artistCount +
+					'</strong> artists and may take approximately <strong>' + minutes +
+					(minutes === 1 ? ' minute' : ' minutes') +
+					'</strong>.<br><br>The evaluation runs in the background -- you can continue using Stillwater while it runs.';
+			} else {
+				message = 'This will evaluate rules for all artists.<br><br>The evaluation runs in the background -- you can continue using Stillwater while it runs.';
+			}
+
+			// Pass customizations via opts so the modal resets them in hideModal.
+			// No pre-mutation of the shared modal DOM is needed.
+			window.showConfirmDialog(message, 'run_rules', function() {
+				startRuleRun(bp);
+			}, {
+				html: true,
+				title: 'Run Rules',
+				acceptText: 'Start',
+				acceptClass: 'rounded bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2'
+			});
+		}
+
+		function startRuleRun(bp) {
+			var btn = document.getElementById('run-rules-btn');
+			var spinner = document.getElementById('run-rules-spinner');
+			var label = document.getElementById('run-rules-label');
+
+			if (btn) btn.disabled = true;
+			if (spinner) spinner.classList.remove('hidden');
+			if (label) label.textContent = 'Running...';
+
+			var csrfVal = (function() {
+				var m = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/);
+				return m ? m[1] : '';
+			})();
+
+			fetch(bp + '/api/v1/rules/run-all', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					'X-CSRF-Token': csrfVal
+				}
+			}).then(function(r) {
+				if (r.status === 202) {
+					showSuccessToast('Rule evaluation started...');
+					pollRuleStatus(bp);
+				} else if (r.status === 409) {
+					showToast('Rules already running');
+					pollRuleStatus(bp);
+				} else {
+					return r.json().then(function(data) {
+						showToast(data.error || 'Failed to start rules');
+						resetRuleButton();
+					});
+				}
+			}).catch(function() {
+				showToast('Failed to start rule evaluation');
+				resetRuleButton();
+			});
+		}
+
+		function pollRuleStatus(bp) {
+			pollAsyncStatus(bp + '/api/v1/rules/run-all/status', {
+				onData: function(data) {
+					if (data.status === 'completed') {
+						var msg;
+						if (data.violations_found === 0) {
+							msg = 'No violations found';
+						} else if (data.violations_remaining === 0 && data.violations_auto_fixed > 0) {
+							msg = 'Found ' + data.violations_found + ' violations, all auto-fixed';
+						} else if (data.violations_auto_fixed > 0) {
+							msg = 'Found ' + data.violations_found + ' violations (' + data.violations_auto_fixed + ' auto-fixed, ' + data.violations_remaining + ' remaining)';
+						} else {
+							msg = 'Found ' + data.violations_found + ' violations (' + data.violations_remaining + ' remaining)';
+						}
+						showSuccessToast(msg);
+						resetRuleButton();
+						// Refresh health summary and compliance table if present.
+						if (document.getElementById('health-summary')) {
+							htmx.ajax('GET', '/api/v1/reports/health', {target: '#health-summary', swap: 'innerHTML'});
+						}
+						if (document.getElementById('compliance-summary')) {
+							htmx.ajax('GET', '/api/v1/reports/health/by-library', {target: '#compliance-summary', swap: 'innerHTML'});
+						}
+						htmx.ajax('GET', '/api/v1/notifications/badge', {target: '#sidebar-notif-badge', swap: 'innerHTML'});
+						return true;
+					}
+					if (data.status === 'failed') {
+						showToast('Rule evaluation failed: ' + (data.error || 'unknown error'));
+						resetRuleButton();
+						return true;
+					}
+					if (data.status === 'idle') {
+						showToast('Rule run state was lost');
+						resetRuleButton();
+						return true;
+					}
+					return false;
+				},
+				onTimeout: function() {
+					showToast('Rule status polling timed out');
+					resetRuleButton();
+				},
+				onHTTPError: function(status) {
+					showToast('Status check failed (HTTP ' + status + ')');
+					resetRuleButton();
+				},
+				onNetworkError: function() {
+					showToast('Network error while checking rule status');
+					resetRuleButton();
+				}
+			}, {maxAttempts: 0});
+		}
+
+		function resetRuleButton() {
+			var btn = document.getElementById('run-rules-btn');
+			var spinner = document.getElementById('run-rules-spinner');
+			var label = document.getElementById('run-rules-label');
+			if (btn) btn.disabled = false;
+			if (spinner) spinner.classList.add('hidden');
+			if (label) label.textContent = 'Run Rules';
+		}
 	</script>
 }
 

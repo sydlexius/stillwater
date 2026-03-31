@@ -97,3 +97,15 @@ type AuthUser struct {
 type UserPolicy struct {
 	IsAdministrator bool `json:"IsAdministrator"`
 }
+
+// LibrarySettingsStatus describes the fetcher/saver/metadata downloader state for a library.
+type LibrarySettingsStatus struct {
+	LibraryID               string   `json:"library_id"`
+	LibraryName             string   `json:"library_name"`
+	ImageFetchers           []string `json:"image_fetchers"`
+	MetadataFetchers        []string `json:"metadata_fetchers"`
+	MetadataSavers          []string `json:"metadata_savers"`
+	EnableInternetProviders bool     `json:"enable_internet_providers"`
+	HasConflicts            bool     `json:"has_conflicts"`
+	NeedsLockdata           bool     `json:"needs_lockdata"`
+}

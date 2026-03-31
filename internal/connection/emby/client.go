@@ -278,6 +278,87 @@ func AuthenticateByName(ctx context.Context, baseURL, username, password string,
 	}
 }
 
+// GetLibrarySettings reads the fetcher/saver/downloader configuration for all music libraries.
+// Each library entry describes which image fetchers, metadata fetchers, and metadata savers
+// are active for MusicArtist content.
+func (c *Client) GetLibrarySettings(ctx context.Context) ([]LibrarySettingsStatus, error) {
+	libs, err := c.GetMusicLibraries(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("getting music libraries: %w", err)
+	}
+
+	results := make([]LibrarySettingsStatus, 0, len(libs))
+	for _, lib := range libs {
+		status := LibrarySettingsStatus{
+			LibraryID:      lib.ItemID,
+			LibraryName:    lib.Name,
+			MetadataSavers: lib.LibraryOptions.MetadataSavers,
+		}
+		for _, opt := range lib.LibraryOptions.TypeOptions {
+			if strings.EqualFold(opt.Type, "MusicArtist") {
+				status.ImageFetchers = opt.ImageFetchers
+				status.MetadataFetchers = opt.MetadataFetchers
+				break
+			}
+		}
+		// Normalize nil slices to empty so JSON serializes as [] not null.
+		if status.ImageFetchers == nil {
+			status.ImageFetchers = []string{}
+		}
+		if status.MetadataFetchers == nil {
+			status.MetadataFetchers = []string{}
+		}
+		if status.MetadataSavers == nil {
+			status.MetadataSavers = []string{}
+		}
+		// A library has conflicts if any fetcher/saver is active.
+		status.HasConflicts = len(status.ImageFetchers) > 0 ||
+			len(status.MetadataFetchers) > 0 ||
+			len(status.MetadataSavers) > 0
+		results = append(results, status)
+	}
+	return results, nil
+}
+
+// DisableConflictingSettings clears image fetchers, metadata fetchers, and metadata savers
+// for MusicArtist content in the specified library via the Emby API.
+func (c *Client) DisableConflictingSettings(ctx context.Context, libraryID string) error {
+	libs, err := c.GetMusicLibraries(ctx)
+	if err != nil {
+		return fmt.Errorf("getting music libraries: %w", err)
+	}
+
+	var target *VirtualFolder
+	for i, lib := range libs {
+		if lib.ItemID == libraryID {
+			target = &libs[i]
+			break
+		}
+	}
+	if target == nil {
+		return fmt.Errorf("library not found: %s", libraryID)
+	}
+
+	// Clear MusicArtist-specific fetchers.
+	for i, opt := range target.LibraryOptions.TypeOptions {
+		if strings.EqualFold(opt.Type, "MusicArtist") {
+			target.LibraryOptions.TypeOptions[i].ImageFetchers = []string{}
+			target.LibraryOptions.TypeOptions[i].MetadataFetchers = []string{}
+			break
+		}
+	}
+	// Clear global metadata savers.
+	target.LibraryOptions.MetadataSavers = []string{}
+
+	body, err := json.Marshal(target.LibraryOptions)
+	if err != nil {
+		return fmt.Errorf("encoding library options: %w", err)
+	}
+
+	path := fmt.Sprintf("/Library/VirtualFolders/LibraryOptions?Id=%s", libraryID)
+	return c.PostJSON(ctx, path, bytes.NewReader(body), nil)
+}
+
 func (c *Client) setAuth(req *http.Request) {
 	req.Header.Set("X-Emby-Token", c.APIKey)
 }

@@ -4019,7 +4019,9 @@ templ serviceConnectionCard(connType string, displayName string, exampleURL stri
 					<div id={ "features-" + c.ID } class="hidden mt-2 rounded border border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 px-3 py-2">
 						<div class="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">Feature Toggles</div>
 						<div class="space-y-2">
-							@connectionFeatureToggle(c.ID, "library_import", "Library import", c.FeatureLibraryImport)
+							if c.Type != "lidarr" {
+								@connectionFeatureToggle(c.ID, "library_import", "Library import", c.FeatureLibraryImport)
+							}
 							@connectionFeatureToggle(c.ID, "nfo_write", "NFO write detection", c.FeatureNFOWrite)
 							@connectionFeatureToggle(c.ID, "image_write", "Image download/write", c.FeatureImageWrite)
 						</div>

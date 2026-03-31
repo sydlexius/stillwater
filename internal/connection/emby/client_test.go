@@ -1159,3 +1159,159 @@ func TestAuthenticateByName_RequestBody(t *testing.T) {
 		t.Errorf("Pw = %q, want %q", parsed["Pw"], "testpass")
 	}
 }
+
+func TestGetLibrarySettings(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[
+			{
+				"Name": "Music",
+				"CollectionType": "music",
+				"ItemId": "lib-001",
+				"LibraryOptions": {
+					"SaveLocalMetadata": false,
+					"MetadataSavers": ["Nfo"],
+					"TypeOptions": [
+						{
+							"Type": "MusicArtist",
+							"ImageFetchers": ["TheAudioDb", "FanArt"],
+							"MetadataFetchers": ["MusicBrainz"]
+						}
+					]
+				}
+			},
+			{
+				"Name": "Clean",
+				"CollectionType": "music",
+				"ItemId": "lib-002",
+				"LibraryOptions": {
+					"SaveLocalMetadata": false,
+					"MetadataSavers": [],
+					"TypeOptions": [
+						{
+							"Type": "MusicArtist",
+							"ImageFetchers": [],
+							"MetadataFetchers": []
+						}
+					]
+				}
+			}
+		]`))
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "test-key", "", srv.Client(), testLogger())
+	settings, err := c.GetLibrarySettings(context.Background())
+	if err != nil {
+		t.Fatalf("GetLibrarySettings: %v", err)
+	}
+	if len(settings) != 2 {
+		t.Fatalf("got %d libraries, want 2", len(settings))
+	}
+
+	// First library has conflicts.
+	if !settings[0].HasConflicts {
+		t.Error("expected first library to have conflicts")
+	}
+	if len(settings[0].ImageFetchers) != 2 {
+		t.Errorf("first library ImageFetchers = %v, want 2 entries", settings[0].ImageFetchers)
+	}
+	if len(settings[0].MetadataSavers) != 1 {
+		t.Errorf("first library MetadataSavers = %v, want 1 entry", settings[0].MetadataSavers)
+	}
+
+	// Second library is clean.
+	if settings[1].HasConflicts {
+		t.Error("expected second library to have no conflicts")
+	}
+}
+
+func TestDisableConflictingSettings(t *testing.T) {
+	bodyCh := make(chan []byte, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/Library/VirtualFolders" && r.Method == http.MethodGet:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`[
+				{
+					"Name": "Music",
+					"CollectionType": "music",
+					"ItemId": "lib-001",
+					"LibraryOptions": {
+						"SaveLocalMetadata": false,
+						"MetadataSavers": ["Nfo"],
+						"TypeOptions": [
+							{
+								"Type": "MusicArtist",
+								"ImageFetchers": ["TheAudioDb"],
+								"MetadataFetchers": ["MusicBrainz"]
+							}
+						]
+					}
+				}
+			]`))
+		case r.URL.Path == "/Library/VirtualFolders/LibraryOptions" && r.Method == http.MethodPost:
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Errorf("reading body: %v", err)
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			bodyCh <- body
+			w.WriteHeader(http.StatusOK)
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "test-key", "", srv.Client(), testLogger())
+	if err := c.DisableConflictingSettings(context.Background(), "lib-001"); err != nil {
+		t.Fatalf("DisableConflictingSettings: %v", err)
+	}
+
+	// Verify the request body clears fetchers and savers.
+	receivedBody := <-bodyCh
+	var opts LibraryOptions
+	if err := json.Unmarshal(receivedBody, &opts); err != nil {
+		t.Fatalf("parsing sent body: %v", err)
+	}
+	if len(opts.MetadataSavers) != 0 {
+		t.Errorf("MetadataSavers = %v, want empty", opts.MetadataSavers)
+	}
+	for _, to := range opts.TypeOptions {
+		if strings.EqualFold(to.Type, "MusicArtist") {
+			if len(to.ImageFetchers) != 0 {
+				t.Errorf("ImageFetchers = %v, want empty", to.ImageFetchers)
+			}
+			if len(to.MetadataFetchers) != 0 {
+				t.Errorf("MetadataFetchers = %v, want empty", to.MetadataFetchers)
+			}
+		}
+	}
+}
+
+func TestDisableConflictingSettings_LibraryNotFound(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[
+			{
+				"Name": "Music",
+				"CollectionType": "music",
+				"ItemId": "lib-001",
+				"LibraryOptions": {"MetadataSavers": []}
+			}
+		]`))
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "test-key", "", srv.Client(), testLogger())
+	err := c.DisableConflictingSettings(context.Background(), "nonexistent")
+	if err == nil {
+		t.Fatal("expected error for nonexistent library")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("error = %v, want 'not found'", err)
+	}
+}

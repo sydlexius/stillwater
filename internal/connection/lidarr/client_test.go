@@ -3,6 +3,7 @@ package lidarr
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -159,5 +160,75 @@ func TestTriggerArtistRefresh(t *testing.T) {
 	}
 	if resp.Status != "queued" {
 		t.Errorf("status = %q, want queued", resp.Status)
+	}
+}
+
+func TestGetMetadataConsumers(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/config/metadataprovider" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[
+			{"id":1,"metadataType":"MediaBrowser","consumerId":1,"consumerName":"MediaBrowser","enable":true},
+			{"id":2,"metadataType":"Kodi (XBMC) / Emby","consumerId":2,"consumerName":"Kodi (XBMC) / Emby","enable":false}
+		]`))
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "key", srv.Client(), testLogger())
+	consumers, err := c.GetMetadataConsumers(context.Background())
+	if err != nil {
+		t.Fatalf("GetMetadataConsumers: %v", err)
+	}
+	if len(consumers) != 2 {
+		t.Fatalf("got %d consumers, want 2", len(consumers))
+	}
+	if consumers[0].ConsumerName != "MediaBrowser" {
+		t.Errorf("first consumer = %q, want MediaBrowser", consumers[0].ConsumerName)
+	}
+	if !consumers[0].Enabled {
+		t.Error("expected first consumer to be enabled")
+	}
+	if consumers[1].Enabled {
+		t.Error("expected second consumer to be disabled")
+	}
+}
+
+func TestDisableMetadataConsumer(t *testing.T) {
+	bodyCh := make(chan []byte, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/config/metadataprovider/2" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		if r.Method != http.MethodPut {
+			t.Errorf("method = %s, want PUT", r.Method)
+		}
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("reading body: %v", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		bodyCh <- body
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	c := NewWithHTTPClient(srv.URL, "key", srv.Client(), testLogger())
+	if err := c.DisableMetadataConsumer(context.Background(), 2); err != nil {
+		t.Fatalf("DisableMetadataConsumer: %v", err)
+	}
+
+	receivedBody := <-bodyCh
+	var cfg MetadataProviderConfig
+	if err := json.Unmarshal(receivedBody, &cfg); err != nil {
+		t.Fatalf("parsing sent body: %v", err)
+	}
+	if cfg.ID != 2 {
+		t.Errorf("ID = %d, want 2", cfg.ID)
+	}
+	if cfg.Enable {
+		t.Error("expected Enable to be false")
 	}
 }
