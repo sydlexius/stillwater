@@ -608,7 +608,14 @@ func (r *Router) handleReportsPage(w http.ResponseWriter, req *http.Request) {
 		}
 
 		if isHTMXRequest(req) {
-			renderTempl(w, req, templates.ComplianceTable(complianceData))
+			switch req.Header.Get("HX-Target") {
+			case "compliance-table":
+				renderTempl(w, req, templates.ComplianceTable(complianceData))
+			case "reports-tab-content":
+				renderTempl(w, req, templates.ReportsComplianceTab(complianceData))
+			default:
+				renderTempl(w, req, templates.ComplianceTable(complianceData))
+			}
 			return
 		}
 	}
