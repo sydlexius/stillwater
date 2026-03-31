@@ -45,8 +45,8 @@ func guardRailLabel(v string) string {
 	return "Admins only"
 }
 
-// settingsAuthProvidersTab renders the Auth Providers settings tab content.
-// Only Administrators can access this tab (settings page is admin-only).
+// settingsAuthProvidersTab renders the Authentication settings section content.
+// Only Administrators can access this section (settings page is admin-only).
 func settingsAuthProvidersTab(data AuthProvidersData) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
