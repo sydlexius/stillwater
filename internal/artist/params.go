@@ -12,8 +12,9 @@ type ListParams struct {
 	HealthScoreMin int // 0-100, only applied when > 0
 	HealthScoreMax int // 0-100, only applied when > 0 and <= 100
 	// Filters holds flyout-driven multi-filter state. Keys are filter names
-	// (e.g. "missing_meta", "missing_images", "missing_mbid", "excluded",
-	// "locked") and values are "include" or "exclude".
+	// and values are "include" or "exclude". Single-value keys: missing_meta,
+	// missing_images, missing_mbid, excluded, locked, type_person, type_group,
+	// type_orchestra. Per-library keys: library_{id}.
 	Filters map[string]string
 }
 

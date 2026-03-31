@@ -521,9 +521,10 @@ func cycleFilterItem() templ.ComponentScript {
 // (e.g. "#artist-content"). Defaults to "#artist-content" when empty.
 func DismissFilterChip(key string, targetSel string) templ.ComponentScript {
 	return templ.ComponentScript{
-		Name: `__templ_DismissFilterChip_7146`,
-		Function: `function __templ_DismissFilterChip_7146(key, targetSel){var url = new URL(window.location.href);
+		Name: `__templ_DismissFilterChip_d251`,
+		Function: `function __templ_DismissFilterChip_d251(key, targetSel){var url = new URL(window.location.href);
 	url.searchParams.delete(key);
+	url.searchParams.delete('page');
 	history.pushState(null, '', url.toString());
 	// Strip the base path from url.pathname before passing to htmx.ajax
 	// to avoid a double-prefix from the htmx:configRequest hook.
@@ -536,8 +537,8 @@ func DismissFilterChip(key string, targetSel string) templ.ComponentScript {
 	var sel = targetSel || '#artist-content';
 	htmx.ajax('GET', path + url.search, {target: sel, swap: 'outerHTML'});
 }`,
-		Call:       templ.SafeScript(`__templ_DismissFilterChip_7146`, key, targetSel),
-		CallInline: templ.SafeScriptInline(`__templ_DismissFilterChip_7146`, key, targetSel),
+		Call:       templ.SafeScript(`__templ_DismissFilterChip_d251`, key, targetSel),
+		CallInline: templ.SafeScriptInline(`__templ_DismissFilterChip_d251`, key, targetSel),
 	}
 }
 

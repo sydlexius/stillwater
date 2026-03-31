@@ -2680,9 +2680,9 @@ templ settingsTabScript() {
 			if (panel) panel.classList.remove('hidden');
 			document.querySelectorAll('[data-tab]').forEach(function(t) {
 				t.classList.remove('bg-white', 'dark:bg-gray-700', 'text-blue-600', 'dark:text-blue-300', 'shadow-sm');
-				t.classList.add('text-gray-600', 'dark:text-gray-400');
+				t.classList.add('text-gray-600', 'dark:text-gray-400', 'hover:text-gray-900', 'dark:hover:text-gray-200', 'hover:bg-white/60', 'dark:hover:bg-gray-700/60');
 			});
-			el.classList.remove('text-gray-600', 'dark:text-gray-400');
+			el.classList.remove('text-gray-600', 'dark:text-gray-400', 'hover:text-gray-900', 'dark:hover:text-gray-200', 'hover:bg-white/60', 'dark:hover:bg-gray-700/60');
 			el.classList.add('bg-white', 'dark:bg-gray-700', 'text-blue-600', 'dark:text-blue-300', 'shadow-sm');
 			var settingsTabMeta = document.querySelector('meta[name="htmx-base-path"]');
 			var settingsTabBp = settingsTabMeta ? settingsTabMeta.content : '';
@@ -2713,6 +2713,53 @@ templ settingsTabScript() {
 				}
 			}
 		}
+
+		// Restore the active tab when the user navigates back or forward.
+		window.addEventListener('popstate', function() {
+			var params = new URLSearchParams(window.location.search);
+			var tabId = params.get('tab');
+			if (!tabId) {
+				var firstTab = document.querySelector('[data-tab]');
+				if (firstTab) tabId = firstTab.dataset.tab;
+			}
+			if (!tabId) return;
+			var el = document.querySelector('[data-tab="' + tabId + '"]');
+			if (!el) return;
+			document.querySelectorAll('[data-tab-panel]').forEach(function(p) {
+				p.classList.add('hidden');
+			});
+			document.querySelectorAll('[data-tab-panel]').forEach(function(p) {
+				if (p.dataset.tabPanel === tabId) p.classList.remove('hidden');
+			});
+			document.querySelectorAll('[data-tab]').forEach(function(t) {
+				t.classList.remove('bg-white', 'dark:bg-gray-700', 'text-blue-600', 'dark:text-blue-300', 'shadow-sm');
+				t.classList.add('text-gray-600', 'dark:text-gray-400', 'hover:text-gray-900', 'dark:hover:text-gray-200', 'hover:bg-white/60', 'dark:hover:bg-gray-700/60');
+			});
+			el.classList.remove('text-gray-600', 'dark:text-gray-400', 'hover:text-gray-900', 'dark:hover:text-gray-200', 'hover:bg-white/60', 'dark:hover:bg-gray-700/60');
+			el.classList.add('bg-white', 'dark:bg-gray-700', 'text-blue-600', 'dark:text-blue-300', 'shadow-sm');
+			// Mirror the side effects from switchSettingsTab for tab-specific state.
+			if (tabId === 'general' && typeof loadCacheStats === 'function') {
+				loadCacheStats();
+			}
+			var logViewer = document.getElementById('log-viewer');
+			if (logViewer && typeof logViewerState !== 'undefined') {
+				if (tabId === 'logs') {
+					if (typeof loadLogFiles === 'function') loadLogFiles();
+					if (typeof updateCleanupRow === 'function') updateCleanupRow();
+					if (logViewer.dataset.tabPaused === 'true') {
+						logViewer.dataset.tabPaused = 'false';
+						logViewer.setAttribute('hx-trigger', 'load, every 2s, logRefresh from:body');
+						if (typeof htmx !== 'undefined') htmx.process(logViewer);
+					}
+				} else {
+					if (!logViewerState.paused) {
+						logViewer.dataset.tabPaused = 'true';
+						logViewer.setAttribute('hx-trigger', 'logRefresh from:body');
+						if (typeof htmx !== 'undefined') htmx.process(logViewer);
+					}
+				}
+			}
+		});
 	</script>
 }
 

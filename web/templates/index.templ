@@ -58,20 +58,20 @@ templ IndexPage(assets AssetPaths) {
 					<canvas id="violations-chart"></canvas>
 				</div>
 			</div>
-		</div>
-		<div class="sw-card rounded-lg bg-white dark:bg-gray-800 p-4 shadow sm:p-6">
-			<h2 class="text-lg font-semibold mb-1">Metadata Completeness</h2>
-			<div
-				id="completeness-summary"
-				hx-get="/api/v1/reports/metadata-completeness"
-				hx-trigger="load"
-				hx-swap="innerHTML"
-				class="text-sm text-gray-500 dark:text-gray-400"
-			>
-				<p>Loading...</p>
-			</div>
-			<div class="mt-4 relative h-[300px] sm:h-[360px]">
-				<canvas id="completeness-chart"></canvas>
+			<div class="sw-card rounded-lg bg-white dark:bg-gray-800 p-4 shadow sm:p-6">
+				<h2 class="text-lg font-semibold mb-1">Metadata Completeness</h2>
+				<div
+					id="completeness-summary"
+					hx-get="/api/v1/reports/metadata-completeness"
+					hx-trigger="load"
+					hx-swap="innerHTML"
+					class="text-sm text-gray-500 dark:text-gray-400"
+				>
+					<p>Loading...</p>
+				</div>
+				<div class="mt-4 relative h-[300px] sm:h-[360px]">
+					<canvas id="completeness-chart"></canvas>
+				</div>
 			</div>
 		</div>
 		<script src={ assets.ChartJS }></script>

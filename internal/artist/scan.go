@@ -265,6 +265,77 @@ func buildWhereClause(params ListParams) (string, []any) {
 		}
 	}
 
+	// Aggregate artist-type filters into IN/NOT IN conditions so that
+	// including multiple types produces OR logic (not impossible AND logic).
+	var typeIncludes, typeExcludes []string
+	for key, state := range params.Filters {
+		var typeName string
+		switch key {
+		case "type_person":
+			typeName = "person"
+		case "type_group":
+			typeName = "group"
+		case "type_orchestra":
+			typeName = "orchestra"
+		default:
+			continue
+		}
+		switch state {
+		case "include":
+			typeIncludes = append(typeIncludes, typeName)
+		case "exclude":
+			typeExcludes = append(typeExcludes, typeName)
+		}
+	}
+	if len(typeIncludes) > 0 {
+		ph := strings.Repeat("?,", len(typeIncludes))
+		conditions = append(conditions, "type IN ("+ph[:len(ph)-1]+")")
+		for _, t := range typeIncludes {
+			args = append(args, t)
+		}
+	}
+	if len(typeExcludes) > 0 {
+		ph := strings.Repeat("?,", len(typeExcludes))
+		conditions = append(conditions, "type NOT IN ("+ph[:len(ph)-1]+")")
+		for _, t := range typeExcludes {
+			args = append(args, t)
+		}
+	}
+
+	// Aggregate per-library filters into IN/NOT IN conditions.
+	var libIncludes, libExcludes []string
+	for key, state := range params.Filters {
+		if !strings.HasPrefix(key, "library_") {
+			continue
+		}
+		libID := key[len("library_"):]
+		if libID == "" {
+			continue
+		}
+		switch state {
+		case "include":
+			libIncludes = append(libIncludes, libID)
+		case "exclude":
+			libExcludes = append(libExcludes, libID)
+		}
+	}
+	if len(libIncludes) > 0 {
+		ph := strings.Repeat("?,", len(libIncludes))
+		conditions = append(conditions, "library_id IN ("+ph[:len(ph)-1]+")")
+		for _, id := range libIncludes {
+			args = append(args, id)
+		}
+	}
+	if len(libExcludes) > 0 {
+		ph := strings.Repeat("?,", len(libExcludes))
+		// Use IS NULL OR NOT IN so artists with no library assignment are not
+		// silently dropped when excluding a specific library (NULL NOT IN (...) = NULL).
+		conditions = append(conditions, "(library_id IS NULL OR library_id NOT IN ("+ph[:len(ph)-1]+"))")
+		for _, id := range libExcludes {
+			args = append(args, id)
+		}
+	}
+
 	if params.HealthScoreMin > 0 {
 		conditions = append(conditions, "health_score >= ?")
 		args = append(args, params.HealthScoreMin)

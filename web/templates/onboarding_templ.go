@@ -306,7 +306,7 @@ func OnboardingPage(assets AssetPaths, data OnboardingData) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "</div><div id=\"ob-library-form-wrapper\"><button type=\"button\" id=\"ob-add-library-btn\" class=\"text-sm px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors\" onclick=\"document.getElementById('ob-library-form').classList.remove('hidden'); this.classList.add('hidden'); var e=document.getElementById('ob-library-error'); if(e) e.classList.add('hidden');\">Add Library</button><div id=\"ob-library-error\" role=\"alert\" class=\"hidden mb-2 rounded-md bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 px-3 py-2 text-sm text-red-700 dark:text-red-300\"></div><form id=\"ob-library-form\" class=\"hidden mt-3 space-y-3\" hx-post=\"/api/v1/libraries\" hx-swap=\"none\" hx-on::after-request=\"onLibraryAfterRequest(event)\"><div class=\"grid grid-cols-1 gap-3\"><input name=\"name\" placeholder=\"Library name (e.g. Music, Classical, Soundtracks)\" required class=\"rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500\"> <input name=\"path\" placeholder=\"Path (e.g. /music or /music/classical)\" required class=\"rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500\"><div class=\"flex flex-col gap-1.5\"><select name=\"type\" class=\"rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500\" onchange=\"syncLibraryTypeHelpText()\"><option value=\"regular\">Regular</option> <option value=\"classical\">Classical</option></select><p id=\"ob-library-type-help\" class=\"text-xs text-gray-500 dark:text-gray-400\" aria-live=\"polite\"></p></div></div><div class=\"flex gap-2\"><button type=\"submit\" class=\"text-sm px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 transition-colors\">Save</button> <button type=\"button\" class=\"text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors\" onclick=\"document.getElementById('ob-library-form').classList.add('hidden'); document.getElementById('ob-add-library-btn').classList.remove('hidden'); var e=document.getElementById('ob-library-error'); if(e) e.classList.add('hidden');\">Cancel</button></div></form></div></div><!-- Step 2: Platform Profile -->")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "</div><div id=\"ob-library-form-wrapper\"><button type=\"button\" id=\"ob-add-library-btn\" class=\"text-sm px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors\" onclick=\"document.getElementById('ob-library-form').classList.remove('hidden'); this.classList.add('hidden'); var e=document.getElementById('ob-library-error'); if(e) e.classList.add('hidden');\">Add Library</button><div id=\"ob-library-error\" role=\"alert\" class=\"hidden mb-2 rounded-md bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 px-3 py-2 text-sm text-red-700 dark:text-red-300\"></div><form id=\"ob-library-form\" class=\"hidden mt-3 space-y-3\" hx-post=\"/api/v1/libraries\" hx-swap=\"none\" hx-on::after-request=\"onLibraryAfterRequest(event)\"><div class=\"grid grid-cols-1 gap-3\"><input name=\"name\" placeholder=\"Library name (e.g. Music, Classical, Soundtracks)\" required class=\"rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500\"> <input name=\"path\" placeholder=\"Path (e.g. /music or /music/classical)\" required class=\"rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500\"><div class=\"flex flex-col gap-1.5\"><label for=\"ob-library-type\" class=\"sr-only\">Library type</label> <select id=\"ob-library-type\" name=\"type\" class=\"rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500\" onchange=\"syncLibraryTypeHelpText()\" aria-describedby=\"ob-library-type-help\"><option value=\"regular\">Regular</option> <option value=\"classical\">Classical</option></select><p id=\"ob-library-type-help\" class=\"text-xs text-gray-500 dark:text-gray-400\" aria-live=\"polite\"></p></div></div><div class=\"flex gap-2\"><button type=\"submit\" class=\"text-sm px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 transition-colors\">Save</button> <button type=\"button\" class=\"text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors\" onclick=\"document.getElementById('ob-library-form').classList.add('hidden'); document.getElementById('ob-add-library-btn').classList.remove('hidden'); var e=document.getElementById('ob-library-error'); if(e) e.classList.add('hidden');\">Cancel</button></div></form></div></div><!-- Step 2: Platform Profile -->")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -521,7 +521,7 @@ func OnboardingPage(assets AssetPaths, data OnboardingData) templ.Component {
 			var templ_7745c5c3_Var31 string
 			templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(data.UnidentifiedCount) + " artists need identification")
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 345, Col: 146}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 348, Col: 146}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var31))
 			if templ_7745c5c3_Err != nil {
@@ -588,7 +588,7 @@ func onboardingLibraryRow(lib library.Library) templ.Component {
 		var templ_7745c5c3_Var33 string
 		templ_7745c5c3_Var33, templ_7745c5c3_Err = templ.JoinStringErrs("ob-lib-" + lib.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1251, Col: 136}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1254, Col: 136}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var33))
 		if templ_7745c5c3_Err != nil {
@@ -601,7 +601,7 @@ func onboardingLibraryRow(lib library.Library) templ.Component {
 		var templ_7745c5c3_Var34 string
 		templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.JoinStringErrs(lib.Name)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1253, Col: 79}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1256, Col: 79}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var34))
 		if templ_7745c5c3_Err != nil {
@@ -619,7 +619,7 @@ func onboardingLibraryRow(lib library.Library) templ.Component {
 			var templ_7745c5c3_Var35 string
 			templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.JoinStringErrs(lib.Path)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1255, Col: 68}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1258, Col: 68}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var35))
 			if templ_7745c5c3_Err != nil {
@@ -637,7 +637,7 @@ func onboardingLibraryRow(lib library.Library) templ.Component {
 		var templ_7745c5c3_Var36 string
 		templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.JoinStringErrs(lib.Type)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1258, Col: 148}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1261, Col: 148}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var36))
 		if templ_7745c5c3_Err != nil {
@@ -727,7 +727,7 @@ func onboardingProfileCard(p platform.Profile) templ.Component {
 		var templ_7745c5c3_Var41 string
 		templ_7745c5c3_Var41, templ_7745c5c3_Err = templ.JoinStringErrs("/api/v1/platforms/" + p.ID + "/activate")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1282, Col: 53}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1285, Col: 53}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var41))
 		if templ_7745c5c3_Err != nil {
@@ -745,7 +745,7 @@ func onboardingProfileCard(p platform.Profile) templ.Component {
 			var templ_7745c5c3_Var42 string
 			templ_7745c5c3_Var42, templ_7745c5c3_Err = templ.JoinStringErrs(logoSrc(p.ID))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1290, Col: 25}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1293, Col: 25}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var42))
 			if templ_7745c5c3_Err != nil {
@@ -758,7 +758,7 @@ func onboardingProfileCard(p platform.Profile) templ.Component {
 			var templ_7745c5c3_Var43 string
 			templ_7745c5c3_Var43, templ_7745c5c3_Err = templ.JoinStringErrs(logoSrcSet(p.ID))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1291, Col: 31}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1294, Col: 31}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var43))
 			if templ_7745c5c3_Err != nil {
@@ -776,7 +776,7 @@ func onboardingProfileCard(p platform.Profile) templ.Component {
 			var templ_7745c5c3_Var44 string
 			templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.JoinStringErrs(logoSrc(p.ID))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1298, Col: 25}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1301, Col: 25}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var44))
 			if templ_7745c5c3_Err != nil {
@@ -794,7 +794,7 @@ func onboardingProfileCard(p platform.Profile) templ.Component {
 		var templ_7745c5c3_Var45 string
 		templ_7745c5c3_Var45, templ_7745c5c3_Err = templ.JoinStringErrs(p.Name)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1304, Col: 79}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1307, Col: 79}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var45))
 		if templ_7745c5c3_Err != nil {
@@ -861,7 +861,7 @@ func OnboardingProviderCard(pk provider.ProviderKeyStatus) templ.Component {
 		var templ_7745c5c3_Var47 string
 		templ_7745c5c3_Var47, templ_7745c5c3_Err = templ.JoinStringErrs("ob-provider-card-" + string(pk.Name))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1326, Col: 48}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1329, Col: 48}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var47))
 		if templ_7745c5c3_Err != nil {
@@ -879,7 +879,7 @@ func OnboardingProviderCard(pk provider.ProviderKeyStatus) templ.Component {
 			var templ_7745c5c3_Var48 string
 			templ_7745c5c3_Var48, templ_7745c5c3_Err = templ.JoinStringErrs(logoSrc(string(pk.Name)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1331, Col: 36}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1334, Col: 36}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var48))
 			if templ_7745c5c3_Err != nil {
@@ -892,7 +892,7 @@ func OnboardingProviderCard(pk provider.ProviderKeyStatus) templ.Component {
 			var templ_7745c5c3_Var49 string
 			templ_7745c5c3_Var49, templ_7745c5c3_Err = templ.JoinStringErrs(logoSrcSet(string(pk.Name)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1332, Col: 42}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1335, Col: 42}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var49))
 			if templ_7745c5c3_Err != nil {
@@ -910,7 +910,7 @@ func OnboardingProviderCard(pk provider.ProviderKeyStatus) templ.Component {
 			var templ_7745c5c3_Var50 string
 			templ_7745c5c3_Var50, templ_7745c5c3_Err = templ.JoinStringErrs(logoSrc(string(pk.Name)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1339, Col: 36}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1342, Col: 36}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var50))
 			if templ_7745c5c3_Err != nil {
@@ -951,7 +951,7 @@ func OnboardingProviderCard(pk provider.ProviderKeyStatus) templ.Component {
 		var templ_7745c5c3_Var53 string
 		templ_7745c5c3_Var53, templ_7745c5c3_Err = templ.JoinStringErrs(pk.DisplayName)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1355, Col: 87}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1358, Col: 87}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var53))
 		if templ_7745c5c3_Err != nil {
@@ -1004,7 +1004,7 @@ func OnboardingProviderCard(pk provider.ProviderKeyStatus) templ.Component {
 				var templ_7745c5c3_Var54 templ.SafeURL
 				templ_7745c5c3_Var54, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(pk.HelpURL))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1373, Col: 39}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1376, Col: 39}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var54))
 				if templ_7745c5c3_Err != nil {
@@ -1017,7 +1017,7 @@ func OnboardingProviderCard(pk provider.ProviderKeyStatus) templ.Component {
 				var templ_7745c5c3_Var55 string
 				templ_7745c5c3_Var55, templ_7745c5c3_Err = templ.JoinStringErrs(getKeyLinkText(pk.AccessTier))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1378, Col: 38}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1381, Col: 38}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var55))
 				if templ_7745c5c3_Err != nil {
@@ -1068,7 +1068,7 @@ func OnboardingProviderCard(pk provider.ProviderKeyStatus) templ.Component {
 				var templ_7745c5c3_Var57 string
 				templ_7745c5c3_Var57, templ_7745c5c3_Err = templ.JoinStringErrs("/api/v1/providers/" + string(pk.Name) + "/test")
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1396, Col: 65}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1399, Col: 65}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var57))
 				if templ_7745c5c3_Err != nil {
@@ -1081,7 +1081,7 @@ func OnboardingProviderCard(pk provider.ProviderKeyStatus) templ.Component {
 				var templ_7745c5c3_Var58 string
 				templ_7745c5c3_Var58, templ_7745c5c3_Err = templ.JoinStringErrs("#ob-test-result-" + string(pk.Name))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1397, Col: 55}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1400, Col: 55}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var58))
 				if templ_7745c5c3_Err != nil {
@@ -1109,7 +1109,7 @@ func OnboardingProviderCard(pk provider.ProviderKeyStatus) templ.Component {
 			var templ_7745c5c3_Var59 string
 			templ_7745c5c3_Var59, templ_7745c5c3_Err = templ.JoinStringErrs("ob-key-input-" + string(pk.Name))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1407, Col: 46}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1410, Col: 46}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var59))
 			if templ_7745c5c3_Err != nil {
@@ -1122,7 +1122,7 @@ func OnboardingProviderCard(pk provider.ProviderKeyStatus) templ.Component {
 			var templ_7745c5c3_Var60 string
 			templ_7745c5c3_Var60, templ_7745c5c3_Err = templ.JoinStringErrs("/api/v1/providers/" + string(pk.Name) + "/key")
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1410, Col: 61}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1413, Col: 61}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var60))
 			if templ_7745c5c3_Err != nil {
@@ -1135,7 +1135,7 @@ func OnboardingProviderCard(pk provider.ProviderKeyStatus) templ.Component {
 			var templ_7745c5c3_Var61 string
 			templ_7745c5c3_Var61, templ_7745c5c3_Err = templ.JoinStringErrs("#ob-provider-card-" + string(pk.Name))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1411, Col: 55}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1414, Col: 55}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var61))
 			if templ_7745c5c3_Err != nil {
@@ -1195,7 +1195,7 @@ func OnboardingProviderCard(pk provider.ProviderKeyStatus) templ.Component {
 			var templ_7745c5c3_Var63 string
 			templ_7745c5c3_Var63, templ_7745c5c3_Err = templ.JoinStringErrs("ob-test-result-" + string(pk.Name))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1465, Col: 48}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1468, Col: 48}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var63))
 			if templ_7745c5c3_Err != nil {
@@ -1255,7 +1255,7 @@ func OnboardingWebSearchToggle(ws provider.WebSearchProviderStatus) templ.Compon
 		var templ_7745c5c3_Var65 string
 		templ_7745c5c3_Var65, templ_7745c5c3_Err = templ.JoinStringErrs("ob-ws-card-" + string(ws.Name))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1478, Col: 42}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1481, Col: 42}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var65))
 		if templ_7745c5c3_Err != nil {
@@ -1268,7 +1268,7 @@ func OnboardingWebSearchToggle(ws provider.WebSearchProviderStatus) templ.Compon
 		var templ_7745c5c3_Var66 string
 		templ_7745c5c3_Var66, templ_7745c5c3_Err = templ.JoinStringErrs(logoSrc(string(ws.Name)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1481, Col: 39}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1484, Col: 39}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var66))
 		if templ_7745c5c3_Err != nil {
@@ -1306,7 +1306,7 @@ func OnboardingWebSearchToggle(ws provider.WebSearchProviderStatus) templ.Compon
 		var templ_7745c5c3_Var69 string
 		templ_7745c5c3_Var69, templ_7745c5c3_Err = templ.JoinStringErrs(ws.DisplayName)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1490, Col: 87}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1493, Col: 87}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var69))
 		if templ_7745c5c3_Err != nil {
@@ -1344,7 +1344,7 @@ func OnboardingWebSearchToggle(ws provider.WebSearchProviderStatus) templ.Compon
 		var templ_7745c5c3_Var72 string
 		templ_7745c5c3_Var72, templ_7745c5c3_Err = templ.JoinStringErrs("/api/v1/providers/websearch/" + string(ws.Name) + "/toggle")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1501, Col: 73}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1504, Col: 73}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var72))
 		if templ_7745c5c3_Err != nil {
@@ -1357,7 +1357,7 @@ func OnboardingWebSearchToggle(ws provider.WebSearchProviderStatus) templ.Compon
 		var templ_7745c5c3_Var73 string
 		templ_7745c5c3_Var73, templ_7745c5c3_Err = templ.JoinStringErrs(webSearchToggleJSON(!ws.Enabled))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1502, Col: 46}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1505, Col: 46}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var73))
 		if templ_7745c5c3_Err != nil {
@@ -1370,7 +1370,7 @@ func OnboardingWebSearchToggle(ws provider.WebSearchProviderStatus) templ.Compon
 		var templ_7745c5c3_Var74 string
 		templ_7745c5c3_Var74, templ_7745c5c3_Err = templ.JoinStringErrs("#ob-ws-card-" + string(ws.Name))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1503, Col: 48}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1506, Col: 48}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var74))
 		if templ_7745c5c3_Err != nil {
@@ -1432,7 +1432,7 @@ func onboardingConnectionCard(connType string, displayName string, exampleURL st
 			var templ_7745c5c3_Var76 string
 			templ_7745c5c3_Var76, templ_7745c5c3_Err = templ.JoinStringErrs(logoSrc(connType))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1522, Col: 29}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1525, Col: 29}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var76))
 			if templ_7745c5c3_Err != nil {
@@ -1445,7 +1445,7 @@ func onboardingConnectionCard(connType string, displayName string, exampleURL st
 			var templ_7745c5c3_Var77 string
 			templ_7745c5c3_Var77, templ_7745c5c3_Err = templ.JoinStringErrs(logoSrcSet(connType))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1523, Col: 35}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1526, Col: 35}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var77))
 			if templ_7745c5c3_Err != nil {
@@ -1463,7 +1463,7 @@ func onboardingConnectionCard(connType string, displayName string, exampleURL st
 			var templ_7745c5c3_Var78 string
 			templ_7745c5c3_Var78, templ_7745c5c3_Err = templ.JoinStringErrs(logoSrc(connType))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1530, Col: 29}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1533, Col: 29}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var78))
 			if templ_7745c5c3_Err != nil {
@@ -1482,7 +1482,7 @@ func onboardingConnectionCard(connType string, displayName string, exampleURL st
 			var templ_7745c5c3_Var79 string
 			templ_7745c5c3_Var79, templ_7745c5c3_Err = templ.JoinStringErrs("ob-conn-dot-" + connType)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1537, Col: 40}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1540, Col: 40}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var79))
 			if templ_7745c5c3_Err != nil {
@@ -1500,7 +1500,7 @@ func onboardingConnectionCard(connType string, displayName string, exampleURL st
 			var templ_7745c5c3_Var80 string
 			templ_7745c5c3_Var80, templ_7745c5c3_Err = templ.JoinStringErrs("ob-conn-dot-" + connType)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1539, Col: 40}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1542, Col: 40}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var80))
 			if templ_7745c5c3_Err != nil {
@@ -1518,7 +1518,7 @@ func onboardingConnectionCard(connType string, displayName string, exampleURL st
 		var templ_7745c5c3_Var81 string
 		templ_7745c5c3_Var81, templ_7745c5c3_Err = templ.JoinStringErrs(displayName)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1543, Col: 86}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1546, Col: 86}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var81))
 		if templ_7745c5c3_Err != nil {
@@ -1548,7 +1548,7 @@ func onboardingConnectionCard(connType string, displayName string, exampleURL st
 		var templ_7745c5c3_Var83 string
 		templ_7745c5c3_Var83, templ_7745c5c3_Err = templ.JoinStringErrs("More info about " + displayName)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1548, Col: 52}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1551, Col: 52}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var83))
 		if templ_7745c5c3_Err != nil {
@@ -1561,7 +1561,7 @@ func onboardingConnectionCard(connType string, displayName string, exampleURL st
 		var templ_7745c5c3_Var84 string
 		templ_7745c5c3_Var84, templ_7745c5c3_Err = templ.JoinStringErrs("ob-conn-info-" + connType)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1555, Col: 41}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1558, Col: 41}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var84))
 		if templ_7745c5c3_Err != nil {
@@ -1595,7 +1595,7 @@ func onboardingConnectionCard(connType string, displayName string, exampleURL st
 			var templ_7745c5c3_Var85 string
 			templ_7745c5c3_Var85, templ_7745c5c3_Err = templ.JoinStringErrs("ob-conn-test-" + connType)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1565, Col: 37}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1568, Col: 37}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var85))
 			if templ_7745c5c3_Err != nil {
@@ -1633,7 +1633,7 @@ func onboardingConnectionCard(connType string, displayName string, exampleURL st
 				var templ_7745c5c3_Var88 string
 				templ_7745c5c3_Var88, templ_7745c5c3_Err = templ.JoinStringErrs("ob-conn-discover-btn-" + connType)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1574, Col: 46}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1577, Col: 46}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var88))
 				if templ_7745c5c3_Err != nil {
@@ -1682,7 +1682,7 @@ func onboardingConnectionCard(connType string, displayName string, exampleURL st
 			var templ_7745c5c3_Var91 string
 			templ_7745c5c3_Var91, templ_7745c5c3_Err = templ.JoinStringErrs("ob-conn-btn-" + connType)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1587, Col: 35}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1590, Col: 35}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var91))
 			if templ_7745c5c3_Err != nil {
@@ -1709,7 +1709,7 @@ func onboardingConnectionCard(connType string, displayName string, exampleURL st
 		var templ_7745c5c3_Var93 string
 		templ_7745c5c3_Var93, templ_7745c5c3_Err = templ.JoinStringErrs("ob-conn-form-" + connType)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1596, Col: 38}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1599, Col: 38}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var93))
 		if templ_7745c5c3_Err != nil {
@@ -1722,7 +1722,7 @@ func onboardingConnectionCard(connType string, displayName string, exampleURL st
 		var templ_7745c5c3_Var94 string
 		templ_7745c5c3_Var94, templ_7745c5c3_Err = templ.JoinStringErrs(connType)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1599, Col: 29}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1602, Col: 29}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var94))
 		if templ_7745c5c3_Err != nil {
@@ -1735,7 +1735,7 @@ func onboardingConnectionCard(connType string, displayName string, exampleURL st
 		var templ_7745c5c3_Var95 string
 		templ_7745c5c3_Var95, templ_7745c5c3_Err = templ.JoinStringErrs(connType)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1604, Col: 53}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1607, Col: 53}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var95))
 		if templ_7745c5c3_Err != nil {
@@ -1748,7 +1748,7 @@ func onboardingConnectionCard(connType string, displayName string, exampleURL st
 		var templ_7745c5c3_Var96 string
 		templ_7745c5c3_Var96, templ_7745c5c3_Err = templ.JoinStringErrs(displayName + " server")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1608, Col: 43}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1611, Col: 43}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var96))
 		if templ_7745c5c3_Err != nil {
@@ -1761,7 +1761,7 @@ func onboardingConnectionCard(connType string, displayName string, exampleURL st
 		var templ_7745c5c3_Var97 string
 		templ_7745c5c3_Var97, templ_7745c5c3_Err = templ.JoinStringErrs("Server URL (e.g. " + exampleURL + ")")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1615, Col: 58}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1618, Col: 58}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var97))
 		if templ_7745c5c3_Err != nil {
@@ -1791,7 +1791,7 @@ func onboardingConnectionCard(connType string, displayName string, exampleURL st
 		var templ_7745c5c3_Var99 string
 		templ_7745c5c3_Var99, templ_7745c5c3_Err = templ.JoinStringErrs("ob-conn-result-" + connType)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1635, Col: 41}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1638, Col: 41}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var99))
 		if templ_7745c5c3_Err != nil {
@@ -1809,7 +1809,7 @@ func onboardingConnectionCard(connType string, displayName string, exampleURL st
 			var templ_7745c5c3_Var100 string
 			templ_7745c5c3_Var100, templ_7745c5c3_Err = templ.JoinStringErrs("ob-conn-test-result-" + connType)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1639, Col: 47}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1642, Col: 47}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var100))
 			if templ_7745c5c3_Err != nil {
@@ -1822,7 +1822,7 @@ func onboardingConnectionCard(connType string, displayName string, exampleURL st
 			var templ_7745c5c3_Var101 string
 			templ_7745c5c3_Var101, templ_7745c5c3_Err = templ.JoinStringErrs("ob-discover-" + connType)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1640, Col: 39}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1643, Col: 39}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var101))
 			if templ_7745c5c3_Err != nil {
@@ -1840,7 +1840,7 @@ func onboardingConnectionCard(connType string, displayName string, exampleURL st
 			var templ_7745c5c3_Var102 string
 			templ_7745c5c3_Var102, templ_7745c5c3_Err = templ.JoinStringErrs("ob-conn-success-" + connType)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1643, Col: 42}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1646, Col: 42}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var102))
 			if templ_7745c5c3_Err != nil {
@@ -1853,7 +1853,7 @@ func onboardingConnectionCard(connType string, displayName string, exampleURL st
 			var templ_7745c5c3_Var103 string
 			templ_7745c5c3_Var103, templ_7745c5c3_Err = templ.JoinStringErrs("ob-conn-test-" + connType)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1648, Col: 37}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1651, Col: 37}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var103))
 			if templ_7745c5c3_Err != nil {
@@ -1871,7 +1871,7 @@ func onboardingConnectionCard(connType string, displayName string, exampleURL st
 				var templ_7745c5c3_Var104 string
 				templ_7745c5c3_Var104, templ_7745c5c3_Err = templ.JoinStringErrs("ob-conn-discover-btn-" + connType)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1656, Col: 46}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1659, Col: 46}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var104))
 				if templ_7745c5c3_Err != nil {
@@ -1889,7 +1889,7 @@ func onboardingConnectionCard(connType string, displayName string, exampleURL st
 			var templ_7745c5c3_Var105 string
 			templ_7745c5c3_Var105, templ_7745c5c3_Err = templ.JoinStringErrs("ob-conn-test-result-" + connType)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1663, Col: 47}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1666, Col: 47}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var105))
 			if templ_7745c5c3_Err != nil {
@@ -1902,7 +1902,7 @@ func onboardingConnectionCard(connType string, displayName string, exampleURL st
 			var templ_7745c5c3_Var106 string
 			templ_7745c5c3_Var106, templ_7745c5c3_Err = templ.JoinStringErrs("ob-discover-" + connType)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1664, Col: 39}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1667, Col: 39}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var106))
 			if templ_7745c5c3_Err != nil {

@@ -184,6 +184,7 @@ script cycleFilterItem() {
 script DismissFilterChip(key string, targetSel string) {
 	var url = new URL(window.location.href);
 	url.searchParams.delete(key);
+	url.searchParams.delete('page');
 	history.pushState(null, '', url.toString());
 	// Strip the base path from url.pathname before passing to htmx.ajax
 	// to avoid a double-prefix from the htmx:configRequest hook.

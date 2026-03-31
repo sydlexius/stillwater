@@ -2,6 +2,7 @@ package templates
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/sydlexius/stillwater/internal/artist"
 	img "github.com/sydlexius/stillwater/internal/image"
@@ -28,7 +29,8 @@ type ArtistListData struct {
 	Order            string
 	Filter           string
 	// Filters holds the flyout multi-filter state (key -> "include" or "exclude").
-	// Keys: missing_meta, missing_images, missing_mbid, excluded, locked.
+	// Keys: missing_meta, missing_images, missing_mbid, excluded, locked,
+	// type_person, type_group, type_orchestra, library_{id}.
 	Filters          map[string]string
 	LibraryID        string
 	View             string // "table" or "grid"
@@ -201,13 +203,40 @@ func filterChipLabel(key, state string) string {
 		name = "Excluded"
 	case "locked":
 		name = "Locked"
+	case "type_person":
+		name = "Person"
+	case "type_group":
+		name = "Group"
+	case "type_orchestra":
+		name = "Orchestra"
 	default:
-		name = key
+		if strings.HasPrefix(key, "library_") {
+			name = "Library"
+		} else {
+			name = key
+		}
 	}
 	if state == "exclude" {
 		return "Not " + name
 	}
 	return name
+}
+
+// filterChipLabelFromData returns the display label for an active filter chip,
+// resolving library names from the provided slice when the key is a library filter.
+func filterChipLabelFromData(key, state string, libs []library.Library) string {
+	if strings.HasPrefix(key, "library_") {
+		libID := key[len("library_"):]
+		for _, lib := range libs {
+			if lib.ID == libID {
+				if state == "exclude" {
+					return "Not " + lib.Name
+				}
+				return lib.Name
+			}
+		}
+	}
+	return filterChipLabel(key, state)
 }
 
 // filterChipClass returns the CSS classes for an active filter chip based on state.
@@ -266,7 +295,7 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 						hx-trigger="keyup changed delay:300ms"
 						hx-target="#artist-content"
 						hx-swap="outerHTML"
-						hx-include="[name='library_id'],[name='view'],[name='sort'],[name='order'],[name^='filter_missing_']"
+						hx-include="[name='library_id'],[name='view'],[name='sort'],[name='order'],[name^='filter_']"
 						class="block w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
 					/>
 				</div>
@@ -380,11 +409,11 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 					for key, state := range data.Filters {
 						if state == "include" || state == "exclude" {
 							<span class={ filterChipClass(state) }>
-								{ filterChipLabel(key, state) }
+								{ filterChipLabelFromData(key, state, data.Libraries) }
 								<button
 									type="button"
 									class="ml-0.5 inline-flex h-3.5 w-3.5 items-center justify-center rounded-full hover:bg-black/10 dark:hover:bg-white/20 focus:outline-none"
-									aria-label={ "Remove " + filterChipLabel(key, state) + " filter" }
+									aria-label={ "Remove " + filterChipLabelFromData(key, state, data.Libraries) + " filter" }
 									onclick={ components.DismissFilterChip("filter_"+key, "#artist-content") }
 								>
 									<svg class="h-3 w-3" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
@@ -408,6 +437,18 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 				@components.FilterSection("Status") {
 					@components.FilterItem("artist-filters-flyout", "filter_excluded", "y", "Excluded", filterState(data.Filters, "excluded"))
 					@components.FilterItem("artist-filters-flyout", "filter_locked", "y", "Locked", filterState(data.Filters, "locked"))
+				}
+				@components.FilterSection("Artist Type") {
+					@components.FilterItem("artist-filters-flyout", "filter_type_person", "y", "Person", filterState(data.Filters, "type_person"))
+					@components.FilterItem("artist-filters-flyout", "filter_type_group", "y", "Group", filterState(data.Filters, "type_group"))
+					@components.FilterItem("artist-filters-flyout", "filter_type_orchestra", "y", "Orchestra", filterState(data.Filters, "type_orchestra"))
+				}
+				if len(data.Libraries) > 1 {
+					@components.FilterSection("Library") {
+						for _, lib := range data.Libraries {
+							@components.FilterItem("artist-filters-flyout", "filter_library_"+lib.ID, "y", lib.Name, filterState(data.Filters, "library_"+lib.ID))
+						}
+					}
 				}
 			}
 			if data.View == "grid" {
@@ -481,11 +522,12 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 					var el = document.querySelector('[name="' + name + '"]');
 					if (el) params[name] = el.value;
 				});
-				// Carry flyout filter params from the current URL.
+				// Carry all flyout filter params from the current URL dynamically.
 				var urlParams = new URLSearchParams(window.location.search);
-				['filter_missing_meta', 'filter_missing_images', 'filter_missing_mbid', 'filter_excluded', 'filter_locked'].forEach(function(key) {
-					var val = urlParams.get(key);
-					if (val) params[key] = val;
+				urlParams.forEach(function(val, key) {
+					if (key.indexOf('filter_') === 0) {
+						params[key] = val;
+					}
 				});
 				return Object.assign(params, overrides);
 			}
@@ -561,6 +603,10 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 			window.addEventListener('pageshow', function(evt) {
 				if (evt.persisted) {
 					var params = new URLSearchParams(window.location.search);
+					// Re-sync flyout chip states from URL.
+					if (window.swFilterFlyout) {
+						swFilterFlyout.initFromURL('artist-filters-flyout');
+					}
 					// Sync select elements from URL params.
 					['library_id'].forEach(function(name) {
 						var val = params.get(name);

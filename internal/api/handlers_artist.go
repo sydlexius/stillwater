@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -231,24 +232,47 @@ func (r *Router) handleArtistsPage(w http.ResponseWriter, req *http.Request) {
 // component and returns a map of filter key -> "include" or "exclude".
 //
 // The flyout JS writes params in the form: filter_missing_meta=%2By (include)
-// or filter_missing_meta=-y (exclude). Recognized keys are: missing_meta,
-// missing_images, missing_mbid, excluded, locked.
+// or filter_missing_meta=-y (exclude). Single-value keys use exactly "+y" or
+// "-y". Per-library params use filter_library_{id}=+y / -y and are stored as
+// "library_{id}" -> "include"/"exclude". Recognized single-value keys are:
+// missing_meta, missing_images, missing_mbid, excluded, locked,
+// type_person, type_group, type_orchestra.
 func parseFlyoutFilters(req *http.Request) map[string]string {
-	keys := []string{"missing_meta", "missing_images", "missing_mbid", "excluded", "locked"}
-	filters := make(map[string]string, len(keys))
+	keys := []string{
+		"missing_meta", "missing_images", "missing_mbid", "excluded", "locked",
+		"type_person", "type_group", "type_orchestra",
+	}
+	filters := make(map[string]string)
 	for _, k := range keys {
 		raw := req.URL.Query().Get("filter_" + k)
-		if raw == "" {
-			continue
-		}
-		// The flyout prefixes values with '+' (include) or '-' (exclude).
-		switch {
-		case len(raw) > 0 && raw[0] == '+':
+		switch raw {
+		case "+y":
 			filters[k] = "include"
-		case len(raw) > 0 && raw[0] == '-':
+		case "-y":
 			filters[k] = "exclude"
 		}
 	}
+
+	// Parse per-library filter params (filter_library_{id}=+y / -y).
+	for param, vals := range req.URL.Query() {
+		if !strings.HasPrefix(param, "filter_library_") {
+			continue
+		}
+		if len(vals) == 0 || vals[0] == "" {
+			continue
+		}
+		libID := param[len("filter_library_"):]
+		if libID == "" {
+			continue
+		}
+		switch vals[0] {
+		case "+y":
+			filters["library_"+libID] = "include"
+		case "-y":
+			filters["library_"+libID] = "exclude"
+		}
+	}
+
 	if len(filters) == 0 {
 		return nil
 	}
