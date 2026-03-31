@@ -1282,8 +1282,8 @@ input:-webkit-autofill:focus {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   font-size: 0.6875rem;
   font-weight: 700;
