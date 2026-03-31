@@ -412,7 +412,7 @@ func PlatformBadge(platform, tooltip string) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "\"><img src=\"/static/img/logos/lidarr.svg\" alt=\"Lidarr\" class=\"h-4 w-4 rounded-full\"></span>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "\"><img src=\"/static/img/logos/lidarr.svg\" alt=\"\" aria-hidden=\"true\" class=\"h-4 w-4 rounded-full\"></span>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -443,7 +443,7 @@ func PlatformBadge(platform, tooltip string) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "\"><img src=\"/static/img/logos/emby-32.png\" srcset=\"/static/img/logos/emby-32.png 1x, /static/img/logos/emby-64.png 2x\" alt=\"Emby\" class=\"h-4 w-4 rounded-full\"></span>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "\"><img src=\"/static/img/logos/emby-32.png\" srcset=\"/static/img/logos/emby-32.png 1x, /static/img/logos/emby-64.png 2x\" alt=\"\" aria-hidden=\"true\" class=\"h-4 w-4 rounded-full\"></span>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -474,7 +474,7 @@ func PlatformBadge(platform, tooltip string) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 37, "\"><img src=\"/static/img/logos/jellyfin.svg\" alt=\"Jellyfin\" class=\"h-4 w-4 rounded-full\"></span>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 37, "\"><img src=\"/static/img/logos/jellyfin.svg\" alt=\"\" aria-hidden=\"true\" class=\"h-4 w-4 rounded-full\"></span>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

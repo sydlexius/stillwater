@@ -152,7 +152,11 @@ func (r *Router) handleImageUpload(w http.ResponseWriter, req *http.Request) {
 			geo := img.CheckGeometry(w2, h2, imageType)
 			if geo.NeedsCrop {
 				encoded := base64.StdEncoding.EncodeToString(data)
-				dataURI := "data:" + ct + ";base64," + encoded
+				detectedCT := http.DetectContentType(data)
+				if detectedCT == "application/octet-stream" && ct != "" {
+					detectedCT = ct
+				}
+				dataURI := "data:" + detectedCT + ";base64," + encoded
 				writeJSON(w, http.StatusOK, map[string]any{
 					"status":         "needs_crop",
 					"needs_crop":     true,
@@ -1978,12 +1982,7 @@ func (r *Router) handleRandomBackdrop(w http.ResponseWriter, req *http.Request) 
 		return
 	}
 
-	bp := r.basePath
-	if meta := req.Header.Get("X-Base-Path"); meta != "" {
-		bp = meta
-	}
-
 	// Redirect to the standard image serve endpoint for this artist's fanart.
-	target := bp + "/api/v1/artists/" + url.PathEscape(artistID) + "/images/fanart/file"
+	target := r.basePath + "/api/v1/artists/" + url.PathEscape(artistID) + "/images/fanart/file"
 	http.Redirect(w, req, target, http.StatusTemporaryRedirect)
 }

@@ -228,7 +228,7 @@ templ PlatformBadge(platform, tooltip string) {
 				title={ tooltip }
 				aria-label={ tooltip }
 			>
-				<img src="/static/img/logos/lidarr.svg" alt="Lidarr" class="h-4 w-4 rounded-full"/>
+				<img src="/static/img/logos/lidarr.svg" alt="" aria-hidden="true" class="h-4 w-4 rounded-full"/>
 			</span>
 		case "emby":
 			<span
@@ -237,7 +237,7 @@ templ PlatformBadge(platform, tooltip string) {
 				title={ tooltip }
 				aria-label={ tooltip }
 			>
-				<img src="/static/img/logos/emby-32.png" srcset="/static/img/logos/emby-32.png 1x, /static/img/logos/emby-64.png 2x" alt="Emby" class="h-4 w-4 rounded-full"/>
+				<img src="/static/img/logos/emby-32.png" srcset="/static/img/logos/emby-32.png 1x, /static/img/logos/emby-64.png 2x" alt="" aria-hidden="true" class="h-4 w-4 rounded-full"/>
 			</span>
 		case "jellyfin":
 			<span
@@ -246,7 +246,7 @@ templ PlatformBadge(platform, tooltip string) {
 				title={ tooltip }
 				aria-label={ tooltip }
 			>
-				<img src="/static/img/logos/jellyfin.svg" alt="Jellyfin" class="h-4 w-4 rounded-full"/>
+				<img src="/static/img/logos/jellyfin.svg" alt="" aria-hidden="true" class="h-4 w-4 rounded-full"/>
 			</span>
 		default:
 			<span

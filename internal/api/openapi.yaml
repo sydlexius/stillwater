@@ -1822,6 +1822,14 @@ paths:
           required: true
           schema:
             type: string
+        - name: skip_crop
+          in: query
+          schema:
+            type: string
+            enum: ["true"]
+          description: >
+            When set to "true", skip geometry checking and save the image even
+            if the aspect ratio does not match the slot requirement.
       requestBody:
         required: true
         content:
