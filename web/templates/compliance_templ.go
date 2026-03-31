@@ -171,7 +171,7 @@ func ReportsPage(assets AssetPaths, data ReportsPageData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<a href=\"/reports?tab=trends\" class=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<a href=\"?tab=trends\" class=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -184,7 +184,7 @@ func ReportsPage(assets AssetPaths, data ReportsPageData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "\" hx-get=\"/reports?tab=trends\" hx-target=\"#reports-tab-content\" hx-swap=\"innerHTML\" hx-push-url=\"true\" role=\"tab\" aria-selected=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "\" hx-get=\"?tab=trends\" hx-target=\"#reports-tab-content\" hx-swap=\"innerHTML\" hx-push-url=\"true\" role=\"tab\" aria-selected=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -206,7 +206,7 @@ func ReportsPage(assets AssetPaths, data ReportsPageData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<a href=\"/reports?tab=compliance\" class=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<a href=\"?tab=compliance\" class=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -219,7 +219,7 @@ func ReportsPage(assets AssetPaths, data ReportsPageData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "\" hx-get=\"/reports?tab=compliance\" hx-target=\"#reports-tab-content\" hx-swap=\"innerHTML\" hx-push-url=\"true\" role=\"tab\" aria-selected=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "\" hx-get=\"?tab=compliance\" hx-target=\"#reports-tab-content\" hx-swap=\"innerHTML\" hx-push-url=\"true\" role=\"tab\" aria-selected=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -241,7 +241,7 @@ func ReportsPage(assets AssetPaths, data ReportsPageData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "<a href=\"/reports?tab=coverage\" class=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "<a href=\"?tab=coverage\" class=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -254,7 +254,7 @@ func ReportsPage(assets AssetPaths, data ReportsPageData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "\" hx-get=\"/reports?tab=coverage\" hx-target=\"#reports-tab-content\" hx-swap=\"innerHTML\" hx-push-url=\"true\" role=\"tab\" aria-selected=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "\" hx-get=\"?tab=coverage\" hx-target=\"#reports-tab-content\" hx-swap=\"innerHTML\" hx-push-url=\"true\" role=\"tab\" aria-selected=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -277,12 +277,12 @@ func ReportsPage(assets AssetPaths, data ReportsPageData) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			} else if data.ActiveTab == "coverage" {
-				templ_7745c5c3_Err = reportsCoverageTab(data.Compliance).Render(ctx, templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = ReportsCoverageTab(data.Compliance).Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			} else {
-				templ_7745c5c3_Err = reportsTrendsTab().Render(ctx, templ_7745c5c3_Buffer)
+				templ_7745c5c3_Err = ReportsTrendsTab().Render(ctx, templ_7745c5c3_Buffer)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -313,8 +313,8 @@ func ReportsPage(assets AssetPaths, data ReportsPageData) templ.Component {
 	})
 }
 
-// reportsTrendsTab renders the Trends tab content: health score chart, violations chart, and tier visualization.
-func reportsTrendsTab() templ.Component {
+// ReportsTrendsTab renders the Trends tab content: health score chart, violations chart, and tier visualization.
+func ReportsTrendsTab() templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -347,8 +347,8 @@ func reportsTrendsTab() templ.Component {
 	})
 }
 
-// reportsCoverageTab renders the Coverage tab content: metadata completeness bar chart.
-func reportsCoverageTab(data ComplianceData) templ.Component {
+// ReportsCoverageTab renders the Coverage tab content: metadata completeness bar chart.
+func ReportsCoverageTab(data ComplianceData) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {

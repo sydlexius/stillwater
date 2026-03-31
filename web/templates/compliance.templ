@@ -154,9 +154,9 @@ templ ReportsPage(assets AssetPaths, data ReportsPageData) {
 			<div class="border-b border-gray-200 dark:border-gray-700">
 				<nav class="-mb-px flex gap-1" aria-label="Reports tabs" role="tablist">
 					<a
-						href="/reports?tab=trends"
+						href="?tab=trends"
 						class={ "reports-tab px-4 py-2.5 text-sm font-medium rounded-t-md border-b-2 transition-colors", templ.KV("border-blue-500 text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20", data.ActiveTab == "trends" || data.ActiveTab == ""), templ.KV("border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600", data.ActiveTab != "trends" && data.ActiveTab != "") }
-						hx-get="/reports?tab=trends"
+						hx-get="?tab=trends"
 						hx-target="#reports-tab-content"
 						hx-swap="innerHTML"
 						hx-push-url="true"
@@ -167,9 +167,9 @@ templ ReportsPage(assets AssetPaths, data ReportsPageData) {
 						Trends
 					</a>
 					<a
-						href="/reports?tab=compliance"
+						href="?tab=compliance"
 						class={ "reports-tab px-4 py-2.5 text-sm font-medium rounded-t-md border-b-2 transition-colors", templ.KV("border-blue-500 text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20", data.ActiveTab == "compliance"), templ.KV("border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600", data.ActiveTab != "compliance") }
-						hx-get="/reports?tab=compliance"
+						hx-get="?tab=compliance"
 						hx-target="#reports-tab-content"
 						hx-swap="innerHTML"
 						hx-push-url="true"
@@ -180,9 +180,9 @@ templ ReportsPage(assets AssetPaths, data ReportsPageData) {
 						Compliance
 					</a>
 					<a
-						href="/reports?tab=coverage"
+						href="?tab=coverage"
 						class={ "reports-tab px-4 py-2.5 text-sm font-medium rounded-t-md border-b-2 transition-colors", templ.KV("border-blue-500 text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20", data.ActiveTab == "coverage"), templ.KV("border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600", data.ActiveTab != "coverage") }
-						hx-get="/reports?tab=coverage"
+						hx-get="?tab=coverage"
 						hx-target="#reports-tab-content"
 						hx-swap="innerHTML"
 						hx-push-url="true"
@@ -199,9 +199,9 @@ templ ReportsPage(assets AssetPaths, data ReportsPageData) {
 				if data.ActiveTab == "compliance" {
 					@reportsComplianceTab(data.Compliance)
 				} else if data.ActiveTab == "coverage" {
-					@reportsCoverageTab(data.Compliance)
+					@ReportsCoverageTab(data.Compliance)
 				} else {
-					@reportsTrendsTab()
+					@ReportsTrendsTab()
 				}
 			</div>
 		</div>
@@ -242,8 +242,8 @@ templ ReportsPage(assets AssetPaths, data ReportsPageData) {
 	}
 }
 
-// reportsTrendsTab renders the Trends tab content: health score chart, violations chart, and tier visualization.
-templ reportsTrendsTab() {
+// ReportsTrendsTab renders the Trends tab content: health score chart, violations chart, and tier visualization.
+templ ReportsTrendsTab() {
 	<div class="space-y-6">
 		<!-- Health score tier visualization (lazy-loaded via HTMX) -->
 		<div class="sw-card rounded-lg bg-white dark:bg-gray-800 p-4 shadow sm:p-6">
@@ -289,8 +289,8 @@ templ reportsTrendsTab() {
 	@reportsTrendsScript()
 }
 
-// reportsCoverageTab renders the Coverage tab content: metadata completeness bar chart.
-templ reportsCoverageTab(data ComplianceData) {
+// ReportsCoverageTab renders the Coverage tab content: metadata completeness bar chart.
+templ ReportsCoverageTab(data ComplianceData) {
 	<div class="space-y-6">
 		<!-- Metadata Completeness -->
 		<div class="sw-card rounded-lg bg-white dark:bg-gray-800 p-4 shadow sm:p-6">

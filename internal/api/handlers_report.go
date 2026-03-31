@@ -510,9 +510,29 @@ func (r *Router) handleReportsPage(w http.ResponseWriter, req *http.Request) {
 
 	ctx := req.Context()
 
-	// For the compliance tab, load artist data. For other tabs, use an empty struct.
+	// For the compliance tab (or HTMX requests targeting the compliance table), load
+	// artist data. For HTMX tab-switch requests targeting #reports-tab-content, skip
+	// the expensive compliance query and return the appropriate tab fragment directly.
 	var complianceData templates.ComplianceData
-	if isHTMXRequest(req) || tab == "compliance" {
+
+	if isHTMXRequest(req) {
+		hxTarget := req.Header.Get("HX-Target")
+		switch {
+		case hxTarget == "compliance-table" || tab == "compliance":
+			// Fall through to load compliance data below.
+		case tab == "trends":
+			renderTempl(w, req, templates.ReportsTrendsTab())
+			return
+		case tab == "coverage":
+			renderTempl(w, req, templates.ReportsCoverageTab(complianceData))
+			return
+		default:
+			renderTempl(w, req, templates.ReportsTrendsTab())
+			return
+		}
+	}
+
+	if tab == "compliance" || (isHTMXRequest(req) && req.Header.Get("HX-Target") == "compliance-table") {
 		params := complianceListParams(req)
 		status := req.URL.Query().Get("status")
 
