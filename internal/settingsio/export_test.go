@@ -979,12 +979,148 @@ func TestImport_Users_UsernameConflictWarning(t *testing.T) {
 	// A warning about the skipped user should be present
 	foundWarning := false
 	for _, w := range result.Warnings {
-		if w == `skipped user "admin": username already exists on target instance` {
+		if w == `skipped user "admin": conflicts with an existing user on target instance` {
 			foundWarning = true
 			break
 		}
 	}
 	if !foundWarning {
-		t.Errorf("expected username conflict warning, got warnings: %v", result.Warnings)
+		t.Errorf("expected conflict warning, got warnings: %v", result.Warnings)
+	}
+}
+
+func TestImport_Users_IDConflictHandled(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := context.Background()
+
+	provSettings, connSvc, platSvc, whSvc := newTestServices(t, db)
+	svc := NewService(db, provSettings, connSvc, platSvc, whSvc)
+
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	// Seed a user with a specific id
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO users (id, username, display_name, password_hash, role, auth_provider,
+		                   provider_id, is_active, is_protected, created_at, updated_at)
+		VALUES ('same-id', 'existing', 'Existing', '', 'administrator', 'local', '', 1, 1, ?, ?)
+	`, now, now); err != nil {
+		t.Fatalf("seeding user: %v", err)
+	}
+
+	// Payload imports user with same id but different username
+	payload := Payload{
+		Settings:     map[string]string{},
+		ProviderKeys: map[string]string{},
+		Users: []UserExport{
+			{ID: "same-id", Username: "imported-user", DisplayName: "Imported", Role: "operator", AuthProvider: "local", IsActive: true, CreatedAt: now},
+		},
+	}
+
+	passphrase := "test-id-conflict"
+	data, salt, err := encryptWithPassphrase(mustMarshal(t, payload), passphrase)
+	if err != nil {
+		t.Fatalf("encrypt: %v", err)
+	}
+	env := &Envelope{Version: currentVersion, Salt: salt, Data: data}
+
+	// Should not error even though the id already exists
+	result, err := svc.ImportWithOptions(ctx, env, passphrase, ImportOptions{ImportUsers: true})
+	if err != nil {
+		t.Fatalf("ImportWithOptions unexpectedly failed on id conflict: %v", err)
+	}
+	if result.Users != 0 {
+		t.Errorf("expected 0 users imported (id conflict), got %d", result.Users)
+	}
+	if len(result.Warnings) == 0 {
+		t.Error("expected a warning for skipped user, got none")
+	}
+}
+
+func TestImport_Users_InvitedByNulledWhenAbsent(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := context.Background()
+
+	provSettings, connSvc, platSvc, whSvc := newTestServices(t, db)
+	svc := NewService(db, provSettings, connSvc, platSvc, whSvc)
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	inviterID := "missing-inviter"
+	invitee := "new-user"
+
+	// No users seeded on the target instance. The payload has a user whose
+	// invited_by references a user that does not exist in the target.
+	payload := Payload{
+		Settings:     map[string]string{},
+		ProviderKeys: map[string]string{},
+		Users: []UserExport{
+			{ID: "u2", Username: invitee, DisplayName: "New User", Role: "operator", AuthProvider: "local", IsActive: true, InvitedBy: &inviterID, CreatedAt: now},
+		},
+	}
+
+	passphrase := "test-invitedby"
+	data, salt, err := encryptWithPassphrase(mustMarshal(t, payload), passphrase)
+	if err != nil {
+		t.Fatalf("encrypt: %v", err)
+	}
+	env := &Envelope{Version: currentVersion, Salt: salt, Data: data}
+
+	// Should not fail with FK violation
+	result, err := svc.ImportWithOptions(ctx, env, passphrase, ImportOptions{ImportUsers: true})
+	if err != nil {
+		t.Fatalf("ImportWithOptions failed with missing invited_by: %v", err)
+	}
+	if result.Users != 1 {
+		t.Errorf("expected 1 user imported, got %d", result.Users)
+	}
+
+	// Verify invited_by was nulled out (FK violation avoided)
+	var invitedBy sql.NullString
+	if err := db.QueryRowContext(ctx, `SELECT invited_by FROM users WHERE username = ?`, invitee).Scan(&invitedBy); err != nil {
+		t.Fatalf("querying imported user: %v", err)
+	}
+	if invitedBy.Valid {
+		t.Errorf("expected invited_by to be NULL when inviter is absent, got %q", invitedBy.String)
+	}
+}
+
+func TestExport_Rules_CorruptedConfigFallback(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := context.Background()
+
+	provSettings, connSvc, platSvc, whSvc := newTestServices(t, db)
+
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	// Seed a rule with invalid JSON in config
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO rules (id, name, description, category, enabled, automation_mode, config, created_at, updated_at)
+		VALUES ('bad_rule', 'Bad Rule', '', 'nfo', 1, 'auto', 'NOT VALID JSON', ?, ?)
+	`, now, now); err != nil {
+		t.Fatalf("seeding rule: %v", err)
+	}
+
+	svc := NewService(db, provSettings, connSvc, platSvc, whSvc)
+	passphrase := "test-corrupt-config"
+
+	// Export must succeed, not error out due to corrupted rule config
+	envelope, err := svc.Export(ctx, passphrase)
+	if err != nil {
+		t.Fatalf("Export failed with corrupted rule config: %v", err)
+	}
+
+	// Verify the exported rule has "{}" instead of the invalid JSON
+	plaintext, err := decryptWithPassphrase(envelope.Data, envelope.Salt, passphrase)
+	if err != nil {
+		t.Fatalf("decrypt: %v", err)
+	}
+	var payload Payload
+	if err := json.Unmarshal(plaintext, &payload); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(payload.Rules) != 1 {
+		t.Fatalf("expected 1 rule, got %d", len(payload.Rules))
+	}
+	if string(payload.Rules[0].Config) != "{}" {
+		t.Errorf("expected corrupted config to be '{}', got %s", payload.Rules[0].Config)
 	}
 }

@@ -289,7 +289,13 @@ func (s *Service) ExportWithOptions(ctx context.Context, passphrase string, opts
 			return nil, fmt.Errorf("scanning rule: %w", err)
 		}
 		re.Enabled = enabled != 0
-		re.Config = json.RawMessage(configStr)
+		// Guard against corrupted rule config rows; fall back to "{}" so the
+		// export succeeds and json.Marshal(payload) doesn't fail on invalid JSON.
+		if json.Valid([]byte(configStr)) {
+			re.Config = json.RawMessage(configStr)
+		} else {
+			re.Config = json.RawMessage("{}")
+		}
 		payload.Rules = append(payload.Rules, re)
 	}
 	if err := ruleRows.Err(); err != nil {
@@ -616,9 +622,37 @@ func (s *Service) importPayload(ctx context.Context, payload *Payload, opts Impo
 	if opts.ImportUsers && len(payload.Users) > 0 {
 		result.Warnings = append(result.Warnings,
 			"imported users have empty password hashes; accounts must use federated auth or password reset")
+
+		// Preload IDs that will exist after this import pass so that invited_by
+		// references can be validated before inserting each user.
+		importedIDs := make(map[string]bool)
+		existingIDRows, err := s.db.QueryContext(ctx, `SELECT id FROM users`)
+		if err != nil {
+			return nil, fmt.Errorf("loading existing user IDs: %w", err)
+		}
+		defer existingIDRows.Close() //nolint:errcheck
+		for existingIDRows.Next() {
+			var id string
+			if err := existingIDRows.Scan(&id); err != nil {
+				return nil, fmt.Errorf("scanning existing user id: %w", err)
+			}
+			importedIDs[id] = true
+		}
+		if err := existingIDRows.Err(); err != nil {
+			return nil, fmt.Errorf("iterating existing user IDs: %w", err)
+		}
+		// Also mark the IDs that will be imported in this batch so invited_by
+		// forward-references within the same export are resolved correctly.
 		for _, ue := range payload.Users {
+			importedIDs[ue.ID] = true
+		}
+
+		for _, ue := range payload.Users {
+			// Null out invited_by if the referenced user is not present on the
+			// target instance and is not part of this import batch; otherwise
+			// the INSERT will fail with a foreign-key violation.
 			var invitedByVal sql.NullString
-			if ue.InvitedBy != nil && *ue.InvitedBy != "" {
+			if ue.InvitedBy != nil && *ue.InvitedBy != "" && importedIDs[*ue.InvitedBy] {
 				invitedByVal = sql.NullString{String: *ue.InvitedBy, Valid: true}
 			}
 			isActive := 0
@@ -629,11 +663,12 @@ func (s *Service) importPayload(ctx context.Context, payload *Payload, opts Impo
 			if ue.IsProtected {
 				isProtected = 1
 			}
+			// INSERT OR IGNORE handles both primary-key (id) and username unique
+			// conflicts idempotently, preventing partial-import aborts.
 			res, err := s.db.ExecContext(ctx, `
-				INSERT INTO users (id, username, display_name, password_hash, role, auth_provider,
-				                   provider_id, is_active, is_protected, invited_by, created_at, updated_at)
+				INSERT OR IGNORE INTO users (id, username, display_name, password_hash, role, auth_provider,
+				                            provider_id, is_active, is_protected, invited_by, created_at, updated_at)
 				VALUES (?, ?, ?, '', ?, ?, ?, ?, ?, ?, ?, ?)
-				ON CONFLICT(username) DO NOTHING
 			`, ue.ID, ue.Username, ue.DisplayName, ue.Role, ue.AuthProvider,
 				ue.ProviderID, isActive, isProtected, invitedByVal, ue.CreatedAt, now)
 			if err != nil {
@@ -644,7 +679,7 @@ func (s *Service) importPayload(ctx context.Context, payload *Payload, opts Impo
 				result.Users++
 			} else {
 				result.Warnings = append(result.Warnings,
-					fmt.Sprintf("skipped user %q: username already exists on target instance", ue.Username))
+					fmt.Sprintf("skipped user %q: conflicts with an existing user on target instance", ue.Username))
 			}
 		}
 	}

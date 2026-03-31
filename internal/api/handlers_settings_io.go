@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"strings"
@@ -149,7 +150,7 @@ func (r *Router) handleSettingsImport(w http.ResponseWriter, req *http.Request) 
 
 	if req.Header.Get("HX-Request") == "true" {
 		w.Header().Set("Content-Type", "text/html")
-		html := fmt.Sprintf(
+		frag := fmt.Sprintf(
 			`<div class="text-sm text-green-600 dark:text-green-400">`+
 				`Import complete: %d settings, %d connections, %d profiles, %d webhooks, %d provider keys, %d priorities, %d rules, %d scraper configs, %d preferences.`+
 				`</div>`,
@@ -158,18 +159,18 @@ func (r *Router) handleSettingsImport(w http.ResponseWriter, req *http.Request) 
 			result.UserPreferences,
 		)
 		if result.Users > 0 || result.Invites > 0 {
-			html += fmt.Sprintf(
+			frag += fmt.Sprintf(
 				`<div class="text-sm text-green-600 dark:text-green-400">Users: %d, Invites: %d.</div>`,
 				result.Users, result.Invites,
 			)
 		}
 		for _, warning := range result.Warnings {
-			html += fmt.Sprintf(
+			frag += fmt.Sprintf(
 				`<div class="text-sm text-yellow-600 dark:text-yellow-400">Warning: %s</div>`,
-				warning,
+				html.EscapeString(warning),
 			)
 		}
-		w.Write([]byte(html)) //nolint:errcheck,gosec // G705: all format args are integers or pre-validated strings
+		w.Write([]byte(frag)) //nolint:errcheck
 		return
 	}
 
