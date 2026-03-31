@@ -301,21 +301,6 @@ components:
                 type: integer
               severity:
                 type: string
-        tier_excellent:
-          type: integer
-          description: Number of artists with health score 80-100.
-        tier_good:
-          type: integer
-          description: Number of artists with health score 60-79.
-        tier_fair:
-          type: integer
-          description: Number of artists with health score 40-59.
-        tier_poor:
-          type: integer
-          description: Number of artists with health score 20-39.
-        tier_critical:
-          type: integer
-          description: Number of artists with health score 0-19.
     BackupInfo:
       type: object
       properties:
@@ -1388,6 +1373,20 @@ paths:
                     type: integer
                   page_size:
                     type: integer
+
+  /artists/badge:
+    get:
+      tags: [Artists]
+      summary: Get artist count badge fragment
+      description: Returns an HTML fragment containing the total artist count for use in the sidebar badge. Returns empty body when count is zero.
+      operationId: getArtistsBadge
+      responses:
+        "200":
+          description: HTML badge fragment (may be empty when count is zero)
+          content:
+            text/html:
+              schema:
+                type: string
 
   /artists/duplicates:
     get:
@@ -2837,6 +2836,12 @@ paths:
             text/html:
               schema:
                 type: string
+        "400":
+          description: Invalid request (missing field name or provider not supported for the specified field)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /providers/search:
     post:
@@ -3473,22 +3478,6 @@ paths:
             text/html:
               schema:
                 type: string
-
-  /reports/health/tiers:
-    get:
-      tags: [Reports]
-      operationId: getHealthTiers
-      summary: Get health score tier distribution
-      description: Returns an HTML fragment (HealthTierFragment) with artist counts per health score tier. Requires authentication.
-      responses:
-        "200":
-          description: Health tier distribution fragment
-          content:
-            text/html:
-              schema:
-                type: string
-        "401":
-          description: Unauthorized
 
   /reports/health/history:
     get:

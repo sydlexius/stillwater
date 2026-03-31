@@ -207,17 +207,3 @@ func (r *Router) getStringSetting(ctx context.Context, key string, fallback stri
 	}
 	return v
 }
-
-// getUserPreference reads a single user preference from the user_preferences
-// table for the given userID and key. Returns fallback when no row exists or
-// the value is empty.
-func (r *Router) getUserPreference(ctx context.Context, userID, key, fallback string) string {
-	var v string
-	err := r.db.QueryRowContext(ctx,
-		`SELECT value FROM user_preferences WHERE user_id = ? AND key = ?`, userID, key,
-	).Scan(&v)
-	if err != nil || v == "" {
-		return fallback
-	}
-	return v
-}

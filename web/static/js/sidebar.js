@@ -181,6 +181,16 @@
     cycle: cycle
   };
 
+  // swSidebarCycleTheme cycles the theme preference: dark -> light -> dark.
+  // Called from the theme toggle button in the sidebar bottom section.
+  window.swSidebarCycleTheme = function () {
+    if (!window.swPreferences) return;
+    var cached = window.swPreferences.getCache();
+    var current = (cached && cached.theme) ? cached.theme : 'dark';
+    var next = current === 'dark' ? 'light' : 'dark';
+    window.swPreferences.set('theme', next);
+  };
+
   // Auto-initialize on DOM ready.
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);

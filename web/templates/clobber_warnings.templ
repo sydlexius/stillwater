@@ -7,14 +7,27 @@ type ClobberWarning struct {
 	LibraryName    string
 }
 
-templ ClobberWarnings(warnings []ClobberWarning) {
-	for _, w := range warnings {
-		<div class="rounded-md bg-yellow-50 dark:bg-yellow-900/50 px-4 py-3 text-sm text-yellow-700 dark:text-yellow-300 mb-2" role="alert">
-			<strong>{ w.ConnectionName }</strong> ({ w.ConnectionType }) has NFO writing enabled
-			if w.LibraryName != "" {
-				{ " on library \"" + w.LibraryName + "\"" }
+// ClobberWarnings renders inline amber pill badges for each clobber conflict.
+// Each pill links to Settings > Connections so the user can resolve the issue.
+templ ClobberWarnings(warnings []ClobberWarning, basePath string) {
+	if len(warnings) > 0 {
+		<div class="flex flex-wrap gap-1.5" role="alert" aria-label="NFO clobber warnings">
+			for _, w := range warnings {
+				<a
+					href={ templ.SafeURL(basePath + "/settings?tab=connections") }
+					class="inline-flex items-center gap-1 rounded-full border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/30 px-2.5 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/50 transition-colors"
+					title={ "NFO writing is enabled on " + w.ConnectionName + " -- click to open Connections settings" }
+				>
+					<!-- Warning triangle icon -->
+					<svg class="h-3 w-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true">
+						<path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"></path>
+					</svg>
+					<span>{ w.ConnectionName }</span>
+					if w.LibraryName != "" {
+						<span class="opacity-75">({ w.LibraryName })</span>
+					}
+				</a>
 			}
-			. This may overwrite changes made by Stillwater. Disable the NFO saver in your server settings to prevent conflicts.
 		</div>
 	}
 }
