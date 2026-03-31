@@ -477,6 +477,9 @@ func (r *Router) handleTestConnection(w http.ResponseWriter, req *http.Request) 
 						r.logger.Warn("emby platform settings drift detected", "connection_id", id, "library", s.LibraryName)
 					}
 				}
+			} else {
+				r.logger.Warn("could not inspect emby platform settings for drift", "connection_id", id, "error", settingsErr)
+				driftWarnings = append(driftWarnings, "could not inspect platform settings for drift")
 			}
 		}
 	case connection.TypeJellyfin:
@@ -499,6 +502,9 @@ func (r *Router) handleTestConnection(w http.ResponseWriter, req *http.Request) 
 						r.logger.Warn("jellyfin platform settings drift detected", "connection_id", id, "library", s.LibraryName)
 					}
 				}
+			} else {
+				r.logger.Warn("could not inspect jellyfin platform settings for drift", "connection_id", id, "error", settingsErr)
+				driftWarnings = append(driftWarnings, "could not inspect platform settings for drift")
 			}
 		}
 	case connection.TypeLidarr:
@@ -514,6 +520,9 @@ func (r *Router) handleTestConnection(w http.ResponseWriter, req *http.Request) 
 						r.logger.Warn("lidarr platform settings drift detected", "connection_id", id, "consumer", c.ConsumerName)
 					}
 				}
+			} else {
+				r.logger.Warn("could not inspect lidarr platform settings for drift", "connection_id", id, "error", consumersErr)
+				driftWarnings = append(driftWarnings, "could not inspect platform settings for drift")
 			}
 		}
 	default:
@@ -693,6 +702,10 @@ func (r *Router) handleDisablePlatformSettings(w http.ResponseWriter, req *http.
 		client := emby.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger)
 		if disableErr := client.DisableConflictingSettings(disableCtx, body.LibraryID); disableErr != nil {
 			r.logger.Error("disabling emby conflicting settings", "connection_id", id, "library_id", body.LibraryID, "error", disableErr)
+			if strings.Contains(disableErr.Error(), "not found") {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "library not found on platform"})
+				return
+			}
 			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "could not disable platform settings"})
 			return
 		}
@@ -706,6 +719,10 @@ func (r *Router) handleDisablePlatformSettings(w http.ResponseWriter, req *http.
 		client := jellyfin.New(conn.URL, conn.APIKey, conn.PlatformUserID, r.logger)
 		if disableErr := client.DisableConflictingSettings(disableCtx, body.LibraryID); disableErr != nil {
 			r.logger.Error("disabling jellyfin conflicting settings", "connection_id", id, "library_id", body.LibraryID, "error", disableErr)
+			if strings.Contains(disableErr.Error(), "not found") {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "library not found on platform"})
+				return
+			}
 			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "could not disable platform settings"})
 			return
 		}

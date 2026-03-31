@@ -88,20 +88,25 @@ templ IndexPage(assets AssetPaths) {
 				}
 				fetch(bp + '/api/v1/rules/status')
 					.then(function(res) {
-						if (!res.ok) return null;
+						if (!res.ok) {
+							var el = document.getElementById('last-evaluated-text');
+							if (el) el.textContent = 'Status unavailable';
+							return;
+						}
 						return res.json();
 					})
 					.then(function(data) {
 						var el = document.getElementById('last-evaluated-text');
-						if (!el || !data) {
-							if (el) el.textContent = 'Never evaluated';
-							return;
-						}
+						if (!el || !data) return;
 						if (!data.last_evaluation_at) {
 							el.textContent = 'Never evaluated';
 							return;
 						}
 						var evalTime = new Date(data.last_evaluation_at);
+						if (isNaN(evalTime.getTime())) {
+							el.textContent = 'Status unavailable';
+							return;
+						}
 						var now = new Date();
 						var diffMs = now - evalTime;
 						var diffMin = Math.floor(diffMs / 60000);
@@ -121,7 +126,7 @@ templ IndexPage(assets AssetPaths) {
 					})
 					.catch(function() {
 						var el = document.getElementById('last-evaluated-text');
-						if (el) el.textContent = 'Never evaluated';
+						if (el) el.textContent = 'Status unavailable';
 					});
 			})();
 

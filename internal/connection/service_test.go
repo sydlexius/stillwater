@@ -572,8 +572,8 @@ func TestUpdateFeatures_NewFlags(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Enable metadata push and trigger refresh.
-	if err := svc.UpdateFeatures(ctx, c.ID, true, true, true, true, true); err != nil {
+	// Enable metadata push but disable trigger refresh to verify independent storage.
+	if err := svc.UpdateFeatures(ctx, c.ID, true, true, true, true, false); err != nil {
 		t.Fatalf("UpdateFeatures: %v", err)
 	}
 
@@ -584,8 +584,8 @@ func TestUpdateFeatures_NewFlags(t *testing.T) {
 	if !got.FeatureMetadataPush {
 		t.Error("expected FeatureMetadataPush to be true")
 	}
-	if !got.FeatureTriggerRefresh {
-		t.Error("expected FeatureTriggerRefresh to be true")
+	if got.FeatureTriggerRefresh {
+		t.Error("expected FeatureTriggerRefresh to be false")
 	}
 }
 

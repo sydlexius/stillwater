@@ -128,6 +128,9 @@ func (c *Client) GetMetadataConsumers(ctx context.Context) ([]MetadataConsumerSt
 
 // DisableMetadataConsumer disables a specific metadata consumer by config ID.
 func (c *Client) DisableMetadataConsumer(ctx context.Context, configID int) error {
+	if configID <= 0 {
+		return fmt.Errorf("config id must be positive")
+	}
 	payload := MetadataProviderConfig{ID: configID, Enable: false}
 	body, err := json.Marshal(payload)
 	if err != nil {

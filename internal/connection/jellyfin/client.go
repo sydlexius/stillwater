@@ -296,7 +296,7 @@ func (c *Client) GetLibrarySettings(ctx context.Context) ([]LibrarySettingsStatu
 		return nil, fmt.Errorf("getting music libraries: %w", err)
 	}
 
-	var results []LibrarySettingsStatus
+	results := make([]LibrarySettingsStatus, 0, len(libs))
 	for _, lib := range libs {
 		status := LibrarySettingsStatus{
 			LibraryID:               lib.ItemID,
@@ -310,6 +310,16 @@ func (c *Client) GetLibrarySettings(ctx context.Context) ([]LibrarySettingsStatu
 				status.MetadataFetchers = opt.MetadataFetchers
 				break
 			}
+		}
+		// Normalize nil slices to empty so JSON serializes as [] not null.
+		if status.ImageFetchers == nil {
+			status.ImageFetchers = []string{}
+		}
+		if status.MetadataFetchers == nil {
+			status.MetadataFetchers = []string{}
+		}
+		if status.MetadataSavers == nil {
+			status.MetadataSavers = []string{}
 		}
 		// Jellyfin MetadataSavers=[] does NOT stop NFO writes. The only reliable
 		// method is <lockdata>true</lockdata> in the NFO file itself.
@@ -358,7 +368,7 @@ func (c *Client) DisableConflictingSettings(ctx context.Context, libraryID strin
 	}
 
 	path := fmt.Sprintf("/Library/VirtualFolders/LibraryOptions?Id=%s", libraryID)
-	return c.Post(ctx, path, bytes.NewReader(body))
+	return c.PostJSON(ctx, path, bytes.NewReader(body), nil)
 }
 
 func (c *Client) setAuth(req *http.Request) {

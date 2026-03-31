@@ -1227,7 +1227,7 @@ func TestGetLibrarySettings(t *testing.T) {
 }
 
 func TestDisableConflictingSettings(t *testing.T) {
-	var receivedBody []byte
+	bodyCh := make(chan []byte, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/Library/VirtualFolders" && r.Method == http.MethodGet:
@@ -1251,11 +1251,13 @@ func TestDisableConflictingSettings(t *testing.T) {
 				}
 			]`))
 		case r.URL.Path == "/Library/VirtualFolders/LibraryOptions" && r.Method == http.MethodPost:
-			var err error
-			receivedBody, err = io.ReadAll(r.Body)
+			body, err := io.ReadAll(r.Body)
 			if err != nil {
-				t.Fatalf("reading body: %v", err)
+				t.Errorf("reading body: %v", err)
+				w.WriteHeader(http.StatusInternalServerError)
+				return
 			}
+			bodyCh <- body
 			w.WriteHeader(http.StatusOK)
 		default:
 			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
@@ -1270,6 +1272,7 @@ func TestDisableConflictingSettings(t *testing.T) {
 	}
 
 	// Verify the request body clears fetchers and savers.
+	receivedBody := <-bodyCh
 	var opts LibraryOptions
 	if err := json.Unmarshal(receivedBody, &opts); err != nil {
 		t.Fatalf("parsing sent body: %v", err)

@@ -196,7 +196,7 @@ func TestGetMetadataConsumers(t *testing.T) {
 }
 
 func TestDisableMetadataConsumer(t *testing.T) {
-	var receivedBody []byte
+	bodyCh := make(chan []byte, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/v1/config/metadataprovider/2" {
 			t.Errorf("unexpected path: %s", r.URL.Path)
@@ -204,11 +204,13 @@ func TestDisableMetadataConsumer(t *testing.T) {
 		if r.Method != http.MethodPut {
 			t.Errorf("method = %s, want PUT", r.Method)
 		}
-		var err error
-		receivedBody, err = io.ReadAll(r.Body)
+		body, err := io.ReadAll(r.Body)
 		if err != nil {
-			t.Fatalf("reading body: %v", err)
+			t.Errorf("reading body: %v", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
 		}
+		bodyCh <- body
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()
@@ -218,6 +220,7 @@ func TestDisableMetadataConsumer(t *testing.T) {
 		t.Fatalf("DisableMetadataConsumer: %v", err)
 	}
 
+	receivedBody := <-bodyCh
 	var cfg MetadataProviderConfig
 	if err := json.Unmarshal(receivedBody, &cfg); err != nil {
 		t.Fatalf("parsing sent body: %v", err)

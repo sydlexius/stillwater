@@ -111,7 +111,10 @@ templ CompliancePage(assets AssetPaths, data ComplianceData) {
 				</div>
 				<button
 					id="run-rules-btn"
+					type="button"
 					onclick="confirmAndRunRules()"
+					aria-controls="confirm-modal"
+					aria-haspopup="dialog"
 					class="inline-flex items-center justify-center gap-2 rounded-md bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
 				>
 					<span id="run-rules-spinner" class="hidden">
@@ -592,46 +595,16 @@ templ runRulesScript() {
 				message = 'This will evaluate rules for all artists.<br><br>The evaluation runs in the background -- you can continue using Stillwater while it runs.';
 			}
 
-			// Update accept button text and style for this dialog.
-			var acceptBtn = document.getElementById('confirm-modal-accept');
-			if (acceptBtn) {
-				acceptBtn.textContent = 'Start';
-				acceptBtn.className = 'rounded bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2';
-			}
-			var titleEl = document.getElementById('confirm-modal-title');
-			if (titleEl) {
-				titleEl.textContent = 'Run Rules';
-			}
-
-			// Restore default modal styling after it closes (whether confirmed or cancelled).
-			function restoreModalDefaults() {
-				if (acceptBtn) {
-					acceptBtn.textContent = 'Confirm';
-					acceptBtn.className = 'rounded bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 transition-colors focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2';
-				}
-				if (titleEl) {
-					titleEl.textContent = 'Confirm';
-				}
-			}
-
-			// Use a MutationObserver on the modal to detect when it gets hidden.
-			var modalEl = document.getElementById('confirm-modal');
-			if (modalEl) {
-				var observer = new MutationObserver(function(mutations) {
-					for (var i = 0; i < mutations.length; i++) {
-						if (mutations[i].attributeName === 'class' && modalEl.classList.contains('hidden')) {
-							restoreModalDefaults();
-							observer.disconnect();
-							break;
-						}
-					}
-				});
-				observer.observe(modalEl, {attributes: true, attributeFilter: ['class']});
-			}
-
+			// Pass customizations via opts so the modal resets them in hideModal.
+			// No pre-mutation of the shared modal DOM is needed.
 			window.showConfirmDialog(message, 'run_rules', function() {
 				startRuleRun(bp);
-			}, {html: true});
+			}, {
+				html: true,
+				title: 'Run Rules',
+				acceptText: 'Start',
+				acceptClass: 'rounded bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2'
+			});
 		}
 
 		function startRuleRun(bp) {
@@ -691,12 +664,12 @@ templ runRulesScript() {
 						resetRuleButton();
 						// Refresh health summary and compliance table if present.
 						if (document.getElementById('health-summary')) {
-							htmx.ajax('GET', bp + '/api/v1/reports/health', {target: '#health-summary', swap: 'innerHTML'});
+							htmx.ajax('GET', '/api/v1/reports/health', {target: '#health-summary', swap: 'innerHTML'});
 						}
 						if (document.getElementById('compliance-summary')) {
-							htmx.ajax('GET', bp + '/api/v1/reports/health/by-library', {target: '#compliance-summary', swap: 'innerHTML'});
+							htmx.ajax('GET', '/api/v1/reports/health/by-library', {target: '#compliance-summary', swap: 'innerHTML'});
 						}
-						htmx.ajax('GET', bp + '/api/v1/notifications/badge', {target: '#sidebar-notif-badge', swap: 'innerHTML'});
+						htmx.ajax('GET', '/api/v1/notifications/badge', {target: '#sidebar-notif-badge', swap: 'innerHTML'});
 						return true;
 					}
 					if (data.status === 'failed') {

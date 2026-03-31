@@ -4447,58 +4447,77 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  connection_type:
-                    type: string
-                    enum: [emby, jellyfin, lidarr]
-                  libraries:
-                    type: array
-                    description: Per-library settings (Emby/Jellyfin only)
-                    items:
-                      type: object
-                      properties:
-                        library_id:
-                          type: string
-                        library_name:
-                          type: string
-                        image_fetchers:
-                          type: array
-                          items:
-                            type: string
-                        metadata_fetchers:
-                          type: array
-                          items:
-                            type: string
-                        metadata_savers:
-                          type: array
-                          items:
-                            type: string
-                        has_conflicts:
-                          type: boolean
-                        needs_lockdata:
-                          type: boolean
-                          description: Jellyfin only. Indicates NFO lockdata injection is required.
-                        enable_internet_providers:
-                          type: boolean
-                          description: Jellyfin only. Whether internet providers are enabled for this library.
-                  metadata_consumers:
-                    type: array
-                    description: Global metadata consumers (Lidarr only)
-                    items:
-                      type: object
-                      properties:
-                        id:
-                          type: integer
-                        consumer_name:
-                          type: string
-                        metadata_type:
-                          type: string
-                        enabled:
-                          type: boolean
-                  note:
-                    type: string
-                    description: Platform-specific advisory note.
+                oneOf:
+                  - title: EmbyJellyfinPlatformSettings
+                    type: object
+                    required: [connection_type, libraries]
+                    properties:
+                      connection_type:
+                        type: string
+                        enum: [emby, jellyfin]
+                      libraries:
+                        type: array
+                        description: Per-library fetcher/saver settings.
+                        items:
+                          type: object
+                          properties:
+                            library_id:
+                              type: string
+                            library_name:
+                              type: string
+                            image_fetchers:
+                              type: array
+                              items:
+                                type: string
+                            metadata_fetchers:
+                              type: array
+                              items:
+                                type: string
+                            metadata_savers:
+                              type: array
+                              items:
+                                type: string
+                            has_conflicts:
+                              type: boolean
+                            needs_lockdata:
+                              type: boolean
+                              description: Jellyfin only. Indicates NFO lockdata injection is required.
+                            enable_internet_providers:
+                              type: boolean
+                              description: Jellyfin only. Whether internet providers are enabled for this library.
+                      note:
+                        type: string
+                        description: Platform-specific advisory note.
+                  - title: LidarrPlatformSettings
+                    type: object
+                    required: [connection_type, metadata_consumers]
+                    properties:
+                      connection_type:
+                        type: string
+                        enum: [lidarr]
+                      metadata_consumers:
+                        type: array
+                        description: Global metadata consumers.
+                        items:
+                          type: object
+                          properties:
+                            id:
+                              type: integer
+                            consumer_name:
+                              type: string
+                            metadata_type:
+                              type: string
+                            enabled:
+                              type: boolean
+                      note:
+                        type: string
+                        description: Platform-specific advisory note.
+                discriminator:
+                  propertyName: connection_type
+                  mapping:
+                    emby: "#/components/schemas/EmbyJellyfinPlatformSettings"
+                    jellyfin: "#/components/schemas/EmbyJellyfinPlatformSettings"
+                    lidarr: "#/components/schemas/LidarrPlatformSettings"
         "404":
           description: Connection not found
           content:
