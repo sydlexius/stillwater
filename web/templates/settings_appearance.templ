@@ -268,10 +268,23 @@ templ appearanceScript() {
 			// persists to the server and applies to the DOM immediately.
 			window.swSaveAppearancePref = function (key, value) {
 				if (window.swPreferences) {
-					window.swPreferences.set(key, value).then(function () {
-						showSuccessToast('Preference saved');
+					window.swPreferences.set(key, value).then(function (saved) {
+						// swPreferences.set resolves with the previous value when the
+						// server rejects a change (it reverts client-side). Only show
+						// success if the server actually accepted the new value.
+						if (saved === value) {
+							if (typeof window.showSuccessToast === 'function') {
+								showSuccessToast('Preference saved');
+							}
+						} else {
+							if (typeof window.showToast === 'function') {
+								showToast('Failed to save preference');
+							}
+						}
 					}).catch(function () {
-						showToast('Failed to save preference');
+						if (typeof window.showToast === 'function') {
+							showToast('Failed to save preference');
+						}
 					});
 				}
 			};

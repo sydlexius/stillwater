@@ -1312,6 +1312,8 @@ input:-webkit-autofill:focus {
   bottom: calc(100% + 8px);
   transform: translateX(-50%);
   width: 240px;
+  max-width: min(240px, calc(100vw - 2rem));
+  word-break: break-word;
   padding: 10px 12px;
   background: var(--sw-glass-bg);
   backdrop-filter: blur(16px) saturate(160%);

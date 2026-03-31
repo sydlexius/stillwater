@@ -9,7 +9,7 @@ import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
 // ContextHelp renders a small "?" help icon that reveals a tooltip popover on
-// click or hover. It is keyboard-accessible: Tab to focus, Escape to dismiss.
+// click or focus. It is keyboard-accessible: Tab to focus, Escape to dismiss.
 //
 // Parameters:
 //   - id:    a unique DOM id for this help icon (used to associate aria attributes)
