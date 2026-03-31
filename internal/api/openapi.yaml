@@ -6462,9 +6462,11 @@ paths:
                 import_users:
                   type: boolean
                   description: Import user accounts. Imported users have empty password hashes and must authenticate via federated auth or use password reset. Defaults to false.
+                  default: false
                 import_invites:
                   type: boolean
                   description: Import pending invites. Defaults to false.
+                  default: false
               required: [passphrase, envelope]
           multipart/form-data:
             schema:

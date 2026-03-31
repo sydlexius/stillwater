@@ -683,8 +683,8 @@ func (s *Service) importPayload(ctx context.Context, payload *Payload, opts Impo
 					continue
 				}
 				if _, err := s.db.ExecContext(ctx, `
-					UPDATE users SET invited_by = ? WHERE id = ?
-				`, *ue.InvitedBy, ue.ID); err != nil {
+					UPDATE users SET invited_by = ?, updated_at = ? WHERE id = ?
+				`, *ue.InvitedBy, now, ue.ID); err != nil {
 					return nil, fmt.Errorf("updating invited_by for user %q: %w", ue.Username, err)
 				}
 			}
