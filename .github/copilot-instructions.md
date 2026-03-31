@@ -62,8 +62,3 @@ higher-priority category.
 ## PR reviewers
 
 Always request `coderabbitai` as a reviewer on every PR you open or update.
-CodeRabbit auto-review is disabled for draft PRs (`.coderabbit.yaml` sets
-`drafts: false`) and Copilot opens all PRs as drafts, so the CI workflow
-`.github/workflows/coderabbit-copilot-review.yml` posts `@coderabbitai review`
-automatically on each push. You do not need to post it manually, but you must
-address all actionable CodeRabbit inline comments before marking the PR ready.
