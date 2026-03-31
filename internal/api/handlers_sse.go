@@ -217,6 +217,14 @@ func (r *Router) handleSSEStream(w http.ResponseWriter, req *http.Request) {
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no") // disable nginx buffering
 
+	// Clear the write deadline for this SSE stream so it is not subject to the
+	// server-level http.Server.WriteTimeout. This allows the connection to stay
+	// open indefinitely while we periodically send events/heartbeats.
+	rc := http.NewResponseController(w)
+	if err := rc.SetWriteDeadline(time.Time{}); err != nil {
+		r.logger.Error("failed to clear write deadline for SSE stream", "err", err)
+	}
+
 	// Register this client with the hub.
 	client := r.sseHub.Register(userID)
 

@@ -198,6 +198,10 @@ func TestHandleSSEStream(t *testing.T) {
 		}
 	}
 
+	if err := scanner.Err(); err != nil {
+		t.Fatalf("scanner error reading connected event: %v", err)
+	}
+
 	// Verify we got the connected event.
 	joined := strings.Join(eventLines, "\n")
 	if !strings.Contains(joined, "event: connected") {
@@ -219,6 +223,10 @@ func TestHandleSSEStream(t *testing.T) {
 		if line == "" && len(eventLines) > 1 {
 			break
 		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		t.Fatalf("scanner error reading scan.completed event: %v", err)
 	}
 
 	joined = strings.Join(eventLines, "\n")
