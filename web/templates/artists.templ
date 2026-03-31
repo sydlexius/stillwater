@@ -124,6 +124,33 @@ func artistPlatformPresence(id string, m map[string]artist.PlatformPresence) art
 	return m[id]
 }
 
+// artistBadge holds the platform key and tooltip for a single platform badge.
+type artistBadge struct {
+	Platform string
+	Tooltip  string
+}
+
+// computeArtistBadges returns the ordered list of platform badges to display for an artist.
+// Order: Filesystem, Lidarr, Emby, Jellyfin (discovery source first, then platforms).
+func computeArtistBadges(a artist.Artist, sources map[string]LibrarySourceInfo, platforms map[string]artist.PlatformPresence) []artistBadge {
+	p := artistPlatformPresence(a.ID, platforms)
+	src := artistSourceInfo(a, sources)
+	var badges []artistBadge
+	if artistHasFilesystem(a) {
+		badges = append(badges, artistBadge{"filesystem", "Found in " + a.Path})
+	}
+	if p.HasLidarr || src.Source == "lidarr" {
+		badges = append(badges, artistBadge{"lidarr", lidarrTooltip(a, sources)})
+	}
+	if p.HasEmby || src.Source == "emby" {
+		badges = append(badges, artistBadge{"emby", embyTooltip(a, sources)})
+	}
+	if p.HasJellyfin || src.Source == "jellyfin" {
+		badges = append(badges, artistBadge{"jellyfin", jellyfinTooltip(a, sources)})
+	}
+	return badges
+}
+
 // libraryDropdownLabel returns the display label for a library in the dropdown.
 // For imported libraries it appends the connection name in parentheses.
 func libraryDropdownLabel(lib library.Library, sources map[string]LibrarySourceInfo) string {
@@ -676,19 +703,11 @@ templ ArtistCard(a artist.Artist, sources map[string]LibrarySourceInfo, complian
 // artistPlatformBadges renders inline platform badges for the table view name column.
 // Badge order: Filesystem, Lidarr, Emby, Jellyfin (discovery source first, then platforms).
 templ artistPlatformBadges(a artist.Artist, sources map[string]LibrarySourceInfo, platforms map[string]artist.PlatformPresence) {
-	if artistHasFilesystem(a) || artistPlatformPresence(a.ID, platforms).HasLidarr || artistPlatformPresence(a.ID, platforms).HasEmby || artistPlatformPresence(a.ID, platforms).HasJellyfin || artistSourceInfo(a, sources).Source != "" {
+	{{ badges := computeArtistBadges(a, sources, platforms) }}
+	if len(badges) > 0 {
 		<span class="inline-flex items-center gap-0.5 shrink-0">
-			if artistHasFilesystem(a) {
-				@components.PlatformBadge("filesystem", "Found in " + a.Path)
-			}
-			if artistPlatformPresence(a.ID, platforms).HasLidarr || artistSourceInfo(a, sources).Source == "lidarr" {
-				@components.PlatformBadge("lidarr", lidarrTooltip(a, sources))
-			}
-			if artistPlatformPresence(a.ID, platforms).HasEmby || artistSourceInfo(a, sources).Source == "emby" {
-				@components.PlatformBadge("emby", embyTooltip(a, sources))
-			}
-			if artistPlatformPresence(a.ID, platforms).HasJellyfin || artistSourceInfo(a, sources).Source == "jellyfin" {
-				@components.PlatformBadge("jellyfin", jellyfinTooltip(a, sources))
+			for _, b := range badges {
+				@components.PlatformBadge(b.Platform, b.Tooltip)
 			}
 		</span>
 	}
@@ -697,26 +716,12 @@ templ artistPlatformBadges(a artist.Artist, sources map[string]LibrarySourceInfo
 // artistCardPlatformBadges renders overlay platform badges for the grid card view.
 // Badges are positioned in the bottom-right corner of the card image area.
 templ artistCardPlatformBadges(a artist.Artist, sources map[string]LibrarySourceInfo, platforms map[string]artist.PlatformPresence) {
-	if artistHasFilesystem(a) || artistPlatformPresence(a.ID, platforms).HasLidarr || artistPlatformPresence(a.ID, platforms).HasEmby || artistPlatformPresence(a.ID, platforms).HasJellyfin || artistSourceInfo(a, sources).Source != "" {
+	{{ badges := computeArtistBadges(a, sources, platforms) }}
+	if len(badges) > 0 {
 		<div class="absolute bottom-1 right-1 flex items-center gap-0.5">
-			if artistHasFilesystem(a) {
+			for _, b := range badges {
 				<span class="rounded-full bg-black/60 p-0.5">
-					@components.PlatformBadge("filesystem", "Found in " + a.Path)
-				</span>
-			}
-			if artistPlatformPresence(a.ID, platforms).HasLidarr || artistSourceInfo(a, sources).Source == "lidarr" {
-				<span class="rounded-full bg-black/60 p-0.5">
-					@components.PlatformBadge("lidarr", lidarrTooltip(a, sources))
-				</span>
-			}
-			if artistPlatformPresence(a.ID, platforms).HasEmby || artistSourceInfo(a, sources).Source == "emby" {
-				<span class="rounded-full bg-black/60 p-0.5">
-					@components.PlatformBadge("emby", embyTooltip(a, sources))
-				</span>
-			}
-			if artistPlatformPresence(a.ID, platforms).HasJellyfin || artistSourceInfo(a, sources).Source == "jellyfin" {
-				<span class="rounded-full bg-black/60 p-0.5">
-					@components.PlatformBadge("jellyfin", jellyfinTooltip(a, sources))
+					@components.PlatformBadge(b.Platform, b.Tooltip)
 				</span>
 			}
 		</div>
