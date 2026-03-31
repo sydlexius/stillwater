@@ -1184,6 +1184,13 @@ func (r *Router) handleOnboardingPage(w http.ResponseWriter, req *http.Request) 
 		unidentifiedCount = -1
 	}
 
+	// Fetch user's auth provider for OOBE auto-select
+	user, err := r.authService.GetUserByID(req.Context(), userID)
+	userAuthProvider := ""
+	if err == nil && user != nil {
+		userAuthProvider = user.AuthProvider
+	}
+
 	data := templates.OnboardingData{
 		Libraries:          libs,
 		Profiles:           profiles,
@@ -1192,6 +1199,7 @@ func (r *Router) handleOnboardingPage(w http.ResponseWriter, req *http.Request) 
 		Connections:        conns,
 		CurrentStep:        currentStep,
 		UnidentifiedCount:  unidentifiedCount,
+		UserAuthProvider:   userAuthProvider,
 	}
 	renderTempl(w, req, templates.OnboardingPage(r.assetsFor(req), data))
 }
