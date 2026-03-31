@@ -302,11 +302,14 @@ func (r *Router) handleImageFetch(w http.ResponseWriter, req *http.Request) {
 			geo := img.CheckGeometry(w2, h2, imageType)
 			if geo.NeedsCrop {
 				format, _, _ := img.DetectFormat(bytes.NewReader(data))
-				mimeType := "image/jpeg"
-				if format == img.FormatPNG {
+				var mimeType string
+				switch format {
+				case img.FormatPNG:
 					mimeType = "image/png"
-				} else if format == img.FormatWebP {
+				case img.FormatWebP:
 					mimeType = "image/webp"
+				default:
+					mimeType = "image/jpeg"
 				}
 				encoded := base64.StdEncoding.EncodeToString(data)
 				dataURI := "data:" + mimeType + ";base64," + encoded
