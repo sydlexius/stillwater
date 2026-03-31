@@ -182,6 +182,19 @@ func (r *Router) handleSetActivePlatform(w http.ResponseWriter, req *http.Reques
 	writeJSON(w, http.StatusOK, map[string]string{"status": "active"})
 }
 
+// normalizeSettingsSection maps a raw section string to a valid settings tab
+// name. Unknown values fall back to "general". This keeps the validation logic
+// in one place so handleSettingsPage and handleSettingsSectionPage stay in sync.
+func normalizeSettingsSection(section string) string {
+	switch section {
+	case "general", "appearance", "providers", "connections", "libraries", "automation", "rules",
+		"users", "authentication", "maintenance", "logs":
+		return section
+	default:
+		return "general"
+	}
+}
+
 // handleSettingsPage renders the settings HTML page.
 // GET /settings
 func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
@@ -269,14 +282,7 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
-	tab := req.URL.Query().Get("tab")
-	switch tab {
-	case "general", "appearance", "providers", "connections", "libraries", "automation", "rules",
-		"users", "authentication", "maintenance", "logs":
-		// Valid section.
-	default:
-		tab = "general"
-	}
+	tab := normalizeSettingsSection(req.URL.Query().Get("tab"))
 
 	multiUserEnabled := r.getBoolSetting(req.Context(), "multi_user.enabled", false)
 
@@ -356,14 +362,7 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 // It maps the path segment to the ?tab= query parameter and delegates to handleSettingsPage.
 // GET /settings/{section}
 func (r *Router) handleSettingsSectionPage(w http.ResponseWriter, req *http.Request) {
-	section := req.PathValue("section")
-	switch section {
-	case "general", "appearance", "providers", "connections", "libraries", "automation", "rules",
-		"users", "authentication", "maintenance", "logs":
-		// Valid section: rewrite as ?tab= and delegate.
-	default:
-		section = "general"
-	}
+	section := normalizeSettingsSection(req.PathValue("section"))
 	q := req.URL.Query()
 	q.Set("tab", section)
 	req.URL.RawQuery = q.Encode()

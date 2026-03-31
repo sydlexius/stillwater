@@ -476,10 +476,12 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 		@settingsUsersScript()
 		@settingsAuthProvidersScript()
 		<script src={ assets.SortableJS }></script>
+		<!-- Visually hidden page title for screen readers. -->
+		<h1 class="sr-only">Settings</h1>
 		<!-- Settings page: vertical sidebar + content panel -->
 		<div class="flex flex-col lg:flex-row gap-0 min-h-0">
-			<!-- Left sidebar (hidden on mobile when a section is active) -->
-			@settingsSidebar(data.ActiveTab)
+			<!-- Left sidebar (stacks above content on mobile, inline on larger screens) -->
+			@settingsSidebar(data.ActiveTab, assets.BasePath)
 			<!-- Right content area -->
 			<div class="flex-1 min-w-0 lg:pl-6">
 			<!-- General section -->
@@ -1842,7 +1844,9 @@ templ resetConfirmPrefsScript() {
 // settingsSidebar renders the vertical left navigation sidebar for the settings page.
 // On large screens it is a fixed-width column; on mobile it renders as a full-width
 // section list above the content panel.
-templ settingsSidebar(activeSection string) {
+// basePath is the server.base_path prefix (may be empty) used to build correct hrefs
+// in sub-path deployments.
+templ settingsSidebar(activeSection string, basePath string) {
 	<aside
 		id="settings-sidebar"
 		class="w-full lg:w-52 shrink-0"
@@ -1858,7 +1862,7 @@ templ settingsSidebar(activeSection string) {
 					} else {
 						<li>
 							<a
-								href={ templ.SafeURL("/settings?tab=" + item.ID) }
+								href={ templ.SafeURL(basePath + "/settings?tab=" + item.ID) }
 								class={
 									"flex items-center rounded-md px-3 py-2 text-sm font-medium transition-all cursor-pointer",
 									templ.KV("bg-blue-600/10 text-blue-600 dark:text-blue-300 dark:bg-blue-600/20", item.ID == activeSection),
@@ -2702,38 +2706,58 @@ templ profileNamingEditorScript() {
 
 templ settingsTabScript() {
 	<script>
-		function switchSettingsTab(event, el) {
-			event.preventDefault();
-			var tabId = el.dataset.tab;
+		// Resolve base path for sub-path deployments so pushState and sidebar
+		// hrefs stay correct when the app is mounted under a prefix like /stillwater.
+		var settingsBasePath = '';
+		(function() {
+			var m = document.querySelector('meta[name="htmx-base-path"]');
+			if (m && m.content) { settingsBasePath = m.content; }
+		})();
 
+		// applySettingsTab shows the panel for tabId and updates sidebar link
+		// active state. It does NOT push history or update the URL -- callers
+		// that need URL updates do so separately.
+		function applySettingsTab(tabId) {
 			// Hide all section panels.
 			document.querySelectorAll('[data-tab-panel]').forEach(function(p) {
 				p.classList.add('hidden');
 			});
 
 			// Show the selected panel.
-			var panel = null;
 			document.querySelectorAll('[data-tab-panel]').forEach(function(p) {
 				if (p.dataset.tabPanel === tabId) {
-					panel = p;
+					p.classList.remove('hidden');
 				}
 			});
-			if (panel) panel.classList.remove('hidden');
 
-			// Update sidebar link active state.
+			// Update sidebar link active state. Inactive links get the full set
+			// of hover classes restored so the hover effect works correctly after
+			// switching away from them.
 			document.querySelectorAll('[data-tab]').forEach(function(t) {
-				t.classList.remove(
-					'bg-blue-600/10', 'text-blue-600', 'dark:text-blue-300', 'dark:bg-blue-600/20'
-				);
-				t.classList.add('text-gray-700', 'dark:text-gray-300');
-				t.removeAttribute('aria-current');
+				if (t.dataset.tab === tabId) {
+					t.classList.remove(
+						'text-gray-700', 'dark:text-gray-300',
+						'hover:bg-gray-100', 'dark:hover:bg-gray-700/60',
+						'hover:text-gray-900', 'dark:hover:text-gray-100'
+					);
+					t.classList.add(
+						'bg-blue-600/10', 'text-blue-600',
+						'dark:text-blue-300', 'dark:bg-blue-600/20'
+					);
+					t.setAttribute('aria-current', 'page');
+				} else {
+					t.classList.remove(
+						'bg-blue-600/10', 'text-blue-600',
+						'dark:text-blue-300', 'dark:bg-blue-600/20'
+					);
+					t.classList.add(
+						'text-gray-700', 'dark:text-gray-300',
+						'hover:bg-gray-100', 'dark:hover:bg-gray-700/60',
+						'hover:text-gray-900', 'dark:hover:text-gray-100'
+					);
+					t.removeAttribute('aria-current');
+				}
 			});
-			el.classList.remove('text-gray-700', 'dark:text-gray-300');
-			el.classList.add('bg-blue-600/10', 'text-blue-600', 'dark:text-blue-300', 'dark:bg-blue-600/20');
-			el.setAttribute('aria-current', 'page');
-
-			// Push URL so back/forward and direct linking work.
-			history.pushState(null, '', '/settings?tab=' + encodeURIComponent(tabId));
 
 			// Refresh cache stats when switching to the Maintenance section.
 			if (tabId === 'maintenance' && typeof loadCacheStats === 'function') {
@@ -2762,6 +2786,21 @@ templ settingsTabScript() {
 				}
 			}
 		}
+
+		function switchSettingsTab(event, el) {
+			event.preventDefault();
+			var tabId = el.dataset.tab;
+			applySettingsTab(tabId);
+			// Push a base-path-aware URL so back/forward and direct linking work.
+			history.pushState(null, '', settingsBasePath + '/settings?tab=' + encodeURIComponent(tabId));
+		}
+
+		// Restore the correct panel when the user presses Back or Forward.
+		window.addEventListener('popstate', function() {
+			var params = new URLSearchParams(window.location.search);
+			var tab = params.get('tab') || 'general';
+			applySettingsTab(tab);
+		});
 	</script>
 }
 
