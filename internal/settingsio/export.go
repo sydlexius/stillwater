@@ -548,10 +548,16 @@ func (s *Service) importPayload(ctx context.Context, payload *Payload, opts Impo
 		if re.Enabled {
 			enabled = 1
 		}
+		// Coerce invalid automation_mode to "manual" rather than letting invalid
+		// values reach the DB (rule update handlers only accept "auto"/"manual").
+		automationMode := re.AutomationMode
+		if automationMode != "auto" && automationMode != "manual" {
+			automationMode = "manual"
+		}
 		res, err := s.db.ExecContext(ctx, `
 			UPDATE rules SET enabled = ?, automation_mode = ?, config = ?, updated_at = ?
 			WHERE id = ?
-		`, enabled, re.AutomationMode, configStr, now, re.ID)
+		`, enabled, automationMode, configStr, now, re.ID)
 		if err != nil {
 			return nil, fmt.Errorf("updating rule %q: %w", re.ID, err)
 		}
@@ -563,15 +569,12 @@ func (s *Service) importPayload(ctx context.Context, payload *Payload, opts Impo
 
 	// Import scraper configurations: upsert by scope. Always generate a new ID
 	// on insert; ON CONFLICT(scope) preserves the existing row's ID on update.
+	// Both config_json and overrides_json must be JSON objects; non-object values
+	// (null, array, string) are coerced to "{}" to prevent unmarshal errors in
+	// scraper.Service.
 	for _, sce := range payload.ScraperConfigs {
-		configStr := "{}"
-		if len(sce.ConfigJSON) > 0 {
-			configStr = string(sce.ConfigJSON)
-		}
-		overridesStr := "{}"
-		if len(sce.OverridesJSON) > 0 {
-			overridesStr = string(sce.OverridesJSON)
-		}
+		configStr := normalizeJSONObject(sce.ConfigJSON)
+		overridesStr := normalizeJSONObject(sce.OverridesJSON)
 		_, err := s.db.ExecContext(ctx, `
 			INSERT INTO scraper_config (id, scope, config_json, overrides_json, created_at, updated_at)
 			VALUES (lower(hex(randomblob(16))), ?, ?, ?, ?, ?)
@@ -624,30 +627,48 @@ func (s *Service) importPayload(ctx context.Context, payload *Payload, opts Impo
 
 	// Import user preferences: upsert by (user_id, key).
 	// Preferences referencing unknown users are skipped with a warning.
-	for _, up := range payload.UserPreferences {
-		var exists bool
-		if err := s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM users WHERE id = ?)`, up.UserID).Scan(&exists); err != nil {
-			return nil, fmt.Errorf("checking user for preference: %w", err)
-		}
-		if !exists {
-			result.Warnings = append(result.Warnings,
-				fmt.Sprintf("skipped preference %q for unknown user %q", up.Key, up.UserID))
-			continue
-		}
-		_, err := s.db.ExecContext(ctx, `
-			INSERT INTO user_preferences (user_id, key, value, updated_at)
-			VALUES (?, ?, ?, ?)
-			ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
-		`, up.UserID, up.Key, up.Value, now)
+	// Preload existing user IDs once to avoid an N+1 query per preference.
+	if len(payload.UserPreferences) > 0 {
+		existingUsers := make(map[string]bool)
+		rows, err := s.db.QueryContext(ctx, `SELECT id FROM users`)
 		if err != nil {
-			return nil, fmt.Errorf("upserting preference %q for user %q: %w", up.Key, up.UserID, err)
+			return nil, fmt.Errorf("loading user IDs for preference import: %w", err)
 		}
-		result.UserPreferences++
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err != nil {
+				rows.Close() //nolint:errcheck
+				return nil, fmt.Errorf("scanning user id: %w", err)
+			}
+			existingUsers[id] = true
+		}
+		rows.Close() //nolint:errcheck
+		if err := rows.Err(); err != nil {
+			return nil, fmt.Errorf("iterating user IDs: %w", err)
+		}
+
+		for _, up := range payload.UserPreferences {
+			if !existingUsers[up.UserID] {
+				result.Warnings = append(result.Warnings,
+					fmt.Sprintf("skipped preference %q for unknown user %q", up.Key, up.UserID))
+				continue
+			}
+			_, err := s.db.ExecContext(ctx, `
+				INSERT INTO user_preferences (user_id, key, value, updated_at)
+				VALUES (?, ?, ?, ?)
+				ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+			`, up.UserID, up.Key, up.Value, now)
+			if err != nil {
+				return nil, fmt.Errorf("upserting preference %q for user %q: %w", up.Key, up.UserID, err)
+			}
+			result.UserPreferences++
+		}
 	}
 
 	// Import invites (optional): only unredeemed invites are exported/imported.
 	// Invites whose creator (created_by) does not exist in the target DB are
 	// skipped with a warning to avoid foreign key constraint violations.
+	// INSERT OR IGNORE handles conflicts on both the id and code unique constraints.
 	if opts.ImportInvites && len(payload.Invites) > 0 {
 		for _, ie := range payload.Invites {
 			var creatorExists bool
@@ -660,9 +681,8 @@ func (s *Service) importPayload(ctx context.Context, payload *Payload, opts Impo
 				continue
 			}
 			res, err := s.db.ExecContext(ctx, `
-				INSERT INTO invites (id, code, role, created_by, expires_at, created_at)
+				INSERT OR IGNORE INTO invites (id, code, role, created_by, expires_at, created_at)
 				VALUES (?, ?, ?, ?, ?, ?)
-				ON CONFLICT(id) DO NOTHING
 			`, ie.ID, ie.Code, ie.Role, ie.CreatedBy, ie.ExpiresAt, ie.CreatedAt)
 			if err != nil {
 				return nil, fmt.Errorf("importing invite %q: %w", ie.ID, err)
@@ -675,6 +695,25 @@ func (s *Service) importPayload(ctx context.Context, payload *Payload, opts Impo
 	}
 
 	return result, nil
+}
+
+// normalizeJSONObject ensures raw is a valid JSON object string.
+// If raw is nil, empty, or not a JSON object (e.g. null, array, string),
+// it returns "{}". This prevents unmarshal failures in services that expect
+// an object at the destination column.
+func normalizeJSONObject(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return "{}"
+	}
+	// Trim whitespace to check the opening character
+	trimmed := raw
+	for len(trimmed) > 0 && (trimmed[0] == ' ' || trimmed[0] == '\t' || trimmed[0] == '\n' || trimmed[0] == '\r') {
+		trimmed = trimmed[1:]
+	}
+	if len(trimmed) == 0 || trimmed[0] != '{' {
+		return "{}"
+	}
+	return string(raw)
 }
 
 // deriveKey uses PBKDF2-SHA256 to derive a 32-byte AES-256 key from a

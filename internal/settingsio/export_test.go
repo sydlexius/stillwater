@@ -156,7 +156,9 @@ func TestRoundTrip(t *testing.T) {
 
 	// Seed some test data
 	now := time.Now().UTC().Format(time.RFC3339)
-	db.ExecContext(ctx, `INSERT INTO settings (key, value, updated_at) VALUES ('test.key', 'test.value', ?)`, now)
+	if _, err := db.ExecContext(ctx, `INSERT INTO settings (key, value, updated_at) VALUES ('test.key', 'test.value', ?)`, now); err != nil {
+		t.Fatalf("seeding setting: %v", err)
+	}
 
 	c := &connection.Connection{
 		Name:    "Test Emby",
@@ -193,16 +195,20 @@ func TestRoundTrip(t *testing.T) {
 	}
 
 	// Seed a rule
-	db.ExecContext(ctx, `
+	if _, err := db.ExecContext(ctx, `
 		INSERT INTO rules (id, name, description, category, enabled, automation_mode, config, created_at, updated_at)
 		VALUES ('thumb_exists', 'Thumb exists', 'Test rule', 'image', 0, 'manual', '{"severity":"warning"}', ?, ?)
-	`, now, now)
+	`, now, now); err != nil {
+		t.Fatalf("seeding rule: %v", err)
+	}
 
 	// Seed a scraper config
-	db.ExecContext(ctx, `
+	if _, err := db.ExecContext(ctx, `
 		INSERT INTO scraper_config (id, scope, config_json, overrides_json, created_at, updated_at)
 		VALUES ('sc-1', 'global', '{"fields":[]}', '{}', ?, ?)
-	`, now, now)
+	`, now, now); err != nil {
+		t.Fatalf("seeding scraper config: %v", err)
+	}
 
 	// Export with passphrase
 	svc := NewService(db, provSettings, connSvc, platSvc, whSvc)
@@ -228,10 +234,12 @@ func TestRoundTrip(t *testing.T) {
 	svc2 := NewService(db2, provSettings2, connSvc2, platSvc2, whSvc2)
 
 	// Seed rules in db2 so the update finds them
-	db2.ExecContext(ctx, `
+	if _, err := db2.ExecContext(ctx, `
 		INSERT INTO rules (id, name, description, category, enabled, automation_mode, config, created_at, updated_at)
 		VALUES ('thumb_exists', 'Thumb exists', 'Test rule', 'image', 1, 'auto', '{}', ?, ?)
-	`, now, now)
+	`, now, now); err != nil {
+		t.Fatalf("seeding rule in db2: %v", err)
+	}
 
 	// Import with the same passphrase
 	result, err := svc2.Import(ctx, envelope, passphrase)
@@ -260,7 +268,9 @@ func TestRoundTrip(t *testing.T) {
 
 	// Verify imported data
 	var testVal string
-	db2.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = 'test.key'`).Scan(&testVal)
+	if err := db2.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = 'test.key'`).Scan(&testVal); err != nil {
+		t.Fatalf("querying imported setting: %v", err)
+	}
 	if testVal != "test.value" {
 		t.Errorf("expected test.value, got %s", testVal)
 	}
@@ -301,22 +311,28 @@ func TestRoundTrip_WithUsersAndInvites(t *testing.T) {
 	future := time.Now().UTC().Add(24 * time.Hour).Format(time.RFC3339)
 
 	// Seed a user (with bootstrap admin)
-	db.ExecContext(ctx, `
+	if _, err := db.ExecContext(ctx, `
 		INSERT INTO users (id, username, display_name, password_hash, role, auth_provider,
 		                   provider_id, is_active, is_protected, created_at, updated_at)
 		VALUES ('u1', 'admin', 'Admin User', 'hash', 'administrator', 'local', '', 1, 1, ?, ?)
-	`, now, now)
+	`, now, now); err != nil {
+		t.Fatalf("seeding user: %v", err)
+	}
 
 	// Seed user preferences
-	db.ExecContext(ctx, `
+	if _, err := db.ExecContext(ctx, `
 		INSERT INTO user_preferences (user_id, key, value, updated_at) VALUES ('u1', 'theme', 'dark', ?)
-	`, now)
+	`, now); err != nil {
+		t.Fatalf("seeding user preference: %v", err)
+	}
 
 	// Seed an unredeemed invite (created_by references existing user)
-	db.ExecContext(ctx, `
+	if _, err := db.ExecContext(ctx, `
 		INSERT INTO invites (id, code, role, created_by, expires_at, created_at)
 		VALUES ('inv1', 'sw_inv_abc123', 'operator', 'u1', ?, ?)
-	`, future, now)
+	`, future, now); err != nil {
+		t.Fatalf("seeding invite: %v", err)
+	}
 
 	svc := NewService(db, provSettings, connSvc, platSvc, whSvc)
 	passphrase := "test-users-passphrase"
@@ -381,10 +397,12 @@ func TestImport_Rules_SkipsUnknownIDs(t *testing.T) {
 
 	now := time.Now().UTC().Format(time.RFC3339)
 	// Seed one known rule
-	db.ExecContext(ctx, `
+	if _, err := db.ExecContext(ctx, `
 		INSERT INTO rules (id, name, description, category, enabled, automation_mode, config, created_at, updated_at)
 		VALUES ('known_rule', 'Known Rule', 'desc', 'nfo', 1, 'auto', '{}', ?, ?)
-	`, now, now)
+	`, now, now); err != nil {
+		t.Fatalf("seeding rule: %v", err)
+	}
 
 	// Build a payload with one known and one unknown rule ID
 	payload := Payload{
@@ -415,7 +433,9 @@ func TestImport_Rules_SkipsUnknownIDs(t *testing.T) {
 
 	// Verify the known rule was updated
 	var enabled int
-	db.QueryRowContext(ctx, `SELECT enabled FROM rules WHERE id = 'known_rule'`).Scan(&enabled)
+	if err := db.QueryRowContext(ctx, `SELECT enabled FROM rules WHERE id = 'known_rule'`).Scan(&enabled); err != nil {
+		t.Fatalf("query known_rule enabled: %v", err)
+	}
 	if enabled != 0 {
 		t.Errorf("expected known_rule enabled=0, got %d", enabled)
 	}
@@ -430,10 +450,12 @@ func TestImport_ScraperConfigs_Upsert(t *testing.T) {
 
 	now := time.Now().UTC().Format(time.RFC3339)
 	// Seed an existing scraper config
-	db.ExecContext(ctx, `
+	if _, err := db.ExecContext(ctx, `
 		INSERT INTO scraper_config (id, scope, config_json, overrides_json, created_at, updated_at)
 		VALUES ('sc-existing', 'global', '{"old":true}', '{}', ?, ?)
-	`, now, now)
+	`, now, now); err != nil {
+		t.Fatalf("seeding scraper config: %v", err)
+	}
 
 	newConfig := json.RawMessage(`{"fields":[{"field":"biography","enabled":true}]}`)
 	payload := Payload{
@@ -489,11 +511,13 @@ func TestImport_UserPreferences_SkipsUnknownUsers(t *testing.T) {
 
 	now := time.Now().UTC().Format(time.RFC3339)
 	// Create one user
-	db.ExecContext(ctx, `
+	if _, err := db.ExecContext(ctx, `
 		INSERT INTO users (id, username, display_name, password_hash, role, auth_provider,
 		                   provider_id, is_active, is_protected, created_at, updated_at)
 		VALUES ('u1', 'user1', 'User One', '', 'operator', 'local', '', 1, 0, ?, ?)
-	`, now, now)
+	`, now, now); err != nil {
+		t.Fatalf("seeding user: %v", err)
+	}
 
 	payload := Payload{
 		Settings:     map[string]string{},
@@ -677,6 +701,138 @@ func TestEnvelope_JSON(t *testing.T) {
 	}
 	if decoded.Salt != "c29tZS1zYWx0" {
 		t.Errorf("expected salt preserved, got %s", decoded.Salt)
+	}
+}
+
+func TestNormalizeJSONObject(t *testing.T) {
+	cases := []struct {
+		input json.RawMessage
+		want  string
+	}{
+		{nil, "{}"},
+		{json.RawMessage(""), "{}"},
+		{json.RawMessage("null"), "{}"},
+		{json.RawMessage(`"string"`), "{}"},
+		{json.RawMessage(`[1,2,3]`), "{}"},
+		{json.RawMessage(`{"key":"value"}`), `{"key":"value"}`},
+		{json.RawMessage(`{}`), `{}`},
+		// Whitespace-prefixed object
+		{json.RawMessage("  {\"a\":1}"), "  {\"a\":1}"},
+	}
+	for _, tc := range cases {
+		got := normalizeJSONObject(tc.input)
+		if got != tc.want {
+			t.Errorf("normalizeJSONObject(%q) = %q, want %q", string(tc.input), got, tc.want)
+		}
+	}
+}
+
+func TestImport_Rules_InvalidAutomationMode(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := context.Background()
+
+	provSettings, connSvc, platSvc, whSvc := newTestServices(t, db)
+	svc := NewService(db, provSettings, connSvc, platSvc, whSvc)
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO rules (id, name, description, category, enabled, automation_mode, config, created_at, updated_at)
+		VALUES ('rule1', 'Rule 1', '', 'nfo', 1, 'auto', '{}', ?, ?)
+	`, now, now); err != nil {
+		t.Fatalf("seeding rule: %v", err)
+	}
+
+	// Payload contains an invalid automation_mode
+	payload := Payload{
+		Settings:     map[string]string{},
+		ProviderKeys: map[string]string{},
+		Rules: []RuleExport{
+			{ID: "rule1", Enabled: true, AutomationMode: "invalid_mode", Config: json.RawMessage(`{}`)},
+		},
+	}
+
+	passphrase := "test-automode"
+	data, salt, err := encryptWithPassphrase(mustMarshal(t, payload), passphrase)
+	if err != nil {
+		t.Fatalf("encrypt: %v", err)
+	}
+	env := &Envelope{Version: currentVersion, Salt: salt, Data: data}
+
+	result, err := svc.Import(ctx, env, passphrase)
+	if err != nil {
+		t.Fatalf("Import: %v", err)
+	}
+	if result.Rules != 1 {
+		t.Errorf("expected rule to be updated, got %d", result.Rules)
+	}
+
+	// Verify the mode was coerced to "manual"
+	var mode string
+	if err := db.QueryRowContext(ctx, `SELECT automation_mode FROM rules WHERE id = 'rule1'`).Scan(&mode); err != nil {
+		t.Fatalf("querying rule: %v", err)
+	}
+	if mode != "manual" {
+		t.Errorf("expected automation_mode coerced to 'manual', got %q", mode)
+	}
+}
+
+func TestImport_Invites_DuplicateCode(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := context.Background()
+
+	provSettings, connSvc, platSvc, whSvc := newTestServices(t, db)
+	svc := NewService(db, provSettings, connSvc, platSvc, whSvc)
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	future := time.Now().UTC().Add(24 * time.Hour).Format(time.RFC3339)
+
+	// Seed creator user and an existing invite with the same code
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO users (id, username, display_name, password_hash, role, auth_provider,
+		                   provider_id, is_active, is_protected, created_at, updated_at)
+		VALUES ('u1', 'admin', 'Admin', '', 'administrator', 'local', '', 1, 1, ?, ?)
+	`, now, now); err != nil {
+		t.Fatalf("seeding user: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO invites (id, code, role, created_by, expires_at, created_at)
+		VALUES ('existing-id', 'sw_inv_dupe', 'operator', 'u1', ?, ?)
+	`, future, now); err != nil {
+		t.Fatalf("seeding invite: %v", err)
+	}
+
+	// Payload contains a different id but same code
+	payload := Payload{
+		Settings:     map[string]string{},
+		ProviderKeys: map[string]string{},
+		Users: []UserExport{
+			{ID: "u1", Username: "admin", DisplayName: "Admin", Role: "administrator", AuthProvider: "local", IsActive: true, IsProtected: true, CreatedAt: now},
+		},
+		Invites: []InviteExport{
+			{ID: "new-id", Code: "sw_inv_dupe", Role: "operator", CreatedBy: "u1", ExpiresAt: future, CreatedAt: now},
+		},
+	}
+
+	passphrase := "test-dupecode"
+	data, salt, err := encryptWithPassphrase(mustMarshal(t, payload), passphrase)
+	if err != nil {
+		t.Fatalf("encrypt: %v", err)
+	}
+	env := &Envelope{Version: currentVersion, Salt: salt, Data: data}
+
+	// Should not error even though the code already exists
+	_, err = svc.ImportWithOptions(ctx, env, passphrase, ImportOptions{ImportUsers: true, ImportInvites: true})
+	if err != nil {
+		t.Fatalf("ImportWithOptions unexpectedly failed on duplicate code: %v", err)
+	}
+
+	// Original invite should still exist; the duplicate was silently ignored
+	var count int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM invites WHERE code = 'sw_inv_dupe'`).Scan(&count); err != nil {
+		t.Fatalf("querying invite count: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("expected 1 invite with code sw_inv_dupe, got %d", count)
 	}
 }
 
