@@ -17,6 +17,7 @@ type AssetPaths struct {
 	PreferencesJS  string
 	SidebarJS      string
 	FilterFlyoutJS string
+	SSEJS          string
 	LoginBG        string
 	// BasePath is the server.base_path prefix (e.g. "/stillwater"). Empty string
 	// when the app is deployed at the root. Never has a trailing slash.
@@ -736,6 +737,7 @@ templ Layout(title string, assets AssetPaths) {
 					}
 				});
 			</script>
+			<script src={ assets.SSEJS }></script>
 		</body>
 	</html>
 }
