@@ -170,7 +170,7 @@ func (r *Router) handleSettingsImport(w http.ResponseWriter, req *http.Request) 
 				html.EscapeString(warning),
 			)
 		}
-		w.Write([]byte(frag)) //nolint:errcheck
+		w.Write([]byte(frag)) //nolint:errcheck,gosec // G705: all format args are integers or HTML-escaped strings
 		return
 	}
 

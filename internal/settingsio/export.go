@@ -315,8 +315,18 @@ func (s *Service) ExportWithOptions(ctx context.Context, passphrase string, opts
 		if err := scraperRows.Scan(&sce.Scope, &configStr, &overridesStr); err != nil {
 			return nil, fmt.Errorf("scanning scraper config: %w", err)
 		}
-		sce.ConfigJSON = json.RawMessage(configStr)
-		sce.OverridesJSON = json.RawMessage(overridesStr)
+		// Guard against corrupted scraper config JSON; fall back to "{}" so the
+		// export succeeds and json.Marshal(payload) doesn't fail on invalid JSON.
+		if json.Valid([]byte(configStr)) {
+			sce.ConfigJSON = json.RawMessage(configStr)
+		} else {
+			sce.ConfigJSON = json.RawMessage("{}")
+		}
+		if json.Valid([]byte(overridesStr)) {
+			sce.OverridesJSON = json.RawMessage(overridesStr)
+		} else {
+			sce.OverridesJSON = json.RawMessage("{}")
+		}
 		payload.ScraperConfigs = append(payload.ScraperConfigs, sce)
 	}
 	if err := scraperRows.Err(); err != nil {
@@ -568,7 +578,7 @@ func (s *Service) importPayload(ctx context.Context, payload *Payload, opts Impo
 	// Rules are seeded by the server; unrecognized rule IDs are skipped with no error.
 	for _, re := range payload.Rules {
 		configStr := "{}"
-		if len(re.Config) > 0 {
+		if len(re.Config) > 0 && json.Valid([]byte(re.Config)) {
 			configStr = string(re.Config)
 		}
 		enabled := 0
@@ -727,13 +737,27 @@ func (s *Service) importPayload(ctx context.Context, payload *Payload, opts Impo
 	// Invites whose creator (created_by) does not exist in the target DB are
 	// skipped with a warning to avoid foreign key constraint violations.
 	// INSERT OR IGNORE handles conflicts on both the id and code unique constraints.
+	// User IDs are preloaded once to avoid an N+1 query per invite.
 	if opts.ImportInvites && len(payload.Invites) > 0 {
-		for _, ie := range payload.Invites {
-			var creatorExists bool
-			if err := s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM users WHERE id = ?)`, ie.CreatedBy).Scan(&creatorExists); err != nil {
-				return nil, fmt.Errorf("checking creator for invite %q: %w", ie.ID, err)
+		inviteUserIDs := make(map[string]bool)
+		invUserRows, err := s.db.QueryContext(ctx, `SELECT id FROM users`)
+		if err != nil {
+			return nil, fmt.Errorf("loading user IDs for invite import: %w", err)
+		}
+		defer invUserRows.Close() //nolint:errcheck
+		for invUserRows.Next() {
+			var id string
+			if err := invUserRows.Scan(&id); err != nil {
+				return nil, fmt.Errorf("scanning user id for invite import: %w", err)
 			}
-			if !creatorExists {
+			inviteUserIDs[id] = true
+		}
+		if err := invUserRows.Err(); err != nil {
+			return nil, fmt.Errorf("iterating user IDs for invite import: %w", err)
+		}
+
+		for _, ie := range payload.Invites {
+			if !inviteUserIDs[ie.CreatedBy] {
 				result.Warnings = append(result.Warnings,
 					fmt.Sprintf("skipped invite %q: creator user %q not found", ie.ID, ie.CreatedBy))
 				continue
