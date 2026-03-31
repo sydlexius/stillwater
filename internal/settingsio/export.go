@@ -630,26 +630,11 @@ func (s *Service) importPayload(ctx context.Context, payload *Payload, opts Impo
 	// Imported users must authenticate via federated auth or use password reset.
 	// Users are imported before preferences so foreign key checks succeed.
 	if opts.ImportUsers && len(payload.Users) > 0 {
-		result.Warnings = append(result.Warnings,
-			"imported users have empty password hashes; accounts must use federated auth or password reset")
-
 		// Preload IDs that will exist after this import pass so that invited_by
 		// references can be validated before inserting each user.
-		importedIDs := make(map[string]bool)
-		existingIDRows, err := s.db.QueryContext(ctx, `SELECT id FROM users`)
+		importedIDs, err := s.loadUserIDs(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("loading existing user IDs: %w", err)
-		}
-		defer existingIDRows.Close() //nolint:errcheck
-		for existingIDRows.Next() {
-			var id string
-			if err := existingIDRows.Scan(&id); err != nil {
-				return nil, fmt.Errorf("scanning existing user id: %w", err)
-			}
-			importedIDs[id] = true
-		}
-		if err := existingIDRows.Err(); err != nil {
-			return nil, fmt.Errorf("iterating existing user IDs: %w", err)
 		}
 		// Also mark the IDs that will be imported in this batch so invited_by
 		// forward-references within the same export are resolved correctly.
@@ -692,31 +677,30 @@ func (s *Service) importPayload(ctx context.Context, payload *Payload, opts Impo
 					fmt.Sprintf("skipped user %q: conflicts with an existing user on target instance", ue.Username))
 			}
 		}
+		if result.Users > 0 {
+			result.Warnings = append(result.Warnings,
+				"imported users have empty password hashes; accounts must use federated auth or password reset")
+		}
+	}
+
+	// Preload user IDs once for preference and invite import. This query runs
+	// after user import so newly inserted users are included in the set.
+	var userIDs map[string]bool
+	needUserIDs := len(payload.UserPreferences) > 0 ||
+		(opts.ImportInvites && len(payload.Invites) > 0)
+	if needUserIDs {
+		var err error
+		userIDs, err = s.loadUserIDs(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("loading user IDs for preference/invite import: %w", err)
+		}
 	}
 
 	// Import user preferences: upsert by (user_id, key).
 	// Preferences referencing unknown users are skipped with a warning.
-	// Preload existing user IDs once to avoid an N+1 query per preference.
 	if len(payload.UserPreferences) > 0 {
-		existingUsers := make(map[string]bool)
-		rows, err := s.db.QueryContext(ctx, `SELECT id FROM users`)
-		if err != nil {
-			return nil, fmt.Errorf("loading user IDs for preference import: %w", err)
-		}
-		defer rows.Close() //nolint:errcheck
-		for rows.Next() {
-			var id string
-			if err := rows.Scan(&id); err != nil {
-				return nil, fmt.Errorf("scanning user id: %w", err)
-			}
-			existingUsers[id] = true
-		}
-		if err := rows.Err(); err != nil {
-			return nil, fmt.Errorf("iterating user IDs: %w", err)
-		}
-
 		for _, up := range payload.UserPreferences {
-			if !existingUsers[up.UserID] {
+			if !userIDs[up.UserID] {
 				result.Warnings = append(result.Warnings,
 					fmt.Sprintf("skipped preference %q for unknown user %q", up.Key, up.UserID))
 				continue
@@ -737,27 +721,9 @@ func (s *Service) importPayload(ctx context.Context, payload *Payload, opts Impo
 	// Invites whose creator (created_by) does not exist in the target DB are
 	// skipped with a warning to avoid foreign key constraint violations.
 	// INSERT OR IGNORE handles conflicts on both the id and code unique constraints.
-	// User IDs are preloaded once to avoid an N+1 query per invite.
 	if opts.ImportInvites && len(payload.Invites) > 0 {
-		inviteUserIDs := make(map[string]bool)
-		invUserRows, err := s.db.QueryContext(ctx, `SELECT id FROM users`)
-		if err != nil {
-			return nil, fmt.Errorf("loading user IDs for invite import: %w", err)
-		}
-		defer invUserRows.Close() //nolint:errcheck
-		for invUserRows.Next() {
-			var id string
-			if err := invUserRows.Scan(&id); err != nil {
-				return nil, fmt.Errorf("scanning user id for invite import: %w", err)
-			}
-			inviteUserIDs[id] = true
-		}
-		if err := invUserRows.Err(); err != nil {
-			return nil, fmt.Errorf("iterating user IDs for invite import: %w", err)
-		}
-
 		for _, ie := range payload.Invites {
-			if !inviteUserIDs[ie.CreatedBy] {
+			if !userIDs[ie.CreatedBy] {
 				result.Warnings = append(result.Warnings,
 					fmt.Sprintf("skipped invite %q: creator user %q not found", ie.ID, ie.CreatedBy))
 				continue
@@ -777,6 +743,27 @@ func (s *Service) importPayload(ctx context.Context, payload *Payload, opts Impo
 	}
 
 	return result, nil
+}
+
+// loadUserIDs returns a set of all user IDs currently in the database.
+func (s *Service) loadUserIDs(ctx context.Context) (map[string]bool, error) {
+	ids := make(map[string]bool)
+	rows, err := s.db.QueryContext(ctx, `SELECT id FROM users`)
+	if err != nil {
+		return nil, fmt.Errorf("querying user IDs: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scanning user id: %w", err)
+		}
+		ids[id] = true
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating user IDs: %w", err)
+	}
+	return ids, nil
 }
 
 // normalizeJSONObject ensures raw is a syntactically valid JSON object string.
