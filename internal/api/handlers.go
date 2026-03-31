@@ -1189,6 +1189,8 @@ func (r *Router) handleOnboardingPage(w http.ResponseWriter, req *http.Request) 
 	userAuthProvider := ""
 	if err == nil && user != nil {
 		userAuthProvider = user.AuthProvider
+	} else if err != nil {
+		r.logger.Warn("failed to lookup user for onboarding auth provider auto-select", "user_id", userID, "error", err)
 	}
 
 	data := templates.OnboardingData{

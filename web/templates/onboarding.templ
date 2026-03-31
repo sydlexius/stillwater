@@ -211,9 +211,7 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 											<option value="regular">Regular</option>
 											<option value="classical">Classical</option>
 										</select>
-										<p id="ob-library-type-help" class="text-xs text-gray-500 dark:text-gray-400 hidden">
-											Classical: Composer-centric directory scanning with special handling for classical music directory structures.
-										</p>
+										<p id="ob-library-type-help" class="text-xs text-gray-500 dark:text-gray-400" aria-live="polite"></p>
 									</div>
 								</div>
 								<div class="flex gap-2">
@@ -627,15 +625,12 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 				}
 
 				function syncLibraryTypeHelpText() {
-					var selectEl = document.querySelector('[name="type"]');
+					var selectEl = document.querySelector('#ob-library-form select[name="type"]');
 					var helpEl = document.getElementById('ob-library-type-help');
 					if (selectEl && helpEl) {
-						var isClassical = selectEl.value === 'classical';
-						if (isClassical) {
-							helpEl.classList.remove('hidden');
-						} else {
-							helpEl.classList.add('hidden');
-						}
+						helpEl.textContent = selectEl.value === 'classical'
+							? 'Classical: For libraries that primarily contain classical music. Affects labeling; advanced classical features are planned for a future release.'
+							: 'Regular: Standard artist-centric library. Use this for most music collections.';
 					}
 				}
 
