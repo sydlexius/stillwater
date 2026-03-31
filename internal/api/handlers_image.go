@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -151,11 +152,7 @@ func (r *Router) handleImageUpload(w http.ResponseWriter, req *http.Request) {
 			geo := img.CheckGeometry(w2, h2, imageType)
 			if geo.NeedsCrop {
 				encoded := base64.StdEncoding.EncodeToString(data)
-				ct2 := ct
-				if ct2 == "image/webp" {
-					ct2 = "image/png"
-				}
-				dataURI := "data:" + ct2 + ";base64," + encoded
+				dataURI := "data:" + ct + ";base64," + encoded
 				writeJSON(w, http.StatusOK, map[string]any{
 					"status":         "needs_crop",
 					"needs_crop":     true,
@@ -308,6 +305,8 @@ func (r *Router) handleImageFetch(w http.ResponseWriter, req *http.Request) {
 				mimeType := "image/jpeg"
 				if format == img.FormatPNG {
 					mimeType = "image/png"
+				} else if format == img.FormatWebP {
+					mimeType = "image/webp"
 				}
 				encoded := base64.StdEncoding.EncodeToString(data)
 				dataURI := "data:" + mimeType + ";base64," + encoded
@@ -1966,7 +1965,12 @@ func (r *Router) handleRandomBackdrop(w http.ResponseWriter, req *http.Request) 
 		 WHERE image_type = 'fanart' AND slot_index = 0 AND exists_flag = 1
 		 ORDER BY RANDOM() LIMIT 1`).Scan(&artistID)
 	if err != nil {
-		// No artists with fanart -- return a transparent 1x1 PNG placeholder.
+		if !errors.Is(err, sql.ErrNoRows) {
+			r.logger.Error("random backdrop query failed", slog.String("error", err.Error()))
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+		// No artists with fanart found; return 404 Not Found.
 		http.NotFound(w, req)
 		return
 	}

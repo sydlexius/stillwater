@@ -208,7 +208,7 @@ var defaultRules = []Rule{
 	{
 		ID:             RuleBackdropMinCount,
 		Name:           "Minimum backdrop count",
-		Description:    "Flags artists with fewer backdrops than the configured minimum. The auto-fixer fetches additional backdrops from providers, skipping duplicates via perceptual hash comparison.",
+		Description:    "Flags artists with fewer backdrops than the configured minimum. This rule is detection-only; resolving violations requires manual upload or multiple evaluation passes.",
 		Category:       "image",
 		Enabled:        false,
 		AutomationMode: AutomationModeManual,

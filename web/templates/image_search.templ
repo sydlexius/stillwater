@@ -50,7 +50,8 @@ templ ImageSearchPage(assets AssetPaths, data ImageSearchData) {
 			<script>
 				var _cropper = null;
 				var _currentRatio = NaN;
-				function openCropModal(imgSrc, imageType) {
+				var _pendingRatio = NaN;
+				function openCropModal(imgSrc, imageType, initialRatio) {
 					var modal = document.getElementById('crop-modal');
 					var cropImage = document.getElementById('crop-image');
 					var cropType = document.getElementById('crop-type');
@@ -60,12 +61,19 @@ templ ImageSearchPage(assets AssetPaths, data ImageSearchData) {
 					if (imageType) cropType.value = imageType;
 					modal.classList.remove('hidden');
 					_currentRatio = NaN;
+					_pendingRatio = (initialRatio && initialRatio > 0) ? initialRatio : NaN;
 					if (lockCb) lockCb.checked = false;
 					cropImage.onload = function() {
 						if (_cropper) _cropper.destroy();
 						_cropper = new Cropper(cropImage, {
 							viewMode: 1,
 							autoCropArea: 0.8,
+							ready: function() {
+								if (!isNaN(_pendingRatio)) {
+									setCropRatio(_pendingRatio);
+									_pendingRatio = NaN;
+								}
+							}
 						});
 						window._cropper = _cropper;
 					};
@@ -390,15 +398,9 @@ templ imageSearchContextualized(data ImageSearchData) {
 					if (typeof openCropModal !== 'function') return;
 					var cropType = document.getElementById('crop-type');
 					if (cropType) cropType.value = data.type;
-					openCropModal(data.image_data, data.type);
-					// Lock the aspect ratio to the required value after the
-					// cropper finishes initializing (onload fires asynchronously).
-					var ratio = data.required_ratio;
-					if (ratio && ratio > 0) {
-						setTimeout(function() {
-							if (typeof setCropRatio === 'function') setCropRatio(ratio);
-						}, 300);
-					}
+					// Pass the required ratio so the Cropper ready callback
+					// applies it reliably instead of a timing-dependent setTimeout.
+					openCropModal(data.image_data, data.type, data.required_ratio);
 					setStatus('Image needs cropping to match the ' + data.type + ' aspect ratio.', 'text-amber-600');
 				}
 

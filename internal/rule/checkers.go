@@ -1295,7 +1295,7 @@ func (e *Engine) countBackdropsFromDB(artistID string) int {
 	}
 	var count int
 	err := e.db.QueryRowContext(context.Background(),
-		`SELECT COUNT(*) FROM artist_images WHERE artist_id = ? AND image_type = 'fanart'`,
+		`SELECT COUNT(*) FROM artist_images WHERE artist_id = ? AND image_type = 'fanart' AND exists_flag = 1`,
 		artistID).Scan(&count)
 	if err != nil {
 		return 0
