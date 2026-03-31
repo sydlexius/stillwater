@@ -3,9 +3,20 @@ package api
 import (
 	"bytes"
 	"context"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
+	"github.com/sydlexius/stillwater/internal/auth"
+	"github.com/sydlexius/stillwater/internal/connection"
+	"github.com/sydlexius/stillwater/internal/database"
+	"github.com/sydlexius/stillwater/internal/encryption"
+	"github.com/sydlexius/stillwater/internal/library"
+	"github.com/sydlexius/stillwater/internal/platform"
+	"github.com/sydlexius/stillwater/internal/provider"
 	"github.com/sydlexius/stillwater/web/templates"
 	"golang.org/x/net/html"
 )
@@ -283,8 +294,6 @@ func TestLayoutContentArea_ContainsMainLandmark(t *testing.T) {
 // TestLayout_AssetPathsWithBasePath verifies that asset paths are correctly
 // prefixed with the BasePath when rendering.
 func TestLayout_AssetPathsWithBasePath(t *testing.T) {
-	t.Helper()
-
 	basePath := "/my-app"
 	assets := templates.AssetPaths{
 		BasePath:       basePath,
@@ -391,5 +400,95 @@ func TestLayout_RendersWithoutHandlerContext(t *testing.T) {
 	}
 	if !strings.Contains(htmlContent, "id=\"sw-main-content\"") {
 		t.Error("layout missing main content element")
+	}
+}
+
+// TestRootRoute_RendersLayout_WithSidebar verifies that GET / returns a 200
+// status code and renders the layout with the sidebar landmark (id="sw-sidebar").
+// This is an integration test that uses the real app router and handler registration.
+func TestRootRoute_RendersLayout_WithSidebar(t *testing.T) {
+	// Set up test database and services
+	db, err := database.Open(":memory:")
+	if err != nil {
+		t.Fatalf("opening test db: %v", err)
+	}
+	if err := database.Migrate(db); err != nil {
+		t.Fatalf("running migrations: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+
+	enc, _, err := encryption.NewEncryptor("")
+	if err != nil {
+		t.Fatalf("creating encryptor: %v", err)
+	}
+
+	// Create router with all necessary services
+	r := NewRouter(RouterDeps{
+		AuthService:       auth.NewService(db),
+		PlatformService:   platform.NewService(db),
+		ProviderSettings:  provider.NewSettingsService(db, enc),
+		ConnectionService: connection.NewService(db, enc),
+		LibraryService:    library.NewService(db),
+		DB:                db,
+		Logger:            logger,
+		StaticDir:         "../../web/static",
+	})
+
+	// Create a test user and session
+	ctx := context.Background()
+	user, err := r.authService.CreateLocalUser(ctx, "testuser", "password123", "Test User", "administrator", "")
+	if err != nil {
+		t.Fatalf("CreateLocalUser: %v", err)
+	}
+
+	token, err := r.authService.CreateSession(ctx, user.ID)
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+
+	// Mark onboarding as completed so the handler renders the index page
+	_, err = db.ExecContext(ctx,
+		`INSERT INTO settings (key, value) VALUES ('onboarding.completed', 'true')`)
+	if err != nil {
+		t.Fatalf("setting onboarding.completed: %v", err)
+	}
+
+	// Get the HTTP handler/mux
+	mux := r.Handler(ctx)
+
+	// Make HTTP GET request to /
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.AddCookie(&http.Cookie{Name: "session", Value: token})
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	// Verify status code is 200
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	responseBody := w.Body.String()
+
+	// Verify response contains sidebar element with correct ID
+	if !strings.Contains(responseBody, "id=\"sw-sidebar\"") {
+		t.Error("response missing sidebar element with id='sw-sidebar'")
+	}
+
+	// Verify response contains main content element with correct ID
+	if !strings.Contains(responseBody, "id=\"sw-main-content\"") {
+		t.Error("response missing main content element with id='sw-main-content'")
+	}
+
+	// Verify old navbar HTML identifiers are not present
+	// (old navigation used <nav> without sw-sidebar id)
+	if strings.Contains(responseBody, "id=\"navbar\"") || strings.Contains(responseBody, "id=\"nav-") {
+		t.Error("response contains old navbar HTML identifiers (navbar should use id='sw-sidebar')")
+	}
+
+	// Verify response contains valid HTML structure
+	if !strings.Contains(responseBody, "<!doctype html>") && !strings.Contains(responseBody, "<!DOCTYPE html>") {
+		t.Error("response missing DOCTYPE declaration")
 	}
 }

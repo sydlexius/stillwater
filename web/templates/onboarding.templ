@@ -31,24 +31,6 @@ func findConnectionByType(conns []connection.Connection, connType string) *conne
 	return nil
 }
 
-// shouldAutoSelectPlatform checks if the auth provider matches a platform profile.
-// Returns the platform ID if it should be auto-selected, or empty string otherwise.
-func shouldAutoSelectPlatform(authProvider string, profiles []platform.Profile) string {
-	// Only auto-select for federated auth providers (emby, jellyfin).
-	// Skip local and oidc, which don't have a direct platform mapping.
-	if authProvider != "emby" && authProvider != "jellyfin" {
-		return ""
-	}
-
-	// Check if a profile with matching ID exists
-	for _, p := range profiles {
-		if p.ID == authProvider {
-			return authProvider
-		}
-	}
-	return ""
-}
-
 templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 	<!DOCTYPE html>
 	<html lang="en" class="h-full">
@@ -224,7 +206,7 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 										<select
 											name="type"
 											class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-											onchange="document.getElementById('ob-library-type-help').classList.toggle('hidden', this.value !== 'classical')"
+											onchange="syncLibraryTypeHelpText()"
 										>
 											<option value="regular">Regular</option>
 											<option value="classical">Classical</option>
@@ -587,14 +569,17 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 						document.getElementById('back-btn').classList.add('hidden');
 					}
 
-					// Step 2 (platform): auto-select based on auth provider
+					// Step 2 (platform): auto-select based on auth provider only if no platform is already selected
 					if (step === 2) {
 						var userAuthProvider = document.body.dataset.userAuthProvider;
 						if (userAuthProvider && (userAuthProvider === 'emby' || userAuthProvider === 'jellyfin')) {
-							// Defer auto-select slightly to ensure DOM is fully updated
-							setTimeout(function() {
-								autoSelectPlatformCard(userAuthProvider);
-							}, 100);
+							var hasActiveCard = document.querySelector('[data-profile-card].border-blue-500') !== null;
+							if (!hasActiveCard) {
+								// Defer auto-select slightly to ensure DOM is fully updated
+								setTimeout(function() {
+									autoSelectPlatformCard(userAuthProvider);
+								}, 100);
+							}
 						}
 					}
 
@@ -631,21 +616,26 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 				}
 
 				function autoSelectPlatformCard(platformId) {
-					var card = document.querySelector('[data-profile-card] button[hx-post*="/' + platformId + '/"]')?.closest('[data-profile-card]');
-					if (!card) {
-						// Fallback: find by data attribute or direct traversal
-						var cards = document.querySelectorAll('[data-profile-card]');
-						for (var i = 0; i < cards.length; i++) {
-							var hxPost = cards[i].getAttribute('hx-post');
-							if (hxPost && hxPost.includes('/' + platformId + '/')) {
-								card = cards[i];
-								break;
-							}
-						}
+					// Validate platformId against allowlist to prevent selector injection
+					if (platformId !== 'emby' && platformId !== 'jellyfin') {
+						return;
 					}
+					var card = document.querySelector('[data-profile-card][hx-post*="/' + platformId + '/"]');
 					if (card) {
-						selectPlatform(card);
 						card.click();
+					}
+				}
+
+				function syncLibraryTypeHelpText() {
+					var selectEl = document.querySelector('[name="type"]');
+					var helpEl = document.getElementById('ob-library-type-help');
+					if (selectEl && helpEl) {
+						var isClassical = selectEl.value === 'classical';
+						if (isClassical) {
+							helpEl.classList.remove('hidden');
+						} else {
+							helpEl.classList.add('hidden');
+						}
 					}
 				}
 
@@ -654,6 +644,7 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 					if (event.detail.successful) {
 						if (errorEl) errorEl.classList.add('hidden');
 						document.getElementById('ob-library-form').reset();
+						syncLibraryTypeHelpText();
 						document.getElementById('ob-library-form').classList.add('hidden');
 						document.getElementById('ob-add-library-btn').classList.remove('hidden');
 						refreshLibraryList();
@@ -1253,6 +1244,9 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 				if (currentStep !== 0) {
 					goToStep(currentStep);
 				}
+
+				// Initialize library type help text visibility on page load
+				syncLibraryTypeHelpText();
 			</script>
 		</body>
 	</html>
