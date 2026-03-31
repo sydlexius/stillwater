@@ -505,7 +505,7 @@ func TestPopulateFromEmby_DownloadsImages(t *testing.T) {
 	jpegData := createTestJPEGForHandler(t)
 	artistDir, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("EvalSymlinks on TempDir failed: %v", err)
 	}
 	libPath := filepath.Dir(artistDir)
 
@@ -763,9 +763,10 @@ func TestPopulateFromEmby_UsesImageCacheWhenNoPath(t *testing.T) {
 
 func TestPopulateFromJellyfin_DownloadsImages(t *testing.T) {
 	jpegData := createTestJPEGForHandler(t)
-	artistDir, err := filepath.EvalSymlinks(t.TempDir())
+	tmpDir := t.TempDir()
+	artistDir, err := filepath.EvalSymlinks(tmpDir)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("EvalSymlinks(%q): %v", tmpDir, err)
 	}
 	libPath := filepath.Dir(artistDir)
 
@@ -1078,7 +1079,7 @@ func TestPopulateFromEmby_PlatformPathNotStoredWhenPathless(t *testing.T) {
 func TestPopulateFromEmby_PlatformPathStoredWhenUnderLibraryRoot(t *testing.T) {
 	artistDir, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("resolving temp dir symlinks: %v", err)
 	}
 
 	embySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
