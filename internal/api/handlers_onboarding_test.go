@@ -247,12 +247,14 @@ func TestHandleOnboardingPage_UserAuthProvider(t *testing.T) {
 	tests := []struct {
 		name          string
 		authProvider  string
+		insertUser    bool
 		wantAttribute string
 	}{
-		{"local auth", "local", `data-user-auth-provider="local"`},
-		{"emby federated", "emby", `data-user-auth-provider="emby"`},
-		{"jellyfin federated", "jellyfin", `data-user-auth-provider="jellyfin"`},
-		{"oidc federated", "oidc", `data-user-auth-provider="oidc"`},
+		{"local auth", "local", true, `data-user-auth-provider="local"`},
+		{"emby federated", "emby", true, `data-user-auth-provider="emby"`},
+		{"jellyfin federated", "jellyfin", true, `data-user-auth-provider="jellyfin"`},
+		{"oidc federated", "oidc", true, `data-user-auth-provider="oidc"`},
+		{"user not found", "", false, `data-user-auth-provider=""`},
 	}
 
 	for _, tt := range tests {
@@ -261,13 +263,15 @@ func TestHandleOnboardingPage_UserAuthProvider(t *testing.T) {
 			r := testRouterForOnboarding(t)
 			ctx := context.Background()
 
-			// Insert a test user with the specified auth provider.
-			_, err := r.db.ExecContext(ctx,
-				`INSERT INTO users (id, username, display_name, role, auth_provider, is_active, is_protected, created_at, updated_at)
-				 VALUES ('test-user-id', 'testuser', 'Test User', 'admin', ?, 1, 0, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')`,
-				tt.authProvider)
-			if err != nil {
-				t.Fatalf("inserting test user: %v", err)
+			if tt.insertUser {
+				// Insert a test user with the specified auth provider.
+				_, err := r.db.ExecContext(ctx,
+					`INSERT INTO users (id, username, display_name, role, auth_provider, is_active, is_protected, created_at, updated_at)
+					 VALUES ('test-user-id', 'testuser', 'Test User', 'admin', ?, 1, 0, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')`,
+					tt.authProvider)
+				if err != nil {
+					t.Fatalf("inserting test user: %v", err)
+				}
 			}
 
 			req := onboardingRequest()
