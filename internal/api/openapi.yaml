@@ -1387,6 +1387,12 @@ paths:
             text/html:
               schema:
                 type: string
+        "500":
+          description: Service error
+          content:
+            text/html:
+              schema:
+                type: string
 
   /artists/duplicates:
     get:

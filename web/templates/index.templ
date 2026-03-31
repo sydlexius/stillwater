@@ -132,6 +132,9 @@ templ IndexPage(assets AssetPaths) {
 					});
 			})();
 
+			var healthChart = null;
+			var completenessChart = null;
+
 			(function() {
 				var isDark = document.documentElement.classList.contains('dark');
 				var textColor = isDark ? '#9ca3af' : '#6b7280';
@@ -153,7 +156,7 @@ templ IndexPage(assets AssetPaths) {
 						var scores = history.map(function(h) { return h.score; });
 
 						var ctx = document.getElementById('health-chart');
-						new Chart(ctx, {
+						healthChart = new Chart(ctx, {
 							type: 'line',
 							data: {
 								labels: labels,
@@ -300,7 +303,7 @@ templ IndexPage(assets AssetPaths) {
 						});
 						var ctx = document.getElementById('completeness-chart');
 						if (!ctx) return;
-						new Chart(ctx, {
+						completenessChart = new Chart(ctx, {
 							type: 'bar',
 							data: {
 								labels: labels,
@@ -344,6 +347,32 @@ templ IndexPage(assets AssetPaths) {
 						});
 					})
 					.catch(function() { showToast('Failed to load completeness data', 'error'); });
+			})();
+
+			// Re-apply theme colors to all dashboard charts when dark mode is toggled.
+			(function() {
+				var lastDark = document.documentElement.classList.contains('dark');
+				new MutationObserver(function() {
+					var isDark = document.documentElement.classList.contains('dark');
+					if (isDark === lastDark) return;
+					lastDark = isDark;
+					var textColor = isDark ? '#9ca3af' : '#6b7280';
+					var gridColor = isDark ? '#374151' : '#e5e7eb';
+					[healthChart, violationsChart, completenessChart].forEach(function(chart) {
+						if (!chart) return;
+						var scales = chart.options.scales;
+						if (scales) {
+							Object.values(scales).forEach(function(axis) {
+								if (axis.ticks) axis.ticks.color = textColor;
+								if (axis.grid) axis.grid.color = gridColor;
+							});
+						}
+						if (chart.options.plugins && chart.options.plugins.legend && chart.options.plugins.legend.labels) {
+							chart.options.plugins.legend.labels.color = textColor;
+						}
+						chart.update();
+					});
+				}).observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
 			})();
 		</script>
 	}

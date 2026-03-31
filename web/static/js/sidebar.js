@@ -187,6 +187,9 @@
     if (!window.swPreferences) return;
     var cached = window.swPreferences.getCache();
     var current = (cached && cached.theme) ? cached.theme : 'dark';
+    if (current === 'system') {
+      current = document.documentElement.classList.contains('dark') ? 'dark' : 'light';
+    }
     var next = current === 'dark' ? 'light' : 'dark';
     window.swPreferences.set('theme', next);
   };

@@ -139,15 +139,15 @@ func HealthSummaryFragment(data HealthSummaryData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = quickStatCard("Missing Metadata", data.MissingNFO, "/reports/compliance?filter=missing_nfo").Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = quickStatCard("Missing Metadata", data.MissingNFO, "reports/compliance?filter=missing_nfo").Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = quickStatCard("Missing Thumb", data.MissingThumb, "/reports/compliance?filter=missing_thumb").Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = quickStatCard("Missing Thumb", data.MissingThumb, "reports/compliance?filter=missing_thumb").Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = quickStatCard("Missing MBID", data.MissingMBID, "/reports/compliance?filter=missing_mbid").Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = quickStatCard("Missing MBID", data.MissingMBID, "reports/compliance?filter=missing_mbid").Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

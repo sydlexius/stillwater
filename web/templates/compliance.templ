@@ -34,6 +34,7 @@ type ComplianceData struct {
 	HealthScoreMin int
 	HealthScoreMax int
 	ProfileName    string // Active platform profile name for image terminology
+	BasePath       string // Deployment base path for constructing sub-path-aware links
 }
 
 // LibrarySummaryData holds per-library health stats for the summary section.
@@ -412,7 +413,7 @@ templ ComplianceTable(data ComplianceData) {
 						</tr>
 					}
 					for _, row := range data.Rows {
-						@complianceRow(row, data.ProfileName)
+						@complianceRow(row, data.ProfileName, data.BasePath)
 					}
 				</tbody>
 			</table>
@@ -421,7 +422,7 @@ templ ComplianceTable(data ComplianceData) {
 	</div>
 }
 
-templ complianceRow(row ComplianceRow, profileName string) {
+templ complianceRow(row ComplianceRow, profileName string, basePath string) {
 	<tr class="hover:bg-gray-50 dark:hover:bg-gray-800">
 		<td class="px-4 py-3 text-center">
 			<input
@@ -433,7 +434,7 @@ templ complianceRow(row ComplianceRow, profileName string) {
 		</td>
 		<td data-col="artist" class="px-4 py-3 text-sm">
 			<a
-				href={ templ.SafeURL("/artists/" + row.Artist.ID) }
+				href={ templ.SafeURL(basePath + "/artists/" + row.Artist.ID) }
 				class="font-medium text-blue-600 dark:text-blue-400 hover:underline"
 			>
 				{ row.Artist.Name }
@@ -463,7 +464,7 @@ templ complianceRow(row ComplianceRow, profileName string) {
 			<div class="flex items-center justify-end gap-1">
 				if row.Artist.NFOExists {
 					<a
-						href={ templ.SafeURL("/artists/" + row.Artist.ID + "/nfo") }
+						href={ templ.SafeURL(basePath + "/artists/" + row.Artist.ID + "/nfo") }
 						class="text-sm px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
 					>
 						Changes
