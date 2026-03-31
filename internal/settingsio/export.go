@@ -622,11 +622,11 @@ func (s *Service) importPayload(ctx context.Context, payload *Payload, opts Impo
 	// Import user preferences: upsert by (user_id, key).
 	// Preferences referencing unknown users are skipped with a warning.
 	for _, up := range payload.UserPreferences {
-		var exists int
-		if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM users WHERE id = ?`, up.UserID).Scan(&exists); err != nil {
+		var exists bool
+		if err := s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM users WHERE id = ?)`, up.UserID).Scan(&exists); err != nil {
 			return nil, fmt.Errorf("checking user for preference: %w", err)
 		}
-		if exists == 0 {
+		if !exists {
 			result.Warnings = append(result.Warnings,
 				fmt.Sprintf("skipped preference %q for unknown user %q", up.Key, up.UserID))
 			continue

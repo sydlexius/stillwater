@@ -275,14 +275,18 @@ func TestRoundTrip(t *testing.T) {
 
 	// Verify rule was updated (enabled was 1 in db2, should be 0 after import)
 	var ruleEnabled int
-	db2.QueryRowContext(ctx, `SELECT enabled FROM rules WHERE id = 'thumb_exists'`).Scan(&ruleEnabled)
+	if err := db2.QueryRowContext(ctx, `SELECT enabled FROM rules WHERE id = 'thumb_exists'`).Scan(&ruleEnabled); err != nil {
+		t.Fatalf("querying imported rule: %v", err)
+	}
 	if ruleEnabled != 0 {
 		t.Errorf("expected rule enabled=0 after import, got %d", ruleEnabled)
 	}
 
 	// Verify scraper config was upserted
 	var scraperScope string
-	db2.QueryRowContext(ctx, `SELECT scope FROM scraper_config WHERE scope = 'global'`).Scan(&scraperScope)
+	if err := db2.QueryRowContext(ctx, `SELECT scope FROM scraper_config WHERE scope = 'global'`).Scan(&scraperScope); err != nil {
+		t.Fatalf("querying imported scraper config: %v", err)
+	}
 	if scraperScope != "global" {
 		t.Errorf("expected scraper config for 'global' scope, got %q", scraperScope)
 	}
@@ -347,21 +351,24 @@ func TestRoundTrip_WithUsersAndInvites(t *testing.T) {
 
 	// Verify user was imported with empty password_hash
 	var pwHash string
-	db2.QueryRowContext(ctx, `SELECT password_hash FROM users WHERE id = 'u1'`).Scan(&pwHash)
+	if err := db2.QueryRowContext(ctx, `SELECT password_hash FROM users WHERE id = 'u1'`).Scan(&pwHash); err != nil {
+		t.Fatalf("querying imported user: %v", err)
+	}
 	if pwHash != "" {
 		t.Errorf("expected empty password_hash for imported user, got %q", pwHash)
 	}
 
 	// Verify warning was issued about password hashes
+	const expectedWarning = "imported users have empty password hashes; accounts must use federated auth or password reset"
 	foundWarning := false
 	for _, w := range result.Warnings {
-		if w != "" {
+		if w == expectedWarning {
 			foundWarning = true
 			break
 		}
 	}
 	if !foundWarning {
-		t.Error("expected at least one warning about empty password hashes")
+		t.Errorf("expected warning %q, got %v", expectedWarning, result.Warnings)
 	}
 }
 
@@ -456,14 +463,18 @@ func TestImport_ScraperConfigs_Upsert(t *testing.T) {
 
 	// Verify global config was updated
 	var configJSON string
-	db.QueryRowContext(ctx, `SELECT config_json FROM scraper_config WHERE scope = 'global'`).Scan(&configJSON)
+	if err := db.QueryRowContext(ctx, `SELECT config_json FROM scraper_config WHERE scope = 'global'`).Scan(&configJSON); err != nil {
+		t.Fatalf("querying scraper config: %v", err)
+	}
 	if configJSON != string(newConfig) {
 		t.Errorf("expected updated config, got %s", configJSON)
 	}
 
 	// Verify new scope was inserted
 	var count int
-	db.QueryRowContext(ctx, `SELECT COUNT(*) FROM scraper_config WHERE scope = 'conn-123'`).Scan(&count)
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM scraper_config WHERE scope = 'conn-123'`).Scan(&count); err != nil {
+		t.Fatalf("querying scraper config count: %v", err)
+	}
 	if count != 1 {
 		t.Errorf("expected 1 scraper config for 'conn-123', got %d", count)
 	}
