@@ -634,15 +634,14 @@ func (s *Service) importPayload(ctx context.Context, payload *Payload, opts Impo
 		if err != nil {
 			return nil, fmt.Errorf("loading user IDs for preference import: %w", err)
 		}
+		defer rows.Close() //nolint:errcheck
 		for rows.Next() {
 			var id string
 			if err := rows.Scan(&id); err != nil {
-				rows.Close() //nolint:errcheck
 				return nil, fmt.Errorf("scanning user id: %w", err)
 			}
 			existingUsers[id] = true
 		}
-		rows.Close() //nolint:errcheck
 		if err := rows.Err(); err != nil {
 			return nil, fmt.Errorf("iterating user IDs: %w", err)
 		}
