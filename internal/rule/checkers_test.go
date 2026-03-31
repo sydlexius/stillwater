@@ -944,8 +944,8 @@ func TestCheckBackdropMinCount_BelowMinimum(t *testing.T) {
 	if v.RuleID != RuleBackdropMinCount {
 		t.Errorf("RuleID = %q, want %q", v.RuleID, RuleBackdropMinCount)
 	}
-	if !v.Fixable {
-		t.Error("expected Fixable to be true")
+	if v.Fixable {
+		t.Error("expected Fixable to be false for detection-only rule")
 	}
 }
 

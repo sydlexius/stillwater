@@ -1252,7 +1252,7 @@ func (e *Engine) checkBackdropSequencingFromDB(a *artist.Artist, cfg RuleConfig)
 // artist directory. It iterates over all configured fanart naming patterns from
 // the active platform profile (falling back to defaults) and sums the discovered
 // files for each pattern. Duplicate files across patterns are not double-counted
-// because DiscoverFanart only returns files matching a single primary name.
+// A `seen` map deduplicates files that appear under multiple naming patterns.
 func (e *Engine) countBackdrops(dir string) int {
 	var profile *platform.Profile
 	if e.platformService != nil {
@@ -1332,7 +1332,7 @@ func (e *Engine) makeBackdropMinCountChecker() Checker {
 			Category: "image",
 			Severity: effectiveSeverity(cfg),
 			Message:  fmt.Sprintf("artist %q has %d backdrop(s), minimum is %d", a.Name, count, minCount),
-			Fixable:  true,
+			Fixable:  false,
 		}
 	}
 }

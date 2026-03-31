@@ -846,6 +846,7 @@ func GroupViolations(violations []RuleViolation, groupBy string) []ViolationGrou
 			"fanart":     "image",
 			"logo":       "image",
 			"banner":     "image",
+			"backdrop":   "image",
 			"extraneous": "image",
 			"bio":        "metadata",
 			"artist":     "metadata",

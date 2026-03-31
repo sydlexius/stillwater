@@ -272,11 +272,17 @@ func TestGetPlatformPresenceForArtists(t *testing.T) {
 	a3 := createTestArtist(t, svc, "Portishead")
 
 	// a1: Emby + Jellyfin
-	svc.SetPlatformID(ctx, a1.ID, "conn-1", "emby-111")
-	svc.SetPlatformID(ctx, a1.ID, "conn-2", "jf-111")
+	if err := svc.SetPlatformID(ctx, a1.ID, "conn-1", "emby-111"); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.SetPlatformID(ctx, a1.ID, "conn-2", "jf-111"); err != nil {
+		t.Fatal(err)
+	}
 
 	// a2: Lidarr only
-	svc.SetPlatformID(ctx, a2.ID, "conn-3", "lidarr-222")
+	if err := svc.SetPlatformID(ctx, a2.ID, "conn-3", "lidarr-222"); err != nil {
+		t.Fatal(err)
+	}
 
 	// a3: no platform IDs (should be absent from result)
 

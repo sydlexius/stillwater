@@ -127,7 +127,7 @@ func TestImageTermWithAttribution(t *testing.T) {
 
 func TestAllSlots(t *testing.T) {
 	if len(AllSlots) != 4 {
-		t.Errorf("AllSlots has %d entries, want 4", len(AllSlots))
+		t.Fatalf("AllSlots has %d entries, want 4", len(AllSlots))
 	}
 	// Verify order: thumb, fanart, logo, banner
 	expected := []string{"thumb", "fanart", "logo", "banner"}

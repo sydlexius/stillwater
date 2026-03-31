@@ -248,6 +248,18 @@ templ PlatformBadge(platform, tooltip string) {
 			>
 				<img src="/static/img/logos/jellyfin.svg" alt="Jellyfin" class="h-4 w-4 rounded-full"/>
 			</span>
+		default:
+			<span
+				class="inline-flex items-center justify-center rounded-full p-0.5"
+				style="color: #94a3b8; background: rgba(148, 163, 184, 0.15);"
+				title={ tooltip }
+				aria-label={ tooltip }
+			>
+				<!-- Heroicons: question-mark-circle (mini) -->
+				<svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+					<path fill-rule="evenodd" d="M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0ZM8.94 6.94a.75.75 0 1 1-1.061-1.061 3 3 0 1 1 2.871 5.026v.345a.75.75 0 0 1-1.5 0v-.5c0-.72.57-1.172 1.081-1.287A1.5 1.5 0 1 0 8.94 6.94ZM10 15a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clip-rule="evenodd"></path>
+				</svg>
+			</span>
 	}
 }
 

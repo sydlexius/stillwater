@@ -65,6 +65,9 @@ func ImageTermWithAttribution(slot, profileName string) string {
 	if term == "" {
 		return ""
 	}
+	if strings.TrimSpace(profileName) == "" {
+		return term
+	}
 	return term + " (" + profileName + ")"
 }
 

@@ -342,9 +342,9 @@ func imageSearchContextualized(data ImageSearchData) templ.Component {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var17 string
-				templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs("Delete this " + imageTypeLabel(data.SelectedType) + " image?")
+				templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs("Delete this " + imageTypeLabel(data.SelectedType, data.ProfileName) + " image?")
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 188, Col: 83}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 188, Col: 101}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 				if templ_7745c5c3_Err != nil {
@@ -1169,10 +1169,10 @@ func imageExistsForType(a artist.Artist, t string) bool {
 	}
 }
 
-// imageTypeLabel returns the default display label for an image slot.
-// For platform-specific labels, use img.ImageTermFor(slot, profileName).
-func imageTypeLabel(t string) string {
-	label := img.ImageTermFor(t, "")
+// imageTypeLabel returns a display label for an image slot, using the
+// platform profile name when available for profile-aware terminology.
+func imageTypeLabel(t, profileName string) string {
+	label := img.ImageTermFor(t, profileName)
 	if label == "" {
 		return t
 	}

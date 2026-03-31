@@ -536,7 +536,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 										<div class="font-medium text-sm">Use symlinks for duplicate copies</div>
 										<div class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
 											if data.SymlinkSupported {
-												When multiple filenames are configured for an image type, create symlinks instead of byte-for-byte copies. Fanart images are always real files.
+												When multiple filenames are configured for an image type, create symlinks instead of byte-for-byte copies. { img.ImageTermFor("fanart", data.ActiveProfile.Name) } images are always real files.
 											} else {
 												Symlinks are not supported on this filesystem. The library path does not support symbolic links.
 											}
