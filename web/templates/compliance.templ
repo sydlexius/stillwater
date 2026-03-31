@@ -1162,6 +1162,10 @@ templ reportsTabScript() {
 				link.classList.toggle('border-transparent', !isActive);
 				link.classList.toggle('text-gray-500', !isActive);
 				link.classList.toggle('dark:text-gray-400', !isActive);
+				link.classList.toggle('hover:text-gray-700', !isActive);
+				link.classList.toggle('dark:hover:text-gray-300', !isActive);
+				link.classList.toggle('hover:border-gray-300', !isActive);
+				link.classList.toggle('dark:hover:border-gray-600', !isActive);
 				link.setAttribute('aria-selected', isActive ? 'true' : 'false');
 			});
 		});
