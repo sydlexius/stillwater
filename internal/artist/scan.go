@@ -220,6 +220,51 @@ func buildWhereClause(params ListParams) (string, []any) {
 		conditions = append(conditions, "health_score < 100")
 	}
 
+	// Apply flyout-driven multi-filter conditions. Each key maps to "include"
+	// (add positive condition) or "exclude" (add negative condition). The
+	// "missing_images" key matches any artist missing at least one image type.
+	for key, state := range params.Filters {
+		switch key {
+		case "missing_meta":
+			switch state {
+			case "include":
+				conditions = append(conditions, "nfo_exists = 0")
+			case "exclude":
+				conditions = append(conditions, "nfo_exists = 1")
+			}
+		case "missing_images":
+			switch state {
+			case "include":
+				// Include artists missing ANY of thumb, fanart, logo, or banner.
+				conditions = append(conditions, "(NOT EXISTS (SELECT 1 FROM artist_images WHERE artist_id = artists.id AND image_type = 'thumb' AND exists_flag = 1) OR NOT EXISTS (SELECT 1 FROM artist_images WHERE artist_id = artists.id AND image_type = 'fanart' AND exists_flag = 1) OR NOT EXISTS (SELECT 1 FROM artist_images WHERE artist_id = artists.id AND image_type = 'logo' AND exists_flag = 1) OR NOT EXISTS (SELECT 1 FROM artist_images WHERE artist_id = artists.id AND image_type = 'banner' AND exists_flag = 1))")
+			case "exclude":
+				// Exclude artists that have ALL of thumb, fanart, logo, and banner.
+				conditions = append(conditions, "(EXISTS (SELECT 1 FROM artist_images WHERE artist_id = artists.id AND image_type = 'thumb' AND exists_flag = 1) AND EXISTS (SELECT 1 FROM artist_images WHERE artist_id = artists.id AND image_type = 'fanart' AND exists_flag = 1) AND EXISTS (SELECT 1 FROM artist_images WHERE artist_id = artists.id AND image_type = 'logo' AND exists_flag = 1) AND EXISTS (SELECT 1 FROM artist_images WHERE artist_id = artists.id AND image_type = 'banner' AND exists_flag = 1))")
+			}
+		case "missing_mbid":
+			switch state {
+			case "include":
+				conditions = append(conditions, "NOT EXISTS (SELECT 1 FROM artist_provider_ids WHERE artist_id = artists.id AND provider = 'musicbrainz')")
+			case "exclude":
+				conditions = append(conditions, "EXISTS (SELECT 1 FROM artist_provider_ids WHERE artist_id = artists.id AND provider = 'musicbrainz')")
+			}
+		case "excluded":
+			switch state {
+			case "include":
+				conditions = append(conditions, "is_excluded = 1")
+			case "exclude":
+				conditions = append(conditions, "is_excluded = 0")
+			}
+		case "locked":
+			switch state {
+			case "include":
+				conditions = append(conditions, "locked = 1")
+			case "exclude":
+				conditions = append(conditions, "locked = 0")
+			}
+		}
+	}
+
 	if params.HealthScoreMin > 0 {
 		conditions = append(conditions, "health_score >= ?")
 		args = append(args, params.HealthScoreMin)

@@ -21,6 +21,7 @@ func (r *Router) handleListArtists(w http.ResponseWriter, req *http.Request) {
 		Search:    req.URL.Query().Get("search"),
 		Filter:    req.URL.Query().Get("filter"),
 		LibraryID: req.URL.Query().Get("library_id"),
+		Filters:   parseFlyoutFilters(req),
 	}
 	params.Validate()
 
@@ -95,6 +96,7 @@ func (r *Router) handleArtistsPage(w http.ResponseWriter, req *http.Request) {
 		Search:    req.URL.Query().Get("search"),
 		Filter:    req.URL.Query().Get("filter"),
 		LibraryID: req.URL.Query().Get("library_id"),
+		Filters:   parseFlyoutFilters(req),
 	}
 	params.Validate()
 
@@ -172,6 +174,7 @@ func (r *Router) handleArtistsPage(w http.ResponseWriter, req *http.Request) {
 		Sort:             params.Sort,
 		Order:            params.Order,
 		Filter:           params.Filter,
+		Filters:          params.Filters,
 		LibraryID:        params.LibraryID,
 		View:             view,
 		ProfileName:      r.getActiveProfileName(req.Context()),
@@ -222,6 +225,34 @@ func (r *Router) handleArtistsPage(w http.ResponseWriter, req *http.Request) {
 	}
 
 	renderTempl(w, req, templates.ArtistsPage(r.assetsFor(req), data))
+}
+
+// parseFlyoutFilters reads the URL query params written by the filter flyout
+// component and returns a map of filter key -> "include" or "exclude".
+//
+// The flyout JS writes params in the form: filter_missing_meta=%2By (include)
+// or filter_missing_meta=-y (exclude). Recognized keys are: missing_meta,
+// missing_images, missing_mbid, excluded, locked.
+func parseFlyoutFilters(req *http.Request) map[string]string {
+	keys := []string{"missing_meta", "missing_images", "missing_mbid", "excluded", "locked"}
+	filters := make(map[string]string, len(keys))
+	for _, k := range keys {
+		raw := req.URL.Query().Get("filter_" + k)
+		if raw == "" {
+			continue
+		}
+		// The flyout prefixes values with '+' (include) or '-' (exclude).
+		switch {
+		case len(raw) > 0 && raw[0] == '+':
+			filters[k] = "include"
+		case len(raw) > 0 && raw[0] == '-':
+			filters[k] = "exclude"
+		}
+	}
+	if len(filters) == 0 {
+		return nil
+	}
+	return filters
 }
 
 // handleArtistDetailPage renders the artist detail HTML page.

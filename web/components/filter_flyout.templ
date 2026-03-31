@@ -155,7 +155,9 @@ func filterItemIcon(state string) string {
 // loaded globally via layout.templ. These script blocks exist solely to
 // generate valid templ.ComponentScript values for use in onclick attributes.
 
-script openFilterFlyout(id string) {
+// OpenFilterFlyout is an exported script for use as an onclick handler in
+// templates outside this package.
+script OpenFilterFlyout(id string) {
 	swFilterFlyout.open(id);
 }
 
@@ -173,4 +175,24 @@ script clearAllFilterFlyout(id string) {
 
 script cycleFilterItem() {
 	swFilterFlyout.cycleItem(this);
+}
+
+// DismissFilterChip removes a single filter key from the URL and reloads the
+// HTMX target region. Called by the X button on active filter chips.
+// targetSel is the CSS selector for the HTMX content region to reload
+// (e.g. "#artist-content"). Defaults to "#artist-content" when empty.
+script DismissFilterChip(key string, targetSel string) {
+	var url = new URL(window.location.href);
+	url.searchParams.delete(key);
+	history.pushState(null, '', url.toString());
+	// Strip the base path from url.pathname before passing to htmx.ajax
+	// to avoid a double-prefix from the htmx:configRequest hook.
+	var bpMeta = document.querySelector('meta[name="htmx-base-path"]');
+	var bp = bpMeta ? bpMeta.content : '';
+	var path = url.pathname;
+	if (bp && path.startsWith(bp)) {
+		path = path.slice(bp.length) || '/';
+	}
+	var sel = targetSel || '#artist-content';
+	htmx.ajax('GET', path + url.search, {target: sel, swap: 'outerHTML'});
 }

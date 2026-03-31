@@ -27,6 +27,9 @@ type ArtistListData struct {
 	Sort             string
 	Order            string
 	Filter           string
+	// Filters holds the flyout multi-filter state (key -> "include" or "exclude").
+	// Keys: missing_meta, missing_images, missing_mbid, excluded, locked.
+	Filters          map[string]string
 	LibraryID        string
 	View             string // "table" or "grid"
 	ProfileName      string // Active platform profile name for image terminology
@@ -161,6 +164,60 @@ func orderLabel(order string) string {
 	return "asc"
 }
 
+// filterState returns the flyout state string for a given filter key.
+// Returns "include", "exclude", or "neutral".
+func filterState(filters map[string]string, key string) string {
+	if filters == nil {
+		return "neutral"
+	}
+	if s, ok := filters[key]; ok && (s == "include" || s == "exclude") {
+		return s
+	}
+	return "neutral"
+}
+
+// activeFilterCount returns the number of active (non-neutral) filters in the map.
+func activeFilterCount(filters map[string]string) int {
+	count := 0
+	for _, v := range filters {
+		if v == "include" || v == "exclude" {
+			count++
+		}
+	}
+	return count
+}
+
+// filterChipLabel returns the display label for an active filter chip.
+func filterChipLabel(key, state string) string {
+	var name string
+	switch key {
+	case "missing_meta":
+		name = "Missing Metadata"
+	case "missing_images":
+		name = "Missing Images"
+	case "missing_mbid":
+		name = "Missing MBID"
+	case "excluded":
+		name = "Excluded"
+	case "locked":
+		name = "Locked"
+	default:
+		name = key
+	}
+	if state == "exclude" {
+		return "Not " + name
+	}
+	return name
+}
+
+// filterChipClass returns the CSS classes for an active filter chip based on state.
+func filterChipClass(state string) string {
+	if state == "exclude" {
+		return "inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300"
+	}
+	return "inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300"
+}
+
 // sortDropdownItem returns the CSS classes for a sort dropdown item, with active highlighting.
 func sortDropdownItem(active bool) string {
 	base := "w-full text-left px-4 py-1.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 "
@@ -209,7 +266,7 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 						hx-trigger="keyup changed delay:300ms"
 						hx-target="#artist-content"
 						hx-swap="outerHTML"
-						hx-include="[name='filter'],[name='library_id'],[name='view'],[name='sort'],[name='order']"
+						hx-include="[name='library_id'],[name='view'],[name='sort'],[name='order'],[name^='filter_missing_']"
 						class="block w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
 					/>
 				</div>
@@ -221,8 +278,9 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 							hx-trigger="change"
 							hx-target="#artist-content"
 							hx-swap="outerHTML"
-							hx-include="[name='search'],[name='filter'],[name='view'],[name='sort'],[name='order']"
+							hx-include="[name='search'],[name='view'],[name='sort'],[name='order']"
 							class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+							aria-label="Filter by library"
 						>
 							<option value="" selected?={ data.LibraryID == "" }>All Libraries</option>
 							for _, lib := range data.Libraries {
@@ -230,25 +288,27 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 							}
 						</select>
 					}
-					<select
-						name="filter"
-						hx-get="/artists"
-						hx-trigger="change"
-						hx-target="#artist-content"
-						hx-swap="outerHTML"
-						hx-include="[name='search'],[name='library_id'],[name='view'],[name='sort'],[name='order']"
-						class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+					<!-- Filters flyout trigger button -->
+					<button
+						id="artist-filter-trigger"
+						type="button"
+						class={ "inline-flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm transition-colors focus:outline-none focus:ring-1 focus:ring-blue-500", templ.KV("border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-600", activeFilterCount(data.Filters) > 0), templ.KV("border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700", activeFilterCount(data.Filters) == 0) }
+						aria-label="Open filter panel"
+						aria-expanded="false"
+						aria-controls="artist-filters-flyout"
+						onclick={ components.OpenFilterFlyout("artist-filters-flyout") }
 					>
-						<option value="" selected?={ data.Filter == "" }>All Artists</option>
-						<option value="missing_nfo" selected?={ data.Filter == "missing_nfo" }>Missing Metadata</option>
-						<option value="missing_thumb" selected?={ data.Filter == "missing_thumb" }>Missing { img.ImageTermFor("thumb", data.ProfileName) }</option>
-						<option value="missing_fanart" selected?={ data.Filter == "missing_fanart" }>Missing { img.ImageTermFor("fanart", data.ProfileName) }</option>
-						<option value="missing_logo" selected?={ data.Filter == "missing_logo" }>Missing { img.ImageTermFor("logo", data.ProfileName) }</option>
-						<option value="missing_banner" selected?={ data.Filter == "missing_banner" }>Missing { img.ImageTermFor("banner", data.ProfileName) }</option>
-						<option value="missing_mbid" selected?={ data.Filter == "missing_mbid" }>Missing MBID</option>
-						<option value="excluded" selected?={ data.Filter == "excluded" }>Excluded</option>
-						<option value="not_excluded" selected?={ data.Filter == "not_excluded" }>Not Excluded</option>
-					</select>
+						<!-- Heroicons: funnel (mini) -->
+						<svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+							<path fill-rule="evenodd" d="M2.628 1.601C5.028 1.206 7.49 1 10 1s4.973.206 7.372.601a.75.75 0 0 1 .628.74v2.288a2.25 2.25 0 0 1-.659 1.59l-4.682 4.683a2.25 2.25 0 0 0-.659 1.59v3.037c0 .684-.31 1.33-.844 1.757l-1.937 1.55A.75.75 0 0 1 9 18.25v-5.757a2.25 2.25 0 0 0-.659-1.591L3.659 6.22A2.25 2.25 0 0 1 3 4.629V2.34a.75.75 0 0 1 .628-.74Z" clip-rule="evenodd"></path>
+						</svg>
+						<span>Filters</span>
+						if activeFilterCount(data.Filters) > 0 {
+							<span class="ml-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white dark:bg-blue-400 dark:text-gray-900" aria-label={ func() string { n := activeFilterCount(data.Filters); if n == 1 { return "1 active filter" }; return fmt.Sprintf("%d active filters", n) }() }>
+								{ fmt.Sprintf("%d", activeFilterCount(data.Filters)) }
+							</span>
+						}
+					</button>
 					<details id="sort-dropdown" class="relative">
 						<summary class="list-none cursor-pointer inline-flex items-center gap-1.5 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500" title="Sort">
 							<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
@@ -287,7 +347,7 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 							hx-get="/artists"
 							hx-target="#artist-content"
 							hx-swap="outerHTML"
-							hx-include="[name='search'],[name='filter'],[name='library_id'],[name='sort'],[name='order']"
+							hx-include="[name='search'],[name='library_id'],[name='sort'],[name='order']"
 							hx-vals='{"view":"table","page":"1"}'
 							onclick="setView('table')"
 							class={ "p-2 transition-colors", templ.KV("bg-blue-600 text-white", data.View == "table"), templ.KV("bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700", data.View != "table") }
@@ -302,7 +362,7 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 							hx-get="/artists"
 							hx-target="#artist-content"
 							hx-swap="outerHTML"
-							hx-include="[name='search'],[name='filter'],[name='library_id'],[name='sort'],[name='order']"
+							hx-include="[name='search'],[name='library_id'],[name='sort'],[name='order']"
 							hx-vals='{"view":"grid","page":"1"}'
 							onclick="setView('grid')"
 							class={ "p-2 transition-colors", templ.KV("bg-blue-600 text-white", data.View == "grid"), templ.KV("bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700", data.View != "grid") }
@@ -314,6 +374,42 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 					</div>
 				</div>
 			</div>
+			<!-- Active filter chips: shown when any flyout filters are active -->
+			if activeFilterCount(data.Filters) > 0 {
+				<div class="flex flex-wrap items-center gap-2" aria-label="Active filters">
+					for key, state := range data.Filters {
+						if state == "include" || state == "exclude" {
+							<span class={ filterChipClass(state) }>
+								{ filterChipLabel(key, state) }
+								<button
+									type="button"
+									class="ml-0.5 inline-flex h-3.5 w-3.5 items-center justify-center rounded-full hover:bg-black/10 dark:hover:bg-white/20 focus:outline-none"
+									aria-label={ "Remove " + filterChipLabel(key, state) + " filter" }
+									onclick={ components.DismissFilterChip("filter_"+key, "#artist-content") }
+								>
+									<svg class="h-3 w-3" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
+										<path d="M4 4l4 4m0-4L4 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+									</svg>
+								</button>
+							</span>
+						}
+					}
+				</div>
+			}
+			<!-- FilterFlyout panel for artist filters -->
+			@components.FilterFlyout("artist-filters-flyout", "Artist Filters", "artist-filter-trigger", activeFilterCount(data.Filters), "#artist-content") {
+				@components.FilterSection("Metadata") {
+					@components.FilterItem("artist-filters-flyout", "filter_missing_meta", "y", "Missing Metadata", filterState(data.Filters, "missing_meta"))
+					@components.FilterItem("artist-filters-flyout", "filter_missing_mbid", "y", "Missing MBID", filterState(data.Filters, "missing_mbid"))
+				}
+				@components.FilterSection("Images") {
+					@components.FilterItem("artist-filters-flyout", "filter_missing_images", "y", "Missing Images", filterState(data.Filters, "missing_images"))
+				}
+				@components.FilterSection("Status") {
+					@components.FilterItem("artist-filters-flyout", "filter_excluded", "y", "Excluded", filterState(data.Filters, "excluded"))
+					@components.FilterItem("artist-filters-flyout", "filter_locked", "y", "Locked", filterState(data.Filters, "locked"))
+				}
+			}
 			if data.View == "grid" {
 				@ArtistGrid(data)
 			} else {
@@ -380,9 +476,16 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 
 			function buildArtistParams(overrides) {
 				var params = {};
-				['search', 'filter', 'library_id', 'view', 'sort', 'order'].forEach(function(name) {
+				// Collect form-based params from named elements.
+				['search', 'library_id', 'view', 'sort', 'order'].forEach(function(name) {
 					var el = document.querySelector('[name="' + name + '"]');
 					if (el) params[name] = el.value;
+				});
+				// Carry flyout filter params from the current URL.
+				var urlParams = new URLSearchParams(window.location.search);
+				['filter_missing_meta', 'filter_missing_images', 'filter_missing_mbid', 'filter_excluded', 'filter_locked'].forEach(function(key) {
+					var val = urlParams.get(key);
+					if (val) params[key] = val;
 				});
 				return Object.assign(params, overrides);
 			}
@@ -430,6 +533,28 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 				}
 			});
 
+			// Reload artist content when the filter flyout applies filters.
+			document.body.addEventListener('sw:filter-applied', function(evt) {
+				if (evt.target && evt.target.id === 'artist-content') {
+					// Strip the base path from location.pathname before passing to htmx.ajax
+					// to avoid a double-prefix from the htmx:configRequest hook.
+					var bpMeta = document.querySelector('meta[name="htmx-base-path"]');
+					var bp = bpMeta ? bpMeta.content : '';
+					var path = window.location.pathname;
+					if (bp && path.startsWith(bp)) {
+						path = path.slice(bp.length) || '/';
+					}
+					htmx.ajax('GET', path + window.location.search, {target: '#artist-content', swap: 'outerHTML'});
+				}
+			});
+
+			// Initialise the flyout from URL params on first page load.
+			document.addEventListener('DOMContentLoaded', function() {
+				if (window.swFilterFlyout) {
+					swFilterFlyout.initFromURL('artist-filters-flyout');
+				}
+			});
+
 			// When the page is restored from bfcache (browser back/forward navigation),
 			// sync filter controls from the URL query params and reload content so
 			// status badges reflect the latest state.
@@ -437,7 +562,7 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 				if (evt.persisted) {
 					var params = new URLSearchParams(window.location.search);
 					// Sync select elements from URL params.
-					['filter', 'library_id'].forEach(function(name) {
+					['library_id'].forEach(function(name) {
 						var val = params.get(name);
 						var el = document.querySelector('select[name="' + name + '"]');
 						if (el) el.value = (val !== null) ? val : '';

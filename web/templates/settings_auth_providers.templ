@@ -1,7 +1,5 @@
 package templates
 
-import "github.com/sydlexius/stillwater/web/components"
-
 // AuthProvidersData holds settings for all authentication providers.
 type AuthProvidersData struct {
 	// Local provider
@@ -39,10 +37,9 @@ func guardRailLabel(v string) string {
 	return "Admins only"
 }
 
-// settingsAuthProvidersTab renders the Authentication settings section content.
-// Only Administrators can access this section (settings page is admin-only).
+// settingsAuthProvidersTab renders the Auth Providers settings tab content.
+// Only Administrators can access this tab (settings page is admin-only).
 templ settingsAuthProvidersTab(data AuthProvidersData) {
-	@components.ContextHelpScript()
 	<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 		<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 			<h2 class="text-lg font-semibold">Authentication Providers</h2>
@@ -395,10 +392,7 @@ templ settingsAuthProvidersTab(data AuthProvidersData) {
 					>
 						<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 							<div>
-								<div class="flex items-center gap-1.5 mb-1">
-									<label for="oidc-issuer-url" class="block text-xs font-medium text-gray-700 dark:text-gray-300">Issuer URL</label>
-									@components.ContextHelp("help-oidc-issuer", "OIDC Issuer URL", "The base URL of your OIDC provider. Stillwater fetches the OpenID Connect discovery document from {issuer}/.well-known/openid-configuration. Must match the iss claim in tokens.")
-								</div>
+								<label for="oidc-issuer-url" class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Issuer URL</label>
 								<input
 									id="oidc-issuer-url"
 									name="oidc_issuer_url"
@@ -446,10 +440,7 @@ templ settingsAuthProvidersTab(data AuthProvidersData) {
 								</select>
 							</div>
 							<div>
-								<div class="flex items-center gap-1.5 mb-1">
-									<label for="oidc-admin-groups" class="block text-xs font-medium text-gray-700 dark:text-gray-300">Administrator Groups</label>
-									@components.ContextHelp("help-oidc-admin-groups", "OIDC Administrator Groups", "Comma-separated list of OIDC group claim values that grant the Administrator role. Users whose token includes any of these groups are provisioned as administrators.")
-								</div>
+								<label for="oidc-admin-groups" class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Administrator Groups</label>
 								<input
 									id="oidc-admin-groups"
 									name="oidc_admin_groups"
@@ -462,10 +453,7 @@ templ settingsAuthProvidersTab(data AuthProvidersData) {
 								<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">OIDC group claims that grant Administrator role (comma-separated)</p>
 							</div>
 							<div>
-								<div class="flex items-center gap-1.5 mb-1">
-									<label for="oidc-user-groups" class="block text-xs font-medium text-gray-700 dark:text-gray-300">Allowed Groups</label>
-									@components.ContextHelp("help-oidc-user-groups", "OIDC Allowed Groups", "Comma-separated list of groups that are permitted to log in. Leave empty to allow any authenticated OIDC user. Users not in an allowed group receive a 403 Forbidden response.")
-								</div>
+								<label for="oidc-user-groups" class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Allowed Groups</label>
 								<input
 									id="oidc-user-groups"
 									name="oidc_user_groups"

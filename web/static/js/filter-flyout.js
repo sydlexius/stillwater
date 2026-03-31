@@ -35,6 +35,12 @@
       scrim.classList.add('sw-filter-scrim--visible');
     }
 
+    var triggerID = panel.getAttribute('data-trigger-id');
+    if (triggerID) {
+      var trigger = document.getElementById(triggerID);
+      if (trigger) trigger.setAttribute('aria-expanded', 'true');
+    }
+
     // Move focus to the first focusable element inside the body.
     var body = panel.querySelector('.sw-filter-flyout-body');
     if (body) {
@@ -65,11 +71,14 @@
       scrim.classList.remove('sw-filter-scrim--visible');
     }
 
-    // Return focus to the trigger element.
+    // Return focus to the trigger element and collapse its aria-expanded state.
     var triggerID = panel.getAttribute('data-trigger-id');
     if (triggerID) {
       var trigger = document.getElementById(triggerID);
-      if (trigger) trigger.focus();
+      if (trigger) {
+        trigger.setAttribute('aria-expanded', 'false');
+        trigger.focus();
+      }
     }
   }
 

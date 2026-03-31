@@ -17,12 +17,6 @@ type HealthStatsResult struct {
 	MissingThumb     int     `json:"missing_thumb"`
 	MissingFanart    int     `json:"missing_fanart"`
 	MissingMBID      int     `json:"missing_mbid"`
-	// Tier counts group artists by health score range.
-	TierExcellent int `json:"tier_excellent"` // 80-100
-	TierGood      int `json:"tier_good"`      // 60-79
-	TierFair      int `json:"tier_fair"`      // 40-59
-	TierPoor      int `json:"tier_poor"`      // 20-39
-	TierCritical  int `json:"tier_critical"`  // 0-19
 }
 
 // UpdateHealthScore sets the health_score and health_evaluated_at columns for the given artist.
@@ -82,12 +76,7 @@ SELECT
     SUM(CASE WHEN a.nfo_exists = 0 THEN 1 ELSE 0 END)                      AS missing_nfo,
     SUM(CASE WHEN COALESCE(thumb.exists_flag, 0) = 0 THEN 1 ELSE 0 END)    AS missing_thumb,
     SUM(CASE WHEN COALESCE(fanart.exists_flag, 0) = 0 THEN 1 ELSE 0 END)   AS missing_fanart,
-    SUM(CASE WHEN COALESCE(mbid.provider_id, '') = '' THEN 1 ELSE 0 END)    AS missing_mbid,
-    SUM(CASE WHEN a.health_score >= 80 THEN 1 ELSE 0 END)                  AS tier_excellent,
-    SUM(CASE WHEN a.health_score >= 60 AND a.health_score < 80 THEN 1 ELSE 0 END) AS tier_good,
-    SUM(CASE WHEN a.health_score >= 40 AND a.health_score < 60 THEN 1 ELSE 0 END) AS tier_fair,
-    SUM(CASE WHEN a.health_score >= 20 AND a.health_score < 40 THEN 1 ELSE 0 END) AS tier_poor,
-    SUM(CASE WHEN a.health_score < 20 THEN 1 ELSE 0 END)                   AS tier_critical
+    SUM(CASE WHEN COALESCE(mbid.provider_id, '') = '' THEN 1 ELSE 0 END)    AS missing_mbid
 FROM artists a
 LEFT JOIN artist_images thumb   ON thumb.artist_id = a.id   AND thumb.image_type = 'thumb'   AND thumb.slot_index = 0
 LEFT JOIN artist_images fanart  ON fanart.artist_id = a.id  AND fanart.image_type = 'fanart'  AND fanart.slot_index = 0
@@ -106,7 +95,6 @@ WHERE a.is_excluded = 0`
 
 	var hs HealthStatsResult
 	var compliant, missingNFO, missingThumb, missingFanart, missingMBID sql.NullInt64
-	var tierExcellent, tierGood, tierFair, tierPoor, tierCritical sql.NullInt64
 	var score sql.NullFloat64
 
 	err := r.db.QueryRowContext(ctx, query, args...).Scan(
@@ -117,11 +105,6 @@ WHERE a.is_excluded = 0`
 		&missingThumb,
 		&missingFanart,
 		&missingMBID,
-		&tierExcellent,
-		&tierGood,
-		&tierFair,
-		&tierPoor,
-		&tierCritical,
 	)
 	if err != nil {
 		return hs, fmt.Errorf("querying health stats: %w", err)
@@ -132,11 +115,6 @@ WHERE a.is_excluded = 0`
 	hs.MissingThumb = int(missingThumb.Int64)
 	hs.MissingFanart = int(missingFanart.Int64)
 	hs.MissingMBID = int(missingMBID.Int64)
-	hs.TierExcellent = int(tierExcellent.Int64)
-	hs.TierGood = int(tierGood.Int64)
-	hs.TierFair = int(tierFair.Int64)
-	hs.TierPoor = int(tierPoor.Int64)
-	hs.TierCritical = int(tierCritical.Int64)
 
 	if score.Valid {
 		hs.Score = math.Round(score.Float64*10) / 10

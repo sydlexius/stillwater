@@ -11,6 +11,10 @@ type ListParams struct {
 	LibraryID      string
 	HealthScoreMin int // 0-100, only applied when > 0
 	HealthScoreMax int // 0-100, only applied when > 0 and <= 100
+	// Filters holds flyout-driven multi-filter state. Keys are filter names
+	// (e.g. "missing_meta", "missing_images", "missing_mbid", "excluded",
+	// "locked") and values are "include" or "exclude".
+	Filters map[string]string
 }
 
 // Validate normalizes and validates list parameters.
