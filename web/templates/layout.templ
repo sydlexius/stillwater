@@ -447,7 +447,7 @@ templ Layout(title string, assets AssetPaths) {
 
 					// Check stored preference. The preferences.js IIFE applies data
 					// attributes synchronously, so we can read the ambient_bg preference
-					// from the cached localStorage value before the API responds.
+					// from the cached sessionStorage value before the API responds.
 					// Skip in lite mode -- CSS hides the element but the fetch
 					// still costs a network round-trip.
 					if (document.documentElement.getAttribute('data-lite') === 'on') return;

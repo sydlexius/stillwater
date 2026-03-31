@@ -204,6 +204,17 @@ templ SyncBadge(state string) {
 	}
 }
 
+// badgeLabel returns tooltip if non-empty, otherwise falls back to the platform name.
+func badgeLabel(tooltip, platform string) string {
+	if tooltip != "" {
+		return tooltip
+	}
+	if platform != "" {
+		return platform
+	}
+	return "Unknown platform"
+}
+
 // PlatformBadge renders a small icon badge for a platform source (filesystem,
 // lidarr, emby, jellyfin). Used in artist list/grid views to indicate which
 // platforms have the artist. The tooltip provides additional context.
@@ -213,8 +224,8 @@ templ PlatformBadge(platform, tooltip string) {
 			<span
 				class="inline-flex items-center justify-center rounded-full p-0.5"
 				style="color: #94a3b8; background: rgba(148, 163, 184, 0.15);"
-				title={ tooltip }
-				aria-label={ tooltip }
+				title={ badgeLabel(tooltip, platform) }
+				aria-label={ badgeLabel(tooltip, platform) }
 			>
 				<!-- Heroicons: folder (mini) -->
 				<svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
@@ -225,8 +236,8 @@ templ PlatformBadge(platform, tooltip string) {
 			<span
 				class="inline-flex items-center justify-center rounded-full"
 				style="background: rgba(46, 204, 113, 0.15);"
-				title={ tooltip }
-				aria-label={ tooltip }
+				title={ badgeLabel(tooltip, platform) }
+				aria-label={ badgeLabel(tooltip, platform) }
 			>
 				<img src="/static/img/logos/lidarr.svg" alt="" aria-hidden="true" class="h-4 w-4 rounded-full"/>
 			</span>
@@ -234,8 +245,8 @@ templ PlatformBadge(platform, tooltip string) {
 			<span
 				class="inline-flex items-center justify-center rounded-full"
 				style="background: rgba(82, 181, 75, 0.15);"
-				title={ tooltip }
-				aria-label={ tooltip }
+				title={ badgeLabel(tooltip, platform) }
+				aria-label={ badgeLabel(tooltip, platform) }
 			>
 				<img src="/static/img/logos/emby-32.png" srcset="/static/img/logos/emby-32.png 1x, /static/img/logos/emby-64.png 2x" alt="" aria-hidden="true" class="h-4 w-4 rounded-full"/>
 			</span>
@@ -243,8 +254,8 @@ templ PlatformBadge(platform, tooltip string) {
 			<span
 				class="inline-flex items-center justify-center rounded-full"
 				style="background: rgba(0, 164, 220, 0.15);"
-				title={ tooltip }
-				aria-label={ tooltip }
+				title={ badgeLabel(tooltip, platform) }
+				aria-label={ badgeLabel(tooltip, platform) }
 			>
 				<img src="/static/img/logos/jellyfin.svg" alt="" aria-hidden="true" class="h-4 w-4 rounded-full"/>
 			</span>
@@ -252,8 +263,8 @@ templ PlatformBadge(platform, tooltip string) {
 			<span
 				class="inline-flex items-center justify-center rounded-full p-0.5"
 				style="color: #94a3b8; background: rgba(148, 163, 184, 0.15);"
-				title={ tooltip }
-				aria-label={ tooltip }
+				title={ badgeLabel(tooltip, platform) }
+				aria-label={ badgeLabel(tooltip, platform) }
 			>
 				<!-- Heroicons: question-mark-circle (mini) -->
 				<svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">

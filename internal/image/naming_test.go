@@ -110,6 +110,9 @@ func TestImageTermWithAttribution(t *testing.T) {
 		{"thumb", "Jellyfin", "Primary (Jellyfin)"},
 		{"thumb", "Plex", "Folder (Plex)"},
 		{"logo", "Emby", "Logo (Emby)"},
+		// Empty/whitespace profile returns default term without parentheses
+		{"fanart", "", "Fanart"},
+		{"thumb", "  ", "Thumbnail"},
 		// Unknown slot returns empty
 		{"unknown", "Emby", ""},
 	}

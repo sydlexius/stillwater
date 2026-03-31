@@ -451,7 +451,7 @@ templ imageSearchContextualized(data ImageSearchData) {
 						credentials: 'same-origin'
 					}).then(function(r) {
 						return r.json().then(function(data) {
-							if (!r.ok) { setStatus(data.error || 'Fetch failed', 'text-red-500'); return; }
+							if (!r.ok) { setStatus('Unable to fetch image', 'text-red-500'); return; }
 							if (data.needs_crop) { openAutoCrop(data); return; }
 							window.location.reload();
 						});
