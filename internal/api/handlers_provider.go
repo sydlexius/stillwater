@@ -3,7 +3,6 @@ package api
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -284,16 +283,6 @@ func (r *Router) handleSetPriorities(w http.ResponseWriter, req *http.Request) {
 		if p.Field == "" {
 			writeError(w, req, http.StatusBadRequest, "field name is required")
 			return
-		}
-		// Reject providers that are structurally excluded for the given field.
-		// This prevents the UI from persisting invalid combinations (e.g. MusicBrainz
-		// in the biography priority list when MusicBrainz does not supply biography).
-		for _, prov := range p.Providers {
-			if provider.IsExcludedForField(p.Field, prov) {
-				writeError(w, req, http.StatusBadRequest,
-					fmt.Sprintf("provider %q does not support field %q and cannot be added to its priority list", prov, p.Field))
-				return
-			}
 		}
 		if err := r.providerSettings.SetPriority(req.Context(), p.Field, p.Providers); err != nil {
 			r.logger.Error("setting priority", "field", p.Field, "error", err)

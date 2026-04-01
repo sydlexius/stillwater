@@ -15,6 +15,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/platform"
 	"github.com/sydlexius/stillwater/internal/provider"
+	"github.com/sydlexius/stillwater/web/components"
 )
 
 // OnboardingData holds the data for the onboarding wizard page.
@@ -67,7 +68,7 @@ func OnboardingPage(assets AssetPaths, data OnboardingData) templ.Component {
 		var templ_7745c5c3_Var2 templ.SafeURL
 		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinURLErrs(assets.CSS)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 41, Col: 43}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 42, Col: 43}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
 		if templ_7745c5c3_Err != nil {
@@ -80,7 +81,7 @@ func OnboardingPage(assets AssetPaths, data OnboardingData) templ.Component {
 		var templ_7745c5c3_Var3 templ.SafeURL
 		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinURLErrs(assets.BasePath + "/static/img/favicon.svg")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 42, Col: 91}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 43, Col: 91}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 		if templ_7745c5c3_Err != nil {
@@ -93,7 +94,7 @@ func OnboardingPage(assets AssetPaths, data OnboardingData) templ.Component {
 		var templ_7745c5c3_Var4 templ.SafeURL
 		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinURLErrs(assets.BasePath + "/static/img/favicon-32x32.png")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 43, Col: 107}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 44, Col: 107}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 		if templ_7745c5c3_Err != nil {
@@ -106,7 +107,7 @@ func OnboardingPage(assets AssetPaths, data OnboardingData) templ.Component {
 		var templ_7745c5c3_Var5 templ.SafeURL
 		templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinURLErrs(assets.BasePath + "/static/img/favicon-16x16.png")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 44, Col: 107}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 45, Col: 107}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 		if templ_7745c5c3_Err != nil {
@@ -119,7 +120,7 @@ func OnboardingPage(assets AssetPaths, data OnboardingData) templ.Component {
 		var templ_7745c5c3_Var6 templ.SafeURL
 		templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinURLErrs(assets.BasePath + "/static/img/apple-touch-icon.png")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 45, Col: 107}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 46, Col: 107}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 		if templ_7745c5c3_Err != nil {
@@ -132,7 +133,7 @@ func OnboardingPage(assets AssetPaths, data OnboardingData) templ.Component {
 		var templ_7745c5c3_Var7 templ.SafeURL
 		templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinURLErrs(assets.BasePath + "/static/site.webmanifest")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 46, Col: 75}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 47, Col: 75}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 		if templ_7745c5c3_Err != nil {
@@ -145,7 +146,7 @@ func OnboardingPage(assets AssetPaths, data OnboardingData) templ.Component {
 		var templ_7745c5c3_Var8 string
 		templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(assets.BasePath)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 47, Col: 56}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 48, Col: 56}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 		if templ_7745c5c3_Err != nil {
@@ -166,7 +167,7 @@ func OnboardingPage(assets AssetPaths, data OnboardingData) templ.Component {
 		var templ_7745c5c3_Var9 string
 		templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(assets.HTMX)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 49, Col: 28}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 50, Col: 28}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 		if templ_7745c5c3_Err != nil {
@@ -179,7 +180,7 @@ func OnboardingPage(assets AssetPaths, data OnboardingData) templ.Component {
 		var templ_7745c5c3_Var10 string
 		templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(data.CurrentStep))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 66, Col: 134}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 67, Col: 134}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 		if templ_7745c5c3_Err != nil {
@@ -192,7 +193,7 @@ func OnboardingPage(assets AssetPaths, data OnboardingData) templ.Component {
 		var templ_7745c5c3_Var11 string
 		templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(data.UnidentifiedCount))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 66, Col: 199}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 67, Col: 199}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 		if templ_7745c5c3_Err != nil {
@@ -205,26 +206,34 @@ func OnboardingPage(assets AssetPaths, data OnboardingData) templ.Component {
 		var templ_7745c5c3_Var12 string
 		templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(data.UserAuthProvider)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 66, Col: 249}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 67, Col: 249}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "\"><div class=\"flex min-h-full items-start justify-center px-4 py-8 sm:py-12\"><div class=\"w-full max-w-2xl space-y-6\"><div class=\"text-center\"><div class=\"flex justify-center\"><img src=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = components.ContextHelpScript().Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "<div class=\"flex min-h-full items-start justify-center px-4 py-8 sm:py-12\"><div class=\"w-full max-w-2xl space-y-6\"><div class=\"text-center\"><div class=\"flex justify-center\"><img src=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var13 string
 		templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(assets.BasePath + "/static/img/favicon.svg")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 71, Col: 61}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 73, Col: 61}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "\" alt=\"\" class=\"h-12 w-12\" aria-hidden=\"true\"></div><h1 class=\"mt-3 text-3xl font-bold text-blue-600 dark:text-blue-400\">Welcome to Stillwater</h1><p class=\"mt-2 text-sm text-gray-500 dark:text-gray-400\">Configure your installation in a few quick steps.</p></div><!-- Progress indicator (hidden on intro step) -->")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "\" alt=\"\" class=\"h-12 w-12\" aria-hidden=\"true\"></div><h1 class=\"mt-3 text-3xl font-bold text-blue-600 dark:text-blue-400\">Welcome to Stillwater</h1><p class=\"mt-2 text-sm text-gray-500 dark:text-gray-400\">Configure your installation in a few quick steps.</p></div><!-- Progress indicator (hidden on intro step) -->")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -233,7 +242,7 @@ func OnboardingPage(assets AssetPaths, data OnboardingData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "<div class=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "<div class=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -246,7 +255,7 @@ func OnboardingPage(assets AssetPaths, data OnboardingData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "\" id=\"progress-bar\"><div class=\"flex items-center gap-2\"><div id=\"step-dot-1\" class=\"h-8 w-8 rounded-full bg-blue-600 text-white flex items-center justify-center text-sm font-medium\">1</div><span id=\"step-label-1\" class=\"text-sm font-medium text-gray-900 dark:text-gray-100 hidden sm:inline\">Libraries</span></div><div id=\"step-line-1\" class=\"h-0.5 w-8 bg-gray-300 dark:bg-gray-600 mx-2 sm:w-8\"></div><div class=\"flex items-center gap-2\"><div id=\"step-dot-2\" class=\"h-8 w-8 rounded-full bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 flex items-center justify-center text-sm font-medium\">2</div><span id=\"step-label-2\" class=\"text-sm text-gray-500 dark:text-gray-400 hidden sm:inline\">Platform</span></div><div id=\"step-line-2\" class=\"h-0.5 w-8 bg-gray-300 dark:bg-gray-600 mx-2 sm:w-8\"></div><div class=\"flex items-center gap-2\"><div id=\"step-dot-3\" class=\"h-8 w-8 rounded-full bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 flex items-center justify-center text-sm font-medium\">3</div><span id=\"step-label-3\" class=\"text-sm text-gray-500 dark:text-gray-400 hidden sm:inline\">Providers</span></div><div id=\"step-line-3\" class=\"h-0.5 w-8 bg-gray-300 dark:bg-gray-600 mx-2 sm:w-8\"></div><div class=\"flex items-center gap-2\"><div id=\"step-dot-4\" class=\"h-8 w-8 rounded-full bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 flex items-center justify-center text-sm font-medium\">4</div><span id=\"step-label-4\" class=\"text-sm text-gray-500 dark:text-gray-400 hidden sm:inline\">Connections</span></div><div id=\"step-line-4\" class=\"h-0.5 w-8 bg-gray-300 dark:bg-gray-600 mx-2 sm:w-8\"></div><div class=\"flex items-center gap-2\"><div id=\"step-dot-5\" class=\"h-8 w-8 rounded-full bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 flex items-center justify-center text-sm font-medium\">5</div><span id=\"step-label-5\" class=\"text-sm text-gray-500 dark:text-gray-400 hidden sm:inline\">Discovery</span></div></div><!-- Step 0: Introduction -->")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "\" id=\"progress-bar\"><div class=\"flex items-center gap-2\"><div id=\"step-dot-1\" class=\"h-8 w-8 rounded-full bg-blue-600 text-white flex items-center justify-center text-sm font-medium\">1</div><span id=\"step-label-1\" class=\"text-sm font-medium text-gray-900 dark:text-gray-100 hidden sm:inline\">Libraries</span></div><div id=\"step-line-1\" class=\"h-0.5 w-8 bg-gray-300 dark:bg-gray-600 mx-2 sm:w-8\"></div><div class=\"flex items-center gap-2\"><div id=\"step-dot-2\" class=\"h-8 w-8 rounded-full bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 flex items-center justify-center text-sm font-medium\">2</div><span id=\"step-label-2\" class=\"text-sm text-gray-500 dark:text-gray-400 hidden sm:inline\">Platform</span></div><div id=\"step-line-2\" class=\"h-0.5 w-8 bg-gray-300 dark:bg-gray-600 mx-2 sm:w-8\"></div><div class=\"flex items-center gap-2\"><div id=\"step-dot-3\" class=\"h-8 w-8 rounded-full bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 flex items-center justify-center text-sm font-medium\">3</div><span id=\"step-label-3\" class=\"text-sm text-gray-500 dark:text-gray-400 hidden sm:inline\">Providers</span></div><div id=\"step-line-3\" class=\"h-0.5 w-8 bg-gray-300 dark:bg-gray-600 mx-2 sm:w-8\"></div><div class=\"flex items-center gap-2\"><div id=\"step-dot-4\" class=\"h-8 w-8 rounded-full bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 flex items-center justify-center text-sm font-medium\">4</div><span id=\"step-label-4\" class=\"text-sm text-gray-500 dark:text-gray-400 hidden sm:inline\">Connections</span></div><div id=\"step-line-4\" class=\"h-0.5 w-8 bg-gray-300 dark:bg-gray-600 mx-2 sm:w-8\"></div><div class=\"flex items-center gap-2\"><div id=\"step-dot-5\" class=\"h-8 w-8 rounded-full bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 flex items-center justify-center text-sm font-medium\">5</div><span id=\"step-label-5\" class=\"text-sm text-gray-500 dark:text-gray-400 hidden sm:inline\">Discovery</span></div></div><!-- Step 0: Introduction -->")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -255,7 +264,7 @@ func OnboardingPage(assets AssetPaths, data OnboardingData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "<div id=\"wizard-step-0\" class=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "<div id=\"wizard-step-0\" class=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -268,7 +277,7 @@ func OnboardingPage(assets AssetPaths, data OnboardingData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "\"><p class=\"text-sm text-gray-600 dark:text-gray-300 mb-5\">Stillwater manages artist metadata and images for your self-hosted music library. It writes NFO files and organizes artwork so your media server displays rich artist information.</p><div class=\"grid grid-cols-1 sm:grid-cols-2 gap-3\"><div class=\"rounded-lg border border-gray-200 dark:border-gray-700 p-3\"><h3 class=\"text-sm font-semibold text-gray-900 dark:text-gray-100 mb-1\">Metadata (NFO Files)</h3><p class=\"text-xs text-gray-500 dark:text-gray-400\">Fetch biographies, genres, styles, moods, and formation dates from multiple sources and write them as standard NFO files your media server can read.</p></div><div class=\"rounded-lg border border-gray-200 dark:border-gray-700 p-3\"><h3 class=\"text-sm font-semibold text-gray-900 dark:text-gray-100 mb-1\">Image Management</h3><p class=\"text-xs text-gray-500 dark:text-gray-400\">Download and manage artist thumbnails, fanart, logos, and banners. Compare options side-by-side, crop to fit, and save in the correct format for your platform.</p></div><div class=\"rounded-lg border border-gray-200 dark:border-gray-700 p-3\"><h3 class=\"text-sm font-semibold text-gray-900 dark:text-gray-100 mb-1\">Provider System</h3><p class=\"text-xs text-gray-500 dark:text-gray-400\">Pull data from MusicBrainz, Fanart.tv, TheAudioDB, Last.fm, Discogs, Wikidata, and Deezer. Configure priority order per field so the best source wins.</p></div><div class=\"rounded-lg border border-gray-200 dark:border-gray-700 p-3\"><h3 class=\"text-sm font-semibold text-gray-900 dark:text-gray-100 mb-1\">Platform Profiles</h3><p class=\"text-xs text-gray-500 dark:text-gray-400\">Choose your media server (Emby, Jellyfin, or Kodi) and Stillwater adapts NFO format and image naming conventions to match what it expects.</p></div><div class=\"rounded-lg border border-gray-200 dark:border-gray-700 p-3\"><h3 class=\"text-sm font-semibold text-gray-900 dark:text-gray-100 mb-1\">Rule Engine</h3><p class=\"text-xs text-gray-500 dark:text-gray-400\">Define rules that automatically apply metadata decisions across your library. Set genre mappings, image preferences, and field overrides that run on every fetch.</p></div><div class=\"rounded-lg border border-gray-200 dark:border-gray-700 p-3\"><h3 class=\"text-sm font-semibold text-gray-900 dark:text-gray-100 mb-1\">Scanner Exclusions</h3><p class=\"text-xs text-gray-500 dark:text-gray-400\">Directories named \"Various Artists\", \"VA\", \"Soundtrack\", or \"OST\" are excluded from scanning by default. These compilation folders lack meaningful artist metadata.</p></div></div></div><!-- Step 1: Music Libraries -->")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "\"><p class=\"text-sm text-gray-600 dark:text-gray-300 mb-5\">Stillwater manages artist metadata and images for your self-hosted music library. It writes NFO files and organizes artwork so your media server displays rich artist information.</p><div class=\"grid grid-cols-1 sm:grid-cols-2 gap-3\"><div class=\"rounded-lg border border-gray-200 dark:border-gray-700 p-3\"><h3 class=\"text-sm font-semibold text-gray-900 dark:text-gray-100 mb-1\">Metadata (NFO Files)</h3><p class=\"text-xs text-gray-500 dark:text-gray-400\">Fetch biographies, genres, styles, moods, and formation dates from multiple sources and write them as standard NFO files your media server can read.</p></div><div class=\"rounded-lg border border-gray-200 dark:border-gray-700 p-3\"><h3 class=\"text-sm font-semibold text-gray-900 dark:text-gray-100 mb-1\">Image Management</h3><p class=\"text-xs text-gray-500 dark:text-gray-400\">Download and manage artist thumbnails, fanart, logos, and banners. Compare options side-by-side, crop to fit, and save in the correct format for your platform.</p></div><div class=\"rounded-lg border border-gray-200 dark:border-gray-700 p-3\"><h3 class=\"text-sm font-semibold text-gray-900 dark:text-gray-100 mb-1\">Provider System</h3><p class=\"text-xs text-gray-500 dark:text-gray-400\">Pull data from MusicBrainz, Fanart.tv, TheAudioDB, Last.fm, Discogs, Wikidata, and Deezer. Configure priority order per field so the best source wins.</p></div><div class=\"rounded-lg border border-gray-200 dark:border-gray-700 p-3\"><h3 class=\"text-sm font-semibold text-gray-900 dark:text-gray-100 mb-1\">Platform Profiles</h3><p class=\"text-xs text-gray-500 dark:text-gray-400\">Choose your media server (Emby, Jellyfin, or Kodi) and Stillwater adapts NFO format and image naming conventions to match what it expects.</p></div><div class=\"rounded-lg border border-gray-200 dark:border-gray-700 p-3\"><h3 class=\"text-sm font-semibold text-gray-900 dark:text-gray-100 mb-1\">Rule Engine</h3><p class=\"text-xs text-gray-500 dark:text-gray-400\">Define rules that automatically apply metadata decisions across your library. Set genre mappings, image preferences, and field overrides that run on every fetch.</p></div><div class=\"rounded-lg border border-gray-200 dark:border-gray-700 p-3\"><h3 class=\"text-sm font-semibold text-gray-900 dark:text-gray-100 mb-1\">Scanner Exclusions</h3><p class=\"text-xs text-gray-500 dark:text-gray-400\">Directories named \"Various Artists\", \"VA\", \"Soundtrack\", or \"OST\" are excluded from scanning by default. These compilation folders lack meaningful artist metadata.</p></div></div></div><!-- Step 1: Music Libraries -->")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -277,7 +286,7 @@ func OnboardingPage(assets AssetPaths, data OnboardingData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "<div id=\"wizard-step-1\" class=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "<div id=\"wizard-step-1\" class=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -290,7 +299,7 @@ func OnboardingPage(assets AssetPaths, data OnboardingData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "\"><h2 class=\"text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1\">Music Libraries</h2><p class=\"text-sm text-gray-500 dark:text-gray-400 mb-4\">Add your music library paths. Each library maps to a directory containing artist folders.</p><div class=\"rounded-lg border border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/20 p-4 mb-4\"><p class=\"text-sm text-blue-800 dark:text-blue-200 mb-2\">Stillwater expects one album artist per top-level directory (e.g. <code class=\"text-xs bg-blue-100 dark:bg-blue-800/40 px-1 rounded\">/music/Pink Floyd/</code>, <code class=\"text-xs bg-blue-100 dark:bg-blue-800/40 px-1 rounded\">/music/Radiohead/</code>).</p><p class=\"text-xs text-blue-700 dark:text-blue-300 mb-2\">Compilation folders like \"Various Artists\", \"Various\", \"VA\", \"Soundtrack\", and \"OST\" are excluded by default since they lack meaningful artist metadata.</p><p class=\"text-xs text-blue-700 dark:text-blue-300\">Tools for organizing: <a href=\"https://picard.musicbrainz.org/\" target=\"_blank\" rel=\"noopener noreferrer\" class=\"underline hover:text-blue-900 dark:hover:text-blue-100\">MusicBrainz Picard</a>, <a href=\"https://beets.io/\" target=\"_blank\" rel=\"noopener noreferrer\" class=\"underline hover:text-blue-900 dark:hover:text-blue-100\">Beets</a>, <a href=\"https://lidarr.audio/\" target=\"_blank\" rel=\"noopener noreferrer\" class=\"underline hover:text-blue-900 dark:hover:text-blue-100\">Lidarr</a>. <a href=\"/guide#library-structure\" target=\"_blank\" rel=\"noopener noreferrer\" class=\"underline font-medium hover:text-blue-900 dark:hover:text-blue-100\">Read more</a></p></div><div id=\"ob-library-list\" class=\"space-y-2 mb-4\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "\"><h2 class=\"text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1\">Music Libraries</h2><p class=\"text-sm text-gray-500 dark:text-gray-400 mb-4\">Add your music library paths. Each library maps to a directory containing artist folders.</p><div class=\"rounded-lg border border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/20 p-4 mb-4\"><p class=\"text-sm text-blue-800 dark:text-blue-200 mb-2\">Stillwater expects one album artist per top-level directory (e.g. <code class=\"text-xs bg-blue-100 dark:bg-blue-800/40 px-1 rounded\">/music/Pink Floyd/</code>, <code class=\"text-xs bg-blue-100 dark:bg-blue-800/40 px-1 rounded\">/music/Radiohead/</code>).</p><p class=\"text-xs text-blue-700 dark:text-blue-300 mb-2\">Compilation folders like \"Various Artists\", \"Various\", \"VA\", \"Soundtrack\", and \"OST\" are excluded by default since they lack meaningful artist metadata.</p><p class=\"text-xs text-blue-700 dark:text-blue-300\">Tools for organizing: <a href=\"https://picard.musicbrainz.org/\" target=\"_blank\" rel=\"noopener noreferrer\" class=\"underline hover:text-blue-900 dark:hover:text-blue-100\">MusicBrainz Picard</a>, <a href=\"https://beets.io/\" target=\"_blank\" rel=\"noopener noreferrer\" class=\"underline hover:text-blue-900 dark:hover:text-blue-100\">Beets</a>, <a href=\"https://lidarr.audio/\" target=\"_blank\" rel=\"noopener noreferrer\" class=\"underline hover:text-blue-900 dark:hover:text-blue-100\">Lidarr</a>. <a href=\"/guide#library-structure\" target=\"_blank\" rel=\"noopener noreferrer\" class=\"underline font-medium hover:text-blue-900 dark:hover:text-blue-100\">Read more</a></p></div><div id=\"ob-library-list\" class=\"space-y-2 mb-4\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -301,12 +310,20 @@ func OnboardingPage(assets AssetPaths, data OnboardingData) templ.Component {
 			}
 		}
 		if len(data.Libraries) == 0 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "<p id=\"ob-no-libraries\" class=\"text-sm text-gray-400 dark:text-gray-500 italic\">No libraries configured yet.</p>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "<p id=\"ob-no-libraries\" class=\"text-sm text-gray-400 dark:text-gray-500 italic\">No libraries configured yet.</p>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "</div><div id=\"ob-library-form-wrapper\"><button type=\"button\" id=\"ob-add-library-btn\" class=\"text-sm px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors\" onclick=\"document.getElementById('ob-library-form').classList.remove('hidden'); this.classList.add('hidden'); var e=document.getElementById('ob-library-error'); if(e) e.classList.add('hidden');\">Add Library</button><div id=\"ob-library-error\" role=\"alert\" class=\"hidden mb-2 rounded-md bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 px-3 py-2 text-sm text-red-700 dark:text-red-300\"></div><form id=\"ob-library-form\" class=\"hidden mt-3 space-y-3\" hx-post=\"/api/v1/libraries\" hx-swap=\"none\" hx-on::after-request=\"onLibraryAfterRequest(event)\"><div class=\"grid grid-cols-1 gap-3\"><input name=\"name\" placeholder=\"Library name (e.g. Music, Classical, Soundtracks)\" required class=\"rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500\"> <input name=\"path\" placeholder=\"Path (e.g. /music or /music/classical)\" required class=\"rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500\"><div class=\"flex flex-col gap-1.5\"><label for=\"ob-library-type\" class=\"sr-only\">Library type</label> <select id=\"ob-library-type\" name=\"type\" class=\"rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500\" onchange=\"syncLibraryTypeHelpText()\" aria-describedby=\"ob-library-type-help\"><option value=\"regular\">Regular</option> <option value=\"classical\">Classical</option></select><p id=\"ob-library-type-help\" class=\"text-xs text-gray-500 dark:text-gray-400\" aria-live=\"polite\"></p></div></div><div class=\"flex gap-2\"><button type=\"submit\" class=\"text-sm px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 transition-colors\">Save</button> <button type=\"button\" class=\"text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors\" onclick=\"document.getElementById('ob-library-form').classList.add('hidden'); document.getElementById('ob-add-library-btn').classList.remove('hidden'); var e=document.getElementById('ob-library-error'); if(e) e.classList.add('hidden');\">Cancel</button></div></form></div></div><!-- Step 2: Platform Profile -->")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "</div><div id=\"ob-library-form-wrapper\"><button type=\"button\" id=\"ob-add-library-btn\" class=\"text-sm px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors\" onclick=\"document.getElementById('ob-library-form').classList.remove('hidden'); this.classList.add('hidden'); var e=document.getElementById('ob-library-error'); if(e) e.classList.add('hidden');\">Add Library</button><div id=\"ob-library-error\" role=\"alert\" class=\"hidden mb-2 rounded-md bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 px-3 py-2 text-sm text-red-700 dark:text-red-300\"></div><form id=\"ob-library-form\" class=\"hidden mt-3 space-y-3\" hx-post=\"/api/v1/libraries\" hx-swap=\"none\" hx-on::after-request=\"onLibraryAfterRequest(event)\"><div class=\"grid grid-cols-1 gap-3\"><input name=\"name\" placeholder=\"Library name (e.g. Music, Classical, Soundtracks)\" required class=\"rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500\"> <input name=\"path\" placeholder=\"Path (e.g. /music or /music/classical)\" required class=\"rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500\"><div class=\"flex flex-col gap-1.5\"><div class=\"flex items-center gap-1.5\"><select name=\"type\" class=\"flex-1 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500\" onchange=\"syncLibraryTypeHelpText()\" aria-label=\"Library type\"><option value=\"regular\">Regular</option> <option value=\"classical\">Classical</option></select>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = components.ContextHelp("help-ob-lib-type", "Library Type", "Regular: standard artist library for all genres. Classical: for libraries that primarily contain classical music. Classical mode adjusts artist labeling; additional classical-specific features are planned for a future release.").Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "</div><p id=\"ob-library-type-help\" class=\"text-xs text-gray-500 dark:text-gray-400\" aria-live=\"polite\"></p></div></div><div class=\"flex gap-2\"><button type=\"submit\" class=\"text-sm px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 transition-colors\">Save</button> <button type=\"button\" class=\"text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors\" onclick=\"document.getElementById('ob-library-form').classList.add('hidden'); document.getElementById('ob-add-library-btn').classList.remove('hidden'); var e=document.getElementById('ob-library-error'); if(e) e.classList.add('hidden');\">Cancel</button></div></form></div></div><!-- Step 2: Platform Profile -->")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -315,7 +332,7 @@ func OnboardingPage(assets AssetPaths, data OnboardingData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "<div id=\"wizard-step-2\" class=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "<div id=\"wizard-step-2\" class=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -328,7 +345,7 @@ func OnboardingPage(assets AssetPaths, data OnboardingData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "\"><h2 class=\"text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1\">Choose Your Platform</h2><p class=\"text-sm text-gray-500 dark:text-gray-400 mb-4\">Select the media server you use. This controls NFO format and image naming conventions.</p><div class=\"grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "\"><h2 class=\"text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1\">Choose Your Platform</h2><p class=\"text-sm text-gray-500 dark:text-gray-400 mb-4\">Select the media server you use. This controls NFO format and image naming conventions.</p><div class=\"grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -338,7 +355,7 @@ func OnboardingPage(assets AssetPaths, data OnboardingData) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "</div></div><!-- Step 3: Provider API Keys -->")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "</div></div><!-- Step 3: Provider API Keys -->")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -347,7 +364,7 @@ func OnboardingPage(assets AssetPaths, data OnboardingData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "<div id=\"wizard-step-3\" class=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "<div id=\"wizard-step-3\" class=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -360,7 +377,7 @@ func OnboardingPage(assets AssetPaths, data OnboardingData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "\"><h2 class=\"text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1\">Provider API Keys</h2><p class=\"text-sm text-gray-500 dark:text-gray-400 mb-4\">Configure API keys for metadata and image providers. You can skip this and add keys later from Settings.</p><div class=\"space-y-3\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "\"><h2 class=\"text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1\">Provider API Keys</h2><p class=\"text-sm text-gray-500 dark:text-gray-400 mb-4\">Configure API keys for metadata and image providers. You can skip this and add keys later from Settings.</p><div class=\"space-y-3\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -370,12 +387,12 @@ func OnboardingPage(assets AssetPaths, data OnboardingData) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "</div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "</div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if len(data.WebSearchProviders) > 0 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "<div class=\"mt-6 pt-4 border-t border-gray-200 dark:border-gray-700\"><h3 class=\"text-sm font-semibold text-gray-900 dark:text-gray-100 mb-1\">Web Image Search</h3><p class=\"text-xs text-gray-500 dark:text-gray-400 mb-3\">Enable web search providers to find additional artist images via search engines. No API key required.</p><div class=\"space-y-3\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "<div class=\"mt-6 pt-4 border-t border-gray-200 dark:border-gray-700\"><h3 class=\"text-sm font-semibold text-gray-900 dark:text-gray-100 mb-1\">Web Image Search</h3><p class=\"text-xs text-gray-500 dark:text-gray-400 mb-3\">Enable web search providers to find additional artist images via search engines. No API key required.</p><div class=\"space-y-3\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -385,12 +402,12 @@ func OnboardingPage(assets AssetPaths, data OnboardingData) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "</div></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "</div></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "</div><!-- Step 4: Server Connections -->")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "</div><!-- Step 4: Server Connections -->")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -399,7 +416,7 @@ func OnboardingPage(assets AssetPaths, data OnboardingData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "<div id=\"wizard-step-4\" class=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "<div id=\"wizard-step-4\" class=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -412,7 +429,7 @@ func OnboardingPage(assets AssetPaths, data OnboardingData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "\"><h2 class=\"text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1\">Server Connections</h2><p class=\"text-sm text-gray-500 dark:text-gray-400 mb-4\">Optionally connect to your media server or music manager. These are not required for core functionality and can be added later from Settings.</p><div class=\"space-y-4\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "\"><h2 class=\"text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1\">Server Connections</h2><p class=\"text-sm text-gray-500 dark:text-gray-400 mb-4\">Optionally connect to your media server or music manager. These are not required for core functionality and can be added later from Settings.</p><div class=\"space-y-4\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -428,7 +445,7 @@ func OnboardingPage(assets AssetPaths, data OnboardingData) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "<ul class=\"text-xs text-gray-500 dark:text-gray-400 mt-1 space-y-0.5 list-disc list-inside\"><li>Import artist lists from your Emby music libraries</li><li>Push metadata updates (biography, genres, sort name) to Emby artist entries</li><li>Trigger per-artist or full library refreshes after image and NFO changes</li><li>Read MusicBrainz IDs from existing Emby records for accurate provider matching</li></ul>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "<ul class=\"text-xs text-gray-500 dark:text-gray-400 mt-1 space-y-0.5 list-disc list-inside\"><li>Import artist lists from your Emby music libraries</li><li>Push metadata updates (biography, genres, sort name) to Emby artist entries</li><li>Trigger per-artist or full library refreshes after image and NFO changes</li><li>Read MusicBrainz IDs from existing Emby records for accurate provider matching</li></ul>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -450,7 +467,7 @@ func OnboardingPage(assets AssetPaths, data OnboardingData) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "<ul class=\"text-xs text-gray-500 dark:text-gray-400 mt-1 space-y-0.5 list-disc list-inside\"><li>Import artist lists from your Jellyfin music libraries</li><li>Push metadata updates (biography, genres, sort name) to Jellyfin artist entries</li><li>Trigger per-artist or full library refreshes after image and NFO changes</li><li>Read MusicBrainz IDs from existing Jellyfin records for accurate provider matching</li></ul>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 37, "<ul class=\"text-xs text-gray-500 dark:text-gray-400 mt-1 space-y-0.5 list-disc list-inside\"><li>Import artist lists from your Jellyfin music libraries</li><li>Push metadata updates (biography, genres, sort name) to Jellyfin artist entries</li><li>Trigger per-artist or full library refreshes after image and NFO changes</li><li>Read MusicBrainz IDs from existing Jellyfin records for accurate provider matching</li></ul>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -472,7 +489,7 @@ func OnboardingPage(assets AssetPaths, data OnboardingData) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "<ul class=\"text-xs text-gray-500 dark:text-gray-400 mt-1 space-y-0.5 list-disc list-inside\"><li>Read-only metadata source for MusicBrainz ID seeding</li><li>No library is created for Lidarr connections</li><li>Detect Lidarr NFO writer configuration to warn about write conflicts</li><li>Read metadata profiles for configuration awareness</li></ul>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "<ul class=\"text-xs text-gray-500 dark:text-gray-400 mt-1 space-y-0.5 list-disc list-inside\"><li>Read-only metadata source for MusicBrainz ID seeding</li><li>No library is created for Lidarr connections</li><li>Detect Lidarr NFO writer configuration to warn about write conflicts</li><li>Read metadata profiles for configuration awareness</li></ul>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -482,7 +499,7 @@ func OnboardingPage(assets AssetPaths, data OnboardingData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 37, "</div><div id=\"ob-clobber-warnings\" hx-get=\"/api/v1/connections/clobber-check\" hx-trigger=\"load delay:1s, clobberRecheck from:body\" hx-swap=\"innerHTML\" class=\"mt-4\"></div></div><!-- Step 5: Artist Discovery -->")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 39, "</div><div id=\"ob-clobber-warnings\" hx-get=\"/api/v1/connections/clobber-check\" hx-trigger=\"load delay:1s, clobberRecheck from:body\" hx-swap=\"innerHTML\" class=\"mt-4\"></div></div><!-- Step 5: Artist Discovery -->")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -491,7 +508,7 @@ func OnboardingPage(assets AssetPaths, data OnboardingData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "<div id=\"wizard-step-5\" class=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 40, "<div id=\"wizard-step-5\" class=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -504,55 +521,55 @@ func OnboardingPage(assets AssetPaths, data OnboardingData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 39, "\"><!-- Phase 1: Opt-in --><div id=\"discovery-opt-in\"><h2 class=\"text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1\">Artist Discovery</h2><p class=\"text-sm text-gray-500 dark:text-gray-400 mb-4\">Stillwater can search your configured providers to identify artists in your library and fetch metadata automatically.</p>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "\"><!-- Phase 1: Opt-in --><div id=\"discovery-opt-in\"><h2 class=\"text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1\">Artist Discovery</h2><p class=\"text-sm text-gray-500 dark:text-gray-400 mb-4\">Stillwater can search your configured providers to identify artists in your library and fetch metadata automatically.</p>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if data.UnidentifiedCount < 0 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 40, "<div class=\"rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 p-4 mb-5\"><div class=\"flex items-center gap-3\"><div class=\"flex-shrink-0\"><svg class=\"w-8 h-8 text-amber-600 dark:text-amber-400\" fill=\"none\" viewBox=\"0 0 24 24\" stroke=\"currentColor\" stroke-width=\"1.5\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z\"></path></svg></div><div><p class=\"text-sm font-medium text-amber-800 dark:text-amber-200\">Could not check artist identification status</p><p class=\"text-xs text-amber-700 dark:text-amber-300/70 mt-0.5\">You can still start discovery -- it will determine the count automatically.</p></div></div></div><button type=\"button\" id=\"discovery-start-btn\" class=\"w-full text-sm px-4 py-2.5 rounded-md bg-green-600 text-white hover:bg-green-700 transition-colors font-medium\" onclick=\"startDiscovery()\">Start Discovery</button><p class=\"text-xs text-gray-500 dark:text-gray-400 mt-3 text-center\">You can skip this and identify artists individually later from the Artists page.</p>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 42, "<div class=\"rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 p-4 mb-5\"><div class=\"flex items-center gap-3\"><div class=\"flex-shrink-0\"><svg class=\"w-8 h-8 text-amber-600 dark:text-amber-400\" fill=\"none\" viewBox=\"0 0 24 24\" stroke=\"currentColor\" stroke-width=\"1.5\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z\"></path></svg></div><div><p class=\"text-sm font-medium text-amber-800 dark:text-amber-200\">Could not check artist identification status</p><p class=\"text-xs text-amber-700 dark:text-amber-300/70 mt-0.5\">You can still start discovery -- it will determine the count automatically.</p></div></div></div><button type=\"button\" id=\"discovery-start-btn\" class=\"w-full text-sm px-4 py-2.5 rounded-md bg-green-600 text-white hover:bg-green-700 transition-colors font-medium\" onclick=\"startDiscovery()\">Start Discovery</button><p class=\"text-xs text-gray-500 dark:text-gray-400 mt-3 text-center\">You can skip this and identify artists individually later from the Artists page.</p>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else if data.UnidentifiedCount > 0 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "<div class=\"rounded-lg border border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/20 p-4 mb-5\"><div class=\"flex items-center gap-3\"><div class=\"flex-shrink-0\"><svg class=\"w-8 h-8 text-blue-600 dark:text-blue-400\" fill=\"none\" viewBox=\"0 0 24 24\" stroke=\"currentColor\" stroke-width=\"1.5\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z\"></path></svg></div><div><p class=\"text-sm font-medium text-blue-800 dark:text-blue-200\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 43, "<div class=\"rounded-lg border border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/20 p-4 mb-5\"><div class=\"flex items-center gap-3\"><div class=\"flex-shrink-0\"><svg class=\"w-8 h-8 text-blue-600 dark:text-blue-400\" fill=\"none\" viewBox=\"0 0 24 24\" stroke=\"currentColor\" stroke-width=\"1.5\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z\"></path></svg></div><div><p class=\"text-sm font-medium text-blue-800 dark:text-blue-200\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var31 string
 			templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(data.UnidentifiedCount) + " artists need identification")
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 348, Col: 146}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 351, Col: 146}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var31))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 42, "</p><p class=\"text-xs text-blue-700 dark:text-blue-300/70 mt-0.5\">These artists have no MusicBrainz ID linked. Discovery will search providers and auto-link high-confidence matches.</p></div></div></div><div class=\"space-y-2 mb-5 text-xs text-gray-600 dark:text-gray-400\"><div class=\"flex items-start gap-2\"><svg class=\"w-4 h-4 text-green-600 dark:text-green-400 mt-0.5 flex-shrink-0\" fill=\"none\" viewBox=\"0 0 24 24\" stroke=\"currentColor\" stroke-width=\"2\"><polyline points=\"20 6 9 17 4 12\"></polyline></svg> <span>Matches artists against your Emby/Jellyfin/Lidarr libraries first</span></div><div class=\"flex items-start gap-2\"><svg class=\"w-4 h-4 text-green-600 dark:text-green-400 mt-0.5 flex-shrink-0\" fill=\"none\" viewBox=\"0 0 24 24\" stroke=\"currentColor\" stroke-width=\"2\"><polyline points=\"20 6 9 17 4 12\"></polyline></svg> <span>Compares local album folders against MusicBrainz discographies</span></div><div class=\"flex items-start gap-2\"><svg class=\"w-4 h-4 text-green-600 dark:text-green-400 mt-0.5 flex-shrink-0\" fill=\"none\" viewBox=\"0 0 24 24\" stroke=\"currentColor\" stroke-width=\"2\"><polyline points=\"20 6 9 17 4 12\"></polyline></svg> <span>Queues uncertain matches for your review</span></div></div><button type=\"button\" id=\"discovery-start-btn\" class=\"w-full text-sm px-4 py-2.5 rounded-md bg-green-600 text-white hover:bg-green-700 transition-colors font-medium\" onclick=\"startDiscovery()\">Start Discovery</button><p class=\"text-xs text-gray-500 dark:text-gray-400 mt-3 text-center\">You can skip this and identify artists individually later from the Artists page.</p>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 44, "</p><p class=\"text-xs text-blue-700 dark:text-blue-300/70 mt-0.5\">These artists have no MusicBrainz ID linked. Discovery will search providers and auto-link high-confidence matches.</p></div></div></div><div class=\"space-y-2 mb-5 text-xs text-gray-600 dark:text-gray-400\"><div class=\"flex items-start gap-2\"><svg class=\"w-4 h-4 text-green-600 dark:text-green-400 mt-0.5 flex-shrink-0\" fill=\"none\" viewBox=\"0 0 24 24\" stroke=\"currentColor\" stroke-width=\"2\"><polyline points=\"20 6 9 17 4 12\"></polyline></svg> <span>Matches artists against your Emby/Jellyfin/Lidarr libraries first</span></div><div class=\"flex items-start gap-2\"><svg class=\"w-4 h-4 text-green-600 dark:text-green-400 mt-0.5 flex-shrink-0\" fill=\"none\" viewBox=\"0 0 24 24\" stroke=\"currentColor\" stroke-width=\"2\"><polyline points=\"20 6 9 17 4 12\"></polyline></svg> <span>Compares local album folders against MusicBrainz discographies</span></div><div class=\"flex items-start gap-2\"><svg class=\"w-4 h-4 text-green-600 dark:text-green-400 mt-0.5 flex-shrink-0\" fill=\"none\" viewBox=\"0 0 24 24\" stroke=\"currentColor\" stroke-width=\"2\"><polyline points=\"20 6 9 17 4 12\"></polyline></svg> <span>Queues uncertain matches for your review</span></div></div><button type=\"button\" id=\"discovery-start-btn\" class=\"w-full text-sm px-4 py-2.5 rounded-md bg-green-600 text-white hover:bg-green-700 transition-colors font-medium\" onclick=\"startDiscovery()\">Start Discovery</button><p class=\"text-xs text-gray-500 dark:text-gray-400 mt-3 text-center\">You can skip this and identify artists individually later from the Artists page.</p>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 43, "<div class=\"flex flex-col items-center py-6\"><svg class=\"w-12 h-12 text-green-600 dark:text-green-400 mb-3\" fill=\"none\" viewBox=\"0 0 24 24\" stroke=\"currentColor\" stroke-width=\"1.5\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z\"></path></svg><p class=\"text-sm font-medium text-gray-900 dark:text-gray-100\">All artists are already identified</p><p class=\"text-xs text-gray-500 dark:text-gray-400 mt-1\">Nothing to discover. You're all set!</p></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 45, "<div class=\"flex flex-col items-center py-6\"><svg class=\"w-12 h-12 text-green-600 dark:text-green-400 mb-3\" fill=\"none\" viewBox=\"0 0 24 24\" stroke=\"currentColor\" stroke-width=\"1.5\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z\"></path></svg><p class=\"text-sm font-medium text-gray-900 dark:text-gray-100\">All artists are already identified</p><p class=\"text-xs text-gray-500 dark:text-gray-400 mt-1\">Nothing to discover. You're all set!</p></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 44, "</div><!-- Phase 2: Progress --><div id=\"discovery-progress\" class=\"hidden\"><h2 class=\"text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1\">Artist Discovery</h2><p class=\"text-sm text-gray-500 dark:text-gray-400 mb-4\">Identifying artists in your library...</p><div class=\"mb-4\"><div class=\"flex justify-between text-xs text-gray-600 dark:text-gray-400 mb-1.5\"><span>Processing: <span id=\"discovery-current-name\" class=\"text-gray-900 dark:text-gray-200 font-medium\"></span></span> <span><span id=\"discovery-processed\">0</span> / <span id=\"discovery-total\">0</span></span></div><div class=\"w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5\"><div id=\"discovery-bar\" class=\"bg-blue-600 h-2.5 rounded-full transition-all\" style=\"width: 0%\"></div></div></div><div class=\"grid grid-cols-3 gap-3 mb-4\"><div class=\"rounded-lg bg-gray-100 dark:bg-gray-700/50 p-3 text-center\"><div id=\"discovery-auto-linked\" class=\"text-lg font-bold text-green-600 dark:text-green-400\">0</div><div class=\"text-xs text-gray-500 dark:text-gray-400\">Auto-linked</div></div><div class=\"rounded-lg bg-gray-100 dark:bg-gray-700/50 p-3 text-center\"><div id=\"discovery-queued\" class=\"text-lg font-bold text-amber-600 dark:text-amber-400\">0</div><div class=\"text-xs text-gray-500 dark:text-gray-400\">Need review</div></div><div class=\"rounded-lg bg-gray-100 dark:bg-gray-700/50 p-3 text-center\"><div id=\"discovery-unmatched\" class=\"text-lg font-bold text-gray-500 dark:text-gray-400\">0</div><div class=\"text-xs text-gray-500 dark:text-gray-400\">No match</div></div></div><button type=\"button\" id=\"discovery-cancel-btn\" class=\"w-full text-sm px-4 py-2 rounded-md border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors\" onclick=\"cancelDiscovery()\">Cancel</button><p class=\"text-xs text-gray-500 dark:text-gray-400 mt-3 text-center\">Already-linked artists are saved immediately. You can cancel at any time without losing progress.</p></div><!-- Phase 3: Review --><div id=\"discovery-review\" class=\"hidden\"><h2 class=\"text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1\">Artist Discovery</h2><p id=\"discovery-review-summary\" class=\"text-sm text-gray-500 dark:text-gray-400 mb-1\"></p><div id=\"discovery-review-badges\" class=\"flex gap-3 text-xs mb-4 mt-3\"></div><div id=\"discovery-review-list\" class=\"space-y-1.5 max-h-80 overflow-y-auto pr-1\"></div><p class=\"text-xs text-gray-500 dark:text-gray-400 mt-3\">Click an artist to see candidates. Pick the correct match or skip. Unreviewed artists can be identified later from the Artists page.</p></div></div><!-- Navigation --><div class=\"flex items-center justify-between\"><button type=\"button\" id=\"skip-btn\" class=\"text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 py-2\" onclick=\"finishWizard()\">Skip setup</button><div class=\"flex items-center gap-3\"><button type=\"button\" id=\"back-btn\" class=\"hidden text-sm px-4 py-2 rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors\" onclick=\"goToStep(currentStep - 1)\">Back</button> <button type=\"button\" id=\"next-btn\" class=\"text-sm px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 transition-colors\" onclick=\"goToStep(currentStep + 1)\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 46, "</div><!-- Phase 2: Progress --><div id=\"discovery-progress\" class=\"hidden\"><h2 class=\"text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1\">Artist Discovery</h2><p class=\"text-sm text-gray-500 dark:text-gray-400 mb-4\">Identifying artists in your library...</p><div class=\"mb-4\"><div class=\"flex justify-between text-xs text-gray-600 dark:text-gray-400 mb-1.5\"><span>Processing: <span id=\"discovery-current-name\" class=\"text-gray-900 dark:text-gray-200 font-medium\"></span></span> <span><span id=\"discovery-processed\">0</span> / <span id=\"discovery-total\">0</span></span></div><div class=\"w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5\"><div id=\"discovery-bar\" class=\"bg-blue-600 h-2.5 rounded-full transition-all\" style=\"width: 0%\"></div></div></div><div class=\"grid grid-cols-3 gap-3 mb-4\"><div class=\"rounded-lg bg-gray-100 dark:bg-gray-700/50 p-3 text-center\"><div id=\"discovery-auto-linked\" class=\"text-lg font-bold text-green-600 dark:text-green-400\">0</div><div class=\"text-xs text-gray-500 dark:text-gray-400\">Auto-linked</div></div><div class=\"rounded-lg bg-gray-100 dark:bg-gray-700/50 p-3 text-center\"><div id=\"discovery-queued\" class=\"text-lg font-bold text-amber-600 dark:text-amber-400\">0</div><div class=\"text-xs text-gray-500 dark:text-gray-400\">Need review</div></div><div class=\"rounded-lg bg-gray-100 dark:bg-gray-700/50 p-3 text-center\"><div id=\"discovery-unmatched\" class=\"text-lg font-bold text-gray-500 dark:text-gray-400\">0</div><div class=\"text-xs text-gray-500 dark:text-gray-400\">No match</div></div></div><button type=\"button\" id=\"discovery-cancel-btn\" class=\"w-full text-sm px-4 py-2 rounded-md border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors\" onclick=\"cancelDiscovery()\">Cancel</button><p class=\"text-xs text-gray-500 dark:text-gray-400 mt-3 text-center\">Already-linked artists are saved immediately. You can cancel at any time without losing progress.</p></div><!-- Phase 3: Review --><div id=\"discovery-review\" class=\"hidden\"><h2 class=\"text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1\">Artist Discovery</h2><p id=\"discovery-review-summary\" class=\"text-sm text-gray-500 dark:text-gray-400 mb-1\"></p><div id=\"discovery-review-badges\" class=\"flex gap-3 text-xs mb-4 mt-3\"></div><div id=\"discovery-review-list\" class=\"space-y-1.5 max-h-80 overflow-y-auto pr-1\"></div><p class=\"text-xs text-gray-500 dark:text-gray-400 mt-3\">Click an artist to see candidates. Pick the correct match or skip. Unreviewed artists can be identified later from the Artists page.</p></div></div><!-- Navigation --><div class=\"flex items-center justify-between\"><button type=\"button\" id=\"skip-btn\" class=\"text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 py-2\" onclick=\"finishWizard()\">Skip setup</button><div class=\"flex items-center gap-3\"><button type=\"button\" id=\"back-btn\" class=\"hidden text-sm px-4 py-2 rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors\" onclick=\"goToStep(currentStep - 1)\">Back</button> <button type=\"button\" id=\"next-btn\" class=\"text-sm px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 transition-colors\" onclick=\"goToStep(currentStep + 1)\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if data.CurrentStep == 0 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 45, "Get Started")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 47, "Get Started")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 46, "Next")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 48, "Next")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 47, "</button> <button type=\"button\" id=\"finish-btn\" class=\"hidden text-sm px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 transition-colors\" onclick=\"finishWizard()\">Finish Setup</button></div></div></div></div><script>\n\t\t\t\tvar parsedStep = parseInt(document.body.dataset.currentStep, 10);\n\t\t\t\tvar currentStep = isNaN(parsedStep) ? 0 : parsedStep;\n\t\t\t\tvar totalSteps = 5;\n\t\t\t\tvar discoveryPhase = 'idle'; // idle, running, review\n\t\t\t\tvar discoveryPollTimer = null;\n\t\t\t\tvar discoveryReviewQueue = [];\n\t\t\t\tvar discoveryPollFailures = 0;\n\t\t\t\tvar bpEl = document.querySelector('meta[name=\"htmx-base-path\"]');\n\t\t\t\tvar basePath = bpEl ? bpEl.content : '';\n\n\t\t\t\tfunction getCsrfToken() {\n\t\t\t\t\treturn document.cookie.replace(/(?:(?:^|.*;\\s*)csrf_token\\s*\\=\\s*([^;]*).*$)|^.*$/, \"$1\");\n\t\t\t\t}\n\n\t\t\t\tfunction removeFromReviewQueue(artistId) {\n\t\t\t\t\tfor (var i = 0; i < discoveryReviewQueue.length; i++) {\n\t\t\t\t\t\tif (discoveryReviewQueue[i].artist_id === artistId) {\n\t\t\t\t\t\t\tdiscoveryReviewQueue.splice(i, 1);\n\t\t\t\t\t\t\tbreak;\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t\tvar summaryEl = document.getElementById('discovery-review-summary');\n\t\t\t\t\tif (summaryEl) {\n\t\t\t\t\t\tvar current = summaryEl.textContent;\n\t\t\t\t\t\tvar prefix = current.indexOf('Discovery canceled.') === 0 ? 'Discovery canceled. ' : 'Discovery complete. ';\n\t\t\t\t\t\tsummaryEl.textContent = prefix + String(discoveryReviewQueue.length) + ' artists need your review.';\n\t\t\t\t\t}\n\t\t\t\t\tvar amberSpan = document.querySelector('#discovery-review-badges span:nth-child(2)');\n\t\t\t\t\tif (amberSpan) {\n\t\t\t\t\t\tamberSpan.textContent = String(discoveryReviewQueue.length) + ' need review';\n\t\t\t\t\t}\n\t\t\t\t}\n\n\t\t\t\tfunction goToStep(step) {\n\t\t\t\t\tif (step < 0) step = 0;\n\t\t\t\t\tif (step > totalSteps) step = totalSteps;\n\t\t\t\t\tcurrentStep = step;\n\n\t\t\t\t\t// Step 0 (intro) is outside the progress bar\n\t\t\t\t\tvar introStep = document.getElementById('wizard-step-0');\n\t\t\t\t\tvar progressBar = document.getElementById('progress-bar');\n\t\t\t\t\tif (introStep) introStep.classList.toggle('hidden', step !== 0);\n\t\t\t\t\tif (progressBar) progressBar.classList.toggle('hidden', step === 0);\n\n\t\t\t\t\tfor (var i = 1; i <= totalSteps; i++) {\n\t\t\t\t\t\tvar el = document.getElementById('wizard-step-' + i);\n\t\t\t\t\t\tif (el) el.classList.toggle('hidden', i !== step);\n\n\t\t\t\t\t\tvar dot = document.getElementById('step-dot-' + i);\n\t\t\t\t\t\tvar label = document.getElementById('step-label-' + i);\n\t\t\t\t\t\tvar line = document.getElementById('step-line-' + i);\n\t\t\t\t\t\tif (dot) {\n\t\t\t\t\t\t\tif (i <= step) {\n\t\t\t\t\t\t\t\tdot.className = 'h-8 w-8 rounded-full bg-blue-600 text-white flex items-center justify-center text-sm font-medium';\n\t\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t\tdot.className = 'h-8 w-8 rounded-full bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 flex items-center justify-center text-sm font-medium';\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}\n\t\t\t\t\t\tif (label) {\n\t\t\t\t\t\t\tif (i <= step) {\n\t\t\t\t\t\t\t\tlabel.className = 'text-sm font-medium text-gray-900 dark:text-gray-100 hidden sm:inline';\n\t\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t\tlabel.className = 'text-sm text-gray-500 dark:text-gray-400 hidden sm:inline';\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}\n\t\t\t\t\t\tif (line) {\n\t\t\t\t\t\t\tline.className = i < step\n\t\t\t\t\t\t\t\t? 'h-0.5 w-8 bg-blue-600 mx-2 sm:w-8'\n\t\t\t\t\t\t\t\t: 'h-0.5 w-8 bg-gray-300 dark:bg-gray-600 mx-2 sm:w-8';\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\n\t\t\t\t\tdocument.getElementById('back-btn').classList.toggle('hidden', step <= 0);\n\t\t\t\t\tvar nextBtn = document.getElementById('next-btn');\n\t\t\t\t\tnextBtn.classList.toggle('hidden', step >= totalSteps);\n\t\t\t\t\tnextBtn.textContent = step === 0 ? 'Get Started' : 'Next';\n\t\t\t\t\tdocument.getElementById('finish-btn').classList.toggle('hidden', step < totalSteps);\n\n\t\t\t\t\t// Step 5 (discovery) hides Back during progress/review phases.\n\t\t\t\t\tif (step === 5 && (discoveryPhase === 'running' || discoveryPhase === 'review')) {\n\t\t\t\t\t\tdocument.getElementById('back-btn').classList.add('hidden');\n\t\t\t\t\t}\n\n\t\t\t\t\t// Step 2 (platform): auto-select based on auth provider only if no platform is already selected\n\t\t\t\t\tif (step === 2) {\n\t\t\t\t\t\tvar userAuthProvider = document.body.dataset.userAuthProvider;\n\t\t\t\t\t\tif (userAuthProvider && (userAuthProvider === 'emby' || userAuthProvider === 'jellyfin')) {\n\t\t\t\t\t\t\tvar hasActiveCard = document.querySelector('[data-profile-card].border-blue-500') !== null;\n\t\t\t\t\t\t\tif (!hasActiveCard) {\n\t\t\t\t\t\t\t\t// Defer auto-select slightly to ensure DOM is fully updated\n\t\t\t\t\t\t\t\tsetTimeout(function() {\n\t\t\t\t\t\t\t\t\tautoSelectPlatformCard(userAuthProvider);\n\t\t\t\t\t\t\t\t}, 100);\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\n\t\t\t\t\tfetch(basePath + '/api/v1/settings', {\n\t\t\t\t\t\tmethod: 'PUT',\n\t\t\t\t\t\theaders: {'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken()},\n\t\t\t\t\t\tbody: JSON.stringify({\"onboarding.step\": String(step)})\n\t\t\t\t\t}).catch(function(err) {\n\t\t\t\t\t\tconsole.warn('Failed to persist onboarding step:', err);\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\tfunction finishWizard() {\n\t\t\t\t\tfetch(basePath + '/api/v1/settings', {\n\t\t\t\t\t\tmethod: 'PUT',\n\t\t\t\t\t\theaders: {'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken()},\n\t\t\t\t\t\tbody: JSON.stringify({\"onboarding.completed\": \"true\"})\n\t\t\t\t\t}).then(function(resp) {\n\t\t\t\t\t\tif (!resp.ok) throw new Error('HTTP ' + resp.status);\n\t\t\t\t\t\twindow.location.href = basePath + '/';\n\t\t\t\t\t}).catch(function() {\n\t\t\t\t\t\talert('Failed to complete setup. Please try again.');\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\tfunction selectPlatform(el) {\n\t\t\t\t\tvar cards = el.closest('.grid').querySelectorAll('[data-profile-card]');\n\t\t\t\t\tcards.forEach(function(card) {\n\t\t\t\t\t\tcard.classList.remove('border-blue-500', 'bg-blue-50', 'dark:bg-blue-900/20');\n\t\t\t\t\t\tcard.classList.add('border-gray-200', 'dark:border-gray-700');\n\t\t\t\t\t});\n\t\t\t\t\tel.closest('[data-profile-card]').classList.remove('border-gray-200', 'dark:border-gray-700');\n\t\t\t\t\tel.closest('[data-profile-card]').classList.add('border-blue-500', 'bg-blue-50', 'dark:bg-blue-900/20');\n\t\t\t\t}\n\n\t\t\t\tfunction autoSelectPlatformCard(platformId) {\n\t\t\t\t\t// Validate platformId against allowlist to prevent selector injection\n\t\t\t\t\tif (platformId !== 'emby' && platformId !== 'jellyfin') {\n\t\t\t\t\t\treturn;\n\t\t\t\t\t}\n\t\t\t\t\tvar card = document.querySelector('[data-profile-card][hx-post*=\"/' + platformId + '/\"]');\n\t\t\t\t\tif (card) {\n\t\t\t\t\t\tcard.click();\n\t\t\t\t\t}\n\t\t\t\t}\n\n\t\t\t\tfunction syncLibraryTypeHelpText() {\n\t\t\t\t\tvar selectEl = document.querySelector('#ob-library-form select[name=\"type\"]');\n\t\t\t\t\tvar helpEl = document.getElementById('ob-library-type-help');\n\t\t\t\t\tif (selectEl && helpEl) {\n\t\t\t\t\t\thelpEl.textContent = selectEl.value === 'classical'\n\t\t\t\t\t\t\t? 'Classical: For libraries that primarily contain classical music. Affects labeling; advanced classical features are planned for a future release.'\n\t\t\t\t\t\t\t: 'Regular: Standard artist-centric library. Use this for most music collections.';\n\t\t\t\t\t}\n\t\t\t\t}\n\n\t\t\t\tfunction onLibraryAfterRequest(event) {\n\t\t\t\t\tvar errorEl = document.getElementById('ob-library-error');\n\t\t\t\t\tif (event.detail.successful) {\n\t\t\t\t\t\tif (errorEl) errorEl.classList.add('hidden');\n\t\t\t\t\t\tdocument.getElementById('ob-library-form').reset();\n\t\t\t\t\t\tsyncLibraryTypeHelpText();\n\t\t\t\t\t\tdocument.getElementById('ob-library-form').classList.add('hidden');\n\t\t\t\t\t\tdocument.getElementById('ob-add-library-btn').classList.remove('hidden');\n\t\t\t\t\t\trefreshLibraryList();\n\t\t\t\t\t} else {\n\t\t\t\t\t\t// Show inline error from the server response.\n\t\t\t\t\t\tvar msg = 'Failed to add library. Please check the path and try again.';\n\t\t\t\t\t\ttry {\n\t\t\t\t\t\t\tvar xhr = event.detail.xhr;\n\t\t\t\t\t\t\tif (xhr && xhr.responseText) {\n\t\t\t\t\t\t\t\tvar data = JSON.parse(xhr.responseText);\n\t\t\t\t\t\t\t\tif (data.error) msg = data.error;\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t} catch (e) { /* use default message */ }\n\t\t\t\t\t\tif (errorEl) {\n\t\t\t\t\t\t\terrorEl.textContent = msg;\n\t\t\t\t\t\t\terrorEl.classList.remove('hidden');\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t}\n\n\t\t\t\tfunction refreshLibraryList() {\n\t\t\t\t\tfetch(basePath + '/api/v1/libraries', {\n\t\t\t\t\t\theaders: {'X-CSRF-Token': getCsrfToken()}\n\t\t\t\t\t}).then(function(res) {\n\t\t\t\t\t\tif (!res.ok) throw new Error('HTTP ' + res.status);\n\t\t\t\t\t\treturn res.json();\n\t\t\t\t\t}).then(function(libs) {\n\t\t\t\t\t\tvar list = document.getElementById('ob-library-list');\n\t\t\t\t\t\tif (!libs || libs.length === 0) {\n\t\t\t\t\t\t\tlist.innerHTML = '<p id=\"ob-no-libraries\" class=\"text-sm text-gray-400 dark:text-gray-500 italic\">No libraries configured yet.</p>';\n\t\t\t\t\t\t\treturn;\n\t\t\t\t\t\t}\n\t\t\t\t\t\tvar html = '';\n\t\t\t\t\t\tlibs.forEach(function(lib) {\n\t\t\t\t\t\t\tvar pathLine = lib.path ? '<div class=\"text-xs text-gray-500 dark:text-gray-400\">' + escapeHtml(lib.path) + '</div>' : '';\n\t\t\t\t\t\t\tvar connectionBadge = lib.connection_id ? '<span class=\"inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300\">Connection</span>' : '';\n\t\t\t\t\t\t\thtml += '<div class=\"flex items-center justify-between rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3\" id=\"ob-lib-' + lib.id + '\">'\n\t\t\t\t\t\t\t\t+ '<div>'\n\t\t\t\t\t\t\t\t+ '<div class=\"font-medium text-sm text-gray-900 dark:text-gray-100\">' + escapeHtml(lib.name) + '</div>'\n\t\t\t\t\t\t\t\t+ pathLine\n\t\t\t\t\t\t\t\t+ '<div class=\"flex items-center gap-1.5 mt-1\">'\n\t\t\t\t\t\t\t\t+ '<span class=\"inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300\">' + escapeHtml(lib.type) + '</span>'\n\t\t\t\t\t\t\t\t+ connectionBadge\n\t\t\t\t\t\t\t\t+ '</div>'\n\t\t\t\t\t\t\t\t+ '</div>'\n\t\t\t\t\t\t\t\t+ '<button type=\"button\" class=\"text-xs text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300\" onclick=\"deleteLibrary(\\'' + escapeJsString(lib.id) + '\\')\">'\n\t\t\t\t\t\t\t\t+ 'Remove'\n\t\t\t\t\t\t\t\t+ '</button>'\n\t\t\t\t\t\t\t\t+ '</div>';\n\t\t\t\t\t\t});\n\t\t\t\t\t\tlist.innerHTML = html;\n\t\t\t\t\t}).catch(function() {\n\t\t\t\t\t\tvar list = document.getElementById('ob-library-list');\n\t\t\t\t\t\tif (list) list.textContent = 'Failed to load libraries. Please refresh the page.';\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\tfunction deleteLibrary(id) {\n\t\t\t\t\tfetch(basePath + '/api/v1/libraries/' + id, {\n\t\t\t\t\t\tmethod: 'DELETE',\n\t\t\t\t\t\theaders: {'X-CSRF-Token': getCsrfToken()}\n\t\t\t\t\t}).then(function(res) {\n\t\t\t\t\t\tif (res.ok) {\n\t\t\t\t\t\t\trefreshLibraryList();\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\treturn res.json().then(function(data) { alert(data.error || 'Failed to delete library'); });\n\t\t\t\t\t\t}\n\t\t\t\t\t}).catch(function() {\n\t\t\t\t\t\talert('Network error removing library. Please try again.');\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\tfunction escapeHtml(str) {\n\t\t\t\t\tvar div = document.createElement('div');\n\t\t\t\t\tdiv.textContent = str;\n\t\t\t\t\treturn div.innerHTML;\n\t\t\t\t}\n\n\t\t\t\tfunction escapeJsString(s) {\n\t\t\t\t\treturn String(s)\n\t\t\t\t\t\t.replace(/\\\\/g, '\\\\\\\\')\n\t\t\t\t\t\t.replace(/'/g, \"\\\\'\")\n\t\t\t\t\t\t.replace(/&/g, '&amp;')\n\t\t\t\t\t\t.replace(/\"/g, '&quot;')\n\t\t\t\t\t\t.replace(/</g, '&lt;')\n\t\t\t\t\t\t.replace(/>/g, '&gt;')\n\t\t\t\t\t\t.replace(/\\r?\\n/g, '\\\\n');\n\t\t\t\t}\n\n\t\t\t\tfunction discoverLibraries(connID, connType) {\n\t\t\t\t\thtmx.ajax('GET', '/api/v1/connections/' + connID + '/libraries', {\n\t\t\t\t\t\ttarget: '#ob-discover-' + connType,\n\t\t\t\t\t\tswap: 'innerHTML'\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\tfunction showDiscoveryProgress() {\n\t\t\t\t\tdiscoveryPhase = 'running';\n\t\t\t\t\tvar optIn = document.getElementById('discovery-opt-in');\n\t\t\t\t\tvar progress = document.getElementById('discovery-progress');\n\t\t\t\t\tvar review = document.getElementById('discovery-review');\n\t\t\t\t\tif (optIn) optIn.classList.add('hidden');\n\t\t\t\t\tif (progress) progress.classList.remove('hidden');\n\t\t\t\t\tif (review) review.classList.add('hidden');\n\t\t\t\t\tdocument.getElementById('back-btn').classList.add('hidden');\n\t\t\t\t}\n\n\t\t\t\tfunction startDiscovery() {\n\t\t\t\t\t// Disable button immediately to prevent double-click spawning duplicate polls.\n\t\t\t\t\tvar startBtn = document.getElementById('discovery-start-btn');\n\t\t\t\t\tif (startBtn) { startBtn.disabled = true; startBtn.textContent = 'Starting...'; }\n\t\t\t\t\tfetch(basePath + '/api/v1/artists/bulk-identify', {\n\t\t\t\t\t\tmethod: 'POST',\n\t\t\t\t\t\tcredentials: 'same-origin',\n\t\t\t\t\t\theaders: {'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken()},\n\t\t\t\t\t\tbody: JSON.stringify({})\n\t\t\t\t\t}).then(function(resp) {\n\t\t\t\t\t\tif (resp.status === 409) {\n\t\t\t\t\t\t\tshowDiscoveryProgress();\n\t\t\t\t\t\t\tpollDiscoveryStatus();\n\t\t\t\t\t\t\treturn;\n\t\t\t\t\t\t}\n\t\t\t\t\t\tif (!resp.ok) {\n\t\t\t\t\t\t\treturn resp.text().then(function(text) {\n\t\t\t\t\t\t\t\tif (startBtn) { startBtn.disabled = false; startBtn.textContent = 'Start Discovery'; }\n\t\t\t\t\t\t\t\tvar msg = 'Failed to start discovery (HTTP ' + resp.status + ')';\n\t\t\t\t\t\t\t\ttry { var d = JSON.parse(text); if (d.error) msg = d.error; } catch(e) { /* non-JSON */ }\n\t\t\t\t\t\t\t\talert(msg);\n\t\t\t\t\t\t\t});\n\t\t\t\t\t\t}\n\t\t\t\t\t\treturn resp.json().then(function(data) {\n\t\t\t\t\t\t\tif (data.status === 'running') {\n\t\t\t\t\t\t\t\tshowDiscoveryProgress();\n\t\t\t\t\t\t\t\tvar totalEl = document.getElementById('discovery-total');\n\t\t\t\t\t\t\t\tif (totalEl) totalEl.textContent = String(data.total);\n\t\t\t\t\t\t\t\tpollDiscoveryStatus();\n\t\t\t\t\t\t\t} else if (data.total === 0) {\n\t\t\t\t\t\t\t\tvar optIn = document.getElementById('discovery-opt-in');\n\t\t\t\t\t\t\t\tif (optIn) {\n\t\t\t\t\t\t\t\t\toptIn.innerHTML = '';\n\t\t\t\t\t\t\t\t\tvar wrapper = document.createElement('div');\n\t\t\t\t\t\t\t\t\twrapper.className = 'flex flex-col items-center py-6';\n\t\t\t\t\t\t\t\t\tvar svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');\n\t\t\t\t\t\t\t\t\tsvg.setAttribute('class', 'w-12 h-12 text-green-600 dark:text-green-400 mb-3');\n\t\t\t\t\t\t\t\t\tsvg.setAttribute('fill', 'none');\n\t\t\t\t\t\t\t\t\tsvg.setAttribute('viewBox', '0 0 24 24');\n\t\t\t\t\t\t\t\t\tsvg.setAttribute('stroke', 'currentColor');\n\t\t\t\t\t\t\t\t\tsvg.setAttribute('stroke-width', '1.5');\n\t\t\t\t\t\t\t\t\tvar path = document.createElementNS('http://www.w3.org/2000/svg', 'path');\n\t\t\t\t\t\t\t\t\tpath.setAttribute('stroke-linecap', 'round');\n\t\t\t\t\t\t\t\t\tpath.setAttribute('stroke-linejoin', 'round');\n\t\t\t\t\t\t\t\t\tpath.setAttribute('d', 'M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z');\n\t\t\t\t\t\t\t\t\tsvg.appendChild(path);\n\t\t\t\t\t\t\t\t\twrapper.appendChild(svg);\n\t\t\t\t\t\t\t\t\tvar p1 = document.createElement('p');\n\t\t\t\t\t\t\t\t\tp1.className = 'text-sm font-medium text-gray-900 dark:text-gray-100';\n\t\t\t\t\t\t\t\t\tp1.textContent = 'All artists are already identified';\n\t\t\t\t\t\t\t\t\twrapper.appendChild(p1);\n\t\t\t\t\t\t\t\t\tvar p2 = document.createElement('p');\n\t\t\t\t\t\t\t\t\tp2.className = 'text-xs text-gray-500 dark:text-gray-400 mt-1';\n\t\t\t\t\t\t\t\t\tp2.textContent = 'Nothing to discover. You are all set!';\n\t\t\t\t\t\t\t\t\twrapper.appendChild(p2);\n\t\t\t\t\t\t\t\t\toptIn.appendChild(wrapper);\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t});\n\t\t\t\t\t}).catch(function() {\n\t\t\t\t\t\tif (startBtn) { startBtn.disabled = false; startBtn.textContent = 'Start Discovery'; }\n\t\t\t\t\t\talert('Network error starting discovery. Please try again.');\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\tfunction pollDiscoveryStatus() {\n\t\t\t\t\tfetch(basePath + '/api/v1/artists/bulk-identify', {\n\t\t\t\t\t\tcredentials: 'same-origin'\n\t\t\t\t\t}).then(function(resp) {\n\t\t\t\t\t\tif (!resp.ok) {\n\t\t\t\t\t\t\tdiscoveryPollFailures++;\n\t\t\t\t\t\t\tif (discoveryPollFailures >= 10) {\n\t\t\t\t\t\t\t\tdocument.getElementById('discovery-current-name').textContent = '';\n\t\t\t\t\t\t\t\tvar desc = document.querySelector('#discovery-progress > p:first-of-type');\n\t\t\t\t\t\t\t\tif (desc) desc.textContent = 'Lost connection to the discovery job. Please refresh the page.';\n\t\t\t\t\t\t\t\tdocument.getElementById('discovery-cancel-btn').classList.add('hidden');\n\t\t\t\t\t\t\t\treturn;\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\tdiscoveryPollTimer = setTimeout(pollDiscoveryStatus, 2000);\n\t\t\t\t\t\t\treturn;\n\t\t\t\t\t\t}\n\t\t\t\t\t\treturn resp.json();\n\t\t\t\t\t}).then(function(data) {\n\t\t\t\t\t\tif (!data) return;\n\t\t\t\t\t\tdiscoveryPollFailures = 0;\n\n\t\t\t\t\t\tvar processed = data.processed || 0;\n\t\t\t\t\t\tvar total = data.total || 0;\n\n\t\t\t\t\t\tvar processedEl = document.getElementById('discovery-processed');\n\t\t\t\t\t\tvar totalEl = document.getElementById('discovery-total');\n\t\t\t\t\t\tvar autoLinkedEl = document.getElementById('discovery-auto-linked');\n\t\t\t\t\t\tvar queuedEl = document.getElementById('discovery-queued');\n\t\t\t\t\t\tvar unmatchedEl = document.getElementById('discovery-unmatched');\n\t\t\t\t\t\tvar currentNameEl = document.getElementById('discovery-current-name');\n\n\t\t\t\t\t\tif (processedEl) processedEl.textContent = String(processed);\n\t\t\t\t\t\tif (totalEl) totalEl.textContent = String(total);\n\t\t\t\t\t\tif (autoLinkedEl) autoLinkedEl.textContent = String(data.auto_linked || 0);\n\t\t\t\t\t\tif (queuedEl) queuedEl.textContent = String(data.queued || 0);\n\t\t\t\t\t\tif (unmatchedEl) unmatchedEl.textContent = String(data.unmatched || 0);\n\t\t\t\t\t\tif (currentNameEl) currentNameEl.textContent = data.current_name || '';\n\n\t\t\t\t\t\tvar barWidth = total > 0 ? Math.round((processed / total) * 100) : 0;\n\t\t\t\t\t\tvar barEl = document.getElementById('discovery-bar');\n\t\t\t\t\t\tif (barEl) barEl.style.width = barWidth + '%';\n\n\t\t\t\t\t\tif (data.status === 'running') {\n\t\t\t\t\t\t\tdiscoveryPollTimer = setTimeout(pollDiscoveryStatus, 1000);\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\tdiscoveryReviewQueue = data.review_queue || [];\n\t\t\t\t\t\t\tshowDiscoveryComplete(data, data.status === 'canceled');\n\t\t\t\t\t\t}\n\t\t\t\t\t}).catch(function() {\n\t\t\t\t\t\tdiscoveryPollFailures++;\n\t\t\t\t\t\tif (discoveryPollFailures >= 10) {\n\t\t\t\t\t\t\tdocument.getElementById('discovery-current-name').textContent = '';\n\t\t\t\t\t\t\tvar desc = document.querySelector('#discovery-progress > p:first-of-type');\n\t\t\t\t\t\t\tif (desc) desc.textContent = 'Lost connection to the discovery job. Please refresh the page.';\n\t\t\t\t\t\t\tdocument.getElementById('discovery-cancel-btn').classList.add('hidden');\n\t\t\t\t\t\t\treturn;\n\t\t\t\t\t\t}\n\t\t\t\t\t\tdiscoveryPollTimer = setTimeout(pollDiscoveryStatus, 2000);\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\tfunction cancelDiscovery() {\n\t\t\t\t\tvar cancelBtn = document.getElementById('discovery-cancel-btn');\n\t\t\t\t\tif (cancelBtn) { cancelBtn.disabled = true; cancelBtn.textContent = 'Cancelling...'; }\n\t\t\t\t\tfetch(basePath + '/api/v1/artists/bulk-identify', {\n\t\t\t\t\t\tmethod: 'DELETE',\n\t\t\t\t\t\tcredentials: 'same-origin',\n\t\t\t\t\t\theaders: {'X-CSRF-Token': getCsrfToken()}\n\t\t\t\t\t}).then(function(resp) {\n\t\t\t\t\t\tif (!resp.ok) {\n\t\t\t\t\t\t\tif (cancelBtn) { cancelBtn.disabled = false; cancelBtn.textContent = 'Cancel'; }\n\t\t\t\t\t\t\talert('Failed to cancel discovery. The job may still be running.');\n\t\t\t\t\t\t}\n\t\t\t\t\t\t// Success: polling will detect canceled status\n\t\t\t\t\t}).catch(function() {\n\t\t\t\t\t\tif (cancelBtn) { cancelBtn.disabled = false; cancelBtn.textContent = 'Cancel'; }\n\t\t\t\t\t\talert('Network error cancelling discovery. Please try again.');\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\tfunction showDiscoveryComplete(data, wasCanceled) {\n\t\t\t\t\tif (discoveryReviewQueue.length > 0) {\n\t\t\t\t\t\tshowDiscoveryReview(data, wasCanceled);\n\t\t\t\t\t\treturn;\n\t\t\t\t\t}\n\t\t\t\t\t// No items to review -- show completion in the progress panel.\n\t\t\t\t\tvar cancelBtn = document.getElementById('discovery-cancel-btn');\n\t\t\t\t\tif (cancelBtn) cancelBtn.classList.add('hidden');\n\n\t\t\t\t\tvar statusText = wasCanceled ? 'Discovery canceled.' : 'Discovery complete.';\n\t\t\t\t\tvar summaryText = String(data.auto_linked || 0) + ' artists linked'\n\t\t\t\t\t\t+ (wasCanceled ? ' before cancellation.' : ' automatically.');\n\n\t\t\t\t\tvar progressEl = document.getElementById('discovery-progress');\n\t\t\t\t\tif (progressEl) {\n\t\t\t\t\t\tvar heading = progressEl.querySelector('h2');\n\t\t\t\t\t\tif (heading) {\n\t\t\t\t\t\t\tvar sibling = heading.nextElementSibling;\n\t\t\t\t\t\t\tif (sibling && sibling.tagName === 'P') {\n\t\t\t\t\t\t\t\tsibling.textContent = statusText;\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}\n\t\t\t\t\t\tvar paras = progressEl.querySelectorAll('p');\n\t\t\t\t\t\tvar lastP = paras.length > 0 ? paras[paras.length - 1] : null;\n\t\t\t\t\t\tif (lastP) {\n\t\t\t\t\t\t\tlastP.textContent = summaryText;\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t\tdiscoveryPhase = 'review';\n\t\t\t\t}\n\n\t\t\t\tfunction showDiscoveryReview(data, wasCanceled) {\n\t\t\t\t\tdiscoveryPhase = 'review';\n\n\t\t\t\t\tvar progressEl = document.getElementById('discovery-progress');\n\t\t\t\t\tvar reviewEl = document.getElementById('discovery-review');\n\t\t\t\t\tif (progressEl) progressEl.classList.add('hidden');\n\t\t\t\t\tif (reviewEl) reviewEl.classList.remove('hidden');\n\t\t\t\t\tdocument.getElementById('back-btn').classList.add('hidden');\n\n\t\t\t\t\tvar prefix = wasCanceled ? 'Discovery canceled. ' : 'Discovery complete. ';\n\t\t\t\t\tvar summaryEl = document.getElementById('discovery-review-summary');\n\t\t\t\t\tif (summaryEl) {\n\t\t\t\t\t\tsummaryEl.textContent = prefix + String(discoveryReviewQueue.length) + ' artists need your review.';\n\t\t\t\t\t}\n\n\t\t\t\t\tvar badgesEl = document.getElementById('discovery-review-badges');\n\t\t\t\t\tif (badgesEl) {\n\t\t\t\t\t\tbadgesEl.textContent = '';\n\t\t\t\t\t\tvar greenSpan = document.createElement('span');\n\t\t\t\t\t\tgreenSpan.className = 'inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium bg-green-100 dark:bg-green-900/30 border border-green-300 dark:border-green-700/30 text-green-700 dark:text-green-400';\n\t\t\t\t\t\tgreenSpan.textContent = String(data.auto_linked || 0) + ' auto-linked';\n\t\t\t\t\t\tbadgesEl.appendChild(greenSpan);\n\n\t\t\t\t\t\tvar amberSpan = document.createElement('span');\n\t\t\t\t\t\tamberSpan.className = 'inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium bg-amber-100 dark:bg-amber-900/30 border border-amber-300 dark:border-amber-700/30 text-amber-700 dark:text-amber-400';\n\t\t\t\t\t\tamberSpan.textContent = String(discoveryReviewQueue.length) + ' need review';\n\t\t\t\t\t\tbadgesEl.appendChild(amberSpan);\n\n\t\t\t\t\t\tvar graySpan = document.createElement('span');\n\t\t\t\t\t\tgraySpan.className = 'inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium bg-gray-100 dark:bg-gray-700/50 border border-gray-300 dark:border-gray-600/30 text-gray-600 dark:text-gray-400';\n\t\t\t\t\t\tgraySpan.textContent = String(data.unmatched || 0) + ' no match';\n\t\t\t\t\t\tbadgesEl.appendChild(graySpan);\n\t\t\t\t\t}\n\n\t\t\t\t\tbuildReviewAccordion();\n\t\t\t\t}\n\n\t\t\t\tfunction buildReviewAccordion() {\n\t\t\t\t\tvar list = document.getElementById('discovery-review-list');\n\t\t\t\t\tif (!list) return;\n\t\t\t\t\tlist.textContent = '';\n\n\t\t\t\t\tfor (var i = 0; i < discoveryReviewQueue.length; i++) {\n\t\t\t\t\t\tvar item = discoveryReviewQueue[i];\n\n\t\t\t\t\t\t// Compute initials: first letter of each word, max 2, uppercased\n\t\t\t\t\t\tvar words = item.artist_name.trim().split(/\\s+/);\n\t\t\t\t\t\tvar initials = '';\n\t\t\t\t\t\tfor (var w = 0; w < words.length && w < 2; w++) {\n\t\t\t\t\t\t\tinitials += words[w].charAt(0).toUpperCase();\n\t\t\t\t\t\t}\n\n\t\t\t\t\t\tvar tierLabel = item.tier === 'album' ? 'album match' : 'name match';\n\t\t\t\t\t\tvar candidateCount = item.candidates ? item.candidates.length : 0;\n\n\t\t\t\t\t\tvar row = document.createElement('div');\n\t\t\t\t\t\trow.id = 'review-row-' + item.artist_id;\n\t\t\t\t\t\trow.className = 'rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden';\n\n\t\t\t\t\t\t// Header button\n\t\t\t\t\t\tvar headerBtn = document.createElement('button');\n\t\t\t\t\t\theaderBtn.type = 'button';\n\t\t\t\t\t\theaderBtn.className = 'w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors';\n\t\t\t\t\t\theaderBtn.setAttribute('aria-expanded', 'false');\n\t\t\t\t\t\theaderBtn.setAttribute('aria-controls', 'review-content-' + item.artist_id);\n\t\t\t\t\t\theaderBtn.onclick = function(b) { return function() { toggleReviewRow(b); }; }(headerBtn);\n\t\t\t\t\t\theaderBtn.innerHTML = '<div class=\"w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-xs font-medium text-gray-600 dark:text-gray-300 shrink-0\">'\n\t\t\t\t\t\t\t+ escapeHtml(initials)\n\t\t\t\t\t\t\t+ '</div>'\n\t\t\t\t\t\t\t+ '<div class=\"flex-1 min-w-0\">'\n\t\t\t\t\t\t\t+ '<span class=\"text-sm font-medium text-gray-900 dark:text-gray-100 truncate block\">' + escapeHtml(item.artist_name) + '</span>'\n\t\t\t\t\t\t\t+ '<span class=\"text-xs text-gray-500 dark:text-gray-400\">' + String(candidateCount) + ' candidate' + (candidateCount !== 1 ? 's' : '') + ' / ' + escapeHtml(tierLabel) + '</span>'\n\t\t\t\t\t\t\t+ '</div>'\n\t\t\t\t\t\t\t+ '<svg class=\"w-4 h-4 text-gray-400 shrink-0 transition-transform\" fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M19 9l-7 7-7-7\"/></svg>';\n\n\t\t\t\t\t\t// Expandable content (hidden by default)\n\t\t\t\t\t\tvar content = document.createElement('div');\n\t\t\t\t\t\tcontent.className = 'hidden border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/30 p-3';\n\t\t\t\t\t\tcontent.id = 'review-content-' + item.artist_id;\n\t\t\t\t\t\tcontent.innerHTML = buildCandidateCards(item);\n\n\t\t\t\t\t\trow.appendChild(headerBtn);\n\t\t\t\t\t\trow.appendChild(content);\n\t\t\t\t\t\tlist.appendChild(row);\n\t\t\t\t\t}\n\t\t\t\t}\n\n\t\t\t\tfunction toggleReviewRow(btn) {\n\t\t\t\t\tvar content = btn.nextElementSibling;\n\t\t\t\t\tif (content) content.classList.toggle('hidden');\n\t\t\t\t\tvar svg = btn.querySelector('svg');\n\t\t\t\t\tif (svg) svg.classList.toggle('rotate-180');\n\t\t\t\t\tvar expanded = btn.getAttribute('aria-expanded') === 'true';\n\t\t\t\t\tbtn.setAttribute('aria-expanded', String(!expanded));\n\t\t\t\t}\n\n\t\t\t\tfunction buildCandidateCards(item) {\n\t\t\t\t\tvar html = '<div class=\"space-y-2\">';\n\t\t\t\t\tvar candidates = item.candidates || [];\n\n\t\t\t\t\tfor (var c = 0; c < candidates.length; c++) {\n\t\t\t\t\t\tvar cand = candidates[c];\n\t\t\t\t\t\thtml += '<button type=\"button\" onclick=\"linkCandidate(\\'' + escapeJsString(item.artist_id) + '\\', \\'' + escapeJsString(cand.musicbrainz_id) + '\\', this)\"'\n\t\t\t\t\t\t\t+ ' class=\"w-full text-left rounded border border-gray-200 dark:border-gray-600 p-3 hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:border-blue-300 dark:hover:border-blue-700 transition-colors\">';\n\n\t\t\t\t\t\thtml += '<div class=\"flex items-center justify-between\">'\n\t\t\t\t\t\t\t+ '<div class=\"flex-1 min-w-0\">'\n\t\t\t\t\t\t\t+ '<div class=\"font-medium text-sm text-gray-900 dark:text-gray-100\">' + escapeHtml(cand.name) + '</div>';\n\n\t\t\t\t\t\t// Type, country, disambiguation line\n\t\t\t\t\t\tvar meta = '';\n\t\t\t\t\t\tif (cand.type) meta += escapeHtml(cand.type);\n\t\t\t\t\t\tif (cand.country) meta += (meta ? ' from ' : '') + escapeHtml(cand.country);\n\t\t\t\t\t\tif (cand.disambiguation) meta += (meta ? ' ' : '') + '<span class=\"italic\">(' + escapeHtml(cand.disambiguation) + ')</span>';\n\t\t\t\t\t\tif (meta) html += '<div class=\"text-xs text-gray-500 dark:text-gray-400 mt-0.5\">' + meta + '</div>';\n\n\t\t\t\t\t\t// MBID in monospace\n\t\t\t\t\t\tif (cand.musicbrainz_id) {\n\t\t\t\t\t\t\thtml += '<div class=\"text-[10px] text-gray-400 font-mono mt-0.5 truncate\">' + escapeHtml(cand.musicbrainz_id) + '</div>';\n\t\t\t\t\t\t}\n\n\t\t\t\t\t\t// Album match badge\n\t\t\t\t\t\tif (cand.album_comparison && cand.album_comparison.local_count > 0) {\n\t\t\t\t\t\t\tvar pct = cand.album_comparison.match_percent || 0;\n\t\t\t\t\t\t\tvar badgeClasses;\n\t\t\t\t\t\t\tif (pct >= 60) {\n\t\t\t\t\t\t\t\tbadgeClasses = 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 border-green-300 dark:border-green-700/30';\n\t\t\t\t\t\t\t} else if (pct >= 30) {\n\t\t\t\t\t\t\t\tbadgeClasses = 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border-amber-300 dark:border-amber-700/30';\n\t\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t\tbadgeClasses = 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 border-red-300 dark:border-red-700/30';\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\thtml += '<div class=\"mt-1.5 flex items-center gap-2\">'\n\t\t\t\t\t\t\t\t+ '<span class=\"inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ' + badgeClasses + '\">'\n\t\t\t\t\t\t\t\t+ String(cand.album_comparison.match_count || 0) + '/' + String(cand.album_comparison.local_count) + ' albums'\n\t\t\t\t\t\t\t\t+ '</span>'\n\t\t\t\t\t\t\t\t+ '</div>';\n\t\t\t\t\t\t}\n\n\t\t\t\t\t\thtml += '</div>'; // close flex-1\n\n\t\t\t\t\t\t// Score on the right\n\t\t\t\t\t\tif (cand.score > 0) {\n\t\t\t\t\t\t\thtml += '<div class=\"flex items-center gap-2 ml-3 shrink-0\">'\n\t\t\t\t\t\t\t\t+ '<span class=\"text-xs text-gray-500\">' + String(cand.score) + '</span>'\n\t\t\t\t\t\t\t\t+ '</div>';\n\t\t\t\t\t\t}\n\n\t\t\t\t\t\thtml += '</div>'; // close flex justify-between\n\t\t\t\t\t\thtml += '</button>';\n\t\t\t\t\t}\n\n\t\t\t\t\t// Skip button\n\t\t\t\t\thtml += '<button type=\"button\" onclick=\"skipReviewArtist(\\'' + escapeJsString(item.artist_id) + '\\')\"'\n\t\t\t\t\t\t+ ' class=\"w-full text-center rounded border border-dashed border-gray-300 dark:border-gray-600 px-3 py-2 text-xs text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors\">'\n\t\t\t\t\t\t+ 'Skip this artist'\n\t\t\t\t\t\t+ '</button>';\n\n\t\t\t\t\thtml += '</div>';\n\t\t\t\t\treturn html;\n\t\t\t\t}\n\n\t\t\t\tfunction linkCandidate(artistId, mbid, btn) {\n\t\t\t\t\t// Disable all candidate buttons in this row to prevent concurrent link requests.\n\t\t\t\t\tvar row = btn.closest('[id^=\"review-row-\"]');\n\t\t\t\t\tif (row && row.dataset.linking === '1') return;\n\t\t\t\t\tif (row) row.dataset.linking = '1';\n\t\t\t\t\tvar rowButtons = row ? row.querySelectorAll('button') : [btn];\n\t\t\t\t\tfor (var i = 0; i < rowButtons.length; i++) {\n\t\t\t\t\t\trowButtons[i].disabled = true;\n\t\t\t\t\t\trowButtons[i].style.opacity = '0.5';\n\t\t\t\t\t}\n\n\t\t\t\t\tfetch(basePath + '/api/v1/artists/bulk-identify/link', {\n\t\t\t\t\t\tmethod: 'POST',\n\t\t\t\t\t\tcredentials: 'same-origin',\n\t\t\t\t\t\theaders: {\n\t\t\t\t\t\t\t'Content-Type': 'application/json',\n\t\t\t\t\t\t\t'X-CSRF-Token': getCsrfToken()\n\t\t\t\t\t\t},\n\t\t\t\t\t\tbody: JSON.stringify({artist_id: artistId, mbid: mbid})\n\t\t\t\t\t}).then(function(resp) {\n\t\t\t\t\t\tif (!resp.ok) {\n\t\t\t\t\t\t\treturn resp.text().then(function(text) {\n\t\t\t\t\t\t\t\tvar msg = 'Failed to link artist (HTTP ' + resp.status + ')';\n\t\t\t\t\t\t\t\ttry { var d = JSON.parse(text); if (d.error) msg = d.error; } catch(e) { /* non-JSON */ }\n\t\t\t\t\t\t\t\tthrow new Error(msg);\n\t\t\t\t\t\t\t});\n\t\t\t\t\t\t}\n\t\t\t\t\t\treturn resp.json();\n\t\t\t\t\t}).then(function() {\n\t\t\t\t\t\t// Find the artist name before removing from queue\n\t\t\t\t\t\tvar artistName = artistId;\n\t\t\t\t\t\tfor (var i = 0; i < discoveryReviewQueue.length; i++) {\n\t\t\t\t\t\t\tif (discoveryReviewQueue[i].artist_id === artistId) {\n\t\t\t\t\t\t\t\tartistName = discoveryReviewQueue[i].artist_name;\n\t\t\t\t\t\t\t\tbreak;\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}\n\t\t\t\t\t\tremoveFromReviewQueue(artistId);\n\n\t\t\t\t\t\tvar row = document.getElementById('review-row-' + artistId);\n\t\t\t\t\t\tif (row) {\n\t\t\t\t\t\t\trow.className = 'rounded-lg border border-green-200 dark:border-green-800/40 bg-green-50 dark:bg-green-900/10 overflow-hidden';\n\t\t\t\t\t\t\trow.innerHTML = '<div class=\"flex items-center gap-3 px-3 py-2\">'\n\t\t\t\t\t\t\t\t+ '<div class=\"w-8 h-8 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center shrink-0\">'\n\t\t\t\t\t\t\t\t+ '<svg class=\"w-4 h-4 text-green-600 dark:text-green-400\" fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M5 13l4 4L19 7\"/></svg>'\n\t\t\t\t\t\t\t\t+ '</div>'\n\t\t\t\t\t\t\t\t+ '<div class=\"flex-1 min-w-0\">'\n\t\t\t\t\t\t\t\t+ '<span class=\"text-sm font-medium text-gray-900 dark:text-gray-100\">' + escapeHtml(artistName) + '</span>'\n\t\t\t\t\t\t\t\t+ '<span class=\"text-xs text-green-600 dark:text-green-400 ml-2\">Linked successfully</span>'\n\t\t\t\t\t\t\t\t+ '</div>'\n\t\t\t\t\t\t\t\t+ '</div>';\n\t\t\t\t\t\t}\n\t\t\t\t\t}).catch(function(err) {\n\t\t\t\t\t\tif (row) delete row.dataset.linking;\n\t\t\t\t\t\tfor (var i = 0; i < rowButtons.length; i++) {\n\t\t\t\t\t\t\trowButtons[i].disabled = false;\n\t\t\t\t\t\t\trowButtons[i].style.opacity = '1';\n\t\t\t\t\t\t}\n\t\t\t\t\t\talert(err.message || 'Failed to link artist');\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\tfunction skipReviewArtist(artistId) {\n\t\t\t\t\tvar row = document.getElementById('review-row-' + artistId);\n\t\t\t\t\tif (!row) return;\n\t\t\t\t\tremoveFromReviewQueue(artistId);\n\t\t\t\t\trow.classList.add('opacity-50');\n\t\t\t\t\t// Hide the expandable content (second child of the row)\n\t\t\t\t\tvar children = row.children;\n\t\t\t\t\tif (children.length > 1) {\n\t\t\t\t\t\tchildren[1].classList.add('hidden');\n\t\t\t\t\t}\n\t\t\t\t\t// Collapse the chevron and reset aria-expanded\n\t\t\t\t\tvar headerBtn = row.querySelector('button');\n\t\t\t\t\tif (headerBtn) headerBtn.setAttribute('aria-expanded', 'false');\n\t\t\t\t\tvar svg = row.querySelector('button svg');\n\t\t\t\t\tif (svg) svg.classList.remove('rotate-180');\n\t\t\t\t}\n\n\t\t\t\tfunction onConnectionSaved(connType, xhr) {\n\t\t\t\t\tvar form = document.getElementById('ob-conn-form-' + connType);\n\t\t\t\t\tvar success = document.getElementById('ob-conn-success-' + connType);\n\t\t\t\t\tvar dot = document.getElementById('ob-conn-dot-' + connType);\n\t\t\t\t\tvar btn = document.getElementById('ob-conn-btn-' + connType);\n\t\t\t\t\tif (form) form.classList.add('hidden');\n\t\t\t\t\tif (success) success.classList.remove('hidden');\n\t\t\t\t\tif (btn) btn.classList.add('hidden');\n\t\t\t\t\tdocument.body.dispatchEvent(new Event('clobberRecheck'));\n\t\t\t\t\tif (dot) {\n\t\t\t\t\t\tdot.classList.remove('bg-gray-400', 'dark:bg-gray-500');\n\t\t\t\t\t\tdot.classList.add('bg-green-500');\n\t\t\t\t\t}\n\t\t\t\t\tif (xhr && xhr.responseText) {\n\t\t\t\t\t\ttry {\n\t\t\t\t\t\t\tvar data = JSON.parse(xhr.responseText);\n\t\t\t\t\t\t\tif (data.id) {\n\t\t\t\t\t\t\t\tvar testBtn = document.getElementById('ob-conn-test-' + connType);\n\t\t\t\t\t\t\t\tif (testBtn) {\n\t\t\t\t\t\t\t\t\ttestBtn.classList.remove('hidden');\n\t\t\t\t\t\t\t\t\ttestBtn.onclick = function() { testConnection(data.id, connType); };\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t\t// Lidarr is read-only (MBID seeding); no libraries to discover.\n\t\t\t\t\t\t\t\tif (connType !== 'lidarr') {\n\t\t\t\t\t\t\t\t\tvar discoverBtn = document.getElementById('ob-conn-discover-btn-' + connType);\n\t\t\t\t\t\t\t\t\tif (discoverBtn) {\n\t\t\t\t\t\t\t\t\t\tdiscoverBtn.classList.remove('hidden');\n\t\t\t\t\t\t\t\t\t\tdiscoverBtn.onclick = function() { discoverLibraries(data.id, connType); };\n\t\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t} catch(e) {}\n\t\t\t\t\t}\n\t\t\t\t}\n\n\t\t\t\tfunction testConnection(connID, connType) {\n\t\t\t\t\tvar testBtn = document.getElementById('ob-conn-test-' + connType);\n\t\t\t\t\tvar resultEl = document.getElementById('ob-conn-test-result-' + connType);\n\t\t\t\t\tvar dot = document.getElementById('ob-conn-dot-' + connType);\n\t\t\t\t\tif (testBtn) { testBtn.disabled = true; testBtn.textContent = 'Testing...'; }\n\t\t\t\t\tfetch(basePath + '/api/v1/connections/' + connID + '/test', {\n\t\t\t\t\t\tmethod: 'POST',\n\t\t\t\t\t\theaders: {'X-CSRF-Token': getCsrfToken()}\n\t\t\t\t\t}).then(function(res) {\n\t\t\t\t\t\tif (!res.ok) throw new Error('HTTP ' + res.status);\n\t\t\t\t\t\treturn res.json();\n\t\t\t\t\t}).then(function(data) {\n\t\t\t\t\t\tif (testBtn) { testBtn.disabled = false; testBtn.textContent = 'Test'; }\n\t\t\t\t\t\tif (data.status === 'ok') {\n\t\t\t\t\t\t\tif (resultEl) { resultEl.className = 'text-xs mt-1 text-green-600 dark:text-green-400'; resultEl.textContent = 'Connection successful'; }\n\t\t\t\t\t\t\tif (dot) { dot.className = 'mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-green-500'; }\n\t\t\t\t\t\t\tif (connType !== 'lidarr') {\n\t\t\t\t\t\t\t\tvar discoverBtn = document.getElementById('ob-conn-discover-btn-' + connType);\n\t\t\t\t\t\t\t\tif (discoverBtn) {\n\t\t\t\t\t\t\t\t\tdiscoverBtn.classList.remove('hidden');\n\t\t\t\t\t\t\t\t\tif (!discoverBtn.dataset.bound) {\n\t\t\t\t\t\t\t\t\t\tdiscoverBtn.onclick = function() { discoverLibraries(connID, connType); };\n\t\t\t\t\t\t\t\t\t\tdiscoverBtn.dataset.bound = '1';\n\t\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\tif (resultEl) { resultEl.className = 'text-xs mt-1 text-red-600 dark:text-red-400'; resultEl.textContent = 'Failed: ' + (data.message || 'unknown error'); }\n\t\t\t\t\t\t\tif (dot) { dot.className = 'mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-red-500'; }\n\t\t\t\t\t\t}\n\t\t\t\t\t}).catch(function() {\n\t\t\t\t\t\tif (testBtn) { testBtn.disabled = false; testBtn.textContent = 'Test'; }\n\t\t\t\t\t\tif (resultEl) { resultEl.className = 'text-xs mt-1 text-red-600 dark:text-red-400'; resultEl.textContent = 'Network error'; }\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\t// Initialize to the correct step on page load\n\t\t\t\tif (currentStep !== 0) {\n\t\t\t\t\tgoToStep(currentStep);\n\t\t\t\t}\n\n\t\t\t\t// Initialize library type help text visibility on page load\n\t\t\t\tsyncLibraryTypeHelpText();\n\t\t\t</script></body></html>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 49, "</button> <button type=\"button\" id=\"finish-btn\" class=\"hidden text-sm px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 transition-colors\" onclick=\"finishWizard()\">Finish Setup</button></div></div></div></div><script>\n\t\t\t\tvar parsedStep = parseInt(document.body.dataset.currentStep, 10);\n\t\t\t\tvar currentStep = isNaN(parsedStep) ? 0 : parsedStep;\n\t\t\t\tvar totalSteps = 5;\n\t\t\t\tvar discoveryPhase = 'idle'; // idle, running, review\n\t\t\t\tvar discoveryPollTimer = null;\n\t\t\t\tvar discoveryReviewQueue = [];\n\t\t\t\tvar discoveryPollFailures = 0;\n\t\t\t\tvar bpEl = document.querySelector('meta[name=\"htmx-base-path\"]');\n\t\t\t\tvar basePath = bpEl ? bpEl.content : '';\n\n\t\t\t\tfunction getCsrfToken() {\n\t\t\t\t\treturn document.cookie.replace(/(?:(?:^|.*;\\s*)csrf_token\\s*\\=\\s*([^;]*).*$)|^.*$/, \"$1\");\n\t\t\t\t}\n\n\t\t\t\tfunction removeFromReviewQueue(artistId) {\n\t\t\t\t\tfor (var i = 0; i < discoveryReviewQueue.length; i++) {\n\t\t\t\t\t\tif (discoveryReviewQueue[i].artist_id === artistId) {\n\t\t\t\t\t\t\tdiscoveryReviewQueue.splice(i, 1);\n\t\t\t\t\t\t\tbreak;\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t\tvar summaryEl = document.getElementById('discovery-review-summary');\n\t\t\t\t\tif (summaryEl) {\n\t\t\t\t\t\tvar current = summaryEl.textContent;\n\t\t\t\t\t\tvar prefix = current.indexOf('Discovery canceled.') === 0 ? 'Discovery canceled. ' : 'Discovery complete. ';\n\t\t\t\t\t\tsummaryEl.textContent = prefix + String(discoveryReviewQueue.length) + ' artists need your review.';\n\t\t\t\t\t}\n\t\t\t\t\tvar amberSpan = document.querySelector('#discovery-review-badges span:nth-child(2)');\n\t\t\t\t\tif (amberSpan) {\n\t\t\t\t\t\tamberSpan.textContent = String(discoveryReviewQueue.length) + ' need review';\n\t\t\t\t\t}\n\t\t\t\t}\n\n\t\t\t\tfunction goToStep(step) {\n\t\t\t\t\tif (step < 0) step = 0;\n\t\t\t\t\tif (step > totalSteps) step = totalSteps;\n\t\t\t\t\tcurrentStep = step;\n\n\t\t\t\t\t// Step 0 (intro) is outside the progress bar\n\t\t\t\t\tvar introStep = document.getElementById('wizard-step-0');\n\t\t\t\t\tvar progressBar = document.getElementById('progress-bar');\n\t\t\t\t\tif (introStep) introStep.classList.toggle('hidden', step !== 0);\n\t\t\t\t\tif (progressBar) progressBar.classList.toggle('hidden', step === 0);\n\n\t\t\t\t\tfor (var i = 1; i <= totalSteps; i++) {\n\t\t\t\t\t\tvar el = document.getElementById('wizard-step-' + i);\n\t\t\t\t\t\tif (el) el.classList.toggle('hidden', i !== step);\n\n\t\t\t\t\t\tvar dot = document.getElementById('step-dot-' + i);\n\t\t\t\t\t\tvar label = document.getElementById('step-label-' + i);\n\t\t\t\t\t\tvar line = document.getElementById('step-line-' + i);\n\t\t\t\t\t\tif (dot) {\n\t\t\t\t\t\t\tif (i <= step) {\n\t\t\t\t\t\t\t\tdot.className = 'h-8 w-8 rounded-full bg-blue-600 text-white flex items-center justify-center text-sm font-medium';\n\t\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t\tdot.className = 'h-8 w-8 rounded-full bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 flex items-center justify-center text-sm font-medium';\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}\n\t\t\t\t\t\tif (label) {\n\t\t\t\t\t\t\tif (i <= step) {\n\t\t\t\t\t\t\t\tlabel.className = 'text-sm font-medium text-gray-900 dark:text-gray-100 hidden sm:inline';\n\t\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t\tlabel.className = 'text-sm text-gray-500 dark:text-gray-400 hidden sm:inline';\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}\n\t\t\t\t\t\tif (line) {\n\t\t\t\t\t\t\tline.className = i < step\n\t\t\t\t\t\t\t\t? 'h-0.5 w-8 bg-blue-600 mx-2 sm:w-8'\n\t\t\t\t\t\t\t\t: 'h-0.5 w-8 bg-gray-300 dark:bg-gray-600 mx-2 sm:w-8';\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\n\t\t\t\t\tdocument.getElementById('back-btn').classList.toggle('hidden', step <= 0);\n\t\t\t\t\tvar nextBtn = document.getElementById('next-btn');\n\t\t\t\t\tnextBtn.classList.toggle('hidden', step >= totalSteps);\n\t\t\t\t\tnextBtn.textContent = step === 0 ? 'Get Started' : 'Next';\n\t\t\t\t\tdocument.getElementById('finish-btn').classList.toggle('hidden', step < totalSteps);\n\n\t\t\t\t\t// Step 5 (discovery) hides Back during progress/review phases.\n\t\t\t\t\tif (step === 5 && (discoveryPhase === 'running' || discoveryPhase === 'review')) {\n\t\t\t\t\t\tdocument.getElementById('back-btn').classList.add('hidden');\n\t\t\t\t\t}\n\n\t\t\t\t\t// Step 2 (platform): auto-select based on auth provider only if no platform is already selected\n\t\t\t\t\tif (step === 2) {\n\t\t\t\t\t\tvar userAuthProvider = document.body.dataset.userAuthProvider;\n\t\t\t\t\t\tif (userAuthProvider && (userAuthProvider === 'emby' || userAuthProvider === 'jellyfin')) {\n\t\t\t\t\t\t\tvar hasActiveCard = document.querySelector('[data-profile-card].border-blue-500') !== null;\n\t\t\t\t\t\t\tif (!hasActiveCard) {\n\t\t\t\t\t\t\t\t// Defer auto-select slightly to ensure DOM is fully updated\n\t\t\t\t\t\t\t\tsetTimeout(function() {\n\t\t\t\t\t\t\t\t\tautoSelectPlatformCard(userAuthProvider);\n\t\t\t\t\t\t\t\t}, 100);\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\n\t\t\t\t\tfetch(basePath + '/api/v1/settings', {\n\t\t\t\t\t\tmethod: 'PUT',\n\t\t\t\t\t\theaders: {'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken()},\n\t\t\t\t\t\tbody: JSON.stringify({\"onboarding.step\": String(step)})\n\t\t\t\t\t}).catch(function(err) {\n\t\t\t\t\t\tconsole.warn('Failed to persist onboarding step:', err);\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\tfunction finishWizard() {\n\t\t\t\t\tfetch(basePath + '/api/v1/settings', {\n\t\t\t\t\t\tmethod: 'PUT',\n\t\t\t\t\t\theaders: {'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken()},\n\t\t\t\t\t\tbody: JSON.stringify({\"onboarding.completed\": \"true\"})\n\t\t\t\t\t}).then(function(resp) {\n\t\t\t\t\t\tif (!resp.ok) throw new Error('HTTP ' + resp.status);\n\t\t\t\t\t\twindow.location.href = basePath + '/';\n\t\t\t\t\t}).catch(function() {\n\t\t\t\t\t\talert('Failed to complete setup. Please try again.');\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\tfunction selectPlatform(el) {\n\t\t\t\t\tvar cards = el.closest('.grid').querySelectorAll('[data-profile-card]');\n\t\t\t\t\tcards.forEach(function(card) {\n\t\t\t\t\t\tcard.classList.remove('border-blue-500', 'bg-blue-50', 'dark:bg-blue-900/20');\n\t\t\t\t\t\tcard.classList.add('border-gray-200', 'dark:border-gray-700');\n\t\t\t\t\t});\n\t\t\t\t\tel.closest('[data-profile-card]').classList.remove('border-gray-200', 'dark:border-gray-700');\n\t\t\t\t\tel.closest('[data-profile-card]').classList.add('border-blue-500', 'bg-blue-50', 'dark:bg-blue-900/20');\n\t\t\t\t}\n\n\t\t\t\tfunction autoSelectPlatformCard(platformId) {\n\t\t\t\t\t// Validate platformId against allowlist to prevent selector injection\n\t\t\t\t\tif (platformId !== 'emby' && platformId !== 'jellyfin') {\n\t\t\t\t\t\treturn;\n\t\t\t\t\t}\n\t\t\t\t\tvar card = document.querySelector('[data-profile-card][hx-post*=\"/' + platformId + '/\"]');\n\t\t\t\t\tif (card) {\n\t\t\t\t\t\tcard.click();\n\t\t\t\t\t}\n\t\t\t\t}\n\n\t\t\t\tfunction syncLibraryTypeHelpText() {\n\t\t\t\t\tvar selectEl = document.querySelector('#ob-library-form select[name=\"type\"]');\n\t\t\t\t\tvar helpEl = document.getElementById('ob-library-type-help');\n\t\t\t\t\tif (selectEl && helpEl) {\n\t\t\t\t\t\thelpEl.textContent = selectEl.value === 'classical'\n\t\t\t\t\t\t\t? 'Classical: For libraries that primarily contain classical music. Affects labeling; advanced classical features are planned for a future release.'\n\t\t\t\t\t\t\t: 'Regular: Standard artist-centric library. Use this for most music collections.';\n\t\t\t\t\t}\n\t\t\t\t}\n\n\t\t\t\tfunction onLibraryAfterRequest(event) {\n\t\t\t\t\tvar errorEl = document.getElementById('ob-library-error');\n\t\t\t\t\tif (event.detail.successful) {\n\t\t\t\t\t\tif (errorEl) errorEl.classList.add('hidden');\n\t\t\t\t\t\tdocument.getElementById('ob-library-form').reset();\n\t\t\t\t\t\tsyncLibraryTypeHelpText();\n\t\t\t\t\t\tdocument.getElementById('ob-library-form').classList.add('hidden');\n\t\t\t\t\t\tdocument.getElementById('ob-add-library-btn').classList.remove('hidden');\n\t\t\t\t\t\trefreshLibraryList();\n\t\t\t\t\t} else {\n\t\t\t\t\t\t// Show inline error from the server response.\n\t\t\t\t\t\tvar msg = 'Failed to add library. Please check the path and try again.';\n\t\t\t\t\t\ttry {\n\t\t\t\t\t\t\tvar xhr = event.detail.xhr;\n\t\t\t\t\t\t\tif (xhr && xhr.responseText) {\n\t\t\t\t\t\t\t\tvar data = JSON.parse(xhr.responseText);\n\t\t\t\t\t\t\t\tif (data.error) msg = data.error;\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t} catch (e) { /* use default message */ }\n\t\t\t\t\t\tif (errorEl) {\n\t\t\t\t\t\t\terrorEl.textContent = msg;\n\t\t\t\t\t\t\terrorEl.classList.remove('hidden');\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t}\n\n\t\t\t\tfunction refreshLibraryList() {\n\t\t\t\t\tfetch(basePath + '/api/v1/libraries', {\n\t\t\t\t\t\theaders: {'X-CSRF-Token': getCsrfToken()}\n\t\t\t\t\t}).then(function(res) {\n\t\t\t\t\t\tif (!res.ok) throw new Error('HTTP ' + res.status);\n\t\t\t\t\t\treturn res.json();\n\t\t\t\t\t}).then(function(libs) {\n\t\t\t\t\t\tvar list = document.getElementById('ob-library-list');\n\t\t\t\t\t\tif (!libs || libs.length === 0) {\n\t\t\t\t\t\t\tlist.innerHTML = '<p id=\"ob-no-libraries\" class=\"text-sm text-gray-400 dark:text-gray-500 italic\">No libraries configured yet.</p>';\n\t\t\t\t\t\t\treturn;\n\t\t\t\t\t\t}\n\t\t\t\t\t\tvar html = '';\n\t\t\t\t\t\tlibs.forEach(function(lib) {\n\t\t\t\t\t\t\tvar pathLine = lib.path ? '<div class=\"text-xs text-gray-500 dark:text-gray-400\">' + escapeHtml(lib.path) + '</div>' : '';\n\t\t\t\t\t\t\tvar connectionBadge = lib.connection_id ? '<span class=\"inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300\">Connection</span>' : '';\n\t\t\t\t\t\t\thtml += '<div class=\"flex items-center justify-between rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3\" id=\"ob-lib-' + lib.id + '\">'\n\t\t\t\t\t\t\t\t+ '<div>'\n\t\t\t\t\t\t\t\t+ '<div class=\"font-medium text-sm text-gray-900 dark:text-gray-100\">' + escapeHtml(lib.name) + '</div>'\n\t\t\t\t\t\t\t\t+ pathLine\n\t\t\t\t\t\t\t\t+ '<div class=\"flex items-center gap-1.5 mt-1\">'\n\t\t\t\t\t\t\t\t+ '<span class=\"inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300\">' + escapeHtml(lib.type) + '</span>'\n\t\t\t\t\t\t\t\t+ connectionBadge\n\t\t\t\t\t\t\t\t+ '</div>'\n\t\t\t\t\t\t\t\t+ '</div>'\n\t\t\t\t\t\t\t\t+ '<button type=\"button\" class=\"text-xs text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300\" onclick=\"deleteLibrary(\\'' + escapeJsString(lib.id) + '\\')\">'\n\t\t\t\t\t\t\t\t+ 'Remove'\n\t\t\t\t\t\t\t\t+ '</button>'\n\t\t\t\t\t\t\t\t+ '</div>';\n\t\t\t\t\t\t});\n\t\t\t\t\t\tlist.innerHTML = html;\n\t\t\t\t\t}).catch(function() {\n\t\t\t\t\t\tvar list = document.getElementById('ob-library-list');\n\t\t\t\t\t\tif (list) list.textContent = 'Failed to load libraries. Please refresh the page.';\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\tfunction deleteLibrary(id) {\n\t\t\t\t\tfetch(basePath + '/api/v1/libraries/' + id, {\n\t\t\t\t\t\tmethod: 'DELETE',\n\t\t\t\t\t\theaders: {'X-CSRF-Token': getCsrfToken()}\n\t\t\t\t\t}).then(function(res) {\n\t\t\t\t\t\tif (res.ok) {\n\t\t\t\t\t\t\trefreshLibraryList();\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\treturn res.json().then(function(data) { alert(data.error || 'Failed to delete library'); });\n\t\t\t\t\t\t}\n\t\t\t\t\t}).catch(function() {\n\t\t\t\t\t\talert('Network error removing library. Please try again.');\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\tfunction escapeHtml(str) {\n\t\t\t\t\tvar div = document.createElement('div');\n\t\t\t\t\tdiv.textContent = str;\n\t\t\t\t\treturn div.innerHTML;\n\t\t\t\t}\n\n\t\t\t\tfunction escapeJsString(s) {\n\t\t\t\t\treturn String(s)\n\t\t\t\t\t\t.replace(/\\\\/g, '\\\\\\\\')\n\t\t\t\t\t\t.replace(/'/g, \"\\\\'\")\n\t\t\t\t\t\t.replace(/&/g, '&amp;')\n\t\t\t\t\t\t.replace(/\"/g, '&quot;')\n\t\t\t\t\t\t.replace(/</g, '&lt;')\n\t\t\t\t\t\t.replace(/>/g, '&gt;')\n\t\t\t\t\t\t.replace(/\\r?\\n/g, '\\\\n');\n\t\t\t\t}\n\n\t\t\t\tfunction discoverLibraries(connID, connType) {\n\t\t\t\t\thtmx.ajax('GET', '/api/v1/connections/' + connID + '/libraries', {\n\t\t\t\t\t\ttarget: '#ob-discover-' + connType,\n\t\t\t\t\t\tswap: 'innerHTML'\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\tfunction showDiscoveryProgress() {\n\t\t\t\t\tdiscoveryPhase = 'running';\n\t\t\t\t\tvar optIn = document.getElementById('discovery-opt-in');\n\t\t\t\t\tvar progress = document.getElementById('discovery-progress');\n\t\t\t\t\tvar review = document.getElementById('discovery-review');\n\t\t\t\t\tif (optIn) optIn.classList.add('hidden');\n\t\t\t\t\tif (progress) progress.classList.remove('hidden');\n\t\t\t\t\tif (review) review.classList.add('hidden');\n\t\t\t\t\tdocument.getElementById('back-btn').classList.add('hidden');\n\t\t\t\t}\n\n\t\t\t\tfunction startDiscovery() {\n\t\t\t\t\t// Disable button immediately to prevent double-click spawning duplicate polls.\n\t\t\t\t\tvar startBtn = document.getElementById('discovery-start-btn');\n\t\t\t\t\tif (startBtn) { startBtn.disabled = true; startBtn.textContent = 'Starting...'; }\n\t\t\t\t\tfetch(basePath + '/api/v1/artists/bulk-identify', {\n\t\t\t\t\t\tmethod: 'POST',\n\t\t\t\t\t\tcredentials: 'same-origin',\n\t\t\t\t\t\theaders: {'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken()},\n\t\t\t\t\t\tbody: JSON.stringify({})\n\t\t\t\t\t}).then(function(resp) {\n\t\t\t\t\t\tif (resp.status === 409) {\n\t\t\t\t\t\t\tshowDiscoveryProgress();\n\t\t\t\t\t\t\tpollDiscoveryStatus();\n\t\t\t\t\t\t\treturn;\n\t\t\t\t\t\t}\n\t\t\t\t\t\tif (!resp.ok) {\n\t\t\t\t\t\t\treturn resp.text().then(function(text) {\n\t\t\t\t\t\t\t\tif (startBtn) { startBtn.disabled = false; startBtn.textContent = 'Start Discovery'; }\n\t\t\t\t\t\t\t\tvar msg = 'Failed to start discovery (HTTP ' + resp.status + ')';\n\t\t\t\t\t\t\t\ttry { var d = JSON.parse(text); if (d.error) msg = d.error; } catch(e) { /* non-JSON */ }\n\t\t\t\t\t\t\t\talert(msg);\n\t\t\t\t\t\t\t});\n\t\t\t\t\t\t}\n\t\t\t\t\t\treturn resp.json().then(function(data) {\n\t\t\t\t\t\t\tif (data.status === 'running') {\n\t\t\t\t\t\t\t\tshowDiscoveryProgress();\n\t\t\t\t\t\t\t\tvar totalEl = document.getElementById('discovery-total');\n\t\t\t\t\t\t\t\tif (totalEl) totalEl.textContent = String(data.total);\n\t\t\t\t\t\t\t\tpollDiscoveryStatus();\n\t\t\t\t\t\t\t} else if (data.total === 0) {\n\t\t\t\t\t\t\t\tvar optIn = document.getElementById('discovery-opt-in');\n\t\t\t\t\t\t\t\tif (optIn) {\n\t\t\t\t\t\t\t\t\toptIn.innerHTML = '';\n\t\t\t\t\t\t\t\t\tvar wrapper = document.createElement('div');\n\t\t\t\t\t\t\t\t\twrapper.className = 'flex flex-col items-center py-6';\n\t\t\t\t\t\t\t\t\tvar svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');\n\t\t\t\t\t\t\t\t\tsvg.setAttribute('class', 'w-12 h-12 text-green-600 dark:text-green-400 mb-3');\n\t\t\t\t\t\t\t\t\tsvg.setAttribute('fill', 'none');\n\t\t\t\t\t\t\t\t\tsvg.setAttribute('viewBox', '0 0 24 24');\n\t\t\t\t\t\t\t\t\tsvg.setAttribute('stroke', 'currentColor');\n\t\t\t\t\t\t\t\t\tsvg.setAttribute('stroke-width', '1.5');\n\t\t\t\t\t\t\t\t\tvar path = document.createElementNS('http://www.w3.org/2000/svg', 'path');\n\t\t\t\t\t\t\t\t\tpath.setAttribute('stroke-linecap', 'round');\n\t\t\t\t\t\t\t\t\tpath.setAttribute('stroke-linejoin', 'round');\n\t\t\t\t\t\t\t\t\tpath.setAttribute('d', 'M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z');\n\t\t\t\t\t\t\t\t\tsvg.appendChild(path);\n\t\t\t\t\t\t\t\t\twrapper.appendChild(svg);\n\t\t\t\t\t\t\t\t\tvar p1 = document.createElement('p');\n\t\t\t\t\t\t\t\t\tp1.className = 'text-sm font-medium text-gray-900 dark:text-gray-100';\n\t\t\t\t\t\t\t\t\tp1.textContent = 'All artists are already identified';\n\t\t\t\t\t\t\t\t\twrapper.appendChild(p1);\n\t\t\t\t\t\t\t\t\tvar p2 = document.createElement('p');\n\t\t\t\t\t\t\t\t\tp2.className = 'text-xs text-gray-500 dark:text-gray-400 mt-1';\n\t\t\t\t\t\t\t\t\tp2.textContent = 'Nothing to discover. You are all set!';\n\t\t\t\t\t\t\t\t\twrapper.appendChild(p2);\n\t\t\t\t\t\t\t\t\toptIn.appendChild(wrapper);\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t});\n\t\t\t\t\t}).catch(function() {\n\t\t\t\t\t\tif (startBtn) { startBtn.disabled = false; startBtn.textContent = 'Start Discovery'; }\n\t\t\t\t\t\talert('Network error starting discovery. Please try again.');\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\tfunction pollDiscoveryStatus() {\n\t\t\t\t\tfetch(basePath + '/api/v1/artists/bulk-identify', {\n\t\t\t\t\t\tcredentials: 'same-origin'\n\t\t\t\t\t}).then(function(resp) {\n\t\t\t\t\t\tif (!resp.ok) {\n\t\t\t\t\t\t\tdiscoveryPollFailures++;\n\t\t\t\t\t\t\tif (discoveryPollFailures >= 10) {\n\t\t\t\t\t\t\t\tdocument.getElementById('discovery-current-name').textContent = '';\n\t\t\t\t\t\t\t\tvar desc = document.querySelector('#discovery-progress > p:first-of-type');\n\t\t\t\t\t\t\t\tif (desc) desc.textContent = 'Lost connection to the discovery job. Please refresh the page.';\n\t\t\t\t\t\t\t\tdocument.getElementById('discovery-cancel-btn').classList.add('hidden');\n\t\t\t\t\t\t\t\treturn;\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\tdiscoveryPollTimer = setTimeout(pollDiscoveryStatus, 2000);\n\t\t\t\t\t\t\treturn;\n\t\t\t\t\t\t}\n\t\t\t\t\t\treturn resp.json();\n\t\t\t\t\t}).then(function(data) {\n\t\t\t\t\t\tif (!data) return;\n\t\t\t\t\t\tdiscoveryPollFailures = 0;\n\n\t\t\t\t\t\tvar processed = data.processed || 0;\n\t\t\t\t\t\tvar total = data.total || 0;\n\n\t\t\t\t\t\tvar processedEl = document.getElementById('discovery-processed');\n\t\t\t\t\t\tvar totalEl = document.getElementById('discovery-total');\n\t\t\t\t\t\tvar autoLinkedEl = document.getElementById('discovery-auto-linked');\n\t\t\t\t\t\tvar queuedEl = document.getElementById('discovery-queued');\n\t\t\t\t\t\tvar unmatchedEl = document.getElementById('discovery-unmatched');\n\t\t\t\t\t\tvar currentNameEl = document.getElementById('discovery-current-name');\n\n\t\t\t\t\t\tif (processedEl) processedEl.textContent = String(processed);\n\t\t\t\t\t\tif (totalEl) totalEl.textContent = String(total);\n\t\t\t\t\t\tif (autoLinkedEl) autoLinkedEl.textContent = String(data.auto_linked || 0);\n\t\t\t\t\t\tif (queuedEl) queuedEl.textContent = String(data.queued || 0);\n\t\t\t\t\t\tif (unmatchedEl) unmatchedEl.textContent = String(data.unmatched || 0);\n\t\t\t\t\t\tif (currentNameEl) currentNameEl.textContent = data.current_name || '';\n\n\t\t\t\t\t\tvar barWidth = total > 0 ? Math.round((processed / total) * 100) : 0;\n\t\t\t\t\t\tvar barEl = document.getElementById('discovery-bar');\n\t\t\t\t\t\tif (barEl) barEl.style.width = barWidth + '%';\n\n\t\t\t\t\t\tif (data.status === 'running') {\n\t\t\t\t\t\t\tdiscoveryPollTimer = setTimeout(pollDiscoveryStatus, 1000);\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\tdiscoveryReviewQueue = data.review_queue || [];\n\t\t\t\t\t\t\tshowDiscoveryComplete(data, data.status === 'canceled');\n\t\t\t\t\t\t}\n\t\t\t\t\t}).catch(function() {\n\t\t\t\t\t\tdiscoveryPollFailures++;\n\t\t\t\t\t\tif (discoveryPollFailures >= 10) {\n\t\t\t\t\t\t\tdocument.getElementById('discovery-current-name').textContent = '';\n\t\t\t\t\t\t\tvar desc = document.querySelector('#discovery-progress > p:first-of-type');\n\t\t\t\t\t\t\tif (desc) desc.textContent = 'Lost connection to the discovery job. Please refresh the page.';\n\t\t\t\t\t\t\tdocument.getElementById('discovery-cancel-btn').classList.add('hidden');\n\t\t\t\t\t\t\treturn;\n\t\t\t\t\t\t}\n\t\t\t\t\t\tdiscoveryPollTimer = setTimeout(pollDiscoveryStatus, 2000);\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\tfunction cancelDiscovery() {\n\t\t\t\t\tvar cancelBtn = document.getElementById('discovery-cancel-btn');\n\t\t\t\t\tif (cancelBtn) { cancelBtn.disabled = true; cancelBtn.textContent = 'Cancelling...'; }\n\t\t\t\t\tfetch(basePath + '/api/v1/artists/bulk-identify', {\n\t\t\t\t\t\tmethod: 'DELETE',\n\t\t\t\t\t\tcredentials: 'same-origin',\n\t\t\t\t\t\theaders: {'X-CSRF-Token': getCsrfToken()}\n\t\t\t\t\t}).then(function(resp) {\n\t\t\t\t\t\tif (!resp.ok) {\n\t\t\t\t\t\t\tif (cancelBtn) { cancelBtn.disabled = false; cancelBtn.textContent = 'Cancel'; }\n\t\t\t\t\t\t\talert('Failed to cancel discovery. The job may still be running.');\n\t\t\t\t\t\t}\n\t\t\t\t\t\t// Success: polling will detect canceled status\n\t\t\t\t\t}).catch(function() {\n\t\t\t\t\t\tif (cancelBtn) { cancelBtn.disabled = false; cancelBtn.textContent = 'Cancel'; }\n\t\t\t\t\t\talert('Network error cancelling discovery. Please try again.');\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\tfunction showDiscoveryComplete(data, wasCanceled) {\n\t\t\t\t\tif (discoveryReviewQueue.length > 0) {\n\t\t\t\t\t\tshowDiscoveryReview(data, wasCanceled);\n\t\t\t\t\t\treturn;\n\t\t\t\t\t}\n\t\t\t\t\t// No items to review -- show completion in the progress panel.\n\t\t\t\t\tvar cancelBtn = document.getElementById('discovery-cancel-btn');\n\t\t\t\t\tif (cancelBtn) cancelBtn.classList.add('hidden');\n\n\t\t\t\t\tvar statusText = wasCanceled ? 'Discovery canceled.' : 'Discovery complete.';\n\t\t\t\t\tvar summaryText = String(data.auto_linked || 0) + ' artists linked'\n\t\t\t\t\t\t+ (wasCanceled ? ' before cancellation.' : ' automatically.');\n\n\t\t\t\t\tvar progressEl = document.getElementById('discovery-progress');\n\t\t\t\t\tif (progressEl) {\n\t\t\t\t\t\tvar heading = progressEl.querySelector('h2');\n\t\t\t\t\t\tif (heading) {\n\t\t\t\t\t\t\tvar sibling = heading.nextElementSibling;\n\t\t\t\t\t\t\tif (sibling && sibling.tagName === 'P') {\n\t\t\t\t\t\t\t\tsibling.textContent = statusText;\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}\n\t\t\t\t\t\tvar paras = progressEl.querySelectorAll('p');\n\t\t\t\t\t\tvar lastP = paras.length > 0 ? paras[paras.length - 1] : null;\n\t\t\t\t\t\tif (lastP) {\n\t\t\t\t\t\t\tlastP.textContent = summaryText;\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t\tdiscoveryPhase = 'review';\n\t\t\t\t}\n\n\t\t\t\tfunction showDiscoveryReview(data, wasCanceled) {\n\t\t\t\t\tdiscoveryPhase = 'review';\n\n\t\t\t\t\tvar progressEl = document.getElementById('discovery-progress');\n\t\t\t\t\tvar reviewEl = document.getElementById('discovery-review');\n\t\t\t\t\tif (progressEl) progressEl.classList.add('hidden');\n\t\t\t\t\tif (reviewEl) reviewEl.classList.remove('hidden');\n\t\t\t\t\tdocument.getElementById('back-btn').classList.add('hidden');\n\n\t\t\t\t\tvar prefix = wasCanceled ? 'Discovery canceled. ' : 'Discovery complete. ';\n\t\t\t\t\tvar summaryEl = document.getElementById('discovery-review-summary');\n\t\t\t\t\tif (summaryEl) {\n\t\t\t\t\t\tsummaryEl.textContent = prefix + String(discoveryReviewQueue.length) + ' artists need your review.';\n\t\t\t\t\t}\n\n\t\t\t\t\tvar badgesEl = document.getElementById('discovery-review-badges');\n\t\t\t\t\tif (badgesEl) {\n\t\t\t\t\t\tbadgesEl.textContent = '';\n\t\t\t\t\t\tvar greenSpan = document.createElement('span');\n\t\t\t\t\t\tgreenSpan.className = 'inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium bg-green-100 dark:bg-green-900/30 border border-green-300 dark:border-green-700/30 text-green-700 dark:text-green-400';\n\t\t\t\t\t\tgreenSpan.textContent = String(data.auto_linked || 0) + ' auto-linked';\n\t\t\t\t\t\tbadgesEl.appendChild(greenSpan);\n\n\t\t\t\t\t\tvar amberSpan = document.createElement('span');\n\t\t\t\t\t\tamberSpan.className = 'inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium bg-amber-100 dark:bg-amber-900/30 border border-amber-300 dark:border-amber-700/30 text-amber-700 dark:text-amber-400';\n\t\t\t\t\t\tamberSpan.textContent = String(discoveryReviewQueue.length) + ' need review';\n\t\t\t\t\t\tbadgesEl.appendChild(amberSpan);\n\n\t\t\t\t\t\tvar graySpan = document.createElement('span');\n\t\t\t\t\t\tgraySpan.className = 'inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium bg-gray-100 dark:bg-gray-700/50 border border-gray-300 dark:border-gray-600/30 text-gray-600 dark:text-gray-400';\n\t\t\t\t\t\tgraySpan.textContent = String(data.unmatched || 0) + ' no match';\n\t\t\t\t\t\tbadgesEl.appendChild(graySpan);\n\t\t\t\t\t}\n\n\t\t\t\t\tbuildReviewAccordion();\n\t\t\t\t}\n\n\t\t\t\tfunction buildReviewAccordion() {\n\t\t\t\t\tvar list = document.getElementById('discovery-review-list');\n\t\t\t\t\tif (!list) return;\n\t\t\t\t\tlist.textContent = '';\n\n\t\t\t\t\tfor (var i = 0; i < discoveryReviewQueue.length; i++) {\n\t\t\t\t\t\tvar item = discoveryReviewQueue[i];\n\n\t\t\t\t\t\t// Compute initials: first letter of each word, max 2, uppercased\n\t\t\t\t\t\tvar words = item.artist_name.trim().split(/\\s+/);\n\t\t\t\t\t\tvar initials = '';\n\t\t\t\t\t\tfor (var w = 0; w < words.length && w < 2; w++) {\n\t\t\t\t\t\t\tinitials += words[w].charAt(0).toUpperCase();\n\t\t\t\t\t\t}\n\n\t\t\t\t\t\tvar tierLabel = item.tier === 'album' ? 'album match' : 'name match';\n\t\t\t\t\t\tvar candidateCount = item.candidates ? item.candidates.length : 0;\n\n\t\t\t\t\t\tvar row = document.createElement('div');\n\t\t\t\t\t\trow.id = 'review-row-' + item.artist_id;\n\t\t\t\t\t\trow.className = 'rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden';\n\n\t\t\t\t\t\t// Header button\n\t\t\t\t\t\tvar headerBtn = document.createElement('button');\n\t\t\t\t\t\theaderBtn.type = 'button';\n\t\t\t\t\t\theaderBtn.className = 'w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors';\n\t\t\t\t\t\theaderBtn.setAttribute('aria-expanded', 'false');\n\t\t\t\t\t\theaderBtn.setAttribute('aria-controls', 'review-content-' + item.artist_id);\n\t\t\t\t\t\theaderBtn.onclick = function(b) { return function() { toggleReviewRow(b); }; }(headerBtn);\n\t\t\t\t\t\theaderBtn.innerHTML = '<div class=\"w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-xs font-medium text-gray-600 dark:text-gray-300 shrink-0\">'\n\t\t\t\t\t\t\t+ escapeHtml(initials)\n\t\t\t\t\t\t\t+ '</div>'\n\t\t\t\t\t\t\t+ '<div class=\"flex-1 min-w-0\">'\n\t\t\t\t\t\t\t+ '<span class=\"text-sm font-medium text-gray-900 dark:text-gray-100 truncate block\">' + escapeHtml(item.artist_name) + '</span>'\n\t\t\t\t\t\t\t+ '<span class=\"text-xs text-gray-500 dark:text-gray-400\">' + String(candidateCount) + ' candidate' + (candidateCount !== 1 ? 's' : '') + ' / ' + escapeHtml(tierLabel) + '</span>'\n\t\t\t\t\t\t\t+ '</div>'\n\t\t\t\t\t\t\t+ '<svg class=\"w-4 h-4 text-gray-400 shrink-0 transition-transform\" fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M19 9l-7 7-7-7\"/></svg>';\n\n\t\t\t\t\t\t// Expandable content (hidden by default)\n\t\t\t\t\t\tvar content = document.createElement('div');\n\t\t\t\t\t\tcontent.className = 'hidden border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/30 p-3';\n\t\t\t\t\t\tcontent.id = 'review-content-' + item.artist_id;\n\t\t\t\t\t\tcontent.innerHTML = buildCandidateCards(item);\n\n\t\t\t\t\t\trow.appendChild(headerBtn);\n\t\t\t\t\t\trow.appendChild(content);\n\t\t\t\t\t\tlist.appendChild(row);\n\t\t\t\t\t}\n\t\t\t\t}\n\n\t\t\t\tfunction toggleReviewRow(btn) {\n\t\t\t\t\tvar content = btn.nextElementSibling;\n\t\t\t\t\tif (content) content.classList.toggle('hidden');\n\t\t\t\t\tvar svg = btn.querySelector('svg');\n\t\t\t\t\tif (svg) svg.classList.toggle('rotate-180');\n\t\t\t\t\tvar expanded = btn.getAttribute('aria-expanded') === 'true';\n\t\t\t\t\tbtn.setAttribute('aria-expanded', String(!expanded));\n\t\t\t\t}\n\n\t\t\t\tfunction buildCandidateCards(item) {\n\t\t\t\t\tvar html = '<div class=\"space-y-2\">';\n\t\t\t\t\tvar candidates = item.candidates || [];\n\n\t\t\t\t\tfor (var c = 0; c < candidates.length; c++) {\n\t\t\t\t\t\tvar cand = candidates[c];\n\t\t\t\t\t\thtml += '<button type=\"button\" onclick=\"linkCandidate(\\'' + escapeJsString(item.artist_id) + '\\', \\'' + escapeJsString(cand.musicbrainz_id) + '\\', this)\"'\n\t\t\t\t\t\t\t+ ' class=\"w-full text-left rounded border border-gray-200 dark:border-gray-600 p-3 hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:border-blue-300 dark:hover:border-blue-700 transition-colors\">';\n\n\t\t\t\t\t\thtml += '<div class=\"flex items-center justify-between\">'\n\t\t\t\t\t\t\t+ '<div class=\"flex-1 min-w-0\">'\n\t\t\t\t\t\t\t+ '<div class=\"font-medium text-sm text-gray-900 dark:text-gray-100\">' + escapeHtml(cand.name) + '</div>';\n\n\t\t\t\t\t\t// Type, country, disambiguation line\n\t\t\t\t\t\tvar meta = '';\n\t\t\t\t\t\tif (cand.type) meta += escapeHtml(cand.type);\n\t\t\t\t\t\tif (cand.country) meta += (meta ? ' from ' : '') + escapeHtml(cand.country);\n\t\t\t\t\t\tif (cand.disambiguation) meta += (meta ? ' ' : '') + '<span class=\"italic\">(' + escapeHtml(cand.disambiguation) + ')</span>';\n\t\t\t\t\t\tif (meta) html += '<div class=\"text-xs text-gray-500 dark:text-gray-400 mt-0.5\">' + meta + '</div>';\n\n\t\t\t\t\t\t// MBID in monospace\n\t\t\t\t\t\tif (cand.musicbrainz_id) {\n\t\t\t\t\t\t\thtml += '<div class=\"text-[10px] text-gray-400 font-mono mt-0.5 truncate\">' + escapeHtml(cand.musicbrainz_id) + '</div>';\n\t\t\t\t\t\t}\n\n\t\t\t\t\t\t// Album match badge\n\t\t\t\t\t\tif (cand.album_comparison && cand.album_comparison.local_count > 0) {\n\t\t\t\t\t\t\tvar pct = cand.album_comparison.match_percent || 0;\n\t\t\t\t\t\t\tvar badgeClasses;\n\t\t\t\t\t\t\tif (pct >= 60) {\n\t\t\t\t\t\t\t\tbadgeClasses = 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 border-green-300 dark:border-green-700/30';\n\t\t\t\t\t\t\t} else if (pct >= 30) {\n\t\t\t\t\t\t\t\tbadgeClasses = 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border-amber-300 dark:border-amber-700/30';\n\t\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\t\tbadgeClasses = 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 border-red-300 dark:border-red-700/30';\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\thtml += '<div class=\"mt-1.5 flex items-center gap-2\">'\n\t\t\t\t\t\t\t\t+ '<span class=\"inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ' + badgeClasses + '\">'\n\t\t\t\t\t\t\t\t+ String(cand.album_comparison.match_count || 0) + '/' + String(cand.album_comparison.local_count) + ' albums'\n\t\t\t\t\t\t\t\t+ '</span>'\n\t\t\t\t\t\t\t\t+ '</div>';\n\t\t\t\t\t\t}\n\n\t\t\t\t\t\thtml += '</div>'; // close flex-1\n\n\t\t\t\t\t\t// Score on the right\n\t\t\t\t\t\tif (cand.score > 0) {\n\t\t\t\t\t\t\thtml += '<div class=\"flex items-center gap-2 ml-3 shrink-0\">'\n\t\t\t\t\t\t\t\t+ '<span class=\"text-xs text-gray-500\">' + String(cand.score) + '</span>'\n\t\t\t\t\t\t\t\t+ '</div>';\n\t\t\t\t\t\t}\n\n\t\t\t\t\t\thtml += '</div>'; // close flex justify-between\n\t\t\t\t\t\thtml += '</button>';\n\t\t\t\t\t}\n\n\t\t\t\t\t// Skip button\n\t\t\t\t\thtml += '<button type=\"button\" onclick=\"skipReviewArtist(\\'' + escapeJsString(item.artist_id) + '\\')\"'\n\t\t\t\t\t\t+ ' class=\"w-full text-center rounded border border-dashed border-gray-300 dark:border-gray-600 px-3 py-2 text-xs text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors\">'\n\t\t\t\t\t\t+ 'Skip this artist'\n\t\t\t\t\t\t+ '</button>';\n\n\t\t\t\t\thtml += '</div>';\n\t\t\t\t\treturn html;\n\t\t\t\t}\n\n\t\t\t\tfunction linkCandidate(artistId, mbid, btn) {\n\t\t\t\t\t// Disable all candidate buttons in this row to prevent concurrent link requests.\n\t\t\t\t\tvar row = btn.closest('[id^=\"review-row-\"]');\n\t\t\t\t\tif (row && row.dataset.linking === '1') return;\n\t\t\t\t\tif (row) row.dataset.linking = '1';\n\t\t\t\t\tvar rowButtons = row ? row.querySelectorAll('button') : [btn];\n\t\t\t\t\tfor (var i = 0; i < rowButtons.length; i++) {\n\t\t\t\t\t\trowButtons[i].disabled = true;\n\t\t\t\t\t\trowButtons[i].style.opacity = '0.5';\n\t\t\t\t\t}\n\n\t\t\t\t\tfetch(basePath + '/api/v1/artists/bulk-identify/link', {\n\t\t\t\t\t\tmethod: 'POST',\n\t\t\t\t\t\tcredentials: 'same-origin',\n\t\t\t\t\t\theaders: {\n\t\t\t\t\t\t\t'Content-Type': 'application/json',\n\t\t\t\t\t\t\t'X-CSRF-Token': getCsrfToken()\n\t\t\t\t\t\t},\n\t\t\t\t\t\tbody: JSON.stringify({artist_id: artistId, mbid: mbid})\n\t\t\t\t\t}).then(function(resp) {\n\t\t\t\t\t\tif (!resp.ok) {\n\t\t\t\t\t\t\treturn resp.text().then(function(text) {\n\t\t\t\t\t\t\t\tvar msg = 'Failed to link artist (HTTP ' + resp.status + ')';\n\t\t\t\t\t\t\t\ttry { var d = JSON.parse(text); if (d.error) msg = d.error; } catch(e) { /* non-JSON */ }\n\t\t\t\t\t\t\t\tthrow new Error(msg);\n\t\t\t\t\t\t\t});\n\t\t\t\t\t\t}\n\t\t\t\t\t\treturn resp.json();\n\t\t\t\t\t}).then(function() {\n\t\t\t\t\t\t// Find the artist name before removing from queue\n\t\t\t\t\t\tvar artistName = artistId;\n\t\t\t\t\t\tfor (var i = 0; i < discoveryReviewQueue.length; i++) {\n\t\t\t\t\t\t\tif (discoveryReviewQueue[i].artist_id === artistId) {\n\t\t\t\t\t\t\t\tartistName = discoveryReviewQueue[i].artist_name;\n\t\t\t\t\t\t\t\tbreak;\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}\n\t\t\t\t\t\tremoveFromReviewQueue(artistId);\n\n\t\t\t\t\t\tvar row = document.getElementById('review-row-' + artistId);\n\t\t\t\t\t\tif (row) {\n\t\t\t\t\t\t\trow.className = 'rounded-lg border border-green-200 dark:border-green-800/40 bg-green-50 dark:bg-green-900/10 overflow-hidden';\n\t\t\t\t\t\t\trow.innerHTML = '<div class=\"flex items-center gap-3 px-3 py-2\">'\n\t\t\t\t\t\t\t\t+ '<div class=\"w-8 h-8 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center shrink-0\">'\n\t\t\t\t\t\t\t\t+ '<svg class=\"w-4 h-4 text-green-600 dark:text-green-400\" fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M5 13l4 4L19 7\"/></svg>'\n\t\t\t\t\t\t\t\t+ '</div>'\n\t\t\t\t\t\t\t\t+ '<div class=\"flex-1 min-w-0\">'\n\t\t\t\t\t\t\t\t+ '<span class=\"text-sm font-medium text-gray-900 dark:text-gray-100\">' + escapeHtml(artistName) + '</span>'\n\t\t\t\t\t\t\t\t+ '<span class=\"text-xs text-green-600 dark:text-green-400 ml-2\">Linked successfully</span>'\n\t\t\t\t\t\t\t\t+ '</div>'\n\t\t\t\t\t\t\t\t+ '</div>';\n\t\t\t\t\t\t}\n\t\t\t\t\t}).catch(function(err) {\n\t\t\t\t\t\tif (row) delete row.dataset.linking;\n\t\t\t\t\t\tfor (var i = 0; i < rowButtons.length; i++) {\n\t\t\t\t\t\t\trowButtons[i].disabled = false;\n\t\t\t\t\t\t\trowButtons[i].style.opacity = '1';\n\t\t\t\t\t\t}\n\t\t\t\t\t\talert(err.message || 'Failed to link artist');\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\tfunction skipReviewArtist(artistId) {\n\t\t\t\t\tvar row = document.getElementById('review-row-' + artistId);\n\t\t\t\t\tif (!row) return;\n\t\t\t\t\tremoveFromReviewQueue(artistId);\n\t\t\t\t\trow.classList.add('opacity-50');\n\t\t\t\t\t// Hide the expandable content (second child of the row)\n\t\t\t\t\tvar children = row.children;\n\t\t\t\t\tif (children.length > 1) {\n\t\t\t\t\t\tchildren[1].classList.add('hidden');\n\t\t\t\t\t}\n\t\t\t\t\t// Collapse the chevron and reset aria-expanded\n\t\t\t\t\tvar headerBtn = row.querySelector('button');\n\t\t\t\t\tif (headerBtn) headerBtn.setAttribute('aria-expanded', 'false');\n\t\t\t\t\tvar svg = row.querySelector('button svg');\n\t\t\t\t\tif (svg) svg.classList.remove('rotate-180');\n\t\t\t\t}\n\n\t\t\t\tfunction onConnectionSaved(connType, xhr) {\n\t\t\t\t\tvar form = document.getElementById('ob-conn-form-' + connType);\n\t\t\t\t\tvar success = document.getElementById('ob-conn-success-' + connType);\n\t\t\t\t\tvar dot = document.getElementById('ob-conn-dot-' + connType);\n\t\t\t\t\tvar btn = document.getElementById('ob-conn-btn-' + connType);\n\t\t\t\t\tif (form) form.classList.add('hidden');\n\t\t\t\t\tif (success) success.classList.remove('hidden');\n\t\t\t\t\tif (btn) btn.classList.add('hidden');\n\t\t\t\t\tdocument.body.dispatchEvent(new Event('clobberRecheck'));\n\t\t\t\t\tif (dot) {\n\t\t\t\t\t\tdot.classList.remove('bg-gray-400', 'dark:bg-gray-500');\n\t\t\t\t\t\tdot.classList.add('bg-green-500');\n\t\t\t\t\t}\n\t\t\t\t\tif (xhr && xhr.responseText) {\n\t\t\t\t\t\ttry {\n\t\t\t\t\t\t\tvar data = JSON.parse(xhr.responseText);\n\t\t\t\t\t\t\tif (data.id) {\n\t\t\t\t\t\t\t\tvar testBtn = document.getElementById('ob-conn-test-' + connType);\n\t\t\t\t\t\t\t\tif (testBtn) {\n\t\t\t\t\t\t\t\t\ttestBtn.classList.remove('hidden');\n\t\t\t\t\t\t\t\t\ttestBtn.onclick = function() { testConnection(data.id, connType); };\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t\t// Lidarr is read-only (MBID seeding); no libraries to discover.\n\t\t\t\t\t\t\t\tif (connType !== 'lidarr') {\n\t\t\t\t\t\t\t\t\tvar discoverBtn = document.getElementById('ob-conn-discover-btn-' + connType);\n\t\t\t\t\t\t\t\t\tif (discoverBtn) {\n\t\t\t\t\t\t\t\t\t\tdiscoverBtn.classList.remove('hidden');\n\t\t\t\t\t\t\t\t\t\tdiscoverBtn.onclick = function() { discoverLibraries(data.id, connType); };\n\t\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t} catch(e) {}\n\t\t\t\t\t}\n\t\t\t\t}\n\n\t\t\t\tfunction testConnection(connID, connType) {\n\t\t\t\t\tvar testBtn = document.getElementById('ob-conn-test-' + connType);\n\t\t\t\t\tvar resultEl = document.getElementById('ob-conn-test-result-' + connType);\n\t\t\t\t\tvar dot = document.getElementById('ob-conn-dot-' + connType);\n\t\t\t\t\tif (testBtn) { testBtn.disabled = true; testBtn.textContent = 'Testing...'; }\n\t\t\t\t\tfetch(basePath + '/api/v1/connections/' + connID + '/test', {\n\t\t\t\t\t\tmethod: 'POST',\n\t\t\t\t\t\theaders: {'X-CSRF-Token': getCsrfToken()}\n\t\t\t\t\t}).then(function(res) {\n\t\t\t\t\t\tif (!res.ok) throw new Error('HTTP ' + res.status);\n\t\t\t\t\t\treturn res.json();\n\t\t\t\t\t}).then(function(data) {\n\t\t\t\t\t\tif (testBtn) { testBtn.disabled = false; testBtn.textContent = 'Test'; }\n\t\t\t\t\t\tif (data.status === 'ok') {\n\t\t\t\t\t\t\tif (resultEl) { resultEl.className = 'text-xs mt-1 text-green-600 dark:text-green-400'; resultEl.textContent = 'Connection successful'; }\n\t\t\t\t\t\t\tif (dot) { dot.className = 'mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-green-500'; }\n\t\t\t\t\t\t\tif (connType !== 'lidarr') {\n\t\t\t\t\t\t\t\tvar discoverBtn = document.getElementById('ob-conn-discover-btn-' + connType);\n\t\t\t\t\t\t\t\tif (discoverBtn) {\n\t\t\t\t\t\t\t\t\tdiscoverBtn.classList.remove('hidden');\n\t\t\t\t\t\t\t\t\tif (!discoverBtn.dataset.bound) {\n\t\t\t\t\t\t\t\t\t\tdiscoverBtn.onclick = function() { discoverLibraries(connID, connType); };\n\t\t\t\t\t\t\t\t\t\tdiscoverBtn.dataset.bound = '1';\n\t\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\tif (resultEl) { resultEl.className = 'text-xs mt-1 text-red-600 dark:text-red-400'; resultEl.textContent = 'Failed: ' + (data.message || 'unknown error'); }\n\t\t\t\t\t\t\tif (dot) { dot.className = 'mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-red-500'; }\n\t\t\t\t\t\t}\n\t\t\t\t\t}).catch(function() {\n\t\t\t\t\t\tif (testBtn) { testBtn.disabled = false; testBtn.textContent = 'Test'; }\n\t\t\t\t\t\tif (resultEl) { resultEl.className = 'text-xs mt-1 text-red-600 dark:text-red-400'; resultEl.textContent = 'Network error'; }\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\t// Initialize to the correct step on page load\n\t\t\t\tif (currentStep !== 0) {\n\t\t\t\t\tgoToStep(currentStep);\n\t\t\t\t}\n\n\t\t\t\t// Initialize library type help text visibility on page load\n\t\t\t\tsyncLibraryTypeHelpText();\n\t\t\t</script></body></html>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -581,79 +598,79 @@ func onboardingLibraryRow(lib library.Library) templ.Component {
 			templ_7745c5c3_Var32 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 48, "<div class=\"flex items-center justify-between rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3\" id=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 50, "<div class=\"flex items-center justify-between rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3\" id=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var33 string
 		templ_7745c5c3_Var33, templ_7745c5c3_Err = templ.JoinStringErrs("ob-lib-" + lib.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1254, Col: 136}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1257, Col: 136}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var33))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 49, "\"><div><div class=\"font-medium text-sm text-gray-900 dark:text-gray-100\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 51, "\"><div><div class=\"font-medium text-sm text-gray-900 dark:text-gray-100\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var34 string
 		templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.JoinStringErrs(lib.Name)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1256, Col: 79}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1259, Col: 79}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var34))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 50, "</div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 52, "</div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if lib.Path != "" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 51, "<div class=\"text-xs text-gray-500 dark:text-gray-400\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 53, "<div class=\"text-xs text-gray-500 dark:text-gray-400\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var35 string
 			templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.JoinStringErrs(lib.Path)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1258, Col: 68}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1261, Col: 68}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var35))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 52, "</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 54, "</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 53, "<div class=\"flex items-center gap-1.5 mt-1\"><span class=\"inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 55, "<div class=\"flex items-center gap-1.5 mt-1\"><span class=\"inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var36 string
 		templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.JoinStringErrs(lib.Type)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1261, Col: 148}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1264, Col: 148}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var36))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 54, "</span> ")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 56, "</span> ")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if lib.ConnectionID != "" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 55, "<span class=\"inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300\">Connection</span>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 57, "<span class=\"inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300\">Connection</span>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 56, "</div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 58, "</div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -661,7 +678,7 @@ func onboardingLibraryRow(lib library.Library) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 57, "<button type=\"button\" class=\"text-xs text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300\" onclick=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 59, "<button type=\"button\" class=\"text-xs text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300\" onclick=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -670,7 +687,7 @@ func onboardingLibraryRow(lib library.Library) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 58, "\">Remove</button></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 60, "\">Remove</button></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -707,7 +724,7 @@ func onboardingProfileCard(p platform.Profile) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 59, "<div data-profile-card class=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 61, "<div data-profile-card class=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -720,65 +737,47 @@ func onboardingProfileCard(p platform.Profile) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 60, "\" hx-post=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 62, "\" hx-post=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var41 string
 		templ_7745c5c3_Var41, templ_7745c5c3_Err = templ.JoinStringErrs("/api/v1/platforms/" + p.ID + "/activate")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1285, Col: 53}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1288, Col: 53}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var41))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 61, "\" hx-swap=\"none\" hx-on::after-request=\"if(event.detail.successful) selectPlatform(this)\"><div class=\"flex items-center justify-between\"><div class=\"flex items-center gap-2\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 63, "\" hx-swap=\"none\" hx-on::after-request=\"if(event.detail.successful) selectPlatform(this)\"><div class=\"flex items-center justify-between\"><div class=\"flex items-center gap-2\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if logoSrcSet(p.ID) != "" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 62, "<img src=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 64, "<img src=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var42 string
 			templ_7745c5c3_Var42, templ_7745c5c3_Err = templ.JoinStringErrs(logoSrc(p.ID))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1293, Col: 25}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1296, Col: 25}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var42))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 63, "\" srcset=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 65, "\" srcset=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var43 string
 			templ_7745c5c3_Var43, templ_7745c5c3_Err = templ.JoinStringErrs(logoSrcSet(p.ID))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1294, Col: 31}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1297, Col: 31}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var43))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 64, "\" alt=\"\" class=\"h-6 w-6 shrink-0\" aria-hidden=\"true\">")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 65, "<img src=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var44 string
-			templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.JoinStringErrs(logoSrc(p.ID))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1301, Col: 25}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var44))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -786,46 +785,64 @@ func onboardingProfileCard(p platform.Profile) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
+		} else {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 67, "<img src=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var44 string
+			templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.JoinStringErrs(logoSrc(p.ID))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1304, Col: 25}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var44))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 68, "\" alt=\"\" class=\"h-6 w-6 shrink-0\" aria-hidden=\"true\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 67, "<h3 class=\"font-semibold text-sm text-gray-900 dark:text-gray-100\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 69, "<h3 class=\"font-semibold text-sm text-gray-900 dark:text-gray-100\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var45 string
 		templ_7745c5c3_Var45, templ_7745c5c3_Err = templ.JoinStringErrs(p.Name)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1307, Col: 79}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1310, Col: 79}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var45))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 68, "</h3></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 70, "</h3></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if p.IsActive {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 69, "<span class=\"inline-flex items-center rounded-full bg-blue-100 dark:bg-blue-800 px-2 py-0.5 text-xs font-medium text-blue-700 dark:text-blue-300\">Active</span>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 71, "<span class=\"inline-flex items-center rounded-full bg-blue-100 dark:bg-blue-800 px-2 py-0.5 text-xs font-medium text-blue-700 dark:text-blue-300\">Active</span>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 70, "</div><div class=\"mt-2 text-xs text-gray-500 dark:text-gray-400 space-y-1\"><div>NFO: ")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 72, "</div><div class=\"mt-2 text-xs text-gray-500 dark:text-gray-400 space-y-1\"><div>NFO: ")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if p.NFOEnabled {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 71, "<span class=\"text-green-600 dark:text-green-400\">Enabled</span>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 73, "<span class=\"text-green-600 dark:text-green-400\">Enabled</span>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 72, "<span class=\"text-gray-400 dark:text-gray-500\">Disabled</span>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 74, "<span class=\"text-gray-400 dark:text-gray-500\">Disabled</span>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 73, "</div></div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 75, "</div></div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -854,69 +871,69 @@ func OnboardingProviderCard(pk provider.ProviderKeyStatus) templ.Component {
 			templ_7745c5c3_Var46 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 74, "<div id=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 76, "<div id=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var47 string
 		templ_7745c5c3_Var47, templ_7745c5c3_Err = templ.JoinStringErrs("ob-provider-card-" + string(pk.Name))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1329, Col: 48}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1332, Col: 48}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var47))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 75, "\" class=\"rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3\"><div class=\"flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between\"><div class=\"flex items-center gap-3\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 77, "\" class=\"rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3\"><div class=\"flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between\"><div class=\"flex items-center gap-3\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if logoSrcSet(string(pk.Name)) != "" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 76, "<img src=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 78, "<img src=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var48 string
 			templ_7745c5c3_Var48, templ_7745c5c3_Err = templ.JoinStringErrs(logoSrc(string(pk.Name)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1334, Col: 36}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1337, Col: 36}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var48))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 77, "\" srcset=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 79, "\" srcset=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var49 string
 			templ_7745c5c3_Var49, templ_7745c5c3_Err = templ.JoinStringErrs(logoSrcSet(string(pk.Name)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1335, Col: 42}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1338, Col: 42}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var49))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 78, "\" alt=\"\" class=\"h-6 w-6 shrink-0\" aria-hidden=\"true\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 80, "\" alt=\"\" class=\"h-6 w-6 shrink-0\" aria-hidden=\"true\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 79, "<img src=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 81, "<img src=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var50 string
 			templ_7745c5c3_Var50, templ_7745c5c3_Err = templ.JoinStringErrs(logoSrc(string(pk.Name)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1342, Col: 36}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1345, Col: 36}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var50))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 80, "\" alt=\"\" class=\"h-6 w-6 shrink-0\" aria-hidden=\"true\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 82, "\" alt=\"\" class=\"h-6 w-6 shrink-0\" aria-hidden=\"true\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -931,7 +948,7 @@ func OnboardingProviderCard(pk provider.ProviderKeyStatus) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 81, "<div class=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 83, "<div class=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -944,86 +961,86 @@ func OnboardingProviderCard(pk provider.ProviderKeyStatus) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 82, "\"></div><div><div class=\"font-medium text-sm text-gray-900 dark:text-gray-100\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 84, "\"></div><div><div class=\"font-medium text-sm text-gray-900 dark:text-gray-100\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var53 string
 		templ_7745c5c3_Var53, templ_7745c5c3_Err = templ.JoinStringErrs(pk.DisplayName)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1358, Col: 87}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1361, Col: 87}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var53))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 83, "</div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 85, "</div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if !pk.RequiresKey && !pk.OptionalKey {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 84, "<div class=\"text-xs text-gray-500 dark:text-gray-400\">No API key required</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 86, "<div class=\"text-xs text-gray-500 dark:text-gray-400\">No API key required</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else if pk.OptionalKey && pk.HasKey {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 85, "<div class=\"text-xs text-green-600 dark:text-green-400\">Premium key configured</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 87, "<div class=\"text-xs text-green-600 dark:text-green-400\">Premium key configured</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else if pk.OptionalKey {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 86, "<div class=\"text-xs text-gray-500 dark:text-gray-400\">Free tier (optional premium upgrade)</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 88, "<div class=\"text-xs text-gray-500 dark:text-gray-400\">Free tier (optional premium upgrade)</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else if pk.HasKey {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 87, "<div class=\"text-xs text-green-600 dark:text-green-400\">Key configured</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 89, "<div class=\"text-xs text-green-600 dark:text-green-400\">Key configured</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 88, "<div class=\"text-xs text-amber-600 dark:text-amber-400\">API key required</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 90, "<div class=\"text-xs text-amber-600 dark:text-amber-400\">API key required</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 89, "</div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 91, "</div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if pk.RequiresKey || pk.OptionalKey {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 90, "<div class=\"flex items-center gap-2\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 92, "<div class=\"flex items-center gap-2\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if pk.HelpURL != "" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 91, "<a href=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 93, "<a href=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var54 templ.SafeURL
 				templ_7745c5c3_Var54, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(pk.HelpURL))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1376, Col: 39}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1379, Col: 39}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var54))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 92, "\" target=\"_blank\" rel=\"noopener noreferrer\" class=\"text-sm text-blue-600 dark:text-blue-400 hover:underline\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 94, "\" target=\"_blank\" rel=\"noopener noreferrer\" class=\"text-sm text-blue-600 dark:text-blue-400 hover:underline\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var55 string
 				templ_7745c5c3_Var55, templ_7745c5c3_Err = templ.JoinStringErrs(getKeyLinkText(pk.AccessTier))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1381, Col: 38}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1384, Col: 38}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var55))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 93, "</a> ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 95, "</a> ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -1032,7 +1049,7 @@ func OnboardingProviderCard(pk provider.ProviderKeyStatus) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 94, "<button type=\"button\" class=\"text-sm px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors\" onclick=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 96, "<button type=\"button\" class=\"text-sm px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors\" onclick=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1041,137 +1058,137 @@ func OnboardingProviderCard(pk provider.ProviderKeyStatus) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 95, "\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 97, "\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if pk.HasKey {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 96, "Update")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 98, "Update")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			} else {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 97, "Configure")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 99, "Configure")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 98, "</button> ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 100, "</button> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if pk.HasKey {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 99, "<button type=\"button\" class=\"text-sm px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors\" hx-post=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 101, "<button type=\"button\" class=\"text-sm px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors\" hx-post=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var57 string
 				templ_7745c5c3_Var57, templ_7745c5c3_Err = templ.JoinStringErrs("/api/v1/providers/" + string(pk.Name) + "/test")
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1399, Col: 65}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1402, Col: 65}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var57))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 100, "\" hx-target=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 102, "\" hx-target=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var58 string
 				templ_7745c5c3_Var58, templ_7745c5c3_Err = templ.JoinStringErrs("#ob-test-result-" + string(pk.Name))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1400, Col: 55}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1403, Col: 55}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var58))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 101, "\" hx-swap=\"innerHTML\">Test</button>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 103, "\" hx-swap=\"innerHTML\">Test</button>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 102, "</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 104, "</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 103, "</div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 105, "</div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if pk.RequiresKey || pk.OptionalKey {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 104, "<div id=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 106, "<div id=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var59 string
 			templ_7745c5c3_Var59, templ_7745c5c3_Err = templ.JoinStringErrs("ob-key-input-" + string(pk.Name))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1410, Col: 46}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1413, Col: 46}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var59))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 105, "\" class=\"hidden mt-3\"><form class=\"flex flex-col gap-2\" hx-put=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 107, "\" class=\"hidden mt-3\"><form class=\"flex flex-col gap-2\" hx-put=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var60 string
 			templ_7745c5c3_Var60, templ_7745c5c3_Err = templ.JoinStringErrs("/api/v1/providers/" + string(pk.Name) + "/key")
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1413, Col: 61}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1416, Col: 61}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var60))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 106, "\" hx-target=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 108, "\" hx-target=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var61 string
 			templ_7745c5c3_Var61, templ_7745c5c3_Err = templ.JoinStringErrs("#ob-provider-card-" + string(pk.Name))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1414, Col: 55}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1417, Col: 55}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var61))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 107, "\" hx-swap=\"outerHTML\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 109, "\" hx-swap=\"outerHTML\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if pk.Name == provider.NameSpotify {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 108, "<div class=\"flex flex-col gap-2 sm:flex-row sm:items-center\"><input type=\"text\" name=\"client_id\" placeholder=\"Client ID\" autocomplete=\"off\" data-1p-ignore data-lpignore=\"true\" class=\"flex-1 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500\" required> <input type=\"password\" name=\"client_secret\" placeholder=\"Client Secret\" autocomplete=\"off\" data-1p-ignore data-lpignore=\"true\" class=\"flex-1 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500\" required></div><p class=\"text-xs text-gray-500 dark:text-gray-400\">Requires a Spotify Premium subscription and a registered <a href=\"https://developer.spotify.com\" target=\"_blank\" rel=\"noopener noreferrer\" class=\"text-blue-600 dark:text-blue-400 hover:underline\">Spotify Developer</a> app.</p>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 110, "<div class=\"flex flex-col gap-2 sm:flex-row sm:items-center\"><input type=\"text\" name=\"client_id\" placeholder=\"Client ID\" autocomplete=\"off\" data-1p-ignore data-lpignore=\"true\" class=\"flex-1 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500\" required> <input type=\"password\" name=\"client_secret\" placeholder=\"Client Secret\" autocomplete=\"off\" data-1p-ignore data-lpignore=\"true\" class=\"flex-1 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500\" required></div><p class=\"text-xs text-gray-500 dark:text-gray-400\">Requires a Spotify Premium subscription and a registered <a href=\"https://developer.spotify.com\" target=\"_blank\" rel=\"noopener noreferrer\" class=\"text-blue-600 dark:text-blue-400 hover:underline\">Spotify Developer</a> app.</p>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			} else {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 109, "<div class=\"flex flex-col gap-2 sm:flex-row sm:items-center\"><input type=\"text\" name=\"api_key\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 111, "<div class=\"flex flex-col gap-2 sm:flex-row sm:items-center\"><input type=\"text\" name=\"api_key\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				if pk.OptionalKey {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 110, " placeholder=\"Enter premium API key...\"")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 112, " placeholder=\"Enter premium API key...\"")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 				} else {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 111, " placeholder=\"Enter API key...\"")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 113, " placeholder=\"Enter API key...\"")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 112, " autocomplete=\"off\" data-1p-ignore data-lpignore=\"true\" class=\"flex-1 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500\" required></div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 114, " autocomplete=\"off\" data-1p-ignore data-lpignore=\"true\" class=\"flex-1 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500\" required></div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 113, "<div class=\"flex gap-2\"><button type=\"submit\" class=\"text-sm px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 transition-colors\">Save</button> ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 115, "<div class=\"flex gap-2\"><button type=\"submit\" class=\"text-sm px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 transition-colors\">Save</button> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1179,7 +1196,7 @@ func OnboardingProviderCard(pk provider.ProviderKeyStatus) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 114, "<button type=\"button\" class=\"text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors\" onclick=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 116, "<button type=\"button\" class=\"text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors\" onclick=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1188,25 +1205,25 @@ func OnboardingProviderCard(pk provider.ProviderKeyStatus) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 115, "\">Cancel</button></div></form></div><div id=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 117, "\">Cancel</button></div></form></div><div id=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var63 string
 			templ_7745c5c3_Var63, templ_7745c5c3_Err = templ.JoinStringErrs("ob-test-result-" + string(pk.Name))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1468, Col: 48}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1471, Col: 48}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var63))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 116, "\" class=\"text-xs mt-1\"></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 118, "\" class=\"text-xs mt-1\"></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 117, "</div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 119, "</div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1248,33 +1265,33 @@ func OnboardingWebSearchToggle(ws provider.WebSearchProviderStatus) templ.Compon
 			templ_7745c5c3_Var64 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 118, "<div id=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 120, "<div id=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var65 string
 		templ_7745c5c3_Var65, templ_7745c5c3_Err = templ.JoinStringErrs("ob-ws-card-" + string(ws.Name))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1481, Col: 42}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1484, Col: 42}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var65))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 119, "\" class=\"rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3\"><div class=\"flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between\"><div class=\"flex items-center gap-3\"><img src=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 121, "\" class=\"rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3\"><div class=\"flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between\"><div class=\"flex items-center gap-3\"><img src=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var66 string
 		templ_7745c5c3_Var66, templ_7745c5c3_Err = templ.JoinStringErrs(logoSrc(string(ws.Name)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1484, Col: 39}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1487, Col: 39}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var66))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 120, "\" alt=\"\" class=\"h-6 w-6 shrink-0\" aria-hidden=\"true\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 122, "\" alt=\"\" class=\"h-6 w-6 shrink-0\" aria-hidden=\"true\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1286,7 +1303,7 @@ func OnboardingWebSearchToggle(ws provider.WebSearchProviderStatus) templ.Compon
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 121, "<div class=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 123, "<div class=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1299,20 +1316,20 @@ func OnboardingWebSearchToggle(ws provider.WebSearchProviderStatus) templ.Compon
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 122, "\"></div><div><div class=\"font-medium text-sm text-gray-900 dark:text-gray-100\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 124, "\"></div><div><div class=\"font-medium text-sm text-gray-900 dark:text-gray-100\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var69 string
 		templ_7745c5c3_Var69, templ_7745c5c3_Err = templ.JoinStringErrs(ws.DisplayName)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1493, Col: 87}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1496, Col: 87}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var69))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 123, "</div><div class=\"text-xs text-gray-500 dark:text-gray-400\">No API key required</div></div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 125, "</div><div class=\"text-xs text-gray-500 dark:text-gray-400\">No API key required</div></div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1324,7 +1341,7 @@ func OnboardingWebSearchToggle(ws provider.WebSearchProviderStatus) templ.Compon
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 124, "<button type=\"button\" class=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 126, "<button type=\"button\" class=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1337,61 +1354,61 @@ func OnboardingWebSearchToggle(ws provider.WebSearchProviderStatus) templ.Compon
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 125, "\" hx-put=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 127, "\" hx-put=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var72 string
 		templ_7745c5c3_Var72, templ_7745c5c3_Err = templ.JoinStringErrs("/api/v1/providers/websearch/" + string(ws.Name) + "/toggle")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1504, Col: 73}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1507, Col: 73}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var72))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 126, "\" hx-vals=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 128, "\" hx-vals=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var73 string
 		templ_7745c5c3_Var73, templ_7745c5c3_Err = templ.JoinStringErrs(webSearchToggleJSON(!ws.Enabled))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1505, Col: 46}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1508, Col: 46}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var73))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 127, "\" hx-target=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 129, "\" hx-target=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var74 string
 		templ_7745c5c3_Var74, templ_7745c5c3_Err = templ.JoinStringErrs("#ob-ws-card-" + string(ws.Name))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1506, Col: 48}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1509, Col: 48}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var74))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 128, "\" hx-swap=\"outerHTML\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 130, "\" hx-swap=\"outerHTML\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if ws.Enabled {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 129, "Enabled")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 131, "Enabled")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 130, "Disabled")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 132, "Disabled")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 131, "</button></div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 133, "</button></div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1420,52 +1437,34 @@ func onboardingConnectionCard(connType string, displayName string, exampleURL st
 			templ_7745c5c3_Var75 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 132, "<div class=\"rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3\"><div class=\"flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between\"><div class=\"flex items-start gap-3\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 134, "<div class=\"rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3\"><div class=\"flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between\"><div class=\"flex items-start gap-3\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if logoSrcSet(connType) != "" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 133, "<img src=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 135, "<img src=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var76 string
 			templ_7745c5c3_Var76, templ_7745c5c3_Err = templ.JoinStringErrs(logoSrc(connType))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1525, Col: 29}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1528, Col: 29}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var76))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 134, "\" srcset=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 136, "\" srcset=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var77 string
 			templ_7745c5c3_Var77, templ_7745c5c3_Err = templ.JoinStringErrs(logoSrcSet(connType))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1526, Col: 35}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1529, Col: 35}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var77))
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 135, "\" alt=\"\" class=\"h-6 w-6 shrink-0 mt-0.5\" aria-hidden=\"true\"> ")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 136, "<img src=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var78 string
-			templ_7745c5c3_Var78, templ_7745c5c3_Err = templ.JoinStringErrs(logoSrc(connType))
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1533, Col: 29}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var78))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1473,58 +1472,76 @@ func onboardingConnectionCard(connType string, displayName string, exampleURL st
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
+		} else {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 138, "<img src=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var78 string
+			templ_7745c5c3_Var78, templ_7745c5c3_Err = templ.JoinStringErrs(logoSrc(connType))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1536, Col: 29}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var78))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 139, "\" alt=\"\" class=\"h-6 w-6 shrink-0 mt-0.5\" aria-hidden=\"true\"> ")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
 		}
 		if findConnectionByType(conns, connType) != nil {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 138, "<div id=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 140, "<div id=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var79 string
 			templ_7745c5c3_Var79, templ_7745c5c3_Err = templ.JoinStringErrs("ob-conn-dot-" + connType)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1540, Col: 40}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1543, Col: 40}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var79))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 139, "\" class=\"mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-green-500\"></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 141, "\" class=\"mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-green-500\"></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 140, "<div id=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 142, "<div id=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var80 string
 			templ_7745c5c3_Var80, templ_7745c5c3_Err = templ.JoinStringErrs("ob-conn-dot-" + connType)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1542, Col: 40}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1545, Col: 40}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var80))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 141, "\" class=\"mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-gray-400 dark:bg-gray-500\"></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 143, "\" class=\"mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-gray-400 dark:bg-gray-500\"></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 142, "<div><div class=\"flex items-center gap-1.5\"><span class=\"font-medium text-sm text-gray-900 dark:text-gray-100\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 144, "<div><div class=\"flex items-center gap-1.5\"><span class=\"font-medium text-sm text-gray-900 dark:text-gray-100\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var81 string
 		templ_7745c5c3_Var81, templ_7745c5c3_Err = templ.JoinStringErrs(displayName)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1546, Col: 86}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1549, Col: 86}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var81))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 143, "</span> ")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 145, "</span> ")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1532,7 +1549,7 @@ func onboardingConnectionCard(connType string, displayName string, exampleURL st
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 144, "<button type=\"button\" class=\"text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300\" onclick=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 146, "<button type=\"button\" class=\"text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300\" onclick=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1541,33 +1558,33 @@ func onboardingConnectionCard(connType string, displayName string, exampleURL st
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 145, "\" aria-label=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 147, "\" aria-label=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var83 string
 		templ_7745c5c3_Var83, templ_7745c5c3_Err = templ.JoinStringErrs("More info about " + displayName)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1551, Col: 52}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1554, Col: 52}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var83))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 146, "\"><svg class=\"h-4 w-4\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1.5\" stroke=\"currentColor\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z\"></path></svg></button></div><div id=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 148, "\"><svg class=\"h-4 w-4\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1.5\" stroke=\"currentColor\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z\"></path></svg></button></div><div id=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var84 string
 		templ_7745c5c3_Var84, templ_7745c5c3_Err = templ.JoinStringErrs("ob-conn-info-" + connType)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1558, Col: 41}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1561, Col: 41}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var84))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 147, "\" class=\"hidden\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 149, "\" class=\"hidden\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1575,12 +1592,12 @@ func onboardingConnectionCard(connType string, displayName string, exampleURL st
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 148, "</div></div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 150, "</div></div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if findConnectionByType(conns, connType) != nil {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 149, "<div class=\"flex items-center gap-2 shrink-0\"><span class=\"text-xs text-green-600 dark:text-green-400\">Connected</span> ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 151, "<div class=\"flex items-center gap-2 shrink-0\"><span class=\"text-xs text-green-600 dark:text-green-400\">Connected</span> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1588,20 +1605,20 @@ func onboardingConnectionCard(connType string, displayName string, exampleURL st
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 150, "<button type=\"button\" id=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 152, "<button type=\"button\" id=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var85 string
 			templ_7745c5c3_Var85, templ_7745c5c3_Err = templ.JoinStringErrs("ob-conn-test-" + connType)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1568, Col: 37}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1571, Col: 37}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var85))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 151, "\" class=\"text-xs px-2.5 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors\" onclick=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 153, "\" class=\"text-xs px-2.5 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors\" onclick=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1610,7 +1627,7 @@ func onboardingConnectionCard(connType string, displayName string, exampleURL st
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 152, "\">Test</button> ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 154, "\">Test</button> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1626,20 +1643,20 @@ func onboardingConnectionCard(connType string, displayName string, exampleURL st
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 153, "<button type=\"button\" id=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 155, "<button type=\"button\" id=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var88 string
 				templ_7745c5c3_Var88, templ_7745c5c3_Err = templ.JoinStringErrs("ob-conn-discover-btn-" + connType)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1577, Col: 46}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1580, Col: 46}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var88))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 154, "\" class=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 156, "\" class=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -1652,7 +1669,7 @@ func onboardingConnectionCard(connType string, displayName string, exampleURL st
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 155, "\" onclick=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 157, "\" onclick=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -1661,12 +1678,12 @@ func onboardingConnectionCard(connType string, displayName string, exampleURL st
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 156, "\">Discover Libraries</button>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 158, "\">Discover Libraries</button>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 157, "</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 159, "</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1675,20 +1692,20 @@ func onboardingConnectionCard(connType string, displayName string, exampleURL st
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 158, "<button id=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 160, "<button id=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var91 string
 			templ_7745c5c3_Var91, templ_7745c5c3_Err = templ.JoinStringErrs("ob-conn-btn-" + connType)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1590, Col: 35}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1593, Col: 35}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var91))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 159, "\" type=\"button\" class=\"text-sm px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors shrink-0\" onclick=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 161, "\" type=\"button\" class=\"text-sm px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors shrink-0\" onclick=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1697,77 +1714,77 @@ func onboardingConnectionCard(connType string, displayName string, exampleURL st
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 160, "\">Configure</button>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 162, "\">Configure</button>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 161, "</div><div id=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 163, "</div><div id=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var93 string
 		templ_7745c5c3_Var93, templ_7745c5c3_Err = templ.JoinStringErrs("ob-conn-form-" + connType)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1599, Col: 38}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1602, Col: 38}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var93))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 162, "\" class=\"hidden mt-3 pl-5.5\"><form class=\"space-y-3\" data-conn-type=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 164, "\" class=\"hidden mt-3 pl-5.5\"><form class=\"space-y-3\" data-conn-type=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var94 string
 		templ_7745c5c3_Var94, templ_7745c5c3_Err = templ.JoinStringErrs(connType)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1602, Col: 29}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1605, Col: 29}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var94))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 163, "\" hx-post=\"/api/v1/connections\" hx-swap=\"none\" hx-on::after-request=\"if(event.detail.successful) onConnectionSaved(this.dataset.connType, event.detail.xhr)\"><input type=\"hidden\" name=\"type\" value=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 165, "\" hx-post=\"/api/v1/connections\" hx-swap=\"none\" hx-on::after-request=\"if(event.detail.successful) onConnectionSaved(this.dataset.connType, event.detail.xhr)\"><input type=\"hidden\" name=\"type\" value=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var95 string
 		templ_7745c5c3_Var95, templ_7745c5c3_Err = templ.JoinStringErrs(connType)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1607, Col: 53}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1610, Col: 53}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var95))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 164, "\"><div class=\"grid grid-cols-1 gap-3\"><input name=\"name\" placeholder=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 166, "\"><div class=\"grid grid-cols-1 gap-3\"><input name=\"name\" placeholder=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var96 string
 		templ_7745c5c3_Var96, templ_7745c5c3_Err = templ.JoinStringErrs(displayName + " server")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1611, Col: 43}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1614, Col: 43}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var96))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 165, "\" required class=\"rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500\"> <input name=\"url\" type=\"url\" placeholder=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 167, "\" required class=\"rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500\"> <input name=\"url\" type=\"url\" placeholder=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var97 string
 		templ_7745c5c3_Var97, templ_7745c5c3_Err = templ.JoinStringErrs("Server URL (e.g. " + exampleURL + ")")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1618, Col: 58}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1621, Col: 58}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var97))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 166, "\" required class=\"rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500\"> <input name=\"api_key\" type=\"text\" placeholder=\"API Key\" required autocomplete=\"off\" data-1p-ignore data-lpignore=\"true\" class=\"rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500\"></div><div class=\"flex gap-2\"><button type=\"submit\" class=\"text-sm px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 transition-colors\">Save</button> ")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 168, "\" required class=\"rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500\"> <input name=\"api_key\" type=\"text\" placeholder=\"API Key\" required autocomplete=\"off\" data-1p-ignore data-lpignore=\"true\" class=\"rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500\"></div><div class=\"flex gap-2\"><button type=\"submit\" class=\"text-sm px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 transition-colors\">Save</button> ")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1775,7 +1792,7 @@ func onboardingConnectionCard(connType string, displayName string, exampleURL st
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 167, "<button type=\"button\" class=\"text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors\" onclick=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 169, "<button type=\"button\" class=\"text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors\" onclick=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1784,136 +1801,136 @@ func onboardingConnectionCard(connType string, displayName string, exampleURL st
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 168, "\">Cancel</button></div></form><div id=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 170, "\">Cancel</button></div></form><div id=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var99 string
 		templ_7745c5c3_Var99, templ_7745c5c3_Err = templ.JoinStringErrs("ob-conn-result-" + connType)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1638, Col: 41}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1641, Col: 41}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var99))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 169, "\" class=\"mt-2\"></div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 171, "\" class=\"mt-2\"></div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if findConnectionByType(conns, connType) != nil {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 170, "<div class=\"mt-2 pl-6\"><div id=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 172, "<div class=\"mt-2 pl-6\"><div id=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var100 string
 			templ_7745c5c3_Var100, templ_7745c5c3_Err = templ.JoinStringErrs("ob-conn-test-result-" + connType)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1642, Col: 47}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1645, Col: 47}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var100))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 171, "\" class=\"text-xs mt-1\"></div><div id=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 173, "\" class=\"text-xs mt-1\"></div><div id=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var101 string
 			templ_7745c5c3_Var101, templ_7745c5c3_Err = templ.JoinStringErrs("ob-discover-" + connType)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1643, Col: 39}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1646, Col: 39}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var101))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 172, "\" class=\"mt-2\"></div></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 174, "\" class=\"mt-2\"></div></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 173, "<div id=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 175, "<div id=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var102 string
 			templ_7745c5c3_Var102, templ_7745c5c3_Err = templ.JoinStringErrs("ob-conn-success-" + connType)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1646, Col: 42}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1649, Col: 42}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var102))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 174, "\" class=\"hidden mt-3 pl-6\"><div class=\"flex items-center gap-3\"><p class=\"text-xs text-green-600 dark:text-green-400\">Connected.</p><button type=\"button\" id=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 176, "\" class=\"hidden mt-3 pl-6\"><div class=\"flex items-center gap-3\"><p class=\"text-xs text-green-600 dark:text-green-400\">Connected.</p><button type=\"button\" id=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var103 string
 			templ_7745c5c3_Var103, templ_7745c5c3_Err = templ.JoinStringErrs("ob-conn-test-" + connType)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1651, Col: 37}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1654, Col: 37}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var103))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 175, "\" class=\"hidden text-xs px-2.5 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors\">Test</button> ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 177, "\" class=\"hidden text-xs px-2.5 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors\">Test</button> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if connType != "lidarr" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 176, "<button type=\"button\" id=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 178, "<button type=\"button\" id=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var104 string
 				templ_7745c5c3_Var104, templ_7745c5c3_Err = templ.JoinStringErrs("ob-conn-discover-btn-" + connType)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1659, Col: 46}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1662, Col: 46}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var104))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 177, "\" class=\"hidden text-xs px-2.5 py-1 rounded border border-blue-300 dark:border-blue-700 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors\">Discover Libraries</button>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 179, "\" class=\"hidden text-xs px-2.5 py-1 rounded border border-blue-300 dark:border-blue-700 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors\">Discover Libraries</button>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 178, "</div><div id=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 180, "</div><div id=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var105 string
 			templ_7745c5c3_Var105, templ_7745c5c3_Err = templ.JoinStringErrs("ob-conn-test-result-" + connType)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1666, Col: 47}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1669, Col: 47}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var105))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 179, "\" class=\"text-xs mt-1\"></div><div id=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 181, "\" class=\"text-xs mt-1\"></div><div id=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var106 string
 			templ_7745c5c3_Var106, templ_7745c5c3_Err = templ.JoinStringErrs("ob-discover-" + connType)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1667, Col: 39}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/onboarding.templ`, Line: 1670, Col: 39}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var106))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 180, "\" class=\"mt-2\"></div></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 182, "\" class=\"mt-2\"></div></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 181, "</div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 183, "</div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

@@ -8,6 +8,8 @@ package templates
 import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
+import "github.com/sydlexius/stillwater/web/components"
+
 // AuthProvidersData holds settings for all authentication providers.
 type AuthProvidersData struct {
 	// Local provider
@@ -45,8 +47,8 @@ func guardRailLabel(v string) string {
 	return "Admins only"
 }
 
-// settingsAuthProvidersTab renders the Auth Providers settings tab content.
-// Only Administrators can access this tab (settings page is admin-only).
+// settingsAuthProvidersTab renders the Authentication settings section content.
+// Only Administrators can access this section (settings page is admin-only).
 func settingsAuthProvidersTab(data AuthProvidersData) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -68,6 +70,10 @@ func settingsAuthProvidersTab(data AuthProvidersData) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
+		templ_7745c5c3_Err = components.ContextHelpScript().Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
 		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"sw-card bg-white dark:bg-gray-800 shadow rounded-lg\"><div class=\"px-6 py-4 border-b border-gray-200 dark:border-gray-700\"><h2 class=\"text-lg font-semibold\">Authentication Providers</h2><p class=\"mt-1 text-sm text-gray-500 dark:text-gray-400\">Configure how users can authenticate with this instance.</p></div><div class=\"divide-y divide-gray-200 dark:divide-gray-700\"><!-- Local provider --><div class=\"px-6 py-5\"><div class=\"flex items-center justify-between mb-3\"><div class=\"flex items-center gap-3\"><div class=\"h-7 w-7 rounded-md bg-blue-600/20 border border-blue-500/30 flex items-center justify-center\" aria-hidden=\"true\"><svg class=\"w-4 h-4 text-blue-400\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M15.75 5.25a3 3 0 0 1 3 3m3 0a6 6 0 0 1-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1 1 21.75 8.25Z\"></path></svg></div><div><span class=\"font-medium text-sm\">Local</span> ")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
@@ -140,7 +146,7 @@ func settingsAuthProvidersTab(data AuthProvidersData) templ.Component {
 		var templ_7745c5c3_Var6 string
 		templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(boolAttr(data.LocalEnabled))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_auth_providers.templ`, Line: 86, Col: 48}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_auth_providers.templ`, Line: 89, Col: 48}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 		if templ_7745c5c3_Err != nil {
@@ -243,7 +249,7 @@ func settingsAuthProvidersTab(data AuthProvidersData) templ.Component {
 		var templ_7745c5c3_Var13 string
 		templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(boolAttr(data.EmbyEnabled))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_auth_providers.templ`, Line: 136, Col: 47}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_auth_providers.templ`, Line: 139, Col: 47}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 		if templ_7745c5c3_Err != nil {
@@ -291,7 +297,7 @@ func settingsAuthProvidersTab(data AuthProvidersData) templ.Component {
 				var templ_7745c5c3_Var16 string
 				templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(data.EmbyServerURL)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_auth_providers.templ`, Line: 160, Col: 130}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_auth_providers.templ`, Line: 163, Col: 130}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 				if templ_7745c5c3_Err != nil {
@@ -334,7 +340,7 @@ func settingsAuthProvidersTab(data AuthProvidersData) templ.Component {
 			var templ_7745c5c3_Var19 string
 			templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(boolAttr(data.EmbyAutoProvision))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_auth_providers.templ`, Line: 177, Col: 55}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_auth_providers.templ`, Line: 180, Col: 55}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 			if templ_7745c5c3_Err != nil {
@@ -482,7 +488,7 @@ func settingsAuthProvidersTab(data AuthProvidersData) templ.Component {
 		var templ_7745c5c3_Var26 string
 		templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.JoinStringErrs(boolAttr(data.JellyfinEnabled))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_auth_providers.templ`, Line: 254, Col: 51}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_auth_providers.templ`, Line: 257, Col: 51}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var26))
 		if templ_7745c5c3_Err != nil {
@@ -530,7 +536,7 @@ func settingsAuthProvidersTab(data AuthProvidersData) templ.Component {
 				var templ_7745c5c3_Var29 string
 				templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.JoinStringErrs(data.JellyfinServerURL)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_auth_providers.templ`, Line: 278, Col: 134}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_auth_providers.templ`, Line: 281, Col: 134}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var29))
 				if templ_7745c5c3_Err != nil {
@@ -573,7 +579,7 @@ func settingsAuthProvidersTab(data AuthProvidersData) templ.Component {
 			var templ_7745c5c3_Var32 string
 			templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.JoinStringErrs(boolAttr(data.JellyfinAutoProvision))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_auth_providers.templ`, Line: 295, Col: 59}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_auth_providers.templ`, Line: 298, Col: 59}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var32))
 			if templ_7745c5c3_Err != nil {
@@ -721,7 +727,7 @@ func settingsAuthProvidersTab(data AuthProvidersData) templ.Component {
 		var templ_7745c5c3_Var39 string
 		templ_7745c5c3_Var39, templ_7745c5c3_Err = templ.JoinStringErrs(boolAttr(data.OIDCEnabled))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_auth_providers.templ`, Line: 372, Col: 47}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_auth_providers.templ`, Line: 375, Col: 47}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var39))
 		if templ_7745c5c3_Err != nil {
@@ -757,79 +763,103 @@ func settingsAuthProvidersTab(data AuthProvidersData) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		if data.OIDCEnabled {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 78, "<form class=\"space-y-3\" onsubmit=\"saveOIDCSettings(event, this)\"><div class=\"grid grid-cols-1 gap-3 sm:grid-cols-2\"><div><label for=\"oidc-issuer-url\" class=\"block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1\">Issuer URL</label> <input id=\"oidc-issuer-url\" name=\"oidc_issuer_url\" type=\"url\" placeholder=\"https://auth.example.com\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 78, "<form class=\"space-y-3\" onsubmit=\"saveOIDCSettings(event, this)\"><div class=\"grid grid-cols-1 gap-3 sm:grid-cols-2\"><div><div class=\"flex items-center gap-1.5 mb-1\"><label for=\"oidc-issuer-url\" class=\"block text-xs font-medium text-gray-700 dark:text-gray-300\">Issuer URL</label>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = components.ContextHelp("help-oidc-issuer", "OIDC Issuer URL", "The base URL of your OIDC provider. Stillwater fetches the OpenID Connect discovery document from {issuer}/.well-known/openid-configuration. Must match the iss claim in tokens.").Render(ctx, templ_7745c5c3_Buffer)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 79, "</div><input id=\"oidc-issuer-url\" name=\"oidc_issuer_url\" type=\"url\" placeholder=\"https://auth.example.com\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var42 string
 			templ_7745c5c3_Var42, templ_7745c5c3_Err = templ.JoinStringErrs(data.OIDCIssuerURL)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_auth_providers.templ`, Line: 401, Col: 35}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_auth_providers.templ`, Line: 407, Col: 35}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var42))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 79, "\" class=\"w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500\" aria-label=\"OIDC issuer URL\"></div><div><label for=\"oidc-client-id\" class=\"block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1\">Client ID</label> <input id=\"oidc-client-id\" name=\"oidc_client_id\" type=\"text\" placeholder=\"stillwater\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 80, "\" class=\"w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500\" aria-label=\"OIDC issuer URL\"></div><div><label for=\"oidc-client-id\" class=\"block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1\">Client ID</label> <input id=\"oidc-client-id\" name=\"oidc_client_id\" type=\"text\" placeholder=\"stillwater\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var43 string
 			templ_7745c5c3_Var43, templ_7745c5c3_Err = templ.JoinStringErrs(data.OIDCClientID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_auth_providers.templ`, Line: 413, Col: 34}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_auth_providers.templ`, Line: 419, Col: 34}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var43))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 80, "\" class=\"w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500\" aria-label=\"OIDC client ID\"></div><div><label for=\"oidc-client-secret\" class=\"block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1\">Client Secret</label> <input id=\"oidc-client-secret\" name=\"oidc_client_secret\" type=\"password\" placeholder=\"Leave blank to keep existing\" class=\"w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500\" aria-label=\"OIDC client secret\" autocomplete=\"new-password\"></div><div><label for=\"oidc-default-role\" class=\"block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1\">Default Role</label> <select id=\"oidc-default-role\" name=\"oidc_default_role\" class=\"w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500\" aria-label=\"Default role for OIDC users not in an admin group\"><option value=\"operator\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 81, "\" class=\"w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500\" aria-label=\"OIDC client ID\"></div><div><label for=\"oidc-client-secret\" class=\"block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1\">Client Secret</label> <input id=\"oidc-client-secret\" name=\"oidc_client_secret\" type=\"password\" placeholder=\"Leave blank to keep existing\" class=\"w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500\" aria-label=\"OIDC client secret\" autocomplete=\"new-password\"></div><div><label for=\"oidc-default-role\" class=\"block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1\">Default Role</label> <select id=\"oidc-default-role\" name=\"oidc_default_role\" class=\"w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500\" aria-label=\"Default role for OIDC users not in an admin group\"><option value=\"operator\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if data.OIDCDefaultRole == "operator" || data.OIDCDefaultRole == "" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 81, " selected")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 82, " selected")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 82, ">Operator</option> <option value=\"administrator\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 83, ">Operator</option> <option value=\"administrator\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if data.OIDCDefaultRole == "administrator" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 83, " selected")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 84, " selected")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 84, ">Administrator</option></select></div><div><label for=\"oidc-admin-groups\" class=\"block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1\">Administrator Groups</label> <input id=\"oidc-admin-groups\" name=\"oidc_admin_groups\" type=\"text\" placeholder=\"stillwater-admins\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 85, ">Administrator</option></select></div><div><div class=\"flex items-center gap-1.5 mb-1\"><label for=\"oidc-admin-groups\" class=\"block text-xs font-medium text-gray-700 dark:text-gray-300\">Administrator Groups</label>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = components.ContextHelp("help-oidc-admin-groups", "OIDC Administrator Groups", "Comma-separated list of OIDC group claim values that grant the Administrator role. Users whose token includes any of these groups are provisioned as administrators.").Render(ctx, templ_7745c5c3_Buffer)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 86, "</div><input id=\"oidc-admin-groups\" name=\"oidc_admin_groups\" type=\"text\" placeholder=\"stillwater-admins\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var44 string
 			templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.JoinStringErrs(data.OIDCAdminGroups)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_auth_providers.templ`, Line: 449, Col: 37}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_auth_providers.templ`, Line: 458, Col: 37}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var44))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 85, "\" class=\"w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500\" aria-label=\"OIDC group claims that grant Administrator role (comma-separated)\"><p class=\"mt-1 text-xs text-gray-500 dark:text-gray-400\">OIDC group claims that grant Administrator role (comma-separated)</p></div><div><label for=\"oidc-user-groups\" class=\"block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1\">Allowed Groups</label> <input id=\"oidc-user-groups\" name=\"oidc_user_groups\" type=\"text\" placeholder=\"Leave empty to allow all users\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 87, "\" class=\"w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500\" aria-label=\"OIDC group claims that grant Administrator role (comma-separated)\"><p class=\"mt-1 text-xs text-gray-500 dark:text-gray-400\">OIDC group claims that grant Administrator role (comma-separated)</p></div><div><div class=\"flex items-center gap-1.5 mb-1\"><label for=\"oidc-user-groups\" class=\"block text-xs font-medium text-gray-700 dark:text-gray-300\">Allowed Groups</label>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = components.ContextHelp("help-oidc-user-groups", "OIDC Allowed Groups", "Comma-separated list of groups that are permitted to log in. Leave empty to allow any authenticated OIDC user. Users not in an allowed group receive a 403 Forbidden response.").Render(ctx, templ_7745c5c3_Buffer)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 88, "</div><input id=\"oidc-user-groups\" name=\"oidc_user_groups\" type=\"text\" placeholder=\"Leave empty to allow all users\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var45 string
 			templ_7745c5c3_Var45, templ_7745c5c3_Err = templ.JoinStringErrs(data.OIDCUserGroups)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_auth_providers.templ`, Line: 462, Col: 36}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_auth_providers.templ`, Line: 474, Col: 36}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var45))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 86, "\" class=\"w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500\" aria-label=\"Restrict OIDC login to these groups (comma-separated, empty allows all)\"><p class=\"mt-1 text-xs text-gray-500 dark:text-gray-400\">Restrict login to these groups. Leave empty to allow all authenticated users.</p></div></div><div class=\"flex items-center justify-between pt-1\"><div class=\"flex items-center gap-3\"><span class=\"text-sm font-medium\">Auto-Provision</span> ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 89, "\" class=\"w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500\" aria-label=\"Restrict OIDC login to these groups (comma-separated, empty allows all)\"><p class=\"mt-1 text-xs text-gray-500 dark:text-gray-400\">Restrict login to these groups. Leave empty to allow all authenticated users.</p></div></div><div class=\"flex items-center justify-between pt-1\"><div class=\"flex items-center gap-3\"><span class=\"text-sm font-medium\">Auto-Provision</span> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -841,7 +871,7 @@ func settingsAuthProvidersTab(data AuthProvidersData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 87, "<button type=\"button\" id=\"oidc-autoprovision-toggle\" class=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 90, "<button type=\"button\" id=\"oidc-autoprovision-toggle\" class=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -854,20 +884,20 @@ func settingsAuthProvidersTab(data AuthProvidersData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 88, "\" role=\"switch\" aria-checked=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 91, "\" role=\"switch\" aria-checked=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var48 string
 			templ_7745c5c3_Var48, templ_7745c5c3_Err = templ.JoinStringErrs(boolAttr(data.OIDCAutoProvision))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_auth_providers.templ`, Line: 481, Col: 56}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/settings_auth_providers.templ`, Line: 493, Col: 56}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var48))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 89, "\" aria-label=\"Enable auto-provisioning for OIDC users\" onclick=\"toggleProviderSetting(this, 'auth.providers.oidc.auto_provision')\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 92, "\" aria-label=\"Enable auto-provisioning for OIDC users\" onclick=\"toggleProviderSetting(this, 'auth.providers.oidc.auto_provision')\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -879,7 +909,7 @@ func settingsAuthProvidersTab(data AuthProvidersData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 90, "<span class=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 93, "<span class=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -892,12 +922,12 @@ func settingsAuthProvidersTab(data AuthProvidersData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 91, "\"></span></button> <span class=\"text-xs text-gray-500 dark:text-gray-400\">Create accounts for authenticated OIDC users</span></div><div class=\"flex gap-2\"><button type=\"submit\" class=\"text-sm px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors\">Save</button></div></div></form>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 94, "\"></span></button> <span class=\"text-xs text-gray-500 dark:text-gray-400\">Create accounts for authenticated OIDC users</span></div><div class=\"flex gap-2\"><button type=\"submit\" class=\"text-sm px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors\">Save</button></div></div></form>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 92, "</div></div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 95, "</div></div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -927,7 +957,7 @@ func settingsAuthProvidersScript() templ.Component {
 			templ_7745c5c3_Var51 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 93, "<script>\n\t\tvar authProvidersBasePath = (document.querySelector('meta[name=\"htmx-base-path\"]') || {content: ''}).content;\n\n\t\tfunction getAuthProvidersCsrfToken() {\n\t\t\treturn document.cookie.replace(\n\t\t\t\t/(?:(?:^|.*;\\s*)csrf_token\\s*=\\s*([^;]*).*$)|^.*$/, \"$1\"\n\t\t\t);\n\t\t}\n\n\t\tfunction toggleAuthProvider(btn, provider) {\n\t\t\tvar enabled = btn.getAttribute('aria-checked') === 'true';\n\t\t\tvar newVal = !enabled;\n\t\t\tvar csrfToken = getAuthProvidersCsrfToken();\n\t\t\tvar key = 'auth.providers.' + provider + '.enabled';\n\t\t\tvar body = {};\n\t\t\tbody[key] = newVal ? 'true' : 'false';\n\t\t\tfetch(authProvidersBasePath + '/api/v1/settings', {\n\t\t\t\tmethod: 'PUT',\n\t\t\t\theaders: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },\n\t\t\t\tbody: JSON.stringify(body)\n\t\t\t}).then(function(resp) {\n\t\t\t\tif (!resp.ok) {\n\t\t\t\t\treturn resp.json().catch(function() { throw new Error('Server error (' + resp.status + ')'); }).then(function(d) { throw new Error(d.error || 'Failed to update provider'); });\n\t\t\t\t}\n\t\t\t\t// Reload so the expanded settings panel appears or hides.\n\t\t\t\twindow.location.reload();\n\t\t\t}).catch(function(err) {\n\t\t\t\tshowToast(err.message || 'Failed to update provider setting');\n\t\t\t});\n\t\t}\n\n\t\tfunction toggleProviderSetting(btn, key) {\n\t\t\tvar enabled = btn.getAttribute('aria-checked') === 'true';\n\t\t\tvar newVal = !enabled;\n\t\t\tvar csrfToken = getAuthProvidersCsrfToken();\n\t\t\tvar body = {};\n\t\t\tbody[key] = newVal ? 'true' : 'false';\n\t\t\tfetch(authProvidersBasePath + '/api/v1/settings', {\n\t\t\t\tmethod: 'PUT',\n\t\t\t\theaders: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },\n\t\t\t\tbody: JSON.stringify(body)\n\t\t\t}).then(function(resp) {\n\t\t\t\tif (!resp.ok) {\n\t\t\t\t\treturn resp.json().catch(function() { throw new Error('Server error (' + resp.status + ')'); }).then(function(d) { throw new Error(d.error || 'Failed to update setting'); });\n\t\t\t\t}\n\t\t\t\tbtn.setAttribute('aria-checked', newVal ? 'true' : 'false');\n\t\t\t\tif (newVal) {\n\t\t\t\t\tbtn.classList.remove('bg-gray-200', 'dark:bg-gray-600');\n\t\t\t\t\tbtn.classList.add('bg-blue-600');\n\t\t\t\t\tbtn.querySelector('span').classList.remove('translate-x-0');\n\t\t\t\t\tbtn.querySelector('span').classList.add('translate-x-4');\n\t\t\t\t} else {\n\t\t\t\t\tbtn.classList.remove('bg-blue-600');\n\t\t\t\t\tbtn.classList.add('bg-gray-200', 'dark:bg-gray-600');\n\t\t\t\t\tbtn.querySelector('span').classList.remove('translate-x-4');\n\t\t\t\t\tbtn.querySelector('span').classList.add('translate-x-0');\n\t\t\t\t}\n\t\t\t\tshowSuccessToast('Setting saved');\n\t\t\t}).catch(function(err) {\n\t\t\t\tshowToast(err.message || 'Failed to update setting');\n\t\t\t});\n\t\t}\n\n\t\tfunction saveProviderSetting(key, value) {\n\t\t\tvar csrfToken = getAuthProvidersCsrfToken();\n\t\t\tvar body = {};\n\t\t\tbody[key] = value;\n\t\t\tfetch(authProvidersBasePath + '/api/v1/settings', {\n\t\t\t\tmethod: 'PUT',\n\t\t\t\theaders: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },\n\t\t\t\tbody: JSON.stringify(body)\n\t\t\t}).then(function(resp) {\n\t\t\t\tif (!resp.ok) {\n\t\t\t\t\treturn resp.json().catch(function() { throw new Error('Server error (' + resp.status + ')'); }).then(function(d) { throw new Error(d.error || 'Failed to update setting'); });\n\t\t\t\t}\n\t\t\t\tshowSuccessToast('Setting saved');\n\t\t\t}).catch(function(err) {\n\t\t\t\tshowToast(err.message || 'Failed to update setting');\n\t\t\t});\n\t\t}\n\n\t\tfunction saveOIDCSettings(event, form) {\n\t\t\tevent.preventDefault();\n\t\t\tvar csrfToken = getAuthProvidersCsrfToken();\n\t\t\tvar body = {};\n\t\t\tvar issuerURL = form.querySelector('[name=\"oidc_issuer_url\"]').value;\n\t\t\tvar clientID = form.querySelector('[name=\"oidc_client_id\"]').value;\n\t\t\tvar clientSecret = form.querySelector('[name=\"oidc_client_secret\"]').value;\n\t\t\tvar defaultRole = form.querySelector('[name=\"oidc_default_role\"]').value;\n\t\t\tvar adminGroups = form.querySelector('[name=\"oidc_admin_groups\"]').value;\n\t\t\tvar userGroups = form.querySelector('[name=\"oidc_user_groups\"]').value;\n\n\t\t\tif (issuerURL) { body['auth.providers.oidc.issuer_url'] = issuerURL; }\n\t\t\tif (clientID) { body['auth.providers.oidc.client_id'] = clientID; }\n\t\t\tif (clientSecret) { body['auth.providers.oidc.client_secret'] = clientSecret; }\n\t\t\tif (defaultRole) { body['auth.providers.oidc.default_role'] = defaultRole; }\n\t\t\tbody['auth.providers.oidc.admin_groups'] = adminGroups;\n\t\t\tbody['auth.providers.oidc.user_groups'] = userGroups;\n\n\t\t\tfetch(authProvidersBasePath + '/api/v1/settings', {\n\t\t\t\tmethod: 'PUT',\n\t\t\t\theaders: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },\n\t\t\t\tbody: JSON.stringify(body)\n\t\t\t}).then(function(resp) {\n\t\t\t\tif (!resp.ok) {\n\t\t\t\t\treturn resp.json().catch(function() { throw new Error('Server error (' + resp.status + ')'); }).then(function(d) { throw new Error(d.error || 'Failed to save OIDC settings'); });\n\t\t\t\t}\n\t\t\t\t// Clear the secret field after save so it does not remain visible.\n\t\t\t\tform.querySelector('[name=\"oidc_client_secret\"]').value = '';\n\t\t\t\tshowSuccessToast('OIDC settings saved');\n\t\t\t}).catch(function(err) {\n\t\t\t\tshowToast(err.message || 'Failed to save OIDC settings');\n\t\t\t});\n\t\t}\n\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 96, "<script>\n\t\tvar authProvidersBasePath = (document.querySelector('meta[name=\"htmx-base-path\"]') || {content: ''}).content;\n\n\t\tfunction getAuthProvidersCsrfToken() {\n\t\t\treturn document.cookie.replace(\n\t\t\t\t/(?:(?:^|.*;\\s*)csrf_token\\s*=\\s*([^;]*).*$)|^.*$/, \"$1\"\n\t\t\t);\n\t\t}\n\n\t\tfunction toggleAuthProvider(btn, provider) {\n\t\t\tvar enabled = btn.getAttribute('aria-checked') === 'true';\n\t\t\tvar newVal = !enabled;\n\t\t\tvar csrfToken = getAuthProvidersCsrfToken();\n\t\t\tvar key = 'auth.providers.' + provider + '.enabled';\n\t\t\tvar body = {};\n\t\t\tbody[key] = newVal ? 'true' : 'false';\n\t\t\tfetch(authProvidersBasePath + '/api/v1/settings', {\n\t\t\t\tmethod: 'PUT',\n\t\t\t\theaders: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },\n\t\t\t\tbody: JSON.stringify(body)\n\t\t\t}).then(function(resp) {\n\t\t\t\tif (!resp.ok) {\n\t\t\t\t\treturn resp.json().catch(function() { throw new Error('Server error (' + resp.status + ')'); }).then(function(d) { throw new Error(d.error || 'Failed to update provider'); });\n\t\t\t\t}\n\t\t\t\t// Reload so the expanded settings panel appears or hides.\n\t\t\t\twindow.location.reload();\n\t\t\t}).catch(function(err) {\n\t\t\t\tshowToast(err.message || 'Failed to update provider setting');\n\t\t\t});\n\t\t}\n\n\t\tfunction toggleProviderSetting(btn, key) {\n\t\t\tvar enabled = btn.getAttribute('aria-checked') === 'true';\n\t\t\tvar newVal = !enabled;\n\t\t\tvar csrfToken = getAuthProvidersCsrfToken();\n\t\t\tvar body = {};\n\t\t\tbody[key] = newVal ? 'true' : 'false';\n\t\t\tfetch(authProvidersBasePath + '/api/v1/settings', {\n\t\t\t\tmethod: 'PUT',\n\t\t\t\theaders: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },\n\t\t\t\tbody: JSON.stringify(body)\n\t\t\t}).then(function(resp) {\n\t\t\t\tif (!resp.ok) {\n\t\t\t\t\treturn resp.json().catch(function() { throw new Error('Server error (' + resp.status + ')'); }).then(function(d) { throw new Error(d.error || 'Failed to update setting'); });\n\t\t\t\t}\n\t\t\t\tbtn.setAttribute('aria-checked', newVal ? 'true' : 'false');\n\t\t\t\tif (newVal) {\n\t\t\t\t\tbtn.classList.remove('bg-gray-200', 'dark:bg-gray-600');\n\t\t\t\t\tbtn.classList.add('bg-blue-600');\n\t\t\t\t\tbtn.querySelector('span').classList.remove('translate-x-0');\n\t\t\t\t\tbtn.querySelector('span').classList.add('translate-x-4');\n\t\t\t\t} else {\n\t\t\t\t\tbtn.classList.remove('bg-blue-600');\n\t\t\t\t\tbtn.classList.add('bg-gray-200', 'dark:bg-gray-600');\n\t\t\t\t\tbtn.querySelector('span').classList.remove('translate-x-4');\n\t\t\t\t\tbtn.querySelector('span').classList.add('translate-x-0');\n\t\t\t\t}\n\t\t\t\tshowSuccessToast('Setting saved');\n\t\t\t}).catch(function(err) {\n\t\t\t\tshowToast(err.message || 'Failed to update setting');\n\t\t\t});\n\t\t}\n\n\t\tfunction saveProviderSetting(key, value) {\n\t\t\tvar csrfToken = getAuthProvidersCsrfToken();\n\t\t\tvar body = {};\n\t\t\tbody[key] = value;\n\t\t\tfetch(authProvidersBasePath + '/api/v1/settings', {\n\t\t\t\tmethod: 'PUT',\n\t\t\t\theaders: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },\n\t\t\t\tbody: JSON.stringify(body)\n\t\t\t}).then(function(resp) {\n\t\t\t\tif (!resp.ok) {\n\t\t\t\t\treturn resp.json().catch(function() { throw new Error('Server error (' + resp.status + ')'); }).then(function(d) { throw new Error(d.error || 'Failed to update setting'); });\n\t\t\t\t}\n\t\t\t\tshowSuccessToast('Setting saved');\n\t\t\t}).catch(function(err) {\n\t\t\t\tshowToast(err.message || 'Failed to update setting');\n\t\t\t});\n\t\t}\n\n\t\tfunction saveOIDCSettings(event, form) {\n\t\t\tevent.preventDefault();\n\t\t\tvar csrfToken = getAuthProvidersCsrfToken();\n\t\t\tvar body = {};\n\t\t\tvar issuerURL = form.querySelector('[name=\"oidc_issuer_url\"]').value;\n\t\t\tvar clientID = form.querySelector('[name=\"oidc_client_id\"]').value;\n\t\t\tvar clientSecret = form.querySelector('[name=\"oidc_client_secret\"]').value;\n\t\t\tvar defaultRole = form.querySelector('[name=\"oidc_default_role\"]').value;\n\t\t\tvar adminGroups = form.querySelector('[name=\"oidc_admin_groups\"]').value;\n\t\t\tvar userGroups = form.querySelector('[name=\"oidc_user_groups\"]').value;\n\n\t\t\tif (issuerURL) { body['auth.providers.oidc.issuer_url'] = issuerURL; }\n\t\t\tif (clientID) { body['auth.providers.oidc.client_id'] = clientID; }\n\t\t\tif (clientSecret) { body['auth.providers.oidc.client_secret'] = clientSecret; }\n\t\t\tif (defaultRole) { body['auth.providers.oidc.default_role'] = defaultRole; }\n\t\t\tbody['auth.providers.oidc.admin_groups'] = adminGroups;\n\t\t\tbody['auth.providers.oidc.user_groups'] = userGroups;\n\n\t\t\tfetch(authProvidersBasePath + '/api/v1/settings', {\n\t\t\t\tmethod: 'PUT',\n\t\t\t\theaders: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },\n\t\t\t\tbody: JSON.stringify(body)\n\t\t\t}).then(function(resp) {\n\t\t\t\tif (!resp.ok) {\n\t\t\t\t\treturn resp.json().catch(function() { throw new Error('Server error (' + resp.status + ')'); }).then(function(d) { throw new Error(d.error || 'Failed to save OIDC settings'); });\n\t\t\t\t}\n\t\t\t\t// Clear the secret field after save so it does not remain visible.\n\t\t\t\tform.querySelector('[name=\"oidc_client_secret\"]').value = '';\n\t\t\t\tshowSuccessToast('OIDC settings saved');\n\t\t\t}).catch(function(err) {\n\t\t\t\tshowToast(err.message || 'Failed to save OIDC settings');\n\t\t\t});\n\t\t}\n\t</script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

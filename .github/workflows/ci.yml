@@ -56,7 +56,7 @@ jobs:
           go-version-file: go.mod
 
       - name: Install templ
-        run: go install github.com/a-h/templ/cmd/templ@latest
+        run: go install github.com/a-h/templ/cmd/templ@v0.3.1001
 
       - name: Generate templ
         run: templ generate
@@ -92,7 +92,7 @@ jobs:
           go-version-file: go.mod
 
       - name: Install templ
-        run: go install github.com/a-h/templ/cmd/templ@latest
+        run: go install github.com/a-h/templ/cmd/templ@v0.3.1001
 
       - name: Generate templ
         run: templ generate
@@ -113,7 +113,7 @@ jobs:
           go-version-file: go.mod
 
       - name: Install templ
-        run: go install github.com/a-h/templ/cmd/templ@latest
+        run: go install github.com/a-h/templ/cmd/templ@v0.3.1001
 
       - name: Generate templ
         run: templ generate

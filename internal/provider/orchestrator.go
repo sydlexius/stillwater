@@ -36,29 +36,20 @@ type FieldSource struct {
 	Provider ProviderName `json:"provider"`
 }
 
-// FieldProviderExclusions lists providers that structurally cannot provide data
+// fieldProviderExclusions lists providers that structurally cannot provide data
 // for specific fields. MusicBrainz, for example, does not return biography text
 // so the field is always empty when sourced from MusicBrainz.
-// Exported so that UI layers can filter the priority editor to match orchestrator
-// behavior.
-var FieldProviderExclusions = map[string]map[ProviderName]bool{
+var fieldProviderExclusions = map[string]map[ProviderName]bool{
 	"biography": {NameMusicBrainz: true},
 }
 
-// isExcludedForField returns true if a provider is structurally unable to
+// IsExcludedForField returns true if a provider is structurally unable to
 // provide data for the given field and should be skipped.
-func isExcludedForField(field string, prov ProviderName) bool {
-	if ex, ok := FieldProviderExclusions[field]; ok {
+func IsExcludedForField(field string, prov ProviderName) bool {
+	if ex, ok := fieldProviderExclusions[field]; ok {
 		return ex[prov]
 	}
 	return false
-}
-
-// IsExcludedForField returns true if a provider is structurally unable to
-// provide data for the given field. Exported for use by API handlers and
-// templates that need to validate or filter priority lists.
-func IsExcludedForField(field string, prov ProviderName) bool {
-	return isExcludedForField(field, prov)
 }
 
 // FetchResult holds the merged result of querying multiple providers.
@@ -146,7 +137,7 @@ func (o *Orchestrator) FetchMetadata(ctx context.Context, mbid, name string, pro
 			if !available[provName] {
 				continue
 			}
-			if isExcludedForField(pri.Field, provName) {
+			if IsExcludedForField(pri.Field, provName) {
 				continue
 			}
 
@@ -567,7 +558,7 @@ func (o *Orchestrator) FetchFieldFromProviders(ctx context.Context, mbid, name, 
 	for _, pri := range priorities {
 		if pri.Field == field {
 			for _, p := range pri.EnabledProviders() {
-				if available[p] && !isExcludedForField(field, p) {
+				if available[p] && !IsExcludedForField(field, p) {
 					providers = append(providers, p)
 				}
 			}

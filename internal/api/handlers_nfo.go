@@ -385,7 +385,7 @@ func (r *Router) handleClobberCheck(w http.ResponseWriter, req *http.Request) {
 				})
 			}
 		}
-		renderTempl(w, req, templates.ClobberWarnings(warnings, r.basePath))
+		renderTempl(w, req, templates.ClobberWarnings(warnings))
 		return
 	}
 	writeJSON(w, http.StatusOK, resp)
