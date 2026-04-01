@@ -224,15 +224,17 @@ func filterChipLabel(key, state string) string {
 
 // filterChipLabelFromData returns the display label for an active filter chip,
 // resolving library names from the provided slice when the key is a library filter.
-func filterChipLabelFromData(key, state string, libs []library.Library) string {
+// sources is used to append the connection name for imported libraries.
+func filterChipLabelFromData(key, state string, libs []library.Library, sources map[string]LibrarySourceInfo) string {
 	if strings.HasPrefix(key, "library_") {
 		libID := key[len("library_"):]
 		for _, lib := range libs {
 			if lib.ID == libID {
+				label := libraryDropdownLabel(lib, sources)
 				if state == "exclude" {
-					return "Not " + lib.Name
+					return "Not " + label
 				}
-				return lib.Name
+				return label
 			}
 		}
 	}
@@ -307,7 +309,7 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 							hx-trigger="change"
 							hx-target="#artist-content"
 							hx-swap="outerHTML"
-							hx-include="[name='search'],[name='view'],[name='sort'],[name='order']"
+							hx-include="[name='search'],[name='view'],[name='sort'],[name='order'],[name^='filter_']"
 							class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
 							aria-label="Filter by library"
 						>
@@ -376,7 +378,7 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 							hx-get="/artists"
 							hx-target="#artist-content"
 							hx-swap="outerHTML"
-							hx-include="[name='search'],[name='library_id'],[name='sort'],[name='order']"
+							hx-include="[name='search'],[name='library_id'],[name='sort'],[name='order'],[name^='filter_']"
 							hx-vals='{"view":"table","page":"1"}'
 							onclick="setView('table')"
 							class={ "p-2 transition-colors", templ.KV("bg-blue-600 text-white", data.View == "table"), templ.KV("bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700", data.View != "table") }
@@ -391,7 +393,7 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 							hx-get="/artists"
 							hx-target="#artist-content"
 							hx-swap="outerHTML"
-							hx-include="[name='search'],[name='library_id'],[name='sort'],[name='order']"
+							hx-include="[name='search'],[name='library_id'],[name='sort'],[name='order'],[name^='filter_']"
 							hx-vals='{"view":"grid","page":"1"}'
 							onclick="setView('grid')"
 							class={ "p-2 transition-colors", templ.KV("bg-blue-600 text-white", data.View == "grid"), templ.KV("bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700", data.View != "grid") }
@@ -409,11 +411,11 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 					for key, state := range data.Filters {
 						if state == "include" || state == "exclude" {
 							<span class={ filterChipClass(state) }>
-								{ filterChipLabelFromData(key, state, data.Libraries) }
+								{ filterChipLabelFromData(key, state, data.Libraries, data.LibrarySources) }
 								<button
 									type="button"
 									class="ml-0.5 inline-flex h-3.5 w-3.5 items-center justify-center rounded-full hover:bg-black/10 dark:hover:bg-white/20 focus:outline-none"
-									aria-label={ "Remove " + filterChipLabelFromData(key, state, data.Libraries) + " filter" }
+									aria-label={ "Remove " + filterChipLabelFromData(key, state, data.Libraries, data.LibrarySources) + " filter" }
 									onclick={ components.DismissFilterChip("filter_"+key, "#artist-content") }
 								>
 									<svg class="h-3 w-3" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
@@ -446,7 +448,7 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 				if len(data.Libraries) > 1 {
 					@components.FilterSection("Library") {
 						for _, lib := range data.Libraries {
-							@components.FilterItem("artist-filters-flyout", "filter_library_"+lib.ID, "y", lib.Name, filterState(data.Filters, "library_"+lib.ID))
+							@components.FilterItem("artist-filters-flyout", "filter_library_"+lib.ID, "y", libraryDropdownLabel(lib, data.LibrarySources), filterState(data.Filters, "library_"+lib.ID))
 						}
 					}
 				}

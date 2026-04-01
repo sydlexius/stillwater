@@ -486,6 +486,13 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("GET "+bp+"/artists/{id}", wrapOptionalAuth(r.handleArtistDetailPage, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/artists", wrapOptionalAuth(r.handleArtistsPage, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/reports/compliance", wrapOptionalAuth(r.handleCompliancePage, optAuthMw))
+	mux.HandleFunc("GET "+bp+"/reports", wrapOptionalAuth(func(w http.ResponseWriter, req *http.Request) {
+		target := r.basePath + "/reports/compliance"
+		if req.URL.RawQuery != "" {
+			target = target + "?" + req.URL.RawQuery
+		}
+		http.Redirect(w, req, target, http.StatusMovedPermanently)
+	}, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/artists/{id}/nfo", wrapOptionalAuth(r.handleNFODiffPage, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/settings", wrapOptionalAuth(r.handleSettingsPage, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/guide", wrapOptionalAuth(r.handleGuidePage, optAuthMw))

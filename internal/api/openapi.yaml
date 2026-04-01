@@ -1385,6 +1385,38 @@ paths:
           schema:
             type: string
             enum: ["+y", "-y"]
+        - name: filter_type_person
+          in: query
+          description: Include (+y) or exclude (-y) artists of type "person"
+          schema:
+            type: string
+            enum: ["+y", "-y"]
+        - name: filter_type_group
+          in: query
+          description: Include (+y) or exclude (-y) artists of type "group"
+          schema:
+            type: string
+            enum: ["+y", "-y"]
+        - name: filter_type_orchestra
+          in: query
+          description: Include (+y) or exclude (-y) artists of type "orchestra"
+          schema:
+            type: string
+            enum: ["+y", "-y"]
+        - name: library_id
+          in: query
+          description: Filter artists by library ID
+          schema:
+            type: string
+        - name: "filter_library_{id}"
+          in: query
+          description: >-
+            Per-library include/exclude filter. Replace {id} with a library ID.
+            Use +y to include only artists from that library, -y to exclude them.
+            Multiple filter_library_{id} params may be combined.
+          schema:
+            type: string
+            enum: ["+y", "-y"]
       responses:
         "200":
           description: Paginated artist list

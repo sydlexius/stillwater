@@ -852,8 +852,11 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 										class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
 									/>
 									<div class="flex flex-col gap-1.5">
+										<label for="settings-library-type" class="sr-only">Library type</label>
 										<select
+											id="settings-library-type"
 											name="type"
+											aria-describedby="settings-library-type-help"
 											class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
 											onchange="syncSettingsLibraryTypeHelp()"
 										>
@@ -1994,8 +1997,15 @@ templ loggingScript() {
 
 templ cacheScript() {
 	<script>
+		// Resolve base path for sub-path deployments (e.g. reverse proxy prefix).
+		var cacheBasePath = '';
+		var cacheBaseMeta = document.querySelector('meta[name="htmx-base-path"]');
+		if (cacheBaseMeta && cacheBaseMeta.content) {
+			cacheBasePath = cacheBaseMeta.content;
+		}
+
 		function loadCacheStats() {
-			fetch('/api/v1/settings/cache/stats')
+			fetch(cacheBasePath + '/api/v1/settings/cache/stats')
 				.then(function(r) { if (!r.ok) throw new Error('failed'); return r.json(); })
 				.then(function(data) {
 					var mb = (data.size_bytes / (1024 * 1024)).toFixed(1);
@@ -2005,8 +2015,10 @@ templ cacheScript() {
 				})
 				.catch(function() {
 					var el = document.getElementById('cache-stats');
-					el.textContent = 'Failed to load cache stats';
-					el.className = 'text-sm text-red-500';
+					if (el) {
+						el.textContent = 'Failed to load cache stats';
+						el.className = 'text-sm text-red-500';
+					}
 				});
 		}
 
@@ -2014,7 +2026,7 @@ templ cacheScript() {
 			var csrfToken = document.cookie.replace(
 				/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1"
 			);
-			fetch('/api/v1/settings', {
+			fetch(cacheBasePath + '/api/v1/settings', {
 				method: 'PUT',
 				headers: {
 					'Content-Type': 'application/json',
@@ -2040,7 +2052,7 @@ templ cacheScript() {
 			var csrfToken = document.cookie.replace(
 				/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1"
 			);
-			fetch('/api/v1/settings/cache', {
+			fetch(cacheBasePath + '/api/v1/settings/cache', {
 				method: 'DELETE',
 				headers: { 'X-CSRF-Token': csrfToken }
 			})
@@ -2724,7 +2736,13 @@ templ settingsTabScript() {
 			}
 			if (!tabId) return;
 			var el = document.querySelector('[data-tab="' + tabId + '"]');
-			if (!el) return;
+			if (!el) {
+				// Stale ?tab= value -- fall back to the first available tab.
+				el = document.querySelector('[data-tab]');
+				if (!el) return;
+				tabId = el.dataset.tab;
+				history.replaceState(null, '', window.location.pathname + '?tab=' + tabId);
+			}
 			document.querySelectorAll('[data-tab-panel]').forEach(function(p) {
 				p.classList.add('hidden');
 			});
