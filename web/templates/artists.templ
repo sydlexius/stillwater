@@ -2,6 +2,7 @@ package templates
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -249,6 +250,17 @@ func filterChipClass(state string) string {
 	return "inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300"
 }
 
+// sortedFilterKeys returns the keys of a filter map in sorted order for
+// deterministic chip rendering.
+func sortedFilterKeys(filters map[string]string) []string {
+	keys := make([]string, 0, len(filters))
+	for k := range filters {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
 // sortDropdownItem returns the CSS classes for a sort dropdown item, with active highlighting.
 func sortDropdownItem(active bool) string {
 	base := "w-full text-left px-4 py-1.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 "
@@ -297,7 +309,7 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 						hx-trigger="keyup changed delay:300ms"
 						hx-target="#artist-content"
 						hx-swap="outerHTML"
-						hx-include="[name='library_id'],[name='view'],[name='sort'],[name='order'],[name^='filter_']"
+						hx-include="[name='library_id'],[name='view'],[name='sort'],[name='order']"
 						class="block w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
 					/>
 				</div>
@@ -309,7 +321,7 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 							hx-trigger="change"
 							hx-target="#artist-content"
 							hx-swap="outerHTML"
-							hx-include="[name='search'],[name='view'],[name='sort'],[name='order'],[name^='filter_']"
+							hx-include="[name='search'],[name='view'],[name='sort'],[name='order']"
 							class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
 							aria-label="Filter by library"
 						>
@@ -378,7 +390,7 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 							hx-get="/artists"
 							hx-target="#artist-content"
 							hx-swap="outerHTML"
-							hx-include="[name='search'],[name='library_id'],[name='sort'],[name='order'],[name^='filter_']"
+							hx-include="[name='search'],[name='library_id'],[name='sort'],[name='order']"
 							hx-vals='{"view":"table","page":"1"}'
 							onclick="setView('table')"
 							class={ "p-2 transition-colors", templ.KV("bg-blue-600 text-white", data.View == "table"), templ.KV("bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700", data.View != "table") }
@@ -393,7 +405,7 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 							hx-get="/artists"
 							hx-target="#artist-content"
 							hx-swap="outerHTML"
-							hx-include="[name='search'],[name='library_id'],[name='sort'],[name='order'],[name^='filter_']"
+							hx-include="[name='search'],[name='library_id'],[name='sort'],[name='order']"
 							hx-vals='{"view":"grid","page":"1"}'
 							onclick="setView('grid')"
 							class={ "p-2 transition-colors", templ.KV("bg-blue-600 text-white", data.View == "grid"), templ.KV("bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700", data.View != "grid") }
@@ -405,28 +417,6 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 					</div>
 				</div>
 			</div>
-			<!-- Active filter chips: shown when any flyout filters are active -->
-			if activeFilterCount(data.Filters) > 0 {
-				<div class="flex flex-wrap items-center gap-2" aria-label="Active filters">
-					for key, state := range data.Filters {
-						if state == "include" || state == "exclude" {
-							<span class={ filterChipClass(state) }>
-								{ filterChipLabelFromData(key, state, data.Libraries, data.LibrarySources) }
-								<button
-									type="button"
-									class="ml-0.5 inline-flex h-3.5 w-3.5 items-center justify-center rounded-full hover:bg-black/10 dark:hover:bg-white/20 focus:outline-none"
-									aria-label={ "Remove " + filterChipLabelFromData(key, state, data.Libraries, data.LibrarySources) + " filter" }
-									onclick={ components.DismissFilterChip("filter_"+key, "#artist-content") }
-								>
-									<svg class="h-3 w-3" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
-										<path d="M4 4l4 4m0-4L4 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-									</svg>
-								</button>
-							</span>
-						}
-					}
-				</div>
-			}
 			<!-- FilterFlyout panel for artist filters -->
 			@components.FilterFlyout("artist-filters-flyout", "Artist Filters", "artist-filter-trigger", activeFilterCount(data.Filters), "#artist-content") {
 				@components.FilterSection("Metadata") {
@@ -460,6 +450,20 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 			}
 		</div>
 		<script>
+			// Inject flyout filter params from the URL into HTMX requests that
+			// target #artist-content. The flyout stores state in the URL only
+			// (not in named form elements), so hx-include cannot pick it up.
+			document.body.addEventListener('htmx:configRequest', function(evt) {
+				if (evt.detail.target && evt.detail.target.id === 'artist-content') {
+					var urlParams = new URLSearchParams(window.location.search);
+					urlParams.forEach(function(val, key) {
+						if (key.indexOf('filter_') === 0 && !(key in evt.detail.parameters)) {
+							evt.detail.parameters[key] = val;
+						}
+					});
+				}
+			});
+
 			var _sortActiveClass = 'w-full text-left px-4 py-1.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 font-semibold text-blue-600 dark:text-blue-400';
 			var _sortInactiveClass = 'w-full text-left px-4 py-1.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200';
 			var _sortFieldLabels = {sort_name: 'Sort Name', health_score: 'Health', updated_at: 'Updated', created_at: 'Added'};
@@ -630,7 +634,11 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 						var colToggle = document.getElementById('col-toggle-wrapper');
 						if (colToggle) colToggle.classList.toggle('hidden', viewInput.value !== 'table');
 					}
-					htmx.ajax('GET', window.location.pathname + window.location.search, {target: '#artist-content', swap: 'outerHTML'});
+					var _psMeta = document.querySelector('meta[name="htmx-base-path"]');
+					var _psBp = _psMeta ? _psMeta.content : '';
+					var _psPath = window.location.pathname;
+					if (_psBp && _psPath.startsWith(_psBp)) { _psPath = _psPath.slice(_psBp.length) || '/'; }
+					htmx.ajax('GET', _psPath + window.location.search, {target: '#artist-content', swap: 'outerHTML'});
 				}
 			});
 
@@ -657,7 +665,11 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 						onData: function(data) {
 							if (data.status === 'completed' || data.status === 'failed') {
 								resetScanUI();
-								htmx.ajax('GET', window.location.pathname + window.location.search, {target: '#artist-content', swap: 'outerHTML'});
+								var _scMeta = document.querySelector('meta[name="htmx-base-path"]');
+								var _scBp = _scMeta ? _scMeta.content : '';
+								var _scPath = window.location.pathname;
+								if (_scBp && _scPath.startsWith(_scBp)) { _scPath = _scPath.slice(_scBp.length) || '/'; }
+								htmx.ajax('GET', _scPath + window.location.search, {target: '#artist-content', swap: 'outerHTML'});
 								return true;
 							}
 							return false;
@@ -681,6 +693,28 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 // ArtistTable is the HTMX-swappable table fragment.
 templ ArtistTable(data ArtistListData) {
 	<div id="artist-content">
+		<!-- Active filter chips: re-rendered on every HTMX swap so state stays in sync -->
+		if activeFilterCount(data.Filters) > 0 {
+			<div class="flex flex-wrap items-center gap-2 mb-4" aria-label="Active filters">
+				for _, key := range sortedFilterKeys(data.Filters) {
+					if data.Filters[key] == "include" || data.Filters[key] == "exclude" {
+						<span class={ filterChipClass(data.Filters[key]) }>
+							{ filterChipLabelFromData(key, data.Filters[key], data.Libraries, data.LibrarySources) }
+							<button
+								type="button"
+								class="ml-0.5 inline-flex h-3.5 w-3.5 items-center justify-center rounded-full hover:bg-black/10 dark:hover:bg-white/20 focus:outline-none"
+								aria-label={ "Remove " + filterChipLabelFromData(key, data.Filters[key], data.Libraries, data.LibrarySources) + " filter" }
+								onclick={ components.DismissFilterChip("filter_"+key, "#artist-content") }
+							>
+								<svg class="h-3 w-3" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
+									<path d="M4 4l4 4m0-4L4 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+								</svg>
+							</button>
+						</span>
+					}
+				}
+			</div>
+		}
 		<div class="overflow-x-auto">
 			<table id="artists-table" class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
 				<thead class="bg-gray-50 dark:bg-gray-800">
@@ -785,6 +819,28 @@ templ ArtistRow(a artist.Artist, sources map[string]LibrarySourceInfo, complianc
 // ArtistGrid is the HTMX-swappable grid fragment.
 templ ArtistGrid(data ArtistListData) {
 	<div id="artist-content">
+		<!-- Active filter chips: re-rendered on every HTMX swap so state stays in sync -->
+		if activeFilterCount(data.Filters) > 0 {
+			<div class="flex flex-wrap items-center gap-2 mb-4" aria-label="Active filters">
+				for _, key := range sortedFilterKeys(data.Filters) {
+					if data.Filters[key] == "include" || data.Filters[key] == "exclude" {
+						<span class={ filterChipClass(data.Filters[key]) }>
+							{ filterChipLabelFromData(key, data.Filters[key], data.Libraries, data.LibrarySources) }
+							<button
+								type="button"
+								class="ml-0.5 inline-flex h-3.5 w-3.5 items-center justify-center rounded-full hover:bg-black/10 dark:hover:bg-white/20 focus:outline-none"
+								aria-label={ "Remove " + filterChipLabelFromData(key, data.Filters[key], data.Libraries, data.LibrarySources) + " filter" }
+								onclick={ components.DismissFilterChip("filter_"+key, "#artist-content") }
+							>
+								<svg class="h-3 w-3" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
+									<path d="M4 4l4 4m0-4L4 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+								</svg>
+							</button>
+						</span>
+					}
+				}
+			</div>
+		}
 		if len(data.Artists) == 0 {
 			<div class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
 				No artists found. Run a library scan to discover artists.

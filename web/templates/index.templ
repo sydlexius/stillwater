@@ -37,7 +37,7 @@ templ IndexPage(assets AssetPaths) {
 			<div class="sw-card rounded-lg bg-white dark:bg-gray-800 p-4 shadow sm:p-6">
 				<h2 class="text-lg font-semibold mb-4">Health Score Trend</h2>
 				<div class="relative h-[250px] sm:h-[300px]">
-					<canvas id="health-chart"></canvas>
+					<canvas id="health-chart" aria-label="Health score trend chart" role="img"></canvas>
 				</div>
 			</div>
 			<div class="sw-card rounded-lg bg-white dark:bg-gray-800 p-4 shadow sm:p-6">
@@ -55,7 +55,7 @@ templ IndexPage(assets AssetPaths) {
 					</select>
 				</div>
 				<div class="relative h-[250px] sm:h-[300px]">
-					<canvas id="violations-chart"></canvas>
+					<canvas id="violations-chart" aria-label="Violations trend chart" role="img"></canvas>
 				</div>
 			</div>
 			<div class="sw-card rounded-lg bg-white dark:bg-gray-800 p-4 shadow sm:p-6">
@@ -70,7 +70,7 @@ templ IndexPage(assets AssetPaths) {
 					<p>Loading...</p>
 				</div>
 				<div class="mt-4 relative h-[300px] sm:h-[360px]">
-					<canvas id="completeness-chart"></canvas>
+					<canvas id="completeness-chart" aria-label="Metadata completeness chart" role="img"></canvas>
 				</div>
 			</div>
 		</div>
