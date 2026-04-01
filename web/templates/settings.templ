@@ -2724,16 +2724,17 @@ templ settingsTabScript() {
 		}
 
 		// Restore the active tab when the user navigates back or forward.
+		// Mirror the server's invalid-tab fallback: unknown or removed tab names
+		// (e.g. ?tab=appearance from an old bookmark) fall back to "general".
 		window.addEventListener('popstate', function() {
 			var params = new URLSearchParams(window.location.search);
 			var tabId = params.get('tab');
-			if (!tabId) {
-				var firstTab = document.querySelector('[data-tab]');
-				if (firstTab) tabId = firstTab.dataset.tab;
+			var el = tabId ? document.querySelector('[data-tab="' + tabId + '"]') : null;
+			if (!el) {
+				el = document.querySelector('[data-tab="general"]') || document.querySelector('[data-tab]');
+				if (!el) return;
+				tabId = el.dataset.tab;
 			}
-			if (!tabId) return;
-			var el = document.querySelector('[data-tab="' + tabId + '"]');
-			if (!el) return;
 			document.querySelectorAll('[data-tab-panel]').forEach(function(p) {
 				p.classList.add('hidden');
 			});

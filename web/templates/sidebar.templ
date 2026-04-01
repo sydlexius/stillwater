@@ -64,14 +64,9 @@ templ Sidebar(data SidebarData) {
 				aria-expanded="true"
 				title="Toggle sidebar ( [ )"
 			>
-				<!-- Chevron changes direction based on sidebar state.
-				     data-sidebar-state="full" shows chevron-left (collapse).
-				     icon-only or hidden shows chevron-right (expand). -->
-				<svg class="sw-sidebar-chevron-collapse h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
+				<!-- Chevron-left: collapses sidebar one step (full -> icon-only -> hidden). -->
+				<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
 					<path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5"></path>
-				</svg>
-				<svg class="sw-sidebar-chevron-expand h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
-					<path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5"></path>
 				</svg>
 			</button>
 		</div>
