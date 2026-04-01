@@ -269,14 +269,7 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
-	tab := req.URL.Query().Get("tab")
-	switch tab {
-	case "general", "providers", "connections", "libraries", "automation", "rules",
-		"users", "auth_providers", "maintenance", "logs":
-		// Valid tab.
-	default:
-		tab = "general"
-	}
+	tab := normalizeSettingsSection(req.URL.Query().Get("tab"))
 
 	multiUserEnabled := r.getBoolSetting(req.Context(), "multi_user.enabled", false)
 
@@ -350,4 +343,17 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 		AuthProviders:           authProvidersData,
 	}
 	renderTempl(w, req, templates.SettingsPage(r.assetsFor(req), data))
+}
+
+// normalizeSettingsSection returns section if it is a valid settings tab name,
+// otherwise returns "general". Used by both handleSettingsPage (?tab=) and any
+// future section-specific handler so the valid set stays in one place.
+func normalizeSettingsSection(section string) string {
+	switch section {
+	case "general", "providers", "connections", "libraries", "automation", "rules",
+		"users", "auth_providers", "maintenance", "logs":
+		return section
+	default:
+		return "general"
+	}
 }
