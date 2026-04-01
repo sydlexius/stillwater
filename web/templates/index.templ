@@ -139,7 +139,10 @@ templ IndexPage(assets AssetPaths) {
 
 				fetch(bp + '/api/v1/reports/health/history')
 					.then(function(res) {
-						if (!res.ok) { return null; }
+						if (!res.ok) {
+							showToast('Failed to load health history', 'error');
+							return null;
+						}
 						return res.json();
 					})
 					.then(function(data) {
@@ -204,7 +207,7 @@ templ IndexPage(assets AssetPaths) {
 				fetch(bp + '/api/v1/violations/trend?days=' + encodeURIComponent(days))
 					.then(function(res) {
 						if (!res.ok) {
-							showToast('Failed to load violations trend');
+							showToast('Failed to load violations trend', 'error');
 							return null;
 						}
 						return res.json();

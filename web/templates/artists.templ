@@ -565,6 +565,12 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 			// support, and carries over the page param from the HTMX request URL.
 			document.body.addEventListener('htmx:afterSwap', function(evt) {
 				if (evt.detail.target && evt.detail.target.id === 'artist-content') {
+					// Re-sync flyout state from URL after any swap (including chip dismissals
+					// via DismissFilterChip, which bypass the sw:filter-applied event).
+					if (window.swFilterFlyout) {
+						swFilterFlyout.initFromURL('artist-filters-flyout');
+					}
+
 					var params = buildArtistParams({});
 					// Extract page from the HTMX request URL if present.
 					try {
