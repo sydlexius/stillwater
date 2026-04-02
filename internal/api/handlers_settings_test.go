@@ -7,25 +7,6 @@ import (
 	"testing"
 )
 
-// TestNormalizeSettingsSection verifies that valid section names pass through
-// unchanged and that unknown names fall back to "general".
-func TestNormalizeSettingsSection(t *testing.T) {
-	valid := []string{
-		"general", "appearance", "providers", "connections", "libraries",
-		"automation", "rules", "users", "authentication", "maintenance", "logs",
-	}
-	for _, s := range valid {
-		if got := normalizeSettingsSection(s); got != s {
-			t.Errorf("normalizeSettingsSection(%q) = %q, want %q", s, got, s)
-		}
-	}
-	for _, bad := range []string{"", "admin", "unknown", "../etc"} {
-		if got := normalizeSettingsSection(bad); got != "general" {
-			t.Errorf("normalizeSettingsSection(%q) = %q, want \"general\"", bad, got)
-		}
-	}
-}
-
 func TestHandleUpdateSettings_CacheMaxSize_Invalid(t *testing.T) {
 	r, _ := testRouter(t)
 	body := `{"cache.image.max_size_mb": "-5"}`

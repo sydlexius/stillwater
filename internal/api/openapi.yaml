@@ -301,21 +301,6 @@ components:
                 type: integer
               severity:
                 type: string
-        tier_excellent:
-          type: integer
-          description: Number of artists with health score 80-100.
-        tier_good:
-          type: integer
-          description: Number of artists with health score 60-79.
-        tier_fair:
-          type: integer
-          description: Number of artists with health score 40-59.
-        tier_poor:
-          type: integer
-          description: Number of artists with health score 20-39.
-        tier_critical:
-          type: integer
-          description: Number of artists with health score 0-19.
     BackupInfo:
       type: object
       properties:
@@ -1370,6 +1355,68 @@ paths:
           in: query
           schema:
             type: string
+        - name: filter_missing_meta
+          in: query
+          description: Include (+y) or exclude (-y) artists with missing metadata
+          schema:
+            type: string
+            enum: ["+y", "-y"]
+        - name: filter_missing_images
+          in: query
+          description: Include (+y) or exclude (-y) artists with missing images
+          schema:
+            type: string
+            enum: ["+y", "-y"]
+        - name: filter_missing_mbid
+          in: query
+          description: Include (+y) or exclude (-y) artists with no MusicBrainz ID
+          schema:
+            type: string
+            enum: ["+y", "-y"]
+        - name: filter_excluded
+          in: query
+          description: Include (+y) or exclude (-y) artists marked as excluded
+          schema:
+            type: string
+            enum: ["+y", "-y"]
+        - name: filter_locked
+          in: query
+          description: Include (+y) or exclude (-y) artists that are locked
+          schema:
+            type: string
+            enum: ["+y", "-y"]
+        - name: filter_type_person
+          in: query
+          description: Include (+y) or exclude (-y) artists of type "person"
+          schema:
+            type: string
+            enum: ["+y", "-y"]
+        - name: filter_type_group
+          in: query
+          description: Include (+y) or exclude (-y) artists of type "group"
+          schema:
+            type: string
+            enum: ["+y", "-y"]
+        - name: filter_type_orchestra
+          in: query
+          description: Include (+y) or exclude (-y) artists of type "orchestra"
+          schema:
+            type: string
+            enum: ["+y", "-y"]
+        - name: library_id
+          in: query
+          description: Filter artists by library ID
+          schema:
+            type: string
+        - name: "filter_library_{id}"
+          in: query
+          description: >-
+            Per-library include/exclude filter. Replace {id} with a library ID.
+            Use +y to include only artists from that library, -y to exclude them.
+            Multiple filter_library_{id} params may be combined.
+          schema:
+            type: string
+            enum: ["+y", "-y"]
       responses:
         "200":
           description: Paginated artist list
@@ -3473,22 +3520,6 @@ paths:
             text/html:
               schema:
                 type: string
-
-  /reports/health/tiers:
-    get:
-      tags: [Reports]
-      operationId: getHealthTiers
-      summary: Get health score tier distribution
-      description: Returns an HTML fragment (HealthTierFragment) with artist counts per health score tier. Requires authentication.
-      responses:
-        "200":
-          description: Health tier distribution fragment
-          content:
-            text/html:
-              schema:
-                type: string
-        "401":
-          description: Unauthorized
 
   /reports/health/history:
     get:

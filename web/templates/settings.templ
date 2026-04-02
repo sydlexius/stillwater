@@ -58,32 +58,27 @@ type SettingsData struct {
 	NameSimilarityThreshold int
 	Users                UsersTabData
 	AuthProviders        AuthProvidersData
-	Appearance           AppearancePrefsData
 }
 
-// settingsNavItem defines an item in the settings left sidebar navigation.
-// When Separator is true the item is a visual divider and ID/Label are ignored.
-type settingsNavItem struct {
-	ID        string
-	Label     string
-	Separator bool
+// settingsTab defines a tab in the settings page navigation.
+type settingsTab struct {
+	ID    string
+	Label string
 }
 
-// settingsNavItems returns the ordered list of settings sidebar items.
-func settingsNavItems() []settingsNavItem {
-	return []settingsNavItem{
+// settingsTabs returns the ordered list of settings page tabs.
+func settingsTabs() []settingsTab {
+	return []settingsTab{
 		{ID: "general", Label: "General"},
 		{ID: "providers", Label: "Providers"},
 		{ID: "connections", Label: "Connections"},
 		{ID: "libraries", Label: "Libraries"},
 		{ID: "automation", Label: "Automation"},
 		{ID: "rules", Label: "Rules"},
-		{Separator: true},
 		{ID: "users", Label: "Users"},
-		{ID: "authentication", Label: "Authentication"},
-		{ID: "appearance", Label: "Appearance"},
-		{ID: "logs", Label: "Logs"},
+		{ID: "auth_providers", Label: "Auth Providers"},
 		{ID: "maintenance", Label: "Maintenance"},
+		{ID: "logs", Label: "Logs"},
 	}
 }
 
@@ -477,15 +472,15 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 		@settingsUsersScript()
 		@settingsAuthProvidersScript()
 		<script src={ assets.SortableJS }></script>
-		<!-- Visually hidden page title for screen readers. -->
-		<h1 class="sr-only">Settings</h1>
-		<!-- Settings page: vertical sidebar + content panel -->
-		<div class="flex flex-col lg:flex-row gap-0 min-h-0">
-			<!-- Left sidebar (stacks above content on mobile, inline on larger screens) -->
-			@settingsSidebar(data.ActiveTab, assets.BasePath)
-			<!-- Right content area -->
-			<div class="flex-1 min-w-0 lg:pl-6">
-			<!-- General section -->
+		<div class="space-y-6">
+			<div class="sw-card rounded-lg px-6 py-4">
+				<h1 class="text-2xl font-bold">Settings</h1>
+				<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+					Configure platform profiles, provider API keys, and output settings.
+				</p>
+			</div>
+			@settingsTabBar(data.ActiveTab, assets.BasePath)
+			<!-- General tab -->
 			<div
 				data-tab-panel="general"
 				class={
@@ -493,178 +488,6 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 					templ.KV("hidden", data.ActiveTab != "general"),
 				}
 			>
-				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
-					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-						<h2 class="text-lg font-semibold">Behavior</h2>
-						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-							Configure default behaviors for image management and metadata workflows.
-						</p>
-					</div>
-					<div class="px-6 py-4">
-						<div class="flex items-center justify-between">
-							<div>
-								<div class="font-medium text-sm">Auto-fetch images</div>
-								<div class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-									When opening an artist's image management page, automatically search providers for available images. This applies to manual browsing only and does not affect rule-based image fetching.
-								</div>
-							</div>
-							<button
-								type="button"
-								id="auto-fetch-toggle"
-								class={
-									"relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800",
-									templ.KV("bg-blue-600", data.AutoFetchImages),
-									templ.KV("bg-gray-200 dark:bg-gray-600", !data.AutoFetchImages),
-								}
-								role="switch"
-								aria-checked={ boolAttr(data.AutoFetchImages) }
-								aria-label="Auto-fetch images"
-								onclick="toggleAutoFetch(this)"
-							>
-								<span
-									class={
-										"pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out",
-										templ.KV("translate-x-5", data.AutoFetchImages),
-										templ.KV("translate-x-0", !data.AutoFetchImages),
-									}
-								></span>
-							</button>
-						</div>
-					</div>
-				</div>
-				<!-- Restore All Dialogs -->
-				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
-					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-						<h2 class="text-lg font-semibold">Confirmation Dialogs</h2>
-						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-							Manage "Don't ask again" preferences for confirmation dialogs throughout the app.
-						</p>
-					</div>
-					<div class="px-6 py-4">
-						<p class="text-sm text-gray-600 dark:text-gray-400 mb-3">
-							If you previously checked "Don't ask again" on a confirmation dialog, you can reset
-							all preferences here to restore those prompts.
-						</p>
-						<button
-							type="button"
-							id="reset-confirm-prefs-general"
-							class="text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-							onclick="resetConfirmPrefs()"
-						>
-							Restore All Dialogs
-						</button>
-						<span id="confirm-reset-status" class="ml-2 text-sm text-green-600 dark:text-green-400 hidden">Preferences reset.</span>
-					</div>
-				</div>
-			</div>
-			<!-- Providers section -->
-			<div
-				data-tab-panel="providers"
-				class={
-					"space-y-6",
-					templ.KV("hidden", data.ActiveTab != "providers"),
-				}
-			>
-				if len(data.ProviderKeys) > 0 {
-					<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
-						<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-							<h2 class="text-lg font-semibold">Provider API Keys</h2>
-							<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-								Configure API keys for metadata providers. Providers without a configured key will be skipped during metadata lookups.
-							</p>
-						</div>
-						<div class="px-6 py-4 space-y-4">
-							for _, pk := range data.ProviderKeys {
-								<div id={ "provider-card-" + string(pk.Name) }>
-									@ProviderKeyCard(pk)
-								</div>
-							}
-						</div>
-					</div>
-				}
-				if len(data.WebSearchProviders) > 0 {
-					<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
-						<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-							<h2 class="text-lg font-semibold">Web Image Search</h2>
-							<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-								Enable web search providers to find additional artist images beyond authoritative sources. No API key required.
-							</p>
-						</div>
-						<div class="px-6 py-4 space-y-4">
-							for _, ws := range data.WebSearchProviders {
-								@WebSearchToggle(ws)
-							}
-						</div>
-					</div>
-				}
-				if len(data.Priorities) > 0 {
-					<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
-						<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-							<h2 class="text-lg font-semibold">Provider Priorities</h2>
-							<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-								Set the preferred provider order for each metadata field. Drag to reorder. Click the checkmark/X to enable or disable. Only configured providers are shown.
-							</p>
-						</div>
-						<div class="px-6 py-4">
-							<div class="space-y-3">
-								for _, pri := range data.Priorities {
-									@PriorityChipRow(pri, data.ProviderKeys)
-								}
-							</div>
-						</div>
-					</div>
-				}
-				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
-					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-						<h2 class="text-lg font-semibold">Advanced</h2>
-						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-							Fine-tune provider matching behavior.
-						</p>
-					</div>
-					<div class="px-6 py-4 space-y-4">
-						<div>
-							<label for="name_similarity_threshold" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-								Name Similarity Threshold
-							</label>
-							<p class="text-xs text-gray-500 dark:text-gray-400 mb-2">
-								Minimum similarity score (0-100) required when matching artist names from search results.
-								Set to 0 to disable name validation and accept any result. Default is 60.
-							</p>
-							<div class="flex items-center gap-3">
-								<input
-									type="number"
-									id="name_similarity_threshold"
-									name="name_similarity_threshold"
-									min="0"
-									max="100"
-									step="1"
-									value={ strconv.Itoa(data.NameSimilarityThreshold) }
-									aria-label="Name similarity threshold (0-100)"
-									class="w-24 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-								/>
-								<span class="text-sm text-gray-500 dark:text-gray-400">%</span>
-								<button
-									type="button"
-									class="text-sm px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
-									onclick={ saveNameSimilarityThreshold() }
-								>
-									Save
-								</button>
-								<span id="name-similarity-status" class="text-sm text-green-600 dark:text-green-400 hidden">Saved</span>
-							</div>
-						</div>
-					</div>
-				</div>
-			</div>
-			<!-- Connections section -->
-			<div
-				data-tab-panel="connections"
-				class={
-					"space-y-6",
-					templ.KV("hidden", data.ActiveTab != "connections"),
-				}
-			>
-				<!-- Platform Profile (moved from General) -->
 				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 						<h2 class="text-lg font-semibold">Platform Profile</h2>
@@ -764,6 +587,196 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 				}
 				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+						<h2 class="text-lg font-semibold">Behavior</h2>
+						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+							Configure default behaviors for image management and metadata workflows.
+						</p>
+					</div>
+					<div class="px-6 py-4">
+						<div class="flex items-center justify-between">
+							<div>
+								<div class="font-medium text-sm">Auto-fetch images</div>
+								<div class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+									When opening an artist's image management page, automatically search providers for available images. This applies to manual browsing only and does not affect rule-based image fetching.
+								</div>
+							</div>
+							<button
+								type="button"
+								id="auto-fetch-toggle"
+								class={
+									"relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800",
+									templ.KV("bg-blue-600", data.AutoFetchImages),
+									templ.KV("bg-gray-200 dark:bg-gray-600", !data.AutoFetchImages),
+								}
+								role="switch"
+								aria-checked={ boolAttr(data.AutoFetchImages) }
+								aria-label="Auto-fetch images"
+								onclick="toggleAutoFetch(this)"
+							>
+								<span
+									class={
+										"pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out",
+										templ.KV("translate-x-5", data.AutoFetchImages),
+										templ.KV("translate-x-0", !data.AutoFetchImages),
+									}
+								></span>
+							</button>
+						</div>
+					</div>
+				</div>
+				<!-- Image Cache Configuration -->
+				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
+					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+						<h2 class="text-lg font-semibold">Image Cache</h2>
+						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+							Manage cached images for artists without filesystem paths.
+						</p>
+					</div>
+					<div class="px-6 py-4 space-y-4">
+						<div id="cache-stats" role="status" aria-live="polite" aria-atomic="true" class="text-sm text-gray-600 dark:text-gray-400">Loading...</div>
+						<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+							<div>
+								<label for="cache-max-size" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Maximum size</label>
+								<select
+									id="cache-max-size"
+									aria-label="Maximum cache size"
+									class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+									onchange="saveCacheMaxSize(this.value)"
+								>
+									if data.CacheMaxSizeMB != "" && data.CacheMaxSizeMB != "0" && data.CacheMaxSizeMB != "256" && data.CacheMaxSizeMB != "512" && data.CacheMaxSizeMB != "1024" && data.CacheMaxSizeMB != "2048" {
+										<option value={ data.CacheMaxSizeMB } selected>{ data.CacheMaxSizeMB + " MB (custom)" }</option>
+									}
+									<option value="0" selected?={ data.CacheMaxSizeMB == "0" }>Unlimited</option>
+									<option value="256" selected?={ data.CacheMaxSizeMB == "256" }>256 MB</option>
+									<option value="512" selected?={ data.CacheMaxSizeMB == "512" }>512 MB</option>
+									<option value="1024" selected?={ data.CacheMaxSizeMB == "1024" }>1 GB</option>
+									<option value="2048" selected?={ data.CacheMaxSizeMB == "2048" }>2 GB</option>
+								</select>
+							</div>
+							<div class="flex items-end gap-3">
+								<button
+									type="button"
+									class="text-sm px-3 py-2 rounded border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+									onclick="clearCache()"
+								>
+									Clear Cache
+								</button>
+								<span id="cache-status" role="status" aria-live="polite" aria-atomic="true"></span>
+							</div>
+						</div>
+					</div>
+				</div>
+				@cacheScript()
+			</div>
+			<!-- Providers tab -->
+			<div
+				data-tab-panel="providers"
+				class={
+					"space-y-6",
+					templ.KV("hidden", data.ActiveTab != "providers"),
+				}
+			>
+				if len(data.ProviderKeys) > 0 {
+					<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
+						<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+							<h2 class="text-lg font-semibold">Provider API Keys</h2>
+							<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+								Configure API keys for metadata providers. Providers without a configured key will be skipped during metadata lookups.
+							</p>
+						</div>
+						<div class="px-6 py-4 space-y-4">
+							for _, pk := range data.ProviderKeys {
+								<div id={ "provider-card-" + string(pk.Name) }>
+									@ProviderKeyCard(pk)
+								</div>
+							}
+						</div>
+					</div>
+				}
+				if len(data.WebSearchProviders) > 0 {
+					<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
+						<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+							<h2 class="text-lg font-semibold">Web Image Search</h2>
+							<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+								Enable web search providers to find additional artist images beyond authoritative sources. No API key required.
+							</p>
+						</div>
+						<div class="px-6 py-4 space-y-4">
+							for _, ws := range data.WebSearchProviders {
+								@WebSearchToggle(ws)
+							}
+						</div>
+					</div>
+				}
+				if len(data.Priorities) > 0 {
+					<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
+						<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+							<h2 class="text-lg font-semibold">Provider Priorities</h2>
+							<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+								Set the preferred provider order for each metadata field. Drag to reorder. Click the checkmark/X to enable or disable. Only configured providers are shown.
+							</p>
+						</div>
+						<div class="px-6 py-4">
+							<div class="space-y-3">
+								for _, pri := range data.Priorities {
+									@PriorityChipRow(pri, data.ProviderKeys)
+								}
+							</div>
+						</div>
+					</div>
+				}
+				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
+					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+						<h2 class="text-lg font-semibold">Advanced</h2>
+						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+							Fine-tune provider matching behavior.
+						</p>
+					</div>
+					<div class="px-6 py-4 space-y-4">
+						<div>
+							<label for="name_similarity_threshold" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+								Name Similarity Threshold
+							</label>
+							<p class="text-xs text-gray-500 dark:text-gray-400 mb-2">
+								Minimum similarity score (0-100) required when matching artist names from search results.
+								Set to 0 to disable name validation and accept any result. Default is 60.
+							</p>
+							<div class="flex items-center gap-3">
+								<input
+									type="number"
+									id="name_similarity_threshold"
+									name="name_similarity_threshold"
+									min="0"
+									max="100"
+									step="1"
+									value={ strconv.Itoa(data.NameSimilarityThreshold) }
+									aria-label="Name similarity threshold (0-100)"
+									class="w-24 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+								/>
+								<span class="text-sm text-gray-500 dark:text-gray-400">%</span>
+								<button
+									type="button"
+									class="text-sm px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+									onclick={ saveNameSimilarityThreshold() }
+								>
+									Save
+								</button>
+								<span id="name-similarity-status" class="text-sm text-green-600 dark:text-green-400 hidden">Saved</span>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+			<!-- Connections tab -->
+			<div
+				data-tab-panel="connections"
+				class={
+					"space-y-6",
+					templ.KV("hidden", data.ActiveTab != "connections"),
+				}
+			>
+				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
+					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 						<h2 class="text-lg font-semibold">Server Connections</h2>
 						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
 							Connect to Emby, Jellyfin, or Lidarr servers for library sync and metadata push.
@@ -839,18 +852,17 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 										class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
 									/>
 									<div class="flex flex-col gap-1.5">
-										<div class="flex items-center gap-1.5">
-											<select
-												name="type"
-												class="flex-1 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-												onchange="syncSettingsLibraryTypeHelp()"
-												aria-label="Library type"
-											>
-												<option value="regular">Regular</option>
-												<option value="classical">Classical</option>
-											</select>
-											@components.ContextHelp("help-settings-lib-type", "Library Type", "Regular: standard artist library for all genres. Classical: for libraries that primarily contain classical music. Classical mode adjusts artist labeling; additional classical-specific features are planned for a future release.")
-										</div>
+										<label for="settings-library-type" class="sr-only">Library type</label>
+										<select
+											id="settings-library-type"
+											name="type"
+											aria-describedby="settings-library-type-help"
+											class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+											onchange="syncSettingsLibraryTypeHelp()"
+										>
+											<option value="regular">Regular</option>
+											<option value="classical">Classical</option>
+										</select>
 										<p id="settings-library-type-help" class="text-xs text-gray-500 dark:text-gray-400" aria-live="polite"></p>
 									</div>
 								</div>
@@ -973,6 +985,146 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 									/>
 									<span class="text-sm text-gray-600 dark:text-gray-400">Info</span>
 								</label>
+							</div>
+						</div>
+					</div>
+				</div>
+				<!-- API Tokens -->
+				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
+					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+						<h2 class="text-lg font-semibold">API Tokens</h2>
+						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+							Generate tokens for external applications to access the Stillwater API.
+						</p>
+					</div>
+					<div class="px-6 py-4 space-y-3">
+						if len(data.APITokens) == 0 {
+							<p class="text-sm text-gray-500 dark:text-gray-400 italic">No API tokens created.</p>
+						}
+						for _, tok := range data.APITokens {
+							if tok.Status == auth.TokenStatusActive {
+								<div id={ "token-row-" + tok.ID } class="flex items-center justify-between py-2">
+									<div>
+										<span class="text-sm font-medium text-gray-900 dark:text-gray-100">{ tok.Name }</span>
+										<div class="flex gap-1 mt-1">
+											for _, scope := range strings.Split(tok.Scopes, ",") {
+												if strings.TrimSpace(scope) != "" {
+													<span class={ "inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium", scopePillClasses(scope) }>{ strings.TrimSpace(scope) }</span>
+												}
+											}
+										</div>
+										<p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+											Created { tok.CreatedAt }
+											if tok.LastUsedAt != nil {
+												{ " | Last used " + *tok.LastUsedAt }
+											}
+										</p>
+									</div>
+									<button
+										type="button"
+										class="text-sm px-3 py-1 rounded border border-red-300 dark:border-red-600 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+										hx-delete={ "/api/v1/auth/tokens/" + tok.ID }
+										hx-swap="none"
+										hx-confirm="Revoke this API token? Applications using it will lose access."
+										hx-on--after-request={ tokenAfterRequest("token-row-" + tok.ID, "revoke") }
+										aria-label={ "Revoke token " + tok.Name }
+									>
+										Revoke
+									</button>
+								</div>
+							}
+						}
+						if hasRevokedTokens(data.APITokens) {
+							<div class="border-t border-gray-200 dark:border-gray-700 pt-3 mt-3">
+								<button
+									type="button"
+									class="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
+									onclick="var el = document.getElementById('archived-tokens'); el.classList.toggle('hidden'); this.setAttribute('aria-expanded', el.classList.contains('hidden') ? 'false' : 'true'); this.querySelector('span').textContent = el.classList.contains('hidden') ? 'Show Archive' : 'Hide Archive'"
+									aria-expanded="false"
+									aria-controls="archived-tokens"
+								>
+									<span>Show Archive</span>
+									{ fmt.Sprintf(" (%d)", countRevokedTokens(data.APITokens)) }
+								</button>
+								<div id="archived-tokens" class="hidden mt-3 space-y-3">
+									for _, tok := range data.APITokens {
+										if tok.Status == auth.TokenStatusRevoked {
+											<div id={ "token-row-" + tok.ID } class="flex items-center justify-between py-2 opacity-50">
+												<div>
+													<span class="text-sm font-medium text-gray-900 dark:text-gray-100">{ tok.Name }</span>
+													<span class="ml-2 text-xs font-medium text-red-600 dark:text-red-400">Revoked</span>
+													<div class="flex gap-1 mt-1">
+														for _, scope := range strings.Split(tok.Scopes, ",") {
+															if strings.TrimSpace(scope) != "" {
+																<span class={ "inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium", scopePillClasses(scope) }>{ strings.TrimSpace(scope) }</span>
+															}
+														}
+													</div>
+													<p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+														Created { tok.CreatedAt }
+														if tok.LastUsedAt != nil {
+															{ " | Last used " + *tok.LastUsedAt }
+														}
+													</p>
+												</div>
+												<button
+													type="button"
+													class="text-sm px-3 py-1 rounded border border-red-300 dark:border-red-600 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+													hx-delete={ "/api/v1/auth/tokens/" + tok.ID + "/permanent" }
+													hx-swap="none"
+													hx-confirm="Permanently delete this token? This cannot be undone. Audit log entries will be anonymized."
+													hx-on--after-request={ tokenAfterRequest("token-row-" + tok.ID, "delete") }
+													aria-label={ "Delete token " + tok.Name }
+												>
+													Delete
+												</button>
+											</div>
+										}
+									}
+								</div>
+							</div>
+						}
+					</div>
+					<div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700">
+						<button
+							type="button"
+							class="text-sm px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+							onclick="document.getElementById('add-token-form').classList.toggle('hidden')"
+						>
+							Generate Token
+						</button>
+						<div id="add-token-form" class="hidden mt-4">
+							<form id="create-token-form" class="space-y-3" onsubmit="createAPIToken(event)">
+								<input name="name" placeholder="Token name (e.g. Lidarr)" required class="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+								<div class="flex flex-wrap gap-3">
+									<label class="inline-flex items-center gap-1.5">
+										<input type="checkbox" name="scope_read" checked class="rounded border-gray-300 dark:border-gray-600"/>
+										<span class="text-sm">Read</span>
+									</label>
+									<label class="inline-flex items-center gap-1.5">
+										<input type="checkbox" name="scope_write" class="rounded border-gray-300 dark:border-gray-600"/>
+										<span class="text-sm">Write</span>
+									</label>
+									<label class="inline-flex items-center gap-1.5">
+										<input type="checkbox" name="scope_webhook" class="rounded border-gray-300 dark:border-gray-600"/>
+										<span class="text-sm">Webhook</span>
+									</label>
+									<label class="inline-flex items-center gap-1.5">
+										<input type="checkbox" name="scope_admin" class="rounded border-gray-300 dark:border-gray-600"/>
+										<span class="text-sm">Admin</span>
+									</label>
+								</div>
+								<div class="flex gap-2">
+									<button type="submit" class="text-sm px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 transition-colors">Create</button>
+									<button type="button" class="text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" onclick="this.closest('#add-token-form').classList.add('hidden')">Cancel</button>
+								</div>
+							</form>
+							<div id="token-created-result" class="hidden mt-4 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded">
+								<p class="text-sm font-medium text-green-800 dark:text-green-200 mb-1">Token created. Copy it now -- it will not be shown again.</p>
+								<div class="flex items-center gap-2">
+									<code id="token-plaintext" class="flex-1 text-xs bg-white dark:bg-gray-800 px-2 py-1 rounded border border-gray-200 dark:border-gray-600 break-all"></code>
+									<button type="button" class="text-sm px-2 py-1 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" onclick="navigator.clipboard.writeText(document.getElementById('token-plaintext').textContent)">Copy</button>
+								</div>
 							</div>
 						</div>
 					</div>
@@ -1153,157 +1305,17 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 			>
 				@settingsUsersTab(data.Users)
 			</div>
-			<!-- Authentication section (formerly Auth Providers) -->
+			<!-- Auth Providers tab -->
 			<div
-				data-tab-panel="authentication"
+				data-tab-panel="auth_providers"
 				class={
 					"space-y-6",
-					templ.KV("hidden", data.ActiveTab != "authentication"),
+					templ.KV("hidden", data.ActiveTab != "auth_providers"),
 				}
 			>
 				@settingsAuthProvidersTab(data.AuthProviders)
-				<!-- API Tokens (moved from Automation) -->
-				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
-					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-						<h2 class="text-lg font-semibold">API Tokens</h2>
-						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-							Generate tokens for external applications to access the Stillwater API.
-						</p>
-					</div>
-					<div class="px-6 py-4 space-y-3">
-						if len(data.APITokens) == 0 {
-							<p class="text-sm text-gray-500 dark:text-gray-400 italic">No API tokens created.</p>
-						}
-						for _, tok := range data.APITokens {
-							if tok.Status == auth.TokenStatusActive {
-								<div id={ "token-row-" + tok.ID } class="flex items-center justify-between py-2">
-									<div>
-										<span class="text-sm font-medium text-gray-900 dark:text-gray-100">{ tok.Name }</span>
-										<div class="flex gap-1 mt-1">
-											for _, scope := range strings.Split(tok.Scopes, ",") {
-												if strings.TrimSpace(scope) != "" {
-													<span class={ "inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium", scopePillClasses(scope) }>{ strings.TrimSpace(scope) }</span>
-												}
-											}
-										</div>
-										<p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-											Created { tok.CreatedAt }
-											if tok.LastUsedAt != nil {
-												{ " | Last used " + *tok.LastUsedAt }
-											}
-										</p>
-									</div>
-									<button
-										type="button"
-										class="text-sm px-3 py-1 rounded border border-red-300 dark:border-red-600 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-										hx-delete={ "/api/v1/auth/tokens/" + tok.ID }
-										hx-swap="none"
-										hx-confirm="Revoke this API token? Applications using it will lose access."
-										hx-on--after-request={ tokenAfterRequest("token-row-" + tok.ID, "revoke") }
-										aria-label={ "Revoke token " + tok.Name }
-									>
-										Revoke
-									</button>
-								</div>
-							}
-						}
-						if hasRevokedTokens(data.APITokens) {
-							<div class="border-t border-gray-200 dark:border-gray-700 pt-3 mt-3">
-								<button
-									type="button"
-									class="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
-									onclick="var el = document.getElementById('archived-tokens'); el.classList.toggle('hidden'); this.setAttribute('aria-expanded', el.classList.contains('hidden') ? 'false' : 'true'); this.querySelector('span').textContent = el.classList.contains('hidden') ? 'Show Archive' : 'Hide Archive'"
-									aria-expanded="false"
-									aria-controls="archived-tokens"
-								>
-									<span>Show Archive</span>
-									{ fmt.Sprintf(" (%d)", countRevokedTokens(data.APITokens)) }
-								</button>
-								<div id="archived-tokens" class="hidden mt-3 space-y-3">
-									for _, tok := range data.APITokens {
-										if tok.Status == auth.TokenStatusRevoked {
-											<div id={ "token-row-" + tok.ID } class="flex items-center justify-between py-2 opacity-50">
-												<div>
-													<span class="text-sm font-medium text-gray-900 dark:text-gray-100">{ tok.Name }</span>
-													<span class="ml-2 text-xs font-medium text-red-600 dark:text-red-400">Revoked</span>
-													<div class="flex gap-1 mt-1">
-														for _, scope := range strings.Split(tok.Scopes, ",") {
-															if strings.TrimSpace(scope) != "" {
-																<span class={ "inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium", scopePillClasses(scope) }>{ strings.TrimSpace(scope) }</span>
-															}
-														}
-													</div>
-													<p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-														Created { tok.CreatedAt }
-														if tok.LastUsedAt != nil {
-															{ " | Last used " + *tok.LastUsedAt }
-														}
-													</p>
-												</div>
-												<button
-													type="button"
-													class="text-sm px-3 py-1 rounded border border-red-300 dark:border-red-600 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-													hx-delete={ "/api/v1/auth/tokens/" + tok.ID + "/permanent" }
-													hx-swap="none"
-													hx-confirm="Permanently delete this token? This cannot be undone. Audit log entries will be anonymized."
-													hx-on--after-request={ tokenAfterRequest("token-row-" + tok.ID, "delete") }
-													aria-label={ "Delete token " + tok.Name }
-												>
-													Delete
-												</button>
-											</div>
-										}
-									}
-								</div>
-							</div>
-						}
-					</div>
-					<div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700">
-						<button
-							type="button"
-							class="text-sm px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
-							onclick="document.getElementById('add-token-form').classList.toggle('hidden')"
-						>
-							Generate Token
-						</button>
-						<div id="add-token-form" class="hidden mt-4">
-							<form id="create-token-form" class="space-y-3" onsubmit="createAPIToken(event)">
-								<input name="name" placeholder="Token name (e.g. Lidarr)" required class="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-500"/>
-								<div class="flex flex-wrap gap-3">
-									<label class="inline-flex items-center gap-1.5">
-										<input type="checkbox" name="scope_read" checked class="rounded border-gray-300 dark:border-gray-600"/>
-										<span class="text-sm">Read</span>
-									</label>
-									<label class="inline-flex items-center gap-1.5">
-										<input type="checkbox" name="scope_write" class="rounded border-gray-300 dark:border-gray-600"/>
-										<span class="text-sm">Write</span>
-									</label>
-									<label class="inline-flex items-center gap-1.5">
-										<input type="checkbox" name="scope_webhook" class="rounded border-gray-300 dark:border-gray-600"/>
-										<span class="text-sm">Webhook</span>
-									</label>
-									<label class="inline-flex items-center gap-1.5">
-										<input type="checkbox" name="scope_admin" class="rounded border-gray-300 dark:border-gray-600"/>
-										<span class="text-sm">Admin</span>
-									</label>
-								</div>
-								<div class="flex gap-2">
-									<button type="submit" class="text-sm px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 transition-colors">Create</button>
-									<button type="button" class="text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" onclick="this.closest('#add-token-form').classList.add('hidden')">Cancel</button>
-								</div>
-							</form>
-							<div id="token-created-result" class="hidden mt-4 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded">
-								<p class="text-sm font-medium text-green-800 dark:text-green-200 mb-1">Token created. Copy it now -- it will not be shown again.</p>
-								<div class="flex items-center gap-2">
-									<code id="token-plaintext" class="flex-1 text-xs bg-white dark:bg-gray-800 px-2 py-1 rounded border border-gray-200 dark:border-gray-600 break-all"></code>
-									<button type="button" class="text-sm px-2 py-1 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" onclick="navigator.clipboard.writeText(document.getElementById('token-plaintext').textContent)">Copy</button>
-								</div>
-							</div>
-						</div>
-					</div>
-				</div>
 			</div>
-			<!-- Maintenance section -->
+			<!-- Maintenance tab -->
 			<div
 				data-tab-panel="maintenance"
 				class={
@@ -1311,49 +1323,29 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 					templ.KV("hidden", data.ActiveTab != "maintenance"),
 				}
 			>
-				<!-- Image Cache (moved from General) -->
 				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-						<h2 class="text-lg font-semibold">Image Cache</h2>
+						<h2 class="text-lg font-semibold">Confirmation Dialogs</h2>
 						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-							Manage cached images for artists without filesystem paths.
+							Manage "Don't ask again" preferences for confirmation dialogs throughout the app.
 						</p>
 					</div>
-					<div class="px-6 py-4 space-y-4">
-						<div id="cache-stats" role="status" aria-live="polite" aria-atomic="true" class="text-sm text-gray-600 dark:text-gray-400">Loading...</div>
-						<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-							<div>
-								<label for="cache-max-size" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Maximum size</label>
-								<select
-									id="cache-max-size"
-									aria-label="Maximum cache size"
-									class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-									onchange="saveCacheMaxSize(this.value)"
-								>
-									if data.CacheMaxSizeMB != "" && data.CacheMaxSizeMB != "0" && data.CacheMaxSizeMB != "256" && data.CacheMaxSizeMB != "512" && data.CacheMaxSizeMB != "1024" && data.CacheMaxSizeMB != "2048" {
-										<option value={ data.CacheMaxSizeMB } selected>{ data.CacheMaxSizeMB + " MB (custom)" }</option>
-									}
-									<option value="0" selected?={ data.CacheMaxSizeMB == "0" }>Unlimited</option>
-									<option value="256" selected?={ data.CacheMaxSizeMB == "256" }>256 MB</option>
-									<option value="512" selected?={ data.CacheMaxSizeMB == "512" }>512 MB</option>
-									<option value="1024" selected?={ data.CacheMaxSizeMB == "1024" }>1 GB</option>
-									<option value="2048" selected?={ data.CacheMaxSizeMB == "2048" }>2 GB</option>
-								</select>
-							</div>
-							<div class="flex items-end gap-3">
-								<button
-									type="button"
-									class="text-sm px-3 py-2 rounded border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-									onclick="clearCache()"
-								>
-									Clear Cache
-								</button>
-								<span id="cache-status" role="status" aria-live="polite" aria-atomic="true"></span>
-							</div>
-						</div>
+					<div class="px-6 py-4">
+						<p class="text-sm text-gray-600 dark:text-gray-400 mb-3">
+							If you previously checked "Don't ask again" on a confirmation dialog, you can reset
+							all preferences here to restore those prompts.
+						</p>
+						<button
+							type="button"
+							id="reset-confirm-prefs"
+							class="text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+							onclick="resetConfirmPrefs()"
+						>
+							Reset all confirmation preferences
+						</button>
+						<span id="confirm-reset-status" class="ml-2 text-sm text-green-600 dark:text-green-400 hidden">Preferences reset.</span>
 					</div>
 				</div>
-				@cacheScript()
 				<!-- Database Maintenance -->
 				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
@@ -1805,18 +1797,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 					</div>
 				</div>
 			</div>
-			<!-- Appearance tab -->
-			<div
-				data-tab-panel="appearance"
-				class={
-					"space-y-6",
-					templ.KV("hidden", data.ActiveTab != "appearance"),
-				}
-			>
-				@settingsAppearanceTab(data.Appearance)
-			</div>
-			</div> <!-- end right content panel -->
-		</div> <!-- end settings flex wrapper -->
+		</div>
 		@sortableInitScript()
 	}
 }
@@ -1844,47 +1825,25 @@ templ resetConfirmPrefsScript() {
 	</script>
 }
 
-// settingsSidebar renders the vertical left navigation sidebar for the settings page.
-// On large screens it is a fixed-width column; on mobile it renders as a full-width
-// section list above the content panel.
-// basePath is the server.base_path prefix (may be empty) used to build correct hrefs
-// in sub-path deployments.
-templ settingsSidebar(activeSection string, basePath string) {
-	<aside
-		id="settings-sidebar"
-		class="w-full lg:w-52 shrink-0"
-		aria-label="Settings navigation"
-	>
-		<nav class="sw-card rounded-lg p-2 lg:sticky lg:top-4">
-			<ul class="space-y-0.5" role="list">
-				for _, item := range settingsNavItems() {
-					if item.Separator {
-						<li role="separator" aria-hidden="true">
-							<div class="my-1.5 border-t border-gray-200 dark:border-gray-700"></div>
-						</li>
-					} else {
-						<li>
-							<a
-								href={ templ.SafeURL(basePath + "/settings?tab=" + item.ID) }
-								class={
-									"flex items-center rounded-md px-3 py-2 text-sm font-medium transition-all cursor-pointer",
-									templ.KV("bg-blue-600/10 text-blue-600 dark:text-blue-300 dark:bg-blue-600/20", item.ID == activeSection),
-									templ.KV("text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700/60 hover:text-gray-900 dark:hover:text-gray-100", item.ID != activeSection),
-								}
-								data-tab={ item.ID }
-								if item.ID == activeSection {
-									aria-current="page"
-								}
-								onclick="switchSettingsTab(event, this)"
-							>
-								{ item.Label }
-							</a>
-						</li>
+templ settingsTabBar(activeTab string, basePath string) {
+	<div class="sw-card rounded-lg p-1.5">
+		<nav class="flex overflow-x-auto gap-0.5" aria-label="Settings tabs">
+			for _, tab := range settingsTabs() {
+				<a
+					href={ templ.SafeURL(basePath + "/settings?tab=" + tab.ID) }
+					class={
+						"whitespace-nowrap rounded-md px-4 py-2 text-sm font-medium transition-all cursor-pointer",
+						templ.KV("bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-300 shadow-sm", tab.ID == activeTab),
+						templ.KV("text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-white/60 dark:hover:bg-gray-700/60", tab.ID != activeTab),
 					}
-				}
-			</ul>
+					data-tab={ tab.ID }
+					onclick="switchSettingsTab(event, this)"
+				>
+					{ tab.Label }
+				</a>
+			}
 		</nav>
-	</aside>
+	</div>
 }
 
 templ loggingScript() {
@@ -2038,8 +1997,15 @@ templ loggingScript() {
 
 templ cacheScript() {
 	<script>
+		// Resolve base path for sub-path deployments (e.g. reverse proxy prefix).
+		var cacheBasePath = '';
+		var cacheBaseMeta = document.querySelector('meta[name="htmx-base-path"]');
+		if (cacheBaseMeta && cacheBaseMeta.content) {
+			cacheBasePath = cacheBaseMeta.content;
+		}
+
 		function loadCacheStats() {
-			fetch('/api/v1/settings/cache/stats')
+			fetch(cacheBasePath + '/api/v1/settings/cache/stats')
 				.then(function(r) { if (!r.ok) throw new Error('failed'); return r.json(); })
 				.then(function(data) {
 					var mb = (data.size_bytes / (1024 * 1024)).toFixed(1);
@@ -2049,8 +2015,10 @@ templ cacheScript() {
 				})
 				.catch(function() {
 					var el = document.getElementById('cache-stats');
-					el.textContent = 'Failed to load cache stats';
-					el.className = 'text-sm text-red-500';
+					if (el) {
+						el.textContent = 'Failed to load cache stats';
+						el.className = 'text-sm text-red-500';
+					}
 				});
 		}
 
@@ -2058,7 +2026,7 @@ templ cacheScript() {
 			var csrfToken = document.cookie.replace(
 				/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1"
 			);
-			fetch('/api/v1/settings', {
+			fetch(cacheBasePath + '/api/v1/settings', {
 				method: 'PUT',
 				headers: {
 					'Content-Type': 'application/json',
@@ -2084,7 +2052,7 @@ templ cacheScript() {
 			var csrfToken = document.cookie.replace(
 				/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1"
 			);
-			fetch('/api/v1/settings/cache', {
+			fetch(cacheBasePath + '/api/v1/settings/cache', {
 				method: 'DELETE',
 				headers: { 'X-CSRF-Token': csrfToken }
 			})
@@ -2104,9 +2072,9 @@ templ cacheScript() {
 				});
 		}
 
-		// Load cache stats when the Maintenance section is visible on page load.
+		// Load cache stats when the General tab is visible on page load.
 		(function() {
-			var panel = document.querySelector('[data-tab-panel="maintenance"]');
+			var panel = document.querySelector('[data-tab-panel="general"]');
 			if (panel && !panel.classList.contains('hidden')) {
 				loadCacheStats();
 			}
@@ -2709,69 +2677,37 @@ templ profileNamingEditorScript() {
 
 templ settingsTabScript() {
 	<script>
-		// Resolve base path for sub-path deployments so pushState and sidebar
-		// hrefs stay correct when the app is mounted under a prefix like /stillwater.
-		var settingsBasePath = '';
-		(function() {
-			var m = document.querySelector('meta[name="htmx-base-path"]');
-			if (m && m.content) { settingsBasePath = m.content; }
-		})();
-
-		// applySettingsTab shows the panel for tabId and updates sidebar link
-		// active state. It does NOT push history or update the URL -- callers
-		// that need URL updates do so separately.
-		function applySettingsTab(tabId) {
-			// Hide all section panels.
+		function switchSettingsTab(event, el) {
+			event.preventDefault();
+			var tabId = el.dataset.tab;
 			document.querySelectorAll('[data-tab-panel]').forEach(function(p) {
 				p.classList.add('hidden');
 			});
-
-			// Show the selected panel.
+			var panel = null;
 			document.querySelectorAll('[data-tab-panel]').forEach(function(p) {
 				if (p.dataset.tabPanel === tabId) {
-					p.classList.remove('hidden');
+					panel = p;
 				}
 			});
-
-			// Update sidebar link active state. Inactive links get the full set
-			// of hover classes restored so the hover effect works correctly after
-			// switching away from them.
+			if (panel) panel.classList.remove('hidden');
 			document.querySelectorAll('[data-tab]').forEach(function(t) {
-				if (t.dataset.tab === tabId) {
-					t.classList.remove(
-						'text-gray-700', 'dark:text-gray-300',
-						'hover:bg-gray-100', 'dark:hover:bg-gray-700/60',
-						'hover:text-gray-900', 'dark:hover:text-gray-100'
-					);
-					t.classList.add(
-						'bg-blue-600/10', 'text-blue-600',
-						'dark:text-blue-300', 'dark:bg-blue-600/20'
-					);
-					t.setAttribute('aria-current', 'page');
-				} else {
-					t.classList.remove(
-						'bg-blue-600/10', 'text-blue-600',
-						'dark:text-blue-300', 'dark:bg-blue-600/20'
-					);
-					t.classList.add(
-						'text-gray-700', 'dark:text-gray-300',
-						'hover:bg-gray-100', 'dark:hover:bg-gray-700/60',
-						'hover:text-gray-900', 'dark:hover:text-gray-100'
-					);
-					t.removeAttribute('aria-current');
-				}
+				t.classList.remove('bg-white', 'dark:bg-gray-700', 'text-blue-600', 'dark:text-blue-300', 'shadow-sm');
+				t.classList.add('text-gray-600', 'dark:text-gray-400', 'hover:text-gray-900', 'dark:hover:text-gray-200', 'hover:bg-white/60', 'dark:hover:bg-gray-700/60');
 			});
-
-			// Refresh cache stats when switching to the Maintenance section.
-			if (tabId === 'maintenance' && typeof loadCacheStats === 'function') {
+			el.classList.remove('text-gray-600', 'dark:text-gray-400', 'hover:text-gray-900', 'dark:hover:text-gray-200', 'hover:bg-white/60', 'dark:hover:bg-gray-700/60');
+			el.classList.add('bg-white', 'dark:bg-gray-700', 'text-blue-600', 'dark:text-blue-300', 'shadow-sm');
+			var settingsTabMeta = document.querySelector('meta[name="htmx-base-path"]');
+			var settingsTabBp = settingsTabMeta ? settingsTabMeta.content : '';
+			history.pushState(null, '', settingsTabBp + '/settings?tab=' + encodeURIComponent(tabId));
+			// Refresh cache stats when switching to the General tab.
+			if (tabId === 'general' && typeof loadCacheStats === 'function') {
 				loadCacheStats();
 			}
-
-			// Pause log polling when leaving Logs section, resume when entering.
+			// Pause log polling when leaving Logs tab, resume when entering.
 			var logViewer = document.getElementById('log-viewer');
 			if (logViewer && typeof logViewerState !== 'undefined') {
 				if (tabId === 'logs') {
-					// Entering Logs: refresh file list, cleanup row, resume if tab-paused.
+					// Entering Logs tab: refresh file list, cleanup row, and resume if tab-paused.
 					if (typeof loadLogFiles === 'function') loadLogFiles();
 					if (typeof updateCleanupRow === 'function') updateCleanupRow();
 					if (logViewer.dataset.tabPaused === 'true') {
@@ -2780,7 +2716,7 @@ templ settingsTabScript() {
 						if (typeof htmx !== 'undefined') htmx.process(logViewer);
 					}
 				} else {
-					// Leaving Logs: pause polling unless user already paused.
+					// Leaving Logs tab: pause polling unless user already paused.
 					if (!logViewerState.paused) {
 						logViewer.dataset.tabPaused = 'true';
 						logViewer.setAttribute('hx-trigger', 'logRefresh from:body');
@@ -2790,19 +2726,57 @@ templ settingsTabScript() {
 			}
 		}
 
-		function switchSettingsTab(event, el) {
-			event.preventDefault();
-			var tabId = el.dataset.tab;
-			applySettingsTab(tabId);
-			// Push a base-path-aware URL so back/forward and direct linking work.
-			history.pushState(null, '', settingsBasePath + '/settings?tab=' + encodeURIComponent(tabId));
-		}
-
-		// Restore the correct panel when the user presses Back or Forward.
+		// Restore the active tab when the user navigates back or forward.
 		window.addEventListener('popstate', function() {
 			var params = new URLSearchParams(window.location.search);
-			var tab = params.get('tab') || 'general';
-			applySettingsTab(tab);
+			var tabId = params.get('tab');
+			if (!tabId) {
+				var firstTab = document.querySelector('[data-tab]');
+				if (firstTab) tabId = firstTab.dataset.tab;
+			}
+			if (!tabId) return;
+			var el = document.querySelector('[data-tab="' + tabId + '"]');
+			if (!el) {
+				// Stale ?tab= value -- fall back to the first available tab.
+				el = document.querySelector('[data-tab]');
+				if (!el) return;
+				tabId = el.dataset.tab;
+				history.replaceState(null, '', window.location.pathname + '?tab=' + tabId);
+			}
+			document.querySelectorAll('[data-tab-panel]').forEach(function(p) {
+				p.classList.add('hidden');
+			});
+			document.querySelectorAll('[data-tab-panel]').forEach(function(p) {
+				if (p.dataset.tabPanel === tabId) p.classList.remove('hidden');
+			});
+			document.querySelectorAll('[data-tab]').forEach(function(t) {
+				t.classList.remove('bg-white', 'dark:bg-gray-700', 'text-blue-600', 'dark:text-blue-300', 'shadow-sm');
+				t.classList.add('text-gray-600', 'dark:text-gray-400', 'hover:text-gray-900', 'dark:hover:text-gray-200', 'hover:bg-white/60', 'dark:hover:bg-gray-700/60');
+			});
+			el.classList.remove('text-gray-600', 'dark:text-gray-400', 'hover:text-gray-900', 'dark:hover:text-gray-200', 'hover:bg-white/60', 'dark:hover:bg-gray-700/60');
+			el.classList.add('bg-white', 'dark:bg-gray-700', 'text-blue-600', 'dark:text-blue-300', 'shadow-sm');
+			// Mirror the side effects from switchSettingsTab for tab-specific state.
+			if (tabId === 'general' && typeof loadCacheStats === 'function') {
+				loadCacheStats();
+			}
+			var logViewer = document.getElementById('log-viewer');
+			if (logViewer && typeof logViewerState !== 'undefined') {
+				if (tabId === 'logs') {
+					if (typeof loadLogFiles === 'function') loadLogFiles();
+					if (typeof updateCleanupRow === 'function') updateCleanupRow();
+					if (logViewer.dataset.tabPaused === 'true') {
+						logViewer.dataset.tabPaused = 'false';
+						logViewer.setAttribute('hx-trigger', 'load, every 2s, logRefresh from:body');
+						if (typeof htmx !== 'undefined') htmx.process(logViewer);
+					}
+				} else {
+					if (!logViewerState.paused) {
+						logViewer.dataset.tabPaused = 'true';
+						logViewer.setAttribute('hx-trigger', 'logRefresh from:body');
+						if (typeof htmx !== 'undefined') htmx.process(logViewer);
+					}
+				}
+			}
 		});
 	</script>
 }

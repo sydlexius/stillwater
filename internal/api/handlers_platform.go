@@ -182,19 +182,6 @@ func (r *Router) handleSetActivePlatform(w http.ResponseWriter, req *http.Reques
 	writeJSON(w, http.StatusOK, map[string]string{"status": "active"})
 }
 
-// normalizeSettingsSection maps a raw section string to a valid settings tab
-// name. Unknown values fall back to "general". This keeps the validation logic
-// in one place so handleSettingsPage and handleSettingsSectionPage stay in sync.
-func normalizeSettingsSection(section string) string {
-	switch section {
-	case "general", "appearance", "providers", "connections", "libraries", "automation", "rules",
-		"users", "authentication", "maintenance", "logs":
-		return section
-	default:
-		return "general"
-	}
-}
-
 // handleSettingsPage renders the settings HTML page.
 // GET /settings
 func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
@@ -328,23 +315,6 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 		OIDCDefaultRole:       r.getStringSetting(req.Context(), "auth.providers.oidc.default_role", "operator"),
 	}
 
-	// Load appearance preferences for the Appearance tab.
-	// Preferences are per-user and stored in user_preferences. We fall back to
-	// the compiled defaults when no row exists for a key.
-	appearanceData := templates.AppearancePrefsData{
-		Theme:          r.getUserPreference(req.Context(), userID, PrefTheme, preferenceDefaults[PrefTheme].defaultValue),
-		GlassIntensity: r.getUserPreference(req.Context(), userID, PrefGlassIntensity, preferenceDefaults[PrefGlassIntensity].defaultValue),
-		ThumbnailSize:  r.getUserPreference(req.Context(), userID, PrefThumbnailSize, preferenceDefaults[PrefThumbnailSize].defaultValue),
-		SidebarState:   r.getUserPreference(req.Context(), userID, PrefSidebarState, preferenceDefaults[PrefSidebarState].defaultValue),
-		ContentWidth:   r.getUserPreference(req.Context(), userID, PrefContentWidth, preferenceDefaults[PrefContentWidth].defaultValue),
-		ReducedMotion:  r.getUserPreference(req.Context(), userID, PrefReducedMotion, preferenceDefaults[PrefReducedMotion].defaultValue),
-		Language:       r.getUserPreference(req.Context(), userID, PrefLanguage, preferenceDefaults[PrefLanguage].defaultValue),
-		FontFamily:     r.getUserPreference(req.Context(), userID, PrefFontFamily, preferenceDefaults[PrefFontFamily].defaultValue),
-		LetterSpacing:  r.getUserPreference(req.Context(), userID, PrefLetterSpacing, preferenceDefaults[PrefLetterSpacing].defaultValue),
-		FontSize:       r.getUserPreference(req.Context(), userID, PrefFontSize, preferenceDefaults[PrefFontSize].defaultValue),
-		LiteMode:       r.getUserPreference(req.Context(), userID, PrefLiteMode, preferenceDefaults[PrefLiteMode].defaultValue),
-	}
-
 	data := templates.SettingsData{
 		ActiveTab:               tab,
 		Libraries:               libs,
@@ -371,18 +341,19 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 		NameSimilarityThreshold: r.getNameSimilarityThreshold(req.Context()),
 		Users:                   usersTabData,
 		AuthProviders:           authProvidersData,
-		Appearance:              appearanceData,
 	}
 	renderTempl(w, req, templates.SettingsPage(r.assetsFor(req), data))
 }
 
-// handleSettingsSectionPage handles /settings/{section} for direct section linking.
-// It maps the path segment to the ?tab= query parameter and delegates to handleSettingsPage.
-// GET /settings/{section}
-func (r *Router) handleSettingsSectionPage(w http.ResponseWriter, req *http.Request) {
-	section := normalizeSettingsSection(req.PathValue("section"))
-	q := req.URL.Query()
-	q.Set("tab", section)
-	req.URL.RawQuery = q.Encode()
-	r.handleSettingsPage(w, req)
+// normalizeSettingsSection returns section if it is a valid settings tab name,
+// otherwise returns "general". Used by both handleSettingsPage (?tab=) and any
+// future section-specific handler so the valid set stays in one place.
+func normalizeSettingsSection(section string) string {
+	switch section {
+	case "general", "providers", "connections", "libraries", "automation", "rules",
+		"users", "auth_providers", "maintenance", "logs":
+		return section
+	default:
+		return "general"
+	}
 }

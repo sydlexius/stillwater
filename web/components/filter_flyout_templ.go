@@ -462,13 +462,16 @@ func filterItemIcon(state string) string {
 // Script stubs -- the real implementations live in filter-flyout.js, which is
 // loaded globally via layout.templ. These script blocks exist solely to
 // generate valid templ.ComponentScript values for use in onclick attributes.
-func openFilterFlyout(id string) templ.ComponentScript {
+
+// OpenFilterFlyout is an exported script for use as an onclick handler in
+// templates outside this package.
+func OpenFilterFlyout(id string) templ.ComponentScript {
 	return templ.ComponentScript{
-		Name: `__templ_openFilterFlyout_ef80`,
-		Function: `function __templ_openFilterFlyout_ef80(id){swFilterFlyout.open(id);
+		Name: `__templ_OpenFilterFlyout_ef80`,
+		Function: `function __templ_OpenFilterFlyout_ef80(id){swFilterFlyout.open(id);
 }`,
-		Call:       templ.SafeScript(`__templ_openFilterFlyout_ef80`, id),
-		CallInline: templ.SafeScriptInline(`__templ_openFilterFlyout_ef80`, id),
+		Call:       templ.SafeScript(`__templ_OpenFilterFlyout_ef80`, id),
+		CallInline: templ.SafeScriptInline(`__templ_OpenFilterFlyout_ef80`, id),
 	}
 }
 
@@ -509,6 +512,33 @@ func cycleFilterItem() templ.ComponentScript {
 }`,
 		Call:       templ.SafeScript(`__templ_cycleFilterItem_6c38`),
 		CallInline: templ.SafeScriptInline(`__templ_cycleFilterItem_6c38`),
+	}
+}
+
+// DismissFilterChip removes a single filter key from the URL and reloads the
+// HTMX target region. Called by the X button on active filter chips.
+// targetSel is the CSS selector for the HTMX content region to reload
+// (e.g. "#artist-content"). Defaults to "#artist-content" when empty.
+func DismissFilterChip(key string, targetSel string) templ.ComponentScript {
+	return templ.ComponentScript{
+		Name: `__templ_DismissFilterChip_d251`,
+		Function: `function __templ_DismissFilterChip_d251(key, targetSel){var url = new URL(window.location.href);
+	url.searchParams.delete(key);
+	url.searchParams.delete('page');
+	history.pushState(null, '', url.toString());
+	// Strip the base path from url.pathname before passing to htmx.ajax
+	// to avoid a double-prefix from the htmx:configRequest hook.
+	var bpMeta = document.querySelector('meta[name="htmx-base-path"]');
+	var bp = bpMeta ? bpMeta.content : '';
+	var path = url.pathname;
+	if (bp && path.startsWith(bp)) {
+		path = path.slice(bp.length) || '/';
+	}
+	var sel = targetSel || '#artist-content';
+	htmx.ajax('GET', path + url.search, {target: sel, swap: 'outerHTML'});
+}`,
+		Call:       templ.SafeScript(`__templ_DismissFilterChip_d251`, key, targetSel),
+		CallInline: templ.SafeScriptInline(`__templ_DismissFilterChip_d251`, key, targetSel),
 	}
 }
 

@@ -81,7 +81,7 @@ func TestLayout_NavLinksUseBasePath(t *testing.T) {
 	navLinks := []string{
 		`href="/stillwater/"`,
 		`href="/stillwater/artists"`,
-		`href="/stillwater/reports"`,
+		`href="/stillwater/reports/compliance"`,
 		`href="/stillwater/settings"`,
 		`href="/stillwater/guide"`,
 	}
@@ -142,7 +142,7 @@ func TestLayout_NavLinksNoBasePath(t *testing.T) {
 	navLinks := []string{
 		`href="/"`,
 		`href="/artists"`,
-		`href="/reports"`,
+		`href="/reports/compliance"`,
 		`href="/settings"`,
 		`href="/guide"`,
 	}
