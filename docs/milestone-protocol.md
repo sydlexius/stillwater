@@ -71,7 +71,7 @@ Example structure:
 - Update the plan file checklist and worktree table as work progresses.
 - Update `memory/worktrees.md` whenever a worktree is created or removed.
 - Run `gofmt -d` and `go test ./...` before every commit. Do not push code that fails either.
-- Use `docker-compose.local.yml` for UAT builds whenever the PR/check cycle warrants a container test.
+- Use `docker-compose.uat.yml` for UAT builds whenever the PR/check cycle warrants a container test.
 - After addressing PR review feedback, update the relevant checklist items.
 
 ## 4. Documentation Updates
