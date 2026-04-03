@@ -65,4 +65,4 @@ echo "=== Pruning stale refs ==="
 git fetch --prune
 
 echo ""
-echo "Done. Update docs/worktrees.md to reflect the change."
+echo "Done. Update ~/.claude/projects/.../memory/worktrees.md to reflect the change."

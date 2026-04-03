@@ -5,7 +5,8 @@
 #   resolve-threads.sh <pr> <comment-db-id...>
 #
 # Resolves the review threads whose first comment matches one of the given
-# comment database IDs. Only resolves threads started by Copilot/bot users.
+# comment database IDs. Only resolves threads started by Copilot (by design --
+# CodeRabbit threads are resolved via @coderabbitai resolve, not GraphQL).
 # Prints "Resolved <thread-id> (comment <db-id>)" per thread, or
 # "Skipped <db-id> (already resolved or not found)" if nothing matched.
 #
