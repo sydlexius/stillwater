@@ -18,7 +18,10 @@ if ! command -v gh &>/dev/null; then
   exit 1
 fi
 
-repo=$(gh repo view --json nameWithOwner -q .nameWithOwner)
+repo=$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null) || {
+  echo "Error: could not determine repository. Run from inside a git repo with a GitHub remote."
+  exit 1
+}
 pr="$1"
 
 if [ "${#}" -eq 2 ]; then

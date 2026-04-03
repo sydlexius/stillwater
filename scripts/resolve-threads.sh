@@ -25,7 +25,10 @@ fi
 
 pr="$1"
 shift
-repo=$(gh repo view --json nameWithOwner -q .nameWithOwner)
+repo=$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null) || {
+  echo "Error: could not determine repository. Run from inside a git repo with a GitHub remote."
+  exit 1
+}
 owner="${repo%%/*}"
 name="${repo##*/}"
 
