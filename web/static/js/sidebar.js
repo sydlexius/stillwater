@@ -176,8 +176,8 @@
   });
 
   // Cycle the color theme through dark -> light -> system -> dark.
-  // Derives the effective mode from the DOM when the stored value is "system"
-  // so the next step in the cycle is always meaningful.
+  // The preferences API applies the theme immediately (including resolving
+  // "system" via the OS media query), so no DOM inspection is needed here.
   function cycleTheme() {
     var ORDER = ['dark', 'light', 'system'];
     var current = 'dark';

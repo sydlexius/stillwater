@@ -357,15 +357,3 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 	}
 	renderTempl(w, req, templates.SettingsPage(r.assetsFor(req), data))
 }
-
-// handleSettingsSectionPage handles /settings/{section} for backward-compatible
-// direct section linking. It maps the path segment to the ?tab= query parameter
-// and delegates to handleSettingsPage.
-// GET /settings/{section}
-func (r *Router) handleSettingsSectionPage(w http.ResponseWriter, req *http.Request) {
-	section := normalizeSettingsSection(req.PathValue("section"))
-	q := req.URL.Query()
-	q.Set("tab", section)
-	req.URL.RawQuery = q.Encode()
-	r.handleSettingsPage(w, req)
-}

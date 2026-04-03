@@ -173,14 +173,14 @@ templ Sidebar(data SidebarData) {
 				<span class="sw-sidebar-label">Help</span>
 				<kbd class="sw-sidebar-kbd">?</kbd>
 			</button>
-			<!-- Theme toggle: switches between dark and light -->
+			<!-- Theme toggle: cycles through dark, light, and system -->
 			<button
 				type="button"
 				id="sidebar-theme-toggle"
 				class="sw-sidebar-link w-full"
 				onclick="window.swSidebar.cycleTheme()"
-				aria-label="Toggle theme"
-				title="Toggle dark/light theme"
+				aria-label="Cycle theme: dark, light, system"
+				title="Cycle theme (dark, light, system)"
 			>
 				<!-- Sun icon (shown in dark mode) -->
 				<svg class="sw-sidebar-icon sw-theme-icon-light" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
