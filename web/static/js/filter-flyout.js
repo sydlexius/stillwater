@@ -100,7 +100,7 @@
     el.setAttribute('data-filter-state', next);
     el.setAttribute('aria-label', ariaLabel(next, labelText));
     if (icon) {
-      icon.textContent = iconChar(next);
+      icon.innerHTML = iconHTML(next);
     }
 
     // Update the active count badge in the footer.
@@ -119,17 +119,22 @@
     }
   }
 
-  // iconChar returns the icon character for a given state.
-  function iconChar(state) {
+  // iconHTML returns an SVG icon for a given state: checkmark for include,
+  // X for exclude, empty for neutral. Using innerHTML keeps the icons crisp
+  // at any size and avoids font-weight rendering differences across browsers.
+  function iconHTML(state) {
     switch (state) {
-      case 'include': return '+';
-      case 'exclude': return '-';
-      default:        return '';
+      case 'include':
+        return '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>';
+      case 'exclude':
+        return '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>';
+      default:
+        return '';
     }
   }
 
-  // refreshActiveCount counts non-neutral items in the flyout and updates the
-  // active-count badge in the footer.
+  // refreshActiveCount counts non-neutral items in the flyout and updates both
+  // the footer badge inside the panel and the trigger button's count badge.
   function refreshActiveCount(id) {
     var panel = getPanel(id);
     if (!panel) return;
@@ -141,9 +146,37 @@
       if (s === 'include' || s === 'exclude') count++;
     });
 
+    // Update the footer badge inside the flyout panel.
     var badge = panel.querySelector('.sw-filter-active-badge');
     if (badge) {
       badge.textContent = count > 0 ? count + ' active' : '';
+    }
+
+    // Update the trigger button's inline count badge. Uses a stable class
+    // selector (.sw-filter-trigger-badge) instead of aria-label content
+    // matching to avoid duplicate badge creation if label text changes.
+    var triggerID = panel.getAttribute('data-trigger-id');
+    if (triggerID) {
+      var trigger = document.getElementById(triggerID);
+      if (trigger) {
+        var triggerBadge = trigger.querySelector('.sw-filter-trigger-badge');
+        if (triggerBadge) {
+          if (count > 0) {
+            triggerBadge.textContent = count;
+            triggerBadge.setAttribute('aria-label', count === 1 ? '1 active filter' : count + ' active filters');
+            triggerBadge.style.display = '';
+          } else {
+            triggerBadge.style.display = 'none';
+          }
+        } else if (count > 0) {
+          // Badge element doesn't exist yet (server rendered with 0 filters).
+          var span = document.createElement('span');
+          span.className = 'sw-filter-trigger-badge ml-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white dark:bg-blue-400 dark:text-gray-900';
+          span.setAttribute('aria-label', count === 1 ? '1 active filter' : count + ' active filters');
+          span.textContent = count;
+          trigger.appendChild(span);
+        }
+      }
     }
   }
 
@@ -208,8 +241,8 @@
     close(id);
   }
 
-  // clearAll resets all FilterItems in the panel to neutral, clears their URL
-  // params, and closes the flyout.
+  // clearAll resets all FilterItems in the panel to neutral and clears their
+  // URL params. The flyout stays open so the user can see the reset state.
   function clearAll(id) {
     var panel = getPanel(id);
     if (!panel) return;
@@ -222,7 +255,7 @@
         var icon = item.querySelector('.sw-filter-item-icon');
         item.setAttribute('data-filter-state', 'neutral');
         item.setAttribute('aria-label', ariaLabel('neutral', labelText));
-        if (icon) icon.textContent = '';
+        if (icon) icon.innerHTML = '';
       }
     );
 
@@ -244,8 +277,6 @@
       var target = document.querySelector(targetSel);
       if (target) htmx.trigger(target, 'sw:filter-applied');
     }
-
-    close(id);
   }
 
   // initFromURL reads URL query params on page load and sets each FilterItem's
@@ -276,7 +307,7 @@
 
         item.setAttribute('data-filter-state', state);
         item.setAttribute('aria-label', ariaLabel(state, labelText));
-        if (icon) icon.textContent = iconChar(state);
+        if (icon) icon.innerHTML = iconHTML(state);
       }
     );
 

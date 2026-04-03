@@ -507,11 +507,11 @@ func clearAllFilterFlyout(id string) templ.ComponentScript {
 
 func cycleFilterItem() templ.ComponentScript {
 	return templ.ComponentScript{
-		Name: `__templ_cycleFilterItem_6c38`,
-		Function: `function __templ_cycleFilterItem_6c38(){swFilterFlyout.cycleItem(this);
+		Name: `__templ_cycleFilterItem_7217`,
+		Function: `function __templ_cycleFilterItem_7217(){swFilterFlyout.cycleItem(event.currentTarget);
 }`,
-		Call:       templ.SafeScript(`__templ_cycleFilterItem_6c38`),
-		CallInline: templ.SafeScriptInline(`__templ_cycleFilterItem_6c38`),
+		Call:       templ.SafeScript(`__templ_cycleFilterItem_7217`),
+		CallInline: templ.SafeScriptInline(`__templ_cycleFilterItem_7217`),
 	}
 }
 

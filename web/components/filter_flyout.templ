@@ -174,7 +174,7 @@ script clearAllFilterFlyout(id string) {
 }
 
 script cycleFilterItem() {
-	swFilterFlyout.cycleItem(this);
+	swFilterFlyout.cycleItem(event.currentTarget);
 }
 
 // DismissFilterChip removes a single filter key from the URL and reloads the
