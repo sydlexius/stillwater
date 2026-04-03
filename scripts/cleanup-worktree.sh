@@ -18,6 +18,10 @@ if ! command -v gh &>/dev/null; then
 fi
 
 issue="$1"
+if ! [[ "$issue" =~ ^[0-9]+$ ]]; then
+  echo "Error: issue-number must be numeric (got: $issue)"
+  exit 1
+fi
 # Match both stillwater-<issue> and stillwater-m<N>-<issue>
 pattern="stillwater(-m[0-9]+)?-${issue}$"
 
@@ -61,4 +65,4 @@ echo "=== Pruning stale refs ==="
 git fetch --prune
 
 echo ""
-echo "Done. Update memory/worktrees.md to reflect the change."
+echo "Done. Update docs/worktrees.md to reflect the change."

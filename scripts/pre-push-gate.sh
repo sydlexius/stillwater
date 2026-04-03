@@ -19,7 +19,7 @@ bash "$SCRIPT_DIR/check-generated.sh"
 
 echo ""
 echo "=== Raw error leak check ==="
-error_leaks=$(git diff "$BASE"..HEAD -- 'internal/api/handlers_*.go' \
+error_leaks=$(git diff "$BASE"..HEAD -- 'internal/api/handlers.go' 'internal/api/handlers_*.go' \
   | grep '^+' \
   | grep -E 'err\.(Error|String)\(\)' \
   | grep -vE '\bslog\.|\blogger\.|\blog\.' || true)
