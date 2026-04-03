@@ -12,6 +12,50 @@ import (
 	"github.com/sydlexius/stillwater/internal/artist"
 )
 
+func TestHandleArtistsBadge_ZeroCount(t *testing.T) {
+	r, _ := testRouter(t)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/artists/badge", nil)
+	w := httptest.NewRecorder()
+	r.handleArtistsBadge(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	if body := w.Body.String(); body != "" {
+		t.Errorf("body = %q, want empty for zero count", body)
+	}
+}
+
+func TestHandleArtistsBadge_NonZeroCount(t *testing.T) {
+	r, artistSvc := testRouter(t)
+	if err := artistSvc.Create(context.Background(), &artist.Artist{Name: "Badge Artist"}); err != nil {
+		t.Fatalf("creating artist: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/artists/badge", nil)
+	w := httptest.NewRecorder()
+	r.handleArtistsBadge(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	if body := w.Body.String(); !strings.Contains(body, "1") {
+		t.Errorf("body = %q, want span containing count", body)
+	}
+}
+
+func TestHandleArtistsBadge_ServiceError(t *testing.T) {
+	r, _ := testRouter(t)
+	// Close the DB to force a service error. testRouter's t.Cleanup will
+	// attempt a second close; that error is intentionally ignored there.
+	if err := r.db.Close(); err != nil {
+		t.Fatalf("closing db: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/artists/badge", nil)
+	w := httptest.NewRecorder()
+	r.handleArtistsBadge(w, req)
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", w.Code)
+	}
+}
+
 func TestArtistsPageSortParams(t *testing.T) {
 	r, _, artistSvc := testRouterWithLibrary(t)
 

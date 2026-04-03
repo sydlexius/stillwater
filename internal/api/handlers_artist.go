@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -39,6 +40,38 @@ func (r *Router) handleListArtists(w http.ResponseWriter, req *http.Request) {
 		"page":      params.Page,
 		"page_size": params.PageSize,
 	})
+}
+
+// handleArtistsBadge returns an HTML fragment with the total artist count for the
+// sidebar badge. The response is intentionally lightweight: it fetches only the
+// total count (page_size=1) rather than the full artist list.
+// GET /api/v1/artists/badge
+func (r *Router) handleArtistsBadge(w http.ResponseWriter, req *http.Request) {
+	params := artist.ListParams{
+		Page:     1,
+		PageSize: 1,
+	}
+	params.Validate()
+
+	w.Header().Set("Cache-Control", "no-store")
+
+	_, total, err := r.artistService.List(req.Context(), params)
+	if err != nil {
+		r.logger.Error("fetching artist count for badge", "error", err)
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusInternalServerError)
+		//nolint:errcheck // badge fragment; write errors are not actionable
+		fmt.Fprint(w, `<!-- error fetching artist count -->`)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	if total == 0 {
+		return
+	}
+	//nolint:errcheck // badge fragment; write errors are not actionable
+	fmt.Fprintf(w, `<span class="inline-flex items-center rounded-full bg-gray-700 dark:bg-gray-600 px-1.5 py-0.5 text-xs font-medium text-gray-200 tabular-nums">%d</span>`, total)
 }
 
 // handleGetArtist returns a single artist as JSON.

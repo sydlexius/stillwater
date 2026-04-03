@@ -243,6 +243,7 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("PATCH "+bp+"/api/v1/users/{id}", wrapAuth(requireMultiUser(middleware.RequireAdmin(r.handleUpdateUser)), authMw))
 	mux.HandleFunc("DELETE "+bp+"/api/v1/users/{id}", wrapAuth(requireMultiUser(middleware.RequireAdmin(r.handleDeactivateUser)), authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/artists", wrapAuth(r.handleListArtists, authMw))
+	mux.HandleFunc("GET "+bp+"/api/v1/artists/badge", wrapAuth(r.handleArtistsBadge, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/locked", wrapAuth(r.handleListLockedArtists, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}", wrapAuth(r.handleGetArtist, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/duplicates", wrapAuth(r.handleDuplicates, authMw))

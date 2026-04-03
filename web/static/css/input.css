@@ -322,6 +322,20 @@
   flex-shrink: 0;
 }
 
+/* Theme toggle icons: sun shown in dark mode, moon shown in light mode. */
+.sw-theme-icon-light {
+  display: none;
+}
+:where(.dark, .dark *) .sw-theme-icon-light {
+  display: block;
+}
+.sw-theme-icon-dark {
+  display: block;
+}
+:where(.dark, .dark *) .sw-theme-icon-dark {
+  display: none;
+}
+
 .sw-sidebar-label {
   overflow: hidden;
   text-overflow: ellipsis;

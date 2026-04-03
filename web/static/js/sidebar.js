@@ -175,10 +175,30 @@
     }
   });
 
+  // Cycle the color theme through dark -> light -> system -> dark.
+  // The preferences API applies the theme immediately (including resolving
+  // "system" via the OS media query), so no DOM inspection is needed here.
+  function cycleTheme() {
+    var ORDER = ['dark', 'light', 'system'];
+    var current = 'dark';
+    if (window.swPreferences) {
+      var cached = window.swPreferences.getCache();
+      if (cached && cached.theme) {
+        current = cached.theme;
+      }
+    }
+    var idx = ORDER.indexOf(current);
+    var next = ORDER[(idx + 1) % ORDER.length];
+    if (window.swPreferences) {
+      window.swPreferences.set('theme', next);
+    }
+  }
+
   // Expose public API.
   window.swSidebar = {
     init: init,
-    cycle: cycle
+    cycle: cycle,
+    cycleTheme: cycleTheme
   };
 
   // Auto-initialize on DOM ready.

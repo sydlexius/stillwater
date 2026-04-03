@@ -390,10 +390,15 @@ func providerIsAvailable(name provider.ProviderName, keys []provider.ProviderKey
 	return false
 }
 
-// availableProviders filters a priority list to only providers that are configured.
+// availableProviders filters a priority list to only providers that are configured
+// and not structurally excluded for the given field (e.g. MusicBrainz never
+// provides biography text, so it is excluded from the biography priority list).
 func availableProviders(pri provider.FieldPriority, keys []provider.ProviderKeyStatus) []provider.ProviderName {
 	var result []provider.ProviderName
 	for _, p := range pri.Providers {
+		if provider.IsExcludedForField(pri.Field, p) {
+			continue
+		}
 		if providerIsAvailable(p, keys) {
 			result = append(result, p)
 		}
@@ -2010,8 +2015,10 @@ templ cacheScript() {
 				.then(function(data) {
 					var mb = (data.size_bytes / (1024 * 1024)).toFixed(1);
 					var el = document.getElementById('cache-stats');
-					el.textContent = mb + ' MB used (' + data.file_count + ' files, ' + data.artist_count + ' artists)';
-					el.className = 'text-sm text-gray-600 dark:text-gray-400';
+					if (el) {
+						el.textContent = mb + ' MB used (' + data.file_count + ' files, ' + data.artist_count + ' artists)';
+						el.className = 'text-sm text-gray-600 dark:text-gray-400';
+					}
 				})
 				.catch(function() {
 					var el = document.getElementById('cache-stats');
@@ -2710,7 +2717,7 @@ templ settingsTabScript() {
 					// Entering Logs tab: refresh file list, cleanup row, and resume if tab-paused.
 					if (typeof loadLogFiles === 'function') loadLogFiles();
 					if (typeof updateCleanupRow === 'function') updateCleanupRow();
-					if (logViewer.dataset.tabPaused === 'true') {
+					if (logViewer.dataset.tabPaused === 'true' && !logViewerState.file) {
 						logViewer.dataset.tabPaused = 'false';
 						logViewer.setAttribute('hx-trigger', 'load, every 2s, logRefresh from:body');
 						if (typeof htmx !== 'undefined') htmx.process(logViewer);
@@ -2764,7 +2771,7 @@ templ settingsTabScript() {
 				if (tabId === 'logs') {
 					if (typeof loadLogFiles === 'function') loadLogFiles();
 					if (typeof updateCleanupRow === 'function') updateCleanupRow();
-					if (logViewer.dataset.tabPaused === 'true') {
+					if (logViewer.dataset.tabPaused === 'true' && !logViewerState.file) {
 						logViewer.dataset.tabPaused = 'false';
 						logViewer.setAttribute('hx-trigger', 'load, every 2s, logRefresh from:body');
 						if (typeof htmx !== 'undefined') htmx.process(logViewer);
@@ -3313,11 +3320,17 @@ templ connectionFeatureToggleScript() {
 
 templ sortableInitScript() {
 	<script>
-		(function() {
+		var sortableBp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
+
+		// initSortableContainers attaches Sortable.js to all [data-sortable-field] containers
+		// that do not already have a Sortable instance. Called on initial page load and after
+		// every HTMX swap so that newly rendered priority rows are draggable immediately.
+		function initSortableContainers() {
 			if (typeof Sortable === 'undefined') return;
 			document.querySelectorAll('[data-sortable-field]').forEach(function(container) {
+				if (container._sortable) return; // already initialised
 				var field = container.dataset.sortableField;
-				Sortable.create(container, {
+				container._sortable = Sortable.create(container, {
 					handle: '.drag-handle',
 					animation: 150,
 					ghostClass: 'opacity-30',
@@ -3343,7 +3356,7 @@ templ sortableInitScript() {
 						var csrfToken = document.cookie.replace(
 							/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1"
 						);
-						fetch('/api/v1/providers/priorities', {
+						fetch(sortableBp + '/api/v1/providers/priorities', {
 							method: 'PUT',
 							headers: {
 								'Content-Type': 'application/json',
@@ -3369,7 +3382,13 @@ templ sortableInitScript() {
 					}
 				});
 			});
-		})();
+		}
+		// Initial setup on page load.
+		initSortableContainers();
+		// Re-attach after any HTMX swap so newly rendered priority rows are draggable.
+		document.addEventListener('htmx:afterSwap', function() {
+			initSortableContainers();
+		});
 	</script>
 }
 

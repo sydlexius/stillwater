@@ -43,9 +43,9 @@ var fieldProviderExclusions = map[string]map[ProviderName]bool{
 	"biography": {NameMusicBrainz: true},
 }
 
-// isExcludedForField returns true if a provider is structurally unable to
+// IsExcludedForField returns true if a provider is structurally unable to
 // provide data for the given field and should be skipped.
-func isExcludedForField(field string, prov ProviderName) bool {
+func IsExcludedForField(field string, prov ProviderName) bool {
 	if ex, ok := fieldProviderExclusions[field]; ok {
 		return ex[prov]
 	}
@@ -137,7 +137,7 @@ func (o *Orchestrator) FetchMetadata(ctx context.Context, mbid, name string, pro
 			if !available[provName] {
 				continue
 			}
-			if isExcludedForField(pri.Field, provName) {
+			if IsExcludedForField(pri.Field, provName) {
 				continue
 			}
 
@@ -558,7 +558,7 @@ func (o *Orchestrator) FetchFieldFromProviders(ctx context.Context, mbid, name, 
 	for _, pri := range priorities {
 		if pri.Field == field {
 			for _, p := range pri.EnabledProviders() {
-				if available[p] && !isExcludedForField(field, p) {
+				if available[p] && !IsExcludedForField(field, p) {
 					providers = append(providers, p)
 				}
 			}

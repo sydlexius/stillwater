@@ -78,12 +78,13 @@ func TestLayout_NavLinksUseBasePath(t *testing.T) {
 	body := w.Body.String()
 
 	// Verify that nav anchor hrefs carry the base path prefix.
+	// Note: the guide link is not in the sidebar nav (issue #836) but the page
+	// itself is still accessible at /guide.
 	navLinks := []string{
 		`href="/stillwater/"`,
 		`href="/stillwater/artists"`,
 		`href="/stillwater/reports/compliance"`,
 		`href="/stillwater/settings"`,
-		`href="/stillwater/guide"`,
 	}
 	for _, link := range navLinks {
 		if !strings.Contains(body, link) {
@@ -105,12 +106,12 @@ func TestLayout_NavLinksUseBasePath(t *testing.T) {
 	}
 
 	// Verify that root-relative nav links (without the prefix) are NOT present
-	// to catch any missed hrefs.
+	// to catch any missed hrefs. The guide link is excluded from this check
+	// because the guide page content itself may reference /guide.
 	rootLinks := []string{
 		`href="/"`,
 		`href="/artists"`,
 		`href="/settings"`,
-		`href="/guide"`,
 	}
 	for _, link := range rootLinks {
 		if strings.Contains(body, link) {
@@ -139,12 +140,13 @@ func TestLayout_NavLinksNoBasePath(t *testing.T) {
 	body := w.Body.String()
 
 	// With an empty base path the nav links should still resolve as root-relative.
+	// Note: the guide link is not in the sidebar nav (issue #836) but the page
+	// itself is still accessible at /guide.
 	navLinks := []string{
 		`href="/"`,
 		`href="/artists"`,
 		`href="/reports/compliance"`,
 		`href="/settings"`,
-		`href="/guide"`,
 	}
 	for _, link := range navLinks {
 		if !strings.Contains(body, link) {

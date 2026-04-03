@@ -1436,6 +1436,28 @@ paths:
                   page_size:
                     type: integer
 
+  /artists/badge:
+    get:
+      tags: [Artists]
+      summary: Get artist count badge HTML fragment
+      operationId: getArtistsBadge
+      description: >-
+        Returns an HTML fragment containing the total artist count, used by
+        the sidebar badge. Lightweight endpoint that fetches only the count.
+      responses:
+        "200":
+          description: HTML fragment with artist count
+          content:
+            text/html:
+              schema:
+                type: string
+        "500":
+          description: Service error
+          content:
+            text/html:
+              schema:
+                type: string
+
   /artists/duplicates:
     get:
       tags: [Artists]

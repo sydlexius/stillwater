@@ -182,6 +182,19 @@ func (r *Router) handleSetActivePlatform(w http.ResponseWriter, req *http.Reques
 	writeJSON(w, http.StatusOK, map[string]string{"status": "active"})
 }
 
+// normalizeSettingsSection maps a raw section string to a valid settings tab
+// name. Unknown values fall back to "general". This keeps the validation logic
+// in one place so handleSettingsPage and handleSettingsSectionPage stay in sync.
+func normalizeSettingsSection(section string) string {
+	switch section {
+	case "general", "providers", "connections", "libraries", "automation", "rules",
+		"users", "auth_providers", "maintenance", "logs":
+		return section
+	default:
+		return "general"
+	}
+}
+
 // handleSettingsPage renders the settings HTML page.
 // GET /settings
 func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
@@ -343,17 +356,4 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 		AuthProviders:           authProvidersData,
 	}
 	renderTempl(w, req, templates.SettingsPage(r.assetsFor(req), data))
-}
-
-// normalizeSettingsSection returns section if it is a valid settings tab name,
-// otherwise returns "general". Used by both handleSettingsPage (?tab=) and any
-// future section-specific handler so the valid set stays in one place.
-func normalizeSettingsSection(section string) string {
-	switch section {
-	case "general", "providers", "connections", "libraries", "automation", "rules",
-		"users", "auth_providers", "maintenance", "logs":
-		return section
-	default:
-		return "general"
-	}
 }

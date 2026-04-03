@@ -460,7 +460,7 @@ func (r *Router) handleCompliancePage(w http.ResponseWriter, req *http.Request) 
 	artists, total, err := r.artistService.List(ctx, params)
 	if err != nil {
 		r.logger.Error("listing artists for compliance page", "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		writeError(w, req, http.StatusInternalServerError, "failed to list artists")
 		return
 	}
 
@@ -472,7 +472,7 @@ func (r *Router) handleCompliancePage(w http.ResponseWriter, req *http.Request) 
 	pageViolations, err := r.ruleService.GetViolationsForArtists(ctx, pageIDs)
 	if err != nil {
 		r.logger.Error("loading violations for compliance page", "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		writeError(w, req, http.StatusInternalServerError, "failed to load violations")
 		return
 	}
 
@@ -500,7 +500,8 @@ func (r *Router) handleCompliancePage(w http.ResponseWriter, req *http.Request) 
 	}
 
 	data := templates.ComplianceData{
-		Rows: rows,
+		Rows:     rows,
+		BasePath: r.basePath,
 		Pagination: components.PaginationData{
 			CurrentPage:    params.Page,
 			TotalPages:     totalPages,

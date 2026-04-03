@@ -64,8 +64,9 @@ templ Sidebar(data SidebarData) {
 				aria-expanded="true"
 				title="Toggle sidebar ( [ )"
 			>
+				<!-- Chevron-left: collapses sidebar one step (full -> icon-only -> hidden). -->
 				<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
-					<path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25H12"></path>
+					<path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5"></path>
 				</svg>
 			</button>
 		</div>
@@ -106,6 +107,14 @@ templ Sidebar(data SidebarData) {
 							<path stroke-linecap="round" stroke-linejoin="round" d="M9 9l10.5-3m0 6.553v3.75a2.25 2.25 0 01-1.632 2.163l-1.32.377a1.803 1.803 0 11-.99-3.467l2.31-.66a2.25 2.25 0 001.632-2.163zm0 0V4.5l-10.5 3v8.553m0 0v3.75a2.25 2.25 0 01-1.632 2.163l-1.32.377a1.803 1.803 0 01-.99-3.467l2.31-.66A2.25 2.25 0 009 16.053z"></path>
 						</svg>
 						<span class="sw-sidebar-label">Artists</span>
+						<!-- Artist count badge: visible in full state only, hidden in icon-only/hidden -->
+						<span
+							id="sidebar-artist-count"
+							class="sw-sidebar-badge"
+							hx-get="/api/v1/artists/badge"
+							hx-trigger="load, every 120s"
+							hx-swap="innerHTML"
+						></span>
 					</a>
 				</li>
 				<li>
@@ -149,20 +158,8 @@ templ Sidebar(data SidebarData) {
 		}
 		<!-- Spacer pushes bottom section down -->
 		<div class="flex-1"></div>
-		<!-- Bottom section: Help, divider, user profile -->
+		<!-- Bottom section: Help, theme toggle, divider, user profile, version -->
 		<div class="sw-sidebar-bottom">
-			<a
-				href={ templ.SafeURL(data.BasePath + "/guide") }
-				class="sw-sidebar-link"
-				data-path="/guide"
-				aria-label="Guide"
-			>
-				<!-- Book icon -->
-				<svg class="sw-sidebar-icon" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
-					<path stroke-linecap="round" stroke-linejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25"></path>
-				</svg>
-				<span class="sw-sidebar-label">Guide</span>
-			</a>
 			<button
 				type="button"
 				class="sw-sidebar-link w-full"
@@ -175,6 +172,25 @@ templ Sidebar(data SidebarData) {
 				</svg>
 				<span class="sw-sidebar-label">Help</span>
 				<kbd class="sw-sidebar-kbd">?</kbd>
+			</button>
+			<!-- Theme toggle: cycles through dark, light, and system -->
+			<button
+				type="button"
+				id="sidebar-theme-toggle"
+				class="sw-sidebar-link w-full"
+				onclick="window.swSidebar.cycleTheme()"
+				aria-label="Cycle theme: dark, light, system"
+				title="Cycle theme (dark, light, system)"
+			>
+				<!-- Sun icon (shown in dark mode) -->
+				<svg class="sw-sidebar-icon sw-theme-icon-light" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
+					<path stroke-linecap="round" stroke-linejoin="round" d="M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0z"></path>
+				</svg>
+				<!-- Moon icon (shown in light mode) -->
+				<svg class="sw-sidebar-icon sw-theme-icon-dark" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
+					<path stroke-linecap="round" stroke-linejoin="round" d="M21.752 15.002A9.72 9.72 0 0 1 18 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 0 0 3 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 0 0 9.002-5.998z"></path>
+				</svg>
+				<span class="sw-sidebar-label sw-sidebar-theme-label">Theme</span>
 			</button>
 			<div class="sw-sidebar-divider"></div>
 			<!-- User profile -->
@@ -229,8 +245,9 @@ templ Sidebar(data SidebarData) {
 		aria-label="Show sidebar"
 		title="Show sidebar ( [ )"
 	>
+		<!-- Chevron-right: sidebar is hidden, click to expand -->
 		<svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
-			<path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25H12"></path>
+			<path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5"></path>
 		</svg>
 	</button>
 }
