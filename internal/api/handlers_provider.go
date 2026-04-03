@@ -279,11 +279,15 @@ func (r *Router) handleSetPriorities(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	// Two-pass: validate all entries before persisting any, so a validation
+	// failure on a later entry does not leave earlier entries partially saved.
 	for _, p := range body.Priorities {
 		if p.Field == "" {
 			writeError(w, req, http.StatusBadRequest, "field name is required")
 			return
 		}
+	}
+	for _, p := range body.Priorities {
 		if err := r.providerSettings.SetPriority(req.Context(), p.Field, p.Providers); err != nil {
 			r.logger.Error("setting priority", "field", p.Field, "error", err)
 			writeError(w, req, http.StatusInternalServerError, "failed to set priority")

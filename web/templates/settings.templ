@@ -2002,14 +2002,18 @@ templ loggingScript() {
 
 templ cacheScript() {
 	<script>
+		var cacheBp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
+
 		function loadCacheStats() {
-			fetch('/api/v1/settings/cache/stats')
+			fetch(cacheBp + '/api/v1/settings/cache/stats')
 				.then(function(r) { if (!r.ok) throw new Error('failed'); return r.json(); })
 				.then(function(data) {
 					var mb = (data.size_bytes / (1024 * 1024)).toFixed(1);
 					var el = document.getElementById('cache-stats');
-					el.textContent = mb + ' MB used (' + data.file_count + ' files, ' + data.artist_count + ' artists)';
-					el.className = 'text-sm text-gray-600 dark:text-gray-400';
+					if (el) {
+						el.textContent = mb + ' MB used (' + data.file_count + ' files, ' + data.artist_count + ' artists)';
+						el.className = 'text-sm text-gray-600 dark:text-gray-400';
+					}
 				})
 				.catch(function() {
 					var el = document.getElementById('cache-stats');
@@ -2024,7 +2028,7 @@ templ cacheScript() {
 			var csrfToken = document.cookie.replace(
 				/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1"
 			);
-			fetch('/api/v1/settings', {
+			fetch(cacheBp + '/api/v1/settings', {
 				method: 'PUT',
 				headers: {
 					'Content-Type': 'application/json',
@@ -2050,7 +2054,7 @@ templ cacheScript() {
 			var csrfToken = document.cookie.replace(
 				/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1"
 			);
-			fetch('/api/v1/settings/cache', {
+			fetch(cacheBp + '/api/v1/settings/cache', {
 				method: 'DELETE',
 				headers: { 'X-CSRF-Token': csrfToken }
 			})
@@ -2690,9 +2694,9 @@ templ settingsTabScript() {
 			if (panel) panel.classList.remove('hidden');
 			document.querySelectorAll('[data-tab]').forEach(function(t) {
 				t.classList.remove('bg-white', 'dark:bg-gray-700', 'text-blue-600', 'dark:text-blue-300', 'shadow-sm');
-				t.classList.add('text-gray-600', 'dark:text-gray-400');
+				t.classList.add('text-gray-600', 'dark:text-gray-400', 'hover:text-gray-900', 'dark:hover:text-gray-200', 'hover:bg-white/60', 'dark:hover:bg-gray-700/60');
 			});
-			el.classList.remove('text-gray-600', 'dark:text-gray-400');
+			el.classList.remove('text-gray-600', 'dark:text-gray-400', 'hover:text-gray-900', 'dark:hover:text-gray-200', 'hover:bg-white/60', 'dark:hover:bg-gray-700/60');
 			el.classList.add('bg-white', 'dark:bg-gray-700', 'text-blue-600', 'dark:text-blue-300', 'shadow-sm');
 			var settingsBp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
 			history.pushState(null, '', settingsBp + '/settings?tab=' + encodeURIComponent(tabId));
@@ -2707,7 +2711,7 @@ templ settingsTabScript() {
 					// Entering Logs tab: refresh file list, cleanup row, and resume if tab-paused.
 					if (typeof loadLogFiles === 'function') loadLogFiles();
 					if (typeof updateCleanupRow === 'function') updateCleanupRow();
-					if (logViewer.dataset.tabPaused === 'true') {
+					if (logViewer.dataset.tabPaused === 'true' && !logViewerState.file) {
 						logViewer.dataset.tabPaused = 'false';
 						logViewer.setAttribute('hx-trigger', 'load, every 2s, logRefresh from:body');
 						if (typeof htmx !== 'undefined') htmx.process(logViewer);
@@ -2743,9 +2747,9 @@ templ settingsTabScript() {
 			});
 			document.querySelectorAll('[data-tab]').forEach(function(t) {
 				t.classList.remove('bg-white', 'dark:bg-gray-700', 'text-blue-600', 'dark:text-blue-300', 'shadow-sm');
-				t.classList.add('text-gray-600', 'dark:text-gray-400');
+				t.classList.add('text-gray-600', 'dark:text-gray-400', 'hover:text-gray-900', 'dark:hover:text-gray-200', 'hover:bg-white/60', 'dark:hover:bg-gray-700/60');
 			});
-			el.classList.remove('text-gray-600', 'dark:text-gray-400');
+			el.classList.remove('text-gray-600', 'dark:text-gray-400', 'hover:text-gray-900', 'dark:hover:text-gray-200', 'hover:bg-white/60', 'dark:hover:bg-gray-700/60');
 			el.classList.add('bg-white', 'dark:bg-gray-700', 'text-blue-600', 'dark:text-blue-300', 'shadow-sm');
 			// Apply the same side effects as switchSettingsTab.
 			if (tabId === 'general' && typeof loadCacheStats === 'function') {
@@ -2756,7 +2760,7 @@ templ settingsTabScript() {
 				if (tabId === 'logs') {
 					if (typeof loadLogFiles === 'function') loadLogFiles();
 					if (typeof updateCleanupRow === 'function') updateCleanupRow();
-					if (logViewer.dataset.tabPaused === 'true') {
+					if (logViewer.dataset.tabPaused === 'true' && !logViewerState.file) {
 						logViewer.dataset.tabPaused = 'false';
 						logViewer.setAttribute('hx-trigger', 'load, every 2s, logRefresh from:body');
 						if (typeof htmx !== 'undefined') htmx.process(logViewer);
@@ -3305,6 +3309,8 @@ templ connectionFeatureToggleScript() {
 
 templ sortableInitScript() {
 	<script>
+		var sortableBp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
+
 		// initSortableContainers attaches Sortable.js to all [data-sortable-field] containers
 		// that do not already have a Sortable instance. Called on initial page load and after
 		// every HTMX swap so that newly rendered priority rows are draggable immediately.
@@ -3339,7 +3345,7 @@ templ sortableInitScript() {
 						var csrfToken = document.cookie.replace(
 							/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1"
 						);
-						fetch('/api/v1/providers/priorities', {
+						fetch(sortableBp + '/api/v1/providers/priorities', {
 							method: 'PUT',
 							headers: {
 								'Content-Type': 'application/json',

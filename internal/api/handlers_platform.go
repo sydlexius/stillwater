@@ -282,14 +282,7 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
-	tab := req.URL.Query().Get("tab")
-	switch tab {
-	case "general", "providers", "connections", "libraries", "automation", "rules",
-		"users", "auth_providers", "maintenance", "logs":
-		// Valid tab.
-	default:
-		tab = "general"
-	}
+	tab := normalizeSettingsSection(req.URL.Query().Get("tab"))
 
 	multiUserEnabled := r.getBoolSetting(req.Context(), "multi_user.enabled", false)
 

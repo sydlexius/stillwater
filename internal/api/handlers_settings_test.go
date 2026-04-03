@@ -19,7 +19,7 @@ func TestNormalizeSettingsSection(t *testing.T) {
 			t.Errorf("normalizeSettingsSection(%q) = %q, want %q", s, got, s)
 		}
 	}
-	for _, bad := range []string{"", "admin", "unknown", "../etc"} {
+	for _, bad := range []string{"", "admin", "unknown", "../etc", "appearance", "authentication"} {
 		if got := normalizeSettingsSection(bad); got != "general" {
 			t.Errorf("normalizeSettingsSection(%q) = %q, want \"general\"", bad, got)
 		}

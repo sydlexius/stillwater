@@ -175,10 +175,30 @@
     }
   });
 
+  // Cycle the color theme through dark -> light -> system -> dark.
+  // Derives the effective mode from the DOM when the stored value is "system"
+  // so the next step in the cycle is always meaningful.
+  function cycleTheme() {
+    var ORDER = ['dark', 'light', 'system'];
+    var current = 'dark';
+    if (window.swPreferences) {
+      var cached = window.swPreferences.getCache();
+      if (cached && cached.theme) {
+        current = cached.theme;
+      }
+    }
+    var idx = ORDER.indexOf(current);
+    var next = ORDER[(idx + 1) % ORDER.length];
+    if (window.swPreferences) {
+      window.swPreferences.set('theme', next);
+    }
+  }
+
   // Expose public API.
   window.swSidebar = {
     init: init,
-    cycle: cycle
+    cycle: cycle,
+    cycleTheme: cycleTheme
   };
 
   // Auto-initialize on DOM ready.

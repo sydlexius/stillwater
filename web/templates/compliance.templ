@@ -34,6 +34,7 @@ type ComplianceData struct {
 	HealthScoreMin int
 	HealthScoreMax int
 	ProfileName    string // Active platform profile name for image terminology
+	BasePath       string // Application base path for sub-path deployments
 }
 
 // ReportsPageData holds all data for the unified Reports page.
@@ -73,7 +74,8 @@ func sortIcon(currentSort, col, currentOrder string) string {
 	return " \u2191"
 }
 
-// complianceExportURL builds the CSV export URL with current filter params.
+// complianceExportURL builds the CSV export URL with current filter params,
+// prefixed with the application base path for sub-path deployments.
 func complianceExportURL(data ComplianceData) string {
 	v := url.Values{}
 	if data.Search != "" {
@@ -102,9 +104,9 @@ func complianceExportURL(data ComplianceData) string {
 	}
 	q := v.Encode()
 	if q != "" {
-		return "/api/v1/reports/compliance/export?" + q
+		return data.BasePath + "/api/v1/reports/compliance/export?" + q
 	}
-	return "/api/v1/reports/compliance/export"
+	return data.BasePath + "/api/v1/reports/compliance/export"
 }
 
 // ReportsPage is the unified reports page with Trends, Compliance, and Coverage tabs.
@@ -566,7 +568,7 @@ templ ComplianceTable(data ComplianceData) {
 						</tr>
 					}
 					for _, row := range data.Rows {
-						@complianceRow(row, data.ProfileName)
+						@complianceRow(row, data.ProfileName, data.BasePath)
 					}
 				</tbody>
 			</table>
@@ -575,7 +577,7 @@ templ ComplianceTable(data ComplianceData) {
 	</div>
 }
 
-templ complianceRow(row ComplianceRow, profileName string) {
+templ complianceRow(row ComplianceRow, profileName string, basePath string) {
 	<tr class="hover:bg-gray-50 dark:hover:bg-gray-800">
 		<td class="px-4 py-3 text-center">
 			<input
@@ -587,7 +589,7 @@ templ complianceRow(row ComplianceRow, profileName string) {
 		</td>
 		<td data-col="artist" class="px-4 py-3 text-sm">
 			<a
-				href={ templ.SafeURL("/artists/" + row.Artist.ID) }
+				href={ templ.SafeURL(basePath + "/artists/" + row.Artist.ID) }
 				class="font-medium text-blue-600 dark:text-blue-400 hover:underline"
 			>
 				{ row.Artist.Name }
@@ -617,7 +619,7 @@ templ complianceRow(row ComplianceRow, profileName string) {
 			<div class="flex items-center justify-end gap-1">
 				if row.Artist.NFOExists {
 					<a
-						href={ templ.SafeURL("/artists/" + row.Artist.ID + "/nfo") }
+						href={ templ.SafeURL(basePath + "/artists/" + row.Artist.ID + "/nfo") }
 						class="text-sm px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
 					>
 						Changes
@@ -1233,8 +1235,12 @@ templ complianceScript() {
 			});
 			if (ids.length === 0) return;
 
+			var bulkBp = (function() {
+				var el = document.querySelector('meta[name="htmx-base-path"]');
+				return el ? el.content : '';
+			})();
 			var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, '$1');
-			fetch('/api/v1/bulk/' + action, {
+			fetch(bulkBp + '/api/v1/bulk/' + action, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
 				body: JSON.stringify({ mode: 'prompt_no_match', artist_ids: ids })
