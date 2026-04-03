@@ -1,0 +1,58 @@
+#!/bin/bash
+# pre-push-gate.sh -- deterministic pre-push checks; run before code review
+# Exit status: 0 = all hard checks passed; 1 = a hard check failed
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+BASE=$(git merge-base main HEAD 2>/dev/null || echo "HEAD~1")
+
+echo "=== Tests ==="
+go test -race -count=1 ./...
+
+echo ""
+echo "=== OpenAPI consistency ==="
+go test -count=1 -run TestOpenAPIConsistency -v ./internal/api/
+
+echo ""
+echo "=== Generated files ==="
+bash "$SCRIPT_DIR/check-generated.sh"
+
+echo ""
+echo "=== Raw error leak check ==="
+error_leaks=$(git diff "$BASE"..HEAD -- 'internal/api/handlers.go' 'internal/api/handlers_*.go' \
+  | grep '^+' \
+  | grep -E 'err\.(Error|String)\(\)' \
+  | grep -vE '\bslog\.|\blogger\.|\blog\.' || true)
+if [ -n "$error_leaks" ]; then
+  echo "CRITICAL: Raw error text may be leaking to clients:"
+  echo "$error_leaks"
+  echo ""
+  echo "Client-visible messages must be generic. Log full errors server-side with slog."
+  exit 1
+fi
+echo "OK"
+
+echo ""
+echo "=== OpenAPI breaking changes ==="
+if command -v oasdiff &>/dev/null; then
+  tmp_openapi=$(mktemp /tmp/openapi-base.XXXXXX.yaml)
+  trap 'rm -f "${tmp_openapi:-}"' EXIT
+  if git show main:internal/api/openapi.yaml > "$tmp_openapi" 2>/dev/null; then
+    breaking=$(oasdiff breaking "$tmp_openapi" internal/api/openapi.yaml 2>&1 || true)
+    rm -f "$tmp_openapi"
+    if [ -n "$breaking" ]; then
+      echo "WARNING: Breaking OpenAPI changes detected (may be intentional):"
+      echo "$breaking"
+    else
+      echo "No breaking changes."
+    fi
+  else
+    rm -f "$tmp_openapi"
+    echo "Skipped (openapi.yaml not yet on main)."
+  fi
+else
+  echo "Skipped (oasdiff not installed -- install: go install github.com/oasdiff/oasdiff@latest)"
+fi
+
+echo ""
+echo "All hard checks passed. Proceed with /pr-review-toolkit:review-pr."

@@ -220,6 +220,122 @@ func buildWhereClause(params ListParams) (string, []any) {
 		conditions = append(conditions, "health_score < 100")
 	}
 
+	// Apply flyout-driven multi-filter conditions. Each key maps to "include"
+	// (add positive condition) or "exclude" (add negative condition). The
+	// "missing_images" key matches any artist missing at least one image type.
+	for key, state := range params.Filters {
+		switch key {
+		case "missing_meta":
+			switch state {
+			case "include":
+				conditions = append(conditions, "nfo_exists = 0")
+			case "exclude":
+				conditions = append(conditions, "nfo_exists = 1")
+			}
+		case "missing_images":
+			switch state {
+			case "include":
+				// Include artists missing ANY of thumb, fanart, logo, or banner.
+				conditions = append(conditions, "(NOT EXISTS (SELECT 1 FROM artist_images WHERE artist_id = artists.id AND image_type = 'thumb' AND exists_flag = 1) OR NOT EXISTS (SELECT 1 FROM artist_images WHERE artist_id = artists.id AND image_type = 'fanart' AND exists_flag = 1) OR NOT EXISTS (SELECT 1 FROM artist_images WHERE artist_id = artists.id AND image_type = 'logo' AND exists_flag = 1) OR NOT EXISTS (SELECT 1 FROM artist_images WHERE artist_id = artists.id AND image_type = 'banner' AND exists_flag = 1))")
+			case "exclude":
+				// Exclude artists that have ALL of thumb, fanart, logo, and banner.
+				conditions = append(conditions, "(EXISTS (SELECT 1 FROM artist_images WHERE artist_id = artists.id AND image_type = 'thumb' AND exists_flag = 1) AND EXISTS (SELECT 1 FROM artist_images WHERE artist_id = artists.id AND image_type = 'fanart' AND exists_flag = 1) AND EXISTS (SELECT 1 FROM artist_images WHERE artist_id = artists.id AND image_type = 'logo' AND exists_flag = 1) AND EXISTS (SELECT 1 FROM artist_images WHERE artist_id = artists.id AND image_type = 'banner' AND exists_flag = 1))")
+			}
+		case "missing_mbid":
+			switch state {
+			case "include":
+				conditions = append(conditions, "NOT EXISTS (SELECT 1 FROM artist_provider_ids WHERE artist_id = artists.id AND provider = 'musicbrainz')")
+			case "exclude":
+				conditions = append(conditions, "EXISTS (SELECT 1 FROM artist_provider_ids WHERE artist_id = artists.id AND provider = 'musicbrainz')")
+			}
+		case "excluded":
+			switch state {
+			case "include":
+				conditions = append(conditions, "is_excluded = 1")
+			case "exclude":
+				conditions = append(conditions, "is_excluded = 0")
+			}
+		case "locked":
+			switch state {
+			case "include":
+				conditions = append(conditions, "locked = 1")
+			case "exclude":
+				conditions = append(conditions, "locked = 0")
+			}
+		}
+	}
+
+	// Aggregate artist-type filters into IN/NOT IN conditions so that
+	// including multiple types produces OR logic (not impossible AND logic).
+	var typeIncludes, typeExcludes []string
+	for key, state := range params.Filters {
+		var typeName string
+		switch key {
+		case "type_person":
+			typeName = "person"
+		case "type_group":
+			typeName = "group"
+		case "type_orchestra":
+			typeName = "orchestra"
+		default:
+			continue
+		}
+		switch state {
+		case "include":
+			typeIncludes = append(typeIncludes, typeName)
+		case "exclude":
+			typeExcludes = append(typeExcludes, typeName)
+		}
+	}
+	if len(typeIncludes) > 0 {
+		ph := strings.Repeat("?,", len(typeIncludes))
+		conditions = append(conditions, "type IN ("+ph[:len(ph)-1]+")")
+		for _, t := range typeIncludes {
+			args = append(args, t)
+		}
+	}
+	if len(typeExcludes) > 0 {
+		ph := strings.Repeat("?,", len(typeExcludes))
+		conditions = append(conditions, "type NOT IN ("+ph[:len(ph)-1]+")")
+		for _, t := range typeExcludes {
+			args = append(args, t)
+		}
+	}
+
+	// Aggregate per-library filters into IN/NOT IN conditions.
+	var libIncludes, libExcludes []string
+	for key, state := range params.Filters {
+		if !strings.HasPrefix(key, "library_") {
+			continue
+		}
+		libID := key[len("library_"):]
+		if libID == "" {
+			continue
+		}
+		switch state {
+		case "include":
+			libIncludes = append(libIncludes, libID)
+		case "exclude":
+			libExcludes = append(libExcludes, libID)
+		}
+	}
+	if len(libIncludes) > 0 {
+		ph := strings.Repeat("?,", len(libIncludes))
+		conditions = append(conditions, "library_id IN ("+ph[:len(ph)-1]+")")
+		for _, id := range libIncludes {
+			args = append(args, id)
+		}
+	}
+	if len(libExcludes) > 0 {
+		ph := strings.Repeat("?,", len(libExcludes))
+		// Use IS NULL OR NOT IN so artists with no library assignment are not
+		// silently dropped when excluding a specific library (NULL NOT IN (...) = NULL).
+		conditions = append(conditions, "(library_id IS NULL OR library_id NOT IN ("+ph[:len(ph)-1]+"))")
+		for _, id := range libExcludes {
+			args = append(args, id)
+		}
+	}
+
 	if params.HealthScoreMin > 0 {
 		conditions = append(conditions, "health_score >= ?")
 		args = append(args, params.HealthScoreMin)

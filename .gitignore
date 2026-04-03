@@ -19,9 +19,7 @@ coverage.html
 # IDE / tools
 .idea/
 .vscode/
-.claude/settings.local.json
-.claude/*.local.md
-.claude/worktrees/
+.claude/
 .superpowers/
 .playwright-mcp/
 *.swp

@@ -1,0 +1,46 @@
+services:
+  emby:
+    image: emby/embyserver:latest
+    container_name: emby
+    ports:
+      - "8096:8096"
+      - "8920:8920"
+    volumes:
+      - "${HOME}/appdata/emby/config:/config"
+      - "${HOME}/media/music:/music"
+      - "${HOME}/media/classical:/classical"
+    environment:
+      - UID=${UID:-501}
+      - GID=${GID:-20}
+      - TZ=America/Los_Angeles
+    restart: unless-stopped
+
+  jellyfin:
+    image: jellyfin/jellyfin:latest
+    container_name: jellyfin
+    ports:
+      - "8097:8096/tcp"
+      - "7359:7359/udp"
+    volumes:
+      - "${HOME}/appdata/jellyfin/config:/config"
+      - "${HOME}/appdata/jellyfin/cache:/cache"
+      - "${HOME}/media/music:/music"
+      - "${HOME}/media/classical:/classical"
+    environment:
+      - JELLYFIN_PublishedServerUrl=http://localhost:8097
+    restart: unless-stopped
+
+  lidarr:
+    image: lscr.io/linuxserver/lidarr:latest
+    container_name: lidarr
+    ports:
+      - "8686:8686"
+    volumes:
+      - "${HOME}/appdata/lidarr:/config"
+      - "${HOME}/media/music:/music"
+      - "${HOME}/media/classical:/classical"
+    environment:
+      - PUID=${UID:-501}
+      - PGID=${GID:-20}
+      - TZ=America/Los_Angeles
+    restart: unless-stopped

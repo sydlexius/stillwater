@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -22,6 +23,7 @@ func (r *Router) handleListArtists(w http.ResponseWriter, req *http.Request) {
 		Search:    req.URL.Query().Get("search"),
 		Filter:    req.URL.Query().Get("filter"),
 		LibraryID: req.URL.Query().Get("library_id"),
+		Filters:   parseFlyoutFilters(req),
 	}
 	params.Validate()
 
@@ -128,6 +130,7 @@ func (r *Router) handleArtistsPage(w http.ResponseWriter, req *http.Request) {
 		Search:    req.URL.Query().Get("search"),
 		Filter:    req.URL.Query().Get("filter"),
 		LibraryID: req.URL.Query().Get("library_id"),
+		Filters:   parseFlyoutFilters(req),
 	}
 	params.Validate()
 
@@ -205,6 +208,7 @@ func (r *Router) handleArtistsPage(w http.ResponseWriter, req *http.Request) {
 		Sort:             params.Sort,
 		Order:            params.Order,
 		Filter:           params.Filter,
+		Filters:          params.Filters,
 		LibraryID:        params.LibraryID,
 		View:             view,
 		ProfileName:      r.getActiveProfileName(req.Context()),
@@ -255,6 +259,57 @@ func (r *Router) handleArtistsPage(w http.ResponseWriter, req *http.Request) {
 	}
 
 	renderTempl(w, req, templates.ArtistsPage(r.assetsFor(req), data))
+}
+
+// parseFlyoutFilters reads the URL query params written by the filter flyout
+// component and returns a map of filter key -> "include" or "exclude".
+//
+// The flyout JS writes params in the form: filter_missing_meta=%2By (include)
+// or filter_missing_meta=-y (exclude). Single-value keys use exactly "+y" or
+// "-y". Per-library params use filter_library_{id}=+y / -y and are stored as
+// "library_{id}" -> "include"/"exclude". Recognized single-value keys are:
+// missing_meta, missing_images, missing_mbid, excluded, locked,
+// type_person, type_group, type_orchestra.
+func parseFlyoutFilters(req *http.Request) map[string]string {
+	keys := []string{
+		"missing_meta", "missing_images", "missing_mbid", "excluded", "locked",
+		"type_person", "type_group", "type_orchestra",
+	}
+	filters := make(map[string]string)
+	for _, k := range keys {
+		raw := req.URL.Query().Get("filter_" + k)
+		switch raw {
+		case "+y":
+			filters[k] = "include"
+		case "-y":
+			filters[k] = "exclude"
+		}
+	}
+
+	// Parse per-library filter params (filter_library_{id}=+y / -y).
+	for param, vals := range req.URL.Query() {
+		if !strings.HasPrefix(param, "filter_library_") {
+			continue
+		}
+		if len(vals) == 0 || vals[0] == "" {
+			continue
+		}
+		libID := param[len("filter_library_"):]
+		if libID == "" {
+			continue
+		}
+		switch vals[0] {
+		case "+y":
+			filters["library_"+libID] = "include"
+		case "-y":
+			filters["library_"+libID] = "exclude"
+		}
+	}
+
+	if len(filters) == 0 {
+		return nil
+	}
+	return filters
 }
 
 // handleArtistDetailPage renders the artist detail HTML page.
