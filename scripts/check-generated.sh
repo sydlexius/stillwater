@@ -6,10 +6,19 @@ base=$(git merge-base main HEAD 2>/dev/null || echo "HEAD~1")
 templ_changed=$(git diff --name-only "$base"..HEAD -- '*.templ')
 gen_changed=$(git diff --name-only "$base"..HEAD -- '*_templ.go')
 
-if [ -n "$templ_changed" ] && [ -z "$gen_changed" ]; then
-  echo "ERROR: .templ files changed but *_templ.go not regenerated. Run: templ generate"
-  echo "Changed .templ files:"
-  echo "$templ_changed"
+missing=""
+while IFS= read -r templ_file; do
+  [ -z "$templ_file" ] && continue
+  expected="${templ_file%.templ}_templ.go"
+  if ! echo "$gen_changed" | grep -qxF "$expected"; then
+    missing="${missing}  $templ_file\n"
+  fi
+done <<< "$templ_changed"
+
+if [ -n "$missing" ]; then
+  echo "ERROR: .templ files changed but corresponding *_templ.go not regenerated. Run: templ generate"
+  echo "Missing regeneration for:"
+  printf "%b" "$missing"
   exit 1
 fi
 

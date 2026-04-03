@@ -7,8 +7,19 @@ if [ -z "${1:-}" ]; then
   exit 1
 fi
 
+if ! command -v jq &>/dev/null; then
+  echo "Error: jq is required but not installed."
+  exit 1
+fi
+
+if ! command -v gh &>/dev/null; then
+  echo "Error: gh (GitHub CLI) is required but not installed."
+  exit 1
+fi
+
 issue="$1"
-pattern="stillwater-${issue}"
+# Match both stillwater-<issue> and stillwater-m<N>-<issue>
+pattern="stillwater(-m[0-9]+)?-${issue}$"
 
 # Find worktree path and branch by pattern
 worktree_path=$(git worktree list --porcelain \
@@ -38,8 +49,9 @@ if [ -n "$branch" ]; then
 
   # Delete remote branch
   echo "=== Deleting remote branch: $branch ==="
+  repo=$(gh repo view --json nameWithOwner -q .nameWithOwner)
   encoded=$(printf '%s' "$branch" | jq -sRr @uri)
-  gh api "repos/sydlexius/stillwater/git/refs/heads/$encoded" -X DELETE 2>/dev/null \
+  gh api "repos/$repo/git/refs/heads/$encoded" -X DELETE 2>/dev/null \
     && echo "Remote branch deleted." \
     || echo "Remote branch not found or already deleted."
 fi

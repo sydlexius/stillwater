@@ -6,9 +6,9 @@ services:
       - "8096:8096"
       - "8920:8920"
     volumes:
-      - "~/appdata/emby/config:/config"
-      - "~/media/music:/music"
-      - "~/media/classical:/classical"
+      - "${HOME}/appdata/emby/config:/config"
+      - "${HOME}/media/music:/music"
+      - "${HOME}/media/classical:/classical"
     environment:
       - UID=501
       - GID=20
@@ -22,10 +22,10 @@ services:
       - "8097:8096/tcp"
       - "7359:7359/udp"
     volumes:
-      - "~/appdata/jellyfin/config:/config"
-      - "~/appdata/jellyfin/cache:/cache"
-      - "~/media/music:/music"
-      - "~/media/classical:/classical"
+      - "${HOME}/appdata/jellyfin/config:/config"
+      - "${HOME}/appdata/jellyfin/cache:/cache"
+      - "${HOME}/media/music:/music"
+      - "${HOME}/media/classical:/classical"
     environment:
       - JELLYFIN_PublishedServerUrl=http://localhost:8097
     restart: unless-stopped
@@ -36,9 +36,9 @@ services:
     ports:
       - "8686:8686"
     volumes:
-      - "~/appdata/lidarr:/config"
-      - "~/media/music:/music"
-      - "~/media/classical:/classical"
+      - "${HOME}/appdata/lidarr:/config"
+      - "${HOME}/media/music:/music"
+      - "${HOME}/media/classical:/classical"
     environment:
       - PUID=501
       - PGID=20

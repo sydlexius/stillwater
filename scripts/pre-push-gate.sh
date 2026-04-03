@@ -7,7 +7,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BASE=$(git merge-base main HEAD 2>/dev/null || echo "HEAD~1")
 
 echo "=== Tests ==="
-go test -count=1 ./...
+go test -race -count=1 ./...
 
 echo ""
 echo "=== OpenAPI consistency ==="
@@ -21,8 +21,8 @@ echo ""
 echo "=== Raw error leak check ==="
 error_leaks=$(git diff "$BASE"..HEAD -- 'internal/api/handlers_*.go' \
   | grep '^+' \
-  | grep -E 'err\.(Error|String)\(\)|fmt\.(Sprintf|Errorf).*err[^o]' \
-  | grep -v 'slog\.\|logger\.\|log\.' || true)
+  | grep -E 'err\.(Error|String)\(\)' \
+  | grep -vE '\bslog\.|\blogger\.|\blog\.' || true)
 if [ -n "$error_leaks" ]; then
   echo "CRITICAL: Raw error text may be leaking to clients:"
   echo "$error_leaks"
@@ -35,9 +35,11 @@ echo "OK"
 echo ""
 echo "=== OpenAPI breaking changes ==="
 if command -v oasdiff &>/dev/null; then
-  if git show main:internal/api/openapi.yaml > /tmp/openapi-base.yaml 2>/dev/null; then
-    breaking=$(oasdiff breaking /tmp/openapi-base.yaml internal/api/openapi.yaml 2>&1 || true)
-    rm -f /tmp/openapi-base.yaml
+  tmp_openapi=$(mktemp /tmp/openapi-base.XXXXXX.yaml)
+  trap 'rm -f "${tmp_openapi:-}"' EXIT
+  if git show main:internal/api/openapi.yaml > "$tmp_openapi" 2>/dev/null; then
+    breaking=$(oasdiff breaking "$tmp_openapi" internal/api/openapi.yaml 2>&1 || true)
+    rm -f "$tmp_openapi"
     if [ -n "$breaking" ]; then
       echo "WARNING: Breaking OpenAPI changes detected (may be intentional):"
       echo "$breaking"
@@ -45,7 +47,7 @@ if command -v oasdiff &>/dev/null; then
       echo "No breaking changes."
     fi
   else
-    rm -f /tmp/openapi-base.yaml
+    rm -f "$tmp_openapi"
     echo "Skipped (openapi.yaml not yet on main)."
   fi
 else

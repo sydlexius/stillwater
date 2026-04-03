@@ -8,7 +8,7 @@ Then run `/pr-review-toolkit:review-pr` for code review. Fix all critical/import
 
 ## Squash before first push
 
-Squash all development/fixup commits into clean, logical commits before the first push. Copilot reviews only the diff it sees on each push; incremental commits hide the full changeset.
+Squash all development/fixup commits into clean, logical commits before the first push. Copilot's initial review covers the full diff present when the PR is first opened; incremental commits added after opening are not automatically re-reviewed (see Copilot review policy below).
 
 ```bash
 git rebase -i main
