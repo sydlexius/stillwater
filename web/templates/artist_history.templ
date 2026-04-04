@@ -88,16 +88,38 @@ templ ArtistHistoryMoreRows(data HistoryTabData) {
 	}
 }
 
+// HistoryChangeRowFragment is an exported wrapper for historyChangeRow, used
+// by handlers that need to render a single change row as an HTMX response
+// (e.g. after a successful revert).
+templ HistoryChangeRowFragment(c artist.MetadataChange) {
+	@historyChangeRow(c)
+}
+
 // historyChangeRow renders a single metadata change entry in the timeline.
 templ historyChangeRow(c artist.MetadataChange) {
-	<div class="border-l-2 border-gray-300 dark:border-gray-600 pl-4 py-2">
-		<div class="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-			<time datetime={ c.CreatedAt.Format(time.RFC3339) } title={ c.CreatedAt.Format("2006-01-02 15:04:05 UTC") }>
-				{ historyTimeAgo(c.CreatedAt) }
-			</time>
-			<span class="inline-block px-2 py-0.5 rounded-full text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
-				{ historySourceLabel(c.Source) }
-			</span>
+	<div id={ "history-change-" + c.ID } class="border-l-2 border-gray-300 dark:border-gray-600 pl-4 py-2">
+		<div class="flex items-center justify-between">
+			<div class="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+				<time datetime={ c.CreatedAt.Format(time.RFC3339) } title={ c.CreatedAt.Format("2006-01-02 15:04:05 UTC") }>
+					{ historyTimeAgo(c.CreatedAt) }
+				</time>
+				<span class={ "inline-block px-2 py-0.5 rounded-full text-xs", historySourceBadgeClass(c.Source) }>
+					{ historySourceLabel(c.Source) }
+				</span>
+			</div>
+			if artist.IsTrackableField(c.Field) && c.Source != "revert" {
+				<button
+					type="button"
+					hx-post={ "/api/v1/history/" + c.ID + "/revert" }
+					hx-target={ "#history-change-" + c.ID }
+					hx-swap="outerHTML"
+					hx-confirm={ "Undo this " + historyFieldLabel(c.Field) + " change?" }
+					class="text-xs px-2 py-1 rounded border border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+					title="Undo this change"
+				>
+					Undo
+				</button>
+			}
 		</div>
 		<div class="mt-1 text-sm">
 			<span class="font-medium text-gray-800 dark:text-gray-200">{ historyFieldLabel(c.Field) }</span>
@@ -154,6 +176,8 @@ func historySourceLabel(source string) string {
 		return "Scan"
 	case source == "import":
 		return "Import"
+	case source == "revert":
+		return "Revert"
 	case strings.HasPrefix(source, "provider:"):
 		name := strings.TrimPrefix(source, "provider:")
 		if name == "" {
@@ -169,6 +193,15 @@ func historySourceLabel(source string) string {
 	default:
 		return source
 	}
+}
+
+// historySourceBadgeClass returns Tailwind classes for the source badge.
+// Revert entries get a distinct amber color to stand out in the timeline.
+func historySourceBadgeClass(source string) string {
+	if source == "revert" {
+		return "bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300"
+	}
+	return "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300"
 }
 
 // historyFieldLabels maps database field names to human-readable labels.

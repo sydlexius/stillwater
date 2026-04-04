@@ -65,16 +65,19 @@ components:
           properties:
             genre:
               type: array
+              description: Source categories that feed the NFO genre element.
               items:
                 type: string
                 enum: [genres, styles, moods]
             style:
               type: array
+              description: Source categories that feed the NFO style element.
               items:
                 type: string
                 enum: [genres, styles, moods]
             mood:
               type: array
+              description: Source categories that feed the NFO mood element.
               items:
                 type: string
                 enum: [genres, styles, moods]
@@ -84,18 +87,23 @@ components:
       properties:
         status:
           type: string
+          description: Current status text.
     ConnectionResponse:
       type: object
       properties:
         id:
           type: string
+          description: Unique connection identifier.
         name:
           type: string
+          description: User-assigned display name for this connection.
         type:
           type: string
           enum: [emby, jellyfin, lidarr]
+          description: Platform type of the connection.
         url:
           type: string
+          description: Base URL of the platform server.
         has_key:
           type: boolean
           description: Whether the connection has an API key configured.
@@ -104,19 +112,25 @@ components:
           description: Whether the connection has a platform user ID configured for personalized metadata.
         enabled:
           type: boolean
+          description: Whether the connection is active and will be used for operations.
         status:
           type: string
+          description: Current connectivity state (e.g. connected, unreachable).
         status_message:
           type: string
+          description: Human-readable detail about the connection status.
         last_checked_at:
           type: string
           format: date-time
+          description: When the connection was last health-checked (UTC, RFC 3339).
         created_at:
           type: string
           format: date-time
+          description: When the connection was created (UTC, RFC 3339).
         updated_at:
           type: string
           format: date-time
+          description: When the connection was last modified (UTC, RFC 3339).
         feature_library_import:
           type: boolean
           description: Whether Stillwater imports libraries from this connection.
@@ -143,30 +157,39 @@ components:
       properties:
         id:
           type: string
+          description: Unique webhook identifier.
         name:
           type: string
+          description: User-assigned display name for this webhook.
         url:
           type: string
+          description: Destination URL that receives webhook payloads.
         type:
           type: string
+          description: Webhook delivery type.
         events:
           type: array
+          description: Event types this webhook subscribes to.
           items:
             type: string
         enabled:
           type: boolean
+          description: Whether this webhook is active and will fire on matching events.
         created_at:
           type: string
           format: date-time
+          description: When the webhook was created (UTC, RFC 3339).
         updated_at:
           type: string
           format: date-time
+          description: When the webhook was last modified (UTC, RFC 3339).
     IdentifyProgress:
       type: object
       properties:
         status:
           type: string
           enum: [idle, running, completed, canceled]
+          description: Current state of the identification process.
         total:
           type: integer
           description: Total number of unidentified artists to process.
@@ -198,16 +221,20 @@ components:
       properties:
         artist_id:
           type: string
+          description: ID of the unidentified artist.
         artist_name:
           type: string
+          description: Display name of the unidentified artist.
         artist_path:
           type: string
+          description: Filesystem path to the artist directory.
         tier:
           type: string
           enum: [connection, album, name]
           description: The pipeline tier that produced this candidate.
         candidates:
           type: array
+          description: Ranked list of potential MusicBrainz matches.
           items:
             $ref: "#/components/schemas/ScoredCandidate"
     ScoredCandidate:
@@ -215,22 +242,31 @@ components:
       properties:
         provider_id:
           type: string
+          description: Provider-specific identifier for this candidate.
         name:
           type: string
+          description: Candidate artist name from the provider.
         sort_name:
           type: string
+          description: Sort-friendly form of the candidate name.
         type:
           type: string
+          description: Artist type (e.g. person, group).
         disambiguation:
           type: string
+          description: Provider disambiguation comment to distinguish similar names.
         country:
           type: string
+          description: ISO country code associated with the candidate.
         score:
           type: integer
+          description: Provider match score (higher is better).
         musicbrainz_id:
           type: string
+          description: MusicBrainz artist ID (MBID) for the candidate.
         source:
           type: string
+          description: Provider that supplied this candidate.
         album_comparison:
           $ref: "#/components/schemas/AlbumComparison"
         confidence:
@@ -242,32 +278,42 @@ components:
           description: Human-readable reason for the confidence score.
     AlbumComparison:
       type: object
+      description: Comparison of local and remote album catalogs for an artist match candidate.
       properties:
         matches:
           type: array
+          description: Albums found in both local and remote catalogs.
           items:
             type: object
             properties:
               local_name:
                 type: string
+                description: Album name from the local library.
               remote_name:
                 type: string
+                description: Album name from the remote provider.
               matched:
                 type: boolean
+                description: Whether the local and remote names were considered a match.
         local_only:
           type: array
+          description: Album names present locally but not found in the remote catalog.
           items:
             type: string
         remote_only:
           type: array
+          description: Album names present remotely but not found in the local library.
           items:
             type: string
         match_count:
           type: integer
+          description: Number of albums matched between local and remote.
         local_count:
           type: integer
+          description: Total number of albums in the local library.
         remote_count:
           type: integer
+          description: Total number of albums in the remote catalog.
         match_percent:
           type: integer
           description: Percentage of local albums matched (0-100).
@@ -276,51 +322,69 @@ components:
       properties:
         score:
           type: number
+          description: Overall health score from 0.0 (worst) to 1.0 (best).
         total_artists:
           type: integer
+          description: Total number of tracked artists.
         compliant_artists:
           type: integer
+          description: Number of artists with no open violations.
         missing_nfo:
           type: integer
+          description: Number of artists missing an NFO file.
         missing_thumb:
           type: integer
+          description: Number of artists missing a thumbnail image.
         missing_fanart:
           type: integer
+          description: Number of artists missing fanart.
         missing_mbid:
           type: integer
+          description: Number of artists missing a MusicBrainz ID.
         top_violations:
           type: array
+          description: Most common violation types across all artists.
           items:
             type: object
             properties:
               rule_id:
                 type: string
+                description: Identifier of the rule.
               rule_name:
                 type: string
+                description: Display name of the rule.
               count:
                 type: integer
+                description: Number of open violations for this rule.
               severity:
                 type: string
+                description: Severity level of the rule (error, warning, info).
     BackupInfo:
       type: object
       properties:
         filename:
           type: string
+          description: Name of the backup file.
         size:
           type: integer
+          description: File size in bytes.
         created_at:
           type: string
           format: date-time
+          description: When the backup was created (UTC, RFC 3339).
     RuleRunStatus:
       type: object
       properties:
         running:
           type: boolean
+          description: Whether a rule evaluation is currently in progress.
         status:
           type: string
           enum: [idle, running, completed, failed]
+          description: Current state of the rule run.
         artists_processed:
           type: integer
+          description: Number of artists evaluated so far.
         violations_found:
           type: integer
           description: Total number of violations detected during evaluation
@@ -332,39 +396,54 @@ components:
           description: Number of active violations remaining, filtered by notification badge severity settings
         fixes_attempted:
           type: integer
+          description: Number of automated fix attempts made.
         fixes_succeeded:
           type: integer
+          description: Number of automated fixes that succeeded.
         started_at:
           type: string
           format: date-time
+          description: When the rule run started (UTC, RFC 3339).
         completed_at:
           type: string
           format: date-time
+          description: When the rule run finished (UTC, RFC 3339).
         error:
           type: string
+          description: Error message if the run failed. Omitted on success.
     Library:
       type: object
+      description: A media library that Stillwater monitors for artists.
       properties:
         id:
           type: string
+          description: Unique library identifier.
         name:
           type: string
+          description: User-assigned display name for this library.
         path:
           type: string
+          description: Filesystem root path of the library.
         type:
           type: string
           enum: [regular, classical]
+          description: Library classification.
         source:
           type: string
           enum: [manual, emby, jellyfin, lidarr]
+          description: How the library was added to Stillwater.
         connection_id:
           type: string
+          description: ID of the platform connection this library belongs to. Omitted for manual libraries.
         external_id:
           type: string
+          description: Platform-specific library identifier. Omitted for manual libraries.
         fs_watch:
           type: integer
+          description: Filesystem watch mode (0=disabled, 1=notify, 2=poll).
         fs_poll_interval:
           type: integer
+          description: Polling interval in seconds when fs_watch is poll mode.
         shared_fs_status:
           type: string
           description: Shared-filesystem detection status. Empty string means unknown (not yet evaluated).
@@ -377,12 +456,15 @@ components:
           description: Comma-separated IDs of peer libraries associated with the shared-filesystem evidence
         fs_notify_supported:
           type: boolean
+          description: Whether the OS supports inotify/fsevents for this path.
         created_at:
           type: string
           format: date-time
+          description: When the library was created (UTC, RFC 3339).
         updated_at:
           type: string
           format: date-time
+          description: When the library was last modified (UTC, RFC 3339).
     SharedFilesystemStatus:
       type: object
       properties:
@@ -391,6 +473,7 @@ components:
           description: True when shared-filesystem overlaps exist
         libraries:
           type: array
+          description: Libraries involved in shared-filesystem overlaps.
           items:
             $ref: '#/components/schemas/SharedFilesystemEntry'
         dismissed:
@@ -429,12 +512,16 @@ components:
       properties:
         library_id:
           type: string
+          description: ID of the library.
         library_name:
           type: string
+          description: Display name of the library.
         path:
           type: string
+          description: Root filesystem path of the library.
         overlap_with:
           type: string
+          description: ID of the library that shares the same path or parent.
     SharedFilesystemRecheckResult:
       type: object
       properties:
@@ -461,33 +548,44 @@ components:
       properties:
         library_id:
           type: string
+          description: ID of the library the operation ran on.
         library_name:
           type: string
+          description: Display name of the library.
         operation:
           type: string
           enum: [populate, scan]
+          description: Type of library operation.
         status:
           type: string
           enum: [running, completed, failed]
+          description: Current state of the operation.
         message:
           type: string
+          description: Human-readable result or error message.
         started_at:
           type: string
           format: date-time
+          description: When the operation started (UTC, RFC 3339).
         completed_at:
           type: string
           format: date-time
+          description: When the operation finished (UTC, RFC 3339).
     APIToken:
       type: object
       properties:
         id:
           type: string
+          description: Unique token identifier.
         name:
           type: string
+          description: User-assigned display name for this token.
         scopes:
           type: string
+          description: Comma-separated permission scopes granted to this token.
         user_id:
           type: string
+          description: ID of the user who owns this token.
         status:
           type: string
           enum: [active, revoked]
@@ -495,63 +593,84 @@ components:
         created_at:
           type: string
           format: date-time
+          description: When the token was created (UTC, RFC 3339).
         last_used_at:
           type: string
           format: date-time
+          description: When the token was last used for authentication (UTC, RFC 3339).
         revoked_at:
           type: string
           format: date-time
+          description: When the token was revoked (UTC, RFC 3339). Omitted if active.
     Violation:
       type: object
       properties:
         id:
           type: string
+          description: Unique violation identifier.
         rule_id:
           type: string
+          description: ID of the rule that generated this violation.
         artist_id:
           type: string
+          description: ID of the artist this violation applies to.
         artist_name:
           type: string
+          description: Display name of the artist.
         library_name:
           type: string
           description: Name of the library the artist belongs to. Empty if unknown.
         severity:
           type: string
           enum: [error, warning, info]
+          description: Violation severity level.
         message:
           type: string
+          description: Human-readable description of the violation.
         fixable:
           type: boolean
+          description: Whether this violation can be automatically fixed.
         status:
           type: string
           enum: [open, dismissed, resolved, pending_choice]
+          description: Current lifecycle state of the violation.
         candidates:
           type: array
+          description: Fix candidates for image violations. Omitted for non-image rules.
           items:
             type: object
             properties:
               url:
                 type: string
+                description: Source URL of the candidate image.
               width:
                 type: integer
+                description: Image width in pixels.
               height:
                 type: integer
+                description: Image height in pixels.
               source:
                 type: string
+                description: Provider that supplied this candidate.
               image_type:
                 type: string
+                description: Type of image (e.g. thumb, fanart, logo, banner).
         dismissed_at:
           type: string
           format: date-time
+          description: When the violation was dismissed (UTC, RFC 3339). Omitted if not dismissed.
         resolved_at:
           type: string
           format: date-time
+          description: When the violation was resolved (UTC, RFC 3339). Omitted if not resolved.
         created_at:
           type: string
           format: date-time
+          description: When the violation was first detected (UTC, RFC 3339).
         updated_at:
           type: string
           format: date-time
+          description: When the violation was last updated (UTC, RFC 3339).
     LogFileInfo:
       type: object
       description: Metadata for a log file available for browsing in the log viewer.
@@ -607,51 +726,68 @@ components:
         level:
           type: string
           enum: [trace, debug, info, warn, error]
+          description: Minimum log severity to emit.
         format:
           type: string
           enum: [text, json]
+          description: Log output format.
         file_path:
           type: string
+          description: Path to the log file on disk.
         file_max_size_mb:
           type: integer
+          description: Maximum log file size in megabytes before rotation.
         file_max_files:
           type: integer
+          description: Maximum number of rotated log files to retain.
         file_max_age_days:
           type: integer
+          description: Maximum age in days before a rotated log file is deleted.
     MaintenanceStatus:
       type: object
       properties:
         db_file_size:
           type: integer
           format: int64
+          description: Size of the main database file in bytes.
         wal_file_size:
           type: integer
           format: int64
+          description: Size of the WAL (write-ahead log) file in bytes.
         page_count:
           type: integer
           format: int64
+          description: Total number of pages in the database.
         page_size:
           type: integer
           format: int64
+          description: Database page size in bytes.
         last_optimize_at:
           type: string
           format: date-time
+          description: When the database was last optimized (UTC, RFC 3339).
         schedule_enabled:
           type: boolean
+          description: Whether automatic maintenance is enabled.
         schedule_interval_hours:
           type: integer
+          description: Hours between automatic maintenance runs.
     PlatformBackdropConnection:
       type: object
       properties:
         connection_id:
           type: string
+          description: ID of the platform connection.
         connection_name:
           type: string
+          description: Display name of the platform connection.
         connection_type:
           type: string
           enum: [emby, jellyfin]
+          description: Platform type of the connection.
         backdrops:
           type: array
+          description: Backdrop images available on this connection.
           items:
             $ref: "#/components/schemas/PlatformBackdropItem"
     PlatformBackdropItem:
@@ -668,12 +804,14 @@ components:
       properties:
         connection_id:
           type: string
+          description: ID of the platform connection.
         name:
           type: string
           description: Display name of the connection
         type:
           type: string
           enum: [emby, jellyfin]
+          description: Platform type of the connection.
         synced:
           type: boolean
           description: Whether the platform has a backdrop at this index
@@ -689,6 +827,7 @@ components:
           description: Aggregate sync state across all reachable connections
         connections:
           type: array
+          description: Per-connection sync status for this fanart slot.
           items:
             $ref: "#/components/schemas/FanartSyncSlotConnection"
     MetadataChange:
@@ -714,8 +853,8 @@ components:
           type: string
           description: >
             Origin of the change. One of "manual", "scan", "import",
-            "provider:<name>" (e.g. "provider:musicbrainz"), or
-            "rule:<rule_id>" (e.g. "rule:missing_mbid").
+            "revert", "provider:<name>" (e.g. "provider:musicbrainz"),
+            or "rule:<rule_id>" (e.g. "rule:missing_mbid").
         created_at:
           type: string
           format: date-time
@@ -727,84 +866,115 @@ components:
       properties:
         id:
           type: string
+          description: Unique artist identifier.
         name:
           type: string
+          description: Primary display name of the artist.
         sort_name:
           type: string
+          description: Name used for alphabetical sorting.
         type:
           type: string
           description: Artist type, e.g. "person" or "group".
         gender:
           type: string
+          description: Gender of the artist (e.g. male, female, other). Empty when unknown.
         disambiguation:
           type: string
+          description: Text to distinguish similarly named artists.
         musicbrainz_id:
           type: string
+          description: MusicBrainz artist ID (MBID).
         audiodb_id:
           type: string
+          description: TheAudioDB artist ID.
         discogs_id:
           type: string
+          description: Discogs artist ID.
         wikidata_id:
           type: string
+          description: Wikidata entity ID.
         deezer_id:
           type: string
+          description: Deezer artist ID.
         spotify_id:
           type: string
+          description: Spotify artist ID.
         genres:
           type:
             - array
             - "null"
           items:
             type: string
+          description: Genre tags associated with the artist.
         styles:
           type:
             - array
             - "null"
           items:
             type: string
+          description: Style tags associated with the artist.
         moods:
           type:
             - array
             - "null"
           items:
             type: string
+          description: Mood tags associated with the artist.
         years_active:
           type: string
+          description: Period(s) the artist was active (e.g. 1990-2005).
         born:
           type: string
+          description: Birth date or year for a person artist.
         formed:
           type: string
+          description: Formation date or year for a group.
         died:
           type: string
+          description: Death date or year for a person artist.
         disbanded:
           type: string
+          description: Disbandment date or year for a group.
         biography:
           type: string
+          description: Biographical text for the artist.
         path:
           type: string
           description: Filesystem path to the artist directory. Empty for pathless (platform-only) artists.
         library_id:
           type: string
+          description: ID of the library this artist belongs to.
         nfo_exists:
           type: boolean
+          description: Whether an NFO file exists on disk for this artist.
         thumb_exists:
           type: boolean
+          description: Whether a thumbnail image exists for this artist.
         fanart_exists:
           type: boolean
+          description: Whether at least one fanart image exists for this artist.
         fanart_count:
           type: integer
+          description: Number of fanart images on disk for this artist.
         logo_exists:
           type: boolean
+          description: Whether a logo image exists for this artist.
         banner_exists:
           type: boolean
+          description: Whether a banner image exists for this artist.
         thumb_low_res:
           type: boolean
+          description: Whether the thumbnail is below the minimum resolution threshold.
         fanart_low_res:
           type: boolean
+          description: Whether the primary fanart is below the minimum resolution threshold.
         logo_low_res:
           type: boolean
+          description: Whether the logo is below the minimum resolution threshold.
         banner_low_res:
           type: boolean
+          description: Whether the banner is below the minimum resolution threshold.
         thumb_placeholder:
           type: string
           description: Base64-encoded placeholder for the thumb image. Omitted when not set.
@@ -820,13 +990,16 @@ components:
         health_score:
           type: number
           format: double
+          description: Metadata completeness score from 0.0 (worst) to 1.0 (best).
         is_excluded:
           type: boolean
+          description: Whether the artist is excluded from rules and automated operations.
         exclusion_reason:
           type: string
           description: Reason the artist is excluded from rules and metadata operations. Omitted when not excluded.
         is_classical:
           type: boolean
+          description: Whether the artist is classified as classical.
         locked:
           type: boolean
           description: When true, automated operations will not modify this artist.
@@ -865,9 +1038,11 @@ components:
         created_at:
           type: string
           format: date-time
+          description: When the artist record was created (UTC, RFC 3339).
         updated_at:
           type: string
           format: date-time
+          description: When the artist record was last modified (UTC, RFC 3339).
       required:
         - id
         - name
@@ -914,10 +1089,13 @@ components:
       properties:
         id:
           type: string
+          description: Unique band member record identifier.
         artist_id:
           type: string
+          description: ID of the parent artist (band/group).
         member_name:
           type: string
+          description: Display name of the band member.
         member_mbid:
           type: string
           description: MusicBrainz ID for this member. Omitted when not set.
@@ -927,6 +1105,7 @@ components:
             - "null"
           items:
             type: string
+          description: Instruments played by this member. Null when unknown.
         vocal_type:
           type: string
           description: Vocal range or type (e.g. "tenor"). Omitted when not set.
@@ -938,14 +1117,18 @@ components:
           description: Year or date the member left the group. Omitted for current members.
         is_original_member:
           type: boolean
+          description: Whether this member was part of the original lineup.
         sort_order:
           type: integer
+          description: Display order of this member relative to others in the band.
         created_at:
           type: string
           format: date-time
+          description: When this record was created (UTC, RFC 3339).
         updated_at:
           type: string
           format: date-time
+          description: When this record was last modified (UTC, RFC 3339).
       required:
         - id
         - artist_id
@@ -999,13 +1182,17 @@ paths:
                   status:
                     type: string
                     example: ok
+                    description: Health check result (e.g. ok).
                   version:
                     type: string
+                    description: Application version string.
                   commit:
                     type: string
+                    description: Git commit SHA of the running build.
                   time:
                     type: string
                     format: date-time
+                    description: Current server time (UTC, RFC 3339).
 
   /auth/login:
     post:
@@ -1209,6 +1396,7 @@ paths:
                 properties:
                   user_id:
                     type: string
+                    description: Unique identifier of the authenticated user.
         "401":
           description: Not authenticated
           content:
@@ -1245,10 +1433,13 @@ paths:
                 properties:
                   id:
                     type: string
+                    description: Unique identifier for the newly created token.
                   token:
                     type: string
+                    description: Plaintext API token value. Only returned once at creation.
                   name:
                     type: string
+                    description: User-assigned display name for this token.
         "400":
           description: Invalid request
           content:
@@ -1429,12 +1620,16 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/Artist"
+                    description: List of artist records.
                   total:
                     type: integer
+                    description: Total number of matching records.
                   page:
                     type: integer
+                    description: Current page number (1-based).
                   page_size:
                     type: integer
+                    description: Number of records per page.
 
   /artists/badge:
     get:
@@ -1477,6 +1672,7 @@ paths:
                       type: array
                       items:
                         $ref: "#/components/schemas/Artist"
+                      description: Artists in this duplicate group.
                     reason:
                       type: string
                       description: >-
@@ -1521,12 +1717,16 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/Artist"
+                    description: List of locked artist records.
                   total:
                     type: integer
+                    description: Total number of matching records.
                   page:
                     type: integer
+                    description: Current page number (1-based).
                   page_size:
                     type: integer
+                    description: Number of records per page.
 
   /artists/{id}/lock:
     post:
@@ -1615,6 +1815,7 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/BandMember"
+                    description: Band members associated with this artist.
         "404":
           description: Artist not found
           content:
@@ -1643,18 +1844,24 @@ paths:
                 properties:
                   artist_id:
                     type: string
+                    description: ID of the artist.
                   artist_name:
                     type: string
+                    description: Display name of the artist.
                   violations:
                     type: array
                     items:
                       type: object
+                    description: List of active violations for this artist.
                   rules_passed:
                     type: integer
+                    description: Number of rules the artist passes.
                   rules_total:
                     type: integer
+                    description: Total number of applicable rules.
                   health_score:
                     type: number
+                    description: Health score from 0.0 (worst) to 1.0 (best).
                   warning:
                     type: string
                     description: Present when the health score was computed but failed to persist.
@@ -1714,6 +1921,7 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/MetadataChange"
+                    description: List of metadata change records.
                   total:
                     type: integer
                     description: Total number of change records for this artist across all pages.
@@ -1754,10 +1962,13 @@ paths:
                   properties:
                     id:
                       type: string
+                      description: Unique identifier.
                     alias:
                       type: string
+                      description: Alternative name for the artist.
                     source:
                       type: string
+                      description: Origin of this alias (e.g. musicbrainz, manual).
     post:
       tags: [Aliases]
       summary: Add alias to artist
@@ -1860,8 +2071,10 @@ paths:
                     type: array
                     items:
                       type: string
+                    description: Filenames of images saved to disk.
                   type:
                     type: string
+                    description: Image type (e.g. thumb, fanart, logo, banner).
                   sync_warnings:
                     type: array
                     items:
@@ -1953,8 +2166,10 @@ paths:
                     type: array
                     items:
                       type: string
+                    description: Filenames of images saved to disk.
                   type:
                     type: string
+                    description: Image type (e.g. thumb, fanart, logo, banner).
                   sync_warnings:
                     type: array
                     items:
@@ -2010,10 +2225,12 @@ paths:
                     type: array
                     items:
                       type: object
+                    description: List of available images from providers.
                   errors:
                     type: array
                     items:
                       type: string
+                    description: Errors encountered during the image search.
             text/html:
               schema:
                 type: string
@@ -2061,12 +2278,15 @@ paths:
                 properties:
                   status:
                     type: string
+                    description: Result status of the crop operation.
                   saved:
                     type: array
                     items:
                       type: string
+                    description: Filenames of images saved to disk.
                   type:
                     type: string
+                    description: Image type (e.g. thumb, fanart, logo, banner).
                   sync_warnings:
                     type: array
                     items:
@@ -2085,11 +2305,6 @@ paths:
         - name: id
           in: path
           required: true
-          schema:
-            type: string
-        - name: compare_to
-          in: query
-          description: Snapshot ID to compare against (defaults to latest)
           schema:
             type: string
       responses:
@@ -2127,66 +2342,175 @@ paths:
                 properties:
                   has_conflict:
                     type: boolean
+                    description: Whether an NFO conflict was detected.
                   reason:
                     type: string
+                    description: Explanation of the conflict.
                   external_writer:
                     type: string
+                    description: Name of the external tool that wrote the NFO.
                   last_modified:
                     type: string
                     format: date-time
                     description: Present when the NFO file exists and is accessible; contains the file's last-modified timestamp regardless of conflict status. Omitted when the file does not exist or cannot be accessed (pathless artists, missing file, or filesystem errors).
 
-  /artists/{id}/nfo/snapshots:
-    get:
-      tags: [NFO]
-      summary: List NFO snapshots
-      operationId: listNFOSnapshots
+  /history/{id}/revert:
+    post:
+      tags: [History]
+      summary: Revert a metadata change
+      operationId: revertHistory
+      description: >
+        Restores the old value from a metadata_changes record back to the
+        artist field. Creates a new history entry with source "revert".
       parameters:
         - name: id
           in: path
           required: true
+          description: Metadata change record ID.
           schema:
             type: string
       responses:
         "200":
-          description: List of snapshots
+          description: Change reverted successfully.
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  snapshots:
-                    type: array
-                    items:
-                      type: object
-
-  /artists/{id}/nfo/snapshots/{snapshotId}/restore:
-    post:
-      tags: [NFO]
-      summary: Restore NFO from snapshot
-      description: >
-        For pathless artists, applies the snapshot fields to the database
-        and pushes updated metadata to connected platforms instead of
-        writing to disk.
-      operationId: restoreNFOSnapshot
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: snapshotId
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: NFO restored
+                  reverted:
+                    type: boolean
+                    description: Whether the change was successfully reverted.
+                  change_id:
+                    type: string
+                    description: ID of the reverted change record.
+                required: [reverted, change_id]
+            text/html:
+              schema:
+                type: string
+                description: >
+                  When the request includes an HX-Request header, returns an HTML
+                  fragment instead of JSON. Depending on where the request
+                  originated, this may be an activity-card fragment, an
+                  artist-history row fragment, or a fallback confirmation block
+                  if the new history record cannot be located.
+        "400":
+          description: Field is not revertible, or change source is "revert".
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Status"
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Change not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Internal server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: History service is not available.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /history:
+    get:
+      tags: [History]
+      summary: List global metadata change history
+      operationId: listGlobalHistory
+      description: >
+        Returns paginated metadata change records across all artists,
+        ordered by most recent first.
+      parameters:
+        - name: limit
+          in: query
+          description: Maximum number of records to return (1-200, default 50).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: offset
+          in: query
+          description: Number of records to skip for pagination.
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: artist_id
+          in: query
+          description: Filter to a single artist.
+          schema:
+            type: string
+        - name: field
+          in: query
+          description: >
+            Filter by field name. Repeat the parameter to include multiple
+            fields (e.g. ?field=biography&field=genres).
+          style: form
+          explode: true
+          schema:
+            type: array
+            items:
+              type: string
+        - name: source
+          in: query
+          description: >
+            Filter by change source. Repeat the parameter to include multiple
+            sources (e.g. ?source=manual&source=scan).
+          style: form
+          explode: true
+          schema:
+            type: array
+            items:
+              type: string
+      responses:
+        "200":
+          description: Paginated list of metadata changes with artist names.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  changes:
+                    type: array
+                    items:
+                      allOf:
+                        - $ref: "#/components/schemas/MetadataChange"
+                        - type: object
+                          required: [artist_name]
+                          properties:
+                            artist_name:
+                              type: string
+                              description: Display name of the artist this change belongs to.
+                    description: List of metadata change records.
+                  total:
+                    type: integer
+                    description: Total number of matching records.
+                  limit:
+                    type: integer
+                    description: Maximum number of records returned.
+                  offset:
+                    type: integer
+                    description: Number of records skipped from the start.
+                required: [changes, total, limit, offset]
+        "500":
+          description: Internal server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: History service is not available.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /artists/{id}/platform-ids:
     get:
@@ -2211,16 +2535,21 @@ paths:
                   properties:
                     artist_id:
                       type: string
+                      description: ID of the artist.
                     connection_id:
                       type: string
+                      description: ID of the platform connection.
                     platform_artist_id:
                       type: string
+                      description: Artist identifier on the remote platform.
                     created_at:
                       type: string
                       format: date-time
+                      description: When the platform mapping was created (UTC, RFC 3339).
                     updated_at:
                       type: string
                       format: date-time
+                      description: When the platform mapping was last modified (UTC, RFC 3339).
 
   /artists/{id}/platform-ids/{connectionId}:
     put:
@@ -2665,8 +2994,10 @@ paths:
                   status:
                     type: string
                     enum: [ok, error]
+                    description: Connection test result (ok or error).
                   message:
                     type: string
+                    description: Human-readable connection test result detail.
                   drift_warnings:
                     type: array
                     description: Platform settings that may conflict with Stillwater-managed metadata. Present only when drift is detected.
@@ -2690,6 +3021,7 @@ paths:
                     type: array
                     items:
                       type: object
+                    description: List of configured providers.
 
   /providers/{name}/key:
     put:
@@ -2797,6 +3129,7 @@ paths:
                 properties:
                   status:
                     type: string
+                    description: Result status of the mirror update.
                   test:
                     type: string
                     enum: [ok, error]
@@ -2850,8 +3183,10 @@ paths:
                   status:
                     type: string
                     enum: [ok, error]
+                    description: Provider test result (ok or error).
                   error:
                     type: string
+                    description: Error message if the provider test failed.
             text/html:
               schema:
                 type: string
@@ -2873,6 +3208,7 @@ paths:
                     type: array
                     items:
                       type: object
+                    description: Ordered list of provider priority entries.
     put:
       tags: [Providers]
       summary: Set provider priorities
@@ -2934,6 +3270,7 @@ paths:
                     type: array
                     items:
                       type: object
+                    description: Search results from providers.
 
   /providers/fetch:
     post:
@@ -2981,6 +3318,7 @@ paths:
                     type: array
                     items:
                       type: object
+                    description: List of configured rules.
                   has_local_library:
                     type: boolean
                     description: True when at least one library with a filesystem path exists
@@ -3068,8 +3406,10 @@ paths:
                   status:
                     type: string
                     enum: [running]
+                    description: Acknowledgment that the rule run was started.
                   rule_id:
                     type: string
+                    description: ID of the rule being evaluated.
         "404":
           description: Rule not found
           content:
@@ -3119,6 +3459,7 @@ paths:
                 properties:
                   error:
                     type: string
+                    description: Error message explaining why the run could not start.
         "500":
           description: Internal server error
           content:
@@ -3167,14 +3508,18 @@ paths:
                     type: string
                     format: date-time
                     nullable: true
+                    description: When the last rule evaluation completed (UTC, RFC 3339).
                   interval_minutes:
                     type: integer
+                    description: Minutes between scheduled rule evaluations.
                   next_evaluation_at:
                     type: string
                     format: date-time
                     nullable: true
+                    description: When the next scheduled evaluation will run (UTC, RFC 3339).
                   scheduler_enabled:
                     type: boolean
+                    description: Whether the automatic rule scheduler is enabled.
 
   /rules/classical-mode:
     get:
@@ -3192,6 +3537,7 @@ paths:
                   mode:
                     type: string
                     enum: [skip, composer, performer]
+                    description: Classical mode setting (skip, composer, or performer).
     put:
       tags: [Rules]
       summary: Set classical music handling mode
@@ -3217,6 +3563,7 @@ paths:
                 properties:
                   mode:
                     type: string
+                    description: Classical mode setting (skip, composer, or performer).
 
   /bulk/fetch-metadata:
     post:
@@ -3286,6 +3633,7 @@ paths:
                     type: array
                     items:
                       type: object
+                    description: List of bulk operation jobs.
         "500":
           description: Internal server error
           content:
@@ -3314,10 +3662,12 @@ paths:
                 properties:
                   job:
                     type: object
+                    description: Bulk job details.
                   items:
                     type: array
                     items:
                       type: object
+                    description: Individual items within the bulk job.
         "404":
           description: Job not found
           content:
@@ -3380,6 +3730,7 @@ paths:
                   status:
                     type: string
                     enum: [running]
+                    description: Current state of the identification process.
                   total:
                     type: integer
                     description: Number of unidentified artists to process.
@@ -3393,10 +3744,13 @@ paths:
                   status:
                     type: string
                     enum: [completed]
+                    description: Current state of the identification process.
                   message:
                     type: string
+                    description: Human-readable result detail.
                   total:
                     type: integer
+                    description: Total number of artists to identify.
         "400":
           description: Invalid request body
           content:
@@ -3413,8 +3767,10 @@ paths:
                   status:
                     type: string
                     enum: [running]
+                    description: Status indicating a conflict.
                   message:
                     type: string
+                    description: Human-readable result detail.
         "500":
           description: Failed to list artists
           content:
@@ -3459,6 +3815,7 @@ paths:
                       finished; "idle" if no job exists.
                   message:
                     type: string
+                    description: Human-readable result detail.
                 required:
                   - status
                   - message
@@ -3498,10 +3855,13 @@ paths:
                   status:
                     type: string
                     enum: [linked]
+                    description: Result status of the link operation.
                   artist_id:
                     type: string
+                    description: ID of the linked artist.
                   mbid:
                     type: string
+                    description: MusicBrainz ID that was linked.
         "400":
           description: Invalid request body or missing required fields
           content:
@@ -3571,6 +3931,7 @@ paths:
                     type: array
                     items:
                       type: object
+                    description: List of historical health snapshots.
 
   /reports/compliance:
     get:
@@ -3613,12 +3974,16 @@ paths:
                     type: array
                     items:
                       type: object
+                    description: Compliance report rows.
                   total:
                     type: integer
+                    description: Total number of matching records.
                   page:
                     type: integer
+                    description: Current page number (1-based).
                   page_size:
                     type: integer
+                    description: Number of records per page.
 
   /webhooks:
     get:
@@ -3935,39 +4300,51 @@ paths:
                   theme:
                     type: string
                     enum: [dark, light, system]
+                    description: UI color theme (e.g. dark, light).
                   glass_intensity:
                     type: string
                     enum: [light, medium, heavy]
+                    description: Frosted glass effect intensity preset.
                   sidebar_state:
                     type: string
                     enum: [full, icon-only, hidden]
+                    description: Sidebar visibility mode (full, icon-only, or hidden).
                   content_width:
                     type: string
                     enum: [narrow, wide]
+                    description: Content area maximum width preference.
                   font_family:
                     type: string
                     enum: [system, inter, atkinson]
+                    description: Preferred font family for the UI.
                   font_size:
                     type: string
                     enum: [small, medium, large]
+                    description: Base font size preference.
                   letter_spacing:
                     type: string
                     enum: [normal, wide, extra-wide]
+                    description: Letter spacing adjustment preference.
                   thumbnail_size:
                     type: string
                     enum: [small, medium, large]
+                    description: Thumbnail display size preference.
                   reduced_motion:
                     type: string
                     enum: [system, on, off]
+                    description: Whether reduced-motion animations are preferred.
                   lite_mode:
                     type: string
                     enum: [off, on, auto]
+                    description: Whether lite mode is active to reduce UI complexity.
                   language:
                     type: string
                     enum: [en]
+                    description: Preferred UI language code.
                   notification_enabled:
                     type: string
                     enum: ["true", "false"]
+                    description: Whether browser notifications are enabled.
                 required:
                   - theme
                   - glass_intensity
@@ -4379,6 +4756,7 @@ paths:
                     $ref: "#/components/schemas/Library"
                   artist_count:
                     type: integer
+                    description: Number of artists in this library.
         "404":
           description: Library not found
           content:
@@ -4503,6 +4881,7 @@ paths:
                 properties:
                   has_risk:
                     type: boolean
+                    description: Whether any connections have clobber risk.
                   risks:
                     type: array
                     items:
@@ -4510,16 +4889,23 @@ paths:
                       properties:
                         connection_id:
                           type: string
+                          description: ID of the connection with clobber risk.
                         connection_name:
                           type: string
+                          description: Display name of the connection.
                         connection_type:
                           type: string
+                          description: Platform type of the connection.
                         nfo_writer:
                           type: boolean
+                          description: Whether an NFO writer is enabled and may clobber files.
                         library_name:
                           type: string
+                          description: Name of the platform library at risk.
                         error:
                           type: string
+                          description: Error message if the operation failed.
+                    description: List of connections with clobber risk.
             text/html:
               schema:
                 type: string
@@ -4595,6 +4981,7 @@ paths:
                       connection_type:
                         type: string
                         enum: [emby, jellyfin]
+                        description: Platform type of the connection.
                       libraries:
                         type: array
                         description: Per-library fetcher/saver settings.
@@ -4603,22 +4990,28 @@ paths:
                           properties:
                             library_id:
                               type: string
+                              description: ID of the library.
                             library_name:
                               type: string
+                              description: Display name of the library on the platform.
                             image_fetchers:
                               type: array
                               items:
                                 type: string
+                              description: Image fetcher plugins enabled for this library.
                             metadata_fetchers:
                               type: array
                               items:
                                 type: string
+                              description: Metadata fetcher plugins enabled for this library.
                             metadata_savers:
                               type: array
                               items:
                                 type: string
+                              description: Metadata saver plugins enabled for this library.
                             has_conflicts:
                               type: boolean
+                              description: Whether conflicting plugin settings were detected.
                             needs_lockdata:
                               type: boolean
                               description: Jellyfin only. Indicates NFO lockdata injection is required.
@@ -4635,6 +5028,7 @@ paths:
                       connection_type:
                         type: string
                         enum: [lidarr]
+                        description: Platform type of the connection.
                       metadata_consumers:
                         type: array
                         description: Global metadata consumers.
@@ -4643,12 +5037,16 @@ paths:
                           properties:
                             id:
                               type: integer
+                              description: Unique identifier.
                             consumer_name:
                               type: string
+                              description: Display name of the metadata consumer plugin.
                             metadata_type:
                               type: string
+                              description: Type of metadata this consumer handles.
                             enabled:
                               type: boolean
+                              description: Whether this metadata consumer is enabled.
                       note:
                         type: string
                         description: Platform-specific advisory note.
@@ -4710,6 +5108,7 @@ paths:
                 properties:
                   status:
                     type: string
+                    description: Result status of the disable operation.
                   note:
                     type: string
                     description: Platform-specific advisory note (Jellyfin NFO lockdata).
@@ -4805,10 +5204,13 @@ paths:
                   properties:
                     external_id:
                       type: string
+                      description: Platform-specific library identifier.
                     name:
                       type: string
+                      description: Display name of the library on the platform.
                     imported:
                       type: boolean
+                      description: Whether this library has been imported into Stillwater.
             text/html:
               schema:
                 type: string
@@ -4989,10 +5391,14 @@ paths:
                       properties:
                         name:
                           type: string
+                          description: Internal provider identifier.
                         display_name:
                           type: string
+                          description: Human-readable provider display name.
                         enabled:
                           type: boolean
+                          description: Whether this web search provider is active.
+                    description: Available web search image providers.
 
   /providers/websearch/{name}/toggle:
     put:
@@ -5098,10 +5504,13 @@ paths:
                 properties:
                   config:
                     type: object
+                    description: Current scraper configuration for this connection.
                   raw:
                     type: object
+                    description: Raw configuration data from the platform.
                   overrides:
                     type: object
+                    description: User-defined configuration overrides.
         "404":
           description: Connection not found
           content:
@@ -5181,20 +5590,27 @@ paths:
                       properties:
                         provider:
                           type: string
+                          description: Internal provider identifier.
                         display_name:
                           type: string
+                          description: Human-readable provider display name.
                         requires_auth:
                           type: boolean
+                          description: Whether the provider requires API key authentication.
                         has_key:
                           type: boolean
+                          description: Whether the provider has an API key configured.
                         metadata_fields:
                           type: array
                           items:
                             type: string
+                          description: Metadata fields this provider can supply.
                         image_fields:
                           type: array
                           items:
                             type: string
+                          description: Image types this provider can supply.
+                    description: Available metadata scraper providers.
 
   # --- Notifications ---
 
@@ -5213,12 +5629,16 @@ paths:
                 properties:
                   error:
                     type: integer
+                    description: Number of error-severity violations.
                   warning:
                     type: integer
+                    description: Number of warning-severity violations.
                   info:
                     type: integer
+                    description: Number of info-severity violations.
                   total:
                     type: integer
+                    description: Total number of violations.
 
   /notifications/badge:
     get:
@@ -5292,8 +5712,10 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/Violation"
+                    description: List of violation records.
                   count:
                     type: integer
+                    description: Total number of violations in this response.
 
   /notifications/{id}/dismiss:
     post:
@@ -5397,6 +5819,7 @@ paths:
                 properties:
                   dismissed:
                     type: integer
+                    description: Number of violations dismissed.
 
   /notifications/{id}/fix:
     post:
@@ -5547,8 +5970,10 @@ paths:
                   status:
                     type: string
                     enum: [running]
+                    description: Current state of the fix-all operation.
                   total:
                     type: integer
+                    description: Total number of violations.
         "200":
           description: No fixable violations found
           content:
@@ -5559,10 +5984,13 @@ paths:
                   status:
                     type: string
                     enum: [completed]
+                    description: Current state of the fix-all operation.
                   message:
                     type: string
+                    description: Human-readable result detail.
                   total:
                     type: integer
+                    description: Total number of violations.
         "400":
           description: Malformed JSON body
           content:
@@ -5579,8 +6007,10 @@ paths:
                   status:
                     type: string
                     enum: [running]
+                    description: Current state of the fix-all operation.
                   message:
                     type: string
+                    description: Human-readable result detail.
         "500":
           description: Internal server error
           content:
@@ -5611,16 +6041,22 @@ paths:
                   status:
                     type: string
                     enum: [idle, running, completed]
+                    description: Current state of the fix-all operation.
                   total:
                     type: integer
+                    description: Total number of violations.
                   processed:
                     type: integer
+                    description: Number of violations processed so far.
                   fixed:
                     type: integer
+                    description: Number of violations fixed so far.
                   skipped:
                     type: integer
+                    description: Number of violations skipped (not fixable).
                   failed:
                     type: integer
+                    description: Number of fix attempts that failed.
         "500":
           description: Internal server error
           content:
@@ -5695,23 +6131,31 @@ paths:
                       properties:
                         artist_name:
                           type: string
+                          description: Display name of the artist.
                         library_name:
                           type: string
+                          description: Name of the library the artist belongs to.
                         rule_id:
                           type: string
+                          description: Identifier of the rule that triggered this violation.
                         severity:
                           type: string
                           enum: [error, warning, info]
+                          description: Violation severity level (error, warning, info).
                         message:
                           type: string
+                          description: Human-readable result detail.
                         status:
                           type: string
                           enum: [open, dismissed, resolved, pending_choice]
+                          description: Violation lifecycle state.
                         age:
                           type: string
                           description: Human-readable age (e.g. "5h", "3d")
+                    description: List of violation records.
                   count:
                     type: integer
+                    description: Total number of violations in this response.
 
   /notifications/resolved:
     delete:
@@ -5766,6 +6210,7 @@ paths:
                         resolved:
                           type: integer
                           description: Number of violations resolved on this date
+                    description: Violation count trend data points.
         "500":
           description: Internal server error
 
@@ -5791,24 +6236,35 @@ paths:
                       properties:
                         library_id:
                           type: string
+                          description: ID of the library.
                         library_name:
                           type: string
+                          description: Display name of the library.
                         total_artists:
                           type: integer
+                          description: Total number of artists in this library.
                         compliant_artists:
                           type: integer
+                          description: Number of artists with no open violations.
                         score:
                           type: number
+                          description: Health score from 0.0 (worst) to 1.0 (best).
                         missing_nfo:
                           type: integer
+                          description: Number of artists missing an NFO file.
                         missing_thumb:
                           type: integer
+                          description: Number of artists missing a thumbnail image.
                         missing_fanart:
                           type: integer
+                          description: Number of artists missing fanart.
                         missing_mbid:
                           type: integer
+                          description: Number of artists missing a MusicBrainz ID.
+                    description: Per-library health breakdown.
                   overall:
                     type: object
+                    description: Aggregate health summary across all libraries.
             text/html:
               schema:
                 type: string
@@ -5921,13 +6377,17 @@ paths:
                       properties:
                         library_id:
                           type: string
+                          description: ID of the library.
                         library_name:
                           type: string
+                          description: Display name of the library.
                         total_artists:
                           type: integer
+                          description: Total number of artists in this library.
                         score:
                           type: number
                           format: float
+                          description: Health score from 0.0 (worst) to 1.0 (best).
                         fields:
                           type: array
                           description: Per-field coverage breakdown for this library.
@@ -5956,13 +6416,17 @@ paths:
                       properties:
                         id:
                           type: string
+                          description: Unique identifier.
                         name:
                           type: string
+                          description: Display name of the artist.
                         library_id:
                           type: string
+                          description: ID of the library.
                         health_score:
                           type: number
                           format: float
+                          description: Metadata completeness score from 0.0 to 1.0.
                       required: [id, name, library_id, health_score]
                 required: [overall_score, total_artists, field_coverage, lowest_completeness]
             text/html:
@@ -6354,6 +6818,7 @@ paths:
                 properties:
                   error:
                     type: string
+                    description: Error message describing the failure.
         "503":
           description: Logging manager or ring buffer not available
           content:
@@ -6376,6 +6841,7 @@ paths:
                   status:
                     type: string
                     example: cleared
+                    description: Result status of the log operation.
             text/html:
               schema:
                 type: string
@@ -6495,15 +6961,20 @@ paths:
                 properties:
                   version:
                     type: string
+                    description: Export format version number.
                   app_version:
                     type: string
+                    description: Application version that created this export.
                   created_at:
                     type: string
                     format: date-time
+                    description: When the export was created (UTC, RFC 3339).
                   salt:
                     type: string
+                    description: Encryption salt for the settings payload.
                   data:
                     type: string
+                    description: Encrypted settings payload.
         "400":
           description: Missing passphrase
           content:
@@ -6548,16 +7019,22 @@ paths:
                 properties:
                   settings:
                     type: integer
+                    description: Number of settings entries imported.
                   connections:
                     type: integer
+                    description: Number of connections imported.
                   platform_profiles:
                     type: integer
+                    description: Number of platform profiles imported.
                   webhooks:
                     type: integer
+                    description: Number of webhooks imported.
                   provider_keys:
                     type: integer
+                    description: Number of provider API keys imported.
                   priorities:
                     type: integer
+                    description: Number of provider priority entries imported.
             text/html:
               schema:
                 type: string
@@ -6691,8 +7168,10 @@ paths:
                 properties:
                   field:
                     type: string
+                    description: Name of the metadata field.
                   value:
                     type: string
+                    description: Formatted field value for display.
             text/html:
               schema:
                 type: string
@@ -6729,8 +7208,10 @@ paths:
                 properties:
                   field:
                     type: string
+                    description: Name of the metadata field.
                   value:
                     type: string
+                    description: Current field value for editing.
             text/html:
               schema:
                 type: string
@@ -6787,10 +7268,13 @@ paths:
                 properties:
                   status:
                     type: string
+                    description: Result status of the operation.
                   field:
                     type: string
+                    description: Name of the updated metadata field.
                   value:
                     type: string
+                    description: Updated field value.
             text/html:
               schema:
                 type: string
@@ -6825,8 +7309,10 @@ paths:
                 properties:
                   status:
                     type: string
+                    description: Result status of the operation.
                   field:
                     type: string
+                    description: Name of the updated metadata field.
             text/html:
               schema:
                 type: string
@@ -6863,6 +7349,7 @@ paths:
                 properties:
                   field:
                     type: string
+                    description: Name of the metadata field queried.
                   results:
                     type: array
                     items:
@@ -6870,16 +7357,22 @@ paths:
                       properties:
                         provider:
                           type: string
+                          description: Name of the provider.
                         value:
                           type: string
+                          description: Field value returned by this provider.
                         values:
                           type: array
                           items:
                             type: string
+                          description: Array of field values when the field is multi-valued.
                         has_data:
                           type: boolean
+                          description: Whether the provider returned data for this field.
                         error:
                           type: string
+                          description: Error message if the provider test failed.
+                    description: Per-provider lookup results for this field.
             text/html:
               schema:
                 type: string
@@ -6991,6 +7484,7 @@ paths:
                 properties:
                   status:
                     type: string
+                    description: Result status of the metadata refresh.
                   sources:
                     type: array
                     items:
@@ -6998,8 +7492,11 @@ paths:
                       properties:
                         field:
                           type: string
+                          description: Metadata field name.
                         provider:
                           type: string
+                          description: Name of the provider that supplied this field.
+                    description: Per-field provider attribution for updated fields.
             text/html:
               schema:
                 type: string
@@ -7050,6 +7547,7 @@ paths:
                     type: array
                     items:
                       type: object
+                    description: Search results from the refresh operation.
             text/html:
               schema:
                 type: string
@@ -7104,6 +7602,7 @@ paths:
                 properties:
                   status:
                     type: string
+                    description: Result status of the metadata refresh.
                   sources:
                     type: array
                     items:
@@ -7111,8 +7610,11 @@ paths:
                       properties:
                         field:
                           type: string
+                          description: Metadata field name.
                         provider:
                           type: string
+                          description: Name of the provider that supplied this field.
+                    description: Per-field provider attribution for updated fields.
             text/html:
               schema:
                 type: string
@@ -7151,8 +7653,10 @@ paths:
                 properties:
                   artist_id:
                     type: string
+                    description: ID of the artist.
                   musicbrainz_id:
                     type: string
+                    description: MusicBrainz artist ID (MBID).
                   diffs:
                     type: array
                     items:
@@ -7170,6 +7674,7 @@ paths:
                         source:
                           type: string
                           description: Provider that sourced the current Stillwater value
+                    description: List of field-level differences.
                   contribution_mode:
                     type: string
                     enum: [disabled, web_form, api]
@@ -7206,10 +7711,13 @@ paths:
                 properties:
                   status:
                     type: string
+                    description: Result status of the reidentification.
                   artist:
                     type: string
+                    description: Artist name after reidentification.
                   message:
                     type: string
+                    description: Human-readable result detail.
             text/html:
               schema:
                 type: string
@@ -7299,6 +7807,7 @@ paths:
                     type: array
                     items:
                       type: object
+                    description: Image results from web search providers.
             text/html:
               schema:
                 type: string
@@ -7324,6 +7833,7 @@ paths:
                 properties:
                   status:
                     type: string
+                    description: Result status of the logo trim operation.
                   sync_warnings:
                     type: array
                     items:
@@ -7371,15 +7881,20 @@ paths:
                   properties:
                     index:
                       type: integer
+                      description: Zero-based index of the fanart slot.
                     filename:
                       type: string
+                      description: Name of the image file on disk.
                     width:
                       type: integer
+                      description: Image width in pixels.
                     height:
                       type: integer
+                      description: Image height in pixels.
                     size:
                       type: integer
                       format: int64
+                      description: File size in bytes.
             text/html:
               schema:
                 type: string
@@ -7448,12 +7963,15 @@ paths:
                 properties:
                   status:
                     type: string
+                    description: Result status of the delete operation.
                   deleted:
                     type: array
                     items:
                       type: string
+                    description: Indices of the deleted fanart slots.
                   count:
                     type: integer
+                    description: Number of fanart images remaining after deletion.
                   sync_warnings:
                     type: array
                     items:
@@ -7501,16 +8019,20 @@ paths:
                 properties:
                   status:
                     type: string
+                    description: Result status of the batch fetch.
                   saved:
                     type: array
                     items:
                       type: string
+                    description: Filenames of images saved successfully.
                   errors:
                     type: array
                     items:
                       type: string
+                    description: Error messages for any failed fetches.
                   count:
                     type: integer
+                    description: Number of images fetched.
                   sync_warnings:
                     type: array
                     description: Warnings from syncing fanart to connected platforms after batch fetch. Empty when there are no sync issues.
@@ -7557,8 +8079,10 @@ paths:
                 properties:
                   status:
                     type: string
+                    description: Result status of the reorder operation.
                   count:
                     type: integer
+                    description: Total number of fanart images after reorder.
                   sync_warnings:
                     type: array
                     description: Warnings from syncing reordered fanart to connected platforms. Empty only when there are no sync issues.
@@ -7612,10 +8136,13 @@ paths:
                 properties:
                   status:
                     type: string
+                    description: Result status of the assignment.
                   slot:
                     type: integer
+                    description: Zero-based fanart slot index.
                   count:
                     type: integer
+                    description: Total number of fanart images after assignment.
                   sync_warnings:
                     type: array
                     description: Warnings from syncing fanart to connected platforms after assignment. Empty only when there are no sync issues.
@@ -7660,11 +8187,13 @@ paths:
                 properties:
                   status:
                     type: string
+                    description: Result status of the delete operation.
                   deleted:
                     type: string
                     description: Filename of the deleted file
                   count:
                     type: integer
+                    description: Number of fanart images remaining after deletion.
                   sync_warnings:
                     type: array
                     description: Warnings from fanart deletion, including renumbering issues and platform sync errors. Empty only when there are no warnings.
@@ -7700,6 +8229,7 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/PlatformBackdropConnection"
+                    description: Per-connection backdrop image lists.
             text/html:
               schema:
                 type: string
@@ -7772,6 +8302,7 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/FanartSyncSlot"
+                    description: Per-slot sync state for each fanart image.
                   state:
                     type: string
                     description: >
@@ -7862,18 +8393,24 @@ paths:
                 properties:
                   type:
                     type: string
+                    description: Image type (e.g. thumb, fanart, logo, banner).
                   filename:
                     type: string
+                    description: Name of the image file on disk.
                   width:
                     type: integer
+                    description: Image width in pixels.
                   height:
                     type: integer
+                    description: Image height in pixels.
                   size:
                     type: integer
                     format: int64
+                    description: File size in bytes.
                   modified:
                     type: string
                     format: date-time
+                    description: When the file was last modified (UTC, RFC 3339).
             text/html:
               schema:
                 type: string
@@ -7911,10 +8448,12 @@ paths:
                 properties:
                   status:
                     type: string
+                    description: Result status of the delete operation.
                   deleted:
                     type: array
                     items:
                       type: string
+                    description: Filenames of images that were deleted.
                   sync_warnings:
                     type: array
                     items:
@@ -7977,10 +8516,12 @@ paths:
                     type: array
                     items:
                       type: string
+                    description: Filenames of images uploaded to the platform.
                   errors:
                     type: array
                     items:
                       type: string
+                    description: Error messages for any failed uploads.
         "400":
           description: Invalid request
           content:
@@ -8039,6 +8580,7 @@ paths:
                   status:
                     type: string
                     example: deleted
+                    description: Result status of the delete operation.
         "400":
           description: >-
             Invalid request (invalid image type, missing connection_id,

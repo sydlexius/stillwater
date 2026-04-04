@@ -417,12 +417,12 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	// History routes
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/history", wrapAuth(r.handleListArtistHistory, authMw))
 	mux.HandleFunc("GET "+bp+"/artists/{id}/history/tab", wrapOptionalAuth(r.handleArtistHistoryTab, optAuthMw))
+	mux.HandleFunc("POST "+bp+"/api/v1/history/{id}/revert", wrapAuth(r.handleRevertHistory, authMw))
+	mux.HandleFunc("GET "+bp+"/api/v1/history", wrapAuth(r.handleListGlobalHistory, authMw))
 
-	// NFO snapshot routes
+	// NFO diff routes (snapshot routes removed -- field-level undo via /history)
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/nfo/diff", wrapAuth(r.handleNFODiff, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/nfo/conflict", wrapAuth(r.handleNFOConflictCheck, authMw))
-	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/nfo/snapshots", wrapAuth(r.handleNFOSnapshotList, authMw))
-	mux.HandleFunc("POST "+bp+"/api/v1/artists/{id}/nfo/snapshots/{snapshotId}/restore", wrapAuth(r.handleNFOSnapshotRestore, authMw))
 
 	// Field-level edit routes
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/fields/{field}/display", wrapAuth(r.handleFieldDisplay, authMw))
@@ -495,6 +495,8 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 		http.Redirect(w, req, target, http.StatusMovedPermanently)
 	}, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/artists/{id}/nfo", wrapOptionalAuth(r.handleNFODiffPage, optAuthMw))
+	mux.HandleFunc("GET "+bp+"/activity", wrapOptionalAuth(r.handleActivityPage, optAuthMw))
+	mux.HandleFunc("GET "+bp+"/activity/content", wrapOptionalAuth(r.handleActivityContent, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/settings", wrapOptionalAuth(r.handleSettingsPage, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/settings/{section}", wrapOptionalAuth(func(w http.ResponseWriter, req *http.Request) {
 		q := req.URL.Query()

@@ -348,3 +348,203 @@ func TestHandleArtistHistoryTab_NilHistoryService(t *testing.T) {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
 	}
 }
+
+func TestHandleRevertHistory(t *testing.T) {
+	r, artistSvc, historySvc := testRouterWithHistory(t)
+	artistSvc.SetHistoryService(historySvc)
+
+	a := addTestArtist(t, artistSvc, "Revert Artist")
+
+	// Update a field to create a history entry.
+	ctx := artist.ContextWithSource(context.Background(), "manual")
+	if err := artistSvc.UpdateField(ctx, a.ID, "biography", "original bio"); err != nil {
+		t.Fatalf("UpdateField: %v", err)
+	}
+
+	// Get the change ID.
+	changes, _, err := historySvc.List(context.Background(), a.ID, 1, 0)
+	if err != nil || len(changes) == 0 {
+		t.Fatalf("List: err=%v, len=%d", err, len(changes))
+	}
+	changeID := changes[0].ID
+
+	t.Run("reverts field and returns JSON", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/history/"+changeID+"/revert", nil)
+		req.SetPathValue("id", changeID)
+		w := httptest.NewRecorder()
+
+		r.handleRevertHistory(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+		}
+
+		var resp map[string]any
+		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+			t.Fatalf("decoding: %v", err)
+		}
+		if resp["reverted"] != true {
+			t.Errorf("reverted = %v, want true", resp["reverted"])
+		}
+
+		// Verify the field was reverted.
+		updated, err := artistSvc.GetByID(context.Background(), a.ID)
+		if err != nil {
+			t.Fatalf("GetByID: %v", err)
+		}
+		if updated.Biography != "" {
+			t.Errorf("Biography = %q, want empty (reverted)", updated.Biography)
+		}
+
+		// Verify a revert history record was created.
+		allChanges, _, err := historySvc.List(context.Background(), a.ID, 10, 0)
+		if err != nil {
+			t.Fatalf("List: %v", err)
+		}
+		found := false
+		for _, c := range allChanges {
+			if c.Source == "revert" {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Error("expected a history entry with source 'revert'")
+		}
+	})
+
+	t.Run("returns 404 for nonexistent change", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/history/nonexistent/revert", nil)
+		req.SetPathValue("id", "nonexistent")
+		w := httptest.NewRecorder()
+
+		r.handleRevertHistory(w, req)
+
+		if w.Code != http.StatusNotFound {
+			t.Errorf("status = %d, want %d", w.Code, http.StatusNotFound)
+		}
+	})
+
+	t.Run("returns 503 when history service is nil", func(t *testing.T) {
+		r2, _, _ := testRouterWithHistory(t)
+		r2.historyService = nil
+
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/history/any/revert", nil)
+		req.SetPathValue("id", "any")
+		w := httptest.NewRecorder()
+
+		r2.handleRevertHistory(w, req)
+
+		if w.Code != http.StatusServiceUnavailable {
+			t.Errorf("status = %d, want %d", w.Code, http.StatusServiceUnavailable)
+		}
+	})
+}
+
+func TestHandleListGlobalHistory(t *testing.T) {
+	r, artistSvc, historySvc := testRouterWithHistory(t)
+
+	a := addTestArtist(t, artistSvc, "Global History Artist")
+	b := addTestArtist(t, artistSvc, "Second Global Artist")
+	addHistoryChange(t, historySvc, a.ID, "biography", "", "bio text", "manual")
+	addHistoryChange(t, historySvc, a.ID, "genres", "", "Rock", "scan")
+	addHistoryChange(t, historySvc, b.ID, "biography", "", "second bio", "manual")
+
+	t.Run("returns all changes with JSON shape", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/history", nil)
+		w := httptest.NewRecorder()
+
+		r.handleListGlobalHistory(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+		}
+
+		var resp map[string]any
+		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+			t.Fatalf("decoding: %v", err)
+		}
+
+		changes, ok := resp["changes"].([]any)
+		if !ok {
+			t.Fatalf("changes is not []any: %T", resp["changes"])
+		}
+		if len(changes) != 3 {
+			t.Errorf("len(changes) = %d, want 3", len(changes))
+		}
+		if resp["total"] != float64(3) {
+			t.Errorf("total = %v, want 3", resp["total"])
+		}
+
+		// Verify artist_name is present and cross-artist results are included.
+		artistNames := map[string]bool{}
+		for _, entry := range changes {
+			c, ok := entry.(map[string]any)
+			if !ok {
+				continue
+			}
+			if name, exists := c["artist_name"]; exists {
+				if n, ok := name.(string); ok {
+					artistNames[n] = true
+				}
+			}
+		}
+		if !artistNames["Global History Artist"] {
+			t.Error("expected changes from 'Global History Artist'")
+		}
+		if !artistNames["Second Global Artist"] {
+			t.Error("expected changes from 'Second Global Artist'")
+		}
+	})
+
+	t.Run("filters by source", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/history?source=scan", nil)
+		w := httptest.NewRecorder()
+
+		r.handleListGlobalHistory(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+		}
+
+		var resp map[string]any
+		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+			t.Fatalf("decoding: %v", err)
+		}
+		if resp["total"] != float64(1) {
+			t.Errorf("total = %v, want 1", resp["total"])
+		}
+	})
+
+	t.Run("returns 503 when nil", func(t *testing.T) {
+		r2, _, _ := testRouterWithHistory(t)
+		r2.historyService = nil
+
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/history", nil)
+		w := httptest.NewRecorder()
+
+		r2.handleListGlobalHistory(w, req)
+
+		if w.Code != http.StatusServiceUnavailable {
+			t.Errorf("status = %d, want %d", w.Code, http.StatusServiceUnavailable)
+		}
+	})
+}
+
+func TestHandleActivityPage(t *testing.T) {
+	r, _, _ := testRouterWithHistory(t)
+
+	ctx := middleware.WithTestUserID(context.Background(), "test-user")
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/activity", nil)
+	w := httptest.NewRecorder()
+
+	r.handleActivityPage(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "Activity") {
+		t.Error("response body missing 'Activity' heading")
+	}
+}

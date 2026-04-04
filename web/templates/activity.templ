@@ -1,0 +1,265 @@
+package templates
+
+import (
+	"fmt"
+	"net/url"
+	"strconv"
+	"time"
+
+	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/web/components"
+)
+
+// ActivityPageData holds data for the global activity page.
+type ActivityPageData struct {
+	Changes        []artist.MetadataChangeWithArtist
+	Total          int
+	Limit          int
+	Offset         int
+	BasePath       string
+	FilterArtistID string
+	FilterFields   []string
+	FilterSources  []string
+}
+
+// activityFilterCount returns the number of active filters on the activity page.
+// Only counts filters that have corresponding flyout items (field and source).
+// FilterArtistID is excluded because the flyout does not render or round-trip it.
+func activityFilterCount(data ActivityPageData) int {
+	return len(data.FilterFields) + len(data.FilterSources)
+}
+
+// ActivityPage renders the global activity page at /activity.
+templ ActivityPage(assets AssetPaths, data ActivityPageData) {
+	@Layout("Activity", assets) {
+		<div class="space-y-6">
+			<div class="sw-card rounded-lg px-6 py-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+				<div>
+					<h1 class="text-2xl font-bold">Activity</h1>
+					<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+						All metadata changes across all artists.
+					</p>
+				</div>
+				<button
+					id="activity-filter-trigger"
+					type="button"
+					class={ "inline-flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm transition-colors focus:outline-none focus:ring-1 focus:ring-blue-500", templ.KV(filterTriggerActive, activityFilterCount(data) > 0), templ.KV(filterTriggerNeutral, activityFilterCount(data) == 0) }
+					data-active-classes={ filterTriggerActive }
+					data-neutral-classes={ filterTriggerNeutral }
+					data-badge-classes={ filterTriggerBadge }
+					aria-label="Open filter panel"
+					aria-expanded="false"
+					aria-controls="activity-filters-flyout"
+					onclick={ components.OpenFilterFlyout("activity-filters-flyout") }
+				>
+					<svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+						<path fill-rule="evenodd" d="M2.628 1.601C5.028 1.206 7.49 1 10 1s4.973.206 7.372.601a.75.75 0 0 1 .628.74v2.288a2.25 2.25 0 0 1-.659 1.59l-4.682 4.683a2.25 2.25 0 0 0-.659 1.59v3.037c0 .684-.31 1.33-.844 1.757l-1.937 1.55A.75.75 0 0 1 9 18.25v-5.757a2.25 2.25 0 0 0-.659-1.591L3.659 6.22A2.25 2.25 0 0 1 3 4.629V2.34a.75.75 0 0 1 .628-.74Z" clip-rule="evenodd"></path>
+					</svg>
+					<span>Filters</span>
+					if activityFilterCount(data) > 0 {
+						<span class={ filterTriggerBadge } aria-label={ func() string { n := activityFilterCount(data); if n == 1 { return "1 active filter" }; return fmt.Sprintf("%d active filters", n) }() }>
+							{ fmt.Sprintf("%d", activityFilterCount(data)) }
+						</span>
+					}
+				</button>
+			</div>
+			<div id="activity-content">
+				@ActivityContent(data)
+			</div>
+		</div>
+		@components.FilterFlyout("activity-filters-flyout", "Activity Filters", "activity-filter-trigger", 0, "#activity-content") {
+			@components.FilterSection("Change Type") {
+				@components.FilterItem("activity-filters-flyout", "field", "biography", "Biography", "neutral")
+				@components.FilterItem("activity-filters-flyout", "field", "genres", "Genres", "neutral")
+				@components.FilterItem("activity-filters-flyout", "field", "styles", "Styles", "neutral")
+				@components.FilterItem("activity-filters-flyout", "field", "moods", "Moods", "neutral")
+				@components.FilterItem("activity-filters-flyout", "field", "formed", "Formed", "neutral")
+				@components.FilterItem("activity-filters-flyout", "field", "born", "Born", "neutral")
+				@components.FilterItem("activity-filters-flyout", "field", "disbanded", "Disbanded", "neutral")
+				@components.FilterItem("activity-filters-flyout", "field", "died", "Died", "neutral")
+				@components.FilterItem("activity-filters-flyout", "field", "years_active", "Years Active", "neutral")
+				@components.FilterItem("activity-filters-flyout", "field", "type", "Type", "neutral")
+				@components.FilterItem("activity-filters-flyout", "field", "gender", "Gender", "neutral")
+			}
+			@components.FilterSection("Trigger Source") {
+				@components.FilterItem("activity-filters-flyout", "source", "manual", "Manual", "neutral")
+				@components.FilterItem("activity-filters-flyout", "source", "scan", "Scan", "neutral")
+				@components.FilterItem("activity-filters-flyout", "source", "import", "Import", "neutral")
+				@components.FilterItem("activity-filters-flyout", "source", "revert", "Revert", "neutral")
+			}
+		}
+		<script>
+			// Reload activity content when the filter flyout applies filters.
+			// The shared htmx:configRequest hook prepends the base path automatically,
+			// so we use the root-relative path here to avoid double-prefixing.
+			document.body.addEventListener('sw:filter-applied', function(evt) {
+				if (evt.target && evt.target.id === 'activity-content') {
+					htmx.ajax('GET', '/activity/content' + window.location.search, {target: '#activity-content', swap: 'innerHTML'});
+				}
+			});
+
+			// Initialise the flyout from URL params on first page load.
+			document.addEventListener('DOMContentLoaded', function() {
+				if (typeof swFilterFlyout !== 'undefined') {
+					swFilterFlyout.initFromURL('activity-filters-flyout');
+				} else {
+					console.warn('[activity] swFilterFlyout not loaded; filter UI will not sync from URL params');
+				}
+			});
+		</script>
+	}
+}
+
+// ActivityContent renders the activity list fragment for HTMX load-more.
+templ ActivityContent(data ActivityPageData) {
+	if len(data.Changes) == 0 && data.Offset == 0 {
+		<div class="sw-card rounded-lg p-8 text-center">
+			<p class="text-sm text-gray-500 dark:text-gray-400 italic">No activity recorded yet.</p>
+		</div>
+	} else {
+		<div class="space-y-2" id="activity-entries">
+			for _, c := range data.Changes {
+				@activityRow(c, data.BasePath)
+			}
+		</div>
+		if data.Offset+len(data.Changes) < data.Total {
+			@activityLoadMoreButton(data)
+		}
+		if data.Total > 0 {
+			<p id="activity-showing-counter" class="text-xs text-gray-400 dark:text-gray-500 text-right mt-2">
+				Showing { strconv.Itoa(min(data.Offset+len(data.Changes), data.Total)) } of { strconv.Itoa(data.Total) } changes
+			</p>
+		}
+	}
+}
+
+// activityLoadMoreButton renders the load-more button with its own ID so it
+// can be the direct outerHTML swap target. This keeps appended rows as siblings
+// in the parent container rather than nesting them inside the swap target.
+templ activityLoadMoreButton(data ActivityPageData) {
+	<div id="activity-load-more" class="flex justify-center mt-4">
+		<button
+			type="button"
+			aria-label="Load more activity entries"
+			class="px-4 py-2 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
+			hx-get={ activityLoadMoreURL(data) }
+			hx-target="#activity-load-more"
+			hx-swap="outerHTML"
+		>
+			Load more
+		</button>
+	</div>
+}
+
+// ActivityMoreRows renders additional activity rows for HTMX load-more.
+// New rows are appended to #activity-entries via OOB swap. The response's
+// primary element is an updated load-more button (or empty div if exhausted),
+// which replaces #activity-load-more via the caller's outerHTML swap.
+templ ActivityMoreRows(data ActivityPageData) {
+	if data.Offset+len(data.Changes) < data.Total {
+		@activityLoadMoreButton(data)
+	} else {
+		<div id="activity-load-more"></div>
+	}
+	<div id="activity-entries" hx-swap-oob="beforeend">
+		for _, c := range data.Changes {
+			@activityRow(c, data.BasePath)
+		}
+	</div>
+	if data.Total > 0 {
+		<p id="activity-showing-counter" hx-swap-oob="true" class="text-xs text-gray-400 dark:text-gray-500 text-right mt-2">
+			Showing { strconv.Itoa(min(data.Offset+len(data.Changes), data.Total)) } of { strconv.Itoa(data.Total) } changes
+		</p>
+	}
+}
+
+// ActivityChangeRowFragment is an exported wrapper for activityRow, used
+// by handlers that need to render a single activity row as an HTMX response
+// (e.g. after a successful revert from the activity page).
+templ ActivityChangeRowFragment(c artist.MetadataChangeWithArtist, basePath string) {
+	@activityRow(c, basePath)
+}
+
+// activityRow renders a single entry in the global activity feed.
+templ activityRow(c artist.MetadataChangeWithArtist, basePath string) {
+	<div id={ "activity-change-" + c.ID } class="sw-card rounded-lg p-4">
+		<div class="flex items-center justify-between">
+			<div class="flex items-center gap-3">
+				<a
+					href={ templ.SafeURL(basePath + "/artists/" + c.ArtistID) }
+					class="font-medium text-sm text-blue-600 dark:text-blue-400 hover:underline"
+				>
+					{ c.ArtistName }
+				</a>
+				<span class={ "inline-block px-2 py-0.5 rounded-full text-xs", historySourceBadgeClass(c.Source) }>
+					{ historySourceLabel(c.Source) }
+				</span>
+				<time
+					datetime={ c.CreatedAt.Format(time.RFC3339) }
+					title={ c.CreatedAt.Format("2006-01-02 15:04:05 UTC") }
+					class="text-xs text-gray-500 dark:text-gray-400"
+				>
+					{ historyTimeAgo(c.CreatedAt) }
+				</time>
+			</div>
+			if artist.IsTrackableField(c.Field) && c.Source != "revert" {
+				<button
+					type="button"
+					hx-post={ "/api/v1/history/" + c.ID + "/revert" }
+					hx-target={ "#activity-change-" + c.ID }
+					hx-swap="outerHTML"
+					hx-confirm={ "Undo this " + historyFieldLabel(c.Field) + " change?" }
+					class="text-xs px-2 py-1 rounded border border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+					title="Undo this change"
+				>
+					Undo
+				</button>
+			}
+		</div>
+		<details class="mt-2">
+			<summary class="text-sm cursor-pointer text-gray-700 dark:text-gray-300">
+				<span class="font-medium">{ historyFieldLabel(c.Field) }</span>
+				<span class="mx-1 text-gray-400">--</span>
+				if c.OldValue == "" && c.NewValue != "" {
+					<span class="text-green-600 dark:text-green-400">Set to: { historyTruncate(c.NewValue, 80) }</span>
+				} else if c.OldValue != "" && c.NewValue == "" {
+					<span class="text-red-500 dark:text-red-400">Cleared</span>
+				} else if c.OldValue != "" && c.NewValue != "" {
+					<span class="text-gray-500 dark:text-gray-400">Changed</span>
+				} else {
+					<span class="text-gray-400 italic">No value recorded</span>
+				}
+			</summary>
+			<div class="mt-2 pl-4 border-l-2 border-gray-200 dark:border-gray-700 space-y-1 text-sm">
+				if c.OldValue != "" {
+					<div>
+						<span class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Previous</span>
+						<p class="text-red-500 dark:text-red-400 line-through break-words">{ historyTruncate(c.OldValue, 300) }</p>
+					</div>
+				}
+				if c.NewValue != "" {
+					<div>
+						<span class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Current</span>
+						<p class="text-green-600 dark:text-green-400 break-words">{ historyTruncate(c.NewValue, 300) }</p>
+					</div>
+				}
+			</div>
+		</details>
+	</div>
+}
+
+// activityLoadMoreURL builds the load-more URL preserving any active filters.
+func activityLoadMoreURL(data ActivityPageData) string {
+	nextOffset := data.Offset + len(data.Changes)
+	u := fmt.Sprintf("/activity/content?limit=%d&offset=%d", data.Limit, nextOffset)
+	if data.FilterArtistID != "" {
+		u += "&artist_id=" + url.QueryEscape(data.FilterArtistID)
+	}
+	for _, f := range data.FilterFields {
+		u += "&field=" + url.QueryEscape(f)
+	}
+	for _, s := range data.FilterSources {
+		u += "&source=" + url.QueryEscape(s)
+	}
+	return u
+}
