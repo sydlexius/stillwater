@@ -357,15 +357,9 @@
   font-weight: 600;
   padding: 1px 7px;
   border-radius: 9999px;
-  background: rgba(239, 68, 68, 0.12);
-  color: #dc2626;
-  border: 1px solid rgba(239, 68, 68, 0.25);
-}
-
-:where(.dark, .dark *) .sw-sidebar-badge-pill {
   background: rgba(239, 68, 68, 0.18);
   color: #fca5a5;
-  border-color: rgba(239, 68, 68, 0.3);
+  border: 1px solid rgba(239, 68, 68, 0.3);
 }
 
 /* Keyboard shortcut hint */
