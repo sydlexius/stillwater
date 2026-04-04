@@ -958,24 +958,26 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 						<div class="flex items-center gap-2">
 							<h2 class="text-lg font-semibold">Notification Badges</h2>
-							@components.ContextHelp("help-notif-badges", "Notification Badges", "Controls the violation counter shown in the sidebar. 'Show violation count' toggles the entire link visibility. 'Enable badge' toggles the numeric counter. Severity filters let you count only errors, warnings, or info-level violations.")
+							@components.ContextHelp("help-notif-badges", "Notification Badges", "Controls violation visibility and counting in the sidebar. 'Show violation count' toggles the Open Violations link. 'Enable badge' and severity filters control which violations contribute to the numeric counter.")
 						</div>
 						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-							Show a counter badge on the Notifications link indicating active violations.
+							Show a counter badge on the Open Violations link in the sidebar indicating active violations.
 						</p>
 					</div>
 					<div class="px-6 py-4 space-y-4">
 						<div class="flex items-center gap-3">
 							<label class="relative inline-flex items-center cursor-pointer">
 								<input
+									id="sidebar-show-violations"
 									type="checkbox"
 									class="sr-only peer"
 									checked?={ data.SidebarShowViolations }
+									aria-labelledby="sidebar-show-violations-label"
 									onclick="updateSetting('sidebar_show_violations', this.checked)"
 								/>
 								<div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-500 dark:peer-focus:ring-blue-600 rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:after:border-gray-500 peer-checked:bg-blue-600"></div>
 							</label>
-							<span class="text-sm font-medium text-gray-700 dark:text-gray-300">Show violation count in sidebar</span>
+							<span id="sidebar-show-violations-label" class="text-sm font-medium text-gray-700 dark:text-gray-300">Show violation count in sidebar</span>
 						</div>
 						<div class="flex items-center gap-3">
 							<label class="relative inline-flex items-center cursor-pointer">

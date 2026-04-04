@@ -409,7 +409,10 @@ templ settingsAuthProvidersTab(data AuthProvidersData) {
 								/>
 							</div>
 							<div>
-								<label for="oidc-client-id" class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Client ID</label>
+								<div class="flex items-center gap-1 mb-1">
+									<label for="oidc-client-id" class="block text-xs font-medium text-gray-700 dark:text-gray-300">Client ID</label>
+									@components.ContextHelp("help-oidc-client-id", "OIDC Client ID", "The public identifier for Stillwater registered in your identity provider. Used with the issuer URL to start the authorization flow.")
+								</div>
 								<input
 									id="oidc-client-id"
 									name="oidc_client_id"
@@ -421,7 +424,10 @@ templ settingsAuthProvidersTab(data AuthProvidersData) {
 								/>
 							</div>
 							<div>
-								<label for="oidc-client-secret" class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Client Secret</label>
+								<div class="flex items-center gap-1 mb-1">
+									<label for="oidc-client-secret" class="block text-xs font-medium text-gray-700 dark:text-gray-300">Client Secret</label>
+									@components.ContextHelp("help-oidc-client-secret", "OIDC Client Secret", "Confidential credential from your identity provider. Leave blank when editing to keep the currently stored secret unchanged.")
+								</div>
 								<input
 									id="oidc-client-secret"
 									name="oidc_client_secret"

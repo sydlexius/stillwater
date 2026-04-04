@@ -486,7 +486,7 @@
 
 .sw-sidebar-restore-btn:hover {
   color: var(--sw-sidebar-text-hover);
-  background: rgba(15, 23, 42, 0.9);
+  background: var(--sw-sidebar-restore-hover-bg);
 }
 
 .sw-sidebar-restore-hidden {
@@ -589,10 +589,6 @@
   color: var(--sw-sidebar-text);
 }
 
-:root:not(.dark) .sw-sidebar-restore-btn:hover {
-  background: rgba(255, 255, 255, 0.95);
-}
-
 :root:not(.dark) .sw-sidebar-badge-pill {
   background: rgba(239, 68, 68, 0.1);
   color: #dc2626;
@@ -661,7 +657,7 @@
 }
 
 /* Light mode overrides for context help popover */
-:root .sw-context-help-popover {
+:root:not(.dark) .sw-context-help-popover {
   background: rgba(255, 255, 255, 0.95);
   border-color: rgba(0, 0, 0, 0.1);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
