@@ -546,6 +546,132 @@
 #sw-sidebar[data-sidebar-state="icon-only"] .sw-sidebar-link:focus-visible::after {
   opacity: 1;
 }
+
+/* -- Sidebar light theme overrides ---------------------------------------- */
+/* Most sidebar colors use design tokens that switch via :root:not(.dark).
+   These rules override hardcoded rgba values that assume a dark background. */
+:root:not(.dark) .sw-sidebar {
+  scrollbar-color: rgba(0, 0, 0, 0.15) transparent;
+}
+
+:root:not(.dark) .sw-sidebar-brand {
+  color: #1e293b;
+}
+
+:root:not(.dark) .sw-sidebar-collapse-btn:hover {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+:root:not(.dark) .sw-sidebar-section-label {
+  color: rgba(100, 116, 139, 0.7);
+}
+
+:root:not(.dark) .sw-sidebar-link:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+:root:not(.dark) .sw-sidebar-kbd {
+  color: rgba(100, 116, 139, 0.6);
+  border-color: rgba(100, 116, 139, 0.25);
+}
+
+:root:not(.dark) .sw-sidebar-divider {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+:root:not(.dark) .sw-sidebar-version {
+  color: rgba(100, 116, 139, 0.5);
+}
+
+:root:not(.dark) .sw-sidebar-restore-btn {
+  background: #ffffff;
+  border-color: rgba(0, 0, 0, 0.1);
+  color: var(--sw-sidebar-text);
+}
+
+:root:not(.dark) .sw-sidebar-restore-btn:hover {
+  background: rgba(255, 255, 255, 0.95);
+}
+
+:root:not(.dark) .sw-sidebar-badge-pill {
+  background: rgba(239, 68, 68, 0.1);
+  color: #dc2626;
+  border-color: rgba(239, 68, 68, 0.2);
+}
+
+/* -- Context help (? icon with popover) ----------------------------------- */
+.sw-context-help {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  margin-left: 4px;
+}
+
+.sw-context-help-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  background: transparent;
+  color: var(--sw-content-text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
+  flex-shrink: 0;
+}
+
+.sw-context-help-btn:hover,
+.sw-context-help-btn:focus-visible {
+  color: var(--sw-accent-primary);
+  border-color: var(--sw-accent-primary);
+  background: rgba(59, 130, 246, 0.08);
+  outline: none;
+}
+
+.sw-context-help-popover {
+  display: none;
+  position: absolute;
+  left: 50%;
+  top: calc(100% + 6px);
+  transform: translateX(-50%);
+  min-width: 200px;
+  max-width: 300px;
+  padding: 8px 12px;
+  border-radius: var(--sw-radius-sm);
+  background: var(--sw-glass-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--sw-glass-border);
+  color: var(--sw-content-text);
+  font-size: 12px;
+  line-height: 1.5;
+  z-index: 50;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  white-space: normal;
+}
+
+.sw-context-help-popover[aria-hidden="false"] {
+  display: block;
+}
+
+/* Light mode overrides for context help popover */
+:root .sw-context-help-popover {
+  background: rgba(255, 255, 255, 0.95);
+  border-color: rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+.dark .sw-context-help-popover {
+  background: var(--sw-glass-bg);
+  border-color: var(--sw-glass-border);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
 /* -- Segmented control ---------------------------------------------------- */
 .sw-segmented {
   display: inline-flex;

@@ -62,6 +62,26 @@
   --sw-content-bg: #0f172a;
   --sw-content-text: #e2e8f0;
   --sw-content-text-secondary: #94a3b8;
+
+  /* Sidebar (dark keeps the original glass look) */
+  --sw-sidebar-bg: #0f172a;
+  --sw-sidebar-text: #94a3b8;
+  --sw-sidebar-text-hover: #cbd5e1;
+  --sw-sidebar-active-bg: rgba(59, 130, 246, 0.15);
+  --sw-sidebar-active-text: #60a5fa;
+  --sw-sidebar-glass-bg: rgba(15, 23, 42, 0.96);
+  --sw-sidebar-border: rgba(255, 255, 255, 0.06);
+}
+
+/* Light theme sidebar overrides */
+:root:not(.dark) {
+  --sw-sidebar-bg: #ffffff;
+  --sw-sidebar-text: #475569;
+  --sw-sidebar-text-hover: #1e293b;
+  --sw-sidebar-active-bg: rgba(59, 130, 246, 0.1);
+  --sw-sidebar-active-text: #2563eb;
+  --sw-sidebar-glass-bg: rgba(255, 255, 255, 0.96);
+  --sw-sidebar-border: rgba(0, 0, 0, 0.08);
 }
 
 /* -- Glass intensity (set via data-glass on <html>) ----------------------- */
