@@ -23,7 +23,11 @@ type ActivityPageData struct {
 
 // activityFilterCount returns the number of active filters on the activity page.
 func activityFilterCount(data ActivityPageData) int {
-	return len(data.FilterFields) + len(data.FilterSources)
+	count := len(data.FilterFields) + len(data.FilterSources)
+	if data.FilterArtistID != "" {
+		count++
+	}
+	return count
 }
 
 // ActivityPage renders the global activity page at /activity.

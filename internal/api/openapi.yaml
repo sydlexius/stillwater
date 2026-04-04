@@ -3537,7 +3537,7 @@ paths:
                   mode:
                     type: string
                     enum: [skip, composer, performer]
-                    description: Classical mode setting (disabled, manual, or auto).
+                    description: Classical mode setting (skip, composer, or performer).
     put:
       tags: [Rules]
       summary: Set classical music handling mode
@@ -3563,7 +3563,7 @@ paths:
                 properties:
                   mode:
                     type: string
-                    description: Classical mode setting (disabled, manual, or auto).
+                    description: Classical mode setting (skip, composer, or performer).
 
   /bulk/fetch-metadata:
     post:
@@ -4304,11 +4304,11 @@ paths:
                   glass_intensity:
                     type: string
                     enum: [light, medium, heavy]
-                    description: Frosted glass effect intensity (0-100).
+                    description: Frosted glass effect intensity preset.
                   sidebar_state:
                     type: string
                     enum: [full, icon-only, hidden]
-                    description: Sidebar visibility state (expanded or collapsed).
+                    description: Sidebar visibility mode (full, icon-only, or hidden).
                   content_width:
                     type: string
                     enum: [narrow, wide]
@@ -4898,7 +4898,7 @@ paths:
                           description: Platform type of the connection.
                         nfo_writer:
                           type: boolean
-                          description: NFO writer plugin name that may clobber files.
+                          description: Whether an NFO writer is enabled and may clobber files.
                         library_name:
                           type: string
                           description: Name of the platform library at risk.
@@ -7714,7 +7714,7 @@ paths:
                     description: Result status of the reidentification.
                   artist:
                     type: string
-                    description: Updated artist record after reidentification.
+                    description: Artist name after reidentification.
                   message:
                     type: string
                     description: Human-readable result detail.
