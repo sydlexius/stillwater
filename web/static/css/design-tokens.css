@@ -81,7 +81,7 @@
   --sw-sidebar-text-hover: #1e293b;
   --sw-sidebar-active-bg: rgba(59, 130, 246, 0.1);
   --sw-sidebar-active-text: #2563eb;
-  --sw-sidebar-glass-bg: rgba(255, 255, 255, 0.96);
+  --sw-sidebar-glass-bg: rgba(255, 255, 255, 0.78);
   --sw-sidebar-border: rgba(0, 0, 0, 0.08);
   --sw-sidebar-restore-hover-bg: rgba(241, 245, 249, 0.98);
 }
