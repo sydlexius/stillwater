@@ -23,23 +23,31 @@ function pollAsyncStatus(url, callbacks, options) {
   var headers = options.headers || {};
   var credentials = options.credentials || 'same-origin';
   var attempts = 0;
+  var stopped = false;
+  var timer = null;
 
-  var poll = setInterval(function () {
+  function stop() {
+    stopped = true;
+    if (timer) clearTimeout(timer);
+  }
+
+  function tick() {
+    if (stopped) return;
     if (maxAttempts > 0 && ++attempts > maxAttempts) {
-      clearInterval(poll);
+      stop();
       if (callbacks.onTimeout) callbacks.onTimeout();
       return;
     }
     fetch(url, { headers: headers, credentials: credentials })
       .then(function (r) {
         if (!r.ok) {
-          clearInterval(poll);
+          stop();
           if (callbacks.onHTTPError) callbacks.onHTTPError(r.status);
           return null;
         }
         return r.json().catch(function () {
           // Server returned 200 but non-JSON body (e.g. proxy error page).
-          clearInterval(poll);
+          stop();
           if (callbacks.onHTTPError) callbacks.onHTTPError(r.status);
           return null;
         });
@@ -47,18 +55,22 @@ function pollAsyncStatus(url, callbacks, options) {
       .then(function (data) {
         if (!data) return;
         if (callbacks.onData && callbacks.onData(data)) {
-          clearInterval(poll);
+          stop();
+          return;
         }
+        if (!stopped) timer = setTimeout(tick, intervalMs);
       })
       .catch(function (err) {
-        clearInterval(poll);
+        stop();
         if (callbacks.onNetworkError) callbacks.onNetworkError(err);
       });
-  }, intervalMs);
+  }
+
+  timer = setTimeout(tick, intervalMs);
 
   return {
     stop: function () {
-      clearInterval(poll);
+      stop();
     }
   };
 }
