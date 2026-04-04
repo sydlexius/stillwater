@@ -1307,7 +1307,7 @@ input:-webkit-autofill:focus {
   flex-shrink: 0;
 }
 
-/* Hide the icon container when neutral so the label doesn't shift */
+/* Hide the icon glyph when neutral while preserving layout space */
 .sw-filter-item[data-filter-state="neutral"] .sw-filter-item-icon {
-  display: none;
+  visibility: hidden;
 }

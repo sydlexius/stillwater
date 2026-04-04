@@ -121,7 +121,7 @@ templ FilterItem(flyoutID, key, value, label, state string) {
 		onclick="swFilterFlyout.cycleItem(this)"
 	>
 		<span class="sw-filter-item-icon" aria-hidden="true">
-			{ filterItemIcon(state) }
+			@filterItemIconSVG(state)
 		</span>
 		<span class="sw-filter-item-label">{ label }</span>
 	</button>
@@ -139,15 +139,13 @@ func filterItemAriaLabel(state, label string) string {
 	}
 }
 
-// filterItemIcon returns the icon character for the current state.
-func filterItemIcon(state string) string {
-	switch state {
-	case "include":
-		return "+"
-	case "exclude":
-		return "-"
-	default:
-		return ""
+// filterItemIconSVG renders the SVG icon for the current filter state.
+// Must stay in sync with iconHTML() in filter-flyout.js.
+templ filterItemIconSVG(state string) {
+	if state == "include" {
+		<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"></path></svg>
+	} else if state == "exclude" {
+		<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"></path></svg>
 	}
 }
 

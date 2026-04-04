@@ -170,8 +170,11 @@
           }
         } else if (count > 0) {
           // Badge element doesn't exist yet (server rendered with 0 filters).
+          // Read classes from the trigger's data attribute (single source of
+          // truth in the template) with a minimal fallback.
+          var badgeClasses = trigger.getAttribute('data-badge-classes') || 'sw-filter-trigger-badge';
           var span = document.createElement('span');
-          span.className = 'sw-filter-trigger-badge ml-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white dark:bg-blue-400 dark:text-gray-900';
+          span.className = badgeClasses;
           span.setAttribute('aria-label', count === 1 ? '1 active filter' : count + ' active filters');
           span.textContent = count;
           trigger.appendChild(span);
