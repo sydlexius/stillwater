@@ -176,6 +176,19 @@
           span.textContent = count;
           trigger.appendChild(span);
         }
+
+        // Sync the trigger button's active/neutral visual state so it matches
+        // the badge count after client-side Apply or Clear All. Class lists
+        // are read from data attributes on the trigger (single source of truth
+        // in the template) to avoid hardcoding them in JS.
+        var activeStr = trigger.getAttribute('data-active-classes');
+        var neutralStr = trigger.getAttribute('data-neutral-classes');
+        if (activeStr && neutralStr) {
+          var addClasses = (count > 0 ? activeStr : neutralStr).split(' ');
+          var removeClasses = (count > 0 ? neutralStr : activeStr).split(' ');
+          removeClasses.forEach(function (c) { trigger.classList.remove(c); });
+          addClasses.forEach(function (c) { trigger.classList.add(c); });
+        }
       }
     }
   }

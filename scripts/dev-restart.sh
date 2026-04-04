@@ -10,7 +10,8 @@ echo "==> Building..."
 make build
 
 echo "==> Stopping previous Stillwater instance..."
-pkill -f './stillwater$' 2>/dev/null || pkill -x stillwater 2>/dev/null || true
+pkill -f './stillwater$' 2>/dev/null || true
+pkill -x stillwater 2>/dev/null || true
 sleep 1
 
 echo "==> Loading .env..."

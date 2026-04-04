@@ -461,26 +461,14 @@ func (r *Router) handleNotificationBadge(w http.ResponseWriter, req *http.Reques
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	if total == 0 {
-		//nolint:errcheck // Clear the mobile badge via OOB swap
-		fmt.Fprint(w, `<span id="notif-badge-mobile" hx-swap-oob="innerHTML"></span>`)
+		// Empty body clears the badge via hx-swap="innerHTML".
 		return
 	}
 
 	display := fmt.Sprintf("%d", total)
-	// Sidebar badge: plain count styled as an inline pill. The mobile bottom
-	// tab still uses the compact "99+" format with absolute positioning.
 	badge := fmt.Sprintf(`<span class="sw-sidebar-badge-pill">%s</span>`, display)
 	//nolint:errcheck,gosec // display is derived from an integer, no XSS risk
 	fmt.Fprint(w, badge)
-
-	mobileDisplay := display
-	if total > 99 {
-		mobileDisplay = "99+"
-	}
-	mobileBadge := fmt.Sprintf(`<span class="absolute -top-1 -right-2 inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1 text-xs font-bold text-white bg-red-500 rounded-full">%s</span>`, mobileDisplay)
-	// Update the mobile badge via OOB swap so only one poll is needed.
-	//nolint:errcheck,gosec // G705: mobileBadge is derived from an integer, no XSS risk
-	fmt.Fprintf(w, `<span id="notif-badge-mobile" hx-swap-oob="innerHTML">%s</span>`, mobileBadge)
 }
 
 // handleNotificationsTable renders the notifications table for HTMX swaps.

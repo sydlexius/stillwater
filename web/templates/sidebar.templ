@@ -166,7 +166,7 @@ templ Sidebar(data SidebarData) {
 				<span
 					id="sidebar-notif-badge"
 					class="sw-sidebar-badge"
-					hx-get={ data.BasePath + "/api/v1/notifications/badge" }
+					hx-get="/api/v1/notifications/badge"
 					hx-trigger="load, every 30s"
 					hx-swap="innerHTML"
 				></span>

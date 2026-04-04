@@ -1,6 +1,6 @@
 services:
   emby:
-    image: ${EMBY_IMAGE:-emby/embyserver_arm64v8:latest}
+    image: ${EMBY_IMAGE:-emby/embyserver:latest}
     container_name: emby
     ports:
       - "8096:8096"

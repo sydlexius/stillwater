@@ -118,7 +118,7 @@ templ FilterItem(flyoutID, key, value, label, state string) {
 		data-filter-value={ value }
 		data-filter-state={ state }
 		aria-label={ filterItemAriaLabel(state, label) }
-		onclick={ cycleFilterItem() }
+		onclick="swFilterFlyout.cycleItem(this)"
 	>
 		<span class="sw-filter-item-icon" aria-hidden="true">
 			{ filterItemIcon(state) }
@@ -171,10 +171,6 @@ script applyFilterFlyout(id string) {
 
 script clearAllFilterFlyout(id string) {
 	swFilterFlyout.clearAll(id);
-}
-
-script cycleFilterItem() {
-	swFilterFlyout.cycleItem(event.currentTarget);
 }
 
 // DismissFilterChip removes a single filter key from the URL and reloads the
