@@ -287,6 +287,49 @@ func TestEvaluateAll(t *testing.T) {
 	}
 }
 
+// TestEvaluate_FilesystemRulesSkippedForAPIArtists verifies that rules marked as
+// filesystem_dependent are not evaluated against artists with no local path (i.e.
+// artists imported from a connected API source such as Emby or Jellyfin). Running
+// NFO rules against these artists would generate false violations because API-only
+// artists have no filesystem directory and can never have NFO files.
+func TestEvaluate_FilesystemRulesSkippedForAPIArtists(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("SeedDefaults: %v", err)
+	}
+
+	engine := NewEngine(svc, db, nil, nil, testLogger())
+
+	// API-imported artist: no filesystem path, no NFO.
+	a := &artist.Artist{
+		ID:   "api-1",
+		Name: "API Artist",
+		Path: "",
+	}
+
+	result, err := engine.Evaluate(ctx, a)
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+
+	// At least some non-filesystem rules must have been evaluated; a zero
+	// RulesTotal would mean the engine skipped everything, making the test
+	// vacuously true and worthless.
+	if result.RulesTotal == 0 {
+		t.Fatal("RulesTotal = 0, expected non-filesystem rules to be evaluated for a pathless artist")
+	}
+
+	// nfo_exists must not appear in violations for a pathless artist.
+	for _, v := range result.Violations {
+		if v.RuleID == RuleNFOExists {
+			t.Errorf("unexpected violation for %s on API artist with no filesystem path", RuleNFOExists)
+		}
+	}
+}
+
 func TestCalculateHealthScore(t *testing.T) {
 	tests := []struct {
 		passed int
