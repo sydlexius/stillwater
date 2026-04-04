@@ -41,6 +41,8 @@ type AssetPaths struct {
 	Role string
 	// Version is the application version string for the sidebar footer.
 	Version string
+	// ShowViolations controls whether the Open Violations link is visible in the sidebar.
+	ShowViolations bool
 }
 
 templ Layout(title string, assets AssetPaths) {
@@ -97,13 +99,14 @@ templ Layout(title string, assets AssetPaths) {
 				/>
 			</div>
 			@Sidebar(SidebarData{
-				BasePath:    assets.BasePath,
-				IsAdmin:     assets.IsAdmin,
-				Username:    assets.Username,
-				DisplayName: assets.DisplayName,
-				AvatarURL:   assets.AvatarURL,
-				Role:        assets.Role,
-				Version:     assets.Version,
+				BasePath:       assets.BasePath,
+				IsAdmin:        assets.IsAdmin,
+				Username:       assets.Username,
+				DisplayName:    assets.DisplayName,
+				AvatarURL:      assets.AvatarURL,
+				Role:           assets.Role,
+				Version:        assets.Version,
+				ShowViolations: assets.ShowViolations,
 			})
 			<div class="min-h-full sw-sidebar-content" id="sw-main-content">
 				if assets.IsAdmin {

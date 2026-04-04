@@ -84,6 +84,8 @@ func (r *Router) assetsFor(req *http.Request) templates.AssetPaths {
 		}
 	}
 
+	a.ShowViolations = r.getBoolSetting(ctx, "sidebar_show_violations", true)
+
 	// Strip the base path prefix so the bottom tab bar can match the active
 	// route without knowing the deployment prefix.
 	path := req.URL.Path

@@ -9,8 +9,9 @@ type SidebarData struct {
 	Username    string
 	DisplayName string // Preferred display name; falls back to Username when empty.
 	AvatarURL   string // URL for the user's avatar image (Emby/Jellyfin profile image). Empty for local users.
-	Role        string
-	Version     string
+	Role           string
+	Version        string
+	ShowViolations bool // Whether to show the Open Violations link and badge in the sidebar.
 }
 
 // sidebarDisplayName returns the display name if set, otherwise the username.
@@ -153,25 +154,27 @@ templ Sidebar(data SidebarData) {
 		<div class="flex-1"></div>
 		<!-- Bottom section: violations, help, theme toggle, divider, user profile, version -->
 		<div class="sw-sidebar-bottom">
-			<a
-				href={ templ.SafeURL(data.BasePath + "/reports/compliance") }
-				class="sw-sidebar-link"
-				data-path="/reports/compliance"
-				aria-label="Open violations"
-			>
-				<!-- Exclamation triangle icon -->
-				<svg class="sw-sidebar-icon" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
-					<path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z"></path>
-				</svg>
-				<span class="sw-sidebar-label">Open Violations</span>
-				<span
-					id="sidebar-notif-badge"
-					class="sw-sidebar-badge"
-					hx-get="/api/v1/notifications/badge"
-					hx-trigger="load, every 30s"
-					hx-swap="innerHTML"
-				></span>
-			</a>
+			if data.ShowViolations {
+				<a
+					href={ templ.SafeURL(data.BasePath + "/reports/compliance") }
+					class="sw-sidebar-link"
+					data-path="/reports/compliance"
+					aria-label="Open violations"
+				>
+					<!-- Exclamation triangle icon -->
+					<svg class="sw-sidebar-icon" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
+						<path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z"></path>
+					</svg>
+					<span class="sw-sidebar-label">Open Violations</span>
+					<span
+						id="sidebar-notif-badge"
+						class="sw-sidebar-badge"
+						hx-get="/api/v1/notifications/badge"
+						hx-trigger="load, every 30s"
+						hx-swap="innerHTML"
+					></span>
+				</a>
+			}
 			<button
 				type="button"
 				class="sw-sidebar-link w-full"

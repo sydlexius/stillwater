@@ -48,8 +48,9 @@ type SettingsData struct {
 	BadgeEnabled         bool
 	BadgeSeverityError   bool
 	BadgeSeverityWarning bool
-	BadgeSeverityInfo    bool
-	RuleScheduleMinutes  int
+	BadgeSeverityInfo       bool
+	SidebarShowViolations  bool
+	RuleScheduleMinutes    int
 	APITokens            []auth.APIToken
 	BackupRetention      int
 	BackupMaxAgeDays     int
@@ -476,6 +477,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 		@profileNamingEditorScript()
 		@settingsUsersScript()
 		@settingsAuthProvidersScript()
+		@components.ContextHelpScript()
 		<script src={ assets.SortableJS }></script>
 		<div class="space-y-6">
 			<div class="sw-card rounded-lg px-6 py-4">
@@ -632,7 +634,10 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 				<!-- Image Cache Configuration -->
 				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-						<h2 class="text-lg font-semibold">Image Cache</h2>
+						<div class="flex items-center gap-2">
+							<h2 class="text-lg font-semibold">Image Cache</h2>
+							@components.ContextHelp("help-image-cache", "Image Cache", "Stillwater caches downloaded images (posters, banners, logos) locally. Set a maximum size to prevent unbounded disk usage. Clearing the cache removes all downloaded images; they will be re-fetched on next scan.")
+						</div>
 						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
 							Manage cached images for artists without filesystem paths.
 						</p>
@@ -716,7 +721,10 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 				if len(data.Priorities) > 0 {
 					<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 						<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-							<h2 class="text-lg font-semibold">Provider Priorities</h2>
+							<div class="flex items-center gap-2">
+								<h2 class="text-lg font-semibold">Provider Priorities</h2>
+								@components.ContextHelp("help-provider-priorities", "Provider Priorities", "When multiple providers return data for the same field, Stillwater uses the first enabled provider in priority order. Drag to reorder. Disabled providers are skipped during metadata fetching.")
+							</div>
 							<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
 								Set the preferred provider order for each metadata field. Drag to reorder. Click the checkmark/X to enable or disable. Only configured providers are shown.
 							</p>
@@ -739,9 +747,12 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 					</div>
 					<div class="px-6 py-4 space-y-4">
 						<div>
-							<label for="name_similarity_threshold" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-								Name Similarity Threshold
-							</label>
+							<div class="flex items-center gap-1 mb-1">
+								<label for="name_similarity_threshold" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+									Name Similarity Threshold
+								</label>
+								@components.ContextHelp("help-name-similarity", "Name Similarity", "Controls how closely an artist name from a provider must match the local name. Lower values accept fuzzier matches (useful for transliterated names). Higher values require near-exact matches (fewer false positives).")
+							</div>
 							<p class="text-xs text-gray-500 dark:text-gray-400 mb-2">
 								Minimum similarity score (0-100) required when matching artist names from search results.
 								Set to 0 to disable name validation and accept any result. Default is 60.
@@ -891,7 +902,10 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 			>
 				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-						<h2 class="text-lg font-semibold">Webhooks</h2>
+						<div class="flex items-center gap-2">
+							<h2 class="text-lg font-semibold">Webhooks</h2>
+							@components.ContextHelp("help-webhooks", "Webhooks", "Webhooks send HTTP POST requests to external services when events occur (scan complete, violations found, etc.). Generic webhooks send JSON payloads; Discord, Slack, and Gotify use service-specific formatting.")
+						</div>
 						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
 							Send notifications to external services when events occur.
 						</p>
@@ -942,12 +956,29 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 				<!-- Notification Badge Settings -->
 				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-						<h2 class="text-lg font-semibold">Notification Badges</h2>
+						<div class="flex items-center gap-2">
+							<h2 class="text-lg font-semibold">Notification Badges</h2>
+							@components.ContextHelp("help-notif-badges", "Notification Badges", "Controls violation visibility and counting in the sidebar. 'Show violation count' toggles the Open Violations link. 'Enable badge' and severity filters control which violations contribute to the numeric counter.")
+						</div>
 						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-							Show a counter badge on the Notifications link indicating active violations.
+							Show a counter badge on the Open Violations link in the sidebar indicating active violations.
 						</p>
 					</div>
 					<div class="px-6 py-4 space-y-4">
+						<div class="flex items-center gap-3">
+							<label class="relative inline-flex items-center cursor-pointer">
+								<input
+									id="sidebar-show-violations"
+									type="checkbox"
+									class="sr-only peer"
+									checked?={ data.SidebarShowViolations }
+									aria-labelledby="sidebar-show-violations-label"
+									onclick="updateSetting('sidebar_show_violations', this.checked)"
+								/>
+								<div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-500 dark:peer-focus:ring-blue-600 rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:after:border-gray-500 peer-checked:bg-blue-600"></div>
+							</label>
+							<span id="sidebar-show-violations-label" class="text-sm font-medium text-gray-700 dark:text-gray-300">Show violation count in sidebar</span>
+						</div>
 						<div class="flex items-center gap-3">
 							<label class="relative inline-flex items-center cursor-pointer">
 								<input
@@ -1254,7 +1285,18 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 					if len(catRules) > 0 {
 						<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 							<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-								<h2 class="text-lg font-semibold">{ categoryLabel(cat) } Rules</h2>
+								<div class="flex items-center gap-2">
+									<h2 class="text-lg font-semibold">{ categoryLabel(cat) } Rules</h2>
+									if cat == "nfo" {
+										@components.ContextHelp("help-rules-nfo", "NFO Rules", "NFO rules validate and fix artist information files. Each rule can be disabled, set to manual (notify only), or auto-fix (automatically correct violations during scans).")
+									}
+									if cat == "image" {
+										@components.ContextHelp("help-rules-image", "Image Rules", "Image rules check for missing, oversized, or incorrectly formatted artist images (posters, banners, logos). Auto-fix mode can fetch and resize images automatically.")
+									}
+									if cat == "metadata" {
+										@components.ContextHelp("help-rules-metadata", "Metadata Rules", "Metadata rules verify artist data quality (genres, biographies, sort names, etc.). Auto-fix mode fetches corrections from configured providers.")
+									}
+								</div>
 							</div>
 							<div class="px-6 divide-y divide-gray-100 dark:divide-gray-700">
 								for _, rl := range catRules {
@@ -1272,7 +1314,10 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 				<!-- Rule Evaluation Schedule -->
 				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+						<div class="flex items-center gap-2">
 						<h2 class="text-lg font-semibold">Scheduled Evaluation</h2>
+						@components.ContextHelp("help-rule-schedule", "Scheduled Evaluation", "Periodically evaluates all enabled rules across your library. Rules set to auto-fix will automatically correct violations. Rules set to manual will only report violations without changing files.")
+					</div>
 						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
 							Run all enabled rules on a recurring schedule. Requires a container restart after changing.
 						</p>
@@ -1354,7 +1399,10 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 				<!-- Database Maintenance -->
 				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-						<h2 class="text-lg font-semibold">Database Maintenance</h2>
+						<div class="flex items-center gap-2">
+							<h2 class="text-lg font-semibold">Database Maintenance</h2>
+							@components.ContextHelp("help-db-maintenance", "Database Maintenance", "Optimize runs PRAGMA optimize to update query planner statistics. Vacuum rebuilds the database file to reclaim unused space, but temporarily doubles disk usage during the operation. Auto-optimize runs Optimize on a schedule.")
+						</div>
 						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
 							Optimize database performance and reclaim disk space.
 						</p>
