@@ -2994,7 +2994,7 @@ paths:
                   status:
                     type: string
                     enum: [ok, error]
-                    description: Connection test result (e.g. ok, failed).
+                    description: Connection test result (ok or error).
                   message:
                     type: string
                     description: Human-readable connection test result detail.
@@ -3183,7 +3183,7 @@ paths:
                   status:
                     type: string
                     enum: [ok, error]
-                    description: Provider test result (e.g. ok, failed).
+                    description: Provider test result (ok or error).
                   error:
                     type: string
                     description: Error message if the provider test failed.
@@ -3208,7 +3208,7 @@ paths:
                     type: array
                     items:
                       type: object
-                    description: Number of provider priority entries imported.
+                    description: Ordered list of provider priority entries.
     put:
       tags: [Providers]
       summary: Set provider priorities
@@ -7833,7 +7833,7 @@ paths:
                 properties:
                   status:
                     type: string
-                    description: Result status of the log operation.
+                    description: Result status of the logo trim operation.
                   sync_warnings:
                     type: array
                     items:

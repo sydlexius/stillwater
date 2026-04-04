@@ -22,12 +22,10 @@ type ActivityPageData struct {
 }
 
 // activityFilterCount returns the number of active filters on the activity page.
+// Only counts filters that have corresponding flyout items (field and source).
+// FilterArtistID is excluded because the flyout does not render or round-trip it.
 func activityFilterCount(data ActivityPageData) int {
-	count := len(data.FilterFields) + len(data.FilterSources)
-	if data.FilterArtistID != "" {
-		count++
-	}
-	return count
+	return len(data.FilterFields) + len(data.FilterSources)
 }
 
 // ActivityPage renders the global activity page at /activity.
