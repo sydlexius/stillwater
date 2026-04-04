@@ -225,7 +225,7 @@ func (r *Router) handleRevertHistory(w http.ResponseWriter, req *http.Request) {
 			}
 			globalChanges, _, err := r.historyService.ListGlobal(req.Context(), filter)
 			if err != nil {
-				r.logger.Warn("fetching revert confirmation for activity", "change_id", changeID, "error", err)
+				r.logger.Error("fetching revert confirmation for activity", "change_id", changeID, "error", err)
 			}
 			if err == nil && len(globalChanges) > 0 {
 				renderTempl(w, req, templates.ActivityChangeRowFragment(globalChanges[0]))
@@ -235,7 +235,7 @@ func (r *Router) handleRevertHistory(w http.ResponseWriter, req *http.Request) {
 			// Artist history tab needs MetadataChange (no artist name needed).
 			changes, _, err := r.historyService.List(req.Context(), change.ArtistID, 20, 0)
 			if err != nil {
-				r.logger.Warn("fetching revert confirmation", "change_id", changeID, "error", err)
+				r.logger.Error("fetching revert confirmation", "change_id", changeID, "error", err)
 			}
 			var revertChange *artist.MetadataChange
 			if err == nil {
@@ -253,11 +253,11 @@ func (r *Router) handleRevertHistory(w http.ResponseWriter, req *http.Request) {
 		}
 
 		// Fallback: the revert succeeded but we could not locate the new record.
-		r.logger.Warn("revert record not found in recent history, using fallback confirmation",
+		r.logger.Error("revert record not found in recent history, using fallback confirmation",
 			"change_id", changeID, "field", change.Field, "artist_id", change.ArtistID)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`<div class="border-l-2 border-amber-400 dark:border-amber-500 pl-4 py-2"><p class="text-sm text-amber-600 dark:text-amber-400">Change reverted successfully.</p></div>`))
+		_, _ = w.Write([]byte(`<div class="border-l-2 border-amber-400 dark:border-amber-500 pl-4 py-2"><p class="text-sm text-amber-600 dark:text-amber-400">Change reverted. Refresh the page to see the updated entry.</p></div>`))
 		return
 	}
 

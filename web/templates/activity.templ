@@ -21,6 +21,11 @@ type ActivityPageData struct {
 	FilterSources  []string
 }
 
+// activityFilterCount returns the number of active filters on the activity page.
+func activityFilterCount(data ActivityPageData) int {
+	return len(data.FilterFields) + len(data.FilterSources)
+}
+
 // ActivityPage renders the global activity page at /activity.
 templ ActivityPage(assets AssetPaths, data ActivityPageData) {
 	@Layout("Activity", assets) {
@@ -33,15 +38,26 @@ templ ActivityPage(assets AssetPaths, data ActivityPageData) {
 					</p>
 				</div>
 				<button
-					type="button"
 					id="activity-filter-trigger"
-					class="inline-flex items-center gap-1.5 px-3 py-2 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
+					type="button"
+					class={ "inline-flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm transition-colors focus:outline-none focus:ring-1 focus:ring-blue-500", templ.KV(filterTriggerActive, activityFilterCount(data) > 0), templ.KV(filterTriggerNeutral, activityFilterCount(data) == 0) }
+					data-active-classes={ filterTriggerActive }
+					data-neutral-classes={ filterTriggerNeutral }
+					data-badge-classes={ filterTriggerBadge }
+					aria-label="Open filter panel"
+					aria-expanded="false"
+					aria-controls="activity-filters-flyout"
 					onclick={ components.OpenFilterFlyout("activity-filters-flyout") }
 				>
-					<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
-						<path stroke-linecap="round" stroke-linejoin="round" d="M12 3c2.755 0 5.455.232 8.083.678.533.09.917.556.917 1.096v1.044a2.25 2.25 0 0 1-.659 1.591l-5.432 5.432a2.25 2.25 0 0 0-.659 1.591v2.927a2.25 2.25 0 0 1-1.244 2.013L9.75 21v-6.568a2.25 2.25 0 0 0-.659-1.591L3.659 7.409A2.25 2.25 0 0 1 3 5.818V4.774c0-.54.384-1.006.917-1.096A48.32 48.32 0 0 1 12 3Z"></path>
+					<svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+						<path fill-rule="evenodd" d="M2.628 1.601C5.028 1.206 7.49 1 10 1s4.973.206 7.372.601a.75.75 0 0 1 .628.74v2.288a2.25 2.25 0 0 1-.659 1.59l-4.682 4.683a2.25 2.25 0 0 0-.659 1.59v3.037c0 .684-.31 1.33-.844 1.757l-1.937 1.55A.75.75 0 0 1 9 18.25v-5.757a2.25 2.25 0 0 0-.659-1.591L3.659 6.22A2.25 2.25 0 0 1 3 4.629V2.34a.75.75 0 0 1 .628-.74Z" clip-rule="evenodd"></path>
 					</svg>
-					Filters
+					<span>Filters</span>
+					if activityFilterCount(data) > 0 {
+						<span class={ filterTriggerBadge } aria-label={ func() string { n := activityFilterCount(data); if n == 1 { return "1 active filter" }; return fmt.Sprintf("%d active filters", n) }() }>
+							{ fmt.Sprintf("%d", activityFilterCount(data)) }
+						</span>
+					}
 				</button>
 			</div>
 			<div id="activity-content">
@@ -83,6 +99,8 @@ templ ActivityPage(assets AssetPaths, data ActivityPageData) {
 			document.addEventListener('DOMContentLoaded', function() {
 				if (typeof swFilterFlyout !== 'undefined') {
 					swFilterFlyout.initFromURL('activity-filters-flyout');
+				} else {
+					console.warn('[activity] swFilterFlyout not loaded; filter UI will not sync from URL params');
 				}
 			});
 		</script>
