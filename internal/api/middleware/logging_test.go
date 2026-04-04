@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -59,6 +60,45 @@ func TestScrubQuery_CaseInsensitive(t *testing.T) {
 	want := "API_KEY=REDACTED&APIKEY=REDACTED"
 	if got != want {
 		t.Errorf("scrubQuery(uppercase) = %q, want %q", got, want)
+	}
+}
+
+func TestLogging_LogLevels(t *testing.T) {
+	// Successful requests must be logged at DEBUG, 4xx at WARN, 5xx at ERROR.
+	tests := []struct {
+		status    int
+		wantLevel slog.Level
+	}{
+		{http.StatusOK, slog.LevelDebug},
+		{http.StatusCreated, slog.LevelDebug},
+		{http.StatusNoContent, slog.LevelDebug},
+		{http.StatusBadRequest, slog.LevelWarn},
+		{http.StatusUnauthorized, slog.LevelWarn},
+		{http.StatusNotFound, slog.LevelWarn},
+		{http.StatusInternalServerError, slog.LevelError},
+		{http.StatusBadGateway, slog.LevelError},
+	}
+
+	for _, tt := range tests {
+		var buf bytes.Buffer
+		logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+		handler := Logging(logger, "")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(tt.status)
+		}))
+
+		req := httptest.NewRequest("GET", "/api/v1/artists", nil)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+
+		output := buf.String()
+		if output == "" {
+			t.Errorf("status %d: expected log output but got none", tt.status)
+			continue
+		}
+		wantKey := "level=" + tt.wantLevel.String()
+		if !strings.Contains(output, wantKey) {
+			t.Errorf("status %d: expected log level %s, got output: %s", tt.status, tt.wantLevel, output)
+		}
 	}
 }
 
