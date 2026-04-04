@@ -36,7 +36,8 @@ web/static/css/styles.css
 docker-compose.local.yml
 docker-compose.wsl.yml
 setupdocker.sh
-.env.integration
+.env
+.env.*
 
 # Node (Tailwind v4, MCP servers)
 node_modules/
