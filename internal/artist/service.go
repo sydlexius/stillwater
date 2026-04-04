@@ -350,6 +350,25 @@ func (s *Service) UpdateImageProvenance(ctx context.Context, artistID, imageType
 	return s.images.UpdateProvenance(ctx, artistID, imageType, slotIndex, phash, source, fileFormat, lastWrittenAt)
 }
 
+// GenderOptions lists the predefined canonical gender values aligned with MusicBrainz.
+var GenderOptions = []string{"male", "female", "non-binary", "other", "unknown"}
+
+// TypeOptions lists the predefined canonical artist type values aligned with MusicBrainz.
+var TypeOptions = []string{"person", "group", "orchestra", "choir", "character", "other"}
+
+// FieldPickerOptions returns the ordered list of picker options for constrained
+// fields. It returns nil for fields that accept free-form text.
+func FieldPickerOptions(field string) []string {
+	switch field {
+	case "gender":
+		return GenderOptions
+	case "type":
+		return TypeOptions
+	default:
+		return nil
+	}
+}
+
 // IsEditableField reports whether the given field name can be updated via
 // the field-level API. This includes both direct-column fields (in
 // fieldColumnMap) and provider-ID fields (in providerFieldMap).
@@ -514,6 +533,8 @@ func applyProviderFieldToArtist(a *Artist, providerName, value string) {
 // invalid. Validation rules:
 //   - "name" must not be empty or whitespace-only.
 //   - "musicbrainz_id" must be a valid UUID (or empty, which clears the ID).
+//   - "gender" must be one of GenderOptions (or empty, which clears the field).
+//   - "type" must be one of TypeOptions (or empty, which clears the field).
 //
 // All other fields are accepted as-is (free-form text).
 func ValidateFieldUpdate(field, value string) error {
@@ -526,8 +547,30 @@ func ValidateFieldUpdate(field, value string) error {
 		if value != "" && !isValidMBID(value) {
 			return fmt.Errorf("invalid MusicBrainz ID format (expected UUID)")
 		}
+	case "gender":
+		if value != "" {
+			if !isCanonicalValue(value, GenderOptions) {
+				return fmt.Errorf("invalid gender value %q", value)
+			}
+		}
+	case "type":
+		if value != "" {
+			if !isCanonicalValue(value, TypeOptions) {
+				return fmt.Errorf("invalid type value %q", value)
+			}
+		}
 	}
 	return nil
+}
+
+// isCanonicalValue reports whether value is one of the allowed canonical strings.
+func isCanonicalValue(value string, allowed []string) bool {
+	for _, a := range allowed {
+		if value == a {
+			return true
+		}
+	}
+	return false
 }
 
 // isValidMBID reports whether s is a syntactically valid UUID, as used by
