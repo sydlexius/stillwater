@@ -2160,13 +2160,25 @@ paths:
                     type: string
                 required: [reverted, change_id]
         "400":
-          description: Field is not revertible.
+          description: Field is not revertible, or change source is "revert".
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
         "404":
           description: Change not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Internal server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: History service is not available.
           content:
             application/json:
               schema:
@@ -2235,6 +2247,18 @@ paths:
                   offset:
                     type: integer
                 required: [changes, total, limit, offset]
+        "500":
+          description: Internal server error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: History service is not available.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /artists/{id}/platform-ids:
     get:

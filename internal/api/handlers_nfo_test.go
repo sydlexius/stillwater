@@ -16,25 +16,113 @@ import (
 func TestHandleNFODiff_JSON(t *testing.T) {
 	r, artistSvc := testRouter(t)
 
-	a := addTestArtist(t, artistSvc, "Diff Artist")
+	t.Run("pathless artist shows no diff", func(t *testing.T) {
+		// Pathless artist (no filesystem path) compares dbNFO against itself.
+		a := &artist.Artist{
+			Name:     "Pathless Diff Artist",
+			SortName: "Pathless Diff Artist",
+			Type:     "group",
+		}
+		if err := artistSvc.Create(context.Background(), a); err != nil {
+			t.Fatalf("creating artist: %v", err)
+		}
 
-	// For a pathless artist with no on-disk NFO, the diff compares nil vs database NFO.
-	_ = a
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/artists/"+a.ID+"/nfo/diff", nil)
+		req.SetPathValue("id", a.ID)
+		w := httptest.NewRecorder()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/artists/"+a.ID+"/nfo/diff", nil)
-	req.SetPathValue("id", a.ID)
-	w := httptest.NewRecorder()
+		r.handleNFODiff(w, req)
 
-	r.handleNFODiff(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+		}
 
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
-	}
+		var resp nfo.DiffResult
+		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+			t.Fatalf("decoding response: %v", err)
+		}
 
-	var resp nfo.DiffResult
-	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
-		t.Fatalf("decoding response: %v", err)
-	}
+		if resp.HasDiff {
+			t.Errorf("HasDiff = true for pathless artist, want false")
+		}
+	})
+
+	t.Run("path-based artist without nfo file shows diff", func(t *testing.T) {
+		// Artist with path but no on-disk NFO: all populated DB fields appear as added.
+		dir := t.TempDir()
+		a := &artist.Artist{
+			Name:     "Path Diff Artist",
+			SortName: "Path Diff Artist",
+			Type:     "group",
+			Path:     dir,
+			Genres:   []string{"Rock"},
+		}
+		if err := artistSvc.Create(context.Background(), a); err != nil {
+			t.Fatalf("creating artist: %v", err)
+		}
+
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/artists/"+a.ID+"/nfo/diff", nil)
+		req.SetPathValue("id", a.ID)
+		w := httptest.NewRecorder()
+
+		r.handleNFODiff(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+		}
+
+		var resp nfo.DiffResult
+		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+			t.Fatalf("decoding response: %v", err)
+		}
+
+		if !resp.HasDiff {
+			t.Errorf("HasDiff = false for path-based artist without NFO file, want true")
+		}
+	})
+
+	t.Run("path-based artist with matching nfo shows no diff", func(t *testing.T) {
+		dir := t.TempDir()
+		a := &artist.Artist{
+			Name:     "Matching NFO Artist",
+			SortName: "Matching NFO Artist",
+			Type:     "group",
+			Path:     dir,
+		}
+		if err := artistSvc.Create(context.Background(), a); err != nil {
+			t.Fatalf("creating artist: %v", err)
+		}
+
+		// Write an NFO file that matches the DB state.
+		nfoContent := `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<artist>
+  <name>Matching NFO Artist</name>
+  <sortname>Matching NFO Artist</sortname>
+  <type>group</type>
+</artist>`
+		if err := os.WriteFile(filepath.Join(dir, "artist.nfo"), []byte(nfoContent), 0644); err != nil {
+			t.Fatalf("writing nfo: %v", err)
+		}
+
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/artists/"+a.ID+"/nfo/diff", nil)
+		req.SetPathValue("id", a.ID)
+		w := httptest.NewRecorder()
+
+		r.handleNFODiff(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+		}
+
+		var resp nfo.DiffResult
+		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+			t.Fatalf("decoding response: %v", err)
+		}
+
+		if resp.HasDiff {
+			t.Errorf("HasDiff = true for matching NFO, want false")
+		}
+	})
 }
 
 func TestHandleNFODiff_HTMX(t *testing.T) {

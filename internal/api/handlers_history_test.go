@@ -445,8 +445,10 @@ func TestHandleListGlobalHistory(t *testing.T) {
 	r, artistSvc, historySvc := testRouterWithHistory(t)
 
 	a := addTestArtist(t, artistSvc, "Global History Artist")
+	b := addTestArtist(t, artistSvc, "Second Global Artist")
 	addHistoryChange(t, historySvc, a.ID, "biography", "", "bio text", "manual")
 	addHistoryChange(t, historySvc, a.ID, "genres", "", "Rock", "scan")
+	addHistoryChange(t, historySvc, b.ID, "biography", "", "second bio", "manual")
 
 	t.Run("returns all changes with JSON shape", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/history", nil)
@@ -467,18 +469,31 @@ func TestHandleListGlobalHistory(t *testing.T) {
 		if !ok {
 			t.Fatalf("changes is not []any: %T", resp["changes"])
 		}
-		if len(changes) != 2 {
-			t.Errorf("len(changes) = %d, want 2", len(changes))
+		if len(changes) != 3 {
+			t.Errorf("len(changes) = %d, want 3", len(changes))
 		}
-		if resp["total"] != float64(2) {
-			t.Errorf("total = %v, want 2", resp["total"])
+		if resp["total"] != float64(3) {
+			t.Errorf("total = %v, want 3", resp["total"])
 		}
 
-		// Verify artist_name is present.
-		if first, ok := changes[0].(map[string]any); ok {
-			if _, exists := first["artist_name"]; !exists {
-				t.Error("first change missing artist_name field")
+		// Verify artist_name is present and cross-artist results are included.
+		artistNames := map[string]bool{}
+		for _, entry := range changes {
+			c, ok := entry.(map[string]any)
+			if !ok {
+				continue
 			}
+			if name, exists := c["artist_name"]; exists {
+				if n, ok := name.(string); ok {
+					artistNames[n] = true
+				}
+			}
+		}
+		if !artistNames["Global History Artist"] {
+			t.Error("expected changes from 'Global History Artist'")
+		}
+		if !artistNames["Second Global Artist"] {
+			t.Error("expected changes from 'Second Global Artist'")
 		}
 	})
 

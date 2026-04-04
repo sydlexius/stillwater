@@ -2,12 +2,14 @@ package api
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
+	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/connection/emby"
 	"github.com/sydlexius/stillwater/internal/connection/jellyfin"
@@ -27,18 +29,23 @@ func (r *Router) handleNFODiff(w http.ResponseWriter, req *http.Request) {
 
 	a, err := r.artistService.GetByID(req.Context(), artistID)
 	if err != nil {
-		writeError(w, req, http.StatusNotFound, "artist not found")
+		if errors.Is(err, artist.ErrNotFound) {
+			writeError(w, req, http.StatusNotFound, "artist not found")
+			return
+		}
+		r.logger.Error("fetching artist for NFO diff", "artist_id", artistID, "error", err)
+		writeError(w, req, http.StatusInternalServerError, "internal error")
 		return
 	}
 
 	// Compare on-disk NFO (previous state) against current database metadata.
 	// For pathless artists, both sides come from the database, so no diff.
-	var onDiskNFO *nfo.ArtistNFO
+	dbNFO := nfo.FromArtist(a)
+	onDiskNFO := dbNFO // default: identical, so no diff for pathless artists
 	if a.Path != "" {
 		nfoPath := filepath.Join(a.Path, "artist.nfo")
 		onDiskNFO = parseNFOFile(nfoPath)
 	}
-	dbNFO := nfo.FromArtist(a)
 	diff := nfo.Diff(onDiskNFO, dbNFO)
 
 	if isHTMXRequest(req) {
@@ -60,7 +67,12 @@ func (r *Router) handleNFODiffPage(w http.ResponseWriter, req *http.Request) {
 	artistID := req.PathValue("id")
 	a, err := r.artistService.GetByID(req.Context(), artistID)
 	if err != nil {
-		http.Error(w, "artist not found", http.StatusNotFound)
+		if errors.Is(err, artist.ErrNotFound) {
+			http.Error(w, "artist not found", http.StatusNotFound)
+			return
+		}
+		r.logger.Error("fetching artist for NFO diff page", "artist_id", artistID, "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 

@@ -138,8 +138,10 @@ func (r *sqliteHistoryRepo) ListGlobal(ctx context.Context, filter GlobalHistory
 		whereClause = "WHERE " + strings.Join(where, " AND ")
 	}
 
-	// Count total matching rows.
-	countQ := "SELECT COUNT(*) FROM metadata_changes mc " + whereClause
+	// Count total matching rows. The JOIN ensures orphaned metadata_changes
+	// rows (where the artist was deleted) are excluded from the count,
+	// matching the behavior of the select query below.
+	countQ := "SELECT COUNT(*) FROM metadata_changes mc JOIN artists a ON a.id = mc.artist_id " + whereClause
 	var total int
 	if err := r.db.QueryRowContext(ctx, countQ, args...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("counting global metadata changes: %w", err)

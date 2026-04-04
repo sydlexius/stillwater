@@ -3,11 +3,31 @@ package api
 import (
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/artist"
 	"github.com/sydlexius/stillwater/web/templates"
 )
+
+// parseFilterValues extracts filter values from a multi-valued query parameter,
+// stripping the "+" include prefix that the filter flyout component emits.
+// Bare values (no prefix) are treated as includes. Values with a "-" exclude
+// prefix are ignored for now (exclude filtering is not yet implemented).
+func parseFilterValues(values []string) []string {
+	var result []string
+	for _, v := range values {
+		v = strings.TrimSpace(v)
+		if v == "" {
+			continue
+		}
+		if strings.HasPrefix(v, "-") {
+			continue // exclude not yet supported
+		}
+		result = append(result, strings.TrimPrefix(v, "+"))
+	}
+	return result
+}
 
 // handleListArtistHistory returns paginated metadata change records for an artist.
 // GET /api/v1/artists/{id}/history
@@ -127,7 +147,7 @@ func (r *Router) handleArtistHistoryTab(w http.ResponseWriter, req *http.Request
 // POST /api/v1/history/{id}/revert
 func (r *Router) handleRevertHistory(w http.ResponseWriter, req *http.Request) {
 	if r.historyService == nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "history service is not available"})
+		writeError(w, req, http.StatusServiceUnavailable, "history service is not available")
 		return
 	}
 
@@ -139,16 +159,21 @@ func (r *Router) handleRevertHistory(w http.ResponseWriter, req *http.Request) {
 	change, err := r.historyService.GetByID(req.Context(), changeID)
 	if err != nil {
 		if errors.Is(err, artist.ErrChangeNotFound) {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "change not found"})
+			writeError(w, req, http.StatusNotFound, "change not found")
 			return
 		}
 		r.logger.Error("fetching change for revert", "change_id", changeID, "error", err)
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		writeError(w, req, http.StatusInternalServerError, "internal error")
 		return
 	}
 
 	if !artist.IsTrackableField(change.Field) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "field is not revertible"})
+		writeError(w, req, http.StatusBadRequest, "field is not revertible")
+		return
+	}
+
+	if change.Source == "revert" {
+		writeError(w, req, http.StatusBadRequest, "revert entries cannot be reverted")
 		return
 	}
 
@@ -159,13 +184,13 @@ func (r *Router) handleRevertHistory(w http.ResponseWriter, req *http.Request) {
 	if change.OldValue == "" {
 		if err := r.artistService.ClearField(ctx, change.ArtistID, change.Field); err != nil {
 			r.logger.Error("reverting change (clear)", "change_id", changeID, "error", err)
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "revert failed"})
+			writeError(w, req, http.StatusInternalServerError, "revert failed")
 			return
 		}
 	} else {
 		if err := r.artistService.UpdateField(ctx, change.ArtistID, change.Field, change.OldValue); err != nil {
 			r.logger.Error("reverting change (update)", "change_id", changeID, "error", err)
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "revert failed"})
+			writeError(w, req, http.StatusInternalServerError, "revert failed")
 			return
 		}
 	}
@@ -174,19 +199,35 @@ func (r *Router) handleRevertHistory(w http.ResponseWriter, req *http.Request) {
 	// the new history entry that was created by the revert. For API callers,
 	// return JSON.
 	if isHTMXRequest(req) {
-		// Re-fetch the latest change for this artist+field to get the revert record.
-		changes, _, err := r.historyService.List(req.Context(), change.ArtistID, 1, 0)
+		// Re-fetch recent changes and find the revert record for this field.
+		// We search rather than trusting changes[0] because another concurrent
+		// write could produce a newer entry for a different field.
+		changes, _, err := r.historyService.List(req.Context(), change.ArtistID, 20, 0)
 		if err != nil {
 			r.logger.Warn("fetching revert confirmation", "change_id", changeID, "error", err)
 		}
-		if err != nil || len(changes) == 0 {
-			// Fallback: the revert succeeded but we could not fetch the new record.
+
+		var revertChange *artist.MetadataChange
+		if err == nil {
+			for i := range changes {
+				if changes[i].Field == change.Field && changes[i].Source == "revert" {
+					revertChange = &changes[i]
+					break
+				}
+			}
+		}
+
+		if revertChange == nil {
+			// Fallback: the revert succeeded but we could not locate the new
+			// record among the 20 most recent changes (possible under concurrent load).
+			r.logger.Warn("revert record not found in recent history, using fallback confirmation",
+				"change_id", changeID, "field", change.Field, "artist_id", change.ArtistID)
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`<div class="border-l-2 border-amber-400 dark:border-amber-500 pl-4 py-2"><p class="text-sm text-amber-600 dark:text-amber-400">Change reverted successfully.</p></div>`))
 			return
 		}
-		renderTempl(w, req, templates.HistoryChangeRowFragment(changes[0]))
+		renderTempl(w, req, templates.HistoryChangeRowFragment(*revertChange))
 		return
 	}
 
@@ -207,14 +248,10 @@ func (r *Router) handleListGlobalHistory(w http.ResponseWriter, req *http.Reques
 	q := req.URL.Query()
 	filter := artist.GlobalHistoryFilter{
 		ArtistID: q.Get("artist_id"),
+		Fields:   parseFilterValues(q["field"]),
+		Sources:  parseFilterValues(q["source"]),
 		Limit:    intQuery(req, "limit", 50),
 		Offset:   intQuery(req, "offset", 0),
-	}
-	if f := q.Get("field"); f != "" {
-		filter.Fields = []string{f}
-	}
-	if s := q.Get("source"); s != "" {
-		filter.Sources = []string{s}
 	}
 
 	// Clamp for response echo.
@@ -256,9 +293,13 @@ func (r *Router) handleActivityPage(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	q := req.URL.Query()
 	filter := artist.GlobalHistoryFilter{
-		Limit:  25,
-		Offset: 0,
+		ArtistID: q.Get("artist_id"),
+		Fields:   parseFilterValues(q["field"]),
+		Sources:  parseFilterValues(q["source"]),
+		Limit:    25,
+		Offset:   0,
 	}
 
 	var changes []artist.MetadataChangeWithArtist
@@ -277,10 +318,13 @@ func (r *Router) handleActivityPage(w http.ResponseWriter, req *http.Request) {
 	}
 
 	data := templates.ActivityPageData{
-		Changes: changes,
-		Total:   total,
-		Limit:   filter.Limit,
-		Offset:  filter.Offset,
+		Changes:        changes,
+		Total:          total,
+		Limit:          filter.Limit,
+		Offset:         filter.Offset,
+		FilterArtistID: filter.ArtistID,
+		FilterFields:   filter.Fields,
+		FilterSources:  filter.Sources,
 	}
 	renderTempl(w, req, templates.ActivityPage(r.assetsFor(req), data))
 }
@@ -288,7 +332,14 @@ func (r *Router) handleActivityPage(w http.ResponseWriter, req *http.Request) {
 // handleActivityContent renders the activity list fragment for HTMX.
 // GET /activity/content
 func (r *Router) handleActivityContent(w http.ResponseWriter, req *http.Request) {
+	userID := middleware.UserIDFromContext(req.Context())
+	if userID == "" {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	if r.historyService == nil {
+		r.logger.Warn("activity content requested but history service is not configured")
 		renderTempl(w, req, templates.ActivityContent(templates.ActivityPageData{Limit: 25}))
 		return
 	}
@@ -296,14 +347,10 @@ func (r *Router) handleActivityContent(w http.ResponseWriter, req *http.Request)
 	q := req.URL.Query()
 	filter := artist.GlobalHistoryFilter{
 		ArtistID: q.Get("artist_id"),
+		Fields:   parseFilterValues(q["field"]),
+		Sources:  parseFilterValues(q["source"]),
 		Limit:    intQuery(req, "limit", 25),
 		Offset:   intQuery(req, "offset", 0),
-	}
-	if f := q.Get("field"); f != "" {
-		filter.Fields = []string{f}
-	}
-	if s := q.Get("source"); s != "" {
-		filter.Sources = []string{s}
 	}
 	if filter.Limit <= 0 {
 		filter.Limit = 25
@@ -333,6 +380,13 @@ func (r *Router) handleActivityContent(w http.ResponseWriter, req *http.Request)
 		FilterArtistID: filter.ArtistID,
 		FilterFields:   filter.Fields,
 		FilterSources:  filter.Sources,
+	}
+
+	// Load-more requests (offset > 0) return just the new rows + updated
+	// load-more button, appending to the existing list.
+	if filter.Offset > 0 {
+		renderTempl(w, req, templates.ActivityMoreRows(data))
+		return
 	}
 	renderTempl(w, req, templates.ActivityContent(data))
 }

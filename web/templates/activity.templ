@@ -44,12 +44,7 @@ templ ActivityPage(assets AssetPaths, data ActivityPageData) {
 					Filters
 				</button>
 			</div>
-			<div
-				id="activity-content"
-				hx-get="/activity/content"
-				hx-trigger="load"
-				hx-swap="innerHTML"
-			>
+			<div id="activity-content">
 				@ActivityContent(data)
 			</div>
 		</div>
@@ -75,6 +70,18 @@ templ ActivityPage(assets AssetPaths, data ActivityPageData) {
 			}
 		}
 		<script>
+			// Reload activity content when the filter flyout applies filters.
+			document.body.addEventListener('sw:filter-applied', function(evt) {
+				if (evt.target && evt.target.id === 'activity-content') {
+					var bpMeta = document.querySelector('meta[name="htmx-base-path"]');
+					var bp = bpMeta ? bpMeta.content : '';
+					var path = '/activity/content';
+					if (bp) { path = bp + path; }
+					htmx.ajax('GET', path + window.location.search, {target: '#activity-content', swap: 'innerHTML'});
+				}
+			});
+
+			// Initialise the flyout from URL params on first page load.
 			document.addEventListener('DOMContentLoaded', function() {
 				if (typeof swFilterFlyout !== 'undefined') {
 					swFilterFlyout.initFromURL('activity-filters-flyout');
@@ -97,24 +104,57 @@ templ ActivityContent(data ActivityPageData) {
 			}
 		</div>
 		if data.Offset+len(data.Changes) < data.Total {
+			<div id="activity-load-more-wrapper">
+				<div id="activity-load-more" class="flex justify-center mt-4">
+					<button
+						type="button"
+						aria-label="Load more activity entries"
+						class="px-4 py-2 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
+						hx-get={ activityLoadMoreURL(data) }
+						hx-target="#activity-load-more-wrapper"
+						hx-swap="outerHTML"
+					>
+						Load more
+					</button>
+				</div>
+			</div>
+		}
+		if data.Total > 0 {
+			<p id="activity-showing-counter" class="text-xs text-gray-400 dark:text-gray-500 text-right mt-2">
+				Showing { strconv.Itoa(min(data.Offset+len(data.Changes), data.Total)) } of { strconv.Itoa(data.Total) } changes
+			</p>
+		}
+	}
+}
+
+// ActivityMoreRows renders additional activity rows for HTMX load-more.
+// The response replaces #activity-load-more-wrapper via outerHTML: new rows
+// come first, followed by an updated load-more button (or nothing if exhausted).
+// An hx-swap-oob paragraph updates the "Showing X of Y" counter.
+templ ActivityMoreRows(data ActivityPageData) {
+	<div id="activity-load-more-wrapper">
+		for _, c := range data.Changes {
+			@activityRow(c)
+		}
+		if data.Offset+len(data.Changes) < data.Total {
 			<div id="activity-load-more" class="flex justify-center mt-4">
 				<button
 					type="button"
 					aria-label="Load more activity entries"
 					class="px-4 py-2 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
 					hx-get={ activityLoadMoreURL(data) }
-					hx-target="#activity-content"
-					hx-swap="innerHTML"
+					hx-target="#activity-load-more-wrapper"
+					hx-swap="outerHTML"
 				>
 					Load more
 				</button>
 			</div>
 		}
-		if data.Total > 0 {
-			<p class="text-xs text-gray-400 dark:text-gray-500 text-right mt-2">
-				Showing { strconv.Itoa(min(data.Offset+len(data.Changes), data.Total)) } of { strconv.Itoa(data.Total) } changes
-			</p>
-		}
+	</div>
+	if data.Total > 0 {
+		<p id="activity-showing-counter" hx-swap-oob="true" class="text-xs text-gray-400 dark:text-gray-500 text-right mt-2">
+			Showing { strconv.Itoa(min(data.Offset+len(data.Changes), data.Total)) } of { strconv.Itoa(data.Total) } changes
+		</p>
 	}
 }
 

@@ -2,7 +2,7 @@ package artist
 
 import (
 	"context"
-	"strings"
+	"errors"
 	"testing"
 	"time"
 
@@ -294,7 +294,7 @@ func TestHistoryService_GetByID(t *testing.T) {
 		if err == nil {
 			t.Fatal("expected error, got nil")
 		}
-		if !strings.Contains(err.Error(), "metadata change not found") {
+		if !errors.Is(err, ErrChangeNotFound) {
 			t.Errorf("error = %v, want ErrChangeNotFound", err)
 		}
 	})
@@ -326,9 +326,15 @@ func TestHistoryService_ListGlobal(t *testing.T) {
 	}
 
 	// Record changes for both artists.
-	_ = svc.Record(ctx, "artist-a", "biography", "", "bio A", "manual")
-	_ = svc.Record(ctx, "artist-a", "genres", "", "Rock", "provider:musicbrainz")
-	_ = svc.Record(ctx, "artist-b", "biography", "", "bio B", "scan")
+	if err := svc.Record(ctx, "artist-a", "biography", "", "bio A", "manual"); err != nil {
+		t.Fatalf("recording artist-a biography change: %v", err)
+	}
+	if err := svc.Record(ctx, "artist-a", "genres", "", "Rock", "provider:musicbrainz"); err != nil {
+		t.Fatalf("recording artist-a genres change: %v", err)
+	}
+	if err := svc.Record(ctx, "artist-b", "biography", "", "bio B", "scan"); err != nil {
+		t.Fatalf("recording artist-b biography change: %v", err)
+	}
 
 	t.Run("returns all changes with artist names", func(t *testing.T) {
 		changes, total, err := svc.ListGlobal(ctx, GlobalHistoryFilter{Limit: 50})
