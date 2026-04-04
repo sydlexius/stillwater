@@ -40,6 +40,7 @@ function pollAsyncStatus(url, callbacks, options) {
     }
     fetch(url, { headers: headers, credentials: credentials })
       .then(function (r) {
+        if (stopped) return null;
         if (!r.ok) {
           stop();
           if (callbacks.onHTTPError) callbacks.onHTTPError(r.status);
@@ -53,7 +54,7 @@ function pollAsyncStatus(url, callbacks, options) {
         });
       })
       .then(function (data) {
-        if (!data) return;
+        if (stopped || !data) return;
         if (callbacks.onData && callbacks.onData(data)) {
           stop();
           return;
@@ -61,6 +62,7 @@ function pollAsyncStatus(url, callbacks, options) {
         if (!stopped) timer = setTimeout(tick, intervalMs);
       })
       .catch(function (err) {
+        if (stopped) return;
         stop();
         if (callbacks.onNetworkError) callbacks.onNetworkError(err);
       });
