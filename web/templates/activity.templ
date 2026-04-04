@@ -16,6 +16,7 @@ type ActivityPageData struct {
 	Total          int
 	Limit          int
 	Offset         int
+	BasePath       string
 	FilterArtistID string
 	FilterFields   []string
 	FilterSources  []string
@@ -118,7 +119,7 @@ templ ActivityContent(data ActivityPageData) {
 	} else {
 		<div class="space-y-2" id="activity-entries">
 			for _, c := range data.Changes {
-				@activityRow(c)
+				@activityRow(c, data.BasePath)
 			}
 		</div>
 		if data.Offset+len(data.Changes) < data.Total {
@@ -162,7 +163,7 @@ templ ActivityMoreRows(data ActivityPageData) {
 	}
 	<div id="activity-entries" hx-swap-oob="beforeend">
 		for _, c := range data.Changes {
-			@activityRow(c)
+			@activityRow(c, data.BasePath)
 		}
 	</div>
 	if data.Total > 0 {
@@ -175,17 +176,17 @@ templ ActivityMoreRows(data ActivityPageData) {
 // ActivityChangeRowFragment is an exported wrapper for activityRow, used
 // by handlers that need to render a single activity row as an HTMX response
 // (e.g. after a successful revert from the activity page).
-templ ActivityChangeRowFragment(c artist.MetadataChangeWithArtist) {
-	@activityRow(c)
+templ ActivityChangeRowFragment(c artist.MetadataChangeWithArtist, basePath string) {
+	@activityRow(c, basePath)
 }
 
 // activityRow renders a single entry in the global activity feed.
-templ activityRow(c artist.MetadataChangeWithArtist) {
+templ activityRow(c artist.MetadataChangeWithArtist, basePath string) {
 	<div id={ "activity-change-" + c.ID } class="sw-card rounded-lg p-4">
 		<div class="flex items-center justify-between">
 			<div class="flex items-center gap-3">
 				<a
-					href={ templ.SafeURL("/artists/" + c.ArtistID) }
+					href={ templ.SafeURL(basePath + "/artists/" + c.ArtistID) }
 					class="font-medium text-sm text-blue-600 dark:text-blue-400 hover:underline"
 				>
 					{ c.ArtistName }

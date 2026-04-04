@@ -228,7 +228,7 @@ func (r *Router) handleRevertHistory(w http.ResponseWriter, req *http.Request) {
 				r.logger.Error("fetching revert confirmation for activity", "change_id", changeID, "error", err)
 			}
 			if err == nil && len(globalChanges) > 0 {
-				renderTempl(w, req, templates.ActivityChangeRowFragment(globalChanges[0]))
+				renderTempl(w, req, templates.ActivityChangeRowFragment(globalChanges[0], r.basePath))
 				return
 			}
 		} else {
@@ -352,6 +352,7 @@ func (r *Router) handleActivityPage(w http.ResponseWriter, req *http.Request) {
 		Total:          total,
 		Limit:          filter.Limit,
 		Offset:         filter.Offset,
+		BasePath:       r.basePath,
 		FilterArtistID: filter.ArtistID,
 		FilterFields:   filter.Fields,
 		FilterSources:  filter.Sources,
@@ -370,7 +371,7 @@ func (r *Router) handleActivityContent(w http.ResponseWriter, req *http.Request)
 
 	if r.historyService == nil {
 		r.logger.Warn("activity content requested but history service is not configured")
-		renderTempl(w, req, templates.ActivityContent(templates.ActivityPageData{Limit: 25}))
+		renderTempl(w, req, templates.ActivityContent(templates.ActivityPageData{Limit: 25, BasePath: r.basePath}))
 		return
 	}
 
@@ -407,6 +408,7 @@ func (r *Router) handleActivityContent(w http.ResponseWriter, req *http.Request)
 		Total:          total,
 		Limit:          filter.Limit,
 		Offset:         filter.Offset,
+		BasePath:       r.basePath,
 		FilterArtistID: filter.ArtistID,
 		FilterFields:   filter.Fields,
 		FilterSources:  filter.Sources,
