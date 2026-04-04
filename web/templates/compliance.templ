@@ -694,10 +694,6 @@ templ runRulesScript() {
 					}
 					return false;
 				},
-				onTimeout: function() {
-					showToast('Rule status polling timed out');
-					resetRuleButton();
-				},
 				onHTTPError: function(status) {
 					showToast('Status check failed (HTTP ' + status + ')');
 					resetRuleButton();
