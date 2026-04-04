@@ -11,6 +11,14 @@ import (
 	"github.com/sydlexius/stillwater/web/components"
 )
 
+// Filter trigger button class sets. Used in both the class attribute (via
+// templ.KV) and data-* attributes so the template is the single source of truth.
+const (
+	filterTriggerActive  = "border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-600"
+	filterTriggerNeutral = "border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700"
+	filterTriggerBadge   = "sw-filter-trigger-badge ml-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white dark:bg-blue-400 dark:text-gray-900"
+)
+
 // LibrarySourceInfo holds display metadata for an imported library's source.
 type LibrarySourceInfo struct {
 	Source         string // "emby", "jellyfin", "lidarr"
@@ -335,7 +343,10 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 					<button
 						id="artist-filter-trigger"
 						type="button"
-						class={ "inline-flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm transition-colors focus:outline-none focus:ring-1 focus:ring-blue-500", templ.KV("border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-600", activeFilterCount(data.Filters) > 0), templ.KV("border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700", activeFilterCount(data.Filters) == 0) }
+						class={ "inline-flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm transition-colors focus:outline-none focus:ring-1 focus:ring-blue-500", templ.KV(filterTriggerActive, activeFilterCount(data.Filters) > 0), templ.KV(filterTriggerNeutral, activeFilterCount(data.Filters) == 0) }
+						data-active-classes={ filterTriggerActive }
+						data-neutral-classes={ filterTriggerNeutral }
+						data-badge-classes={ filterTriggerBadge }
 						aria-label="Open filter panel"
 						aria-expanded="false"
 						aria-controls="artist-filters-flyout"
@@ -347,7 +358,7 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 						</svg>
 						<span>Filters</span>
 						if activeFilterCount(data.Filters) > 0 {
-							<span class="ml-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white dark:bg-blue-400 dark:text-gray-900" aria-label={ func() string { n := activeFilterCount(data.Filters); if n == 1 { return "1 active filter" }; return fmt.Sprintf("%d active filters", n) }() }>
+							<span class={ filterTriggerBadge } aria-label={ func() string { n := activeFilterCount(data.Filters); if n == 1 { return "1 active filter" }; return fmt.Sprintf("%d active filters", n) }() }>
 								{ fmt.Sprintf("%d", activeFilterCount(data.Filters)) }
 							</span>
 						}
