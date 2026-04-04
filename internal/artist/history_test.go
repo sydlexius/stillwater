@@ -366,12 +366,14 @@ func TestHistoryService_ListGlobal(t *testing.T) {
 		if total != 2 {
 			t.Errorf("total = %d, want 2", total)
 		}
+		if len(changes) != 2 {
+			t.Fatalf("len(changes) = %d, want 2", len(changes))
+		}
 		for _, c := range changes {
 			if c.ArtistID != "artist-a" {
 				t.Errorf("ArtistID = %q, want artist-a", c.ArtistID)
 			}
 		}
-		_ = changes
 	})
 
 	t.Run("filters by field", func(t *testing.T) {
@@ -385,12 +387,14 @@ func TestHistoryService_ListGlobal(t *testing.T) {
 		if total != 2 {
 			t.Errorf("total = %d, want 2", total)
 		}
+		if len(changes) != 2 {
+			t.Fatalf("len(changes) = %d, want 2", len(changes))
+		}
 		for _, c := range changes {
 			if c.Field != "biography" {
 				t.Errorf("Field = %q, want biography", c.Field)
 			}
 		}
-		_ = changes
 	})
 
 	t.Run("filters by source", func(t *testing.T) {
@@ -404,7 +408,10 @@ func TestHistoryService_ListGlobal(t *testing.T) {
 		if total != 1 {
 			t.Errorf("total = %d, want 1", total)
 		}
-		if len(changes) == 1 && changes[0].Source != "scan" {
+		if len(changes) != 1 {
+			t.Fatalf("len(changes) = %d, want 1", len(changes))
+		}
+		if changes[0].Source != "scan" {
 			t.Errorf("Source = %q, want scan", changes[0].Source)
 		}
 	})

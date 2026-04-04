@@ -181,14 +181,26 @@ func (r *Router) handleRevertHistory(w http.ResponseWriter, req *http.Request) {
 	// is distinguishable from manual edits.
 	ctx := artist.ContextWithSource(req.Context(), "revert")
 
+	// ClearField/UpdateField currently succeed silently when the artist ID
+	// does not exist (UPDATE affects zero rows). The ErrNotFound guards below
+	// are defensive: they will activate if the repo layer is updated to check
+	// RowsAffected and return ErrNotFound for missing artists.
 	if change.OldValue == "" {
 		if err := r.artistService.ClearField(ctx, change.ArtistID, change.Field); err != nil {
+			if errors.Is(err, artist.ErrNotFound) {
+				writeError(w, req, http.StatusNotFound, "artist not found")
+				return
+			}
 			r.logger.Error("reverting change (clear)", "change_id", changeID, "error", err)
 			writeError(w, req, http.StatusInternalServerError, "revert failed")
 			return
 		}
 	} else {
 		if err := r.artistService.UpdateField(ctx, change.ArtistID, change.Field, change.OldValue); err != nil {
+			if errors.Is(err, artist.ErrNotFound) {
+				writeError(w, req, http.StatusNotFound, "artist not found")
+				return
+			}
 			r.logger.Error("reverting change (update)", "change_id", changeID, "error", err)
 			writeError(w, req, http.StatusInternalServerError, "revert failed")
 			return
@@ -199,35 +211,53 @@ func (r *Router) handleRevertHistory(w http.ResponseWriter, req *http.Request) {
 	// the new history entry that was created by the revert. For API callers,
 	// return JSON.
 	if isHTMXRequest(req) {
-		// Re-fetch recent changes and find the revert record for this field.
-		// We search rather than trusting changes[0] because another concurrent
-		// write could produce a newer entry for a different field.
-		changes, _, err := r.historyService.List(req.Context(), change.ArtistID, 20, 0)
-		if err != nil {
-			r.logger.Warn("fetching revert confirmation", "change_id", changeID, "error", err)
-		}
+		// Determine whether the undo was triggered from the activity page or
+		// the artist history tab so we can render the correct fragment type.
+		fromActivity := strings.Contains(req.Header.Get("HX-Current-URL"), "/activity")
 
-		var revertChange *artist.MetadataChange
-		if err == nil {
-			for i := range changes {
-				if changes[i].Field == change.Field && changes[i].Source == "revert" {
-					revertChange = &changes[i]
-					break
+		if fromActivity {
+			// Activity feed needs MetadataChangeWithArtist (includes artist name).
+			filter := artist.GlobalHistoryFilter{
+				ArtistID: change.ArtistID,
+				Fields:   []string{change.Field},
+				Sources:  []string{"revert"},
+				Limit:    1,
+			}
+			globalChanges, _, err := r.historyService.ListGlobal(req.Context(), filter)
+			if err != nil {
+				r.logger.Warn("fetching revert confirmation for activity", "change_id", changeID, "error", err)
+			}
+			if err == nil && len(globalChanges) > 0 {
+				renderTempl(w, req, templates.ActivityChangeRowFragment(globalChanges[0]))
+				return
+			}
+		} else {
+			// Artist history tab needs MetadataChange (no artist name needed).
+			changes, _, err := r.historyService.List(req.Context(), change.ArtistID, 20, 0)
+			if err != nil {
+				r.logger.Warn("fetching revert confirmation", "change_id", changeID, "error", err)
+			}
+			var revertChange *artist.MetadataChange
+			if err == nil {
+				for i := range changes {
+					if changes[i].Field == change.Field && changes[i].Source == "revert" {
+						revertChange = &changes[i]
+						break
+					}
 				}
+			}
+			if revertChange != nil {
+				renderTempl(w, req, templates.HistoryChangeRowFragment(*revertChange))
+				return
 			}
 		}
 
-		if revertChange == nil {
-			// Fallback: the revert succeeded but we could not locate the new
-			// record among the 20 most recent changes (possible under concurrent load).
-			r.logger.Warn("revert record not found in recent history, using fallback confirmation",
-				"change_id", changeID, "field", change.Field, "artist_id", change.ArtistID)
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`<div class="border-l-2 border-amber-400 dark:border-amber-500 pl-4 py-2"><p class="text-sm text-amber-600 dark:text-amber-400">Change reverted successfully.</p></div>`))
-			return
-		}
-		renderTempl(w, req, templates.HistoryChangeRowFragment(*revertChange))
+		// Fallback: the revert succeeded but we could not locate the new record.
+		r.logger.Warn("revert record not found in recent history, using fallback confirmation",
+			"change_id", changeID, "field", change.Field, "artist_id", change.ArtistID)
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`<div class="border-l-2 border-amber-400 dark:border-amber-500 pl-4 py-2"><p class="text-sm text-amber-600 dark:text-amber-400">Change reverted successfully.</p></div>`))
 		return
 	}
 

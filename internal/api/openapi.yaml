@@ -2159,6 +2159,12 @@ paths:
                   change_id:
                     type: string
                 required: [reverted, change_id]
+            text/html:
+              schema:
+                type: string
+              description: >
+                When the request includes an HX-Request header, returns an HTML
+                fragment of the newly created revert history row instead of JSON.
         "400":
           description: Field is not revertible, or change source is "revert".
           content:
@@ -2215,14 +2221,26 @@ paths:
             type: string
         - name: field
           in: query
-          description: Filter by field name (e.g. "biography", "genres").
+          description: >
+            Filter by field name. Repeat the parameter to include multiple
+            fields (e.g. ?field=biography&field=genres).
+          style: form
+          explode: true
           schema:
-            type: string
+            type: array
+            items:
+              type: string
         - name: source
           in: query
-          description: Filter by source (e.g. "manual", "revert").
+          description: >
+            Filter by change source. Repeat the parameter to include multiple
+            sources (e.g. ?source=manual&source=scan).
+          style: form
+          explode: true
           schema:
-            type: string
+            type: array
+            items:
+              type: string
       responses:
         "200":
           description: Paginated list of metadata changes with artist names.
