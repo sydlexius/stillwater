@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 )
 
@@ -34,6 +35,29 @@ func (r *sqliteHistoryRepo) Record(ctx context.Context, change *MetadataChange) 
 		return fmt.Errorf("inserting metadata change: %w", err)
 	}
 	return nil
+}
+
+// GetByID retrieves a single metadata change by its primary key.
+func (r *sqliteHistoryRepo) GetByID(ctx context.Context, id string) (*MetadataChange, error) {
+	const q = `
+		SELECT id, artist_id, field, old_value, new_value, source, created_at
+		FROM metadata_changes
+		WHERE id = ?`
+
+	var c MetadataChange
+	var createdAtStr string
+	err := r.db.QueryRowContext(ctx, q, id).Scan(
+		&c.ID, &c.ArtistID, &c.Field, &c.OldValue, &c.NewValue, &c.Source, &createdAtStr,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("%w: %s", ErrChangeNotFound, id)
+		}
+		return nil, fmt.Errorf("querying metadata change: %w", err)
+	}
+
+	c.CreatedAt = parseHistoryTimestamp(c.ID, createdAtStr)
+	return &c, nil
 }
 
 // List returns paginated metadata changes for an artist, ordered by created_at DESC.
@@ -71,21 +95,7 @@ func (r *sqliteHistoryRepo) List(ctx context.Context, artistID string, limit, of
 		if err := rows.Scan(&c.ID, &c.ArtistID, &c.Field, &c.OldValue, &c.NewValue, &c.Source, &createdAtStr); err != nil {
 			return nil, 0, fmt.Errorf("scanning metadata change row: %w", err)
 		}
-		t, err := time.Parse(time.RFC3339, createdAtStr)
-		if err != nil {
-			// Fall back to SQLite's datetime() format (space separator, no timezone suffix).
-			t, err = time.Parse("2006-01-02 15:04:05", createdAtStr)
-			if err != nil {
-				slog.Warn("unparsable created_at in metadata_changes",
-					"change_id", c.ID,
-					"raw_value", createdAtStr,
-					"error", err,
-				)
-				// Use current time as fallback so clients never see a zero-value timestamp.
-				t = time.Now()
-			}
-		}
-		c.CreatedAt = t.UTC()
+		c.CreatedAt = parseHistoryTimestamp(c.ID, createdAtStr)
 		changes = append(changes, c)
 	}
 	if err := rows.Err(); err != nil {
@@ -93,4 +103,105 @@ func (r *sqliteHistoryRepo) List(ctx context.Context, artistID string, limit, of
 	}
 
 	return changes, total, nil
+}
+
+// ListGlobal returns paginated metadata changes across all artists, joining
+// the artists table to include the artist name in each result.
+func (r *sqliteHistoryRepo) ListGlobal(ctx context.Context, filter GlobalHistoryFilter) ([]MetadataChangeWithArtist, int, error) {
+	// Build dynamic WHERE clause.
+	var where []string
+	var args []any
+
+	if filter.ArtistID != "" {
+		where = append(where, "mc.artist_id = ?")
+		args = append(args, filter.ArtistID)
+	}
+	if len(filter.Fields) > 0 {
+		placeholders := make([]string, len(filter.Fields))
+		for i, f := range filter.Fields {
+			placeholders[i] = "?"
+			args = append(args, f)
+		}
+		where = append(where, "mc.field IN ("+strings.Join(placeholders, ", ")+")")
+	}
+	if len(filter.Sources) > 0 {
+		placeholders := make([]string, len(filter.Sources))
+		for i, s := range filter.Sources {
+			placeholders[i] = "?"
+			args = append(args, s)
+		}
+		where = append(where, "mc.source IN ("+strings.Join(placeholders, ", ")+")")
+	}
+
+	whereClause := ""
+	if len(where) > 0 {
+		whereClause = "WHERE " + strings.Join(where, " AND ")
+	}
+
+	// Count total matching rows.
+	countQ := "SELECT COUNT(*) FROM metadata_changes mc " + whereClause
+	var total int
+	if err := r.db.QueryRowContext(ctx, countQ, args...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("counting global metadata changes: %w", err)
+	}
+	if total == 0 {
+		return []MetadataChangeWithArtist{}, 0, nil
+	}
+
+	// Fetch rows with artist name.
+	selectQ := `
+		SELECT mc.id, mc.artist_id, a.name, mc.field, mc.old_value, mc.new_value, mc.source, mc.created_at
+		FROM metadata_changes mc
+		JOIN artists a ON a.id = mc.artist_id
+		` + whereClause + `
+		ORDER BY mc.created_at DESC, mc.id DESC
+		LIMIT ? OFFSET ?`
+
+	queryArgs := make([]any, len(args))
+	copy(queryArgs, args)
+	queryArgs = append(queryArgs, filter.Limit, filter.Offset)
+
+	rows, err := r.db.QueryContext(ctx, selectQ, queryArgs...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("querying global metadata changes: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var changes []MetadataChangeWithArtist
+	for rows.Next() {
+		var c MetadataChangeWithArtist
+		var createdAtStr string
+		if err := rows.Scan(
+			&c.ID, &c.ArtistID, &c.ArtistName,
+			&c.Field, &c.OldValue, &c.NewValue, &c.Source, &createdAtStr,
+		); err != nil {
+			return nil, 0, fmt.Errorf("scanning global metadata change row: %w", err)
+		}
+		c.CreatedAt = parseHistoryTimestamp(c.ID, createdAtStr)
+		changes = append(changes, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("iterating global metadata change rows: %w", err)
+	}
+
+	return changes, total, nil
+}
+
+// parseHistoryTimestamp parses a created_at string from the metadata_changes
+// table, trying RFC3339 first, then SQLite datetime format. Falls back to
+// current time with a warning if both fail.
+func parseHistoryTimestamp(changeID, raw string) time.Time {
+	t, err := time.Parse(time.RFC3339, raw)
+	if err != nil {
+		t, err = time.Parse("2006-01-02 15:04:05", raw)
+		if err != nil {
+			slog.Warn("unparsable created_at in metadata_changes",
+				"change_id", changeID,
+				"raw_value", raw,
+				"error", err,
+			)
+			return time.Now().UTC()
+		}
+	}
+	return t.UTC()
 }

@@ -13,86 +13,13 @@ import (
 	"github.com/sydlexius/stillwater/internal/nfo"
 )
 
-func TestHandleNFOSnapshotList(t *testing.T) {
-	r, artistSvc := testRouter(t)
-
-	a := addTestArtist(t, artistSvc, "Snapshot Artist")
-
-	ctx := context.Background()
-	if _, err := r.nfoSnapshotService.Save(ctx, a.ID, "<artist><name>V1</name></artist>"); err != nil {
-		t.Fatalf("saving snapshot 1: %v", err)
-	}
-	if _, err := r.nfoSnapshotService.Save(ctx, a.ID, "<artist><name>V2</name></artist>"); err != nil {
-		t.Fatalf("saving snapshot 2: %v", err)
-	}
-
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/artists/"+a.ID+"/nfo/snapshots", nil)
-	req.SetPathValue("id", a.ID)
-	w := httptest.NewRecorder()
-
-	r.handleNFOSnapshotList(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
-	}
-
-	var resp map[string][]nfo.Snapshot
-	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
-		t.Fatalf("decoding response: %v", err)
-	}
-
-	if len(resp["snapshots"]) != 2 {
-		t.Errorf("snapshot count = %d, want 2", len(resp["snapshots"]))
-	}
-}
-
-func TestHandleNFOSnapshotList_Empty(t *testing.T) {
-	r, artistSvc := testRouter(t)
-
-	a := addTestArtist(t, artistSvc, "No Snapshots")
-
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/artists/"+a.ID+"/nfo/snapshots", nil)
-	req.SetPathValue("id", a.ID)
-	w := httptest.NewRecorder()
-
-	r.handleNFOSnapshotList(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
-	}
-
-	var resp map[string][]nfo.Snapshot
-	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
-		t.Fatalf("decoding response: %v", err)
-	}
-
-	if len(resp["snapshots"]) != 0 {
-		t.Errorf("expected empty snapshots, got %d", len(resp["snapshots"]))
-	}
-}
-
-func TestHandleNFOSnapshotList_MissingID(t *testing.T) {
-	r, _ := testRouter(t)
-
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/artists//nfo/snapshots", nil)
-	w := httptest.NewRecorder()
-
-	r.handleNFOSnapshotList(w, req)
-
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want %d", w.Code, http.StatusBadRequest)
-	}
-}
-
 func TestHandleNFODiff_JSON(t *testing.T) {
 	r, artistSvc := testRouter(t)
 
 	a := addTestArtist(t, artistSvc, "Diff Artist")
 
-	ctx := context.Background()
-	if _, err := r.nfoSnapshotService.Save(ctx, a.ID, "<artist><name>Old Name</name></artist>"); err != nil {
-		t.Fatalf("saving snapshot: %v", err)
-	}
+	// For a pathless artist with no on-disk NFO, the diff compares nil vs database NFO.
+	_ = a
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/artists/"+a.ID+"/nfo/diff", nil)
 	req.SetPathValue("id", a.ID)
@@ -107,10 +34,6 @@ func TestHandleNFODiff_JSON(t *testing.T) {
 	var resp nfo.DiffResult
 	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatalf("decoding response: %v", err)
-	}
-
-	if len(resp.Fields) == 0 {
-		t.Error("expected diff fields in result")
 	}
 }
 
@@ -150,101 +73,6 @@ func TestHandleNFODiff_NotFound(t *testing.T) {
 	}
 }
 
-func TestHandleNFOSnapshotRestore_ArtistNotFound(t *testing.T) {
-	r, _ := testRouter(t)
-
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/nonexistent/nfo/snapshots/abc/restore", nil)
-	req.SetPathValue("id", "nonexistent")
-	req.SetPathValue("snapshotId", "abc")
-	w := httptest.NewRecorder()
-
-	r.handleNFOSnapshotRestore(w, req)
-
-	if w.Code != http.StatusNotFound {
-		t.Fatalf("status = %d, want %d", w.Code, http.StatusNotFound)
-	}
-}
-
-func TestHandleNFOSnapshotRestore_MissingParams(t *testing.T) {
-	r, _ := testRouter(t)
-
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists//nfo/snapshots//restore", nil)
-	w := httptest.NewRecorder()
-
-	r.handleNFOSnapshotRestore(w, req)
-
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want %d", w.Code, http.StatusBadRequest)
-	}
-}
-
-func TestHandleNFODiff_CrossArtistSnapshot(t *testing.T) {
-	r, artistSvc := testRouter(t)
-	ctx := context.Background()
-
-	artistA := addTestArtist(t, artistSvc, "Artist A")
-	artistB := addTestArtist(t, artistSvc, "Artist B")
-
-	// Save a snapshot for artist B
-	snap, err := r.nfoSnapshotService.Save(ctx, artistB.ID, "<artist><name>B</name></artist>")
-	if err != nil {
-		t.Fatalf("saving snapshot: %v", err)
-	}
-
-	// Try to diff artist A with artist B's snapshot -- should get 404
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/artists/"+artistA.ID+"/nfo/diff?compare_to="+snap.ID, nil)
-	req.SetPathValue("id", artistA.ID)
-	w := httptest.NewRecorder()
-
-	r.handleNFODiff(w, req)
-
-	if w.Code != http.StatusNotFound {
-		t.Errorf("status = %d, want %d (cross-artist snapshot should be rejected)", w.Code, http.StatusNotFound)
-	}
-}
-
-func TestHandleNFODiff_SnapshotNotFound(t *testing.T) {
-	r, artistSvc := testRouter(t)
-
-	a := addTestArtist(t, artistSvc, "Diff Missing Snap")
-
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/artists/"+a.ID+"/nfo/diff?compare_to=nonexistent", nil)
-	req.SetPathValue("id", a.ID)
-	w := httptest.NewRecorder()
-
-	r.handleNFODiff(w, req)
-
-	if w.Code != http.StatusNotFound {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusNotFound)
-	}
-}
-
-func TestHandleNFOSnapshotRestore_CrossArtist(t *testing.T) {
-	r, artistSvc := testRouter(t)
-	ctx := context.Background()
-
-	artistA := addTestArtist(t, artistSvc, "Restore A")
-	artistB := addTestArtist(t, artistSvc, "Restore B")
-
-	// Save a snapshot for artist B
-	snap, err := r.nfoSnapshotService.Save(ctx, artistB.ID, "<artist><name>B</name></artist>")
-	if err != nil {
-		t.Fatalf("saving snapshot: %v", err)
-	}
-
-	// Try to restore artist B's snapshot via artist A's route -- should get 404
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+artistA.ID+"/nfo/snapshots/"+snap.ID+"/restore", nil)
-	req.SetPathValue("id", artistA.ID)
-	req.SetPathValue("snapshotId", snap.ID)
-	w := httptest.NewRecorder()
-
-	r.handleNFOSnapshotRestore(w, req)
-
-	if w.Code != http.StatusNotFound {
-		t.Errorf("status = %d, want %d (cross-artist restore should be rejected)", w.Code, http.StatusNotFound)
-	}
-}
-
 func TestHandleNFODiff_PathlessArtist(t *testing.T) {
 	r, artistSvc := testRouter(t)
 
@@ -272,112 +100,6 @@ func TestHandleNFODiff_PathlessArtist(t *testing.T) {
 	var resp nfo.DiffResult
 	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatalf("decoding response: %v", err)
-	}
-}
-
-func TestHandleNFODiff_PathlessArtist_WithSnapshot(t *testing.T) {
-	r, artistSvc := testRouter(t)
-	ctx := context.Background()
-
-	a := &artist.Artist{
-		Name:     "Virtual Snapshot Artist",
-		SortName: "Virtual Snapshot Artist",
-		Type:     "group",
-		Path:     "",
-	}
-	if err := artistSvc.Create(ctx, a); err != nil {
-		t.Fatalf("creating artist: %v", err)
-	}
-
-	// Save a snapshot with a different name to get a diff.
-	if _, err := r.nfoSnapshotService.Save(ctx, a.ID, "<artist><name>Old Name</name></artist>"); err != nil {
-		t.Fatalf("saving snapshot: %v", err)
-	}
-
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/artists/"+a.ID+"/nfo/diff", nil)
-	req.SetPathValue("id", a.ID)
-	w := httptest.NewRecorder()
-
-	r.handleNFODiff(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
-	}
-
-	var resp nfo.DiffResult
-	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
-		t.Fatalf("decoding response: %v", err)
-	}
-	if !resp.HasDiff {
-		t.Error("expected diff between virtual NFO and snapshot")
-	}
-}
-
-func TestHandleNFOSnapshotRestore_PathlessArtist(t *testing.T) {
-	r, artistSvc := testRouter(t)
-	ctx := context.Background()
-
-	a := &artist.Artist{
-		Name:          "Restorable Virtual",
-		SortName:      "Restorable Virtual",
-		Type:          "solo",
-		MusicBrainzID: "original-mbid",
-		Path:          "",
-	}
-	if err := artistSvc.Create(ctx, a); err != nil {
-		t.Fatalf("creating artist: %v", err)
-	}
-
-	// Save a snapshot with different fields.
-	snapContent := `<?xml version="1.0" encoding="UTF-8"?>
-<artist>
-  <name>Restored Name</name>
-  <sortname>Restored Name</sortname>
-  <type>group</type>
-  <musicbrainzartistid>restored-mbid</musicbrainzartistid>
-  <biography>Restored biography text.</biography>
-</artist>`
-	snap, err := r.nfoSnapshotService.Save(ctx, a.ID, snapContent)
-	if err != nil {
-		t.Fatalf("saving snapshot: %v", err)
-	}
-
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/artists/"+a.ID+"/nfo/snapshots/"+snap.ID+"/restore", nil)
-	req.SetPathValue("id", a.ID)
-	req.SetPathValue("snapshotId", snap.ID)
-	w := httptest.NewRecorder()
-
-	r.handleNFOSnapshotRestore(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d; body: %s", w.Code, http.StatusOK, w.Body.String())
-	}
-
-	// Verify the artist was updated in the database.
-	updated, err := artistSvc.GetByID(ctx, a.ID)
-	if err != nil {
-		t.Fatalf("getting updated artist: %v", err)
-	}
-	if updated.Name != "Restored Name" {
-		t.Errorf("Name = %q, want %q", updated.Name, "Restored Name")
-	}
-	if updated.MusicBrainzID != "restored-mbid" {
-		t.Errorf("MusicBrainzID = %q, want %q", updated.MusicBrainzID, "restored-mbid")
-	}
-	if updated.Type != "group" {
-		t.Errorf("Type = %q, want %q", updated.Type, "group")
-	}
-	if updated.Biography != "Restored biography text." {
-		t.Errorf("Biography = %q, want %q", updated.Biography, "Restored biography text.")
-	}
-
-	// Verify a safety snapshot was created (before the restore).
-	snapshots, err := r.nfoSnapshotService.List(ctx, a.ID)
-	if err != nil {
-		t.Fatalf("listing snapshots: %v", err)
-	}
-	if len(snapshots) < 2 {
-		t.Errorf("expected at least 2 snapshots (original + safety), got %d", len(snapshots))
 	}
 }
 

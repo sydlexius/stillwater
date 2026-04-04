@@ -2,6 +2,7 @@ package artist
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -90,6 +91,7 @@ func TestHistoryService_Record(t *testing.T) {
 			"rule:missing_mbid",
 			"scan",
 			"import",
+			"revert",
 		}
 		for _, src := range sources {
 			err := svc.Record(ctx, artistID2, "biography", "", "value", src)
@@ -259,5 +261,193 @@ func TestHistoryService_RecordPreservesTimestamp(t *testing.T) {
 	ts := changes[0].CreatedAt
 	if ts.Before(before) || ts.After(after) {
 		t.Errorf("CreatedAt %v not within expected range [%v, %v]", ts, before, after)
+	}
+}
+
+func TestHistoryService_GetByID(t *testing.T) {
+	svc := setupHistoryTestDB(t)
+	ctx := context.Background()
+
+	t.Run("returns recorded change", func(t *testing.T) {
+		if err := svc.Record(ctx, "artist-get", "biography", "old", "new", "manual"); err != nil {
+			t.Fatalf("Record() error = %v", err)
+		}
+		changes, _, err := svc.List(ctx, "artist-get", 1, 0)
+		if err != nil || len(changes) == 0 {
+			t.Fatalf("List() error = %v, len = %d", err, len(changes))
+		}
+
+		got, err := svc.GetByID(ctx, changes[0].ID)
+		if err != nil {
+			t.Fatalf("GetByID() error = %v", err)
+		}
+		if got.Field != "biography" {
+			t.Errorf("Field = %q, want %q", got.Field, "biography")
+		}
+		if got.OldValue != "old" {
+			t.Errorf("OldValue = %q, want %q", got.OldValue, "old")
+		}
+	})
+
+	t.Run("returns ErrChangeNotFound for missing ID", func(t *testing.T) {
+		_, err := svc.GetByID(ctx, "nonexistent-id")
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if !strings.Contains(err.Error(), "metadata change not found") {
+			t.Errorf("error = %v, want ErrChangeNotFound", err)
+		}
+	})
+
+	t.Run("returns error for empty ID", func(t *testing.T) {
+		_, err := svc.GetByID(ctx, "")
+		if err == nil {
+			t.Fatal("expected error for empty ID, got nil")
+		}
+	})
+}
+
+func TestHistoryService_ListGlobal(t *testing.T) {
+	svc := setupHistoryTestDB(t)
+	ctx := context.Background()
+
+	// Need artists in the database for the JOIN.
+	db := svc.repo.(*sqliteHistoryRepo).db
+	for _, a := range []struct{ id, name string }{
+		{"artist-a", "Alpha"},
+		{"artist-b", "Beta"},
+	} {
+		_, err := db.ExecContext(ctx,
+			`INSERT INTO artists (id, name, sort_name, path) VALUES (?, ?, ?, '')`,
+			a.id, a.name, a.name)
+		if err != nil {
+			t.Fatalf("inserting artist %s: %v", a.id, err)
+		}
+	}
+
+	// Record changes for both artists.
+	_ = svc.Record(ctx, "artist-a", "biography", "", "bio A", "manual")
+	_ = svc.Record(ctx, "artist-a", "genres", "", "Rock", "provider:musicbrainz")
+	_ = svc.Record(ctx, "artist-b", "biography", "", "bio B", "scan")
+
+	t.Run("returns all changes with artist names", func(t *testing.T) {
+		changes, total, err := svc.ListGlobal(ctx, GlobalHistoryFilter{Limit: 50})
+		if err != nil {
+			t.Fatalf("ListGlobal() error = %v", err)
+		}
+		if total != 3 {
+			t.Errorf("total = %d, want 3", total)
+		}
+		if len(changes) != 3 {
+			t.Errorf("len(changes) = %d, want 3", len(changes))
+		}
+		// Verify artist names are populated.
+		for _, c := range changes {
+			if c.ArtistName == "" {
+				t.Errorf("ArtistName empty for change %s", c.ID)
+			}
+		}
+	})
+
+	t.Run("filters by artist_id", func(t *testing.T) {
+		changes, total, err := svc.ListGlobal(ctx, GlobalHistoryFilter{
+			ArtistID: "artist-a",
+			Limit:    50,
+		})
+		if err != nil {
+			t.Fatalf("ListGlobal() error = %v", err)
+		}
+		if total != 2 {
+			t.Errorf("total = %d, want 2", total)
+		}
+		for _, c := range changes {
+			if c.ArtistID != "artist-a" {
+				t.Errorf("ArtistID = %q, want artist-a", c.ArtistID)
+			}
+		}
+		_ = changes
+	})
+
+	t.Run("filters by field", func(t *testing.T) {
+		changes, total, err := svc.ListGlobal(ctx, GlobalHistoryFilter{
+			Fields: []string{"biography"},
+			Limit:  50,
+		})
+		if err != nil {
+			t.Fatalf("ListGlobal() error = %v", err)
+		}
+		if total != 2 {
+			t.Errorf("total = %d, want 2", total)
+		}
+		for _, c := range changes {
+			if c.Field != "biography" {
+				t.Errorf("Field = %q, want biography", c.Field)
+			}
+		}
+		_ = changes
+	})
+
+	t.Run("filters by source", func(t *testing.T) {
+		changes, total, err := svc.ListGlobal(ctx, GlobalHistoryFilter{
+			Sources: []string{"scan"},
+			Limit:   50,
+		})
+		if err != nil {
+			t.Fatalf("ListGlobal() error = %v", err)
+		}
+		if total != 1 {
+			t.Errorf("total = %d, want 1", total)
+		}
+		if len(changes) == 1 && changes[0].Source != "scan" {
+			t.Errorf("Source = %q, want scan", changes[0].Source)
+		}
+	})
+
+	t.Run("pagination works", func(t *testing.T) {
+		changes, total, err := svc.ListGlobal(ctx, GlobalHistoryFilter{
+			Limit:  2,
+			Offset: 0,
+		})
+		if err != nil {
+			t.Fatalf("ListGlobal() error = %v", err)
+		}
+		if total != 3 {
+			t.Errorf("total = %d, want 3", total)
+		}
+		if len(changes) != 2 {
+			t.Errorf("len(changes) = %d, want 2", len(changes))
+		}
+	})
+
+	t.Run("empty result returns empty slice", func(t *testing.T) {
+		changes, total, err := svc.ListGlobal(ctx, GlobalHistoryFilter{
+			ArtistID: "nonexistent",
+			Limit:    50,
+		})
+		if err != nil {
+			t.Fatalf("ListGlobal() error = %v", err)
+		}
+		if total != 0 {
+			t.Errorf("total = %d, want 0", total)
+		}
+		if changes == nil {
+			t.Error("expected empty slice, got nil")
+		}
+	})
+}
+
+func TestIsTrackableField(t *testing.T) {
+	trackable := []string{"biography", "genres", "styles", "moods", "formed", "born", "disbanded", "died", "years_active", "type", "gender"}
+	for _, f := range trackable {
+		if !IsTrackableField(f) {
+			t.Errorf("IsTrackableField(%q) = false, want true", f)
+		}
+	}
+
+	notTrackable := []string{"", "name", "id", "path", "nonexistent"}
+	for _, f := range notTrackable {
+		if IsTrackableField(f) {
+			t.Errorf("IsTrackableField(%q) = true, want false", f)
+		}
 	}
 }

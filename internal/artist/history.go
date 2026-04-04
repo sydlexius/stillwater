@@ -10,9 +10,12 @@ import (
 	"github.com/google/uuid"
 )
 
+// ErrChangeNotFound is returned when a metadata change record does not exist.
+var ErrChangeNotFound = fmt.Errorf("metadata change not found")
+
 // MetadataChange records a single field-level metadata change for an artist.
 // Source values follow the pattern: "manual", "provider:<name>", "rule:<rule_id>",
-// "scan", or "import".
+// "scan", "import", or "revert".
 type MetadataChange struct {
 	ID        string    `json:"id"`
 	ArtistID  string    `json:"artist_id"`
@@ -23,14 +26,39 @@ type MetadataChange struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// MetadataChangeWithArtist extends MetadataChange with the artist name,
+// used by global (cross-artist) queries where the caller needs to display
+// which artist was affected.
+type MetadataChangeWithArtist struct {
+	MetadataChange
+	ArtistName string `json:"artist_name"`
+}
+
+// GlobalHistoryFilter specifies filter criteria for cross-artist history queries.
+type GlobalHistoryFilter struct {
+	ArtistID string   // optional: restrict to a single artist
+	Fields   []string // optional: e.g. ["biography", "genres"]
+	Sources  []string // optional: e.g. ["manual", "revert"]
+	Limit    int
+	Offset   int
+}
+
 // HistoryRepository defines the persistence interface for metadata change records.
 type HistoryRepository interface {
 	// Record inserts a new metadata change entry.
 	Record(ctx context.Context, change *MetadataChange) error
 
+	// GetByID retrieves a single metadata change by its primary key.
+	// Returns ErrChangeNotFound when no matching record exists.
+	GetByID(ctx context.Context, id string) (*MetadataChange, error)
+
 	// List returns paginated changes for the given artist, ordered by
 	// created_at descending (most recent first).
 	List(ctx context.Context, artistID string, limit, offset int) ([]MetadataChange, int, error)
+
+	// ListGlobal returns paginated changes across all artists, ordered by
+	// created_at descending. The filter controls which records are returned.
+	ListGlobal(ctx context.Context, filter GlobalHistoryFilter) ([]MetadataChangeWithArtist, int, error)
 }
 
 // HistoryService provides metadata change tracking for artists.
@@ -63,6 +91,7 @@ func (h *HistoryService) Record(ctx context.Context, artistID, field, oldValue, 
 		return fmt.Errorf("source is required")
 	}
 	validSource := source == "manual" || source == "scan" || source == "import" ||
+		source == "revert" ||
 		strings.HasPrefix(source, "provider:") || strings.HasPrefix(source, "rule:")
 	if !validSource {
 		return fmt.Errorf("invalid source: %s", source)
@@ -77,6 +106,14 @@ func (h *HistoryService) Record(ctx context.Context, artistID, field, oldValue, 
 		CreatedAt: time.Now().UTC(),
 	}
 	return h.repo.Record(ctx, change)
+}
+
+// GetByID retrieves a single metadata change by ID.
+func (h *HistoryService) GetByID(ctx context.Context, id string) (*MetadataChange, error) {
+	if id == "" {
+		return nil, fmt.Errorf("change id is required")
+	}
+	return h.repo.GetByID(ctx, id)
 }
 
 // List returns paginated metadata changes for the given artist, ordered by
@@ -96,4 +133,29 @@ func (h *HistoryService) List(ctx context.Context, artistID string, limit, offse
 		offset = 0
 	}
 	return h.repo.List(ctx, artistID, limit, offset)
+}
+
+// ListGlobal returns paginated metadata changes across all artists.
+func (h *HistoryService) ListGlobal(ctx context.Context, filter GlobalHistoryFilter) ([]MetadataChangeWithArtist, int, error) {
+	if filter.Limit <= 0 {
+		filter.Limit = 50
+	}
+	if filter.Limit > 200 {
+		filter.Limit = 200
+	}
+	if filter.Offset < 0 {
+		filter.Offset = 0
+	}
+	return h.repo.ListGlobal(ctx, filter)
+}
+
+// IsTrackableField reports whether the given field name is tracked by the
+// history system and can be reverted via field-level undo.
+func IsTrackableField(field string) bool {
+	for _, f := range trackableFields {
+		if f == field {
+			return true
+		}
+	}
+	return false
 }

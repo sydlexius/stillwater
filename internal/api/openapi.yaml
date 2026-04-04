@@ -714,8 +714,8 @@ components:
           type: string
           description: >
             Origin of the change. One of "manual", "scan", "import",
-            "provider:<name>" (e.g. "provider:musicbrainz"), or
-            "rule:<rule_id>" (e.g. "rule:missing_mbid").
+            "revert", "provider:<name>" (e.g. "provider:musicbrainz"),
+            or "rule:<rule_id>" (e.g. "rule:missing_mbid").
         created_at:
           type: string
           format: date-time
@@ -2087,11 +2087,6 @@ paths:
           required: true
           schema:
             type: string
-        - name: compare_to
-          in: query
-          description: Snapshot ID to compare against (defaults to latest)
-          schema:
-            type: string
       responses:
         "200":
           description: NFO diff result (returns HTML fragment when HX-Request header is set)
@@ -2136,57 +2131,110 @@ paths:
                     format: date-time
                     description: Present when the NFO file exists and is accessible; contains the file's last-modified timestamp regardless of conflict status. Omitted when the file does not exist or cannot be accessed (pathless artists, missing file, or filesystem errors).
 
-  /artists/{id}/nfo/snapshots:
-    get:
-      tags: [NFO]
-      summary: List NFO snapshots
-      operationId: listNFOSnapshots
+  /history/{id}/revert:
+    post:
+      tags: [History]
+      summary: Revert a metadata change
+      operationId: revertHistory
+      description: >
+        Restores the old value from a metadata_changes record back to the
+        artist field. Creates a new history entry with source "revert".
       parameters:
         - name: id
           in: path
           required: true
+          description: Metadata change record ID.
           schema:
             type: string
       responses:
         "200":
-          description: List of snapshots
+          description: Change reverted successfully.
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  snapshots:
-                    type: array
-                    items:
-                      type: object
+                  reverted:
+                    type: boolean
+                  change_id:
+                    type: string
+                required: [reverted, change_id]
+        "400":
+          description: Field is not revertible.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Change not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
-  /artists/{id}/nfo/snapshots/{snapshotId}/restore:
-    post:
-      tags: [NFO]
-      summary: Restore NFO from snapshot
+  /history:
+    get:
+      tags: [History]
+      summary: List global metadata change history
+      operationId: listGlobalHistory
       description: >
-        For pathless artists, applies the snapshot fields to the database
-        and pushes updated metadata to connected platforms instead of
-        writing to disk.
-      operationId: restoreNFOSnapshot
+        Returns paginated metadata change records across all artists,
+        ordered by most recent first.
       parameters:
-        - name: id
-          in: path
-          required: true
+        - name: limit
+          in: query
+          description: Maximum number of records to return (1-200, default 50).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: offset
+          in: query
+          description: Number of records to skip for pagination.
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: artist_id
+          in: query
+          description: Filter to a single artist.
           schema:
             type: string
-        - name: snapshotId
-          in: path
-          required: true
+        - name: field
+          in: query
+          description: Filter by field name (e.g. "biography", "genres").
+          schema:
+            type: string
+        - name: source
+          in: query
+          description: Filter by source (e.g. "manual", "revert").
           schema:
             type: string
       responses:
         "200":
-          description: NFO restored
+          description: Paginated list of metadata changes with artist names.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Status"
+                type: object
+                properties:
+                  changes:
+                    type: array
+                    items:
+                      allOf:
+                        - $ref: "#/components/schemas/MetadataChange"
+                        - type: object
+                          properties:
+                            artist_name:
+                              type: string
+                  total:
+                    type: integer
+                  limit:
+                    type: integer
+                  offset:
+                    type: integer
+                required: [changes, total, limit, offset]
 
   /artists/{id}/platform-ids:
     get:

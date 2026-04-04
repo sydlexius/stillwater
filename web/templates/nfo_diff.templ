@@ -9,7 +9,6 @@ import (
 type NFODiffPageData struct {
 	Artist     artist.Artist
 	Diff       nfo.DiffResult
-	Snapshots  []nfo.Snapshot
 	IsPathless bool
 }
 
@@ -38,53 +37,18 @@ templ NFODiffPage(assets AssetPaths, data NFODiffPageData) {
 					</p>
 				</div>
 			}
-			<div class="grid grid-cols-1 gap-6 md:grid-cols-3">
-				<div class="md:col-span-2">
-					<div
-						id="nfo-diff-content"
-						hx-get={ "/api/v1/artists/" + data.Artist.ID + "/nfo/diff" }
-						hx-trigger="load"
-						hx-swap="innerHTML"
-					>
-						@NFODiffFragment(data.Diff)
-					</div>
-				</div>
-				<div class="space-y-6">
-					<section class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
-						<h2 class="text-lg font-semibold mb-3">Snapshots</h2>
-						if len(data.Snapshots) == 0 {
-							<p class="text-sm text-gray-500 dark:text-gray-400">No snapshots saved yet.</p>
-						}
-						<div class="space-y-2">
-							for _, snap := range data.Snapshots {
-								<div class="flex flex-col gap-2 rounded border border-gray-200 dark:border-gray-700 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
-									<span class="text-xs text-gray-500 dark:text-gray-400">
-										{ snap.CreatedAt.Format("2006-01-02 15:04") }
-									</span>
-									<div class="flex gap-1">
-										<button
-											hx-get={ "/api/v1/artists/" + data.Artist.ID + "/nfo/diff?compare_to=" + snap.ID }
-											hx-target="#nfo-diff-content"
-											hx-swap="innerHTML"
-											class="text-sm px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-										>
-											Compare
-										</button>
-										<button
-											hx-post={ "/api/v1/artists/" + data.Artist.ID + "/nfo/snapshots/" + snap.ID + "/restore" }
-											hx-swap="none"
-											hx-confirm="Restore this snapshot? The current NFO will be saved as a new snapshot first."
-											class="text-sm px-3 py-1.5 rounded bg-yellow-600 text-white hover:bg-yellow-700 transition-colors"
-										>
-											Restore
-										</button>
-									</div>
-								</div>
-							}
-						</div>
-					</section>
-				</div>
+			<div
+				id="nfo-diff-content"
+				hx-get={ "/api/v1/artists/" + data.Artist.ID + "/nfo/diff" }
+				hx-trigger="load"
+				hx-swap="innerHTML"
+			>
+				@NFODiffFragment(data.Diff)
 			</div>
+			<p class="text-xs text-gray-400 dark:text-gray-500">
+				Field-level undo is available from the
+				<a href={ templ.SafeURL("/artists/" + data.Artist.ID) } class="text-blue-500 hover:underline">artist history tab</a>.
+			</p>
 		</div>
 	}
 }

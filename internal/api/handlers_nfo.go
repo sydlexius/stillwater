@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
@@ -13,12 +12,12 @@ import (
 	"github.com/sydlexius/stillwater/internal/connection/emby"
 	"github.com/sydlexius/stillwater/internal/connection/jellyfin"
 	"github.com/sydlexius/stillwater/internal/connection/lidarr"
-	"github.com/sydlexius/stillwater/internal/filesystem"
 	"github.com/sydlexius/stillwater/internal/nfo"
 	"github.com/sydlexius/stillwater/web/templates"
 )
 
-// handleNFODiff computes a field-level diff between the current NFO and a snapshot.
+// handleNFODiff computes a field-level diff between the on-disk NFO and
+// the current database metadata.
 // GET /api/v1/artists/{id}/nfo/diff
 func (r *Router) handleNFODiff(w http.ResponseWriter, req *http.Request) {
 	artistID, ok := RequirePathParam(w, req, "id")
@@ -32,178 +31,21 @@ func (r *Router) handleNFODiff(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	// For pathless artists, generate a virtual NFO from database fields.
-	// For path-based artists, read the on-disk NFO file.
-	var currentNFO *nfo.ArtistNFO
+	// Compare on-disk NFO (previous state) against current database metadata.
+	// For pathless artists, both sides come from the database, so no diff.
+	var onDiskNFO *nfo.ArtistNFO
 	if a.Path != "" {
 		nfoPath := filepath.Join(a.Path, "artist.nfo")
-		currentNFO = parseNFOFile(nfoPath)
-	} else {
-		currentNFO = nfo.FromArtist(a)
+		onDiskNFO = parseNFOFile(nfoPath)
 	}
-
-	// Determine what to compare against
-	var snapshotNFO *nfo.ArtistNFO
-
-	compareToID := req.URL.Query().Get("compare_to")
-	if compareToID != "" {
-		snap, err := r.nfoSnapshotService.GetByID(req.Context(), compareToID)
-		if err != nil {
-			writeError(w, req, http.StatusNotFound, "snapshot not found")
-			return
-		}
-		if snap.ArtistID != artistID {
-			writeError(w, req, http.StatusNotFound, "snapshot not found")
-			return
-		}
-		snapshotNFO, err = nfo.Parse(strings.NewReader(snap.Content))
-		if err != nil {
-			writeError(w, req, http.StatusBadRequest, "invalid snapshot content")
-			return
-		}
-	} else {
-		// Default: compare against the latest snapshot
-		snapshots, err := r.nfoSnapshotService.List(req.Context(), artistID)
-		if err != nil {
-			r.logger.Warn("listing snapshots for nfo diff", "artist_id", artistID, "error", err)
-		} else if len(snapshots) > 0 {
-			parsed, parseErr := nfo.Parse(strings.NewReader(snapshots[0].Content))
-			if parseErr != nil {
-				r.logger.Warn("parsing snapshot for nfo diff", "artist_id", artistID, "snapshot_id", snapshots[0].ID, "error", parseErr)
-			} else {
-				snapshotNFO = parsed
-			}
-		}
-	}
-
-	diff := nfo.Diff(snapshotNFO, currentNFO)
+	dbNFO := nfo.FromArtist(a)
+	diff := nfo.Diff(onDiskNFO, dbNFO)
 
 	if isHTMXRequest(req) {
 		renderTempl(w, req, templates.NFODiffFragment(*diff))
 		return
 	}
 	writeJSON(w, http.StatusOK, diff)
-}
-
-// handleNFOSnapshotList returns all NFO snapshots for an artist.
-// GET /api/v1/artists/{id}/nfo/snapshots
-func (r *Router) handleNFOSnapshotList(w http.ResponseWriter, req *http.Request) {
-	artistID, ok := RequirePathParam(w, req, "id")
-	if !ok {
-		return
-	}
-
-	snapshots, err := r.nfoSnapshotService.List(req.Context(), artistID)
-	if err != nil {
-		r.logger.Error("listing nfo snapshots", "artist_id", artistID, "error", err)
-		writeError(w, req, http.StatusInternalServerError, "failed to list snapshots")
-		return
-	}
-
-	if snapshots == nil {
-		snapshots = []nfo.Snapshot{}
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{"snapshots": snapshots})
-}
-
-// handleNFOSnapshotRestore restores an NFO from a snapshot.
-// POST /api/v1/artists/{id}/nfo/snapshots/{snapshotId}/restore
-func (r *Router) handleNFOSnapshotRestore(w http.ResponseWriter, req *http.Request) {
-	artistID, ok := RequirePathParam(w, req, "id")
-	if !ok {
-		return
-	}
-	snapshotID, ok := RequirePathParam(w, req, "snapshotId")
-	if !ok {
-		return
-	}
-
-	a, err := r.artistService.GetByID(req.Context(), artistID)
-	if err != nil {
-		writeError(w, req, http.StatusNotFound, "artist not found")
-		return
-	}
-
-	snap, err := r.nfoSnapshotService.GetByID(req.Context(), snapshotID)
-	if err != nil {
-		writeError(w, req, http.StatusNotFound, "snapshot not found")
-		return
-	}
-	if snap.ArtistID != artistID {
-		writeError(w, req, http.StatusNotFound, "snapshot not found")
-		return
-	}
-
-	if a.Path == "" {
-		// Pathless artist: apply snapshot fields to the database and push to platforms.
-		snapNFO, parseErr := nfo.Parse(strings.NewReader(snap.Content))
-		if parseErr != nil {
-			writeError(w, req, http.StatusBadRequest, "invalid snapshot content")
-			return
-		}
-
-		// Save current state as a safety snapshot before restoring.
-		currentNFO := nfo.FromArtist(a)
-		var buf strings.Builder
-		if writeErr := nfo.Write(&buf, currentNFO); writeErr != nil {
-			r.logger.Warn("generating safety snapshot for virtual restore", "artist_id", artistID, "error", writeErr)
-		} else if buf.Len() > 0 {
-			if _, saveErr := r.nfoSnapshotService.Save(req.Context(), artistID, buf.String()); saveErr != nil {
-				r.logger.Warn("saving safety snapshot before virtual restore", "artist_id", artistID, "error", saveErr)
-			}
-		}
-
-		nfo.ApplyNFOToArtist(snapNFO, a)
-		if err := r.artistService.Update(req.Context(), a); err != nil {
-			r.logger.Error("updating artist from virtual nfo restore", "artist_id", artistID, "error", err)
-			writeError(w, req, http.StatusInternalServerError, "failed to restore NFO")
-			return
-		}
-		r.publisher.PushMetadataAsync(req.Context(), a)
-		writeJSON(w, http.StatusOK, map[string]string{"status": "restored"})
-		return
-	}
-
-	// Path-based artist: restore NFO file to disk.
-	// Safety: save current NFO as a new snapshot before overwriting
-	currentPath := filepath.Join(a.Path, "artist.nfo")
-	if currentData, readErr := os.ReadFile(currentPath); readErr == nil { //nolint:gosec // G304: path is constructed from trusted artist.Path, not user input
-		if _, saveErr := r.nfoSnapshotService.Save(req.Context(), artistID, string(currentData)); saveErr != nil {
-			r.logger.Warn("saving safety snapshot before restore", "artist_id", artistID, "error", saveErr)
-		}
-	}
-
-	// Register expected write so the filesystem watcher does not treat
-	// this restore as an external modification.
-	if r.expectedWrites != nil {
-		r.expectedWrites.Add(currentPath)
-		defer r.expectedWrites.Remove(currentPath)
-	}
-
-	// Write the snapshot content to disk
-	if err := filesystem.WriteFileAtomic(currentPath, []byte(snap.Content), 0o644); err != nil {
-		r.logger.Error("restoring nfo snapshot", "artist_id", artistID, "error", err)
-		writeError(w, req, http.StatusInternalServerError, "failed to restore NFO")
-		return
-	}
-
-	// Parse the restored snapshot and apply its fields to the artist struct
-	// so that PushMetadataAsync sends the restored values, not the pre-restore
-	// state. This mirrors the pathless branch logic above.
-	if snapNFO, parseErr := nfo.Parse(strings.NewReader(snap.Content)); parseErr == nil {
-		nfo.ApplyNFOToArtist(snapNFO, a)
-	}
-	a.NFOExists = true
-	if err := r.artistService.Update(req.Context(), a); err != nil {
-		r.logger.Warn("updating artist after nfo restore", "artist_id", artistID, "error", err)
-	} else {
-		// Push to platforms only when the DB update succeeded. The NFO was
-		// already restored to disk above, so WriteBackNFO is not needed.
-		r.publisher.PushMetadataAsync(req.Context(), a)
-	}
-
-	writeJSON(w, http.StatusOK, map[string]string{"status": "restored"})
 }
 
 // handleNFODiffPage renders the NFO diff HTML page.
@@ -222,18 +64,9 @@ func (r *Router) handleNFODiffPage(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	snapshots, snapErr := r.nfoSnapshotService.List(req.Context(), artistID)
-	if snapErr != nil {
-		r.logger.Warn("listing snapshots for nfo diff page", "artist_id", artistID, "error", snapErr)
-	}
-	if snapshots == nil {
-		snapshots = []nfo.Snapshot{}
-	}
-
 	data := templates.NFODiffPageData{
 		Artist:     *a,
 		Diff:       nfo.DiffResult{},
-		Snapshots:  snapshots,
 		IsPathless: a.Path == "",
 	}
 	renderTempl(w, req, templates.NFODiffPage(r.assetsFor(req), data))

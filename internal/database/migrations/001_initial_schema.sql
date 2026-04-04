@@ -281,6 +281,7 @@ CREATE TABLE IF NOT EXISTS metadata_changes (
 );
 
 CREATE INDEX idx_metadata_changes_artist ON metadata_changes(artist_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_metadata_changes_created ON metadata_changes(created_at DESC);
 
 -- Stores the last-known MusicBrainz value for each metadata field per artist.
 -- Upserted on each provider refresh so that Stillwater can compute diffs between
