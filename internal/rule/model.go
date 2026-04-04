@@ -148,6 +148,28 @@ type ViolationTrendPoint struct {
 	Resolved int    `json:"resolved"` // violations with resolved_at on this date
 }
 
+// RuleResult stores the per-rule evaluation outcome for a single artist.
+// Both passes and failures are recorded so report endpoints can aggregate
+// directly from the database without re-running the rule engine.
+type RuleResult struct {
+	ArtistID         string    `json:"artist_id"`
+	RuleID           string    `json:"rule_id"`
+	Passed           bool      `json:"passed"`
+	ViolationID      string    `json:"violation_id,omitempty"`      // empty when passed or no persisted violation
+	ViolationMessage string    `json:"violation_message,omitempty"` // empty when passed
+	EvaluatedAt      time.Time `json:"evaluated_at"`
+}
+
+// RuleStats aggregates pass and fail counts for a single rule across all artists.
+type RuleStats struct {
+	RuleID       string  `json:"rule_id"`
+	RuleName     string  `json:"rule_name"`
+	TotalArtists int     `json:"total_artists"`
+	PassCount    int     `json:"pass_count"`
+	FailCount    int     `json:"fail_count"`
+	PassRate     float64 `json:"pass_rate"`
+}
+
 // MarshalConfig serializes a RuleConfig to a JSON string.
 func MarshalConfig(cfg RuleConfig) string {
 	data, _ := json.Marshal(cfg)

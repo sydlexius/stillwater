@@ -302,6 +302,9 @@ func (e *Engine) Evaluate(ctx context.Context, a *artist.Artist) (*EvaluationRes
 		ArtistName: a.Name,
 	}
 
+	evaluatedAt := time.Now().UTC()
+	ruleResults := make([]RuleResult, 0, len(rules))
+
 	for _, r := range rules {
 		if !r.Enabled {
 			continue
@@ -316,6 +319,11 @@ func (e *Engine) Evaluate(ctx context.Context, a *artist.Artist) (*EvaluationRes
 		result.RulesTotal++
 
 		v := checker(a, r.Config)
+		rr := RuleResult{
+			ArtistID:    a.ID,
+			RuleID:      r.ID,
+			EvaluatedAt: evaluatedAt,
+		}
 		if v != nil {
 			// Use severity from rule config if the checker did not set it
 			if v.Severity == "" {
@@ -323,12 +331,22 @@ func (e *Engine) Evaluate(ctx context.Context, a *artist.Artist) (*EvaluationRes
 			}
 			v.Config = r.Config
 			result.Violations = append(result.Violations, *v)
+			rr.Passed = false
+			rr.ViolationMessage = v.Message
 		} else {
 			result.RulesPassed++
+			rr.Passed = true
 		}
+		ruleResults = append(ruleResults, rr)
 	}
 
 	result.HealthScore = calculateHealthScore(result.RulesPassed, result.RulesTotal)
+
+	if len(ruleResults) > 0 {
+		if err := e.service.UpsertRuleResults(ctx, ruleResults); err != nil {
+			e.logger.Warn("storing rule results", "artist_id", a.ID, "error", err)
+		}
+	}
 
 	return result, nil
 }

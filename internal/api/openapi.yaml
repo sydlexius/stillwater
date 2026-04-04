@@ -5975,6 +5975,57 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  /reports/rules:
+    get:
+      tags: [Reports]
+      summary: Get per-rule pass/fail statistics
+      description: >
+        Returns aggregated pass and fail counts for every rule that has at least
+        one stored result. Results are read directly from the rule_results table
+        via a single aggregation query; the rule engine is not invoked.
+      operationId: getReportRules
+      responses:
+        "200":
+          description: Per-rule statistics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rules:
+                    type: array
+                    description: One entry per rule that has at least one stored result.
+                    items:
+                      type: object
+                      properties:
+                        rule_id:
+                          type: string
+                          description: Unique rule identifier.
+                        rule_name:
+                          type: string
+                          description: Human-readable rule name.
+                        total_artists:
+                          type: integer
+                          description: Total number of artists with a stored result for this rule.
+                        pass_count:
+                          type: integer
+                          description: Number of artists that passed this rule.
+                        fail_count:
+                          type: integer
+                          description: Number of artists that failed this rule.
+                        pass_rate:
+                          type: number
+                          format: float
+                          description: pass_count / total_artists * 100. Zero when total_artists is zero.
+                      required: [rule_id, rule_name, total_artists, pass_count, fail_count, pass_rate]
+                required: [rules]
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   # --- Inbound webhooks ---
 
   /webhooks/inbound/lidarr:

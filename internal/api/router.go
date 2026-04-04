@@ -413,6 +413,7 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("GET "+bp+"/api/v1/reports/compliance", wrapAuth(r.handleReportCompliance, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/reports/compliance/export", wrapAuth(r.handleReportComplianceExport, authMw))
 	mux.HandleFunc("GET "+bp+"/api/v1/reports/metadata-completeness", wrapAuth(r.handleReportMetadataCompleteness, authMw))
+	mux.HandleFunc("GET "+bp+"/api/v1/reports/rules", wrapAuth(r.handleReportRules, authMw))
 
 	// History routes
 	mux.HandleFunc("GET "+bp+"/api/v1/artists/{id}/history", wrapAuth(r.handleListArtistHistory, authMw))

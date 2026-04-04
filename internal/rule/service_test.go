@@ -1600,3 +1600,186 @@ func TestRecordHealthSnapshot_ThrottleExpiry(t *testing.T) {
 		t.Errorf("health_history count = %d, want 2 after throttle expiry", count)
 	}
 }
+
+func TestUpsertRuleResults(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("SeedDefaults: %v", err)
+	}
+
+	// Insert a test artist.
+	_, err := db.ExecContext(ctx, `
+INSERT INTO artists (id, name, sort_name, type, path, created_at, updated_at)
+VALUES ('artist-1', 'Test Artist', 'Test Artist', 'group', '/music/test', datetime('now'), datetime('now'))
+`)
+	if err != nil {
+		t.Fatalf("inserting test artist: %v", err)
+	}
+
+	results := []RuleResult{
+		{ArtistID: "artist-1", RuleID: RuleNFOExists, Passed: true, EvaluatedAt: time.Now().UTC()},
+		{ArtistID: "artist-1", RuleID: RuleThumbExists, Passed: false, ViolationMessage: "thumb missing", EvaluatedAt: time.Now().UTC()},
+	}
+
+	if err := svc.UpsertRuleResults(ctx, results); err != nil {
+		t.Fatalf("UpsertRuleResults: %v", err)
+	}
+
+	var count int
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM rule_results WHERE artist_id = 'artist-1'").Scan(&count); err != nil {
+		t.Fatalf("counting rule_results: %v", err)
+	}
+	if count != 2 {
+		t.Errorf("rule_results count = %d, want 2", count)
+	}
+
+	// Verify passes and failures are stored correctly.
+	var passed int
+	if err := db.QueryRowContext(ctx, "SELECT passed FROM rule_results WHERE artist_id = 'artist-1' AND rule_id = ?", RuleNFOExists).Scan(&passed); err != nil {
+		t.Fatalf("querying nfo_exists result: %v", err)
+	}
+	if passed != 1 {
+		t.Errorf("nfo_exists passed = %d, want 1", passed)
+	}
+
+	var failPassed int
+	var msg string
+	if err := db.QueryRowContext(ctx, "SELECT passed, COALESCE(violation_message, '') FROM rule_results WHERE artist_id = 'artist-1' AND rule_id = ?", RuleThumbExists).Scan(&failPassed, &msg); err != nil {
+		t.Fatalf("querying thumb_exists result: %v", err)
+	}
+	if failPassed != 0 {
+		t.Errorf("thumb_exists passed = %d, want 0", failPassed)
+	}
+	if msg != "thumb missing" {
+		t.Errorf("thumb_exists violation_message = %q, want %q", msg, "thumb missing")
+	}
+}
+
+func TestUpsertRuleResults_Idempotent(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("SeedDefaults: %v", err)
+	}
+
+	_, err := db.ExecContext(ctx, `
+INSERT INTO artists (id, name, sort_name, type, path, created_at, updated_at)
+VALUES ('artist-2', 'Test Artist 2', 'Test Artist 2', 'group', '/music/test2', datetime('now'), datetime('now'))
+`)
+	if err != nil {
+		t.Fatalf("inserting test artist: %v", err)
+	}
+
+	results := []RuleResult{
+		{ArtistID: "artist-2", RuleID: RuleNFOExists, Passed: false, ViolationMessage: "nfo missing", EvaluatedAt: time.Now().UTC()},
+	}
+
+	// First upsert.
+	if err := svc.UpsertRuleResults(ctx, results); err != nil {
+		t.Fatalf("first UpsertRuleResults: %v", err)
+	}
+
+	// Second upsert with updated result (now passing).
+	results[0].Passed = true
+	results[0].ViolationMessage = ""
+	if err := svc.UpsertRuleResults(ctx, results); err != nil {
+		t.Fatalf("second UpsertRuleResults: %v", err)
+	}
+
+	var count int
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM rule_results WHERE artist_id = 'artist-2'").Scan(&count); err != nil {
+		t.Fatalf("counting rule_results: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("rule_results count = %d, want 1 (upsert should not create duplicates)", count)
+	}
+
+	var passed int
+	if err := db.QueryRowContext(ctx, "SELECT passed FROM rule_results WHERE artist_id = 'artist-2' AND rule_id = ?", RuleNFOExists).Scan(&passed); err != nil {
+		t.Fatalf("querying result: %v", err)
+	}
+	if passed != 1 {
+		t.Errorf("passed = %d, want 1 after upsert to passing", passed)
+	}
+}
+
+func TestGetRuleStats(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("SeedDefaults: %v", err)
+	}
+
+	// No results yet -- expect empty slice, not an error.
+	stats, err := svc.GetRuleStats(ctx)
+	if err != nil {
+		t.Fatalf("GetRuleStats on empty table: %v", err)
+	}
+	if len(stats) != 0 {
+		t.Errorf("expected 0 stats rows, got %d", len(stats))
+	}
+
+	// Insert two artists.
+	for _, id := range []string{"artist-s1", "artist-s2"} {
+		if _, err := db.ExecContext(ctx, `
+INSERT INTO artists (id, name, sort_name, type, path, created_at, updated_at)
+VALUES (?, ?, ?, 'group', '/music/x', datetime('now'), datetime('now'))
+`, id, id, id); err != nil {
+			t.Fatalf("inserting artist %s: %v", id, err)
+		}
+	}
+
+	// artist-s1: nfo passes, thumb fails
+	// artist-s2: nfo fails, thumb fails
+	results := []RuleResult{
+		{ArtistID: "artist-s1", RuleID: RuleNFOExists, Passed: true, EvaluatedAt: time.Now().UTC()},
+		{ArtistID: "artist-s1", RuleID: RuleThumbExists, Passed: false, ViolationMessage: "thumb missing", EvaluatedAt: time.Now().UTC()},
+		{ArtistID: "artist-s2", RuleID: RuleNFOExists, Passed: false, ViolationMessage: "nfo missing", EvaluatedAt: time.Now().UTC()},
+		{ArtistID: "artist-s2", RuleID: RuleThumbExists, Passed: false, ViolationMessage: "thumb missing", EvaluatedAt: time.Now().UTC()},
+	}
+	if err := svc.UpsertRuleResults(ctx, results); err != nil {
+		t.Fatalf("UpsertRuleResults: %v", err)
+	}
+
+	stats, err = svc.GetRuleStats(ctx)
+	if err != nil {
+		t.Fatalf("GetRuleStats: %v", err)
+	}
+	if len(stats) != 2 {
+		t.Fatalf("expected 2 rule stat rows, got %d", len(stats))
+	}
+
+	byID := make(map[string]RuleStats, len(stats))
+	for _, s := range stats {
+		byID[s.RuleID] = s
+	}
+
+	nfoStat := byID[RuleNFOExists]
+	if nfoStat.TotalArtists != 2 {
+		t.Errorf("nfo total = %d, want 2", nfoStat.TotalArtists)
+	}
+	if nfoStat.PassCount != 1 {
+		t.Errorf("nfo pass_count = %d, want 1", nfoStat.PassCount)
+	}
+	if nfoStat.FailCount != 1 {
+		t.Errorf("nfo fail_count = %d, want 1", nfoStat.FailCount)
+	}
+	if nfoStat.PassRate != 50.0 {
+		t.Errorf("nfo pass_rate = %.1f, want 50.0", nfoStat.PassRate)
+	}
+
+	thumbStat := byID[RuleThumbExists]
+	if thumbStat.PassCount != 0 {
+		t.Errorf("thumb pass_count = %d, want 0", thumbStat.PassCount)
+	}
+	if thumbStat.FailCount != 2 {
+		t.Errorf("thumb fail_count = %d, want 2", thumbStat.FailCount)
+	}
+}
