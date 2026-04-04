@@ -253,7 +253,7 @@ func (r *Router) handleRevertHistory(w http.ResponseWriter, req *http.Request) {
 		}
 
 		// Fallback: the revert succeeded but we could not locate the new record.
-		r.logger.Error("revert record not found in recent history, using fallback confirmation",
+		r.logger.Warn("revert record not found in recent history, using fallback confirmation",
 			"change_id", changeID, "field", change.Field, "artist_id", change.ArtistID)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
