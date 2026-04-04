@@ -156,6 +156,7 @@ templ Sidebar(data SidebarData) {
 		<div class="sw-sidebar-bottom">
 			if data.ShowViolations {
 				<a
+					id="sidebar-violations-link"
 					href={ templ.SafeURL(data.BasePath + "/reports/compliance") }
 					class="sw-sidebar-link"
 					data-path="/reports/compliance"
