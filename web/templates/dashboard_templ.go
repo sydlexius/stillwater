@@ -26,7 +26,7 @@ type ActionQueueData struct {
 	Limit            int
 	Offset           int
 	CategoryFilter   string
-	CategoryCounts   map[string]int // keyed by category: "nfo", "image", "metadata", "other"
+	CategoryCounts   map[string]int // keyed by category: "nfo", "image", "metadata"
 	HealthScore      float64
 	TotalArtists     int
 	CompliantArtists int
