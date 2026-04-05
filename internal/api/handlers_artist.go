@@ -3,11 +3,13 @@ package api
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
 	"github.com/sydlexius/stillwater/internal/artist"
+	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/web/components"
 	"github.com/sydlexius/stillwater/web/templates"
 )
@@ -350,6 +352,38 @@ func (r *Router) handleArtistDetailPage(w http.ResponseWriter, req *http.Request
 		}
 	}
 
+	// Read the active tab from query params, defaulting to "overview".
+	activeTab := req.URL.Query().Get("tab")
+	switch activeTab {
+	case "overview", "images", "providers", "history":
+		// valid tab, keep it
+	default:
+		activeTab = "overview"
+	}
+
+	// Build platform connection list for "View on Platform" links.
+	var connections []templates.ArtistDetailConnection
+	if r.connectionService != nil {
+		pids, pidErr := r.artistService.GetPlatformIDs(req.Context(), id)
+		if pidErr != nil {
+			r.logger.Warn("listing platform IDs for detail page", "artist_id", id, "error", pidErr)
+		}
+		for _, pid := range pids {
+			conn, connErr := r.connectionService.GetByID(req.Context(), pid.ConnectionID)
+			if connErr != nil {
+				r.logger.Warn("fetching connection for detail page", "connection_id", pid.ConnectionID, "error", connErr)
+				continue
+			}
+			extURL := buildPlatformArtistURL(conn, pid.PlatformArtistID)
+			connections = append(connections, templates.ArtistDetailConnection{
+				ID:   conn.ID,
+				Name: conn.Name,
+				Type: conn.Type,
+				URL:  extURL,
+			})
+		}
+	}
+
 	data := templates.ArtistDetailData{
 		Artist:         *a,
 		Members:        members,
@@ -358,8 +392,26 @@ func (r *Router) handleArtistDetailPage(w http.ResponseWriter, req *http.Request
 		LibraryName:    libraryName,
 		LibrarySource:  librarySource,
 		ProfileName:    r.getActiveProfileName(req.Context()),
+		ActiveTab:      activeTab,
+		Connections:    connections,
 	}
 	renderTempl(w, req, templates.ArtistDetailPage(r.assetsFor(req), data))
+}
+
+// buildPlatformArtistURL constructs the external URL to view an artist on
+// the given platform connection.
+func buildPlatformArtistURL(conn *connection.Connection, platformArtistID string) string {
+	base := strings.TrimRight(conn.URL, "/")
+	switch conn.Type {
+	case connection.TypeEmby:
+		return base + "/web/index.html#!/item?id=" + url.QueryEscape(platformArtistID)
+	case connection.TypeJellyfin:
+		return base + "/web/index.html#!/details?id=" + url.QueryEscape(platformArtistID)
+	case connection.TypeLidarr:
+		return base + "/artist/" + url.PathEscape(platformArtistID)
+	default:
+		return base
+	}
 }
 
 // handleArtistImagesPage renders the image management page.

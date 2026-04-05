@@ -20,7 +20,18 @@ type ArtistDetailData struct {
 	FieldProviders map[string][]string
 	LibraryName         string
 	LibrarySource       string
-	ProfileName         string // Active platform profile name for image terminology
+	ProfileName         string                    // Active platform profile name for image terminology
+	ActiveTab           string                    // "overview", "images", "providers", "history" (default: "overview")
+	Connections         []ArtistDetailConnection  // Platform connections with external URLs
+}
+
+// ArtistDetailConnection holds connection info for the "View on Platform" links
+// and the Providers tab platform state cards.
+type ArtistDetailConnection struct {
+	ID   string
+	Name string
+	Type string // "emby", "jellyfin", "lidarr"
+	URL  string // External URL to view the artist on the platform
 }
 
 templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
@@ -178,67 +189,133 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 							</p>
 						}
 					</div>
-					<div class="flex items-center gap-2 mr-4">
-						// Split button: primary Refresh Metadata + dropdown for Re-identify
-						<div class="relative inline-flex" data-context-menu={ "refresh-split-" + data.Artist.ID }>
+					<div class="flex items-center gap-3 mr-4">
+						if data.Artist.Locked {
+							<span
+								class={
+									"inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium",
+									templ.KV("bg-amber-100/80 text-amber-700", !data.Artist.FanartExists),
+									templ.KV("bg-amber-500/20 text-amber-200 drop-shadow", data.Artist.FanartExists),
+								}
+							>
+								@components.IconLockClosed("h-3.5 w-3.5")
+								Locked
+								if data.Artist.LockSource != "" {
+									<span class="opacity-70">({ data.Artist.LockSource })</span>
+								}
+							</span>
+						}
+						// Actions dropdown button
+						<div class="relative inline-flex" data-context-menu={ "artist-actions-" + data.Artist.ID }>
 							<button
 								type="button"
 								class={
-									"inline-flex items-center gap-2 bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors",
-									templ.KV("rounded-md", data.Artist.MusicBrainzID == ""),
-									templ.KV("rounded-l-md", data.Artist.MusicBrainzID != ""),
+									"inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+									templ.KV("border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600", !data.Artist.FanartExists),
+									templ.KV("border border-white/30 bg-white/10 text-white hover:bg-white/20 backdrop-blur-sm drop-shadow", data.Artist.FanartExists),
 								}
-								hx-post={ "/api/v1/artists/" + data.Artist.ID + "/refresh" }
-								hx-target="#refresh-panel"
-								hx-swap="innerHTML"
-								hx-indicator="#refresh-spinner"
+								aria-haspopup="true"
+								aria-expanded="false"
+								aria-controls={ "ctx-panel-artist-actions-" + data.Artist.ID }
+								onclick={ components.ToggleContextMenu("artist-actions-" + data.Artist.ID) }
 							>
-								@components.IconArrowPath("h-4 w-4")
-								Refresh Metadata
+								Actions
+								@components.IconChevronDown("h-4 w-4")
 							</button>
-							if data.Artist.MusicBrainzID != "" {
+							<div
+								id={ "ctx-panel-artist-actions-" + data.Artist.ID }
+								class="hidden absolute right-0 top-full z-40 mt-1 min-w-[12rem] rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 py-1 shadow-lg"
+								role="menu"
+							>
 								<button
 									type="button"
-									class="inline-flex items-center bg-blue-600 px-1.5 py-2 text-white hover:bg-blue-700 border-l border-blue-500 rounded-r-md transition-colors"
-									aria-haspopup="true"
-									aria-expanded="false"
-									aria-controls={ "ctx-panel-refresh-split-" + data.Artist.ID }
-									aria-label="More refresh options"
-									onclick={ components.ToggleContextMenu("refresh-split-" + data.Artist.ID) }
+									role="menuitem"
+									class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+									hx-post={ "/api/v1/artists/" + data.Artist.ID + "/run-rules" }
+									hx-target="#refresh-panel"
+									hx-swap="innerHTML"
+									hx-indicator="#rules-spinner"
 								>
-									@components.IconChevronDown("h-4 w-4")
+									@components.IconPlay("h-4 w-4 text-gray-400")
+									Run Rules
 								</button>
-								<div
-									id={ "ctx-panel-refresh-split-" + data.Artist.ID }
-									class="hidden absolute right-0 top-full z-40 mt-1 min-w-[10rem] rounded-md bg-blue-700 py-1 shadow-lg"
-									role="menu"
+								<button
+									type="button"
+									role="menuitem"
+									class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+									hx-post={ "/api/v1/artists/" + data.Artist.ID + "/refresh" }
+									hx-target="#refresh-panel"
+									hx-swap="innerHTML"
+									hx-indicator="#refresh-spinner"
 								>
+									@components.IconArrowPath("h-4 w-4 text-gray-400")
+									Refresh Metadata
+								</button>
+								if data.Artist.MusicBrainzID != "" {
 									<button
 										type="button"
 										role="menuitem"
-										class="w-full px-4 py-2 text-left text-sm text-white hover:bg-blue-800 transition-colors"
+										class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
 										hx-post={ "/api/v1/artists/" + data.Artist.ID + "/reidentify" }
 										hx-target="#refresh-panel"
 										hx-swap="innerHTML"
 										hx-confirm="This will clear all provider IDs and let you re-link this artist. Continue?"
 									>
-										Re-identify
+										@components.IconMagnifyingGlass("h-4 w-4 text-gray-400")
+										Re-identify Artist
 									</button>
-								</div>
-							}
+								}
+								<a
+									href={ templ.SafeURL(fmt.Sprintf("/artists/%s/images?fetch=1", data.Artist.ID)) }
+									role="menuitem"
+									class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+								>
+									@components.IconPhoto("h-4 w-4 text-gray-400")
+									Fetch All Images
+								</a>
+								<div class="my-1 border-t border-gray-200 dark:border-gray-700"></div>
+								if data.Artist.Locked {
+									<button
+										type="button"
+										role="menuitem"
+										class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+										hx-delete={ "/api/v1/artists/" + data.Artist.ID + "/lock" }
+										hx-swap="none"
+										hx-on::after-request="if(event.detail.successful) window.location.reload(); else alert('Action failed: ' + event.detail.xhr.responseText);"
+									>
+										@components.IconLockOpen("h-4 w-4 text-gray-400")
+										Unlock Artist
+									</button>
+								} else {
+									<button
+										type="button"
+										role="menuitem"
+										class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+										hx-post={ "/api/v1/artists/" + data.Artist.ID + "/lock" }
+										hx-swap="none"
+										hx-on::after-request="if(event.detail.successful) window.location.reload(); else alert('Action failed: ' + event.detail.xhr.responseText);"
+									>
+										@components.IconLockClosed("h-4 w-4 text-gray-400")
+										Lock Artist
+									</button>
+								}
+								if len(data.Connections) > 0 {
+									<div class="my-1 border-t border-gray-200 dark:border-gray-700"></div>
+									for _, conn := range data.Connections {
+										<a
+											href={ templ.SafeURL(conn.URL) }
+											target="_blank"
+											rel="noopener noreferrer"
+											role="menuitem"
+											class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+										>
+											@components.IconArrowTopRightOnSquare("h-4 w-4 text-gray-400")
+											View on { conn.Name }
+										</a>
+									}
+								}
+							</div>
 						</div>
-						<button
-							type="button"
-							id={ "run-rules-btn-" + data.Artist.ID }
-							class="inline-flex items-center gap-2 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
-							hx-post={ "/api/v1/artists/" + data.Artist.ID + "/run-rules" }
-							hx-target="#refresh-panel"
-							hx-swap="innerHTML"
-							hx-indicator="#rules-spinner"
-						>
-							@components.IconCheck("h-4 w-4")
-							Run Rules
-						</button>
 					</div>
 				</div>
 				<div id="refresh-panel" class="mt-3"></div>
@@ -259,108 +336,242 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 					}
 				>Fetching metadata...</span>
 			</div>
-			<div class="grid grid-cols-1 gap-6 md:grid-cols-3">
-				<div class="md:col-span-2 space-y-6">
-					// Biography -- always show section wrapper for edit access
-					@FieldDisplay(&data.Artist, "biography", data.FieldProviders["biography"])
-					// Tags
-					<section id={ "artist-tags-" + data.Artist.ID } class="sw-card rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
-						<h2 class="text-lg font-semibold mb-3">Tags</h2>
-						@FieldDisplay(&data.Artist, "genres", data.FieldProviders["genres"])
-						@FieldDisplay(&data.Artist, "styles", data.FieldProviders["styles"])
-						@FieldDisplay(&data.Artist, "moods", data.FieldProviders["moods"])
-					</section>
-					// Members -- always show section so fetch is accessible
-					@MembersSection(data.Artist.ID, data.Members, data.FieldProviders["members"])
-					// History section -- lazily loaded via HTMX
-					@ArtistHistorySection(data.Artist.ID)
+			// Lock banner
+			if data.Artist.Locked {
+				<div class="rounded-lg border border-amber-200 dark:border-amber-800/50 bg-amber-50 dark:bg-amber-900/20 px-4 py-2.5 text-sm text-amber-700 dark:text-amber-400 flex items-center gap-2">
+					@components.IconLockClosed("h-4 w-4 flex-shrink-0")
+					This artist is locked. Automated changes are skipped. Manual edits are still allowed.
 				</div>
-				<div class="space-y-6">
-					<section id={ "artist-details-" + data.Artist.ID } class="sw-card rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
-						<h2 class="text-lg font-semibold mb-3">Details</h2>
-						<dl class="space-y-2 text-sm">
-							@FieldDisplay(&data.Artist, "name", data.FieldProviders["name"])
-							@FieldDisplay(&data.Artist, "sort_name", data.FieldProviders["sort_name"])
-							@FieldDisplay(&data.Artist, "disambiguation", data.FieldProviders["disambiguation"])
-							@FieldDisplay(&data.Artist, "type", data.FieldProviders["type"])
-							@FieldDisplay(&data.Artist, "gender", data.FieldProviders["gender"])
-							@FieldDisplay(&data.Artist, "formed", data.FieldProviders["formed"])
-							@FieldDisplay(&data.Artist, "born", data.FieldProviders["born"])
-							@FieldDisplay(&data.Artist, "disbanded", data.FieldProviders["disbanded"])
-							@FieldDisplay(&data.Artist, "died", data.FieldProviders["died"])
-							@FieldDisplay(&data.Artist, "years_active", data.FieldProviders["years_active"])
-						</dl>
-					</section>
-					<section id={ "artist-images-" + data.Artist.ID } class="sw-card rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
-						<h2 class="text-lg font-semibold mb-3">Images</h2>
-						<div class="grid grid-cols-2 gap-3">
-							@ImagePreviewCard(data.Artist.ID, "thumb", data.Artist.ThumbExists, img.ImageTermFor("thumb", data.ProfileName), 0)
-							@ImagePreviewCard(data.Artist.ID, "fanart", data.Artist.FanartExists, img.ImageTermFor("fanart", data.ProfileName), data.Artist.FanartCount)
-							@ImagePreviewCard(data.Artist.ID, "logo", data.Artist.LogoExists, img.ImageTermFor("logo", data.ProfileName), 0)
-							@ImagePreviewCard(data.Artist.ID, "banner", data.Artist.BannerExists, img.ImageTermFor("banner", data.ProfileName), 0)
-						</div>
-						<div class="mt-3">
-							@components.StatusBadge(data.Artist.NFOExists, "Metadata")
-						</div>
-					</section>
-					<section id={ "artist-providers-" + data.Artist.ID } class="sw-card rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
-						<h2 class="text-lg font-semibold mb-3">Provider IDs</h2>
-						<dl class="space-y-2 text-sm">
-							@FieldDisplay(&data.Artist, "musicbrainz_id", data.FieldProviders["musicbrainz_id"])
-							@FieldDisplay(&data.Artist, "audiodb_id", data.FieldProviders["audiodb_id"])
-							@FieldDisplay(&data.Artist, "discogs_id", data.FieldProviders["discogs_id"])
-							@FieldDisplay(&data.Artist, "wikidata_id", data.FieldProviders["wikidata_id"])
-							@FieldDisplay(&data.Artist, "deezer_id", data.FieldProviders["deezer_id"])
-						</dl>
-					</section>
-					<section class="sw-card rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
-						<h2 class="text-lg font-semibold mb-3">Aliases</h2>
-						<div id={ "aliases-" + data.Artist.ID }>
-							if len(data.Aliases) > 0 {
-								<div class="space-y-1.5 mb-3">
-									for _, a := range data.Aliases {
-										<div class="flex items-center justify-between text-sm">
-											<span>{ a.Alias }</span>
-											<button
-												type="button"
-												class="text-xs text-red-500 hover:text-red-700 dark:hover:text-red-300"
-												hx-delete={ "/api/v1/artists/" + data.Artist.ID + "/aliases/" + a.ID }
-												hx-swap="none"
-												hx-on::after-request="window.location.reload()"
-											>
-												Remove
-											</button>
-										</div>
-									}
-								</div>
-							} else {
-								<p class="text-sm text-gray-500 dark:text-gray-400 italic mb-3">No aliases.</p>
-							}
-						</div>
-						<form
-							class="flex items-center gap-2"
-							hx-post={ "/api/v1/artists/" + data.Artist.ID + "/aliases" }
-							hx-swap="none"
-							hx-on::after-request="if(event.detail.successful) { this.reset(); window.location.reload(); }"
-						>
-							<input
-								name="alias"
-								placeholder="Add alias..."
-								required
-								class="flex-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-							/>
-							<button
-								type="submit"
-								class="px-3 py-2 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+			}
+			// Tab bar
+			@artistDetailTabBar(normalizeTab(data.ActiveTab))
+			// Tab panels
+			// -- Overview --
+			<div
+				id="panel-overview"
+				role="tabpanel"
+				aria-labelledby="tab-overview"
+				data-tab-panel="overview"
+				class={
+					"space-y-6",
+					templ.KV("hidden", normalizeTab(data.ActiveTab) != "overview"),
+				}
+			>
+				<div class="grid grid-cols-1 gap-6 md:grid-cols-3">
+					<div class="md:col-span-2 space-y-6">
+						@FieldDisplay(&data.Artist, "biography", data.FieldProviders["biography"])
+						<section id={ "artist-tags-" + data.Artist.ID } class="sw-card rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
+							<h2 class="text-lg font-semibold mb-3">Tags</h2>
+							@FieldDisplay(&data.Artist, "genres", data.FieldProviders["genres"])
+							@FieldDisplay(&data.Artist, "styles", data.FieldProviders["styles"])
+							@FieldDisplay(&data.Artist, "moods", data.FieldProviders["moods"])
+						</section>
+						@MembersSection(data.Artist.ID, data.Members, data.FieldProviders["members"])
+					</div>
+					<div class="space-y-6">
+						<section id={ "artist-details-" + data.Artist.ID } class="sw-card rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
+							<h2 class="text-lg font-semibold mb-3">Details</h2>
+							<dl class="space-y-2 text-sm">
+								@FieldDisplay(&data.Artist, "name", data.FieldProviders["name"])
+								@FieldDisplay(&data.Artist, "sort_name", data.FieldProviders["sort_name"])
+								@FieldDisplay(&data.Artist, "disambiguation", data.FieldProviders["disambiguation"])
+								@FieldDisplay(&data.Artist, "type", data.FieldProviders["type"])
+								@FieldDisplay(&data.Artist, "gender", data.FieldProviders["gender"])
+								@FieldDisplay(&data.Artist, "formed", data.FieldProviders["formed"])
+								@FieldDisplay(&data.Artist, "born", data.FieldProviders["born"])
+								@FieldDisplay(&data.Artist, "disbanded", data.FieldProviders["disbanded"])
+								@FieldDisplay(&data.Artist, "died", data.FieldProviders["died"])
+								@FieldDisplay(&data.Artist, "years_active", data.FieldProviders["years_active"])
+							</dl>
+						</section>
+						<section class="sw-card rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
+							<h2 class="text-lg font-semibold mb-3">Aliases</h2>
+							<div id={ "aliases-" + data.Artist.ID }>
+								if len(data.Aliases) > 0 {
+									<div class="space-y-1.5 mb-3">
+										for _, a := range data.Aliases {
+											<div class="flex items-center justify-between text-sm">
+												<span>{ a.Alias }</span>
+												<button
+													type="button"
+													class="text-xs text-red-500 hover:text-red-700 dark:hover:text-red-300"
+													hx-delete={ "/api/v1/artists/" + data.Artist.ID + "/aliases/" + a.ID }
+													hx-swap="none"
+													hx-on::after-request="if(event.detail.successful) window.location.reload(); else alert('Remove failed: ' + event.detail.xhr.responseText);"
+												>
+													Remove
+												</button>
+											</div>
+										}
+									</div>
+								} else {
+									<p class="text-sm text-gray-500 dark:text-gray-400 italic mb-3">No aliases.</p>
+								}
+							</div>
+							<form
+								class="flex items-center gap-2"
+								hx-post={ "/api/v1/artists/" + data.Artist.ID + "/aliases" }
+								hx-swap="none"
+								hx-on::after-request="if(event.detail.successful) { this.reset(); window.location.reload(); } else { alert('Add alias failed: ' + event.detail.xhr.responseText); }"
 							>
-								Add
-							</button>
-						</form>
-					</section>
+								<input
+									name="alias"
+									placeholder="Add alias..."
+									required
+									class="flex-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+								/>
+								<button
+									type="submit"
+									class="px-3 py-2 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+								>
+									Add
+								</button>
+							</form>
+						</section>
+					</div>
 				</div>
 			</div>
+			// -- Images --
+			<div
+				id="panel-images"
+				role="tabpanel"
+				aria-labelledby="tab-images"
+				data-tab-panel="images"
+				class={
+					templ.KV("hidden", normalizeTab(data.ActiveTab) != "images"),
+				}
+			>
+				@ArtistImagesTab(data.Artist.ID, &data.Artist, data.ProfileName)
+			</div>
+			// -- Providers --
+			<div
+				id="panel-providers"
+				role="tabpanel"
+				aria-labelledby="tab-providers"
+				data-tab-panel="providers"
+				class={
+					"space-y-6",
+					templ.KV("hidden", normalizeTab(data.ActiveTab) != "providers"),
+				}
+			>
+				<section id={ "artist-providers-" + data.Artist.ID } class="sw-card rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
+					<h2 class="text-lg font-semibold mb-3">Provider IDs</h2>
+					<dl class="space-y-2 text-sm">
+						@FieldDisplay(&data.Artist, "musicbrainz_id", data.FieldProviders["musicbrainz_id"])
+						@FieldDisplay(&data.Artist, "audiodb_id", data.FieldProviders["audiodb_id"])
+						@FieldDisplay(&data.Artist, "discogs_id", data.FieldProviders["discogs_id"])
+						@FieldDisplay(&data.Artist, "wikidata_id", data.FieldProviders["wikidata_id"])
+						@FieldDisplay(&data.Artist, "deezer_id", data.FieldProviders["deezer_id"])
+					</dl>
+				</section>
+				// Platform state cards load lazily per connection
+				if len(data.Connections) > 0 {
+					<div class="space-y-4">
+						<h2 class="text-lg font-semibold">Platform State</h2>
+						for _, conn := range data.Connections {
+							<div
+								id={ "platform-state-" + conn.ID }
+								hx-get={ fmt.Sprintf("/api/v1/artists/%s/platform-state?connection_id=%s", data.Artist.ID, conn.ID) }
+								hx-trigger="revealed"
+								hx-swap="outerHTML"
+							>
+								<div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 animate-pulse">
+									<div class="flex items-center gap-2">
+										<div class="h-4 w-24 bg-gray-200 dark:bg-gray-700 rounded"></div>
+										<div class="h-4 w-16 bg-gray-200 dark:bg-gray-700 rounded-full"></div>
+									</div>
+								</div>
+							</div>
+						}
+					</div>
+				}
+			</div>
+			// -- History --
+			<div
+				id="panel-history"
+				role="tabpanel"
+				aria-labelledby="tab-history"
+				data-tab-panel="history"
+				class={
+					templ.KV("hidden", normalizeTab(data.ActiveTab) != "history"),
+				}
+			>
+				<div
+					id={ "artist-history-tab-" + data.Artist.ID }
+					hx-get={ "/artists/" + data.Artist.ID + "/history/tab" }
+					hx-trigger="intersect once"
+					hx-swap="innerHTML"
+				>
+					<p class="text-sm text-gray-400 italic py-8 text-center">Loading history...</p>
+				</div>
+			</div>
+			@artistDetailTabScript()
 		</div>
 	}
+}
+
+// artistDetailTabBar renders the horizontal tab bar for the artist detail page.
+templ artistDetailTabBar(activeTab string) {
+	<nav class="flex gap-1 rounded-lg bg-gray-100 dark:bg-gray-800/50 p-1" role="tablist">
+		@artistDetailTab("overview", "Overview", activeTab)
+		@artistDetailTab("images", "Images", activeTab)
+		@artistDetailTab("providers", "Providers", activeTab)
+		@artistDetailTab("history", "History", activeTab)
+	</nav>
+}
+
+templ artistDetailTab(id string, label string, activeTab string) {
+	<button
+		type="button"
+		role="tab"
+		id={ "tab-" + id }
+		data-tab={ id }
+		aria-controls={ "panel-" + id }
+		class={
+			"flex-1 rounded-md px-4 py-2 text-sm font-medium transition-colors cursor-pointer",
+			templ.KV("bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-300 shadow-sm", activeTab == id),
+			templ.KV("text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-white/60 dark:hover:bg-gray-700/60", activeTab != id),
+		}
+		aria-selected={ strconv.FormatBool(activeTab == id) }
+		onclick="switchArtistTab(event, this)"
+	>
+		{ label }
+	</button>
+}
+
+// artistDetailTabScript handles client-side tab switching with URL updates.
+templ artistDetailTabScript() {
+	<script>
+		function switchArtistTab(event, el) {
+			event.preventDefault();
+			var tabId = el.dataset.tab;
+			document.querySelectorAll('[data-tab-panel]').forEach(function(p) {
+				p.classList.add('hidden');
+			});
+			var panel = null;
+			document.querySelectorAll('[data-tab-panel]').forEach(function(p) {
+				if (p.dataset.tabPanel === tabId) {
+					panel = p;
+				}
+			});
+			if (panel) panel.classList.remove('hidden');
+			document.querySelectorAll('[data-tab]').forEach(function(t) {
+				t.classList.remove('bg-white', 'dark:bg-gray-700', 'text-blue-600', 'dark:text-blue-300', 'shadow-sm');
+				t.classList.add('text-gray-600', 'dark:text-gray-400', 'hover:text-gray-900', 'dark:hover:text-gray-200', 'hover:bg-white/60', 'dark:hover:bg-gray-700/60');
+				t.setAttribute('aria-selected', 'false');
+			});
+			el.classList.remove('text-gray-600', 'dark:text-gray-400', 'hover:text-gray-900', 'dark:hover:text-gray-200', 'hover:bg-white/60', 'dark:hover:bg-gray-700/60');
+			el.classList.add('bg-white', 'dark:bg-gray-700', 'text-blue-600', 'dark:text-blue-300', 'shadow-sm');
+			el.setAttribute('aria-selected', 'true');
+			var url = new URL(window.location);
+			if (tabId === 'overview') {
+				url.searchParams.delete('tab');
+			} else {
+				url.searchParams.set('tab', tabId);
+			}
+			history.replaceState(null, '', url);
+		}
+	</script>
 }
 
 // ArtistHistorySection renders a collapsible history card that loads its
@@ -423,11 +634,12 @@ templ ImagePreviewCard(artistID, imageType string, exists bool, label string, fa
 						{ strconv.Itoa(fanartCount) } images
 					</span>
 				}
-				<div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
+				<div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity flex items-center justify-center gap-3">
 					<a
 						href={ templ.SafeURL(fmt.Sprintf("/artists/%s/images?type=%s", artistID, imageType)) }
 						class="rounded-full bg-white/20 p-2 text-white hover:bg-white/40 transition-colors"
 						title="Edit image"
+						aria-label={ "Edit " + label + " image" }
 					>
 						@components.IconPencilSquare("h-5 w-5")
 					</a>
@@ -436,9 +648,10 @@ templ ImagePreviewCard(artistID, imageType string, exists bool, label string, fa
 							type="button"
 							class="rounded-full bg-white/20 p-2 text-white hover:bg-blue-500/80 transition-colors"
 							title="Trim transparent border"
+							aria-label="Trim transparent border"
 							hx-post={ fmt.Sprintf("/api/v1/artists/%s/images/logo/trim", artistID) }
 							hx-swap="none"
-							hx-on::after-request="if(event.detail.successful) window.location.reload()"
+							hx-on::after-request="if(event.detail.successful) window.location.reload(); else alert('Action failed: ' + event.detail.xhr.responseText);"
 						>
 							@components.IconScissors("h-5 w-5")
 						</button>
@@ -447,6 +660,7 @@ templ ImagePreviewCard(artistID, imageType string, exists bool, label string, fa
 						type="button"
 						class="rounded-full bg-white/20 p-2 text-white hover:bg-red-500/80 transition-colors"
 						title="Delete image"
+						aria-label={ "Delete " + label + " image" }
 						hx-delete={ fmt.Sprintf("/api/v1/artists/%s/images/%s", artistID, imageType) }
 						hx-target={ "#image-preview-" + imageType + "-" + artistID }
 						hx-swap="outerHTML"
@@ -521,26 +735,72 @@ templ FanartGallery(artistID string, items []FanartGalleryItem, profileName stri
 			<div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
 				for _, item := range items {
 					<div class="relative rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden group">
-						<label class="cursor-pointer">
-							<input
-								type="checkbox"
-								class="fanart-cb absolute top-2 left-2 z-10 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-								value={ strconv.Itoa(item.Index) }
+						// Batch-select checkbox (top-left, above overlay).
+						<input
+							type="checkbox"
+							class="fanart-cb absolute top-2 left-2 z-10 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+							value={ strconv.Itoa(item.Index) }
+							aria-label={ "Select " + item.Filename }
+						/>
+						// Primary badge (top-right).
+						if item.Index == 0 {
+							<span class="absolute top-2 right-2 z-10 inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full bg-amber-500/90 text-white shadow-sm">
+								@components.IconStar("w-3 h-3")
+								Primary
+							</span>
+						}
+						<div class="aspect-video bg-gray-100 dark:bg-gray-900 flex items-center justify-center overflow-hidden">
+							<img
+								src={ fmt.Sprintf("/api/v1/artists/%s/images/fanart/%d/file", artistID, item.Index) }
+								alt={ item.Filename }
+								class="max-w-full max-h-full object-cover"
+								loading="lazy"
 							/>
-							<div class="aspect-video bg-gray-100 dark:bg-gray-900 flex items-center justify-center overflow-hidden">
-								<img
-									src={ fmt.Sprintf("/api/v1/artists/%s/images/fanart/%d/file", artistID, item.Index) }
-									alt={ item.Filename }
-									class="max-w-full max-h-full object-cover"
-									loading="lazy"
-								/>
-							</div>
-						</label>
+						</div>
+						// Hover overlay with action buttons.
+						<div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity flex items-center justify-center gap-3">
+							// View full-size
+							<a
+								href={ templ.SafeURL(fmt.Sprintf("/api/v1/artists/%s/images/fanart/%d/file", artistID, item.Index)) }
+								target="_blank"
+								class="p-2 rounded-full bg-black/40 hover:bg-black/60 text-white transition-colors shadow-sm"
+								title="View full-size"
+								aria-label={ "View full-size " + item.Filename }
+							>
+								@components.IconArrowsPointingOut("w-5 h-5")
+							</a>
+							// Set as Primary (non-primary images only)
+							if item.Index > 0 {
+								<button
+									type="button"
+									class="p-2 rounded-full bg-black/40 hover:bg-amber-500/80 text-white transition-colors shadow-sm"
+									title="Set as primary"
+									aria-label={ "Set " + item.Filename + " as primary" }
+									data-set-primary-index={ strconv.Itoa(item.Index) }
+									data-set-primary-count={ strconv.Itoa(len(items)) }
+									data-set-primary-artist={ artistID }
+									onclick="setFanartPrimary(this)"
+								>
+									@components.IconStar("w-5 h-5")
+								</button>
+							}
+							// Delete
+							<button
+								hx-delete={ fmt.Sprintf("/api/v1/artists/%s/images/fanart/%d", artistID, item.Index) }
+								hx-confirm="Delete this fanart image?"
+								hx-swap="none"
+								hx-on::after-request="if(event.detail.successful) window.location.reload(); else alert('Action failed: ' + event.detail.xhr.responseText);"
+								class="p-2 rounded-full bg-black/40 hover:bg-red-500/80 text-white transition-colors shadow-sm"
+								title="Delete"
+								aria-label={ "Delete " + item.Filename }
+							>
+								@components.IconTrash("w-5 h-5")
+							</button>
+						</div>
 						<div class="p-1.5 text-center">
 							<span class="text-xs text-gray-500 dark:text-gray-400">
-								{ item.Filename }
 								if item.Width > 0 && item.Height > 0 {
-									{ " " + strconv.Itoa(item.Width) + "x" + strconv.Itoa(item.Height) }
+									{ strconv.Itoa(item.Width) + "x" + strconv.Itoa(item.Height) }
 								}
 								{ " " + formatFileSizeTempl(item.Size) }
 							</span>
@@ -555,6 +815,7 @@ templ FanartGallery(artistID string, items []FanartGalleryItem, profileName stri
 			(function() {
 				var gallery = document.getElementById('fanart-gallery');
 				if (!gallery) return;
+				var basePath = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
 				var deleteBtn = document.getElementById('fanart-delete-selected');
 				gallery.addEventListener('change', function() {
 					var checked = gallery.querySelectorAll('.fanart-cb:checked');
@@ -569,27 +830,49 @@ templ FanartGallery(artistID string, items []FanartGalleryItem, profileName stri
 					var checked = gallery.querySelectorAll('.fanart-cb:checked');
 					if (checked.length === 0) return;
 					if (!confirm('Delete ' + checked.length + ' fanart image(s)?')) return;
+					var token = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1");
+					if (!token) {
+						alert('Session expired. Please reload the page and try again.');
+						return;
+					}
 					var indices = [];
 					for (var i = 0; i < checked.length; i++) {
 						indices.push(parseInt(checked[i].value, 10));
 					}
 					var id = gallery.dataset.artistId;
-					fetch('/api/v1/artists/' + id + '/images/fanart/batch', {
+					fetch(basePath + '/api/v1/artists/' + id + '/images/fanart/batch', {
 						method: 'DELETE',
 						headers: {
 							'Content-Type': 'application/json',
-							'X-CSRF-Token': document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1")
+							'X-CSRF-Token': token
 						},
 						body: JSON.stringify({indices: indices}),
 						credentials: 'same-origin'
 					}).then(function(r) {
-						if (r.ok) window.location.reload();
-						else alert('Failed to delete selected images. Please try again.');
+						if (r.ok) {
+							window.location.reload();
+							return;
+						}
+						return r.text().then(function(body) {
+							alert('Failed to delete selected images: ' + body);
+						});
+					}).catch(function(err) {
+						alert('Network error deleting selected images: ' + err.message);
 					});
 				});
 			})();
 		</script>
 	</div>
+}
+
+// normalizeTab returns tab if it is a known artist-detail tab, otherwise "overview".
+func normalizeTab(tab string) string {
+	switch tab {
+	case "overview", "images", "providers", "history":
+		return tab
+	default:
+		return "overview"
+	}
 }
 
 // formatFileSizeTempl formats a byte count as a human-readable string for templates.
@@ -730,7 +1013,7 @@ templ PlatformStateCard(a *artist.Artist, conn *connection.Connection, state *co
 					hx-post={ "/api/v1/artists/" + a.ID + "/push" }
 					hx-vals={ hxValsJSON(map[string]string{"connection_id": conn.ID}) }
 					hx-swap="none"
-					hx-on::after-request="if(event.detail.successful) window.location.reload()"
+					hx-on::after-request="if(event.detail.successful) window.location.reload(); else alert('Action failed: ' + event.detail.xhr.responseText);"
 				>
 					Push All
 				</button>
@@ -739,7 +1022,7 @@ templ PlatformStateCard(a *artist.Artist, conn *connection.Connection, state *co
 					class="inline-flex items-center gap-1.5 rounded-md border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
 					hx-post={ "/api/v1/artists/" + a.ID + "/pull?connection_id=" + conn.ID }
 					hx-swap="none"
-					hx-on::after-request="if(event.detail.successful) window.location.reload()"
+					hx-on::after-request="if(event.detail.successful) window.location.reload(); else alert('Action failed: ' + event.detail.xhr.responseText);"
 				>
 					Pull from Platform
 				</button>

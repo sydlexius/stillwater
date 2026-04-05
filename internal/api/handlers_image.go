@@ -1716,7 +1716,15 @@ func (r *Router) handleServeFanartByIndex(w http.ResponseWriter, req *http.Reque
 		return
 	}
 
-	w.Header().Set("Cache-Control", "no-cache")
+	// Prevent conditional 304 responses for fanart-by-index URLs.
+	// After a reorder, os.Rename preserves mtime, so a promoted image
+	// may have an older mtime than what the browser cached for this
+	// index, causing http.ServeFile to return a stale 304. Stripping
+	// the conditional headers forces ServeFile to always send content;
+	// no-store prevents the browser from caching the response.
+	req.Header.Del("If-Modified-Since")
+	req.Header.Del("If-None-Match")
+	w.Header().Set("Cache-Control", "no-store")
 	http.ServeFile(w, req, paths[index])
 }
 
