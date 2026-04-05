@@ -1117,14 +1117,19 @@ func (s *Service) CountActiveViolationsByCategory(ctx context.Context) (map[stri
 }
 
 // DismissOrphanedViolations dismisses all active violations whose artist_id
-// no longer exists in the artists table. Returns the number dismissed.
+// no longer exists in the artists table OR whose artist has no library
+// (library_id IS NULL, meaning the library was removed but the artist was
+// kept). Returns the number dismissed.
 func (s *Service) DismissOrphanedViolations(ctx context.Context) (int, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
 	res, err := s.db.ExecContext(ctx, `
 		UPDATE rule_violations
 		SET status = ?, dismissed_at = ?, updated_at = ?
 		WHERE status IN (?, ?)
-		AND artist_id NOT IN (SELECT id FROM artists)
+		AND (
+			artist_id NOT IN (SELECT id FROM artists)
+			OR artist_id IN (SELECT id FROM artists WHERE library_id IS NULL)
+		)
 	`, ViolationStatusDismissed, now, now, ViolationStatusOpen, ViolationStatusPendingChoice)
 	if err != nil {
 		return 0, fmt.Errorf("dismissing orphaned violations: %w", err)

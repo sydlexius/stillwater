@@ -1024,10 +1024,17 @@ func TestDismissOrphanedViolations(t *testing.T) {
 	svc := NewService(db)
 	ctx := context.Background()
 
-	// Create a real artist violation and an orphaned one.
-	// First insert a real artist directly so we have a valid artist_id.
-	_, err := db.ExecContext(ctx, `INSERT INTO artists (id, name, sort_name, type, path) VALUES (?, ?, ?, ?, ?)`,
-		"real-artist", "Real Artist", "Real Artist", "person", "/music/Real Artist")
+	// Create a library so the real artist has a valid library_id.
+	_, err := db.ExecContext(ctx, `INSERT INTO libraries (id, name, path, type) VALUES (?, ?, ?, ?)`,
+		"lib-1", "Test Library", "/music", "regular")
+	if err != nil {
+		t.Fatalf("inserting library: %v", err)
+	}
+
+	// Create a real artist with a library, an orphaned violation (deleted
+	// artist), and a libraryless artist (library removed, artist kept).
+	_, err = db.ExecContext(ctx, `INSERT INTO artists (id, name, sort_name, type, path, library_id) VALUES (?, ?, ?, ?, ?, ?)`,
+		"real-artist", "Real Artist", "Real Artist", "person", "/music/Real Artist", "lib-1")
 	if err != nil {
 		t.Fatalf("inserting real artist: %v", err)
 	}
@@ -1046,12 +1053,28 @@ func TestDismissOrphanedViolations(t *testing.T) {
 		}
 	}
 
+	// Also create an artist with no library (library removed, artist kept)
+	// and a violation for that artist.
+	_, err = db.ExecContext(ctx, `INSERT INTO artists (id, name, sort_name, type, path) VALUES (?, ?, ?, ?, ?)`,
+		"libraryless-artist", "Libraryless Artist", "Libraryless Artist", "person", "/music/Libraryless Artist")
+	if err != nil {
+		t.Fatalf("inserting libraryless artist: %v", err)
+	}
+	librarylessV := &RuleViolation{
+		RuleID: RuleNFOExists, ArtistID: "libraryless-artist", ArtistName: "Libraryless Artist",
+		Severity: "error", Message: "missing nfo", Fixable: true, Status: ViolationStatusOpen,
+	}
+	if err := svc.UpsertViolation(ctx, librarylessV); err != nil {
+		t.Fatalf("upserting libraryless violation: %v", err)
+	}
+
 	n, err := svc.DismissOrphanedViolations(ctx)
 	if err != nil {
 		t.Fatalf("DismissOrphanedViolations: %v", err)
 	}
-	if n != 1 {
-		t.Errorf("dismissed = %d, want 1", n)
+	// Should dismiss both: orphaned (deleted artist) and libraryless.
+	if n != 2 {
+		t.Errorf("dismissed = %d, want 2", n)
 	}
 
 	// Orphaned violation should be dismissed.
@@ -1061,6 +1084,15 @@ func TestDismissOrphanedViolations(t *testing.T) {
 	}
 	if got.Status != ViolationStatusDismissed {
 		t.Errorf("orphan status = %q, want %q", got.Status, ViolationStatusDismissed)
+	}
+
+	// Libraryless violation should be dismissed.
+	got, err = svc.GetViolationByID(ctx, librarylessV.ID)
+	if err != nil {
+		t.Fatalf("GetViolationByID: %v", err)
+	}
+	if got.Status != ViolationStatusDismissed {
+		t.Errorf("libraryless status = %q, want %q", got.Status, ViolationStatusDismissed)
 	}
 
 	// Real violation should still be open.
