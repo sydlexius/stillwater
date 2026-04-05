@@ -2,6 +2,7 @@ package templates
 
 import (
 	"fmt"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -166,7 +167,7 @@ func dashboardLoadMoreURL(data ActionQueueData) string {
 	nextOffset := data.Offset + len(data.Violations)
 	u := fmt.Sprintf("/dashboard/actions?limit=%d&offset=%d", data.Limit, nextOffset)
 	if data.CategoryFilter != "" {
-		u += "&category=" + data.CategoryFilter
+		u += "&category=" + url.QueryEscape(data.CategoryFilter)
 	}
 	return u
 }

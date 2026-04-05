@@ -39,8 +39,8 @@ func (r *Router) handleDashboardActionQueue(w http.ResponseWriter, req *http.Req
 	params := rule.ViolationListParams{
 		Status:   "active",
 		Category: category,
-		Sort:     "artist_name",
-		Order:    "asc",
+		Sort:     "severity",
+		Order:    "desc",
 		Limit:    limit,
 		Offset:   offset,
 	}
