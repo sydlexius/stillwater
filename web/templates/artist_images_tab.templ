@@ -34,7 +34,7 @@ templ ArtistImagesTab(artistID string, a *artist.Artist, profileName string) {
 					<div
 						class="text-sm text-gray-500 dark:text-gray-400 space-y-1"
 						hx-get={ fmt.Sprintf("/api/v1/artists/%s/images/thumb/info", artistID) }
-						hx-trigger="load"
+						hx-trigger="revealed"
 						hx-swap="innerHTML"
 					>
 						if a.ThumbWidth > 0 && a.ThumbHeight > 0 {
@@ -57,7 +57,7 @@ templ ArtistImagesTab(artistID string, a *artist.Artist, profileName string) {
 			if a.FanartCount > 0 {
 				<div
 					hx-get={ fmt.Sprintf("/api/v1/artists/%s/images/fanart/list", artistID) }
-					hx-trigger="load"
+					hx-trigger="revealed"
 					hx-swap="innerHTML"
 				>
 					<p class="text-sm text-gray-400 italic">Loading gallery...</p>
@@ -87,7 +87,7 @@ templ ArtistImagesTab(artistID string, a *artist.Artist, profileName string) {
 					<div
 						class="text-sm text-gray-500 dark:text-gray-400"
 						hx-get={ fmt.Sprintf("/api/v1/artists/%s/images/logo/info", artistID) }
-						hx-trigger="load"
+						hx-trigger="revealed"
 						hx-swap="innerHTML"
 					></div>
 				</div>
@@ -116,7 +116,7 @@ templ ArtistImagesTab(artistID string, a *artist.Artist, profileName string) {
 					<div
 						class="text-sm text-gray-500 dark:text-gray-400"
 						hx-get={ fmt.Sprintf("/api/v1/artists/%s/images/banner/info", artistID) }
-						hx-trigger="load"
+						hx-trigger="revealed"
 						hx-swap="innerHTML"
 					></div>
 				</div>
@@ -212,7 +212,7 @@ templ countBadge(count int) {
 // for a single image. When index is -1, the image type uses non-indexed URLs
 // (thumb, logo, banner). When index >= 0, index-based URLs are used (fanart).
 templ imageOverlay(artistID string, imageType string, index int) {
-	<div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
+	<div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity flex items-center justify-center gap-3">
 		// View full-size
 		if index >= 0 {
 			<a
@@ -220,6 +220,7 @@ templ imageOverlay(artistID string, imageType string, index int) {
 				target="_blank"
 				class="p-2 rounded-full bg-black/40 hover:bg-black/60 text-white transition-colors shadow-sm"
 				title="View full-size"
+				aria-label={ "View full-size " + imageType }
 			>
 				@components.IconArrowsPointingOut("w-5 h-5")
 			</a>
@@ -229,6 +230,7 @@ templ imageOverlay(artistID string, imageType string, index int) {
 				target="_blank"
 				class="p-2 rounded-full bg-black/40 hover:bg-black/60 text-white transition-colors shadow-sm"
 				title="View full-size"
+				aria-label={ "View full-size " + imageType }
 			>
 				@components.IconArrowsPointingOut("w-5 h-5")
 			</a>
@@ -238,6 +240,7 @@ templ imageOverlay(artistID string, imageType string, index int) {
 			href={ templ.SafeURL(fmt.Sprintf("/artists/%s/images?type=%s&fetch=1", artistID, imageType)) }
 			class="p-2 rounded-full bg-black/40 hover:bg-black/60 text-white transition-colors shadow-sm"
 			title="Replace"
+			aria-label={ "Replace " + imageType }
 		>
 			@components.IconArrowUpTray("w-5 h-5")
 		</a>
@@ -250,6 +253,7 @@ templ imageOverlay(artistID string, imageType string, index int) {
 				hx-on::after-request="if(event.detail.successful) window.location.reload(); else alert('Trim failed: ' + event.detail.xhr.responseText);"
 				class="p-2 rounded-full bg-black/40 hover:bg-black/60 text-white transition-colors shadow-sm"
 				title="Trim transparent edges"
+				aria-label="Trim transparent edges"
 			>
 				@components.IconScissors("w-5 h-5")
 			</button>
@@ -263,6 +267,7 @@ templ imageOverlay(artistID string, imageType string, index int) {
 				hx-on::after-request="if(event.detail.successful) window.location.reload(); else alert('Delete failed: ' + event.detail.xhr.responseText);"
 				class="p-2 rounded-full bg-black/40 hover:bg-red-500/80 text-white transition-colors shadow-sm"
 				title="Delete"
+				aria-label={ "Delete " + imageType }
 			>
 				@components.IconTrash("w-5 h-5")
 			</button>
@@ -274,6 +279,7 @@ templ imageOverlay(artistID string, imageType string, index int) {
 				hx-on::after-request="if(event.detail.successful) window.location.reload(); else alert('Delete failed: ' + event.detail.xhr.responseText);"
 				class="p-2 rounded-full bg-black/40 hover:bg-red-500/80 text-white transition-colors shadow-sm"
 				title="Delete"
+				aria-label={ "Delete " + imageType }
 			>
 				@components.IconTrash("w-5 h-5")
 			</button>

@@ -634,11 +634,12 @@ templ ImagePreviewCard(artistID, imageType string, exists bool, label string, fa
 						{ strconv.Itoa(fanartCount) } images
 					</span>
 				}
-				<div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
+				<div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity flex items-center justify-center gap-3">
 					<a
 						href={ templ.SafeURL(fmt.Sprintf("/artists/%s/images?type=%s", artistID, imageType)) }
 						class="rounded-full bg-white/20 p-2 text-white hover:bg-white/40 transition-colors"
 						title="Edit image"
+						aria-label={ "Edit " + label + " image" }
 					>
 						@components.IconPencilSquare("h-5 w-5")
 					</a>
@@ -647,6 +648,7 @@ templ ImagePreviewCard(artistID, imageType string, exists bool, label string, fa
 							type="button"
 							class="rounded-full bg-white/20 p-2 text-white hover:bg-blue-500/80 transition-colors"
 							title="Trim transparent border"
+							aria-label="Trim transparent border"
 							hx-post={ fmt.Sprintf("/api/v1/artists/%s/images/logo/trim", artistID) }
 							hx-swap="none"
 							hx-on::after-request="if(event.detail.successful) window.location.reload(); else alert('Action failed: ' + event.detail.xhr.responseText);"
@@ -658,6 +660,7 @@ templ ImagePreviewCard(artistID, imageType string, exists bool, label string, fa
 						type="button"
 						class="rounded-full bg-white/20 p-2 text-white hover:bg-red-500/80 transition-colors"
 						title="Delete image"
+						aria-label={ "Delete " + label + " image" }
 						hx-delete={ fmt.Sprintf("/api/v1/artists/%s/images/%s", artistID, imageType) }
 						hx-target={ "#image-preview-" + imageType + "-" + artistID }
 						hx-swap="outerHTML"
