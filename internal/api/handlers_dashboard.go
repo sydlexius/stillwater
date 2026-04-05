@@ -52,6 +52,21 @@ func (r *Router) handleDashboardActionQueue(w http.ResponseWriter, req *http.Req
 		return
 	}
 
+	// Load-more requests (offset > 0) only need violations and pagination
+	// data -- skip the summary queries that the header/chips need.
+	if offset > 0 {
+		data := templates.ActionQueueData{
+			Violations:     violations,
+			Total:          total,
+			Limit:          limit,
+			Offset:         offset,
+			CategoryFilter: category,
+			BasePath:       r.basePath,
+		}
+		renderTempl(w, req, templates.DashboardActionMoreRows(data))
+		return
+	}
+
 	categoryCounts, err := r.ruleService.CountActiveViolationsByCategory(ctx)
 	if err != nil {
 		r.logger.Error("dashboard category counts", "error", err)
@@ -83,13 +98,6 @@ func (r *Router) handleDashboardActionQueue(w http.ResponseWriter, req *http.Req
 		TotalArtists:     totalArtists,
 		CompliantArtists: compliantArtists,
 		BasePath:         r.basePath,
-	}
-
-	// Load-more requests (offset > 0) return just the new rows + updated
-	// load-more button, appending to the existing list.
-	if offset > 0 {
-		renderTempl(w, req, templates.DashboardActionMoreRows(data))
-		return
 	}
 	renderTempl(w, req, templates.DashboardActionQueue(data))
 }

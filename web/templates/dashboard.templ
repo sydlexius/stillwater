@@ -228,17 +228,6 @@ templ DashboardFilterChips(counts map[string]int, activeCategory string, basePat
 				</button>
 			}
 		}
-		if counts["other"] > 0 {
-			<button
-				hx-get="/dashboard/actions?category=other"
-				hx-target="#action-queue"
-				hx-swap="innerHTML"
-				class={ categoryChipClass("other", activeCategory == "other") }
-			>
-				{ dashboardCategoryLabel("other") }
-				<span class="ml-1 font-semibold">{ fmt.Sprint(counts["other"]) }</span>
-			</button>
-		}
 	</div>
 }
 
@@ -280,7 +269,11 @@ templ DashboardActionCard(v rule.RuleViolation, basePath string) {
 						{ v.Severity }
 					</span>
 				</div>
-				<p class="text-xs text-gray-500 dark:text-gray-400 truncate">
+				<p
+					class="text-xs text-gray-500 dark:text-gray-400 truncate cursor-pointer"
+					title="Click to expand"
+					onclick="this.classList.toggle('truncate');this.classList.toggle('whitespace-normal')"
+				>
 					{ v.Message }
 				</p>
 			</div>
