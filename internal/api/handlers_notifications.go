@@ -161,6 +161,8 @@ func (r *Router) handleDismissViolation(w http.ResponseWriter, req *http.Request
 	}
 
 	// Return empty HTML for HTMX hx-swap="outerHTML" to remove the row.
+	// Trigger dashboard counter refresh when called from the dashboard.
+	w.Header().Set("HX-Trigger", "dashboard:action-resolved")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 }
@@ -204,6 +206,7 @@ func (r *Router) handleBulkDismissViolations(w http.ResponseWriter, req *http.Re
 	// Bulk-dismissing violations changes health scores.
 	r.InvalidateHealthCache()
 
+	w.Header().Set("HX-Trigger", "dashboard:action-resolved")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprintf(w, "%d", n) //nolint:errcheck,gosec // G705: n is int, no XSS risk

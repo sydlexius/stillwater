@@ -131,6 +131,8 @@ type ViolationListParams struct {
 	Category string // filter: "nfo", "image", "metadata"
 	RuleID   string // filter by specific rule
 	GroupBy  string // "artist", "rule", "severity", "category", ""
+	Limit    int    // pagination limit; 0 = no limit (backward compatible)
+	Offset   int    // pagination offset
 }
 
 // ViolationGroup holds a group of violations for grouped display.

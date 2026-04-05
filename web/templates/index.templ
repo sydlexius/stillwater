@@ -1,356 +1,319 @@
 package templates
 
+// IndexPage renders the BLUF dashboard with action queue and activity feed.
 templ IndexPage(assets AssetPaths) {
 	@Layout("Dashboard", assets) {
-		<div class="space-y-6">
-			<div class="sw-card rounded-lg px-6 py-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-				<div>
-					<h1 class="text-2xl font-bold">Dashboard</h1>
-					<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-						Artist metadata and image management overview.
-					</p>
-				</div>
-				<a
-					id="last-evaluated-link"
-					href={ templ.SafeURL(assets.BasePath + "/reports/compliance") }
-					class="inline-flex items-center gap-1.5 text-sm text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
-					title="Go to Reports"
-				>
-					<span id="last-evaluated-text">Loading...</span>
-					<!-- Small refresh/arrow icon linking to reports -->
-					<svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
-						<path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3"></path>
-					</svg>
-				</a>
-			</div>
-			<div
-				id="health-summary"
-				hx-get="/api/v1/reports/health"
-				hx-trigger="load"
-				hx-swap="innerHTML"
-				class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4"
-			>
-				<div class="sw-card rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
-					<p class="text-sm font-medium text-gray-500 dark:text-gray-400">Loading...</p>
-				</div>
-			</div>
-			<div class="sw-card rounded-lg bg-white dark:bg-gray-800 p-4 shadow sm:p-6">
-				<h2 class="text-lg font-semibold mb-4">Health Score Trend</h2>
-				<div class="relative h-[250px] sm:h-[300px]">
-					<canvas id="health-chart" aria-label="Health score trend chart" role="img"></canvas>
-				</div>
-			</div>
-			<div class="sw-card rounded-lg bg-white dark:bg-gray-800 p-4 shadow sm:p-6">
-				<div class="flex items-center justify-between mb-4">
-					<h2 class="text-lg font-semibold">Violations Trend</h2>
-					<select
-						id="violations-trend-days"
-						aria-label="Date range for violations trend chart"
-						onchange="loadViolationsTrend(this.value)"
-						class="text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1"
-					>
-						<option value="7">Last 7 days</option>
-						<option value="30" selected>Last 30 days</option>
-						<option value="90">Last 90 days</option>
-					</select>
-				</div>
-				<div class="relative h-[250px] sm:h-[300px]">
-					<canvas id="violations-chart" aria-label="Violations trend chart" role="img"></canvas>
-				</div>
-			</div>
-			<div class="sw-card rounded-lg bg-white dark:bg-gray-800 p-4 shadow sm:p-6">
-				<h2 class="text-lg font-semibold mb-1">Metadata Completeness</h2>
+		<div class="flex flex-col gap-6 lg:flex-row" id="dashboard-columns">
+			// Left column: Action Queue (~65%)
+			<section class="min-h-0 lg:w-[65%] lg:overflow-y-auto lg:pr-3" style="scrollbar-width: thin;">
 				<div
-					id="completeness-summary"
-					hx-get="/api/v1/reports/metadata-completeness"
+					id="action-queue"
+					hx-get="/dashboard/actions"
 					hx-trigger="load"
 					hx-swap="innerHTML"
-					class="text-sm text-gray-500 dark:text-gray-400"
 				>
-					<p>Loading...</p>
+					// Loading skeleton
+					<div class="space-y-3">
+						<div class="sw-card rounded-lg px-5 py-4 shadow-sm animate-pulse">
+							<div class="flex items-center justify-between">
+								<div class="flex items-center gap-3">
+									<div class="h-5 w-28 bg-gray-200 dark:bg-gray-700 rounded"></div>
+									<div class="h-5 w-32 bg-red-100 dark:bg-red-900/30 rounded-full"></div>
+								</div>
+								<div class="h-4 w-40 bg-gray-200 dark:bg-gray-700 rounded"></div>
+							</div>
+						</div>
+						<div class="flex gap-2">
+							for i := 0; i < 4; i++ {
+								<div class="h-8 w-28 bg-gray-200 dark:bg-gray-700 rounded-full animate-pulse"></div>
+							}
+						</div>
+						for i := 0; i < 5; i++ {
+							<div class={ "rounded-lg border-l-4 bg-white dark:bg-gray-800/80 px-3 py-2.5 shadow-sm animate-pulse",
+								templ.KV("border-l-red-400", i%3 == 0),
+								templ.KV("border-l-indigo-400", i%3 == 1),
+								templ.KV("border-l-amber-400", i%3 == 2),
+							}>
+								<div class="flex items-center gap-2.5">
+									<div class="h-3.5 w-3.5 bg-gray-200 dark:bg-gray-700 rounded"></div>
+									<div class="h-8 w-8 bg-gray-200 dark:bg-gray-700 rounded-full"></div>
+									<div class="flex-1 space-y-1.5">
+										<div class="h-3.5 w-32 bg-gray-200 dark:bg-gray-700 rounded"></div>
+										<div class="h-3 w-56 bg-gray-200 dark:bg-gray-700 rounded"></div>
+									</div>
+									<div class="flex gap-1">
+										<div class="h-6 w-20 bg-blue-100 dark:bg-blue-900/30 rounded-md"></div>
+										<div class="h-6 w-14 bg-gray-100 dark:bg-gray-700 rounded-md"></div>
+									</div>
+								</div>
+							</div>
+						}
+					</div>
 				</div>
-				<div class="mt-4 relative h-[300px] sm:h-[360px]">
-					<canvas id="completeness-chart" aria-label="Metadata completeness chart" role="img"></canvas>
+				// Bulk action bar (hidden by default, shown via JS when checkboxes selected)
+				<div
+					id="bulk-bar"
+					class="fixed bottom-0 left-0 right-0 z-40 hidden border-t border-gray-200 bg-white/95 p-3 shadow-lg backdrop-blur-sm dark:border-gray-700 dark:bg-gray-800/95"
+				>
+					<div class="mx-auto flex max-w-3xl items-center justify-between">
+						<div class="flex items-center gap-3">
+							<span id="bulk-count" class="text-sm font-medium text-gray-700 dark:text-gray-300">0 selected</span>
+							<button
+								id="bulk-select-all-btn"
+								class="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+							>
+								Select all
+							</button>
+							<button
+								id="bulk-deselect-btn"
+								class="text-xs text-gray-500 dark:text-gray-400 hover:underline"
+							>
+								Clear
+							</button>
+						</div>
+						<div class="flex gap-2">
+							<button
+								id="bulk-fix-btn"
+								class="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-blue-700 transition-colors"
+							>
+								Fix Selected
+							</button>
+							<button
+								id="bulk-dismiss-btn"
+								class="inline-flex items-center gap-1.5 rounded-lg bg-gray-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-gray-700 transition-colors"
+							>
+								Dismiss Selected
+							</button>
+						</div>
+					</div>
 				</div>
-			</div>
+			</section>
+			// Right column: Activity Feed (~35%)
+			<aside class="min-h-0 lg:w-[35%] lg:overflow-y-auto lg:pl-4 lg:border-l border-gray-200 dark:border-gray-700/50" style="scrollbar-width: thin;">
+				<div
+					id="activity-feed"
+					hx-get="/dashboard/activity"
+					hx-trigger="load, every 10s"
+					hx-swap="innerHTML"
+				>
+					// Loading skeleton
+					<div>
+						<div class="h-5 w-32 bg-gray-200 dark:bg-gray-700 rounded animate-pulse mb-3"></div>
+						for i := 0; i < 6; i++ {
+							<div class="rounded-md px-2.5 py-2 animate-pulse">
+								<div class="h-3.5 w-28 bg-gray-200 dark:bg-gray-700 rounded mb-1.5"></div>
+								<div class="h-3 w-44 bg-gray-200 dark:bg-gray-700 rounded"></div>
+							</div>
+						}
+					</div>
+				</div>
+			</aside>
 		</div>
-		<script src={ assets.ChartJS }></script>
+		// Independent column scrolling: pin the dashboard container to viewport height
+		// at desktop width so each column scrolls independently.
 		<script>
-			// Fetch last evaluation timestamp and display relative time.
 			(function() {
+				var cols = document.getElementById('dashboard-columns');
+				if (!cols) return;
+				function setHeight() {
+					if (window.innerWidth >= 1024) {
+						var top = cols.getBoundingClientRect().top;
+						cols.style.height = (window.innerHeight - top - 16) + 'px';
+						cols.style.overflow = 'hidden';
+					} else {
+						cols.style.height = '';
+						cols.style.overflow = '';
+					}
+				}
+				setHeight();
+				window.addEventListener('resize', setHeight);
+			})();
+		</script>
+		// Last evaluated timestamp + bulk selection JS
+		<script>
+			(function() {
+				// Fetch last evaluation timestamp and display relative time.
 				var bp = (function() {
 					var el = document.querySelector('meta[name="htmx-base-path"]');
 					return el ? el.content : '';
 				})();
-				var link = document.getElementById('last-evaluated-link');
-				if (link) {
-					link.href = bp + '/reports/compliance';
-				}
-				fetch(bp + '/api/v1/rules/status')
-					.then(function(res) {
-						if (!res.ok) {
+				function updateLastEvaluated() {
+					fetch(bp + '/api/v1/rules/status')
+						.then(function(res) { return res.ok ? res.json() : null; })
+						.then(function(data) {
+							var el = document.getElementById('last-evaluated-text');
+							if (!el || !data) { if (el) el.textContent = 'Status unavailable'; return; }
+							if (!data.last_evaluation_at) { el.textContent = 'Never evaluated'; return; }
+							var evalTime = new Date(data.last_evaluation_at);
+							if (isNaN(evalTime.getTime())) { el.textContent = 'Status unavailable'; return; }
+							var diffMin = Math.floor((Date.now() - evalTime) / 60000);
+							var label;
+							if (diffMin < 1) label = 'just now';
+							else if (diffMin < 60) label = diffMin + 'm ago';
+							else if (diffMin < 1440) { var h = Math.floor(diffMin / 60); label = h + 'h ago'; }
+							else { var d = Math.floor(diffMin / 1440); label = d + 'd ago'; }
+							el.textContent = 'Evaluated ' + label;
+						})
+						.catch(function() {
 							var el = document.getElementById('last-evaluated-text');
 							if (el) el.textContent = 'Status unavailable';
-							return;
+						});
+				}
+				updateLastEvaluated();
+				// Re-run after action queue reloads (the element is inside the HTMX fragment)
+				document.body.addEventListener('htmx:afterSwap', function(e) {
+					if (e.detail.target && e.detail.target.id === 'action-queue') {
+						updateLastEvaluated();
+					}
+				});
+
+				// Bulk selection
+				var queue = document.getElementById('action-queue');
+				var bulkBar = document.getElementById('bulk-bar');
+				var bulkCount = document.getElementById('bulk-count');
+				var bulkDismissBtn = document.getElementById('bulk-dismiss-btn');
+				var bulkFixBtn = document.getElementById('bulk-fix-btn');
+				var selectAllBtn = document.getElementById('bulk-select-all-btn');
+				var deselectBtn = document.getElementById('bulk-deselect-btn');
+				if (!queue || !bulkBar) return;
+
+				var lastChecked = null; // for shift-click range selection
+
+				function updateBulkBar() {
+					var checked = queue.querySelectorAll('.bulk-check:checked');
+					var total = queue.querySelectorAll('.bulk-check').length;
+					if (checked.length > 0) {
+						bulkBar.classList.remove('hidden');
+						bulkCount.textContent = checked.length + ' selected';
+					} else {
+						bulkBar.classList.add('hidden');
+					}
+					// Sync the Select All toggle
+					var toggle = document.getElementById('select-all-toggle');
+					if (toggle) {
+						toggle.checked = total > 0 && checked.length === total;
+						toggle.indeterminate = checked.length > 0 && checked.length < total;
+					}
+				}
+
+				function getCSRF() {
+					var match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/);
+					return match ? decodeURIComponent(match[1]) : '';
+				}
+
+				function getCheckedIDs() {
+					var checked = queue.querySelectorAll('.bulk-check:checked');
+					return Array.prototype.map.call(checked, function(cb) { return cb.value; });
+				}
+
+				function setAllChecked(state) {
+					queue.querySelectorAll('.bulk-check').forEach(function(cb) { cb.checked = state; });
+					updateBulkBar();
+				}
+
+				// Checkbox change with Shift-click range selection
+				queue.addEventListener('click', function(e) {
+					var cb = e.target;
+					if (!cb.classList.contains('bulk-check')) return;
+					if (e.shiftKey && lastChecked && lastChecked !== cb) {
+						var boxes = Array.from(queue.querySelectorAll('.bulk-check'));
+						var start = boxes.indexOf(lastChecked);
+						var end = boxes.indexOf(cb);
+						if (start > -1 && end > -1) {
+							var lo = Math.min(start, end);
+							var hi = Math.max(start, end);
+							for (var i = lo; i <= hi; i++) {
+								boxes[i].checked = cb.checked;
+							}
 						}
-						return res.json();
-					})
-					.then(function(data) {
-						var el = document.getElementById('last-evaluated-text');
-						if (!el || !data) return;
-						if (!data.last_evaluation_at) {
-							el.textContent = 'Never evaluated';
-							return;
-						}
-						var evalTime = new Date(data.last_evaluation_at);
-						if (isNaN(evalTime.getTime())) {
-							el.textContent = 'Status unavailable';
-							return;
-						}
-						var now = new Date();
-						var diffMs = now - evalTime;
-						var diffMin = Math.floor(diffMs / 60000);
-						var label;
-						if (diffMin < 1) {
-							label = 'just now';
-						} else if (diffMin < 60) {
-							label = diffMin + ' min ago';
-						} else if (diffMin < 1440) {
-							var hours = Math.floor(diffMin / 60);
-							label = hours + (hours === 1 ? ' hour ago' : ' hours ago');
-						} else {
-							var days = Math.floor(diffMin / 1440);
-							label = days + (days === 1 ? ' day ago' : ' days ago');
-						}
-						el.textContent = 'Last evaluated: ' + label;
-					})
-					.catch(function() {
-						var el = document.getElementById('last-evaluated-text');
-						if (el) el.textContent = 'Status unavailable';
+					}
+					lastChecked = cb;
+					updateBulkBar();
+				});
+
+				// Select All toggle in the header area
+				queue.addEventListener('change', function(e) {
+					if (e.target.id === 'select-all-toggle') {
+						setAllChecked(e.target.checked);
+						return;
+					}
+					if (e.target.classList.contains('bulk-check')) updateBulkBar();
+				});
+
+				// Bulk bar Select All / Clear buttons
+				if (selectAllBtn) {
+					selectAllBtn.addEventListener('click', function() { setAllChecked(true); });
+				}
+				if (deselectBtn) {
+					deselectBtn.addEventListener('click', function() { setAllChecked(false); });
+				}
+
+				if (bulkDismissBtn) {
+					bulkDismissBtn.addEventListener('click', function() {
+						var ids = getCheckedIDs();
+						if (ids.length === 0) return;
+						fetch(bp + '/api/v1/notifications/bulk-dismiss', {
+							method: 'POST',
+							headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCSRF() },
+							body: JSON.stringify({ids: ids})
+						}).then(function(res) {
+							if (res.ok) {
+								bulkBar.classList.add('hidden');
+								htmx.ajax('GET', '/dashboard/actions', {target: '#action-queue', swap: 'innerHTML'});
+							} else {
+								window.showToast && window.showToast('Dismiss failed (' + res.status + ')', 'error');
+							}
+						}).catch(function() {
+							window.showToast && window.showToast('Network error dismissing violations', 'error');
+						});
 					});
-			})();
+				}
 
-			(function() {
-				var isDark = document.documentElement.classList.contains('dark');
-				var textColor = isDark ? '#9ca3af' : '#6b7280';
-				var gridColor = isDark ? '#374151' : '#e5e7eb';
-				var bpMeta = document.querySelector('meta[name="htmx-base-path"]');
-				var bp = bpMeta ? bpMeta.content : '';
-
-				fetch(bp + '/api/v1/reports/health/history')
-					.then(function(res) {
-						if (!res.ok) {
-							showToast('Failed to load health history', 'error');
-							return null;
-						}
-						return res.json();
-					})
-					.then(function(data) {
-						if (!data) { return; }
-						var history = data.history || [];
-						if (history.length === 0) return;
-
-						var labels = history.map(function(h) {
-							return h.recorded_at.substring(0, 10);
-						});
-						var scores = history.map(function(h) { return h.score; });
-
-						var ctx = document.getElementById('health-chart');
-						new Chart(ctx, {
-							type: 'line',
-							data: {
-								labels: labels,
-								datasets: [{
-									label: 'Health Score',
-									data: scores,
-									borderColor: '#3b82f6',
-									backgroundColor: 'rgba(59, 130, 246, 0.1)',
-									fill: true,
-									tension: 0.3,
-									pointRadius: 2,
-									pointHoverRadius: 5
-								}]
-							},
-							options: {
-								responsive: true,
-								maintainAspectRatio: false,
-								scales: {
-									y: {
-										min: 0,
-										max: 100,
-										ticks: { color: textColor },
-										grid: { color: gridColor }
-									},
-									x: {
-										ticks: { color: textColor, maxTicksLimit: 10 },
-										grid: { color: gridColor }
-									}
-								},
-								plugins: {
-									legend: { labels: { color: textColor } }
+				if (bulkFixBtn) {
+					bulkFixBtn.addEventListener('click', function() {
+						var ids = getCheckedIDs();
+						if (ids.length === 0) return;
+						bulkFixBtn.disabled = true;
+						var total = ids.length, failed = 0;
+						// Serialize requests to avoid overloading the fix pipeline.
+						function fixNext(i) {
+							if (i >= ids.length) {
+								bulkBar.classList.add('hidden');
+								bulkFixBtn.disabled = false;
+								bulkFixBtn.textContent = 'Fix Selected';
+								if (failed > 0) {
+									window.showToast && window.showToast(failed + ' of ' + total + ' fixes failed', 'error');
 								}
+								htmx.ajax('GET', '/dashboard/actions', {target: '#action-queue', swap: 'innerHTML'});
+								return;
 							}
-						});
-					})
-					.catch(function(err) { showToast('Failed to load health history', 'error'); });
-			})();
-
-			var violationsChart = null;
-
-			function loadViolationsTrend(days) {
-				var isDark = document.documentElement.classList.contains('dark');
-				var textColor = isDark ? '#9ca3af' : '#6b7280';
-				var gridColor = isDark ? '#374151' : '#e5e7eb';
-				var bpMeta = document.querySelector('meta[name="htmx-base-path"]');
-				var bp = bpMeta ? bpMeta.content : '';
-
-				fetch(bp + '/api/v1/violations/trend?days=' + encodeURIComponent(days))
-					.then(function(res) {
-						if (!res.ok) {
-							showToast('Failed to load violations trend', 'error');
-							return null;
+							bulkFixBtn.textContent = 'Fixing ' + (i + 1) + '/' + total + '...';
+							fetch(bp + '/api/v1/notifications/' + ids[i] + '/fix', {
+								method: 'POST',
+								headers: { 'X-CSRF-Token': getCSRF() }
+							}).then(function(res) {
+								if (!res.ok) failed++;
+							}).catch(function() {
+								failed++;
+							}).finally(function() {
+								fixNext(i + 1);
+							});
 						}
-						return res.json();
-					})
-					.then(function(data) {
-						if (!data) { return; }
-						var trend = data.trend || [];
+						fixNext(0);
+					});
+				}
 
-						var labels = trend.map(function(p) { return p.date; });
-						var created = trend.map(function(p) { return p.created; });
-						var resolved = trend.map(function(p) { return p.resolved; });
+				document.body.addEventListener('htmx:afterSwap', function(e) {
+					if (e.detail.target && e.detail.target.id === 'action-queue') {
+						bulkBar.classList.add('hidden');
+					}
+				});
 
-						var ctx = document.getElementById('violations-chart');
-						if (violationsChart) {
-							violationsChart.destroy();
-						}
-						violationsChart = new Chart(ctx, {
-							type: 'line',
-							data: {
-								labels: labels,
-								datasets: [
-									{
-										label: 'Created',
-										data: created,
-										borderColor: '#ef4444',
-										backgroundColor: 'rgba(239, 68, 68, 0.1)',
-										fill: true,
-										tension: 0.3,
-										pointRadius: 2,
-										pointHoverRadius: 5
-									},
-									{
-										label: 'Resolved',
-										data: resolved,
-										borderColor: '#22c55e',
-										backgroundColor: 'rgba(34, 197, 94, 0.1)',
-										fill: true,
-										tension: 0.3,
-										pointRadius: 2,
-										pointHoverRadius: 5
-									}
-								]
-							},
-							options: {
-								responsive: true,
-								maintainAspectRatio: false,
-								scales: {
-									y: {
-										min: 0,
-										ticks: {
-											color: textColor,
-											stepSize: 1,
-											precision: 0
-										},
-										grid: { color: gridColor }
-									},
-									x: {
-										ticks: { color: textColor, maxTicksLimit: 10 },
-										grid: { color: gridColor }
-									}
-								},
-								plugins: {
-									legend: { labels: { color: textColor } }
-								}
-							}
-						});
-					})
-					.catch(function(err) { showToast('Failed to load violations trend', 'error'); });
-			}
-
-			loadViolationsTrend(30);
-
-			(function() {
-				var isDark = document.documentElement.classList.contains('dark');
-				var textColor = isDark ? '#9ca3af' : '#6b7280';
-				var gridColor = isDark ? '#374151' : '#e5e7eb';
-				var bpMeta = document.querySelector('meta[name="htmx-base-path"]');
-				var bp = bpMeta ? bpMeta.content : '';
-
-				fetch(bp + '/api/v1/reports/metadata-completeness')
-					.then(function(res) {
-						if (!res.ok) {
-							showToast('Failed to load completeness data', 'error');
-							return null;
-						}
-						return res.json();
-					})
-					.then(function(data) {
-						if (!data || !data.field_coverage || data.field_coverage.length === 0) return;
-						var fields = data.field_coverage;
-						var labels = fields.map(function(f) { return f.field; });
-						var values = fields.map(function(f) { return f.percentage; });
-						var bgColors = values.map(function(v) {
-							if (v >= 80) return 'rgba(34, 197, 94, 0.75)';
-							if (v >= 50) return 'rgba(234, 179, 8, 0.75)';
-							return 'rgba(239, 68, 68, 0.75)';
-						});
-						var ctx = document.getElementById('completeness-chart');
-						if (!ctx) return;
-						new Chart(ctx, {
-							type: 'bar',
-							data: {
-								labels: labels,
-								datasets: [{
-									label: 'Coverage (%)',
-									data: values,
-									backgroundColor: bgColors,
-									borderRadius: 3
-								}]
-							},
-							options: {
-								indexAxis: 'y',
-								responsive: true,
-								maintainAspectRatio: false,
-								scales: {
-									x: {
-										min: 0,
-										max: 100,
-										ticks: {
-											color: textColor,
-											callback: function(v) { return v + '%'; }
-										},
-										grid: { color: gridColor }
-									},
-									y: {
-										ticks: { color: textColor }
-									}
-								},
-								plugins: {
-									legend: { display: false },
-									tooltip: {
-										callbacks: {
-											label: function(ctx) {
-												var f = fields[ctx.dataIndex];
-												return f.count + ' / ' + f.total + ' (' + f.percentage.toFixed(1) + '%)';
-											}
-										}
-									}
-								}
-							}
-						});
-					})
-					.catch(function() { showToast('Failed to load completeness data', 'error'); });
+				// Reload the full action queue after each fix/dismiss so filter chip
+				// counts, pagination, and empty-state stay in sync.
+				document.body.addEventListener('dashboard:action-resolved', function() {
+					htmx.ajax('GET', '/dashboard/actions', {target: '#action-queue', swap: 'innerHTML'});
+				});
 			})();
 		</script>
 	}
