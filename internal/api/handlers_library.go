@@ -197,6 +197,15 @@ func (r *Router) handleDeleteLibrary(w http.ResponseWriter, req *http.Request) {
 	if req.URL.Query().Get("deleteArtists") == "true" {
 		err = r.libraryService.DeleteWithArtists(req.Context(), id)
 	} else {
+		// Dismiss active violations before the delete NULLs library_id
+		// (after which the association is lost and cleanup is impossible).
+		if _, dismissErr := r.ruleService.DismissViolationsForLibrary(req.Context(), id); dismissErr != nil {
+			r.logger.Error("dismissing violations for library removal", "library_id", id, "error", dismissErr)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{
+				"error": "failed to clean up library violations; deletion was not performed",
+			})
+			return
+		}
 		err = r.libraryService.Delete(req.Context(), id)
 	}
 	if err != nil {

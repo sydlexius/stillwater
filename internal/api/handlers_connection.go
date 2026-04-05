@@ -414,6 +414,12 @@ func (r *Router) handleDeleteConnection(w http.ResponseWriter, req *http.Request
 					return
 				}
 			} else {
+				// Dismiss active violations before the delete NULLs library_id.
+				if _, dismissErr := r.ruleService.DismissViolationsForLibrary(req.Context(), lib.ID); dismissErr != nil {
+					r.logger.Error("dismissing violations for library removal", "library_id", lib.ID, "error", dismissErr)
+					writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+					return
+				}
 				if err := r.libraryService.Delete(req.Context(), lib.ID); err != nil {
 					r.logger.Error("deleting library", "library_id", lib.ID, "error", err)
 					writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
@@ -421,6 +427,9 @@ func (r *Router) handleDeleteConnection(w http.ResponseWriter, req *http.Request
 				}
 			}
 		}
+		// When the last local library is removed, auto-disable filesystem-dependent
+		// rules so they do not evaluate against artists without filesystem paths.
+		r.maybeDisableFilesystemRules(req.Context())
 	} else {
 		// Default: clear library FK references. Imported libraries keep their
 		// source/external_id for provenance.

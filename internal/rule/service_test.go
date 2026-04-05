@@ -1073,6 +1073,96 @@ func TestDismissOrphanedViolations(t *testing.T) {
 	}
 }
 
+func TestDismissViolationsForLibrary(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	// Insert two libraries.
+	for _, lib := range []struct{ id, name string }{
+		{"lib-a", "Library A"},
+		{"lib-b", "Library B"},
+	} {
+		_, err := db.ExecContext(ctx, `INSERT INTO libraries (id, name, type, created_at, updated_at)
+			VALUES (?, ?, 'regular', datetime('now'), datetime('now'))`, lib.id, lib.name)
+		if err != nil {
+			t.Fatalf("inserting library %s: %v", lib.id, err)
+		}
+	}
+
+	// Insert artists belonging to each library.
+	for _, a := range []struct{ id, name, libID string }{
+		{"artist-a1", "Artist A1", "lib-a"},
+		{"artist-a2", "Artist A2", "lib-a"},
+		{"artist-b1", "Artist B1", "lib-b"},
+	} {
+		_, err := db.ExecContext(ctx, `INSERT INTO artists (id, name, sort_name, type, path, library_id)
+			VALUES (?, ?, ?, 'person', '/music/'||?, ?)`, a.id, a.name, a.name, a.id, a.libID)
+		if err != nil {
+			t.Fatalf("inserting artist %s: %v", a.id, err)
+		}
+	}
+
+	// Create violations for both libraries' artists.
+	violations := []*RuleViolation{
+		{RuleID: RuleNFOExists, ArtistID: "artist-a1", ArtistName: "Artist A1",
+			Severity: "error", Message: "missing nfo", Fixable: true, Status: ViolationStatusOpen},
+		{RuleID: RuleThumbExists, ArtistID: "artist-a2", ArtistName: "Artist A2",
+			Severity: "warning", Message: "missing thumb", Fixable: true, Status: ViolationStatusPendingChoice,
+			Candidates: []ImageCandidate{{URL: "http://example.com/img.jpg", Width: 500, Height: 500, Source: "test", ImageType: "thumb"}}},
+		{RuleID: RuleNFOExists, ArtistID: "artist-b1", ArtistName: "Artist B1",
+			Severity: "error", Message: "missing nfo", Fixable: true, Status: ViolationStatusOpen},
+	}
+	for _, v := range violations {
+		if err := svc.UpsertViolation(ctx, v); err != nil {
+			t.Fatalf("upserting violation: %v", err)
+		}
+	}
+
+	// Dismiss violations for library A only.
+	n, err := svc.DismissViolationsForLibrary(ctx, "lib-a")
+	if err != nil {
+		t.Fatalf("DismissViolationsForLibrary: %v", err)
+	}
+	if n != 2 {
+		t.Errorf("dismissed = %d, want 2", n)
+	}
+
+	// Library A's violations should be dismissed.
+	for _, v := range violations[:2] {
+		got, err := svc.GetViolationByID(ctx, v.ID)
+		if err != nil {
+			t.Fatalf("GetViolationByID(%s): %v", v.ID, err)
+		}
+		if got.Status != ViolationStatusDismissed {
+			t.Errorf("lib-a violation %s status = %q, want %q", v.ID, got.Status, ViolationStatusDismissed)
+		}
+	}
+
+	// Library B's violation should still be open.
+	got, err := svc.GetViolationByID(ctx, violations[2].ID)
+	if err != nil {
+		t.Fatalf("GetViolationByID(%s): %v", violations[2].ID, err)
+	}
+	if got.Status != ViolationStatusOpen {
+		t.Errorf("lib-b violation status = %q, want %q", got.Status, ViolationStatusOpen)
+	}
+}
+
+func TestDismissViolationsForLibrary_NoViolations(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	n, err := svc.DismissViolationsForLibrary(ctx, "nonexistent-lib")
+	if err != nil {
+		t.Fatalf("DismissViolationsForLibrary: %v", err)
+	}
+	if n != 0 {
+		t.Errorf("dismissed = %d, want 0", n)
+	}
+}
+
 func TestGetComplianceForArtists(t *testing.T) {
 	db := setupTestDB(t)
 	svc := NewService(db)

@@ -1001,6 +1001,25 @@ func (s *Service) CountActiveViolationsBySeverity(ctx context.Context) (map[stri
 	return counts, rows.Err()
 }
 
+// DismissViolationsForLibrary dismisses all active violations for artists that
+// belong to the given library. This should be called before deleting a library
+// with deleteArtists=false, because the delete NULLs artists.library_id and the
+// association is lost. Returns the number of violations dismissed.
+func (s *Service) DismissViolationsForLibrary(ctx context.Context, libraryID string) (int, error) {
+	now := time.Now().UTC().Format(time.RFC3339)
+	res, err := s.db.ExecContext(ctx, `
+		UPDATE rule_violations
+		SET status = ?, dismissed_at = ?, updated_at = ?
+		WHERE status IN (?, ?)
+		AND artist_id IN (SELECT id FROM artists WHERE library_id = ?)
+	`, ViolationStatusDismissed, now, now, ViolationStatusOpen, ViolationStatusPendingChoice, libraryID)
+	if err != nil {
+		return 0, fmt.Errorf("dismissing violations for library %s: %w", libraryID, err)
+	}
+	n, _ := res.RowsAffected()
+	return int(n), nil
+}
+
 // DismissOrphanedViolations dismisses all active violations whose artist_id
 // no longer exists in the artists table. Returns the number dismissed.
 func (s *Service) DismissOrphanedViolations(ctx context.Context) (int, error) {
