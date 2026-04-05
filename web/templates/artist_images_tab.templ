@@ -1,0 +1,303 @@
+package templates
+
+import (
+	"fmt"
+	"strconv"
+
+	"github.com/sydlexius/stillwater/internal/artist"
+	img "github.com/sydlexius/stillwater/internal/image"
+	"github.com/sydlexius/stillwater/web/components"
+)
+
+// ArtistImagesTab renders the gallery-by-type Images tab for the artist detail page.
+// Each image type (thumbnail, fanart/backdrop, logo, banner) gets its own section
+// with a header, count badge, and either the image(s) or an empty-state placeholder.
+templ ArtistImagesTab(artistID string, a *artist.Artist, profileName string) {
+	<div class="space-y-8">
+		// -- Thumbnail section (1:1) --
+		@imageSectionWithAction(
+			img.ImageTermFor("thumb", profileName),
+			"1:1 square format",
+			boolToCount(a.ThumbExists),
+			templ.SafeURL(fmt.Sprintf("/artists/%s/images?type=thumb&fetch=1", artistID)),
+		) {
+			if a.ThumbExists {
+				<div class="flex flex-col sm:flex-row gap-6">
+					<div class="group relative w-48 h-48 flex-shrink-0 rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-800">
+						<img
+							src={ fmt.Sprintf("/api/v1/artists/%s/images/thumb/file", artistID) }
+							alt={ fmt.Sprintf("%s thumbnail", a.Name) }
+							class="w-full h-full object-cover"
+						/>
+						@imageOverlay(artistID, "thumb", -1)
+					</div>
+					<div
+						class="text-sm text-gray-500 dark:text-gray-400 space-y-1"
+						hx-get={ fmt.Sprintf("/api/v1/artists/%s/images/thumb/info", artistID) }
+						hx-trigger="load"
+						hx-swap="innerHTML"
+					>
+						if a.ThumbWidth > 0 && a.ThumbHeight > 0 {
+							<p>{ strconv.Itoa(a.ThumbWidth) } x { strconv.Itoa(a.ThumbHeight) } px</p>
+						}
+					</div>
+				</div>
+			} else {
+				@emptyState(artistID, "thumb", img.ImageTermFor("thumb", profileName))
+			}
+		}
+
+		// -- Fanart / Backdrop section (16:9) --
+		@imageSectionWithAction(
+			img.ImageTermFor("fanart", profileName),
+			"16:9 widescreen format",
+			a.FanartCount,
+			templ.SafeURL(fmt.Sprintf("/artists/%s/images?type=fanart&fetch=1", artistID)),
+		) {
+			if a.FanartCount > 0 {
+				<div
+					hx-get={ fmt.Sprintf("/api/v1/artists/%s/images/fanart/list", artistID) }
+					hx-trigger="load"
+					hx-swap="innerHTML"
+				>
+					<p class="text-sm text-gray-400 italic">Loading gallery...</p>
+				</div>
+			} else {
+				@emptyState(artistID, "fanart", img.ImageTermFor("fanart", profileName))
+			}
+		}
+
+		// -- Logo section --
+		@imageSectionWithAction(
+			img.ImageTermFor("logo", profileName),
+			"Transparent PNG format",
+			boolToCount(a.LogoExists),
+			templ.SafeURL(fmt.Sprintf("/artists/%s/images?type=logo&fetch=1", artistID)),
+		) {
+			if a.LogoExists {
+				<div class="flex flex-col sm:flex-row gap-4">
+					<div class="group relative max-w-md rounded-lg overflow-hidden checkered-bg p-4">
+						<img
+							src={ fmt.Sprintf("/api/v1/artists/%s/images/logo/file", artistID) }
+							alt={ fmt.Sprintf("%s logo", a.Name) }
+							class="max-h-32 w-auto object-contain"
+						/>
+						@imageOverlay(artistID, "logo", -1)
+					</div>
+					<div
+						class="text-sm text-gray-500 dark:text-gray-400"
+						hx-get={ fmt.Sprintf("/api/v1/artists/%s/images/logo/info", artistID) }
+						hx-trigger="load"
+						hx-swap="innerHTML"
+					></div>
+				</div>
+			} else {
+				@emptyState(artistID, "logo", img.ImageTermFor("logo", profileName))
+			}
+		}
+
+		// -- Banner section (~4:1) --
+		@imageSectionWithAction(
+			img.ImageTermFor("banner", profileName),
+			"~4:1 wide format",
+			boolToCount(a.BannerExists),
+			templ.SafeURL(fmt.Sprintf("/artists/%s/images?type=banner&fetch=1", artistID)),
+		) {
+			if a.BannerExists {
+				<div class="space-y-2">
+					<div class="group relative aspect-[4/1] rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-800">
+						<img
+							src={ fmt.Sprintf("/api/v1/artists/%s/images/banner/file", artistID) }
+							alt={ fmt.Sprintf("%s banner", a.Name) }
+							class="w-full h-full object-cover"
+						/>
+						@imageOverlay(artistID, "banner", -1)
+					</div>
+					<div
+						class="text-sm text-gray-500 dark:text-gray-400"
+						hx-get={ fmt.Sprintf("/api/v1/artists/%s/images/banner/info", artistID) }
+						hx-trigger="load"
+						hx-swap="innerHTML"
+					></div>
+				</div>
+			} else {
+				@emptyState(artistID, "banner", img.ImageTermFor("banner", profileName))
+			}
+		}
+		<script>
+			function setFanartPrimary(el) {
+				if (!confirm('Set this image as the primary fanart?')) return;
+				var idx = parseInt(el.dataset.setPrimaryIndex, 10);
+				var count = parseInt(el.dataset.setPrimaryCount, 10);
+				var id = el.dataset.setPrimaryArtist;
+				if (isNaN(idx) || isNaN(count) || count <= 0) {
+					alert('Unable to reorder: invalid image data. Please reload the page.');
+					return;
+				}
+				var token = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, '$1');
+				if (!token) {
+					alert('Session expired. Please reload the page and try again.');
+					return;
+				}
+				// Build new order: put selected index first, then the rest in original order.
+				var order = [idx];
+				for (var i = 0; i < count; i++) {
+					if (i !== idx) order.push(i);
+				}
+				fetch('/api/v1/artists/' + id + '/images/fanart/reorder', {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json',
+						'X-CSRF-Token': token
+					},
+					body: JSON.stringify({order: order}),
+					credentials: 'same-origin'
+				}).then(function(r) {
+					if (r.ok) {
+						window.location.reload();
+					} else {
+						r.text().then(function(body) {
+							alert('Failed to set primary (HTTP ' + r.status + '): ' + body);
+						});
+					}
+				}).catch(function(err) {
+					alert('Network error setting primary: ' + err.message);
+				});
+			}
+		</script>
+	</div>
+}
+
+// imageSectionWithAction renders a section header that includes an add-image button
+// in the header row, useful for multi-image types like fanart.
+templ imageSectionWithAction(typeName string, description string, count int, addURL templ.SafeURL) {
+	<section class="sw-card p-6">
+		<div class="flex items-center gap-3 mb-4">
+			<h3 class="text-lg font-semibold text-gray-900 dark:text-white">{ typeName }</h3>
+			<span class="text-sm text-gray-500 dark:text-gray-400">{ description }</span>
+			@countBadge(count)
+			<a
+				href={ addURL }
+				class="ml-auto inline-flex items-center gap-1 text-sm font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+			>
+				if count > 0 {
+					@components.IconArrowPath("w-4 h-4")
+					Replace { typeName }
+				} else {
+					@components.IconPlusCircle("w-4 h-4")
+					Add { typeName }
+				}
+			</a>
+		</div>
+		{ children... }
+	</section>
+}
+
+// countBadge renders a small pill showing the count of images for a type.
+// Green when at least one image exists, red when none are present.
+templ countBadge(count int) {
+	if count > 0 {
+		<span class="inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
+			{ strconv.Itoa(count) }
+		</span>
+	} else {
+		<span class="inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">
+			0
+		</span>
+	}
+}
+
+// imageOverlay renders the semi-transparent hover overlay with action buttons
+// for a single image. When index is -1, the image type uses non-indexed URLs
+// (thumb, logo, banner). When index >= 0, index-based URLs are used (fanart).
+templ imageOverlay(artistID string, imageType string, index int) {
+	<div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
+		// View full-size
+		if index >= 0 {
+			<a
+				href={ templ.SafeURL(fmt.Sprintf("/api/v1/artists/%s/images/%s/%d/file", artistID, imageType, index)) }
+				target="_blank"
+				class="p-2 rounded-full bg-black/40 hover:bg-black/60 text-white transition-colors shadow-sm"
+				title="View full-size"
+			>
+				@components.IconArrowsPointingOut("w-5 h-5")
+			</a>
+		} else {
+			<a
+				href={ templ.SafeURL(fmt.Sprintf("/api/v1/artists/%s/images/%s/file", artistID, imageType)) }
+				target="_blank"
+				class="p-2 rounded-full bg-black/40 hover:bg-black/60 text-white transition-colors shadow-sm"
+				title="View full-size"
+			>
+				@components.IconArrowsPointingOut("w-5 h-5")
+			</a>
+		}
+		// Replace (navigates to image search with auto-fetch)
+		<a
+			href={ templ.SafeURL(fmt.Sprintf("/artists/%s/images?type=%s&fetch=1", artistID, imageType)) }
+			class="p-2 rounded-full bg-black/40 hover:bg-black/60 text-white transition-colors shadow-sm"
+			title="Replace"
+		>
+			@components.IconArrowUpTray("w-5 h-5")
+		</a>
+		// Trim (logo only -- removes transparent edges)
+		if imageType == "logo" {
+			<button
+				hx-post={ fmt.Sprintf("/api/v1/artists/%s/images/logo/trim", artistID) }
+				hx-confirm="Trim transparent edges from this logo?"
+				hx-swap="none"
+				hx-on::after-request="if(event.detail.successful) window.location.reload(); else alert('Trim failed: ' + event.detail.xhr.responseText);"
+				class="p-2 rounded-full bg-black/40 hover:bg-black/60 text-white transition-colors shadow-sm"
+				title="Trim transparent edges"
+			>
+				@components.IconScissors("w-5 h-5")
+			</button>
+		}
+		// Delete
+		if index >= 0 {
+			<button
+				hx-delete={ fmt.Sprintf("/api/v1/artists/%s/images/%s/%d", artistID, imageType, index) }
+				hx-confirm={ fmt.Sprintf("Delete this %s image?", imageType) }
+				hx-swap="none"
+				hx-on::after-request="if(event.detail.successful) window.location.reload(); else alert('Delete failed: ' + event.detail.xhr.responseText);"
+				class="p-2 rounded-full bg-black/40 hover:bg-red-500/80 text-white transition-colors shadow-sm"
+				title="Delete"
+			>
+				@components.IconTrash("w-5 h-5")
+			</button>
+		} else {
+			<button
+				hx-delete={ fmt.Sprintf("/api/v1/artists/%s/images/%s", artistID, imageType) }
+				hx-confirm={ fmt.Sprintf("Delete this %s image?", imageType) }
+				hx-swap="none"
+				hx-on::after-request="if(event.detail.successful) window.location.reload(); else alert('Delete failed: ' + event.detail.xhr.responseText);"
+				class="p-2 rounded-full bg-black/40 hover:bg-red-500/80 text-white transition-colors shadow-sm"
+				title="Delete"
+			>
+				@components.IconTrash("w-5 h-5")
+			</button>
+		}
+	</div>
+}
+
+// emptyState renders a dashed-border placeholder prompting the user to upload
+// or fetch an image of the given type.
+templ emptyState(artistID string, imageType string, typeName string) {
+	<div class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg flex items-center justify-center p-8">
+		<a
+			href={ templ.SafeURL(fmt.Sprintf("/artists/%s/images?type=%s", artistID, imageType)) }
+			class="flex flex-col items-center gap-2 text-gray-400 dark:text-gray-500 hover:text-blue-500 dark:hover:text-blue-400 transition-colors"
+		>
+			@components.IconPhoto("w-8 h-8")
+			<span class="text-sm font-medium">Upload or fetch { typeName }</span>
+		</a>
+	</div>
+}
+
+// boolToCount converts a boolean existence flag to 0 or 1 for the count badge.
+func boolToCount(exists bool) int {
+	if exists {
+		return 1
+	}
+	return 0
+}
