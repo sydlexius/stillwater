@@ -1690,3 +1690,193 @@ func TestRecordHealthSnapshot_ThrottleExpiry(t *testing.T) {
 		t.Errorf("health_history count = %d, want 2 after throttle expiry", count)
 	}
 }
+
+func TestListViolationsFilteredPaged(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("SeedDefaults: %v", err)
+	}
+
+	// Insert 5 violations with different severities.
+	violations := []*RuleViolation{
+		{RuleID: RuleNFOExists, ArtistID: "a1", ArtistName: "Alpha", Severity: "error", Message: "m1", Status: ViolationStatusOpen},
+		{RuleID: RuleThumbExists, ArtistID: "a2", ArtistName: "Beta", Severity: "error", Message: "m2", Status: ViolationStatusOpen},
+		{RuleID: RuleFanartExists, ArtistID: "a3", ArtistName: "Gamma", Severity: "warning", Message: "m3", Status: ViolationStatusOpen},
+		{RuleID: RuleNFOHasMBID, ArtistID: "a4", ArtistName: "Delta", Severity: "info", Message: "m4", Status: ViolationStatusOpen},
+		{RuleID: RuleBioExists, ArtistID: "a5", ArtistName: "Epsilon", Severity: "warning", Message: "m5", Status: ViolationStatusOpen},
+	}
+	for _, v := range violations {
+		if err := svc.UpsertViolation(ctx, v); err != nil {
+			t.Fatalf("UpsertViolation: %v", err)
+		}
+	}
+
+	// Page 1: limit=2, offset=0 -- should get first 2 results, total=5.
+	got, total, err := svc.ListViolationsFilteredPaged(ctx, ViolationListParams{
+		Status: "active",
+		Limit:  2,
+		Offset: 0,
+	})
+	if err != nil {
+		t.Fatalf("ListViolationsFilteredPaged page 1: %v", err)
+	}
+	if total != 5 {
+		t.Errorf("total = %d, want 5", total)
+	}
+	if len(got) != 2 {
+		t.Errorf("page 1 len = %d, want 2", len(got))
+	}
+
+	// Page 2: limit=2, offset=2 -- should get next 2 results, same total.
+	got2, total2, err := svc.ListViolationsFilteredPaged(ctx, ViolationListParams{
+		Status: "active",
+		Limit:  2,
+		Offset: 2,
+	})
+	if err != nil {
+		t.Fatalf("ListViolationsFilteredPaged page 2: %v", err)
+	}
+	if total2 != 5 {
+		t.Errorf("total = %d, want 5", total2)
+	}
+	if len(got2) != 2 {
+		t.Errorf("page 2 len = %d, want 2", len(got2))
+	}
+
+	// Page 3: limit=2, offset=4 -- should get 1 result (last one).
+	got3, total3, err := svc.ListViolationsFilteredPaged(ctx, ViolationListParams{
+		Status: "active",
+		Limit:  2,
+		Offset: 4,
+	})
+	if err != nil {
+		t.Fatalf("ListViolationsFilteredPaged page 3: %v", err)
+	}
+	if total3 != 5 {
+		t.Errorf("total = %d, want 5", total3)
+	}
+	if len(got3) != 1 {
+		t.Errorf("page 3 len = %d, want 1", len(got3))
+	}
+
+	// Verify no overlap between pages.
+	seen := map[string]bool{}
+	for _, v := range got {
+		seen[v.ID] = true
+	}
+	for _, v := range got2 {
+		if seen[v.ID] {
+			t.Errorf("duplicate ID %s across pages 1 and 2", v.ID)
+		}
+		seen[v.ID] = true
+	}
+	for _, v := range got3 {
+		if seen[v.ID] {
+			t.Errorf("duplicate ID %s across pages 1-2 and 3", v.ID)
+		}
+	}
+}
+
+func TestListViolationsFilteredPaged_NoLimit(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("SeedDefaults: %v", err)
+	}
+
+	// Insert 3 violations.
+	violations := []*RuleViolation{
+		{RuleID: RuleNFOExists, ArtistID: "a1", ArtistName: "Alpha", Severity: "error", Message: "m1", Status: ViolationStatusOpen},
+		{RuleID: RuleThumbExists, ArtistID: "a2", ArtistName: "Beta", Severity: "warning", Message: "m2", Status: ViolationStatusOpen},
+		{RuleID: RuleFanartExists, ArtistID: "a3", ArtistName: "Gamma", Severity: "info", Message: "m3", Status: ViolationStatusOpen},
+	}
+	for _, v := range violations {
+		if err := svc.UpsertViolation(ctx, v); err != nil {
+			t.Fatalf("UpsertViolation: %v", err)
+		}
+	}
+
+	// Limit=0 should return all results with correct total.
+	got, total, err := svc.ListViolationsFilteredPaged(ctx, ViolationListParams{
+		Status: "active",
+		Limit:  0,
+	})
+	if err != nil {
+		t.Fatalf("ListViolationsFilteredPaged (no limit): %v", err)
+	}
+	if total != 3 {
+		t.Errorf("total = %d, want 3", total)
+	}
+	if len(got) != 3 {
+		t.Errorf("len = %d, want 3", len(got))
+	}
+}
+
+func TestCountActiveViolationsByCategory(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(db)
+	ctx := context.Background()
+
+	// Seed default rules so the JOIN on rules table works.
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("SeedDefaults: %v", err)
+	}
+
+	// Insert violations spanning different categories:
+	// - RuleNFOExists is category "nfo"
+	// - RuleThumbExists is category "image"
+	// - RuleFanartExists is category "image"
+	violations := []*RuleViolation{
+		{RuleID: RuleNFOExists, ArtistID: "a1", ArtistName: "A1", Severity: "error", Message: "m1", Status: ViolationStatusOpen},
+		{RuleID: RuleNFOHasMBID, ArtistID: "a2", ArtistName: "A2", Severity: "warning", Message: "m2", Status: ViolationStatusOpen},
+		{RuleID: RuleThumbExists, ArtistID: "a1", ArtistName: "A1", Severity: "error", Message: "m3", Status: ViolationStatusOpen},
+		{RuleID: RuleFanartExists, ArtistID: "a2", ArtistName: "A2", Severity: "warning", Message: "m4", Status: ViolationStatusPendingChoice},
+		// Dismissed and resolved should NOT be counted.
+		{RuleID: RuleNFOExists, ArtistID: "a3", ArtistName: "A3", Severity: "error", Message: "m5", Status: ViolationStatusDismissed},
+		{RuleID: RuleThumbExists, ArtistID: "a4", ArtistName: "A4", Severity: "error", Message: "m6", Status: ViolationStatusResolved},
+	}
+	for _, v := range violations {
+		if err := svc.UpsertViolation(ctx, v); err != nil {
+			t.Fatalf("UpsertViolation: %v", err)
+		}
+	}
+
+	counts, err := svc.CountActiveViolationsByCategory(ctx)
+	if err != nil {
+		t.Fatalf("CountActiveViolationsByCategory: %v", err)
+	}
+
+	// RuleNFOExists and RuleNFOHasMBID are both category "nfo".
+	if counts["nfo"] != 2 {
+		t.Errorf("nfo count = %d, want 2", counts["nfo"])
+	}
+	// RuleThumbExists and RuleFanartExists are both category "image".
+	if counts["image"] != 2 {
+		t.Errorf("image count = %d, want 2", counts["image"])
+	}
+	// No metadata violations inserted.
+	if counts["metadata"] != 0 {
+		t.Errorf("metadata count = %d, want 0", counts["metadata"])
+	}
+
+	// Empty DB: all counts should be zero.
+	db2 := setupTestDB(t)
+	svc2 := NewService(db2)
+	if err := svc2.SeedDefaults(ctx); err != nil {
+		t.Fatalf("SeedDefaults (empty): %v", err)
+	}
+	counts2, err := svc2.CountActiveViolationsByCategory(ctx)
+	if err != nil {
+		t.Fatalf("CountActiveViolationsByCategory (empty): %v", err)
+	}
+	for _, cat := range []string{"nfo", "image", "metadata"} {
+		if counts2[cat] != 0 {
+			t.Errorf("%s count = %d, want 0 (empty DB)", cat, counts2[cat])
+		}
+	}
+}

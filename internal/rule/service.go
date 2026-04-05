@@ -737,14 +737,9 @@ func (s *Service) ListViolations(ctx context.Context, status string) ([]RuleViol
 	return violations, rows.Err()
 }
 
-// ListViolationsFiltered returns violations matching the given params with dynamic SQL.
-func (s *Service) ListViolationsFiltered(ctx context.Context, p ViolationListParams) ([]RuleViolation, error) {
-	var (
-		whereClauses []string
-		args         []any
-		needJoin     bool
-	)
-
+// buildViolationFilter constructs WHERE clauses and args from ViolationListParams.
+// It returns the clauses, args, and whether a JOIN on the rules table is needed.
+func buildViolationFilter(p ViolationListParams) (whereClauses []string, args []any, needJoin bool) {
 	// Status filter (same "active" logic as ListViolations)
 	switch p.Status {
 	case "active":
@@ -776,16 +771,20 @@ func (s *Service) ListViolationsFiltered(ctx context.Context, p ViolationListPar
 		args = append(args, p.Category)
 	}
 
-	// Build query -- always join artists/libraries for library_name context
-	query := `SELECT rv.id, rv.rule_id, rv.artist_id, rv.artist_name, COALESCE(l.name, '') AS library_name, rv.severity, rv.message, rv.fixable, rv.status, rv.candidates, rv.dismissed_at, rv.resolved_at, rv.created_at, rv.updated_at FROM rule_violations rv LEFT JOIN artists a ON a.id = rv.artist_id LEFT JOIN libraries l ON l.id = a.library_id`
-	if needJoin {
-		query += ` JOIN rules r ON r.id = rv.rule_id`
-	}
-	if len(whereClauses) > 0 {
-		query += " WHERE " + joinStrings(whereClauses, " AND ") //nolint:gosec // G202: all clauses use parameterized placeholders
-	}
+	return whereClauses, args, needJoin
+}
 
-	// Sort with whitelisted columns
+// buildViolationFromClause returns the FROM/JOIN portion of a violation query.
+func buildViolationFromClause(needJoin bool) string {
+	q := ` FROM rule_violations rv LEFT JOIN artists a ON a.id = rv.artist_id LEFT JOIN libraries l ON l.id = a.library_id`
+	if needJoin {
+		q += ` JOIN rules r ON r.id = rv.rule_id`
+	}
+	return q
+}
+
+// buildViolationOrderClause returns the ORDER BY portion for a violation query.
+func buildViolationOrderClause(p ViolationListParams) string {
 	severityRank := `CASE rv.severity WHEN 'error' THEN 3 WHEN 'warning' THEN 2 WHEN 'info' THEN 1 ELSE 0 END`
 
 	sortCols := map[string]string{
@@ -801,14 +800,27 @@ func (s *Service) ListViolationsFiltered(ctx context.Context, p ViolationListPar
 	}
 
 	if col, ok := sortCols[p.Sort]; ok {
-		query += " ORDER BY " + col + " " + order //nolint:gosec // G202: col is from whitelist map, not user input
+		clause := " ORDER BY " + col + " " + order //nolint:gosec // G202: col is from whitelist map, not user input
 		if p.Sort != "created_at" {
-			query += ", rv.created_at DESC"
+			clause += ", rv.created_at DESC"
 		}
-	} else {
-		// Default sort: severity DESC (errors first), then newest
-		query += " ORDER BY " + severityRank + " DESC, rv.created_at DESC" //nolint:gosec // G202: severityRank is a constant CASE expression
+		return clause
 	}
+	// Default sort: severity DESC (errors first), then newest
+	return " ORDER BY " + severityRank + " DESC, rv.created_at DESC" //nolint:gosec // G202: severityRank is a constant CASE expression
+}
+
+// ListViolationsFiltered returns violations matching the given params with dynamic SQL.
+func (s *Service) ListViolationsFiltered(ctx context.Context, p ViolationListParams) ([]RuleViolation, error) {
+	whereClauses, args, needJoin := buildViolationFilter(p)
+
+	// Build query -- always join artists/libraries for library_name context
+	query := `SELECT rv.id, rv.rule_id, rv.artist_id, rv.artist_name, COALESCE(l.name, '') AS library_name, rv.severity, rv.message, rv.fixable, rv.status, rv.candidates, rv.dismissed_at, rv.resolved_at, rv.created_at, rv.updated_at`
+	query += buildViolationFromClause(needJoin)
+	if len(whereClauses) > 0 {
+		query += " WHERE " + joinStrings(whereClauses, " AND ") //nolint:gosec // G202: all clauses use parameterized placeholders
+	}
+	query += buildViolationOrderClause(p) //nolint:gosec // G202: order clause uses whitelisted column map
 
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -825,6 +837,58 @@ func (s *Service) ListViolationsFiltered(ctx context.Context, p ViolationListPar
 		violations = append(violations, *v)
 	}
 	return violations, rows.Err()
+}
+
+// ListViolationsFilteredPaged returns violations matching the given params with pagination.
+// It returns the matching violations, the total count (before pagination), and any error.
+// When p.Limit <= 0, all results are returned (no LIMIT clause) but the total count is
+// still computed for caller convenience.
+func (s *Service) ListViolationsFilteredPaged(ctx context.Context, p ViolationListParams) ([]RuleViolation, int, error) {
+	whereClauses, args, needJoin := buildViolationFilter(p)
+
+	fromClause := buildViolationFromClause(needJoin)
+	whereClause := ""
+	if len(whereClauses) > 0 {
+		whereClause = " WHERE " + joinStrings(whereClauses, " AND ") //nolint:gosec // G202: all clauses use parameterized placeholders
+	}
+
+	// Count total matching rows.
+	countQuery := "SELECT COUNT(*)" + fromClause + whereClause
+	var total int
+	if err := s.db.QueryRowContext(ctx, countQuery, args...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("counting filtered violations: %w", err)
+	}
+
+	// Build the data query with the same filters.
+	query := `SELECT rv.id, rv.rule_id, rv.artist_id, rv.artist_name, COALESCE(l.name, '') AS library_name, rv.severity, rv.message, rv.fixable, rv.status, rv.candidates, rv.dismissed_at, rv.resolved_at, rv.created_at, rv.updated_at`
+	query += fromClause + whereClause
+	query += buildViolationOrderClause(p) //nolint:gosec // G202: order clause uses whitelisted column map
+
+	// Append LIMIT/OFFSET when a positive limit is specified.
+	dataArgs := append([]any{}, args...)
+	if p.Limit > 0 {
+		query += " LIMIT ? OFFSET ?"
+		dataArgs = append(dataArgs, p.Limit, p.Offset)
+	}
+
+	rows, err := s.db.QueryContext(ctx, query, dataArgs...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("listing filtered violations (paged): %w", err)
+	}
+	defer rows.Close() //nolint:errcheck
+
+	var violations []RuleViolation
+	for rows.Next() {
+		v, err := scanViolation(rows)
+		if err != nil {
+			return nil, 0, fmt.Errorf("scanning filtered violation row: %w", err)
+		}
+		violations = append(violations, *v)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+	return violations, total, nil
 }
 
 // GroupViolations groups violations by the specified field.
@@ -1018,6 +1082,38 @@ func (s *Service) DismissViolationsForLibrary(ctx context.Context, libraryID str
 	}
 	n, _ := res.RowsAffected()
 	return int(n), nil
+}
+
+// CountActiveViolationsByCategory returns the count of active (open + pending_choice)
+// violations grouped by rule category (nfo, image, metadata). Categories are
+// determined by joining the rules table.
+func (s *Service) CountActiveViolationsByCategory(ctx context.Context) (map[string]int, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT r.category, COUNT(*) FROM rule_violations rv
+		JOIN rules r ON r.id = rv.rule_id
+		WHERE rv.status IN (?, ?)
+		GROUP BY r.category
+	`, ViolationStatusOpen, ViolationStatusPendingChoice)
+	if err != nil {
+		return nil, fmt.Errorf("counting active violations by category: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck
+
+	counts := map[string]int{"nfo": 0, "image": 0, "metadata": 0}
+	for rows.Next() {
+		var category string
+		var count int
+		if err := rows.Scan(&category, &count); err != nil {
+			return nil, fmt.Errorf("scanning category count: %w", err)
+		}
+		switch category {
+		case "nfo", "image", "metadata":
+			counts[category] = count
+		default:
+			// Ignore unknown categories to keep the return shape stable.
+		}
+	}
+	return counts, rows.Err()
 }
 
 // DismissOrphanedViolations dismisses all active violations whose artist_id

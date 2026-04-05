@@ -43,7 +43,7 @@ func checkNFOExists(a *artist.Artist, _ RuleConfig) *Violation {
 		RuleName: "NFO file exists",
 		Category: "nfo",
 		Severity: "error",
-		Message:  fmt.Sprintf("artist %q has no artist.nfo file", a.Name),
+		Message:  fmt.Sprintf("artist %s has no artist.nfo file", a.Name),
 		Fixable:  true,
 	}
 }
@@ -57,7 +57,7 @@ func checkNFOHasMBID(a *artist.Artist, _ RuleConfig) *Violation {
 		RuleName: "NFO has MusicBrainz ID",
 		Category: "nfo",
 		Severity: "error",
-		Message:  fmt.Sprintf("artist %q has no MusicBrainz ID", a.Name),
+		Message:  fmt.Sprintf("artist %s has no MusicBrainz ID", a.Name),
 		Fixable:  true,
 	}
 }
@@ -71,7 +71,7 @@ func checkThumbExists(a *artist.Artist, _ RuleConfig) *Violation {
 		RuleName: "Thumbnail image exists",
 		Category: "image",
 		Severity: "error",
-		Message:  fmt.Sprintf("artist %q has no thumbnail image", a.Name),
+		Message:  fmt.Sprintf("artist %s has no thumbnail image", a.Name),
 		Fixable:  true,
 	}
 }
@@ -108,7 +108,7 @@ func (e *Engine) makeThumbSquareChecker() Checker {
 			RuleName: "Thumbnail is square",
 			Category: "image",
 			Severity: effectiveSeverity(cfg),
-			Message:  fmt.Sprintf("artist %q thumbnail aspect ratio %.2f does not match expected %.2f", a.Name, actual, ratio),
+			Message:  fmt.Sprintf("artist %s thumbnail aspect ratio %.2f does not match expected %.2f", a.Name, actual, ratio),
 			Fixable:  true,
 		}
 	}
@@ -145,7 +145,7 @@ func (e *Engine) makeThumbMinResChecker() Checker {
 			RuleName: "Thumbnail minimum resolution",
 			Category: "image",
 			Severity: effectiveSeverity(cfg),
-			Message:  fmt.Sprintf("artist %q thumbnail is %dx%d, minimum required is %dx%d", a.Name, w, h, minW, minH),
+			Message:  fmt.Sprintf("artist %s thumbnail is %dx%d, minimum required is %dx%d", a.Name, w, h, minW, minH),
 			Fixable:  true,
 		}
 	}
@@ -160,7 +160,7 @@ func checkFanartExists(a *artist.Artist, _ RuleConfig) *Violation {
 		RuleName: "Fanart image exists",
 		Category: "image",
 		Severity: "warning",
-		Message:  fmt.Sprintf("artist %q has no fanart image", a.Name),
+		Message:  fmt.Sprintf("artist %s has no fanart image", a.Name),
 		Fixable:  true,
 	}
 }
@@ -174,7 +174,7 @@ func checkLogoExists(a *artist.Artist, _ RuleConfig) *Violation {
 		RuleName: "Logo image exists",
 		Category: "image",
 		Severity: "info",
-		Message:  fmt.Sprintf("artist %q has no logo image", a.Name),
+		Message:  fmt.Sprintf("artist %s has no logo image", a.Name),
 		Fixable:  true,
 	}
 }
@@ -189,9 +189,9 @@ func checkBioExists(a *artist.Artist, cfg RuleConfig) *Violation {
 		return nil
 	}
 
-	msg := fmt.Sprintf("artist %q has no biography", a.Name)
+	msg := fmt.Sprintf("artist %s has no biography", a.Name)
 	if a.Biography != "" {
-		msg = fmt.Sprintf("artist %q biography is too short (%d chars, minimum %d)", a.Name, len(a.Biography), minLen)
+		msg = fmt.Sprintf("artist %s biography is too short (%d chars, minimum %d)", a.Name, len(a.Biography), minLen)
 	}
 
 	return &Violation{
@@ -230,7 +230,7 @@ func (e *Engine) makeFanartMinResChecker() Checker {
 			RuleName: "Fanart minimum resolution",
 			Category: "image",
 			Severity: effectiveSeverity(cfg),
-			Message:  fmt.Sprintf("artist %q fanart is %dx%d, minimum required is %dx%d", a.Name, w, h, minW, minH),
+			Message:  fmt.Sprintf("artist %s fanart is %dx%d, minimum required is %dx%d", a.Name, w, h, minW, minH),
 			Fixable:  true,
 		}
 	}
@@ -264,7 +264,7 @@ func (e *Engine) makeFanartAspectChecker() Checker {
 			RuleName: "Fanart aspect ratio",
 			Category: "image",
 			Severity: effectiveSeverity(cfg),
-			Message:  fmt.Sprintf("artist %q fanart aspect ratio %.3f, expected %.3f", a.Name, actual, ratio),
+			Message:  fmt.Sprintf("artist %s fanart aspect ratio %.3f, expected %.3f", a.Name, actual, ratio),
 			Fixable:  true,
 		}
 	}
@@ -293,7 +293,7 @@ func (e *Engine) makeLogoMinResChecker() Checker {
 			RuleName: "Logo minimum width",
 			Category: "image",
 			Severity: effectiveSeverity(cfg),
-			Message:  fmt.Sprintf("artist %q logo is %dpx wide, minimum is %dpx", a.Name, w, minW),
+			Message:  fmt.Sprintf("artist %s logo is %dpx wide, minimum is %dpx", a.Name, w, minW),
 			Fixable:  true,
 		}
 	}
@@ -308,7 +308,7 @@ func checkBannerExists(a *artist.Artist, _ RuleConfig) *Violation {
 		RuleName: "Banner image exists",
 		Category: "image",
 		Severity: "info",
-		Message:  fmt.Sprintf("artist %q has no banner image", a.Name),
+		Message:  fmt.Sprintf("artist %s has no banner image", a.Name),
 		Fixable:  true,
 	}
 }
@@ -339,7 +339,7 @@ func (e *Engine) makeBannerMinResChecker() Checker {
 			RuleName: "Banner minimum resolution",
 			Category: "image",
 			Severity: effectiveSeverity(cfg),
-			Message:  fmt.Sprintf("artist %q banner is %dx%d, minimum required is %dx%d", a.Name, w, h, minW, minH),
+			Message:  fmt.Sprintf("artist %s banner is %dx%d, minimum required is %dx%d", a.Name, w, h, minW, minH),
 			Fixable:  true,
 		}
 	}
@@ -578,7 +578,7 @@ func (e *Engine) makeLogoPaddingChecker() Checker {
 			Category: "image",
 			Severity: effectiveSeverity(cfg),
 			Message: fmt.Sprintf(
-				"artist %q logo has %.1f%% padding (threshold %.0f%%)",
+				"artist %s logo has %.1f%% padding (threshold %.0f%%)",
 				a.Name, paddingRatio*100, threshold,
 			),
 			Fixable: true,
@@ -625,7 +625,7 @@ func checkArtistIDMismatch(a *artist.Artist, cfg RuleConfig) *Violation {
 		RuleName: "Artist/ID mismatch",
 		Category: "metadata",
 		Severity: effectiveSeverity(cfg),
-		Message:  fmt.Sprintf("folder name %q does not match artist name %q (%.0f%% similar)", folderName, a.Name, sim*100),
+		Message:  fmt.Sprintf("folder name \"%s\" does not match artist name \"%s\" (%.0f%% similar)", folderName, a.Name, sim*100),
 		Fixable:  false,
 	}
 }
@@ -775,7 +775,7 @@ func (e *Engine) makeExtraneousImagesChecker() Checker {
 			RuleName: "Extraneous image files",
 			Category: "image",
 			Severity: effectiveSeverity(cfg),
-			Message:  fmt.Sprintf("artist %q has %d extraneous image file(s): %s", a.Name, len(extraneous), strings.Join(extraneous, ", ")),
+			Message:  fmt.Sprintf("artist %s has %d extraneous image file(s): %s", a.Name, len(extraneous), strings.Join(extraneous, ", ")),
 			Fixable:  true,
 		}
 	}
@@ -814,7 +814,7 @@ func (e *Engine) checkExtraneousAgainst(a *artist.Artist, expected map[string]bo
 		RuleName: "Extraneous image files",
 		Category: "image",
 		Severity: effectiveSeverity(cfg),
-		Message:  fmt.Sprintf("artist %q has %d extraneous image file(s): %s", a.Name, len(extraneous), strings.Join(extraneous, ", ")),
+		Message:  fmt.Sprintf("artist %s has %d extraneous image file(s): %s", a.Name, len(extraneous), strings.Join(extraneous, ", ")),
 		Fixable:  true,
 	}
 }
@@ -901,7 +901,7 @@ func (e *Engine) checkExtraneousImagesFromDB(a *artist.Artist, cfg RuleConfig) *
 		RuleName: "Extraneous image files",
 		Category: "image",
 		Severity: effectiveSeverity(cfg),
-		Message:  fmt.Sprintf("artist %q has %d extraneous image record(s): %s", a.Name, len(extraneous), strings.Join(extraneous, ", ")),
+		Message:  fmt.Sprintf("artist %s has %d extraneous image record(s): %s", a.Name, len(extraneous), strings.Join(extraneous, ", ")),
 		Fixable:  false, // no filesystem to clean up for API-imported artists
 	}
 }
@@ -1015,7 +1015,7 @@ func checkDirectoryNameMismatch(a *artist.Artist, cfg RuleConfig) *Violation {
 		RuleName: "Directory name matches artist",
 		Category: "metadata",
 		Severity: effectiveSeverity(cfg),
-		Message:  fmt.Sprintf("directory %q does not match expected %q", dirName, canonical),
+		Message:  fmt.Sprintf("directory \"%s\" does not match expected \"%s\"", dirName, canonical),
 		Fixable:  true,
 	}
 
@@ -1081,7 +1081,7 @@ func (e *Engine) makeImageDuplicateChecker() Checker {
 						RuleName: "No duplicate images",
 						Category: "image",
 						Severity: effectiveSeverity(cfg),
-						Message: fmt.Sprintf("artist %q: %s and %s are %.0f%% similar",
+						Message: fmt.Sprintf("artist %s: %s and %s are %.0f%% similar",
 							a.Name, hashes[i].slot, hashes[j].slot, sim*100),
 						Fixable: false,
 					}
@@ -1113,7 +1113,7 @@ func checkMetadataQuality(a *artist.Artist, cfg RuleConfig) *Violation {
 			RuleName: "Metadata quality",
 			Category: "metadata",
 			Severity: effectiveSeverity(cfg),
-			Message:  fmt.Sprintf("artist %q has placeholder biography: %q", a.Name, truncateStr(a.Biography, 50)),
+			Message:  fmt.Sprintf("artist %s has placeholder biography: \"%s\"", a.Name, truncateStr(a.Biography, 50)),
 			Fixable:  true,
 		}
 	}
@@ -1174,7 +1174,7 @@ func (e *Engine) makeBackdropSequencingChecker() Checker {
 						RuleName: "Backdrop/fanart sequencing",
 						Category: "image",
 						Severity: effectiveSeverity(cfg),
-						Message:  fmt.Sprintf("artist %q has non-sequential %s files: %s", a.Name, strings.TrimSuffix(primaryName, filepath.Ext(primaryName)), strings.Join(fileList, ", ")),
+						Message:  fmt.Sprintf("artist %s has non-sequential %s files: %s", a.Name, strings.TrimSuffix(primaryName, filepath.Ext(primaryName)), strings.Join(fileList, ", ")),
 						Fixable:  true,
 					}
 				}
@@ -1243,7 +1243,7 @@ func (e *Engine) checkBackdropSequencingFromDB(a *artist.Artist, cfg RuleConfig)
 		RuleName: "Backdrop/fanart sequencing",
 		Category: "image",
 		Severity: effectiveSeverity(cfg),
-		Message:  fmt.Sprintf("artist %q has non-contiguous fanart slots: missing index %v", a.Name, missing),
+		Message:  fmt.Sprintf("artist %s has non-contiguous fanart slots: missing index %v", a.Name, missing),
 		Fixable:  false, // no filesystem to renumber for API-imported artists
 	}
 }
@@ -1332,7 +1332,7 @@ func (e *Engine) makeBackdropMinCountChecker() Checker {
 			RuleName: "Minimum backdrop count",
 			Category: "image",
 			Severity: effectiveSeverity(cfg),
-			Message:  fmt.Sprintf("artist %q has %d backdrop(s), minimum is %d", a.Name, count, minCount),
+			Message:  fmt.Sprintf("artist %s has %d backdrop(s), minimum is %d", a.Name, count, minCount),
 			Fixable:  false,
 		}
 	}

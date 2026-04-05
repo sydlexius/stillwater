@@ -100,6 +100,16 @@ func (r *Router) handleFixViolation(w http.ResponseWriter, req *http.Request) {
 	// Fixing a violation changes the artist's health score.
 	r.InvalidateHealthCache()
 
+	// When called via HTMX (dashboard action cards), return empty HTML
+	// so hx-swap="outerHTML" removes the card. Include trigger for
+	// dashboard counter refresh.
+	if isHTMXRequest(req) {
+		w.Header().Set("HX-Trigger", "dashboard:action-resolved")
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
 	writeJSON(w, http.StatusOK, resp)
 }
 

@@ -1156,7 +1156,7 @@ func (f *DirectoryRenameFixer) Fix(ctx context.Context, a *artist.Artist, v *Vio
 			return &FixResult{
 				RuleID:  v.RuleID,
 				Fixed:   false,
-				Message: fmt.Sprintf("destination %q already exists", canonical),
+				Message: fmt.Sprintf("destination \"%s\" already exists", canonical),
 			}, nil
 		}
 		return nil, fmt.Errorf("checking destination %q: %w", newPath, err)
@@ -1176,7 +1176,7 @@ func (f *DirectoryRenameFixer) Fix(ctx context.Context, a *artist.Artist, v *Vio
 	return &FixResult{
 		RuleID:  v.RuleID,
 		Fixed:   true,
-		Message: fmt.Sprintf("renamed directory to %q", canonical),
+		Message: fmt.Sprintf("renamed directory to \"%s\"", canonical),
 	}, nil
 }
 

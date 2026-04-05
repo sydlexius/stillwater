@@ -497,6 +497,8 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	mux.HandleFunc("GET "+bp+"/artists/{id}/nfo", wrapOptionalAuth(r.handleNFODiffPage, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/activity", wrapOptionalAuth(r.handleActivityPage, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/activity/content", wrapOptionalAuth(r.handleActivityContent, optAuthMw))
+	mux.HandleFunc("GET "+bp+"/dashboard/actions", wrapOptionalAuth(r.handleDashboardActionQueue, optAuthMw))
+	mux.HandleFunc("GET "+bp+"/dashboard/activity", wrapOptionalAuth(r.handleDashboardActivityFeed, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/settings", wrapOptionalAuth(r.handleSettingsPage, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/settings/{section}", wrapOptionalAuth(func(w http.ResponseWriter, req *http.Request) {
 		q := req.URL.Query()
