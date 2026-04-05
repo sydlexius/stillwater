@@ -130,6 +130,7 @@ templ ArtistImagesTab(artistID string, a *artist.Artist, profileName string) {
 				var idx = parseInt(el.dataset.setPrimaryIndex, 10);
 				var count = parseInt(el.dataset.setPrimaryCount, 10);
 				var id = el.dataset.setPrimaryArtist;
+				var basePath = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
 				if (isNaN(idx) || isNaN(count) || count <= 0) {
 					alert('Unable to reorder: invalid image data. Please reload the page.');
 					return;
@@ -144,7 +145,7 @@ templ ArtistImagesTab(artistID string, a *artist.Artist, profileName string) {
 				for (var i = 0; i < count; i++) {
 					if (i !== idx) order.push(i);
 				}
-				fetch('/api/v1/artists/' + id + '/images/fanart/reorder', {
+				fetch(basePath + '/api/v1/artists/' + id + '/images/fanart/reorder', {
 					method: 'POST',
 					headers: {
 						'Content-Type': 'application/json',
@@ -156,7 +157,7 @@ templ ArtistImagesTab(artistID string, a *artist.Artist, profileName string) {
 					if (r.ok) {
 						window.location.reload();
 					} else {
-						r.text().then(function(body) {
+						return r.text().then(function(body) {
 							alert('Failed to set primary (HTTP ' + r.status + '): ' + body);
 						});
 					}

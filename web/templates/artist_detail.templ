@@ -344,7 +344,7 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 				</div>
 			}
 			// Tab bar
-			@artistDetailTabBar(data.ActiveTab)
+			@artistDetailTabBar(normalizeTab(data.ActiveTab))
 			// Tab panels
 			// -- Overview --
 			<div
@@ -354,7 +354,7 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 				data-tab-panel="overview"
 				class={
 					"space-y-6",
-					templ.KV("hidden", data.ActiveTab != "overview"),
+					templ.KV("hidden", normalizeTab(data.ActiveTab) != "overview"),
 				}
 			>
 				<div class="grid grid-cols-1 gap-6 md:grid-cols-3">
@@ -438,7 +438,7 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 				aria-labelledby="tab-images"
 				data-tab-panel="images"
 				class={
-					templ.KV("hidden", data.ActiveTab != "images"),
+					templ.KV("hidden", normalizeTab(data.ActiveTab) != "images"),
 				}
 			>
 				@ArtistImagesTab(data.Artist.ID, &data.Artist, data.ProfileName)
@@ -451,7 +451,7 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 				data-tab-panel="providers"
 				class={
 					"space-y-6",
-					templ.KV("hidden", data.ActiveTab != "providers"),
+					templ.KV("hidden", normalizeTab(data.ActiveTab) != "providers"),
 				}
 			>
 				<section id={ "artist-providers-" + data.Artist.ID } class="sw-card rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
@@ -472,7 +472,7 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 							<div
 								id={ "platform-state-" + conn.ID }
 								hx-get={ fmt.Sprintf("/api/v1/artists/%s/platform-state?connection_id=%s", data.Artist.ID, conn.ID) }
-								hx-trigger="load"
+								hx-trigger="revealed"
 								hx-swap="outerHTML"
 							>
 								<div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4 animate-pulse">
@@ -493,7 +493,7 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 				aria-labelledby="tab-history"
 				data-tab-panel="history"
 				class={
-					templ.KV("hidden", data.ActiveTab != "history"),
+					templ.KV("hidden", normalizeTab(data.ActiveTab) != "history"),
 				}
 			>
 				<div
@@ -737,6 +737,7 @@ templ FanartGallery(artistID string, items []FanartGalleryItem, profileName stri
 							type="checkbox"
 							class="fanart-cb absolute top-2 left-2 z-10 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
 							value={ strconv.Itoa(item.Index) }
+							aria-label={ "Select " + item.Filename }
 						/>
 						// Primary badge (top-right).
 						if item.Index == 0 {
@@ -754,13 +755,14 @@ templ FanartGallery(artistID string, items []FanartGalleryItem, profileName stri
 							/>
 						</div>
 						// Hover overlay with action buttons.
-						<div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
+						<div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity flex items-center justify-center gap-3">
 							// View full-size
 							<a
 								href={ templ.SafeURL(fmt.Sprintf("/api/v1/artists/%s/images/fanart/%d/file", artistID, item.Index)) }
 								target="_blank"
 								class="p-2 rounded-full bg-black/40 hover:bg-black/60 text-white transition-colors shadow-sm"
 								title="View full-size"
+								aria-label={ "View full-size " + item.Filename }
 							>
 								@components.IconArrowsPointingOut("w-5 h-5")
 							</a>
@@ -770,6 +772,7 @@ templ FanartGallery(artistID string, items []FanartGalleryItem, profileName stri
 									type="button"
 									class="p-2 rounded-full bg-black/40 hover:bg-amber-500/80 text-white transition-colors shadow-sm"
 									title="Set as primary"
+									aria-label={ "Set " + item.Filename + " as primary" }
 									data-set-primary-index={ strconv.Itoa(item.Index) }
 									data-set-primary-count={ strconv.Itoa(len(items)) }
 									data-set-primary-artist={ artistID }
@@ -786,6 +789,7 @@ templ FanartGallery(artistID string, items []FanartGalleryItem, profileName stri
 								hx-on::after-request="if(event.detail.successful) window.location.reload(); else alert('Action failed: ' + event.detail.xhr.responseText);"
 								class="p-2 rounded-full bg-black/40 hover:bg-red-500/80 text-white transition-colors shadow-sm"
 								title="Delete"
+								aria-label={ "Delete " + item.Filename }
 							>
 								@components.IconTrash("w-5 h-5")
 							</button>
@@ -808,6 +812,7 @@ templ FanartGallery(artistID string, items []FanartGalleryItem, profileName stri
 			(function() {
 				var gallery = document.getElementById('fanart-gallery');
 				if (!gallery) return;
+				var basePath = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
 				var deleteBtn = document.getElementById('fanart-delete-selected');
 				gallery.addEventListener('change', function() {
 					var checked = gallery.querySelectorAll('.fanart-cb:checked');
@@ -822,27 +827,49 @@ templ FanartGallery(artistID string, items []FanartGalleryItem, profileName stri
 					var checked = gallery.querySelectorAll('.fanart-cb:checked');
 					if (checked.length === 0) return;
 					if (!confirm('Delete ' + checked.length + ' fanart image(s)?')) return;
+					var token = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1");
+					if (!token) {
+						alert('Session expired. Please reload the page and try again.');
+						return;
+					}
 					var indices = [];
 					for (var i = 0; i < checked.length; i++) {
 						indices.push(parseInt(checked[i].value, 10));
 					}
 					var id = gallery.dataset.artistId;
-					fetch('/api/v1/artists/' + id + '/images/fanart/batch', {
+					fetch(basePath + '/api/v1/artists/' + id + '/images/fanart/batch', {
 						method: 'DELETE',
 						headers: {
 							'Content-Type': 'application/json',
-							'X-CSRF-Token': document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1")
+							'X-CSRF-Token': token
 						},
 						body: JSON.stringify({indices: indices}),
 						credentials: 'same-origin'
 					}).then(function(r) {
-						if (r.ok) window.location.reload();
-						else alert('Failed to delete selected images. Please try again.');
+						if (r.ok) {
+							window.location.reload();
+							return;
+						}
+						return r.text().then(function(body) {
+							alert('Failed to delete selected images: ' + body);
+						});
+					}).catch(function(err) {
+						alert('Network error deleting selected images: ' + err.message);
 					});
 				});
 			})();
 		</script>
 	</div>
+}
+
+// normalizeTab returns tab if it is a known artist-detail tab, otherwise "overview".
+func normalizeTab(tab string) string {
+	switch tab {
+	case "overview", "images", "providers", "history":
+		return tab
+	default:
+		return "overview"
+	}
 }
 
 // formatFileSizeTempl formats a byte count as a human-readable string for templates.

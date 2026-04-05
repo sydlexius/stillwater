@@ -328,8 +328,8 @@ func ProviderLogoStack(artistID, field string, providers []string) templ.Compone
 	})
 }
 
-// fieldActions renders a contextual "..." dropdown menu for a field with
-// Edit, Clear, and Fetch from providers actions.
+// fieldActions renders a persistent inline edit button (pencil icon) and,
+// when applicable, an overflow menu for Clear and Fetch from providers actions.
 func fieldActions(artistID, field string, hasValue bool, providers []string) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context

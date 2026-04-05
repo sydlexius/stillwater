@@ -93,8 +93,8 @@ templ ProviderLogoStack(artistID, field string, providers []string) {
 	}
 }
 
-// fieldActions renders a contextual "..." dropdown menu for a field with
-// Edit, Clear, and Fetch from providers actions.
+// fieldActions renders a persistent inline edit button (pencil icon) and,
+// when applicable, an overflow menu for Clear and Fetch from providers actions.
 templ fieldActions(artistID, field string, hasValue bool, providers []string) {
 	<span class="inline-flex items-center gap-0.5">
 		// Direct edit button (pencil icon)
