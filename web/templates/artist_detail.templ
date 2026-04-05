@@ -348,6 +348,9 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 			// Tab panels
 			// -- Overview --
 			<div
+				id="panel-overview"
+				role="tabpanel"
+				aria-labelledby="tab-overview"
 				data-tab-panel="overview"
 				class={
 					"space-y-6",
@@ -430,6 +433,9 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 			</div>
 			// -- Images --
 			<div
+				id="panel-images"
+				role="tabpanel"
+				aria-labelledby="tab-images"
 				data-tab-panel="images"
 				class={
 					templ.KV("hidden", data.ActiveTab != "images"),
@@ -439,6 +445,9 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 			</div>
 			// -- Providers --
 			<div
+				id="panel-providers"
+				role="tabpanel"
+				aria-labelledby="tab-providers"
 				data-tab-panel="providers"
 				class={
 					"space-y-6",
@@ -479,6 +488,9 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 			</div>
 			// -- History --
 			<div
+				id="panel-history"
+				role="tabpanel"
+				aria-labelledby="tab-history"
 				data-tab-panel="history"
 				class={
 					templ.KV("hidden", data.ActiveTab != "history"),
@@ -512,7 +524,9 @@ templ artistDetailTab(id string, label string, activeTab string) {
 	<button
 		type="button"
 		role="tab"
+		id={ "tab-" + id }
 		data-tab={ id }
+		aria-controls={ "panel-" + id }
 		class={
 			"flex-1 rounded-md px-4 py-2 text-sm font-medium transition-colors cursor-pointer",
 			templ.KV("bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-300 shadow-sm", activeTab == id),
