@@ -164,7 +164,7 @@ templ dashboardLoadMoreButton(data ActionQueueData) {
 // dashboardLoadMoreURL builds the next-page URL preserving the active category filter.
 func dashboardLoadMoreURL(data ActionQueueData) string {
 	nextOffset := data.Offset + len(data.Violations)
-	u := fmt.Sprintf("%s/dashboard/actions?limit=%d&offset=%d", data.BasePath, data.Limit, nextOffset)
+	u := fmt.Sprintf("/dashboard/actions?limit=%d&offset=%d", data.Limit, nextOffset)
 	if data.CategoryFilter != "" {
 		u += "&category=" + data.CategoryFilter
 	}
@@ -177,9 +177,9 @@ templ DashboardActionHeader(data ActionQueueData) {
 		<div class="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
 			<div class="flex items-center gap-3">
 				<h1 class="text-xl font-bold">Dashboard</h1>
-				if totalActiveActions(data.CategoryCounts) > 0 {
+				if data.Total > 0 {
 					<span class="inline-flex items-center rounded-full bg-red-100 dark:bg-red-900/30 px-2.5 py-0.5 text-sm font-semibold text-red-700 dark:text-red-300">
-						{ fmt.Sprint(totalActiveActions(data.CategoryCounts)) } actions needed
+						{ fmt.Sprint(data.Total) } actions needed
 					</span>
 				}
 			</div>
@@ -206,7 +206,7 @@ templ DashboardActionHeader(data ActionQueueData) {
 templ DashboardFilterChips(counts map[string]int, activeCategory string, basePath string) {
 	<div class="flex flex-wrap gap-2 mt-3">
 		<button
-			hx-get={ basePath + "/dashboard/actions" }
+			hx-get="/dashboard/actions"
 			hx-target="#action-queue"
 			hx-swap="innerHTML"
 			class={ categoryChipClass("", activeCategory == "") }
@@ -217,7 +217,7 @@ templ DashboardFilterChips(counts map[string]int, activeCategory string, basePat
 		for _, cat := range []string{"metadata", "image", "nfo"} {
 			if counts[cat] > 0 {
 				<button
-					hx-get={ fmt.Sprintf("%s/dashboard/actions?category=%s", basePath, cat) }
+					hx-get={ fmt.Sprintf("/dashboard/actions?category=%s", cat) }
 					hx-target="#action-queue"
 					hx-swap="innerHTML"
 					class={ categoryChipClass(cat, activeCategory == cat) }
@@ -229,7 +229,7 @@ templ DashboardFilterChips(counts map[string]int, activeCategory string, basePat
 		}
 		if counts["other"] > 0 {
 			<button
-				hx-get={ fmt.Sprintf("%s/dashboard/actions?category=other", basePath) }
+				hx-get="/dashboard/actions?category=other"
 				hx-target="#action-queue"
 				hx-swap="innerHTML"
 				class={ categoryChipClass("other", activeCategory == "other") }
@@ -287,7 +287,7 @@ templ DashboardActionCard(v rule.RuleViolation, basePath string) {
 				if v.Fixable {
 					<button
 						type="button"
-						hx-post={ basePath + "/api/v1/notifications/" + v.ID + "/fix" }
+						hx-post={ "/api/v1/notifications/" + v.ID + "/fix" }
 						hx-target={ "#action-card-" + v.ID }
 						hx-swap="outerHTML"
 						class="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 shadow-sm transition-colors"
@@ -306,7 +306,7 @@ templ DashboardActionCard(v rule.RuleViolation, basePath string) {
 				}
 				<button
 					type="button"
-					hx-post={ basePath + "/api/v1/notifications/" + v.ID + "/dismiss" }
+					hx-post={ "/api/v1/notifications/" + v.ID + "/dismiss" }
 					hx-target={ "#action-card-" + v.ID }
 					hx-swap="outerHTML"
 					class="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"

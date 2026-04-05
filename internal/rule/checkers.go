@@ -625,7 +625,7 @@ func checkArtistIDMismatch(a *artist.Artist, cfg RuleConfig) *Violation {
 		RuleName: "Artist/ID mismatch",
 		Category: "metadata",
 		Severity: effectiveSeverity(cfg),
-		Message:  fmt.Sprintf("folder name \"%s\" does not match artist name \"%s\" (%.0f%% similar)", folderName, a.Name, sim*100),
+		Message:  fmt.Sprintf("folder name '%s' does not match artist name '%s' (%.0f%% similar)", folderName, a.Name, sim*100),
 		Fixable:  false,
 	}
 }
@@ -1015,7 +1015,7 @@ func checkDirectoryNameMismatch(a *artist.Artist, cfg RuleConfig) *Violation {
 		RuleName: "Directory name matches artist",
 		Category: "metadata",
 		Severity: effectiveSeverity(cfg),
-		Message:  fmt.Sprintf("directory \"%s\" does not match expected \"%s\"", dirName, canonical),
+		Message:  fmt.Sprintf("directory '%s' does not match expected '%s'", dirName, canonical),
 		Fixable:  true,
 	}
 
@@ -1113,7 +1113,7 @@ func checkMetadataQuality(a *artist.Artist, cfg RuleConfig) *Violation {
 			RuleName: "Metadata quality",
 			Category: "metadata",
 			Severity: effectiveSeverity(cfg),
-			Message:  fmt.Sprintf("artist %s has placeholder biography: \"%s\"", a.Name, truncateStr(a.Biography, 50)),
+			Message:  fmt.Sprintf("artist %s has placeholder biography: '%s'", a.Name, truncateStr(a.Biography, 50)),
 			Fixable:  true,
 		}
 	}

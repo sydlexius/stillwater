@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"path/filepath"
@@ -101,12 +103,20 @@ func (r *Router) handleFixViolation(w http.ResponseWriter, req *http.Request) {
 	r.InvalidateHealthCache()
 
 	// When called via HTMX (dashboard action cards), return empty HTML
-	// so hx-swap="outerHTML" removes the card. Include trigger for
-	// dashboard counter refresh.
+	// so hx-swap="outerHTML" removes the card. Only remove the card when
+	// the fix actually resolved; otherwise return the message so the card
+	// stays visible.
 	if isHTMXRequest(req) {
-		w.Header().Set("HX-Trigger", "dashboard:action-resolved")
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.WriteHeader(http.StatusOK)
+		if fr.Fixed || fr.Dismissed {
+			w.Header().Set("HX-Trigger", "dashboard:action-resolved")
+			w.WriteHeader(http.StatusOK)
+		} else {
+			// Fix did not resolve -- return 422 with message so the card
+			// stays in place and HTMX does not swap it out.
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			_, _ = fmt.Fprint(w, html.EscapeString(fr.Message)) //nolint:gosec // G705: fr.Message is rule-engine text, escaped for safety
+		}
 		return
 	}
 
