@@ -542,7 +542,11 @@ func (r *Router) setSessionCookie(w http.ResponseWriter, req *http.Request, toke
 // without a server restart.
 func (r *Router) renderLoginPage(w http.ResponseWriter, req *http.Request) {
 	providers := r.enabledAuthProviders(req.Context())
-	renderTempl(w, req, templates.LoginPage(r.assets(), providers))
+	oidcInfo := templates.OIDCLoginInfo{
+		DisplayName: r.getStringSetting(req.Context(), "auth.providers.oidc.display_name", ""),
+		LogoURL:     r.getStringSetting(req.Context(), "auth.providers.oidc.logo_url", ""),
+	}
+	renderTempl(w, req, templates.LoginPage(r.assets(), providers, oidcInfo))
 }
 
 // enabledAuthProviders builds the provider list for login and registration
@@ -551,9 +555,9 @@ func (r *Router) renderLoginPage(w http.ResponseWriter, req *http.Request) {
 func (r *Router) enabledAuthProviders(ctx context.Context) []auth.Authenticator {
 	var providers []auth.Authenticator
 
-	if r.getBoolSetting(ctx, "auth.providers.local.enabled", true) {
-		providers = append(providers, syntheticProvider{providerType: "local"})
-	}
+	// Local authentication is always included: it provides break-glass access
+	// when all federated providers are misconfigured.
+	providers = append(providers, syntheticProvider{providerType: "local"})
 	if r.getBoolSetting(ctx, "auth.providers.emby.enabled", false) {
 		providers = append(providers, syntheticProvider{providerType: "emby"})
 	}
@@ -562,12 +566,6 @@ func (r *Router) enabledAuthProviders(ctx context.Context) []auth.Authenticator 
 	}
 	if r.getBoolSetting(ctx, "auth.providers.oidc.enabled", false) {
 		providers = append(providers, syntheticProvider{providerType: "oidc"})
-	}
-
-	// Fallback: if nothing is enabled (e.g. fresh install before settings
-	// exist), show the local login form so the admin can still sign in.
-	if len(providers) == 0 {
-		providers = append(providers, syntheticProvider{providerType: "local"})
 	}
 
 	return providers

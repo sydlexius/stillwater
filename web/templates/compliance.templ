@@ -531,7 +531,8 @@ templ ComplianceSummaryFragment(data ComplianceSummaryData) {
 	</div>
 	if len(data.Libraries) > 0 {
 		<div class="sw-card rounded-lg bg-white dark:bg-gray-800 p-5 shadow mt-4">
-			<canvas id="coverage-chart" height="200"></canvas>
+			<canvas id="coverage-chart" height="200" aria-hidden="true"></canvas>
+			<div id="coverage-chart-sr" class="sr-only" aria-live="polite" aria-atomic="true"></div>
 		</div>
 		@coverageChartData(data)
 	}
@@ -583,6 +584,28 @@ templ coverageChartData(data ComplianceSummaryData) {
 					}
 				}
 			});
+
+			// Populate the screen-reader summary for the coverage chart.
+			(function() {
+				var sr = document.getElementById('coverage-chart-sr');
+				if (!sr || !d.labels || !d.labels.length) return;
+				var thumbLabel = d.thumb_label || 'Thumb';
+				var fanartLabel = d.fanart_label || 'Fanart';
+				var lines = ['Coverage by library:'];
+				for (var i = 0; i < d.labels.length; i++) {
+					var total = d.total[i] || 0;
+					if (total === 0) continue;
+					var pct = function(n) { return Math.round(n / total * 100) + '%'; };
+					lines.push(
+						d.labels[i] + ': Metadata ' + pct(d.metadata[i]) +
+						', ' + thumbLabel + ' ' + pct(d.thumb[i]) +
+						', ' + fanartLabel + ' ' + pct(d.fanart[i]) +
+						', MBID ' + pct(d.mbid[i]) +
+						' (' + total + ' artists).'
+					);
+				}
+				sr.textContent = lines.join(' ');
+			})();
 		})();
 	</script>
 }

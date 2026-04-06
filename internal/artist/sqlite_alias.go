@@ -44,7 +44,7 @@ func (r *sqliteAliasRepo) Delete(ctx context.Context, aliasID string) error {
 	}
 	n, _ := result.RowsAffected()
 	if n == 0 {
-		return fmt.Errorf("alias not found")
+		return ErrAliasNotFound
 	}
 	return nil
 }

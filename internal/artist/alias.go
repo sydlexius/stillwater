@@ -1,6 +1,12 @@
 package artist
 
-import "time"
+import (
+	"errors"
+	"time"
+)
+
+// ErrAliasNotFound is returned when an alias record does not exist.
+var ErrAliasNotFound = errors.New("alias not found")
 
 // Alias represents an alternative name for an artist.
 type Alias struct {
