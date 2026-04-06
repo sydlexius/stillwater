@@ -48,6 +48,8 @@ COPY --from=builder /src/web/static /app/web/static
 COPY build/docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
+USER stillwater
+
 WORKDIR /app
 
 EXPOSE 1973
