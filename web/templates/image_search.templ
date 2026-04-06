@@ -687,6 +687,7 @@ templ FanartSearchResults(artistID string, images []provider.ImageResult) {
 				(function() {
 					var container = document.getElementById('fanart-search-results');
 					if (!container) return;
+					var bp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
 					var artistId = container.dataset.artistId;
 					var bar = document.getElementById('fanart-bulk-bar');
 					var countEl = document.getElementById('fanart-bulk-count');
@@ -711,7 +712,7 @@ templ FanartSearchResults(artistID string, images []provider.ImageResult) {
 						bar.classList.add('hidden');
 						countEl.textContent = 'Saving...';
 						bar.classList.remove('hidden');
-						fetch('/api/v1/artists/' + artistId + '/images/fanart/fetch-batch', {
+						fetch(bp + '/api/v1/artists/' + artistId + '/images/fanart/fetch-batch', {
 							method: 'POST',
 							headers: {
 								'Content-Type': 'application/json',

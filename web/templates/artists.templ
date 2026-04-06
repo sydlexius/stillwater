@@ -491,6 +491,7 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 			}
 		</div>
 		<script>
+			var _artistsBp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
 			// Inject flyout filter params from the URL into HTMX requests that
 			// target #artist-content. The flyout stores state in the URL only
 			// (not in named form elements), so hx-include cannot pick it up.
@@ -598,7 +599,7 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 				}
 				// Fire-and-forget save preference
 				var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*\=\s*([^;]*).*$)|^.*$/, "$1");
-				fetch('/api/v1/settings', {
+				fetch(_artistsBp + '/api/v1/settings', {
 					method: 'PUT',
 					headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
 					body: JSON.stringify({"ui.artists_view": view})

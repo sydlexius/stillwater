@@ -8,7 +8,18 @@ import (
 // FanartManagementGallery renders the fanart gallery with per-slot management
 // controls (delete, reorder). Used on the image management page only.
 templ FanartManagementGallery(artistID string, items []FanartGalleryItem) {
-	<div id="fanart-management-gallery" class="space-y-4" data-artist-id={ artistID }>
+	<div
+		id="fanart-management-gallery"
+		class="space-y-4"
+		data-artist-id={ artistID }
+		data-label-delete-n={ t(ctx, "image.delete_n_selected") }
+		data-confirm-delete-n={ t(ctx, "artist.delete_n_fanart_confirm") }
+		data-toast-delete-failed={ t(ctx, "image.delete_failed") }
+		data-toast-delete-http-failed={ t(ctx, "image.delete_failed_http") }
+		data-toast-network-error={ t(ctx, "common.network_error") }
+		data-toast-reorder-failed={ t(ctx, "image.reorder_failed") }
+		data-toast-reorder-http-failed={ t(ctx, "image.reorder_failed_http") }
+	>
 		<div class="flex items-center justify-between">
 			<h3 class="text-sm font-semibold">{ tn(ctx, "image.fanart_count", len(items)) }</h3>
 			<button
@@ -98,6 +109,7 @@ templ FanartManagementGallery(artistID string, items []FanartGalleryItem) {
 			(function() {
 				var gallery = document.getElementById('fanart-management-gallery');
 				if (!gallery) return;
+				var bp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
 				var deleteBtn = document.getElementById('fanart-delete-selected');
 
 				// Batch select/delete
@@ -105,7 +117,7 @@ templ FanartManagementGallery(artistID string, items []FanartGalleryItem) {
 					var checked = gallery.querySelectorAll('.fanart-cb:checked');
 					if (checked.length > 0) {
 						deleteBtn.classList.remove('hidden');
-						deleteBtn.textContent = 'Delete ' + checked.length + ' selected';
+						deleteBtn.textContent = (gallery.dataset.labelDeleteN || 'Delete %d selected').replace('%d', checked.length);
 					} else {
 						deleteBtn.classList.add('hidden');
 					}
@@ -113,13 +125,13 @@ templ FanartManagementGallery(artistID string, items []FanartGalleryItem) {
 				deleteBtn.addEventListener('click', function() {
 					var checked = gallery.querySelectorAll('.fanart-cb:checked');
 					if (checked.length === 0) return;
-					if (!confirm('Delete ' + checked.length + ' fanart image(s)?')) return;
+					if (!confirm((gallery.dataset.confirmDeleteN || 'Delete %d fanart image(s)?').replace('%d', checked.length))) return;
 					var indices = [];
 					for (var i = 0; i < checked.length; i++) {
 						indices.push(parseInt(checked[i].value, 10));
 					}
 					var id = gallery.dataset.artistId;
-					fetch('/api/v1/artists/' + id + '/images/fanart/batch', {
+					fetch(bp + '/api/v1/artists/' + id + '/images/fanart/batch', {
 						method: 'DELETE',
 						headers: {
 							'Content-Type': 'application/json',
@@ -129,10 +141,10 @@ templ FanartManagementGallery(artistID string, items []FanartGalleryItem) {
 						credentials: 'same-origin'
 					}).then(function(r) {
 						if (r.ok) { window.location.reload(); return; }
-						r.json().then(function(b) { alert('Delete failed: ' + (b.error || 'unknown error')); })
-							.catch(function() { alert('Delete failed (HTTP ' + r.status + ')'); });
+						r.json().then(function(b) { alert((gallery.dataset.toastDeleteFailed || 'Delete failed: %s').replace('%s', function() { return b.error || 'unknown error'; })); })
+							.catch(function() { alert((gallery.dataset.toastDeleteHttpFailed || 'Delete failed (HTTP %s)').replace('%s', function() { return r.status; })); });
 					}).catch(function() {
-						alert('Network error. Please check your connection and try again.');
+						alert(gallery.dataset.toastNetworkError || 'Network error. Check your connection and try again.');
 					});
 				});
 
@@ -153,7 +165,7 @@ templ FanartManagementGallery(artistID string, items []FanartGalleryItem) {
 					order[idx] = swapWith;
 					order[swapWith] = idx;
 
-					fetch('/api/v1/artists/' + id + '/images/fanart/reorder', {
+					fetch(bp + '/api/v1/artists/' + id + '/images/fanart/reorder', {
 						method: 'POST',
 						headers: {
 							'Content-Type': 'application/json',
@@ -163,10 +175,10 @@ templ FanartManagementGallery(artistID string, items []FanartGalleryItem) {
 						credentials: 'same-origin'
 					}).then(function(r) {
 						if (r.ok) { window.location.reload(); return; }
-						r.json().then(function(b) { alert('Reorder failed: ' + (b.error || 'unknown error')); })
-							.catch(function() { alert('Reorder failed (HTTP ' + r.status + ')'); });
+						r.json().then(function(b) { alert((gallery.dataset.toastReorderFailed || 'Reorder failed: %s').replace('%s', function() { return b.error || 'unknown error'; })); })
+							.catch(function() { alert((gallery.dataset.toastReorderHttpFailed || 'Reorder failed (HTTP %s)').replace('%s', function() { return r.status; })); });
 					}).catch(function() {
-						alert('Network error. Please check your connection and try again.');
+						alert(gallery.dataset.toastNetworkError || 'Network error. Check your connection and try again.');
 					});
 				});
 			})();

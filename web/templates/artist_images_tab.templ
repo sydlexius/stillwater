@@ -158,11 +158,11 @@ templ ArtistImagesTab(artistID string, a *artist.Artist, profileName string) {
 						window.location.reload();
 					} else {
 						return r.text().then(function(body) {
-							alert((el.dataset.setPrimaryFailed || 'Failed to set primary (HTTP %d): %s').replace('%d', r.status).replace('%s', body));
+							alert((el.dataset.setPrimaryFailed || 'Failed to set primary (HTTP %d): %s').replace('%d', r.status).replace('%s', function() { return body; }));
 						});
 					}
 				}).catch(function(err) {
-					alert((el.dataset.setPrimaryNetwork || 'Network error setting primary: %s').replace('%s', err.message));
+					alert((el.dataset.setPrimaryNetwork || 'Network error setting primary: %s').replace('%s', function() { return err.message; }));
 				});
 			}
 		</script>
@@ -250,7 +250,8 @@ templ imageOverlay(artistID string, imageType string, index int) {
 				hx-post={ fmt.Sprintf("/api/v1/artists/%s/images/logo/trim", artistID) }
 				hx-confirm={ t(ctx, "image.confirm_trim_logo") }
 				hx-swap="none"
-				hx-on::after-request="if(event.detail.successful) window.location.reload(); else alert('Trim failed: ' + event.detail.xhr.responseText);"
+				data-msg-failed={ t(ctx, "image.trim_failed") }
+				hx-on::after-request="if(event.detail.successful) window.location.reload(); else alert(this.dataset.msgFailed.replace('%s', event.detail.xhr.responseText));"
 				class="p-2 rounded-full bg-black/40 hover:bg-black/60 text-white transition-colors shadow-sm"
 				title={ t(ctx, "image.trim_transparent_edges") }
 				aria-label={ t(ctx, "image.trim_transparent_edges") }
@@ -264,7 +265,8 @@ templ imageOverlay(artistID string, imageType string, index int) {
 				hx-delete={ fmt.Sprintf("/api/v1/artists/%s/images/%s/%d", artistID, imageType, index) }
 				hx-confirm={ tf(ctx, "image.confirm_delete_type", localizedImageType(ctx, imageType)) }
 				hx-swap="none"
-				hx-on::after-request="if(event.detail.successful) window.location.reload(); else alert('Delete failed: ' + event.detail.xhr.responseText);"
+				data-msg-failed={ t(ctx, "image.delete_failed") }
+				hx-on::after-request="if(event.detail.successful) window.location.reload(); else alert(this.dataset.msgFailed.replace('%s', event.detail.xhr.responseText));"
 				class="p-2 rounded-full bg-black/40 hover:bg-red-500/80 text-white transition-colors shadow-sm"
 				title={ t(ctx, "common.delete") }
 				aria-label={ tf(ctx, "image.delete_type", localizedImageType(ctx, imageType)) }
@@ -276,7 +278,8 @@ templ imageOverlay(artistID string, imageType string, index int) {
 				hx-delete={ fmt.Sprintf("/api/v1/artists/%s/images/%s", artistID, imageType) }
 				hx-confirm={ tf(ctx, "image.confirm_delete_type", localizedImageType(ctx, imageType)) }
 				hx-swap="none"
-				hx-on::after-request="if(event.detail.successful) window.location.reload(); else alert('Delete failed: ' + event.detail.xhr.responseText);"
+				data-msg-failed={ t(ctx, "image.delete_failed") }
+				hx-on::after-request="if(event.detail.successful) window.location.reload(); else alert(this.dataset.msgFailed.replace('%s', event.detail.xhr.responseText));"
 				class="p-2 rounded-full bg-black/40 hover:bg-red-500/80 text-white transition-colors shadow-sm"
 				title={ t(ctx, "common.delete") }
 				aria-label={ tf(ctx, "image.delete_type", localizedImageType(ctx, imageType)) }

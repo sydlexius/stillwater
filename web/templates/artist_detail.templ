@@ -865,10 +865,10 @@ templ FanartGallery(artistID string, items []FanartGalleryItem, profileName stri
 							return;
 						}
 						return r.text().then(function(body) {
-							alert((gallery.dataset.toastDeleteFailed || 'Failed to delete selected images: %s').replace('%s', body));
+							alert((gallery.dataset.toastDeleteFailed || 'Failed to delete selected images: %s').replace('%s', function() { return body; }));
 						});
 					}).catch(function(err) {
-						alert((gallery.dataset.toastDeleteNetwork || 'Network error deleting selected images: %s').replace('%s', err.message));
+						alert((gallery.dataset.toastDeleteNetwork || 'Network error deleting selected images: %s').replace('%s', function() { return err.message; }));
 					});
 				});
 			})();

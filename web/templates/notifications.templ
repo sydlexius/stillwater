@@ -628,6 +628,8 @@ templ candidatePreviewModal() {
 
 templ candidateScript() {
 	<script>
+	var _notifBp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
+
 	// ---- Violation row toggle ----
 	function toggleCandidates(id) {
 		var row = document.getElementById(id);
@@ -640,7 +642,7 @@ templ candidateScript() {
 			/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, '$1'
 		);
 		var btn = document.getElementById('bulk-dismiss-btn');
-		fetch('/api/v1/notifications/' + violationID + '/apply-candidate', {
+		fetch(_notifBp + '/api/v1/notifications/' + violationID + '/apply-candidate', {
 			method: 'POST',
 			headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
 			body: JSON.stringify({url: url, image_type: imageType}),
@@ -809,7 +811,7 @@ templ candidateScript() {
 		var csrfToken = document.cookie.replace(
 			/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, '$1'
 		);
-		fetch('/api/v1/notifications/bulk-dismiss', {
+		fetch(_notifBp + '/api/v1/notifications/bulk-dismiss', {
 			method: 'POST',
 			headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
 			body: '{}',
@@ -835,7 +837,7 @@ templ candidateScript() {
 		var csrfToken = document.cookie.replace(
 			/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, '$1'
 		);
-		fetch('/api/v1/notifications/bulk-dismiss', {
+		fetch(_notifBp + '/api/v1/notifications/bulk-dismiss', {
 			method: 'POST',
 			headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
 			body: JSON.stringify({ids: ids}),
@@ -859,7 +861,7 @@ templ candidateScript() {
 		var csrfToken = document.cookie.replace(
 			/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, '$1'
 		);
-		fetch('/api/v1/notifications/' + violationID + '/fix', {
+		fetch(_notifBp + '/api/v1/notifications/' + violationID + '/fix', {
 			method: 'POST',
 			headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
 			credentials: 'same-origin'
@@ -876,7 +878,7 @@ templ candidateScript() {
 					showSuccessToast(data.message || (dismissBtn && dismissBtn.dataset.toastFixApplied) || 'Fix applied');
 				}
 			} else {
-				if (typeof showToast === 'function') showToast(((dismissBtn && dismissBtn.dataset.toastFixFailed) || 'Fix failed: %s').replace('%s', data.message || 'Unknown error'));
+				if (typeof showToast === 'function') showToast(((dismissBtn && dismissBtn.dataset.toastFixFailed) || 'Fix failed: %s').replace('%s', function() { return data.message || 'Unknown error'; }));
 				btn.disabled = false;
 				btn.textContent = originalText;
 			}
@@ -894,7 +896,7 @@ templ candidateScript() {
 		var csrfToken = document.cookie.replace(
 			/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, '$1'
 		);
-		fetch('/api/v1/notifications/fix-all', {
+		fetch(_notifBp + '/api/v1/notifications/fix-all', {
 			method: 'POST',
 			headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
 			credentials: 'same-origin'
@@ -916,7 +918,7 @@ templ candidateScript() {
 	}
 
 	function pollFixAllStatus() {
-		fetch('/api/v1/notifications/fix-all/status', {credentials: 'same-origin'})
+		fetch(_notifBp + '/api/v1/notifications/fix-all/status', {credentials: 'same-origin'})
 		.then(function(resp) {
 			if (!resp.ok) throw new Error('HTTP ' + resp.status);
 			return resp.json();
