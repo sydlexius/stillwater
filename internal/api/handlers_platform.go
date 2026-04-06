@@ -326,6 +326,8 @@ func (r *Router) handleSettingsPage(w http.ResponseWriter, req *http.Request) {
 		OIDCAdminGroups:       r.getStringSetting(req.Context(), "auth.providers.oidc.admin_groups", ""),
 		OIDCUserGroups:        r.getStringSetting(req.Context(), "auth.providers.oidc.user_groups", ""),
 		OIDCDefaultRole:       r.getStringSetting(req.Context(), "auth.providers.oidc.default_role", "operator"),
+		OIDCDisplayName:       r.getStringSetting(req.Context(), "auth.providers.oidc.display_name", ""),
+		OIDCLogoURL:           r.getStringSetting(req.Context(), "auth.providers.oidc.logo_url", ""),
 	}
 
 	data := templates.SettingsData{

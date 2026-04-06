@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/provider"
@@ -106,6 +107,35 @@ func (r *Router) handleUpdateSettings(w http.ResponseWriter, req *http.Request) 
 		if v != "local" && v != "emby" && v != "jellyfin" {
 			writeJSON(w, http.StatusBadRequest, map[string]string{
 				"error": "auth.method must be local, emby, or jellyfin",
+			})
+			return
+		}
+	}
+	// Local authentication cannot be disabled: it provides break-glass access
+	// when all federated providers are misconfigured. Reject any attempt to
+	// set auth.providers.local.enabled to a falsy value, normalising the input
+	// to guard against case and whitespace variants (e.g. "FALSE", " false ").
+	if v, ok := body["auth.providers.local.enabled"]; ok {
+		normalized := strings.TrimSpace(strings.ToLower(v))
+		switch normalized {
+		case "true", "1":
+			body["auth.providers.local.enabled"] = "true"
+		case "false", "0", "":
+			r.logger.Warn("rejecting settings update",
+				"key", "auth.providers.local.enabled",
+				"value", normalized,
+			)
+			writeJSON(w, http.StatusBadRequest, map[string]string{
+				"error": "local authentication cannot be disabled; it provides break-glass access if all other providers are misconfigured",
+			})
+			return
+		default:
+			r.logger.Warn("rejecting settings update",
+				"key", "auth.providers.local.enabled",
+				"value", normalized,
+			)
+			writeJSON(w, http.StatusBadRequest, map[string]string{
+				"error": "auth.providers.local.enabled must be \"true\"",
 			})
 			return
 		}

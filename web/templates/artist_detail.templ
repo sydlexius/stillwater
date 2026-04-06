@@ -190,6 +190,17 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 						}
 					</div>
 					<div class="flex items-center gap-3 mr-4">
+						if data.Artist.ThumbExists {
+							<img
+								src={ assets.BasePath + fmt.Sprintf("/api/v1/artists/%s/images/thumb/file", data.Artist.ID) }
+								alt={ data.Artist.Name }
+								class={
+									"h-20 w-20 rounded-lg object-cover object-center flex-shrink-0",
+									templ.KV("ring-1 ring-gray-200 dark:ring-gray-700", !data.Artist.FanartExists),
+									templ.KV("ring-1 ring-white/20 drop-shadow-lg", data.Artist.FanartExists),
+								}
+							/>
+						}
 						if data.Artist.Locked {
 							<span
 								class={
@@ -388,41 +399,43 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 							<h2 class="text-lg font-semibold mb-3">{ t(ctx, "artist.aliases") }</h2>
 							<div id={ "aliases-" + data.Artist.ID }>
 								if len(data.Aliases) > 0 {
-									<div class="space-y-1.5 mb-3">
+									<div class="divide-y divide-gray-100 dark:divide-gray-700 mb-4">
 										for _, a := range data.Aliases {
-											<div class="flex items-center justify-between text-sm">
-												<span>{ a.Alias }</span>
+											<div class="flex items-center justify-between py-2 text-sm">
+												<span class="text-gray-800 dark:text-gray-200">{ a.Alias }</span>
 												<button
 													type="button"
-													class="text-xs text-red-500 hover:text-red-700 dark:hover:text-red-300"
+													class="inline-flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
 													hx-delete={ "/api/v1/artists/" + data.Artist.ID + "/aliases/" + a.ID }
 													hx-swap="none"
-													hx-on::after-request="if(event.detail.successful) window.location.reload(); else alert('Remove failed: ' + event.detail.xhr.responseText);"
+													hx-on::after-request="if(event.detail.successful) window.location.reload(); else { var msg; try { msg = JSON.parse(event.detail.xhr.responseText).error; } catch(e) {} alert('Remove failed: ' + (msg || event.detail.xhr.responseText)); }"
 												>
+													@components.IconTrash("h-3.5 w-3.5")
 													{ t(ctx, "common.remove") }
 												</button>
 											</div>
 										}
 									</div>
 								} else {
-									<p class="text-sm text-gray-500 dark:text-gray-400 italic mb-3">{ t(ctx, "artist.no_aliases") }</p>
+									<p class="text-sm text-gray-500 dark:text-gray-400 italic mb-4">{ t(ctx, "artist.no_aliases") }</p>
 								}
 							</div>
 							<form
 								class="flex items-center gap-2"
 								hx-post={ "/api/v1/artists/" + data.Artist.ID + "/aliases" }
 								hx-swap="none"
-								hx-on::after-request="if(event.detail.successful) { this.reset(); window.location.reload(); } else { alert('Add alias failed: ' + event.detail.xhr.responseText); }"
+								hx-on::after-request="if(event.detail.successful) { this.reset(); window.location.reload(); } else { var msg; try { msg = JSON.parse(event.detail.xhr.responseText).error; } catch(e) {} alert('Add alias failed: ' + (msg || event.detail.xhr.responseText)); }"
 							>
 								<input
 									name="alias"
 									placeholder={ t(ctx, "artist.add_alias_placeholder") }
 									required
-									class="flex-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+									class="flex-1 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
 								/>
+								<input type="hidden" name="source" value="manual"/>
 								<button
 									type="submit"
-									class="px-3 py-2 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+									class="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
 								>
 									{ t(ctx, "common.add") }
 								</button>

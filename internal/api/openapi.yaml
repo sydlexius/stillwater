@@ -1992,6 +1992,15 @@ paths:
                 source:
                   type: string
               required: [alias]
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                alias:
+                  type: string
+                source:
+                  type: string
+              required: [alias]
       responses:
         "201":
           description: Alias created
@@ -1999,6 +2008,18 @@ paths:
             application/json:
               schema:
                 type: object
+        "400":
+          description: Validation error (e.g. alias is required)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Artist not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /artists/{id}/aliases/{aliasId}:
     delete:

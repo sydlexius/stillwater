@@ -82,6 +82,46 @@ func TestHandleUpdateSettings_Threshold_Invalid(t *testing.T) {
 	}
 }
 
+// TestHandleUpdateSettings_LocalAuthCannotBeDisabled verifies that any attempt
+// to set auth.providers.local.enabled to a falsy value is rejected with 400,
+// including case and whitespace variants.
+func TestHandleUpdateSettings_LocalAuthCannotBeDisabled(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+	}{
+		{"false string", "false"},
+		{"zero string", "0"},
+		{"uppercase False", "False"},
+		{"padded false", " false "},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r, _ := testRouter(t)
+			body := `{"auth.providers.local.enabled": "` + tt.value + `"}`
+			req := httptest.NewRequest(http.MethodPut, "/api/v1/settings", strings.NewReader(body))
+			w := httptest.NewRecorder()
+			r.handleUpdateSettings(w, req)
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("expected 400 for value %q, got %d: %s", tt.value, w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
+// TestHandleUpdateSettings_LocalAuthEnabled verifies that setting
+// auth.providers.local.enabled to true is accepted.
+func TestHandleUpdateSettings_LocalAuthEnabled(t *testing.T) {
+	r, _ := testRouter(t)
+	body := `{"auth.providers.local.enabled": "true"}`
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/settings", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	r.handleUpdateSettings(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
 func TestHandleUpdateSettings_Threshold_Valid(t *testing.T) {
 	tests := []struct {
 		name  string

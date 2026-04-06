@@ -1,11 +1,23 @@
 package templates
 
-import "github.com/sydlexius/stillwater/internal/auth"
+import (
+	"context"
+	"strings"
+
+	"github.com/sydlexius/stillwater/internal/auth"
+)
+
+// OIDCLoginInfo carries display customisation for the OIDC sign-in button.
+// Both fields are optional; zero values produce the default appearance.
+type OIDCLoginInfo struct {
+	DisplayName string // label shown on the sign-in button; empty falls back to i18n default
+	LogoURL     string // image URL shown next to the button; empty shows the key icon
+}
 
 // LoginPage renders the login page. It accepts a slice of enabled auth providers
 // so the page can show federated buttons and/or the local credentials form as
 // appropriate for this instance's configuration.
-templ LoginPage(assets AssetPaths, providers []auth.Authenticator) {
+templ LoginPage(assets AssetPaths, providers []auth.Authenticator, oidcInfo OIDCLoginInfo) {
 	<!DOCTYPE html>
 	<html lang="en" class="h-full">
 		<head>
@@ -53,7 +65,7 @@ templ LoginPage(assets AssetPaths, providers []auth.Authenticator) {
 						<h2 class="mt-2 text-sm text-gray-600 dark:text-gray-400">{ t(ctx, "login.sign_in_to_account") }</h2>
 					</div>
 					<!-- Federated provider buttons (Emby, Jellyfin, OIDC) -->
-					@loginFederatedButtons(assets, providers)
+					@loginFederatedButtons(assets, providers, oidcInfo)
 					<!-- Local credentials form -->
 					@loginLocalForm(assets, providers)
 					<div id="login-result"></div>
@@ -107,7 +119,7 @@ templ LoginPage(assets AssetPaths, providers []auth.Authenticator) {
 
 // loginFederatedButtons renders sign-in buttons for non-local providers.
 // Returns nothing if no federated providers are enabled.
-templ loginFederatedButtons(assets AssetPaths, providers []auth.Authenticator) {
+templ loginFederatedButtons(assets AssetPaths, providers []auth.Authenticator, oidcInfo OIDCLoginInfo) {
 	for _, p := range providers {
 		if p.Type() == "emby" {
 			<button
@@ -136,22 +148,31 @@ templ loginFederatedButtons(assets AssetPaths, providers []auth.Authenticator) {
 			</button>
 		}
 		if p.Type() == "oidc" {
-			<a
-				href={ templ.SafeURL(assets.BasePath + "/api/v1/auth/oidc/login") }
-				aria-label={ t(ctx, "login.sign_in_with_sso") }
-				class="flex w-full items-center justify-center gap-3 rounded-lg border border-gray-300/60 dark:border-gray-600/60 bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm px-4 py-2.5 text-sm font-semibold text-gray-700 dark:text-gray-200 shadow-sm hover:bg-gray-50/80 dark:hover:bg-gray-700/60 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-colors"
-			>
-				<svg class="h-5 w-5 text-gray-500 dark:text-gray-400" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
-					<path stroke-linecap="round" stroke-linejoin="round" d="M15.75 5.25a3 3 0 0 1 3 3m3 0a6 6 0 0 1-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1 1 21.75 8.25Z"></path>
-				</svg>
-				{ t(ctx, "login.sign_in_with_sso") }
-			</a>
+			@loginOIDCButton(assets, oidcInfo)
 		}
 	}
 	<!-- Federated credentials form (hidden until a provider button is clicked) -->
 	@loginFederatedForm(assets, providers)
 	<!-- Divider shown when both federated and local providers exist -->
 	@loginDivider(providers)
+}
+
+// loginOIDCButton renders the OIDC sign-in button with optional display name and logo.
+templ loginOIDCButton(assets AssetPaths, info OIDCLoginInfo) {
+	<a
+		href={ templ.SafeURL(assets.BasePath + "/api/v1/auth/oidc/login") }
+		aria-label={ oidcButtonLabel(ctx, info.DisplayName) }
+		class="flex w-full items-center justify-center gap-3 rounded-lg border border-gray-300/60 dark:border-gray-600/60 bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm px-4 py-2.5 text-sm font-semibold text-gray-700 dark:text-gray-200 shadow-sm hover:bg-gray-50/80 dark:hover:bg-gray-700/60 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-colors"
+	>
+		if info.LogoURL != "" {
+			<img src={ string(templ.URL(info.LogoURL)) } alt="" class="h-5 w-5 object-contain" aria-hidden="true"/>
+		} else {
+			<svg class="h-5 w-5 text-gray-500 dark:text-gray-400" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
+				<path stroke-linecap="round" stroke-linejoin="round" d="M15.75 5.25a3 3 0 0 1 3 3m3 0a6 6 0 0 1-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1 1 21.75 8.25Z"></path>
+			</svg>
+		}
+		{ oidcButtonLabel(ctx, info.DisplayName) }
+	</a>
 }
 
 // loginFederatedForm is the shared username/password form for Emby and Jellyfin.
@@ -261,6 +282,17 @@ templ loginLocalForm(assets AssetPaths, providers []auth.Authenticator) {
 			</button>
 		</form>
 	}
+}
+
+// oidcButtonLabel returns the localised CTA for the OIDC sign-in button.
+// When a display name is configured it returns "Sign in with <name>"; otherwise
+// it falls back to "Sign in with OIDC".
+func oidcButtonLabel(ctx context.Context, displayName string) string {
+	name := strings.TrimSpace(displayName)
+	if name == "" {
+		name = "OIDC"
+	}
+	return tf(ctx, "login.sign_in_with_provider", name)
 }
 
 // hasFederatedProvider reports whether any non-local provider is in the list.
