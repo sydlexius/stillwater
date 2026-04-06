@@ -150,6 +150,22 @@ templ notificationsTableContent(data NotificationsData) {
 			type="button"
 			id="bulk-dismiss-btn"
 			onclick="bulkDismissSelected()"
+			data-label-dismiss-n={ t(ctx, "notifications.dismiss_n_selected") }
+			data-toast-dismiss-failed={ t(ctx, "notifications.dismiss_failed") }
+			data-toast-dismiss-network={ t(ctx, "notifications.dismiss_network") }
+			data-confirm-dismiss-all={ t(ctx, "notifications.dismiss_all_confirm") }
+			data-toast-apply-failed={ t(ctx, "notifications.apply_image_failed") }
+			data-toast-apply-network={ t(ctx, "notifications.apply_image_network") }
+			data-label-preview-loading={ t(ctx, "notifications.preview_loading") }
+			data-label-fixing={ t(ctx, "notifications.fixing") }
+			data-toast-fix-applied={ t(ctx, "notifications.fix_applied") }
+			data-toast-fix-failed={ t(ctx, "notifications.fix_failed") }
+			data-toast-fix-network={ t(ctx, "notifications.fix_network") }
+			data-toast-fix-all-started={ t(ctx, "notifications.fix_all_started") }
+			data-toast-fix-all-no-fixable={ t(ctx, "notifications.fix_all_no_fixable") }
+			data-toast-fix-all-failed={ t(ctx, "notifications.fix_all_failed") }
+			data-toast-fix-all-network={ t(ctx, "notifications.fix_all_network") }
+			data-confirm-fix-all={ t(ctx, "notifications.fix_all_confirm") }
 			class="hidden rounded border border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/30 px-3 py-1.5 text-xs font-semibold text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/50 transition-colors"
 		>
 			{ t(ctx, "notifications.dismiss_selected") }
@@ -266,6 +282,22 @@ templ notificationsGroupedContent(data NotificationsData) {
 			type="button"
 			id="bulk-dismiss-btn"
 			onclick="bulkDismissSelected()"
+			data-label-dismiss-n={ t(ctx, "notifications.dismiss_n_selected") }
+			data-toast-dismiss-failed={ t(ctx, "notifications.dismiss_failed") }
+			data-toast-dismiss-network={ t(ctx, "notifications.dismiss_network") }
+			data-confirm-dismiss-all={ t(ctx, "notifications.dismiss_all_confirm") }
+			data-toast-apply-failed={ t(ctx, "notifications.apply_image_failed") }
+			data-toast-apply-network={ t(ctx, "notifications.apply_image_network") }
+			data-label-preview-loading={ t(ctx, "notifications.preview_loading") }
+			data-label-fixing={ t(ctx, "notifications.fixing") }
+			data-toast-fix-applied={ t(ctx, "notifications.fix_applied") }
+			data-toast-fix-failed={ t(ctx, "notifications.fix_failed") }
+			data-toast-fix-network={ t(ctx, "notifications.fix_network") }
+			data-toast-fix-all-started={ t(ctx, "notifications.fix_all_started") }
+			data-toast-fix-all-no-fixable={ t(ctx, "notifications.fix_all_no_fixable") }
+			data-toast-fix-all-failed={ t(ctx, "notifications.fix_all_failed") }
+			data-toast-fix-all-network={ t(ctx, "notifications.fix_all_network") }
+			data-confirm-fix-all={ t(ctx, "notifications.fix_all_confirm") }
 			class="hidden rounded border border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/30 px-3 py-1.5 text-xs font-semibold text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/50 transition-colors"
 		>
 			{ t(ctx, "notifications.dismiss_selected") }
@@ -596,6 +628,8 @@ templ candidatePreviewModal() {
 
 templ candidateScript() {
 	<script>
+	var _notifBp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
+
 	// ---- Violation row toggle ----
 	function toggleCandidates(id) {
 		var row = document.getElementById(id);
@@ -607,7 +641,8 @@ templ candidateScript() {
 		var csrfToken = document.cookie.replace(
 			/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, '$1'
 		);
-		fetch('/api/v1/notifications/' + violationID + '/apply-candidate', {
+		var btn = document.getElementById('bulk-dismiss-btn');
+		fetch(_notifBp + '/api/v1/notifications/' + violationID + '/apply-candidate', {
 			method: 'POST',
 			headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
 			body: JSON.stringify({url: url, image_type: imageType}),
@@ -618,10 +653,10 @@ templ candidateScript() {
 				if (tbody) tbody.remove();
 				updateBulkButton();
 			} else if (typeof showToast === 'function') {
-				showToast('Failed to apply image.');
+				showToast((btn && btn.dataset.toastApplyFailed) || 'Failed to apply image.');
 			}
 		}).catch(function() {
-			if (typeof showToast === 'function') showToast('Network error applying image.');
+			if (typeof showToast === 'function') showToast((btn && btn.dataset.toastApplyNetwork) || 'Network error applying image.');
 		});
 	}
 
@@ -674,7 +709,7 @@ templ candidateScript() {
 
 		var img = document.getElementById('preview-image');
 		img.src = '';
-		document.getElementById('preview-dims').textContent = 'Loading...';
+		document.getElementById('preview-dims').textContent = (document.getElementById('bulk-dismiss-btn') && document.getElementById('bulk-dismiss-btn').dataset.labelPreviewLoading) || 'Loading...';
 		document.getElementById('preview-provider-name').textContent = _providerDisplayName(source);
 
 		var logo = document.getElementById('preview-provider-logo');
@@ -741,7 +776,7 @@ templ candidateScript() {
 		var btn = document.getElementById('bulk-dismiss-btn');
 		if (!btn) return;
 		if (checked.length > 0) {
-			btn.textContent = 'Dismiss ' + checked.length + ' selected';
+			btn.textContent = (btn.dataset.labelDismissN || 'Dismiss %d selected').replace('%d', checked.length);
 			btn.classList.remove('hidden');
 		} else {
 			btn.classList.add('hidden');
@@ -771,11 +806,12 @@ templ candidateScript() {
 	}
 
 	function bulkDismissAll() {
-		if (!confirm('Dismiss all active violations?')) return;
+		var btn = document.getElementById('bulk-dismiss-btn');
+		if (!confirm((btn && btn.dataset.confirmDismissAll) || 'Dismiss all active violations?')) return;
 		var csrfToken = document.cookie.replace(
 			/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, '$1'
 		);
-		fetch('/api/v1/notifications/bulk-dismiss', {
+		fetch(_notifBp + '/api/v1/notifications/bulk-dismiss', {
 			method: 'POST',
 			headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
 			body: '{}',
@@ -784,10 +820,10 @@ templ candidateScript() {
 			if (r.ok) {
 				reloadNotificationsTable();
 			} else if (typeof showToast === 'function') {
-				showToast('Failed to dismiss violations.');
+				showToast((btn && btn.dataset.toastDismissFailed) || 'Failed to dismiss violations.');
 			}
 		}).catch(function() {
-			if (typeof showToast === 'function') showToast('Network error dismissing violations.');
+			if (typeof showToast === 'function') showToast((btn && btn.dataset.toastDismissNetwork) || 'Network error dismissing violations.');
 		});
 	}
 
@@ -797,10 +833,11 @@ templ candidateScript() {
 			ids.push(c.dataset.violationId);
 		});
 		if (ids.length === 0) return;
+		var btn = document.getElementById('bulk-dismiss-btn');
 		var csrfToken = document.cookie.replace(
 			/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, '$1'
 		);
-		fetch('/api/v1/notifications/bulk-dismiss', {
+		fetch(_notifBp + '/api/v1/notifications/bulk-dismiss', {
 			method: 'POST',
 			headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
 			body: JSON.stringify({ids: ids}),
@@ -809,22 +846,22 @@ templ candidateScript() {
 			if (r.ok) {
 				reloadNotificationsTable();
 			} else if (typeof showToast === 'function') {
-				showToast('Failed to dismiss violations.');
+				showToast((btn && btn.dataset.toastDismissFailed) || 'Failed to dismiss violations.');
 			}
 		}).catch(function() {
-			if (typeof showToast === 'function') showToast('Network error dismissing violations.');
+			if (typeof showToast === 'function') showToast((btn && btn.dataset.toastDismissNetwork) || 'Network error dismissing violations.');
 		});
 	}
 
-	// ---- Fix single violation ----
 	function fixViolation(btn, violationID) {
 		var originalText = btn.textContent;
+		var dismissBtn = document.getElementById('bulk-dismiss-btn');
 		btn.disabled = true;
-		btn.textContent = 'Fixing...';
+		btn.textContent = (dismissBtn && dismissBtn.dataset.labelFixing) || 'Fixing...';
 		var csrfToken = document.cookie.replace(
 			/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, '$1'
 		);
-		fetch('/api/v1/notifications/' + violationID + '/fix', {
+		fetch(_notifBp + '/api/v1/notifications/' + violationID + '/fix', {
 			method: 'POST',
 			headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
 			credentials: 'same-origin'
@@ -836,17 +873,17 @@ templ candidateScript() {
 				reloadNotificationsTable();
 				if (data.undo_id && typeof showUndoToast === 'function') {
 					var secs = data.undo_expires_in || 30;
-					showUndoToast(data.message || 'Fix applied', data.undo_id, secs, csrfToken);
+					showUndoToast(data.message || (dismissBtn && dismissBtn.dataset.toastFixApplied) || 'Fix applied', data.undo_id, secs, csrfToken);
 				} else if (typeof showSuccessToast === 'function') {
-					showSuccessToast(data.message || 'Fix applied');
+					showSuccessToast(data.message || (dismissBtn && dismissBtn.dataset.toastFixApplied) || 'Fix applied');
 				}
 			} else {
-				if (typeof showToast === 'function') showToast('Fix failed: ' + (data.message || 'Unknown error'));
+				if (typeof showToast === 'function') showToast(((dismissBtn && dismissBtn.dataset.toastFixFailed) || 'Fix failed: %s').replace('%s', function() { return data.message || 'Unknown error'; }));
 				btn.disabled = false;
 				btn.textContent = originalText;
 			}
 		}).catch(function() {
-			if (typeof showToast === 'function') showToast('Network error applying fix.');
+			if (typeof showToast === 'function') showToast((dismissBtn && dismissBtn.dataset.toastFixNetwork) || 'Network error applying fix.');
 			btn.disabled = false;
 			btn.textContent = originalText;
 		});
@@ -854,11 +891,12 @@ templ candidateScript() {
 
 	// ---- Fix All ----
 	function fixAll() {
-		if (!confirm('Apply recommended fixes for all fixable violations?')) return;
+		var dismissBtn = document.getElementById('bulk-dismiss-btn');
+		if (!confirm((dismissBtn && dismissBtn.dataset.confirmFixAll) || 'Apply recommended fixes for all fixable violations?')) return;
 		var csrfToken = document.cookie.replace(
 			/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, '$1'
 		);
-		fetch('/api/v1/notifications/fix-all', {
+		fetch(_notifBp + '/api/v1/notifications/fix-all', {
 			method: 'POST',
 			headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken},
 			credentials: 'same-origin'
@@ -867,20 +905,20 @@ templ candidateScript() {
 			return resp.json();
 		}).then(function(data) {
 			if (data.status === 'running' && data.total) {
-				if (typeof showSuccessToast === 'function') showSuccessToast('Applying fixes for ' + data.total + ' violations...');
+				if (typeof showSuccessToast === 'function') showSuccessToast(((dismissBtn && dismissBtn.dataset.toastFixAllStarted) || 'Applying fixes for %d violations...').replace('%d', data.total));
 				pollFixAllStatus();
 			} else if (data.status === 'completed') {
-				if (typeof showSuccessToast === 'function') showSuccessToast(data.message || 'No fixable violations');
+				if (typeof showSuccessToast === 'function') showSuccessToast(data.message || (dismissBtn && dismissBtn.dataset.toastFixAllNoFixable) || 'No fixable violations');
 			} else {
-				if (typeof showToast === 'function') showToast(data.message || 'Failed to start fix-all');
+				if (typeof showToast === 'function') showToast(data.message || (dismissBtn && dismissBtn.dataset.toastFixAllFailed) || 'Failed to start fix-all');
 			}
 		}).catch(function() {
-			if (typeof showToast === 'function') showToast('Network error starting fix-all.');
+			if (typeof showToast === 'function') showToast((dismissBtn && dismissBtn.dataset.toastFixAllNetwork) || 'Network error starting fix-all.');
 		});
 	}
 
 	function pollFixAllStatus() {
-		fetch('/api/v1/notifications/fix-all/status', {credentials: 'same-origin'})
+		fetch(_notifBp + '/api/v1/notifications/fix-all/status', {credentials: 'same-origin'})
 		.then(function(resp) {
 			if (!resp.ok) throw new Error('HTTP ' + resp.status);
 			return resp.json();

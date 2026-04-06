@@ -113,7 +113,9 @@ templ loginFederatedButtons(assets AssetPaths, providers []auth.Authenticator) {
 			<button
 				type="button"
 				aria-label={ t(ctx, "login.sign_in_with_emby") }
-				onclick="document.getElementById('federated-form-provider').value='emby'; document.getElementById('federated-form').classList.remove('hidden'); document.getElementById('federated-form-title').textContent='Sign in with Emby'; document.getElementById('federated-submit').textContent='Sign In with Emby';"
+				data-form-title={ t(ctx, "login.sign_in_with_emby") }
+				data-form-submit={ t(ctx, "login.sign_in_with_emby_submit") }
+				onclick="document.getElementById('federated-form-provider').value='emby'; document.getElementById('federated-form').classList.remove('hidden'); document.getElementById('federated-form-title').textContent=this.dataset.formTitle; document.getElementById('federated-submit').textContent=this.dataset.formSubmit;"
 				class="flex w-full items-center justify-center gap-3 rounded-lg border border-gray-300/60 dark:border-gray-600/60 bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm px-4 py-2.5 text-sm font-semibold text-gray-700 dark:text-gray-200 shadow-sm hover:bg-gray-50/80 dark:hover:bg-gray-700/60 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-colors"
 			>
 				<img src={ assets.BasePath + "/static/img/logos/emby-128.png" } alt="" class="h-5 w-5" aria-hidden="true"/>
@@ -124,7 +126,9 @@ templ loginFederatedButtons(assets AssetPaths, providers []auth.Authenticator) {
 			<button
 				type="button"
 				aria-label={ t(ctx, "login.sign_in_with_jellyfin") }
-				onclick="document.getElementById('federated-form-provider').value='jellyfin'; document.getElementById('federated-form').classList.remove('hidden'); document.getElementById('federated-form-title').textContent='Sign in with Jellyfin'; document.getElementById('federated-submit').textContent='Sign In with Jellyfin';"
+				data-form-title={ t(ctx, "login.sign_in_with_jellyfin") }
+				data-form-submit={ t(ctx, "login.sign_in_with_jellyfin_submit") }
+				onclick="document.getElementById('federated-form-provider').value='jellyfin'; document.getElementById('federated-form').classList.remove('hidden'); document.getElementById('federated-form-title').textContent=this.dataset.formTitle; document.getElementById('federated-submit').textContent=this.dataset.formSubmit;"
 				class="flex w-full items-center justify-center gap-3 rounded-lg border border-gray-300/60 dark:border-gray-600/60 bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm px-4 py-2.5 text-sm font-semibold text-gray-700 dark:text-gray-200 shadow-sm hover:bg-gray-50/80 dark:hover:bg-gray-700/60 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-colors"
 			>
 				<img src={ assets.BasePath + "/static/img/logos/jellyfin.svg" } alt="" class="h-5 w-5" aria-hidden="true"/>

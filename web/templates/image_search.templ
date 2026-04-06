@@ -523,16 +523,16 @@ templ imageSearchGeneric(data ImageSearchData) {
 				<section class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
 					<h2 class="text-lg font-semibold mb-4">{ t(ctx, "image.search_providers") }</h2>
 					<div class="flex flex-wrap gap-2 mb-4" id="image-type-tabs">
-						for _, t := range []string{"thumb", "fanart", "logo", "banner"} {
+						for _, imageType := range []string{"thumb", "fanart", "logo", "banner"} {
 							<button
 								type="button"
 								class="px-3 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-								hx-get={ fmt.Sprintf("/api/v1/artists/%s/images/search?type=%s", data.Artist.ID, t) }
+								hx-get={ fmt.Sprintf("/api/v1/artists/%s/images/search?type=%s", data.Artist.ID, imageType) }
 								hx-target="#search-results"
 								hx-swap="innerHTML"
 								hx-indicator="#search-spinner"
 							>
-								{ t }
+								{ imageTypeLabel(imageType, data.ProfileName) }
 							</button>
 						}
 						<button
@@ -565,16 +565,16 @@ templ imageSearchGeneric(data ImageSearchData) {
 						<span id="web-search-spinner" class="htmx-indicator text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "common.searching") }</span>
 					</div>
 					<div class="flex flex-wrap gap-2 mb-4">
-						for _, t := range []string{"thumb", "fanart", "logo", "banner"} {
+						for _, imageType := range []string{"thumb", "fanart", "logo", "banner"} {
 							<button
 								type="button"
 								class="px-3 py-2 text-sm rounded-md border border-dashed border-purple-300 dark:border-purple-700 text-purple-700 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors"
-								hx-get={ fmt.Sprintf("/api/v1/artists/%s/images/websearch?type=%s", data.Artist.ID, t) }
+								hx-get={ fmt.Sprintf("/api/v1/artists/%s/images/websearch?type=%s", data.Artist.ID, imageType) }
 								hx-target="#web-search-results"
 								hx-swap="innerHTML"
 								hx-indicator="#web-search-spinner"
 							>
-								{ tf(ctx, "image.extend_type", imageTypeLabel(t, data.ProfileName)) }
+								{ tf(ctx, "image.extend_type", imageTypeLabel(imageType, data.ProfileName)) }
 							</button>
 						}
 					</div>
@@ -687,6 +687,7 @@ templ FanartSearchResults(artistID string, images []provider.ImageResult) {
 				(function() {
 					var container = document.getElementById('fanart-search-results');
 					if (!container) return;
+					var bp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
 					var artistId = container.dataset.artistId;
 					var bar = document.getElementById('fanart-bulk-bar');
 					var countEl = document.getElementById('fanart-bulk-count');
@@ -711,7 +712,7 @@ templ FanartSearchResults(artistID string, images []provider.ImageResult) {
 						bar.classList.add('hidden');
 						countEl.textContent = 'Saving...';
 						bar.classList.remove('hidden');
-						fetch('/api/v1/artists/' + artistId + '/images/fanart/fetch-batch', {
+						fetch(bp + '/api/v1/artists/' + artistId + '/images/fanart/fetch-batch', {
 							method: 'POST',
 							headers: {
 								'Content-Type': 'application/json',

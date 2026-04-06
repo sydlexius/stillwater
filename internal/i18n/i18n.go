@@ -175,7 +175,7 @@ func LoadFS(fsys fs.FS) (*Bundle, error) {
 	}
 
 	if len(b.translators) == 0 {
-		return nil, fmt.Errorf("i18n: no locale files found in filesystem")
+		return nil, fmt.Errorf("i18n: no locale files found")
 	}
 
 	// If the default fallback is not available, pick the first alphabetically.

@@ -26,7 +26,17 @@ templ DiscoverResults(connID string, libs []DiscoveredLib, isOOBE bool) {
 			<p class="text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">
 				{ tn(ctx, "discover.found_libraries", len(libs)) }
 			</p>
-			<form id={ "import-form-" + connID }>
+			<form id={ "import-form-" + connID }
+				data-alert-select-one={ t(ctx, "discover.import_select_at_least_one") }
+				data-alert-import-failed={ t(ctx, "discover.import_failed") }
+				data-alert-import-failed-http={ t(ctx, "discover.import_failed_http") }
+				data-alert-network={ t(ctx, "discover.import_network") }
+				data-msg-libraries-imported={ t(ctx, "discover.libraries_imported") }
+				data-msg-no-new-libraries={ t(ctx, "discover.no_new_libraries") }
+				data-msg-one-library-imported={ t(ctx, "discover.one_library_imported") }
+				data-msg-n-libraries-imported={ t(ctx, "discover.n_libraries_imported") }
+				data-msg-all-already-imported={ t(ctx, "discover.all_already_imported") }
+			>
 				for _, lib := range libs {
 					<label class="flex items-center gap-2 text-sm">
 						if lib.Imported {
@@ -70,14 +80,15 @@ templ DiscoverResults(connID string, libs []DiscoveredLib, isOOBE bool) {
 
 script importSelectedLibraries(connID string) {
 	var form = document.getElementById("import-form-" + connID);
+	var bp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
 	var checked = form.querySelectorAll('input[name="lib"]:checked');
-	if (checked.length === 0) { alert("Select at least one library to import."); return; }
+	if (checked.length === 0) { alert(form.dataset.alertSelectOne || "Select at least one library to import."); return; }
 	var libs = [];
 	checked.forEach(function(cb) {
 		libs.push({external_id: cb.value, name: cb.getAttribute("data-name")});
 	});
 	var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1");
-	fetch("/api/v1/connections/" + connID + "/libraries/import", {
+	fetch(bp + "/api/v1/connections/" + connID + "/libraries/import", {
 		method: "POST",
 		headers: {"Content-Type": "application/json", "X-CSRF-Token": csrfToken},
 		body: JSON.stringify({libraries: libs})
@@ -86,42 +97,45 @@ script importSelectedLibraries(connID string) {
 			return res.json().then(function(data) {
 				var count = Array.isArray(data) ? data.length : 0;
 				if (typeof showSuccessToast === 'function') {
-					if (count > 0) {
-						var word = count === 1 ? "library" : "libraries";
-						showSuccessToast(count + " " + word + " imported. Auto-populating artists...");
+					if (count === 1) {
+						showSuccessToast(form.dataset.msgOneLibraryImported || "1 library imported. Auto-populating artists...");
+					} else if (count > 1) {
+						showSuccessToast((form.dataset.msgNLibrariesImported || "{count} libraries imported. Auto-populating artists...").replace("{count}", count));
 					} else {
-						showSuccessToast("No new libraries to import.");
+						showSuccessToast(form.dataset.msgNoNewLibraries || "No new libraries to import.");
 					}
 				}
 				setTimeout(function() { window.location.reload(); }, 1500);
-			}).catch(function() {
+			}).catch(function(e) {
+				console.warn('Import response parse error:', e);
 				if (typeof showSuccessToast === 'function') {
-					showSuccessToast("Libraries imported.");
+					showSuccessToast(form.dataset.msgLibrariesImported || "Libraries imported.");
 				}
 				setTimeout(function() { window.location.reload(); }, 1500);
 			});
 		} else {
 			return res.json().then(function(data) {
-				alert(data.error || "Import failed");
+				alert(data.error || form.dataset.alertImportFailed || "Import failed");
 			}).catch(function() {
-				alert("Import failed (HTTP " + res.status + ")");
+				alert((form.dataset.alertImportFailedHttp || "Import failed (HTTP %d)").replace("%d", res.status));
 			});
 		}
 	}).catch(function() {
-		alert("Network error. Check your connection and try again.");
+		alert(form.dataset.alertNetwork || "Network error. Check your connection and try again.");
 	});
 }
 
 script importSelectedLibrariesOOBE(connID string) {
 	var form = document.getElementById("import-form-" + connID);
+	var bp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
 	var checked = form.querySelectorAll('input[name="lib"]:checked');
-	if (checked.length === 0) { alert("Select at least one library to import."); return; }
+	if (checked.length === 0) { alert(form.dataset.alertSelectOne || "Select at least one library to import."); return; }
 	var libs = [];
 	checked.forEach(function(cb) {
 		libs.push({external_id: cb.value, name: cb.getAttribute("data-name")});
 	});
 	var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1");
-	fetch("/api/v1/connections/" + connID + "/libraries/import", {
+	fetch(bp + "/api/v1/connections/" + connID + "/libraries/import", {
 		method: "POST",
 		headers: {"Content-Type": "application/json", "X-CSRF-Token": csrfToken},
 		body: JSON.stringify({libraries: libs})
@@ -129,23 +143,40 @@ script importSelectedLibrariesOOBE(connID string) {
 		if (res.ok) {
 			return res.json().then(function(data) {
 				var count = Array.isArray(data) ? data.length : 0;
-				var word = count === 1 ? "library" : "libraries";
-				if (count > 0) {
-					form.innerHTML = '<p class="text-xs text-green-600 dark:text-green-400 py-1">' + count + ' ' + word + ' imported. Auto-populating artists...</p>';
+				var msg;
+				var isSuccess;
+				if (count === 1) {
+					msg = form.dataset.msgOneLibraryImported || "1 library imported. Auto-populating artists...";
+					isSuccess = true;
+				} else if (count > 1) {
+					msg = (form.dataset.msgNLibrariesImported || "{count} libraries imported. Auto-populating artists...").replace("{count}", count);
+					isSuccess = true;
 				} else {
-					form.innerHTML = '<p class="text-xs text-gray-500 dark:text-gray-400 py-1">All libraries already imported.</p>';
+					msg = form.dataset.msgAllAlreadyImported || "All libraries already imported.";
+					isSuccess = false;
 				}
-			}).catch(function() {
-				form.innerHTML = '<p class="text-xs text-green-600 dark:text-green-400 py-1">Libraries imported.</p>';
+				var p = document.createElement("p");
+				p.className = isSuccess ? "text-xs text-green-600 dark:text-green-400 py-1" : "text-xs text-gray-500 dark:text-gray-400 py-1";
+				p.textContent = msg;
+				form.replaceChildren(p);
+			}).catch(function(e) {
+				console.warn('Import response parse error:', e);
+				var p = document.createElement("p");
+				p.className = "text-xs text-green-600 dark:text-green-400 py-1";
+				p.textContent = form.dataset.msgLibrariesImported || "Libraries imported.";
+				form.replaceChildren(p);
 			});
 		} else {
 			return res.json().then(function(data) {
-				alert(data.error || "Import failed");
+				alert(data.error || form.dataset.alertImportFailed || "Import failed");
 			}).catch(function() {
-				alert("Import failed (HTTP " + res.status + ")");
+				alert((form.dataset.alertImportFailedHttp || "Import failed (HTTP %d)").replace("%d", res.status));
 			});
 		}
 	}).catch(function() {
-		form.innerHTML = '<p class="text-xs text-red-600 dark:text-red-400 py-1">Network error. Check your connection and try again.</p>';
+		var p = document.createElement("p");
+		p.className = "text-xs text-red-600 dark:text-red-400 py-1";
+		p.textContent = form.dataset.alertNetwork || "Network error. Check your connection and try again.";
+		form.replaceChildren(p);
 	});
 }

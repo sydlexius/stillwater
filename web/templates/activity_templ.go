@@ -844,9 +844,9 @@ func activityRow(c artist.MetadataChangeWithArtist, basePath string) templ.Compo
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var39 string
-		templ_7745c5c3_Var39, templ_7745c5c3_Err = templ.JoinStringErrs(historyTimeAgo(c.CreatedAt))
+		templ_7745c5c3_Var39, templ_7745c5c3_Err = templ.JoinStringErrs(historyTimeAgo(ctx, c.CreatedAt))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/activity.templ`, Line: 201, Col: 34}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/activity.templ`, Line: 201, Col: 39}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var39))
 		if templ_7745c5c3_Err != nil {

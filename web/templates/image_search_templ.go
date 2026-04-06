@@ -970,15 +970,15 @@ func imageSearchGeneric(data ImageSearchData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			for _, t := range []string{"thumb", "fanart", "logo", "banner"} {
+			for _, imageType := range []string{"thumb", "fanart", "logo", "banner"} {
 				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 81, "<button type=\"button\" class=\"px-3 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors\" hx-get=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var58 string
-				templ_7745c5c3_Var58, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/api/v1/artists/%s/images/search?type=%s", data.Artist.ID, t))
+				templ_7745c5c3_Var58, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/api/v1/artists/%s/images/search?type=%s", data.Artist.ID, imageType))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 530, Col: 91}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 530, Col: 99}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var58))
 				if templ_7745c5c3_Err != nil {
@@ -989,9 +989,9 @@ func imageSearchGeneric(data ImageSearchData) templ.Component {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var59 string
-				templ_7745c5c3_Var59, templ_7745c5c3_Err = templ.JoinStringErrs(t)
+				templ_7745c5c3_Var59, templ_7745c5c3_Err = templ.JoinStringErrs(imageTypeLabel(imageType, data.ProfileName))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 535, Col: 11}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 535, Col: 53}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var59))
 				if templ_7745c5c3_Err != nil {
@@ -1095,15 +1095,15 @@ func imageSearchGeneric(data ImageSearchData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			for _, t := range []string{"thumb", "fanart", "logo", "banner"} {
+			for _, imageType := range []string{"thumb", "fanart", "logo", "banner"} {
 				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 93, "<button type=\"button\" class=\"px-3 py-2 text-sm rounded-md border border-dashed border-purple-300 dark:border-purple-700 text-purple-700 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors\" hx-get=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var66 string
-				templ_7745c5c3_Var66, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/api/v1/artists/%s/images/websearch?type=%s", data.Artist.ID, t))
+				templ_7745c5c3_Var66, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/api/v1/artists/%s/images/websearch?type=%s", data.Artist.ID, imageType))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 572, Col: 94}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 572, Col: 102}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var66))
 				if templ_7745c5c3_Err != nil {
@@ -1114,9 +1114,9 @@ func imageSearchGeneric(data ImageSearchData) templ.Component {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var67 string
-				templ_7745c5c3_Var67, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "image.extend_type", imageTypeLabel(t, data.ProfileName)))
+				templ_7745c5c3_Var67, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "image.extend_type", imageTypeLabel(imageType, data.ProfileName)))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 577, Col: 75}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 577, Col: 83}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var67))
 				if templ_7745c5c3_Err != nil {
@@ -1557,7 +1557,7 @@ func FanartSearchResults(artistID string, images []provider.ImageResult) templ.C
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 131, "</button></div><script>\n\t\t\t\t(function() {\n\t\t\t\t\tvar container = document.getElementById('fanart-search-results');\n\t\t\t\t\tif (!container) return;\n\t\t\t\t\tvar artistId = container.dataset.artistId;\n\t\t\t\t\tvar bar = document.getElementById('fanart-bulk-bar');\n\t\t\t\t\tvar countEl = document.getElementById('fanart-bulk-count');\n\n\t\t\t\t\tcontainer.addEventListener('change', function() {\n\t\t\t\t\t\tvar checked = container.querySelectorAll('.fanart-select-cb:checked');\n\t\t\t\t\t\tif (checked.length > 0) {\n\t\t\t\t\t\t\tbar.classList.remove('hidden');\n\t\t\t\t\t\t\tcountEl.textContent = checked.length + ' selected';\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\tbar.classList.add('hidden');\n\t\t\t\t\t\t}\n\t\t\t\t\t});\n\n\t\t\t\t\tdocument.getElementById('fanart-bulk-save').addEventListener('click', function() {\n\t\t\t\t\t\tvar checked = container.querySelectorAll('.fanart-select-cb:checked');\n\t\t\t\t\t\tif (checked.length === 0) return;\n\t\t\t\t\t\tvar urls = [];\n\t\t\t\t\t\tfor (var i = 0; i < checked.length; i++) {\n\t\t\t\t\t\t\turls.push(checked[i].dataset.url);\n\t\t\t\t\t\t}\n\t\t\t\t\t\tbar.classList.add('hidden');\n\t\t\t\t\t\tcountEl.textContent = 'Saving...';\n\t\t\t\t\t\tbar.classList.remove('hidden');\n\t\t\t\t\t\tfetch('/api/v1/artists/' + artistId + '/images/fanart/fetch-batch', {\n\t\t\t\t\t\t\tmethod: 'POST',\n\t\t\t\t\t\t\theaders: {\n\t\t\t\t\t\t\t\t'Content-Type': 'application/json',\n\t\t\t\t\t\t\t\t'X-CSRF-Token': document.cookie.replace(/(?:(?:^|.*;\\s*)csrf_token\\s*=\\s*([^;]*).*$)|^.*$/, \"$1\")\n\t\t\t\t\t\t\t},\n\t\t\t\t\t\t\tbody: JSON.stringify({urls: urls}),\n\t\t\t\t\t\t\tcredentials: 'same-origin'\n\t\t\t\t\t\t}).then(function(r) {\n\t\t\t\t\t\t\tif (r.ok) window.location.reload();\n\t\t\t\t\t\t\telse alert('Failed to save selected images. Please try again.');\n\t\t\t\t\t\t});\n\t\t\t\t\t});\n\t\t\t\t})();\n\t\t\t</script></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 131, "</button></div><script>\n\t\t\t\t(function() {\n\t\t\t\t\tvar container = document.getElementById('fanart-search-results');\n\t\t\t\t\tif (!container) return;\n\t\t\t\t\tvar bp = (document.querySelector('meta[name=\"htmx-base-path\"]') || {content: ''}).content;\n\t\t\t\t\tvar artistId = container.dataset.artistId;\n\t\t\t\t\tvar bar = document.getElementById('fanart-bulk-bar');\n\t\t\t\t\tvar countEl = document.getElementById('fanart-bulk-count');\n\n\t\t\t\t\tcontainer.addEventListener('change', function() {\n\t\t\t\t\t\tvar checked = container.querySelectorAll('.fanart-select-cb:checked');\n\t\t\t\t\t\tif (checked.length > 0) {\n\t\t\t\t\t\t\tbar.classList.remove('hidden');\n\t\t\t\t\t\t\tcountEl.textContent = checked.length + ' selected';\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\tbar.classList.add('hidden');\n\t\t\t\t\t\t}\n\t\t\t\t\t});\n\n\t\t\t\t\tdocument.getElementById('fanart-bulk-save').addEventListener('click', function() {\n\t\t\t\t\t\tvar checked = container.querySelectorAll('.fanart-select-cb:checked');\n\t\t\t\t\t\tif (checked.length === 0) return;\n\t\t\t\t\t\tvar urls = [];\n\t\t\t\t\t\tfor (var i = 0; i < checked.length; i++) {\n\t\t\t\t\t\t\turls.push(checked[i].dataset.url);\n\t\t\t\t\t\t}\n\t\t\t\t\t\tbar.classList.add('hidden');\n\t\t\t\t\t\tcountEl.textContent = 'Saving...';\n\t\t\t\t\t\tbar.classList.remove('hidden');\n\t\t\t\t\t\tfetch(bp + '/api/v1/artists/' + artistId + '/images/fanart/fetch-batch', {\n\t\t\t\t\t\t\tmethod: 'POST',\n\t\t\t\t\t\t\theaders: {\n\t\t\t\t\t\t\t\t'Content-Type': 'application/json',\n\t\t\t\t\t\t\t\t'X-CSRF-Token': document.cookie.replace(/(?:(?:^|.*;\\s*)csrf_token\\s*=\\s*([^;]*).*$)|^.*$/, \"$1\")\n\t\t\t\t\t\t\t},\n\t\t\t\t\t\t\tbody: JSON.stringify({urls: urls}),\n\t\t\t\t\t\t\tcredentials: 'same-origin'\n\t\t\t\t\t\t}).then(function(r) {\n\t\t\t\t\t\t\tif (r.ok) window.location.reload();\n\t\t\t\t\t\t\telse alert('Failed to save selected images. Please try again.');\n\t\t\t\t\t\t});\n\t\t\t\t\t});\n\t\t\t\t})();\n\t\t\t</script></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1597,7 +1597,7 @@ func WebImageSearchResults(artistID string, images []provider.ImageResult) templ
 			var templ_7745c5c3_Var93 string
 			templ_7745c5c3_Var93, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "image.no_images_from_web_search"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 737, Col: 102}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 738, Col: 102}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var93))
 			if templ_7745c5c3_Err != nil {
@@ -1615,7 +1615,7 @@ func WebImageSearchResults(artistID string, images []provider.ImageResult) templ
 			var templ_7745c5c3_Var94 string
 			templ_7745c5c3_Var94, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "image.web_search_warning"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 740, Col: 39}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/image_search.templ`, Line: 741, Col: 39}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var94))
 			if templ_7745c5c3_Err != nil {
