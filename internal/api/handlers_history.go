@@ -275,21 +275,19 @@ func (r *Router) handleListGlobalHistory(w http.ResponseWriter, req *http.Reques
 		return
 	}
 
+	userID := middleware.UserIDFromContext(req.Context())
 	q := req.URL.Query()
 	filter := artist.GlobalHistoryFilter{
 		ArtistID: q.Get("artist_id"),
 		Fields:   parseFilterValues(q["field"]),
 		Sources:  parseFilterValues(q["source"]),
-		Limit:    intQuery(req, "limit", 50),
+		Limit:    r.getUserPageSize(req.Context(), userID, intQuery(req, "limit", 0)),
 		Offset:   intQuery(req, "offset", 0),
 	}
 
 	// Clamp for response echo.
-	if filter.Limit <= 0 {
-		filter.Limit = 50
-	}
-	if filter.Limit > 200 {
-		filter.Limit = 200
+	if filter.Limit > PageSizeMax {
+		filter.Limit = PageSizeMax
 	}
 	if filter.Offset < 0 {
 		filter.Offset = 0
@@ -328,7 +326,7 @@ func (r *Router) handleActivityPage(w http.ResponseWriter, req *http.Request) {
 		ArtistID: q.Get("artist_id"),
 		Fields:   parseFilterValues(q["field"]),
 		Sources:  parseFilterValues(q["source"]),
-		Limit:    25,
+		Limit:    r.getUserPageSize(req.Context(), userID, 0),
 		Offset:   0,
 	}
 
@@ -371,7 +369,7 @@ func (r *Router) handleActivityContent(w http.ResponseWriter, req *http.Request)
 
 	if r.historyService == nil {
 		r.logger.Warn("activity content requested but history service is not configured")
-		renderTempl(w, req, templates.ActivityContent(templates.ActivityPageData{Limit: 25, BasePath: r.basePath}))
+		renderTempl(w, req, templates.ActivityContent(templates.ActivityPageData{Limit: PageSizeDefault, BasePath: r.basePath}))
 		return
 	}
 
@@ -380,14 +378,11 @@ func (r *Router) handleActivityContent(w http.ResponseWriter, req *http.Request)
 		ArtistID: q.Get("artist_id"),
 		Fields:   parseFilterValues(q["field"]),
 		Sources:  parseFilterValues(q["source"]),
-		Limit:    intQuery(req, "limit", 25),
+		Limit:    r.getUserPageSize(req.Context(), userID, intQuery(req, "limit", 0)),
 		Offset:   intQuery(req, "offset", 0),
 	}
-	if filter.Limit <= 0 {
-		filter.Limit = 25
-	}
-	if filter.Limit > 200 {
-		filter.Limit = 200
+	if filter.Limit > PageSizeMax {
+		filter.Limit = PageSizeMax
 	}
 	if filter.Offset < 0 {
 		filter.Offset = 0

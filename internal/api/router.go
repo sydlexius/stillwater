@@ -513,6 +513,7 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 		}
 		http.Redirect(w, req, target, http.StatusMovedPermanently)
 	}, optAuthMw))
+	mux.HandleFunc("GET "+bp+"/preferences", wrapOptionalAuth(r.handleUserPreferencesPage, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/guide", wrapOptionalAuth(r.handleGuidePage, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/setup/wizard", wrapOptionalAuth(r.handleOnboardingPage, optAuthMw))
 	mux.HandleFunc("GET "+bp+"/notifications", wrapAuth(func(w http.ResponseWriter, req *http.Request) {

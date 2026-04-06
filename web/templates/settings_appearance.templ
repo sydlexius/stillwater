@@ -2,6 +2,24 @@ package templates
 
 import "github.com/sydlexius/stillwater/web/components"
 
+// UserPreferencesPage renders a standalone page for user-level appearance
+// preferences. It is accessible to all authenticated users (not admin-only).
+templ UserPreferencesPage(assets AssetPaths, prefs AppearancePrefsData) {
+	@Layout(t(ctx, "settings.appearance"), assets) {
+		<div class="space-y-6">
+			<div class="sw-card rounded-lg px-6 py-4">
+				<h1 class="text-2xl font-bold">{ t(ctx, "settings.appearance") }</h1>
+				<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+					{ t(ctx, "settings.appearance.page_desc") }
+				</p>
+			</div>
+			<div data-tab-panel="appearance" class="space-y-6">
+				@settingsAppearanceTab(prefs)
+			</div>
+		</div>
+	}
+}
+
 // AppearancePrefsData holds the current user preference values shown in the
 // Appearance settings tab. All fields are pre-populated from the user_preferences
 // table (or the compiled defaults) by the settings page handler.
@@ -17,6 +35,7 @@ type AppearancePrefsData struct {
 	LetterSpacing  string // "normal" | "wide" | "extra-wide"
 	FontSize       string // "small" | "medium" | "large"
 	LiteMode       string // "off" | "on" | "auto"
+	PageSize       int    // 10-500; 0 means use default (50)
 }
 
 // settingsAppearanceTab renders the Appearance settings tab.
@@ -121,6 +140,26 @@ templ settingsAppearanceTab(prefs AppearancePrefsData) {
 					},
 					prefs.ContentWidth,
 				)
+			</div>
+			<!-- Page size -->
+			<div class="flex items-center justify-between gap-4">
+				<div>
+					<div class="text-sm font-medium">{ t(ctx, "settings.appearance.page_size") }</div>
+					<div class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "settings.appearance.page_size_desc") }</div>
+				</div>
+				<select
+					class="text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500"
+					aria-label={ t(ctx, "settings.appearance.page_size") }
+					id="pref-page-size"
+					onchange="swSavePageSizePref(this.value)"
+				>
+					<option value="10" selected?={ prefs.PageSize == 10 }>10</option>
+					<option value="25" selected?={ prefs.PageSize == 25 }>25</option>
+					<option value="50" selected?={ prefs.PageSize == 50 || prefs.PageSize == 0 }>50</option>
+					<option value="100" selected?={ prefs.PageSize == 100 }>100</option>
+					<option value="200" selected?={ prefs.PageSize == 200 }>200</option>
+					<option value="500" selected?={ prefs.PageSize == 500 }>500</option>
+				</select>
 			</div>
 		</div>
 	</div>
@@ -287,6 +326,12 @@ templ appearanceScript() {
 						}
 					});
 				}
+			};
+
+			// Save the page_size preference. Unlike segmented controls this is a
+			// plain select element so it gets its own save helper.
+			window.swSavePageSizePref = function (value) {
+				swSaveAppearancePref('page_size', value);
 			};
 
 			// Wire all segmented controls inside the appearance tab panel.

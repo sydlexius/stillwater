@@ -124,6 +124,32 @@ templ ArtistImagesTab(artistID string, a *artist.Artist, profileName string) {
 				@emptyState(artistID, "banner", img.ImageTermFor("banner", profileName))
 			}
 		}
+		// Lightbox overlay for full-size image viewing.
+		// Hidden by default; shown by openImageLightbox().
+		<div
+			id="sw-lightbox"
+			class="fixed inset-0 z-50 hidden items-center justify-center bg-black/85"
+			role="dialog"
+			aria-modal="true"
+			aria-label={ t(ctx, "image.view_full_size") }
+			onclick="closeLightbox()"
+		>
+			<button
+				type="button"
+				class="absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors"
+				onclick="closeLightbox()"
+				aria-label={ t(ctx, "common.close") }
+			>
+				@components.IconXMark("w-6 h-6")
+			</button>
+			<img
+				id="sw-lightbox-img"
+				src=""
+				alt=""
+				class="max-w-[90vw] max-h-[90vh] object-contain rounded shadow-2xl"
+				onclick="event.stopPropagation()"
+			/>
+		</div>
 		<script>
 			function setFanartPrimary(el) {
 				if (!confirm(el.dataset.confirm || 'Set this image as the primary fanart?')) return;
@@ -164,6 +190,31 @@ templ ArtistImagesTab(artistID string, a *artist.Artist, profileName string) {
 				}).catch(function(err) {
 					alert((el.dataset.setPrimaryNetwork || 'Network error setting primary: %s').replace('%s', function() { return err.message; }));
 				});
+			}
+
+			function openLightbox(src, alt) {
+				var lb = document.getElementById('sw-lightbox');
+				var img = document.getElementById('sw-lightbox-img');
+				if (!lb || !img) return;
+				img.src = src;
+				img.alt = alt || '';
+				lb.classList.remove('hidden');
+				lb.classList.add('flex');
+				document.addEventListener('keydown', _lightboxKeydown);
+			}
+
+			function closeLightbox() {
+				var lb = document.getElementById('sw-lightbox');
+				if (!lb) return;
+				lb.classList.add('hidden');
+				lb.classList.remove('flex');
+				var img = document.getElementById('sw-lightbox-img');
+				if (img) img.src = '';
+				document.removeEventListener('keydown', _lightboxKeydown);
+			}
+
+			function _lightboxKeydown(e) {
+				if (e.key === 'Escape') closeLightbox();
 			}
 		</script>
 	</div>
@@ -213,27 +264,27 @@ templ countBadge(count int) {
 // (thumb, logo, banner). When index >= 0, index-based URLs are used (fanart).
 templ imageOverlay(artistID string, imageType string, index int) {
 	<div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity flex items-center justify-center gap-3">
-		// View full-size
+		// View full-size (opens lightbox overlay)
 		if index >= 0 {
-			<a
-				href={ templ.SafeURL(fmt.Sprintf("/api/v1/artists/%s/images/%s/%d/file", artistID, imageType, index)) }
-				target="_blank"
+			<button
+				type="button"
+				onclick={ openImageLightbox(fmt.Sprintf("/api/v1/artists/%s/images/%s/%d/file", artistID, imageType, index), tf(ctx, "image.view_full_size_type", localizedImageType(ctx, imageType))) }
 				class="p-2 rounded-full bg-black/40 hover:bg-black/60 text-white transition-colors shadow-sm"
 				title={ t(ctx, "image.view_full_size") }
 				aria-label={ tf(ctx, "image.view_full_size_type", localizedImageType(ctx, imageType)) }
 			>
 				@components.IconArrowsPointingOut("w-5 h-5")
-			</a>
+			</button>
 		} else {
-			<a
-				href={ templ.SafeURL(fmt.Sprintf("/api/v1/artists/%s/images/%s/file", artistID, imageType)) }
-				target="_blank"
+			<button
+				type="button"
+				onclick={ openImageLightbox(fmt.Sprintf("/api/v1/artists/%s/images/%s/file", artistID, imageType), tf(ctx, "image.view_full_size_type", localizedImageType(ctx, imageType))) }
 				class="p-2 rounded-full bg-black/40 hover:bg-black/60 text-white transition-colors shadow-sm"
 				title={ t(ctx, "image.view_full_size") }
 				aria-label={ tf(ctx, "image.view_full_size_type", localizedImageType(ctx, imageType)) }
 			>
 				@components.IconArrowsPointingOut("w-5 h-5")
-			</a>
+			</button>
 		}
 		// Replace (navigates to image search with auto-fetch)
 		<a
@@ -243,6 +294,15 @@ templ imageOverlay(artistID string, imageType string, index int) {
 			aria-label={ tf(ctx, "image.replace_type", localizedImageType(ctx, imageType)) }
 		>
 			@components.IconArrowUpTray("w-5 h-5")
+		</a>
+		// Crop (navigates to image management page with crop modal auto-opened)
+		<a
+			href={ templ.SafeURL(fmt.Sprintf("/artists/%s/images?type=%s&crop=1", artistID, imageType)) }
+			class="p-2 rounded-full bg-black/40 hover:bg-black/60 text-white transition-colors shadow-sm"
+			title={ t(ctx, "common.crop") }
+			aria-label={ tf(ctx, "image.crop_type", localizedImageType(ctx, imageType)) }
+		>
+			@components.IconScissors("w-5 h-5")
 		</a>
 		// Trim (logo only -- removes transparent edges)
 		if imageType == "logo" {
@@ -310,4 +370,11 @@ func boolToCount(exists bool) int {
 		return 1
 	}
 	return 0
+}
+
+// openImageLightbox is a templ script that calls the page-level openLightbox
+// function with the image URL and accessible label. Using a script function
+// lets Go values be safely embedded in the onclick attribute.
+script openImageLightbox(src string, alt string) {
+	openLightbox(src, alt);
 }

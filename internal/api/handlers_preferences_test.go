@@ -1,11 +1,16 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/sydlexius/stillwater/internal/api/middleware"
+	"github.com/sydlexius/stillwater/internal/artist"
 )
 
 func TestGetPreferences_ReturnsDefaults(t *testing.T) {
@@ -391,6 +396,218 @@ func TestGetPreference_Unauthenticated(t *testing.T) {
 
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+// -- page_size preference tests --
+
+func TestPageSizePref_DefaultReturned(t *testing.T) {
+	r, _, userID := testRouterWithAuth(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/preferences/page_size", nil)
+	req.SetPathValue("key", "page_size")
+	req = withUserCtx(req, userID)
+	w := httptest.NewRecorder()
+
+	r.handleGetPreference(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	want := fmt.Sprintf("%d", PageSizeDefault)
+	if resp["value"] != want {
+		t.Errorf("expected value=%s (default), got %q", want, resp["value"])
+	}
+}
+
+func TestPageSizePref_StoreAndRetrieve(t *testing.T) {
+	r, _, userID := testRouterWithAuth(t)
+
+	// PUT a valid page_size value.
+	body := `{"value":"100"}`
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/preferences/page_size", strings.NewReader(body))
+	req.SetPathValue("key", "page_size")
+	req = withUserCtx(req, userID)
+	w := httptest.NewRecorder()
+	r.handleUpdatePreference(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("PUT expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// GET and verify the stored value.
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/preferences/page_size", nil)
+	req.SetPathValue("key", "page_size")
+	req = withUserCtx(req, userID)
+	w = httptest.NewRecorder()
+	r.handleGetPreference(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+	if resp["value"] != "100" {
+		t.Errorf("expected value=100, got %q", resp["value"])
+	}
+}
+
+func TestPageSizePref_RejectsOutOfRange(t *testing.T) {
+	r, _, userID := testRouterWithAuth(t)
+
+	cases := []struct {
+		value string
+	}{
+		{"9"},
+		{"501"},
+		{"0"},
+		{"-1"},
+		{"not_a_number"},
+		{""},
+	}
+
+	for _, tc := range cases {
+		t.Run("value_"+tc.value, func(t *testing.T) {
+			body := fmt.Sprintf(`{"value":%q}`, tc.value)
+			req := httptest.NewRequest(http.MethodPut, "/api/v1/preferences/page_size", strings.NewReader(body))
+			req.SetPathValue("key", "page_size")
+			req = withUserCtx(req, userID)
+			w := httptest.NewRecorder()
+			r.handleUpdatePreference(w, req)
+
+			if w.Code != http.StatusBadRequest {
+				t.Errorf("expected 400 for value %q, got %d: %s", tc.value, w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
+func TestPageSizePref_AcceptsBoundaryValues(t *testing.T) {
+	r, _, userID := testRouterWithAuth(t)
+
+	for _, v := range []string{"10", "500"} {
+		t.Run("value_"+v, func(t *testing.T) {
+			body := fmt.Sprintf(`{"value":%q}`, v)
+			req := httptest.NewRequest(http.MethodPut, "/api/v1/preferences/page_size", strings.NewReader(body))
+			req.SetPathValue("key", "page_size")
+			req = withUserCtx(req, userID)
+			w := httptest.NewRecorder()
+			r.handleUpdatePreference(w, req)
+
+			if w.Code != http.StatusOK {
+				t.Errorf("expected 200 for boundary value %q, got %d: %s", v, w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
+// TestPageSizePref_UsedByArtistList verifies that the page_size preference is
+// respected by the artist list API endpoint when no query param is provided.
+func TestPageSizePref_UsedByArtistList(t *testing.T) {
+	r, artistSvc := testRouter(t)
+
+	// Establish a known user ID that we will use for the preference.
+	const testUserID = "test-user-pagesize"
+
+	// Create more artists than the stored page size so the cap is observable.
+	for i := 0; i < 15; i++ {
+		a := &artist.Artist{Name: fmt.Sprintf("Test Artist %02d", i)}
+		if err := artistSvc.Create(context.Background(), a); err != nil {
+			t.Fatalf("creating artist: %v", err)
+		}
+	}
+
+	// Store page_size=10 directly in the DB for the test user.
+	_, err := r.db.ExecContext(context.Background(),
+		`INSERT INTO user_preferences (user_id, key, value, updated_at)
+		 VALUES (?, 'page_size', '10', datetime('now'))
+		 ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+		testUserID)
+	if err != nil {
+		t.Fatalf("storing page_size pref: %v", err)
+	}
+
+	// Call handleListArtists without explicit page_size param.
+	ctx := middleware.WithTestUserID(context.Background(), testUserID)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/v1/artists", nil)
+	w := httptest.NewRecorder()
+	r.handleListArtists(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+
+	// The response should reflect page_size=10 from the preference.
+	pageSize, ok := resp["page_size"].(float64)
+	if !ok {
+		t.Fatalf("page_size not present or not a number in response")
+	}
+	if int(pageSize) != 10 {
+		t.Errorf("expected page_size=10 from preference, got %d", int(pageSize))
+	}
+
+	// The returned artists slice should be capped at 10.
+	artists, ok := resp["artists"].([]any)
+	if !ok {
+		t.Fatalf("artists not present or not an array in response")
+	}
+	if len(artists) > 10 {
+		t.Errorf("expected at most 10 artists, got %d", len(artists))
+	}
+}
+
+// TestPageSizePref_QueryParamOverridesPref verifies that an explicit page_size
+// query parameter takes precedence over the stored user preference.
+func TestPageSizePref_QueryParamOverridesPref(t *testing.T) {
+	r, _ := testRouter(t)
+
+	const testUserID = "test-user-qparam"
+
+	// Store page_size=10 directly in the DB for the test user.
+	_, err := r.db.ExecContext(context.Background(),
+		`INSERT INTO user_preferences (user_id, key, value, updated_at)
+		 VALUES (?, 'page_size', '10', datetime('now'))
+		 ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+		testUserID)
+	if err != nil {
+		t.Fatalf("storing page_size pref: %v", err)
+	}
+
+	// Call handleListArtists with page_size=25 in the query param.
+	ctx := middleware.WithTestUserID(context.Background(), testUserID)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/v1/artists?page_size=25", nil)
+	w := httptest.NewRecorder()
+	r.handleListArtists(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+
+	// The query param value (25) should override the stored preference (10).
+	pageSize, ok := resp["page_size"].(float64)
+	if !ok {
+		t.Fatalf("page_size not present or not a number in response")
+	}
+	if int(pageSize) != 25 {
+		t.Errorf("expected page_size=25 from query override, got %d", int(pageSize))
 	}
 }
 
