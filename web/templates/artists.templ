@@ -338,6 +338,7 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 						name="search"
 						value={ data.Search }
 						placeholder={ t(ctx, "artists.search_placeholder") }
+						aria-label={ t(ctx, "artists.search_placeholder") }
 						hx-get="/artists"
 						hx-trigger="keyup changed delay:300ms"
 						hx-target="#artist-content"
@@ -411,18 +412,19 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 					</details>
 					<div id="col-toggle-wrapper" class={ templ.KV("hidden", data.View != "table") }>
 					@components.ColumnToggle("artists", "artists-table", []components.ColumnDef{
-						{Key: "name", Label: "Name", Required: true},
-						{Key: "metadata", Label: "Metadata"},
+						{Key: "name", Label: t(ctx, "artists.col.name"), Required: true},
+						{Key: "metadata", Label: t(ctx, "artists.col.metadata")},
 						{Key: "thumb", Label: img.ImageTermFor("thumb", data.ProfileName)},
 						{Key: "fanart", Label: img.ImageTermFor("fanart", data.ProfileName)},
 						{Key: "logo", Label: img.ImageTermFor("logo", data.ProfileName)},
-						{Key: "mbid", Label: "MBID"},
+						{Key: "mbid", Label: t(ctx, "artists.col.mbid")},
 					})
 				</div>
 				<div class="flex rounded-md border border-gray-300 dark:border-gray-600 overflow-hidden">
 						<button
 							type="button"
 							title={ t(ctx, "artists.view.table") }
+							aria-label={ t(ctx, "artists.view.table") }
 							hx-get="/artists"
 							hx-target="#artist-content"
 							hx-swap="outerHTML"
@@ -438,6 +440,7 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 						<button
 							type="button"
 							title={ t(ctx, "artists.view.grid") }
+							aria-label={ t(ctx, "artists.view.grid") }
 							hx-get="/artists"
 							hx-target="#artist-content"
 							hx-swap="outerHTML"
@@ -838,7 +841,7 @@ templ ArtistRow(a artist.Artist, sources map[string]LibrarySourceInfo, complianc
 			</div>
 		</td>
 		<td data-col="metadata" class="px-4 py-3 text-center">
-			@components.StatusBadge(a.NFOExists, "Metadata")
+			@components.StatusBadge(a.NFOExists, t(ctx, "common.metadata"))
 		</td>
 		<td data-col="thumb" class="px-4 py-3 text-center">
 			@components.ImageStatusBadge(a.ThumbExists, a.ThumbLowRes, img.ImageTermFor("thumb", profileName))
@@ -850,7 +853,7 @@ templ ArtistRow(a artist.Artist, sources map[string]LibrarySourceInfo, complianc
 			@components.ImageStatusBadge(a.LogoExists, a.LogoLowRes, img.ImageTermFor("logo", profileName))
 		</td>
 		<td data-col="mbid" class="px-4 py-3 text-center">
-			@components.StatusBadge(a.MusicBrainzID != "", "MBID")
+			@components.StatusBadge(a.MusicBrainzID != "", t(ctx, "artists.col.mbid"))
 		</td>
 	</tr>
 }

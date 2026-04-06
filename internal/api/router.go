@@ -534,7 +534,7 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	// sidebar can show the logged-in state when the user is authenticated.
 	mux.HandleFunc(bp+"/{path...}", wrapOptionalAuth(r.handle404, optAuthMw))
 
-	// Apply middleware chain: security headers > logging > CSRF
+	// Apply middleware chain: security headers > i18n > logging > CSRF
 	// Login and setup are exempt from CSRF (registered with rate limiter above)
 	csrfExempt := []string{
 		bp + "/api/v1/auth/login",

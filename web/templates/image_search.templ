@@ -20,7 +20,7 @@ type ImageSearchData struct {
 }
 
 templ ImageSearchPage(assets AssetPaths, data ImageSearchData) {
-	@Layout(data.Artist.Name+" - Images", assets) {
+	@Layout(data.Artist.Name+" - "+t(ctx, "common.images"), assets) {
 		<div class="space-y-6">
 			<div class="border-b border-gray-200 dark:border-gray-700 pb-4">
 				<div class="flex items-center gap-2">
@@ -574,7 +574,7 @@ templ imageSearchGeneric(data ImageSearchData) {
 								hx-swap="innerHTML"
 								hx-indicator="#web-search-spinner"
 							>
-								{ tf(ctx, "image.extend_type", t) }
+								{ tf(ctx, "image.extend_type", imageTypeLabel(t, data.ProfileName)) }
 							</button>
 						}
 					</div>

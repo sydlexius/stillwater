@@ -1,7 +1,7 @@
 package templates
 
 templ GuidePage(assets AssetPaths) {
-	@Layout("User Guide", assets) {
+	@Layout(t(ctx, "guide.title"), assets) {
 		<div class="space-y-8">
 			<!-- Page header -->
 			<div>

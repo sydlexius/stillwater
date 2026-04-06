@@ -54,6 +54,7 @@ templ FanartManagementGallery(artistID string, items []FanartGalleryItem) {
 										type="button"
 										class="fanart-move-btn text-xs p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
 										title={ t(ctx, "image.move_up") }
+										aria-label={ t(ctx, "image.move_up") }
 										data-artist-id={ artistID }
 										data-index={ strconv.Itoa(item.Index) }
 										data-direction="up"
@@ -66,6 +67,7 @@ templ FanartManagementGallery(artistID string, items []FanartGalleryItem) {
 										type="button"
 										class="fanart-move-btn text-xs p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
 										title={ t(ctx, "image.move_down") }
+										aria-label={ t(ctx, "image.move_down") }
 										data-artist-id={ artistID }
 										data-index={ strconv.Itoa(item.Index) }
 										data-direction="down"
@@ -77,6 +79,7 @@ templ FanartManagementGallery(artistID string, items []FanartGalleryItem) {
 									type="button"
 									class="text-xs p-1 text-red-400 hover:text-red-600"
 									title={ t(ctx, "image.delete_this_fanart") }
+									aria-label={ t(ctx, "image.delete_this_fanart") }
 									hx-delete={ fmt.Sprintf("/api/v1/artists/%s/images/fanart/%d", artistID, item.Index) }
 									hx-confirm={ t(ctx, "image.confirm_delete_fanart") }
 									hx-swap="none"
