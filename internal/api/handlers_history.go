@@ -362,7 +362,7 @@ func (r *Router) handleActivityContent(w http.ResponseWriter, req *http.Request)
 
 	if r.historyService == nil {
 		r.logger.Warn("activity content requested but history service is not configured")
-		renderTempl(w, req, templates.ActivityContent(templates.ActivityPageData{Limit: PageSizeDefault, BasePath: r.basePath}))
+		renderTempl(w, req, templates.ActivityContent(templates.ActivityPageData{Limit: r.getUserPageSize(req.Context(), userID, 0), BasePath: r.basePath}))
 		return
 	}
 
