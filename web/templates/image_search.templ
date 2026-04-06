@@ -27,14 +27,14 @@ templ ImageSearchPage(assets AssetPaths, data ImageSearchData) {
 		<div class="space-y-6">
 			<div class="border-b border-gray-200 dark:border-gray-700 pb-4">
 				<div class="flex items-center gap-2">
-					<a href={ templ.SafeURL(data.BasePath + "/artists") } class="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200">
+					<a href={ templ.SafeURL(data.BasePath + "/artists") } class="text-sm text-gray-800 dark:text-gray-300 hover:text-black dark:hover:text-white">
 						{ t(ctx, "common.artists") }
 					</a>
-					<span class="text-gray-400">/</span>
-					<a href={ templ.SafeURL(data.BasePath + "/artists/" + data.Artist.ID) } class="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200">
+					<span class="text-gray-600 dark:text-gray-500">/</span>
+					<a href={ templ.SafeURL(data.BasePath + "/artists/" + data.Artist.ID) } class="text-sm text-gray-800 dark:text-gray-300 hover:text-black dark:hover:text-white">
 						{ data.Artist.Name }
 					</a>
-					<span class="text-gray-400">/</span>
+					<span class="text-gray-600 dark:text-gray-500">/</span>
 				</div>
 				if data.SelectedType != "" {
 					<h1 class="mt-2 text-2xl font-bold">{ img.ImageTermFor(data.SelectedType, data.ProfileName) }</h1>
@@ -271,7 +271,7 @@ templ imageSearchContextualized(data ImageSearchData) {
 						class="max-w-full max-h-96 object-contain"
 					/>
 				} else {
-					<div class="text-center text-gray-400">
+					<div class="text-center text-gray-500 dark:text-gray-400">
 						@components.IconPlusCircle("mx-auto h-12 w-12")
 						<p class="mt-2 text-sm">{ tf(ctx, "image.no_image_yet", img.ImageTermFor(data.SelectedType, data.ProfileName)) }</p>
 					</div>
@@ -280,7 +280,7 @@ templ imageSearchContextualized(data ImageSearchData) {
 					<p class="text-sm font-medium text-blue-500">{ t(ctx, "image.drop_image_here") }</p>
 				</div>
 			</div>
-			<p class="mt-1 text-xs text-gray-400 dark:text-gray-500 text-center">{ t(ctx, "image.drag_drop_hint") }</p>
+			<p class="mt-1 text-xs text-gray-500 dark:text-gray-400 text-center">{ t(ctx, "image.drag_drop_hint") }</p>
 			if imageExistsForType(data.Artist, data.SelectedType) {
 				<div
 					class="mt-1 text-center"

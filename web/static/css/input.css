@@ -580,7 +580,7 @@
 }
 
 :root:not(.dark) .sw-sidebar-version {
-  color: rgba(100, 116, 139, 0.5);
+  color: #475569;
 }
 
 :root:not(.dark) .sw-sidebar-restore-btn {
@@ -679,6 +679,19 @@
   border: 1px solid var(--sw-glass-border);
 }
 
+/* Light mode: give the segmented track a visible gray surface so it doesn't
+   disappear on white card backgrounds (glass token is translucent white). */
+:root:not(.dark) .sw-segmented {
+  background: rgba(0, 0, 0, 0.06);
+  border-color: rgba(0, 0, 0, 0.14);
+}
+
+/* Light mode: inactive segment text uses the primary content color for legibility.
+   Scoped to non-active segments so the active pill keeps its white text. */
+:root:not(.dark) .sw-segment:not(.sw-segment--active) {
+  color: var(--sw-content-text);
+}
+
 .sw-segment {
   position: relative;
   display: inline-flex;
@@ -702,6 +715,7 @@
 
 .sw-segment--active {
   background-color: var(--sw-accent-primary);
+  /* Explicit white text in all themes so the pill is always legible */
   color: #fff;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
@@ -723,8 +737,13 @@
   transition: opacity 0.15s ease;
 }
 
+/* Hide dividers on either side of the active pill.
+   :has() selects the divider that immediately precedes an active segment
+   (the divider itself, not the segment). Without :has() the old
+   `divider + active` rule incorrectly set opacity:0 on the active segment
+   instead of the divider. */
 .sw-segment--active + .sw-segment-divider,
-.sw-segment-divider + .sw-segment--active {
+.sw-segment-divider:has(+ .sw-segment--active) {
   opacity: 0;
 }
 

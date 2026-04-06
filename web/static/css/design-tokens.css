@@ -74,8 +74,9 @@
   --sw-sidebar-restore-hover-bg: rgba(15, 23, 42, 0.9);
 }
 
-/* Light theme sidebar overrides */
+/* Light theme overrides */
 :root:not(.dark) {
+  /* Sidebar */
   --sw-sidebar-bg: #ffffff;
   --sw-sidebar-text: #475569;
   --sw-sidebar-text-hover: #1e293b;
@@ -84,6 +85,10 @@
   --sw-sidebar-glass-bg: rgba(255, 255, 255, 0.78);
   --sw-sidebar-border: rgba(0, 0, 0, 0.08);
   --sw-sidebar-restore-hover-bg: rgba(241, 245, 249, 0.98);
+
+  /* Glass -- light mode uses a translucent white surface instead of dark navy */
+  --sw-glass-bg: rgba(255, 255, 255, 0.55);
+  --sw-glass-border: rgba(0, 0, 0, 0.10);
 }
 
 /* -- Glass intensity (set via data-glass on <html>) ----------------------- */

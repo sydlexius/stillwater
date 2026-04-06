@@ -120,7 +120,7 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 						href={ templ.SafeURL(artistsBackURL(data.Artist.LibraryID)) }
 						class={
 							"text-sm",
-							templ.KV("text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200", !data.Artist.FanartExists),
+							templ.KV("text-gray-800 dark:text-gray-300 hover:text-black dark:hover:text-white", !data.Artist.FanartExists),
 							templ.KV("text-white/75 hover:text-white drop-shadow", data.Artist.FanartExists),
 						}
 					>
@@ -128,68 +128,13 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 					</a>
 					<span
 						class={
-							templ.KV("text-gray-400", !data.Artist.FanartExists),
+							templ.KV("text-gray-500 dark:text-gray-400", !data.Artist.FanartExists),
 							templ.KV("text-white/50", data.Artist.FanartExists),
 						}
 					>/</span>
 				</div>
 				<div class="flex items-center justify-between mt-2">
-					<div>
-						if data.Artist.LogoExists {
-							<h1 class="sr-only">{ data.Artist.Name }</h1>
-							<img
-								src={ fmt.Sprintf("/api/v1/artists/%s/images/logo/file", data.Artist.ID) }
-								alt={ data.Artist.Name }
-								class={
-									"max-h-20 max-w-[300px] object-contain object-left",
-									templ.KV("drop-shadow-[0_2px_10px_rgba(0,0,0,0.7)]", data.Artist.FanartExists),
-								}
-							/>
-						} else {
-							<h1
-								class={
-									"text-2xl font-bold",
-									templ.KV("text-white drop-shadow-md", data.Artist.FanartExists),
-								}
-							>{ data.Artist.Name }</h1>
-						}
-						if data.Artist.SortName != "" && data.Artist.SortName != data.Artist.Name {
-							<p
-								class={
-									"text-sm mt-1",
-									templ.KV("text-gray-500 dark:text-gray-400", !data.Artist.FanartExists),
-									templ.KV("text-white/70 drop-shadow", data.Artist.FanartExists),
-								}
-							>{ tf(ctx, "artist.sort_prefix", data.Artist.SortName) }</p>
-						}
-						if data.Artist.Disambiguation != "" {
-							<p
-								class={
-									"mt-1 text-sm",
-									templ.KV("text-gray-500 dark:text-gray-400", !data.Artist.FanartExists),
-									templ.KV("text-white/70 drop-shadow", data.Artist.FanartExists),
-								}
-							>{ data.Artist.Disambiguation }</p>
-						}
-						if data.LibraryName != "" {
-							<p
-								class={
-									"mt-1 text-xs",
-									templ.KV("text-gray-400 dark:text-gray-500", !data.Artist.FanartExists),
-									templ.KV("text-white/60 drop-shadow", data.Artist.FanartExists),
-								}
-							>
-								{ tf(ctx, "artist.library_label", data.LibraryName) }
-								if data.LibrarySource != "" && data.LibrarySource != "manual" {
-									<span class="ml-1.5 inline-flex items-center gap-1 rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300">
-										<img src={ logoSrc(data.LibrarySource) } class="h-3.5 w-3.5" alt=""/>
-										{ sourceDisplayName(data.LibrarySource) }
-									</span>
-								}
-							</p>
-						}
-					</div>
-					<div class="flex items-center gap-3 mr-4">
+					<div class="flex items-center gap-3">
 						if data.Artist.ThumbExists {
 							<img
 								src={ assets.BasePath + fmt.Sprintf("/api/v1/artists/%s/images/thumb/file", data.Artist.ID) }
@@ -201,6 +146,63 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 								}
 							/>
 						}
+						<div>
+							if data.Artist.LogoExists {
+								<h1 class="sr-only">{ data.Artist.Name }</h1>
+								<img
+									src={ fmt.Sprintf("/api/v1/artists/%s/images/logo/file", data.Artist.ID) }
+									alt={ data.Artist.Name }
+									class={
+										"max-h-20 max-w-[300px] object-contain object-left",
+										templ.KV("drop-shadow-[0_2px_10px_rgba(0,0,0,0.7)]", data.Artist.FanartExists),
+									}
+								/>
+							} else {
+								<h1
+									class={
+										"text-2xl font-bold",
+										templ.KV("text-white drop-shadow-md", data.Artist.FanartExists),
+									}
+								>{ data.Artist.Name }</h1>
+							}
+							if data.Artist.SortName != "" && data.Artist.SortName != data.Artist.Name {
+								<p
+									class={
+										"text-sm mt-1",
+										templ.KV("text-gray-500 dark:text-gray-400", !data.Artist.FanartExists),
+										templ.KV("text-white/70 drop-shadow", data.Artist.FanartExists),
+									}
+								>{ tf(ctx, "artist.sort_prefix", data.Artist.SortName) }</p>
+							}
+							if data.Artist.Disambiguation != "" {
+								<p
+									class={
+										"mt-1 text-sm",
+										templ.KV("text-gray-500 dark:text-gray-400", !data.Artist.FanartExists),
+										templ.KV("text-white/70 drop-shadow", data.Artist.FanartExists),
+									}
+								>{ data.Artist.Disambiguation }</p>
+							}
+							if data.LibraryName != "" {
+								<p
+									class={
+										"mt-1 text-xs",
+										templ.KV("text-gray-400 dark:text-gray-500", !data.Artist.FanartExists),
+										templ.KV("text-white/60 drop-shadow", data.Artist.FanartExists),
+									}
+								>
+									{ tf(ctx, "artist.library_label", data.LibraryName) }
+									if data.LibrarySource != "" && data.LibrarySource != "manual" {
+										<span class="ml-1.5 inline-flex items-center gap-1 rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300">
+											<img src={ logoSrc(data.LibrarySource) } class="h-3.5 w-3.5" alt=""/>
+											{ sourceDisplayName(data.LibrarySource) }
+										</span>
+									}
+								</p>
+							}
+						</div>
+					</div>
+					<div class="flex items-center gap-3 mr-4">
 						if data.Artist.Locked {
 							<span
 								class={
@@ -778,16 +780,19 @@ templ FanartGallery(artistID string, items []FanartGalleryItem, profileName stri
 						</div>
 						// Hover overlay with action buttons.
 						<div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity flex items-center justify-center gap-3">
-							// View full-size
-							<a
-								href={ templ.SafeURL(fmt.Sprintf("/api/v1/artists/%s/images/fanart/%d/file", artistID, item.Index)) }
-								target="_blank"
+							// View full-size (opens lightbox; openLightbox is defined in
+							// artist_images_tab.templ and is always present on this page).
+							<button
+								type="button"
 								class="p-2 rounded-full bg-black/40 hover:bg-black/60 text-white transition-colors shadow-sm"
 								title={ t(ctx, "artist.view_full_size") }
 								aria-label={ tf(ctx, "artist.view_full_size_name", item.Filename) }
+								data-lightbox-src={ fmt.Sprintf("/api/v1/artists/%s/images/fanart/%d/file", artistID, item.Index) }
+								data-lightbox-alt={ item.Filename }
+								onclick="openLightbox(this.dataset.lightboxSrc, this.dataset.lightboxAlt)"
 							>
 								@components.IconArrowsPointingOut("w-5 h-5")
-							</a>
+							</button>
 							// Set as Primary (non-primary images only)
 							if item.Index > 0 {
 								<button

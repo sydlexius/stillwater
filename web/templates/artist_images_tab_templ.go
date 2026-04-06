@@ -832,7 +832,7 @@ func imageOverlay(artistID string, imageType string, index int, basePath string)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = components.IconScissors("w-5 h-5").Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = components.IconCrop("w-5 h-5").Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
