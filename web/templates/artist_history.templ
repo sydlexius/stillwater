@@ -207,8 +207,7 @@ func historySourceBadgeClass(source string) string {
 }
 
 // historyFieldLabel converts a database field name to a human-readable label.
-// It delegates to fieldLabel for shared field names and adds history-specific
-// image type labels (thumb, fanart, logo, banner).
+// It delegates to fieldLabel for the actual label mapping.
 func historyFieldLabel(ctx context.Context, field string) string {
 	return fieldLabel(ctx, field)
 }

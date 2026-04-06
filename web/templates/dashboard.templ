@@ -180,12 +180,12 @@ templ DashboardActionHeader(data ActionQueueData) {
 				<h1 class="text-xl font-bold">{ t(ctx, "dashboard.title") }</h1>
 				if data.Total > 0 {
 					<span class="inline-flex items-center rounded-full bg-red-100 dark:bg-red-900/30 px-2.5 py-0.5 text-sm font-semibold text-red-700 dark:text-red-300">
-						{ tf(ctx, "dashboard.actions_needed", data.Total) }
+						{ tn(ctx, "dashboard.actions_needed", data.Total) }
 					</span>
 				}
 			</div>
 			<div class="flex items-center gap-3 text-sm text-gray-500 dark:text-gray-400">
-				<span>{ tf(ctx, "dashboard.artist_count", data.TotalArtists) }</span>
+				<span>{ tn(ctx, "dashboard.artist_count", data.TotalArtists) }</span>
 				<span class="text-gray-300 dark:text-gray-600">|</span>
 				<span
 					class={

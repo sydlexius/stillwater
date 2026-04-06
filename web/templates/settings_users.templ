@@ -212,9 +212,11 @@ templ settingsUsersTab(data UsersTabData) {
 								type="button"
 								class="text-xs px-2.5 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
 								aria-label={ t(ctx, "settings.users.copy_invite") }
-								onclick="navigator.clipboard.writeText(document.getElementById('invite-link-value').value).then(function(){ showSuccessToast('Invite link copied'); }).catch(function(){ showToast('Failed to copy link'); })"
+								data-success-msg={ t(ctx, "settings.users.invite_copied") }
+								data-fail-msg={ t(ctx, "settings.users.copy_failed") }
+								onclick="var btn=this; navigator.clipboard.writeText(document.getElementById('invite-link-value').value).then(function(){ showSuccessToast(btn.dataset.successMsg); }).catch(function(){ showToast(btn.dataset.failMsg); })"
 							>
-								Copy
+								{ t(ctx, "common.copy") }
 							</button>
 						</div>
 						<p class="text-xs text-gray-500 dark:text-gray-400 mt-1">{ t(ctx, "settings.users.link_single_use") }</p>

@@ -109,7 +109,7 @@ func settingsAppearanceTab(prefs AppearancePrefsData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = components.ContextHelp("help-theme", "Theme", "Light uses a bright background. Dark uses a dark background. System follows your device's color scheme preference and changes automatically.").Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = components.ContextHelp("help-theme", t(ctx, "settings.appearance.theme"), t(ctx, "settings.appearance.help_theme")).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -158,7 +158,7 @@ func settingsAppearanceTab(prefs AppearancePrefsData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = components.ContextHelp("help-glass", "Glass Intensity", "Adjusts the blur strength and opacity of frosted glass surfaces. Light is subtle, Heavy gives a stronger diffusion effect. Disable in Lite Mode to remove glass effects entirely.").Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = components.ContextHelp("help-glass", t(ctx, "settings.appearance.glass_intensity"), t(ctx, "settings.appearance.help_glass")).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -422,7 +422,7 @@ func settingsAppearanceTab(prefs AppearancePrefsData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = components.ContextHelp("help-letter-spacing", "Letter Spacing", "Increases the space between characters. Wide and Extra Wide are useful for users with dyslexia or low vision. Each option is rendered in its own spacing so you can preview the difference.").Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = components.ContextHelp("help-letter-spacing", t(ctx, "settings.appearance.letter_spacing"), t(ctx, "settings.appearance.help_letter_spacing")).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -538,7 +538,7 @@ func settingsAppearanceTab(prefs AppearancePrefsData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = components.ContextHelp("help-reduced-motion", "Reduced Motion", "System follows your OS-level accessibility setting. On forces reduced motion regardless of OS preference, which is useful if your browser does not expose the system setting.").Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = components.ContextHelp("help-reduced-motion", t(ctx, "settings.appearance.reduced_motion"), t(ctx, "settings.appearance.help_reduced_motion")).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -587,7 +587,7 @@ func settingsAppearanceTab(prefs AppearancePrefsData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = components.ContextHelp("help-lite-mode", "Lite Mode", "Auto detects low-end devices (fewer than 4 CPU cores or less than 4 GB RAM) and enables Lite Mode automatically. On forces Lite Mode regardless of device, improving performance on constrained hardware or slow connections.").Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = components.ContextHelp("help-lite-mode", t(ctx, "settings.appearance.lite_mode"), t(ctx, "settings.appearance.help_lite_mode")).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

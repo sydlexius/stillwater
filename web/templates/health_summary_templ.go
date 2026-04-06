@@ -214,7 +214,7 @@ func HealthSummaryFragment(data HealthSummaryData) templ.Component {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var13 string
-				templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "health.artist_count", v.Count))
+				templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(tn(ctx, "health.artist_count", v.Count))
 				if templ_7745c5c3_Err != nil {
 					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/health_summary.templ`, Line: 64, Col: 49}
 				}

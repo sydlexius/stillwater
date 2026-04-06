@@ -272,7 +272,13 @@ templ CompliancePage(assets AssetPaths, data ComplianceData) {
 			class="fixed bottom-0 left-0 right-0 z-30 hidden bg-gray-900 dark:bg-gray-800 border-t border-gray-700 px-6 py-3"
 		>
 			<div class="max-w-7xl mx-auto flex items-center justify-between">
-				<span id="bulk-count" class="text-sm text-white">{ t(ctx, "report.zero_selected") }</span>
+				<span
+					id="bulk-count"
+					class="text-sm text-white"
+					data-zero-text={ t(ctx, "report.zero_selected") }
+					data-one-text={ t(ctx, "report.one_selected") }
+					data-many-template={ t(ctx, "report.n_selected") }
+				>{ t(ctx, "report.zero_selected") }</span>
 				<div class="flex items-center gap-3">
 					<button
 						type="button"
@@ -755,9 +761,17 @@ templ complianceScript() {
 
 			if (selected.length > 0) {
 				bar.classList.remove('hidden');
-				count.textContent = selected.length + ' selected';
+				if (count) {
+					if (selected.length === 1) {
+						count.textContent = count.dataset.oneText || '1 selected';
+					} else {
+						var tpl = count.dataset.manyTemplate || '{count} selected';
+						count.textContent = tpl.replace('{count}', String(selected.length));
+					}
+				}
 			} else {
 				bar.classList.add('hidden');
+				if (count) count.textContent = count.dataset.zeroText || '';
 			}
 		}
 

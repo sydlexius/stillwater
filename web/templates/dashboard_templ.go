@@ -351,7 +351,7 @@ func DashboardActionHeader(data ActionQueueData) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var10 string
-			templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "dashboard.actions_needed", data.Total))
+			templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(tn(ctx, "dashboard.actions_needed", data.Total))
 			if templ_7745c5c3_Err != nil {
 				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/dashboard.templ`, Line: 183, Col: 55}
 			}
@@ -369,7 +369,7 @@ func DashboardActionHeader(data ActionQueueData) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var11 string
-		templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "dashboard.artist_count", data.TotalArtists))
+		templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(tn(ctx, "dashboard.artist_count", data.TotalArtists))
 		if templ_7745c5c3_Err != nil {
 			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/dashboard.templ`, Line: 188, Col: 64}
 		}
