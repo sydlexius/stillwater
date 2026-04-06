@@ -1896,12 +1896,13 @@ paths:
             type: string
         - name: limit
           in: query
-          description: Maximum number of records to return (1-200, default 50).
+          description: >
+            Maximum number of records to return (10-500). Defaults to the
+            caller's page_size preference when omitted.
           schema:
             type: integer
-            minimum: 1
-            maximum: 200
-            default: 50
+            minimum: 10
+            maximum: 500
         - name: offset
           in: query
           description: Number of records to skip for pagination.
@@ -2429,12 +2430,13 @@ paths:
       parameters:
         - name: limit
           in: query
-          description: Maximum number of records to return (1-200, default 50).
+          description: >
+            Maximum number of records to return (10-500). Defaults to the
+            caller's page_size preference when omitted.
           schema:
             type: integer
-            minimum: 1
-            maximum: 200
-            default: 50
+            minimum: 10
+            maximum: 500
         - name: offset
           in: query
           description: Number of records to skip for pagination.
@@ -4290,12 +4292,13 @@ paths:
       responses:
         "200":
           description: >
-            All 12 preference keys with the user's values merged over defaults.
+            All 13 preference keys with the user's values merged over defaults.
             The response always contains exactly these keys.
           content:
             application/json:
               schema:
                 type: object
+                additionalProperties: false
                 properties:
                   theme:
                     type: string
@@ -4345,6 +4348,11 @@ paths:
                     type: string
                     enum: ["true", "false"]
                     description: Whether browser notifications are enabled.
+                  page_size:
+                    type: string
+                    pattern: "^(?:[1-9][0-9]|[1-4][0-9]{2}|500)$"
+                    description: Number of items per page (integer 10-500 as a string).
+                    example: "50"
                 required:
                   - theme
                   - glass_intensity
@@ -4358,6 +4366,7 @@ paths:
                   - lite_mode
                   - language
                   - notification_enabled
+                  - page_size
         "401":
           description: Not authenticated
           content:
@@ -4403,6 +4412,7 @@ paths:
                   - lite_mode
                   - language
                   - notification_enabled
+                  - page_size
               - type: string
                 pattern: "^suppress_confirm_[a-z0-9_]+$"
       responses:
@@ -4470,6 +4480,7 @@ paths:
                   - lite_mode
                   - language
                   - notification_enabled
+                  - page_size
               - type: string
                 pattern: "^suppress_confirm_[a-z0-9_]+$"
       requestBody:

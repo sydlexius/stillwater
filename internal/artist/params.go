@@ -23,7 +23,7 @@ func (p *ListParams) Validate() {
 	if p.Page < 1 {
 		p.Page = 1
 	}
-	if p.PageSize < 1 || p.PageSize > 200 {
+	if p.PageSize < 10 || p.PageSize > 500 {
 		p.PageSize = 50
 	}
 	switch p.Sort {

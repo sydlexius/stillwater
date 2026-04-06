@@ -53,17 +53,9 @@ func (r *Router) handleListArtistHistory(w http.ResponseWriter, req *http.Reques
 		return
 	}
 
-	limit := intQuery(req, "limit", 50)
+	userID := middleware.UserIDFromContext(req.Context())
+	limit := r.getUserPageSize(req.Context(), userID, intQuery(req, "limit", 0))
 	offset := intQuery(req, "offset", 0)
-
-	// Clamp limit and offset here so the response echoes the effective values
-	// that were actually applied, matching the clamping in HistoryService.List.
-	if limit <= 0 {
-		limit = 50
-	}
-	if limit > 200 {
-		limit = 200
-	}
 	if offset < 0 {
 		offset = 0
 	}
@@ -116,7 +108,8 @@ func (r *Router) handleArtistHistoryTab(w http.ResponseWriter, req *http.Request
 		return
 	}
 
-	limit := intQuery(req, "limit", 25)
+	userID := middleware.UserIDFromContext(req.Context())
+	limit := r.getUserPageSize(req.Context(), userID, intQuery(req, "limit", 0))
 	offset := intQuery(req, "offset", 0)
 
 	changes, total, err := r.historyService.List(req.Context(), artistID, limit, offset)
@@ -275,22 +268,16 @@ func (r *Router) handleListGlobalHistory(w http.ResponseWriter, req *http.Reques
 		return
 	}
 
+	userID := middleware.UserIDFromContext(req.Context())
 	q := req.URL.Query()
 	filter := artist.GlobalHistoryFilter{
 		ArtistID: q.Get("artist_id"),
 		Fields:   parseFilterValues(q["field"]),
 		Sources:  parseFilterValues(q["source"]),
-		Limit:    intQuery(req, "limit", 50),
+		Limit:    r.getUserPageSize(req.Context(), userID, intQuery(req, "limit", 0)),
 		Offset:   intQuery(req, "offset", 0),
 	}
 
-	// Clamp for response echo.
-	if filter.Limit <= 0 {
-		filter.Limit = 50
-	}
-	if filter.Limit > 200 {
-		filter.Limit = 200
-	}
 	if filter.Offset < 0 {
 		filter.Offset = 0
 	}
@@ -328,7 +315,7 @@ func (r *Router) handleActivityPage(w http.ResponseWriter, req *http.Request) {
 		ArtistID: q.Get("artist_id"),
 		Fields:   parseFilterValues(q["field"]),
 		Sources:  parseFilterValues(q["source"]),
-		Limit:    25,
+		Limit:    r.getUserPageSize(req.Context(), userID, 0),
 		Offset:   0,
 	}
 
@@ -371,7 +358,7 @@ func (r *Router) handleActivityContent(w http.ResponseWriter, req *http.Request)
 
 	if r.historyService == nil {
 		r.logger.Warn("activity content requested but history service is not configured")
-		renderTempl(w, req, templates.ActivityContent(templates.ActivityPageData{Limit: 25, BasePath: r.basePath}))
+		renderTempl(w, req, templates.ActivityContent(templates.ActivityPageData{Limit: r.getUserPageSize(req.Context(), userID, 0), BasePath: r.basePath}))
 		return
 	}
 
@@ -380,14 +367,8 @@ func (r *Router) handleActivityContent(w http.ResponseWriter, req *http.Request)
 		ArtistID: q.Get("artist_id"),
 		Fields:   parseFilterValues(q["field"]),
 		Sources:  parseFilterValues(q["source"]),
-		Limit:    intQuery(req, "limit", 25),
+		Limit:    r.getUserPageSize(req.Context(), userID, intQuery(req, "limit", 0)),
 		Offset:   intQuery(req, "offset", 0),
-	}
-	if filter.Limit <= 0 {
-		filter.Limit = 25
-	}
-	if filter.Limit > 200 {
-		filter.Limit = 200
 	}
 	if filter.Offset < 0 {
 		filter.Offset = 0

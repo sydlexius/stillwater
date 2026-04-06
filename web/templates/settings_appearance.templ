@@ -1,6 +1,28 @@
 package templates
 
-import "github.com/sydlexius/stillwater/web/components"
+import (
+	"strconv"
+
+	"github.com/sydlexius/stillwater/web/components"
+)
+
+// UserPreferencesPage renders a standalone page for user-level appearance
+// preferences. It is accessible to all authenticated users (not admin-only).
+templ UserPreferencesPage(assets AssetPaths, prefs AppearancePrefsData) {
+	@Layout(t(ctx, "settings.appearance"), assets) {
+		<div class="space-y-6">
+			<div class="sw-card rounded-lg px-6 py-4">
+				<h1 class="text-2xl font-bold">{ t(ctx, "settings.appearance") }</h1>
+				<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+					{ t(ctx, "settings.appearance.page_desc") }
+				</p>
+			</div>
+			<div data-tab-panel="appearance" class="space-y-6">
+				@settingsAppearanceTab(prefs)
+			</div>
+		</div>
+	}
+}
 
 // AppearancePrefsData holds the current user preference values shown in the
 // Appearance settings tab. All fields are pre-populated from the user_preferences
@@ -17,6 +39,7 @@ type AppearancePrefsData struct {
 	LetterSpacing  string // "normal" | "wide" | "extra-wide"
 	FontSize       string // "small" | "medium" | "large"
 	LiteMode       string // "off" | "on" | "auto"
+	PageSize       int    // Validated page size in the range 10-500; defaults to 50.
 }
 
 // settingsAppearanceTab renders the Appearance settings tab.
@@ -121,6 +144,24 @@ templ settingsAppearanceTab(prefs AppearancePrefsData) {
 					},
 					prefs.ContentWidth,
 				)
+			</div>
+			<!-- Page size -->
+			<div class="flex items-center justify-between gap-4">
+				<div>
+					<div class="text-sm font-medium">{ t(ctx, "settings.appearance.page_size") }</div>
+					<div class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "settings.appearance.page_size_desc") }</div>
+				</div>
+				<input
+					type="number"
+					min="10"
+					max="500"
+					step="1"
+					class="w-20 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500"
+					aria-label={ t(ctx, "settings.appearance.page_size") }
+					id="pref-page-size"
+					value={ strconv.Itoa(prefs.PageSize) }
+					onchange="swSavePageSizePref(this.value)"
+				/>
 			</div>
 		</div>
 	</div>
@@ -282,6 +323,50 @@ templ appearanceScript() {
 							}
 						}
 					}).catch(function () {
+						if (typeof window.showToast === 'function') {
+							showToast('Failed to save preference');
+						}
+					});
+				}
+			};
+
+			// Save the page_size preference. Unlike segmented controls this is a
+			// standalone numeric input, so it gets its own save helper.
+			// The server canonicalizes page_size (e.g. "010" -> "10") via
+			// strconv.Itoa, so we normalize client-side first to match. This lets
+			// swSaveAppearancePref's saved === value check work correctly.
+			window.swSavePageSizePref = function (value) {
+				var n = parseInt(value, 10);
+				var input = document.getElementById('pref-page-size');
+				var cache = window.swPreferences ? window.swPreferences.getCache() : null;
+				var cachedPageSize = (cache && cache.page_size) || '50';
+				if (isNaN(n)) {
+					if (typeof window.showToast === 'function') {
+						showToast('Failed to save preference');
+					}
+					// Restore to the last accepted value from the cache.
+					if (input) input.value = cachedPageSize;
+					return;
+				}
+				var normalized = String(n);
+				var previous = cachedPageSize;
+				// Show the canonical form optimistically.
+				if (input) input.value = normalized;
+				if (window.swPreferences) {
+					window.swPreferences.set('page_size', normalized).then(function (saved) {
+						if (saved === normalized) {
+							if (typeof window.showSuccessToast === 'function') {
+								showSuccessToast('Preference saved');
+							}
+						} else {
+							// Server rejected -- revert the input to the previous value.
+							if (input) input.value = previous;
+							if (typeof window.showToast === 'function') {
+								showToast('Failed to save preference');
+							}
+						}
+					}).catch(function () {
+						if (input) input.value = previous;
 						if (typeof window.showToast === 'function') {
 							showToast('Failed to save preference');
 						}

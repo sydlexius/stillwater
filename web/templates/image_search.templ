@@ -16,7 +16,10 @@ type ImageSearchData struct {
 	WebSearchEnabled bool
 	AutoFetchImages  bool   // When true, auto-search providers on page load
 	SelectedType     string // "thumb", "fanart", "logo", "banner", or "" for generic
+	SelectedIndex    int    // Fanart index for auto-crop; -1 for non-indexed types
 	ProfileName      string // Active platform profile name for image terminology
+	AutoCrop         bool   // When true, auto-open crop modal for the current image on load
+	BasePath         string // Application base path for sub-path deployments
 }
 
 templ ImageSearchPage(assets AssetPaths, data ImageSearchData) {
@@ -24,11 +27,11 @@ templ ImageSearchPage(assets AssetPaths, data ImageSearchData) {
 		<div class="space-y-6">
 			<div class="border-b border-gray-200 dark:border-gray-700 pb-4">
 				<div class="flex items-center gap-2">
-					<a href="/artists" class="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200">
+					<a href={ templ.SafeURL(data.BasePath + "/artists") } class="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200">
 						{ t(ctx, "common.artists") }
 					</a>
 					<span class="text-gray-400">/</span>
-					<a href={ templ.SafeURL("/artists/" + data.Artist.ID) } class="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200">
+					<a href={ templ.SafeURL(data.BasePath + "/artists/" + data.Artist.ID) } class="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200">
 						{ data.Artist.Name }
 					</a>
 					<span class="text-gray-400">/</span>
@@ -47,6 +50,24 @@ templ ImageSearchPage(assets AssetPaths, data ImageSearchData) {
 			@components.ImageCropModal(data.Artist.ID)
 			<link rel="stylesheet" href={ assets.CropperCSS }/>
 			<script src={ assets.CropperJS }></script>
+			if data.AutoCrop && data.SelectedType != "" && imageExistsForType(data.Artist, data.SelectedType) {
+				// Marker element read by the setup script below to auto-open the crop
+				// modal once Cropper.js is ready. The src/type are passed via data
+				// attributes to avoid inline Go string interpolation inside <script>.
+				//
+				// Indexed fanart is intentionally excluded: the crop save endpoint only
+				// carries the image type (no slot index), so auto-opening crop for
+				// /fanart/{index}/file would save the result to the primary fanart
+				// instead of the selected slot.
+				if data.SelectedType != "fanart" || data.SelectedIndex < 0 {
+					<div
+						id="auto-crop-trigger"
+						class="hidden"
+						data-src={ fmt.Sprintf("%s/api/v1/artists/%s/images/%s/file", assets.BasePath, data.Artist.ID, data.SelectedType) }
+						data-type={ data.SelectedType }
+					></div>
+				}
+			}
 			<script>
 				var _cropper = null;
 				var _currentRatio = NaN;
@@ -57,12 +78,13 @@ templ ImageSearchPage(assets AssetPaths, data ImageSearchData) {
 					var cropType = document.getElementById('crop-type');
 					var lockCb = document.getElementById('crop-lock-ratio');
 					cropImage.crossOrigin = 'anonymous';
-					cropImage.src = imgSrc;
 					if (imageType) cropType.value = imageType;
 					modal.classList.remove('hidden');
 					_currentRatio = NaN;
 					_pendingRatio = (initialRatio && initialRatio > 0) ? initialRatio : NaN;
 					if (lockCb) lockCb.checked = false;
+					// Attach handlers before setting src: cached images fire onload
+					// synchronously, so the handler must exist before src is assigned.
 					cropImage.onload = function() {
 						if (_cropper) _cropper.destroy();
 						_cropper = new Cropper(cropImage, {
@@ -87,6 +109,7 @@ templ ImageSearchPage(assets AssetPaths, data ImageSearchData) {
 							statusEl.replaceChildren(s);
 						}
 					};
+					cropImage.src = imgSrc;
 				}
 				function closeCropModal() {
 					var modal = document.getElementById('crop-modal');
@@ -112,6 +135,18 @@ templ ImageSearchPage(assets AssetPaths, data ImageSearchData) {
 						_cropper.setAspectRatio(checked && !isNaN(_currentRatio) ? _currentRatio : NaN);
 					}
 				}
+				// Auto-crop: if the page was navigated with crop=1, open the crop
+				// modal immediately. The trigger element carries the image src and
+				// type via data attributes so no inline Go interpolation is needed.
+				(function() {
+					var trigger = document.getElementById('auto-crop-trigger');
+					if (!trigger) return;
+					var src = trigger.dataset.src;
+					var imgType = trigger.dataset.type;
+					if (src && typeof openCropModal === 'function') {
+						openCropModal(src, imgType);
+					}
+				})();
 			</script>
 		</div>
 	}
@@ -123,84 +158,101 @@ templ imageSearchContextualized(data ImageSearchData) {
 		<section class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
 			<div class="flex items-center justify-between mb-4">
 				<h2 class="text-lg font-semibold">{ tf(ctx, "image.current_type", img.ImageTermFor(data.SelectedType, data.ProfileName)) }</h2>
-				<span class="inline-flex items-center gap-1">
-					@components.ContextMenu("img-actions-"+data.Artist.ID, false) {
-						if data.Artist.MusicBrainzID != "" {
+				<div class="inline-flex items-center gap-1">
+					<div class="relative inline-flex" data-context-menu={ "img-actions-" + data.Artist.ID }>
+						<button
+							type="button"
+							class="inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600"
+							aria-haspopup="true"
+							aria-expanded="false"
+							aria-controls={ "ctx-panel-img-actions-" + data.Artist.ID }
+							onclick={ components.ToggleContextMenu("img-actions-" + data.Artist.ID) }
+						>
+							{ t(ctx, "common.actions") }
+							@components.IconChevronDown("h-4 w-4")
+						</button>
+						<div
+							id={ "ctx-panel-img-actions-" + data.Artist.ID }
+							class="hidden absolute right-0 top-full z-40 mt-1 min-w-[12rem] rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 py-1 shadow-lg"
+							role="menu"
+						>
+							if data.Artist.MusicBrainzID != "" {
+								<button
+									type="button"
+									role="menuitem"
+									class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+									hx-get={ fmt.Sprintf("/api/v1/artists/%s/images/search?type=%s", data.Artist.ID, data.SelectedType) }
+									hx-target="#image-results"
+									hx-swap="innerHTML"
+									hx-indicator="#search-spinner"
+								>
+									{ t(ctx, "image.fetch") }
+								</button>
+							}
+							if data.WebSearchEnabled {
+								<button
+									type="button"
+									role="menuitem"
+									class="flex w-full items-center gap-2 px-3 py-2 text-sm text-purple-700 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-900/20"
+									hx-get={ fmt.Sprintf("/api/v1/artists/%s/images/websearch?type=%s", data.Artist.ID, data.SelectedType) }
+									hx-target="#image-results"
+									hx-swap="innerHTML"
+									hx-indicator="#search-spinner"
+								>
+									{ t(ctx, "image.web_search") }
+								</button>
+							}
+							if data.Artist.MusicBrainzID != "" || data.WebSearchEnabled {
+								<div class="my-1 border-t border-gray-200 dark:border-gray-700"></div>
+							}
 							<button
 								type="button"
 								role="menuitem"
 								class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-								hx-get={ fmt.Sprintf("/api/v1/artists/%s/images/search?type=%s", data.Artist.ID, data.SelectedType) }
-								hx-target="#image-results"
-								hx-swap="innerHTML"
-								hx-indicator="#search-spinner"
+								onclick="var m=this.closest('[data-context-menu]');m.querySelector('[role=menu]').classList.add('hidden');m.querySelector('[aria-haspopup]').setAttribute('aria-expanded','false');document.getElementById('image-file-input').click()"
 							>
-								{ t(ctx, "image.fetch") }
+								{ t(ctx, "image.browse") }
 							</button>
-						}
-						if data.WebSearchEnabled {
-							<button
-								type="button"
-								role="menuitem"
-								class="flex w-full items-center gap-2 px-3 py-2 text-sm text-purple-700 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-900/20"
-								hx-get={ fmt.Sprintf("/api/v1/artists/%s/images/websearch?type=%s", data.Artist.ID, data.SelectedType) }
-								hx-target="#image-results"
-								hx-swap="innerHTML"
-								hx-indicator="#search-spinner"
-							>
-								{ t(ctx, "image.web_search") }
-							</button>
-						}
-						if data.Artist.MusicBrainzID != "" || data.WebSearchEnabled {
-							<div class="my-1 border-t border-gray-200 dark:border-gray-700"></div>
-						}
-						<button
-							type="button"
-							role="menuitem"
-							class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-							onclick="var m=this.closest('[data-context-menu]');m.querySelector('[role=menu]').classList.add('hidden');m.querySelector('[aria-haspopup]').setAttribute('aria-expanded','false');document.getElementById('image-file-input').click()"
-						>
-							{ t(ctx, "image.browse") }
-						</button>
-						<button
-							type="button"
-							role="menuitem"
-							class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-							onclick="var m=this.closest('[data-context-menu]');m.querySelector('[role=menu]').classList.add('hidden');m.querySelector('[aria-haspopup]').setAttribute('aria-expanded','false');document.getElementById('fetch-url-modal').classList.remove('hidden')"
-						>
-							{ t(ctx, "image.fetch_from_url") }
-						</button>
-						if imageExistsForType(data.Artist, data.SelectedType) {
-							<div class="my-1 border-t border-gray-200 dark:border-gray-700"></div>
 							<button
 								type="button"
 								role="menuitem"
 								class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-								onclick={ openCropForType(fmt.Sprintf("/api/v1/artists/%s/images/%s/file", data.Artist.ID, data.SelectedType), data.SelectedType) }
+								onclick="var m=this.closest('[data-context-menu]');m.querySelector('[role=menu]').classList.add('hidden');m.querySelector('[aria-haspopup]').setAttribute('aria-expanded','false');document.getElementById('fetch-url-modal').classList.remove('hidden')"
 							>
-								{ t(ctx, "common.crop") }
+								{ t(ctx, "image.fetch_from_url") }
 							</button>
-							<button
-								type="button"
-								role="menuitem"
-								class="flex w-full items-center gap-2 px-3 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
-								hx-delete={ fmt.Sprintf("/api/v1/artists/%s/images/%s", data.Artist.ID, data.SelectedType) }
-								hx-confirm={ tf(ctx, "image.confirm_delete_type", imageTypeLabel(data.SelectedType, data.ProfileName)) }
-								data-confirm-key="image-delete"
-								hx-swap="none"
-								hx-on::after-request="if(event.detail.successful) window.location.reload()"
-							>
-								{ t(ctx, "common.delete") }
-							</button>
-						}
-					}
+							if imageExistsForType(data.Artist, data.SelectedType) {
+								<div class="my-1 border-t border-gray-200 dark:border-gray-700"></div>
+								<button
+									type="button"
+									role="menuitem"
+									class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+									onclick={ openCropForType(data.BasePath+fmt.Sprintf("/api/v1/artists/%s/images/%s/file", data.Artist.ID, data.SelectedType), data.SelectedType) }
+								>
+									{ t(ctx, "common.crop") }
+								</button>
+								<button
+									type="button"
+									role="menuitem"
+									class="flex w-full items-center gap-2 px-3 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
+									hx-delete={ fmt.Sprintf("/api/v1/artists/%s/images/%s", data.Artist.ID, data.SelectedType) }
+									hx-confirm={ tf(ctx, "image.confirm_delete_type", imageTypeLabel(data.SelectedType, data.ProfileName)) }
+									data-confirm-key="image-delete"
+									hx-swap="none"
+									hx-on::after-request="if(event.detail.successful) window.location.reload()"
+								>
+									{ t(ctx, "common.delete") }
+								</button>
+							}
+						</div>
+					</div>
 					<span id="search-spinner" class="htmx-indicator">
 						<svg class="h-4 w-4 animate-spin text-gray-400" fill="none" viewBox="0 0 24 24">
 							<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
 							<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
 						</svg>
 					</span>
-				</span>
+				</div>
 			</div>
 			// -- Image display / drag-drop target --
 			<div
@@ -214,7 +266,7 @@ templ imageSearchContextualized(data ImageSearchData) {
 			>
 				if imageExistsForType(data.Artist, data.SelectedType) {
 					<img
-						src={ fmt.Sprintf("/api/v1/artists/%s/images/%s/file", data.Artist.ID, data.SelectedType) }
+						src={ fmt.Sprintf("%s/api/v1/artists/%s/images/%s/file", data.BasePath, data.Artist.ID, data.SelectedType) }
 						alt={ img.ImageTermFor(data.SelectedType, data.ProfileName) }
 						class="max-w-full max-h-96 object-contain"
 					/>
@@ -298,7 +350,7 @@ templ imageSearchContextualized(data ImageSearchData) {
 							}
 						>
 							<img
-								src={ fmt.Sprintf("/api/v1/artists/%s/images/%s/file", data.Artist.ID, data.SelectedType) }
+								src={ fmt.Sprintf("%s/api/v1/artists/%s/images/%s/file", data.BasePath, data.Artist.ID, data.SelectedType) }
 								alt={ t(ctx, "image.current_image") }
 								class="max-w-full max-h-64 object-contain"
 							/>
@@ -782,5 +834,13 @@ func imageTypeLabel(t, profileName string) string {
 }
 
 script openCropForType(imgSrc string, imageType string) {
+	// Close the context menu before opening the crop modal so the dropdown
+	// does not stay visible behind the modal overlay.
+	var menus = document.querySelectorAll('[data-context-menu] [role=menu]:not(.hidden)');
+	for (var i = 0; i < menus.length; i++) {
+		menus[i].classList.add('hidden');
+		var trigger = menus[i].closest('[data-context-menu]').querySelector('[aria-haspopup]');
+		if (trigger) trigger.setAttribute('aria-expanded', 'false');
+	}
 	openCropModal(imgSrc, imageType);
 }

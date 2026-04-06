@@ -197,14 +197,14 @@ func TestHistoryService_List(t *testing.T) {
 		}
 	})
 
-	t.Run("clamps limit to maximum of 200", func(t *testing.T) {
+	t.Run("clamps limit to maximum of 500", func(t *testing.T) {
 		// Should not error; limit is silently clamped.
 		changes, _, err := svc.List(ctx, artistID, 999, 0)
 		if err != nil {
 			t.Fatalf("List() error = %v", err)
 		}
-		if len(changes) > 200 {
-			t.Errorf("len(changes) = %d, want <= 200", len(changes))
+		if len(changes) > 500 {
+			t.Errorf("len(changes) = %d, want <= 500", len(changes))
 		}
 	})
 

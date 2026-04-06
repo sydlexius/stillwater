@@ -23,15 +23,10 @@ func (r *Router) handleDashboardActionQueue(w http.ResponseWriter, req *http.Req
 	ctx := req.Context()
 
 	category := req.URL.Query().Get("category")
-	limit := intQuery(req, "limit", 25)
+	limit := r.getUserPageSize(ctx, userID, intQuery(req, "limit", 0))
 	offset := intQuery(req, "offset", 0)
 
 	// Clamp pagination values to prevent abuse and invalid paging.
-	if limit <= 0 {
-		limit = 25
-	} else if limit > 100 {
-		limit = 100
-	}
 	if offset < 0 {
 		offset = 0
 	}

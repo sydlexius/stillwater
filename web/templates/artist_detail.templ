@@ -441,7 +441,7 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 					templ.KV("hidden", normalizeTab(data.ActiveTab) != "images"),
 				}
 			>
-				@ArtistImagesTab(data.Artist.ID, &data.Artist, data.ProfileName)
+				@ArtistImagesTab(data.Artist.ID, &data.Artist, data.ProfileName, assets.BasePath)
 			</div>
 			// -- Providers --
 			<div

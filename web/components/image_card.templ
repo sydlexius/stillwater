@@ -45,6 +45,18 @@ func normalizeCardImageType(t string) string {
 	}
 }
 
+// imageCardTypeLabel returns a human-readable display label for an image type.
+// Provider-specific variant names (hdlogo, widethumb, background) are normalized
+// to their base type before looking up the default display name.
+func imageCardTypeLabel(rawType string) string {
+	base := normalizeCardImageType(rawType)
+	label := img.ImageTermFor(base, "")
+	if label == "" {
+		return rawType
+	}
+	return label
+}
+
 templ ImageCard(artistID string, img provider.ImageResult) {
 	<div
 		class={ "relative rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden group hover:border-blue-400 dark:hover:border-blue-500 transition-colors", }
@@ -80,8 +92,8 @@ templ ImageCard(artistID string, img provider.ImageResult) {
 				<span class={ "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium", sourceBadgeColor(img.Source) }>
 					{ provider.ProviderName(img.Source).DisplayName() }
 				</span>
-				<span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-400">
-					{ string(img.Type) }
+				<span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs font-medium text-gray-600 dark:text-gray-400">
+					{ imageCardTypeLabel(string(img.Type)) }
 				</span>
 			</div>
 			<div class="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">

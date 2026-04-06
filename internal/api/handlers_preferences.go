@@ -1,12 +1,15 @@
 package api
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/sydlexius/stillwater/internal/api/middleware"
+	"github.com/sydlexius/stillwater/web/templates"
 )
 
 // Preference key constants. Use these instead of raw strings when referencing
@@ -24,12 +27,19 @@ const (
 	PrefLiteMode            = "lite_mode"
 	PrefLanguage            = "language"
 	PrefNotificationEnabled = "notification_enabled"
+	PrefPageSize            = "page_size"
 
 	// PrefSuppressConfirmPrefix is the prefix for per-action confirm suppression
 	// preferences. Keys have the form "suppress_confirm_{action}" and accept
 	// "true" or "false". These are not listed in preferenceDefaults because they
 	// are created dynamically by the UI as the user opts out of specific dialogs.
 	PrefSuppressConfirmPrefix = "suppress_confirm_"
+
+	// PageSizeDefault is the default number of items per page.
+	// PageSizeMin and PageSizeMax define the allowed range for the page_size preference.
+	PageSizeDefault = 50
+	PageSizeMin     = 10
+	PageSizeMax     = 500
 )
 
 // preferenceDef describes a valid preference key, its default value, and allowed values.
@@ -71,6 +81,29 @@ func init() {
 	}
 }
 
+// isPageSizeKey reports whether key is the page_size preference key.
+// page_size is validated as an integer in [PageSizeMin, PageSizeMax] and is
+// not listed in preferenceDefaults because its allowed values form a range
+// rather than a fixed set of strings.
+func isPageSizeKey(key string) bool {
+	return key == PrefPageSize
+}
+
+// normalizePageSize parses a raw page_size string and returns the canonical
+// decimal form when it is a valid integer in [PageSizeMin, PageSizeMax].
+// Invalid or out-of-range values fall back to PageSizeDefault, matching the
+// same strategy used by getUserPageSize on the read path.
+func normalizePageSize(raw string) string {
+	n, err := strconv.Atoi(raw)
+	if err != nil {
+		return strconv.Itoa(PageSizeDefault)
+	}
+	if n < PageSizeMin || n > PageSizeMax {
+		return strconv.Itoa(PageSizeDefault)
+	}
+	return strconv.Itoa(n)
+}
+
 // isSuppressConfirmKey reports whether key is a valid per-action confirm
 // suppression preference (prefix "suppress_confirm_" followed by at least one
 // character that is a lowercase letter, digit, or underscore).
@@ -93,6 +126,7 @@ func isSuppressConfirmKey(key string) bool {
 // handleGetPreference returns a single preference for the authenticated user.
 // For fixed preference keys the value is merged with the compiled default.
 // For suppress_confirm_* keys a missing row returns "false".
+// For page_size a missing row returns the string representation of PageSizeDefault.
 // GET /api/v1/preferences/{key}
 func (r *Router) handleGetPreference(w http.ResponseWriter, req *http.Request) {
 	userID := middleware.UserIDFromContext(req.Context())
@@ -108,7 +142,8 @@ func (r *Router) handleGetPreference(w http.ResponseWriter, req *http.Request) {
 
 	def, known := preferenceDefaults[key]
 	suppressKey := isSuppressConfirmKey(key)
-	if !known && !suppressKey {
+	pageSizeKey := isPageSizeKey(key)
+	if !known && !suppressKey && !pageSizeKey {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unknown preference key"})
 		return
 	}
@@ -123,10 +158,23 @@ func (r *Router) handleGetPreference(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		// No stored row -- use default.
-		if suppressKey {
+		switch {
+		case suppressKey:
 			value = "false"
-		} else {
+		case pageSizeKey:
+			value = strconv.Itoa(PageSizeDefault)
+		default:
 			value = def.defaultValue
+		}
+	}
+
+	// Canonicalize page_size so stale or manually edited DB rows always
+	// return a clean decimal string in range.
+	if pageSizeKey {
+		if normalized := normalizePageSize(value); normalized != value {
+			r.logger.Warn("stored page_size normalized on read",
+				"user_id", userID, "raw_value", value, "normalized", normalized)
+			value = normalized
 		}
 	}
 
@@ -143,11 +191,12 @@ func (r *Router) handleGetPreferences(w http.ResponseWriter, req *http.Request) 
 		return
 	}
 
-	// Start with defaults.
-	prefs := make(map[string]string, len(preferenceDefaults))
+	// Start with defaults (fixed keys + page_size).
+	prefs := make(map[string]string, len(preferenceDefaults)+1)
 	for k, def := range preferenceDefaults {
 		prefs[k] = def.defaultValue
 	}
+	prefs[PrefPageSize] = strconv.Itoa(PageSizeDefault)
 
 	// Overlay with stored values.
 	rows, err := r.db.QueryContext(req.Context(),
@@ -167,8 +216,17 @@ func (r *Router) handleGetPreferences(w http.ResponseWriter, req *http.Request) 
 			return
 		}
 		// Only include known keys (ignore stale rows from removed preferences).
-		if _, known := preferenceDefaults[k]; known {
+		// page_size is valid but not in preferenceDefaults (range-based, not enum).
+		_, known := preferenceDefaults[k]
+		if known {
 			prefs[k] = v
+		} else if isPageSizeKey(k) {
+			normalized := normalizePageSize(v)
+			if normalized != v {
+				r.logger.Warn("stored page_size normalized on read",
+					"user_id", userID, "raw_value", v, "normalized", normalized)
+			}
+			prefs[k] = normalized
 		}
 	}
 	if err := rows.Err(); err != nil {
@@ -196,7 +254,8 @@ func (r *Router) handleUpdatePreference(w http.ResponseWriter, req *http.Request
 
 	def, known := preferenceDefaults[key]
 	suppressKey := isSuppressConfirmKey(key)
-	if !known && !suppressKey {
+	pageSizeKey := isPageSizeKey(key)
+	if !known && !suppressKey && !pageSizeKey {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unknown preference key"})
 		return
 	}
@@ -210,10 +269,19 @@ func (r *Router) handleUpdatePreference(w http.ResponseWriter, req *http.Request
 
 	// Validate value against allowed list.
 	// suppress_confirm_* keys only accept "true" or "false".
+	// page_size must be an integer in [PageSizeMin, PageSizeMax].
 	var valid bool
-	if suppressKey {
+	switch {
+	case suppressKey:
 		valid = body.Value == "true" || body.Value == "false"
-	} else {
+	case pageSizeKey:
+		n, err := strconv.Atoi(body.Value)
+		valid = err == nil && n >= PageSizeMin && n <= PageSizeMax
+		if valid {
+			// Normalize to canonical decimal so "+10" or "010" is stored as "10".
+			body.Value = strconv.Itoa(n)
+		}
+	default:
 		for _, allowed := range def.allowedValues {
 			if body.Value == allowed {
 				valid = true
@@ -238,4 +306,126 @@ func (r *Router) handleUpdatePreference(w http.ResponseWriter, req *http.Request
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"key": key, "value": body.Value})
+}
+
+// handleUserPreferencesPage renders the user preferences page (accessible to
+// all authenticated users). It loads all preference values from the database
+// and falls back to compiled defaults for any missing keys.
+// GET /preferences
+func (r *Router) handleUserPreferencesPage(w http.ResponseWriter, req *http.Request) {
+	userID := middleware.UserIDFromContext(req.Context())
+	if userID == "" {
+		r.renderLoginPage(w, req)
+		return
+	}
+
+	ctx := req.Context()
+
+	// Load all stored preferences for this user.
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT key, value FROM user_preferences WHERE user_id = ?`, userID)
+	if err != nil {
+		r.logger.Error("querying user preferences for page", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close() //nolint:errcheck
+
+	stored := make(map[string]string)
+	for rows.Next() {
+		var k, v string
+		if err := rows.Scan(&k, &v); err != nil {
+			r.logger.Error("scanning user preference", "error", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		stored[k] = v
+	}
+	if err := rows.Err(); err != nil {
+		r.logger.Error("iterating user preferences", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	pref := func(key string) string {
+		if v, ok := stored[key]; ok {
+			return v
+		}
+		if def, ok := preferenceDefaults[key]; ok {
+			return def.defaultValue
+		}
+		return ""
+	}
+
+	// Parse page_size as integer; fall back to default.
+	pageSize := PageSizeDefault
+	if v, ok := stored[PrefPageSize]; ok {
+		if n, err2 := strconv.Atoi(v); err2 == nil && n >= PageSizeMin && n <= PageSizeMax {
+			pageSize = n
+		} else {
+			r.logger.Warn("stored page_size invalid for preferences page, using default",
+				"user_id", userID, "raw_value", v)
+		}
+	}
+
+	prefs := templates.AppearancePrefsData{
+		Theme:          pref(PrefTheme),
+		GlassIntensity: pref(PrefGlassIntensity),
+		ThumbnailSize:  pref(PrefThumbnailSize),
+		SidebarState:   pref(PrefSidebarState),
+		ContentWidth:   pref(PrefContentWidth),
+		ReducedMotion:  pref(PrefReducedMotion),
+		Language:       pref(PrefLanguage),
+		FontFamily:     pref(PrefFontFamily),
+		LetterSpacing:  pref(PrefLetterSpacing),
+		FontSize:       pref(PrefFontSize),
+		LiteMode:       pref(PrefLiteMode),
+		PageSize:       pageSize,
+	}
+
+	renderTempl(w, req, templates.UserPreferencesPage(r.assetsFor(req), prefs))
+}
+
+// getUserPageSize reads the page_size preference for the given user from the
+// database. If no preference is stored or the stored value is out of range,
+// PageSizeDefault is returned. The query param value (queryParam) takes
+// precedence when it is non-zero, allowing API callers to override the user
+// preference on a per-request basis.
+func (r *Router) getUserPageSize(ctx context.Context, userID string, queryParam int) int {
+	// Explicit query parameter overrides the stored preference.
+	if queryParam > 0 {
+		if queryParam < PageSizeMin {
+			return PageSizeMin
+		}
+		if queryParam > PageSizeMax {
+			return PageSizeMax
+		}
+		return queryParam
+	}
+
+	if userID == "" {
+		return PageSizeDefault
+	}
+
+	var raw string
+	err := r.db.QueryRowContext(ctx,
+		`SELECT value FROM user_preferences WHERE user_id = ? AND key = ?`, userID, PrefPageSize).Scan(&raw)
+	if err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
+			r.logger.Warn("querying user page size preference", "user_id", userID, "error", err)
+		}
+		return PageSizeDefault
+	}
+	n, parseErr := strconv.Atoi(raw)
+	if parseErr != nil {
+		r.logger.Warn("stored page_size is not a valid integer, using default",
+			"user_id", userID, "raw_value", raw, "error", parseErr)
+		return PageSizeDefault
+	}
+	if n < PageSizeMin || n > PageSizeMax {
+		r.logger.Warn("stored page_size is out of range, using default",
+			"user_id", userID, "value", n, "min", PageSizeMin, "max", PageSizeMax)
+		return PageSizeDefault
+	}
+	return n
 }

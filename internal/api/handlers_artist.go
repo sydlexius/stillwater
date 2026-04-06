@@ -17,9 +17,10 @@ import (
 // handleListArtists returns paginated artist list as JSON.
 // GET /api/v1/artists
 func (r *Router) handleListArtists(w http.ResponseWriter, req *http.Request) {
+	userID := middleware.UserIDFromContext(req.Context())
 	params := artist.ListParams{
 		Page:      intQuery(req, "page", 1),
-		PageSize:  intQuery(req, "page_size", 50),
+		PageSize:  r.getUserPageSize(req.Context(), userID, intQuery(req, "page_size", 0)),
 		Sort:      req.URL.Query().Get("sort"),
 		Order:     req.URL.Query().Get("order"),
 		Search:    req.URL.Query().Get("search"),
@@ -126,7 +127,7 @@ func (r *Router) handleArtistsPage(w http.ResponseWriter, req *http.Request) {
 
 	params := artist.ListParams{
 		Page:      intQuery(req, "page", 1),
-		PageSize:  intQuery(req, "page_size", 50),
+		PageSize:  r.getUserPageSize(req.Context(), userID, intQuery(req, "page_size", 0)),
 		Sort:      req.URL.Query().Get("sort"),
 		Order:     req.URL.Query().Get("order"),
 		Search:    req.URL.Query().Get("search"),
@@ -441,12 +442,18 @@ func (r *Router) handleArtistImagesPage(w http.ResponseWriter, req *http.Request
 		selectedType = ""
 	}
 
+	autoCrop := req.URL.Query().Get("crop") == "1"
+	selectedIndex := intQuery(req, "index", -1)
+
 	data := templates.ImageSearchData{
 		Artist:           *a,
 		WebSearchEnabled: webSearchEnabled,
 		AutoFetchImages:  autoFetch,
 		SelectedType:     selectedType,
+		SelectedIndex:    selectedIndex,
 		ProfileName:      r.getActiveProfileName(req.Context()),
+		AutoCrop:         autoCrop,
+		BasePath:         r.basePath,
 	}
 	renderTempl(w, req, templates.ImageSearchPage(r.assetsFor(req), data))
 }

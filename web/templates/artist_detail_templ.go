@@ -1353,7 +1353,7 @@ func ArtistDetailPage(assets AssetPaths, data ArtistDetailData) templ.Component 
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = ArtistImagesTab(data.Artist.ID, &data.Artist, data.ProfileName).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = ArtistImagesTab(data.Artist.ID, &data.Artist, data.ProfileName, assets.BasePath).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

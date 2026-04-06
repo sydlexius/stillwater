@@ -184,13 +184,13 @@ func TestHandleListArtistHistory_Pagination(t *testing.T) {
 
 	a := addTestArtist(t, artistSvc, "Pagination Artist")
 
-	// Insert 5 changes.
-	for i := 0; i < 5; i++ {
+	// Insert 15 changes. Minimum allowed limit is PageSizeMin (10).
+	for i := 0; i < 15; i++ {
 		addHistoryChange(t, historySvc, a.ID, "biography", "", "value", "manual")
 	}
 
-	// Request first page of 3.
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/artists/"+a.ID+"/history?limit=3&offset=0", nil)
+	// Request first page of 10.
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/artists/"+a.ID+"/history?limit=10&offset=0", nil)
 	req.SetPathValue("id", a.ID)
 	w := httptest.NewRecorder()
 	r.handleListArtistHistory(w, req)
@@ -208,21 +208,21 @@ func TestHandleListArtistHistory_Pagination(t *testing.T) {
 	if !ok {
 		t.Fatal("changes is not []any")
 	}
-	if len(changes) != 3 {
-		t.Errorf("first page len(changes) = %d, want 3", len(changes))
+	if len(changes) != 10 {
+		t.Errorf("first page len(changes) = %d, want 10", len(changes))
 	}
-	if resp["total"] != float64(5) {
-		t.Errorf("total = %v, want 5", resp["total"])
+	if resp["total"] != float64(15) {
+		t.Errorf("total = %v, want 15", resp["total"])
 	}
-	if resp["limit"] != float64(3) {
-		t.Errorf("limit = %v, want 3", resp["limit"])
+	if resp["limit"] != float64(10) {
+		t.Errorf("limit = %v, want 10", resp["limit"])
 	}
 	if resp["offset"] != float64(0) {
 		t.Errorf("offset = %v, want 0", resp["offset"])
 	}
 
 	// Request second page.
-	req2 := httptest.NewRequest(http.MethodGet, "/api/v1/artists/"+a.ID+"/history?limit=3&offset=3", nil)
+	req2 := httptest.NewRequest(http.MethodGet, "/api/v1/artists/"+a.ID+"/history?limit=10&offset=10", nil)
 	req2.SetPathValue("id", a.ID)
 	w2 := httptest.NewRecorder()
 	r.handleListArtistHistory(w2, req2)
@@ -239,8 +239,8 @@ func TestHandleListArtistHistory_Pagination(t *testing.T) {
 	if !ok2 {
 		t.Fatal("changes2 is not []any")
 	}
-	if len(changes2) != 2 {
-		t.Errorf("second page len(changes) = %d, want 2", len(changes2))
+	if len(changes2) != 5 {
+		t.Errorf("second page len(changes) = %d, want 5", len(changes2))
 	}
 }
 
