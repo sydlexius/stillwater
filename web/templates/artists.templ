@@ -714,7 +714,7 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 						spinner.classList.add('hidden');
 						label.textContent = btn.dataset.labelScan || 'Scan Library';
 					}
-					pollAsyncStatus('/api/v1/scanner/status', {
+					pollAsyncStatus(_artistsBp + '/api/v1/scanner/status', {
 						onData: function(data) {
 							if (data.status === 'completed' || data.status === 'failed') {
 								resetScanUI();

@@ -251,7 +251,7 @@ templ imageOverlay(artistID string, imageType string, index int) {
 				hx-confirm={ t(ctx, "image.confirm_trim_logo") }
 				hx-swap="none"
 				data-msg-failed={ t(ctx, "image.trim_failed") }
-				hx-on::after-request="if(event.detail.successful) window.location.reload(); else alert(this.dataset.msgFailed.replace('%s', event.detail.xhr.responseText));"
+				hx-on::after-request="if(event.detail.successful) window.location.reload(); else alert(this.dataset.msgFailed.replace('%s', function(){return event.detail.xhr.responseText;}));"
 				class="p-2 rounded-full bg-black/40 hover:bg-black/60 text-white transition-colors shadow-sm"
 				title={ t(ctx, "image.trim_transparent_edges") }
 				aria-label={ t(ctx, "image.trim_transparent_edges") }
@@ -266,7 +266,7 @@ templ imageOverlay(artistID string, imageType string, index int) {
 				hx-confirm={ tf(ctx, "image.confirm_delete_type", localizedImageType(ctx, imageType)) }
 				hx-swap="none"
 				data-msg-failed={ t(ctx, "image.delete_failed") }
-				hx-on::after-request="if(event.detail.successful) window.location.reload(); else alert(this.dataset.msgFailed.replace('%s', event.detail.xhr.responseText));"
+				hx-on::after-request="if(event.detail.successful) window.location.reload(); else alert(this.dataset.msgFailed.replace('%s', function(){return event.detail.xhr.responseText;}));"
 				class="p-2 rounded-full bg-black/40 hover:bg-red-500/80 text-white transition-colors shadow-sm"
 				title={ t(ctx, "common.delete") }
 				aria-label={ tf(ctx, "image.delete_type", localizedImageType(ctx, imageType)) }
@@ -279,7 +279,7 @@ templ imageOverlay(artistID string, imageType string, index int) {
 				hx-confirm={ tf(ctx, "image.confirm_delete_type", localizedImageType(ctx, imageType)) }
 				hx-swap="none"
 				data-msg-failed={ t(ctx, "image.delete_failed") }
-				hx-on::after-request="if(event.detail.successful) window.location.reload(); else alert(this.dataset.msgFailed.replace('%s', event.detail.xhr.responseText));"
+				hx-on::after-request="if(event.detail.successful) window.location.reload(); else alert(this.dataset.msgFailed.replace('%s', function(){return event.detail.xhr.responseText;}));"
 				class="p-2 rounded-full bg-black/40 hover:bg-red-500/80 text-white transition-colors shadow-sm"
 				title={ t(ctx, "common.delete") }
 				aria-label={ tf(ctx, "image.delete_type", localizedImageType(ctx, imageType)) }
