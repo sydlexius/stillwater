@@ -278,10 +278,6 @@ func (r *Router) handleListGlobalHistory(w http.ResponseWriter, req *http.Reques
 		Offset:   intQuery(req, "offset", 0),
 	}
 
-	// Clamp for response echo.
-	if filter.Limit > PageSizeMax {
-		filter.Limit = PageSizeMax
-	}
 	if filter.Offset < 0 {
 		filter.Offset = 0
 	}
@@ -373,9 +369,6 @@ func (r *Router) handleActivityContent(w http.ResponseWriter, req *http.Request)
 		Sources:  parseFilterValues(q["source"]),
 		Limit:    r.getUserPageSize(req.Context(), userID, intQuery(req, "limit", 0)),
 		Offset:   intQuery(req, "offset", 0),
-	}
-	if filter.Limit > PageSizeMax {
-		filter.Limit = PageSizeMax
 	}
 	if filter.Offset < 0 {
 		filter.Offset = 0
