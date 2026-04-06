@@ -12,7 +12,7 @@ import (
 // ArtistImagesTab renders the gallery-by-type Images tab for the artist detail page.
 // Each image type (thumbnail, fanart/backdrop, logo, banner) gets its own section
 // with a header, count badge, and either the image(s) or an empty-state placeholder.
-templ ArtistImagesTab(artistID string, a *artist.Artist, profileName string) {
+templ ArtistImagesTab(artistID string, a *artist.Artist, profileName string, basePath string) {
 	<div class="space-y-8">
 		// -- Thumbnail section (1:1) --
 		@imageSectionWithAction(
@@ -29,7 +29,7 @@ templ ArtistImagesTab(artistID string, a *artist.Artist, profileName string) {
 							alt={ tf(ctx, "image.alt_artist_type", a.Name, localizedImageType(ctx, "thumb")) }
 							class="w-full h-full object-cover"
 						/>
-						@imageOverlay(artistID, "thumb", -1)
+						@imageOverlay(artistID, "thumb", -1, basePath)
 					</div>
 					<div
 						class="text-sm text-gray-500 dark:text-gray-400 space-y-1"
@@ -82,7 +82,7 @@ templ ArtistImagesTab(artistID string, a *artist.Artist, profileName string) {
 							alt={ tf(ctx, "image.alt_artist_type", a.Name, localizedImageType(ctx, "logo")) }
 							class="max-h-32 w-auto object-contain"
 						/>
-						@imageOverlay(artistID, "logo", -1)
+						@imageOverlay(artistID, "logo", -1, basePath)
 					</div>
 					<div
 						class="text-sm text-gray-500 dark:text-gray-400"
@@ -111,7 +111,7 @@ templ ArtistImagesTab(artistID string, a *artist.Artist, profileName string) {
 							alt={ tf(ctx, "image.alt_artist_type", a.Name, localizedImageType(ctx, "banner")) }
 							class="w-full h-full object-cover"
 						/>
-						@imageOverlay(artistID, "banner", -1)
+						@imageOverlay(artistID, "banner", -1, basePath)
 					</div>
 					<div
 						class="text-sm text-gray-500 dark:text-gray-400"
@@ -262,13 +262,13 @@ templ countBadge(count int) {
 // imageOverlay renders the semi-transparent hover overlay with action buttons
 // for a single image. When index is -1, the image type uses non-indexed URLs
 // (thumb, logo, banner). When index >= 0, index-based URLs are used (fanart).
-templ imageOverlay(artistID string, imageType string, index int) {
+templ imageOverlay(artistID string, imageType string, index int, basePath string) {
 	<div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity flex items-center justify-center gap-3">
 		// View full-size (opens lightbox overlay)
 		if index >= 0 {
 			<button
 				type="button"
-				onclick={ openImageLightbox(fmt.Sprintf("/api/v1/artists/%s/images/%s/%d/file", artistID, imageType, index), tf(ctx, "image.view_full_size_type", localizedImageType(ctx, imageType))) }
+				onclick={ openImageLightbox(fmt.Sprintf("%s/api/v1/artists/%s/images/%s/%d/file", basePath, artistID, imageType, index), tf(ctx, "image.view_full_size_type", localizedImageType(ctx, imageType))) }
 				class="p-2 rounded-full bg-black/40 hover:bg-black/60 text-white transition-colors shadow-sm"
 				title={ t(ctx, "image.view_full_size") }
 				aria-label={ tf(ctx, "image.view_full_size_type", localizedImageType(ctx, imageType)) }
@@ -278,7 +278,7 @@ templ imageOverlay(artistID string, imageType string, index int) {
 		} else {
 			<button
 				type="button"
-				onclick={ openImageLightbox(fmt.Sprintf("/api/v1/artists/%s/images/%s/file", artistID, imageType), tf(ctx, "image.view_full_size_type", localizedImageType(ctx, imageType))) }
+				onclick={ openImageLightbox(fmt.Sprintf("%s/api/v1/artists/%s/images/%s/file", basePath, artistID, imageType), tf(ctx, "image.view_full_size_type", localizedImageType(ctx, imageType))) }
 				class="p-2 rounded-full bg-black/40 hover:bg-black/60 text-white transition-colors shadow-sm"
 				title={ t(ctx, "image.view_full_size") }
 				aria-label={ tf(ctx, "image.view_full_size_type", localizedImageType(ctx, imageType)) }
@@ -288,7 +288,7 @@ templ imageOverlay(artistID string, imageType string, index int) {
 		}
 		// Replace (navigates to image search with auto-fetch)
 		<a
-			href={ templ.SafeURL(fmt.Sprintf("/artists/%s/images?type=%s&fetch=1", artistID, imageType)) }
+			href={ templ.SafeURL(fmt.Sprintf("%s/artists/%s/images?type=%s&fetch=1", basePath, artistID, imageType)) }
 			class="p-2 rounded-full bg-black/40 hover:bg-black/60 text-white transition-colors shadow-sm"
 			title={ t(ctx, "common.replace") }
 			aria-label={ tf(ctx, "image.replace_type", localizedImageType(ctx, imageType)) }
@@ -296,14 +296,27 @@ templ imageOverlay(artistID string, imageType string, index int) {
 			@components.IconArrowUpTray("w-5 h-5")
 		</a>
 		// Crop (navigates to image management page with crop modal auto-opened)
-		<a
-			href={ templ.SafeURL(fmt.Sprintf("/artists/%s/images?type=%s&crop=1", artistID, imageType)) }
-			class="p-2 rounded-full bg-black/40 hover:bg-black/60 text-white transition-colors shadow-sm"
-			title={ t(ctx, "common.crop") }
-			aria-label={ tf(ctx, "image.crop_type", localizedImageType(ctx, imageType)) }
-		>
-			@components.IconScissors("w-5 h-5")
-		</a>
+		// For indexed types (fanart index >= 0), pass the index so the target page
+		// opens the correct image rather than the primary.
+		if index >= 0 {
+			<a
+				href={ templ.SafeURL(fmt.Sprintf("%s/artists/%s/images?type=%s&crop=1&index=%d", basePath, artistID, imageType, index)) }
+				class="p-2 rounded-full bg-black/40 hover:bg-black/60 text-white transition-colors shadow-sm"
+				title={ t(ctx, "common.crop") }
+				aria-label={ tf(ctx, "image.crop_type", localizedImageType(ctx, imageType)) }
+			>
+				@components.IconScissors("w-5 h-5")
+			</a>
+		} else {
+			<a
+				href={ templ.SafeURL(fmt.Sprintf("%s/artists/%s/images?type=%s&crop=1", basePath, artistID, imageType)) }
+				class="p-2 rounded-full bg-black/40 hover:bg-black/60 text-white transition-colors shadow-sm"
+				title={ t(ctx, "common.crop") }
+				aria-label={ tf(ctx, "image.crop_type", localizedImageType(ctx, imageType)) }
+			>
+				@components.IconScissors("w-5 h-5")
+			</a>
+		}
 		// Trim (logo only -- removes transparent edges)
 		if imageType == "logo" {
 			<button

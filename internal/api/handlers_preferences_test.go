@@ -43,9 +43,16 @@ func TestGetPreferences_ReturnsDefaults(t *testing.T) {
 		}
 	}
 
-	// Verify no extra keys beyond the defined defaults.
-	if len(prefs) != len(preferenceDefaults) {
-		t.Errorf("expected %d keys, got %d", len(preferenceDefaults), len(prefs))
+	// Verify page_size is present with its default value.
+	if got, ok := prefs[PrefPageSize]; !ok {
+		t.Error("missing default key \"page_size\"")
+	} else if got != "50" {
+		t.Errorf("key %q: expected default %q, got %q", PrefPageSize, "50", got)
+	}
+
+	// Verify no extra keys beyond defaults + page_size.
+	if len(prefs) != len(preferenceDefaults)+1 {
+		t.Errorf("expected %d keys, got %d", len(preferenceDefaults)+1, len(prefs))
 	}
 }
 

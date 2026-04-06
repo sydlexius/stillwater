@@ -166,11 +166,12 @@ func (r *Router) handleGetPreferences(w http.ResponseWriter, req *http.Request) 
 		return
 	}
 
-	// Start with defaults.
-	prefs := make(map[string]string, len(preferenceDefaults))
+	// Start with defaults (fixed keys + page_size).
+	prefs := make(map[string]string, len(preferenceDefaults)+1)
 	for k, def := range preferenceDefaults {
 		prefs[k] = def.defaultValue
 	}
+	prefs[PrefPageSize] = strconv.Itoa(PageSizeDefault)
 
 	// Overlay with stored values.
 	rows, err := r.db.QueryContext(req.Context(),
@@ -190,8 +191,21 @@ func (r *Router) handleGetPreferences(w http.ResponseWriter, req *http.Request) 
 			return
 		}
 		// Only include known keys (ignore stale rows from removed preferences).
-		if _, known := preferenceDefaults[k]; known {
+		// page_size is valid but not in preferenceDefaults (range-based, not enum).
+		_, known := preferenceDefaults[k]
+		if known {
 			prefs[k] = v
+		} else if isPageSizeKey(k) {
+			n, nerr := strconv.Atoi(v)
+			if nerr != nil {
+				r.logger.Warn("stored page_size is not a valid integer, using default",
+					"user_id", userID, "raw_value", v, "error", nerr)
+			} else if n < PageSizeMin || n > PageSizeMax {
+				r.logger.Warn("stored page_size is out of range, using default",
+					"user_id", userID, "value", n, "min", PageSizeMin, "max", PageSizeMax)
+			} else {
+				prefs[k] = v
+			}
 		}
 	}
 	if err := rows.Err(); err != nil {
@@ -369,10 +383,20 @@ func (r *Router) getUserPageSize(ctx context.Context, userID string, queryParam 
 	err := r.db.QueryRowContext(ctx,
 		`SELECT value FROM user_preferences WHERE user_id = ? AND key = ?`, userID, PrefPageSize).Scan(&raw)
 	if err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
+			r.logger.Warn("querying user page size preference", "user_id", userID, "error", err)
+		}
 		return PageSizeDefault
 	}
-	n, err := strconv.Atoi(raw)
-	if err != nil || n < PageSizeMin || n > PageSizeMax {
+	n, parseErr := strconv.Atoi(raw)
+	if parseErr != nil {
+		r.logger.Warn("stored page_size is not a valid integer, using default",
+			"user_id", userID, "raw_value", raw, "error", parseErr)
+		return PageSizeDefault
+	}
+	if n < PageSizeMin || n > PageSizeMax {
+		r.logger.Warn("stored page_size is out of range, using default",
+			"user_id", userID, "value", n, "min", PageSizeMin, "max", PageSizeMax)
 		return PageSizeDefault
 	}
 	return n

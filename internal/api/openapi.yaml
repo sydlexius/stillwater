@@ -4290,7 +4290,7 @@ paths:
       responses:
         "200":
           description: >
-            All 12 preference keys with the user's values merged over defaults.
+            All 13 preference keys with the user's values merged over defaults.
             The response always contains exactly these keys.
           content:
             application/json:
@@ -4345,6 +4345,10 @@ paths:
                     type: string
                     enum: ["true", "false"]
                     description: Whether browser notifications are enabled.
+                  page_size:
+                    type: string
+                    description: Number of items per page (integer 10-500 as a string).
+                    example: "50"
                 required:
                   - theme
                   - glass_intensity
@@ -4358,6 +4362,7 @@ paths:
                   - lite_mode
                   - language
                   - notification_enabled
+                  - page_size
         "401":
           description: Not authenticated
           content:

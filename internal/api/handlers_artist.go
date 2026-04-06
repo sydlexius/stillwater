@@ -443,14 +443,17 @@ func (r *Router) handleArtistImagesPage(w http.ResponseWriter, req *http.Request
 	}
 
 	autoCrop := req.URL.Query().Get("crop") == "1"
+	selectedIndex := intQuery(req, "index", -1)
 
 	data := templates.ImageSearchData{
 		Artist:           *a,
 		WebSearchEnabled: webSearchEnabled,
 		AutoFetchImages:  autoFetch,
 		SelectedType:     selectedType,
+		SelectedIndex:    selectedIndex,
 		ProfileName:      r.getActiveProfileName(req.Context()),
 		AutoCrop:         autoCrop,
+		BasePath:         r.basePath,
 	}
 	renderTempl(w, req, templates.ImageSearchPage(r.assetsFor(req), data))
 }

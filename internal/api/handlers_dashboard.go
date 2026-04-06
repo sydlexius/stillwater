@@ -27,9 +27,6 @@ func (r *Router) handleDashboardActionQueue(w http.ResponseWriter, req *http.Req
 	offset := intQuery(req, "offset", 0)
 
 	// Clamp pagination values to prevent abuse and invalid paging.
-	if limit > PageSizeMax {
-		limit = PageSizeMax
-	}
 	if offset < 0 {
 		offset = 0
 	}

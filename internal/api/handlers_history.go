@@ -53,17 +53,9 @@ func (r *Router) handleListArtistHistory(w http.ResponseWriter, req *http.Reques
 		return
 	}
 
-	limit := intQuery(req, "limit", 50)
+	userID := middleware.UserIDFromContext(req.Context())
+	limit := r.getUserPageSize(req.Context(), userID, intQuery(req, "limit", 0))
 	offset := intQuery(req, "offset", 0)
-
-	// Clamp limit and offset here so the response echoes the effective values
-	// that were actually applied, matching the clamping in HistoryService.List.
-	if limit <= 0 {
-		limit = 50
-	}
-	if limit > 200 {
-		limit = 200
-	}
 	if offset < 0 {
 		offset = 0
 	}
@@ -116,7 +108,8 @@ func (r *Router) handleArtistHistoryTab(w http.ResponseWriter, req *http.Request
 		return
 	}
 
-	limit := intQuery(req, "limit", 25)
+	userID := middleware.UserIDFromContext(req.Context())
+	limit := r.getUserPageSize(req.Context(), userID, intQuery(req, "limit", 0))
 	offset := intQuery(req, "offset", 0)
 
 	changes, total, err := r.historyService.List(req.Context(), artistID, limit, offset)

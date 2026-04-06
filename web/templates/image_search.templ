@@ -16,8 +16,10 @@ type ImageSearchData struct {
 	WebSearchEnabled bool
 	AutoFetchImages  bool   // When true, auto-search providers on page load
 	SelectedType     string // "thumb", "fanart", "logo", "banner", or "" for generic
+	SelectedIndex    int    // Fanart index for auto-crop; -1 for non-indexed types
 	ProfileName      string // Active platform profile name for image terminology
 	AutoCrop         bool   // When true, auto-open crop modal for the current image on load
+	BasePath         string // Application base path for sub-path deployments
 }
 
 templ ImageSearchPage(assets AssetPaths, data ImageSearchData) {
@@ -52,12 +54,21 @@ templ ImageSearchPage(assets AssetPaths, data ImageSearchData) {
 				// Marker element read by the setup script below to auto-open the crop
 				// modal once Cropper.js is ready. The src/type are passed via data
 				// attributes to avoid inline Go string interpolation inside <script>.
-				<div
-					id="auto-crop-trigger"
-					class="hidden"
-					data-src={ fmt.Sprintf("/api/v1/artists/%s/images/%s/file", data.Artist.ID, data.SelectedType) }
-					data-type={ data.SelectedType }
-				></div>
+				if data.SelectedType == "fanart" && data.SelectedIndex >= 0 {
+					<div
+						id="auto-crop-trigger"
+						class="hidden"
+						data-src={ fmt.Sprintf("%s/api/v1/artists/%s/images/fanart/%d/file", assets.BasePath, data.Artist.ID, data.SelectedIndex) }
+						data-type={ data.SelectedType }
+					></div>
+				} else {
+					<div
+						id="auto-crop-trigger"
+						class="hidden"
+						data-src={ fmt.Sprintf("%s/api/v1/artists/%s/images/%s/file", assets.BasePath, data.Artist.ID, data.SelectedType) }
+						data-type={ data.SelectedType }
+					></div>
+				}
 			}
 			<script>
 				var _cropper = null;
@@ -69,12 +80,13 @@ templ ImageSearchPage(assets AssetPaths, data ImageSearchData) {
 					var cropType = document.getElementById('crop-type');
 					var lockCb = document.getElementById('crop-lock-ratio');
 					cropImage.crossOrigin = 'anonymous';
-					cropImage.src = imgSrc;
 					if (imageType) cropType.value = imageType;
 					modal.classList.remove('hidden');
 					_currentRatio = NaN;
 					_pendingRatio = (initialRatio && initialRatio > 0) ? initialRatio : NaN;
 					if (lockCb) lockCb.checked = false;
+					// Attach handlers before setting src: cached images fire onload
+					// synchronously, so the handler must exist before src is assigned.
 					cropImage.onload = function() {
 						if (_cropper) _cropper.destroy();
 						_cropper = new Cropper(cropImage, {
@@ -99,6 +111,7 @@ templ ImageSearchPage(assets AssetPaths, data ImageSearchData) {
 							statusEl.replaceChildren(s);
 						}
 					};
+					cropImage.src = imgSrc;
 				}
 				function closeCropModal() {
 					var modal = document.getElementById('crop-modal');
@@ -147,7 +160,7 @@ templ imageSearchContextualized(data ImageSearchData) {
 		<section class="rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
 			<div class="flex items-center justify-between mb-4">
 				<h2 class="text-lg font-semibold">{ tf(ctx, "image.current_type", img.ImageTermFor(data.SelectedType, data.ProfileName)) }</h2>
-				<span class="inline-flex items-center gap-1">
+				<div class="inline-flex items-center gap-1">
 					<div class="relative inline-flex" data-context-menu={ "img-actions-" + data.Artist.ID }>
 						<button
 							type="button"
@@ -216,7 +229,7 @@ templ imageSearchContextualized(data ImageSearchData) {
 									type="button"
 									role="menuitem"
 									class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-									onclick={ openCropForType(fmt.Sprintf("/api/v1/artists/%s/images/%s/file", data.Artist.ID, data.SelectedType), data.SelectedType) }
+									onclick={ openCropForType(data.BasePath+fmt.Sprintf("/api/v1/artists/%s/images/%s/file", data.Artist.ID, data.SelectedType), data.SelectedType) }
 								>
 									{ t(ctx, "common.crop") }
 								</button>
@@ -241,7 +254,7 @@ templ imageSearchContextualized(data ImageSearchData) {
 							<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
 						</svg>
 					</span>
-				</span>
+				</div>
 			</div>
 			// -- Image display / drag-drop target --
 			<div

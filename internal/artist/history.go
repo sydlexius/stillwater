@@ -126,8 +126,8 @@ func (h *HistoryService) List(ctx context.Context, artistID string, limit, offse
 	if limit <= 0 {
 		limit = 50
 	}
-	if limit > 200 {
-		limit = 200
+	if limit > 500 {
+		limit = 500
 	}
 	if offset < 0 {
 		offset = 0
@@ -140,8 +140,8 @@ func (h *HistoryService) ListGlobal(ctx context.Context, filter GlobalHistoryFil
 	if filter.Limit <= 0 {
 		filter.Limit = 50
 	}
-	if filter.Limit > 200 {
-		filter.Limit = 200
+	if filter.Limit > 500 {
+		filter.Limit = 500
 	}
 	if filter.Offset < 0 {
 		filter.Offset = 0
