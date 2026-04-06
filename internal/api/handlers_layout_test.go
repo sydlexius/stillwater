@@ -14,6 +14,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/database"
 	"github.com/sydlexius/stillwater/internal/encryption"
+	"github.com/sydlexius/stillwater/internal/i18n"
 	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/platform"
 	"github.com/sydlexius/stillwater/internal/provider"
@@ -53,7 +54,7 @@ func TestLayoutRenders_ValidHTML(t *testing.T) {
 
 	// Render the layout template with a sample child content.
 	var buf bytes.Buffer
-	if err := templates.Layout("Test Page", assets).Render(context.Background(), &buf); err != nil {
+	if err := templates.Layout("Test Page", assets).Render(testI18nCtx(t, context.Background()), &buf); err != nil {
 		t.Fatalf("rendering layout: %v", err)
 	}
 
@@ -117,7 +118,7 @@ func TestLayoutSidebar_ContainsRequiredLandmarks(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := templates.Layout("Home", assets).Render(context.Background(), &buf); err != nil {
+	if err := templates.Layout("Home", assets).Render(testI18nCtx(t, context.Background()), &buf); err != nil {
 		t.Fatalf("rendering layout: %v", err)
 	}
 
@@ -219,7 +220,7 @@ func TestLayoutAdmin_RendersSharedFilesystemBar(t *testing.T) {
 			}
 
 			var buf bytes.Buffer
-			if err := templates.Layout("Test", assets).Render(context.Background(), &buf); err != nil {
+			if err := templates.Layout("Test", assets).Render(testI18nCtx(t, context.Background()), &buf); err != nil {
 				t.Fatalf("rendering layout: %v", err)
 			}
 
@@ -269,7 +270,7 @@ func TestLayoutContentArea_ContainsMainLandmark(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := templates.Layout("Dashboard", assets).Render(context.Background(), &buf); err != nil {
+	if err := templates.Layout("Dashboard", assets).Render(testI18nCtx(t, context.Background()), &buf); err != nil {
 		t.Fatalf("rendering layout: %v", err)
 	}
 
@@ -321,7 +322,7 @@ func TestLayout_AssetPathsWithBasePath(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := templates.Layout("Test", assets).Render(context.Background(), &buf); err != nil {
+	if err := templates.Layout("Test", assets).Render(testI18nCtx(t, context.Background()), &buf); err != nil {
 		t.Fatalf("rendering layout: %v", err)
 	}
 
@@ -376,9 +377,9 @@ func TestLayout_RendersWithoutHandlerContext(t *testing.T) {
 		Version:        "dev",
 	}
 
-	// Render without any special context or middleware.
+	// Render without HTTP middleware, but with i18n context for translation.
 	var buf bytes.Buffer
-	ctx := context.Background()
+	ctx := testI18nCtx(t, context.Background())
 	if err := templates.Layout("Test Page", assets).Render(ctx, &buf); err != nil {
 		t.Fatalf("rendering layout with background context: %v", err)
 	}
@@ -424,6 +425,11 @@ func TestRootRoute_RendersLayout_WithSidebar(t *testing.T) {
 		t.Fatalf("creating encryptor: %v", err)
 	}
 
+	i18nBundle, err := i18n.LoadEmbedded()
+	if err != nil {
+		t.Fatalf("loading i18n bundle: %v", err)
+	}
+
 	// Create router with all necessary services
 	r := NewRouter(RouterDeps{
 		AuthService:       auth.NewService(db),
@@ -431,6 +437,7 @@ func TestRootRoute_RendersLayout_WithSidebar(t *testing.T) {
 		ProviderSettings:  provider.NewSettingsService(db, enc),
 		ConnectionService: connection.NewService(db, enc),
 		LibraryService:    library.NewService(db),
+		I18nBundle:        i18nBundle,
 		DB:                db,
 		Logger:            logger,
 		StaticDir:         "../../web/static",

@@ -42,20 +42,98 @@ func Error404Page(assets AssetPaths) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"flex flex-col items-center justify-center min-h-[60vh] text-center px-4\"><div class=\"sw-card rounded-2xl px-8 py-10 max-w-lg w-full space-y-6\"><div class=\"flex justify-center\"><svg class=\"w-20 h-20 text-gray-400 dark:text-gray-500\" xmlns=\"http://www.w3.org/2000/svg\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1\" stroke=\"currentColor\" aria-hidden=\"true\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 5.25h.008v.008H12v-.008Z\"></path></svg></div><div class=\"space-y-2\"><p class=\"text-6xl font-black text-gray-300 dark:text-gray-600 tabular-nums\">404</p><h1 class=\"text-2xl font-bold text-gray-900 dark:text-gray-100\">Page not found</h1><p class=\"text-sm text-gray-500 dark:text-gray-400\">The page you requested could not be found. It may have been moved or deleted.</p></div><div class=\"flex flex-col sm:flex-row gap-3 justify-center\"><a href=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"flex flex-col items-center justify-center min-h-[60vh] text-center px-4\"><div class=\"sw-card rounded-2xl px-8 py-10 max-w-lg w-full space-y-6\"><div class=\"flex justify-center\"><svg class=\"w-20 h-20 text-gray-400 dark:text-gray-500\" xmlns=\"http://www.w3.org/2000/svg\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1\" stroke=\"currentColor\" aria-hidden=\"true\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 5.25h.008v.008H12v-.008Z\"></path></svg></div><div class=\"space-y-2\"><p class=\"text-6xl font-black text-gray-300 dark:text-gray-600 tabular-nums\">404</p><h1 class=\"text-2xl font-bold text-gray-900 dark:text-gray-100\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var3 templ.SafeURL
-			templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(assets.BasePath + "/"))
+			var templ_7745c5c3_Var3 string
+			templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "error.page_not_found"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/error_pages.templ`, Line: 22, Col: 49}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/error_pages.templ`, Line: 15, Col: 101}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "\" class=\"inline-flex items-center justify-center gap-2 rounded-md bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700 transition-colors\">Go to Dashboard</a> <button id=\"report-404-btn\" type=\"button\" onclick=\"toggleIssuePreview('404')\" aria-controls=\"issue-preview\" aria-expanded=\"false\" class=\"inline-flex items-center justify-center gap-2 rounded-md border border-gray-300 dark:border-gray-600 px-4 py-2.5 text-sm font-medium hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors\">Report this issue</button></div><div id=\"issue-preview\" class=\"hidden rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 p-4 text-left text-xs text-gray-600 dark:text-gray-400 space-y-2\"><p class=\"font-semibold text-gray-700 dark:text-gray-300\">The following will be pre-filled in the GitHub issue:</p><pre id=\"issue-preview-body\" class=\"whitespace-pre-wrap break-words font-mono text-xs leading-relaxed\"></pre><a id=\"issue-open-link\" href=\"#\" target=\"_blank\" rel=\"noopener noreferrer\" class=\"inline-flex items-center gap-1 text-blue-600 dark:text-blue-400 hover:underline font-medium\">Open GitHub issue <svg class=\"w-3 h-3\" xmlns=\"http://www.w3.org/2000/svg\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"2\" stroke=\"currentColor\" aria-hidden=\"true\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M13.5 6H5.25A2.25 2.25 0 0 0 3 8.25v10.5A2.25 2.25 0 0 0 5.25 21h10.5A2.25 2.25 0 0 0 18 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25\"></path></svg></a></div></div></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "</h1><p class=\"text-sm text-gray-500 dark:text-gray-400\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var4 string
+			templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "error.page_not_found_description"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/error_pages.templ`, Line: 17, Col: 50}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</p></div><div class=\"flex flex-col sm:flex-row gap-3 justify-center\"><a href=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var5 templ.SafeURL
+			templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(assets.BasePath + "/"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/error_pages.templ`, Line: 22, Col: 49}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "\" class=\"inline-flex items-center justify-center gap-2 rounded-md bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700 transition-colors\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var6 string
+			templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "error.go_to_dashboard"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/error_pages.templ`, Line: 25, Col: 39}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "</a> <button id=\"report-404-btn\" type=\"button\" onclick=\"toggleIssuePreview('404')\" aria-controls=\"issue-preview\" aria-expanded=\"false\" class=\"inline-flex items-center justify-center gap-2 rounded-md border border-gray-300 dark:border-gray-600 px-4 py-2.5 text-sm font-medium hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var7 string
+			templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "error.report_this_issue"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/error_pages.templ`, Line: 35, Col: 41}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "</button></div><div id=\"issue-preview\" class=\"hidden rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 p-4 text-left text-xs text-gray-600 dark:text-gray-400 space-y-2\"><p class=\"font-semibold text-gray-700 dark:text-gray-300\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var8 string
+			templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "error.issue_prefill_note"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/error_pages.templ`, Line: 39, Col: 99}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "</p><pre id=\"issue-preview-body\" class=\"whitespace-pre-wrap break-words font-mono text-xs leading-relaxed\"></pre><a id=\"issue-open-link\" href=\"#\" target=\"_blank\" rel=\"noopener noreferrer\" class=\"inline-flex items-center gap-1 text-blue-600 dark:text-blue-400 hover:underline font-medium\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var9 string
+			templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "error.open_github_issue"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/error_pages.templ`, Line: 48, Col: 41}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, " <svg class=\"w-3 h-3\" xmlns=\"http://www.w3.org/2000/svg\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"2\" stroke=\"currentColor\" aria-hidden=\"true\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M13.5 6H5.25A2.25 2.25 0 0 0 3 8.25v10.5A2.25 2.25 0 0 0 5.25 21h10.5A2.25 2.25 0 0 0 18 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25\"></path></svg></a></div></div></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -65,7 +143,7 @@ func Error404Page(assets AssetPaths) templ.Component {
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = Layout("Page Not Found", assets).Render(templ.WithChildren(ctx, templ_7745c5c3_Var2), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = Layout(t(ctx, "error.page_not_found"), assets).Render(templ.WithChildren(ctx, templ_7745c5c3_Var2), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -90,12 +168,12 @@ func Error500Page(assets AssetPaths) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var4 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var4 == nil {
-			templ_7745c5c3_Var4 = templ.NopComponent
+		templ_7745c5c3_Var10 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var10 == nil {
+			templ_7745c5c3_Var10 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Var5 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_Var11 := templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 			templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 			templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
 			if !templ_7745c5c3_IsBuffer {
@@ -107,20 +185,111 @@ func Error500Page(assets AssetPaths) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<div class=\"flex flex-col items-center justify-center min-h-[60vh] text-center px-4\"><div class=\"sw-card rounded-2xl px-8 py-10 max-w-lg w-full space-y-6\"><div class=\"flex justify-center\"><svg class=\"w-20 h-20 text-red-400 dark:text-red-500\" xmlns=\"http://www.w3.org/2000/svg\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1\" stroke=\"currentColor\" aria-hidden=\"true\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z\"></path></svg></div><div class=\"space-y-2\"><p class=\"text-6xl font-black text-gray-300 dark:text-gray-600 tabular-nums\">500</p><h1 class=\"text-2xl font-bold text-gray-900 dark:text-gray-100\">Something went wrong</h1><p class=\"text-sm text-gray-500 dark:text-gray-400\">An unexpected error occurred on the server. You can try again or report the issue.</p></div><div class=\"flex flex-col sm:flex-row gap-3 justify-center\"><a href=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "<div class=\"flex flex-col items-center justify-center min-h-[60vh] text-center px-4\"><div class=\"sw-card rounded-2xl px-8 py-10 max-w-lg w-full space-y-6\"><div class=\"flex justify-center\"><svg class=\"w-20 h-20 text-red-400 dark:text-red-500\" xmlns=\"http://www.w3.org/2000/svg\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"1\" stroke=\"currentColor\" aria-hidden=\"true\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z\"></path></svg></div><div class=\"space-y-2\"><p class=\"text-6xl font-black text-gray-300 dark:text-gray-600 tabular-nums\">500</p><h1 class=\"text-2xl font-bold text-gray-900 dark:text-gray-100\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var6 templ.SafeURL
-			templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(assets.BasePath + "/"))
+			var templ_7745c5c3_Var12 string
+			templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "error.something_went_wrong"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/error_pages.templ`, Line: 70, Col: 107}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "</h1><p class=\"text-sm text-gray-500 dark:text-gray-400\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var13 string
+			templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "error.something_went_wrong_description"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/error_pages.templ`, Line: 72, Col: 56}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "</p></div><div class=\"flex flex-col sm:flex-row gap-3 justify-center\"><a href=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var14 templ.SafeURL
+			templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(assets.BasePath + "/"))
 			if templ_7745c5c3_Err != nil {
 				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/error_pages.templ`, Line: 77, Col: 49}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "\" class=\"inline-flex items-center justify-center gap-2 rounded-md bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700 transition-colors\">Go to Dashboard</a> <button type=\"button\" onclick=\"history.back()\" class=\"inline-flex items-center justify-center gap-2 rounded-md border border-gray-300 dark:border-gray-600 px-4 py-2.5 text-sm font-medium hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors\">Go back</button> <button id=\"report-500-btn\" type=\"button\" onclick=\"toggleIssuePreview('500')\" aria-controls=\"issue-preview\" aria-expanded=\"false\" class=\"inline-flex items-center justify-center gap-2 rounded-md border border-gray-300 dark:border-gray-600 px-4 py-2.5 text-sm font-medium hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors\">Report this issue</button></div><div id=\"issue-preview\" class=\"hidden rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 p-4 text-left text-xs text-gray-600 dark:text-gray-400 space-y-2\"><p class=\"font-semibold text-gray-700 dark:text-gray-300\">The following will be pre-filled in the GitHub issue:</p><pre id=\"issue-preview-body\" class=\"whitespace-pre-wrap break-words font-mono text-xs leading-relaxed\"></pre><a id=\"issue-open-link\" href=\"#\" target=\"_blank\" rel=\"noopener noreferrer\" class=\"inline-flex items-center gap-1 text-blue-600 dark:text-blue-400 hover:underline font-medium\">Open GitHub issue <svg class=\"w-3 h-3\" xmlns=\"http://www.w3.org/2000/svg\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"2\" stroke=\"currentColor\" aria-hidden=\"true\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M13.5 6H5.25A2.25 2.25 0 0 0 3 8.25v10.5A2.25 2.25 0 0 0 5.25 21h10.5A2.25 2.25 0 0 0 18 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25\"></path></svg></a></div></div></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "\" class=\"inline-flex items-center justify-center gap-2 rounded-md bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700 transition-colors\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var15 string
+			templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "error.go_to_dashboard"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/error_pages.templ`, Line: 80, Col: 39}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "</a> <button type=\"button\" onclick=\"history.back()\" class=\"inline-flex items-center justify-center gap-2 rounded-md border border-gray-300 dark:border-gray-600 px-4 py-2.5 text-sm font-medium hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var16 string
+			templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "error.go_back"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/error_pages.templ`, Line: 87, Col: 31}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "</button> <button id=\"report-500-btn\" type=\"button\" onclick=\"toggleIssuePreview('500')\" aria-controls=\"issue-preview\" aria-expanded=\"false\" class=\"inline-flex items-center justify-center gap-2 rounded-md border border-gray-300 dark:border-gray-600 px-4 py-2.5 text-sm font-medium hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var17 string
+			templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "error.report_this_issue"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/error_pages.templ`, Line: 97, Col: 41}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "</button></div><div id=\"issue-preview\" class=\"hidden rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 p-4 text-left text-xs text-gray-600 dark:text-gray-400 space-y-2\"><p class=\"font-semibold text-gray-700 dark:text-gray-300\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var18 string
+			templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "error.issue_prefill_note"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/error_pages.templ`, Line: 101, Col: 99}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "</p><pre id=\"issue-preview-body\" class=\"whitespace-pre-wrap break-words font-mono text-xs leading-relaxed\"></pre><a id=\"issue-open-link\" href=\"#\" target=\"_blank\" rel=\"noopener noreferrer\" class=\"inline-flex items-center gap-1 text-blue-600 dark:text-blue-400 hover:underline font-medium\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var19 string
+			templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "error.open_github_issue"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/error_pages.templ`, Line: 110, Col: 41}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, " <svg class=\"w-3 h-3\" xmlns=\"http://www.w3.org/2000/svg\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"2\" stroke=\"currentColor\" aria-hidden=\"true\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M13.5 6H5.25A2.25 2.25 0 0 0 3 8.25v10.5A2.25 2.25 0 0 0 5.25 21h10.5A2.25 2.25 0 0 0 18 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25\"></path></svg></a></div></div></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -130,7 +299,7 @@ func Error500Page(assets AssetPaths) templ.Component {
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = Layout("Something Went Wrong", assets).Render(templ.WithChildren(ctx, templ_7745c5c3_Var5), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = Layout(t(ctx, "error.something_went_wrong"), assets).Render(templ.WithChildren(ctx, templ_7745c5c3_Var11), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -156,12 +325,12 @@ func errorPageScript() templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var7 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var7 == nil {
-			templ_7745c5c3_Var7 = templ.NopComponent
+		templ_7745c5c3_Var20 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var20 == nil {
+			templ_7745c5c3_Var20 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<script>\n\t\t(function() {\n\t\t\tfunction getVersion() {\n\t\t\t\tvar el = document.querySelector('meta[name=\"app-version\"]');\n\t\t\t\treturn el ? el.content : 'unknown';\n\t\t\t}\n\n\t\t\tfunction buildIssueBody(statusCode) {\n\t\t\t\tvar route = window.location.pathname;\n\t\t\t\tvar ts = new Date().toISOString();\n\t\t\t\tvar ver = getVersion();\n\t\t\t\treturn [\n\t\t\t\t\t'**Error type:** HTTP ' + statusCode,\n\t\t\t\t\t'**Route:** ' + route,\n\t\t\t\t\t'**Timestamp (UTC):** ' + ts,\n\t\t\t\t\t'**App version:** ' + ver,\n\t\t\t\t\t'',\n\t\t\t\t\t'**Steps to reproduce:**',\n\t\t\t\t\t'1. ',\n\t\t\t\t\t'',\n\t\t\t\t\t'**Expected behavior:**',\n\t\t\t\t\t'',\n\t\t\t\t\t'**Actual behavior:**',\n\t\t\t\t\t'HTTP ' + statusCode + ' error on ' + route,\n\t\t\t\t\t'',\n\t\t\t\t\t'**Additional context:**',\n\t\t\t\t\t''\n\t\t\t\t].join('\\n');\n\t\t\t}\n\n\t\t\tfunction buildIssueURL(statusCode) {\n\t\t\t\tvar title = 'HTTP ' + statusCode + ' error on ' + window.location.pathname;\n\t\t\t\tvar body = buildIssueBody(statusCode);\n\t\t\t\tvar base = 'https://github.com/sydlexius/stillwater/issues/new';\n\t\t\t\treturn base + '?template=bug.md&title=' + encodeURIComponent(title) + '&body=' + encodeURIComponent(body);\n\t\t\t}\n\n\t\t\twindow.toggleIssuePreview = function(statusCode) {\n\t\t\t\tvar preview = document.getElementById('issue-preview');\n\t\t\t\tvar previewBody = document.getElementById('issue-preview-body');\n\t\t\t\tvar link = document.getElementById('issue-open-link');\n\t\t\t\tvar btn = document.getElementById('report-' + statusCode + '-btn');\n\t\t\t\tif (!preview) return;\n\n\t\t\t\tif (preview.classList.contains('hidden')) {\n\t\t\t\t\tvar body = buildIssueBody(statusCode);\n\t\t\t\t\tif (previewBody) previewBody.textContent = body;\n\t\t\t\t\tif (link) link.href = buildIssueURL(statusCode);\n\t\t\t\t\tpreview.classList.remove('hidden');\n\t\t\t\t\tif (btn) btn.setAttribute('aria-expanded', 'true');\n\t\t\t\t} else {\n\t\t\t\t\tpreview.classList.add('hidden');\n\t\t\t\t\tif (btn) btn.setAttribute('aria-expanded', 'false');\n\t\t\t\t}\n\t\t\t};\n\t\t})();\n\t</script>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "<script>\n\t\t(function() {\n\t\t\tfunction getVersion() {\n\t\t\t\tvar el = document.querySelector('meta[name=\"app-version\"]');\n\t\t\t\treturn el ? el.content : 'unknown';\n\t\t\t}\n\n\t\t\tfunction buildIssueBody(statusCode) {\n\t\t\t\tvar route = window.location.pathname;\n\t\t\t\tvar ts = new Date().toISOString();\n\t\t\t\tvar ver = getVersion();\n\t\t\t\treturn [\n\t\t\t\t\t'**Error type:** HTTP ' + statusCode,\n\t\t\t\t\t'**Route:** ' + route,\n\t\t\t\t\t'**Timestamp (UTC):** ' + ts,\n\t\t\t\t\t'**App version:** ' + ver,\n\t\t\t\t\t'',\n\t\t\t\t\t'**Steps to reproduce:**',\n\t\t\t\t\t'1. ',\n\t\t\t\t\t'',\n\t\t\t\t\t'**Expected behavior:**',\n\t\t\t\t\t'',\n\t\t\t\t\t'**Actual behavior:**',\n\t\t\t\t\t'HTTP ' + statusCode + ' error on ' + route,\n\t\t\t\t\t'',\n\t\t\t\t\t'**Additional context:**',\n\t\t\t\t\t''\n\t\t\t\t].join('\\n');\n\t\t\t}\n\n\t\t\tfunction buildIssueURL(statusCode) {\n\t\t\t\tvar title = 'HTTP ' + statusCode + ' error on ' + window.location.pathname;\n\t\t\t\tvar body = buildIssueBody(statusCode);\n\t\t\t\tvar base = 'https://github.com/sydlexius/stillwater/issues/new';\n\t\t\t\treturn base + '?template=bug.md&title=' + encodeURIComponent(title) + '&body=' + encodeURIComponent(body);\n\t\t\t}\n\n\t\t\twindow.toggleIssuePreview = function(statusCode) {\n\t\t\t\tvar preview = document.getElementById('issue-preview');\n\t\t\t\tvar previewBody = document.getElementById('issue-preview-body');\n\t\t\t\tvar link = document.getElementById('issue-open-link');\n\t\t\t\tvar btn = document.getElementById('report-' + statusCode + '-btn');\n\t\t\t\tif (!preview) return;\n\n\t\t\t\tif (preview.classList.contains('hidden')) {\n\t\t\t\t\tvar body = buildIssueBody(statusCode);\n\t\t\t\t\tif (previewBody) previewBody.textContent = body;\n\t\t\t\t\tif (link) link.href = buildIssueURL(statusCode);\n\t\t\t\t\tpreview.classList.remove('hidden');\n\t\t\t\t\tif (btn) btn.setAttribute('aria-expanded', 'true');\n\t\t\t\t} else {\n\t\t\t\t\tpreview.classList.add('hidden');\n\t\t\t\t\tif (btn) btn.setAttribute('aria-expanded', 'false');\n\t\t\t\t}\n\t\t\t};\n\t\t})();\n\t</script>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

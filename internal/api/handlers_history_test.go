@@ -16,10 +16,22 @@ import (
 	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/database"
 	"github.com/sydlexius/stillwater/internal/encryption"
+	"github.com/sydlexius/stillwater/internal/i18n"
 	"github.com/sydlexius/stillwater/internal/nfo"
 	"github.com/sydlexius/stillwater/internal/provider"
 	"github.com/sydlexius/stillwater/internal/rule"
 )
+
+// testI18nCtx adds the embedded English translator to a context so that
+// templates render translated strings (e.g. "Biography") instead of raw keys.
+func testI18nCtx(tb testing.TB, ctx context.Context) context.Context {
+	tb.Helper()
+	bundle, err := i18n.LoadEmbedded()
+	if err != nil {
+		tb.Fatalf("loading i18n bundle: %v", err)
+	}
+	return i18n.WithTranslator(ctx, bundle.Translator("en"))
+}
 
 // testRouterWithHistory creates a Router wired with a real HistoryService that
 // shares the same in-memory database as the artist service, so artist lookups
@@ -55,6 +67,11 @@ func testRouterWithHistory(t *testing.T) (*Router, *artist.Service, *artist.Hist
 	nfoSnapSvc := nfo.NewSnapshotService(db)
 	providerSettings := provider.NewSettingsService(db, nil)
 
+	i18nBundle, err := i18n.LoadEmbedded()
+	if err != nil {
+		t.Fatalf("loading i18n bundle: %v", err)
+	}
+
 	r := NewRouter(RouterDeps{
 		AuthService:        authSvc,
 		ArtistService:      artistSvc,
@@ -64,6 +81,7 @@ func testRouterWithHistory(t *testing.T) (*Router, *artist.Service, *artist.Hist
 		RuleEngine:         ruleEngine,
 		NFOSnapshotService: nfoSnapSvc,
 		ProviderSettings:   providerSettings,
+		I18nBundle:         i18nBundle,
 		DB:                 db,
 		Logger:             logger,
 		StaticDir:          "../../web/static",
@@ -290,6 +308,7 @@ func TestHandleArtistHistoryTab_HTML(t *testing.T) {
 	addHistoryChange(t, historySvc, a.ID, "biography", "", "some biography", "manual")
 
 	ctx := middleware.WithTestUserID(context.Background(), "test-user")
+	ctx = testI18nCtx(t, ctx)
 	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/artists/"+a.ID+"/history/tab", nil)
 	req.SetPathValue("id", a.ID)
 	w := httptest.NewRecorder()
@@ -314,7 +333,7 @@ func TestHandleArtistHistoryTab_Empty(t *testing.T) {
 
 	a := addTestArtist(t, artistSvc, "No History Artist")
 
-	ctx := middleware.WithTestUserID(context.Background(), "test-user")
+	ctx := testI18nCtx(t, middleware.WithTestUserID(context.Background(), "test-user"))
 	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/artists/"+a.ID+"/history/tab", nil)
 	req.SetPathValue("id", a.ID)
 	w := httptest.NewRecorder()
@@ -534,7 +553,7 @@ func TestHandleListGlobalHistory(t *testing.T) {
 func TestHandleActivityPage(t *testing.T) {
 	r, _, _ := testRouterWithHistory(t)
 
-	ctx := middleware.WithTestUserID(context.Background(), "test-user")
+	ctx := testI18nCtx(t, middleware.WithTestUserID(context.Background(), "test-user"))
 	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/activity", nil)
 	w := httptest.NewRecorder()
 

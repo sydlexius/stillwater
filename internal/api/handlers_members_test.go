@@ -72,6 +72,7 @@ func TestHandleClearMembers_HTMX(t *testing.T) {
 	}
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/v1/artists/"+a.ID+"/members", nil)
+	req = req.WithContext(testI18nCtx(t, req.Context()))
 	req.SetPathValue("id", a.ID)
 	req.Header.Set("HX-Request", "true")
 	w := httptest.NewRecorder()

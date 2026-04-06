@@ -124,7 +124,7 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 							templ.KV("text-white/75 hover:text-white drop-shadow", data.Artist.FanartExists),
 						}
 					>
-						Artists
+						{ t(ctx, "common.artists") }
 					</a>
 					<span
 						class={
@@ -160,7 +160,7 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 									templ.KV("text-gray-500 dark:text-gray-400", !data.Artist.FanartExists),
 									templ.KV("text-white/70 drop-shadow", data.Artist.FanartExists),
 								}
-							>Sort: { data.Artist.SortName }</p>
+							>{ tf(ctx, "artist.sort_prefix", data.Artist.SortName) }</p>
 						}
 						if data.Artist.Disambiguation != "" {
 							<p
@@ -179,7 +179,7 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 									templ.KV("text-white/60 drop-shadow", data.Artist.FanartExists),
 								}
 							>
-								Library: { data.LibraryName }
+								{ tf(ctx, "artist.library_label", data.LibraryName) }
 								if data.LibrarySource != "" && data.LibrarySource != "manual" {
 									<span class="ml-1.5 inline-flex items-center gap-1 rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300">
 										<img src={ logoSrc(data.LibrarySource) } class="h-3.5 w-3.5" alt=""/>
@@ -199,7 +199,7 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 								}
 							>
 								@components.IconLockClosed("h-3.5 w-3.5")
-								Locked
+								{ t(ctx, "common.locked") }
 								if data.Artist.LockSource != "" {
 									<span class="opacity-70">({ data.Artist.LockSource })</span>
 								}
@@ -219,7 +219,7 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 								aria-controls={ "ctx-panel-artist-actions-" + data.Artist.ID }
 								onclick={ components.ToggleContextMenu("artist-actions-" + data.Artist.ID) }
 							>
-								Actions
+								{ t(ctx, "common.actions") }
 								@components.IconChevronDown("h-4 w-4")
 							</button>
 							<div
@@ -237,7 +237,7 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 									hx-indicator="#rules-spinner"
 								>
 									@components.IconPlay("h-4 w-4 text-gray-400")
-									Run Rules
+									{ t(ctx, "artist.run_rules") }
 								</button>
 								<button
 									type="button"
@@ -249,7 +249,7 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 									hx-indicator="#refresh-spinner"
 								>
 									@components.IconArrowPath("h-4 w-4 text-gray-400")
-									Refresh Metadata
+									{ t(ctx, "artist.refresh_metadata") }
 								</button>
 								if data.Artist.MusicBrainzID != "" {
 									<button
@@ -259,10 +259,10 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 										hx-post={ "/api/v1/artists/" + data.Artist.ID + "/reidentify" }
 										hx-target="#refresh-panel"
 										hx-swap="innerHTML"
-										hx-confirm="This will clear all provider IDs and let you re-link this artist. Continue?"
+										hx-confirm={ t(ctx, "artist.reidentify_confirm") }
 									>
 										@components.IconMagnifyingGlass("h-4 w-4 text-gray-400")
-										Re-identify Artist
+										{ t(ctx, "artist.reidentify") }
 									</button>
 								}
 								<a
@@ -271,7 +271,7 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 									class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
 								>
 									@components.IconPhoto("h-4 w-4 text-gray-400")
-									Fetch All Images
+									{ t(ctx, "artist.fetch_all_images") }
 								</a>
 								<div class="my-1 border-t border-gray-200 dark:border-gray-700"></div>
 								if data.Artist.Locked {
@@ -284,7 +284,7 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 										hx-on::after-request="if(event.detail.successful) window.location.reload(); else alert('Action failed: ' + event.detail.xhr.responseText);"
 									>
 										@components.IconLockOpen("h-4 w-4 text-gray-400")
-										Unlock Artist
+										{ t(ctx, "artist.unlock_artist") }
 									</button>
 								} else {
 									<button
@@ -296,7 +296,7 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 										hx-on::after-request="if(event.detail.successful) window.location.reload(); else alert('Action failed: ' + event.detail.xhr.responseText);"
 									>
 										@components.IconLockClosed("h-4 w-4 text-gray-400")
-										Lock Artist
+										{ t(ctx, "artist.lock_artist") }
 									</button>
 								}
 								if len(data.Connections) > 0 {
@@ -310,7 +310,7 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 											class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
 										>
 											@components.IconArrowTopRightOnSquare("h-4 w-4 text-gray-400")
-											View on { conn.Name }
+											{ tf(ctx, "artist.view_on_platform", conn.Name) }
 										</a>
 									}
 								}
@@ -326,7 +326,7 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 						templ.KV("text-gray-500", !data.Artist.FanartExists),
 						templ.KV("text-white/70 drop-shadow", data.Artist.FanartExists),
 					}
-				>Running rules...</span>
+				>{ t(ctx, "artist.running_rules") }</span>
 				<span
 					id="refresh-spinner"
 					class={
@@ -334,13 +334,13 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 						templ.KV("text-gray-500", !data.Artist.FanartExists),
 						templ.KV("text-white/70 drop-shadow", data.Artist.FanartExists),
 					}
-				>Fetching metadata...</span>
+				>{ t(ctx, "artist.fetching_metadata") }</span>
 			</div>
 			// Lock banner
 			if data.Artist.Locked {
 				<div class="rounded-lg border border-amber-200 dark:border-amber-800/50 bg-amber-50 dark:bg-amber-900/20 px-4 py-2.5 text-sm text-amber-700 dark:text-amber-400 flex items-center gap-2">
 					@components.IconLockClosed("h-4 w-4 flex-shrink-0")
-					This artist is locked. Automated changes are skipped. Manual edits are still allowed.
+					{ t(ctx, "artist.locked_banner") }
 				</div>
 			}
 			// Tab bar
@@ -361,7 +361,7 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 					<div class="md:col-span-2 space-y-6">
 						@FieldDisplay(&data.Artist, "biography", data.FieldProviders["biography"])
 						<section id={ "artist-tags-" + data.Artist.ID } class="sw-card rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
-							<h2 class="text-lg font-semibold mb-3">Tags</h2>
+							<h2 class="text-lg font-semibold mb-3">{ t(ctx, "artist.tags") }</h2>
 							@FieldDisplay(&data.Artist, "genres", data.FieldProviders["genres"])
 							@FieldDisplay(&data.Artist, "styles", data.FieldProviders["styles"])
 							@FieldDisplay(&data.Artist, "moods", data.FieldProviders["moods"])
@@ -370,7 +370,7 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 					</div>
 					<div class="space-y-6">
 						<section id={ "artist-details-" + data.Artist.ID } class="sw-card rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
-							<h2 class="text-lg font-semibold mb-3">Details</h2>
+							<h2 class="text-lg font-semibold mb-3">{ t(ctx, "artist.details") }</h2>
 							<dl class="space-y-2 text-sm">
 								@FieldDisplay(&data.Artist, "name", data.FieldProviders["name"])
 								@FieldDisplay(&data.Artist, "sort_name", data.FieldProviders["sort_name"])
@@ -385,7 +385,7 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 							</dl>
 						</section>
 						<section class="sw-card rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
-							<h2 class="text-lg font-semibold mb-3">Aliases</h2>
+							<h2 class="text-lg font-semibold mb-3">{ t(ctx, "artist.aliases") }</h2>
 							<div id={ "aliases-" + data.Artist.ID }>
 								if len(data.Aliases) > 0 {
 									<div class="space-y-1.5 mb-3">
@@ -399,13 +399,13 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 													hx-swap="none"
 													hx-on::after-request="if(event.detail.successful) window.location.reload(); else alert('Remove failed: ' + event.detail.xhr.responseText);"
 												>
-													Remove
+													{ t(ctx, "common.remove") }
 												</button>
 											</div>
 										}
 									</div>
 								} else {
-									<p class="text-sm text-gray-500 dark:text-gray-400 italic mb-3">No aliases.</p>
+									<p class="text-sm text-gray-500 dark:text-gray-400 italic mb-3">{ t(ctx, "artist.no_aliases") }</p>
 								}
 							</div>
 							<form
@@ -416,7 +416,7 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 							>
 								<input
 									name="alias"
-									placeholder="Add alias..."
+									placeholder={ t(ctx, "artist.add_alias_placeholder") }
 									required
 									class="flex-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
 								/>
@@ -424,7 +424,7 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 									type="submit"
 									class="px-3 py-2 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
 								>
-									Add
+									{ t(ctx, "common.add") }
 								</button>
 							</form>
 						</section>
@@ -455,7 +455,7 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 				}
 			>
 				<section id={ "artist-providers-" + data.Artist.ID } class="sw-card rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
-					<h2 class="text-lg font-semibold mb-3">Provider IDs</h2>
+					<h2 class="text-lg font-semibold mb-3">{ t(ctx, "artist.provider_ids") }</h2>
 					<dl class="space-y-2 text-sm">
 						@FieldDisplay(&data.Artist, "musicbrainz_id", data.FieldProviders["musicbrainz_id"])
 						@FieldDisplay(&data.Artist, "audiodb_id", data.FieldProviders["audiodb_id"])
@@ -467,7 +467,7 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 				// Platform state cards load lazily per connection
 				if len(data.Connections) > 0 {
 					<div class="space-y-4">
-						<h2 class="text-lg font-semibold">Platform State</h2>
+						<h2 class="text-lg font-semibold">{ t(ctx, "artist.platform_state") }</h2>
 						for _, conn := range data.Connections {
 							<div
 								id={ "platform-state-" + conn.ID }
@@ -502,7 +502,7 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 					hx-trigger="intersect once"
 					hx-swap="innerHTML"
 				>
-					<p class="text-sm text-gray-400 italic py-8 text-center">Loading history...</p>
+					<p class="text-sm text-gray-400 italic py-8 text-center">{ t(ctx, "artist.loading_history") }</p>
 				</div>
 			</div>
 			@artistDetailTabScript()
@@ -513,10 +513,10 @@ templ ArtistDetailPage(assets AssetPaths, data ArtistDetailData) {
 // artistDetailTabBar renders the horizontal tab bar for the artist detail page.
 templ artistDetailTabBar(activeTab string) {
 	<nav class="flex gap-1 rounded-lg bg-gray-100 dark:bg-gray-800/50 p-1" role="tablist">
-		@artistDetailTab("overview", "Overview", activeTab)
-		@artistDetailTab("images", "Images", activeTab)
-		@artistDetailTab("providers", "Providers", activeTab)
-		@artistDetailTab("history", "History", activeTab)
+		@artistDetailTab("overview", t(ctx, "artist.tab_overview"), activeTab)
+		@artistDetailTab("images", t(ctx, "artist.tab_images"), activeTab)
+		@artistDetailTab("providers", t(ctx, "artist.tab_providers"), activeTab)
+		@artistDetailTab("history", t(ctx, "artist.tab_history"), activeTab)
 	</nav>
 }
 
@@ -595,13 +595,13 @@ templ ArtistHistorySection(artistID string) {
 			hx-swap="innerHTML"
 			hx-trigger="click once"
 		>
-			<h2 class="text-lg font-semibold">History</h2>
+			<h2 class="text-lg font-semibold">{ t(ctx, "artist.tab_history") }</h2>
 			<svg class="h-5 w-5 text-gray-400 dark:text-gray-500 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
 				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
 			</svg>
 		</button>
 		<div id={ "artist-history-body-" + artistID } class="hidden px-6 pb-6">
-			<p class="text-sm text-gray-400 italic">Loading...</p>
+			<p class="text-sm text-gray-400 italic">{ t(ctx, "common.loading") }</p>
 		</div>
 	</section>
 }
@@ -631,15 +631,15 @@ templ ImagePreviewCard(artistID, imageType string, exists bool, label string, fa
 				</div>
 				if fanartCount > 1 {
 					<span class="absolute top-2 right-2 bg-black/60 text-white text-xs px-2 py-0.5 rounded-full pointer-events-none">
-						{ strconv.Itoa(fanartCount) } images
+						{ tn(ctx, "artist.image_count", fanartCount) }
 					</span>
 				}
 				<div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity flex items-center justify-center gap-3">
 					<a
 						href={ templ.SafeURL(fmt.Sprintf("/artists/%s/images?type=%s", artistID, imageType)) }
 						class="rounded-full bg-white/20 p-2 text-white hover:bg-white/40 transition-colors"
-						title="Edit image"
-						aria-label={ "Edit " + label + " image" }
+						title={ t(ctx, "artist.edit_image") }
+						aria-label={ tf(ctx, "artist.edit_image_type", label) }
 					>
 						@components.IconPencilSquare("h-5 w-5")
 					</a>
@@ -647,8 +647,8 @@ templ ImagePreviewCard(artistID, imageType string, exists bool, label string, fa
 						<button
 							type="button"
 							class="rounded-full bg-white/20 p-2 text-white hover:bg-blue-500/80 transition-colors"
-							title="Trim transparent border"
-							aria-label="Trim transparent border"
+							title={ t(ctx, "artist.trim_transparent_border") }
+							aria-label={ t(ctx, "artist.trim_transparent_border") }
 							hx-post={ fmt.Sprintf("/api/v1/artists/%s/images/logo/trim", artistID) }
 							hx-swap="none"
 							hx-on::after-request="if(event.detail.successful) window.location.reload(); else alert('Action failed: ' + event.detail.xhr.responseText);"
@@ -659,12 +659,12 @@ templ ImagePreviewCard(artistID, imageType string, exists bool, label string, fa
 					<button
 						type="button"
 						class="rounded-full bg-white/20 p-2 text-white hover:bg-red-500/80 transition-colors"
-						title="Delete image"
-						aria-label={ "Delete " + label + " image" }
+						title={ t(ctx, "artist.delete_image") }
+						aria-label={ tf(ctx, "artist.delete_image_type", label) }
 						hx-delete={ fmt.Sprintf("/api/v1/artists/%s/images/%s", artistID, imageType) }
 						hx-target={ "#image-preview-" + imageType + "-" + artistID }
 						hx-swap="outerHTML"
-						hx-confirm={ "Delete this " + label + " image?" }
+						hx-confirm={ tf(ctx, "artist.delete_image_confirm", label) }
 						data-confirm-key="image-delete"
 					>
 						@components.IconTrash("h-5 w-5")
@@ -683,7 +683,7 @@ templ ImagePreviewCard(artistID, imageType string, exists bool, label string, fa
 			<a
 				href={ templ.SafeURL(fmt.Sprintf("/artists/%s/images?type=%s&fetch=1", artistID, imageType)) }
 				class="aspect-square flex items-center justify-center bg-gray-50 dark:bg-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors group/add"
-				title={ "Add " + label }
+				title={ tf(ctx, "artist.add_image_type", label) }
 			>
 				<div class="text-center text-gray-400 group-hover/add:text-blue-500 dark:group-hover/add:text-blue-400 transition-colors">
 					@components.IconPlusCircle("mx-auto h-8 w-8")
@@ -728,7 +728,7 @@ templ FanartGallery(artistID string, items []FanartGalleryItem, profileName stri
 				id="fanart-delete-selected"
 				class="hidden text-xs px-3 py-1.5 rounded bg-red-600 text-white hover:bg-red-700 transition-colors"
 			>
-				Delete selected
+				{ t(ctx, "artist.delete_selected") }
 			</button>
 		</div>
 		if len(items) > 0 {
@@ -746,7 +746,7 @@ templ FanartGallery(artistID string, items []FanartGalleryItem, profileName stri
 						if item.Index == 0 {
 							<span class="absolute top-2 right-2 z-10 inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full bg-amber-500/90 text-white shadow-sm">
 								@components.IconStar("w-3 h-3")
-								Primary
+								{ t(ctx, "common.primary") }
 							</span>
 						}
 						<div class="aspect-video bg-gray-100 dark:bg-gray-900 flex items-center justify-center overflow-hidden">
@@ -764,8 +764,8 @@ templ FanartGallery(artistID string, items []FanartGalleryItem, profileName stri
 								href={ templ.SafeURL(fmt.Sprintf("/api/v1/artists/%s/images/fanart/%d/file", artistID, item.Index)) }
 								target="_blank"
 								class="p-2 rounded-full bg-black/40 hover:bg-black/60 text-white transition-colors shadow-sm"
-								title="View full-size"
-								aria-label={ "View full-size " + item.Filename }
+								title={ t(ctx, "artist.view_full_size") }
+								aria-label={ tf(ctx, "artist.view_full_size_name", item.Filename) }
 							>
 								@components.IconArrowsPointingOut("w-5 h-5")
 							</a>
@@ -774,8 +774,8 @@ templ FanartGallery(artistID string, items []FanartGalleryItem, profileName stri
 								<button
 									type="button"
 									class="p-2 rounded-full bg-black/40 hover:bg-amber-500/80 text-white transition-colors shadow-sm"
-									title="Set as primary"
-									aria-label={ "Set " + item.Filename + " as primary" }
+									title={ t(ctx, "artist.set_as_primary") }
+									aria-label={ tf(ctx, "artist.set_as_primary_name", item.Filename) }
 									data-set-primary-index={ strconv.Itoa(item.Index) }
 									data-set-primary-count={ strconv.Itoa(len(items)) }
 									data-set-primary-artist={ artistID }
@@ -787,12 +787,12 @@ templ FanartGallery(artistID string, items []FanartGalleryItem, profileName stri
 							// Delete
 							<button
 								hx-delete={ fmt.Sprintf("/api/v1/artists/%s/images/fanart/%d", artistID, item.Index) }
-								hx-confirm="Delete this fanart image?"
+								hx-confirm={ t(ctx, "artist.delete_fanart_confirm") }
 								hx-swap="none"
 								hx-on::after-request="if(event.detail.successful) window.location.reload(); else alert('Action failed: ' + event.detail.xhr.responseText);"
 								class="p-2 rounded-full bg-black/40 hover:bg-red-500/80 text-white transition-colors shadow-sm"
-								title="Delete"
-								aria-label={ "Delete " + item.Filename }
+								title={ t(ctx, "common.delete") }
+								aria-label={ tf(ctx, "artist.delete_filename", item.Filename) }
 							>
 								@components.IconTrash("w-5 h-5")
 							</button>
@@ -809,7 +809,7 @@ templ FanartGallery(artistID string, items []FanartGalleryItem, profileName stri
 				}
 			</div>
 		} else {
-			<p class="text-sm text-gray-400 italic">No fanart images.</p>
+			<p class="text-sm text-gray-400 italic">{ t(ctx, "artist.no_fanart_images") }</p>
 		}
 		<script>
 			(function() {
@@ -904,7 +904,7 @@ func artistsBackURL(libraryID string) string {
 templ MembersSection(artistID string, members []artist.BandMember, providers []string) {
 	<section id={ "members-section-" + artistID } class="sw-card rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
 		<div class="flex items-center justify-between mb-3">
-			<h2 class="text-lg font-semibold">Members</h2>
+			<h2 class="text-lg font-semibold">{ t(ctx, "artist.members") }</h2>
 			<span class="inline-flex items-center gap-0.5">
 				@components.ContextMenu("members-"+artistID, true) {
 					if len(providers) > 0 {
@@ -918,7 +918,7 @@ templ MembersSection(artistID string, members []artist.BandMember, providers []s
 							hx-indicator={ "#members-spinner-" + artistID }
 						>
 							@components.IconArrowDownTray("h-4 w-4 text-gray-400")
-							Fetch from providers
+							{ t(ctx, "artist.fetch_from_providers") }
 						</button>
 					}
 					if len(members) > 0 {
@@ -932,11 +932,11 @@ templ MembersSection(artistID string, members []artist.BandMember, providers []s
 							hx-delete={ "/api/v1/artists/" + artistID + "/members" }
 							hx-target={ "#members-section-" + artistID }
 							hx-swap="outerHTML"
-							hx-confirm="Clear all members?"
+							hx-confirm={ t(ctx, "artist.clear_all_members_confirm") }
 							data-confirm-key="members-clear"
 						>
 							@components.IconTrash("h-4 w-4")
-							Clear all members
+							{ t(ctx, "artist.clear_all_members") }
 						</button>
 					}
 				}
@@ -956,7 +956,7 @@ templ MembersSection(artistID string, members []artist.BandMember, providers []s
 							<p class="text-sm font-medium text-gray-900 dark:text-gray-100">
 								{ m.MemberName }
 								if m.IsOriginalMember {
-									<span class="ml-1 text-xs text-gray-400">(original)</span>
+									<span class="ml-1 text-xs text-gray-400">{ t(ctx, "artist.member_original") }</span>
 								}
 							</p>
 							if len(m.Instruments) > 0 {
@@ -976,7 +976,7 @@ templ MembersSection(artistID string, members []artist.BandMember, providers []s
 								if m.DateLeft != "" {
 									{ " - " + m.DateLeft }
 								} else {
-									{ " - present" }
+									{ " - " + t(ctx, "artist.member_present") }
 								}
 							}
 						</div>
@@ -984,7 +984,7 @@ templ MembersSection(artistID string, members []artist.BandMember, providers []s
 				}
 			</div>
 		} else {
-			<p class="text-sm text-gray-400 italic">No members.</p>
+			<p class="text-sm text-gray-400 italic">{ t(ctx, "artist.no_members") }</p>
 		}
 	</section>
 }
@@ -1003,7 +1003,7 @@ templ PlatformStateCard(a *artist.Artist, conn *connection.Connection, state *co
 					templ.KV("bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300", conn.Type == connection.TypeJellyfin),
 				}>{ conn.Type }</span>
 				if state.IsLocked {
-					<span class="inline-flex items-center rounded-full bg-amber-100 dark:bg-amber-900/30 px-2 py-0.5 text-xs text-amber-700 dark:text-amber-400">Locked</span>
+					<span class="inline-flex items-center rounded-full bg-amber-100 dark:bg-amber-900/30 px-2 py-0.5 text-xs text-amber-700 dark:text-amber-400">{ t(ctx, "common.locked") }</span>
 				}
 			</div>
 			<div class="flex items-center gap-2">
@@ -1015,7 +1015,7 @@ templ PlatformStateCard(a *artist.Artist, conn *connection.Connection, state *co
 					hx-swap="none"
 					hx-on::after-request="if(event.detail.successful) window.location.reload(); else alert('Action failed: ' + event.detail.xhr.responseText);"
 				>
-					Push All
+					{ t(ctx, "artist.push_all") }
 				</button>
 				<button
 					type="button"
@@ -1024,7 +1024,7 @@ templ PlatformStateCard(a *artist.Artist, conn *connection.Connection, state *co
 					hx-swap="none"
 					hx-on::after-request="if(event.detail.successful) window.location.reload(); else alert('Action failed: ' + event.detail.xhr.responseText);"
 				>
-					Pull from Platform
+					{ t(ctx, "artist.pull_from_platform") }
 				</button>
 			</div>
 		</div>
@@ -1032,40 +1032,40 @@ templ PlatformStateCard(a *artist.Artist, conn *connection.Connection, state *co
 			<table class="w-full text-sm">
 				<thead>
 					<tr class="border-b border-gray-200 dark:border-gray-700">
-						<th class="text-left px-4 py-2 font-medium text-gray-500 dark:text-gray-400 w-32">Field</th>
+						<th class="text-left px-4 py-2 font-medium text-gray-500 dark:text-gray-400 w-32">{ t(ctx, "common.field") }</th>
 						<th class="text-left px-4 py-2 font-medium text-gray-500 dark:text-gray-400">Stillwater</th>
-						<th class="text-left px-4 py-2 font-medium text-gray-500 dark:text-gray-400">Platform</th>
-						<th class="text-center px-4 py-2 font-medium text-gray-500 dark:text-gray-400 w-20">Status</th>
+						<th class="text-left px-4 py-2 font-medium text-gray-500 dark:text-gray-400">{ t(ctx, "artist.platform") }</th>
+						<th class="text-center px-4 py-2 font-medium text-gray-500 dark:text-gray-400 w-20">{ t(ctx, "common.status") }</th>
 					</tr>
 				</thead>
 				<tbody class="divide-y divide-gray-100 dark:divide-gray-700/50">
-					@platformStateRow("Biography",
+					@platformStateRow(t(ctx, "artist.biography"),
 						truncate(a.Biography, 80),
 						truncate(state.Biography, 80),
 						fieldMatch(a.Biography, state.Biography),
 						a.Biography == "" && state.Biography == "")
-					@platformStateRow("Genres",
+					@platformStateRow(t(ctx, "artist.genres"),
 						strings.Join(a.Genres, ", "),
 						strings.Join(state.Genres, ", "),
 						sliceMatch(a.Genres, state.Genres),
 						len(a.Genres) == 0 && len(state.Genres) == 0)
-					@platformStateRow("Formed/PremiereDate",
+					@platformStateRow(t(ctx, "artist.formed_premiere_date"),
 						firstNonEmpty(a.Formed, a.Born),
 						state.PremiereDate,
 						fieldMatch(firstNonEmpty(a.Formed, a.Born), state.PremiereDate),
 						firstNonEmpty(a.Formed, a.Born) == "" && state.PremiereDate == "")
-					@platformStateRow("Disbanded/EndDate",
+					@platformStateRow(t(ctx, "artist.disbanded_end_date"),
 						firstNonEmpty(a.Disbanded, a.Died),
 						state.EndDate,
 						fieldMatch(firstNonEmpty(a.Disbanded, a.Died), state.EndDate),
 						firstNonEmpty(a.Disbanded, a.Died) == "" && state.EndDate == "")
-					@platformStateRow("MusicBrainz ID",
+					@platformStateRow(t(ctx, "artist.musicbrainz_id_label"),
 						a.MusicBrainzID,
 						state.MusicBrainzID,
 						fieldMatch(a.MusicBrainzID, state.MusicBrainzID),
 						a.MusicBrainzID == "" && state.MusicBrainzID == "")
 					<tr>
-						<td class="px-4 py-2 text-gray-500 dark:text-gray-400 font-medium align-top">Images</td>
+						<td class="px-4 py-2 text-gray-500 dark:text-gray-400 font-medium align-top">{ t(ctx, "artist.tab_images") }</td>
 						<td class="px-4 py-2">
 							@platformImageBadge(img.ImageTermFor("thumb", profileName), a.ThumbExists)
 							@platformImageBadge(img.ImageTermFor("fanart", profileName), a.FanartExists)
@@ -1093,7 +1093,7 @@ templ PlatformStateError(conn *connection.Connection, errMsg string) {
 	<div class="rounded-lg border border-red-200 dark:border-red-800 p-4">
 		<div class="flex items-center gap-2 text-red-600 dark:text-red-400">
 			<span class="font-medium text-sm">{ conn.Name }</span>
-			<span class="text-xs">Failed to load platform state: { errMsg }</span>
+			<span class="text-xs">{ tf(ctx, "artist.platform_state_error", errMsg) }</span>
 		</div>
 	</div>
 }
@@ -1105,27 +1105,27 @@ templ platformStateRow(field, swValue, platValue string, match, bothEmpty bool) 
 			if swValue != "" {
 				{ swValue }
 			} else {
-				<span class="text-gray-400 italic">empty</span>
+				<span class="text-gray-400 italic">{ t(ctx, "common.empty") }</span>
 			}
 		</td>
 		<td class="px-4 py-2 text-gray-900 dark:text-gray-100 align-top">
 			if platValue != "" {
 				{ platValue }
 			} else {
-				<span class="text-gray-400 italic">empty</span>
+				<span class="text-gray-400 italic">{ t(ctx, "common.empty") }</span>
 			}
 		</td>
 		<td class="px-4 py-2 text-center align-top">
 			if bothEmpty {
 				<span class="text-gray-300 dark:text-gray-600">--</span>
 			} else if match {
-				<span class="text-green-500" title="Match">
+				<span class="text-green-500" title={ t(ctx, "common.match") }>
 					<svg class="h-4 w-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
 					</svg>
 				</span>
 			} else {
-				<span class="text-amber-500" title="Mismatch">
+				<span class="text-amber-500" title={ t(ctx, "common.mismatch") }>
 					<svg class="h-4 w-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M12 3a9 9 0 100 18A9 9 0 0012 3z"></path>
 					</svg>

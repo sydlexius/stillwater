@@ -27,7 +27,7 @@ templ HealthSummaryFragment(data HealthSummaryData) {
 	<div
 		class={ "sw-card rounded-lg bg-white dark:bg-gray-800 p-6 shadow", }
 	>
-		<p class="text-sm font-medium text-gray-500 dark:text-gray-400">Compliance Score</p>
+		<p class="text-sm font-medium text-gray-500 dark:text-gray-400">{ t(ctx, "health.compliance_score") }</p>
 		<p
 			class={
 				"mt-2 text-4xl font-bold",
@@ -39,15 +39,15 @@ templ HealthSummaryFragment(data HealthSummaryData) {
 			{ fmt.Sprintf("%.1f%%", data.Score) }
 		</p>
 		<p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
-			{ fmt.Sprint(data.CompliantArtists) } of { fmt.Sprint(data.TotalArtists) } fully compliant
+			{ tf(ctx, "health.fully_compliant", data.CompliantArtists, data.TotalArtists) }
 		</p>
 	</div>
-	@quickStatCard("Missing Metadata", data.MissingNFO, "reports/compliance?filter=missing_nfo")
-	@quickStatCard("Missing Thumb", data.MissingThumb, "reports/compliance?filter=missing_thumb")
-	@quickStatCard("Missing MBID", data.MissingMBID, "reports/compliance?filter=missing_mbid")
+	@quickStatCard(t(ctx, "health.missing_metadata"), data.MissingNFO, "reports/compliance?filter=missing_nfo")
+	@quickStatCard(t(ctx, "health.missing_thumb"), data.MissingThumb, "reports/compliance?filter=missing_thumb")
+	@quickStatCard(t(ctx, "health.missing_mbid"), data.MissingMBID, "reports/compliance?filter=missing_mbid")
 	if len(data.TopViolations) > 0 {
 		<div class="sw-card sm:col-span-2 lg:col-span-4 rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
-			<h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Top Violations</h3>
+			<h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">{ t(ctx, "health.top_violations") }</h3>
 			<div class="space-y-2">
 				for _, v := range data.TopViolations {
 					<div class="flex items-center justify-between text-sm">
@@ -61,7 +61,7 @@ templ HealthSummaryFragment(data HealthSummaryData) {
 									templ.KV("bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200", v.Severity == "info"),
 								}
 							>
-								{ fmt.Sprint(v.Count) } artists
+								{ tf(ctx, "health.artist_count", v.Count) }
 							</span>
 						</div>
 					</div>

@@ -26,6 +26,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/database"
 	"github.com/sydlexius/stillwater/internal/encryption"
 	"github.com/sydlexius/stillwater/internal/event"
+	"github.com/sydlexius/stillwater/internal/i18n"
 	"github.com/sydlexius/stillwater/internal/imagebridge"
 	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/logging"
@@ -406,6 +407,12 @@ func run() error {
 		}
 	}
 
+	// Load i18n translation bundle (embedded at compile time).
+	i18nBundle, err := i18n.LoadEmbedded()
+	if err != nil {
+		return fmt.Errorf("loading i18n bundle: %w", err)
+	}
+
 	// Set up HTTP router
 	router := api.NewRouter(api.RouterDeps{
 		AuthService:        authService,
@@ -446,6 +453,7 @@ func run() error {
 		ImageCacheDir:      filepath.Join(filepath.Dir(cfg.Database.Path), "cache", "images"),
 		Publisher:          publisher,
 		RuleScheduler:      ruleScheduler,
+		I18nBundle:         i18nBundle,
 	})
 
 	// Graceful shutdown

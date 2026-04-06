@@ -1,7 +1,6 @@
 package templates
 
 import (
-	"fmt"
 	"strconv"
 
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -28,10 +27,9 @@ type RefreshOOBData struct {
 // has no MBID. Pre-filled with the artist name for immediate search.
 templ RefreshDisambiguationForm(artistID, artistName string) {
 	<div class="rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 p-4">
-		<h3 class="font-semibold text-sm mb-2">MusicBrainz ID Required</h3>
+		<h3 class="font-semibold text-sm mb-2">{ t(ctx, "image.mbid_required") }</h3>
 		<p class="text-sm text-gray-600 dark:text-gray-400 mb-3">
-			No MusicBrainz ID found for this artist. Search to find and link the correct entry,
-			then metadata will be fetched from all configured providers.
+			{ t(ctx, "image.mbid_required_description") }
 		</p>
 		<form
 			hx-post={ "/api/v1/artists/" + artistID + "/refresh/search" }
@@ -44,7 +42,7 @@ templ RefreshDisambiguationForm(artistID, artistName string) {
 					name="query"
 					type="text"
 					value={ artistName }
-					placeholder="Artist name"
+					placeholder={ t(ctx, "image.artist_name_placeholder") }
 					class="flex-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
 				/>
 				<button
@@ -52,19 +50,19 @@ templ RefreshDisambiguationForm(artistID, artistName string) {
 					class="inline-flex items-center gap-1.5 rounded bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
 				>
 					@components.IconMagnifyingGlass("h-4 w-4")
-					Search
+					{ t(ctx, "common.search") }
 				</button>
 			</div>
 		</form>
 		<div id="disambiguation-results" class="mt-3"></div>
-		<span id="search-spinner" class="htmx-indicator text-sm text-gray-500">Searching...</span>
+		<span id="search-spinner" class="htmx-indicator text-sm text-gray-500">{ t(ctx, "common.searching") }</span>
 	</div>
 }
 
 // DisambiguationResults renders the list of search result cards for MBID linking.
 templ DisambiguationResults(artistID string, candidates []DisambiguationCandidate) {
 	if len(candidates) == 0 {
-		<p class="text-sm text-gray-500 italic py-2">No results found. Try a different search term.</p>
+		<p class="text-sm text-gray-500 italic py-2">{ t(ctx, "image.no_results_found") }</p>
 	} else {
 		<div class="space-y-2">
 			for _, c := range candidates {
@@ -85,7 +83,7 @@ templ DisambiguationResults(artistID string, candidates []DisambiguationCandidat
 									<span>{ c.Result.Type }</span>
 								}
 								if c.Result.Country != "" {
-									<span> from { c.Result.Country }</span>
+									<span> { tf(ctx, "image.from_country", c.Result.Country) }</span>
 								}
 								if c.Result.Disambiguation != "" {
 									<span class="italic"> ({ c.Result.Disambiguation })</span>
@@ -97,7 +95,7 @@ templ DisambiguationResults(artistID string, candidates []DisambiguationCandidat
 							if c.AlbumComparison != nil && c.AlbumComparison.LocalCount > 0 {
 								<div class="mt-1.5 flex items-center gap-2">
 									<span class={ "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium", albumMatchClasses(c.AlbumComparison.MatchPercent) }>
-										{ fmt.Sprintf("%d/%d albums", c.AlbumComparison.MatchCount, c.AlbumComparison.LocalCount) }
+										{ tf(ctx, "image.album_match_count", c.AlbumComparison.MatchCount, c.AlbumComparison.LocalCount) }
 									</span>
 									if hasMatchedAlbums(c.AlbumComparison) {
 										<span class="text-[10px] text-gray-400 truncate">{ joinMatchedNames(c.AlbumComparison) }</span>
@@ -121,23 +119,23 @@ templ DisambiguationResults(artistID string, candidates []DisambiguationCandidat
 				</button>
 			}
 		</div>
-		<span id="link-spinner" class="htmx-indicator text-sm text-gray-500 mt-2 block">Linking and refreshing...</span>
+		<span id="link-spinner" class="htmx-indicator text-sm text-gray-500 mt-2 block">{ t(ctx, "image.linking_and_refreshing") }</span>
 	}
 }
 
 // RefreshResultSummary shows the outcome of a metadata refresh.
 templ RefreshResultSummary(artistID string, sources []provider.FieldSource) {
 	<div class="rounded-lg border border-green-300 dark:border-green-700 bg-green-50 dark:bg-green-900/20 p-4">
-		<h3 class="font-semibold text-sm mb-2">Metadata Refreshed</h3>
+		<h3 class="font-semibold text-sm mb-2">{ t(ctx, "image.metadata_refreshed") }</h3>
 		if len(sources) == 0 {
-			<p class="text-sm text-gray-500 italic">No new data was found from providers.</p>
+			<p class="text-sm text-gray-500 italic">{ t(ctx, "image.no_new_data") }</p>
 		} else {
 			<div class="space-y-1 text-sm">
 				for _, src := range sources {
 					<div class="flex items-center gap-2">
-						<span class="text-gray-600 dark:text-gray-400">{ fieldLabel(src.Field) }:</span>
+						<span class="text-gray-600 dark:text-gray-400">{ fieldLabel(ctx, src.Field) }:</span>
 						<span class="flex items-center gap-1 text-green-600 dark:text-green-400">
-							Updated from
+							{ t(ctx, "image.updated_from") }
 							if logoSrcSet(string(src.Provider)) != "" {
 								<img src={ logoSrc(string(src.Provider)) } srcset={ logoSrcSet(string(src.Provider)) } alt="" class="h-3.5 w-3.5 inline" aria-hidden="true"/>
 							} else {
@@ -155,7 +153,7 @@ templ RefreshResultSummary(artistID string, sources []provider.FieldSource) {
 // RefreshError shows an error from a failed refresh attempt.
 templ RefreshError(message string) {
 	<div class="rounded-lg border border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/20 p-4">
-		<h3 class="font-semibold text-sm mb-1 text-red-800 dark:text-red-200">Refresh Failed</h3>
+		<h3 class="font-semibold text-sm mb-1 text-red-800 dark:text-red-200">{ t(ctx, "image.refresh_failed") }</h3>
 		<p class="text-sm text-red-600 dark:text-red-400">{ message }</p>
 	</div>
 }
@@ -169,7 +167,7 @@ templ RefreshOOBFragments(data RefreshOOBData) {
 	</div>
 	// Tags
 	<section id={ "artist-tags-" + data.Artist.ID } hx-swap-oob="outerHTML" class="sw-card rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
-		<h2 class="text-lg font-semibold mb-3">Tags</h2>
+		<h2 class="text-lg font-semibold mb-3">{ t(ctx, "common.tags") }</h2>
 		@FieldDisplay(&data.Artist, "genres", data.FieldProviders["genres"])
 		@FieldDisplay(&data.Artist, "styles", data.FieldProviders["styles"])
 		@FieldDisplay(&data.Artist, "moods", data.FieldProviders["moods"])
@@ -180,7 +178,7 @@ templ RefreshOOBFragments(data RefreshOOBData) {
 	</div>
 	// Details
 	<section id={ "artist-details-" + data.Artist.ID } hx-swap-oob="outerHTML" class="sw-card rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
-		<h2 class="text-lg font-semibold mb-3">Details</h2>
+		<h2 class="text-lg font-semibold mb-3">{ t(ctx, "common.details") }</h2>
 		<dl class="space-y-2 text-sm">
 			@FieldDisplay(&data.Artist, "name", data.FieldProviders["name"])
 			@FieldDisplay(&data.Artist, "sort_name", data.FieldProviders["sort_name"])
@@ -196,7 +194,7 @@ templ RefreshOOBFragments(data RefreshOOBData) {
 	</section>
 	// Images
 	<section id={ "artist-images-" + data.Artist.ID } hx-swap-oob="outerHTML" class="sw-card rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
-		<h2 class="text-lg font-semibold mb-3">Images</h2>
+		<h2 class="text-lg font-semibold mb-3">{ t(ctx, "common.images") }</h2>
 		<div class="grid grid-cols-2 gap-3">
 			@ImagePreviewCard(data.Artist.ID, "thumb", data.Artist.ThumbExists, img.ImageTermFor("thumb", data.ProfileName), 0)
 			@ImagePreviewCard(data.Artist.ID, "fanart", data.Artist.FanartExists, img.ImageTermFor("fanart", data.ProfileName), data.Artist.FanartCount)
@@ -204,12 +202,12 @@ templ RefreshOOBFragments(data RefreshOOBData) {
 			@ImagePreviewCard(data.Artist.ID, "banner", data.Artist.BannerExists, img.ImageTermFor("banner", data.ProfileName), 0)
 		</div>
 		<div class="mt-3">
-			@components.StatusBadge(data.Artist.NFOExists, "Metadata")
+			@components.StatusBadge(data.Artist.NFOExists, t(ctx, "common.metadata"))
 		</div>
 	</section>
 	// Provider IDs
 	<section id={ "artist-providers-" + data.Artist.ID } hx-swap-oob="outerHTML" class="sw-card rounded-lg bg-white dark:bg-gray-800 p-6 shadow">
-		<h2 class="text-lg font-semibold mb-3">Provider IDs</h2>
+		<h2 class="text-lg font-semibold mb-3">{ t(ctx, "common.provider_ids") }</h2>
 		<dl class="space-y-2 text-sm">
 			@FieldDisplay(&data.Artist, "musicbrainz_id", data.FieldProviders["musicbrainz_id"])
 			@FieldDisplay(&data.Artist, "audiodb_id", data.FieldProviders["audiodb_id"])

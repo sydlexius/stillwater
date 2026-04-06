@@ -17,7 +17,7 @@ templ NFODiffPage(assets AssetPaths, data NFODiffPageData) {
 		<div class="space-y-6">
 			<div class="sw-card rounded-lg px-6 py-4">
 				<div class="flex flex-wrap items-center gap-2 text-sm text-gray-500 dark:text-gray-400 mb-2">
-					<a href={ templ.SafeURL(assets.BasePath + "/artists") } class="hover:text-gray-700 dark:hover:text-gray-200">Artists</a>
+					<a href={ templ.SafeURL(assets.BasePath + "/artists") } class="hover:text-gray-700 dark:hover:text-gray-200">{ t(ctx, "common.artists") }</a>
 					<span>/</span>
 					<a
 						href={ templ.SafeURL(assets.BasePath + "/artists/" + data.Artist.ID) }
@@ -26,14 +26,14 @@ templ NFODiffPage(assets AssetPaths, data NFODiffPageData) {
 						{ data.Artist.Name }
 					</a>
 					<span>/</span>
-					<span>NFO Diff</span>
+					<span>{ t(ctx, "nfo.diff_breadcrumb") }</span>
 				</div>
-				<h1 class="text-2xl font-bold">NFO Diff Preview</h1>
+				<h1 class="text-2xl font-bold">{ t(ctx, "nfo.diff_title") }</h1>
 			</div>
 			if data.IsPathless {
 				<div class="rounded-lg border border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/20 px-4 py-3">
 					<p class="text-sm text-blue-700 dark:text-blue-400">
-						No filesystem path. Showing virtual NFO from database fields.
+						{ t(ctx, "nfo.no_filesystem_path") }
 					</p>
 				</div>
 			}
@@ -46,8 +46,8 @@ templ NFODiffPage(assets AssetPaths, data NFODiffPageData) {
 				@NFODiffFragment(data.Diff)
 			</div>
 			<p class="text-xs text-gray-400 dark:text-gray-500">
-				Field-level undo is available from the
-				<a href={ templ.SafeURL(assets.BasePath + "/artists/" + data.Artist.ID) } class="text-blue-500 hover:underline">artist page</a> (History section).
+				{ t(ctx, "nfo.undo_hint_prefix") }
+				<a href={ templ.SafeURL(assets.BasePath + "/artists/" + data.Artist.ID) } class="text-blue-500 hover:underline">{ t(ctx, "nfo.undo_hint_link") }</a> { t(ctx, "nfo.undo_hint_suffix") }
 			</p>
 		</div>
 	}
@@ -58,16 +58,16 @@ templ NFODiffFragment(diff nfo.DiffResult) {
 	<div class="rounded-lg bg-white dark:bg-gray-800 shadow overflow-hidden">
 		if !diff.HasDiff {
 			<div class="p-6 text-center text-sm text-gray-500 dark:text-gray-400">
-				No differences found.
+				{ t(ctx, "nfo.no_differences") }
 			</div>
 		} else {
 			<table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
 				<thead class="bg-gray-50 dark:bg-gray-800">
 					<tr>
-						<th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">Field</th>
-						<th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">Previous</th>
-						<th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">Current</th>
-						<th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">Status</th>
+						<th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">{ t(ctx, "nfo.col_field") }</th>
+						<th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">{ t(ctx, "nfo.col_previous") }</th>
+						<th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">{ t(ctx, "nfo.col_current") }</th>
+						<th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">{ t(ctx, "nfo.col_status") }</th>
 					</tr>
 				</thead>
 				<tbody class="divide-y divide-gray-200 dark:divide-gray-700">
@@ -110,15 +110,15 @@ func truncateStr(s string, maxLen int) string {
 templ diffStatusBadge(status string) {
 	if status == "added" {
 		<span class="inline-flex items-center rounded-full bg-green-100 dark:bg-green-900 px-2 py-0.5 text-xs font-medium text-green-800 dark:text-green-200">
-			Added
+			{ t(ctx, "nfo.status_added") }
 		</span>
 	} else if status == "removed" {
 		<span class="inline-flex items-center rounded-full bg-red-100 dark:bg-red-900 px-2 py-0.5 text-xs font-medium text-red-800 dark:text-red-200">
-			Removed
+			{ t(ctx, "nfo.status_removed") }
 		</span>
 	} else if status == "changed" {
 		<span class="inline-flex items-center rounded-full bg-yellow-100 dark:bg-yellow-900 px-2 py-0.5 text-xs font-medium text-yellow-800 dark:text-yellow-200">
-			Changed
+			{ t(ctx, "nfo.status_changed") }
 		</span>
 	}
 }

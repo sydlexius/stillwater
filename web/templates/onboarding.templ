@@ -37,7 +37,7 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 		<head>
 			<meta charset="UTF-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-			<title>Welcome - Stillwater</title>
+			<title>{ t(ctx, "onboarding.page_title") }</title>
 			<link rel="stylesheet" href={ assets.CSS }/>
 			<link rel="icon" type="image/svg+xml" href={ assets.BasePath + "/static/img/favicon.svg" }/>
 			<link rel="icon" type="image/png" sizes="32x32" href={ assets.BasePath + "/static/img/favicon-32x32.png" }/>
@@ -70,98 +70,98 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 						<div class="flex justify-center">
 							<img src={ assets.BasePath + "/static/img/favicon.svg" } alt="" class="h-12 w-12" aria-hidden="true"/>
 						</div>
-						<h1 class="mt-3 text-3xl font-bold text-blue-600 dark:text-blue-400">Welcome to Stillwater</h1>
+						<h1 class="mt-3 text-3xl font-bold text-blue-600 dark:text-blue-400">{ t(ctx, "onboarding.welcome") }</h1>
 						<p class="mt-2 text-sm text-gray-500 dark:text-gray-400">
-							Configure your installation in a few quick steps.
+							{ t(ctx, "onboarding.configure_intro") }
 						</p>
 					</div>
 					<!-- Progress indicator (hidden on intro step) -->
 					<div class={ "flex items-center justify-center gap-0", templ.KV("hidden", data.CurrentStep == 0) } id="progress-bar">
 						<div class="flex items-center gap-2">
 							<div id="step-dot-1" class="h-8 w-8 rounded-full bg-blue-600 text-white flex items-center justify-center text-sm font-medium">1</div>
-							<span id="step-label-1" class="text-sm font-medium text-gray-900 dark:text-gray-100 hidden sm:inline">Libraries</span>
+							<span id="step-label-1" class="text-sm font-medium text-gray-900 dark:text-gray-100 hidden sm:inline">{ t(ctx, "onboarding.step_libraries") }</span>
 						</div>
 						<div id="step-line-1" class="h-0.5 w-8 bg-gray-300 dark:bg-gray-600 mx-2 sm:w-8"></div>
 						<div class="flex items-center gap-2">
 							<div id="step-dot-2" class="h-8 w-8 rounded-full bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 flex items-center justify-center text-sm font-medium">2</div>
-							<span id="step-label-2" class="text-sm text-gray-500 dark:text-gray-400 hidden sm:inline">Platform</span>
+							<span id="step-label-2" class="text-sm text-gray-500 dark:text-gray-400 hidden sm:inline">{ t(ctx, "onboarding.step_platform") }</span>
 						</div>
 						<div id="step-line-2" class="h-0.5 w-8 bg-gray-300 dark:bg-gray-600 mx-2 sm:w-8"></div>
 						<div class="flex items-center gap-2">
 							<div id="step-dot-3" class="h-8 w-8 rounded-full bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 flex items-center justify-center text-sm font-medium">3</div>
-							<span id="step-label-3" class="text-sm text-gray-500 dark:text-gray-400 hidden sm:inline">Providers</span>
+							<span id="step-label-3" class="text-sm text-gray-500 dark:text-gray-400 hidden sm:inline">{ t(ctx, "onboarding.step_providers") }</span>
 						</div>
 						<div id="step-line-3" class="h-0.5 w-8 bg-gray-300 dark:bg-gray-600 mx-2 sm:w-8"></div>
 						<div class="flex items-center gap-2">
 							<div id="step-dot-4" class="h-8 w-8 rounded-full bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 flex items-center justify-center text-sm font-medium">4</div>
-							<span id="step-label-4" class="text-sm text-gray-500 dark:text-gray-400 hidden sm:inline">Connections</span>
+							<span id="step-label-4" class="text-sm text-gray-500 dark:text-gray-400 hidden sm:inline">{ t(ctx, "onboarding.step_connections") }</span>
 						</div>
 						<div id="step-line-4" class="h-0.5 w-8 bg-gray-300 dark:bg-gray-600 mx-2 sm:w-8"></div>
 						<div class="flex items-center gap-2">
 							<div id="step-dot-5" class="h-8 w-8 rounded-full bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 flex items-center justify-center text-sm font-medium">5</div>
-							<span id="step-label-5" class="text-sm text-gray-500 dark:text-gray-400 hidden sm:inline">Discovery</span>
+							<span id="step-label-5" class="text-sm text-gray-500 dark:text-gray-400 hidden sm:inline">{ t(ctx, "onboarding.step_discovery") }</span>
 						</div>
 					</div>
 					<!-- Step 0: Introduction -->
 					<div id="wizard-step-0" class={ "rounded-lg bg-white dark:bg-gray-800 shadow p-6", templ.KV("hidden", data.CurrentStep != 0) }>
 						<p class="text-sm text-gray-600 dark:text-gray-300 mb-5">
-							Stillwater manages artist metadata and images for your self-hosted music library. It writes NFO files and organizes artwork so your media server displays rich artist information.
+							{ t(ctx, "onboarding.intro_description") }
 						</p>
 						<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
 							<div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
-								<h3 class="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-1">Metadata (NFO Files)</h3>
+								<h3 class="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-1">{ t(ctx, "onboarding.feature_metadata_title") }</h3>
 								<p class="text-xs text-gray-500 dark:text-gray-400">
-									Fetch biographies, genres, styles, moods, and formation dates from multiple sources and write them as standard NFO files your media server can read.
+									{ t(ctx, "onboarding.feature_metadata_desc") }
 								</p>
 							</div>
 							<div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
-								<h3 class="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-1">Image Management</h3>
+								<h3 class="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-1">{ t(ctx, "onboarding.feature_images_title") }</h3>
 								<p class="text-xs text-gray-500 dark:text-gray-400">
-									Download and manage artist thumbnails, fanart, logos, and banners. Compare options side-by-side, crop to fit, and save in the correct format for your platform.
+									{ t(ctx, "onboarding.feature_images_desc") }
 								</p>
 							</div>
 							<div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
-								<h3 class="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-1">Provider System</h3>
+								<h3 class="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-1">{ t(ctx, "onboarding.feature_providers_title") }</h3>
 								<p class="text-xs text-gray-500 dark:text-gray-400">
-									Pull data from MusicBrainz, Fanart.tv, TheAudioDB, Last.fm, Discogs, Wikidata, and Deezer. Configure priority order per field so the best source wins.
+									{ t(ctx, "onboarding.feature_providers_desc") }
 								</p>
 							</div>
 							<div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
-								<h3 class="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-1">Platform Profiles</h3>
+								<h3 class="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-1">{ t(ctx, "onboarding.feature_platforms_title") }</h3>
 								<p class="text-xs text-gray-500 dark:text-gray-400">
-									Choose your media server (Emby, Jellyfin, or Kodi) and Stillwater adapts NFO format and image naming conventions to match what it expects.
+									{ t(ctx, "onboarding.feature_platforms_desc") }
 								</p>
 							</div>
 							<div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
-								<h3 class="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-1">Rule Engine</h3>
+								<h3 class="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-1">{ t(ctx, "onboarding.feature_rules_title") }</h3>
 								<p class="text-xs text-gray-500 dark:text-gray-400">
-									Define rules that automatically apply metadata decisions across your library. Set genre mappings, image preferences, and field overrides that run on every fetch.
+									{ t(ctx, "onboarding.feature_rules_desc") }
 								</p>
 							</div>
 							<div class="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
-								<h3 class="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-1">Scanner Exclusions</h3>
+								<h3 class="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-1">{ t(ctx, "onboarding.feature_scanner_title") }</h3>
 								<p class="text-xs text-gray-500 dark:text-gray-400">
-									Directories named "Various Artists", "VA", "Soundtrack", or "OST" are excluded from scanning by default. These compilation folders lack meaningful artist metadata.
+									{ t(ctx, "onboarding.feature_scanner_desc") }
 								</p>
 							</div>
 						</div>
 					</div>
 					<!-- Step 1: Music Libraries -->
 					<div id="wizard-step-1" class={ "rounded-lg bg-white dark:bg-gray-800 shadow p-6", templ.KV("hidden", data.CurrentStep != 1) }>
-						<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">Music Libraries</h2>
+						<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">{ t(ctx, "onboarding.music_libraries") }</h2>
 						<p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
-							Add your music library paths. Each library maps to a directory containing artist folders.
+							{ t(ctx, "onboarding.libraries_description") }
 						</p>
 						<div class="rounded-lg border border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/20 p-4 mb-4">
 							<p class="text-sm text-blue-800 dark:text-blue-200 mb-2">
 								Stillwater expects one album artist per top-level directory (e.g. <code class="text-xs bg-blue-100 dark:bg-blue-800/40 px-1 rounded">/music/Pink Floyd/</code>, <code class="text-xs bg-blue-100 dark:bg-blue-800/40 px-1 rounded">/music/Radiohead/</code>).
 							</p>
 							<p class="text-xs text-blue-700 dark:text-blue-300 mb-2">
-								Compilation folders like "Various Artists", "Various", "VA", "Soundtrack", and "OST" are excluded by default since they lack meaningful artist metadata.
+								{ t(ctx, "onboarding.compilation_exclusions") }
 							</p>
 							<p class="text-xs text-blue-700 dark:text-blue-300">
 								Tools for organizing: <a href="https://picard.musicbrainz.org/" target="_blank" rel="noopener noreferrer" class="underline hover:text-blue-900 dark:hover:text-blue-100">MusicBrainz Picard</a>, <a href="https://beets.io/" target="_blank" rel="noopener noreferrer" class="underline hover:text-blue-900 dark:hover:text-blue-100">Beets</a>, <a href="https://lidarr.audio/" target="_blank" rel="noopener noreferrer" class="underline hover:text-blue-900 dark:hover:text-blue-100">Lidarr</a>.
-								<a href="/guide#library-structure" target="_blank" rel="noopener noreferrer" class="underline font-medium hover:text-blue-900 dark:hover:text-blue-100">Read more</a>
+								<a href="/guide#library-structure" target="_blank" rel="noopener noreferrer" class="underline font-medium hover:text-blue-900 dark:hover:text-blue-100">{ t(ctx, "common.read_more") }</a>
 							</p>
 						</div>
 						<div id="ob-library-list" class="space-y-2 mb-4">
@@ -169,7 +169,7 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 								@onboardingLibraryRow(lib)
 							}
 							if len(data.Libraries) == 0 {
-								<p id="ob-no-libraries" class="text-sm text-gray-400 dark:text-gray-500 italic">No libraries configured yet.</p>
+								<p id="ob-no-libraries" class="text-sm text-gray-400 dark:text-gray-500 italic">{ t(ctx, "onboarding.no_libraries") }</p>
 							}
 						</div>
 						<div id="ob-library-form-wrapper">
@@ -179,7 +179,7 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 								class="text-sm px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
 								onclick="document.getElementById('ob-library-form').classList.remove('hidden'); this.classList.add('hidden'); var e=document.getElementById('ob-library-error'); if(e) e.classList.add('hidden');"
 							>
-								Add Library
+								{ t(ctx, "onboarding.add_library") }
 							</button>
 							<div id="ob-library-error" role="alert" class="hidden mb-2 rounded-md bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 px-3 py-2 text-sm text-red-700 dark:text-red-300"></div>
 							<form
@@ -192,13 +192,13 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 								<div class="grid grid-cols-1 gap-3">
 									<input
 										name="name"
-										placeholder="Library name (e.g. Music, Classical, Soundtracks)"
+										placeholder={ t(ctx, "onboarding.library_name_placeholder") }
 										required
 										class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
 									/>
 									<input
 										name="path"
-										placeholder="Path (e.g. /music or /music/classical)"
+										placeholder={ t(ctx, "onboarding.library_path_placeholder") }
 										required
 										class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
 									/>
@@ -211,24 +211,24 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 											onchange="syncLibraryTypeHelpText()"
 											aria-describedby="ob-library-type-help"
 										>
-											<option value="regular">Regular</option>
-											<option value="classical">Classical</option>
+											<option value="regular">{ t(ctx, "onboarding.library_type_regular") }</option>
+											<option value="classical">{ t(ctx, "onboarding.library_type_classical") }</option>
 										</select>
 										<p id="ob-library-type-help" class="text-xs text-gray-500 dark:text-gray-400" aria-live="polite"></p>
 									</div>
 								</div>
 								<div class="flex gap-2">
-									<button type="submit" class="text-sm px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 transition-colors">Save</button>
-									<button type="button" class="text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" onclick="document.getElementById('ob-library-form').classList.add('hidden'); document.getElementById('ob-add-library-btn').classList.remove('hidden'); var e=document.getElementById('ob-library-error'); if(e) e.classList.add('hidden');">Cancel</button>
+									<button type="submit" class="text-sm px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 transition-colors">{ t(ctx, "common.save") }</button>
+									<button type="button" class="text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" onclick="document.getElementById('ob-library-form').classList.add('hidden'); document.getElementById('ob-add-library-btn').classList.remove('hidden'); var e=document.getElementById('ob-library-error'); if(e) e.classList.add('hidden');">{ t(ctx, "common.cancel") }</button>
 								</div>
 							</form>
 						</div>
 					</div>
 					<!-- Step 2: Platform Profile -->
 					<div id="wizard-step-2" class={ "rounded-lg bg-white dark:bg-gray-800 shadow p-6", templ.KV("hidden", data.CurrentStep != 2) }>
-						<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">Choose Your Platform</h2>
+						<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">{ t(ctx, "onboarding.choose_platform") }</h2>
 						<p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
-							Select the media server you use. This controls NFO format and image naming conventions.
+							{ t(ctx, "onboarding.platform_description") }
 						</p>
 						<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
 							for _, p := range data.Profiles {
@@ -238,9 +238,9 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 					</div>
 					<!-- Step 3: Provider API Keys -->
 					<div id="wizard-step-3" class={ "rounded-lg bg-white dark:bg-gray-800 shadow p-6", templ.KV("hidden", data.CurrentStep != 3) }>
-						<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">Provider API Keys</h2>
+						<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">{ t(ctx, "onboarding.provider_api_keys") }</h2>
 						<p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
-							Configure API keys for metadata and image providers. You can skip this and add keys later from Settings.
+							{ t(ctx, "onboarding.providers_description") }
 						</p>
 						<div class="space-y-3">
 							for _, pk := range data.ProviderKeys {
@@ -249,9 +249,9 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 						</div>
 						if len(data.WebSearchProviders) > 0 {
 							<div class="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
-								<h3 class="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-1">Web Image Search</h3>
+								<h3 class="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-1">{ t(ctx, "onboarding.web_image_search") }</h3>
 								<p class="text-xs text-gray-500 dark:text-gray-400 mb-3">
-									Enable web search providers to find additional artist images via search engines. No API key required.
+									{ t(ctx, "onboarding.web_search_description") }
 								</p>
 								<div class="space-y-3">
 									for _, ws := range data.WebSearchProviders {
@@ -263,33 +263,33 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 					</div>
 					<!-- Step 4: Server Connections -->
 					<div id="wizard-step-4" class={ "rounded-lg bg-white dark:bg-gray-800 shadow p-6", templ.KV("hidden", data.CurrentStep != 4) }>
-						<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">Server Connections</h2>
+						<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">{ t(ctx, "onboarding.server_connections") }</h2>
 						<p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
-							Optionally connect to your media server or music manager. These are not required for core functionality and can be added later from Settings.
+							{ t(ctx, "onboarding.connections_description") }
 						</p>
 						<div class="space-y-4">
 							@onboardingConnectionCard("emby", "Emby", "http://192.168.1.100:8096", data.Connections) {
 								<ul class="text-xs text-gray-500 dark:text-gray-400 mt-1 space-y-0.5 list-disc list-inside">
-									<li>Import artist lists from your Emby music libraries</li>
-									<li>Push metadata updates (biography, genres, sort name) to Emby artist entries</li>
-									<li>Trigger per-artist or full library refreshes after image and NFO changes</li>
-									<li>Read MusicBrainz IDs from existing Emby records for accurate provider matching</li>
+									<li>{ t(ctx, "onboarding.emby_import_artists") }</li>
+									<li>{ t(ctx, "onboarding.emby_push_metadata") }</li>
+									<li>{ t(ctx, "onboarding.emby_trigger_refresh") }</li>
+									<li>{ t(ctx, "onboarding.emby_read_mbids") }</li>
 								</ul>
 							}
 							@onboardingConnectionCard("jellyfin", "Jellyfin", "http://192.168.1.100:8096", data.Connections) {
 								<ul class="text-xs text-gray-500 dark:text-gray-400 mt-1 space-y-0.5 list-disc list-inside">
-									<li>Import artist lists from your Jellyfin music libraries</li>
-									<li>Push metadata updates (biography, genres, sort name) to Jellyfin artist entries</li>
-									<li>Trigger per-artist or full library refreshes after image and NFO changes</li>
-									<li>Read MusicBrainz IDs from existing Jellyfin records for accurate provider matching</li>
+									<li>{ t(ctx, "onboarding.jellyfin_import_artists") }</li>
+									<li>{ t(ctx, "onboarding.jellyfin_push_metadata") }</li>
+									<li>{ t(ctx, "onboarding.jellyfin_trigger_refresh") }</li>
+									<li>{ t(ctx, "onboarding.jellyfin_read_mbids") }</li>
 								</ul>
 							}
 							@onboardingConnectionCard("lidarr", "Lidarr", "http://192.168.1.100:8686", data.Connections) {
 								<ul class="text-xs text-gray-500 dark:text-gray-400 mt-1 space-y-0.5 list-disc list-inside">
-									<li>Read-only metadata source for MusicBrainz ID seeding</li>
-									<li>No library is created for Lidarr connections</li>
-									<li>Detect Lidarr NFO writer configuration to warn about write conflicts</li>
-									<li>Read metadata profiles for configuration awareness</li>
+									<li>{ t(ctx, "onboarding.lidarr_readonly") }</li>
+									<li>{ t(ctx, "onboarding.lidarr_no_library") }</li>
+									<li>{ t(ctx, "onboarding.lidarr_detect_nfo") }</li>
+									<li>{ t(ctx, "onboarding.lidarr_read_profiles") }</li>
 								</ul>
 							}
 						</div>
@@ -305,9 +305,9 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 					<div id="wizard-step-5" class={ "rounded-lg bg-white dark:bg-gray-800 shadow p-6", templ.KV("hidden", data.CurrentStep != 5) }>
 						<!-- Phase 1: Opt-in -->
 						<div id="discovery-opt-in">
-							<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">Artist Discovery</h2>
+							<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">{ t(ctx, "onboarding.artist_discovery") }</h2>
 							<p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
-								Stillwater can search your configured providers to identify artists in your library and fetch metadata automatically.
+								{ t(ctx, "onboarding.discovery_description") }
 							</p>
 							if data.UnidentifiedCount < 0 {
 								<div class="rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 p-4 mb-5">
@@ -318,9 +318,9 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 											</svg>
 										</div>
 										<div>
-											<p class="text-sm font-medium text-amber-800 dark:text-amber-200">Could not check artist identification status</p>
+											<p class="text-sm font-medium text-amber-800 dark:text-amber-200">{ t(ctx, "onboarding.discovery_check_failed") }</p>
 											<p class="text-xs text-amber-700 dark:text-amber-300/70 mt-0.5">
-												You can still start discovery -- it will determine the count automatically.
+												{ t(ctx, "onboarding.discovery_check_failed_hint") }
 											</p>
 										</div>
 									</div>
@@ -331,10 +331,10 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 									class="w-full text-sm px-4 py-2.5 rounded-md bg-green-600 text-white hover:bg-green-700 transition-colors font-medium"
 									onclick="startDiscovery()"
 								>
-									Start Discovery
+									{ t(ctx, "onboarding.start_discovery") }
 								</button>
 								<p class="text-xs text-gray-500 dark:text-gray-400 mt-3 text-center">
-									You can skip this and identify artists individually later from the Artists page.
+									{ t(ctx, "onboarding.discovery_skip_hint") }
 								</p>
 							} else if data.UnidentifiedCount > 0 {
 								<div class="rounded-lg border border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/20 p-4 mb-5">
@@ -345,9 +345,9 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 											</svg>
 										</div>
 										<div>
-											<p class="text-sm font-medium text-blue-800 dark:text-blue-200">{ strconv.Itoa(data.UnidentifiedCount) + " artists need identification" }</p>
+											<p class="text-sm font-medium text-blue-800 dark:text-blue-200">{ tf(ctx, "onboarding.artists_need_identification", data.UnidentifiedCount) }</p>
 											<p class="text-xs text-blue-700 dark:text-blue-300/70 mt-0.5">
-												These artists have no MusicBrainz ID linked. Discovery will search providers and auto-link high-confidence matches.
+												{ t(ctx, "onboarding.no_mbid_linked") }
 											</p>
 										</div>
 									</div>
@@ -357,19 +357,19 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 										<svg class="w-4 h-4 text-green-600 dark:text-green-400 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
 											<polyline points="20 6 9 17 4 12"></polyline>
 										</svg>
-										<span>Matches artists against your Emby/Jellyfin/Lidarr libraries first</span>
+										<span>{ t(ctx, "onboarding.discovery_match_libraries") }</span>
 									</div>
 									<div class="flex items-start gap-2">
 										<svg class="w-4 h-4 text-green-600 dark:text-green-400 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
 											<polyline points="20 6 9 17 4 12"></polyline>
 										</svg>
-										<span>Compares local album folders against MusicBrainz discographies</span>
+										<span>{ t(ctx, "onboarding.discovery_compare_albums") }</span>
 									</div>
 									<div class="flex items-start gap-2">
 										<svg class="w-4 h-4 text-green-600 dark:text-green-400 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
 											<polyline points="20 6 9 17 4 12"></polyline>
 										</svg>
-										<span>Queues uncertain matches for your review</span>
+										<span>{ t(ctx, "onboarding.discovery_queue_review") }</span>
 									</div>
 								</div>
 								<button
@@ -378,28 +378,28 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 									class="w-full text-sm px-4 py-2.5 rounded-md bg-green-600 text-white hover:bg-green-700 transition-colors font-medium"
 									onclick="startDiscovery()"
 								>
-									Start Discovery
+									{ t(ctx, "onboarding.start_discovery") }
 								</button>
 								<p class="text-xs text-gray-500 dark:text-gray-400 mt-3 text-center">
-									You can skip this and identify artists individually later from the Artists page.
+									{ t(ctx, "onboarding.discovery_skip_hint") }
 								</p>
 							} else {
 								<div class="flex flex-col items-center py-6">
 									<svg class="w-12 h-12 text-green-600 dark:text-green-400 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
 										<path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
 									</svg>
-									<p class="text-sm font-medium text-gray-900 dark:text-gray-100">All artists are already identified</p>
-									<p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Nothing to discover. You're all set!</p>
+									<p class="text-sm font-medium text-gray-900 dark:text-gray-100">{ t(ctx, "onboarding.all_artists_identified") }</p>
+									<p class="text-xs text-gray-500 dark:text-gray-400 mt-1">{ t(ctx, "onboarding.nothing_to_discover") }</p>
 								</div>
 							}
 						</div>
 						<!-- Phase 2: Progress -->
 						<div id="discovery-progress" class="hidden">
-							<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">Artist Discovery</h2>
-							<p class="text-sm text-gray-500 dark:text-gray-400 mb-4">Identifying artists in your library...</p>
+							<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">{ t(ctx, "onboarding.artist_discovery") }</h2>
+							<p class="text-sm text-gray-500 dark:text-gray-400 mb-4">{ t(ctx, "onboarding.identifying_artists") }</p>
 							<div class="mb-4">
 								<div class="flex justify-between text-xs text-gray-600 dark:text-gray-400 mb-1.5">
-									<span>Processing: <span id="discovery-current-name" class="text-gray-900 dark:text-gray-200 font-medium"></span></span>
+									<span>{ t(ctx, "onboarding.processing") } <span id="discovery-current-name" class="text-gray-900 dark:text-gray-200 font-medium"></span></span>
 									<span><span id="discovery-processed">0</span> / <span id="discovery-total">0</span></span>
 								</div>
 								<div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5">
@@ -409,15 +409,15 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 							<div class="grid grid-cols-3 gap-3 mb-4">
 								<div class="rounded-lg bg-gray-100 dark:bg-gray-700/50 p-3 text-center">
 									<div id="discovery-auto-linked" class="text-lg font-bold text-green-600 dark:text-green-400">0</div>
-									<div class="text-xs text-gray-500 dark:text-gray-400">Auto-linked</div>
+									<div class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "onboarding.auto_linked") }</div>
 								</div>
 								<div class="rounded-lg bg-gray-100 dark:bg-gray-700/50 p-3 text-center">
 									<div id="discovery-queued" class="text-lg font-bold text-amber-600 dark:text-amber-400">0</div>
-									<div class="text-xs text-gray-500 dark:text-gray-400">Need review</div>
+									<div class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "onboarding.need_review") }</div>
 								</div>
 								<div class="rounded-lg bg-gray-100 dark:bg-gray-700/50 p-3 text-center">
 									<div id="discovery-unmatched" class="text-lg font-bold text-gray-500 dark:text-gray-400">0</div>
-									<div class="text-xs text-gray-500 dark:text-gray-400">No match</div>
+									<div class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "onboarding.no_match") }</div>
 								</div>
 							</div>
 							<button
@@ -426,20 +426,20 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 								class="w-full text-sm px-4 py-2 rounded-md border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
 								onclick="cancelDiscovery()"
 							>
-								Cancel
+								{ t(ctx, "common.cancel") }
 							</button>
 							<p class="text-xs text-gray-500 dark:text-gray-400 mt-3 text-center">
-								Already-linked artists are saved immediately. You can cancel at any time without losing progress.
+								{ t(ctx, "onboarding.discovery_cancel_hint") }
 							</p>
 						</div>
 						<!-- Phase 3: Review -->
 						<div id="discovery-review" class="hidden">
-							<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">Artist Discovery</h2>
+							<h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">{ t(ctx, "onboarding.artist_discovery") }</h2>
 							<p id="discovery-review-summary" class="text-sm text-gray-500 dark:text-gray-400 mb-1"></p>
 							<div id="discovery-review-badges" class="flex gap-3 text-xs mb-4 mt-3"></div>
 							<div id="discovery-review-list" class="space-y-1.5 max-h-80 overflow-y-auto pr-1"></div>
 							<p class="text-xs text-gray-500 dark:text-gray-400 mt-3">
-								Click an artist to see candidates. Pick the correct match or skip. Unreviewed artists can be identified later from the Artists page.
+								{ t(ctx, "onboarding.review_instructions") }
 							</p>
 						</div>
 					</div>
@@ -451,7 +451,7 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 							class="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 py-2"
 							onclick="finishWizard()"
 						>
-							Skip setup
+							{ t(ctx, "onboarding.skip_setup") }
 						</button>
 						<div class="flex items-center gap-3">
 							<button
@@ -460,7 +460,7 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 								class="hidden text-sm px-4 py-2 rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
 								onclick="goToStep(currentStep - 1)"
 							>
-								Back
+								{ t(ctx, "common.back") }
 							</button>
 							<button
 								type="button"
@@ -469,9 +469,9 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 								onclick="goToStep(currentStep + 1)"
 							>
 								if data.CurrentStep == 0 {
-									Get Started
+									{ t(ctx, "onboarding.get_started") }
 								} else {
-									Next
+									{ t(ctx, "common.next") }
 								}
 							</button>
 							<button
@@ -480,7 +480,7 @@ templ OnboardingPage(assets AssetPaths, data OnboardingData) {
 								class="hidden text-sm px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 transition-colors"
 								onclick="finishWizard()"
 							>
-								Finish Setup
+								{ t(ctx, "onboarding.finish_setup") }
 							</button>
 						</div>
 					</div>
@@ -1260,7 +1260,7 @@ templ onboardingLibraryRow(lib library.Library) {
 			<div class="flex items-center gap-1.5 mt-1">
 				<span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300">{ lib.Type }</span>
 				if lib.ConnectionID != "" {
-					<span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300">Connection</span>
+					<span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300">{ t(ctx, "common.connection") }</span>
 				}
 			</div>
 		</div>
@@ -1269,7 +1269,7 @@ templ onboardingLibraryRow(lib library.Library) {
 			class="text-xs text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300"
 			onclick={ onboardingDeleteLibrary(lib.ID) }
 		>
-			Remove
+			{ t(ctx, "common.remove") }
 		</button>
 	</div>
 }
@@ -1308,17 +1308,17 @@ templ onboardingProfileCard(p platform.Profile) {
 			</div>
 			if p.IsActive {
 				<span class="inline-flex items-center rounded-full bg-blue-100 dark:bg-blue-800 px-2 py-0.5 text-xs font-medium text-blue-700 dark:text-blue-300">
-					Active
+					{ t(ctx, "common.active") }
 				</span>
 			}
 		</div>
 		<div class="mt-2 text-xs text-gray-500 dark:text-gray-400 space-y-1">
 			<div>
-				NFO:
+				{ t(ctx, "onboarding.nfo_label") }
 				if p.NFOEnabled {
-					<span class="text-green-600 dark:text-green-400">Enabled</span>
+					<span class="text-green-600 dark:text-green-400">{ t(ctx, "common.enabled") }</span>
 				} else {
-					<span class="text-gray-400 dark:text-gray-500">Disabled</span>
+					<span class="text-gray-400 dark:text-gray-500">{ t(ctx, "common.disabled") }</span>
 				}
 			</div>
 		</div>
@@ -1357,15 +1357,15 @@ templ OnboardingProviderCard(pk provider.ProviderKeyStatus) {
 				<div>
 					<div class="font-medium text-sm text-gray-900 dark:text-gray-100">{ pk.DisplayName }</div>
 					if !pk.RequiresKey && !pk.OptionalKey {
-						<div class="text-xs text-gray-500 dark:text-gray-400">No API key required</div>
+						<div class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "onboarding.no_api_key_required") }</div>
 					} else if pk.OptionalKey && pk.HasKey {
-						<div class="text-xs text-green-600 dark:text-green-400">Premium key configured</div>
+						<div class="text-xs text-green-600 dark:text-green-400">{ t(ctx, "onboarding.premium_key_configured") }</div>
 					} else if pk.OptionalKey {
-						<div class="text-xs text-gray-500 dark:text-gray-400">Free tier (optional premium upgrade)</div>
+						<div class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "onboarding.free_tier") }</div>
 					} else if pk.HasKey {
-						<div class="text-xs text-green-600 dark:text-green-400">Key configured</div>
+						<div class="text-xs text-green-600 dark:text-green-400">{ t(ctx, "onboarding.key_configured") }</div>
 					} else {
-						<div class="text-xs text-amber-600 dark:text-amber-400">API key required</div>
+						<div class="text-xs text-amber-600 dark:text-amber-400">{ t(ctx, "onboarding.api_key_required") }</div>
 					}
 				</div>
 			</div>
@@ -1378,7 +1378,7 @@ templ OnboardingProviderCard(pk provider.ProviderKeyStatus) {
 							rel="noopener noreferrer"
 							class="text-sm text-blue-600 dark:text-blue-400 hover:underline"
 						>
-							{ getKeyLinkText(pk.AccessTier) }
+							{ getKeyLinkText(ctx, pk.AccessTier) }
 						</a>
 					}
 					<button
@@ -1387,9 +1387,9 @@ templ OnboardingProviderCard(pk provider.ProviderKeyStatus) {
 						onclick={ toggleOnboardingKeyInput(string(pk.Name)) }
 					>
 						if pk.HasKey {
-							Update
+							{ t(ctx, "common.update") }
 						} else {
-							Configure
+							{ t(ctx, "common.configure") }
 						}
 					</button>
 					if pk.HasKey {
@@ -1400,7 +1400,7 @@ templ OnboardingProviderCard(pk provider.ProviderKeyStatus) {
 							hx-target={ "#ob-test-result-" + string(pk.Name) }
 							hx-swap="innerHTML"
 						>
-							Test
+							{ t(ctx, "common.test") }
 						</button>
 					}
 				</div>
@@ -1419,7 +1419,7 @@ templ OnboardingProviderCard(pk provider.ProviderKeyStatus) {
 							<input
 								type="text"
 								name="client_id"
-								placeholder="Client ID"
+								placeholder={ t(ctx, "onboarding.client_id_placeholder") }
 								autocomplete="off"
 								data-1p-ignore
 								data-lpignore="true"
@@ -1429,7 +1429,7 @@ templ OnboardingProviderCard(pk provider.ProviderKeyStatus) {
 							<input
 								type="password"
 								name="client_secret"
-								placeholder="Client Secret"
+								placeholder={ t(ctx, "onboarding.client_secret_placeholder") }
 								autocomplete="off"
 								data-1p-ignore
 								data-lpignore="true"
@@ -1447,9 +1447,9 @@ templ OnboardingProviderCard(pk provider.ProviderKeyStatus) {
 								type="text"
 								name="api_key"
 								if pk.OptionalKey {
-									placeholder="Enter premium API key..."
+									placeholder={ t(ctx, "onboarding.premium_api_key_placeholder") }
 								} else {
-									placeholder="Enter API key..."
+									placeholder={ t(ctx, "onboarding.api_key_placeholder") }
 								}
 								autocomplete="off"
 								data-1p-ignore
@@ -1460,8 +1460,8 @@ templ OnboardingProviderCard(pk provider.ProviderKeyStatus) {
 						</div>
 					}
 					<div class="flex gap-2">
-						<button type="submit" class="text-sm px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 transition-colors">Save</button>
-						<button type="button" class="text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" onclick={ toggleOnboardingKeyInput(string(pk.Name)) }>Cancel</button>
+						<button type="submit" class="text-sm px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 transition-colors">{ t(ctx, "common.save") }</button>
+						<button type="button" class="text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" onclick={ toggleOnboardingKeyInput(string(pk.Name)) }>{ t(ctx, "common.cancel") }</button>
 					</div>
 				</form>
 			</div>
@@ -1491,7 +1491,7 @@ templ OnboardingWebSearchToggle(ws provider.WebSearchProviderStatus) {
 				></div>
 				<div>
 					<div class="font-medium text-sm text-gray-900 dark:text-gray-100">{ ws.DisplayName }</div>
-					<div class="text-xs text-gray-500 dark:text-gray-400">No API key required</div>
+					<div class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "onboarding.no_api_key_required") }</div>
 				</div>
 			</div>
 			<button
@@ -1507,9 +1507,9 @@ templ OnboardingWebSearchToggle(ws provider.WebSearchProviderStatus) {
 				hx-swap="outerHTML"
 			>
 				if ws.Enabled {
-					Enabled
+					{ t(ctx, "common.enabled") }
 				} else {
-					Disabled
+					{ t(ctx, "common.disabled") }
 				}
 			</button>
 		</div>
@@ -1548,7 +1548,7 @@ templ onboardingConnectionCard(connType string, displayName string, exampleURL s
 							type="button"
 							class="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300"
 							onclick={ toggleObConnectionInfo(connType) }
-							aria-label={ "More info about " + displayName }
+							aria-label={ tf(ctx, "onboarding.more_info_about", displayName) }
 						>
 							<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
 								<path stroke-linecap="round" stroke-linejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"></path>
@@ -1562,14 +1562,14 @@ templ onboardingConnectionCard(connType string, displayName string, exampleURL s
 			</div>
 			if findConnectionByType(conns, connType) != nil {
 				<div class="flex items-center gap-2 shrink-0">
-					<span class="text-xs text-green-600 dark:text-green-400">Connected</span>
+					<span class="text-xs text-green-600 dark:text-green-400">{ t(ctx, "common.connected") }</span>
 					<button
 						type="button"
 						id={ "ob-conn-test-" + connType }
 						class="text-xs px-2.5 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
 						onclick={ initTestConnection(findConnectionByType(conns, connType).ID, connType) }
 					>
-						Test
+						{ t(ctx, "common.test") }
 					</button>
 					if connType != "lidarr" {
 						<button
@@ -1581,7 +1581,7 @@ templ onboardingConnectionCard(connType string, displayName string, exampleURL s
 							}
 							onclick={ initDiscoverLibraries(findConnectionByType(conns, connType).ID, connType) }
 						>
-							Discover Libraries
+							{ t(ctx, "onboarding.discover_libraries") }
 						</button>
 					}
 				</div>
@@ -1592,7 +1592,7 @@ templ onboardingConnectionCard(connType string, displayName string, exampleURL s
 					class="text-sm px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors shrink-0"
 					onclick={ toggleObConnectionForm(connType) }
 				>
-					Configure
+					{ t(ctx, "common.configure") }
 				</button>
 			}
 		</div>
@@ -1608,21 +1608,21 @@ templ onboardingConnectionCard(connType string, displayName string, exampleURL s
 				<div class="grid grid-cols-1 gap-3">
 					<input
 						name="name"
-						placeholder={ displayName + " server" }
+						placeholder={ tf(ctx, "onboarding.server_name_placeholder", displayName) }
 						required
 						class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
 					/>
 					<input
 						name="url"
 						type="url"
-						placeholder={ "Server URL (e.g. " + exampleURL + ")" }
+						placeholder={ tf(ctx, "onboarding.server_url_placeholder", exampleURL) }
 						required
 						class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
 					/>
 					<input
 						name="api_key"
 						type="text"
-						placeholder="API Key"
+						placeholder={ t(ctx, "onboarding.api_key_placeholder") }
 						required
 						autocomplete="off"
 						data-1p-ignore
@@ -1631,8 +1631,8 @@ templ onboardingConnectionCard(connType string, displayName string, exampleURL s
 					/>
 				</div>
 				<div class="flex gap-2">
-					<button type="submit" class="text-sm px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 transition-colors">Save</button>
-					<button type="button" class="text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" onclick={ toggleObConnectionForm(connType) }>Cancel</button>
+					<button type="submit" class="text-sm px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 transition-colors">{ t(ctx, "common.save") }</button>
+					<button type="button" class="text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" onclick={ toggleObConnectionForm(connType) }>{ t(ctx, "common.cancel") }</button>
 				</div>
 			</form>
 			<div id={ "ob-conn-result-" + connType } class="mt-2"></div>
@@ -1645,13 +1645,13 @@ templ onboardingConnectionCard(connType string, displayName string, exampleURL s
 		} else {
 			<div id={ "ob-conn-success-" + connType } class="hidden mt-3 pl-6">
 				<div class="flex items-center gap-3">
-					<p class="text-xs text-green-600 dark:text-green-400">Connected.</p>
+					<p class="text-xs text-green-600 dark:text-green-400">{ t(ctx, "onboarding.connected_success") }</p>
 					<button
 						type="button"
 						id={ "ob-conn-test-" + connType }
 						class="hidden text-xs px-2.5 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
 					>
-						Test
+						{ t(ctx, "common.test") }
 					</button>
 					if connType != "lidarr" {
 						<button
@@ -1659,7 +1659,7 @@ templ onboardingConnectionCard(connType string, displayName string, exampleURL s
 							id={ "ob-conn-discover-btn-" + connType }
 							class="hidden text-xs px-2.5 py-1 rounded border border-blue-300 dark:border-blue-700 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
 						>
-							Discover Libraries
+							{ t(ctx, "onboarding.discover_libraries") }
 						</button>
 					}
 				</div>

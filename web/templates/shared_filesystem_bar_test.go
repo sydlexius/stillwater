@@ -2,7 +2,6 @@ package templates
 
 import (
 	"bytes"
-	"context"
 	"strings"
 	"testing"
 )
@@ -18,7 +17,7 @@ func TestSharedFilesystemBarContent_WithWarnings(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	err := SharedFilesystemBarContent(data).Render(context.Background(), &buf)
+	err := SharedFilesystemBarContent(data).Render(testCtx(t), &buf)
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}
@@ -70,7 +69,7 @@ func TestSharedFilesystemBarContent_NoWarnings(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	err := SharedFilesystemBarContent(data).Render(context.Background(), &buf)
+	err := SharedFilesystemBarContent(data).Render(testCtx(t), &buf)
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}
@@ -97,7 +96,7 @@ func TestSharedFilesystemBarContent_Dismissed(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	err := SharedFilesystemBarContent(data).Render(context.Background(), &buf)
+	err := SharedFilesystemBarContent(data).Render(testCtx(t), &buf)
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}
@@ -119,7 +118,7 @@ func TestSharedFilesystemBarContent_NoOverlaps(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	err := SharedFilesystemBarContent(data).Render(context.Background(), &buf)
+	err := SharedFilesystemBarContent(data).Render(testCtx(t), &buf)
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}

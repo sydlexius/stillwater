@@ -16,19 +16,19 @@ type MetadataCompletenessData struct {
 // by the surrounding page via JavaScript (see index.templ).
 templ MetadataCompletenessFragment(report *artist.MetadataCompletenessReport) {
 	if report.TotalArtists == 0 {
-		<p class="text-sm text-gray-500 dark:text-gray-400 py-2">No artists found.</p>
+		<p class="text-sm text-gray-500 dark:text-gray-400 py-2">{ t(ctx, "metadata.no_artists") }</p>
 	} else {
 		<p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
-			{ fmt.Sprintf("%.1f%% average field coverage across %d artists", report.OverallScore, report.TotalArtists) }
+			{ tf(ctx, "metadata.average_coverage", report.OverallScore, report.TotalArtists) }
 		</p>
 		if len(report.LowestCompleteness) > 0 {
-			<h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Lowest Completeness</h3>
+			<h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">{ t(ctx, "metadata.lowest_completeness") }</h3>
 			<div class="overflow-x-auto">
 				<table class="min-w-full text-sm">
 					<thead>
 						<tr class="border-b border-gray-200 dark:border-gray-700">
-							<th class="text-left py-1 pr-4 font-medium text-gray-500 dark:text-gray-400">Artist</th>
-							<th class="text-right py-1 font-medium text-gray-500 dark:text-gray-400">Health</th>
+							<th class="text-left py-1 pr-4 font-medium text-gray-500 dark:text-gray-400">{ t(ctx, "metadata.artist_column") }</th>
+							<th class="text-right py-1 font-medium text-gray-500 dark:text-gray-400">{ t(ctx, "metadata.health_column") }</th>
 						</tr>
 					</thead>
 					<tbody>

@@ -15,6 +15,7 @@ import (
 	"github.com/sydlexius/stillwater/internal/backup"
 	"github.com/sydlexius/stillwater/internal/connection"
 	"github.com/sydlexius/stillwater/internal/event"
+	"github.com/sydlexius/stillwater/internal/i18n"
 	img "github.com/sydlexius/stillwater/internal/image"
 	"github.com/sydlexius/stillwater/internal/library"
 	"github.com/sydlexius/stillwater/internal/logging"
@@ -72,6 +73,7 @@ type RouterDeps struct {
 	ImageCacheDir      string
 	Publisher          *publish.Publisher
 	SSEHub             *SSEHub
+	I18nBundle         *i18n.Bundle
 }
 
 // Router sets up all HTTP routes for the application.
@@ -126,6 +128,7 @@ type Router struct {
 	identifyMu         sync.RWMutex
 	undoStore          *rule.UndoStore
 	sseHub             *SSEHub
+	i18nBundle         *i18n.Bundle
 }
 
 // NewRouter creates a new Router with all routes configured.
@@ -177,6 +180,7 @@ func NewRouter(deps RouterDeps) *Router {
 		fileRemover: osRemover{},
 		libraryOps:  make(map[string]*LibraryOpResult),
 		undoStore:   rule.NewUndoStore(),
+		i18nBundle:  deps.I18nBundle,
 	}
 
 	// Auto-init the SSE hub if not provided by the caller, so the /events/stream
@@ -539,6 +543,9 @@ func (r *Router) Handler(ctx context.Context) http.Handler {
 	var handler http.Handler = mux
 	handler = csrfWithExemptions(csrf, handler, csrfExempt)
 	handler = middleware.Logging(r.logger, bp)(handler)
+	if r.i18nBundle != nil {
+		handler = i18n.Middleware(r.i18nBundle)(handler)
+	}
 	handler = middleware.SecurityHeaders(handler)
 	return handler
 }

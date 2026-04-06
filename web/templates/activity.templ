@@ -3,7 +3,6 @@ package templates
 import (
 	"fmt"
 	"net/url"
-	"strconv"
 	"time"
 
 	"github.com/sydlexius/stillwater/internal/artist"
@@ -31,13 +30,13 @@ func activityFilterCount(data ActivityPageData) int {
 
 // ActivityPage renders the global activity page at /activity.
 templ ActivityPage(assets AssetPaths, data ActivityPageData) {
-	@Layout("Activity", assets) {
+	@Layout(t(ctx, "activity.title"), assets) {
 		<div class="space-y-6">
 			<div class="sw-card rounded-lg px-6 py-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
 				<div>
-					<h1 class="text-2xl font-bold">Activity</h1>
+					<h1 class="text-2xl font-bold">{ t(ctx, "activity.title") }</h1>
 					<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-						All metadata changes across all artists.
+						{ t(ctx, "activity.subtitle") }
 					</p>
 				</div>
 				<button
@@ -47,7 +46,7 @@ templ ActivityPage(assets AssetPaths, data ActivityPageData) {
 					data-active-classes={ filterTriggerActive }
 					data-neutral-classes={ filterTriggerNeutral }
 					data-badge-classes={ filterTriggerBadge }
-					aria-label="Open filter panel"
+					aria-label={ t(ctx, "common.open_filter_panel") }
 					aria-expanded="false"
 					aria-controls="activity-filters-flyout"
 					onclick={ components.OpenFilterFlyout("activity-filters-flyout") }
@@ -55,9 +54,9 @@ templ ActivityPage(assets AssetPaths, data ActivityPageData) {
 					<svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
 						<path fill-rule="evenodd" d="M2.628 1.601C5.028 1.206 7.49 1 10 1s4.973.206 7.372.601a.75.75 0 0 1 .628.74v2.288a2.25 2.25 0 0 1-.659 1.59l-4.682 4.683a2.25 2.25 0 0 0-.659 1.59v3.037c0 .684-.31 1.33-.844 1.757l-1.937 1.55A.75.75 0 0 1 9 18.25v-5.757a2.25 2.25 0 0 0-.659-1.591L3.659 6.22A2.25 2.25 0 0 1 3 4.629V2.34a.75.75 0 0 1 .628-.74Z" clip-rule="evenodd"></path>
 					</svg>
-					<span>Filters</span>
+					<span>{ t(ctx, "common.filters") }</span>
 					if activityFilterCount(data) > 0 {
-						<span class={ filterTriggerBadge } aria-label={ func() string { n := activityFilterCount(data); if n == 1 { return "1 active filter" }; return fmt.Sprintf("%d active filters", n) }() }>
+						<span class={ filterTriggerBadge } aria-label={ func() string { n := activityFilterCount(data); if n == 1 { return t(ctx, "common.active_filter_one") }; return fmt.Sprintf(t(ctx, "common.active_filter_other"), n) }() }>
 							{ fmt.Sprintf("%d", activityFilterCount(data)) }
 						</span>
 					}
@@ -67,25 +66,25 @@ templ ActivityPage(assets AssetPaths, data ActivityPageData) {
 				@ActivityContent(data)
 			</div>
 		</div>
-		@components.FilterFlyout("activity-filters-flyout", "Activity Filters", "activity-filter-trigger", 0, "#activity-content") {
-			@components.FilterSection("Change Type") {
-				@components.FilterItem("activity-filters-flyout", "field", "biography", "Biography", "neutral")
-				@components.FilterItem("activity-filters-flyout", "field", "genres", "Genres", "neutral")
-				@components.FilterItem("activity-filters-flyout", "field", "styles", "Styles", "neutral")
-				@components.FilterItem("activity-filters-flyout", "field", "moods", "Moods", "neutral")
-				@components.FilterItem("activity-filters-flyout", "field", "formed", "Formed", "neutral")
-				@components.FilterItem("activity-filters-flyout", "field", "born", "Born", "neutral")
-				@components.FilterItem("activity-filters-flyout", "field", "disbanded", "Disbanded", "neutral")
-				@components.FilterItem("activity-filters-flyout", "field", "died", "Died", "neutral")
-				@components.FilterItem("activity-filters-flyout", "field", "years_active", "Years Active", "neutral")
-				@components.FilterItem("activity-filters-flyout", "field", "type", "Type", "neutral")
-				@components.FilterItem("activity-filters-flyout", "field", "gender", "Gender", "neutral")
+		@components.FilterFlyout("activity-filters-flyout", t(ctx, "activity.filters_title"), "activity-filter-trigger", 0, "#activity-content") {
+			@components.FilterSection(t(ctx, "activity.filter_section.change_type")) {
+				@components.FilterItem("activity-filters-flyout", "field", "biography", t(ctx, "field.biography"), "neutral")
+				@components.FilterItem("activity-filters-flyout", "field", "genres", t(ctx, "field.genres"), "neutral")
+				@components.FilterItem("activity-filters-flyout", "field", "styles", t(ctx, "field.styles"), "neutral")
+				@components.FilterItem("activity-filters-flyout", "field", "moods", t(ctx, "field.moods"), "neutral")
+				@components.FilterItem("activity-filters-flyout", "field", "formed", t(ctx, "field.formed"), "neutral")
+				@components.FilterItem("activity-filters-flyout", "field", "born", t(ctx, "field.born"), "neutral")
+				@components.FilterItem("activity-filters-flyout", "field", "disbanded", t(ctx, "field.disbanded"), "neutral")
+				@components.FilterItem("activity-filters-flyout", "field", "died", t(ctx, "field.died"), "neutral")
+				@components.FilterItem("activity-filters-flyout", "field", "years_active", t(ctx, "field.years_active"), "neutral")
+				@components.FilterItem("activity-filters-flyout", "field", "type", t(ctx, "field.type"), "neutral")
+				@components.FilterItem("activity-filters-flyout", "field", "gender", t(ctx, "field.gender"), "neutral")
 			}
-			@components.FilterSection("Trigger Source") {
-				@components.FilterItem("activity-filters-flyout", "source", "manual", "Manual", "neutral")
-				@components.FilterItem("activity-filters-flyout", "source", "scan", "Scan", "neutral")
-				@components.FilterItem("activity-filters-flyout", "source", "import", "Import", "neutral")
-				@components.FilterItem("activity-filters-flyout", "source", "revert", "Revert", "neutral")
+			@components.FilterSection(t(ctx, "activity.filter_section.trigger_source")) {
+				@components.FilterItem("activity-filters-flyout", "source", "manual", t(ctx, "history.source.manual"), "neutral")
+				@components.FilterItem("activity-filters-flyout", "source", "scan", t(ctx, "history.source.scan"), "neutral")
+				@components.FilterItem("activity-filters-flyout", "source", "import", t(ctx, "history.source.import"), "neutral")
+				@components.FilterItem("activity-filters-flyout", "source", "revert", t(ctx, "history.source.revert"), "neutral")
 			}
 		}
 		<script>
@@ -114,7 +113,7 @@ templ ActivityPage(assets AssetPaths, data ActivityPageData) {
 templ ActivityContent(data ActivityPageData) {
 	if len(data.Changes) == 0 && data.Offset == 0 {
 		<div class="sw-card rounded-lg p-8 text-center">
-			<p class="text-sm text-gray-500 dark:text-gray-400 italic">No activity recorded yet.</p>
+			<p class="text-sm text-gray-500 dark:text-gray-400 italic">{ t(ctx, "activity.empty_state") }</p>
 		</div>
 	} else {
 		<div class="space-y-2" id="activity-entries">
@@ -127,7 +126,7 @@ templ ActivityContent(data ActivityPageData) {
 		}
 		if data.Total > 0 {
 			<p id="activity-showing-counter" class="text-xs text-gray-400 dark:text-gray-500 text-right mt-2">
-				Showing { strconv.Itoa(min(data.Offset+len(data.Changes), data.Total)) } of { strconv.Itoa(data.Total) } changes
+				{ tf(ctx, "common.showing_of", min(data.Offset+len(data.Changes), data.Total), data.Total) }
 			</p>
 		}
 	}
@@ -140,13 +139,13 @@ templ activityLoadMoreButton(data ActivityPageData) {
 	<div id="activity-load-more" class="flex justify-center mt-4">
 		<button
 			type="button"
-			aria-label="Load more activity entries"
+			aria-label={ t(ctx, "activity.load_more_aria") }
 			class="px-4 py-2 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
 			hx-get={ activityLoadMoreURL(data) }
 			hx-target="#activity-load-more"
 			hx-swap="outerHTML"
 		>
-			Load more
+			{ t(ctx, "common.load_more") }
 		</button>
 	</div>
 }
@@ -168,7 +167,7 @@ templ ActivityMoreRows(data ActivityPageData) {
 	</div>
 	if data.Total > 0 {
 		<p id="activity-showing-counter" hx-swap-oob="true" class="text-xs text-gray-400 dark:text-gray-500 text-right mt-2">
-			Showing { strconv.Itoa(min(data.Offset+len(data.Changes), data.Total)) } of { strconv.Itoa(data.Total) } changes
+			{ tf(ctx, "common.showing_of", min(data.Offset+len(data.Changes), data.Total), data.Total) }
 		</p>
 	}
 }
@@ -192,7 +191,7 @@ templ activityRow(c artist.MetadataChangeWithArtist, basePath string) {
 					{ c.ArtistName }
 				</a>
 				<span class={ "inline-block px-2 py-0.5 rounded-full text-xs", historySourceBadgeClass(c.Source) }>
-					{ historySourceLabel(c.Source) }
+					{ historySourceLabel(ctx, c.Source) }
 				</span>
 				<time
 					datetime={ c.CreatedAt.Format(time.RFC3339) }
@@ -208,38 +207,38 @@ templ activityRow(c artist.MetadataChangeWithArtist, basePath string) {
 					hx-post={ "/api/v1/history/" + c.ID + "/revert" }
 					hx-target={ "#activity-change-" + c.ID }
 					hx-swap="outerHTML"
-					hx-confirm={ "Undo this " + historyFieldLabel(c.Field) + " change?" }
+					hx-confirm={ tf(ctx, "history.undo_confirm", historyFieldLabel(ctx, c.Field)) }
 					class="text-xs px-2 py-1 rounded border border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-					title="Undo this change"
+					title={ t(ctx, "history.undo_title") }
 				>
-					Undo
+					{ t(ctx, "history.undo") }
 				</button>
 			}
 		</div>
 		<details class="mt-2">
 			<summary class="text-sm cursor-pointer text-gray-700 dark:text-gray-300">
-				<span class="font-medium">{ historyFieldLabel(c.Field) }</span>
+				<span class="font-medium">{ historyFieldLabel(ctx, c.Field) }</span>
 				<span class="mx-1 text-gray-400">--</span>
 				if c.OldValue == "" && c.NewValue != "" {
-					<span class="text-green-600 dark:text-green-400">Set to: { historyTruncate(c.NewValue, 80) }</span>
+					<span class="text-green-600 dark:text-green-400">{ tf(ctx, "history.set_to", historyTruncate(c.NewValue, 80)) }</span>
 				} else if c.OldValue != "" && c.NewValue == "" {
-					<span class="text-red-500 dark:text-red-400">Cleared</span>
+					<span class="text-red-500 dark:text-red-400">{ t(ctx, "history.cleared") }</span>
 				} else if c.OldValue != "" && c.NewValue != "" {
-					<span class="text-gray-500 dark:text-gray-400">Changed</span>
+					<span class="text-gray-500 dark:text-gray-400">{ t(ctx, "history.changed") }</span>
 				} else {
-					<span class="text-gray-400 italic">No value recorded</span>
+					<span class="text-gray-400 italic">{ t(ctx, "history.no_value") }</span>
 				}
 			</summary>
 			<div class="mt-2 pl-4 border-l-2 border-gray-200 dark:border-gray-700 space-y-1 text-sm">
 				if c.OldValue != "" {
 					<div>
-						<span class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Previous</span>
+						<span class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">{ t(ctx, "history.previous") }</span>
 						<p class="text-red-500 dark:text-red-400 line-through break-words">{ historyTruncate(c.OldValue, 300) }</p>
 					</div>
 				}
 				if c.NewValue != "" {
 					<div>
-						<span class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Current</span>
+						<span class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">{ t(ctx, "history.current") }</span>
 						<p class="text-green-600 dark:text-green-400 break-words">{ historyTruncate(c.NewValue, 300) }</p>
 					</div>
 				}

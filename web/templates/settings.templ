@@ -70,16 +70,16 @@ type settingsTab struct {
 // settingsTabs returns the ordered list of settings page tabs.
 func settingsTabs() []settingsTab {
 	return []settingsTab{
-		{ID: "general", Label: "General"},
-		{ID: "providers", Label: "Providers"},
-		{ID: "connections", Label: "Connections"},
-		{ID: "libraries", Label: "Libraries"},
-		{ID: "automation", Label: "Automation"},
-		{ID: "rules", Label: "Rules"},
-		{ID: "users", Label: "Users"},
-		{ID: "auth_providers", Label: "Auth Providers"},
-		{ID: "maintenance", Label: "Maintenance"},
-		{ID: "logs", Label: "Logs"},
+		{ID: "general", Label: "settings.tab.general"},
+		{ID: "providers", Label: "settings.tab.providers"},
+		{ID: "connections", Label: "settings.tab.connections"},
+		{ID: "libraries", Label: "settings.tab.libraries"},
+		{ID: "automation", Label: "settings.tab.automation"},
+		{ID: "rules", Label: "settings.tab.rules"},
+		{ID: "users", Label: "settings.tab.users"},
+		{ID: "auth_providers", Label: "settings.tab.auth_providers"},
+		{ID: "maintenance", Label: "settings.tab.maintenance"},
+		{ID: "logs", Label: "settings.tab.logs"},
 	}
 }
 
@@ -481,9 +481,9 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 		<script src={ assets.SortableJS }></script>
 		<div class="space-y-6">
 			<div class="sw-card rounded-lg px-6 py-4">
-				<h1 class="text-2xl font-bold">Settings</h1>
+				<h1 class="text-2xl font-bold">{ t(ctx, "settings.title") }</h1>
 				<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-					Configure platform profiles, provider API keys, and output settings.
+					{ t(ctx, "settings.description") }
 				</p>
 			</div>
 			@settingsTabBar(data.ActiveTab, assets.BasePath)
@@ -497,9 +497,9 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 			>
 				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-						<h2 class="text-lg font-semibold">Platform Profile</h2>
+						<h2 class="text-lg font-semibold">{ t(ctx, "settings.platform_profile.title") }</h2>
 						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-							Select the target platform to control NFO output and image naming conventions.
+							{ t(ctx, "settings.platform_profile.description") }
 						</p>
 					</div>
 					<div class="px-6 py-4">
@@ -513,22 +513,22 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 				if data.ActiveProfile != nil {
 					<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 						<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-							<h2 class="text-lg font-semibold">Active Profile Details</h2>
+							<h2 class="text-lg font-semibold">{ t(ctx, "settings.active_profile.title") }</h2>
 							if profileEditable(data.ActiveProfile) {
 								<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-									Edit filenames for each image type. Changes are saved to the profile.
+									{ t(ctx, "settings.active_profile.description") }
 								</p>
 							}
 						</div>
 						<div class="px-6 py-4 space-y-4">
 							<div class="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
 								<div>
-									<span class="font-medium text-gray-500 dark:text-gray-400">NFO Output</span>
+									<span class="font-medium text-gray-500 dark:text-gray-400">{ t(ctx, "settings.active_profile.nfo_output") }</span>
 									<p class="mt-1">
 										if data.ActiveProfile.NFOEnabled {
-											Enabled ({ data.ActiveProfile.NFOFormat } format)
+											{ tf(ctx, "settings.active_profile.nfo_enabled_format", data.ActiveProfile.NFOFormat) }
 										} else {
-											Disabled
+											{ t(ctx, "common.disabled") }
 										}
 									</p>
 								</div>
@@ -540,12 +540,12 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 							if profileEditable(data.ActiveProfile) {
 								<div class="mt-4 flex items-center justify-between">
 									<div>
-										<div class="font-medium text-sm">Use symlinks for duplicate copies</div>
+										<div class="font-medium text-sm">{ t(ctx, "settings.symlinks.title") }</div>
 										<div class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
 											if data.SymlinkSupported {
-												When multiple filenames are configured for an image type, create symlinks instead of byte-for-byte copies. { img.ImageTermFor("fanart", data.ActiveProfile.Name) } images are always real files.
+												{ tf(ctx, "settings.symlinks.supported_description", img.ImageTermFor("fanart", data.ActiveProfile.Name)) }
 											} else {
-												Symlinks are not supported on this filesystem. The library path does not support symbolic links.
+												{ t(ctx, "settings.symlinks.unsupported_description") }
 											}
 										</div>
 									</div>
@@ -561,7 +561,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 										}
 										role="switch"
 										aria-checked={ boolAttr(data.ActiveProfile.UseSymlinks) }
-										aria-label="Use symlinks for duplicate copies"
+										aria-label={ t(ctx, "settings.symlinks.title") }
 										if data.SymlinkSupported {
 											onclick="toggleSymlinks(this)"
 										}
@@ -584,7 +584,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 										data-profile-id={ data.ActiveProfile.ID }
 										class="inline-flex items-center rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
 									>
-										Save Filenames
+										{ t(ctx, "settings.active_profile.save_filenames") }
 									</button>
 									<span id="naming-save-status" class="ml-3 text-sm text-gray-500 dark:text-gray-400"></span>
 								</div>
@@ -594,17 +594,17 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 				}
 				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-						<h2 class="text-lg font-semibold">Behavior</h2>
+						<h2 class="text-lg font-semibold">{ t(ctx, "settings.behavior.title") }</h2>
 						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-							Configure default behaviors for image management and metadata workflows.
+							{ t(ctx, "settings.behavior.description") }
 						</p>
 					</div>
 					<div class="px-6 py-4">
 						<div class="flex items-center justify-between">
 							<div>
-								<div class="font-medium text-sm">Auto-fetch images</div>
+								<div class="font-medium text-sm">{ t(ctx, "settings.auto_fetch.title") }</div>
 								<div class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-									When opening an artist's image management page, automatically search providers for available images. This applies to manual browsing only and does not affect rule-based image fetching.
+									{ t(ctx, "settings.auto_fetch.description") }
 								</div>
 							</div>
 							<button
@@ -617,7 +617,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 								}
 								role="switch"
 								aria-checked={ boolAttr(data.AutoFetchImages) }
-								aria-label="Auto-fetch images"
+								aria-label={ t(ctx, "settings.auto_fetch.title") }
 								onclick="toggleAutoFetch(this)"
 							>
 								<span
@@ -635,28 +635,28 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 						<div class="flex items-center gap-2">
-							<h2 class="text-lg font-semibold">Image Cache</h2>
+							<h2 class="text-lg font-semibold">{ t(ctx, "settings.image_cache.title") }</h2>
 							@components.ContextHelp("help-image-cache", "Image Cache", "Stillwater caches downloaded images (posters, banners, logos) locally. Set a maximum size to prevent unbounded disk usage. Clearing the cache removes all downloaded images; they will be re-fetched on next scan.")
 						</div>
 						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-							Manage cached images for artists without filesystem paths.
+							{ t(ctx, "settings.image_cache.description") }
 						</p>
 					</div>
 					<div class="px-6 py-4 space-y-4">
-						<div id="cache-stats" role="status" aria-live="polite" aria-atomic="true" class="text-sm text-gray-600 dark:text-gray-400">Loading...</div>
+						<div id="cache-stats" role="status" aria-live="polite" aria-atomic="true" class="text-sm text-gray-600 dark:text-gray-400">{ t(ctx, "common.loading") }</div>
 						<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 							<div>
-								<label for="cache-max-size" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Maximum size</label>
+								<label for="cache-max-size" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{ t(ctx, "settings.image_cache.max_size") }</label>
 								<select
 									id="cache-max-size"
-									aria-label="Maximum cache size"
+									aria-label={ t(ctx, "settings.image_cache.max_size") }
 									class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
 									onchange="saveCacheMaxSize(this.value)"
 								>
 									if data.CacheMaxSizeMB != "" && data.CacheMaxSizeMB != "0" && data.CacheMaxSizeMB != "256" && data.CacheMaxSizeMB != "512" && data.CacheMaxSizeMB != "1024" && data.CacheMaxSizeMB != "2048" {
 										<option value={ data.CacheMaxSizeMB } selected>{ data.CacheMaxSizeMB + " MB (custom)" }</option>
 									}
-									<option value="0" selected?={ data.CacheMaxSizeMB == "0" }>Unlimited</option>
+									<option value="0" selected?={ data.CacheMaxSizeMB == "0" }>{ t(ctx, "settings.image_cache.unlimited") }</option>
 									<option value="256" selected?={ data.CacheMaxSizeMB == "256" }>256 MB</option>
 									<option value="512" selected?={ data.CacheMaxSizeMB == "512" }>512 MB</option>
 									<option value="1024" selected?={ data.CacheMaxSizeMB == "1024" }>1 GB</option>
@@ -669,7 +669,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 									class="text-sm px-3 py-2 rounded border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
 									onclick="clearCache()"
 								>
-									Clear Cache
+									{ t(ctx, "settings.image_cache.clear") }
 								</button>
 								<span id="cache-status" role="status" aria-live="polite" aria-atomic="true"></span>
 							</div>
@@ -689,9 +689,9 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 				if len(data.ProviderKeys) > 0 {
 					<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 						<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-							<h2 class="text-lg font-semibold">Provider API Keys</h2>
+							<h2 class="text-lg font-semibold">{ t(ctx, "settings.provider_keys.title") }</h2>
 							<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-								Configure API keys for metadata providers. Providers without a configured key will be skipped during metadata lookups.
+								{ t(ctx, "settings.provider_keys.description") }
 							</p>
 						</div>
 						<div class="px-6 py-4 space-y-4">
@@ -706,9 +706,9 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 				if len(data.WebSearchProviders) > 0 {
 					<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 						<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-							<h2 class="text-lg font-semibold">Web Image Search</h2>
+							<h2 class="text-lg font-semibold">{ t(ctx, "settings.web_search.title") }</h2>
 							<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-								Enable web search providers to find additional artist images beyond authoritative sources. No API key required.
+								{ t(ctx, "settings.web_search.description") }
 							</p>
 						</div>
 						<div class="px-6 py-4 space-y-4">
@@ -722,11 +722,11 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 					<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 						<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 							<div class="flex items-center gap-2">
-								<h2 class="text-lg font-semibold">Provider Priorities</h2>
+								<h2 class="text-lg font-semibold">{ t(ctx, "settings.priorities.title") }</h2>
 								@components.ContextHelp("help-provider-priorities", "Provider Priorities", "When multiple providers return data for the same field, Stillwater uses the first enabled provider in priority order. Drag to reorder. Disabled providers are skipped during metadata fetching.")
 							</div>
 							<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-								Set the preferred provider order for each metadata field. Drag to reorder. Click the checkmark/X to enable or disable. Only configured providers are shown.
+								{ t(ctx, "settings.priorities.description") }
 							</p>
 						</div>
 						<div class="px-6 py-4">
@@ -740,22 +740,21 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 				}
 				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-						<h2 class="text-lg font-semibold">Advanced</h2>
+						<h2 class="text-lg font-semibold">{ t(ctx, "settings.advanced.title") }</h2>
 						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-							Fine-tune provider matching behavior.
+							{ t(ctx, "settings.advanced.description") }
 						</p>
 					</div>
 					<div class="px-6 py-4 space-y-4">
 						<div>
 							<div class="flex items-center gap-1 mb-1">
 								<label for="name_similarity_threshold" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
-									Name Similarity Threshold
+									{ t(ctx, "settings.name_similarity.label") }
 								</label>
 								@components.ContextHelp("help-name-similarity", "Name Similarity", "Controls how closely an artist name from a provider must match the local name. Lower values accept fuzzier matches (useful for transliterated names). Higher values require near-exact matches (fewer false positives).")
 							</div>
 							<p class="text-xs text-gray-500 dark:text-gray-400 mb-2">
-								Minimum similarity score (0-100) required when matching artist names from search results.
-								Set to 0 to disable name validation and accept any result. Default is 60.
+								{ t(ctx, "settings.name_similarity.description") }
 							</p>
 							<div class="flex items-center gap-3">
 								<input
@@ -766,7 +765,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 									max="100"
 									step="1"
 									value={ strconv.Itoa(data.NameSimilarityThreshold) }
-									aria-label="Name similarity threshold (0-100)"
+									aria-label={ t(ctx, "settings.name_similarity.label") }
 									class="w-24 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
 								/>
 								<span class="text-sm text-gray-500 dark:text-gray-400">%</span>
@@ -775,9 +774,9 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 									class="text-sm px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
 									onclick={ saveNameSimilarityThreshold() }
 								>
-									Save
+									{ t(ctx, "actions.save") }
 								</button>
-								<span id="name-similarity-status" class="text-sm text-green-600 dark:text-green-400 hidden">Saved</span>
+								<span id="name-similarity-status" class="text-sm text-green-600 dark:text-green-400 hidden">{ t(ctx, "common.saved") }</span>
 							</div>
 						</div>
 					</div>
@@ -793,9 +792,9 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 			>
 				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-						<h2 class="text-lg font-semibold">Server Connections</h2>
+						<h2 class="text-lg font-semibold">{ t(ctx, "settings.connections.title") }</h2>
 						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-							Connect to Emby, Jellyfin, or Lidarr servers for library sync and metadata push.
+							{ t(ctx, "settings.connections.description") }
 						</p>
 					</div>
 					<div class="px-6 py-4">
@@ -824,9 +823,9 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 			>
 				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-						<h2 class="text-lg font-semibold">Music Libraries</h2>
+						<h2 class="text-lg font-semibold">{ t(ctx, "settings.libraries.title") }</h2>
 						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-							Manage your music library paths. Each library maps to a directory containing artist folders.
+							{ t(ctx, "settings.libraries.description") }
 						</p>
 					</div>
 					<div class="px-6 py-4">
@@ -835,7 +834,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 								@settingsLibraryRow(lib)
 							}
 							if len(data.Libraries) == 0 {
-								<p id="settings-no-libraries" class="text-sm text-gray-400 dark:text-gray-500 italic">No libraries configured.</p>
+								<p id="settings-no-libraries" class="text-sm text-gray-400 dark:text-gray-500 italic">{ t(ctx, "settings.libraries.empty") }</p>
 							}
 						</div>
 						<div id="settings-library-form-wrapper">
@@ -845,7 +844,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 								class="text-sm px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
 								onclick="document.getElementById('settings-library-form').classList.remove('hidden'); this.classList.add('hidden'); syncSettingsLibraryTypeHelp();"
 							>
-								Add Library
+								{ t(ctx, "settings.libraries.add") }
 							</button>
 							<form
 								id="settings-library-form"
@@ -857,13 +856,13 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 								<div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
 									<input
 										name="name"
-										placeholder="Library name"
+										placeholder={ t(ctx, "settings.libraries.name_placeholder") }
 										required
 										class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
 									/>
 									<input
 										name="path"
-										placeholder="Path (e.g. /music)"
+										placeholder={ t(ctx, "settings.libraries.path_placeholder") }
 										required
 										class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
 									/>
@@ -876,15 +875,15 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 											class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
 											onchange="syncSettingsLibraryTypeHelp()"
 										>
-											<option value="regular">Regular</option>
-											<option value="classical">Classical</option>
+											<option value="regular">{ t(ctx, "settings.libraries.type_regular") }</option>
+											<option value="classical">{ t(ctx, "settings.libraries.type_classical") }</option>
 										</select>
 										<p id="settings-library-type-help" class="text-xs text-gray-500 dark:text-gray-400" aria-live="polite"></p>
 									</div>
 								</div>
 								<div class="flex gap-2">
-									<button type="submit" class="text-sm px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 transition-colors">Save</button>
-									<button type="button" class="text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" onclick="document.getElementById('settings-library-form').classList.add('hidden'); document.getElementById('settings-add-library-btn').classList.remove('hidden');">Cancel</button>
+									<button type="submit" class="text-sm px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 transition-colors">{ t(ctx, "actions.save") }</button>
+									<button type="button" class="text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" onclick="document.getElementById('settings-library-form').classList.add('hidden'); document.getElementById('settings-add-library-btn').classList.remove('hidden');">{ t(ctx, "actions.cancel") }</button>
 								</div>
 							</form>
 						</div>
@@ -903,16 +902,16 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 						<div class="flex items-center gap-2">
-							<h2 class="text-lg font-semibold">Webhooks</h2>
+							<h2 class="text-lg font-semibold">{ t(ctx, "settings.webhooks.title") }</h2>
 							@components.ContextHelp("help-webhooks", "Webhooks", "Webhooks send HTTP POST requests to external services when events occur (scan complete, violations found, etc.). Generic webhooks send JSON payloads; Discord, Slack, and Gotify use service-specific formatting.")
 						</div>
 						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-							Send notifications to external services when events occur.
+							{ t(ctx, "settings.webhooks.description") }
 						</p>
 					</div>
 					<div id="webhooks-list" class="px-6 py-4 space-y-3">
 						if len(data.Webhooks) == 0 {
-							<p class="text-sm text-gray-500 dark:text-gray-400 italic">No webhooks configured.</p>
+							<p class="text-sm text-gray-500 dark:text-gray-400 italic">{ t(ctx, "settings.webhooks.empty") }</p>
 						}
 						for _, wh := range data.Webhooks {
 							@webhookCard(wh)
@@ -924,7 +923,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 							class="text-sm px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
 							onclick="document.getElementById('add-webhook-form').classList.toggle('hidden')"
 						>
-							Add Webhook
+							{ t(ctx, "settings.webhooks.add") }
 						</button>
 						<div id="add-webhook-form" class="hidden mt-4">
 							<form
@@ -935,19 +934,19 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 								class="space-y-3"
 							>
 								<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-									<input name="name" placeholder="Webhook name" required class="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+									<input name="name" placeholder={ t(ctx, "settings.webhooks.name_placeholder") } required class="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
 									<select name="type" required class="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-										<option value="">Select type...</option>
-										<option value="generic">Generic (JSON)</option>
+										<option value="">{ t(ctx, "settings.webhooks.select_type") }</option>
+										<option value="generic">{ t(ctx, "settings.webhooks.type_generic") }</option>
 										<option value="discord">Discord</option>
 										<option value="slack">Slack</option>
 										<option value="gotify">Gotify</option>
 									</select>
-									<input name="url" type="url" placeholder="Webhook URL" required class="col-span-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+									<input name="url" type="url" placeholder={ t(ctx, "settings.webhooks.url_placeholder") } required class="col-span-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
 								</div>
 								<div class="flex gap-2">
-									<button type="submit" class="text-sm px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 transition-colors">Save</button>
-									<button type="button" class="text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" onclick="this.closest('#add-webhook-form').classList.add('hidden')">Cancel</button>
+									<button type="submit" class="text-sm px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 transition-colors">{ t(ctx, "actions.save") }</button>
+									<button type="button" class="text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" onclick="this.closest('#add-webhook-form').classList.add('hidden')">{ t(ctx, "actions.cancel") }</button>
 								</div>
 							</form>
 						</div>
@@ -957,11 +956,11 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 						<div class="flex items-center gap-2">
-							<h2 class="text-lg font-semibold">Notification Badges</h2>
+							<h2 class="text-lg font-semibold">{ t(ctx, "settings.notif_badges.title") }</h2>
 							@components.ContextHelp("help-notif-badges", "Notification Badges", "Controls violation visibility and counting in the sidebar. 'Show violation count' toggles the Open Violations link. 'Enable badge' and severity filters control which violations contribute to the numeric counter.")
 						</div>
 						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-							Show a counter badge on the Open Violations link in the sidebar indicating active violations.
+							{ t(ctx, "settings.notif_badges.description") }
 						</p>
 					</div>
 					<div class="px-6 py-4 space-y-4">
@@ -977,7 +976,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 								/>
 								<div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-500 dark:peer-focus:ring-blue-600 rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:after:border-gray-500 peer-checked:bg-blue-600"></div>
 							</label>
-							<span id="sidebar-show-violations-label" class="text-sm font-medium text-gray-700 dark:text-gray-300">Show violation count in sidebar</span>
+							<span id="sidebar-show-violations-label" class="text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.notif_badges.show_count") }</span>
 						</div>
 						<div class="flex items-center gap-3">
 							<label class="relative inline-flex items-center cursor-pointer">
@@ -989,10 +988,10 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 								/>
 								<div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-500 dark:peer-focus:ring-blue-600 rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:after:border-gray-500 peer-checked:bg-blue-600"></div>
 							</label>
-							<span class="text-sm font-medium text-gray-700 dark:text-gray-300">Enable badge</span>
+							<span class="text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.notif_badges.enable_badge") }</span>
 						</div>
 						<div class="space-y-2">
-							<p class="text-sm font-medium text-gray-700 dark:text-gray-300">Count violations by severity</p>
+							<p class="text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.notif_badges.count_by_severity") }</p>
 							<div class="flex flex-col gap-2">
 								<label class="inline-flex items-center gap-2">
 									<input
@@ -1001,7 +1000,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 										checked?={ data.BadgeSeverityError }
 										onclick="updateSetting('notif_badge_severity_error', this.checked)"
 									/>
-									<span class="text-sm text-gray-600 dark:text-gray-400">Errors</span>
+									<span class="text-sm text-gray-600 dark:text-gray-400">{ t(ctx, "common.errors") }</span>
 								</label>
 								<label class="inline-flex items-center gap-2">
 									<input
@@ -1010,7 +1009,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 										checked?={ data.BadgeSeverityWarning }
 										onclick="updateSetting('notif_badge_severity_warning', this.checked)"
 									/>
-									<span class="text-sm text-gray-600 dark:text-gray-400">Warnings</span>
+									<span class="text-sm text-gray-600 dark:text-gray-400">{ t(ctx, "common.warnings") }</span>
 								</label>
 								<label class="inline-flex items-center gap-2">
 									<input
@@ -1019,7 +1018,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 										checked?={ data.BadgeSeverityInfo }
 										onclick="updateSetting('notif_badge_severity_info', this.checked)"
 									/>
-									<span class="text-sm text-gray-600 dark:text-gray-400">Info</span>
+									<span class="text-sm text-gray-600 dark:text-gray-400">{ t(ctx, "common.info") }</span>
 								</label>
 							</div>
 						</div>
@@ -1028,14 +1027,14 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 				<!-- API Tokens -->
 				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-						<h2 class="text-lg font-semibold">API Tokens</h2>
+						<h2 class="text-lg font-semibold">{ t(ctx, "settings.api_tokens.title") }</h2>
 						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-							Generate tokens for external applications to access the Stillwater API.
+							{ t(ctx, "settings.api_tokens.description") }
 						</p>
 					</div>
 					<div class="px-6 py-4 space-y-3">
 						if len(data.APITokens) == 0 {
-							<p class="text-sm text-gray-500 dark:text-gray-400 italic">No API tokens created.</p>
+							<p class="text-sm text-gray-500 dark:text-gray-400 italic">{ t(ctx, "settings.api_tokens.empty") }</p>
 						}
 						for _, tok := range data.APITokens {
 							if tok.Status == auth.TokenStatusActive {
@@ -1050,9 +1049,9 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 											}
 										</div>
 										<p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-											Created { tok.CreatedAt }
+											{ tf(ctx, "settings.api_tokens.created_at", tok.CreatedAt) }
 											if tok.LastUsedAt != nil {
-												{ " | Last used " + *tok.LastUsedAt }
+												{ tf(ctx, "settings.api_tokens.last_used", *tok.LastUsedAt) }
 											}
 										</p>
 									</div>
@@ -1061,7 +1060,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 										class="text-sm px-3 py-1 rounded border border-red-300 dark:border-red-600 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
 										hx-delete={ "/api/v1/auth/tokens/" + tok.ID }
 										hx-swap="none"
-										hx-confirm="Revoke this API token? Applications using it will lose access."
+										hx-confirm={ t(ctx, "settings.api_tokens.confirm_revoke") }
 										hx-on--after-request={ tokenAfterRequest("token-row-" + tok.ID, "revoke") }
 										aria-label={ "Revoke token " + tok.Name }
 									>
@@ -1088,7 +1087,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 											<div id={ "token-row-" + tok.ID } class="flex items-center justify-between py-2 opacity-50">
 												<div>
 													<span class="text-sm font-medium text-gray-900 dark:text-gray-100">{ tok.Name }</span>
-													<span class="ml-2 text-xs font-medium text-red-600 dark:text-red-400">Revoked</span>
+													<span class="ml-2 text-xs font-medium text-red-600 dark:text-red-400">{ t(ctx, "settings.api_tokens.revoked") }</span>
 													<div class="flex gap-1 mt-1">
 														for _, scope := range strings.Split(tok.Scopes, ",") {
 															if strings.TrimSpace(scope) != "" {
@@ -1097,9 +1096,9 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 														}
 													</div>
 													<p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-														Created { tok.CreatedAt }
+														{ tf(ctx, "settings.api_tokens.created_at", tok.CreatedAt) }
 														if tok.LastUsedAt != nil {
-															{ " | Last used " + *tok.LastUsedAt }
+															{ tf(ctx, "settings.api_tokens.last_used", *tok.LastUsedAt) }
 														}
 													</p>
 												</div>
@@ -1108,7 +1107,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 													class="text-sm px-3 py-1 rounded border border-red-300 dark:border-red-600 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
 													hx-delete={ "/api/v1/auth/tokens/" + tok.ID + "/permanent" }
 													hx-swap="none"
-													hx-confirm="Permanently delete this token? This cannot be undone. Audit log entries will be anonymized."
+													hx-confirm={ t(ctx, "settings.api_tokens.confirm_delete") }
 													hx-on--after-request={ tokenAfterRequest("token-row-" + tok.ID, "delete") }
 													aria-label={ "Delete token " + tok.Name }
 												>
@@ -1131,35 +1130,35 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 						</button>
 						<div id="add-token-form" class="hidden mt-4">
 							<form id="create-token-form" class="space-y-3" onsubmit="createAPIToken(event)">
-								<input name="name" placeholder="Token name (e.g. Lidarr)" required class="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+								<input name="name" placeholder={ t(ctx, "settings.api_tokens.name_placeholder") } required class="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-500"/>
 								<div class="flex flex-wrap gap-3">
 									<label class="inline-flex items-center gap-1.5">
 										<input type="checkbox" name="scope_read" checked class="rounded border-gray-300 dark:border-gray-600"/>
-										<span class="text-sm">Read</span>
+										<span class="text-sm">{ t(ctx, "settings.api_tokens.scope_read") }</span>
 									</label>
 									<label class="inline-flex items-center gap-1.5">
 										<input type="checkbox" name="scope_write" class="rounded border-gray-300 dark:border-gray-600"/>
-										<span class="text-sm">Write</span>
+										<span class="text-sm">{ t(ctx, "settings.api_tokens.scope_write") }</span>
 									</label>
 									<label class="inline-flex items-center gap-1.5">
 										<input type="checkbox" name="scope_webhook" class="rounded border-gray-300 dark:border-gray-600"/>
-										<span class="text-sm">Webhook</span>
+										<span class="text-sm">{ t(ctx, "settings.api_tokens.scope_webhook") }</span>
 									</label>
 									<label class="inline-flex items-center gap-1.5">
 										<input type="checkbox" name="scope_admin" class="rounded border-gray-300 dark:border-gray-600"/>
-										<span class="text-sm">Admin</span>
+										<span class="text-sm">{ t(ctx, "settings.api_tokens.scope_admin") }</span>
 									</label>
 								</div>
 								<div class="flex gap-2">
-									<button type="submit" class="text-sm px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 transition-colors">Create</button>
-									<button type="button" class="text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" onclick="this.closest('#add-token-form').classList.add('hidden')">Cancel</button>
+									<button type="submit" class="text-sm px-3 py-2 rounded bg-green-600 text-white hover:bg-green-700 transition-colors">{ t(ctx, "actions.create") }</button>
+									<button type="button" class="text-sm px-3 py-2 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" onclick="this.closest('#add-token-form').classList.add('hidden')">{ t(ctx, "actions.cancel") }</button>
 								</div>
 							</form>
 							<div id="token-created-result" class="hidden mt-4 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded">
-								<p class="text-sm font-medium text-green-800 dark:text-green-200 mb-1">Token created. Copy it now -- it will not be shown again.</p>
+								<p class="text-sm font-medium text-green-800 dark:text-green-200 mb-1">{ t(ctx, "settings.api_tokens.created_message") }</p>
 								<div class="flex items-center gap-2">
 									<code id="token-plaintext" class="flex-1 text-xs bg-white dark:bg-gray-800 px-2 py-1 rounded border border-gray-200 dark:border-gray-600 break-all"></code>
-									<button type="button" class="text-sm px-2 py-1 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" onclick="navigator.clipboard.writeText(document.getElementById('token-plaintext').textContent)">Copy</button>
+									<button type="button" class="text-sm px-2 py-1 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" onclick="navigator.clipboard.writeText(document.getElementById('token-plaintext').textContent)">{ t(ctx, "actions.copy") }</button>
 								</div>
 							</div>
 						</div>
@@ -1168,9 +1167,9 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 				<!-- Inbound Webhooks -->
 				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-						<h2 class="text-lg font-semibold">Inbound Webhooks</h2>
+						<h2 class="text-lg font-semibold">{ t(ctx, "settings.inbound_webhooks.title") }</h2>
 						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-							Receive events from external applications to trigger actions in Stillwater.
+							{ t(ctx, "settings.inbound_webhooks.description") }
 						</p>
 					</div>
 					<div class="px-6 py-4 space-y-4">
@@ -1180,13 +1179,13 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 								Configure Lidarr to send webhook notifications when artists are added or albums are downloaded.
 							</p>
 							<div class="mt-2 p-3 bg-gray-50 dark:bg-gray-900/50 rounded border border-gray-200 dark:border-gray-700">
-								<p class="text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Webhook URL</p>
+								<p class="text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">{ t(ctx, "settings.inbound_webhooks.url_label") }</p>
 								<code class="text-xs text-gray-600 dark:text-gray-400 break-all">
 									{ "http://YOUR_HOST:1973/api/v1/webhooks/inbound/lidarr?apikey=YOUR_TOKEN" }
 								</code>
 							</div>
 							<div class="mt-3 text-sm text-gray-600 dark:text-gray-400 space-y-1">
-								<p class="font-medium text-gray-700 dark:text-gray-300">Setup instructions:</p>
+								<p class="font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.inbound_webhooks.setup_instructions") }:</p>
 								<ol class="list-decimal list-inside space-y-1 text-xs">
 									<li>Create an API token above with the <span class="font-medium">webhook</span> scope</li>
 									<li>In Lidarr, go to Settings &gt; Connect &gt; Add &gt; Webhook</li>
@@ -1195,13 +1194,13 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 								</ol>
 							</div>
 							<div class="mt-3">
-								<p class="text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Supported events</p>
+								<p class="text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">{ t(ctx, "settings.inbound_webhooks.supported_events") }</p>
 								<div class="flex flex-wrap gap-1">
 									<span class="inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">ArtistAdded</span>
-									<span class="inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">Download</span>
+									<span class="inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">{ t(ctx, "actions.download") }</span>
 									<span class="inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">Grab</span>
 									<span class="inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">AlbumImport</span>
-									<span class="inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400">Test</span>
+									<span class="inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400">{ t(ctx, "actions.test") }</span>
 								</div>
 							</div>
 						</div>
@@ -1211,13 +1210,13 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 								Receive notifications when music is added or updated in Emby. Requires Emby 4.9 or later.
 							</p>
 							<div class="mt-2 p-3 bg-gray-50 dark:bg-gray-900/50 rounded border border-gray-200 dark:border-gray-700">
-								<p class="text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Webhook URL</p>
+								<p class="text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">{ t(ctx, "settings.inbound_webhooks.url_label") }</p>
 								<code class="text-xs text-gray-600 dark:text-gray-400 break-all">
 									{ "http://YOUR_HOST:1973/api/v1/webhooks/inbound/emby?apikey=YOUR_TOKEN" }
 								</code>
 							</div>
 							<div class="mt-3 text-sm text-gray-600 dark:text-gray-400 space-y-1">
-								<p class="font-medium text-gray-700 dark:text-gray-300">Setup instructions:</p>
+								<p class="font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.inbound_webhooks.setup_instructions") }:</p>
 								<ol class="list-decimal list-inside space-y-1 text-xs">
 									<li>Create an API token above with the <span class="font-medium">webhook</span> scope</li>
 									<li>In Emby, go to Settings &gt; Notifications, click + and choose Webhook</li>
@@ -1227,7 +1226,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 								</ol>
 							</div>
 							<div class="mt-3">
-								<p class="text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Supported events (Emby internal names)</p>
+								<p class="text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">{ t(ctx, "settings.inbound_webhooks.supported_events_emby") }</p>
 								<div class="flex flex-wrap gap-1">
 									<span class="inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">library.new</span>
 									<span class="inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">item.updated</span>
@@ -1242,16 +1241,16 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 								Receive notifications from the Jellyfin webhook plugin. Requires the Webhook plugin (v18 or later) installed via the plugin catalog.
 							</p>
 							<div class="mt-2 p-3 bg-gray-50 dark:bg-gray-900/50 rounded border border-gray-200 dark:border-gray-700">
-								<p class="text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Webhook URL</p>
+								<p class="text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">{ t(ctx, "settings.inbound_webhooks.url_label") }</p>
 								<code class="text-xs text-gray-600 dark:text-gray-400 break-all">
 									{ "http://YOUR_HOST:1973/api/v1/webhooks/inbound/jellyfin?apikey=YOUR_TOKEN" }
 								</code>
 							</div>
 							<div class="mt-3 text-sm text-gray-600 dark:text-gray-400 space-y-1">
-								<p class="font-medium text-gray-700 dark:text-gray-300">Setup instructions:</p>
+								<p class="font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.inbound_webhooks.setup_instructions") }:</p>
 								<ol class="list-decimal list-inside space-y-1 text-xs">
 									<li>Create an API token above with the <span class="font-medium">webhook</span> scope</li>
-									<li>In Jellyfin, go to Dashboard &gt; Plugins &gt; Catalog and install the <span class="font-medium">Webhook</span> plugin</li>
+									<li>In Jellyfin, go to Dashboard &gt; Plugins &gt; Catalog and install the <span class="font-medium">{ t(ctx, "settings.api_tokens.scope_webhook") }</span> plugin</li>
 									<li>After installation, go to Dashboard &gt; Plugins &gt; Webhook and click Add Destination</li>
 									<li>Set the URL to the endpoint above, replacing YOUR_HOST and YOUR_TOKEN</li>
 									<li>Enable notification types: <span class="font-medium">Item Added</span>, <span class="font-medium">Item Updated</span>, <span class="font-medium">Library Changed</span></li>
@@ -1260,12 +1259,12 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 								</ol>
 							</div>
 							<div class="mt-3">
-								<p class="text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Supported events</p>
+								<p class="text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">{ t(ctx, "settings.inbound_webhooks.supported_events") }</p>
 								<div class="flex flex-wrap gap-1">
 									<span class="inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">ItemAdded</span>
 									<span class="inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">ItemUpdated</span>
 									<span class="inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">LibraryChanged</span>
-									<span class="inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400">Test</span>
+									<span class="inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400">{ t(ctx, "actions.test") }</span>
 								</div>
 							</div>
 						</div>
@@ -1286,7 +1285,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 						<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 							<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 								<div class="flex items-center gap-2">
-									<h2 class="text-lg font-semibold">{ categoryLabel(cat) } Rules</h2>
+									<h2 class="text-lg font-semibold">{ tf(ctx, "settings.rules.category_header", categoryLabel(cat)) }</h2>
 									if cat == "nfo" {
 										@components.ContextHelp("help-rules-nfo", "NFO Rules", "NFO rules validate and fix artist information files. Each rule can be disabled, set to manual (notify only), or auto-fix (automatically correct violations during scans).")
 									}
@@ -1308,39 +1307,39 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 				}
 				if len(data.Rules) == 0 {
 					<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg px-6 py-8 text-center">
-						<p class="text-sm text-gray-500 dark:text-gray-400">No rules found.</p>
+						<p class="text-sm text-gray-500 dark:text-gray-400">{ t(ctx, "settings.rules.empty") }</p>
 					</div>
 				}
 				<!-- Rule Evaluation Schedule -->
 				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 						<div class="flex items-center gap-2">
-						<h2 class="text-lg font-semibold">Scheduled Evaluation</h2>
+						<h2 class="text-lg font-semibold">{ t(ctx, "settings.rule_schedule.title") }</h2>
 						@components.ContextHelp("help-rule-schedule", "Scheduled Evaluation", "Periodically evaluates all enabled rules across your library. Rules set to auto-fix will automatically correct violations. Rules set to manual will only report violations without changing files.")
 					</div>
 						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-							Run all enabled rules on a recurring schedule. Requires a container restart after changing.
+							{ t(ctx, "settings.rule_schedule.description") }
 						</p>
 					</div>
 					<div class="px-6 py-4">
 						<div class="flex items-center gap-4">
-							<label class="text-sm font-medium text-gray-700 dark:text-gray-300">Evaluation interval</label>
+							<label class="text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.rule_schedule.interval_label") }</label>
 							<select
 								onchange="updateRuleSchedule(this.value)"
 								class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
 							>
-								<option value="0" selected?={ data.RuleScheduleMinutes == 0 }>Disabled</option>
-								<option value="5" selected?={ data.RuleScheduleMinutes == 5 }>Every 5 minutes</option>
-								<option value="15" selected?={ data.RuleScheduleMinutes == 15 }>Every 15 minutes</option>
-								<option value="30" selected?={ data.RuleScheduleMinutes == 30 }>Every 30 minutes</option>
-								<option value="60" selected?={ data.RuleScheduleMinutes == 60 }>Every hour</option>
-								<option value="360" selected?={ data.RuleScheduleMinutes == 360 }>Every 6 hours</option>
-								<option value="720" selected?={ data.RuleScheduleMinutes == 720 }>Every 12 hours</option>
-								<option value="1440" selected?={ data.RuleScheduleMinutes == 1440 }>Daily (24h)</option>
+								<option value="0" selected?={ data.RuleScheduleMinutes == 0 }>{ t(ctx, "common.disabled") }</option>
+								<option value="5" selected?={ data.RuleScheduleMinutes == 5 }>{ t(ctx, "settings.schedule.every_5m") }</option>
+								<option value="15" selected?={ data.RuleScheduleMinutes == 15 }>{ t(ctx, "settings.schedule.every_15m") }</option>
+								<option value="30" selected?={ data.RuleScheduleMinutes == 30 }>{ t(ctx, "settings.schedule.every_30m") }</option>
+								<option value="60" selected?={ data.RuleScheduleMinutes == 60 }>{ t(ctx, "settings.schedule.every_hour") }</option>
+								<option value="360" selected?={ data.RuleScheduleMinutes == 360 }>{ t(ctx, "settings.schedule.every_6h") }</option>
+								<option value="720" selected?={ data.RuleScheduleMinutes == 720 }>{ t(ctx, "settings.schedule.every_12h") }</option>
+								<option value="1440" selected?={ data.RuleScheduleMinutes == 1440 }>{ t(ctx, "settings.schedule.daily") }</option>
 							</select>
 						</div>
 						<p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
-							Evaluates all enabled rules against every artist on the selected interval. Changes take effect after container restart.
+							{ t(ctx, "settings.rule_schedule.note") }
 						</p>
 					</div>
 				</div>
@@ -1375,15 +1374,15 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 			>
 				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-						<h2 class="text-lg font-semibold">Confirmation Dialogs</h2>
+						<h2 class="text-lg font-semibold">{ t(ctx, "settings.confirm_dialogs.title") }</h2>
 						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-							Manage "Don't ask again" preferences for confirmation dialogs throughout the app.
+							{ t(ctx, "settings.confirm_dialogs.description") }
 						</p>
 					</div>
 					<div class="px-6 py-4">
 						<p class="text-sm text-gray-600 dark:text-gray-400 mb-3">
-							If you previously checked "Don't ask again" on a confirmation dialog, you can reset
-							all preferences here to restore those prompts.
+							{ t(ctx, "settings.confirm_dialogs.reset_info") }
+
 						</p>
 						<button
 							type="button"
@@ -1393,23 +1392,23 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 						>
 							Reset all confirmation preferences
 						</button>
-						<span id="confirm-reset-status" class="ml-2 text-sm text-green-600 dark:text-green-400 hidden">Preferences reset.</span>
+						<span id="confirm-reset-status" class="ml-2 text-sm text-green-600 dark:text-green-400 hidden">{ t(ctx, "settings.confirm_dialogs.reset_success") }</span>
 					</div>
 				</div>
 				<!-- Database Maintenance -->
 				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
 						<div class="flex items-center gap-2">
-							<h2 class="text-lg font-semibold">Database Maintenance</h2>
+							<h2 class="text-lg font-semibold">{ t(ctx, "settings.db_maintenance.title") }</h2>
 							@components.ContextHelp("help-db-maintenance", "Database Maintenance", "Optimize runs PRAGMA optimize to update query planner statistics. Vacuum rebuilds the database file to reclaim unused space, but temporarily doubles disk usage during the operation. Auto-optimize runs Optimize on a schedule.")
 						</div>
 						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-							Optimize database performance and reclaim disk space.
+							{ t(ctx, "settings.db_maintenance.description") }
 						</p>
 					</div>
 					<div class="px-6 py-4 space-y-4">
 						<div id="maintenance-status" hx-get="/api/v1/settings/maintenance/status" hx-trigger="load" hx-swap="innerHTML">
-							<p class="text-sm text-gray-500 dark:text-gray-400 italic">Loading status...</p>
+							<p class="text-sm text-gray-500 dark:text-gray-400 italic">{ t(ctx, "common.loading_status") }</p>
 						</div>
 						<div class="flex items-center gap-3 pt-2 border-t border-gray-200 dark:border-gray-700">
 							<button
@@ -1432,7 +1431,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 								hx-target="#maintenance-status"
 								hx-swap="innerHTML"
 								hx-indicator="#vacuum-spinner"
-								hx-confirm="VACUUM rebuilds the entire database file. This may take a while for large databases and temporarily doubles disk usage. Continue?"
+								hx-confirm={ t(ctx, "settings.db_maintenance.confirm_vacuum") }
 							>
 								Vacuum
 							</button>
@@ -1442,30 +1441,30 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 						</div>
 						<div class="pt-2 border-t border-gray-200 dark:border-gray-700">
 							<div class="flex items-center gap-4">
-								<label class="text-sm font-medium text-gray-700 dark:text-gray-300">Auto-optimize schedule</label>
+								<label class="text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.db_maintenance.auto_schedule") }</label>
 								<select
 									id="maint-interval"
 									onchange="updateMaintSchedule(this)"
 									class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
 								>
-									<option value="6">Every 6 hours</option>
-									<option value="12">Every 12 hours</option>
-									<option value="24" selected>Daily (24h)</option>
-									<option value="168">Weekly</option>
+									<option value="6">{ t(ctx, "settings.schedule.every_6h") }</option>
+									<option value="12">{ t(ctx, "settings.schedule.every_12h") }</option>
+									<option value="24" selected>{ t(ctx, "settings.schedule.daily") }</option>
+									<option value="168">{ t(ctx, "settings.schedule.weekly") }</option>
 								</select>
 								<span id="maint-schedule-status"></span>
 							</div>
 							<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-								Runs PRAGMA optimize and WAL checkpoint on the selected interval. Requires restart to apply schedule changes.
+								{ t(ctx, "settings.db_maintenance.schedule_note") }
 							</p>
 						</div>
 					</div>
 				</div>
 				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-						<h2 class="text-lg font-semibold">Database Backup</h2>
+						<h2 class="text-lg font-semibold">{ t(ctx, "settings.backup.title") }</h2>
 						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-							Create, download, and manage database backups.
+							{ t(ctx, "settings.backup.description") }
 						</p>
 					</div>
 					<div class="px-6 py-4 space-y-4">
@@ -1485,10 +1484,10 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 							</span>
 						</div>
 						<div class="pt-2 border-t border-gray-200 dark:border-gray-700">
-							<h3 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Retention</h3>
+							<h3 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{ t(ctx, "settings.backup.retention") }</h3>
 							<div class="flex flex-wrap items-center gap-4">
 								<div class="flex items-center gap-2">
-									<label for="backup-retention" class="text-sm text-gray-600 dark:text-gray-400">Keep</label>
+									<label for="backup-retention" class="text-sm text-gray-600 dark:text-gray-400">{ t(ctx, "settings.backup.keep") }</label>
 									<input
 										type="number"
 										id="backup-retention"
@@ -1497,20 +1496,20 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 										value={ fmt.Sprint(data.BackupRetention) }
 										class="w-20 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1.5 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
 									/>
-									<span class="text-sm text-gray-600 dark:text-gray-400">backups</span>
+									<span class="text-sm text-gray-600 dark:text-gray-400">{ t(ctx, "settings.backup.backups_unit") }</span>
 								</div>
 								<div class="flex items-center gap-2">
-									<label for="backup-max-age" class="text-sm text-gray-600 dark:text-gray-400">Max age</label>
+									<label for="backup-max-age" class="text-sm text-gray-600 dark:text-gray-400">{ t(ctx, "settings.backup.max_age") }</label>
 									<select
 										id="backup-max-age"
 										class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
 									>
-										<option value="0" selected?={ data.BackupMaxAgeDays == 0 }>Never</option>
-										<option value="7" selected?={ data.BackupMaxAgeDays == 7 }>7 days</option>
-										<option value="14" selected?={ data.BackupMaxAgeDays == 14 }>14 days</option>
-										<option value="30" selected?={ data.BackupMaxAgeDays == 30 }>30 days</option>
-										<option value="60" selected?={ data.BackupMaxAgeDays == 60 }>60 days</option>
-										<option value="90" selected?={ data.BackupMaxAgeDays == 90 }>90 days</option>
+										<option value="0" selected?={ data.BackupMaxAgeDays == 0 }>{ t(ctx, "common.never") }</option>
+										<option value="7" selected?={ data.BackupMaxAgeDays == 7 }>{ t(ctx, "settings.backup.days_7") }</option>
+										<option value="14" selected?={ data.BackupMaxAgeDays == 14 }>{ t(ctx, "settings.backup.days_14") }</option>
+										<option value="30" selected?={ data.BackupMaxAgeDays == 30 }>{ t(ctx, "settings.backup.days_30") }</option>
+										<option value="60" selected?={ data.BackupMaxAgeDays == 60 }>{ t(ctx, "settings.backup.days_60") }</option>
+										<option value="90" selected?={ data.BackupMaxAgeDays == 90 }>{ t(ctx, "settings.backup.days_90") }</option>
 									</select>
 								</div>
 								<button
@@ -1520,24 +1519,24 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 								>
 									Save
 								</button>
-								<span id="backup-retention-status" class="text-xs text-green-600 dark:text-green-400 hidden">Saved</span>
+								<span id="backup-retention-status" class="text-xs text-green-600 dark:text-green-400 hidden">{ t(ctx, "common.saved") }</span>
 							</div>
 							<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-								Oldest backups are pruned after each automatic backup when they exceed the configured retention count or maximum age.
+								{ t(ctx, "settings.backup.retention_note") }
 							</p>
 						</div>
 						<div id="backup-list" hx-get="/api/v1/settings/backup/history" hx-trigger="load" hx-swap="innerHTML">
-							<p class="text-sm text-gray-500 dark:text-gray-400 italic">Loading backup history...</p>
+							<p class="text-sm text-gray-500 dark:text-gray-400 italic">{ t(ctx, "settings.backup.loading_history") }</p>
 						</div>
 					</div>
 				</div>
 				<!-- Settings Export / Import -->
 				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-						<h2 class="text-lg font-semibold">Settings Export / Import</h2>
+						<h2 class="text-lg font-semibold">{ t(ctx, "settings.export_import.title") }</h2>
 						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-							Export all settings (provider keys, connections, profiles, webhooks) as an encrypted file.
-							A passphrase you choose protects the file, so it can be imported on any Stillwater instance.
+							{ t(ctx, "settings.export_import.description_line1") }
+							{ t(ctx, "settings.export_import.description_line2") }
 						</p>
 					</div>
 					<div class="px-6 py-4 space-y-4">
@@ -1546,14 +1545,14 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 							class="space-y-3"
 						>
 							<div>
-								<label for="export-passphrase" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Export passphrase</label>
+								<label for="export-passphrase" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{ t(ctx, "settings.export_import.export_passphrase") }</label>
 								<input
 									id="export-passphrase"
 									name="export_passphrase"
 									type="password"
 									required
 									minlength="8"
-									placeholder="Choose a passphrase (min 8 characters)"
+									placeholder={ t(ctx, "settings.export_import.passphrase_placeholder") }
 									class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
 								/>
 							</div>
@@ -1580,7 +1579,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 								class="space-y-3"
 							>
 								<div>
-									<label for="import-file" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Import settings file</label>
+									<label for="import-file" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{ t(ctx, "settings.export_import.import_file_label") }</label>
 									<input
 										id="import-file"
 										name="file"
@@ -1591,13 +1590,13 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 									/>
 								</div>
 								<div>
-									<label for="import-passphrase" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Import passphrase</label>
+									<label for="import-passphrase" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{ t(ctx, "settings.export_import.import_passphrase") }</label>
 									<input
 										id="import-passphrase"
 										name="passphrase"
 										type="password"
 										required
-										placeholder="Enter the passphrase used during export"
+										placeholder={ t(ctx, "settings.export_import.import_passphrase_placeholder") }
 										class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
 									/>
 								</div>
@@ -1616,8 +1615,8 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 							<div id="import-result" class="mt-2"></div>
 						</div>
 						<p class="text-xs text-gray-500 dark:text-gray-400">
-							The export file is encrypted with your passphrase using PBKDF2 + AES-256-GCM.
-							You will need the same passphrase to import the file on any instance.
+							{ t(ctx, "settings.export_import.encryption_note_line1") }
+							{ t(ctx, "settings.export_import.encryption_note_line2") }
 						</p>
 					</div>
 				</div>
@@ -1633,9 +1632,9 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 				<!-- Log Settings -->
 				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-						<h2 class="text-lg font-semibold">Log Settings</h2>
+						<h2 class="text-lg font-semibold">{ t(ctx, "settings.log_settings.title") }</h2>
 						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-							Configure log level, format, and file output with rotation. Changes take effect immediately.
+							{ t(ctx, "settings.log_settings.description") }
 						</p>
 					</div>
 					<div class="px-6 py-4">
@@ -1648,7 +1647,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 						>
 							<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 								<div>
-									<label for="log-level" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Level</label>
+									<label for="log-level" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{ t(ctx, "settings.log_settings.level") }</label>
 									<select
 										id="log-level"
 										name="level"
@@ -1659,22 +1658,22 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 										hx-swap="none"
 										hx-on::after-request="if(event.detail.successful){try{loadLoggingConfig(JSON.parse(event.detail.xhr.responseText));}catch(e){}}"
 									>
-										<option value="trace">Trace</option>
-										<option value="debug">Debug</option>
-										<option value="info" selected>Info</option>
+										<option value="trace">{ t(ctx, "settings.log_settings.level_trace") }</option>
+										<option value="debug">{ t(ctx, "settings.log_settings.level_debug") }</option>
+										<option value="info" selected>{ t(ctx, "common.info") }</option>
 										<option value="warn">Warn</option>
-										<option value="error">Error</option>
+										<option value="error">{ t(ctx, "common.error") }</option>
 									</select>
 								</div>
 								<div>
-									<label for="log-format" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Format</label>
+									<label for="log-format" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{ t(ctx, "settings.log_settings.format") }</label>
 									<select
 										id="log-format"
 										name="format"
 										class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
 									>
-										<option value="json">JSON</option>
-										<option value="text">Text</option>
+										<option value="json">{ t(ctx, "settings.log_settings.format_json") }</option>
+										<option value="text">{ t(ctx, "settings.log_settings.format_text") }</option>
 									</select>
 								</div>
 							</div>
@@ -1682,9 +1681,9 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 							<div id="ephemeral-level-row" class="hidden flex items-center gap-2">
 								<input type="checkbox" id="ephemeral-level" name="ephemeral" value="true"
 									class="rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 dark:bg-gray-700"
-									aria-label="Revert log level on restart"/>
+									aria-label={ t(ctx, "settings.log_settings.revert_on_restart") }/>
 								<label for="ephemeral-level" class="text-sm text-gray-600 dark:text-gray-400">
-									Revert to <span id="ephemeral-revert-level" class="font-medium">info</span> on restart
+									{ t(ctx, "settings.log_settings.revert_to") } <span id="ephemeral-revert-level" class="font-medium">info</span> { t(ctx, "settings.log_settings.on_restart") }
 								</label>
 							</div>
 							<!-- Hidden input always submitted; JS keeps it in sync with the path display field -->
@@ -1692,15 +1691,15 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 							<!-- Log to file toggle -->
 							<div class="flex items-center justify-between py-1">
 								<div>
-									<p class="text-sm font-medium text-gray-700 dark:text-gray-300">Log to file</p>
-									<p class="text-xs text-gray-500 dark:text-gray-400">Write logs to a rotating file in addition to stdout.</p>
+									<p class="text-sm font-medium text-gray-700 dark:text-gray-300">{ t(ctx, "settings.log_settings.log_to_file") }</p>
+									<p class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "settings.log_settings.log_to_file_desc") }</p>
 								</div>
 								<button
 									type="button"
 									id="log-to-file-btn"
 									role="switch"
 									aria-checked="false"
-									aria-label="Enable file logging"
+									aria-label={ t(ctx, "settings.log_settings.log_to_file") }
 									onclick="toggleFileLogging()"
 									class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-gray-200 dark:bg-gray-600 transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800"
 								>
@@ -1710,7 +1709,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 							<!-- File logging settings (shown when toggle is on) -->
 							<div id="file-logging-settings" class="hidden space-y-4">
 								<div>
-									<label for="log-file-path-display" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Log file path</label>
+									<label for="log-file-path-display" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{ t(ctx, "settings.log_settings.file_path") }</label>
 									<input
 										id="log-file-path-display"
 										type="text"
@@ -1718,20 +1717,20 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 										class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
 										oninput="syncLogFilePath(this.value)"
 									/>
-									<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Logs are always written to stdout. This enables an additional rotating file.</p>
+									<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "settings.log_settings.file_path_note") }</p>
 								</div>
 								<div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
 									<div>
-										<label for="log-file-max-size" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Max size (MB)</label>
-										<input id="log-file-max-size" name="file_max_size_mb" type="number" value="10" min="1" class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500" aria-label="Maximum log file size in megabytes"/>
+										<label for="log-file-max-size" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{ t(ctx, "settings.log_settings.max_size") }</label>
+										<input id="log-file-max-size" name="file_max_size_mb" type="number" value="10" min="1" class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500" aria-label={ t(ctx, "settings.log_settings.max_size") }/>
 									</div>
 									<div>
-										<label for="log-file-max-files" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Files to keep</label>
-										<input id="log-file-max-files" name="file_max_files" type="number" value="5" min="1" class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500" aria-label="Number of rotated log files to keep"/>
+										<label for="log-file-max-files" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{ t(ctx, "settings.log_settings.files_to_keep") }</label>
+										<input id="log-file-max-files" name="file_max_files" type="number" value="5" min="1" class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500" aria-label={ t(ctx, "settings.log_settings.files_to_keep") }/>
 									</div>
 									<div>
-										<label for="log-file-max-age" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Max age (days)</label>
-										<input id="log-file-max-age" name="file_max_age_days" type="number" value="30" min="1" class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500" aria-label="Maximum age of rotated log files in days"/>
+										<label for="log-file-max-age" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{ t(ctx, "settings.log_settings.max_age") }</label>
+										<input id="log-file-max-age" name="file_max_age_days" type="number" value="30" min="1" class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500" aria-label={ t(ctx, "settings.log_settings.max_age") }/>
 									</div>
 								</div>
 								<!-- Cleanup row (visible only when rotated files exist) -->
@@ -1758,15 +1757,15 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 				<!-- Log Viewer -->
 				<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 					<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-						<h2 class="text-lg font-semibold">Log Viewer</h2>
+						<h2 class="text-lg font-semibold">{ t(ctx, "settings.log_viewer.title") }</h2>
 						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-							View application logs in real time with level filtering and search.
+							{ t(ctx, "settings.log_viewer.description") }
 						</p>
 					</div>
 					<div class="px-6 py-4 space-y-3">
 						<!-- Filter bar -->
 						<div class="flex flex-wrap items-center gap-2">
-							<div class="flex items-center gap-1" role="group" aria-label="Log level filter">
+							<div class="flex items-center gap-1" role="group" aria-label={ t(ctx, "settings.log_viewer.level_filter") }>
 								<button type="button" data-log-level="trace" onclick="toggleLogLevel(this)"
 									class="log-level-btn text-[10px] font-semibold uppercase px-2 py-1 rounded bg-purple-900/50 text-purple-300 opacity-50 hover:opacity-100 transition-opacity"
 									aria-pressed="false">
@@ -1796,40 +1795,40 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 							<input
 								type="text"
 								id="log-search"
-								placeholder="Search logs..."
+								placeholder={ t(ctx, "settings.log_viewer.search_placeholder") }
 								oninput="updateLogFilters()"
 								class="flex-1 min-w-[150px] rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-1.5 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-								aria-label="Search log messages"
+								aria-label={ t(ctx, "settings.log_viewer.search_placeholder") }
 							/>
 							<div class="flex items-center gap-1">
 								<button type="button" id="log-pause-btn" onclick="toggleLogPause()"
 									class="text-xs px-2.5 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-									aria-label="Pause log updates"
+									aria-label={ t(ctx, "actions.pause") }
 									aria-pressed="false">
 									Pause
 								</button>
 								<button type="button" onclick="clearLogs()"
 									class="text-xs px-2.5 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-									aria-label="Clear log buffer">
+									aria-label={ t(ctx, "actions.clear") }>
 									Clear
 								</button>
 								<button type="button" onclick="downloadLogs()"
 									class="text-xs px-2.5 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-									aria-label="Download filtered logs">
+									aria-label={ t(ctx, "actions.download") }>
 									Download
 								</button>
 							</div>
 						</div>
 						<!-- Log file picker (visible only when file logging is configured) -->
 						<div id="log-file-picker-row" class="hidden flex items-center gap-2">
-							<label for="log-file-select" class="text-xs text-gray-400 dark:text-gray-500 shrink-0">File:</label>
+							<label for="log-file-select" class="text-xs text-gray-400 dark:text-gray-500 shrink-0">{ t(ctx, "settings.log_viewer.file_label") }:</label>
 							<select
 								id="log-file-select"
 								onchange="selectLogFile(this.value)"
 								class="rounded border border-gray-600 bg-gray-800 text-gray-200 text-xs px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500"
-								aria-label="Select log file to view"
+								aria-label={ t(ctx, "settings.log_viewer.select_file") }
 							>
-								<option value="">Live (current)</option>
+								<option value="">{ t(ctx, "settings.log_viewer.live_current") }</option>
 							</select>
 						</div>
 						<!-- Log viewer container -->
@@ -1845,7 +1844,7 @@ templ SettingsPage(assets AssetPaths, data SettingsData) {
 							</div>
 						</div>
 						<p class="text-xs text-gray-500 dark:text-gray-400">
-							Showing up to 200 most recent entries. Live view polls in real time; historical files are loaded on demand.
+							{ t(ctx, "settings.log_viewer.footer_note") }
 						</p>
 					</div>
 				</div>
@@ -1880,7 +1879,7 @@ templ resetConfirmPrefsScript() {
 
 templ settingsTabBar(activeTab string, basePath string) {
 	<div class="sw-card rounded-lg p-1.5">
-		<nav class="flex overflow-x-auto gap-0.5" aria-label="Settings tabs">
+		<nav class="flex overflow-x-auto gap-0.5" aria-label={ t(ctx, "settings.tabs_label") }>
 			for _, tab := range settingsTabs() {
 				<a
 					href={ templ.SafeURL(basePath + "/settings?tab=" + tab.ID) }
@@ -1892,7 +1891,7 @@ templ settingsTabBar(activeTab string, basePath string) {
 					data-tab={ tab.ID }
 					onclick="switchSettingsTab(event, this)"
 				>
-					{ tab.Label }
+					{ t(ctx, tab.Label) }
 				</a>
 			}
 		</nav>
@@ -2846,7 +2845,7 @@ templ settingsLibraryRow(lib library.Library) {
 			<div class="flex items-center gap-1.5 mt-1">
 				<span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300">{ lib.Type }</span>
 				if lib.ConnectionID != "" {
-					<span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300">Connection</span>
+					<span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300">{ t(ctx, "settings.libraries.connection_badge") }</span>
 				}
 				if lib.Source != "" && lib.Source != "manual" {
 					<span class="inline-flex items-center gap-1 rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300">
@@ -2860,22 +2859,22 @@ templ settingsLibraryRow(lib library.Library) {
 			if !lib.IsPathless() {
 				<select
 					class="text-xs rounded border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 focus:ring-blue-500 px-1.5 py-1"
-					title="Filesystem monitoring mode"
+					title={ t(ctx, "settings.libraries.fs_mode_title") }
 					onchange={ settingsUpdateFSMode(lib.ID) }
 				>
-					<option value="0" selected?={ lib.FSWatch == 0 }>Off</option>
+					<option value="0" selected?={ lib.FSWatch == 0 }>{ t(ctx, "settings.libraries.fs_off") }</option>
 					if lib.FSNotifySupported {
-						<option value="1" selected?={ lib.FSWatch == library.FSModeWatch }>Watch</option>
+						<option value="1" selected?={ lib.FSWatch == library.FSModeWatch }>{ t(ctx, "settings.libraries.fs_watch") }</option>
 					}
-					<option value="2" selected?={ lib.FSWatch == library.FSModePoll }>Poll</option>
+					<option value="2" selected?={ lib.FSWatch == library.FSModePoll }>{ t(ctx, "settings.libraries.fs_poll") }</option>
 					if lib.FSNotifySupported {
-						<option value="3" selected?={ lib.FSWatch == library.FSModeBoth }>Watch + Poll</option>
+						<option value="3" selected?={ lib.FSWatch == library.FSModeBoth }>{ t(ctx, "settings.libraries.fs_both") }</option>
 					}
 				</select>
 				if lib.FSPollEnabled() {
 					<select
 						class="text-xs rounded border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 focus:ring-blue-500 px-1.5 py-1"
-						title="Poll interval"
+						title={ t(ctx, "settings.libraries.poll_interval_title") }
 						onchange={ settingsUpdatePollInterval(lib.ID) }
 					>
 						<option value="60" selected?={ lib.FSPollInterval == 60 }>1m</option>
@@ -2893,7 +2892,7 @@ templ settingsLibraryRow(lib library.Library) {
 					onclick={ settingsAsyncLibOp(lib.ConnectionID, lib.ID, "populate") }
 				>
 					<svg id={ "populate-spinner-" + lib.ID } class="hidden animate-spin h-3 w-3" viewBox="0 0 24 24" fill="none"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
-					<span id={ "populate-label-" + lib.ID }>Re-sync Artists</span>
+					<span id={ "populate-label-" + lib.ID }>{ t(ctx, "settings.libraries.resync") }</span>
 				</button>
 			}
 			if lib.ConnectionID != "" {
@@ -2904,7 +2903,7 @@ templ settingsLibraryRow(lib library.Library) {
 					onclick={ settingsAsyncLibOp(lib.ConnectionID, lib.ID, "scan") }
 				>
 					<svg id={ "scan-spinner-" + lib.ID } class="hidden animate-spin h-3 w-3" viewBox="0 0 24 24" fill="none"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
-					<span id={ "scan-label-" + lib.ID }>Scan Library</span>
+					<span id={ "scan-label-" + lib.ID }>{ t(ctx, "settings.libraries.scan") }</span>
 				</button>
 			}
 			<button
@@ -2977,7 +2976,7 @@ templ settingsLibraryScript() {
 					div.textContent = lib.type;
 					var safeType = div.innerHTML;
 					var pathLine = lib.path ? '<div class="text-xs text-gray-500 dark:text-gray-400">' + safePath + '</div>' : '';
-					var connectionBadge = lib.connection_id ? '<span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300">Connection</span>' : '';
+					var connectionBadge = lib.connection_id ? '<span class="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300">{ t(ctx, "settings.libraries.connection_badge") }</span>' : '';
 					var sourceBadge = '';
 					if (lib.source && lib.source !== 'manual' && sourceNames[lib.source]) {
 						sourceBadge = '<span class="inline-flex items-center gap-1 rounded-full bg-gray-100 dark:bg-gray-700 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300">'
@@ -2991,7 +2990,7 @@ templ settingsLibraryScript() {
 						var fsMode = lib.fs_watch || 0;
 						var supportsNotify = lib.fs_notify_supported;
 						var selClass = 'text-xs rounded border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 focus:ring-blue-500 px-1.5 py-1';
-						modeSelect = '<select class="' + selClass + '" title="Filesystem monitoring mode" onchange="updateLibraryFSMode(&apos;' + lib.id + '&apos;, parseInt(this.value, 10))">'
+						modeSelect = '<select class="' + selClass + '" title={ t(ctx, "settings.libraries.fs_mode_title") } onchange="updateLibraryFSMode(&apos;' + lib.id + '&apos;, parseInt(this.value, 10))">'
 							+ '<option value="0"' + (fsMode === 0 ? ' selected' : '') + '>Off</option>';
 						if (supportsNotify) {
 							modeSelect += '<option value="1"' + (fsMode === 1 ? ' selected' : '') + '>Watch</option>';
@@ -3003,7 +3002,7 @@ templ settingsLibraryScript() {
 						modeSelect += '</select>';
 						if (fsMode === 2 || fsMode === 3) {
 							var pi = lib.fs_poll_interval || 60;
-							modeSelect += ' <select class="' + selClass + '" title="Poll interval" onchange="updateLibraryPollInterval(&apos;' + lib.id + '&apos;, parseInt(this.value, 10))">'
+							modeSelect += ' <select class="' + selClass + '" title={ t(ctx, "settings.libraries.poll_interval_title") } onchange="updateLibraryPollInterval(&apos;' + lib.id + '&apos;, parseInt(this.value, 10))">'
 								+ '<option value="60"' + (pi === 60 ? ' selected' : '') + '>1m</option>'
 								+ '<option value="300"' + (pi === 300 ? ' selected' : '') + '>5m</option>'
 								+ '<option value="900"' + (pi === 900 ? ' selected' : '') + '>15m</option>'
@@ -3015,13 +3014,13 @@ templ settingsLibraryScript() {
 					if (lib.connection_id) {
 						populateBtn = '<button type="button" id="populate-btn-' + lib.id + '" class="text-xs px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors inline-flex items-center gap-1" onclick="runLibraryOp(&apos;' + lib.connection_id + '&apos;, &apos;' + lib.id + '&apos;, &apos;populate&apos;)">'
 							+ spinnerSvg.replace('class="hidden', 'id="populate-spinner-' + lib.id + '" class="hidden')
-							+ '<span id="populate-label-' + lib.id + '">Re-sync Artists</span></button>';
+							+ '<span id="populate-label-' + lib.id + '">{ t(ctx, "settings.libraries.resync") }</span></button>';
 					}
 					var scanBtn = '';
 					if (lib.connection_id) {
 						scanBtn = '<button type="button" id="scan-btn-' + lib.id + '" class="text-xs px-2 py-1 rounded bg-gray-600 text-white hover:bg-gray-700 transition-colors inline-flex items-center gap-1" onclick="runLibraryOp(&apos;' + lib.connection_id + '&apos;, &apos;' + lib.id + '&apos;, &apos;scan&apos;)">'
 							+ spinnerSvg.replace('class="hidden', 'id="scan-spinner-' + lib.id + '" class="hidden')
-							+ '<span id="scan-label-' + lib.id + '">Scan Library</span></button>';
+							+ '<span id="scan-label-' + lib.id + '">{ t(ctx, "settings.libraries.scan") }</span></button>';
 					}
 					html += '<div class="flex items-center justify-between rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3" id="settings-lib-' + lib.id + '">'
 						+ '<div>'
@@ -3470,26 +3469,26 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 					if pk.AccessTier != "" {
 						<span
 							class={ "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium", tierBadgeClasses(pk.AccessTier) }
-							title={ tierTooltip(pk.AccessTier) }
+							title={ tierTooltip(ctx, pk.AccessTier) }
 							aria-describedby={ "tier-tooltip-" + string(pk.Name) }
 						>
-							{ tierBadgeLabel(pk.AccessTier) }
+							{ tierBadgeLabel(ctx, pk.AccessTier) }
 						</span>
-						<span id={ "tier-tooltip-" + string(pk.Name) } class="sr-only">{ tierTooltip(pk.AccessTier) }</span>
+						<span id={ "tier-tooltip-" + string(pk.Name) } class="sr-only">{ tierTooltip(ctx, pk.AccessTier) }</span>
 					}
 				</div>
 				{{ rlText := rateLimitText(pk.RateLimit) }}
 				<div class="flex items-center gap-2 mt-0.5">
 					if !pk.RequiresKey && !pk.OptionalKey {
-						<span class="text-xs text-gray-500 dark:text-gray-400">No API key required</span>
+						<span class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "settings.provider_keys.no_key_required") }</span>
 					} else if pk.OptionalKey && pk.HasKey {
-						<span class="text-xs text-gray-500 dark:text-gray-400">Premium key configured</span>
+						<span class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "settings.provider_keys.premium_configured") }</span>
 					} else if pk.OptionalKey {
-						<span class="text-xs text-gray-500 dark:text-gray-400">Free tier (optional premium upgrade)</span>
+						<span class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "settings.provider_keys.free_tier") }</span>
 					} else if pk.HasKey {
-						<span class="text-xs text-gray-500 dark:text-gray-400">Key configured</span>
+						<span class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "settings.provider_keys.key_configured") }</span>
 					} else {
-						<span class="text-xs text-amber-600 dark:text-amber-400">API key required</span>
+						<span class="text-xs text-amber-600 dark:text-amber-400">{ t(ctx, "settings.provider_keys.key_required") }</span>
 					}
 					if rlText != "" {
 						<span class="text-xs text-gray-400 dark:text-gray-500">{ rlText }</span>
@@ -3506,7 +3505,7 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 						rel="noopener noreferrer"
 						class="text-sm text-blue-600 dark:text-blue-400 hover:underline"
 					>
-						{ getKeyLinkText(pk.AccessTier) }
+						{ getKeyLinkText(ctx, pk.AccessTier) }
 					</a>
 				}
 				<button
@@ -3533,9 +3532,9 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 				}
 			}
 			if pk.SupportsBaseURL {
-				if mirrorStatusLabel(pk.Mirror) != "" {
+				if mirrorStatusLabel(ctx, pk.Mirror) != "" {
 					<span class="inline-flex items-center rounded-full px-1.5 py-0.5 text-xs font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
-						{ mirrorStatusLabel(pk.Mirror) }
+						{ mirrorStatusLabel(ctx, pk.Mirror) }
 					</span>
 				}
 				<button
@@ -3564,7 +3563,7 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 						<input
 							type="text"
 							name="client_id"
-							placeholder="Client ID"
+							placeholder={ t(ctx, "settings.provider_config.client_id") }
 							autocomplete="off"
 							data-1p-ignore
 							data-lpignore="true"
@@ -3574,7 +3573,7 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 						<input
 							type="password"
 							name="client_secret"
-							placeholder="Client Secret"
+							placeholder={ t(ctx, "settings.provider_config.client_secret") }
 							autocomplete="off"
 							data-1p-ignore
 							data-lpignore="true"
@@ -3583,8 +3582,8 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 						/>
 					</div>
 					<p class="text-xs text-gray-500 dark:text-gray-400">
-						Requires a Spotify Premium subscription and a registered
-						<a href="https://developer.spotify.com" target="_blank" rel="noopener noreferrer" class="text-blue-600 dark:text-blue-400 hover:underline">Spotify Developer</a> app.
+						{ t(ctx, "settings.provider_keys.spotify_note_prefix") }
+						<a href="https://developer.spotify.com" target="_blank" rel="noopener noreferrer" class="text-blue-600 dark:text-blue-400 hover:underline">Spotify Developer</a> { t(ctx, "settings.provider_keys.spotify_note_suffix") }
 					</p>
 				} else {
 					<div class="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -3592,9 +3591,9 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 							type="text"
 							name="api_key"
 							if pk.OptionalKey {
-								placeholder="Enter premium API key..."
+								placeholder={ t(ctx, "settings.provider_keys.premium_key_placeholder") }
 							} else {
-								placeholder="Enter API key..."
+								placeholder={ t(ctx, "settings.provider_keys.key_placeholder") }
 							}
 							autocomplete="off"
 							data-1p-ignore
@@ -3632,7 +3631,7 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 				class="flex flex-col gap-3"
 			>
 				<fieldset>
-					<legend class="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">Server</legend>
+					<legend class="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">{ t(ctx, "settings.provider_config.server") }</legend>
 					<div class="flex flex-col gap-1.5">
 						<label class="flex items-center gap-2 text-sm cursor-pointer">
 							<input
@@ -3645,7 +3644,7 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 								class="text-blue-600 focus:ring-blue-500"
 								onchange={ handleServerSelection(string(pk.Name)) }
 							/>
-							<span>Official</span>
+							<span>{ t(ctx, "settings.provider_config.official") }</span>
 							<span class="text-xs text-gray-400 dark:text-gray-500">musicbrainz.org (1 req/s)</span>
 						</label>
 						<label class="flex items-center gap-2 text-sm cursor-pointer">
@@ -3659,7 +3658,7 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 								class="text-blue-600 focus:ring-blue-500"
 								onchange={ handleServerSelection(string(pk.Name)) }
 							/>
-							<span>Beta</span>
+							<span>{ t(ctx, "settings.provider_config.beta") }</span>
 							<span class="text-xs text-gray-400 dark:text-gray-500">beta.musicbrainz.org (same data, 1 req/s)</span>
 						</label>
 						<label class="flex items-center gap-2 text-sm cursor-pointer">
@@ -3673,7 +3672,7 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 								class="text-blue-600 focus:ring-blue-500"
 								onchange={ handleServerSelection(string(pk.Name)) }
 							/>
-							<span>Custom mirror</span>
+							<span>{ t(ctx, "settings.provider_config.custom_mirror") }</span>
 						</label>
 					</div>
 				</fieldset>
@@ -3727,36 +3726,36 @@ templ ProviderKeyCard(pk provider.ProviderKeyStatus) {
 						</div>
 					</div>
 					<p id={ "custom-help-" + string(pk.Name) } class="text-xs text-gray-400 dark:text-gray-500">
-						Self-hosted mirrors can often handle higher rates. Default: 10 req/s.
+						{ t(ctx, "settings.provider_config.custom_help") }
 					</p>
 				</div>
 				<div class="border-t border-gray-100 dark:border-gray-700 pt-3">
 					<div class="flex items-center gap-2">
-						<span class="text-xs font-medium text-gray-400 dark:text-gray-500">OAuth Credentials</span>
+						<span class="text-xs font-medium text-gray-400 dark:text-gray-500">{ t(ctx, "settings.provider_config.oauth_credentials") }</span>
 						<span class="inline-flex items-center rounded-full px-1.5 py-0.5 text-xs font-medium bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400">
 							Coming soon
 						</span>
 					</div>
 					<p class="text-xs text-gray-400 dark:text-gray-500 mt-1 mb-2">
-						Required for submitting edits to MusicBrainz.
+						{ t(ctx, "settings.provider_config.oauth_note") }
 					</p>
 					<div class="flex flex-col gap-1.5 sm:flex-row sm:items-end opacity-50">
 						<div class="flex-1">
-							<label class="block text-xs font-medium text-gray-400 dark:text-gray-500 mb-0.5">Client ID</label>
+							<label class="block text-xs font-medium text-gray-400 dark:text-gray-500 mb-0.5">{ t(ctx, "settings.provider_config.client_id") }</label>
 							<input
 								type="text"
 								disabled
-								placeholder="Register at musicbrainz.org"
+								placeholder={ t(ctx, "settings.provider_config.register_placeholder") }
 								class="w-full rounded border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-1.5 text-sm cursor-not-allowed"
 								aria-disabled="true"
 							/>
 						</div>
 						<div class="flex-1">
-							<label class="block text-xs font-medium text-gray-400 dark:text-gray-500 mb-0.5">Client Secret</label>
+							<label class="block text-xs font-medium text-gray-400 dark:text-gray-500 mb-0.5">{ t(ctx, "settings.provider_config.client_secret") }</label>
 							<input
 								type="password"
 								disabled
-								placeholder="Encrypted at rest"
+								placeholder={ t(ctx, "settings.provider_config.encrypted_placeholder") }
 								class="w-full rounded border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-1.5 text-sm cursor-not-allowed"
 								aria-disabled="true"
 							/>
@@ -3910,7 +3909,7 @@ script handleServerSelection(providerName string) {
 
 templ ProviderTestResult(status string, message string) {
 	if status == "ok" {
-		<span class="text-green-600 dark:text-green-400">Connection successful</span>
+		<span class="text-green-600 dark:text-green-400">{ t(ctx, "settings.provider_keys.test_success") }</span>
 	} else {
 		<span class="text-red-600 dark:text-red-400">{ message }</span>
 	}
@@ -3933,7 +3932,7 @@ templ providerTestSaveFailureInner(name provider.ProviderName, apiKey string, er
 	<div class="mt-2 sm:ml-8">
 		<div class="rounded-md border border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/20 p-3">
 			<p class="text-sm text-red-700 dark:text-red-300 mb-2">
-				Test failed: { errMsg }
+				{ tf(ctx, "settings.provider_keys.test_failed", errMsg) }
 			</p>
 			<form
 				class="flex gap-2"
@@ -3974,7 +3973,7 @@ templ priorityChipRowInner(pri provider.FieldPriority, available []provider.Prov
 	<div id={ "priority-row-" + pri.Field } class="rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3">
 		<div class="flex items-center gap-3 mb-2">
 			<span class="text-sm font-medium capitalize w-24 shrink-0">{ pri.Field }</span>
-			<span class="text-xs text-gray-400 dark:text-gray-500">Drag to reorder. Click to enable/disable.</span>
+			<span class="text-xs text-gray-400 dark:text-gray-500">{ t(ctx, "settings.priorities.instructions") }</span>
 		</div>
 		<div class="flex flex-wrap gap-2" data-sortable-field={ pri.Field }>
 			for _, prov := range available {
@@ -3998,7 +3997,7 @@ templ priorityChipRowInner(pri provider.FieldPriority, available []provider.Prov
 						<button
 							type="button"
 							class="ml-0.5 text-green-500 dark:text-green-400 hover:text-red-500 dark:hover:text-red-400"
-							title="Disable this provider"
+							title={ t(ctx, "settings.priorities.disable_provider") }
 							hx-put={ "/api/v1/providers/priorities/" + pri.Field + "/" + string(prov) + "/toggle" }
 							hx-target={ "#priority-row-" + pri.Field }
 							hx-swap="outerHTML"
@@ -4019,7 +4018,7 @@ templ priorityChipRowInner(pri provider.FieldPriority, available []provider.Prov
 					<button
 						type="button"
 						class="ml-0.5 text-red-500 dark:text-red-400 hover:text-green-500 dark:hover:text-green-400"
-						title="Enable this provider"
+						title={ t(ctx, "settings.priorities.enable_provider") }
 						hx-put={ "/api/v1/providers/priorities/" + pri.Field + "/" + string(prov) + "/toggle" }
 						hx-target={ "#priority-row-" + pri.Field }
 						hx-swap="outerHTML"
@@ -4030,7 +4029,7 @@ templ priorityChipRowInner(pri provider.FieldPriority, available []provider.Prov
 			}
 		}
 		if len(available) == 0 {
-			<p class="text-xs text-gray-400 dark:text-gray-500 italic mt-1">No configured providers for this field.</p>
+			<p class="text-xs text-gray-400 dark:text-gray-500 italic mt-1">{ t(ctx, "settings.priorities.no_providers") }</p>
 		}
 	</div>
 }
@@ -4048,7 +4047,7 @@ templ WebSearchToggle(ws provider.WebSearchProviderStatus) {
 			></div>
 			<div>
 				<div class="font-medium text-sm">{ ws.DisplayName }</div>
-				<div class="text-xs text-gray-500 dark:text-gray-400">No API key required</div>
+				<div class="text-xs text-gray-500 dark:text-gray-400">{ t(ctx, "settings.provider_keys.no_key_required") }</div>
 			</div>
 		</div>
 		<button
@@ -4063,9 +4062,9 @@ templ WebSearchToggle(ws provider.WebSearchProviderStatus) {
 			hx-swap="none"
 		>
 			if ws.Enabled {
-				Enabled
+				{ t(ctx, "common.enabled") }
 			} else {
-				Disabled
+				{ t(ctx, "common.disabled") }
 			}
 		</button>
 	</div>
@@ -4124,8 +4123,8 @@ templ serviceConnectionCard(connType string, displayName string, exampleURL stri
 								type="button"
 								class="text-xs p-1 rounded border border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
 								onclick={ toggleConnectionFeatures(c.ID) }
-								title="Feature toggles"
-								aria-label="Feature toggles"
+								title={ t(ctx, "settings.connections.feature_toggles") }
+								aria-label={ t(ctx, "settings.connections.feature_toggles") }
 								aria-expanded="false"
 								aria-controls={ "features-" + c.ID }
 							>
@@ -4162,19 +4161,19 @@ templ serviceConnectionCard(connType string, displayName string, exampleURL stri
 					</div>
 					<div id={ "discover-" + c.ID } class="mt-2"></div>
 					<div id={ "features-" + c.ID } class="hidden mt-2 rounded border border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 px-3 py-2">
-						<div class="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">Feature Toggles</div>
+						<div class="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">{ t(ctx, "settings.connections.feature_toggles") }</div>
 						<div class="space-y-2">
 							if c.Type != "lidarr" {
-								@connectionFeatureToggle(c.ID, "library_import", "Library import", c.FeatureLibraryImport)
+								@connectionFeatureToggle(c.ID, "library_import", t(ctx, "settings.connections.feature_library_import"), c.FeatureLibraryImport)
 							}
-							@connectionFeatureToggle(c.ID, "nfo_write", "NFO write detection", c.FeatureNFOWrite)
-							@connectionFeatureToggle(c.ID, "image_write", "Image download/write", c.FeatureImageWrite)
+							@connectionFeatureToggle(c.ID, "nfo_write", t(ctx, "settings.connections.feature_nfo_write"), c.FeatureNFOWrite)
+							@connectionFeatureToggle(c.ID, "image_write", t(ctx, "settings.connections.feature_image_write"), c.FeatureImageWrite)
 						</div>
 					</div>
 				}
 			</div>
 		} else {
-			<p class="text-xs text-gray-500 dark:text-gray-400 italic mb-3">Not configured</p>
+			<p class="text-xs text-gray-500 dark:text-gray-400 italic mb-3">{ t(ctx, "settings.connections.not_configured") }</p>
 		}
 		<button
 			type="button"
@@ -4211,7 +4210,7 @@ templ serviceConnectionCard(connType string, displayName string, exampleURL stri
 				<input
 					name="api_key"
 					type="text"
-					placeholder="API Key"
+					placeholder={ t(ctx, "settings.connections.api_key_placeholder") }
 					required
 					autocomplete="off"
 					data-1p-ignore
@@ -4219,8 +4218,8 @@ templ serviceConnectionCard(connType string, displayName string, exampleURL stri
 					class="w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
 				/>
 				<div class="flex gap-2">
-					<button type="submit" class="text-xs px-3 py-1.5 rounded bg-green-600 text-white hover:bg-green-700 transition-colors">Save</button>
-					<button type="button" class="text-xs px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" onclick={ toggleConnectionForm(connType) }>Cancel</button>
+					<button type="submit" class="text-xs px-3 py-1.5 rounded bg-green-600 text-white hover:bg-green-700 transition-colors">{ t(ctx, "actions.save") }</button>
+					<button type="button" class="text-xs px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" onclick={ toggleConnectionForm(connType) }>{ t(ctx, "actions.cancel") }</button>
 				</div>
 			</form>
 			<div id={ "conn-result-" + connType } class="mt-2"></div>
@@ -4233,7 +4232,7 @@ templ serviceConnectionCard(connType string, displayName string, exampleURL stri
 templ ConnectionTestSaveFailure(connType string, name string, url string, apiKey string, errMsg string, isOOBE bool) {
 	<div class="rounded-md border border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/20 p-3">
 		<p class="text-sm text-red-700 dark:text-red-300 mb-2">
-			Test failed: { errMsg }
+			{ tf(ctx, "settings.provider_keys.test_failed", errMsg) }
 		</p>
 		<form
 			class="flex gap-2"
@@ -4346,7 +4345,7 @@ templ webhookCard(wh webhook.Webhook) {
 				type="button"
 				class="text-sm px-3 py-1.5 rounded border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
 				hx-delete={ "/api/v1/webhooks/" + wh.ID }
-				hx-confirm="Delete this webhook?"
+				hx-confirm={ t(ctx, "settings.webhooks.confirm_delete") }
 				hx-swap="none"
 				hx-on::after-request="window.location.reload()"
 			>
@@ -4432,9 +4431,9 @@ templ profileCard(p platform.Profile) {
 			<div>
 				NFO:
 				if p.NFOEnabled {
-					<span class="text-green-600 dark:text-green-400">Enabled</span>
+					<span class="text-green-600 dark:text-green-400">{ t(ctx, "common.enabled") }</span>
 				} else {
-					<span class="text-gray-400 dark:text-gray-500">Disabled</span>
+					<span class="text-gray-400 dark:text-gray-500">{ t(ctx, "common.disabled") }</span>
 				}
 			</div>
 			<div>{ img.ImageTermFor("thumb", p.Name) }: { joinNames(p.ImageNaming.Thumb) }</div>
@@ -4453,7 +4452,7 @@ templ ruleRow(rl rule.Rule, hasLocalLibrary bool) {
 			templ.KV("opacity-50", fsUnavailable),
 		}
 		if fsUnavailable {
-			title="This rule requires a local library with a filesystem path. Add a library with a path to enable it."
+			title={ t(ctx, "settings.rules.requires_local_tooltip") }
 		}
 	>
 		<div class="flex items-center justify-between gap-4">
@@ -4464,9 +4463,9 @@ templ ruleRow(rl rule.Rule, hasLocalLibrary bool) {
 					if fsUnavailable {
 						<span
 							class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400"
-							title="Requires a local library with a filesystem path"
+							title={ t(ctx, "settings.rules.requires_local_tooltip_short") }
 						>
-							Requires local library
+							{ t(ctx, "settings.rules.requires_local") }
 						</span>
 					}
 				</div>
@@ -4481,7 +4480,7 @@ templ ruleRow(rl rule.Rule, hasLocalLibrary bool) {
 					onclick="runRule(this)"
 					disabled?={ !rl.Enabled || fsUnavailable }
 					aria-label={ "Run " + rl.Name + " now" }
-					title="Run this rule now"
+					title={ t(ctx, "actions.run") }
 				>
 					Run
 				</button>
@@ -4492,8 +4491,8 @@ templ ruleRow(rl rule.Rule, hasLocalLibrary bool) {
 					onchange="patchRule(this.dataset.ruleId, {automation_mode: this.value})"
 					disabled?={ !rl.Enabled || fsUnavailable }
 				>
-					<option value="auto" selected?={ rl.AutomationMode == "auto" || rl.AutomationMode == "" }>Auto-fix</option>
-					<option value="manual" selected?={ rl.AutomationMode == "manual" }>Manual (notify only)</option>
+					<option value="auto" selected?={ rl.AutomationMode == "auto" || rl.AutomationMode == "" }>{ t(ctx, "settings.rules.auto_fix") }</option>
+					<option value="manual" selected?={ rl.AutomationMode == "manual" }>{ t(ctx, "settings.rules.manual") }</option>
 					</select>
 				<button
 					type="button"
@@ -4505,7 +4504,7 @@ templ ruleRow(rl rule.Rule, hasLocalLibrary bool) {
 					disabled?={ fsUnavailable }
 					aria-label={ "Enable " + rl.Name }
 					if fsUnavailable {
-						title="Cannot enable: no local library configured"
+						title={ t(ctx, "settings.rules.cannot_enable_tooltip") }
 					}
 				>
 					<span class={ ruleToggleKnobClasses(rl.Enabled) }></span>
@@ -4522,7 +4521,7 @@ templ ruleRow(rl rule.Rule, hasLocalLibrary bool) {
 					aria-controls={ "rule-cfg-" + rl.ID }
 					aria-label={ "Configure " + rl.Name }
 					disabled?={ fsUnavailable }
-				>Configure</button>
+				>{ t(ctx, "actions.configure") }</button>
 				<div id={ "rule-cfg-" + rl.ID } class="hidden mt-2">
 					@ruleConfigForm(rl)
 				</div>
@@ -4547,7 +4546,7 @@ templ ruleConfigForm(rl rule.Rule) {
 		if rl.ID == "thumb_min_res" || rl.ID == "fanart_min_res" || rl.ID == "banner_min_res" || rl.ID == "logo_min_res" {
 			<div class="col-span-full">
 				<label class="block">
-					<span class="text-xs text-gray-600 dark:text-gray-400">Resolution preset</span>
+					<span class="text-xs text-gray-600 dark:text-gray-400">{ t(ctx, "settings.rules.resolution_preset") }</span>
 					<select
 						class="mt-0.5 w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
 						onchange="applyResPreset(this)"
@@ -4559,7 +4558,7 @@ templ ruleConfigForm(rl rule.Rule) {
 		}
 		if rl.ID == "thumb_min_res" || rl.ID == "fanart_min_res" || rl.ID == "banner_min_res" {
 			<label class="block">
-				<span class="text-xs text-gray-600 dark:text-gray-400">Min width (px)</span>
+				<span class="text-xs text-gray-600 dark:text-gray-400">{ t(ctx, "settings.rules.min_width") }</span>
 				<input
 					type="number"
 					name="min_width"
@@ -4569,7 +4568,7 @@ templ ruleConfigForm(rl rule.Rule) {
 				/>
 			</label>
 			<label class="block">
-				<span class="text-xs text-gray-600 dark:text-gray-400">Min height (px)</span>
+				<span class="text-xs text-gray-600 dark:text-gray-400">{ t(ctx, "settings.rules.min_height") }</span>
 				<input
 					type="number"
 					name="min_height"
@@ -4581,7 +4580,7 @@ templ ruleConfigForm(rl rule.Rule) {
 		}
 		if rl.ID == "logo_min_res" {
 			<label class="block">
-				<span class="text-xs text-gray-600 dark:text-gray-400">Min width (px)</span>
+				<span class="text-xs text-gray-600 dark:text-gray-400">{ t(ctx, "settings.rules.min_width") }</span>
 				<input
 					type="number"
 					name="min_width"
@@ -4594,7 +4593,7 @@ templ ruleConfigForm(rl rule.Rule) {
 		if rl.ID == "thumb_square" || rl.ID == "fanart_aspect" {
 			<div class="col-span-full">
 				<label class="block">
-					<span class="text-xs text-gray-600 dark:text-gray-400">Aspect ratio preset</span>
+					<span class="text-xs text-gray-600 dark:text-gray-400">{ t(ctx, "settings.rules.aspect_preset") }</span>
 					<select
 						class="mt-0.5 w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
 						onchange="applyAspectPreset(this)"
@@ -4604,7 +4603,7 @@ templ ruleConfigForm(rl rule.Rule) {
 				</label>
 			</div>
 			<label class="block">
-				<span class="text-xs text-gray-600 dark:text-gray-400">Aspect ratio (decimal)</span>
+				<span class="text-xs text-gray-600 dark:text-gray-400">{ t(ctx, "settings.rules.aspect_ratio") }</span>
 				<input
 					type="number"
 					name="aspect_ratio"
@@ -4615,7 +4614,7 @@ templ ruleConfigForm(rl rule.Rule) {
 				/>
 			</label>
 			<label class="block">
-				<span class="text-xs text-gray-600 dark:text-gray-400">Tolerance (e.g. 0.1)</span>
+				<span class="text-xs text-gray-600 dark:text-gray-400">{ t(ctx, "settings.rules.tolerance") }</span>
 				<input
 					type="number"
 					name="tolerance"
@@ -4629,7 +4628,7 @@ templ ruleConfigForm(rl rule.Rule) {
 		}
 		if rl.ID == "bio_exists" {
 			<label class="block">
-				<span class="text-xs text-gray-600 dark:text-gray-400">Min length (chars)</span>
+				<span class="text-xs text-gray-600 dark:text-gray-400">{ t(ctx, "settings.rules.min_length") }</span>
 				<input
 					type="number"
 					name="min_length"
@@ -4641,7 +4640,7 @@ templ ruleConfigForm(rl rule.Rule) {
 		}
 		if rl.ID == "logo_padding" {
 			<label class="block">
-				<span class="text-xs text-gray-600 dark:text-gray-400">Threshold % (total area)</span>
+				<span class="text-xs text-gray-600 dark:text-gray-400">{ t(ctx, "settings.rules.threshold_percent") }</span>
 				<input
 					type="number"
 					name="threshold_percent"
@@ -4653,7 +4652,7 @@ templ ruleConfigForm(rl rule.Rule) {
 				/>
 			</label>
 			<label class="block">
-				<span class="text-xs text-gray-600 dark:text-gray-400">Trim margin (px)</span>
+				<span class="text-xs text-gray-600 dark:text-gray-400">{ t(ctx, "settings.rules.trim_margin") }</span>
 				<input
 					type="number"
 					name="trim_margin"
@@ -4665,14 +4664,14 @@ templ ruleConfigForm(rl rule.Rule) {
 			</label>
 		}
 		<label class="block">
-			<span class="text-xs text-gray-600 dark:text-gray-400">Severity</span>
+			<span class="text-xs text-gray-600 dark:text-gray-400">{ t(ctx, "settings.rules.severity_label") }</span>
 			<select
 				name="severity"
 				class="mt-0.5 w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
 			>
-				<option value="error" selected?={ rl.Config.Severity == "error" }>Error</option>
-				<option value="warning" selected?={ rl.Config.Severity == "warning" }>Warning</option>
-				<option value="info" selected?={ rl.Config.Severity == "info" }>Info</option>
+				<option value="error" selected?={ rl.Config.Severity == "error" }>{ t(ctx, "common.error") }</option>
+				<option value="warning" selected?={ rl.Config.Severity == "warning" }>{ t(ctx, "common.warning") }</option>
+				<option value="info" selected?={ rl.Config.Severity == "info" }>{ t(ctx, "common.info") }</option>
 			</select>
 		</label>
 		<div class="flex gap-2 col-span-full">
@@ -4696,51 +4695,51 @@ templ ruleConfigForm(rl rule.Rule) {
 templ resolutionPresetOptions(rl rule.Rule) {
 	if rl.ID == "fanart_min_res" {
 		{{ key := fanartResPresetKey(rl.Config.MinWidth, rl.Config.MinHeight) }}
-		<option value="">-- select preset --</option>
-		<option value="1280,720" selected?={ key == "720p" }>720p HD (1280x720)</option>
-		<option value="1920,1080" selected?={ key == "1080p" }>1080p Full HD (1920x1080)</option>
-		<option value="2560,1440" selected?={ key == "1440p" }>1440p QHD (2560x1440)</option>
-		<option value="3840,2160" selected?={ key == "4k" }>4K UHD (3840x2160)</option>
-		<option value="custom" selected?={ key == "custom" }>Custom</option>
+		<option value="">{ t(ctx, "settings.rules.select_preset") }</option>
+		<option value="1280,720" selected?={ key == "720p" }>{ t(ctx, "settings.preset.fanart_720p") }</option>
+		<option value="1920,1080" selected?={ key == "1080p" }>{ t(ctx, "settings.preset.fanart_1080p") }</option>
+		<option value="2560,1440" selected?={ key == "1440p" }>{ t(ctx, "settings.preset.fanart_1440p") }</option>
+		<option value="3840,2160" selected?={ key == "4k" }>{ t(ctx, "settings.preset.fanart_4k") }</option>
+		<option value="custom" selected?={ key == "custom" }>{ t(ctx, "common.custom") }</option>
 	}
 	if rl.ID == "thumb_min_res" {
 		{{ key := thumbResPresetKey(rl.Config.MinWidth, rl.Config.MinHeight) }}
-		<option value="">-- select preset --</option>
-		<option value="500,500" selected?={ key == "std" }>Standard (500x500)</option>
-		<option value="1000,1000" selected?={ key == "hd" }>HD (1000x1000)</option>
-		<option value="2000,2000" selected?={ key == "ultra" }>Ultra (2000x2000)</option>
-		<option value="custom" selected?={ key == "custom" }>Custom</option>
+		<option value="">{ t(ctx, "settings.rules.select_preset") }</option>
+		<option value="500,500" selected?={ key == "std" }>{ t(ctx, "settings.preset.thumb_standard") }</option>
+		<option value="1000,1000" selected?={ key == "hd" }>{ t(ctx, "settings.preset.thumb_hd") }</option>
+		<option value="2000,2000" selected?={ key == "ultra" }>{ t(ctx, "settings.preset.thumb_ultra") }</option>
+		<option value="custom" selected?={ key == "custom" }>{ t(ctx, "common.custom") }</option>
 	}
 	if rl.ID == "banner_min_res" {
 		{{ key := bannerResPresetKey(rl.Config.MinWidth, rl.Config.MinHeight) }}
-		<option value="">-- select preset --</option>
-		<option value="758,140" selected?={ key == "kodi" }>Kodi standard (758x140)</option>
-		<option value="1000,185" selected?={ key == "wide" }>Wide (1000x185)</option>
-		<option value="custom" selected?={ key == "custom" }>Custom</option>
+		<option value="">{ t(ctx, "settings.rules.select_preset") }</option>
+		<option value="758,140" selected?={ key == "kodi" }>{ t(ctx, "settings.preset.banner_kodi") }</option>
+		<option value="1000,185" selected?={ key == "wide" }>{ t(ctx, "settings.preset.banner_wide") }</option>
+		<option value="custom" selected?={ key == "custom" }>{ t(ctx, "common.custom") }</option>
 	}
 	if rl.ID == "logo_min_res" {
 		{{ key := logoWidthPresetKey(rl.Config.MinWidth) }}
-		<option value="">-- select preset --</option>
-		<option value="400" selected?={ key == "std" }>Standard (400px)</option>
-		<option value="800" selected?={ key == "large" }>Large (800px)</option>
-		<option value="custom" selected?={ key == "custom" }>Custom</option>
+		<option value="">{ t(ctx, "settings.rules.select_preset") }</option>
+		<option value="400" selected?={ key == "std" }>{ t(ctx, "settings.preset.logo_standard") }</option>
+		<option value="800" selected?={ key == "large" }>{ t(ctx, "settings.preset.logo_large") }</option>
+		<option value="custom" selected?={ key == "custom" }>{ t(ctx, "common.custom") }</option>
 	}
 }
 
 templ aspectPresetOptions(rl rule.Rule) {
 	if rl.ID == "fanart_aspect" {
 		{{ key := fanartAspectPresetKey(rl.Config.AspectRatio) }}
-		<option value="">-- select preset --</option>
-		<option value="1.7778" selected?={ key == "16:9" }>16:9 widescreen (1.778)</option>
-		<option value="1.6" selected?={ key == "16:10" }>16:10 (1.6)</option>
-		<option value="2.0" selected?={ key == "2:1" }>2:1 ultra-wide (2.0)</option>
-		<option value="custom" selected?={ key == "custom" }>Custom</option>
+		<option value="">{ t(ctx, "settings.rules.select_preset") }</option>
+		<option value="1.7778" selected?={ key == "16:9" }>{ t(ctx, "settings.preset.aspect_16_9") }</option>
+		<option value="1.6" selected?={ key == "16:10" }>{ t(ctx, "settings.preset.aspect_16_10") }</option>
+		<option value="2.0" selected?={ key == "2:1" }>{ t(ctx, "settings.preset.aspect_2_1") }</option>
+		<option value="custom" selected?={ key == "custom" }>{ t(ctx, "common.custom") }</option>
 	}
 	if rl.ID == "thumb_square" {
 		{{ key := thumbAspectPresetKey(rl.Config.AspectRatio) }}
-		<option value="">-- select preset --</option>
-		<option value="1.0" selected?={ key == "1:1" }>1:1 square (1.0)</option>
-		<option value="custom" selected?={ key == "custom" }>Custom</option>
+		<option value="">{ t(ctx, "settings.rules.select_preset") }</option>
+		<option value="1.0" selected?={ key == "1:1" }>{ t(ctx, "settings.preset.aspect_1_1") }</option>
+		<option value="custom" selected?={ key == "custom" }>{ t(ctx, "common.custom") }</option>
 	}
 }
 

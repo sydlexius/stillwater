@@ -92,9 +92,9 @@ templ settingsUsersTab(data UsersTabData) {
 		<div class="px-6 py-4">
 			<div class="flex items-center justify-between">
 				<div>
-					<div class="font-medium text-sm">Multi-User Mode</div>
+					<div class="font-medium text-sm">{ t(ctx, "settings.users.multi_user_mode") }</div>
 					<div class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-						Allow multiple users to access this Stillwater instance with separate accounts and roles.
+						{ t(ctx, "settings.users.multi_user_desc") }
 					</div>
 				</div>
 				<button
@@ -107,7 +107,7 @@ templ settingsUsersTab(data UsersTabData) {
 					}
 					role="switch"
 					aria-checked={ boolAttr(data.MultiUserEnabled) }
-					aria-label="Enable multi-user mode"
+					aria-label={ t(ctx, "settings.users.enable_multi_user") }
 					onclick="toggleMultiUser(this)"
 				>
 					<span
@@ -131,15 +131,15 @@ templ settingsUsersTab(data UsersTabData) {
 		<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 			<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
 				<div>
-					<h2 class="text-lg font-semibold">Users</h2>
+					<h2 class="text-lg font-semibold">{ t(ctx, "settings.users.title") }</h2>
 					<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-						Manage who has access to this instance.
+						{ t(ctx, "settings.users.manage_desc") }
 					</p>
 				</div>
 				<button
 					type="button"
 					class="text-sm px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
-					aria-label="Create invite link"
+					aria-label={ t(ctx, "settings.users.create_invite") }
 					onclick="document.getElementById('create-invite-form').classList.toggle('hidden'); this.setAttribute('aria-expanded', document.getElementById('create-invite-form').classList.contains('hidden') ? 'false' : 'true')"
 					aria-expanded="false"
 					aria-controls="create-invite-form"
@@ -155,31 +155,31 @@ templ settingsUsersTab(data UsersTabData) {
 				>
 					<div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
 						<div>
-							<label for="invite-role" class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Role</label>
+							<label for="invite-role" class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">{ t(ctx, "settings.users.role") }</label>
 							<select
 								id="invite-role"
 								name="role"
 								required
 								class="w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-								aria-label="Role for invited user"
+								aria-label={ t(ctx, "settings.users.role_for_invite") }
 							>
-								<option value="operator">Operator</option>
-								<option value="administrator">Administrator</option>
+								<option value="operator">{ t(ctx, "common.operator") }</option>
+								<option value="administrator">{ t(ctx, "common.administrator") }</option>
 							</select>
 						</div>
 						<div>
-							<label for="invite-expires" class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Expires In</label>
+							<label for="invite-expires" class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">{ t(ctx, "settings.users.expires_in") }</label>
 							<select
 								id="invite-expires"
 								name="expires_in"
 								required
 								class="w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-								aria-label="Invite expiry duration"
+								aria-label={ t(ctx, "settings.users.invite_expiry") }
 							>
-								<option value="24h">24 hours</option>
-								<option value="3d">3 days</option>
-								<option value="7d" selected>7 days</option>
-								<option value="30d">30 days</option>
+								<option value="24h">{ t(ctx, "settings.users.24_hours") }</option>
+								<option value="3d">{ t(ctx, "settings.users.3_days") }</option>
+								<option value="7d" selected>{ t(ctx, "settings.users.7_days") }</option>
+								<option value="30d">{ t(ctx, "settings.users.30_days") }</option>
 							</select>
 						</div>
 						<div class="flex items-end gap-2">
@@ -199,37 +199,37 @@ templ settingsUsersTab(data UsersTabData) {
 						</div>
 					</div>
 					<div id="invite-link-result" class="hidden mt-2">
-						<div class="text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Invite Link</div>
+						<div class="text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">{ t(ctx, "settings.users.invite_link") }</div>
 						<div class="flex items-center gap-2">
 							<input
 								id="invite-link-value"
 								type="text"
 								readonly
 								class="flex-1 rounded border border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-gray-900 px-3 py-1.5 text-xs font-mono text-gray-700 dark:text-gray-300 focus:outline-none"
-								aria-label="Generated invite link"
+								aria-label={ t(ctx, "settings.users.generated_invite_link") }
 							/>
 							<button
 								type="button"
 								class="text-xs px-2.5 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-								aria-label="Copy invite link to clipboard"
+								aria-label={ t(ctx, "settings.users.copy_invite") }
 								onclick="navigator.clipboard.writeText(document.getElementById('invite-link-value').value).then(function(){ showSuccessToast('Invite link copied'); }).catch(function(){ showToast('Failed to copy link'); })"
 							>
 								Copy
 							</button>
 						</div>
-						<p class="text-xs text-gray-500 dark:text-gray-400 mt-1">This link can only be used once.</p>
+						<p class="text-xs text-gray-500 dark:text-gray-400 mt-1">{ t(ctx, "settings.users.link_single_use") }</p>
 					</div>
 				</form>
 			</div>
 			<div class="overflow-x-auto">
-				<table class="w-full text-sm" aria-label="User accounts">
+				<table class="w-full text-sm" aria-label={ t(ctx, "settings.users.user_accounts") }>
 					<thead>
 						<tr class="border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-							<th class="px-6 py-3">User</th>
-							<th class="px-4 py-3">Role</th>
-							<th class="px-4 py-3">Auth Provider</th>
-							<th class="px-4 py-3">Status</th>
-							<th class="px-4 py-3 text-right">Actions</th>
+							<th class="px-6 py-3">{ t(ctx, "settings.users.user") }</th>
+							<th class="px-4 py-3">{ t(ctx, "settings.users.role") }</th>
+							<th class="px-4 py-3">{ t(ctx, "settings.users.auth_provider") }</th>
+							<th class="px-4 py-3">{ t(ctx, "settings.users.status") }</th>
+							<th class="px-4 py-3 text-right">{ t(ctx, "settings.users.actions") }</th>
 						</tr>
 					</thead>
 					<tbody
@@ -241,7 +241,7 @@ templ settingsUsersTab(data UsersTabData) {
 						if len(data.Users) == 0 {
 							<tr>
 								<td colspan="5" class="px-6 py-8 text-center text-sm text-gray-500 dark:text-gray-400 italic">
-									Loading users...
+									{ t(ctx, "settings.users.loading") }
 								</td>
 							</tr>
 						}
@@ -255,9 +255,9 @@ templ settingsUsersTab(data UsersTabData) {
 		<!-- Pending invites -->
 		<div class="sw-card bg-white dark:bg-gray-800 shadow rounded-lg">
 			<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-				<h2 class="text-lg font-semibold">Pending Invites</h2>
+				<h2 class="text-lg font-semibold">{ t(ctx, "settings.users.pending_invites") }</h2>
 				<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-					Invite links that have not been redeemed yet.
+					{ t(ctx, "settings.users.pending_invites_desc") }
 				</p>
 			</div>
 			<div
@@ -268,7 +268,7 @@ templ settingsUsersTab(data UsersTabData) {
 				hx-swap="innerHTML"
 			>
 				if len(data.Invites) == 0 {
-					<p class="text-sm text-gray-500 dark:text-gray-400 italic">Loading invites...</p>
+					<p class="text-sm text-gray-500 dark:text-gray-400 italic">{ t(ctx, "settings.users.loading_invites") }</p>
 				}
 				for _, inv := range data.Invites {
 					@inviteRow(inv)
@@ -305,9 +305,9 @@ templ userTableRow(u auth.User) {
 		<td class="px-4 py-3">
 			<span class={ userStatusBadgeClasses(u.IsActive) }>
 				if u.IsActive {
-					Active
+					{ t(ctx, "common.active") }
 				} else {
-					Inactive
+					{ t(ctx, "common.inactive") }
 				}
 			</span>
 		</td>
@@ -316,18 +316,18 @@ templ userTableRow(u auth.User) {
 				<div class="flex items-center justify-end gap-2">
 					<select
 						class="text-xs rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-						aria-label={ "Change role for " + u.DisplayName }
+						aria-label={ tf(ctx, "settings.users.change_role_for", u.DisplayName) }
 						disabled?={ u.IsProtected }
 						onchange={ templ.ComponentScript{Call: "changeUserRole(this, '" + u.ID + "')"} }
 					>
-						<option value="operator" selected?={ u.Role == "operator" }>Operator</option>
-						<option value="administrator" selected?={ u.Role == "administrator" }>Administrator</option>
+						<option value="operator" selected?={ u.Role == "operator" }>{ t(ctx, "common.operator") }</option>
+						<option value="administrator" selected?={ u.Role == "administrator" }>{ t(ctx, "common.administrator") }</option>
 					</select>
 					if !u.IsProtected {
 						<button
 							type="button"
 							class="text-xs px-2.5 py-1 rounded border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-							aria-label={ "Deactivate " + u.DisplayName }
+							aria-label={ tf(ctx, "settings.users.deactivate_user", u.DisplayName) }
 							data-user-id={ u.ID }
 							data-display-name={ u.DisplayName }
 							onclick="deactivateUserFromDataset(this)"
@@ -347,17 +347,17 @@ templ inviteRow(inv auth.Invite) {
 		<div class="flex items-center gap-4">
 			<span class="font-mono text-xs text-gray-700 dark:text-gray-300">{ inv.Code }</span>
 			<div class="text-xs text-gray-500 dark:text-gray-400">
-				Role: <span class={ roleBadgeClasses(inv.Role) }>{ roleLabel(inv.Role) }</span>
+				{ t(ctx, "settings.users.role_label") } <span class={ roleBadgeClasses(inv.Role) }>{ roleLabel(inv.Role) }</span>
 			</div>
 			<div class="text-xs text-gray-500 dark:text-gray-400">
-				Expires: <span class="text-gray-700 dark:text-gray-300">{ inv.ExpiresAt }</span>
+				{ t(ctx, "settings.users.expires_label") } <span class="text-gray-700 dark:text-gray-300">{ inv.ExpiresAt }</span>
 			</div>
 		</div>
 		<div class="flex items-center gap-2">
 			<button
 				type="button"
 				class="text-xs px-2.5 py-1 rounded border border-gray-300 dark:border-gray-600 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
-				aria-label={ "Copy invite link for code " + inv.Code }
+				aria-label={ tf(ctx, "settings.users.copy_invite_for", inv.Code) }
 				data-inv-code={ inv.Code }
 				onclick="copyInviteLinkFromDataset(this)"
 			>
@@ -366,9 +366,9 @@ templ inviteRow(inv auth.Invite) {
 			<button
 				type="button"
 				class="text-xs px-2.5 py-1 rounded border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-				aria-label={ "Revoke invite " + inv.Code }
+				aria-label={ tf(ctx, "settings.users.revoke_invite", inv.Code) }
 				hx-delete={ "/api/v1/users/invites/" + inv.ID }
-				hx-confirm="Revoke this invite? It will no longer be usable."
+				hx-confirm={ t(ctx, "settings.users.revoke_confirm") }
 				hx-target={ "#invite-row-" + inv.ID }
 				hx-swap="outerHTML"
 				hx-on::after-request="if(event.detail.successful){ showSuccessToast('Invite revoked'); }"

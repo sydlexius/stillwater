@@ -5,15 +5,21 @@ package i18n
 
 import (
 	"context"
+	"embed"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 )
+
+//go:embed locales/*.json
+var localeFS embed.FS
 
 // contextKey is an unexported type for context keys in this package.
 type contextKey string
@@ -134,6 +140,68 @@ func Load(localesDir string) (*Bundle, error) {
 	return b, nil
 }
 
+// LoadFS reads all JSON locale files from an fs.FS and returns a Bundle.
+// This is the generalized form of Load; it works with embed.FS, os.DirFS,
+// and testing filesystems alike.
+func LoadFS(fsys fs.FS) (*Bundle, error) {
+	entries, err := fs.ReadDir(fsys, ".")
+	if err != nil {
+		return nil, fmt.Errorf("i18n: reading locales filesystem: %w", err)
+	}
+
+	b := &Bundle{
+		translators: make(map[string]*Translator),
+		fallback:    "en",
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		locale := strings.TrimSuffix(entry.Name(), ".json")
+
+		data, err := fs.ReadFile(fsys, entry.Name())
+		if err != nil {
+			return nil, fmt.Errorf("i18n: reading %s: %w", entry.Name(), err)
+		}
+
+		var translations map[string]string
+		if err := json.Unmarshal(data, &translations); err != nil {
+			return nil, fmt.Errorf("i18n: parsing %s: %w", entry.Name(), err)
+		}
+
+		b.translators[locale] = &Translator{locale: locale, strings: translations}
+		slog.Info("loaded locale", "locale", locale, "keys", len(translations))
+	}
+
+	if len(b.translators) == 0 {
+		return nil, fmt.Errorf("i18n: no locale files found in embedded filesystem")
+	}
+
+	// If the default fallback is not available, pick the first alphabetically.
+	if _, ok := b.translators[b.fallback]; !ok {
+		locales := make([]string, 0, len(b.translators))
+		for l := range b.translators {
+			locales = append(locales, l)
+		}
+		sort.Strings(locales)
+		b.fallback = locales[0]
+	}
+
+	return b, nil
+}
+
+// LoadEmbedded loads the bundle from the compiled-in locale files. This is the
+// standard entry point for production use -- the en.json file is embedded at
+// build time so no filesystem path is needed at runtime.
+func LoadEmbedded() (*Bundle, error) {
+	sub, err := fs.Sub(localeFS, "locales")
+	if err != nil {
+		return nil, fmt.Errorf("i18n: accessing embedded locales: %w", err)
+	}
+	return LoadFS(sub)
+}
+
 // Translator returns the Translator for the given locale. If the locale is not
 // loaded, the fallback translator is returned.
 func (b *Bundle) Translator(locale string) *Translator {
@@ -237,10 +305,14 @@ func WithTranslator(ctx context.Context, t *Translator) context.Context {
 // present (e.g. middleware not configured), it logs a warning and returns a
 // default English translator with an empty string map so that T() calls fall
 // back to returning the key itself.
+var missingTranslatorOnce sync.Once
+
 func TFromCtx(ctx context.Context) *Translator {
 	if t, ok := ctx.Value(translatorKey).(*Translator); ok && t != nil {
 		return t
 	}
-	slog.Warn("i18n: no translator in context, returning empty fallback")
+	missingTranslatorOnce.Do(func() {
+		slog.Warn("i18n: no translator in context, returning empty fallback")
+	})
 	return &Translator{locale: "en", strings: make(map[string]string)}
 }

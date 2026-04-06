@@ -51,7 +51,7 @@ templ Layout(title string, assets AssetPaths) {
 		<head>
 			<meta charset="UTF-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-			<title>{ title } - Stillwater</title>
+			<title>{ tf(ctx, "layout.page_title", title) }</title>
 			<link rel="stylesheet" href={ assets.CSS }/>
 			<link rel="icon" type="image/svg+xml" href={ assets.BasePath + "/static/img/favicon.svg" }/>
 			<link rel="icon" type="image/png" sizes="32x32" href={ assets.BasePath + "/static/img/favicon-32x32.png" }/>

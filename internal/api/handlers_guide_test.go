@@ -33,6 +33,7 @@ func TestHandleGuidePage_Unauthenticated(t *testing.T) {
 	r := testRouterForOnboarding(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/guide", nil)
+	req = req.WithContext(testI18nCtx(t, req.Context()))
 	w := httptest.NewRecorder()
 
 	r.handleGuidePage(w, req)

@@ -1,10 +1,23 @@
 package templates
 
 import (
+	"context"
 	"testing"
 
+	"github.com/sydlexius/stillwater/internal/i18n"
 	"github.com/sydlexius/stillwater/internal/provider"
 )
+
+// testCtx returns a context with the embedded English translator loaded,
+// so i18n lookups in helper functions return real translations during tests.
+func testCtx(tb testing.TB) context.Context {
+	tb.Helper()
+	bundle, err := i18n.LoadEmbedded()
+	if err != nil {
+		tb.Fatalf("loading i18n bundle: %v", err)
+	}
+	return i18n.WithTranslator(context.Background(), bundle.Translator("en"))
+}
 
 func TestMirrorServerType(t *testing.T) {
 	tests := []struct {
@@ -28,6 +41,7 @@ func TestMirrorServerType(t *testing.T) {
 }
 
 func TestMirrorStatusLabel(t *testing.T) {
+	ctx := testCtx(t)
 	tests := []struct {
 		name   string
 		mirror *provider.MirrorConfig
@@ -40,7 +54,7 @@ func TestMirrorStatusLabel(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := mirrorStatusLabel(tt.mirror)
+			got := mirrorStatusLabel(ctx, tt.mirror)
 			if got != tt.want {
 				t.Errorf("mirrorStatusLabel() = %q, want %q", got, tt.want)
 			}
