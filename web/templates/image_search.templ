@@ -266,7 +266,7 @@ templ imageSearchContextualized(data ImageSearchData) {
 			>
 				if imageExistsForType(data.Artist, data.SelectedType) {
 					<img
-						src={ fmt.Sprintf("/api/v1/artists/%s/images/%s/file", data.Artist.ID, data.SelectedType) }
+						src={ fmt.Sprintf("%s/api/v1/artists/%s/images/%s/file", data.BasePath, data.Artist.ID, data.SelectedType) }
 						alt={ img.ImageTermFor(data.SelectedType, data.ProfileName) }
 						class="max-w-full max-h-96 object-contain"
 					/>
@@ -350,7 +350,7 @@ templ imageSearchContextualized(data ImageSearchData) {
 							}
 						>
 							<img
-								src={ fmt.Sprintf("/api/v1/artists/%s/images/%s/file", data.Artist.ID, data.SelectedType) }
+								src={ fmt.Sprintf("%s/api/v1/artists/%s/images/%s/file", data.BasePath, data.Artist.ID, data.SelectedType) }
 								alt={ t(ctx, "image.current_image") }
 								class="max-w-full max-h-64 object-contain"
 							/>

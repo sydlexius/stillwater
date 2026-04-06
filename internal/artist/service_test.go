@@ -202,38 +202,44 @@ func TestList_Pagination(t *testing.T) {
 	svc := NewService(db)
 	ctx := context.Background()
 
-	names := []string{"Alice", "Bob", "Charlie", "Dave", "Eve", "Frank", "Grace", "Heidi", "Ivan", "Judy"}
+	// Insert 20 artists so we get two full pages at pageSize=10 (the minimum).
+	names := []string{
+		"Alice", "Bob", "Charlie", "Dave", "Eve",
+		"Frank", "Grace", "Heidi", "Ivan", "Judy",
+		"Karl", "Lena", "Mona", "Nora", "Oscar",
+		"Petra", "Quinn", "Rita", "Sara", "Tina",
+	}
 	for _, name := range names {
 		if err := svc.Create(ctx, testArtist(name, "/music/"+name)); err != nil {
 			t.Fatalf("Create %s: %v", name, err)
 		}
 	}
 
-	// Page 1
-	artists, total, err := svc.List(ctx, ListParams{Page: 1, PageSize: 5, Sort: "name", Order: "asc"})
+	// Page 1 (pageSize=10, minimum allowed)
+	artists, total, err := svc.List(ctx, ListParams{Page: 1, PageSize: 10, Sort: "name", Order: "asc"})
 	if err != nil {
 		t.Fatalf("List page 1: %v", err)
 	}
-	if total != 10 {
-		t.Errorf("total = %d, want 10", total)
+	if total != 20 {
+		t.Errorf("total = %d, want 20", total)
 	}
-	if len(artists) != 5 {
-		t.Errorf("page 1 len = %d, want 5", len(artists))
+	if len(artists) != 10 {
+		t.Errorf("page 1 len = %d, want 10", len(artists))
 	}
 	if artists[0].Name != "Alice" {
 		t.Errorf("first artist = %q, want Alice", artists[0].Name)
 	}
 
 	// Page 2
-	artists, _, err = svc.List(ctx, ListParams{Page: 2, PageSize: 5, Sort: "name", Order: "asc"})
+	artists, _, err = svc.List(ctx, ListParams{Page: 2, PageSize: 10, Sort: "name", Order: "asc"})
 	if err != nil {
 		t.Fatalf("List page 2: %v", err)
 	}
-	if len(artists) != 5 {
-		t.Errorf("page 2 len = %d, want 5", len(artists))
+	if len(artists) != 10 {
+		t.Errorf("page 2 len = %d, want 10", len(artists))
 	}
-	if artists[0].Name != "Frank" {
-		t.Errorf("first artist page 2 = %q, want Frank", artists[0].Name)
+	if artists[0].Name != "Karl" {
+		t.Errorf("first artist page 2 = %q, want Karl", artists[0].Name)
 	}
 }
 

@@ -25,7 +25,7 @@ templ ArtistImagesTab(artistID string, a *artist.Artist, profileName string, bas
 				<div class="flex flex-col sm:flex-row gap-6">
 					<div class="group relative w-48 h-48 flex-shrink-0 rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-800">
 						<img
-							src={ fmt.Sprintf("/api/v1/artists/%s/images/thumb/file", artistID) }
+							src={ fmt.Sprintf("%s/api/v1/artists/%s/images/thumb/file", basePath, artistID) }
 							alt={ tf(ctx, "image.alt_artist_type", a.Name, localizedImageType(ctx, "thumb")) }
 							class="w-full h-full object-cover"
 						/>
@@ -78,7 +78,7 @@ templ ArtistImagesTab(artistID string, a *artist.Artist, profileName string, bas
 				<div class="flex flex-col sm:flex-row gap-4">
 					<div class="group relative max-w-md rounded-lg overflow-hidden checkered-bg p-4">
 						<img
-							src={ fmt.Sprintf("/api/v1/artists/%s/images/logo/file", artistID) }
+							src={ fmt.Sprintf("%s/api/v1/artists/%s/images/logo/file", basePath, artistID) }
 							alt={ tf(ctx, "image.alt_artist_type", a.Name, localizedImageType(ctx, "logo")) }
 							class="max-h-32 w-auto object-contain"
 						/>
@@ -107,7 +107,7 @@ templ ArtistImagesTab(artistID string, a *artist.Artist, profileName string, bas
 				<div class="space-y-2">
 					<div class="group relative aspect-[4/1] rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-800">
 						<img
-							src={ fmt.Sprintf("/api/v1/artists/%s/images/banner/file", artistID) }
+							src={ fmt.Sprintf("%s/api/v1/artists/%s/images/banner/file", basePath, artistID) }
 							alt={ tf(ctx, "image.alt_artist_type", a.Name, localizedImageType(ctx, "banner")) }
 							class="w-full h-full object-cover"
 						/>

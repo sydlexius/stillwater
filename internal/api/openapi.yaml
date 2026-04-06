@@ -1896,12 +1896,13 @@ paths:
             type: string
         - name: limit
           in: query
-          description: Maximum number of records to return (1-200, default 50).
+          description: >
+            Maximum number of records to return (10-500). Defaults to the
+            caller's page_size preference when omitted.
           schema:
             type: integer
-            minimum: 1
-            maximum: 200
-            default: 50
+            minimum: 10
+            maximum: 500
         - name: offset
           in: query
           description: Number of records to skip for pagination.
@@ -2429,12 +2430,13 @@ paths:
       parameters:
         - name: limit
           in: query
-          description: Maximum number of records to return (1-200, default 50).
+          description: >
+            Maximum number of records to return (10-500). Defaults to the
+            caller's page_size preference when omitted.
           schema:
             type: integer
-            minimum: 1
-            maximum: 200
-            default: 50
+            minimum: 10
+            maximum: 500
         - name: offset
           in: query
           description: Number of records to skip for pagination.
