@@ -51,7 +51,7 @@ func notifExportURL(data NotificationsData) string {
 
 // NotificationsPage renders the full notifications page.
 templ NotificationsPage(assets AssetPaths, data NotificationsData) {
-	@Layout("Notifications", assets) {
+	@Layout(t(ctx, "notifications.title"), assets) {
 		<div class="space-y-6">
 			<div class="sw-card rounded-lg px-6 py-4">
 				<h1 class="text-2xl font-bold">{ t(ctx, "notifications.title") }</h1>
@@ -553,6 +553,7 @@ templ candidatePreviewModal() {
 					<span id="preview-dims" class="text-xs text-gray-400 dark:text-gray-500 font-mono"></span>
 				</div>
 				<button
+					id="candidate-preview-close-btn"
 					onclick="closeCandidatePreview()"
 					class="rounded-full p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
 					aria-label={ t(ctx, "common.close_preview") }
@@ -691,7 +692,7 @@ templ candidateScript() {
 		_previewTriggerEl = document.activeElement;
 		document.getElementById('candidate-preview-modal').classList.remove('hidden');
 		document.body.style.overflow = 'hidden';
-		var closeBtn = document.querySelector('#candidate-preview-modal button[aria-label="Close preview"]');
+		var closeBtn = document.getElementById('candidate-preview-close-btn');
 		if (closeBtn) closeBtn.focus();
 	}
 

@@ -434,7 +434,7 @@ func ActivityPage(assets AssetPaths, data ActivityPageData) templ.Component {
 				}
 				return nil
 			})
-			templ_7745c5c3_Err = components.FilterFlyout("activity-filters-flyout", t(ctx, "activity.filters_title"), "activity-filter-trigger", 0, "#activity-content").Render(templ.WithChildren(ctx, templ_7745c5c3_Var17), templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = components.FilterFlyout("activity-filters-flyout", t(ctx, "activity.filters_title"), "activity-filter-trigger", activityFilterCount(data), "#activity-content").Render(templ.WithChildren(ctx, templ_7745c5c3_Var17), templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

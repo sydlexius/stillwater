@@ -54,9 +54,9 @@ func FanartManagementGallery(artistID string, items []FanartGalleryItem) templ.C
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var3 string
-		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "image.fanart_count", strconv.Itoa(len(items))))
+		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(tn(ctx, "image.fanart_count", len(items)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 13, Col: 94}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/backdrop_management.templ`, Line: 13, Col: 80}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 		if templ_7745c5c3_Err != nil {

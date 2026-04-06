@@ -66,7 +66,7 @@ templ ActivityPage(assets AssetPaths, data ActivityPageData) {
 				@ActivityContent(data)
 			</div>
 		</div>
-		@components.FilterFlyout("activity-filters-flyout", t(ctx, "activity.filters_title"), "activity-filter-trigger", 0, "#activity-content") {
+		@components.FilterFlyout("activity-filters-flyout", t(ctx, "activity.filters_title"), "activity-filter-trigger", activityFilterCount(data), "#activity-content") {
 			@components.FilterSection(t(ctx, "activity.filter_section.change_type")) {
 				@components.FilterItem("activity-filters-flyout", "field", "biography", t(ctx, "field.biography"), "neutral")
 				@components.FilterItem("activity-filters-flyout", "field", "genres", t(ctx, "field.genres"), "neutral")

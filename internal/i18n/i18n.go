@@ -301,12 +301,14 @@ func WithTranslator(ctx context.Context, t *Translator) context.Context {
 	return context.WithValue(ctx, translatorKey, t)
 }
 
+// missingTranslatorOnce ensures the "no translator in context" warning is only
+// logged once per process lifetime.
+var missingTranslatorOnce sync.Once
+
 // TFromCtx retrieves the Translator from the context. If no translator is
 // present (e.g. middleware not configured), it logs a warning and returns a
 // default English translator with an empty string map so that T() calls fall
 // back to returning the key itself.
-var missingTranslatorOnce sync.Once
-
 func TFromCtx(ctx context.Context) *Translator {
 	if t, ok := ctx.Value(translatorKey).(*Translator); ok && t != nil {
 		return t

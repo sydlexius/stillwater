@@ -10,7 +10,7 @@ import (
 templ FanartManagementGallery(artistID string, items []FanartGalleryItem) {
 	<div id="fanart-management-gallery" class="space-y-4" data-artist-id={ artistID }>
 		<div class="flex items-center justify-between">
-			<h3 class="text-sm font-semibold">{ tf(ctx, "image.fanart_count", strconv.Itoa(len(items))) }</h3>
+			<h3 class="text-sm font-semibold">{ tn(ctx, "image.fanart_count", len(items)) }</h3>
 			<button
 				type="button"
 				id="fanart-delete-selected"

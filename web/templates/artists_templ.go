@@ -362,7 +362,7 @@ func ArtistsPage(assets AssetPaths, data ArtistListData) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var4 string
-			templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "artists.in_library", data.Pagination.TotalItems))
+			templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(tn(ctx, "artists.in_library", data.Pagination.TotalItems))
 			if templ_7745c5c3_Err != nil {
 				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 313, Col: 65}
 			}

@@ -646,13 +646,13 @@ func historySourceLabel(ctx context.Context, source string) string {
 			return t(ctx, "history.source.provider")
 		}
 		// Provider names are brand names -- not translated.
-		return t(ctx, "history.source.provider") + ": " + name
+		return tf(ctx, "history.source.provider_named", name)
 	case strings.HasPrefix(source, "rule:"):
 		ruleID := strings.TrimPrefix(source, "rule:")
 		if ruleID == "" {
 			return t(ctx, "history.source.rule")
 		}
-		return t(ctx, "history.source.rule") + ": " + ruleID
+		return tf(ctx, "history.source.rule_named", ruleID)
 	default:
 		return source
 	}

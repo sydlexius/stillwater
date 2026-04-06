@@ -202,10 +202,10 @@ templ CompliancePage(assets AssetPaths, data ComplianceData) {
 					>
 						<option value="" selected?={ data.Filter == "" }>{ t(ctx, "report.no_filter") }</option>
 						<option value="missing_nfo" selected?={ data.Filter == "missing_nfo" }>{ t(ctx, "report.missing_metadata") }</option>
-						<option value="missing_thumb" selected?={ data.Filter == "missing_thumb" }>{ t(ctx, "report.missing") } { img.ImageTermFor("thumb", data.ProfileName) }</option>
-						<option value="missing_fanart" selected?={ data.Filter == "missing_fanart" }>{ t(ctx, "report.missing") } { img.ImageTermFor("fanart", data.ProfileName) }</option>
-						<option value="missing_logo" selected?={ data.Filter == "missing_logo" }>{ t(ctx, "report.missing") } { img.ImageTermFor("logo", data.ProfileName) }</option>
-						<option value="missing_banner" selected?={ data.Filter == "missing_banner" }>{ t(ctx, "report.missing") } { img.ImageTermFor("banner", data.ProfileName) }</option>
+						<option value="missing_thumb" selected?={ data.Filter == "missing_thumb" }>{ tf(ctx, "report.missing_type", img.ImageTermFor("thumb", data.ProfileName)) }</option>
+						<option value="missing_fanart" selected?={ data.Filter == "missing_fanart" }>{ tf(ctx, "report.missing_type", img.ImageTermFor("fanart", data.ProfileName)) }</option>
+						<option value="missing_logo" selected?={ data.Filter == "missing_logo" }>{ tf(ctx, "report.missing_type", img.ImageTermFor("logo", data.ProfileName)) }</option>
+						<option value="missing_banner" selected?={ data.Filter == "missing_banner" }>{ tf(ctx, "report.missing_type", img.ImageTermFor("banner", data.ProfileName)) }</option>
 						<option value="missing_mbid" selected?={ data.Filter == "missing_mbid" }>{ t(ctx, "report.missing_mbid") }</option>
 					</select>
 					<!-- Health score range -->

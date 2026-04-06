@@ -310,7 +310,7 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 				<div>
 					<h1 class="text-2xl font-bold">{ t(ctx, "artists.title") }</h1>
 					<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-						{ tf(ctx, "artists.in_library", data.Pagination.TotalItems) }
+						{ tn(ctx, "artists.in_library", data.Pagination.TotalItems) }
 					</p>
 				</div>
 				<button

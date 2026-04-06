@@ -659,7 +659,7 @@ templ FanartSearchResults(artistID string, images []provider.ImageResult) {
 									<span>{ strconv.Itoa(img.Width) }x{ strconv.Itoa(img.Height) }</span>
 								}
 								if img.Likes > 0 {
-									<span class="ml-1">{ tf(ctx, "image.likes_count", strconv.Itoa(img.Likes)) }</span>
+									<span class="ml-1">{ tn(ctx, "image.likes_count", img.Likes) }</span>
 								}
 							</div>
 							<button

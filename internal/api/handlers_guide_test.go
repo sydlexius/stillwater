@@ -13,7 +13,8 @@ func TestHandleGuidePage_Authenticated(t *testing.T) {
 	r := testRouterForOnboarding(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/guide", nil)
-	ctx := middleware.WithTestUserID(req.Context(), "test-user-id")
+	ctx := testI18nCtx(t, req.Context())
+	ctx = middleware.WithTestUserID(ctx, "test-user-id")
 	req = req.WithContext(ctx)
 	w := httptest.NewRecorder()
 
