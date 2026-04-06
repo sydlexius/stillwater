@@ -132,6 +132,7 @@ templ ArtistImagesTab(artistID string, a *artist.Artist, profileName string, bas
 			role="dialog"
 			aria-modal="true"
 			aria-label={ t(ctx, "image.view_full_size") }
+			tabindex="-1"
 			onclick="closeLightbox()"
 		>
 			<button
@@ -139,6 +140,7 @@ templ ArtistImagesTab(artistID string, a *artist.Artist, profileName string, bas
 				class="absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors"
 				onclick="closeLightbox()"
 				aria-label={ t(ctx, "common.close") }
+				data-lightbox-close
 			>
 				@components.IconXMark("w-6 h-6")
 			</button>
@@ -192,15 +194,34 @@ templ ArtistImagesTab(artistID string, a *artist.Artist, profileName string, bas
 				});
 			}
 
+			// _lightboxOpener holds the element that had focus when the lightbox
+			// was opened; closeLightbox restores focus to it (same pattern as
+			// layout.templ _modalOpener / hideModal).
+			var _lightboxOpener = null;
+
 			function openLightbox(src, alt) {
 				var lb = document.getElementById('sw-lightbox');
 				var img = document.getElementById('sw-lightbox-img');
-				if (!lb || !img) return;
+				if (!lb || !img) {
+					console.warn('[stillwater] openLightbox: lightbox DOM elements not found');
+					return;
+				}
+				_lightboxOpener = document.activeElement;
 				img.src = src;
 				img.alt = alt || '';
 				lb.classList.remove('hidden');
 				lb.classList.add('flex');
+				// Remove before adding to prevent duplicate listeners when the
+				// lightbox is reopened without closing first.
+				document.removeEventListener('keydown', _lightboxKeydown);
 				document.addEventListener('keydown', _lightboxKeydown);
+				// Move focus into the dialog so keyboard users land inside it.
+				var closeBtn = lb.querySelector('[data-lightbox-close]');
+				if (closeBtn) {
+					closeBtn.focus();
+				} else {
+					lb.focus();
+				}
 			}
 
 			function closeLightbox() {
@@ -211,6 +232,11 @@ templ ArtistImagesTab(artistID string, a *artist.Artist, profileName string, bas
 				var img = document.getElementById('sw-lightbox-img');
 				if (img) img.src = '';
 				document.removeEventListener('keydown', _lightboxKeydown);
+				// Restore focus to the element that opened the lightbox.
+				if (_lightboxOpener && typeof _lightboxOpener.focus === 'function') {
+					_lightboxOpener.focus();
+				}
+				_lightboxOpener = null;
 			}
 
 			function _lightboxKeydown(e) {
@@ -296,18 +322,19 @@ templ imageOverlay(artistID string, imageType string, index int, basePath string
 			@components.IconArrowUpTray("w-5 h-5")
 		</a>
 		// Crop (navigates to image management page with crop modal auto-opened).
-		// Always targets the primary image for the selected type because the crop
-		// save endpoint is slot-unaware -- it only accepts {type, image_data, coords}
-		// with no index field. Passing an index here would open an indexed fanart in
-		// the editor but silently save the result to the primary slot.
-		<a
-			href={ templ.SafeURL(fmt.Sprintf("%s/artists/%s/images?type=%s&crop=1", basePath, artistID, imageType)) }
-			class="p-2 rounded-full bg-black/40 hover:bg-black/60 text-white transition-colors shadow-sm"
-			title={ t(ctx, "common.crop") }
-			aria-label={ tf(ctx, "image.crop_type", localizedImageType(ctx, imageType)) }
-		>
-			@components.IconScissors("w-5 h-5")
-		</a>
+		// Hidden for indexed fanart (index >= 0) because the crop save endpoint is
+		// slot-unaware -- it only accepts {type, image_data, coords} with no index
+		// field. Showing crop on an indexed tile would silently save to the primary slot.
+		if !(imageType == "fanart" && index >= 0) {
+			<a
+				href={ templ.SafeURL(fmt.Sprintf("%s/artists/%s/images?type=%s&crop=1", basePath, artistID, imageType)) }
+				class="p-2 rounded-full bg-black/40 hover:bg-black/60 text-white transition-colors shadow-sm"
+				title={ t(ctx, "common.crop") }
+				aria-label={ tf(ctx, "image.crop_type", localizedImageType(ctx, imageType)) }
+			>
+				@components.IconScissors("w-5 h-5")
+			</a>
+		}
 		// Trim (logo only -- removes transparent edges)
 		if imageType == "logo" {
 			<button

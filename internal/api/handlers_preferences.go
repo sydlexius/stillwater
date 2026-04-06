@@ -256,6 +256,10 @@ func (r *Router) handleUpdatePreference(w http.ResponseWriter, req *http.Request
 	case pageSizeKey:
 		n, err := strconv.Atoi(body.Value)
 		valid = err == nil && n >= PageSizeMin && n <= PageSizeMax
+		if valid {
+			// Normalize to canonical decimal so "+10" or "010" is stored as "10".
+			body.Value = strconv.Itoa(n)
+		}
 	default:
 		for _, allowed := range def.allowedValues {
 			if body.Value == allowed {
