@@ -1601,7 +1601,7 @@ func settingsAuthProvidersTab(data AuthProvidersData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 137, "</label> <input id=\"oidc-display-name\" name=\"oidc_display_name\" type=\"text\" placeholder=\"Sign in with SSO\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 137, "</label> <input id=\"oidc-display-name\" name=\"oidc_display_name\" type=\"text\" placeholder=\"Authentik\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
