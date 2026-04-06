@@ -3,7 +3,6 @@ package templates
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
@@ -102,7 +101,7 @@ templ historyChangeRow(c artist.MetadataChange) {
 		<div class="flex items-center justify-between">
 			<div class="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
 				<time datetime={ c.CreatedAt.Format(time.RFC3339) } title={ c.CreatedAt.Format("2006-01-02 15:04:05 UTC") }>
-					{ historyTimeAgo(c.CreatedAt) }
+					{ historyTimeAgo(ctx, c.CreatedAt) }
 				</time>
 				<span class={ "inline-block px-2 py-0.5 rounded-full text-xs", historySourceBadgeClass(c.Source) }>
 					{ historySourceLabel(ctx, c.Source) }
@@ -139,32 +138,24 @@ templ historyChangeRow(c artist.MetadataChange) {
 	</div>
 }
 
-// historyTimeAgo returns a human-readable relative time string.
-func historyTimeAgo(t time.Time) string {
-	dur := time.Since(t)
+// historyTimeAgo returns a human-readable relative time string using i18n.
+func historyTimeAgo(ctx context.Context, ts time.Time) string {
+	dur := time.Since(ts)
 	switch {
 	case dur < time.Minute:
-		return "just now"
+		return t(ctx, "time.just_now")
 	case dur < time.Hour:
-		m := int(dur.Minutes())
-		if m == 1 {
-			return "1 minute ago"
-		}
-		return strconv.Itoa(m) + " minutes ago"
+		return tn(ctx, "time.history.minutes_ago", int(dur.Minutes()))
 	case dur < 24*time.Hour:
-		h := int(dur.Hours())
-		if h == 1 {
-			return "1 hour ago"
-		}
-		return strconv.Itoa(h) + " hours ago"
+		return tn(ctx, "time.history.hours_ago", int(dur.Hours()))
 	case dur < 7*24*time.Hour:
-		d := int(dur.Hours() / 24)
-		if d == 1 {
-			return "1 day ago"
-		}
-		return strconv.Itoa(d) + " days ago"
+		return tn(ctx, "time.history.days_ago", int(dur.Hours()/24))
 	default:
-		return t.Format("Jan 2, 2006")
+		layout := t(ctx, "time.history.date_format")
+		if layout == "" || layout == "time.history.date_format" {
+			layout = "Jan 2, 2006"
+		}
+		return ts.Format(layout)
 	}
 }
 

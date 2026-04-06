@@ -198,7 +198,7 @@ templ activityRow(c artist.MetadataChangeWithArtist, basePath string) {
 					title={ c.CreatedAt.Format("2006-01-02 15:04:05 UTC") }
 					class="text-xs text-gray-500 dark:text-gray-400"
 				>
-					{ historyTimeAgo(c.CreatedAt) }
+					{ historyTimeAgo(ctx, c.CreatedAt) }
 				</time>
 			</div>
 			if artist.IsTrackableField(c.Field) && c.Source != "revert" {

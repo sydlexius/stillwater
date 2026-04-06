@@ -120,6 +120,26 @@ templ CompliancePage(assets AssetPaths, data ComplianceData) {
 					onclick="confirmAndRunRules()"
 					aria-controls="confirm-modal"
 					aria-haspopup="dialog"
+					data-label-run={ t(ctx, "report.run_rules") }
+					data-label-running={ t(ctx, "report.running") }
+					data-toast-started={ t(ctx, "report.rule_evaluation_started") }
+					data-toast-already-running={ t(ctx, "report.already_running") }
+					data-toast-failed-start={ t(ctx, "report.failed_to_start") }
+					data-toast-failed-start-evaluation={ t(ctx, "report.failed_to_start_evaluation") }
+					data-toast-evaluation-failed={ t(ctx, "report.rule_evaluation_failed") }
+					data-toast-idle={ t(ctx, "report.rule_evaluation_idle") }
+					data-toast-status-http-error={ t(ctx, "report.rule_status_http_error") }
+					data-toast-status-network-error={ t(ctx, "report.rule_status_network_error") }
+					data-msg-no-violations={ t(ctx, "report.violations_none") }
+					data-msg-all-auto-fixed={ t(ctx, "report.violations_all_auto_fixed") }
+					data-msg-violations-found={ t(ctx, "report.violations_found") }
+					data-msg-violations-found-auto-fixed={ t(ctx, "report.violations_found_auto_fixed") }
+					data-confirm-title={ t(ctx, "report.confirm_run_title") }
+					data-confirm-body={ t(ctx, "report.confirm_run_body") }
+					data-confirm-body-estimate={ t(ctx, "report.confirm_run_body_estimate") }
+					data-confirm-accept={ t(ctx, "report.confirm_run_accept") }
+					data-confirm-minute-one={ t(ctx, "report.confirm_minute.one") }
+					data-confirm-minute-other={ t(ctx, "report.confirm_minute.other") }
 					class="inline-flex items-center justify-center gap-2 rounded-md bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
 				>
 					<span id="run-rules-spinner" class="hidden">
@@ -269,6 +289,7 @@ templ CompliancePage(assets AssetPaths, data ComplianceData) {
 		<!-- Bulk action bar (hidden until selections exist) -->
 		<div
 			id="bulk-action-bar"
+			data-label-n-selected={ t(ctx, "report.n_selected") }
 			class="fixed bottom-0 left-0 right-0 z-30 hidden bg-gray-900 dark:bg-gray-800 border-t border-gray-700 px-6 py-3"
 		>
 			<div class="max-w-7xl mx-auto flex items-center justify-between">
@@ -599,16 +620,20 @@ templ runRulesScript() {
 		}
 
 		function showRunRulesConfirm(bp, artistCount) {
+			var btn = document.getElementById('run-rules-btn');
+			var ds = btn ? btn.dataset : {};
 			var message;
 			if (artistCount > 0) {
 				var minutes = Math.ceil(artistCount * 0.05 / 60);
 				if (minutes < 1) minutes = 1;
-				message = 'This will evaluate rules for <strong>' + artistCount +
-					'</strong> artists and may take approximately <strong>' + minutes +
-					(minutes === 1 ? ' minute' : ' minutes') +
-					'</strong>.<br><br>The evaluation runs in the background -- you can continue using Stillwater while it runs.';
+				var minuteLabel = (minutes === 1)
+					? (ds.confirmMinuteOne || '{count} minute').replace('{count}', minutes)
+					: (ds.confirmMinuteOther || '{count} minutes').replace('{count}', minutes);
+				message = (ds.confirmBodyEstimate || 'This will evaluate rules for <strong>{artists}</strong> artists and may take approximately <strong>{duration}</strong>.<br><br>The evaluation runs in the background -- you can continue using Stillwater while it runs.')
+					.replace('{artists}', artistCount)
+					.replace('{duration}', minuteLabel);
 			} else {
-				message = 'This will evaluate rules for all artists.<br><br>The evaluation runs in the background -- you can continue using Stillwater while it runs.';
+				message = ds.confirmBody || 'This will evaluate rules for all artists.<br><br>The evaluation runs in the background -- you can continue using Stillwater while it runs.';
 			}
 
 			// Pass customizations via opts so the modal resets them in hideModal.
@@ -617,8 +642,8 @@ templ runRulesScript() {
 				startRuleRun(bp);
 			}, {
 				html: true,
-				title: 'Run Rules',
-				acceptText: 'Start',
+				title: ds.confirmTitle || 'Run Rules',
+				acceptText: ds.confirmAccept || 'Start',
 				acceptClass: 'rounded bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2'
 			});
 		}
@@ -630,7 +655,7 @@ templ runRulesScript() {
 
 			if (btn) btn.disabled = true;
 			if (spinner) spinner.classList.remove('hidden');
-			if (label) label.textContent = 'Running...';
+			if (label) label.textContent = (btn && btn.dataset.labelRunning) || 'Running...';
 
 			var csrfVal = (function() {
 				var m = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/);
@@ -645,36 +670,39 @@ templ runRulesScript() {
 				}
 			}).then(function(r) {
 				if (r.status === 202) {
-					showSuccessToast('Rule evaluation started...');
+					showSuccessToast((btn && btn.dataset.toastStarted) || 'Rule evaluation started...');
 					pollRuleStatus(bp);
 				} else if (r.status === 409) {
-					showToast('Rules already running');
+					showToast((btn && btn.dataset.toastAlreadyRunning) || 'Rules already running');
 					pollRuleStatus(bp);
 				} else {
 					return r.json().then(function(data) {
-						showToast(data.error || 'Failed to start rules');
+						showToast(data.error || (btn && btn.dataset.toastFailedStart) || 'Failed to start rules');
 						resetRuleButton();
 					});
 				}
 			}).catch(function() {
-				showToast('Failed to start rule evaluation');
+				showToast((btn && btn.dataset.toastFailedStartEvaluation) || 'Failed to start rule evaluation');
 				resetRuleButton();
 			});
 		}
 
 		function pollRuleStatus(bp) {
+			var btn = document.getElementById('run-rules-btn');
 			pollAsyncStatus(bp + '/api/v1/rules/run-all/status', {
 				onData: function(data) {
 					if (data.status === 'completed') {
 						var msg;
 						if (data.violations_found === 0) {
-							msg = 'No violations found';
+							msg = (btn && btn.dataset.msgNoViolations) || 'No violations found';
 						} else if (data.violations_remaining === 0 && data.violations_auto_fixed > 0) {
-							msg = 'Found ' + data.violations_found + ' violations, all auto-fixed';
+							msg = ((btn && btn.dataset.msgAllAutoFixed) || 'Found {found} violations, all auto-fixed').replace('{found}', data.violations_found);
 						} else if (data.violations_auto_fixed > 0) {
-							msg = 'Found ' + data.violations_found + ' violations (' + data.violations_auto_fixed + ' auto-fixed, ' + data.violations_remaining + ' remaining)';
+							msg = ((btn && btn.dataset.msgViolationsFoundAutoFixed) || 'Found {found} violations ({autoFixed} auto-fixed, {remaining} remaining)')
+								.replace('{found}', data.violations_found).replace('{autoFixed}', data.violations_auto_fixed).replace('{remaining}', data.violations_remaining);
 						} else {
-							msg = 'Found ' + data.violations_found + ' violations (' + data.violations_remaining + ' remaining)';
+							msg = ((btn && btn.dataset.msgViolationsFound) || 'Found {found} violations ({remaining} remaining)')
+								.replace('{found}', data.violations_found).replace('{remaining}', data.violations_remaining);
 						}
 						showSuccessToast(msg);
 						resetRuleButton();
@@ -689,23 +717,23 @@ templ runRulesScript() {
 						return true;
 					}
 					if (data.status === 'failed') {
-						showToast('Rule evaluation failed: ' + (data.error || 'unknown error'));
+						showToast(((btn && btn.dataset.toastEvaluationFailed) || 'Rule evaluation failed') + ': ' + (data.error || 'unknown error'));
 						resetRuleButton();
 						return true;
 					}
 					if (data.status === 'idle') {
-						showToast('Rule run state was lost');
+						showToast((btn && btn.dataset.toastIdle) || 'Rule run state was lost');
 						resetRuleButton();
 						return true;
 					}
 					return false;
 				},
 				onHTTPError: function(status) {
-					showToast('Status check failed (HTTP ' + status + ')');
+					showToast(((btn && btn.dataset.toastStatusHttpError) || 'Status check failed (HTTP %d)').replace('%d', status));
 					resetRuleButton();
 				},
 				onNetworkError: function() {
-					showToast('Network error while checking rule status');
+					showToast((btn && btn.dataset.toastStatusNetworkError) || 'Network error while checking rule status');
 					resetRuleButton();
 				}
 			}, {maxAttempts: 0});
@@ -717,7 +745,7 @@ templ runRulesScript() {
 			var label = document.getElementById('run-rules-label');
 			if (btn) btn.disabled = false;
 			if (spinner) spinner.classList.add('hidden');
-			if (label) label.textContent = 'Run Rules';
+			if (label) label.textContent = (btn && btn.dataset.labelRun) || 'Run Rules';
 		}
 	</script>
 }

@@ -216,11 +216,11 @@ templ settingsUsersTab(data UsersTabData) {
 								type="button"
 								class="text-xs px-2.5 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
 								aria-label={ t(ctx, "settings.users.copy_invite") }
-								data-success-msg={ t(ctx, "settings.users.invite_copied") }
-								data-fail-msg={ t(ctx, "settings.users.copy_failed") }
-								onclick="var btn=this; navigator.clipboard.writeText(document.getElementById('invite-link-value').value).then(function(){ showSuccessToast(btn.dataset.successMsg); }).catch(function(){ showToast(btn.dataset.failMsg); })"
+								data-toast-success={ t(ctx, "settings.users.invite_link_copied") }
+								data-toast-error={ t(ctx, "settings.users.invite_link_copy_failed") }
+								onclick="var btn=this; navigator.clipboard.writeText(document.getElementById('invite-link-value').value).then(function(){ showSuccessToast(btn.dataset.toastSuccess); }).catch(function(){ showToast(btn.dataset.toastError); })"
 							>
-								{ t(ctx, "common.copy") }
+								{ t(ctx, "settings.users.copy_link") }
 							</button>
 						</div>
 						<p class="text-xs text-gray-500 dark:text-gray-400 mt-1">{ t(ctx, "settings.users.link_single_use") }</p>
@@ -365,9 +365,11 @@ templ inviteRow(inv auth.Invite) {
 				class="text-xs px-2.5 py-1 rounded border border-gray-300 dark:border-gray-600 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
 				aria-label={ tf(ctx, "settings.users.copy_invite_for", inv.Code) }
 				data-inv-code={ inv.Code }
+				data-toast-success={ t(ctx, "settings.users.invite_link_copied") }
+				data-toast-error={ t(ctx, "settings.users.invite_link_copy_failed") }
 				onclick="copyInviteLinkFromDataset(this)"
 			>
-				Copy Link
+				{ t(ctx, "settings.users.copy_link") }
 			</button>
 			<button
 				type="button"
@@ -377,9 +379,10 @@ templ inviteRow(inv auth.Invite) {
 				hx-confirm={ t(ctx, "settings.users.revoke_confirm") }
 				hx-target={ "#invite-row-" + inv.ID }
 				hx-swap="outerHTML"
-				hx-on::after-request="if(event.detail.successful){ showSuccessToast('Invite revoked'); }"
+				data-toast-revoked={ t(ctx, "settings.users.invite_revoked") }
+				hx-on::after-request="if(event.detail.successful){ showSuccessToast(this.dataset.toastRevoked); }"
 			>
-				Revoke
+				{ t(ctx, "settings.users.revoke") }
 			</button>
 		</div>
 	</div>
@@ -442,17 +445,17 @@ templ settingsUsersScript() {
 			});
 		}
 
-		function copyInviteLink(code) {
+		function copyInviteLink(code, successMsg, errorMsg) {
 			var link = window.location.origin + usersBasePath + '/register?code=' + encodeURIComponent(code);
 			navigator.clipboard.writeText(link).then(function() {
-				showSuccessToast('Invite link copied');
+				showSuccessToast(successMsg || 'Invite link copied');
 			}).catch(function() {
-				showToast('Failed to copy link');
+				showToast(errorMsg || 'Failed to copy link');
 			});
 		}
 
 		function copyInviteLinkFromDataset(el) {
-			copyInviteLink(el.dataset.invCode);
+			copyInviteLink(el.dataset.invCode, el.dataset.toastSuccess, el.dataset.toastError);
 		}
 
 		function deactivateUserFromDataset(el) {

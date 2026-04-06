@@ -1352,16 +1352,17 @@ func dashboardTimeAgo(ctx context.Context, ts time.Time) string {
 	case dur < time.Minute:
 		return t(ctx, "time.just_now")
 	case dur < time.Hour:
-		m := int(dur.Minutes())
-		return tf(ctx, "time.minutes_ago", m)
+		return tn(ctx, "time.minutes_ago", int(dur.Minutes()))
 	case dur < 24*time.Hour:
-		h := int(dur.Hours())
-		return tf(ctx, "time.hours_ago", h)
+		return tn(ctx, "time.hours_ago", int(dur.Hours()))
 	case dur < 7*24*time.Hour:
-		d := int(dur.Hours() / 24)
-		return tf(ctx, "time.days_ago", d)
+		return tn(ctx, "time.days_ago", int(dur.Hours()/24))
 	default:
-		return ts.Format("Jan 2")
+		layout := t(ctx, "time.date_format_short")
+		if layout == "" || layout == "time.date_format_short" {
+			layout = "2006-01-02"
+		}
+		return ts.Format(layout)
 	}
 }
 
@@ -1413,7 +1414,15 @@ func categoryChipClass(category string, active bool) string {
 
 // dashboardCategoryLabel returns the display name for a violation category on the dashboard.
 func dashboardCategoryLabel(ctx context.Context, category string) string {
-	return t(ctx, "dashboard.category."+category)
+	key := "dashboard.category." + category
+	result := t(ctx, key)
+	if result == key {
+		if category != "" && category != "other" {
+			return category
+		}
+		return t(ctx, "dashboard.category.other")
+	}
+	return result
 }
 
 var _ = templruntime.GeneratedTemplate

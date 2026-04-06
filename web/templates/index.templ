@@ -53,6 +53,10 @@ templ IndexPage(assets AssetPaths) {
 				// Bulk action bar (hidden by default, shown via JS when checkboxes selected)
 				<div
 					id="bulk-bar"
+					data-label-selected={ t(ctx, "dashboard.n_selected") }
+					data-label-fix-selected={ t(ctx, "dashboard.fix_selected") }
+					data-label-fixing-progress={ t(ctx, "dashboard.fixing_progress") }
+					data-label-fixes-failed={ t(ctx, "dashboard.fixes_failed") }
 					class="fixed bottom-0 left-0 right-0 z-40 hidden border-t border-gray-200 bg-white/95 p-3 shadow-lg backdrop-blur-sm dark:border-gray-700 dark:bg-gray-800/95"
 				>
 					<div class="mx-auto flex max-w-3xl items-center justify-between">
@@ -184,7 +188,7 @@ templ IndexPage(assets AssetPaths) {
 					var total = queue.querySelectorAll('.bulk-check').length;
 					if (checked.length > 0) {
 						bulkBar.classList.remove('hidden');
-						bulkCount.textContent = checked.length + ' selected';
+						bulkCount.textContent = (bulkBar.dataset.labelSelected || '{count} selected').replace('{count}', checked.length);
 					} else {
 						bulkBar.classList.add('hidden');
 					}
@@ -280,14 +284,14 @@ templ IndexPage(assets AssetPaths) {
 							if (i >= ids.length) {
 								bulkBar.classList.add('hidden');
 								bulkFixBtn.disabled = false;
-								bulkFixBtn.textContent = 'Fix Selected';
+								bulkFixBtn.textContent = bulkBar.dataset.labelFixSelected || 'Fix Selected';
 								if (failed > 0) {
-									window.showToast && window.showToast(failed + ' of ' + total + ' fixes failed', 'error');
+									window.showToast && window.showToast((bulkBar.dataset.labelFixesFailed || '{failed} of {total} fixes failed').replace('{failed}', failed).replace('{total}', total), 'error');
 								}
 								htmx.ajax('GET', '/dashboard/actions', {target: '#action-queue', swap: 'innerHTML'});
 								return;
 							}
-							bulkFixBtn.textContent = 'Fixing ' + (i + 1) + '/' + total + '...';
+							bulkFixBtn.textContent = (bulkBar.dataset.labelFixingProgress || 'Fixing {current}/{total}...').replace('{current}', i + 1).replace('{total}', total);
 							fetch(bp + '/api/v1/notifications/' + ids[i] + '/fix', {
 								method: 'POST',
 								headers: { 'X-CSRF-Token': getCSRF() }

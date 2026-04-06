@@ -39,7 +39,7 @@ templ GuidePage(assets AssetPaths) {
 				<ul class="list-disc list-inside text-sm text-gray-600 dark:text-gray-300 space-y-1.5">
 					<li>{ t(ctx, "guide.library_structure_item1") }</li>
 					<li>{ t(ctx, "guide.library_structure_item2") }</li>
-					<li>{ t(ctx, "guide.library_structure_item3_prefix") } <a href="#scanner-exclusions" class="text-blue-600 dark:text-blue-400 hover:underline">{ t(ctx, "guide.section_scanner_exclusions") }</a> { t(ctx, "guide.library_structure_item3_suffix") }</li>
+					<li>{ translationBefore(t(ctx, "guide.library_structure_item3"), "{link}") }<a href="#scanner-exclusions" class="text-blue-600 dark:text-blue-400 hover:underline">{ t(ctx, "guide.section_scanner_exclusions") }</a>{ translationAfter(t(ctx, "guide.library_structure_item3"), "{link}") }</li>
 				</ul>
 				<div class="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
 					<p class="text-xs text-gray-500 dark:text-gray-400 mb-1">{ t(ctx, "guide.library_tools_label") }</p>

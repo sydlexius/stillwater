@@ -92,92 +92,209 @@ func DiscoverResults(connID string, libs []DiscoveredLib, isOOBE bool) templ.Com
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "\" data-alert-select-one=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var5 string
+			templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "discover.import_select_at_least_one"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/discover_results.templ`, Line: 30, Col: 73}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "\" data-alert-import-failed=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var6 string
+			templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "discover.import_failed"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/discover_results.templ`, Line: 31, Col: 63}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "\" data-alert-import-failed-http=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var7 string
+			templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "discover.import_failed_http"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/discover_results.templ`, Line: 32, Col: 73}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "\" data-alert-network=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var8 string
+			templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "discover.import_network"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/discover_results.templ`, Line: 33, Col: 58}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "\" data-msg-libraries-imported=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var9 string
+			templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "discover.libraries_imported"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/discover_results.templ`, Line: 34, Col: 71}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "\" data-msg-no-new-libraries=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var10 string
+			templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "discover.no_new_libraries"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/discover_results.templ`, Line: 35, Col: 67}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "\" data-msg-one-library-imported=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var11 string
+			templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "discover.one_library_imported"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/discover_results.templ`, Line: 36, Col: 75}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "\" data-msg-n-libraries-imported=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var12 string
+			templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "discover.n_libraries_imported"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/discover_results.templ`, Line: 37, Col: 75}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "\" data-msg-all-already-imported=\"")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var13 string
+			templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "discover.all_already_imported"))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/discover_results.templ`, Line: 38, Col: 75}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			for _, lib := range libs {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<label class=\"flex items-center gap-2 text-sm\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "<label class=\"flex items-center gap-2 text-sm\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				if lib.Imported {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<input type=\"checkbox\" disabled checked class=\"rounded border-gray-300 dark:border-gray-600\"> <span class=\"text-gray-400 dark:text-gray-500\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "<input type=\"checkbox\" disabled checked class=\"rounded border-gray-300 dark:border-gray-600\"> <span class=\"text-gray-400 dark:text-gray-500\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					var templ_7745c5c3_Var5 string
-					templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(lib.Name)
+					var templ_7745c5c3_Var14 string
+					templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(lib.Name)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/discover_results.templ`, Line: 34, Col: 64}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/discover_results.templ`, Line: 44, Col: 64}
 					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, " ")
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					var templ_7745c5c3_Var6 string
-					templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "discover.already_imported"))
-					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/discover_results.templ`, Line: 34, Col: 104}
-					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, " ")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</span>")
+					var templ_7745c5c3_Var15 string
+					templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "discover.already_imported"))
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/discover_results.templ`, Line: 44, Col: 104}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "</span>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 				} else {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<input type=\"checkbox\" name=\"lib\" value=\"")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "<input type=\"checkbox\" name=\"lib\" value=\"")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					var templ_7745c5c3_Var7 string
-					templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(lib.ExternalID)
+					var templ_7745c5c3_Var16 string
+					templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(lib.ExternalID)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/discover_results.templ`, Line: 39, Col: 30}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/discover_results.templ`, Line: 49, Col: 30}
 					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "\" data-name=\"")
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					var templ_7745c5c3_Var8 string
-					templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(lib.Name)
-					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/discover_results.templ`, Line: 40, Col: 28}
-					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "\" data-name=\"")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "\" class=\"rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500\"> <span class=\"text-gray-700 dark:text-gray-300\">")
+					var templ_7745c5c3_Var17 string
+					templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(lib.Name)
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/discover_results.templ`, Line: 50, Col: 28}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					var templ_7745c5c3_Var9 string
-					templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(lib.Name)
-					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/discover_results.templ`, Line: 43, Col: 64}
-					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "\" class=\"rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500\"> <span class=\"text-gray-700 dark:text-gray-300\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "</span>")
+					var templ_7745c5c3_Var18 string
+					templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(lib.Name)
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/discover_results.templ`, Line: 53, Col: 64}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "</span>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "</label> ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "</label> ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -188,29 +305,29 @@ func DiscoverResults(connID string, libs []DiscoveredLib, isOOBE bool) templ.Com
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "<button type=\"button\" class=\"mt-2 text-xs px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors\" onclick=\"")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "<button type=\"button\" class=\"mt-2 text-xs px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors\" onclick=\"")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					var templ_7745c5c3_Var10 templ.ComponentScript = importSelectedLibrariesOOBE(connID)
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var10.Call)
+					var templ_7745c5c3_Var19 templ.ComponentScript = importSelectedLibrariesOOBE(connID)
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var19.Call)
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					var templ_7745c5c3_Var11 string
-					templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "discover.import_selected"))
+					var templ_7745c5c3_Var20 string
+					templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "discover.import_selected"))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/discover_results.templ`, Line: 54, Col: 43}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/discover_results.templ`, Line: 64, Col: 43}
 					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "</button>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "</button>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -219,35 +336,35 @@ func DiscoverResults(connID string, libs []DiscoveredLib, isOOBE bool) templ.Com
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "<button type=\"button\" class=\"mt-2 text-xs px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors\" onclick=\"")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "<button type=\"button\" class=\"mt-2 text-xs px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors\" onclick=\"")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					var templ_7745c5c3_Var12 templ.ComponentScript = importSelectedLibraries(connID)
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var12.Call)
+					var templ_7745c5c3_Var21 templ.ComponentScript = importSelectedLibraries(connID)
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var21.Call)
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					var templ_7745c5c3_Var13 string
-					templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "discover.import_selected"))
+					var templ_7745c5c3_Var22 string
+					templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "discover.import_selected"))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/discover_results.templ`, Line: 62, Col: 43}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/discover_results.templ`, Line: 72, Col: 43}
 					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "</button>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "</button>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "</form></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "</form></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -258,16 +375,17 @@ func DiscoverResults(connID string, libs []DiscoveredLib, isOOBE bool) templ.Com
 
 func importSelectedLibraries(connID string) templ.ComponentScript {
 	return templ.ComponentScript{
-		Name: `__templ_importSelectedLibraries_dad9`,
-		Function: `function __templ_importSelectedLibraries_dad9(connID){var form = document.getElementById("import-form-" + connID);
+		Name: `__templ_importSelectedLibraries_174f`,
+		Function: `function __templ_importSelectedLibraries_174f(connID){var form = document.getElementById("import-form-" + connID);
+	var bp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
 	var checked = form.querySelectorAll('input[name="lib"]:checked');
-	if (checked.length === 0) { alert("Select at least one library to import."); return; }
+	if (checked.length === 0) { alert(form.dataset.alertSelectOne || "Select at least one library to import."); return; }
 	var libs = [];
 	checked.forEach(function(cb) {
 		libs.push({external_id: cb.value, name: cb.getAttribute("data-name")});
 	});
 	var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1");
-	fetch("/api/v1/connections/" + connID + "/libraries/import", {
+	fetch(bp + "/api/v1/connections/" + connID + "/libraries/import", {
 		method: "POST",
 		headers: {"Content-Type": "application/json", "X-CSRF-Token": csrfToken},
 		body: JSON.stringify({libraries: libs})
@@ -276,48 +394,51 @@ func importSelectedLibraries(connID string) templ.ComponentScript {
 			return res.json().then(function(data) {
 				var count = Array.isArray(data) ? data.length : 0;
 				if (typeof showSuccessToast === 'function') {
-					if (count > 0) {
-						var word = count === 1 ? "library" : "libraries";
-						showSuccessToast(count + " " + word + " imported. Auto-populating artists...");
+					if (count === 1) {
+						showSuccessToast(form.dataset.msgOneLibraryImported || "1 library imported. Auto-populating artists...");
+					} else if (count > 1) {
+						showSuccessToast((form.dataset.msgNLibrariesImported || "{count} libraries imported. Auto-populating artists...").replace("{count}", count));
 					} else {
-						showSuccessToast("No new libraries to import.");
+						showSuccessToast(form.dataset.msgNoNewLibraries || "No new libraries to import.");
 					}
 				}
 				setTimeout(function() { window.location.reload(); }, 1500);
-			}).catch(function() {
+			}).catch(function(e) {
+				console.warn('Import response parse error:', e);
 				if (typeof showSuccessToast === 'function') {
-					showSuccessToast("Libraries imported.");
+					showSuccessToast(form.dataset.msgLibrariesImported || "Libraries imported.");
 				}
 				setTimeout(function() { window.location.reload(); }, 1500);
 			});
 		} else {
 			return res.json().then(function(data) {
-				alert(data.error || "Import failed");
+				alert(data.error || form.dataset.alertImportFailed || "Import failed");
 			}).catch(function() {
-				alert("Import failed (HTTP " + res.status + ")");
+				alert((form.dataset.alertImportFailedHttp || "Import failed (HTTP %d)").replace("%d", res.status));
 			});
 		}
 	}).catch(function() {
-		alert("Network error. Check your connection and try again.");
+		alert(form.dataset.alertNetwork || "Network error. Check your connection and try again.");
 	});
 }`,
-		Call:       templ.SafeScript(`__templ_importSelectedLibraries_dad9`, connID),
-		CallInline: templ.SafeScriptInline(`__templ_importSelectedLibraries_dad9`, connID),
+		Call:       templ.SafeScript(`__templ_importSelectedLibraries_174f`, connID),
+		CallInline: templ.SafeScriptInline(`__templ_importSelectedLibraries_174f`, connID),
 	}
 }
 
 func importSelectedLibrariesOOBE(connID string) templ.ComponentScript {
 	return templ.ComponentScript{
-		Name: `__templ_importSelectedLibrariesOOBE_3985`,
-		Function: `function __templ_importSelectedLibrariesOOBE_3985(connID){var form = document.getElementById("import-form-" + connID);
+		Name: `__templ_importSelectedLibrariesOOBE_3588`,
+		Function: `function __templ_importSelectedLibrariesOOBE_3588(connID){var form = document.getElementById("import-form-" + connID);
+	var bp = (document.querySelector('meta[name="htmx-base-path"]') || {content: ''}).content;
 	var checked = form.querySelectorAll('input[name="lib"]:checked');
-	if (checked.length === 0) { alert("Select at least one library to import."); return; }
+	if (checked.length === 0) { alert(form.dataset.alertSelectOne || "Select at least one library to import."); return; }
 	var libs = [];
 	checked.forEach(function(cb) {
 		libs.push({external_id: cb.value, name: cb.getAttribute("data-name")});
 	});
 	var csrfToken = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1");
-	fetch("/api/v1/connections/" + connID + "/libraries/import", {
+	fetch(bp + "/api/v1/connections/" + connID + "/libraries/import", {
 		method: "POST",
 		headers: {"Content-Type": "application/json", "X-CSRF-Token": csrfToken},
 		body: JSON.stringify({libraries: libs})
@@ -325,28 +446,45 @@ func importSelectedLibrariesOOBE(connID string) templ.ComponentScript {
 		if (res.ok) {
 			return res.json().then(function(data) {
 				var count = Array.isArray(data) ? data.length : 0;
-				var word = count === 1 ? "library" : "libraries";
-				if (count > 0) {
-					form.innerHTML = '<p class="text-xs text-green-600 dark:text-green-400 py-1">' + count + ' ' + word + ' imported. Auto-populating artists...</p>';
+				var msg;
+				var isSuccess;
+				if (count === 1) {
+					msg = form.dataset.msgOneLibraryImported || "1 library imported. Auto-populating artists...";
+					isSuccess = true;
+				} else if (count > 1) {
+					msg = (form.dataset.msgNLibrariesImported || "{count} libraries imported. Auto-populating artists...").replace("{count}", count);
+					isSuccess = true;
 				} else {
-					form.innerHTML = '<p class="text-xs text-gray-500 dark:text-gray-400 py-1">All libraries already imported.</p>';
+					msg = form.dataset.msgAllAlreadyImported || "All libraries already imported.";
+					isSuccess = false;
 				}
-			}).catch(function() {
-				form.innerHTML = '<p class="text-xs text-green-600 dark:text-green-400 py-1">Libraries imported.</p>';
+				var p = document.createElement("p");
+				p.className = isSuccess ? "text-xs text-green-600 dark:text-green-400 py-1" : "text-xs text-gray-500 dark:text-gray-400 py-1";
+				p.textContent = msg;
+				form.replaceChildren(p);
+			}).catch(function(e) {
+				console.warn('Import response parse error:', e);
+				var p = document.createElement("p");
+				p.className = "text-xs text-green-600 dark:text-green-400 py-1";
+				p.textContent = form.dataset.msgLibrariesImported || "Libraries imported.";
+				form.replaceChildren(p);
 			});
 		} else {
 			return res.json().then(function(data) {
-				alert(data.error || "Import failed");
+				alert(data.error || form.dataset.alertImportFailed || "Import failed");
 			}).catch(function() {
-				alert("Import failed (HTTP " + res.status + ")");
+				alert((form.dataset.alertImportFailedHttp || "Import failed (HTTP %d)").replace("%d", res.status));
 			});
 		}
 	}).catch(function() {
-		form.innerHTML = '<p class="text-xs text-red-600 dark:text-red-400 py-1">Network error. Check your connection and try again.</p>';
+		var p = document.createElement("p");
+		p.className = "text-xs text-red-600 dark:text-red-400 py-1";
+		p.textContent = form.dataset.alertNetwork || "Network error. Check your connection and try again.";
+		form.replaceChildren(p);
 	});
 }`,
-		Call:       templ.SafeScript(`__templ_importSelectedLibrariesOOBE_3985`, connID),
-		CallInline: templ.SafeScriptInline(`__templ_importSelectedLibrariesOOBE_3985`, connID),
+		Call:       templ.SafeScript(`__templ_importSelectedLibrariesOOBE_3588`, connID),
+		CallInline: templ.SafeScriptInline(`__templ_importSelectedLibrariesOOBE_3588`, connID),
 	}
 }
 

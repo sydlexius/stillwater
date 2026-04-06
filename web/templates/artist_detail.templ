@@ -720,9 +720,15 @@ type FanartGalleryItem struct {
 // FanartGallery renders the fanart gallery management panel as an HTMX partial.
 // profileName controls image terminology (e.g. "backdrop" for Emby vs "fanart" for Kodi).
 templ FanartGallery(artistID string, items []FanartGalleryItem, profileName string) {
-	<div id="fanart-gallery" class="space-y-4" data-artist-id={ artistID }>
+	<div id="fanart-gallery" class="space-y-4" data-artist-id={ artistID }
+		data-label-delete-n={ t(ctx, "artist.delete_n_selected") }
+		data-confirm-delete-n={ t(ctx, "artist.delete_n_fanart_confirm") }
+		data-session-expired={ t(ctx, "common.session_expired") }
+		data-toast-delete-failed={ t(ctx, "artist.delete_selected_failed") }
+		data-toast-delete-network={ t(ctx, "artist.delete_selected_network") }
+	>
 		<div class="flex items-center justify-between">
-			<h3 class="text-sm font-semibold">{ strconv.Itoa(len(items)) } { strings.ToLower(img.ImageTermFor("fanart", profileName)) } images</h3>
+			<h3 class="text-sm font-semibold">{ tn(ctx, "image.fanart_count", len(items)) }</h3>
 			<button
 				type="button"
 				id="fanart-delete-selected"
@@ -779,6 +785,11 @@ templ FanartGallery(artistID string, items []FanartGalleryItem, profileName stri
 									data-set-primary-index={ strconv.Itoa(item.Index) }
 									data-set-primary-count={ strconv.Itoa(len(items)) }
 									data-set-primary-artist={ artistID }
+									data-confirm={ t(ctx, "artist.set_as_primary_confirm") }
+									data-reorder-error={ t(ctx, "artist.set_primary_reorder_error") }
+									data-session-expired={ t(ctx, "common.session_expired") }
+									data-set-primary-failed={ t(ctx, "artist.set_primary_failed") }
+									data-set-primary-network={ t(ctx, "artist.set_primary_network") }
 									onclick="setFanartPrimary(this)"
 								>
 									@components.IconStar("w-5 h-5")
@@ -821,7 +832,7 @@ templ FanartGallery(artistID string, items []FanartGalleryItem, profileName stri
 					var checked = gallery.querySelectorAll('.fanart-cb:checked');
 					if (checked.length > 0) {
 						deleteBtn.classList.remove('hidden');
-						deleteBtn.textContent = 'Delete ' + checked.length + ' selected';
+						deleteBtn.textContent = (gallery.dataset.labelDeleteN || 'Delete %d selected').replace('%d', checked.length);
 					} else {
 						deleteBtn.classList.add('hidden');
 					}
@@ -829,10 +840,10 @@ templ FanartGallery(artistID string, items []FanartGalleryItem, profileName stri
 				deleteBtn.addEventListener('click', function() {
 					var checked = gallery.querySelectorAll('.fanart-cb:checked');
 					if (checked.length === 0) return;
-					if (!confirm('Delete ' + checked.length + ' fanart image(s)?')) return;
+					if (!confirm((gallery.dataset.confirmDeleteN || 'Delete %d fanart image(s)?').replace('%d', checked.length))) return;
 					var token = document.cookie.replace(/(?:(?:^|.*;\s*)csrf_token\s*=\s*([^;]*).*$)|^.*$/, "$1");
 					if (!token) {
-						alert('Session expired. Please reload the page and try again.');
+						alert(gallery.dataset.sessionExpired || 'Session expired. Please reload the page and try again.');
 						return;
 					}
 					var indices = [];
@@ -854,10 +865,10 @@ templ FanartGallery(artistID string, items []FanartGalleryItem, profileName stri
 							return;
 						}
 						return r.text().then(function(body) {
-							alert('Failed to delete selected images: ' + body);
+							alert((gallery.dataset.toastDeleteFailed || 'Failed to delete selected images: %s').replace('%s', body));
 						});
 					}).catch(function(err) {
-						alert('Network error deleting selected images: ' + err.message);
+						alert((gallery.dataset.toastDeleteNetwork || 'Network error deleting selected images: %s').replace('%s', err.message));
 					});
 				});
 			})();

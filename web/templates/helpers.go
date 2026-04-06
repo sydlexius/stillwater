@@ -210,17 +210,32 @@ func tierBadgeClasses(tier provider.AccessTier) string {
 
 // tierBadgeLabel returns the display label for an access tier via i18n.
 func tierBadgeLabel(ctx context.Context, tier provider.AccessTier) string {
-	return t(ctx, "tier."+string(tier))
+	key := "tier." + string(tier)
+	result := t(ctx, key)
+	if result == key {
+		return string(tier)
+	}
+	return result
 }
 
 // tierTooltip returns a tooltip description for an access tier via i18n.
 func tierTooltip(ctx context.Context, tier provider.AccessTier) string {
-	return t(ctx, "tier_tooltip."+string(tier))
+	key := "tier_tooltip." + string(tier)
+	result := t(ctx, key)
+	if result == key {
+		return ""
+	}
+	return result
 }
 
 // getKeyLinkText returns the link label for obtaining a provider API key via i18n.
 func getKeyLinkText(ctx context.Context, tier provider.AccessTier) string {
-	return t(ctx, "tier_link."+string(tier))
+	key := "tier_link." + string(tier)
+	result := t(ctx, key)
+	if result == key {
+		return ""
+	}
+	return result
 }
 
 // rateLimitText formats a RateLimitInfo into a short human-readable string.
@@ -269,7 +284,12 @@ func mirrorStatusLabel(ctx context.Context, m *provider.MirrorConfig) string {
 	if serverType == "official" {
 		return ""
 	}
-	return t(ctx, "mirror."+serverType)
+	key := "mirror." + serverType
+	result := t(ctx, key)
+	if result == key {
+		return serverType
+	}
+	return result
 }
 
 // albumMatchClasses returns Tailwind CSS classes for the album match badge
@@ -323,4 +343,36 @@ func sourceDisplayName(source string) string {
 	default:
 		return ""
 	}
+}
+
+// localizedImageType returns a translated display name for an internal image
+// type ID ("thumb", "fanart", "logo", "banner"). Falls back to the raw ID when
+// no translation key exists.
+func localizedImageType(ctx context.Context, typeID string) string {
+	key := "image.type." + typeID
+	result := t(ctx, key)
+	if result == key {
+		return typeID
+	}
+	return result
+}
+
+// translationBefore returns the portion of s before the first occurrence of
+// placeholder. Returns the entire string when placeholder is not found.
+func translationBefore(s, placeholder string) string {
+	idx := strings.Index(s, placeholder)
+	if idx < 0 {
+		return s
+	}
+	return s[:idx]
+}
+
+// translationAfter returns the portion of s after the first occurrence of
+// placeholder. Returns an empty string when placeholder is not found.
+func translationAfter(s, placeholder string) string {
+	idx := strings.Index(s, placeholder)
+	if idx < 0 {
+		return ""
+	}
+	return s[idx+len(placeholder):]
 }
