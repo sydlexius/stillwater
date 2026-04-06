@@ -345,7 +345,7 @@ templ appearanceScript() {
 				}
 				var normalized = String(n);
 				// Update the input to show the canonical form immediately.
-				var input = document.querySelector('input[name="page_size"]');
+				var input = document.getElementById('pref-page-size');
 				if (input) input.value = normalized;
 				swSaveAppearancePref('page_size', normalized);
 			};

@@ -240,7 +240,31 @@ templ ArtistImagesTab(artistID string, a *artist.Artist, profileName string, bas
 			}
 
 			function _lightboxKeydown(e) {
-				if (e.key === 'Escape') closeLightbox();
+				if (e.key === 'Escape') {
+					e.preventDefault();
+					closeLightbox();
+					return;
+				}
+				// Trap Tab/Shift+Tab inside the dialog so focus cannot escape
+				// while the modal is open (WCAG 2.1 SC 2.4.3).
+				if (e.key !== 'Tab') return;
+				var lb = document.getElementById('sw-lightbox');
+				if (!lb || lb.classList.contains('hidden')) return;
+				var focusables = lb.querySelectorAll('button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])');
+				if (focusables.length === 0) {
+					e.preventDefault();
+					lb.focus();
+					return;
+				}
+				var first = focusables[0];
+				var last = focusables[focusables.length - 1];
+				if (e.shiftKey && document.activeElement === first) {
+					e.preventDefault();
+					last.focus();
+				} else if (!e.shiftKey && document.activeElement === last) {
+					e.preventDefault();
+					first.focus();
+				}
 			}
 		</script>
 	</div>

@@ -89,18 +89,17 @@ func isPageSizeKey(key string) bool {
 	return key == PrefPageSize
 }
 
-// normalizePageSize parses a raw page_size string, clamps it to
-// [PageSizeMin, PageSizeMax], and returns the canonical decimal form.
-// If raw is not a valid integer, PageSizeDefault is returned.
+// normalizePageSize parses a raw page_size string and returns the canonical
+// decimal form when it is a valid integer in [PageSizeMin, PageSizeMax].
+// Invalid or out-of-range values fall back to PageSizeDefault, matching the
+// same strategy used by getUserPageSize on the read path.
 func normalizePageSize(raw string) string {
 	n, err := strconv.Atoi(raw)
 	if err != nil {
 		return strconv.Itoa(PageSizeDefault)
 	}
-	if n < PageSizeMin {
-		n = PageSizeMin
-	} else if n > PageSizeMax {
-		n = PageSizeMax
+	if n < PageSizeMin || n > PageSizeMax {
+		return strconv.Itoa(PageSizeDefault)
 	}
 	return strconv.Itoa(n)
 }
@@ -363,6 +362,9 @@ func (r *Router) handleUserPreferencesPage(w http.ResponseWriter, req *http.Requ
 	if v, ok := stored[PrefPageSize]; ok {
 		if n, err2 := strconv.Atoi(v); err2 == nil && n >= PageSizeMin && n <= PageSizeMax {
 			pageSize = n
+		} else {
+			r.logger.Warn("stored page_size invalid for preferences page, using default",
+				"user_id", userID, "raw_value", v)
 		}
 	}
 

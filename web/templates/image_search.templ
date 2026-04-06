@@ -834,5 +834,13 @@ func imageTypeLabel(t, profileName string) string {
 }
 
 script openCropForType(imgSrc string, imageType string) {
+	// Close the context menu before opening the crop modal so the dropdown
+	// does not stay visible behind the modal overlay.
+	var menus = document.querySelectorAll('[data-context-menu] [role=menu]:not(.hidden)');
+	for (var i = 0; i < menus.length; i++) {
+		menus[i].classList.add('hidden');
+		var trigger = menus[i].closest('[data-context-menu]').querySelector('[aria-haspopup]');
+		if (trigger) trigger.setAttribute('aria-expanded', 'false');
+	}
 	openCropModal(imgSrc, imageType);
 }

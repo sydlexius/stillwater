@@ -418,7 +418,7 @@ func ArtistImagesTab(artistID string, a *artist.Artist, profileName string, base
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "</button> <img id=\"sw-lightbox-img\" src=\"\" alt=\"\" class=\"max-w-[90vw] max-h-[90vh] object-contain rounded shadow-2xl\" onclick=\"event.stopPropagation()\"></div><script>\n\t\t\tfunction setFanartPrimary(el) {\n\t\t\t\tif (!confirm(el.dataset.confirm || 'Set this image as the primary fanart?')) return;\n\t\t\t\tvar idx = parseInt(el.dataset.setPrimaryIndex, 10);\n\t\t\t\tvar count = parseInt(el.dataset.setPrimaryCount, 10);\n\t\t\t\tvar id = el.dataset.setPrimaryArtist;\n\t\t\t\tvar basePath = (document.querySelector('meta[name=\"htmx-base-path\"]') || {content: ''}).content;\n\t\t\t\tif (isNaN(idx) || isNaN(count) || count <= 0) {\n\t\t\t\t\talert(el.dataset.reorderError || 'Unable to reorder: invalid image data. Please reload the page.');\n\t\t\t\t\treturn;\n\t\t\t\t}\n\t\t\t\tvar token = document.cookie.replace(/(?:(?:^|.*;\\s*)csrf_token\\s*=\\s*([^;]*).*$)|^.*$/, '$1');\n\t\t\t\tif (!token) {\n\t\t\t\t\talert(el.dataset.sessionExpired || 'Session expired. Please reload the page and try again.');\n\t\t\t\t\treturn;\n\t\t\t\t}\n\t\t\t\t// Build new order: put selected index first, then the rest in original order.\n\t\t\t\tvar order = [idx];\n\t\t\t\tfor (var i = 0; i < count; i++) {\n\t\t\t\t\tif (i !== idx) order.push(i);\n\t\t\t\t}\n\t\t\t\tfetch(basePath + '/api/v1/artists/' + id + '/images/fanart/reorder', {\n\t\t\t\t\tmethod: 'POST',\n\t\t\t\t\theaders: {\n\t\t\t\t\t\t'Content-Type': 'application/json',\n\t\t\t\t\t\t'X-CSRF-Token': token\n\t\t\t\t\t},\n\t\t\t\t\tbody: JSON.stringify({order: order}),\n\t\t\t\t\tcredentials: 'same-origin'\n\t\t\t\t}).then(function(r) {\n\t\t\t\t\tif (r.ok) {\n\t\t\t\t\t\twindow.location.reload();\n\t\t\t\t\t} else {\n\t\t\t\t\t\treturn r.text().then(function(body) {\n\t\t\t\t\t\t\talert((el.dataset.setPrimaryFailed || 'Failed to set primary (HTTP %d): %s').replace('%d', r.status).replace('%s', function() { return body; }));\n\t\t\t\t\t\t});\n\t\t\t\t\t}\n\t\t\t\t}).catch(function(err) {\n\t\t\t\t\talert((el.dataset.setPrimaryNetwork || 'Network error setting primary: %s').replace('%s', function() { return err.message; }));\n\t\t\t\t});\n\t\t\t}\n\n\t\t\t// _lightboxOpener holds the element that had focus when the lightbox\n\t\t\t// was opened; closeLightbox restores focus to it (same pattern as\n\t\t\t// layout.templ _modalOpener / hideModal).\n\t\t\tvar _lightboxOpener = null;\n\n\t\t\tfunction openLightbox(src, alt) {\n\t\t\t\tvar lb = document.getElementById('sw-lightbox');\n\t\t\t\tvar img = document.getElementById('sw-lightbox-img');\n\t\t\t\tif (!lb || !img) {\n\t\t\t\t\tconsole.warn('[stillwater] openLightbox: lightbox DOM elements not found');\n\t\t\t\t\treturn;\n\t\t\t\t}\n\t\t\t\t_lightboxOpener = document.activeElement;\n\t\t\t\timg.src = src;\n\t\t\t\timg.alt = alt || '';\n\t\t\t\tlb.classList.remove('hidden');\n\t\t\t\tlb.classList.add('flex');\n\t\t\t\t// Remove before adding to prevent duplicate listeners when the\n\t\t\t\t// lightbox is reopened without closing first.\n\t\t\t\tdocument.removeEventListener('keydown', _lightboxKeydown);\n\t\t\t\tdocument.addEventListener('keydown', _lightboxKeydown);\n\t\t\t\t// Move focus into the dialog so keyboard users land inside it.\n\t\t\t\tvar closeBtn = lb.querySelector('[data-lightbox-close]');\n\t\t\t\tif (closeBtn) {\n\t\t\t\t\tcloseBtn.focus();\n\t\t\t\t} else {\n\t\t\t\t\tlb.focus();\n\t\t\t\t}\n\t\t\t}\n\n\t\t\tfunction closeLightbox() {\n\t\t\t\tvar lb = document.getElementById('sw-lightbox');\n\t\t\t\tif (!lb) return;\n\t\t\t\tlb.classList.add('hidden');\n\t\t\t\tlb.classList.remove('flex');\n\t\t\t\tvar img = document.getElementById('sw-lightbox-img');\n\t\t\t\tif (img) img.src = '';\n\t\t\t\tdocument.removeEventListener('keydown', _lightboxKeydown);\n\t\t\t\t// Restore focus to the element that opened the lightbox.\n\t\t\t\tif (_lightboxOpener && typeof _lightboxOpener.focus === 'function') {\n\t\t\t\t\t_lightboxOpener.focus();\n\t\t\t\t}\n\t\t\t\t_lightboxOpener = null;\n\t\t\t}\n\n\t\t\tfunction _lightboxKeydown(e) {\n\t\t\t\tif (e.key === 'Escape') closeLightbox();\n\t\t\t}\n\t\t</script></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "</button> <img id=\"sw-lightbox-img\" src=\"\" alt=\"\" class=\"max-w-[90vw] max-h-[90vh] object-contain rounded shadow-2xl\" onclick=\"event.stopPropagation()\"></div><script>\n\t\t\tfunction setFanartPrimary(el) {\n\t\t\t\tif (!confirm(el.dataset.confirm || 'Set this image as the primary fanart?')) return;\n\t\t\t\tvar idx = parseInt(el.dataset.setPrimaryIndex, 10);\n\t\t\t\tvar count = parseInt(el.dataset.setPrimaryCount, 10);\n\t\t\t\tvar id = el.dataset.setPrimaryArtist;\n\t\t\t\tvar basePath = (document.querySelector('meta[name=\"htmx-base-path\"]') || {content: ''}).content;\n\t\t\t\tif (isNaN(idx) || isNaN(count) || count <= 0) {\n\t\t\t\t\talert(el.dataset.reorderError || 'Unable to reorder: invalid image data. Please reload the page.');\n\t\t\t\t\treturn;\n\t\t\t\t}\n\t\t\t\tvar token = document.cookie.replace(/(?:(?:^|.*;\\s*)csrf_token\\s*=\\s*([^;]*).*$)|^.*$/, '$1');\n\t\t\t\tif (!token) {\n\t\t\t\t\talert(el.dataset.sessionExpired || 'Session expired. Please reload the page and try again.');\n\t\t\t\t\treturn;\n\t\t\t\t}\n\t\t\t\t// Build new order: put selected index first, then the rest in original order.\n\t\t\t\tvar order = [idx];\n\t\t\t\tfor (var i = 0; i < count; i++) {\n\t\t\t\t\tif (i !== idx) order.push(i);\n\t\t\t\t}\n\t\t\t\tfetch(basePath + '/api/v1/artists/' + id + '/images/fanart/reorder', {\n\t\t\t\t\tmethod: 'POST',\n\t\t\t\t\theaders: {\n\t\t\t\t\t\t'Content-Type': 'application/json',\n\t\t\t\t\t\t'X-CSRF-Token': token\n\t\t\t\t\t},\n\t\t\t\t\tbody: JSON.stringify({order: order}),\n\t\t\t\t\tcredentials: 'same-origin'\n\t\t\t\t}).then(function(r) {\n\t\t\t\t\tif (r.ok) {\n\t\t\t\t\t\twindow.location.reload();\n\t\t\t\t\t} else {\n\t\t\t\t\t\treturn r.text().then(function(body) {\n\t\t\t\t\t\t\talert((el.dataset.setPrimaryFailed || 'Failed to set primary (HTTP %d): %s').replace('%d', r.status).replace('%s', function() { return body; }));\n\t\t\t\t\t\t});\n\t\t\t\t\t}\n\t\t\t\t}).catch(function(err) {\n\t\t\t\t\talert((el.dataset.setPrimaryNetwork || 'Network error setting primary: %s').replace('%s', function() { return err.message; }));\n\t\t\t\t});\n\t\t\t}\n\n\t\t\t// _lightboxOpener holds the element that had focus when the lightbox\n\t\t\t// was opened; closeLightbox restores focus to it (same pattern as\n\t\t\t// layout.templ _modalOpener / hideModal).\n\t\t\tvar _lightboxOpener = null;\n\n\t\t\tfunction openLightbox(src, alt) {\n\t\t\t\tvar lb = document.getElementById('sw-lightbox');\n\t\t\t\tvar img = document.getElementById('sw-lightbox-img');\n\t\t\t\tif (!lb || !img) {\n\t\t\t\t\tconsole.warn('[stillwater] openLightbox: lightbox DOM elements not found');\n\t\t\t\t\treturn;\n\t\t\t\t}\n\t\t\t\t_lightboxOpener = document.activeElement;\n\t\t\t\timg.src = src;\n\t\t\t\timg.alt = alt || '';\n\t\t\t\tlb.classList.remove('hidden');\n\t\t\t\tlb.classList.add('flex');\n\t\t\t\t// Remove before adding to prevent duplicate listeners when the\n\t\t\t\t// lightbox is reopened without closing first.\n\t\t\t\tdocument.removeEventListener('keydown', _lightboxKeydown);\n\t\t\t\tdocument.addEventListener('keydown', _lightboxKeydown);\n\t\t\t\t// Move focus into the dialog so keyboard users land inside it.\n\t\t\t\tvar closeBtn = lb.querySelector('[data-lightbox-close]');\n\t\t\t\tif (closeBtn) {\n\t\t\t\t\tcloseBtn.focus();\n\t\t\t\t} else {\n\t\t\t\t\tlb.focus();\n\t\t\t\t}\n\t\t\t}\n\n\t\t\tfunction closeLightbox() {\n\t\t\t\tvar lb = document.getElementById('sw-lightbox');\n\t\t\t\tif (!lb) return;\n\t\t\t\tlb.classList.add('hidden');\n\t\t\t\tlb.classList.remove('flex');\n\t\t\t\tvar img = document.getElementById('sw-lightbox-img');\n\t\t\t\tif (img) img.src = '';\n\t\t\t\tdocument.removeEventListener('keydown', _lightboxKeydown);\n\t\t\t\t// Restore focus to the element that opened the lightbox.\n\t\t\t\tif (_lightboxOpener && typeof _lightboxOpener.focus === 'function') {\n\t\t\t\t\t_lightboxOpener.focus();\n\t\t\t\t}\n\t\t\t\t_lightboxOpener = null;\n\t\t\t}\n\n\t\t\tfunction _lightboxKeydown(e) {\n\t\t\t\tif (e.key === 'Escape') {\n\t\t\t\t\te.preventDefault();\n\t\t\t\t\tcloseLightbox();\n\t\t\t\t\treturn;\n\t\t\t\t}\n\t\t\t\t// Trap Tab/Shift+Tab inside the dialog so focus cannot escape\n\t\t\t\t// while the modal is open (WCAG 2.1 SC 2.4.3).\n\t\t\t\tif (e.key !== 'Tab') return;\n\t\t\t\tvar lb = document.getElementById('sw-lightbox');\n\t\t\t\tif (!lb || lb.classList.contains('hidden')) return;\n\t\t\t\tvar focusables = lb.querySelectorAll('button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex=\"-1\"])');\n\t\t\t\tif (focusables.length === 0) {\n\t\t\t\t\te.preventDefault();\n\t\t\t\t\tlb.focus();\n\t\t\t\t\treturn;\n\t\t\t\t}\n\t\t\t\tvar first = focusables[0];\n\t\t\t\tvar last = focusables[focusables.length - 1];\n\t\t\t\tif (e.shiftKey && document.activeElement === first) {\n\t\t\t\t\te.preventDefault();\n\t\t\t\t\tlast.focus();\n\t\t\t\t} else if (!e.shiftKey && document.activeElement === last) {\n\t\t\t\t\te.preventDefault();\n\t\t\t\t\tfirst.focus();\n\t\t\t\t}\n\t\t\t}\n\t\t</script></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -456,7 +456,7 @@ func imageSectionWithAction(typeName string, description string, count int, addU
 		var templ_7745c5c3_Var22 string
 		templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinStringErrs(typeName)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 254, Col: 77}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 278, Col: 77}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
 		if templ_7745c5c3_Err != nil {
@@ -469,7 +469,7 @@ func imageSectionWithAction(typeName string, description string, count int, addU
 		var templ_7745c5c3_Var23 string
 		templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(description)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 255, Col: 71}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 279, Col: 71}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
 		if templ_7745c5c3_Err != nil {
@@ -490,7 +490,7 @@ func imageSectionWithAction(typeName string, description string, count int, addU
 		var templ_7745c5c3_Var24 templ.SafeURL
 		templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinURLErrs(addURL)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 258, Col: 17}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 282, Col: 17}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
 		if templ_7745c5c3_Err != nil {
@@ -512,7 +512,7 @@ func imageSectionWithAction(typeName string, description string, count int, addU
 			var templ_7745c5c3_Var25 string
 			templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "image.replace_type", typeName))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 263, Col: 46}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 287, Col: 46}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var25))
 			if templ_7745c5c3_Err != nil {
@@ -530,7 +530,7 @@ func imageSectionWithAction(typeName string, description string, count int, addU
 			var templ_7745c5c3_Var26 string
 			templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "image.add_type", typeName))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 266, Col: 42}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 290, Col: 42}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var26))
 			if templ_7745c5c3_Err != nil {
@@ -584,7 +584,7 @@ func countBadge(count int) templ.Component {
 			var templ_7745c5c3_Var28 string
 			templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(count))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 279, Col: 24}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 303, Col: 24}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var28))
 			if templ_7745c5c3_Err != nil {
@@ -653,7 +653,7 @@ func imageOverlay(artistID string, imageType string, index int, basePath string)
 			var templ_7745c5c3_Var31 string
 			templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "image.view_full_size"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 299, Col: 42}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 323, Col: 42}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var31))
 			if templ_7745c5c3_Err != nil {
@@ -666,7 +666,7 @@ func imageOverlay(artistID string, imageType string, index int, basePath string)
 			var templ_7745c5c3_Var32 string
 			templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "image.view_full_size_type", localizedImageType(ctx, imageType)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 300, Col: 89}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 324, Col: 89}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var32))
 			if templ_7745c5c3_Err != nil {
@@ -705,7 +705,7 @@ func imageOverlay(artistID string, imageType string, index int, basePath string)
 			var templ_7745c5c3_Var34 string
 			templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "image.view_full_size"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 309, Col: 42}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 333, Col: 42}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var34))
 			if templ_7745c5c3_Err != nil {
@@ -718,7 +718,7 @@ func imageOverlay(artistID string, imageType string, index int, basePath string)
 			var templ_7745c5c3_Var35 string
 			templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "image.view_full_size_type", localizedImageType(ctx, imageType)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 310, Col: 89}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 334, Col: 89}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var35))
 			if templ_7745c5c3_Err != nil {
@@ -744,7 +744,7 @@ func imageOverlay(artistID string, imageType string, index int, basePath string)
 		var templ_7745c5c3_Var36 templ.SafeURL
 		templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("%s/artists/%s/images?type=%s&fetch=1", basePath, artistID, imageType)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 317, Col: 107}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 341, Col: 107}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var36))
 		if templ_7745c5c3_Err != nil {
@@ -757,7 +757,7 @@ func imageOverlay(artistID string, imageType string, index int, basePath string)
 		var templ_7745c5c3_Var37 string
 		templ_7745c5c3_Var37, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.replace"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 319, Col: 35}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 343, Col: 35}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var37))
 		if templ_7745c5c3_Err != nil {
@@ -770,7 +770,7 @@ func imageOverlay(artistID string, imageType string, index int, basePath string)
 		var templ_7745c5c3_Var38 string
 		templ_7745c5c3_Var38, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "image.replace_type", localizedImageType(ctx, imageType)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 320, Col: 81}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 344, Col: 81}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var38))
 		if templ_7745c5c3_Err != nil {
@@ -796,7 +796,7 @@ func imageOverlay(artistID string, imageType string, index int, basePath string)
 			var templ_7745c5c3_Var39 templ.SafeURL
 			templ_7745c5c3_Var39, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("%s/artists/%s/images?type=%s&crop=1", basePath, artistID, imageType)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 330, Col: 107}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 354, Col: 107}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var39))
 			if templ_7745c5c3_Err != nil {
@@ -809,7 +809,7 @@ func imageOverlay(artistID string, imageType string, index int, basePath string)
 			var templ_7745c5c3_Var40 string
 			templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.crop"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 332, Col: 33}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 356, Col: 33}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var40))
 			if templ_7745c5c3_Err != nil {
@@ -822,7 +822,7 @@ func imageOverlay(artistID string, imageType string, index int, basePath string)
 			var templ_7745c5c3_Var41 string
 			templ_7745c5c3_Var41, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "image.crop_type", localizedImageType(ctx, imageType)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 333, Col: 79}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 357, Col: 79}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var41))
 			if templ_7745c5c3_Err != nil {
@@ -849,7 +849,7 @@ func imageOverlay(artistID string, imageType string, index int, basePath string)
 			var templ_7745c5c3_Var42 string
 			templ_7745c5c3_Var42, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/api/v1/artists/%s/images/logo/trim", artistID))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 341, Col: 74}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 365, Col: 74}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var42))
 			if templ_7745c5c3_Err != nil {
@@ -862,7 +862,7 @@ func imageOverlay(artistID string, imageType string, index int, basePath string)
 			var templ_7745c5c3_Var43 string
 			templ_7745c5c3_Var43, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "image.confirm_trim_logo"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 342, Col: 50}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 366, Col: 50}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var43))
 			if templ_7745c5c3_Err != nil {
@@ -875,7 +875,7 @@ func imageOverlay(artistID string, imageType string, index int, basePath string)
 			var templ_7745c5c3_Var44 string
 			templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "image.trim_failed"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 344, Col: 49}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 368, Col: 49}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var44))
 			if templ_7745c5c3_Err != nil {
@@ -888,7 +888,7 @@ func imageOverlay(artistID string, imageType string, index int, basePath string)
 			var templ_7745c5c3_Var45 string
 			templ_7745c5c3_Var45, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "image.trim_transparent_edges"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 347, Col: 50}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 371, Col: 50}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var45))
 			if templ_7745c5c3_Err != nil {
@@ -901,7 +901,7 @@ func imageOverlay(artistID string, imageType string, index int, basePath string)
 			var templ_7745c5c3_Var46 string
 			templ_7745c5c3_Var46, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "image.trim_transparent_edges"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 348, Col: 55}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 372, Col: 55}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var46))
 			if templ_7745c5c3_Err != nil {
@@ -928,7 +928,7 @@ func imageOverlay(artistID string, imageType string, index int, basePath string)
 			var templ_7745c5c3_Var47 string
 			templ_7745c5c3_Var47, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/api/v1/artists/%s/images/%s/%d", artistID, imageType, index))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 356, Col: 90}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 380, Col: 90}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var47))
 			if templ_7745c5c3_Err != nil {
@@ -941,7 +941,7 @@ func imageOverlay(artistID string, imageType string, index int, basePath string)
 			var templ_7745c5c3_Var48 string
 			templ_7745c5c3_Var48, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "image.confirm_delete_type", localizedImageType(ctx, imageType)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 357, Col: 89}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 381, Col: 89}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var48))
 			if templ_7745c5c3_Err != nil {
@@ -954,7 +954,7 @@ func imageOverlay(artistID string, imageType string, index int, basePath string)
 			var templ_7745c5c3_Var49 string
 			templ_7745c5c3_Var49, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "image.delete_failed"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 359, Col: 51}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 383, Col: 51}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var49))
 			if templ_7745c5c3_Err != nil {
@@ -967,7 +967,7 @@ func imageOverlay(artistID string, imageType string, index int, basePath string)
 			var templ_7745c5c3_Var50 string
 			templ_7745c5c3_Var50, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.delete"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 362, Col: 35}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 386, Col: 35}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var50))
 			if templ_7745c5c3_Err != nil {
@@ -980,7 +980,7 @@ func imageOverlay(artistID string, imageType string, index int, basePath string)
 			var templ_7745c5c3_Var51 string
 			templ_7745c5c3_Var51, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "image.delete_type", localizedImageType(ctx, imageType)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 363, Col: 81}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 387, Col: 81}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var51))
 			if templ_7745c5c3_Err != nil {
@@ -1006,7 +1006,7 @@ func imageOverlay(artistID string, imageType string, index int, basePath string)
 			var templ_7745c5c3_Var52 string
 			templ_7745c5c3_Var52, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("/api/v1/artists/%s/images/%s", artistID, imageType))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 369, Col: 80}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 393, Col: 80}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var52))
 			if templ_7745c5c3_Err != nil {
@@ -1019,7 +1019,7 @@ func imageOverlay(artistID string, imageType string, index int, basePath string)
 			var templ_7745c5c3_Var53 string
 			templ_7745c5c3_Var53, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "image.confirm_delete_type", localizedImageType(ctx, imageType)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 370, Col: 89}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 394, Col: 89}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var53))
 			if templ_7745c5c3_Err != nil {
@@ -1032,7 +1032,7 @@ func imageOverlay(artistID string, imageType string, index int, basePath string)
 			var templ_7745c5c3_Var54 string
 			templ_7745c5c3_Var54, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "image.delete_failed"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 372, Col: 51}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 396, Col: 51}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var54))
 			if templ_7745c5c3_Err != nil {
@@ -1045,7 +1045,7 @@ func imageOverlay(artistID string, imageType string, index int, basePath string)
 			var templ_7745c5c3_Var55 string
 			templ_7745c5c3_Var55, templ_7745c5c3_Err = templ.JoinStringErrs(t(ctx, "common.delete"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 375, Col: 35}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 399, Col: 35}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var55))
 			if templ_7745c5c3_Err != nil {
@@ -1058,7 +1058,7 @@ func imageOverlay(artistID string, imageType string, index int, basePath string)
 			var templ_7745c5c3_Var56 string
 			templ_7745c5c3_Var56, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "image.delete_type", localizedImageType(ctx, imageType)))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 376, Col: 81}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 400, Col: 81}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var56))
 			if templ_7745c5c3_Err != nil {
@@ -1115,7 +1115,7 @@ func emptyState(basePath string, artistID string, imageType string, typeName str
 		var templ_7745c5c3_Var58 templ.SafeURL
 		templ_7745c5c3_Var58, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(fmt.Sprintf("%s/artists/%s/images?type=%s", basePath, artistID, imageType)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 389, Col: 99}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 413, Col: 99}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var58))
 		if templ_7745c5c3_Err != nil {
@@ -1136,7 +1136,7 @@ func emptyState(basePath string, artistID string, imageType string, typeName str
 		var templ_7745c5c3_Var59 string
 		templ_7745c5c3_Var59, templ_7745c5c3_Err = templ.JoinStringErrs(tf(ctx, "image.upload_or_fetch", typeName))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 393, Col: 81}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artist_images_tab.templ`, Line: 417, Col: 81}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var59))
 		if templ_7745c5c3_Err != nil {

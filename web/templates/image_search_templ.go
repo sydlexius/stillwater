@@ -1780,11 +1780,19 @@ func imageTypeLabel(t, profileName string) string {
 
 func openCropForType(imgSrc string, imageType string) templ.ComponentScript {
 	return templ.ComponentScript{
-		Name: `__templ_openCropForType_c20a`,
-		Function: `function __templ_openCropForType_c20a(imgSrc, imageType){openCropModal(imgSrc, imageType);
+		Name: `__templ_openCropForType_9015`,
+		Function: `function __templ_openCropForType_9015(imgSrc, imageType){// Close the context menu before opening the crop modal so the dropdown
+	// does not stay visible behind the modal overlay.
+	var menus = document.querySelectorAll('[data-context-menu] [role=menu]:not(.hidden)');
+	for (var i = 0; i < menus.length; i++) {
+		menus[i].classList.add('hidden');
+		var trigger = menus[i].closest('[data-context-menu]').querySelector('[aria-haspopup]');
+		if (trigger) trigger.setAttribute('aria-expanded', 'false');
+	}
+	openCropModal(imgSrc, imageType);
 }`,
-		Call:       templ.SafeScript(`__templ_openCropForType_c20a`, imgSrc, imageType),
-		CallInline: templ.SafeScriptInline(`__templ_openCropForType_c20a`, imgSrc, imageType),
+		Call:       templ.SafeScript(`__templ_openCropForType_9015`, imgSrc, imageType),
+		CallInline: templ.SafeScriptInline(`__templ_openCropForType_9015`, imgSrc, imageType),
 	}
 }
 
