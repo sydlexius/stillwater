@@ -1,6 +1,10 @@
 package templates
 
-import "github.com/sydlexius/stillwater/internal/auth"
+import (
+	"context"
+
+	"github.com/sydlexius/stillwater/internal/auth"
+)
 
 // roleBadgeClasses returns CSS classes for a user role badge.
 func roleBadgeClasses(role string) string {
@@ -12,13 +16,13 @@ func roleBadgeClasses(role string) string {
 	}
 }
 
-// roleLabel returns a display label for a role string.
-func roleLabel(role string) string {
+// roleLabel returns a translated display label for a role string.
+func roleLabel(ctx context.Context, role string) string {
 	switch role {
 	case "administrator":
-		return "Administrator"
+		return t(ctx, "common.administrator")
 	default:
-		return "Operator"
+		return t(ctx, "common.operator")
 	}
 }
 
@@ -299,7 +303,7 @@ templ userTableRow(u auth.User) {
 			</div>
 		</td>
 		<td class="px-4 py-3">
-			<span class={ roleBadgeClasses(u.Role) }>{ roleLabel(u.Role) }</span>
+			<span class={ roleBadgeClasses(u.Role) }>{ roleLabel(ctx, u.Role) }</span>
 		</td>
 		<td class="px-4 py-3">
 			<span class={ authProviderBadgeClasses(u.AuthProvider) }>{ authProviderLabel(u.AuthProvider) }</span>
@@ -349,7 +353,7 @@ templ inviteRow(inv auth.Invite) {
 		<div class="flex items-center gap-4">
 			<span class="font-mono text-xs text-gray-700 dark:text-gray-300">{ inv.Code }</span>
 			<div class="text-xs text-gray-500 dark:text-gray-400">
-				{ t(ctx, "settings.users.role_label") } <span class={ roleBadgeClasses(inv.Role) }>{ roleLabel(inv.Role) }</span>
+				{ t(ctx, "settings.users.role_label") } <span class={ roleBadgeClasses(inv.Role) }>{ roleLabel(ctx, inv.Role) }</span>
 			</div>
 			<div class="text-xs text-gray-500 dark:text-gray-400">
 				{ t(ctx, "settings.users.expires_label") } <span class="text-gray-700 dark:text-gray-300">{ inv.ExpiresAt }</span>

@@ -67,13 +67,20 @@ func providerDisplayName(key string) string {
 
 // fieldLabel returns a human-readable label for a field name via i18n lookup.
 // Keys use the pattern "field.<name>" (e.g. "field.biography" -> "Biography").
-// Unknown fields fall back to returning the raw field name.
+// Unknown fields fall back to converting snake_case to Title Case so raw
+// database column names are never shown to the user.
 func fieldLabel(ctx context.Context, field string) string {
 	result := t(ctx, "field."+field)
 	// If the key was not found, t() returns the key itself. In that case
-	// fall back to the raw field name which is more readable than the key.
+	// humanize the raw field name (e.g. "spotify_artist_id" -> "Spotify Artist Id").
 	if result == "field."+field {
-		return field
+		parts := strings.Split(field, "_")
+		for i, p := range parts {
+			if len(p) > 0 {
+				parts[i] = strings.ToUpper(p[:1]) + p[1:]
+			}
+		}
+		return strings.Join(parts, " ")
 	}
 	return result
 }
