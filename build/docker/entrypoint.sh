@@ -1,15 +1,43 @@
 #!/bin/sh
 set -e
 
-if [ "${PUID:-99}" != "99" ] || [ "${PGID:-100}" != "100" ]; then
-    echo "WARNING: PUID/PGID are ignored by this image. The container always runs as the built-in stillwater user/group (uid=99 gid=100). Configure host ownership/permissions for mounted volumes externally." >&2
-fi
+PUID="${PUID:-99}"
+PGID="${PGID:-100}"
 
-case "${1:-}" in
-    reset-credentials)
-        exec stillwater "$@"
-        ;;
-    *)
-        exec "$@"
-        ;;
-esac
+# Remap the stillwater user/group to the requested UID/GID, then drop
+# privileges via su-exec so the application never runs as root.
+if [ "$(id -u)" = "0" ]; then
+    CURRENT_GID="$(id -g stillwater 2>/dev/null || echo '')"
+    CURRENT_UID="$(id -u stillwater 2>/dev/null || echo '')"
+
+    if [ "${CURRENT_GID}" != "${PGID}" ]; then
+        delgroup stillwater 2>/dev/null || true
+        addgroup -g "${PGID}" stillwater
+    fi
+
+    if [ "${CURRENT_UID}" != "${PUID}" ]; then
+        deluser stillwater 2>/dev/null || true
+        adduser -u "${PUID}" -G stillwater -s /bin/sh -D stillwater
+    fi
+
+    chown -R stillwater:stillwater /data /music 2>/dev/null || true
+
+    case "${1:-}" in
+        reset-credentials)
+            exec su-exec stillwater stillwater "$@"
+            ;;
+        *)
+            exec su-exec stillwater "$@"
+            ;;
+    esac
+else
+    # Already non-root (e.g. Kubernetes runAsUser override).
+    case "${1:-}" in
+        reset-credentials)
+            exec stillwater "$@"
+            ;;
+        *)
+            exec "$@"
+            ;;
+    esac
+fi

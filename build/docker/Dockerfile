@@ -34,7 +34,7 @@ LABEL org.opencontainers.image.source="https://github.com/sydlexius/stillwater" 
       org.opencontainers.image.licenses="GPL-3.0"
 
 RUN apk add --no-cache --upgrade zlib && \
-    apk add --no-cache ca-certificates tzdata curl
+    apk add --no-cache ca-certificates tzdata su-exec curl
 
 # Create app user
 RUN addgroup -g 100 stillwater && \
@@ -47,8 +47,6 @@ COPY --from=builder /bin/stillwater /usr/local/bin/stillwater
 COPY --from=builder /src/web/static /app/web/static
 COPY build/docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
-
-USER stillwater
 
 WORKDIR /app
 

@@ -137,4 +137,7 @@ jobs:
           rm dockle.tar.gz
 
       - name: Run Dockle
-        run: dockle --exit-code 1 --exit-level warn stillwater:dockle
+        # CIS-DI-0001 (non-root USER) is intentionally suppressed: the image
+        # starts as root so the entrypoint can remap PUID/PGID at runtime,
+        # then drops privileges via su-exec before executing the application.
+        run: dockle --exit-code 1 --exit-level warn --ignore CIS-DI-0001 stillwater:dockle
