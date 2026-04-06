@@ -332,8 +332,22 @@ templ appearanceScript() {
 
 			// Save the page_size preference. Unlike segmented controls this is a
 			// standalone numeric input, so it gets its own save helper.
+			// The server canonicalizes page_size (e.g. "010" -> "10") via
+			// strconv.Itoa, so we normalize client-side first to match. This lets
+			// swSaveAppearancePref's saved === value check work correctly.
 			window.swSavePageSizePref = function (value) {
-				swSaveAppearancePref('page_size', value);
+				var n = parseInt(value, 10);
+				if (isNaN(n)) {
+					if (typeof window.showToast === 'function') {
+						showToast('Failed to save preference');
+					}
+					return;
+				}
+				var normalized = String(n);
+				// Update the input to show the canonical form immediately.
+				var input = document.querySelector('input[name="page_size"]');
+				if (input) input.value = normalized;
+				swSaveAppearancePref('page_size', normalized);
 			};
 
 			// Wire all segmented controls inside the appearance tab panel.

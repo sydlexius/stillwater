@@ -89,6 +89,22 @@ func isPageSizeKey(key string) bool {
 	return key == PrefPageSize
 }
 
+// normalizePageSize parses a raw page_size string, clamps it to
+// [PageSizeMin, PageSizeMax], and returns the canonical decimal form.
+// If raw is not a valid integer, PageSizeDefault is returned.
+func normalizePageSize(raw string) string {
+	n, err := strconv.Atoi(raw)
+	if err != nil {
+		return strconv.Itoa(PageSizeDefault)
+	}
+	if n < PageSizeMin {
+		n = PageSizeMin
+	} else if n > PageSizeMax {
+		n = PageSizeMax
+	}
+	return strconv.Itoa(n)
+}
+
 // isSuppressConfirmKey reports whether key is a valid per-action confirm
 // suppression preference (prefix "suppress_confirm_" followed by at least one
 // character that is a lowercase letter, digit, or underscore).
@@ -153,6 +169,16 @@ func (r *Router) handleGetPreference(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
+	// Canonicalize page_size so stale or manually edited DB rows always
+	// return a clean decimal string in range.
+	if pageSizeKey {
+		if normalized := normalizePageSize(value); normalized != value {
+			r.logger.Warn("stored page_size normalized on read",
+				"user_id", userID, "raw_value", value, "normalized", normalized)
+			value = normalized
+		}
+	}
+
 	writeJSON(w, http.StatusOK, map[string]string{"key": key, "value": value})
 }
 
@@ -196,16 +222,12 @@ func (r *Router) handleGetPreferences(w http.ResponseWriter, req *http.Request) 
 		if known {
 			prefs[k] = v
 		} else if isPageSizeKey(k) {
-			n, nerr := strconv.Atoi(v)
-			if nerr != nil {
-				r.logger.Warn("stored page_size is not a valid integer, using default",
-					"user_id", userID, "raw_value", v, "error", nerr)
-			} else if n < PageSizeMin || n > PageSizeMax {
-				r.logger.Warn("stored page_size is out of range, using default",
-					"user_id", userID, "value", n, "min", PageSizeMin, "max", PageSizeMax)
-			} else {
-				prefs[k] = v
+			normalized := normalizePageSize(v)
+			if normalized != v {
+				r.logger.Warn("stored page_size normalized on read",
+					"user_id", userID, "raw_value", v, "normalized", normalized)
 			}
+			prefs[k] = normalized
 		}
 	}
 	if err := rows.Err(); err != nil {

@@ -397,7 +397,7 @@ func ArtistImagesTab(artistID string, a *artist.Artist, profileName string, base
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "\" tabindex=\"-1\" onclick=\"closeLightbox()\"><button type=\"button\" class=\"absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors\" onclick=\"closeLightbox()\" aria-label=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "\" tabindex=\"-1\" onclick=\"closeLightbox()\"><button type=\"button\" class=\"absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors\" onclick=\"event.stopPropagation(); closeLightbox()\" aria-label=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
