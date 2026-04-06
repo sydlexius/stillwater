@@ -2,7 +2,14 @@
 set -e
 
 if [ "${PUID:-99}" != "99" ] || [ "${PGID:-100}" != "100" ]; then
-    echo "WARNING: PUID/PGID remapping is not supported in this image. Running as stillwater (uid=99)." >&2
+    echo "WARNING: PUID/PGID are ignored by this image. The container always runs as the built-in stillwater user/group (uid=99 gid=100). Configure host ownership/permissions for mounted volumes externally." >&2
 fi
 
-exec "$@"
+case "${1:-}" in
+    reset-credentials)
+        exec stillwater "$@"
+        ;;
+    *)
+        exec "$@"
+        ;;
+esac

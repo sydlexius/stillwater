@@ -34,10 +34,10 @@ LABEL org.opencontainers.image.source="https://github.com/sydlexius/stillwater" 
       org.opencontainers.image.licenses="GPL-3.0"
 
 RUN apk add --no-cache --upgrade zlib && \
-    apk add --no-cache ca-certificates tzdata su-exec curl
+    apk add --no-cache ca-certificates tzdata curl
 
 # Create app user
-RUN addgroup stillwater && \
+RUN addgroup -g 100 stillwater && \
     adduser -u 99 -G stillwater -s /bin/sh -D stillwater
 
 # Create data and music directories
