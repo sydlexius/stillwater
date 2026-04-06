@@ -686,10 +686,10 @@ func ArtistsPage(assets AssetPaths, data ArtistListData) templ.Component {
 					if n == 1 {
 						return t(ctx, "common.active_filter_one")
 					}
-					return fmt.Sprintf(t(ctx, "common.active_filter_other"), n)
+					return tf(ctx, "common.active_filter_other", n)
 				}())
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 387, Col: 229}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/templates/artists.templ`, Line: 387, Col: 217}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var26))
 				if templ_7745c5c3_Err != nil {

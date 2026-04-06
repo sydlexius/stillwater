@@ -384,7 +384,7 @@ templ ArtistsPage(assets AssetPaths, data ArtistListData) {
 						</svg>
 						<span>{ t(ctx, "common.filters") }</span>
 						if activeFilterCount(data.Filters) > 0 {
-							<span class={ filterTriggerBadge } aria-label={ func() string { n := activeFilterCount(data.Filters); if n == 1 { return t(ctx, "common.active_filter_one") }; return fmt.Sprintf(t(ctx, "common.active_filter_other"), n) }() }>
+							<span class={ filterTriggerBadge } aria-label={ func() string { n := activeFilterCount(data.Filters); if n == 1 { return t(ctx, "common.active_filter_one") }; return tf(ctx, "common.active_filter_other", n) }() }>
 								{ fmt.Sprintf("%d", activeFilterCount(data.Filters)) }
 							</span>
 						}
